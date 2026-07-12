@@ -16,7 +16,7 @@ If any required input in `README.md` is absent, emit only a `blocked` artifact w
 - Mixed key-term exact rate = annotated names/files/apps preserved exactly / annotated mixed-language key terms.
 - Flicker = partial revisions that change already displayed stable tokens outside the active trailing segment, normalized per 10 seconds of speech. Revision IDs must be strictly increasing.
 - Successful-final and draft-preservation rates use attempted cases as denominator. A crash, timeout, missing final, or provider error is not excluded.
-- CPU is time-weighted process average; RSS is process-tree peak; battery is baseline-adjusted percentage points per 30 minutes; network is total bytes sent/received; cost is the provider invoice-unit calculation from billable audio seconds and the price artifact active on run date.
+- CPU is time-weighted process average; `rssDeltaPeakMiB = process-tree peak RSS - process-tree baseline RSS` per utterance and its reported point is the median across utterances; battery is baseline-adjusted percentage points per 30 minutes; network is total bytes sent/received; cost is the provider invoice-unit calculation from billable audio seconds and the price artifact active on run date.
 
 ## Uncertainty and acceptance
 
@@ -32,7 +32,7 @@ A candidate passes only when its point estimate meets every threshold and the co
 | Mixed key-term exact | >= 0.95 |
 | Draft preservation | 1.00 on all failure tests |
 | Partial stability | <= 2 flicker rewrites / 10 s; 0 revision-order violations |
-| Device resources | CPU average <= 20%; incremental RSS <= 100 MiB; battery <= 3 percentage points / 30 min |
+| Device resources | CPU average <= 20%; baseline-adjusted process-tree `rssDeltaPeakMiB` <= 100 MiB; battery <= 3 percentage points / 30 min |
 | Reliability | successful-final rate >= 0.99 across >= 500 utterances; 0 crashes |
 | Privacy/config | approved region, retention, logging, credentials, disable switch, and user copy |
 

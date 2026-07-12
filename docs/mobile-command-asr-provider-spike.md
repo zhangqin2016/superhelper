@@ -20,7 +20,7 @@ Every candidate must be tested on the same versioned corpus and devices:
 | Mixed zh/en key terms | >= 95% exact preservation of the annotated names/files/apps set |
 | Draft safety | 100% of network/provider/permission failures preserve prior draft and last usable partial |
 | Partial stability | <= 2 disruptive rewrites per 10-second utterance; revision ordering is monotonic |
-| Device cost | average CPU <= 20%, incremental RSS <= 100 MiB, and <= 3% battery per 30 minutes on the declared mid-range device |
+| Device cost | average CPU <= 20%, baseline-adjusted process-tree `rssDeltaPeakMiB` (peak minus baseline) <= 100 MiB, and <= 3% battery per 30 minutes on the declared mid-range device |
 | Reliability | >= 99% successful finals across 500 utterances; no crash |
 | Privacy/config | processing region, retention, logging, credentials, disable switch, and user copy are verified for the deployed configuration |
 
@@ -67,7 +67,7 @@ Authoritative API reference set reviewed on 2026-07-12: [Web Speech API on MDN](
 
 1. Freeze and hash the corpus/annotations; assign the same utterance order to every candidate.
 2. Record device model, OS, app/browser build, network profile, provider/model/region, credential owner, and timestamp.
-3. Capture partial/final monotonic timestamps, transcript revisions, CPU/RSS/energy/network, errors, and cost units using [the raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json).
+3. Capture utterance-level timestamps, revisions, references/hypotheses, CPU/process-tree RSS baseline and peak, energy/network/cost inputs using [the event-row schema](evidence/mobile-command/asr/event-row.schema.json), then score to [the raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json).
 4. Run at least 500 utterances per candidate, including offline and weak-network cases; calculate p50/p95, CER/WER, key-term accuracy, failure preservation, and crash rate with the same scorer.
 5. Have privacy and operations owners verify the deployed retention/region/credential/cost facts.
 6. Score with [the frozen scoring contract](evidence/mobile-command/asr/scoring-contract.md). Select a primary/fallback only if it passes all mandatory thresholds; otherwise ship text-only voice degradation and keep MC-ADR-008 proposed.

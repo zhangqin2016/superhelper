@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lily.local/schemas/mobile-command/asr/event-row.schema.json",
+  "title": "Mobile Command ASR utterance event row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "caseId", "candidate", "device", "app", "network", "environment", "noiseProfile", "language", "audioSha256", "consentRef", "timestamps", "partialRevisions", "reference", "hypothesis", "referenceIntent", "hypothesisIntent", "slotsExpected", "slotsObserved", "keyTermsExpected", "keyTermsObserved", "errors", "excluded", "draftPreserved", "resources"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "eventId": { "type": "string", "pattern": "^[a-zA-Z0-9-]+$" },
+    "caseId": { "type": "string", "pattern": "^(quiet|street|headset|far-field)\\.(zh-CN|en-US|mixed)\\.(short|long)\\.(ordinary|sensitive)\\.[0-9]{3,}$" },
+    "candidate": { "$ref": "#/$defs/candidate" },
+    "device": { "$ref": "#/$defs/device" },
+    "app": { "$ref": "#/$defs/app" },
+    "network": { "$ref": "#/$defs/network" },
+    "environment": { "enum": ["quiet", "street", "headset", "far-field"] },
+    "noiseProfile": { "type": "string", "minLength": 1 },
+    "language": { "enum": ["zh-CN", "en-US", "mixed"] },
+    "audioSha256": { "$ref": "#/$defs/sha256" },
+    "consentRef": { "type": "string", "minLength": 1 },
+    "timestamps": {
+      "type": "object", "additionalProperties": false,
+      "required": ["audioStartMs", "audioStopMs", "firstPartialMs", "finalMs"],
+      "properties": { "audioStartMs": { "$ref": "#/$defs/millis" }, "audioStopMs": { "$ref": "#/$defs/millis" }, "firstPartialMs": { "$ref": "#/$defs/millis" }, "finalMs": { "$ref": "#/$defs/millis" } }
+    },
+    "partialRevisions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/revision" } },
+    "reference": { "type": "string" }, "hypothesis": { "type": "string" },
+    "referenceIntent": { "type": "string", "minLength": 1 }, "hypothesisIntent": { "type": "string" },
+    "slotsExpected": { "$ref": "#/$defs/stringMap" }, "slotsObserved": { "$ref": "#/$defs/stringMap" },
+    "keyTermsExpected": { "$ref": "#/$defs/stringArray" }, "keyTermsObserved": { "$ref": "#/$defs/stringArray" },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error" } },
+    "excluded": { "type": "boolean" },
+    "exclusionReason": { "type": "string", "minLength": 1 },
+    "draftPreserved": { "type": "boolean" },
+    "resources": { "$ref": "#/$defs/resources" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "millis": { "type": "number", "minimum": 0 },
+    "candidate": { "type": "object", "additionalProperties": false, "required": ["provider", "model", "modelVersion", "region", "endpointClass"], "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "modelVersion": { "type": "string", "minLength": 1 }, "region": { "type": "string", "minLength": 1 }, "endpointClass": { "enum": ["on-device", "remote", "hybrid"] } } },
+    "device": { "type": "object", "additionalProperties": false, "required": ["deviceId", "manufacturer", "model", "os", "osVersion"], "properties": { "deviceId": { "type": "string", "pattern": "^[a-z0-9-]+$" }, "manufacturer": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "os": { "enum": ["iOS", "Android"] }, "osVersion": { "type": "string", "minLength": 1 } } },
+    "app": { "type": "object", "additionalProperties": false, "required": ["name", "version", "build"], "properties": { "name": { "type": "string", "minLength": 1 }, "version": { "type": "string", "minLength": 1 }, "build": { "type": "string", "minLength": 1 } } },
+    "network": { "type": "object", "additionalProperties": false, "required": ["profile", "downKbps", "upKbps", "rttMs", "packetLossPercent"], "properties": { "profile": { "type": "string", "minLength": 1 }, "downKbps": { "type": "number", "minimum": 0 }, "upKbps": { "type": "number", "minimum": 0 }, "rttMs": { "type": "number", "minimum": 0 }, "packetLossPercent": { "type": "number", "minimum": 0, "maximum": 100 } } },
+    "revision": { "type": "object", "additionalProperties": false, "required": ["revisionId", "atMs", "text", "final"], "properties": { "revisionId": { "type": "integer", "minimum": 1 }, "atMs": { "$ref": "#/$defs/millis" }, "text": { "type": "string" }, "final": { "type": "boolean" } } },
+    "stringMap": { "type": "object", "additionalProperties": { "type": "string" } },
+    "stringArray": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "error": { "type": "object", "additionalProperties": false, "required": ["code", "message"], "properties": { "code": { "type": "string", "minLength": 1 }, "message": { "type": "string", "minLength": 1 } } },
+    "resources": { "type": "object", "additionalProperties": false, "required": ["cpuBaselinePercent", "cpuAveragePercent", "cpuPeakPercent", "rssBaselineMiB", "rssPeakMiB", "batteryStartPercent", "batteryEndPercent", "measurementMinutes", "networkBytesSent", "networkBytesReceived", "billableAudioSeconds", "cost", "currency"], "properties": { "cpuBaselinePercent": { "type": "number", "minimum": 0 }, "cpuAveragePercent": { "type": "number", "minimum": 0 }, "cpuPeakPercent": { "type": "number", "minimum": 0 }, "rssBaselineMiB": { "type": "number", "minimum": 0 }, "rssPeakMiB": { "type": "number", "minimum": 0 }, "batteryStartPercent": { "type": "number", "minimum": 0, "maximum": 100 }, "batteryEndPercent": { "type": "number", "minimum": 0, "maximum": 100 }, "measurementMinutes": { "type": "number", "exclusiveMinimum": 0 }, "networkBytesSent": { "type": "integer", "minimum": 0 }, "networkBytesReceived": { "type": "integer", "minimum": 0 }, "billableAudioSeconds": { "type": "number", "minimum": 0 }, "cost": { "type": "number", "minimum": 0 }, "currency": { "type": "string", "pattern": "^[A-Z]{3}$" } } }
+  },
+  "allOf": [{ "if": { "properties": { "excluded": { "const": true } }, "required": ["excluded"] }, "then": { "required": ["exclusionReason"] } }]
+}

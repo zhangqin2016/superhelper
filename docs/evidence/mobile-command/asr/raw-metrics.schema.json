@@ -1,80 +1,47 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lily.local/schemas/mobile-command/asr/raw-metrics.schema.json",
-  "title": "Mobile Command ASR raw metrics",
+  "title": "Mobile Command ASR scored metrics",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "runId", "status", "startedAt", "owner", "artifacts"],
   "properties": {
-    "schemaVersion": { "const": "1.0.0" },
+    "schemaVersion": { "const": "1.1.0" },
     "runId": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z_[a-f0-9]{12}$" },
     "status": { "enum": ["complete", "blocked"] },
-    "blockedReasons": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-    "startedAt": { "type": "string", "format": "date-time" },
-    "owner": { "type": "string", "minLength": 1 },
-    "corpus": { "$ref": "#/$defs/versionedArtifact" },
-    "candidate": {
-      "type": "object", "additionalProperties": false,
-      "required": ["provider", "model", "modelVersion", "region", "endpointClass"],
-      "properties": {
-        "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "modelVersion": { "type": "string", "minLength": 1 }, "region": { "type": "string", "minLength": 1 }, "endpointClass": { "enum": ["on-device", "remote", "hybrid"] }
-      }
-    },
-    "device": {
-      "type": "object", "additionalProperties": false,
-      "required": ["deviceId", "manufacturer", "model", "os", "osVersion"],
-      "properties": { "deviceId": { "type": "string", "pattern": "^[a-z0-9-]+$" }, "manufacturer": { "type": "string" }, "model": { "type": "string" }, "os": { "enum": ["iOS", "Android"] }, "osVersion": { "type": "string" } }
-    },
-    "app": {
-      "type": "object", "additionalProperties": false,
-      "required": ["name", "version", "build"],
-      "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "build": { "type": "string" } }
-    },
-    "network": {
-      "type": "object", "additionalProperties": false,
-      "required": ["profile", "downKbps", "upKbps", "rttMs", "packetLossPercent"],
-      "properties": { "profile": { "type": "string" }, "downKbps": { "type": "number", "minimum": 0 }, "upKbps": { "type": "number", "minimum": 0 }, "rttMs": { "type": "number", "minimum": 0 }, "packetLossPercent": { "type": "number", "minimum": 0, "maximum": 100 } }
-    },
+    "blockedReasons": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "startedAt": { "type": "string", "format": "date-time" }, "owner": { "type": "string", "minLength": 1 },
+    "scorer": { "$ref": "#/$defs/scorer" }, "corpus": { "$ref": "#/$defs/versionedArtifact" },
+    "candidate": { "$ref": "#/$defs/candidate" }, "device": { "$ref": "#/$defs/device" }, "app": { "$ref": "#/$defs/app" }, "networkProfile": { "$ref": "#/$defs/networkProfile" },
     "sampleCounts": { "$ref": "#/$defs/counts" },
     "latencyMs": { "$ref": "#/$defs/latency" },
-    "accuracy": {
-      "type": "object", "additionalProperties": false,
-      "required": ["wer", "cer", "usableCommandRate", "mixedKeyTermExactRate"],
-      "properties": { "wer": { "$ref": "#/$defs/rate" }, "cer": { "$ref": "#/$defs/rate" }, "usableCommandRate": { "$ref": "#/$defs/rate" }, "mixedKeyTermExactRate": { "$ref": "#/$defs/rate" } }
-    },
-    "stability": {
-      "type": "object", "additionalProperties": false,
-      "required": ["flickerRewritesPer10s", "monotonicRevisionViolationCount"],
-      "properties": { "flickerRewritesPer10s": { "type": "number", "minimum": 0 }, "monotonicRevisionViolationCount": { "type": "integer", "minimum": 0 } }
-    },
-    "resources": {
-      "type": "object", "additionalProperties": false,
-      "required": ["cpuAveragePercent", "rssPeakMiB", "batteryDeltaPercentPer30Min"],
-      "properties": { "cpuAveragePercent": { "type": "number", "minimum": 0 }, "rssPeakMiB": { "type": "number", "minimum": 0 }, "batteryDeltaPercentPer30Min": { "type": "number", "minimum": 0 } }
-    },
-    "reliability": {
-      "type": "object", "additionalProperties": false,
-      "required": ["successfulFinalRate", "draftPreservationRate", "crashCount"],
-      "properties": { "successfulFinalRate": { "$ref": "#/$defs/rate" }, "draftPreservationRate": { "$ref": "#/$defs/rate" }, "crashCount": { "type": "integer", "minimum": 0 } }
-    },
-    "privacyCost": {
-      "type": "object", "additionalProperties": false,
-      "required": ["audioRetention", "transcriptRetention", "logging", "credentialOwner", "networkBytesSent", "networkBytesReceived", "billableAudioSeconds", "currency", "cost"],
-      "properties": { "audioRetention": { "type": "string" }, "transcriptRetention": { "type": "string" }, "logging": { "type": "string" }, "credentialOwner": { "type": "string" }, "networkBytesSent": { "type": "integer", "minimum": 0 }, "networkBytesReceived": { "type": "integer", "minimum": 0 }, "billableAudioSeconds": { "type": "number", "minimum": 0 }, "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }, "cost": { "type": "number", "minimum": 0 } }
-    },
+    "accuracy": { "type": "object", "additionalProperties": false, "required": ["wer", "cer", "usableCommandRate", "slotExactRate", "mixedKeyTermExactRate"], "properties": { "wer": { "$ref": "#/$defs/estimate" }, "cer": { "$ref": "#/$defs/estimate" }, "usableCommandRate": { "$ref": "#/$defs/estimate" }, "slotExactRate": { "$ref": "#/$defs/estimate" }, "mixedKeyTermExactRate": { "$ref": "#/$defs/estimate" } } },
+    "stability": { "type": "object", "additionalProperties": false, "required": ["flickerRewritesPer10s", "monotonicRevisionViolationRate"], "properties": { "flickerRewritesPer10s": { "$ref": "#/$defs/estimate" }, "monotonicRevisionViolationRate": { "$ref": "#/$defs/estimate" } } },
+    "resources": { "type": "object", "additionalProperties": false, "required": ["cpuAveragePercent", "rssDeltaPeakMiB", "batteryDeltaPercentPer30Min"], "properties": { "cpuAveragePercent": { "$ref": "#/$defs/estimate" }, "rssDeltaPeakMiB": { "$ref": "#/$defs/estimate" }, "batteryDeltaPercentPer30Min": { "$ref": "#/$defs/estimate" } } },
+    "network": { "type": "object", "additionalProperties": false, "required": ["bytesSent", "bytesReceived"], "properties": { "bytesSent": { "$ref": "#/$defs/estimate" }, "bytesReceived": { "$ref": "#/$defs/estimate" } } },
+    "cost": { "type": "object", "additionalProperties": false, "required": ["total"], "properties": { "total": { "$ref": "#/$defs/estimate" } } },
+    "reliability": { "type": "object", "additionalProperties": false, "required": ["successfulFinalRate", "draftPreservationRate", "crashRate"], "properties": { "successfulFinalRate": { "$ref": "#/$defs/estimate" }, "draftPreservationRate": { "$ref": "#/$defs/estimate" }, "crashRate": { "$ref": "#/$defs/estimate" } } },
+    "acceptance": { "type": "object", "additionalProperties": { "$ref": "#/$defs/gate" } },
+    "privacy": { "type": "object", "additionalProperties": false, "required": ["audioRetention", "transcriptRetention", "logging", "credentialOwner"], "properties": { "audioRetention": { "type": "string" }, "transcriptRetention": { "type": "string" }, "logging": { "type": "string" }, "credentialOwner": { "type": "string" } } },
     "artifacts": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/artifact" } }
   },
   "$defs": {
     "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "artifact": { "type": "object", "additionalProperties": false, "required": ["kind", "path", "sha256"], "properties": { "kind": { "enum": ["manifest", "events", "metrics", "annotations", "energy"] }, "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" } } },
+    "estimate": { "type": "object", "additionalProperties": false, "required": ["point", "lower95", "upper95", "unit", "n"], "properties": { "point": { "type": "number", "minimum": 0 }, "lower95": { "type": "number", "minimum": 0 }, "upper95": { "type": "number", "minimum": 0 }, "unit": { "type": "string", "minLength": 1 }, "n": { "type": "integer", "minimum": 1 } } },
+    "scorer": { "type": "object", "additionalProperties": false, "required": ["version", "commit", "bootstrapSeed", "bootstrapIterations"], "properties": { "version": { "type": "string", "minLength": 1 }, "commit": { "type": "string", "minLength": 1 }, "bootstrapSeed": { "type": "integer" }, "bootstrapIterations": { "type": "integer", "minimum": 1 } } },
+    "candidate": { "type": "object", "additionalProperties": false, "required": ["provider", "model", "modelVersion", "region", "endpointClass"], "properties": { "provider": { "type": "string" }, "model": { "type": "string" }, "modelVersion": { "type": "string" }, "region": { "type": "string" }, "endpointClass": { "enum": ["on-device", "remote", "hybrid"] } } },
+    "device": { "type": "object", "additionalProperties": false, "required": ["deviceId", "manufacturer", "model", "os", "osVersion"], "properties": { "deviceId": { "type": "string" }, "manufacturer": { "type": "string" }, "model": { "type": "string" }, "os": { "enum": ["iOS", "Android"] }, "osVersion": { "type": "string" } } },
+    "app": { "type": "object", "additionalProperties": false, "required": ["name", "version", "build"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "build": { "type": "string" } } },
+    "networkProfile": { "type": "object", "additionalProperties": false, "required": ["profile", "downKbps", "upKbps", "rttMs", "packetLossPercent"], "properties": { "profile": { "type": "string" }, "downKbps": { "type": "number", "minimum": 0 }, "upKbps": { "type": "number", "minimum": 0 }, "rttMs": { "type": "number", "minimum": 0 }, "packetLossPercent": { "type": "number", "minimum": 0, "maximum": 100 } } },
+    "artifact": { "type": "object", "additionalProperties": false, "required": ["kind", "path", "sha256"], "properties": { "kind": { "enum": ["manifest", "events", "metrics", "annotations", "energy", "price"] }, "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" } } },
     "versionedArtifact": { "type": "object", "additionalProperties": false, "required": ["id", "version", "path", "sha256"], "properties": { "id": { "type": "string" }, "version": { "type": "string" }, "path": { "type": "string" }, "sha256": { "$ref": "#/$defs/sha256" } } },
     "counts": { "type": "object", "additionalProperties": false, "required": ["attempted", "scored", "excluded"], "properties": { "attempted": { "type": "integer", "minimum": 0 }, "scored": { "type": "integer", "minimum": 0 }, "excluded": { "type": "integer", "minimum": 0 } } },
-    "percentiles": { "type": "object", "additionalProperties": false, "required": ["p50", "p95"], "properties": { "p50": { "type": "number", "minimum": 0 }, "p95": { "type": "number", "minimum": 0 } } },
+    "percentiles": { "type": "object", "additionalProperties": false, "required": ["p50", "p95"], "properties": { "p50": { "$ref": "#/$defs/estimate" }, "p95": { "$ref": "#/$defs/estimate" } } },
     "latency": { "type": "object", "additionalProperties": false, "required": ["firstPartial", "finalAfterStop"], "properties": { "firstPartial": { "$ref": "#/$defs/percentiles" }, "finalAfterStop": { "$ref": "#/$defs/percentiles" } } },
-    "rate": { "type": "number", "minimum": 0, "maximum": 1 }
+    "gate": { "type": "object", "additionalProperties": false, "required": ["threshold", "bound", "conservativePass"], "properties": { "threshold": { "type": "number" }, "bound": { "enum": ["lower", "upper"] }, "conservativePass": { "type": "boolean" } } }
   },
   "allOf": [
-    { "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] }, "then": { "required": ["blockedReasons"], "properties": { "blockedReasons": { "minItems": 1 } } } },
-    { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "required": ["corpus", "candidate", "device", "app", "network", "sampleCounts", "latencyMs", "accuracy", "stability", "resources", "reliability", "privacyCost"] } }
+    { "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] }, "then": { "required": ["blockedReasons"] } },
+    { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "required": ["scorer", "corpus", "candidate", "device", "app", "networkProfile", "sampleCounts", "latencyMs", "accuracy", "stability", "resources", "network", "cost", "reliability", "acceptance", "privacy"] } }
   ]
 }

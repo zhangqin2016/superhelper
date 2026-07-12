@@ -10,16 +10,30 @@ This directory is the fixed, non-product evidence root for MC-ADR-008. It define
 docs/evidence/mobile-command/asr/
   README.md
   corpus-manifest.schema.json
+  event-row.schema.json
   raw-metrics.schema.json
   scoring-contract.md
   runs/<run-id>/                         # generated evidence; do not create before a real run
     corpus-manifest.json
+    <candidate-id>__<device-id>__metadata.json
     <candidate-id>__<device-id>__raw-metrics.json
     <candidate-id>__<device-id>__events.ndjson
     SHA256SUMS
 ```
 
-`run-id` is UTC `YYYYMMDDTHHMMSSZ_<12-char-corpus-hash>`. Artifact names use lowercase ASCII `[a-z0-9-]`; paths and SHA-256 hashes are recorded in the metrics file. Raw audio is external, consent-controlled input and must not be committed here. Transcripts must be redacted or synthetic-consented before commit.
+`run-id` is UTC `YYYYMMDDTHHMMSSZ_<12-char-corpus-hash>`. Artifact names use lowercase ASCII `[a-z0-9-]`; paths and SHA-256 hashes are recorded in the metrics file. Event rows validate against [`event-row.schema.json`](event-row.schema.json), and scored output validates against [`raw-metrics.schema.json`](raw-metrics.schema.json). Raw audio is external, consent-controlled input and must not be committed here. Transcripts must be redacted or synthetic-consented before commit.
+
+Scorer owner: **Mobile Command / ASR DRI**. Freeze the scorer version and git commit in metadata, then run from the repository root:
+
+```bash
+node scripts/score-mobile-asr-evidence.mjs \
+  --events docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<device-id>__events.ndjson \
+  --metadata docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<device-id>__metadata.json \
+  --output docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<device-id>__raw-metrics.json
+find docs/evidence/mobile-command/asr/runs/<run-id> -type f ! -name SHA256SUMS -exec shasum -a 256 {} + | sort > docs/evidence/mobile-command/asr/runs/<run-id>/SHA256SUMS
+```
+
+Metadata fixes `scorer.version`, `scorer.commit`, bootstrap seed/iterations, corpus hash, candidate/model/region, privacy facts, and input artifact hashes. The scorer performs no network calls.
 
 ## Corpus case IDs
 

@@ -15,10 +15,10 @@ Authoritative API references confirm that browser/native speech interfaces exist
 | zh-CN usable-command accuracy >= 95% | unverified |
 | mixed zh/en key-term preservation >= 95% | unverified |
 | failure preserves draft/partial 100% | unverified |
-| acceptable mid-range-device CPU/memory/battery | unverified |
+| acceptable mid-range-device CPU / baseline-adjusted process-tree RSS delta / battery | unverified |
 | accepted region/retention/credential/quota/cost path | blocked |
 
-The full numeric gate and candidate evidence are in [the ASR spike](mobile-command-asr-provider-spike.md). The next run must use the fixed [evidence workspace](evidence/mobile-command/asr/README.md), [corpus manifest schema](evidence/mobile-command/asr/corpus-manifest.schema.json), [raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json), and [scoring contract](evidence/mobile-command/asr/scoring-contract.md).
+The full numeric gate and candidate evidence are in [the ASR spike](mobile-command-asr-provider-spike.md). The next run must use the fixed [evidence workspace](evidence/mobile-command/asr/README.md), [corpus manifest schema](evidence/mobile-command/asr/corpus-manifest.schema.json), [event-row schema](evidence/mobile-command/asr/event-row.schema.json), [raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json), and [scoring contract](evidence/mobile-command/asr/scoring-contract.md). RSS is exclusively baseline-adjusted process-tree `rssDeltaPeakMiB = peak - baseline`, gated at <= 100 MiB.
 
 ## Constraints That Apply Before Selection
 
