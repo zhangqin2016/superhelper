@@ -912,7 +912,7 @@ file-meta   file transfer metadata
 
 Agent Bridge 的注入、并发、幂等、取消归属、事件投影、推理可见性、工具生命周期、permission/question eligibility、artifact 终局推导、重连快照、terminal 映射和失败矩阵，以 [MC-SPEC-008 Agent Bridge Contract](mobile-command-agent-bridge-contract.md) 为唯一规范来源。
 
-产品摘要：手机命令必须绑定一个明确存在的 Lily session，并且只通过现有 `TurnOrchestrator.sendUserMessage` 进入同一份本地历史；目标不存在时返回可恢复错误，不自动选择或创建会话。busy session 复用现有 steer/FIFO queue，不同 session 可并发。relay 或 bridge 失败不影响本地 Lily，且不能伪造 assistant 完成或远程授权。手机文件仍须先满足 [文件传输合同](mobile-command-file-transfer-contract.md) 再进入现有 staging/attachment 机制。
+产品摘要：手机命令必须绑定一个明确存在的 Lily session，并经 [MC-SPEC-008 规定的 planned crash-safe atomic admission seam](mobile-command-agent-bridge-contract.md#33-crash-safe-exact-once-admission-and-idempotency) 进入唯一的本地历史；当前 `sendUserMessage` 本身不满足 external exact-once。目标不存在时返回可恢复错误，不自动选择或创建会话。busy session 复用现有 steer/FIFO queue，不同 session 可并发。relay 或 bridge 失败不影响本地 Lily，且不能伪造 assistant 完成或远程授权。手机文件仍须先满足 [文件传输合同](mobile-command-file-transfer-contract.md) 再进入现有 staging/attachment 机制。
 
 ## 15. 文件传输
 
