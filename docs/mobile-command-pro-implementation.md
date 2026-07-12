@@ -767,6 +767,8 @@ WebSocket 消息：
 
 ## 11. 事件协议
 
+本节是跨能力的产品事件目录；wire syntax 以 `docs/schemas/mobile-command-events.schema.json` 为准。`agent.*`、permission/question/approval、queue、artifact 和 turn lifecycle 的含义、字段转发/脱敏与重连规则不在此重复定义，统一引用 [MC-SPEC-008 Agent Bridge Contract](mobile-command-agent-bridge-contract.md#5-event-projection-contract)。
+
 统一 envelope：
 
 ```json
@@ -908,21 +910,9 @@ file-meta   file transfer metadata
 
 ## 14. Agent Bridge
 
-`agent-mobile-bridge.js` 必须满足：
+Agent Bridge 的注入、并发、幂等、取消归属、事件投影、推理可见性、工具生命周期、permission/question eligibility、artifact 终局推导、重连快照、terminal 映射和失败矩阵，以 [MC-SPEC-008 Agent Bridge Contract](mobile-command-agent-bridge-contract.md) 为唯一规范来源。
 
-- 手机消息进入指定 Lily session。
-- 如果没有 active session，按现有会话创建规则创建或选择当前默认会话。
-- 不允许跨 session 投递。
-- 手机端文件进入现有 file staging / attachment 机制。
-- agent 流式文本、工具事件、artifact 事件投递给手机。
-- bridge 失败时，消息保持可重试，不写入错误 assistant 结果。
-
-失败策略：
-
-- 找不到目标 session：返回 recoverable error。
-- 当前 runner busy：按现有 steer/queue 规则处理，不能另起孤立 runner。
-- 文件 staged 失败：fail loud，不能让 agent 盲答。
-- 服务端 relay 失败：本地 Lily 继续执行，稍后可同步最终摘要。
+产品摘要：手机命令必须绑定一个明确存在的 Lily session，并且只通过现有 `TurnOrchestrator.sendUserMessage` 进入同一份本地历史；目标不存在时返回可恢复错误，不自动选择或创建会话。busy session 复用现有 steer/FIFO queue，不同 session 可并发。relay 或 bridge 失败不影响本地 Lily，且不能伪造 assistant 完成或远程授权。手机文件仍须先满足 [文件传输合同](mobile-command-file-transfer-contract.md) 再进入现有 staging/attachment 机制。
 
 ## 15. 文件传输
 
@@ -1099,7 +1089,7 @@ expired
 | 输入注入失败 | 降级到 Observe |
 | permission-policy 异常 | 拒绝控制，保留 Chat Only |
 | audit 写入失败 | 普通 chat 继续；敏感动作拒绝 |
-| agent bridge 失败 | 消息可重试，不伪造完成 |
+| agent bridge 失败 | 按 [MC-SPEC-008 失败矩阵](mobile-command-agent-bridge-contract.md#7-failure-matrix) 处理：本地 Lily 继续，消息按幂等状态恢复且不伪造完成 |
 | 手机断线 | 撤销控制权限 |
 | 电脑锁屏 | 停止屏幕流和输入控制 |
 | 老服务端 | 新功能不可用，旧功能不变 |
@@ -1161,10 +1151,7 @@ scripts/test-remote-session-isolation.mjs
 
 ### 20.2 会话绑定
 
-- mobile command 必须绑定 Lily session id。
-- 如果手机从历史任务继续发送消息，必须恢复到同一 Lily session。
-- 如果目标 session 已删除或不可恢复，手机端显示可恢复错误，让用户选择新建任务。
-- 不能因为 remote session 断线而丢失 Lily conversation。
+会话选择、不存在处理、断线恢复以及“绝不创建第二份隐藏历史”的规范由 [MC-SPEC-008 Agent Bridge Contract](mobile-command-agent-bridge-contract.md#2-non-negotiable-invariants) 统一定义。本文件仅保留产品结论：历史任务继续操作同一 Lily conversation；目标失效时由用户显式选择或创建任务，remote session 断线不改变本地历史。
 
 ### 20.3 手机语音
 

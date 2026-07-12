@@ -2,7 +2,7 @@
 
 ## 1. Status And Rules
 
-This MC-SPEC-036 map separates verified current owners from planned placement. It does not authorize production implementation. Current evidence is canonical in [MC-SPEC-005](mobile-command-existing-system-integration.md); planned names below may change when the data, auth, agent-bridge, API, and native contracts are accepted.
+This MC-SPEC-036 map separates verified current owners from planned placement. It does not authorize production implementation. Current evidence is canonical in [MC-SPEC-005](mobile-command-existing-system-integration.md), while bridge semantics and ownership are canonical in [MC-SPEC-008](mobile-command-agent-bridge-contract.md); planned names below may change when the remaining API and native contracts are accepted.
 
 - Extend the current route, lifecycle, turn, event, config, IPC, migration, and logging seams.
 - Do not call private `serviceFetch` or signing helpers, raw OpenCode runtime APIs, or `OpencodeAgentSession.sendUserMessage` from Mobile Command.
@@ -17,9 +17,9 @@ This MC-SPEC-036 map separates verified current owners from planned placement. I
 | User/device/session/license identity | `server/src/routes/public/auth.js:88-111,114-260`; `server/src/services/device-identity.js:13-164`; `server/migrations/001_initial.sql:1-32`; `server/migrations/007_client_config_profiles.sql:43-56`; `server/migrations/022_account_wallet.sql:1-63` | Reference existing IDs; add remote-specific relations instead of parallel base identities |
 | Region and effective config | `server/src/services/client-bootstrap.js:1-124`; `server/src/routes/public/client-config.js:61-175`; `src/main/remote-config.js:275-326` | Add versioned policy/config fields without merging the two delivery paths |
 | Authenticated desktop service requests | `src/main/service-client.js:465-525,827-859` | Add reviewed exported wrapper methods; private transport/signing functions are not an integration API |
-| Conversation and command entry | `src/main/turn-orchestrator.js:841-925,3437`; `src/main/ipc-assistant.js:106,176`; `src/main/scheduled-tasks.js:276` | Inject only through `TurnOrchestrator.sendUserMessage` |
-| Engine message/event normalization | `src/main/runtime/opencode-message-parts.js:526-535`; `src/main/runtime/opencode-runtime-reducer.js:739-842`; `src/main/opencode-agent-session.js:1303-1350` | Project normalized Lily events; never forward raw engine events |
-| Permission/question handling | `src/main/opencode-agent-session.js:1303-1350`; `src/main/turn-orchestrator.js:705-740,1184-1195` | Add remote eligibility/resolution around current permission/question semantics |
+| Conversation and command entry | `src/main/turn-orchestrator.js:841-925,3437`; `src/main/ipc-assistant.js:106,176`; `src/main/scheduled-tasks.js:276` | `agent-bridge.js` injects only through `TurnOrchestrator.sendUserMessage`; no target inference/session creation or hidden history |
+| Engine message/event normalization | `src/main/runtime/opencode-message-parts.js:526-535`; `src/main/runtime/opencode-runtime-reducer.js:739-842`; `src/main/opencode-agent-session.js:1303-1350` | `event-projector.js` consumes normalized Lily events and sealed records only; raw engine events/reasoning/secrets are prohibited |
+| Permission/question handling | `src/main/opencode-agent-session.js:1303-1350`; `src/main/turn-orchestrator.js:705-740,1184-1195` | `agent-bridge.js` recomputes remote eligibility, then uses public orchestrator response seams; sensitive/desktop authority remains desktop-owned |
 | Local artifact identity | `src/main/artifact-registry.js:175-277`; `src/main/turn-artifacts.js:264-357`; `src/main/turn-archive.js:15-49`; `src/main/session-artifact-backfill.js:8-29` | Source adapter only; add remote descriptors and authorization separately |
 | Local attachment staging | `src/main/file-staging-manager.js:67-150,240`; `src/main/ipc-files.js:150-192` | Destination adapter only after remote upload verification |
 | Lifecycle and IPC | `src/main.js:288-313`; `src/main/ipc-handlers.js:42-262`; `src/main/ipc-sessions.js:68-235,385-390` | Minimal service composition and dedicated local UI bridge |
@@ -48,7 +48,7 @@ src/main/mobile-command/
   platform/
 ```
 
-`remote-api.js` is a domain facade over narrow exported functions from the existing `src/main/service-client.js`; it must not perform fetches directly, sign requests, access/hold device keys, select a region/base URL, or implement retries. `agent-bridge.js` delegates to the existing orchestrator. `event-projector.js` consumes normalized Lily events. `artifact-source.js` and `upload-staging-adapter.js` wrap only the verified local invariants; they do not turn current registries into network services. OS adapter filenames remain evidence-needed under MC-ADR-005–007.
+`remote-api.js` is a domain facade over narrow exported functions from the existing `src/main/service-client.js`; it must not perform fetches directly, sign requests, access/hold device keys, select a region/base URL, or implement retries. Per [MC-SPEC-008](mobile-command-agent-bridge-contract.md), `agent-bridge.js` owns validated admission, correlation, ownership-aware cancellation, and reconnect snapshots while delegating command execution to the existing orchestrator; a narrow orchestrator cancellation seam must be added before exposing mobile cancellation because current broad interruption can clear unrelated queue items. `event-projector.js` owns allowlisting/redaction/cursoring over normalized Lily events and sealed turn records. `artifact-source.js` and `upload-staging-adapter.js` wrap only the verified local invariants; they do not turn current registries into network services. OS adapter filenames remain evidence-needed under MC-ADR-005–007.
 
 ```text
 server/src/routes/public/mobile-command.js
@@ -92,7 +92,7 @@ MC-ADR-002 likewise owns native-shell selection and paths. No `mobile-native/`, 
 | `src/main/service-client.js` | Remain the only transport/signing/key/region/retry owner and export narrow Mobile Command route wrappers; never export a general arbitrary fetch/sign primitive |
 | `src/main/remote-config.js` | Read additive accepted fields and notify existing listeners |
 | `src/main/ipc-handlers.js` | Compose a dedicated Mobile Command IPC handler module |
-| `src/main/turn-orchestrator.js` | At most accept validated additive source/idempotency metadata; retain sole turn ownership |
+| `src/main/turn-orchestrator.js` | Retain sole turn ownership; accept only validated source/idempotency metadata and a narrow ownership-safe queued-cancel/active-interrupt seam required by MC-SPEC-008 |
 | `src/main/opencode-agent-session.js` | No Mobile Command business logic; runtime adapter behavior only |
 | `src/main/file-staging-manager.js` | No network/chunk/auth logic |
 | `src/main/artifact-registry.js` | No remote authorization, retention, or download-token logic |
