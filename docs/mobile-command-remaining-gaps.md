@@ -1,229 +1,78 @@
-# Lily Mobile Command Pro Remaining Gaps
-
-## 1. Status
-
-The current document set is strong enough for architecture review and implementation planning. It is not yet a complete build-ready specification for a top-tier production release.
-
-This file lists what is still missing or under-specified.
-
-## 2. Remaining Critical Gaps
-
-### 2.1 Concrete Repository Integration
-
-Status: first-pass implementation map exists in [Mobile Command Repo Implementation Map](mobile-command-repo-implementation-map.md).
-
-Still missing:
-
-- Verification against actual exports and route registration patterns.
-- Final decision whether mobile web lives under `web/mobile-command/` or separate `mobile/`.
-- Exact migration timestamp/name at implementation time.
-- Code-level dependency graph after reading existing modules.
-
-Needed:
-
-- Pre-implementation code audit.
-- Final per-PR task breakdown.
-
-### 2.2 Machine-Readable Schemas
-
-Status: first-pass machine-readable drafts exist:
-
-- [OpenAPI draft](schemas/mobile-command.openapi.yaml)
-- [Events schema draft](schemas/mobile-command-events.schema.json)
-- [Native bridge schema draft](schemas/mobile-command-native-bridge.schema.json)
-
-Still missing:
-
-- Shared generated TypeScript types.
-- Validation against real server route implementation.
-- Full upload/artifact/device route coverage in OpenAPI.
-
-Needed:
-
-- `src/shared/mobile-command/schemas/*`
-- Schema validation tests using real schema files.
-
-### 2.3 Real Account / License / Device Data Model
-
-Current DB design uses generic `account_id`, `desktop_device_id`, and `mobile_device_id`.
-
-Missing:
-
-- How this maps to the existing license/account/device tables.
-- Whether desktop device identity already exists in `server/src/routes/public/devices.js`.
-- Unique indexes and application-level constraints.
-- Data retention policy.
-
-Needed:
-
-- Migration-level schema with indexes.
-- Compatibility analysis against existing device routes.
-- Exact revocation cascade behavior.
-
-### 2.4 Desktop OS Helper Design
-
-Status: first-pass OS adapter contract exists in [Mobile Command Desktop OS Adapters](mobile-command-desktop-os-adapters.md).
-
-Still missing:
-
-- Final Windows input helper language/library.
-- macOS accessibility permission flow and signing implications.
-- Linux supported/unsupported matrix.
-- Packaging, code signing, update, and crash handling for native helpers.
-- Prototype validation on real OSes.
-
-Needed:
-
-- Helper command protocol.
-- Threat model for local helper abuse.
-
-### 2.5 Voice Input / ASR Contract
-
-Status: voice contract exists in [Mobile Command Voice Input Contract](mobile-command-voice-input.md), and provider spike plan exists in [Mobile Command ASR Provider Spike](mobile-command-asr-provider-spike.md).
-
-Still missing:
-
-- Final ASR provider decision.
-- Streaming ASR event protocol.
-- Concrete service endpoint and provider credentials model.
-- Cost/latency evaluation.
-
-Needed:
-
-- ASR provider spike execution.
-- Privacy copy review.
-
-### 2.6 Brand Asset Pipeline
-
-Status: brand asset contract exists in [Mobile Command Brand Assets](mobile-command-brand-assets.md), and generation script spec exists in [Mobile Command Icon Generation Script](mobile-command-icon-generation-script.md).
-
-Still missing:
-
-- Actual `scripts/generate-mobile-icons.mjs` implementation.
-- Actual generated assets.
-- Visual QA screenshots.
-
-Needed:
-
-- `scripts/generate-mobile-icons.mjs`.
-
-### 2.7 Mobile App Build And Packaging
-
-Status: build/release contract exists in [Mobile Command Build And Release](mobile-command-build-release.md).
-
-Still missing:
-
-- Capacitor configuration.
-- Actual CI jobs.
-- Real signing secret setup.
-- Store metadata review.
-
-Needed:
-
-- CI build matrix.
-- Signing secret handling.
-
-### 2.8 Service Deployment And TURN Operations
-
-Status: ops contract exists in [Mobile Command Ops Runbook](mobile-command-ops-runbook.md).
-
-Still missing:
-
-- TURN provider/self-host choice.
-- Actual coturn or provider config.
-- Real dashboards and alerts.
-- Cost model.
-
-Needed:
-
-- TURN credential issuer implementation contract.
-
-### 2.9 UI Visual Design Tokens
-
-UI behavior is specified, but final visual design is not.
-
-Missing:
-
-- Mobile design tokens mapped to existing Lily desktop brand.
-- Exact spacing, typography, colors, motion, waveform style.
-- High-fidelity mockups.
-- Dark mode behavior.
-- Safe-area handling.
-
-Needed:
-
-- Mobile visual spec or Figma.
-- Screenshot-based QA cases.
-
-### 2.10 Full Acceptance Test Cases
-
-Test files and assertions are listed, but not Given/When/Then cases.
-
-Missing:
-
-- Fixture definitions.
-- Mock server behavior.
-- Exact expected outputs.
-- Manual QA forms.
-- Release sign-off checklist.
-
-Needed:
-
-- Expand `mobile-command-test-plan.md` with case IDs.
-- Add QA checklist templates.
-
-## 3. Medium Gaps
-
-- Push notification provider integration details.
-- Offline draft retention duration.
-- Internationalized copy for every approval and error.
-- Telemetry event names and payload schemas.
-- User-facing privacy policy text.
-- Admin/support tooling for revoking devices.
-- Customer support diagnostics package format.
-- Feature flag source and remote config merge behavior.
-- Real Given/When/Then tests are now drafted in [Mobile Command Test Cases](mobile-command-test-cases.md), but test files are not implemented.
-
-## 4. Current Readiness
-
-| Area | Readiness |
+# Lily Mobile Command Pro Specification Closure Dashboard
+
+## 1. Current Gate
+
+Status: **not build-ready**. The existing set supports architecture review, but production implementation remains unauthorized. The canonical artifact states are in the [specification index](mobile-command-spec-index.md); unresolved alternatives are in the [decision log](mobile-command-decision-log.md).
+
+This dashboard reports closure work, not product implementation work. Generated code, CI jobs, native helpers, deployed infrastructure, and production routes belong to a later implementation plan unless evidence gathering explicitly requires a disposable prototype.
+
+## 2. Closure Dashboard
+
+| Gap | Owner artifact | Depends on | Evidence required to close | Status |
+|---|---|---|---|---|
+| Repository integration and mobile app boundary | MC-SPEC-005, MC-SPEC-036; MC-ADR-001 | Inventory gate | Verified exports, callers, route/table/config owners, build/deploy conventions, and corrected implementation map | evidence-needed |
+| Identity, licensing, authentication, and persisted data | MC-SPEC-006–007, MC-SPEC-026; MC-ADR-003 | MC-SPEC-005 | Current schema/identity audit, final mappings, constraints, credential lifecycle, retention, and security review | evidence-needed |
+| Agent bridge and existing conversation behavior | MC-SPEC-008; related protocol rows in MC-SPEC-009–011 | MC-SPEC-005, MC-SPEC-007 | Verified session/turn/event/artifact/file seams, concurrency and fail-open behavior | evidence-needed |
+| Complete lifecycle, error, and API inventory | MC-SPEC-009–011 | MC-SPEC-006–008 | One canonical state/error set and every user flow mapped to every transport/native operation | draft |
+| Machine-readable HTTP, event, and native boundaries | MC-SPEC-012–014 | MC-SPEC-006–011; MC-ADR-002 | Valid OpenAPI/JSON Schema, complete matrix coverage, negative validation cases, prose reconciliation | draft |
+| Windows capture and input | MC-SPEC-016, MC-SPEC-019; MC-ADR-005 | MC-SPEC-005, MC-SPEC-018 | Real-device spike for capture/input, DPI, bounds, permissions, IPC, signing, packaging, crash recovery | evidence-needed |
+| macOS capture and input | MC-SPEC-016, MC-SPEC-019; MC-ADR-006 | MC-SPEC-005, MC-SPEC-018 | Real-device spike for Screen Recording/Accessibility, bounds, IPC, signing, notarization, recovery | evidence-needed |
+| Linux support/degradation | MC-SPEC-015–016, MC-SPEC-019; MC-ADR-007 | MC-SPEC-005, MC-SPEC-018 | Wayland/X11/portal evidence and explicit observe/control/Chat Only support decision | evidence-needed |
+| ASR provider and privacy path | MC-SPEC-017, MC-SPEC-020–021; MC-ADR-008 | Identity, error, privacy, and config contracts | Measured latency/accuracy/battery/cost, credential model, retention path, and reviewed privacy copy | evidence-needed |
+| Native shell and Capacitor boundary | MC-SPEC-014, MC-SPEC-028, MC-SPEC-034; MC-ADR-002 | MC-ADR-001; platform evidence | Technology proof, bridge validation, web-only degradation, signing/build evidence | evidence-needed |
+| WebRTC and TURN topology | MC-SPEC-023, MC-SPEC-029; MC-ADR-004 | Identity, protocol, platform, and operations contracts | Provider/topology selection, credential issuer, regions, load/cost tests, failure and DR proof | evidence-needed |
+| Push topology | MC-SPEC-023–025, MC-SPEC-028; MC-ADR-009 | Identity, native, privacy, and operations contracts | Provider credentials, token lifecycle, outage behavior, notification privacy, operational review | evidence-needed |
+| Temporary upload/artifact/audio storage | MC-SPEC-006, MC-SPEC-023–027; MC-ADR-010 | Data, file, voice, privacy, and operations contracts | Storage topology, encryption, signed access, scanning, quotas, TTL/deletion proof, backup/cost policy | evidence-needed |
+| Feature flags and remote configuration | MC-SPEC-005, MC-SPEC-023, MC-SPEC-034; MC-ADR-011 | Repository audit and release topology | Current config mapping, precedence/scopes, cache/expiry, kill switch, fail-open/fail-safe tests | evidence-needed |
+| Visual design and brand evidence | MC-SPEC-022, MC-SPEC-031–033 | Product states and platform matrix | Desktop-derived tokens, safe areas, dark mode, touch/motion/waveform specs, reference renders, design approval | evidence-needed |
+| Privacy, retention, observability, and support | MC-SPEC-024–025 | All data/transport/platform contracts | Data inventory, prohibited fields, deletion/consent copy, telemetry schema, alerts, diagnostics, support review | evidence-needed |
+| Build, signing, compatibility, and release coupling | MC-SPEC-034; MC-ADR-012 | MC-ADR-001–002, MC-ADR-004–011 | Verified CI/deploy/store constraints, compatibility window, rollout/rollback and mixed-version evidence | evidence-needed |
+| Requirements, tests, and final sign-off | MC-SPEC-003–004, MC-SPEC-037–038 | All canonical contracts and decisions | Complete requirement mappings, deterministic validation, platform/manual QA IDs, cross-functional approval | draft |
+
+## 3. Closure Sequence
+
+| Gate | Exit condition | Current status |
+|---|---|---|
+| Inventory | Index, conflict rules, mandatory ADRs, and dashboard exist | review-ready |
+| Repository truth | Current interfaces and identity/config terminology are verified | evidence-needed |
+| Domain | Data, auth, bridge, permission, file, and configuration semantics are reconciled | draft |
+| Protocol | State/error/API owners and all three machine-readable schemas are complete and valid | draft |
+| Evidence | OS, ASR, TURN, push, storage, design, privacy, observability, and support evidence is accepted | evidence-needed |
+| Traceability | Every requirement maps to contract, owner, test, and release gate; readiness is signed | draft |
+
+A later gate may reopen an earlier artifact. The canonical owner must be corrected and all dependents revalidated; the dashboard status may move backward.
+
+## 4. Historical Gap Disposition
+
+The previous gap inventory is preserved here by disposition rather than repeated as parallel prose:
+
+| Historical item | Current disposition |
 |---|---|
-| Product direction | High |
-| Architecture | High |
-| Security principles | High |
-| Permission model | Medium-high |
-| Protocol contracts | High draft / Medium implementation |
-| File transfer | Medium-high |
-| WebRTC behavior | Medium |
-| Native shell | Medium |
-| Voice UX | Medium-high draft / provider undecided |
-| Repo implementation map | Medium |
-| Build/release | Medium |
-| Ops/TURN | Medium |
-| Visual design | Low |
-| Test cases | Medium-high draft / not implemented |
+| Concrete repository integration | Consolidated into the first three dashboard rows and MC-ADR-001/003 |
+| Machine-readable schemas and shared validators | Consolidated into lifecycle/API and schema rows; production type generation is post-freeze implementation |
+| Real account/license/device model | Consolidated into identity/data row and MC-ADR-003 |
+| Desktop OS helper design | Split by Windows/macOS/Linux evidence in MC-ADR-005–007 |
+| Voice input/ASR | Consolidated into ASR row and MC-ADR-008; the voice UX contract remains a dependency |
+| Brand asset pipeline | Spec closure now tracks visual/design evidence; generation script/assets are later implementation outputs |
+| Mobile build/packaging | Consolidated into app boundary, native shell, and release-coupling rows |
+| Service deployment/TURN | Consolidated into WebRTC/TURN, push, storage, privacy, and operations rows |
+| UI visual tokens | Consolidated into visual design/brand evidence row |
+| Full acceptance tests | Consolidated into requirements/tests/sign-off row |
+| Offline drafts, i18n copy, telemetry, privacy, admin/support diagnostics | Assigned to state/error, UI, privacy, observability, and support canonical artifacts |
 
-## 5. Recommended Next Documents
+This disposition preserves the historical concerns while removing duplicate ownership and stale “next document” lists.
 
-To get to AI-build-ready, create or implement these next:
+## 5. Definition Of Specification Closure
 
-1. Machine-readable schema files under `docs/schemas/` and `src/shared/mobile-command/`.
-2. Shared runtime validators generated or wired from schemas.
-3. `scripts/generate-mobile-icons.mjs`.
-4. Concrete server migrations after inspecting existing device/account schema.
-5. Desktop OS helper prototype execution from [Mobile Command OS Helper Spike](mobile-command-os-helper-spike.md).
-6. ASR provider spike execution and latency/cost decision.
-7. Implement Given/When/Then test cases from [Mobile Command Test Cases](mobile-command-test-cases.md).
+The specification is closed only when:
 
-## 6. Definition Of Complete
+- every required artifact in MC-SPEC-001 through MC-SPEC-040 is `accepted` or explicitly `superseded` by an accepted owner;
+- every mandatory MC-ADR record is accepted with evidence, owner, and date;
+- machine-readable schemas validate and cover every API-matrix operation;
+- every lifecycle/error has explicit recovery, revocation, and capability-gate classification;
+- platform, vendor, infrastructure, privacy, operations, and visual evidence is recorded and approved;
+- every requirement maps to its canonical contract, planned repository owner, automated/manual verification, and release gate;
+- the final ambiguity and link scans pass; and
+- the readiness checklist is signed for product, engineering, security, design, and operations.
 
-The spec is complete only when:
-
-- all protocols are machine-readable schemas
-- repo files to change are named
-- migrations include indexes and compatibility notes
-- native helpers have signed/packaged implementation contracts
-- ASR flow is specified
-- brand assets can be generated by script
-- TURN ops and cost controls are specified
-- every release gate has a test case ID
+Until then, implementation agents must not infer missing product or architecture decisions.
