@@ -18,6 +18,7 @@ export const OPENAPI_TAGS = [
   { name: "public:client-config", description: "Client runtime configuration" },
   { name: "public:devices", description: "Device registration & key rotation" },
   { name: "public:licenses", description: "License activation & status" },
+  { name: "public:mobile", description: "Mobile Command device pairing" },
   { name: "public:skills", description: "Public skill packages" },
   { name: "public:telemetry", description: "Usage / skill / diagnostics reporting" },
   { name: "public:wishes", description: "Public wish pool and account-backed support" },
