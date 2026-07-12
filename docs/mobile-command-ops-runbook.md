@@ -4,6 +4,8 @@
 
 This document defines operational requirements for Mobile Command Pro: service deployment, TURN, temporary storage, monitoring, alerting, abuse controls, incident response, and cost guardrails.
 
+Canonical facts and gates live in [infrastructure deployment](mobile-command-infrastructure-deployment.md), [privacy/retention/compliance](mobile-command-privacy-retention-compliance.md), and [observability/support](mobile-command-observability-support.md). All three are `evidence-needed`; this runbook is procedural and does not claim any service, threshold, alert, or kill switch is implemented.
+
 ## 2. Services
 
 Required server capabilities:
@@ -18,6 +20,8 @@ Required server capabilities:
 - push notification dispatch
 
 ## 3. TURN Operations
+
+Provider selection is **BLOCKED** under MC-ADR-004. Twilio and coturn are candidates only; use of either requires the account/region/configuration, load, abuse, privacy and quote artifacts in MC-SPEC-023.
 
 Options:
 
@@ -41,6 +45,8 @@ Credential rules:
 - revoke by ending remote session
 
 ## 4. Temporary Storage
+
+Provider selection is **BLOCKED** under MC-ADR-010. Do not use the current public Qiniu release/feedback bucket for Mobile Command content. Only a dedicated private, region-approved bucket that passes MC-SPEC-023/024 deletion evidence may be enabled.
 
 Used for:
 
@@ -82,6 +88,8 @@ No content telemetry:
 - no transcript content by default
 
 ## 6. Alerts
+
+The classifications below describe escalation intent. Numeric trigger thresholds are **UNVERIFIED** until MC-SPEC-025 baseline, query, routing and drill artifacts are accepted.
 
 P0 alerts:
 
@@ -127,6 +135,8 @@ Exceeded limits return `SERVER_RATE_LIMITED`.
 
 ## 9. Incident Response
 
+The actions below are required operator intent, not proof the referenced controls exist. Before production rollout, every command, audience, propagation time, audit result and baseline-fallback test must be recorded.
+
 ### 9.1 Remote Control Risk
 
 If unauthorized control is suspected:
@@ -136,6 +146,8 @@ If unauthorized control is suspected:
 3. Preserve audit summaries.
 4. Rotate affected TURN credentials.
 5. Notify affected users if confirmed.
+
+If the scoped switch is unavailable or propagation is unverified, stop issuing remote-session/TURN authority at the server boundary and preserve Chat Only/current desktop behavior. Do not claim containment until active-session rejection is observed.
 
 ### 9.2 TURN Cost Spike
 
@@ -171,6 +183,8 @@ Must not include:
 - file body
 - raw audio
 
+The package schema, consent, support RBAC, private storage and deletion drill are **BLOCKED** artifacts owned by MC-SPEC-025.
+
 ## 11. Dashboards
 
 Required dashboards:
@@ -193,6 +207,8 @@ Before enabling stable rollout:
 - verify TURN credential expiry
 - verify rate limits
 - verify rollback keeps Chat Only or desktop baseline
+
+Required kill switches, all currently planned rather than implemented, are: `mobileCommandEnabled`, `desktopControlEnabled`, `webrtcEnabled`, upload enablement, voice/provider enablement, push enablement, and region/account/device scoped denial. Verification must show signed/configured authority, audience, propagation time, active-session behavior, audit event, stale-config behavior, and recovery. Missing evidence blocks release.
 
 ## 13. Acceptance Criteria
 

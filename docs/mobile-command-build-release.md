@@ -45,6 +45,8 @@ Runtime config comes from server:
 - upload limits
 - supported protocol versions
 
+The authoritative deployment/provider gate is [MC-SPEC-023](mobile-command-infrastructure-deployment.md); privacy and telemetry gates are [MC-SPEC-024](mobile-command-privacy-retention-compliance.md) and [MC-SPEC-025](mobile-command-observability-support.md). Their current status is `evidence-needed`.
+
 Do not bake secrets into mobile bundle.
 
 ## 5. Web Build
@@ -174,6 +176,8 @@ Required before release:
 - iOS build smoke
 - Android build smoke
 
+Release is additionally **BLOCKED** until selected TURN/push/storage account and regional configuration evidence, capacity/load and dated cost evidence, privacy/cross-border approval, retention/deletion proof, telemetry redaction/cardinality tests, alert routing drills, diagnostics/support RBAC tests, store signing evidence, compatibility evidence, and rollback/kill-switch tests are accepted. Candidate provider documentation does not satisfy these gates.
+
 ## 11. Store Metadata
 
 Name:
@@ -204,7 +208,11 @@ Rollback levers:
 - revoke TURN credentials
 - require minimum app version
 
+Additional scoped levers required before rollout: disable new uploads, voice/provider calls, push dispatch, TURN credential issuance, and sensitive capability by region/account/device while preserving Chat Only/current desktop behavior. These levers are planned contracts, **not implemented evidence**.
+
 Rollback must not delete user sessions or local desktop data.
+
+For every lever, the release record must include config authority/audience, change command, propagation measurement, active-session result, stale-client result, audit event, rollback reversal, and a test proving baseline desktop capability remains intact. Missing or failed evidence blocks release.
 
 ## 13. Acceptance Criteria
 

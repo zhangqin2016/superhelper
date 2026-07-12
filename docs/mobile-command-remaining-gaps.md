@@ -73,6 +73,13 @@ The previous gap inventory is preserved here by disposition rather than repeated
 
 This disposition preserves the historical concerns while removing duplicate ownership and stale “next document” lists.
 
+### Task 8 evidence blockers recorded 2026-07-12
+
+- MC-SPEC-023 is `evidence-needed`: the verified production shape is a China stateful origin plus Singapore UAE-policy edge proxy. TURN (Twilio/coturn), APNs/FCM, and Qiniu/Alibaba temporary-storage options remain candidates. Missing Lily accounts/configuration, regional availability, representative load/failure tests, secret rotation, deletion proof, dated quotes/budgets and rollback drills are **BLOCKED** artifacts.
+- MC-SPEC-024 is `evidence-needed`: exact retention/backup/legal-hold schedules, purge implementation, deletion/restore proof, consent/store copy, data-subject workflows and China/Singapore/UAE cross-border approvals are **BLOCKED**.
+- MC-SPEC-025 is `evidence-needed`: telemetry schema enforcement, redaction/cardinality budgets, measured SLO/alert thresholds, dashboards, routing drills, diagnostics package/private store, support RBAC/expiry/audit and cost evidence are **BLOCKED**.
+- MC-ADR-004, MC-ADR-009 and MC-ADR-010 remain `proposed`. No provider or threshold may be inferred from candidate documentation; production enablement stays blocked while Chat Only/current desktop behavior remains the capability-gate fallback.
+
 ## 5. Definition Of Specification Closure
 
 The specification is closed only when:

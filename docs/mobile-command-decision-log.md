@@ -70,8 +70,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: proposed
 - Decision: Select signaling ownership, STUN/TURN topology, managed versus self-hosted TURN, credential issuer, regions, relay policy, capacity, and cost controls.
-- Repository evidence: [WebRTC runbook](mobile-command-webrtc-runbook.md) defines desired behavior and [operations runbook](mobile-command-ops-runbook.md) defines operational needs, but no provider, deployment, load, or cost evidence exists.
-- Evidence refs: Pending — MC-SPEC-015, MC-SPEC-023, MC-SPEC-025, MC-SPEC-029
+- Repository evidence: [WebRTC runbook](mobile-command-webrtc-runbook.md) defines desired behavior and [operations runbook](mobile-command-ops-runbook.md) defines operational needs. Twilio Network Traversal and coturn official sources prove candidate capability only; no Lily account/tenant, enabled-region configuration, credential issuer, CN/UAE UDP/TCP/TLS tests, representative relay load/abuse result, privacy review, capacity result or quote exists.
+- Evidence refs: [Infrastructure deployment evidence](mobile-command-infrastructure-deployment.md); [observability/support](mobile-command-observability-support.md); [WebRTC runbook](mobile-command-webrtc-runbook.md); MC-SPEC-015, MC-SPEC-023, MC-SPEC-025, MC-SPEC-029
 - Evidence owner: Infrastructure and operations lead
 - Alternatives: self-hosted coturn; managed TURN; hybrid regional topology; relay-only or P2P-first policy.
 - Capability gate: WebRTC/TURN failure must degrade to Chat Only and never terminate or weaken the local Lily session.
@@ -150,8 +150,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: proposed
 - Decision: Select iOS and Android push providers, registration/token lifecycle, credential ownership, notification content policy, environments, and revocation behavior.
-- Repository evidence: UI/native/build documents specify required behavior but do not choose APNs/FCM integration topology or record operational evidence.
-- Evidence refs: Pending — MC-SPEC-023, MC-SPEC-024, MC-SPEC-025, MC-SPEC-028
+- Repository evidence: APNs and FCM official documentation establish candidates only. No Lily Apple/Firebase account/project, entitlement/service credential, regional/device delivery test, token rotation/revocation drill, payload privacy approval, quota or quote is recorded. China Android devices without Google Play services remain a blocking coverage gap.
+- Evidence refs: [Infrastructure deployment evidence](mobile-command-infrastructure-deployment.md); [privacy/retention](mobile-command-privacy-retention-compliance.md); [observability/support](mobile-command-observability-support.md); MC-SPEC-023, MC-SPEC-024, MC-SPEC-025, MC-SPEC-028
 - Evidence owner: Mobile infrastructure lead
 - Alternatives: direct APNs plus FCM; managed aggregation service; no push in baseline; platform-specific staged rollout.
 - Capability gate: Push is advisory only; failure cannot block commands, approvals, or local Lily, and notification content cannot grant authority.
@@ -166,8 +166,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: proposed
 - Decision: Select temporary upload/artifact/audio storage, regions, encryption, signed access, scanning, quotas, retention, deletion proof, backup exclusion, and cost controls.
-- Repository evidence: File, voice, and operations documents propose TTLs and behavior but do not identify a deployed storage topology or verified lifecycle policy.
-- Evidence refs: Pending — MC-SPEC-023, MC-SPEC-024, MC-SPEC-025, MC-SPEC-027
+- Repository evidence: Current Qiniu configuration supports public release artifacts and feedback/contact attachments; it is not evidence of private Mobile Command temporary storage. Qiniu CN/Singapore and Alibaba OSS CN/Dubai remain candidates. No Lily candidate account/bucket configuration, private ACL/KMS, lifecycle/version/multipart/backup deletion proof, regional approval, load result or quote is recorded; no Qiniu UAE region is proven.
+- Evidence refs: [Infrastructure deployment evidence](mobile-command-infrastructure-deployment.md); [privacy/retention](mobile-command-privacy-retention-compliance.md); [observability/support](mobile-command-observability-support.md); MC-SPEC-023, MC-SPEC-024, MC-SPEC-025, MC-SPEC-027
 - Evidence owner: Data infrastructure lead
 - Alternatives: existing object storage; dedicated object bucket; server-local staging; provider-managed temporary storage.
 - Capability gate: Storage failure must preserve local chat and drafts; unverifiable or expired objects must not enter agent execution.
