@@ -1,399 +1,180 @@
 openapi: 3.1.0
 info:
-  title: Lily Mobile Command Pro API
+  title: Lily Mobile Command Pro HTTP API
   version: 1.0.0
-  description: HTTP contract for Lily Workbench mobile command, pairing, remote sessions, TURN, and uploads.
+  description: Additive v1 contract. Unknown optional fields live only in explicit extensions; unknown mandatory semantics require client upgrade.
 servers:
   - url: /public
 security:
   - bearerAuth: []
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, pattern: '^idem_[A-Za-z0-9_-]{8,128}$' } }
+    DeviceTimestamp: { name: X-Device-Timestamp, in: header, required: true, schema: { type: string, format: date-time } }
+    DeviceNonce: { name: X-Device-Nonce, in: header, required: true, schema: { type: string, minLength: 16, maxLength: 128 } }
+    DeviceSignature: { name: X-Device-Signature, in: header, required: true, schema: { type: string, minLength: 64, maxLength: 512 } }
+    SignatureVersion: { name: X-Signature-Version, in: header, required: true, schema: { const: '1' } }
+    ProtocolVersion: { name: X-Protocol-Version, in: header, required: true, schema: { const: '1' } }
+    RemoteSessionId: { name: remoteSessionId, in: path, required: true, schema: { $ref: '#/components/schemas/RemoteSessionId' } }
+    MobileDeviceId: { name: mobileDeviceId, in: path, required: true, schema: { $ref: '#/components/schemas/MobileDeviceId' } }
+    UploadId: { name: uploadId, in: path, required: true, schema: { $ref: '#/components/schemas/UploadId' } }
+    ChunkIndex: { name: chunkIndex, in: path, required: true, schema: { type: integer, minimum: 0, maximum: 99999 } }
+    ArtifactId: { name: artifactId, in: path, required: true, schema: { $ref: '#/components/schemas/ArtifactId' } }
+  responses:
+    Error400: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error401: { description: Authentication, signature, clock, or session failure, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error403: { description: Permission denied or device revoked, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error404: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error409: { description: State, replay, or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error410: { description: Resource expired or ended, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error413: { description: Upload too large, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error422: { description: Hash mismatch, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error426: { description: Client upgrade required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error429: { description: Rate or quota limit, headers: { Retry-After: { schema: { type: integer, minimum: 1 } } }, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Error503: { description: Dependency unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   schemas:
-    UnixMs:
-      type: integer
-      minimum: 0
-    SignedFields:
+    Extensions:
       type: object
-      required: [mobileDeviceId, timestamp, nonce, signature]
-      properties:
-        mobileDeviceId:
-          type: string
-          pattern: '^mobile_.+'
-        timestamp:
-          $ref: '#/components/schemas/UnixMs'
-        nonce:
-          type: string
-          minLength: 16
-          maxLength: 128
-        signature:
-          type: string
-          minLength: 16
+      maxProperties: 16
+      propertyNames: { type: string, pattern: '^x-[a-z0-9][a-z0-9-]{0,62}$' }
+      additionalProperties: { $ref: '#/components/schemas/ExtensionValue' }
+    ExtensionValue:
+      oneOf:
+        - { type: string, maxLength: 1024 }
+        - { type: number }
+        - { type: boolean }
+        - { type: 'null' }
+        - { type: array, maxItems: 16, items: { $ref: '#/components/schemas/ExtensionPrimitive' } }
+        - { type: object, maxProperties: 16, propertyNames: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }, additionalProperties: { $ref: '#/components/schemas/ExtensionPrimitive' } }
+    ExtensionPrimitive:
+      oneOf: [{ type: string, maxLength: 1024 }, { type: number }, { type: boolean }, { type: 'null' }]
+    UnixMs: { type: integer, minimum: 0, maximum: 9007199254740991 }
+    Sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+    DesktopDeviceId: { type: string, pattern: '^desktop_[A-Za-z0-9_-]+$' }
+    MobileDeviceId: { type: string, pattern: '^mobile_[A-Za-z0-9_-]+$' }
+    RemoteSessionId: { type: string, pattern: '^rs_[A-Za-z0-9_-]+$' }
+    UploadId: { type: string, pattern: '^upl_[A-Za-z0-9_-]+$' }
+    ArtifactId: { type: string, pattern: '^artifact_[A-Za-z0-9_-]+$' }
+    PermissionLevel: { type: integer, enum: [0, 1, 2, 3, 4, 5, 6] }
+    ErrorCode:
+      type: string
+      pattern: '^MC-ERR-[A-Z0-9-]+$'
+      enum: [MC-ERR-AUTH-REQUIRED, MC-ERR-AUTH-ACCOUNT-NOT-ALLOWED, MC-ERR-CONFIG-FEATURE-DISABLED, MC-ERR-CONFIG-UNAVAILABLE, MC-ERR-AUTH-SIGNATURE-INVALID, MC-ERR-AUTH-CLOCK-SKEW, MC-ERR-AUTH-REPLAY-DETECTED, MC-ERR-AUTH-NONCE-UNAVAILABLE, MC-ERR-AUTH-DEVICE-REVOKED, MC-ERR-AUTH-KEY-ROTATION-REQUIRED, MC-ERR-AUTH-DEVICE-NOT-FOUND, MC-ERR-PAIRING-TOKEN-INVALID, MC-ERR-PAIRING-TOKEN-EXPIRED, MC-ERR-PAIRING-TOKEN-CONSUMED, MC-ERR-PAIRING-DESKTOP-OFFLINE, MC-ERR-PAIRING-DESKTOP-REJECTED, MC-ERR-SESSION-NOT-FOUND, MC-ERR-SESSION-EXPIRED, MC-ERR-SESSION-CONFLICT, MC-ERR-SESSION-STALE, MC-ERR-SESSION-ENDED, MC-ERR-PERMISSION-DENIED, MC-ERR-PERMISSION-APPROVAL-REQUIRED, MC-ERR-PERMISSION-APPROVAL-EXPIRED, MC-ERR-PERMISSION-POLICY-FAILED, MC-ERR-PERMISSION-AUDIT-FAILED, MC-ERR-BRIDGE-SESSION-ABSENT, MC-ERR-BRIDGE-BUSY, MC-ERR-BRIDGE-INJECTION-FAILED, MC-ERR-BRIDGE-DUPLICATE, MC-ERR-BRIDGE-DELIVERY-UNKNOWN, MC-ERR-BRIDGE-ARTIFACT-UNAVAILABLE, MC-ERR-WEBRTC-SIGNALING-FAILED, MC-ERR-WEBRTC-TURN-UNAVAILABLE, MC-ERR-WEBRTC-ICE-FAILED, MC-ERR-WEBRTC-DATA-CHANNEL-CLOSED, MC-ERR-WEBRTC-SOURCE-UNAVAILABLE, MC-ERR-UPLOAD-TOO-LARGE, MC-ERR-UPLOAD-QUOTA-EXCEEDED, MC-ERR-UPLOAD-CHUNK-MISSING, MC-ERR-UPLOAD-CHUNK-HASH-MISMATCH, MC-ERR-UPLOAD-FILE-HASH-MISMATCH, MC-ERR-UPLOAD-EXPIRED, MC-ERR-UPLOAD-DESKTOP-PULL-FAILED, MC-ERR-UPLOAD-STAGING-FAILED, MC-ERR-UPLOAD-RISK-APPROVAL-REQUIRED, MC-ERR-ARTIFACT-NOT-FOUND, MC-ERR-ARTIFACT-EXPIRED, MC-ERR-ARTIFACT-DOWNLOAD-DENIED, MC-ERR-PROTOCOL-INVALID, MC-ERR-PROTOCOL-ILLEGAL-TRANSITION, MC-ERR-PROTOCOL-IDEMPOTENCY-CONFLICT, MC-ERR-PROTOCOL-CLIENT-UPGRADE-REQUIRED, MC-ERR-SERVER-RATE-LIMITED, MC-ERR-SERVER-UNAVAILABLE]
     ApiError:
       type: object
-      required: [error]
+      required: [schemaVersion, error]
       properties:
+        schemaVersion: { const: 1 }
         error:
           type: object
           required: [code, category, recoverable, userMessageKey, correlationId]
           properties:
-            code:
-              $ref: '#/components/schemas/ErrorCode'
-            category:
-              enum: [auth, network, permission, desktop, webrtc, upload, server, protocol]
-            recoverable:
-              type: boolean
-            userMessageKey:
-              type: string
-            retryAfterMs:
-              type: integer
-              minimum: 0
-            correlationId:
-              type: string
-              pattern: '^corr_.+'
-            details:
-              type: object
-              additionalProperties: true
-    ErrorCode:
-      enum:
-        - AUTH_REQUIRED
-        - ACCOUNT_NOT_ALLOWED
-        - FEATURE_DISABLED
-        - CONFIG_UNAVAILABLE
-        - PAIRING_TOKEN_EXPIRED
-        - PAIRING_TOKEN_CONSUMED
-        - PAIRING_TOKEN_INVALID
-        - PAIRING_DESKTOP_OFFLINE
-        - PAIRING_DESKTOP_REJECTED
-        - DEVICE_NOT_FOUND
-        - DEVICE_REVOKED
-        - DEVICE_SIGNATURE_INVALID
-        - DEVICE_KEY_ROTATION_REQUIRED
-        - REMOTE_SESSION_NOT_FOUND
-        - REMOTE_SESSION_EXPIRED
-        - REMOTE_SESSION_CONFLICT
-        - REMOTE_SESSION_STALE
-        - REMOTE_SESSION_ENDED
-        - PERMISSION_DENIED
-        - PERMISSION_APPROVAL_REQUIRED
-        - PERMISSION_APPROVAL_EXPIRED
-        - PERMISSION_POLICY_FAILED
-        - AGENT_SESSION_NOT_FOUND
-        - AGENT_BRIDGE_BUSY
-        - AGENT_BRIDGE_FAILED
-        - AGENT_MESSAGE_DUPLICATE
-        - WEBRTC_SIGNALING_FAILED
-        - WEBRTC_TURN_UNAVAILABLE
-        - WEBRTC_ICE_FAILED
-        - WEBRTC_DATA_CHANNEL_CLOSED
-        - WEBRTC_SOURCE_UNAVAILABLE
-        - INPUT_NOT_AUTHORIZED
-        - INPUT_INJECTION_FAILED
-        - SCREEN_CAPTURE_PERMISSION_MISSING
-        - SCREEN_SOURCE_CHANGED
-        - UPLOAD_TOO_LARGE
-        - UPLOAD_QUOTA_EXCEEDED
-        - UPLOAD_CHUNK_MISSING
-        - UPLOAD_CHUNK_HASH_MISMATCH
-        - UPLOAD_FILE_HASH_MISMATCH
-        - UPLOAD_EXPIRED
-        - UPLOAD_DESKTOP_PULL_FAILED
-        - UPLOAD_STAGING_FAILED
-        - UPLOAD_RISK_APPROVAL_REQUIRED
-        - ARTIFACT_NOT_FOUND
-        - ARTIFACT_EXPIRED
-        - ARTIFACT_DOWNLOAD_DENIED
-        - REQUEST_INVALID
-        - REQUEST_CLOCK_SKEW
-        - REQUEST_REPLAY_DETECTED
-        - REQUEST_IDEMPOTENCY_CONFLICT
-        - SERVER_RATE_LIMITED
-        - SERVER_UNAVAILABLE
-    PermissionLevel:
-      type: integer
-      enum: [0, 1, 2, 3, 4, 5, 6]
-    StartPairingRequest:
-      type: object
-      required: [desktopDeviceId, desktopName, supportedProtocolVersions]
-      properties:
-        desktopDeviceId:
-          type: string
-          pattern: '^desktop_.+'
-        desktopName:
-          type: string
-          minLength: 1
-          maxLength: 120
-        supportedProtocolVersions:
-          type: array
-          items:
-            type: integer
-          minItems: 1
-    StartPairingResponse:
-      type: object
-      required: [pairingId, qrPayload, expiresAt, protocolVersion]
-      properties:
-        pairingId:
-          type: string
-          pattern: '^pair_.+'
-        qrPayload:
-          type: string
-          minLength: 1
-        expiresAt:
-          $ref: '#/components/schemas/UnixMs'
-        protocolVersion:
-          const: 1
-    ConsumePairingRequest:
-      allOf:
-        - $ref: '#/components/schemas/SignedFields'
-        - type: object
-          required: [pairingToken, mobileDeviceName, mobilePlatform, mobilePublicKey, appVersion, supportedProtocolVersions]
-          properties:
-            pairingToken:
-              type: string
-            mobileDeviceName:
-              type: string
-              minLength: 1
-              maxLength: 120
-            mobilePlatform:
-              enum: [ios, android, web]
-            mobilePublicKey:
-              type: string
-            appVersion:
-              type: string
-            supportedProtocolVersions:
-              type: array
-              items:
-                type: integer
-              minItems: 1
-    ConsumePairingResponse:
-      type: object
-      required: [mobileDeviceId, desktopDeviceId, requiresDesktopApproval, approvalExpiresAt, protocolVersion]
-      properties:
-        mobileDeviceId:
-          type: string
-          pattern: '^mobile_.+'
-        desktopDeviceId:
-          type: string
-          pattern: '^desktop_.+'
-        requiresDesktopApproval:
-          const: true
-        approvalExpiresAt:
-          $ref: '#/components/schemas/UnixMs'
-        protocolVersion:
-          const: 1
-    CreateRemoteSessionRequest:
-      allOf:
-        - $ref: '#/components/schemas/SignedFields'
-        - type: object
-          required: [desktopDeviceId, requestedLevel]
-          properties:
-            desktopDeviceId:
-              type: string
-              pattern: '^desktop_.+'
-            requestedLevel:
-              const: 1
-            preferredLilySessionId:
-              type: string
-    CreateRemoteSessionResponse:
-      type: object
-      required: [remoteSessionId, desktopDeviceId, mobileDeviceId, permissionLevel, expiresAt, commandWsUrl]
-      properties:
-        remoteSessionId:
-          type: string
-          pattern: '^rs_.+'
-        desktopDeviceId:
-          type: string
-          pattern: '^desktop_.+'
-        mobileDeviceId:
-          type: string
-          pattern: '^mobile_.+'
-        lilySessionId:
-          type: string
-        permissionLevel:
-          const: 1
-        expiresAt:
-          $ref: '#/components/schemas/UnixMs'
-        commandWsUrl:
-          type: string
-    RequestPermissionRequest:
-      allOf:
-        - $ref: '#/components/schemas/SignedFields'
-        - type: object
-          required: [requestedLevel, reason, ttlSeconds]
-          properties:
-            requestedLevel:
-              $ref: '#/components/schemas/PermissionLevel'
-            reason:
-              type: string
-              minLength: 1
-              maxLength: 500
-            ttlSeconds:
-              type: integer
-              minimum: 1
-              maximum: 3600
-            screenSourceId:
-              type: string
-    RequestPermissionResponse:
+            code: { $ref: '#/components/schemas/ErrorCode' }
+            category: { enum: [auth, config, permission, bridge, webrtc, upload, artifact, protocol, server] }
+            recoverable: { type: boolean }
+            userMessageKey: { type: string, pattern: '^mobile\.error\.' }
+            retryAfterMs: { type: integer, minimum: 0, maximum: 86400000 }
+            correlationId: { type: string, pattern: '^corr_' }
+            details: { $ref: '#/components/schemas/Extensions' }
+          additionalProperties: false
+        extensions: { $ref: '#/components/schemas/Extensions' }
+      additionalProperties: false
+    StartPairingRequest: { type: object, required: [schemaVersion, desktopDeviceId, desktopName, supportedProtocolVersions], properties: { schemaVersion: { const: 1 }, desktopDeviceId: { $ref: '#/components/schemas/DesktopDeviceId' }, desktopName: { type: string, minLength: 1, maxLength: 120 }, supportedProtocolVersions: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { type: integer, minimum: 1 } }, extensions: { $ref: '#/components/schemas/Extensions' } }, additionalProperties: false }
+    PairingChallenge: { type: object, required: [schemaVersion, pairingId, qrPayload, expiresAt, protocolVersion], properties: { schemaVersion: { const: 1 }, pairingId: { type: string, pattern: '^pair_' }, qrPayload: { type: string, minLength: 43, maxLength: 2048 }, expiresAt: { $ref: '#/components/schemas/UnixMs' }, protocolVersion: { const: 1 }, extensions: { $ref: '#/components/schemas/Extensions' } }, additionalProperties: false }
+    ConsumePairingRequest: { type: object, required: [schemaVersion, pairingToken, mobileDeviceId, mobileDeviceName, mobilePlatform, mobilePublicKey, appVersion, supportedProtocolVersions], properties: { schemaVersion: { const: 1 }, pairingToken: { type: string, minLength: 43, maxLength: 512 }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, mobileDeviceName: { type: string, minLength: 1, maxLength: 120 }, mobilePlatform: { enum: [ios, android, web] }, mobilePublicKey: { type: string, minLength: 32, maxLength: 512 }, appVersion: { type: string, minLength: 1, maxLength: 64 }, supportedProtocolVersions: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { type: integer, minimum: 1 } }, extensions: { $ref: '#/components/schemas/Extensions' } }, additionalProperties: false }
+    PairingPending: { type: object, required: [schemaVersion, pairingGrantId, mobileDeviceId, desktopDeviceId, status, approvalExpiresAt], properties: { schemaVersion: { const: 1 }, pairingGrantId: { type: string, pattern: '^grant_' }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, desktopDeviceId: { $ref: '#/components/schemas/DesktopDeviceId' }, status: { const: pending_desktop_approval }, approvalExpiresAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    Device: { type: object, required: [mobileDeviceId, name, platform, grantStatus, revoked], properties: { mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, name: { type: string, maxLength: 120 }, platform: { enum: [ios, android, web] }, grantStatus: { enum: [pending, active, denied, expired, revoked] }, revoked: { type: boolean }, lastSeenAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    DeviceList: { type: object, required: [schemaVersion, devices], properties: { schemaVersion: { const: 1 }, devices: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/Device' } } }, additionalProperties: false }
+    RevocationReceipt: { type: object, required: [schemaVersion, mobileDeviceId, status, revokedAt], properties: { schemaVersion: { const: 1 }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, status: { enum: [revoking, revoked] }, revokedAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    CreateRemoteSessionRequest: { type: object, required: [schemaVersion, desktopDeviceId, mobileDeviceId, pairingGrantId, requestedLevel], properties: { schemaVersion: { const: 1 }, desktopDeviceId: { $ref: '#/components/schemas/DesktopDeviceId' }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, pairingGrantId: { type: string, pattern: '^grant_' }, requestedLevel: { const: 1 }, preferredLilySessionId: { type: string, minLength: 1 }, extensions: { $ref: '#/components/schemas/Extensions' } }, additionalProperties: false }
+    RemoteSession: { type: object, required: [schemaVersion, remoteSessionId, desktopDeviceId, mobileDeviceId, permissionLevel, accessToken, refreshToken, expiresAt, commandWsUrl], properties: { schemaVersion: { const: 1 }, remoteSessionId: { $ref: '#/components/schemas/RemoteSessionId' }, desktopDeviceId: { $ref: '#/components/schemas/DesktopDeviceId' }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, lilySessionId: { type: string }, permissionLevel: { $ref: '#/components/schemas/PermissionLevel' }, accessToken: { type: string, minLength: 32 }, refreshToken: { type: string, minLength: 43 }, expiresAt: { $ref: '#/components/schemas/UnixMs' }, commandWsUrl: { type: string, format: uri, pattern: '^wss://' } }, additionalProperties: false }
+    RefreshRemoteSessionRequest: { type: object, required: [schemaVersion, mobileDeviceId, refreshToken, refreshTokenGeneration], properties: { schemaVersion: { const: 1 }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, refreshToken: { type: string, minLength: 43 }, refreshTokenGeneration: { type: integer, minimum: 1 } }, additionalProperties: false }
+    AccessToken: { type: object, required: [schemaVersion, accessToken, refreshToken, refreshTokenGeneration, expiresAt], properties: { schemaVersion: { const: 1 }, accessToken: { type: string, minLength: 32 }, refreshToken: { type: string, minLength: 43 }, refreshTokenGeneration: { type: integer, minimum: 2 }, expiresAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    EndRemoteSessionRequest: { type: object, required: [schemaVersion, reason], properties: { schemaVersion: { const: 1 }, reason: { enum: [user_requested, desktop_requested, logout, security, replaced] } }, additionalProperties: false }
+    EndReceipt: { type: object, required: [schemaVersion, remoteSessionId, status, endedAt], properties: { schemaVersion: { const: 1 }, remoteSessionId: { $ref: '#/components/schemas/RemoteSessionId' }, status: { const: ended }, endedAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    PermissionRequest: { type: object, required: [schemaVersion, requestedLevel, reason, ttlSeconds], properties: { schemaVersion: { const: 1 }, requestedLevel: { $ref: '#/components/schemas/PermissionLevel' }, reason: { type: string, minLength: 1, maxLength: 500 }, ttlSeconds: { type: integer, minimum: 1, maximum: 3600 }, screenSourceId: { type: string, minLength: 1, maxLength: 256 } }, additionalProperties: false }
+    PermissionProjection:
       oneOf:
-        - type: object
-          required: [status, permissionLevel, expiresAt]
-          properties:
-            status:
-              const: granted
-            permissionLevel:
-              $ref: '#/components/schemas/PermissionLevel'
-            expiresAt:
-              $ref: '#/components/schemas/UnixMs'
-        - type: object
-          required: [status, approvalId, expiresAt]
-          properties:
-            status:
-              const: pending_desktop_approval
-            approvalId:
-              type: string
-              pattern: '^appr_.+'
-            expiresAt:
-              $ref: '#/components/schemas/UnixMs'
-        - type: object
-          required: [status, reasonCode]
-          properties:
-            status:
-              const: denied
-            reasonCode:
-              $ref: '#/components/schemas/ErrorCode'
-    TurnCredentialsResponse:
-      type: object
-      required: [iceServers, expiresAt]
-      properties:
-        iceServers:
-          type: array
-          items:
-            type: object
-            required: [urls]
-            properties:
-              urls:
-                type: array
-                items:
-                  type: string
-                minItems: 1
-              username:
-                type: string
-              credential:
-                type: string
-        expiresAt:
-          $ref: '#/components/schemas/UnixMs'
+        - { $ref: '#/components/schemas/PermissionGranted' }
+        - { $ref: '#/components/schemas/PermissionPending' }
+        - { $ref: '#/components/schemas/PermissionDenied' }
+        - { $ref: '#/components/schemas/PermissionExpired' }
+        - { $ref: '#/components/schemas/PermissionRevoked' }
+    PermissionGranted: { type: object, required: [schemaVersion, status, permissionLevel, expiresAt], properties: { schemaVersion: { const: 1 }, status: { const: granted }, permissionLevel: { $ref: '#/components/schemas/PermissionLevel' }, expiresAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    PermissionPending: { type: object, required: [schemaVersion, status, approvalId, expiresAt], properties: { schemaVersion: { const: 1 }, status: { const: pending_desktop_approval }, approvalId: { type: string, pattern: '^appr_' }, expiresAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    PermissionDenied: { type: object, required: [schemaVersion, status, reasonCode], properties: { schemaVersion: { const: 1 }, status: { const: denied }, reasonCode: { $ref: '#/components/schemas/ErrorCode' } }, additionalProperties: false }
+    PermissionExpired: { type: object, required: [schemaVersion, status, reasonCode], properties: { schemaVersion: { const: 1 }, status: { const: expired }, reasonCode: { $ref: '#/components/schemas/ErrorCode' } }, additionalProperties: false }
+    PermissionRevoked: { type: object, required: [schemaVersion, status, reasonCode], properties: { schemaVersion: { const: 1 }, status: { const: revoked }, reasonCode: { $ref: '#/components/schemas/ErrorCode' } }, additionalProperties: false }
+    TurnCredentialRequest: { type: object, required: [schemaVersion, peerRole], properties: { schemaVersion: { const: 1 }, peerRole: { enum: [mobile, desktop] } }, additionalProperties: false }
+    TurnCredentialSet: { type: object, required: [schemaVersion, iceServers, expiresAt], properties: { schemaVersion: { const: 1 }, iceServers: { type: array, minItems: 1, maxItems: 8, items: { type: object, required: [urls], properties: { urls: { type: array, minItems: 1, maxItems: 8, items: { type: string, format: uri } }, username: { type: string, maxLength: 512 }, credential: { type: string, maxLength: 512 } }, additionalProperties: false } }, expiresAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    CreateUploadRequest: { type: object, required: [schemaVersion, remoteSessionId, mobileDeviceId, originalName, mimeType, sizeBytes, sha256, chunkSize, chunkCount], properties: { schemaVersion: { const: 1 }, remoteSessionId: { $ref: '#/components/schemas/RemoteSessionId' }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, lilySessionId: { type: string }, originalName: { type: string, minLength: 1, maxLength: 255 }, mimeType: { type: string, minLength: 1, maxLength: 255 }, sizeBytes: { type: integer, minimum: 1, maximum: 524288000 }, sha256: { $ref: '#/components/schemas/Sha256' }, chunkSize: { type: integer, minimum: 1, maximum: 26214400 }, chunkCount: { type: integer, minimum: 1, maximum: 100000 }, extensions: { $ref: '#/components/schemas/Extensions' } }, additionalProperties: false }
+    UploadChunk: { type: string, format: binary, minLength: 1, maxLength: 26214400 }
+    CompleteUploadRequest: { type: object, required: [schemaVersion, sha256, chunkCount], properties: { schemaVersion: { const: 1 }, sha256: { $ref: '#/components/schemas/Sha256' }, chunkCount: { type: integer, minimum: 1, maximum: 100000 } }, additionalProperties: false }
+    UploadRecord: { type: object, required: [schemaVersion, uploadId, remoteSessionId, mobileDeviceId, originalName, displayName, mimeType, sizeBytes, sha256, chunkSize, chunkCount, uploadedChunks, status, risk, expiresAt, createdAt, updatedAt], properties: { schemaVersion: { const: 1 }, uploadId: { $ref: '#/components/schemas/UploadId' }, remoteSessionId: { $ref: '#/components/schemas/RemoteSessionId' }, lilySessionId: { type: string }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, originalName: { type: string, maxLength: 255 }, displayName: { type: string, maxLength: 255 }, mimeType: { type: string, maxLength: 255 }, sizeBytes: { type: integer, minimum: 1, maximum: 524288000 }, sha256: { $ref: '#/components/schemas/Sha256' }, chunkSize: { type: integer, minimum: 1, maximum: 26214400 }, chunkCount: { type: integer, minimum: 1 }, uploadedChunks: { type: array, uniqueItems: true, items: { type: integer, minimum: 0 } }, status: { enum: [created, uploading, uploaded, verifying, verified, pulling, staging, staged, attached, recoverable, cancelled, expired, revoked, failed] }, risk: { type: object, required: [level, reasons, requiresApproval], properties: { level: { enum: [low, medium, high, critical] }, reasons: { type: array, maxItems: 32, items: { type: string, maxLength: 128 } }, requiresApproval: { type: boolean } }, additionalProperties: false }, expiresAt: { $ref: '#/components/schemas/UnixMs' }, createdAt: { $ref: '#/components/schemas/UnixMs' }, updatedAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
+    ArtifactDownloadRequest: { type: object, required: [schemaVersion, remoteSessionId, mobileDeviceId], properties: { schemaVersion: { const: 1 }, remoteSessionId: { $ref: '#/components/schemas/RemoteSessionId' }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' } }, additionalProperties: false }
+    AuthorizedDownload: { type: object, required: [schemaVersion, artifactId, downloadUrl, expiresAt], properties: { schemaVersion: { const: 1 }, artifactId: { $ref: '#/components/schemas/ArtifactId' }, downloadUrl: { type: string, format: uri, pattern: '^https://' }, expiresAt: { $ref: '#/components/schemas/UnixMs' }, headers: { type: object, additionalProperties: { type: string, maxLength: 4096 } } }, additionalProperties: false }
+    ArtifactBytes: { type: string, format: binary }
+    PushRegistration: { type: object, required: [schemaVersion, mobileDeviceId, platform, pushToken], properties: { schemaVersion: { const: 1 }, mobileDeviceId: { $ref: '#/components/schemas/MobileDeviceId' }, platform: { enum: [ios, android] }, pushToken: { type: string, minLength: 16, maxLength: 4096 }, environment: { enum: [sandbox, production] } }, additionalProperties: false }
+    PushReceipt: { type: object, required: [schemaVersion, registered], properties: { schemaVersion: { const: 1 }, registered: { type: boolean } }, additionalProperties: false }
+    DiagnosticsRequest: { type: object, required: [schemaVersion, remoteSessionId, consent, categories], properties: { schemaVersion: { const: 1 }, remoteSessionId: { $ref: '#/components/schemas/RemoteSessionId' }, consent: { const: true }, categories: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { enum: [network, signaling, upload, lifecycle, app] } } }, additionalProperties: false }
+    DiagnosticsBundle: { type: object, required: [schemaVersion, diagnosticId, redacted, expiresAt], properties: { schemaVersion: { const: 1 }, diagnosticId: { type: string, pattern: '^diag_' }, redacted: { const: true }, expiresAt: { $ref: '#/components/schemas/UnixMs' } }, additionalProperties: false }
 paths:
   /mobile/pairing/start:
-    post:
-      operationId: startMobilePairing
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StartPairingRequest'
-      responses:
-        '200':
-          description: Pairing started
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StartPairingResponse'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
+    post: { operationId: startMobilePairing, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StartPairingRequest' } } } }, responses: { '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/PairingChallenge' } } } }, '400': { $ref: '#/components/responses/Error400' }, '401': { $ref: '#/components/responses/Error401' }, '409': { $ref: '#/components/responses/Error409' }, '426': { $ref: '#/components/responses/Error426' }, '503': { $ref: '#/components/responses/Error503' } } }
   /mobile/pairing/consume:
-    post:
-      operationId: consumeMobilePairing
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConsumePairingRequest'
-      responses:
-        '200':
-          description: Pairing consumed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConsumePairingResponse'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-  /remote/sessions:
-    post:
-      operationId: createRemoteSession
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateRemoteSessionRequest'
-      responses:
-        '200':
-          description: Remote session created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreateRemoteSessionResponse'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-  /remote/sessions/{remoteSessionId}/permissions:
-    post:
-      operationId: requestRemotePermission
+    post: { operationId: consumeMobilePairing, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConsumePairingRequest' } } } }, responses: { '202': { description: Pending desktop approval, content: { application/json: { schema: { $ref: '#/components/schemas/PairingPending' } } } }, '400': { $ref: '#/components/responses/Error400' }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '409': { $ref: '#/components/responses/Error409' }, '410': { $ref: '#/components/responses/Error410' } } }
+  /mobile/devices:
+    get: { operationId: listMobileDevices, parameters: [{ $ref: '#/components/parameters/ProtocolVersion' }], responses: { '200': { description: Redacted devices, content: { application/json: { schema: { $ref: '#/components/schemas/DeviceList' } } } }, '401': { $ref: '#/components/responses/Error401' }, '426': { $ref: '#/components/responses/Error426' } } }
+  /mobile/devices/{mobileDeviceId}:
+    delete: { operationId: revokeMobileDevice, parameters: [{ $ref: '#/components/parameters/MobileDeviceId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], responses: { '200': { description: Revoked or reconciling, content: { application/json: { schema: { $ref: '#/components/schemas/RevocationReceipt' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '404': { $ref: '#/components/responses/Error404' }, '409': { $ref: '#/components/responses/Error409' }, '503': { $ref: '#/components/responses/Error503' } } }
+  /mobile/sessions:
+    post: { operationId: createRemoteSession, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateRemoteSessionRequest' } } } }, responses: { '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/RemoteSession' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '409': { $ref: '#/components/responses/Error409' }, '426': { $ref: '#/components/responses/Error426' } } }
+  /mobile/sessions/{remoteSessionId}/refresh:
+    post: { operationId: refreshRemoteSession, parameters: [{ $ref: '#/components/parameters/RemoteSessionId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshRemoteSessionRequest' } } } }, responses: { '200': { description: Rotated tokens, content: { application/json: { schema: { $ref: '#/components/schemas/AccessToken' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '409': { $ref: '#/components/responses/Error409' }, '410': { $ref: '#/components/responses/Error410' } } }
+  /mobile/sessions/{remoteSessionId}:
+    delete: { operationId: endRemoteSession, parameters: [{ $ref: '#/components/parameters/RemoteSessionId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EndRemoteSessionRequest' } } } }, responses: { '200': { description: Ended, content: { application/json: { schema: { $ref: '#/components/schemas/EndReceipt' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '410': { $ref: '#/components/responses/Error410' } } }
+  /mobile/sessions/{remoteSessionId}/permissions:
+    post: { operationId: requestRemotePermission, parameters: [{ $ref: '#/components/parameters/RemoteSessionId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PermissionRequest' } } } }, responses: { '200': { description: Permission projection, content: { application/json: { schema: { $ref: '#/components/schemas/PermissionProjection' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '409': { $ref: '#/components/responses/Error409' }, '503': { $ref: '#/components/responses/Error503' } } }
+  /mobile/sessions/{remoteSessionId}/turn-credentials:
+    post: { operationId: createTurnCredentials, parameters: [{ $ref: '#/components/parameters/RemoteSessionId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TurnCredentialRequest' } } } }, responses: { '200': { description: Ephemeral TURN set, content: { application/json: { schema: { $ref: '#/components/schemas/TurnCredentialSet' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '503': { $ref: '#/components/responses/Error503' } } }
+  /mobile/uploads:
+    post: { operationId: createMobileUpload, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateUploadRequest' } } } }, responses: { '201': { description: Upload created, content: { application/json: { schema: { $ref: '#/components/schemas/UploadRecord' } } } }, '401': { $ref: '#/components/responses/Error401' }, '409': { $ref: '#/components/responses/Error409' }, '413': { $ref: '#/components/responses/Error413' }, '429': { $ref: '#/components/responses/Error429' } } }
+  /mobile/uploads/{uploadId}/chunks/{chunkIndex}:
+    put: { operationId: putMobileUploadChunk, parameters: [{ $ref: '#/components/parameters/UploadId' }, { $ref: '#/components/parameters/ChunkIndex' }, { $ref: '#/components/parameters/IdempotencyKey' }, { name: X-Chunk-Sha256, in: header, required: true, schema: { $ref: '#/components/schemas/Sha256' } }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/octet-stream: { schema: { $ref: '#/components/schemas/UploadChunk' } } } }, responses: { '200': { description: Chunk committed, content: { application/json: { schema: { $ref: '#/components/schemas/UploadRecord' } } } }, '401': { $ref: '#/components/responses/Error401' }, '409': { $ref: '#/components/responses/Error409' }, '410': { $ref: '#/components/responses/Error410' }, '422': { $ref: '#/components/responses/Error422' } } }
+  /mobile/uploads/{uploadId}/complete:
+    post: { operationId: completeMobileUpload, parameters: [{ $ref: '#/components/parameters/UploadId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CompleteUploadRequest' } } } }, responses: { '200': { description: Verification checkpoint, content: { application/json: { schema: { $ref: '#/components/schemas/UploadRecord' } } } }, '401': { $ref: '#/components/responses/Error401' }, '409': { $ref: '#/components/responses/Error409' }, '410': { $ref: '#/components/responses/Error410' }, '422': { $ref: '#/components/responses/Error422' } } }
+  /mobile/uploads/{uploadId}:
+    get: { operationId: getMobileUpload, parameters: [{ $ref: '#/components/parameters/UploadId' }], responses: { '200': { description: Upload checkpoint, content: { application/json: { schema: { $ref: '#/components/schemas/UploadRecord' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '404': { $ref: '#/components/responses/Error404' }, '410': { $ref: '#/components/responses/Error410' } } }
+  /mobile/artifacts/{artifactId}/download:
+    post: { operationId: authorizeArtifactDownload, parameters: [{ $ref: '#/components/parameters/ArtifactId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactDownloadRequest' } } } }, responses: { '200': { description: Short-lived authorized download, content: { application/json: { schema: { $ref: '#/components/schemas/AuthorizedDownload' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '404': { $ref: '#/components/responses/Error404' }, '410': { $ref: '#/components/responses/Error410' } } }
+  /mobile/artifacts/{artifactId}/content:
+    get:
+      operationId: getAuthorizedArtifactContent
+      description: Fetch bytes using the short-lived bearer authorization returned by authorizeArtifactDownload; authorization remains bound to account, mobile device, artifact, and expiry.
+      security:
+        - bearerAuth: []
       parameters:
-        - name: remoteSessionId
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '^rs_.+'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RequestPermissionRequest'
+        - { $ref: '#/components/parameters/ArtifactId' }
+        - { $ref: '#/components/parameters/ProtocolVersion' }
       responses:
         '200':
-          description: Permission decision
+          description: Authorized artifact bytes
+          headers:
+            Content-Disposition: { schema: { type: string, maxLength: 1024 } }
+            Content-Length: { schema: { type: integer, minimum: 0 } }
+            ETag: { schema: { type: string, maxLength: 128 } }
+            Cache-Control: { schema: { const: 'private, no-store' } }
           content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RequestPermissionResponse'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-  /remote/turn-credentials:
-    post:
-      operationId: getTurnCredentials
-      responses:
-        '200':
-          description: TURN credentials
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TurnCredentialsResponse'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
+            application/octet-stream:
+              schema: { $ref: '#/components/schemas/ArtifactBytes' }
+        '401': { $ref: '#/components/responses/Error401' }
+        '403': { $ref: '#/components/responses/Error403' }
+        '404': { $ref: '#/components/responses/Error404' }
+        '410': { $ref: '#/components/responses/Error410' }
+  /mobile/push-token:
+    post: { operationId: registerMobilePushToken, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PushRegistration' } } } }, responses: { '200': { description: Registered, content: { application/json: { schema: { $ref: '#/components/schemas/PushReceipt' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '409': { $ref: '#/components/responses/Error409' } } }
+    delete: { operationId: unregisterMobilePushToken, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], responses: { '200': { description: Unregistered, content: { application/json: { schema: { $ref: '#/components/schemas/PushReceipt' } } } }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' } } }
+  /mobile/diagnostics:
+    post: { operationId: createMobileDiagnostics, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceTimestamp' }, { $ref: '#/components/parameters/DeviceNonce' }, { $ref: '#/components/parameters/DeviceSignature' }, { $ref: '#/components/parameters/SignatureVersion' }, { $ref: '#/components/parameters/ProtocolVersion' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DiagnosticsRequest' } } } }, responses: { '202': { description: Redacted diagnostic bundle accepted, content: { application/json: { schema: { $ref: '#/components/schemas/DiagnosticsBundle' } } } }, '400': { $ref: '#/components/responses/Error400' }, '401': { $ref: '#/components/responses/Error401' }, '403': { $ref: '#/components/responses/Error403' }, '503': { $ref: '#/components/responses/Error503' } } }

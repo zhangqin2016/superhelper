@@ -1,167 +1,123 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lilyworkbench.local/schemas/mobile-command-events.schema.json",
-  "title": "Lily Mobile Command Pro Events",
-  "type": "object",
-  "oneOf": [
-    { "$ref": "#/$defs/wsEnvelope" },
-    { "$ref": "#/$defs/dataChannelEnvelope" }
-  ],
+  "title": "Lily Mobile Command WebSocket and DataChannel events v1",
+  "oneOf": [{ "$ref": "#/$defs/wsEnvelope" }, { "$ref": "#/$defs/dataChannelEnvelope" }],
   "$defs": {
-    "unixMs": { "type": "integer", "minimum": 0 },
-    "eventId": { "type": "string", "pattern": "^evt_.+" },
-    "remoteSessionId": { "type": "string", "pattern": "^rs_.+" },
-    "desktopDeviceId": { "type": "string", "pattern": "^desktop_.+" },
-    "mobileDeviceId": { "type": "string", "pattern": "^mobile_.+" },
-    "correlationId": { "type": "string", "pattern": "^corr_.+" },
-    "wsEnvelope": {
-      "type": "object",
-      "required": ["version", "id", "type", "remoteSessionId", "desktopDeviceId", "timestamp", "correlationId", "payload"],
-      "properties": {
-        "version": { "const": 1 },
-        "id": { "$ref": "#/$defs/eventId" },
-        "idempotencyKey": { "type": "string", "pattern": "^idem_.+" },
-        "type": { "$ref": "#/$defs/wsEventType" },
-        "remoteSessionId": { "$ref": "#/$defs/remoteSessionId" },
-        "desktopDeviceId": { "$ref": "#/$defs/desktopDeviceId" },
-        "mobileDeviceId": { "$ref": "#/$defs/mobileDeviceId" },
-        "lilySessionId": { "type": "string" },
-        "timestamp": { "$ref": "#/$defs/unixMs" },
-        "correlationId": { "$ref": "#/$defs/correlationId" },
-        "payload": { "type": "object" },
-        "signature": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "wsEventType": {
-      "enum": [
-        "agent.message",
-        "agent.stream.delta",
-        "agent.tool.started",
-        "agent.tool.progress",
-        "agent.tool.completed",
-        "agent.artifact.created",
-        "approval.required",
-        "approval.granted",
-        "approval.denied",
-        "webrtc.offer",
-        "webrtc.answer",
-        "webrtc.ice.candidate",
-        "session.ended",
-        "health.ping",
-        "health.stats"
-      ]
-    },
-    "dataChannelEnvelope": {
-      "type": "object",
-      "required": ["v", "id", "t", "ts", "p"],
-      "properties": {
-        "v": { "const": 1 },
-        "id": { "$ref": "#/$defs/eventId" },
-        "t": { "$ref": "#/$defs/dataChannelEventType" },
-        "ts": { "$ref": "#/$defs/unixMs" },
-        "p": {
-          "oneOf": [
-            { "$ref": "#/$defs/pointerPayload" },
-            { "$ref": "#/$defs/scrollPayload" },
-            { "$ref": "#/$defs/keyboardTypePayload" },
-            { "$ref": "#/$defs/keyboardShortcutPayload" },
-            { "$ref": "#/$defs/clipboardReadPayload" },
-            { "$ref": "#/$defs/clipboardWritePayload" },
-            { "$ref": "#/$defs/healthStatsPayload" }
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "dataChannelEventType": {
-      "enum": [
-        "control.pointer.move",
-        "control.pointer.down",
-        "control.pointer.up",
-        "control.pointer.scroll",
-        "control.keyboard.type",
-        "control.keyboard.shortcut",
-        "clipboard.read.request",
-        "clipboard.write.request",
-        "health.stats"
-      ]
-    },
-    "pointerPayload": {
-      "type": "object",
-      "required": ["surfaceId", "x", "y", "pointerType"],
-      "properties": {
-        "surfaceId": { "type": "string" },
-        "x": { "type": "number", "minimum": 0, "maximum": 1 },
-        "y": { "type": "number", "minimum": 0, "maximum": 1 },
-        "button": { "enum": ["left", "right", "middle"] },
-        "pointerType": { "enum": ["touch", "mouse", "pen"] },
-        "modifiers": {
-          "type": "array",
-          "items": { "enum": ["shift", "ctrl", "alt", "meta"] }
-        }
-      },
-      "additionalProperties": false
-    },
-    "scrollPayload": {
-      "type": "object",
-      "required": ["surfaceId", "x", "y", "deltaX", "deltaY"],
-      "properties": {
-        "surfaceId": { "type": "string" },
-        "x": { "type": "number", "minimum": 0, "maximum": 1 },
-        "y": { "type": "number", "minimum": 0, "maximum": 1 },
-        "deltaX": { "type": "number" },
-        "deltaY": { "type": "number" }
-      },
-      "additionalProperties": false
-    },
-    "keyboardTypePayload": {
-      "type": "object",
-      "required": ["text"],
-      "properties": {
-        "text": { "type": "string", "maxLength": 10000 }
-      },
-      "additionalProperties": false
-    },
-    "keyboardShortcutPayload": {
-      "type": "object",
-      "required": ["keys"],
-      "properties": {
-        "keys": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1, "maxLength": 32 },
-          "minItems": 1,
-          "maxItems": 8
-        }
-      },
-      "additionalProperties": false
-    },
-    "clipboardReadPayload": {
-      "type": "object",
-      "required": ["maxBytes"],
-      "properties": {
-        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 }
-      },
-      "additionalProperties": false
-    },
-    "clipboardWritePayload": {
-      "type": "object",
-      "required": ["text"],
-      "properties": {
-        "text": { "type": "string", "maxLength": 1048576 }
-      },
-      "additionalProperties": false
-    },
-    "healthStatsPayload": {
-      "type": "object",
-      "properties": {
-        "rttMs": { "type": "number", "minimum": 0 },
-        "packetLoss": { "type": "number", "minimum": 0, "maximum": 1 },
-        "fps": { "type": "number", "minimum": 0 },
-        "bitrateKbps": { "type": "number", "minimum": 0 },
-        "dataChannelBufferedAmount": { "type": "integer", "minimum": 0 }
-      },
-      "additionalProperties": false
-    }
+    "extensions": { "type": "object", "maxProperties": 16, "propertyNames": { "type": "string", "pattern": "^x-[a-z0-9][a-z0-9-]{0,62}$" }, "additionalProperties": { "$ref": "#/$defs/extensionValue" } },
+    "extensionValue": { "oneOf": [{ "type": "string", "maxLength": 1024 }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }, { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/extensionPrimitive" } }, { "type": "object", "maxProperties": 16, "propertyNames": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]{0,63}$" }, "additionalProperties": { "$ref": "#/$defs/extensionPrimitive" } }] },
+    "extensionPrimitive": { "oneOf": [{ "type": "string", "maxLength": 1024 }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }] },
+    "wsBase": { "type": "object", "required": ["version", "id", "type", "remoteSessionId", "desktopDeviceId", "mobileDeviceId", "timestamp", "correlationId", "payload"], "properties": { "version": { "const": 1 }, "id": { "type": "string", "pattern": "^evt_[A-Za-z0-9_-]+$" }, "idempotencyKey": { "type": "string", "pattern": "^idem_[A-Za-z0-9_-]+$" }, "type": { "type": "string" }, "remoteSessionId": { "type": "string", "pattern": "^rs_" }, "desktopDeviceId": { "type": "string", "pattern": "^desktop_" }, "mobileDeviceId": { "type": "string", "pattern": "^mobile_" }, "lilySessionId": { "type": "string", "minLength": 1 }, "turnId": { "type": ["string", "null"] }, "projectionEpoch": { "type": "string", "minLength": 1 }, "projectionSeq": { "type": "integer", "minimum": 0 }, "timestamp": { "type": "integer", "minimum": 0 }, "nonce": { "type": "string", "minLength": 16, "maxLength": 128 }, "signature": { "type": "string", "minLength": 64, "maxLength": 512 }, "signatureVersion": { "const": 1 }, "bodyHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "correlationId": { "type": "string", "pattern": "^corr_" }, "payload": { "type": "object" }, "extensions": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false },
+    "pairingBase": { "type": "object", "required": ["version", "id", "type", "desktopDeviceId", "mobileDeviceId", "timestamp", "correlationId", "payload"], "properties": { "version": { "const": 1 }, "id": { "type": "string", "pattern": "^evt_[A-Za-z0-9_-]+$" }, "idempotencyKey": { "type": "string", "pattern": "^idem_[A-Za-z0-9_-]+$" }, "type": { "type": "string" }, "desktopDeviceId": { "type": "string", "pattern": "^desktop_" }, "mobileDeviceId": { "type": "string", "pattern": "^mobile_" }, "timestamp": { "type": "integer", "minimum": 0 }, "nonce": { "type": "string", "minLength": 16, "maxLength": 128 }, "signature": { "type": "string", "minLength": 64, "maxLength": 512 }, "signatureVersion": { "const": 1 }, "bodyHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "correlationId": { "type": "string", "pattern": "^corr_" }, "payload": { "type": "object" }, "extensions": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false },
+    "mutationRequired": { "required": ["idempotencyKey", "nonce", "signature", "signatureVersion", "bodyHash"] },
+    "wsEnvelope": { "oneOf": [
+      { "$ref": "#/$defs/pairingDecision" }, { "$ref": "#/$defs/pairingCompleted" }, { "$ref": "#/$defs/pairingRejected" }, { "$ref": "#/$defs/pairingExpired" }, { "$ref": "#/$defs/pairingRevoked" }, { "$ref": "#/$defs/commandSubmit" }, { "$ref": "#/$defs/commandAdmission" }, { "$ref": "#/$defs/projectionReconnect" }, { "$ref": "#/$defs/projectionAck" }, { "$ref": "#/$defs/projectionSnapshot" },
+      { "$ref": "#/$defs/assistantDelta" }, { "$ref": "#/$defs/assistantFinal" }, { "$ref": "#/$defs/turnLifecycle" }, { "$ref": "#/$defs/toolStarted" }, { "$ref": "#/$defs/toolProgress" }, { "$ref": "#/$defs/toolCompleted" },
+      { "$ref": "#/$defs/permissionRequested" }, { "$ref": "#/$defs/permissionResolved" }, { "$ref": "#/$defs/questionRequested" }, { "$ref": "#/$defs/questionAnswer" }, { "$ref": "#/$defs/questionResolved" },
+      { "$ref": "#/$defs/approvalRequest" }, { "$ref": "#/$defs/approvalProjection" }, { "$ref": "#/$defs/webrtcOffer" }, { "$ref": "#/$defs/webrtcAnswer" }, { "$ref": "#/$defs/iceCandidate" }, { "$ref": "#/$defs/screenSourceChanged" },
+      { "$ref": "#/$defs/uploadDesktopPull" }, { "$ref": "#/$defs/uploadVerified" }, { "$ref": "#/$defs/uploadStaged" }, { "$ref": "#/$defs/artifactAvailable" }, { "$ref": "#/$defs/diagnosticsSnapshot" }, { "$ref": "#/$defs/sessionEnded" }, { "$ref": "#/$defs/voicePatch" }
+    ] },
+    "pairingDecision": { "oneOf": [
+      { "allOf": [{ "$ref": "#/$defs/pairingBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "pairing.approve" }, "payload": { "$ref": "#/$defs/pairingApprovePayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/pairingBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "pairing.reject" }, "payload": { "$ref": "#/$defs/pairingRejectPayload" } } }] }
+    ] },
+    "pairingApprovePayload": { "type": "object", "required": ["pairingId", "pairingGrantId", "decision"], "properties": { "pairingId": { "type": "string", "pattern": "^pair_" }, "pairingGrantId": { "type": "string", "pattern": "^grant_" }, "decision": { "const": "approve" } }, "additionalProperties": false },
+    "pairingRejectPayload": { "type": "object", "required": ["pairingId", "pairingGrantId", "decision"], "properties": { "pairingId": { "type": "string", "pattern": "^pair_" }, "pairingGrantId": { "type": "string", "pattern": "^grant_" }, "decision": { "const": "reject" } }, "additionalProperties": false },
+    "pairingCompleted": { "allOf": [{ "$ref": "#/$defs/pairingBase" }, { "properties": { "type": { "const": "pairing.completed" }, "payload": { "$ref": "#/$defs/pairingCompletedPayload" } } }] },
+    "pairingRejected": { "allOf": [{ "$ref": "#/$defs/pairingBase" }, { "properties": { "type": { "const": "pairing.rejected" }, "payload": { "$ref": "#/$defs/pairingRejectedPayload" } } }] },
+    "pairingExpired": { "allOf": [{ "$ref": "#/$defs/pairingBase" }, { "properties": { "type": { "const": "pairing.expired" }, "payload": { "$ref": "#/$defs/pairingExpiredPayload" } } }] },
+    "pairingRevoked": { "allOf": [{ "$ref": "#/$defs/pairingBase" }, { "properties": { "type": { "const": "pairing.revoked" }, "payload": { "$ref": "#/$defs/pairingRevokedPayload" } } }] },
+    "pairingCompletedPayload": { "type": "object", "required": ["pairingId", "pairingGrantId", "status", "desktopDeviceId", "mobileDeviceId", "approvedAt"], "description": "The paired grant is active until explicit revocation; this projection intentionally has no grant expiry field.", "properties": { "pairingId": { "type": "string", "pattern": "^pair_" }, "pairingGrantId": { "type": "string", "pattern": "^grant_" }, "status": { "const": "completed" }, "desktopDeviceId": { "type": "string", "pattern": "^desktop_" }, "mobileDeviceId": { "type": "string", "pattern": "^mobile_" }, "approvedAt": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+    "pairingRejectedPayload": { "type": "object", "required": ["pairingId", "status", "reasonCode", "terminalAt"], "properties": { "pairingId": { "type": "string", "pattern": "^pair_" }, "status": { "const": "rejected" }, "reasonCode": { "const": "MC-ERR-PAIRING-DESKTOP-REJECTED" }, "terminalAt": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+    "pairingExpiredPayload": { "type": "object", "required": ["pairingId", "status", "reasonCode", "terminalAt"], "properties": { "pairingId": { "type": "string", "pattern": "^pair_" }, "status": { "const": "expired" }, "reasonCode": { "const": "MC-ERR-PAIRING-TOKEN-EXPIRED" }, "terminalAt": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+    "pairingRevokedPayload": { "type": "object", "required": ["pairingId", "status", "reasonCode", "terminalAt"], "properties": { "pairingId": { "type": "string", "pattern": "^pair_" }, "status": { "const": "revoked" }, "reasonCode": { "const": "MC-ERR-AUTH-DEVICE-REVOKED" }, "terminalAt": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+    "commandSubmit": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "agent.command.submit" }, "payload": { "$ref": "#/$defs/commandPayload" } }, "required": ["lilySessionId"] }] },
+    "commandAdmission": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "agent.command.admission" }, "payload": { "$ref": "#/$defs/admissionPayload" } }, "required": ["lilySessionId"] }] },
+    "projectionReconnect": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "projection.reconnect" }, "payload": { "$ref": "#/$defs/cursorPayload" } }, "required": ["lilySessionId"] }] },
+    "projectionAck": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "projection.ack" }, "payload": { "$ref": "#/$defs/cursorPayload" } }, "required": ["lilySessionId"] }] },
+    "projectionSnapshot": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "projection.snapshot" }, "payload": { "type": "object", "required": ["projectionEpoch", "snapshotSeq", "phase", "queue"], "properties": { "projectionEpoch": { "type": "string" }, "snapshotSeq": { "type": "integer", "minimum": 0 }, "phase": { "type": "string", "maxLength": 64 }, "queue": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/admissionPayload" } }, "assistantText": { "type": "string", "maxLength": 1048576 }, "extensions": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false } }, "required": ["lilySessionId"] }] },
+    "assistantDelta": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "assistant.delta" }, "payload": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "maxLength": 65536 } }, "additionalProperties": false } }, "required": ["lilySessionId", "projectionEpoch", "projectionSeq"] }] },
+    "assistantFinal": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "assistant.final" }, "payload": { "type": "object", "required": ["text", "terminalType"], "properties": { "text": { "type": "string", "maxLength": 1048576 }, "terminalType": { "enum": ["completed", "failed", "cancelled", "stalled"] } }, "additionalProperties": false } } }] },
+    "turnLifecycle": { "oneOf": [
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "turn.started" }, "payload": { "$ref": "#/$defs/admissionPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "turn.accepted" }, "payload": { "$ref": "#/$defs/admissionPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "turn.completed" }, "payload": { "$ref": "#/$defs/admissionPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "turn.failed" }, "payload": { "$ref": "#/$defs/admissionPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "turn.interrupted" }, "payload": { "$ref": "#/$defs/admissionPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "turn.stalled" }, "payload": { "$ref": "#/$defs/admissionPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "queue.updated" }, "payload": { "$ref": "#/$defs/admissionPayload" } } }] }
+    ] },
+    "toolStarted": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "tool.started" }, "payload": { "$ref": "#/$defs/toolPayload" } } }] },
+    "toolProgress": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "tool.progress" }, "payload": { "$ref": "#/$defs/toolPayload" } } }] },
+    "toolCompleted": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "tool.completed" }, "payload": { "$ref": "#/$defs/toolPayload" } } }] },
+    "permissionRequested": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "permission.requested" }, "payload": { "$ref": "#/$defs/requestProjection" } } }] },
+    "permissionResolved": { "oneOf": [
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "permission.resolved" }, "payload": { "$ref": "#/$defs/resolutionPermission" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "permission.timeout" }, "payload": { "$ref": "#/$defs/resolutionTimeout" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "permission.revoked" }, "payload": { "$ref": "#/$defs/resolutionRevoked" } } }] }
+    ] },
+    "questionRequested": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "user_question.requested" }, "payload": { "$ref": "#/$defs/requestProjection" } } }] },
+    "questionAnswer": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "user_question.answer" }, "payload": { "type": "object", "required": ["requestId", "generation", "answer"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "answer": { "type": "string", "maxLength": 10000 } }, "additionalProperties": false } } }] },
+    "questionResolved": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "user_question.resolved" }, "payload": { "$ref": "#/$defs/resolutionAnswered" } } }] },
+    "approvalRequest": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "approval.requested" }, "payload": { "$ref": "#/$defs/approvalRequestPayload" } } }] },
+    "approvalProjection": { "oneOf": [
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "approval.granted" }, "payload": { "$ref": "#/$defs/resolutionGranted" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "approval.denied" }, "payload": { "$ref": "#/$defs/resolutionDenied" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "approval.expired" }, "payload": { "$ref": "#/$defs/resolutionExpired" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "approval.revoked" }, "payload": { "$ref": "#/$defs/resolutionRevoked" } } }] }
+    ] },
+    "webrtcOffer": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "webrtc.offer" }, "payload": { "$ref": "#/$defs/webrtcOfferPayload" } } }] },
+    "webrtcAnswer": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "webrtc.answer" }, "payload": { "$ref": "#/$defs/webrtcAnswerPayload" } } }] },
+    "iceCandidate": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "webrtc.ice.candidate" }, "payload": { "type": "object", "required": ["generation", "candidate"], "properties": { "generation": { "type": "integer", "minimum": 1 }, "candidate": { "type": "string", "maxLength": 4096 }, "sdpMid": { "type": ["string", "null"], "maxLength": 256 }, "sdpMLineIndex": { "type": ["integer", "null"], "minimum": 0 } }, "additionalProperties": false } } }] },
+    "screenSourceChanged": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "screen.source.changed" }, "payload": { "type": "object", "required": ["generation", "sourceAvailable"], "properties": { "generation": { "type": "integer", "minimum": 1 }, "sourceAvailable": { "type": "boolean" } }, "additionalProperties": false } } }] },
+    "uploadDesktopPull": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "upload.desktop_pull" }, "payload": { "$ref": "#/$defs/uploadPayload" } } }] },
+    "uploadVerified": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "upload.verified" }, "payload": { "$ref": "#/$defs/uploadPayload" } } }] },
+    "uploadStaged": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "upload.staged" }, "payload": { "$ref": "#/$defs/uploadPayload" } } }] },
+    "artifactAvailable": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "artifact.available" }, "payload": { "type": "object", "required": ["artifactId", "name", "mimeType"], "properties": { "artifactId": { "type": "string", "pattern": "^artifact_" }, "name": { "type": "string", "maxLength": 255 }, "mimeType": { "type": "string", "maxLength": 255 }, "sizeBytes": { "type": "integer", "minimum": 0 } }, "additionalProperties": false } } }] },
+    "diagnosticsSnapshot": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "diagnostics.snapshot" }, "payload": { "type": "object", "required": ["diagnosticId", "redacted"], "properties": { "diagnosticId": { "type": "string", "pattern": "^diag_" }, "redacted": { "const": true } }, "additionalProperties": false } } }] },
+    "sessionEnded": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "properties": { "type": { "const": "session.ended" }, "payload": { "type": "object", "required": ["reason"], "properties": { "reason": { "type": "string", "maxLength": 128 } }, "additionalProperties": false } } }] },
+    "voicePatch": { "allOf": [{ "$ref": "#/$defs/wsBase" }, { "$ref": "#/$defs/mutationRequired" }, { "properties": { "type": { "const": "voice.transcript.patch" }, "payload": { "$ref": "#/$defs/voicePatchPayload" } } }] },
+    "commandPayload": { "type": "object", "required": ["commandId", "text", "requestedMode", "attachments"], "properties": { "commandId": { "type": "string", "pattern": "^cmd_" }, "text": { "type": "string", "minLength": 1, "maxLength": 100000 }, "requestedMode": { "enum": ["queue", "steer"] }, "attachments": { "type": "array", "maxItems": 20, "items": { "type": "object", "required": ["uploadId"], "properties": { "uploadId": { "type": "string", "pattern": "^upl_" } }, "additionalProperties": false } }, "extensions": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false },
+    "admissionPayload": { "type": "object", "required": ["commandId", "state", "requestedMode", "effectiveMode", "downgradeReason"], "properties": { "commandId": { "type": "string", "pattern": "^cmd_" }, "state": { "enum": ["admitted", "dispatching", "engine_accepted", "dispatch_unknown", "terminal"] }, "requestedMode": { "enum": ["queue", "steer"] }, "effectiveMode": { "enum": ["queue", "steer"] }, "downgradeReason": { "type": ["string", "null"], "maxLength": 128 }, "position": { "type": "integer", "minimum": 0 }, "terminalType": { "enum": ["completed", "failed", "interrupted", "stalled"] } }, "additionalProperties": false },
+    "cursorPayload": { "type": "object", "required": ["projectionEpoch", "projectionSeq"], "properties": { "projectionEpoch": { "type": "string", "minLength": 1 }, "projectionSeq": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+    "toolPayload": { "type": "object", "required": ["toolId", "name", "status"], "properties": { "toolId": { "type": "string" }, "name": { "type": "string", "maxLength": 128 }, "title": { "type": "string", "maxLength": 512 }, "status": { "enum": ["started", "running", "completed", "failed"] }, "safeSummary": { "type": "string", "maxLength": 4096 }, "progress": { "type": "number", "minimum": 0, "maximum": 1 } }, "additionalProperties": false },
+    "requestProjection": { "type": "object", "required": ["requestId", "generation", "expiresAt", "remotelyAnswerable"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "expiresAt": { "type": "integer", "minimum": 0 }, "remotelyAnswerable": { "type": "boolean" }, "prompt": { "type": "string", "maxLength": 4096 }, "options": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 512 } } }, "additionalProperties": false },
+    "approvalRequestPayload": { "type": "object", "required": ["requestId", "generation", "expiresAt", "desktopDecisionRequired"], "properties": { "requestId": { "type": "string", "minLength": 1, "maxLength": 128 }, "generation": { "type": "integer", "minimum": 1 }, "expiresAt": { "type": "integer", "minimum": 0 }, "desktopDecisionRequired": { "const": true }, "summary": { "type": "string", "maxLength": 4096 } }, "additionalProperties": false },
+    "resolutionGranted": { "$ref": "#/$defs/resolutionGrantedShape" },
+    "resolutionGrantedShape": { "type": "object", "required": ["requestId", "generation", "outcome"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "outcome": { "const": "granted" } }, "additionalProperties": false },
+    "resolutionDenied": { "type": "object", "required": ["requestId", "generation", "outcome"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "outcome": { "const": "denied" } }, "additionalProperties": false },
+    "resolutionExpired": { "type": "object", "required": ["requestId", "generation", "outcome"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "outcome": { "const": "expired" } }, "additionalProperties": false },
+    "resolutionRevoked": { "type": "object", "required": ["requestId", "generation", "outcome"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "outcome": { "const": "revoked" } }, "additionalProperties": false },
+    "resolutionAnswered": { "type": "object", "required": ["requestId", "generation", "outcome"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "outcome": { "const": "answered" } }, "additionalProperties": false },
+    "resolutionPermission": { "oneOf": [{ "$ref": "#/$defs/resolutionGranted" }, { "$ref": "#/$defs/resolutionDenied" }] },
+    "resolutionTimeout": { "type": "object", "required": ["requestId", "generation", "outcome"], "properties": { "requestId": { "type": "string" }, "generation": { "type": "integer", "minimum": 1 }, "outcome": { "const": "timeout" } }, "additionalProperties": false },
+    "webrtcOfferPayload": { "type": "object", "required": ["generation", "sdp", "sourceMode"], "properties": { "generation": { "type": "integer", "minimum": 1 }, "sdp": { "type": "string", "minLength": 1, "maxLength": 262144 }, "sourceMode": { "enum": ["app", "desktop"] } }, "additionalProperties": false },
+    "webrtcAnswerPayload": { "type": "object", "required": ["generation", "sdp"], "properties": { "generation": { "type": "integer", "minimum": 1 }, "sdp": { "type": "string", "minLength": 1, "maxLength": 262144 } }, "additionalProperties": false },
+    "uploadPayload": { "type": "object", "required": ["uploadId"], "properties": { "uploadId": { "type": "string", "pattern": "^upl_" }, "stagedFileId": { "type": "string" } }, "additionalProperties": false },
+    "voicePatchPayload": { "type": "object", "required": ["segmentId", "revision", "isFinal", "text"], "properties": { "segmentId": { "type": "string", "minLength": 1 }, "revision": { "type": "integer", "minimum": 0 }, "isFinal": { "type": "boolean" }, "text": { "type": "string", "maxLength": 100000 }, "range": { "type": "object", "required": ["start", "end"], "description": "Half-open UTF-16 code-unit range; end MUST be greater than or equal to start and adapters enforce that relational invariant.", "properties": { "start": { "type": "integer", "minimum": 0 }, "end": { "type": "integer", "minimum": 0 } }, "additionalProperties": false }, "confidence": { "type": "number", "minimum": 0, "maximum": 1 }, "uncertainSpans": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/voiceUncertainSpan" } }, "language": { "enum": ["zh-CN", "en-US", "auto"] } }, "additionalProperties": false },
+    "voiceUncertainSpan": { "type": "object", "required": ["start", "end"], "description": "Half-open UTF-16 code-unit range; end MUST be greater than or equal to start and typed adapters enforce that relational invariant.", "properties": { "start": { "type": "integer", "minimum": 0 }, "end": { "type": "integer", "minimum": 0 }, "alternatives": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1000 } } }, "additionalProperties": false },
+    "dcBase": { "type": "object", "required": ["v", "id", "t", "remoteSessionId", "desktopDeviceId", "mobileDeviceId", "sessionGeneration", "seq", "ts", "nonce", "signature", "signatureVersion", "bodyHash", "idempotencyKey", "p"], "properties": { "v": { "const": 1 }, "id": { "type": "string", "pattern": "^evt_" }, "t": { "type": "string" }, "remoteSessionId": { "type": "string", "pattern": "^rs_" }, "desktopDeviceId": { "type": "string", "pattern": "^desktop_" }, "mobileDeviceId": { "type": "string", "pattern": "^mobile_" }, "sessionGeneration": { "type": "integer", "minimum": 1 }, "seq": { "type": "integer", "minimum": 0 }, "ts": { "type": "integer", "minimum": 0 }, "nonce": { "type": "string", "minLength": 16, "maxLength": 128 }, "signature": { "type": "string", "minLength": 64, "maxLength": 512 }, "signatureVersion": { "const": 1 }, "bodyHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "idempotencyKey": { "type": "string", "pattern": "^idem_[A-Za-z0-9_-]{8,128}$" }, "p": { "type": "object" }, "extensions": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false },
+    "dcReadBase": { "type": "object", "required": ["v", "id", "t", "remoteSessionId", "desktopDeviceId", "mobileDeviceId", "sessionGeneration", "seq", "ts", "p"], "properties": { "v": { "const": 1 }, "id": { "type": "string", "pattern": "^evt_" }, "t": { "type": "string" }, "remoteSessionId": { "type": "string", "pattern": "^rs_" }, "desktopDeviceId": { "type": "string", "pattern": "^desktop_" }, "mobileDeviceId": { "type": "string", "pattern": "^mobile_" }, "sessionGeneration": { "type": "integer", "minimum": 1 }, "seq": { "type": "integer", "minimum": 0 }, "ts": { "type": "integer", "minimum": 0 }, "p": { "type": "object" }, "extensions": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false },
+    "dataChannelEnvelope": { "oneOf": [
+      { "$ref": "#/$defs/pointer" }, { "$ref": "#/$defs/scroll" }, { "$ref": "#/$defs/keyboard" }, { "$ref": "#/$defs/inputAck" }, { "$ref": "#/$defs/clipboardRead" }, { "$ref": "#/$defs/clipboardWrite" }, { "$ref": "#/$defs/clipboardResult" }, { "$ref": "#/$defs/healthPing" }, { "$ref": "#/$defs/healthStats" }
+    ] },
+    "pointer": { "oneOf": [
+      { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "input.pointer.move" }, "p": { "$ref": "#/$defs/pointerPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "input.pointer.down" }, "p": { "$ref": "#/$defs/pointerPayload" } } }] },
+      { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "input.pointer.up" }, "p": { "$ref": "#/$defs/pointerPayload" } } }] }
+    ] },
+    "scroll": { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "input.scroll" }, "p": { "$ref": "#/$defs/scrollPayload" } } }] },
+    "keyboard": { "oneOf": [
+      { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "input.keyboard.type" }, "p": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "maxLength": 10000 } }, "additionalProperties": false } } }] },
+      { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "input.keyboard.shortcut" }, "p": { "type": "object", "required": ["keys"], "properties": { "keys": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string", "maxLength": 32 } } }, "additionalProperties": false } } }] }
+    ] },
+    "inputAck": { "allOf": [{ "$ref": "#/$defs/dcReadBase" }, { "properties": { "t": { "const": "input.ack" }, "p": { "type": "object", "required": ["sequence", "accepted"], "properties": { "sequence": { "type": "integer", "minimum": 0 }, "accepted": { "type": "boolean" } }, "additionalProperties": false } } }] },
+    "clipboardRead": { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "clipboard.read.request" }, "p": { "type": "object", "required": ["requestId", "maxBytes"], "properties": { "requestId": { "type": "string" }, "maxBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 } }, "additionalProperties": false } } }] },
+    "clipboardWrite": { "allOf": [{ "$ref": "#/$defs/dcBase" }, { "properties": { "t": { "const": "clipboard.write" }, "p": { "type": "object", "required": ["requestId", "text"], "properties": { "requestId": { "type": "string" }, "text": { "type": "string", "maxLength": 1048576 } }, "additionalProperties": false } } }] },
+    "clipboardResult": { "allOf": [{ "$ref": "#/$defs/dcReadBase" }, { "properties": { "t": { "const": "clipboard.result" }, "p": { "type": "object", "required": ["requestId", "status"], "properties": { "requestId": { "type": "string" }, "status": { "enum": ["ok", "denied", "failed"] }, "text": { "type": "string", "maxLength": 1048576 } }, "additionalProperties": false } } }] },
+    "healthPing": { "allOf": [{ "$ref": "#/$defs/dcReadBase" }, { "properties": { "t": { "const": "health.ping" }, "p": { "type": "object", "required": ["sentAt"], "properties": { "sentAt": { "type": "integer", "minimum": 0 } }, "additionalProperties": false } } }] },
+    "healthStats": { "allOf": [{ "$ref": "#/$defs/dcReadBase" }, { "properties": { "t": { "const": "health.stats" }, "p": { "type": "object", "properties": { "rttMs": { "type": "number", "minimum": 0 }, "packetLoss": { "type": "number", "minimum": 0, "maximum": 1 }, "fps": { "type": "number", "minimum": 0 }, "bitrateKbps": { "type": "number", "minimum": 0 }, "dataChannelBufferedAmount": { "type": "integer", "minimum": 0 } }, "additionalProperties": false } } }] },
+    "pointerPayload": { "type": "object", "required": ["surfaceId", "x", "y", "pointerType"], "properties": { "surfaceId": { "type": "string" }, "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 }, "pointerType": { "enum": ["touch", "mouse", "pen"] }, "button": { "enum": ["left", "right", "middle"] } }, "additionalProperties": false },
+    "scrollPayload": { "type": "object", "required": ["surfaceId", "x", "y", "deltaX", "deltaY"], "properties": { "surfaceId": { "type": "string" }, "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 }, "deltaX": { "type": "number", "minimum": -100000, "maximum": 100000 }, "deltaY": { "type": "number", "minimum": -100000, "maximum": 100000 } }, "additionalProperties": false }
   }
 }

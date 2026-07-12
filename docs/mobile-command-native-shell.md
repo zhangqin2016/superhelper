@@ -185,15 +185,14 @@ Rules:
 ```ts
 type NativeUploadRequest = {
   uploadId: string;
-  method: 'PUT' | 'POST';
-  url: string;
-  headers: Record<string, string>;
-  fileUri: string;
+  uploadHandle: string;
+  nativeFileHandle: string;
+  sizeBytes: number;
+  sha256: string;
   byteRange?: {
     start: number;
     endInclusive: number;
   };
-  sha256?: string;
 };
 
 type NativeUploadHandle = {
@@ -207,6 +206,12 @@ Method:
 ```text
 upload.startBackgroundUpload
 ```
+
+`uploadHandle` is an opaque server-signed capability for exactly one upload. Native, not Web, validates its signature and expiry and requires claims for the pinned Lily service audience, exact desktop/mobile device tuple, exact `uploadId`, and canonical background-upload purpose. Native derives the built-in trusted service origin and canonical upload path after validation. Web cannot mint, parse, or supply the origin, URL, HTTP method, credentials, token, or headers.
+
+`nativeFileHandle` is an opaque reference issued earlier by the current app installation's secure native file registry. The registry binds it to the current mobile device/app installation, immutable file metadata, `purpose=background_upload`, expiry, and exactly one `uploadId`. Web receives no filesystem/content URI and cannot mint or parse a handle. Native resolves it only after both handles validate and atomically consumes or revokes it according to the registry policy.
+
+For a range request, native MUST validate `0 <= start <= endInclusive < sizeBytes` before resolving or reading the file handle. Any mismatch between the request, signed upload claims, registry metadata, actual file size/hash, or range returns `MC-ERR-PROTOCOL-INVALID`; native reads and uploads zero bytes. Ordinary foreground Web uploads use the canonical HTTP upload endpoints directly and do not call this native background API.
 
 ### 7.2 Status
 
@@ -315,7 +320,9 @@ type SharedFile = {
   name: string;
   mimeType?: string;
   sizeBytes?: number;
-  fileUri: string;
+  sha256?: string;
+  nativeFileHandle: string;
+  expiresAt: number; // Unix time in milliseconds
 };
 
 type GetPendingSharedFilesResult = {
@@ -332,8 +339,11 @@ share.getPendingSharedFiles
 Rules:
 
 - Native copies shared files into app-accessible temporary storage.
+- The secure native file registry issues `nativeFileHandle`; no path, file URI, or content URI crosses the bridge.
+- The handle is bound to the current app installation/mobile device, immutable metadata, allowed purpose, and expiry. It is revoked on acknowledgement, TTL expiry, app data reset, device revocation, or source cleanup.
 - Web must explicitly enqueue them into upload state machine.
-- Native deletes temporary shared files after Web ack or TTL.
+- Before background upload, native exchanges/binds the shared-file handle for `purpose=background_upload` and one exact `uploadId`; Web cannot reuse or retarget it.
+- Native deletes temporary shared files and revokes their handles after Web acknowledgement or TTL.
 
 ## 10. Permissions API
 
@@ -425,7 +435,7 @@ MC-SM-BACKGROUND owns the resulting permission/WebRTC state. Native owns only mo
 - Use FCM for push.
 - Use WorkManager for background uploads.
 - Foreground service may be required for long uploads.
-- Android file URIs must be content URI aware.
+- Android native registry resolution supports content-provider sources internally; provider URIs never cross the Web bridge.
 
 ## 14. Tests
 

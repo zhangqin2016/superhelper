@@ -1,85 +1,124 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lilyworkbench.local/schemas/mobile-command-native-bridge.schema.json",
-  "title": "Lily Mobile Command Native Bridge",
-  "type": "object",
+  "title": "Lily Mobile Command native capability bridge v1",
+  "description": "Closed, additive-versioned bridge. Native accepts typed local capabilities only; it never accepts shell/script text, executable paths, or arbitrary remote protocol payloads.",
   "oneOf": [
     { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/response" }
+    { "$ref": "#/$defs/response" },
+    { "$ref": "#/$defs/lifecycleEvent" }
   ],
   "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "extensions": { "type": "object", "maxProperties": 16, "propertyNames": { "type": "string", "pattern": "^x-[a-z0-9][a-z0-9-]{0,62}$" }, "additionalProperties": { "$ref": "#/$defs/extensionValue" } },
+    "extensionValue": { "oneOf": [{ "type": "string", "maxLength": 1024 }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }, { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/extensionPrimitive" } }, { "type": "object", "maxProperties": 16, "propertyNames": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]{0,63}$" }, "additionalProperties": { "$ref": "#/$defs/extensionPrimitive" } }] },
+    "extensionPrimitive": { "oneOf": [{ "type": "string", "maxLength": 1024 }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }] },
+    "empty": { "type": "object", "additionalProperties": false },
+    "keyHandle": { "type": "string", "pattern": "^key_[A-Za-z0-9_-]{8,128}$" },
+    "permissionName": { "enum": ["camera", "microphone", "notifications", "photos", "files", "localNetwork"] },
+    "permissionStatus": { "enum": ["granted", "denied", "restricted", "notDetermined", "unsupported"] },
     "request": {
-      "type": "object",
-      "required": ["id", "version", "method", "params"],
-      "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "version": { "const": 1 },
-        "method": {
-          "enum": [
-            "secureKey.generateDeviceKey",
-            "secureKey.sign",
-            "secureKey.deleteDeviceKey",
-            "upload.startBackgroundUpload",
-            "upload.getUploadStatus",
-            "upload.cancelUpload",
-            "push.register",
-            "push.unregister",
-            "share.getPendingSharedFiles",
-            "permissions.getStatus",
-            "permissions.request",
-            "camera.scanQr"
-          ]
-        },
-        "params": { "type": "object" }
-      },
-      "additionalProperties": false
-    },
-    "response": {
-      "type": "object",
-      "required": ["id", "ok"],
-      "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "ok": { "type": "boolean" },
-        "result": { "type": "object" },
-        "error": { "$ref": "#/$defs/error" }
-      },
       "oneOf": [
-        { "required": ["result"], "properties": { "ok": { "const": true } } },
-        { "required": ["error"], "properties": { "ok": { "const": false } } }
-      ],
+        { "$ref": "#/$defs/generateKeyRequest" }, { "$ref": "#/$defs/signRequest" },
+        { "$ref": "#/$defs/deleteKeyRequest" }, { "$ref": "#/$defs/startUploadRequest" },
+        { "$ref": "#/$defs/uploadStatusRequest" }, { "$ref": "#/$defs/cancelUploadRequest" },
+        { "$ref": "#/$defs/pushRegisterRequest" }, { "$ref": "#/$defs/pushUnregisterRequest" },
+        { "$ref": "#/$defs/sharedFilesRequest" }, { "$ref": "#/$defs/permissionStatusRequest" },
+        { "$ref": "#/$defs/permissionRequest" }, { "$ref": "#/$defs/scanQrRequest" }
+      ]
+    },
+    "requestBase": {
+      "type": "object", "required": ["id", "version", "method", "params"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "version": { "const": 1 }, "method": { "type": "string" }, "params": { "type": "object" }, "extensions": { "$ref": "#/$defs/extensions" } },
       "additionalProperties": false
     },
-    "error": {
+    "generateKeyRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "secureKey.generateDeviceKey" }, "params": { "$ref": "#/$defs/generateKeyParams" } } }] },
+    "signRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "secureKey.sign" }, "params": { "$ref": "#/$defs/signParams" } } }] },
+    "deleteKeyRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "secureKey.deleteDeviceKey" }, "params": { "$ref": "#/$defs/keyParams" } } }] },
+    "startUploadRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "upload.startBackgroundUpload" }, "params": { "$ref": "#/$defs/nativeUploadParams" } } }] },
+    "uploadStatusRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "upload.getUploadStatus" }, "params": { "$ref": "#/$defs/handleParams" } } }] },
+    "cancelUploadRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "upload.cancelUpload" }, "params": { "$ref": "#/$defs/handleParams" } } }] },
+    "pushRegisterRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "push.register" }, "params": { "$ref": "#/$defs/empty" } } }] },
+    "pushUnregisterRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "push.unregister" }, "params": { "$ref": "#/$defs/empty" } } }] },
+    "sharedFilesRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "share.getPendingSharedFiles" }, "params": { "$ref": "#/$defs/empty" } } }] },
+    "permissionStatusRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "permissions.getStatus" }, "params": { "$ref": "#/$defs/permissionParams" } } }] },
+    "permissionRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "permissions.request" }, "params": { "$ref": "#/$defs/permissionParams" } } }] },
+    "scanQrRequest": { "allOf": [{ "$ref": "#/$defs/requestBase" }, { "properties": { "method": { "const": "camera.scanQr" }, "params": { "$ref": "#/$defs/empty" } } }] },
+    "generateKeyParams": { "type": "object", "required": ["label"], "properties": { "label": { "type": "string", "minLength": 1, "maxLength": 120 }, "requireBiometric": { "type": "boolean" } }, "additionalProperties": false },
+    "signParams": { "type": "object", "required": ["keyHandle", "canonicalDigest", "signatureVersion"], "properties": { "keyHandle": { "$ref": "#/$defs/keyHandle" }, "canonicalDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "signatureVersion": { "const": 1 } }, "additionalProperties": false },
+    "keyParams": { "type": "object", "required": ["keyHandle"], "properties": { "keyHandle": { "$ref": "#/$defs/keyHandle" } }, "additionalProperties": false },
+    "nativeUploadParams": {
       "type": "object",
-      "required": ["code", "recoverable", "messageKey"],
+      "description": "uploadHandle is an opaque server-signed capability. Native validates its signature, expiry, trusted-service audience, and exact desktop/mobile/uploadId claims, then derives the pinned service origin and canonical upload path internally. nativeFileHandle is issued by the current app installation's secure native file registry, is bound to mobileDeviceId, immutable file metadata, purpose=background_upload, expiry, and one uploadId, and cannot be minted or parsed by Web. Web cannot provide an origin, URL, path, URI, HTTP method, credentials, or headers.",
+      "required": ["uploadId", "uploadHandle", "nativeFileHandle", "sizeBytes", "sha256"],
       "properties": {
-        "code": {
-          "enum": [
-            "NATIVE_METHOD_UNSUPPORTED",
-            "NATIVE_PLATFORM_UNSUPPORTED",
-            "NATIVE_PERMISSION_DENIED",
-            "NATIVE_PERMISSION_RESTRICTED",
-            "NATIVE_KEY_NOT_FOUND",
-            "NATIVE_KEY_INVALIDATED",
-            "NATIVE_KEYSTORE_UNAVAILABLE",
-            "NATIVE_SIGN_FAILED",
-            "NATIVE_UPLOAD_FAILED",
-            "NATIVE_UPLOAD_CANCELLED",
-            "NATIVE_UPLOAD_BACKGROUND_UNAVAILABLE",
-            "NATIVE_PUSH_UNAVAILABLE",
-            "NATIVE_SHARE_NO_FILES",
-            "NATIVE_FILE_ACCESS_DENIED",
-            "NATIVE_FILE_TOO_LARGE",
-            "NATIVE_CAMERA_UNAVAILABLE",
-            "NATIVE_SCANNER_FAILED",
-            "NATIVE_TIMEOUT"
-          ]
-        },
-        "recoverable": { "type": "boolean" },
-        "messageKey": { "type": "string" },
-        "details": { "type": "object", "additionalProperties": true }
+        "uploadId": { "type": "string", "pattern": "^upl_[A-Za-z0-9_-]+$" },
+        "uploadHandle": { "type": "string", "pattern": "^uh_[A-Za-z0-9._~-]{32,2048}$" },
+        "nativeFileHandle": { "type": "string", "pattern": "^nfh_[A-Za-z0-9_-]{32,256}$" },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 524288000 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "byteRange": {
+          "type": "object",
+          "description": "Native MUST validate 0 <= start <= endInclusive < sizeBytes before resolving or reading nativeFileHandle. Violation returns MC-ERR-PROTOCOL-INVALID and reads/uploads zero bytes.",
+          "required": ["start", "endInclusive"],
+          "properties": {
+            "start": { "type": "integer", "minimum": 0 },
+            "endInclusive": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
-    }
+    },
+    "handleParams": { "type": "object", "required": ["handle"], "properties": { "handle": { "type": "string", "pattern": "^nupl_[A-Za-z0-9_-]+$" } }, "additionalProperties": false },
+    "permissionParams": { "type": "object", "required": ["name"], "properties": { "name": { "$ref": "#/$defs/permissionName" } }, "additionalProperties": false },
+    "response": { "oneOf": [
+      { "$ref": "#/$defs/generateKeySuccess" }, { "$ref": "#/$defs/generateKeyError" }, { "$ref": "#/$defs/signSuccess" }, { "$ref": "#/$defs/signError" },
+      { "$ref": "#/$defs/deleteKeySuccess" }, { "$ref": "#/$defs/deleteKeyError" }, { "$ref": "#/$defs/startUploadSuccess" }, { "$ref": "#/$defs/startUploadError" },
+      { "$ref": "#/$defs/uploadStatusSuccess" }, { "$ref": "#/$defs/uploadStatusError" }, { "$ref": "#/$defs/cancelUploadSuccess" }, { "$ref": "#/$defs/cancelUploadError" },
+      { "$ref": "#/$defs/pushRegisterSuccess" }, { "$ref": "#/$defs/pushRegisterError" }, { "$ref": "#/$defs/pushUnregisterSuccess" }, { "$ref": "#/$defs/pushUnregisterError" },
+      { "$ref": "#/$defs/sharedFilesSuccess" }, { "$ref": "#/$defs/sharedFilesError" }, { "$ref": "#/$defs/permissionStatusSuccess" }, { "$ref": "#/$defs/permissionStatusError" },
+      { "$ref": "#/$defs/permissionRequestSuccess" }, { "$ref": "#/$defs/permissionRequestError" }, { "$ref": "#/$defs/scanQrSuccess" }, { "$ref": "#/$defs/scanQrError" }
+    ] },
+    "successBase": { "type": "object", "required": ["id", "version", "method", "ok", "result"], "properties": { "id": { "$ref": "#/$defs/id" }, "version": { "const": 1 }, "method": { "type": "string" }, "ok": { "const": true }, "result": {}, "extensions": { "$ref": "#/$defs/extensions" } }, "not": { "required": ["error"] }, "additionalProperties": false },
+    "errorBase": { "type": "object", "required": ["id", "version", "method", "ok", "error"], "properties": { "id": { "$ref": "#/$defs/id" }, "version": { "const": 1 }, "method": { "type": "string" }, "ok": { "const": false }, "error": { "$ref": "#/$defs/error" }, "extensions": { "$ref": "#/$defs/extensions" } }, "not": { "required": ["result"] }, "additionalProperties": false },
+    "generateKeySuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "secureKey.generateDeviceKey" }, "result": { "type": "object", "required": ["keyHandle", "publicKey", "algorithm"], "properties": { "keyHandle": { "$ref": "#/$defs/keyHandle" }, "publicKey": { "type": "string", "minLength": 32, "maxLength": 512 }, "algorithm": { "const": "Ed25519" }, "hardwareBacked": { "type": "boolean" } }, "additionalProperties": false } } }] },
+    "signSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "secureKey.sign" }, "result": { "type": "object", "required": ["signature", "algorithm"], "properties": { "signature": { "type": "string", "minLength": 64, "maxLength": 256 }, "algorithm": { "const": "Ed25519" } }, "additionalProperties": false } } }] },
+    "deleteKeySuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "secureKey.deleteDeviceKey" }, "result": { "type": "object", "required": ["deleted"], "properties": { "deleted": { "const": true } }, "additionalProperties": false } } }] },
+    "cancelUploadSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "upload.cancelUpload" }, "result": { "type": "object", "required": ["cancelled"], "properties": { "cancelled": { "const": true } }, "additionalProperties": false } } }] },
+    "pushUnregisterSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "push.unregister" }, "result": { "type": "object", "required": ["unregistered"], "properties": { "unregistered": { "const": true } }, "additionalProperties": false } } }] },
+    "startUploadSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "upload.startBackgroundUpload" }, "result": { "$ref": "#/$defs/uploadHandle" } } }] },
+    "uploadStatusSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "upload.getUploadStatus" }, "result": { "$ref": "#/$defs/uploadStatus" } } }] },
+    "pushRegisterSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "push.register" }, "result": { "type": "object", "required": ["platform", "pushToken"], "properties": { "platform": { "enum": ["ios", "android"] }, "pushToken": { "type": "string", "minLength": 16, "maxLength": 4096 }, "environment": { "enum": ["sandbox", "production"] } }, "additionalProperties": false } } }] },
+    "sharedFilesSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "share.getPendingSharedFiles" }, "result": { "type": "object", "required": ["files"], "properties": { "files": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/sharedFile" } } }, "additionalProperties": false } } }] },
+    "permissionStatusSuccess": { "allOf": [{ "$ref": "#/$defs/permissionSuccess" }, { "properties": { "method": { "const": "permissions.getStatus" } } }] }, "permissionRequestSuccess": { "allOf": [{ "$ref": "#/$defs/permissionSuccess" }, { "properties": { "method": { "const": "permissions.request" } } }] },
+    "permissionSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "result": { "type": "object", "required": ["name", "status"], "properties": { "name": { "$ref": "#/$defs/permissionName" }, "status": { "$ref": "#/$defs/permissionStatus" } }, "additionalProperties": false } } }] },
+    "scanQrSuccess": { "allOf": [{ "$ref": "#/$defs/successBase" }, { "properties": { "method": { "const": "camera.scanQr" }, "result": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "minLength": 1, "maxLength": 8192 } }, "additionalProperties": false } } }] },
+    "generateKeyError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "secureKey.generateDeviceKey" } } }] },
+    "signError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "secureKey.sign" } } }] },
+    "deleteKeyError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "secureKey.deleteDeviceKey" } } }] },
+    "startUploadError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "upload.startBackgroundUpload" } } }] },
+    "uploadStatusError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "upload.getUploadStatus" } } }] },
+    "cancelUploadError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "upload.cancelUpload" } } }] },
+    "pushRegisterError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "push.register" } } }] },
+    "pushUnregisterError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "push.unregister" } } }] },
+    "sharedFilesError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "share.getPendingSharedFiles" } } }] },
+    "permissionStatusError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "permissions.getStatus" } } }] },
+    "permissionRequestError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "permissions.request" } } }] },
+    "scanQrError": { "allOf": [{ "$ref": "#/$defs/errorBase" }, { "properties": { "method": { "const": "camera.scanQr" } } }] },
+    "uploadHandle": { "type": "object", "required": ["handle", "uploadId"], "properties": { "handle": { "type": "string", "pattern": "^nupl_" }, "uploadId": { "type": "string", "pattern": "^upl_" } }, "additionalProperties": false },
+    "uploadStatus": { "type": "object", "required": ["handle", "uploadId", "state", "bytesSent"], "properties": { "handle": { "type": "string", "pattern": "^nupl_" }, "uploadId": { "type": "string", "pattern": "^upl_" }, "state": { "enum": ["queued", "running", "paused", "completed", "failed", "cancelled"] }, "bytesSent": { "type": "integer", "minimum": 0 }, "totalBytes": { "type": "integer", "minimum": 0 }, "errorCode": { "$ref": "#/$defs/errorCode" } }, "additionalProperties": false },
+    "sharedFile": { "type": "object", "required": ["shareId", "name", "nativeFileHandle", "expiresAt"], "description": "The handle is issued by the secure native file registry for this app installation; no path or URI crosses the bridge. expiresAt is Unix time in milliseconds and is always present so Web cannot infer handle lifetime.", "properties": { "shareId": { "type": "string", "pattern": "^share_" }, "name": { "type": "string", "minLength": 1, "maxLength": 255 }, "mimeType": { "type": "string", "maxLength": 255 }, "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 524288000 }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "nativeFileHandle": { "type": "string", "pattern": "^nfh_[A-Za-z0-9_-]{32,256}$" }, "expiresAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "description": "Unix time in milliseconds." } }, "additionalProperties": false },
+    "errorCode": { "enum": ["MC-ERR-NATIVE-METHOD-UNSUPPORTED", "MC-ERR-NATIVE-PERMISSION-DENIED", "MC-ERR-NATIVE-KEY-INVALIDATED", "MC-ERR-NATIVE-KEYSTORE-UNAVAILABLE", "MC-ERR-NATIVE-SIGN-FAILED", "MC-ERR-NATIVE-UPLOAD-FAILED", "MC-ERR-NATIVE-UPLOAD-CANCELLED", "MC-ERR-NATIVE-TIMEOUT", "MC-ERR-UPLOAD-TOO-LARGE", "MC-ERR-PROTOCOL-INVALID"] },
+    "error": { "type": "object", "required": ["code", "recoverable", "messageKey"], "properties": { "code": { "$ref": "#/$defs/errorCode" }, "recoverable": { "type": "boolean" }, "messageKey": { "type": "string", "pattern": "^mobile\\." }, "details": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false },
+    "lifecycleEvent": { "oneOf": [
+      { "$ref": "#/$defs/foregroundEvent" }, { "$ref": "#/$defs/backgroundEvent" }, { "$ref": "#/$defs/networkEvent" }, { "$ref": "#/$defs/uploadProgressEvent" }, { "$ref": "#/$defs/pushOpenedEvent" }
+    ] },
+    "eventBase": { "type": "object", "required": ["version", "sequence", "timestamp", "type", "payload"], "properties": { "version": { "const": 1 }, "sequence": { "type": "integer", "minimum": 0 }, "timestamp": { "type": "integer", "minimum": 0 }, "type": { "type": "string" }, "payload": { "type": "object" }, "extensions": { "$ref": "#/$defs/extensions" } }, "additionalProperties": false },
+    "foregroundEvent": { "allOf": [{ "$ref": "#/$defs/eventBase" }, { "properties": { "type": { "const": "app.foreground" }, "payload": { "$ref": "#/$defs/empty" } } }] },
+    "backgroundEvent": { "allOf": [{ "$ref": "#/$defs/eventBase" }, { "properties": { "type": { "const": "app.background" }, "payload": { "$ref": "#/$defs/empty" } } }] },
+    "networkEvent": { "allOf": [{ "$ref": "#/$defs/eventBase" }, { "properties": { "type": { "const": "network.changed" }, "payload": { "type": "object", "required": ["online"], "properties": { "online": { "type": "boolean" }, "expensive": { "type": "boolean" }, "constrained": { "type": "boolean" } }, "additionalProperties": false } } }] },
+    "uploadProgressEvent": { "allOf": [{ "$ref": "#/$defs/eventBase" }, { "properties": { "type": { "const": "upload.progress" }, "payload": { "$ref": "#/$defs/uploadStatus" } } }] },
+    "pushOpenedEvent": { "allOf": [{ "$ref": "#/$defs/eventBase" }, { "properties": { "type": { "const": "push.opened" }, "payload": { "type": "object", "required": ["type", "correlationId"], "properties": { "type": { "enum": ["approval_required", "task_completed", "desktop_offline", "remote_control_revoked", "file_ready"] }, "remoteSessionId": { "type": "string", "pattern": "^rs_" }, "lilySessionId": { "type": "string", "minLength": 1 }, "artifactId": { "type": "string", "pattern": "^artifact_" }, "correlationId": { "type": "string", "pattern": "^corr_" } }, "additionalProperties": false } } }] }
   }
 }
