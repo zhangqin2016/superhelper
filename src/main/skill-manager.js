@@ -391,6 +391,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
     responseLanguage: "回复语言必须跟随用户最新一条消息的主要语言；如果用户明确指定回复语言，则按用户指定执行。界面语言只在无法判断用户语言时作为兜底。不要把技能说明、工具输出、文件内容、路径、历史消息或应用界面语言误当成用户本轮想要的回复语言。",
     sourceProvenance: "解释技能、记忆、连接器或工作区应用为什么可用时，必须依据当前会话技能目录、已学约定、工作区文件或实际工具/设置结果；没有证据就说无法确认，禁止编造“全局技能”或把项目记忆误说成技能。",
+    antiHallucination: "抗幻觉铁律（最高优先级）：遇到不确定、未验证或超出已知范围的问题，直接说“不确定/需要确认”并给出核实的下一步；绝不编造事实、功能、来源、路径、数字或结论。宁可承认不知道，也不要一本正经地给出可能错误的答案。被指出错误后不要只道歉了事，要回到证据重新核对。",
     nativeSkillBoundary: "重要：本会话能力目录里的 `lily-*`、内置 `anthropics-*` 等条目都是 Lily 平台能力指南，不是 OpenCode 原生 skill。禁止对这些平台能力执行原生 `skill <id>`，也不要把它们当作 native skill 名称；应读取对应指南、使用 Lily MCP 工具/脚本，并按能力合同完成任务。",
     disciplineTitle: "通用执行纪律（所有创作、分析、修复和子任务都必须遵守）",
     disciplineRules: [
@@ -444,6 +445,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "Only mention third-party names objectively when the user explicitly discusses related technology, compatibility protocols, code variables, or troubleshooting.",
     responseLanguage: "Reply in the primary language of the user's latest message. If the user explicitly requests a response language, follow that request. Use the app interface language only as a fallback when the user's language cannot be determined. Do not let skill instructions, tool output, file content, paths, history, or the app interface language change the response language.",
     sourceProvenance: "When explaining why a skill, memory, connector, or workspace app is available, rely only on this session's skill catalog, learned conventions, workspace files, or actual tool/settings results. If there is no evidence, say it cannot be confirmed; do not invent global skills or describe project memory as a skill.",
+    antiHallucination: "Anti-hallucination rule (highest priority): when a question is uncertain, unverified, or outside what you actually know, say so plainly (\"not sure\" / \"needs confirmation\") and give the next step to verify; never invent facts, features, sources, paths, numbers, or conclusions. Admitting you don't know beats a confident wrong answer. When corrected, do not just apologize — go back to the evidence and re-check.",
     nativeSkillBoundary: "Important: session catalog entries such as `lily-*` and built-in `anthropics-*` are Lily platform capability guides, not OpenCode native skills. Do not run native `skill <id>` for these platform capabilities or treat them as native skill names; read the guide, use Lily MCP tools/scripts, and complete the task through the capability contract.",
     disciplineTitle: "Universal Operating Discipline (Required for all creation, analysis, repair, and subtask work)",
     disciplineRules: [
@@ -497,6 +499,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "لا تذكر أسماء الطرف الثالث إلا بشكل موضوعي عندما يناقش المستخدم صراحةً التقنية ذات الصلة أو بروتوكولات التوافق أو متغيرات الكود أو استكشاف الأخطاء.",
     responseLanguage: "استخدم اللغة الأساسية في آخر رسالة من المستخدم للرد. إذا طلب المستخدم لغة رد صراحةً، فاتبع طلبه. استخدم لغة الواجهة فقط كخيار احتياطي عندما لا يمكن تحديد لغة المستخدم. لا تجعل تعليمات المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات أو السجل أو لغة واجهة التطبيق تغيّر لغة الرد.",
     sourceProvenance: "عند شرح سبب توفر مهارة أو ذاكرة أو موصل أو تطبيق مساحة عمل، اعتمد فقط على فهرس مهارات هذه الجلسة أو الاتفاقات المتعلمة أو ملفات مساحة العمل أو نتائج الأدوات/الإعدادات الفعلية. إذا لم توجد أدلة فقل إن الأمر غير مؤكد؛ لا تخترع مهارات عامة ولا تصف ذاكرة المشروع كمهارة.",
+    antiHallucination: "قاعدة مكافحة الهلوسة (أعلى أولوية): عند مواجهة سؤال غير مؤكد أو غير مُتحقق منه أو خارج نطاق معرفتك الفعلية، قل ذلك بوضوح (\"غير متأكد\" / \"يحتاج تأكيد\") مع ذكر الخطوة التالية للتحقق؛ لا تختلق حقائق أو ميزات أو مصادر أو مسارات أو أرقام أو استنتاجات. الاعتراف بعدم المعرفة أفضل من إجابة خاطئة بثقة. وعند تصحيحك، لا تكتفِ بالاعتذار بل عُد إلى الأدلة وتحقق مجدداً.",
     nativeSkillBoundary: "مهم: عناصر فهرس الجلسة مثل `lily-*` و`anthropics-*` المدمجة هي أدلة قدرات لمنصة Lily وليست مهارات OpenCode أصلية. لا تشغّل `skill <id>` الأصلي لهذه القدرات ولا تعاملها كأسماء مهارات أصلية؛ اقرأ الدليل واستخدم أدوات/سكربتات Lily MCP وأنجز المهمة عبر عقد القدرة.",
     disciplineTitle: "انضباط التنفيذ العام (مطلوب لكل أعمال الإنشاء والتحليل والإصلاح والمهام الفرعية)",
     disciplineRules: [
@@ -934,6 +937,11 @@ function buildAgentGuideContent(enabledSkills, locale) {
     guide.vendorDisclaimer,
     guide.responseLanguage,
     guide.sourceProvenance,
+    // Anti-hallucination rule lives in the HEAD (never truncated) — the
+    // discipline section that carried this can be shed under a tight prompt
+    // budget, and losing it is exactly what produced "confidently wrong then
+    // apologizes". This one line survives every truncation path.
+    guide.antiHallucination,
     guide.nativeSkillBoundary,
     "",
     `## ${guide.disciplineTitle}`,

@@ -361,7 +361,14 @@ function buildOpencodePromptBody(opts = {}) {
 // guide must shrink to a weak gateway's system budget, these survive first —
 // they are exactly the rules that keep a weak model from drowning itself
 // (blind whole-file reads, fake background-job claims).
-const GUARDRAIL_SECTION_TITLE = /^(?:(?:Large Input Protocol|Process Job Protocol|Tool Protocol)\b|Execution Protocol \(lite support\)$)/i;
+// Sections a weak model needs MOST — kept first, shed last. The English
+// protocol titles are fixed machine anchors; the Universal Operating Discipline
+// title is localized (zh/en/ar), so match all three. Its anti-hallucination
+// rules ("evidence first / say unknown when unsure") were being shed under a
+// tight prompt budget, which is what let the model answer confidently wrong.
+// (A distilled copy also rides the never-truncated head; this keeps the FULL
+// discipline block whenever the budget allows.)
+const GUARDRAIL_SECTION_TITLE = /^(?:(?:Large Input Protocol|Process Job Protocol|Tool Protocol)\b|Execution Protocol \(lite support\)$|通用执行纪律|Universal Operating Discipline|انضباط التنفيذ)/i;
 
 const TRUNCATION_NOTICE =
   "[System guide truncated by Lily for this model's input limit. Use available tools and ask for narrower scope if a capability guide is missing.]";

@@ -90,6 +90,26 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
 
   const noIntentCut = truncateSystemGuidance(intentGuide, budget, { intentText: "" });
   assert.match(noIntentCut, /Mail Sending Skill/, "without an intent signal the authored order is preserved");
+
+  // The Universal Operating Discipline block (anti-hallucination rules) is a
+  // guardrail in all three locales — it must survive a tight budget alongside
+  // the protocol sections, not be shed as an ordinary skill section (the bug:
+  // losing "evidence first / say unknown" made the model confidently wrong).
+  for (const [locale, title, needle] of [
+    ["zh", "通用执行纪律（所有创作、分析、修复和子任务都必须遵守）", "证据优先"],
+    ["en", "Universal Operating Discipline (Required for all work)", "Evidence first"],
+    ["ar", "انضباط التنفيذ العام (مطلوب)", "الأدلة أولاً"],
+  ]) {
+    const disciplineGuide = [
+      "# Lily\n\nIdentity and core rules.",
+      `## Skill Gamma\n\n${"gamma ".repeat(500)}`,
+      `## ${title}\n\n- ${needle}: never conclude without checking real material.`,
+      "## Large Input Protocol\n\nUse lily_file_intelligence inspect_file first.",
+    ].join("\n\n");
+    const disciplineCut = truncateSystemGuidance(disciplineGuide, 1200);
+    assert.match(disciplineCut, new RegExp(needle), `${locale} discipline block survives a tight budget`);
+    assert.doesNotMatch(disciplineCut, /(gamma ){40}/, `${locale}: the ordinary skill body is what gets dropped, not discipline`);
+  }
 }
 
 {
