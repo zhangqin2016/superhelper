@@ -72,12 +72,12 @@ function pendingChallenge(overrides = {}) {
 }
 
 {
-  // happy path: challenge consumed atomically, pending grant created
+  // happy path (desktop-vouched, NO mobile login): challenge consumed atomically,
+  // pending grant created with the DESKTOP user vouching, no mobile session, and
+  // a grant-scoped token minted for the phone.
   let grant = null;
   const res = await consumePairingChallenge({
     token: "mpt_fixed",
-    mobileUserId: "u1",
-    mobileSessionId: "sess_mobile",
     mobileDeviceId: "dmob",
     now: NOW,
     casConsumeChallenge: async (hash) => {
@@ -86,22 +86,32 @@ function pendingChallenge(overrides = {}) {
     },
     resolveDesktopLicense: async (dev) => (dev === "dtop" ? "lic1" : null),
     insertGrant: async (row) => { grant = row; },
+    issueGrantToken: ({ grantId, mobileDeviceId }) => `gt_${grantId}_${mobileDeviceId}`,
   });
   assert.equal(res.ok, true);
   assert.equal(grant.status, "pending_approval");
   assert.equal(grant.desktop_device_id, "dtop");
   assert.equal(grant.mobile_device_id, "dmob");
   assert.equal(grant.license_id, "lic1");
-  assert.equal(grant.account_session_id, "sess_mobile", "grant binds the MOBILE session");
+  assert.equal(grant.user_id, "u1", "grant.user_id is the DESKTOP (challenge) user who vouches");
+  assert.equal(grant.account_session_id, null, "no mobile session in the vouched model");
+  assert.equal(res.mobileToken, `gt_${grant.id}_dmob`, "a grant-scoped token is minted for the phone");
   assert.equal(
     new Date(grant.approval_expires_at).getTime() - NOW.getTime(),
     GRANT_APPROVAL_TTL_MS,
     "grant carries the 2-minute approval window",
   );
 
+  // missing device id / token → invalid
+  const invalid = await consumePairingChallenge({
+    token: "", mobileDeviceId: "dmob",
+    casConsumeChallenge: async () => { throw new Error("must not consume without a token"); },
+  });
+  assert.equal(invalid.code, "PAIRING_CONSUME_INVALID");
+
   // replay / expired / already-consumed: CAS returns null → rejected
   const replay = await consumePairingChallenge({
-    token: "mpt_fixed", mobileUserId: "u1", mobileSessionId: "s", mobileDeviceId: "dmob",
+    token: "mpt_fixed", mobileDeviceId: "dmob",
     casConsumeChallenge: async () => null,
     resolveDesktopLicense: async () => "lic1",
     insertGrant: async () => { throw new Error("must not insert on failed consume"); },
@@ -109,18 +119,9 @@ function pendingChallenge(overrides = {}) {
   assert.equal(replay.ok, false);
   assert.equal(replay.code, "PAIRING_CHALLENGE_INVALID_OR_EXPIRED", "a spent/expired challenge cannot pair");
 
-  // cross-account: challenge belongs to a different user
-  const crossAccount = await consumePairingChallenge({
-    token: "mpt_fixed", mobileUserId: "u2", mobileSessionId: "s", mobileDeviceId: "dmob",
-    casConsumeChallenge: async () => pendingChallenge({ user_id: "u1" }),
-    resolveDesktopLicense: async () => "lic1",
-    insertGrant: async () => { throw new Error("must not insert cross-account"); },
-  });
-  assert.equal(crossAccount.code, "PAIRING_ACCOUNT_MISMATCH", "a stranger's session cannot claim the challenge");
-
   // self-pair: mobile device == desktop device
   const selfPair = await consumePairingChallenge({
-    token: "mpt_fixed", mobileUserId: "u1", mobileSessionId: "s", mobileDeviceId: "dtop",
+    token: "mpt_fixed", mobileDeviceId: "dtop",
     casConsumeChallenge: async () => pendingChallenge(),
     resolveDesktopLicense: async () => "lic1",
     insertGrant: async () => { throw new Error("must not self-pair"); },
@@ -129,7 +130,7 @@ function pendingChallenge(overrides = {}) {
 
   // license unresolved
   const noLicense = await consumePairingChallenge({
-    token: "mpt_fixed", mobileUserId: "u1", mobileSessionId: "s", mobileDeviceId: "dmob",
+    token: "mpt_fixed", mobileDeviceId: "dmob",
     casConsumeChallenge: async () => pendingChallenge(),
     resolveDesktopLicense: async () => null,
     insertGrant: async () => { throw new Error("must not insert without license"); },
@@ -138,7 +139,7 @@ function pendingChallenge(overrides = {}) {
 
   // live-pair conflict: insert hits the partial unique
   const dup = await consumePairingChallenge({
-    token: "mpt_fixed", mobileUserId: "u1", mobileSessionId: "s", mobileDeviceId: "dmob",
+    token: "mpt_fixed", mobileDeviceId: "dmob",
     casConsumeChallenge: async () => pendingChallenge(),
     resolveDesktopLicense: async () => "lic1",
     insertGrant: async () => { const e = new Error("dup"); e.code = "23505"; e.constraint = "mobile_pairing_grants_live_pair_uk"; throw e; },

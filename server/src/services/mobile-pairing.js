@@ -73,9 +73,12 @@ export async function createPairingChallenge({
 }
 
 /**
- * Mobile consumes a challenge and creates a pending_approval grant. The
- * mobile identity (userId/sessionId/deviceId) comes from the mobile's own
- * authenticated account session; the challenge supplies the desktop side.
+ * Mobile consumes a challenge and creates a pending_approval grant. Desktop-
+ * vouched model: the phone presents only a browser device id (no account login).
+ * The grant's user_id is the DESKTOP (challenge) user, who vouches for the phone
+ * by approving; security rests on the one-time QR token (proximity) + that human
+ * approval. The phone gets a grant-scoped token (issued by the route layer via
+ * `issueGrantToken`) whose only power is to connect the relay for this grant.
  *
  * - `casConsumeChallenge(tokenHash, now)` must atomically flip the row from
  *   pending→consumed and return the consumed row (or null if it was not an
@@ -84,27 +87,23 @@ export async function createPairingChallenge({
  *   desktop device (grant's license composite FK).
  * - `insertGrant(row)` inserts the pending grant; a live-pair unique violation
  *   surfaces as code PAIRING_ALREADY_LIVE.
+ * - `issueGrantToken({ grantId, mobileDeviceId })` mints the grant-scoped token
+ *   returned to the phone (optional; omitted in tests that don't assert it).
  */
 export async function consumePairingChallenge({
   token,
-  mobileUserId,
-  mobileSessionId,
   mobileDeviceId,
   now = new Date(),
   casConsumeChallenge,
   resolveDesktopLicense,
   insertGrant,
+  issueGrantToken,
 }) {
-  if (!token || !mobileUserId || !mobileSessionId || !mobileDeviceId) {
+  if (!token || !mobileDeviceId) {
     return { ok: false, code: "PAIRING_CONSUME_INVALID" };
   }
   const challenge = await casConsumeChallenge(hashPairingToken(token), now);
   if (!challenge) return { ok: false, code: "PAIRING_CHALLENGE_INVALID_OR_EXPIRED" };
-  // Same account only: the challenge and the consuming mobile session must
-  // belong to the same user (contract line 68).
-  if (challenge.user_id !== mobileUserId) {
-    return { ok: false, code: "PAIRING_ACCOUNT_MISMATCH" };
-  }
   if (challenge.desktop_device_id === mobileDeviceId) {
     return { ok: false, code: "PAIRING_SELF_PAIR" };
   }
@@ -116,8 +115,8 @@ export async function consumePairingChallenge({
   try {
     await insertGrant({
       id: grantId,
-      user_id: mobileUserId,
-      account_session_id: mobileSessionId,
+      user_id: challenge.user_id, // the desktop user vouches for this phone
+      account_session_id: null, // no mobile session in the vouched model
       desktop_device_id: challenge.desktop_device_id,
       mobile_device_id: mobileDeviceId,
       license_id: licenseId,
@@ -129,9 +128,13 @@ export async function consumePairingChallenge({
     if (isLivePairConflict(err)) return { ok: false, code: "PAIRING_ALREADY_LIVE" };
     throw err;
   }
+  const mobileToken = typeof issueGrantToken === "function"
+    ? issueGrantToken({ grantId, mobileDeviceId })
+    : "";
   return {
     ok: true,
     grantId,
+    mobileToken,
     desktopDeviceId: challenge.desktop_device_id,
     approvalExpiresAt: approvalExpiresAt.toISOString(),
   };

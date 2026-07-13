@@ -1,17 +1,17 @@
 "use client";
 
-// Mobile Command — phone pairing + command page (Phase 1).
+// Mobile Command — phone pairing + command page (desktop-vouched model).
 //
-// A phone opens this page, logs in (SMS), pastes/opens the pairing code the
-// desktop shows, and sends tasks into the desktop's active Lily session. Auth
-// is the account device-flow (browser device id + bearer access token) — the
-// consume + relay endpoints accept the account token (see accountGuard on the
-// server); no native device signature is required.
+// A phone scans the QR the desktop shows and can immediately send tasks into the
+// desktop's active Lily session — NO login. The phone presents only a browser
+// device id; it consumes the one-time QR token and receives a grant-scoped token
+// whose only power is to relay for that one grant. Security is the QR possession
+// (proximity) + the desktop user's explicit approval. This is what lets it work
+// abroad, where the phone can't receive an SMS code.
 //
-// LIVE-VALIDATION PENDING: this flow (SMS login → consume → relay connect on
-// approval → command send) must be validated against a running server + phone;
-// the pieces are structurally guarded by scripts/test-mobile-pair-web.mjs but
-// the on-device round-trip is not yet exercised.
+// LIVE-VALIDATION PENDING: the on-device round-trip (scan → desktop approve →
+// send) is exercised server-side by server/scripts/mobile-command-e2e.mjs; the
+// page structure is guarded by scripts/test-mobile-pair-web.mjs.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -34,8 +34,8 @@ function pageOrigin() {
 
 function parsePairingCode(raw) {
   // Desktop shows `${serverUrl}#${token}` for manual paste. Accept that, or a
-  // bare token — in which case the API base is this page's own origin (the
-  // scan deep link lands here, served from the API server).
+  // bare token — in which case the API base is this page's own origin (the scan
+  // deep link lands here, served from the API server).
   const text = String(raw || "").trim();
   const hashAt = text.lastIndexOf("#");
   if (hashAt > 0) return { url: text.slice(0, hashAt).replace(/\/+$/, ""), token: text.slice(hashAt + 1) };
@@ -61,61 +61,27 @@ function wsOrigin(httpUrl) {
 
 export default function MobilePairPage() {
   const [deviceId, setDeviceId] = useState("");
-  const [phone, setPhone] = useState("");
-  const [smsCode, setSmsCode] = useState("");
-  const [accessToken, setAccessToken] = useState("");
   const [codeInput, setCodeInput] = useState("");
-  const [status, setStatus] = useState("idle"); // idle|logging|consuming|waiting|connected|error
+  const [status, setStatus] = useState("idle"); // idle|consuming|waiting|connected|error
   const [message, setMessage] = useState("");
   const [task, setTask] = useState("");
   const [log, setLog] = useState([]);
   const wsRef = useRef(null);
-  const grantRef = useRef({ url: "", token: "", grantId: "" });
+  const grantRef = useRef({ url: "", grantId: "" });
+  const autoPairedRef = useRef(false);
 
-  useEffect(() => {
-    setDeviceId(ensureDeviceId());
-    // A scanned QR lands here with the API base + token in the fragment: prefill
-    // the code so the only manual step left is the one-time same-account login.
-    if (typeof window !== "undefined" && window.location.hash.length > 1) {
-      const scanned = parseScanHash(window.location.hash);
-      if (scanned) setCodeInput(`${scanned.url}#${scanned.token}`);
-      else setCodeInput(decodeURIComponent(window.location.hash.slice(1)));
-    }
-    return () => { try { wsRef.current?.close(); } catch { /* noop */ } };
-  }, []);
-
-  const post = useCallback(async (base, path, body, token) => {
+  const post = useCallback(async (base, path, body) => {
     const res = await fetch(`${base}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     const json = await res.json().catch(() => ({}));
     return { ok: res.ok && json?.ok !== false, json, status: res.status };
   }, []);
 
-  const sendSms = useCallback(async () => {
-    const { url } = parsePairingCode(codeInput);
-    if (!url) { setMessage("请先粘贴桌面显示的配对码（包含服务器地址）"); return; }
-    setStatus("logging");
-    const r = await post(url, "/api/auth/sms/send", { phone: phone.trim(), purpose: "login", deviceId });
-    setMessage(r.ok ? "验证码已发送" : `发送失败：${r.json?.code || r.status}`);
-  }, [codeInput, phone, deviceId, post]);
-
-  const login = useCallback(async () => {
-    const { url } = parsePairingCode(codeInput);
-    if (!url) { setMessage("请先粘贴配对码"); return; }
-    setStatus("logging");
-    await post(url, "/api/devices/register", { deviceId });
-    const r = await post(url, "/api/auth/sms/login", { deviceId, phone: phone.trim(), code: smsCode.trim() });
-    if (!r.ok || !r.json?.accessToken) { setStatus("error"); setMessage(`登录失败：${r.json?.code || r.status}`); return; }
-    setAccessToken(r.json.accessToken);
-    setStatus("idle");
-    setMessage("登录成功，可以配对了");
-  }, [codeInput, phone, smsCode, deviceId, post]);
-
-  const connectRelay = useCallback((base, grantId, token) => {
-    const url = `${wsOrigin(base)}/api/mobile/relay?role=mobile&grantId=${encodeURIComponent(grantId)}&deviceId=${encodeURIComponent(deviceId)}&token=${encodeURIComponent(token)}`;
+  const connectRelay = useCallback((base, grantId, mobileToken) => {
+    const url = `${wsOrigin(base)}/api/mobile/relay?role=mobile&grantId=${encodeURIComponent(grantId)}&deviceId=${encodeURIComponent(deviceId)}&token=${encodeURIComponent(mobileToken)}`;
     let attempts = 0;
     const tryOnce = () => {
       const ws = new WebSocket(url);
@@ -130,7 +96,7 @@ export default function MobilePairPage() {
       };
       ws.onclose = () => {
         // Before approval the relay refuses (grant not active): retry a few times.
-        if (wsRef.current === ws && attempts < 20 && grantRef.current.grantId === grantId) {
+        if (wsRef.current === ws && attempts < 30 && grantRef.current.grantId === grantId) {
           attempts += 1;
           setStatus("waiting");
           setTimeout(tryOnce, 2000);
@@ -141,18 +107,47 @@ export default function MobilePairPage() {
     tryOnce();
   }, [deviceId]);
 
-  const pair = useCallback(async () => {
-    if (!accessToken) { setMessage("请先登录"); return; }
-    const { url, token } = parsePairingCode(codeInput);
-    if (!url || !token) { setMessage("配对码无效"); return; }
+  const pair = useCallback(async (rawCode) => {
+    const { url, token } = parsePairingCode(rawCode ?? codeInput);
+    if (!url || !token) { setMessage("配对码无效，请扫码或粘贴桌面显示的配对码"); return; }
     setStatus("consuming");
-    const r = await post(url, "/api/mobile/pairing/consume", { deviceId, token }, accessToken);
-    if (!r.ok || !r.json?.grantId) { setStatus("error"); setMessage(`配对失败：${r.json?.code || r.status}`); return; }
-    grantRef.current = { url, token, grantId: r.json.grantId };
+    setMessage("正在配对…");
+    // No login: consume with just this browser's device id + the one-time token.
+    const r = await post(url, "/api/mobile/pairing/consume", { deviceId, token });
+    if (!r.ok || !r.json?.grantId || !r.json?.mobileToken) {
+      setStatus("error");
+      setMessage(`配对失败：${r.json?.code || r.status}`);
+      return;
+    }
+    grantRef.current = { url, grantId: r.json.grantId };
     setStatus("waiting");
     setMessage("已提交配对请求，请在桌面上点击“批准”…");
-    connectRelay(url, r.json.grantId, accessToken);
-  }, [accessToken, codeInput, deviceId, post, connectRelay]);
+    connectRelay(url, r.json.grantId, r.json.mobileToken);
+  }, [codeInput, deviceId, post, connectRelay]);
+
+  useEffect(() => {
+    const id = ensureDeviceId();
+    setDeviceId(id);
+    // A scanned QR lands here with the API base + token in the fragment.
+    if (typeof window !== "undefined" && window.location.hash.length > 1) {
+      const scanned = parseScanHash(window.location.hash);
+      if (scanned) setCodeInput(`${scanned.url}#${scanned.token}`);
+      else setCodeInput(decodeURIComponent(window.location.hash.slice(1)));
+    }
+    return () => { try { wsRef.current?.close(); } catch { /* noop */ } };
+  }, []);
+
+  // Auto-pair once when opened via a scanned deep link — scanning is the whole
+  // interaction; the only remaining step is the desktop tapping “批准”.
+  useEffect(() => {
+    if (autoPairedRef.current || !deviceId || status !== "idle") return;
+    if (typeof window === "undefined") return;
+    const scanned = parseScanHash(window.location.hash);
+    if (scanned) {
+      autoPairedRef.current = true;
+      pair(`${scanned.url}#${scanned.token}`);
+    }
+  }, [deviceId, status, pair]);
 
   const sendTask = useCallback(() => {
     const ws = wsRef.current;
@@ -174,23 +169,15 @@ export default function MobilePairPage() {
   return (
     <section className="mx-auto max-w-md p-4">
       <h1 className="text-xl font-semibold">手机控制桌面</h1>
-      <p className="mt-1 text-sm text-slate-500">在桌面「设置 → 手机控制」生成配对码，粘贴到下方完成配对。</p>
+      <p className="mt-1 text-sm text-slate-500">用手机相机扫描桌面「设置 → 手机控制」里的二维码；扫码后在桌面点“批准”即可，无需登录。</p>
       {message ? <p className="mt-3 rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">{message}</p> : null}
 
-      <label className="mt-4 block text-sm font-medium">配对码</label>
-      <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="粘贴桌面显示的配对码" />
-
-      {!accessToken ? (
-        <div className="mt-4 space-y-2">
-          <input className="w-full rounded border border-slate-300 px-3 py-2 text-sm" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="手机号" />
-          <div className="flex gap-2">
-            <input className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm" value={smsCode} onChange={(e) => setSmsCode(e.target.value)} placeholder="验证码" />
-            <button type="button" className="rounded bg-slate-200 px-3 py-2 text-sm" onClick={sendSms}>发送验证码</button>
-          </div>
-          <button type="button" className="w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={login}>登录</button>
-        </div>
-      ) : (
-        <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={pair} disabled={status === "consuming"}>配对并连接</button>
+      {status === "connected" ? null : (
+        <>
+          <label className="mt-4 block text-sm font-medium">配对码（扫不了码时手动粘贴）</label>
+          <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="粘贴桌面显示的配对码" />
+          <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => pair()} disabled={status === "consuming"}>配对并连接</button>
+        </>
       )}
 
       {status === "connected" ? (

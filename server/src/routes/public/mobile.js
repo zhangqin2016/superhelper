@@ -7,6 +7,7 @@ import {
   validLicenseScope,
 } from "../../services/device-identity.js";
 import { requireAccountSession } from "../../services/account-session-guard.js";
+import { createGrantToken } from "../../services/mobile-grant-token.js";
 import {
   createPairingChallenge,
   consumePairingChallenge,
@@ -43,16 +44,16 @@ export function registerPublicMobileRoutes(app) {
     return requireAccountSession(request, reply, input);
   }
 
-  // Mobile-side (Phase 1): account token only, no per-request device signature.
-  // The mobile client is a WEB page that cannot hold a native ed25519 device
-  // key. Pairing security here rests on three controls: the 256-bit one-time QR
-  // token (proximity/possession), the SAME-account session (consume requires
-  // challenge.user_id === caller), and explicit desktop approval (human gate).
-  // Per-request device signature is defense-in-depth deferred to a native shell.
-  // Desktop-side endpoints (challenge/approve/deny/pending) keep bothGuards.
-  async function accountGuard(request, reply, input) {
+  // Mobile-side consume: NO login at all (desktop-vouched model). The phone is a
+  // web page that can't hold a native key and — abroad — can't receive an SMS
+  // code. It presents only a browser device id. Security rests on: the 256-bit
+  // one-time QR token (proximity/possession), the desktop user's explicit
+  // approval (human gate), and a grant-scoped token whose only power is to relay
+  // for that one approved grant. Desktop-side endpoints (challenge/approve/deny/
+  // pending) keep bothGuards (the desktop IS authenticated and vouches).
+  async function deviceOnly(request, reply, input) {
     await upsertDevice(input);
-    return requireAccountSession(request, reply, input);
+    return true;
   }
 
   app.post(
@@ -87,19 +88,16 @@ export function registerPublicMobileRoutes(app) {
         tags: ["public:mobile"],
         summary: "Mobile consumes a challenge and requests pairing approval",
         body: zodBody(consumeSchema),
-        response: { 200: okResponse({ grantId: { type: "string" }, desktopDeviceId: { type: "string" }, approvalExpiresAt: { type: "string" } }) },
+        response: { 200: okResponse({ grantId: { type: "string" }, mobileToken: { type: "string" }, desktopDeviceId: { type: "string" }, approvalExpiresAt: { type: "string" } }) },
       },
     },
     async (request, reply) => {
       const input = consumeSchema.parse(request.body);
-      // Mobile web client: account-token auth (see accountGuard rationale).
-      const account = await accountGuard(request, reply, input);
-      if (!account) return;
+      // Desktop-vouched: only register the phone's device row; no login.
+      if (!(await deviceOnly(request, reply, input))) return;
       const result = await consumePairingChallenge({
         token: input.token,
-        mobileUserId: account.userId,
-        mobileSessionId: account.sessionId,
-        mobileDeviceId: account.deviceId,
+        mobileDeviceId: input.deviceId,
         casConsumeChallenge: (tokenHash, now) => db.transaction().execute((trx) => trx
           .updateTable("mobile_pairing_challenges")
           .set({ status: "consumed", consumed_at: now.toISOString() })
@@ -110,9 +108,10 @@ export function registerPublicMobileRoutes(app) {
           .executeTakeFirst()),
         resolveDesktopLicense: async (deviceId) => (await validLicenseScope({ deviceId })) || null,
         insertGrant: (row) => db.insertInto("mobile_pairing_grants").values(row).execute(),
+        issueGrantToken: ({ grantId, mobileDeviceId }) => createGrantToken({ grantId, mobileDeviceId }),
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
-      return reply.send({ ok: true, grantId: result.grantId, desktopDeviceId: result.desktopDeviceId, approvalExpiresAt: result.approvalExpiresAt });
+      return reply.send({ ok: true, grantId: result.grantId, mobileToken: result.mobileToken, desktopDeviceId: result.desktopDeviceId, approvalExpiresAt: result.approvalExpiresAt });
     },
   );
 

@@ -124,26 +124,20 @@ try {
   });
   assert.equal(activate.statusCode, 200, "desktop device activated");
 
-  // Mobile device only needs a row (account-guarded, no device signature).
+  // Desktop-vouched model: the phone has NO account/session. Register only its
+  // device row; it gets a grant-scoped token from consume, not a login.
   const regMobile = await app.inject({ method: "POST", url: "/api/devices/register", payload: { deviceId: mobileDeviceId, fingerprintHash: "e2e-mob", platform: "ios", arch: "arm64", appVersion: "0.0.0" } });
   assert.equal(regMobile.statusCode, 200, "mobile device registered");
 
-  // --- One account, two sessions (desktop + mobile) — pairing requires the
-  // same user on both sides. ---
+  // --- Desktop account + session (the desktop is the authenticated side). ---
   const userId = `usr_e2e_${runId}`;
   await pool.query("insert into users (id, phone_e164, status, last_login_at) values ($1, $2, 'active', now())", [userId, `+86139${String(runId).slice(-8)}`]);
   const desktopSessionId = `sess_desktop_${runId}`;
-  const mobileSessionId = `sess_mobile_${runId}`;
   await pool.query(
     "insert into user_sessions (id, user_id, device_id, refresh_token_hash, expires_at, last_seen_at) values ($1, $2, $3, $4, now() + interval '7 days', now())",
     [desktopSessionId, userId, desktopDeviceId, hashRefreshToken(`e2e_d_${runId}`)],
   );
-  await pool.query(
-    "insert into user_sessions (id, user_id, device_id, refresh_token_hash, expires_at, last_seen_at) values ($1, $2, $3, $4, now() + interval '7 days', now())",
-    [mobileSessionId, userId, mobileDeviceId, hashRefreshToken(`e2e_m_${runId}`)],
-  );
   const desktopToken = createAccessToken({ userId, sessionId: desktopSessionId, deviceId: desktopDeviceId, scopes: ["account"] });
-  const mobileToken = createAccessToken({ userId, sessionId: mobileSessionId, deviceId: mobileDeviceId, scopes: ["account"] });
 
   const desktopBody = (extra) => ({ deviceId: desktopDeviceId, ...extra });
   const desktopPost = (pathname, body) => app.inject({
@@ -158,15 +152,17 @@ try {
   const pairingToken = challenge.json().token;
   assert.ok(pairingToken && pairingToken.length >= 10, "challenge returns a token");
 
-  // --- 2. Mobile consumes it (account token only, no device signature). ---
+  // --- 2. Mobile consumes it with NO login — just its device id + the token.
+  // The response carries a grant-scoped token that is the phone's only credential. ---
   const consume = await app.inject({
     method: "POST", url: "/api/mobile/pairing/consume",
-    headers: { Authorization: `Bearer ${mobileToken}` },
     payload: { deviceId: mobileDeviceId, token: pairingToken },
   });
   assert.equal(consume.statusCode, 200, `consume ok: ${consume.body}`);
   const grantId = consume.json().grantId;
+  const mobileToken = consume.json().mobileToken;
   assert.ok(grantId, "consume returns a pending grant id");
+  assert.ok(mobileToken && mobileToken.startsWith("lily_mgrant_"), "consume returns a grant-scoped token (no login)");
 
   // --- 3. Desktop sees the pending request. ---
   const pending = await desktopPost("/api/mobile/pairing/pending", desktopBody({}));
