@@ -82,6 +82,15 @@ function createMobilePairingManager({
       };
     },
 
+    /** List live pairings (pending + active) for this desktop, for management. */
+    async listDevices() {
+      const res = await authedPost("/api/mobile/pairing/list", {});
+      if (!res?.ok || !res.json?.ok) {
+        return { ok: false, code: res?.json?.code || res?.code || res?.error || "PAIRING_LIST_FAILED" };
+      }
+      return { ok: true, grants: Array.isArray(res.json.grants) ? res.json.grants : [] };
+    },
+
     /** Poll for mobiles that consumed a challenge and await approval. */
     async pollPending() {
       const res = await authedPost("/api/mobile/pairing/pending", {});

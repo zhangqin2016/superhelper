@@ -201,6 +201,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   mobilePairingCreateChallenge: () => ipcRenderer.invoke("mobile-pairing:create-challenge"),
   mobilePairingPollPending: () => ipcRenderer.invoke("mobile-pairing:poll-pending"),
+  mobilePairingListDevices: () => ipcRenderer.invoke("mobile-pairing:list-devices"),
   mobilePairingApprove: (grantId) => ipcRenderer.invoke("mobile-pairing:approve", grantId),
   mobilePairingDeny: (grantId) => ipcRenderer.invoke("mobile-pairing:deny", grantId),
   mobilePairingRevoke: (payload) => ipcRenderer.invoke("mobile-pairing:revoke", payload),

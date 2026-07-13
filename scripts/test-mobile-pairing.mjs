@@ -16,6 +16,8 @@ const {
   revokePairingGrant,
   listPendingGrants,
   shapePendingGrant,
+  listGrantsForDesktop,
+  shapeGrant,
   hashPairingToken,
   generatePairingToken,
   CHALLENGE_TTL_MS,
@@ -236,6 +238,32 @@ function pendingChallenge(overrides = {}) {
   assert.equal(res.grants[0].grantId, "mpg_1");
 
   const bad = await listPendingGrants({ desktopDeviceId: "", listPending: async () => { throw new Error("must not query"); } });
+  assert.equal(bad.ok, false, "missing desktop device is rejected");
+}
+
+// --- listGrantsForDesktop: desktop manages its paired phones -----------------
+{
+  const shaped = shapeGrant({ id: "mpg_9", mobile_device_id: "dmob", status: "active", approval_expires_at: "x", approved_at: "z", created_at: "y", user_id: "u1", license_id: "lic1" });
+  assert.deepEqual(
+    shaped,
+    { grantId: "mpg_9", mobileDeviceId: "dmob", status: "active", approvalExpiresAt: "x", approvedAt: "z", createdAt: "y" },
+    "the management view exposes status but no user_id/license_id",
+  );
+
+  let queriedDevice = null;
+  const res = await listGrantsForDesktop({
+    desktopDeviceId: "dtop",
+    listGrants: async (deviceId) => { queriedDevice = deviceId; return [
+      { id: "mpg_a", mobile_device_id: "d1", status: "active", created_at: "y" },
+      { id: "mpg_b", mobile_device_id: "d2", status: "pending_approval", created_at: "y" },
+    ]; },
+  });
+  assert.equal(res.ok, true);
+  assert.equal(queriedDevice, "dtop", "listing is scoped to the desktop's own device");
+  assert.equal(res.grants.length, 2, "returns both active and pending for management");
+  assert.equal(res.grants[0].status, "active");
+
+  const bad = await listGrantsForDesktop({ desktopDeviceId: "", listGrants: async () => { throw new Error("must not query"); } });
   assert.equal(bad.ok, false, "missing desktop device is rejected");
 }
 

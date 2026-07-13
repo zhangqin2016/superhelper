@@ -236,4 +236,27 @@ export async function listPendingGrants({ desktopDeviceId, now = new Date(), lis
   return { ok: true, grants: rows.map(shapePendingGrant) };
 }
 
+/** Shape a grant for the desktop's pairing-management list (status included). */
+export function shapeGrant(row) {
+  return {
+    grantId: row.id,
+    mobileDeviceId: row.mobile_device_id,
+    status: row.status,
+    approvalExpiresAt: row.approval_expires_at,
+    approvedAt: row.approved_at || null,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Desktop lists its live pairings (pending_approval + active) so the user can
+ * see and revoke paired phones. `listGrants(desktopDeviceId, nowIso)` returns
+ * the live rows for this desktop (expired pendings excluded).
+ */
+export async function listGrantsForDesktop({ desktopDeviceId, now = new Date(), listGrants }) {
+  if (!desktopDeviceId) return { ok: false, code: "PAIRING_LIST_INVALID" };
+  const rows = (await listGrants(desktopDeviceId, now.toISOString())) || [];
+  return { ok: true, grants: rows.map(shapeGrant) };
+}
+
 export { asTime };

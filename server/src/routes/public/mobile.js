@@ -15,6 +15,7 @@ import {
   denyPairingGrant,
   revokePairingGrant,
   listPendingGrants,
+  listGrantsForDesktop,
 } from "../../services/mobile-pairing.js";
 
 // Mobile Command Phase 1 pairing routes. Thin HTTP layer over the pure pairing
@@ -215,6 +216,30 @@ export function registerPublicMobileRoutes(app) {
           .where("status", "=", "pending_approval")
           .where("approval_expires_at", ">", nowIso)
           .orderBy("created_at", "asc")
+          .execute(),
+      });
+      if (!result.ok) return reply.code(400).send({ ok: false, code: result.code });
+      return reply.send({ ok: true, grants: result.grants });
+    },
+  );
+
+  app.post(
+    "/api/mobile/pairing/list",
+    { schema: { tags: ["public:mobile"], summary: "Desktop lists its live pairings (pending + active)", body: zodBody(challengeSchema), response: { 200: okResponse({ grants: { type: "array", items: { type: "object" } } }) } } },
+    async (request, reply) => {
+      const input = challengeSchema.parse(request.body);
+      const account = await bothGuards(request, reply, input);
+      if (!account) return;
+      const result = await listGrantsForDesktop({
+        desktopDeviceId: account.deviceId,
+        listGrants: (desktopDeviceId, nowIso) => db
+          .selectFrom("mobile_pairing_grants")
+          .selectAll()
+          .where("desktop_device_id", "=", desktopDeviceId)
+          .where("status", "in", ["pending_approval", "active"])
+          // active pairings never expire; only drop stale pendings.
+          .where((eb) => eb.or([eb("status", "=", "active"), eb("approval_expires_at", ">", nowIso)]))
+          .orderBy("created_at", "desc")
           .execute(),
       });
       if (!result.ok) return reply.code(400).send({ ok: false, code: result.code });

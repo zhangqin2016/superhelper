@@ -70,6 +70,7 @@ async function decide(kind, grantId, btn) {
     if (kind === "approve") {
       showToast(t("settings.mobilePairApproved"), "success");
       await refreshBridgeStatus();
+      await refreshDevices();
     }
     await refreshPending();
   } catch {
@@ -82,6 +83,58 @@ async function decide(kind, grantId, btn) {
 async function refreshPending() {
   const res = await api().mobilePairingPollPending?.();
   if (res?.ok) renderPendingList(res.grants || []);
+}
+
+function renderDeviceList(grants = []) {
+  const host = $("mobilePairDeviceList");
+  if (!host) return;
+  host.replaceChildren();
+  const active = grants.filter((g) => g.status === "active");
+  if (!active.length) {
+    const empty = document.createElement("p");
+    empty.className = "settings-section-desc";
+    empty.textContent = t("settings.mobilePairNoPaired");
+    host.appendChild(empty);
+    return;
+  }
+  for (const g of active) {
+    const row = document.createElement("div");
+    row.className = "settings-memory-item";
+    const label = document.createElement("span");
+    label.className = "mobile-pair-pending-device";
+    label.textContent = t("settings.mobilePairDevice", { id: String(g.mobileDeviceId || "").slice(0, 12) });
+    const revoke = document.createElement("button");
+    revoke.type = "button";
+    revoke.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
+    revoke.textContent = t("settings.mobilePairRevoke");
+    revoke.addEventListener("click", () => void doRevoke(g.grantId, revoke));
+    const actions = document.createElement("div");
+    actions.className = "settings-memory-item-actions";
+    actions.append(revoke);
+    row.append(label, actions);
+    host.appendChild(row);
+  }
+}
+
+async function doRevoke(grantId, btn) {
+  if (!grantId) return;
+  btn.disabled = true;
+  try {
+    const res = await api().mobilePairingRevoke?.({ grantId, reason: "user_action" });
+    if (!res?.ok) { showToast(t("settings.mobilePairActionFailed"), "warning"); return; }
+    showToast(t("settings.mobilePairRevoked"), "success");
+    await refreshDevices();
+    await refreshBridgeStatus();
+  } catch {
+    showToast(t("settings.mobilePairActionFailed"), "warning");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function refreshDevices() {
+  const res = await api().mobilePairingListDevices?.();
+  if (res?.ok) renderDeviceList(res.grants || []);
 }
 
 async function refreshBridgeStatus() {
@@ -143,6 +196,7 @@ export function initMobilePairingSettings() {
 export function onMobilePairingPageShown() {
   if (!window.assistantClient?.mobilePairingPollPending) return;
   void refreshPending();
+  void refreshDevices();
   void refreshBridgeStatus();
   stopPolling();
   pollTimer = setInterval(() => { void refreshPending(); }, 3000);

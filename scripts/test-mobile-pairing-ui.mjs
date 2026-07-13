@@ -18,6 +18,7 @@ assert.match(index, /id="settingsPageMobile"/, "the mobile settings page section
 assert.match(index, /id="mobilePairStartBtn"/, "the generate-code button exists");
 assert.match(index, /id="mobilePairQr"/, "the scannable QR image host exists");
 assert.match(index, /id="mobilePairPendingList"/, "the pending list host exists");
+assert.match(index, /id="mobilePairDeviceList"/, "the paired-devices management host exists");
 
 const panel = read("src/renderer/modules/settings-panel.js");
 assert.match(panel, /"mobile"/, "mobile is a registered settings page");
@@ -28,7 +29,7 @@ const app = read("src/renderer/app.js");
 assert.match(app, /initMobilePairingSettings/, "app initializes the mobile pairing UI");
 
 const mod = read("src/renderer/modules/mobile-pairing-settings.js");
-for (const call of ["mobilePairingCreateChallenge", "mobilePairingPollPending", "mobilePairingApprove", "mobilePairingDeny", "mobilePairingStatus"]) {
+for (const call of ["mobilePairingCreateChallenge", "mobilePairingPollPending", "mobilePairingListDevices", "mobilePairingApprove", "mobilePairingDeny", "mobilePairingRevoke", "mobilePairingStatus"]) {
   assert.match(mod, new RegExp(call), `renderer calls preload ${call}`);
 }
 // Feature-off / kill-switch hides the nav entry instead of showing a dead page.
@@ -41,6 +42,7 @@ const keys = [
   "settings.mobilePairDevice", "settings.mobilePairApprove", "settings.mobilePairDeny",
   "settings.mobilePairApproved", "settings.mobilePairBridged", "settings.mobilePairLoginRequired",
   "settings.mobilePairChallengeFailed", "settings.mobilePairActionFailed",
+  "settings.mobilePairPaired", "settings.mobilePairNoPaired", "settings.mobilePairRevoke", "settings.mobilePairRevoked",
 ];
 for (const loc of ["zh-CN", "en", "ar"]) {
   const messages = JSON.parse(read(`src/renderer/i18n/locales/${loc}.json`));
