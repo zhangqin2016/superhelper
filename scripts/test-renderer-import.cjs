@@ -1381,6 +1381,53 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(liveScrollFollowLockResult);
+    const layoutScrollKeepsAutoFollowResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { isUserScrollDetached, scrollToBottom } = await import("./modules/dom.js");
+        const { syncCommittedMessages } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_layout_scroll_keeps_autofollow_regression";
+        const messages = Array.from({ length: 18 }, (_, index) => ({
+          id: "msg_layout_scroll_" + index,
+          role: index % 2 === 0 ? "user" : "assistant",
+          content: "layout scroll message " + index + "\\n" + "content line ".repeat(60),
+          timestamp: new Date(2026, 0, 1, 0, 0, index).toISOString(),
+        }));
+        store.set("activeSessionId", sessionId);
+        showSessionMessages(sessionId);
+        syncCommittedMessages(sessionId, messages);
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"]\`);
+        const ready = () => panel && panel.scrollHeight > panel.clientHeight + 500 && (panel.textContent || "").includes("layout scroll message 17");
+        for (let i = 0; i < 200 && !ready(); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+        if (!ready()) throw new Error("layout scroll fixture did not become scrollable");
+        scrollToBottom(true, panel);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (isUserScrollDetached(panel)) throw new Error("forced bottom should start attached");
+        const beforeTop = panel.scrollTop;
+        const lateBlock = document.createElement("div");
+        lateBlock.textContent = "late layout expansion";
+        lateBlock.style.height = "360px";
+        panel.querySelector(".runtime-messages")?.appendChild(lateBlock);
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        delete panel.dataset.programmaticScroll;
+        panel.dataset.lastScrollTop = String(beforeTop);
+        panel.dispatchEvent(new Event("scroll"));
+        if (isUserScrollDetached(panel)) {
+          throw new Error("layout-only scroll after forced bottom must not detach auto-follow");
+        }
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const maxTop = panel.scrollHeight - panel.clientHeight;
+        if (panel.scrollTop < maxTop - 80) {
+          throw new Error(\`layout-only growth should keep attached sessions at latest: top=\${panel.scrollTop} max=\${maxTop}\`);
+        }
+        return "layout-scroll-keeps-autofollow-regression: ok";
+      }
+    )()`);
+    console.log(layoutScrollKeepsAutoFollowResult);
     const multiSelectQuestionResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");

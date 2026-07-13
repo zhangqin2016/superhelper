@@ -20,7 +20,28 @@ function normalizeCountry(value = "") {
   return String(value || "").trim().toUpperCase();
 }
 
-export function smsRequestAllowedFromRegion(requestLike = {}) {
+function normalizePhone(value = "") {
+  const compact = String(value || "").trim().replace(/[\s()-]/g, "");
+  if (/^\+861[3-9]\d{9}$/.test(compact)) return compact;
+  if (/^1[3-9]\d{9}$/.test(compact)) return `+86${compact}`;
+  return "";
+}
+
+function smsRegionBypassPhones(env = process.env) {
+  return new Set(
+    String(env.SMS_REGION_BYPASS_PHONES || "")
+      .split(",")
+      .map(normalizePhone)
+      .filter(Boolean),
+  );
+}
+
+export function smsRequestAllowedFromRegion(requestLike = {}, options = {}) {
+  const phoneE164 = normalizePhone(options.phoneE164 || options.phone || requestLike.body?.phone);
+  if (phoneE164 && smsRegionBypassPhones(options.env).has(phoneE164)) {
+    return { ok: true, bypass: "phone" };
+  }
+
   const headers = requestLike.headers || {};
   const explicitRegion = normalizeRegion(firstHeader(headers, ["x-lily-region", "x-client-region"]));
   if (explicitRegion === "overseas") return { ok: false, code: "SMS_REGION_BLOCKED" };

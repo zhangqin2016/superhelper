@@ -10,7 +10,9 @@ const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 
 export function stripGeneratedMediaMarkers(text = "") {
   return String(text || "")
+    .replace(/(^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\2(?=\n|$)/g, (block) => block.replace(/</g, "\u0000"))
     .replace(/<generated_media\b[^>]*>[\s\S]*?<\/generated_media>/g, "")
+    .replace(/\u0000/g, "<")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

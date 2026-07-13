@@ -33,6 +33,10 @@ export {
   liveTurnFromRecord,
 } from "./turn-live-turn-adapter.js";
 
+function textOutsideMarkdownFences(text = "") {
+  return String(text || "").replace(/(^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\2(?=\n|$)/g, "\n");
+}
+
 export function buildTurnViewModel(liveTurn = {}, options = {}) {
   const sealed = Boolean(options.sealed ?? liveTurn.final);
   const articleClassFlags = {
@@ -50,7 +54,7 @@ export function buildTurnViewModel(liveTurn = {}, options = {}) {
   // file path against tool-derived blocks.
   try {
     const seen = new Set(hoistedMedia.map((block) => (block.files || []).map((file) => file.path).join("|") || JSON.stringify(block)));
-    for (const block of parseGeneratedMedia(rawAssistantText) || []) {
+    for (const block of parseGeneratedMedia(textOutsideMarkdownFences(rawAssistantText)) || []) {
       const key = (block.files || []).map((file) => file.path).join("|") || JSON.stringify(block);
       if (seen.has(key)) continue;
       seen.add(key);

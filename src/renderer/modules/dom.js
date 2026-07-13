@@ -1,6 +1,7 @@
 /** Shared DOM references and element factory functions. */
 
 import store from "./state.js";
+import { nextAutoFollowDetachedState } from "./scroll-geometry.js";
 
 export const $ = (id) => document.getElementById(id);
 
@@ -127,11 +128,19 @@ export function bindPanelScroll(panel) {
       const userScrolledUp = currentTop < previousTop - 1;
       const nearBottom = isNearBottom(panel);
       const hasUserScrollIntent = Number(panel.dataset[USER_SCROLL_INTENT_UNTIL] || 0) > Date.now();
-      if (hasUserScrollIntent || panel.dataset[PROGRAMMATIC_SCROLL] !== "1") {
-        setUserScrollDetached(panel, userScrolledUp || !nearBottom);
-        delete panel.dataset[USER_SCROLL_INTENT_UNTIL];
-      } else if (nearBottom) {
-        setUserScrollDetached(panel, false);
+      const programmaticScroll = panel.dataset[PROGRAMMATIC_SCROLL] === "1";
+      const wasDetached = isUserScrollDetached(panel);
+      const nextDetached = nextAutoFollowDetachedState({
+        previousDetached: wasDetached,
+        hasUserScrollIntent,
+        programmaticScroll,
+        userScrolledUp,
+        nearBottom,
+      });
+      setUserScrollDetached(panel, nextDetached);
+      if (hasUserScrollIntent) delete panel.dataset[USER_SCROLL_INTENT_UNTIL];
+      if (!nextDetached && !nearBottom && !hasUserScrollIntent && !programmaticScroll) {
+        scrollToBottomAfterLayout(panel, true);
       }
       panel.dataset.lastScrollTop = String(currentTop);
       updateScrollToBottomButton(panel);

@@ -47,6 +47,19 @@ export function revealScrollIntent(input = {}) {
   return { mode: "bottom" };
 }
 
+export function nextAutoFollowDetachedState(input = {}) {
+  const previousDetached = Boolean(input.previousDetached);
+  const hasUserScrollIntent = Boolean(input.hasUserScrollIntent);
+  const programmaticScroll = Boolean(input.programmaticScroll);
+  const userScrolledUp = Boolean(input.userScrolledUp);
+  const nearBottom = Boolean(input.nearBottom);
+
+  if (hasUserScrollIntent) return userScrolledUp || !nearBottom;
+  if (programmaticScroll) return nearBottom ? false : previousDetached;
+  if (nearBottom) return false;
+  return previousDetached;
+}
+
 export function elementScrollTargetTop(input = {}) {
   const panelTop = Number(input?.panelTop || 0);
   const elementTop = Number(input?.elementTop || 0);

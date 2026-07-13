@@ -123,15 +123,15 @@ export function registerPublicAuthRoutes(app) {
       },
     },
     async (request, reply) => {
-      const regionAllowed = smsRequestAllowedFromRegion(request);
+      const input = sendSmsSchema.parse(request.body);
+      const phoneE164 = normalizePhoneE164(input.phone);
+      const regionAllowed = smsRequestAllowedFromRegion(request, { phoneE164 });
       if (!regionAllowed.ok) {
         return reply.code(403).send({ ok: false, code: regionAllowed.code || "SMS_REGION_BLOCKED" });
       }
-      if (!clientFeatureEnabled(request, "accountLogin")) {
+      if (regionAllowed.bypass !== "phone" && !clientFeatureEnabled(request, "accountLogin")) {
         return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
       }
-      const input = sendSmsSchema.parse(request.body);
-      const phoneE164 = normalizePhoneE164(input.phone);
       if (!phoneE164) return reply.code(400).send({ ok: false, code: "INVALID_PHONE" });
 
       const active = await findActiveSmsCode(phoneE164, input.purpose);
@@ -193,12 +193,13 @@ export function registerPublicAuthRoutes(app) {
       },
     },
     async (request, reply) => {
-      if (!clientFeatureEnabled(request, "accountLogin")) {
-        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
-      }
       const input = loginSchema.parse(request.body);
       const phoneE164 = normalizePhoneE164(input.phone);
       if (!phoneE164) return reply.code(400).send({ ok: false, code: "INVALID_PHONE" });
+      const regionAllowed = smsRequestAllowedFromRegion(request, { phoneE164 });
+      if (regionAllowed.bypass !== "phone" && !clientFeatureEnabled(request, "accountLogin")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       await upsertDevice(input);
       await upsertDevicePublicKey(input);
 

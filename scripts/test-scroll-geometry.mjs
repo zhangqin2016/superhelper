@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   elementScrollTargetTop,
+  nextAutoFollowDetachedState,
   normalizeWheelDelta,
   revealScrollIntent,
   shouldLoadOlderOnScroll,
@@ -39,6 +40,40 @@ assert.equal(shouldMarkBoundaryGesture({ delta: 100, scrollTop: 1460, scrollHeig
 assert.deepEqual(revealScrollIntent({ savedScrollTop: 320, hasRenderedContent: true }), { mode: "restore", scrollTop: 320 }, "existing session restores saved scroll");
 assert.deepEqual(revealScrollIntent({ savedScrollTop: 320, hasRenderedContent: false }), { mode: "bottom" }, "empty session still opens at bottom");
 assert.deepEqual(revealScrollIntent({ savedScrollTop: null, hasRenderedContent: true }), { mode: "bottom" }, "first reveal opens at bottom");
+
+assert.equal(
+  nextAutoFollowDetachedState({
+    previousDetached: false,
+    hasUserScrollIntent: false,
+    programmaticScroll: false,
+    userScrolledUp: false,
+    nearBottom: false,
+  }),
+  false,
+  "layout-only scroll after auto-follow must not detach from latest",
+);
+assert.equal(
+  nextAutoFollowDetachedState({
+    previousDetached: false,
+    hasUserScrollIntent: true,
+    programmaticScroll: false,
+    userScrolledUp: true,
+    nearBottom: false,
+  }),
+  true,
+  "real upward user scroll detaches auto-follow",
+);
+assert.equal(
+  nextAutoFollowDetachedState({
+    previousDetached: true,
+    hasUserScrollIntent: false,
+    programmaticScroll: true,
+    userScrolledUp: false,
+    nearBottom: true,
+  }),
+  false,
+  "programmatic scroll to bottom reattaches auto-follow",
+);
 
 assert.equal(
   elementScrollTargetTop({
