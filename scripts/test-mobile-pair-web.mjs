@@ -45,4 +45,9 @@ assert.match(page, /\bt=/, "reads the token param from the scan hash");
 assert.match(page, /pageOrigin\(\)/, "falls back to the page origin as the API base when scanned");
 assert.match(page, /autoPairedRef/, "auto-pairs once when opened via a scanned deep link");
 
+// One-time token: never consume twice (StrictMode double-invoke / double tap).
+assert.match(page, /consumingRef/, "guards against a double consume of the one-time token");
+assert.match(page, /if \(consumingRef\.current\) return/, "pair() returns early if a consume is already in flight/done");
+assert.match(page, /PAIRING_CHALLENGE_INVALID_OR_EXPIRED/, "shows a clear message when the code expired/was used");
+
 console.log("mobile-pair-web: ok");

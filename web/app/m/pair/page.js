@@ -69,6 +69,12 @@ export default function MobilePairPage() {
   const wsRef = useRef(null);
   const grantRef = useRef({ url: "", grantId: "" });
   const autoPairedRef = useRef(false);
+  // The pairing token is ONE-TIME: consuming it twice makes the second call fail
+  // with PAIRING_CHALLENGE_INVALID_OR_EXPIRED. This guards against a double
+  // consume (dev StrictMode double-invoking the auto-pair effect, or a tap on
+  // the button after a scan already paired). Reset on a failed attempt so a
+  // fresh code can be retried.
+  const consumingRef = useRef(false);
 
   const post = useCallback(async (base, path, body) => {
     const res = await fetch(`${base}${path}`, {
@@ -108,15 +114,21 @@ export default function MobilePairPage() {
   }, [deviceId]);
 
   const pair = useCallback(async (rawCode) => {
+    if (consumingRef.current) return; // one-time token: never consume twice
     const { url, token } = parsePairingCode(rawCode ?? codeInput);
     if (!url || !token) { setMessage("配对码无效，请扫码或粘贴桌面显示的配对码"); return; }
+    consumingRef.current = true;
     setStatus("consuming");
     setMessage("正在配对…");
     // No login: consume with just this browser's device id + the one-time token.
     const r = await post(url, "/api/mobile/pairing/consume", { deviceId, token });
     if (!r.ok || !r.json?.grantId || !r.json?.mobileToken) {
+      consumingRef.current = false; // allow a retry with a fresh code
       setStatus("error");
-      setMessage(`配对失败：${r.json?.code || r.status}`);
+      const code = r.json?.code || r.status;
+      setMessage(code === "PAIRING_CHALLENGE_INVALID_OR_EXPIRED"
+        ? "配对码已过期或已被使用，请在桌面重新生成后再扫一次"
+        : `配对失败：${code}`);
       return;
     }
     grantRef.current = { url, grantId: r.json.grantId };
@@ -172,13 +184,13 @@ export default function MobilePairPage() {
       <p className="mt-1 text-sm text-slate-500">用手机相机扫描桌面「设置 → 手机控制」里的二维码；扫码后在桌面点“批准”即可，无需登录。</p>
       {message ? <p className="mt-3 rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">{message}</p> : null}
 
-      {status === "connected" ? null : (
+      {status === "idle" || status === "error" ? (
         <>
           <label className="mt-4 block text-sm font-medium">配对码（扫不了码时手动粘贴）</label>
           <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="粘贴桌面显示的配对码" />
-          <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => pair()} disabled={status === "consuming"}>配对并连接</button>
+          <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => pair()}>配对并连接</button>
         </>
-      )}
+      ) : null}
 
       {status === "connected" ? (
         <div className="mt-6">
