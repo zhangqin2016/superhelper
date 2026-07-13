@@ -28,8 +28,18 @@ function registerMobilePairingIpc(ctx) {
     getAccountToken: () => accountManager.accessTokenForService(),
     getDesktopDeviceId: () => getDeviceId(),
     getServerBaseUrl: () => getServiceSettings()?.apiBaseUrl || "",
-    // Delivered by the server in gateway mode (mirrors LILY_ASR_RELAY_URL).
-    getRelayUrl: () => String(resolveSettingsEnvValue("LILY_MOBILE_RELAY_URL") || "").trim(),
+    // Connect the relay to the SAME server the desktop uses for everything else,
+    // so an overseas desktop (talking to the Singapore edge) relays through that
+    // edge too — and lands on the same backend instance as the phone (which uses
+    // the QR's base). The server-delivered LILY_MOBILE_RELAY_URL is built from the
+    // static PUBLIC_BASE_URL (the China domain) and would send an abroad desktop
+    // straight at China, bypassing the proxy — so prefer our own service base and
+    // only fall back to the delivered env if it's somehow unavailable.
+    getRelayUrl: () => {
+      const apiBase = String(getServiceSettings()?.apiBaseUrl || "").trim();
+      if (apiBase) return `${apiBase.replace(/^http/, "ws")}/api/mobile/relay`;
+      return String(resolveSettingsEnvValue("LILY_MOBILE_RELAY_URL") || "").trim();
+    },
     // Render the scannable pairing link to a QR image (main process = Node, so
     // qrcode works without a renderer bundler). Fail-open: any failure returns
     // "" and the renderer falls back to the copy-paste text code.
