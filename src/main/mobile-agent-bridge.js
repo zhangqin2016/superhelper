@@ -29,14 +29,28 @@ function payloadHashFor(text, attachments) {
  * @returns {Promise<{reply: object|null}>} reply is the frame to send to mobile
  *   (or null when the frame is not a command we handle).
  */
-async function handleRelayCommandFrame(rawFrame, { admit, desktopDeviceId = "", lilySessionId = "" } = {}) {
+async function handleRelayCommandFrame(rawFrame, { admit, interrupt, desktopDeviceId = "", lilySessionId = "" } = {}) {
   let frame;
   try {
     frame = typeof rawFrame === "string" ? JSON.parse(rawFrame) : rawFrame;
   } catch {
     return { reply: { type: "relay.error", code: "COMMAND_FRAME_MALFORMED" } };
   }
-  if (!frame || frame.type !== "command") return { reply: null };
+  if (!frame) return { reply: null };
+
+  // Mobile "stop": interrupt the running turn through the controlled seam
+  // (never the runner directly). Fail-open — a failed interrupt just acks false.
+  if (frame.type === "interrupt") {
+    if (typeof interrupt !== "function") return { reply: { type: "interrupt.ack", ok: false, code: "INTERRUPT_UNAVAILABLE" } };
+    try {
+      const r = await interrupt({ turnId: String(frame.turnId || "") });
+      return { reply: { type: "interrupt.ack", ok: Boolean(r?.ok ?? true), turnId: frame.turnId || null } };
+    } catch (err) {
+      return { reply: { type: "interrupt.ack", ok: false, code: "INTERRUPT_ERROR", detail: String(err?.message || err) } };
+    }
+  }
+
+  if (frame.type !== "command") return { reply: null };
 
   const text = String(frame.text || "").slice(0, MAX_COMMAND_TEXT);
   const attachments = Array.isArray(frame.attachments) ? frame.attachments : [];
@@ -93,6 +107,7 @@ function createMobileAgentBridge({
   grantId,
   desktopDeviceId,
   admit,
+  interrupt,
   WebSocketCtor = globalThis.WebSocket,
   reconnectDelayMs = 3000,
   log = { info() {}, warn() {} },
@@ -116,7 +131,7 @@ function createMobileAgentBridge({
     }
     ws.onopen = () => log.info("mobile bridge connected: grant=%s", grantId);
     ws.onmessage = async (event) => {
-      const { reply } = await handleRelayCommandFrame(event?.data, { admit, desktopDeviceId });
+      const { reply } = await handleRelayCommandFrame(event?.data, { admit, interrupt, desktopDeviceId });
       if (reply && ws && ws.readyState === (WebSocketCtor.OPEN ?? 1)) {
         try { ws.send(JSON.stringify(reply)); } catch { /* best effort */ }
       }

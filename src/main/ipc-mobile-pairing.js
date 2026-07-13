@@ -65,6 +65,18 @@ function registerMobilePairingIpc(ctx) {
         } catch { /* fall back to the envelope's target */ }
         return ctx.turnOrchestrator.admitExternalCommand({ ...envelope, lilySessionId });
       },
+      // Mobile "stop": interrupt the running turn in the foreground session via
+      // the controlled seam (keeps the queue; only the current turn stops).
+      interrupt: () => {
+        try {
+          const active = ctx.sessionManager?.getActive?.();
+          if (!active?.id) return { ok: false, code: "NO_ACTIVE_SESSION" };
+          return ctx.turnOrchestrator.interrupt(active.id, { clearQueue: false });
+        } catch (err) {
+          log.warn("mobile interrupt failed: %s", err?.message || err);
+          return { ok: false, code: "INTERRUPT_ERROR" };
+        }
+      },
     }),
     log,
   });

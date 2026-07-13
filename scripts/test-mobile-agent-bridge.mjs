@@ -73,6 +73,31 @@ const {
   assert.equal(reply.code, "COMMAND_ADMISSION_ERROR");
 }
 
+// --- interrupt frame routes to the controlled interrupt seam ----------------
+{
+  let interrupted = false;
+  const { reply } = await handleRelayCommandFrame(
+    { type: "interrupt", turnId: "t9" },
+    { admit: async () => { throw new Error("must not admit"); }, interrupt: async () => { interrupted = true; return { ok: true }; } },
+  );
+  assert.equal(interrupted, true, "interrupt frame calls the interrupt seam, not admit");
+  assert.equal(reply.type, "interrupt.ack");
+  assert.equal(reply.ok, true);
+  assert.equal(reply.turnId, "t9");
+
+  // no interrupt fn wired → graceful ack, never throws
+  const noFn = await handleRelayCommandFrame({ type: "interrupt" }, { admit: async () => {} });
+  assert.equal(noFn.reply.type, "interrupt.ack");
+  assert.equal(noFn.reply.ok, false);
+  assert.equal(noFn.reply.code, "INTERRUPT_UNAVAILABLE");
+
+  // interrupt throwing is contained
+  const boom = await handleRelayCommandFrame({ type: "interrupt" }, { interrupt: async () => { throw new Error("x"); } });
+  assert.equal(boom.reply.type, "interrupt.ack");
+  assert.equal(boom.reply.ok, false);
+  assert.equal(boom.reply.code, "INTERRUPT_ERROR");
+}
+
 // --- bridge lifecycle against a fake WebSocket ------------------------------
 {
   class FakeWS {

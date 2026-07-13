@@ -41,6 +41,9 @@ assert.match(page, /"assistant\.delta"/, "accumulates streaming assistant text")
 assert.match(page, /"turn\.started"/, "resets the reply on a new turn");
 assert.match(page, /"turn\.ended"/, "marks the turn done/failed/interrupted");
 assert.match(page, /桌面回复/, "renders a reply panel");
+// Interrupt a running turn from the phone.
+assert.match(page, /type: "interrupt"/, "can send an interrupt frame");
+assert.match(page, /interrupt\.ack/, "renders the interrupt ack");
 
 // Retry-until-approved: the relay refuses until the desktop approves.
 assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");

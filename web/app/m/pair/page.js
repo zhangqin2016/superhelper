@@ -107,6 +107,7 @@ export default function MobilePairPage() {
             case "assistant.final": if (frame.text) setReply(String(frame.text).slice(-8000)); break;
             case "tool.started": setLog((l) => [`🔧 正在使用 ${frame.tool}`, ...l].slice(0, 20)); break;
             case "turn.ended": setTurnState(frame.status || "completed"); break;
+            case "interrupt.ack": setLog((l) => [frame.ok ? "⏹ 已请求停止" : `停止失败：${frame.code || ""}`, ...l].slice(0, 20)); break;
             default: break;
           }
         } catch { /* ignore */ }
@@ -189,6 +190,13 @@ export default function MobilePairPage() {
     setTask("");
   }, [task, deviceId]);
 
+  const sendInterrupt = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "interrupt" }));
+    setLog((l) => ["⏹ 发送停止…", ...l].slice(0, 20));
+  }, []);
+
   return (
     <section className="mx-auto max-w-md p-4">
       <h1 className="text-xl font-semibold">手机控制桌面</h1>
@@ -216,6 +224,7 @@ export default function MobilePairPage() {
               <div className="mb-1 flex items-center gap-2 text-xs text-slate-400">
                 <span>桌面回复</span>
                 {turnState === "running" ? <span className="text-indigo-500">运行中…</span> : null}
+                {turnState === "running" ? <button type="button" className="ml-auto rounded bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-600" onClick={sendInterrupt}>停止</button> : null}
                 {turnState === "completed" ? <span className="text-emerald-500">已完成</span> : null}
                 {turnState === "failed" || turnState === "stalled" ? <span className="text-rose-500">出错</span> : null}
                 {turnState === "interrupted" ? <span className="text-slate-500">已中断</span> : null}
