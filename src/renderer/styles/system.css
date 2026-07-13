@@ -24,6 +24,18 @@
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
+/* Final disabled filled-button guard. This file loads after settings.css and
+   prevents primary setting buttons from falling back to a ghosted purple fill
+   when disabled. */
+.settings-action-btn--primary:disabled,
+.settings-action-btn--primary[aria-disabled="true"] {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
+}
+
 /* =========================================================================
    RTL (Arabic)
    ========================================================================= */

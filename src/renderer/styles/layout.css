@@ -280,10 +280,10 @@
 }
 .project-group.active > .project-header {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent-subtle) 52%, transparent), transparent 84%),
-    color-mix(in srgb, var(--bg-surface) 62%, var(--bg-left) 38%);
-  border-color: color-mix(in srgb, var(--accent-border) 34%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 76%, transparent), var(--top-highlight);
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-subtle) 34%, transparent), transparent 86%),
+    color-mix(in srgb, var(--bg-surface) 58%, var(--bg-left) 42%);
+  border-color: color-mix(in srgb, var(--border-light) 64%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 68%, transparent), var(--top-highlight);
 }
 
 .project-group.active .project-collapse-icon {
@@ -449,9 +449,9 @@
 }
 .session-list .session-item:hover { background: var(--bg-surface-hover); }
 .session-list .session-item.active {
-  background: var(--accent-subtle);
+  background: color-mix(in srgb, var(--accent-subtle) 42%, var(--bg-surface) 58%);
   color: var(--text-primary);
-  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
+  box-shadow: inset 2px 0 0 var(--accent), var(--top-highlight);
 }
 
 /* File Tree */

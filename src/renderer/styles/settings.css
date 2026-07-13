@@ -17,8 +17,8 @@
 .settings-panel-backdrop {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--bg-backdrop) 88%, var(--bg-body) 12%);
-  backdrop-filter: blur(10px) saturate(110%);
+  background: color-mix(in srgb, var(--bg-backdrop) 72%, var(--bg-body) 28%);
+  backdrop-filter: blur(7px) saturate(104%);
 }
 
 .settings-panel-sheet {
@@ -31,8 +31,8 @@
   min-height: 0;
   overflow: hidden;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-center) 96%, white 4%), var(--bg-center)),
-    var(--bg-center);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 78%, var(--bg-center) 22%), var(--bg-center)),
+    var(--bg-surface);
   border-left: 1px solid var(--border-light);
   box-shadow: var(--shadow-panel), var(--top-highlight);
   animation: slide-up 0.2s ease;
@@ -50,7 +50,7 @@
   padding: 14px 10px;
   border-right: 1px solid var(--border-light);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-left) 96%, white 4%), var(--bg-left)),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-left) 88%, var(--bg-surface) 12%), var(--bg-left)),
     var(--bg-left);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -128,10 +128,10 @@
 }
 
 .settings-nav-item.is-active {
-  background: color-mix(in srgb, var(--accent-subtle) 68%, var(--bg-elevated) 32%);
+  background: color-mix(in srgb, var(--accent-subtle) 42%, var(--bg-elevated) 58%);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
+  box-shadow: inset 2px 0 0 var(--accent), var(--top-highlight);
 }
 
 .settings-panel-body {
@@ -140,7 +140,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   background:
-    radial-gradient(720px 420px at 82% -12%, color-mix(in srgb, var(--accent-subtle) 42%, transparent) 0, transparent 62%),
+    radial-gradient(720px 420px at 82% -12%, color-mix(in srgb, var(--accent-subtle) 18%, transparent) 0, transparent 62%),
     var(--bg-center);
 }
 
@@ -657,18 +657,6 @@
   cursor: not-allowed;
 }
 
-/* Disabled FILLED buttons go neutral instead of ghosting the accent fill:
-   an accent gradient at 45% opacity reads as a broken washed-out outline
-   (the disabled "打开工作空间" case), not as "unavailable". */
-.settings-action-btn--primary:disabled,
-.settings-action-btn--primary[aria-disabled="true"] {
-  border-color: var(--border-light);
-  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
-  color: var(--text-tertiary);
-  box-shadow: none;
-  opacity: 1;
-}
-
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -724,6 +712,19 @@
 .settings-action-btn--primary:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text-inverse);
+}
+
+/* Disabled FILLED buttons go neutral instead of ghosting the accent fill:
+   an accent gradient at 45% opacity reads as a broken washed-out outline
+   (the disabled "打开工作空间" case), not as "unavailable". Keep this AFTER
+   .settings-action-btn--primary so it wins the cascade. */
+.settings-action-btn--primary:disabled,
+.settings-action-btn--primary[aria-disabled="true"] {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
 }
 
 .settings-action-btn--compact {
@@ -1511,6 +1512,15 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.workspace-app-card-actions .settings-action-btn--primary:disabled,
+.workspace-app-card-actions .settings-action-btn--primary[aria-disabled="true"] {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
 }
 
 .workspace-app-download[aria-disabled="true"],
@@ -2456,7 +2466,7 @@ body.settings-open {
   height: 200px;
   margin: 12px 0;
   padding: 10px;
-  background: #fff;
+  background: var(--document-page-bg);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   image-rendering: pixelated;

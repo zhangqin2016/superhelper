@@ -7,19 +7,24 @@ const primitivePath = path.join(root, "src/renderer/styles/ui-primitives.css");
 const composerPath = path.join(root, "src/renderer/styles/composer.css");
 const messagesPath = path.join(root, "src/renderer/styles/messages.css");
 const settingsPath = path.join(root, "src/renderer/styles/settings.css");
+const systemPath = path.join(root, "src/renderer/styles/system.css");
 const runtimeChatPath = path.join(root, "src/renderer/styles/runtime-chat.css");
 const topbarPath = path.join(root, "src/renderer/styles/topbar.css");
 const customSelectPath = path.join(root, "src/renderer/modules/custom-select.js");
 
 const stylesEntryText = fs.readFileSync(stylesEntry, "utf8");
-if (!stylesEntryText.includes('@import "./styles/ui-primitives.css";')) {
+if (!/@import\s+"\.\/styles\/ui-primitives\.css(?:\?[^"]+)?";/.test(stylesEntryText)) {
   throw new Error("styles.css must import ui-primitives.css");
+}
+if (!/@import\s+"\.\/styles\/settings\.css\?v=20260713-light-theme";/.test(stylesEntryText)) {
+  throw new Error("styles.css must cache-bust settings.css for the light theme button refresh");
 }
 
 const primitiveText = fs.readFileSync(primitivePath, "utf8");
 const composerText = fs.readFileSync(composerPath, "utf8");
 const messagesText = fs.readFileSync(messagesPath, "utf8");
 const settingsText = fs.readFileSync(settingsPath, "utf8");
+const systemText = fs.readFileSync(systemPath, "utf8");
 const runtimeChatText = fs.readFileSync(runtimeChatPath, "utf8");
 const topbarText = fs.readFileSync(topbarPath, "utf8");
 const customSelectText = fs.readFileSync(customSelectPath, "utf8");
@@ -76,6 +81,20 @@ if (!primitiveText.includes(".dialog-btn")) {
   const primaryDisabled = settingsCss.match(/\.settings-action-btn--primary:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
   if (!primaryDisabled.includes("opacity: 1")) {
     throw new Error("settings-action-btn--primary:disabled must override the 0.45 opacity ghosting with a neutral fill");
+  }
+  if (!primaryDisabled.includes("border-color: var(--border-light)")) {
+    throw new Error("settings-action-btn--primary:disabled must use a neutral border, not the accent border");
+  }
+  if (settingsCss.indexOf(".settings-action-btn--primary:disabled") < settingsCss.indexOf(".settings-action-btn--primary {")) {
+    throw new Error("settings-action-btn--primary:disabled must be declared after the primary fill so it wins the cascade");
+  }
+  const workspacePrimaryDisabled = settingsCss.match(/\.workspace-app-card-actions\s+\.settings-action-btn--primary:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
+  if (!workspacePrimaryDisabled.includes("border-color: var(--border-light)")) {
+    throw new Error("disabled workspace app primary actions must use a neutral border");
+  }
+  const finalPrimaryDisabled = systemText.match(/\.settings-action-btn--primary:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
+  if (!finalPrimaryDisabled.includes("opacity: 1") || !finalPrimaryDisabled.includes("border-color: var(--border-light)")) {
+    throw new Error("system.css must final-override disabled primary setting buttons to neutral after all imports");
   }
   const dialogPrimaryDisabled = primitiveText.match(/\.dialog-btn--primary:disabled\s*\{[^}]*\}/s)?.[0] || "";
   if (!dialogPrimaryDisabled.includes("opacity: 1")) {

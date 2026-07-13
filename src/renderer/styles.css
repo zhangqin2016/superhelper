@@ -1,6 +1,6 @@
-@import "./styles/base.css";
+@import "./styles/base.css?v=20260713-light-theme";
 @import "./styles/ui-primitives.css";
-@import "./styles/layout.css";
+@import "./styles/layout.css?v=20260713-light-theme";
 @import "./styles/topbar.css";
 @import "./styles/task-center.css";
 @import "./styles/messages.css";
@@ -8,10 +8,10 @@
 @import "./styles/pdf-viewer.css";
 @import "./styles/diff-panel.css";
 @import "./styles/skills-tree.css";
-@import "./styles/composer.css";
+@import "./styles/composer.css?v=20260713-light-theme";
 @import "./styles/right-panel.css";
 @import "./styles/overlays.css";
-@import "./styles/settings.css";
+@import "./styles/settings.css?v=20260713-light-theme";
 @import "./styles/runtime-chat.css";
 @import "./styles/system.css";
 @import "../../node_modules/katex/dist/katex.min.css";
