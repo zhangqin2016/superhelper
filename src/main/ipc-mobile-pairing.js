@@ -101,6 +101,21 @@ function registerMobilePairingIpc(ctx) {
         }
       },
       getSessionContext: () => buildActiveSessionContext(ctx),
+      // Write phone-sent attachments to a temp dir under userData; the turn gets
+      // real paths. Fail-open to [] (command runs text-only).
+      materializeAttachments: (attachments) => {
+        try {
+          const { materializeMobileAttachments } = require("./mobile-attachments");
+          const { userDataPath } = require("./config");
+          return materializeMobileAttachments(attachments, {
+            tmpDir: userDataPath("mobile-command-attachments"),
+            stamp: String(Date.now()),
+          });
+        } catch (err) {
+          log.warn("mobile attachment materialize failed: %s", err?.message || err);
+          return [];
+        }
+      },
     }),
     log,
   });

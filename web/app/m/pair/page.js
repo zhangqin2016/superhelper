@@ -59,6 +59,46 @@ function wsOrigin(httpUrl) {
   return String(httpUrl || "").replace(/^http/, "ws");
 }
 
+// Downscale an image file to fit the relay frame (256KB). Draw to a canvas at a
+// bounded size, then drop JPEG quality until the base64 is small enough. Returns
+// { name, mimeType, dataBase64 } or null (non-image / failure → skip attachment).
+async function fileToDownscaledAttachment(file, { maxDim = 1280, maxBytes = 170 * 1024 } = {}) {
+  if (!file || !String(file.type || "").startsWith("image/")) return null;
+  const dataUrl = await new Promise((resolve) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result || ""));
+    fr.onerror = () => resolve("");
+    fr.readAsDataURL(file);
+  });
+  if (!dataUrl) return null;
+  const img = await new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = dataUrl;
+  });
+  if (!img) return null;
+  const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+  const w = Math.max(1, Math.round((img.width || 1) * scale));
+  const h = Math.max(1, Math.round((img.height || 1) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const cctx = canvas.getContext("2d");
+  if (!cctx) return null;
+  cctx.drawImage(img, 0, 0, w, h);
+  let q = 0.72;
+  let out = "";
+  for (let i = 0; i < 5; i += 1) {
+    out = canvas.toDataURL("image/jpeg", q);
+    if (out.length * 0.75 <= maxBytes) break; // ~decoded size
+    q -= 0.15;
+    if (q < 0.3) break;
+  }
+  const b64 = out.replace(/^data:[^,]*,/, "");
+  if (!b64) return null;
+  return { name: (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg", mimeType: "image/jpeg", dataBase64: b64, preview: out };
+}
+
 export default function MobilePairPage() {
   const [deviceId, setDeviceId] = useState("");
   const [codeInput, setCodeInput] = useState("");
@@ -69,6 +109,7 @@ export default function MobilePairPage() {
   const [reply, setReply] = useState("");
   const [turnState, setTurnState] = useState("idle"); // idle|running|completed|failed|interrupted|stalled
   const [sessionCtx, setSessionCtx] = useState(null); // { title, phase, recent: [{role,text}] }
+  const [attachment, setAttachment] = useState(null); // { name, mimeType, dataBase64, preview }
   const wsRef = useRef(null);
   const grantRef = useRef({ url: "", grantId: "" });
   const autoPairedRef = useRef(false);
@@ -179,22 +220,34 @@ export default function MobilePairPage() {
     }
   }, [deviceId, status, pair]);
 
+  const pickImage = useCallback(async (e) => {
+    const file = e?.target?.files?.[0];
+    if (e?.target) e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    const att = await fileToDownscaledAttachment(file);
+    if (!att) { setLog((l) => ["图片无法处理(仅支持图片)", ...l].slice(0, 20)); return; }
+    setAttachment(att);
+  }, []);
+
   const sendTask = useCallback(() => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN || !task.trim()) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!task.trim() && !attachment) return;
     const commandId = `cmd_${(crypto.randomUUID?.() || Date.now()).toString().replace(/-/g, "")}`;
     ws.send(JSON.stringify({
       type: "command",
       commandId,
       idempotencyKey: commandId,
       text: task.trim(),
+      attachments: attachment ? [{ name: attachment.name, mimeType: attachment.mimeType, dataBase64: attachment.dataBase64 }] : [],
       mobileDeviceId: deviceId,
       lilySessionId: "",
       mode: "queue",
     }));
-    setLog((l) => [`→ ${task.trim()}`, ...l].slice(0, 20));
+    setLog((l) => [`→ ${attachment ? "🖼 " : ""}${task.trim() || "(图片)"}`, ...l].slice(0, 20));
     setTask("");
-  }, [task, deviceId]);
+    setAttachment(null);
+  }, [task, attachment, deviceId]);
 
   const sendInterrupt = useCallback(() => {
     const ws = wsRef.current;
@@ -238,7 +291,19 @@ export default function MobilePairPage() {
             </div>
           ) : null}
           <label className="block text-sm font-medium">发送任务到桌面</label>
+          {attachment ? (
+            <div className="mt-1 flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={attachment.preview} alt="" className="h-10 w-10 rounded object-cover" />
+              <span className="flex-1 truncate text-xs text-slate-500">{attachment.name}</span>
+              <button type="button" className="text-xs text-rose-500" onClick={() => setAttachment(null)}>移除</button>
+            </div>
+          ) : null}
           <div className="mt-1 flex gap-2">
+            <label className="flex cursor-pointer items-center rounded border border-slate-300 px-2 text-lg text-slate-500" title="添加图片">
+              📷
+              <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
+            </label>
             <input className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm" value={task} onChange={(e) => setTask(e.target.value)} placeholder="例如：整理今天的会议纪要" onKeyDown={(e) => { if (e.key === "Enter") sendTask(); }} />
             <button type="button" className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white" onClick={sendTask}>发送</button>
           </div>

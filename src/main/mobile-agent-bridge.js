@@ -29,7 +29,7 @@ function payloadHashFor(text, attachments) {
  * @returns {Promise<{reply: object|null}>} reply is the frame to send to mobile
  *   (or null when the frame is not a command we handle).
  */
-async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionContext, desktopDeviceId = "", lilySessionId = "" } = {}) {
+async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionContext, materializeAttachments, desktopDeviceId = "", lilySessionId = "" } = {}) {
   let frame;
   try {
     frame = typeof rawFrame === "string" ? JSON.parse(rawFrame) : rawFrame;
@@ -71,6 +71,17 @@ async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionC
     return { reply: { type: "command.rejected", commandId: commandId || null, code: "COMMAND_INVALID" } };
   }
 
+  // Materialize any phone-sent attachments (base64) to local temp files so the
+  // turn gets real paths (the agent reads files from disk). Fail-open: if
+  // materialization is unavailable or throws, the command still runs as
+  // text-only (never worse than baseline); the agent also has its own
+  // unreadable-file fallback manifest.
+  let files = [];
+  if (attachments.length && typeof materializeAttachments === "function") {
+    try { files = (await materializeAttachments(attachments)) || []; }
+    catch { files = []; }
+  }
+
   const envelope = {
     commandId,
     idempotencyKey: String(frame.idempotencyKey || commandId),
@@ -81,6 +92,7 @@ async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionC
     remoteSessionId: String(frame.remoteSessionId || ""),
     text,
     attachments,
+    files,
     mode: frame.mode === "steer" ? "steer" : "queue",
     sourceSequence: Number.isFinite(frame.sourceSequence) ? frame.sourceSequence : null,
   };
@@ -120,6 +132,7 @@ function createMobileAgentBridge({
   admit,
   interrupt,
   getSessionContext,
+  materializeAttachments,
   WebSocketCtor = globalThis.WebSocket,
   reconnectDelayMs = 3000,
   log = { info() {}, warn() {} },
@@ -143,7 +156,7 @@ function createMobileAgentBridge({
     }
     ws.onopen = () => log.info("mobile bridge connected: grant=%s", grantId);
     ws.onmessage = async (event) => {
-      const { reply } = await handleRelayCommandFrame(event?.data, { admit, interrupt, getSessionContext, desktopDeviceId });
+      const { reply } = await handleRelayCommandFrame(event?.data, { admit, interrupt, getSessionContext, materializeAttachments, desktopDeviceId });
       if (reply && ws && ws.readyState === (WebSocketCtor.OPEN ?? 1)) {
         try { ws.send(JSON.stringify(reply)); } catch { /* best effort */ }
       }

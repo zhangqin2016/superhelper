@@ -48,6 +48,11 @@ assert.match(page, /interrupt\.ack/, "renders the interrupt ack");
 assert.match(page, /type: "session\.request"/, "requests session context on connect");
 assert.match(page, /"session\.context"/, "renders the session context");
 assert.match(page, /sessionCtx/, "keeps session context state (title + recent history)");
+// Attachments: pick + downscale an image and send it with the command.
+assert.match(page, /type="file"/, "has an image picker");
+assert.match(page, /accept="image\/\*"/, "picker accepts images");
+assert.match(page, /fileToDownscaledAttachment/, "downscales the image before sending");
+assert.match(page, /attachments: attachment \?/, "includes the attachment in the command frame");
 
 // Retry-until-approved: the relay refuses until the desktop approves.
 assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");

@@ -98,6 +98,27 @@ const {
   assert.equal(boom.reply.code, "INTERRUPT_ERROR");
 }
 
+// --- attachments materialize into envelope.files (fail-open) ----------------
+{
+  let envSeen = null;
+  const materializeAttachments = async (atts) => atts.map((a, i) => ({ path: `/tmp/${i}_${a.name}`, name: a.name }));
+  await handleRelayCommandFrame(
+    { type: "command", commandId: "cA", text: "看图", attachments: [{ name: "p.jpg", mimeType: "image/jpeg", dataBase64: "eA==" }], mobileDeviceId: "dmob", lilySessionId: "s1" },
+    { admit: async (env) => { envSeen = env; return { ok: true, commandId: env.commandId, state: "admitted", requestedMode: "queue", effectiveMode: "queue", downgradeReason: null }; }, materializeAttachments, desktopDeviceId: "dtop" },
+  );
+  assert.equal(envSeen.files.length, 1, "attachments become envelope.files (real paths for the turn)");
+  assert.equal(envSeen.files[0].path, "/tmp/0_p.jpg");
+
+  // materialize throwing → text-only, still admits (fail-open)
+  let envSeen2 = null;
+  const r2 = await handleRelayCommandFrame(
+    { type: "command", commandId: "cB", text: "看图", attachments: [{ name: "p.jpg", mimeType: "image/jpeg", dataBase64: "eA==" }], mobileDeviceId: "dmob", lilySessionId: "s1" },
+    { admit: async (env) => { envSeen2 = env; return { ok: true, commandId: env.commandId, state: "admitted", requestedMode: "queue", effectiveMode: "queue", downgradeReason: null }; }, materializeAttachments: async () => { throw new Error("x"); }, desktopDeviceId: "dtop" },
+  );
+  assert.deepEqual(envSeen2.files, [], "materialize failure → text-only, no throw");
+  assert.equal(r2.reply.type, "command.admitted", "command still admits without attachments");
+}
+
 // --- session.request returns the desktop-provided context ------------------
 {
   const ctxFrame = { type: "session.context", title: "s", sessionId: "s1", phase: "idle", queueLength: 0, recent: [] };
