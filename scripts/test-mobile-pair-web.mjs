@@ -36,6 +36,12 @@ assert.match(page, /commandId/, "the command carries a commandId (idempotency)")
 assert.match(page, /command\.admitted/, "renders the admission ack");
 assert.match(page, /command\.rejected/, "renders a rejection");
 
+// Projected desktop turn output — the phone sees the reply it triggered.
+assert.match(page, /"assistant\.delta"/, "accumulates streaming assistant text");
+assert.match(page, /"turn\.started"/, "resets the reply on a new turn");
+assert.match(page, /"turn\.ended"/, "marks the turn done/failed/interrupted");
+assert.match(page, /桌面回复/, "renders a reply panel");
+
 // Retry-until-approved: the relay refuses until the desktop approves.
 assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");
 

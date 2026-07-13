@@ -85,6 +85,26 @@ function registerMobilePairingIpc(ctx) {
   ipcMain.handle("mobile-pairing:revoke", guard((_e, payload = {}) => manager.revoke(String(payload.grantId || ""), payload.reason)));
   ipcMain.handle("mobile-pairing:status", guard(() => ({ ok: true, bridged: manager.isBridged() })));
 
+  // Project the ACTIVE session's turn output back to the paired phone, so the
+  // phone sees the reply it triggered — not just the admit ack. Passive + fully
+  // fail-open: only the foreground session is projected, only when a bridge is
+  // live (manager.project no-ops otherwise), and observer errors are isolated by
+  // the event bus. No effect on local turns or the renderer.
+  try {
+    const { mobileProjectionFrame } = require("./mobile-projection");
+    ctx.eventBus?.addObserver?.((sessionId, events) => {
+      if (!manager.isBridged()) return;
+      const activeId = ctx.sessionManager?.getActive?.()?.id;
+      if (!activeId || sessionId !== activeId) return;
+      for (const event of events) {
+        const frame = mobileProjectionFrame(event);
+        if (frame) manager.project(frame);
+      }
+    });
+  } catch (err) {
+    log.warn("mobile turn projection not wired: %s", err?.message || err);
+  }
+
   ctx.mobilePairingManager = manager;
   return { registered: true, manager };
 }

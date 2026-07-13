@@ -144,6 +144,13 @@ function createMobilePairingManager({
     isBridged() {
       return Boolean(activeBridge?.isConnected?.());
     },
+
+    /** Project a local turn frame out to the paired phone (no-op if no live
+     *  bridge). Used to stream the desktop's turn output back to mobile. */
+    project(frame) {
+      if (!frame || !activeBridge) return false;
+      try { return Boolean(activeBridge.project?.(frame)); } catch { return false; }
+    },
   };
 }
 

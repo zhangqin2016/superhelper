@@ -66,6 +66,8 @@ export default function MobilePairPage() {
   const [message, setMessage] = useState("");
   const [task, setTask] = useState("");
   const [log, setLog] = useState([]);
+  const [reply, setReply] = useState("");
+  const [turnState, setTurnState] = useState("idle"); // idle|running|completed|failed|interrupted|stalled
   const wsRef = useRef(null);
   const grantRef = useRef({ url: "", grantId: "" });
   const autoPairedRef = useRef(false);
@@ -96,8 +98,17 @@ export default function MobilePairPage() {
       ws.onmessage = (e) => {
         try {
           const frame = JSON.parse(e.data);
-          if (frame.type === "command.admitted") setLog((l) => [`✓ 已送达桌面（${frame.effectiveMode}）`, ...l].slice(0, 20));
-          else if (frame.type === "command.rejected") setLog((l) => [`✗ 被拒绝：${frame.code}`, ...l].slice(0, 20));
+          switch (frame.type) {
+            case "command.admitted": setLog((l) => [`✓ 已送达桌面（${frame.effectiveMode}）`, ...l].slice(0, 20)); break;
+            case "command.rejected": setLog((l) => [`✗ 被拒绝：${frame.code}`, ...l].slice(0, 20)); break;
+            // Projected desktop turn output — the phone sees the reply it triggered.
+            case "turn.started": setReply(""); setTurnState("running"); break;
+            case "assistant.delta": setReply((r) => (r + String(frame.text || "")).slice(-8000)); break;
+            case "assistant.final": if (frame.text) setReply(String(frame.text).slice(-8000)); break;
+            case "tool.started": setLog((l) => [`🔧 正在使用 ${frame.tool}`, ...l].slice(0, 20)); break;
+            case "turn.ended": setTurnState(frame.status || "completed"); break;
+            default: break;
+          }
         } catch { /* ignore */ }
       };
       ws.onclose = () => {
@@ -199,6 +210,20 @@ export default function MobilePairPage() {
             <input className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm" value={task} onChange={(e) => setTask(e.target.value)} placeholder="例如：整理今天的会议纪要" onKeyDown={(e) => { if (e.key === "Enter") sendTask(); }} />
             <button type="button" className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white" onClick={sendTask}>发送</button>
           </div>
+
+          {reply || turnState !== "idle" ? (
+            <div className="mt-4">
+              <div className="mb-1 flex items-center gap-2 text-xs text-slate-400">
+                <span>桌面回复</span>
+                {turnState === "running" ? <span className="text-indigo-500">运行中…</span> : null}
+                {turnState === "completed" ? <span className="text-emerald-500">已完成</span> : null}
+                {turnState === "failed" || turnState === "stalled" ? <span className="text-rose-500">出错</span> : null}
+                {turnState === "interrupted" ? <span className="text-slate-500">已中断</span> : null}
+              </div>
+              <div className="whitespace-pre-wrap rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 min-h-[3rem]">{reply || "…"}</div>
+            </div>
+          ) : null}
+
           <ul className="mt-3 space-y-1 text-sm text-slate-600">
             {log.map((line, i) => <li key={i}>{line}</li>)}
           </ul>

@@ -27,6 +27,26 @@ class RuntimeEventBus {
     this._flushTimer = null;
     this._recent = new Map();
     this._terminalTurns = new Set();
+    // Passive observers (e.g. the mobile bridge projecting turn output to a
+    // paired phone). Called on every committed batch; never affect renderer
+    // delivery and are fully isolated — an observer throwing can't disrupt a turn.
+    this._observers = new Set();
+  }
+
+  /** Register a passive (sessionId, events) observer. Returns an unsubscribe fn. */
+  addObserver(fn) {
+    if (typeof fn !== "function") return () => {};
+    this._observers.add(fn);
+    return () => this._observers.delete(fn);
+  }
+
+  _notifyObservers(sessionId, events) {
+    if (!this._observers.size) return;
+    for (const fn of this._observers) {
+      try { fn(sessionId, events); } catch (err) {
+        console.warn("[runtime-event-bus] observer failed:", err?.message || err);
+      }
+    }
   }
 
   emit(sessionId, eventLike) {
@@ -45,6 +65,7 @@ class RuntimeEventBus {
     this._pending.set(sid, existing);
     this._remember(sid, events);
     this._persist(sid, events);
+    this._notifyObservers(sid, events);
     this._scheduleFlush(events);
     return events;
   }
