@@ -85,6 +85,11 @@ export async function createPairingChallenge({
  *   unexpired pending row). This closes the replay window.
  * - `resolveDesktopLicense(desktopDeviceId)` returns the license bound to the
  *   desktop device (grant's license composite FK).
+ * - `supersedeLivePairs({ desktopDeviceId, mobileDeviceId, now })` (optional)
+ *   revokes any existing live grant for this exact desktop↔mobile pair BEFORE
+ *   inserting, so re-scanning always works: a lingering active/pending grant
+ *   (which never auto-expires once active) would otherwise trip the live-pair
+ *   unique index and permanently block the same phone from re-pairing.
  * - `insertGrant(row)` inserts the pending grant; a live-pair unique violation
  *   surfaces as code PAIRING_ALREADY_LIVE.
  * - `issueGrantToken({ grantId, mobileDeviceId })` mints the grant-scoped token
@@ -96,6 +101,7 @@ export async function consumePairingChallenge({
   now = new Date(),
   casConsumeChallenge,
   resolveDesktopLicense,
+  supersedeLivePairs,
   insertGrant,
   issueGrantToken,
 }) {
@@ -112,6 +118,11 @@ export async function consumePairingChallenge({
 
   const grantId = publicId("mpg");
   const approvalExpiresAt = new Date(now.getTime() + GRANT_APPROVAL_TTL_MS);
+  // Re-scan supersedes: revoke any lingering live pairing for this exact
+  // desktop↔mobile pair so the fresh grant can take the (single) live slot.
+  if (typeof supersedeLivePairs === "function") {
+    await supersedeLivePairs({ desktopDeviceId: challenge.desktop_device_id, mobileDeviceId, now });
+  }
   try {
     await insertGrant({
       id: grantId,

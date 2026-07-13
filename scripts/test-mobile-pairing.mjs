@@ -96,6 +96,24 @@ function pendingChallenge(overrides = {}) {
   assert.equal(grant.user_id, "u1", "grant.user_id is the DESKTOP (challenge) user who vouches");
   assert.equal(grant.account_session_id, null, "no mobile session in the vouched model");
   assert.equal(res.mobileToken, `gt_${grant.id}_dmob`, "a grant-scoped token is minted for the phone");
+
+  // re-scan supersedes: a lingering live pair for the SAME desktop↔mobile is
+  // revoked before insert, so re-pairing the same phone always works.
+  let superseded = null;
+  const rescan = await consumePairingChallenge({
+    token: "mpt_fixed", mobileDeviceId: "dmob", now: NOW,
+    casConsumeChallenge: async () => pendingChallenge(),
+    resolveDesktopLicense: async () => "lic1",
+    supersedeLivePairs: async (args) => { superseded = args; },
+    insertGrant: async () => {},
+    issueGrantToken: () => "gt_x",
+  });
+  assert.equal(rescan.ok, true, "re-scan succeeds");
+  assert.deepEqual(
+    { d: superseded?.desktopDeviceId, m: superseded?.mobileDeviceId },
+    { d: "dtop", m: "dmob" },
+    "re-scan revokes the prior live pairing for this exact desktop↔mobile before inserting",
+  );
   assert.equal(
     new Date(grant.approval_expires_at).getTime() - NOW.getTime(),
     GRANT_APPROVAL_TTL_MS,

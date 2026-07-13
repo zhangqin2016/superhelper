@@ -212,11 +212,26 @@ try {
 
   try { desktopWs.close(); mobileWs.close(); } catch { /* noop */ }
 
-  // --- 9. Revoke tears the grant down; a fresh connect is refused. ---
-  const revoke = await desktopPost("/api/mobile/pairing/revoke", desktopBody({ grantId, reason: "e2e" }));
+  // --- 8b. Re-scan while a grant is ALREADY LIVE: consume must supersede the
+  // old pairing (revoke it) and succeed, not fail PAIRING_ALREADY_LIVE. This is
+  // the real-world "same phone re-pairs" case that used to wedge on the
+  // live-pair unique index. ---
+  const challenge2 = await desktopPost("/api/mobile/pairing/challenge", desktopBody({}));
+  assert.equal(challenge2.statusCode, 200, "second challenge ok");
+  const consume2 = await app.inject({
+    method: "POST", url: "/api/mobile/pairing/consume",
+    payload: { deviceId: mobileDeviceId, token: challenge2.json().token },
+  });
+  assert.equal(consume2.statusCode, 200, `re-scan consume supersedes the live grant: ${consume2.body}`);
+  assert.ok(consume2.json().grantId && consume2.json().grantId !== grantId, "re-scan yields a fresh grant");
+
+  // --- 9. Revoke the (current) grant; a fresh connect is refused. ---
+  const grant2 = consume2.json().grantId;
+  const token2 = consume2.json().mobileToken;
+  const revoke = await desktopPost("/api/mobile/pairing/revoke", desktopBody({ grantId: grant2, reason: "e2e" }));
   assert.equal(revoke.statusCode, 200, "revoke ok");
   {
-    const afterRevoke = connectRelay(base, { role: "mobile", grantId, deviceId: mobileDeviceId, token: mobileToken });
+    const afterRevoke = connectRelay(base, { role: "mobile", grantId: grant2, deviceId: mobileDeviceId, token: token2 });
     const refused = await new Promise((resolve) => {
       afterRevoke.on("open", () => resolve("open"));
       afterRevoke.on("error", () => resolve("refused"));

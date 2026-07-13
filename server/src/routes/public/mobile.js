@@ -107,6 +107,13 @@ export function registerPublicMobileRoutes(app) {
           .returningAll()
           .executeTakeFirst()),
         resolveDesktopLicense: async (deviceId) => (await validLicenseScope({ deviceId })) || null,
+        supersedeLivePairs: ({ desktopDeviceId, mobileDeviceId, now }) => db
+          .updateTable("mobile_pairing_grants")
+          .set({ status: "revoked", terminal_at: now.toISOString(), revoked_reason: "superseded" })
+          .where("desktop_device_id", "=", desktopDeviceId)
+          .where("mobile_device_id", "=", mobileDeviceId)
+          .where("status", "in", ["pending_approval", "active"])
+          .execute(),
         insertGrant: (row) => db.insertInto("mobile_pairing_grants").values(row).execute(),
         issueGrantToken: ({ grantId, mobileDeviceId }) => createGrantToken({ grantId, mobileDeviceId }),
       });
