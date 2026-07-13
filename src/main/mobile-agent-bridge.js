@@ -29,7 +29,7 @@ function payloadHashFor(text, attachments) {
  * @returns {Promise<{reply: object|null}>} reply is the frame to send to mobile
  *   (or null when the frame is not a command we handle).
  */
-async function handleRelayCommandFrame(rawFrame, { admit, interrupt, desktopDeviceId = "", lilySessionId = "" } = {}) {
+async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionContext, desktopDeviceId = "", lilySessionId = "" } = {}) {
   let frame;
   try {
     frame = typeof rawFrame === "string" ? JSON.parse(rawFrame) : rawFrame;
@@ -37,6 +37,17 @@ async function handleRelayCommandFrame(rawFrame, { admit, interrupt, desktopDevi
     return { reply: { type: "relay.error", code: "COMMAND_FRAME_MALFORMED" } };
   }
   if (!frame) return { reply: null };
+
+  // Phone asks which session it controls + recent history.
+  if (frame.type === "session.request") {
+    if (typeof getSessionContext !== "function") return { reply: null };
+    try {
+      const ctx = await getSessionContext();
+      return { reply: ctx || null };
+    } catch {
+      return { reply: null };
+    }
+  }
 
   // Mobile "stop": interrupt the running turn through the controlled seam
   // (never the runner directly). Fail-open — a failed interrupt just acks false.
@@ -108,6 +119,7 @@ function createMobileAgentBridge({
   desktopDeviceId,
   admit,
   interrupt,
+  getSessionContext,
   WebSocketCtor = globalThis.WebSocket,
   reconnectDelayMs = 3000,
   log = { info() {}, warn() {} },
@@ -131,7 +143,7 @@ function createMobileAgentBridge({
     }
     ws.onopen = () => log.info("mobile bridge connected: grant=%s", grantId);
     ws.onmessage = async (event) => {
-      const { reply } = await handleRelayCommandFrame(event?.data, { admit, interrupt, desktopDeviceId });
+      const { reply } = await handleRelayCommandFrame(event?.data, { admit, interrupt, getSessionContext, desktopDeviceId });
       if (reply && ws && ws.readyState === (WebSocketCtor.OPEN ?? 1)) {
         try { ws.send(JSON.stringify(reply)); } catch { /* best effort */ }
       }

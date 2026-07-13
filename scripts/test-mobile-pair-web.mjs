@@ -44,6 +44,10 @@ assert.match(page, /桌面回复/, "renders a reply panel");
 // Interrupt a running turn from the phone.
 assert.match(page, /type: "interrupt"/, "can send an interrupt frame");
 assert.match(page, /interrupt\.ack/, "renders the interrupt ack");
+// Session context + recent history.
+assert.match(page, /type: "session\.request"/, "requests session context on connect");
+assert.match(page, /"session\.context"/, "renders the session context");
+assert.match(page, /sessionCtx/, "keeps session context state (title + recent history)");
 
 // Retry-until-approved: the relay refuses until the desktop approves.
 assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");

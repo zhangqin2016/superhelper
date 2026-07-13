@@ -13,6 +13,29 @@
  * so the desktop behaves exactly as before.
  */
 
+// Build the controlled (foreground) session's context frame for the phone:
+// title + live phase/queue + recent conversation. Fail-open to null.
+function buildActiveSessionContext(ctx) {
+  try {
+    const { buildSessionContextFrame } = require("./mobile-projection");
+    const active = ctx.sessionManager?.getActive?.();
+    if (!active?.id) return null;
+    let recent = [];
+    try { recent = ctx.sessionManager.getProjectedConversation(active.id, { limit: 12 }) || []; } catch { /* best effort */ }
+    let snap = {};
+    try { snap = ctx.turnOrchestrator.snapshot(active.id) || {}; } catch { /* best effort */ }
+    return buildSessionContextFrame({
+      title: active.title || "",
+      sessionId: active.id,
+      phase: snap.phase || "",
+      queueLength: snap.queueLength || 0,
+      recent: recent.map((m) => ({ role: m.role, text: m.content })),
+    });
+  } catch {
+    return null;
+  }
+}
+
 function registerMobilePairingIpc(ctx) {
   if (process.env.LILY_MOBILE_COMMAND === "0") return { registered: false };
   const { ipcMain } = require("electron");
@@ -77,6 +100,7 @@ function registerMobilePairingIpc(ctx) {
           return { ok: false, code: "INTERRUPT_ERROR" };
         }
       },
+      getSessionContext: () => buildActiveSessionContext(ctx),
     }),
     log,
   });
@@ -108,9 +132,16 @@ function registerMobilePairingIpc(ctx) {
       if (!manager.isBridged()) return;
       const activeId = ctx.sessionManager?.getActive?.()?.id;
       if (!activeId || sessionId !== activeId) return;
+      let turnEnded = false;
       for (const event of events) {
         const frame = mobileProjectionFrame(event);
-        if (frame) manager.project(frame);
+        if (frame) { manager.project(frame); if (frame.type === "turn.ended") turnEnded = true; }
+      }
+      // After a turn settles, refresh the phone's session context (recent
+      // history now includes this turn's result).
+      if (turnEnded) {
+        const context = buildActiveSessionContext(ctx);
+        if (context) manager.project(context);
       }
     });
   } catch (err) {

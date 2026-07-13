@@ -98,6 +98,22 @@ const {
   assert.equal(boom.reply.code, "INTERRUPT_ERROR");
 }
 
+// --- session.request returns the desktop-provided context ------------------
+{
+  const ctxFrame = { type: "session.context", title: "s", sessionId: "s1", phase: "idle", queueLength: 0, recent: [] };
+  const { reply } = await handleRelayCommandFrame(
+    { type: "session.request" },
+    { getSessionContext: async () => ctxFrame },
+  );
+  assert.deepEqual(reply, ctxFrame, "session.request replies with the built context");
+
+  // no provider / throw → no reply, never breaks
+  const none = await handleRelayCommandFrame({ type: "session.request" }, {});
+  assert.equal(none.reply, null);
+  const threw = await handleRelayCommandFrame({ type: "session.request" }, { getSessionContext: async () => { throw new Error("x"); } });
+  assert.equal(threw.reply, null);
+}
+
 // --- bridge lifecycle against a fake WebSocket ------------------------------
 {
   class FakeWS {

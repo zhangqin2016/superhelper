@@ -68,6 +68,7 @@ export default function MobilePairPage() {
   const [log, setLog] = useState([]);
   const [reply, setReply] = useState("");
   const [turnState, setTurnState] = useState("idle"); // idle|running|completed|failed|interrupted|stalled
+  const [sessionCtx, setSessionCtx] = useState(null); // { title, phase, recent: [{role,text}] }
   const wsRef = useRef(null);
   const grantRef = useRef({ url: "", grantId: "" });
   const autoPairedRef = useRef(false);
@@ -94,7 +95,11 @@ export default function MobilePairPage() {
     const tryOnce = () => {
       const ws = new WebSocket(url);
       wsRef.current = ws;
-      ws.onopen = () => { setStatus("connected"); setMessage("已连接，手机现在可以发送任务"); };
+      ws.onopen = () => {
+        setStatus("connected");
+        setMessage("已连接，手机现在可以发送任务");
+        try { ws.send(JSON.stringify({ type: "session.request" })); } catch { /* noop */ }
+      };
       ws.onmessage = (e) => {
         try {
           const frame = JSON.parse(e.data);
@@ -108,6 +113,7 @@ export default function MobilePairPage() {
             case "tool.started": setLog((l) => [`🔧 正在使用 ${frame.tool}`, ...l].slice(0, 20)); break;
             case "turn.ended": setTurnState(frame.status || "completed"); break;
             case "interrupt.ack": setLog((l) => [frame.ok ? "⏹ 已请求停止" : `停止失败：${frame.code || ""}`, ...l].slice(0, 20)); break;
+            case "session.context": setSessionCtx({ title: frame.title || "", phase: frame.phase || "", recent: Array.isArray(frame.recent) ? frame.recent : [] }); break;
             default: break;
           }
         } catch { /* ignore */ }
@@ -213,6 +219,24 @@ export default function MobilePairPage() {
 
       {status === "connected" ? (
         <div className="mt-6">
+          {sessionCtx ? (
+            <div className="mb-4 rounded border border-slate-200 bg-white">
+              <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm font-medium text-slate-700">
+                <span className="truncate">{sessionCtx.title || "当前会话"}</span>
+                {sessionCtx.phase && sessionCtx.phase !== "idle" ? <span className="ml-auto text-xs text-indigo-500">忙碌</span> : <span className="ml-auto text-xs text-slate-400">空闲</span>}
+              </div>
+              {sessionCtx.recent?.length ? (
+                <ul className="max-h-40 space-y-1 overflow-y-auto px-3 py-2 text-xs">
+                  {sessionCtx.recent.map((m, i) => (
+                    <li key={i} className={m.role === "assistant" ? "text-slate-600" : "text-slate-900"}>
+                      <span className="mr-1 text-slate-400">{m.role === "assistant" ? "AI" : "我"}</span>
+                      <span className="whitespace-pre-wrap">{m.text.length > 200 ? `${m.text.slice(0, 200)}…` : m.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="px-3 py-2 text-xs text-slate-400">暂无历史</p>}
+            </div>
+          ) : null}
           <label className="block text-sm font-medium">发送任务到桌面</label>
           <div className="mt-1 flex gap-2">
             <input className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm" value={task} onChange={(e) => setTask(e.target.value)} placeholder="例如：整理今天的会议纪要" onKeyDown={(e) => { if (e.key === "Enter") sendTask(); }} />

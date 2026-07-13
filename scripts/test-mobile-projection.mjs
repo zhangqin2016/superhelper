@@ -6,7 +6,7 @@
 import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 const require = createRequire(import.meta.url);
-const { mobileProjectionFrame } = require("../src/main/mobile-projection.js");
+const { mobileProjectionFrame, buildSessionContextFrame, MAX_RECENT } = require("../src/main/mobile-projection.js");
 const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 
 // --- pure mapper ---
@@ -32,6 +32,28 @@ const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
   assert.equal(mobileProjectionFrame(ev("tool.input.delta", { text: "secret" })), null, "tool input is never projected");
   assert.equal(mobileProjectionFrame(ev("stream.metadata")), null);
   assert.equal(mobileProjectionFrame(null), null);
+}
+
+// --- session context builder ---
+{
+  const f = buildSessionContextFrame({
+    title: "重构登录", sessionId: "s1", phase: "streaming", queueLength: 2,
+    recent: [{ role: "user", content: "帮我改登录" }, { role: "assistant", content: "好的" }, { role: "bad", text: "" }],
+  });
+  assert.equal(f.type, "session.context");
+  assert.equal(f.title, "重构登录");
+  assert.equal(f.phase, "streaming");
+  assert.equal(f.queueLength, 2);
+  assert.deepEqual(f.recent, [{ role: "user", text: "帮我改登录" }, { role: "assistant", text: "好的" }], "maps content→text, drops empty, normalizes role");
+
+  // caps count + truncates long text
+  const many = Array.from({ length: 20 }, (_, i) => ({ role: "user", text: "x".repeat(2000) + i }));
+  const capped = buildSessionContextFrame({ title: "t", sessionId: "s", recent: many });
+  assert.equal(capped.recent.length, MAX_RECENT, "recent is capped");
+  assert.ok(capped.recent[0].text.length <= 800, "message text is truncated");
+
+  // tolerant of junk
+  assert.deepEqual(buildSessionContextFrame().recent, []);
 }
 
 // --- event bus observer hook ---

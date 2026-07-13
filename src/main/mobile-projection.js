@@ -63,4 +63,31 @@ function mobileProjectionFrame(event) {
   }
 }
 
-module.exports = { mobileProjectionFrame, TERMINAL_STATUS };
+// --- session context (which session the phone controls + recent history) ---
+const MAX_RECENT = 8;
+const MAX_MSG_LEN = 800;
+
+/**
+ * Pure shaping of the controlled session's context for the phone: title, live
+ * phase/queue, and the last few messages (role + truncated text). Never carries
+ * files, tool payloads, or metadata — just the visible conversation text.
+ */
+function buildSessionContextFrame({ title, sessionId, phase, queueLength, recent } = {}) {
+  const items = (Array.isArray(recent) ? recent : [])
+    .slice(-MAX_RECENT)
+    .map((m) => ({
+      role: m?.role === "assistant" ? "assistant" : "user",
+      text: String(m?.text ?? m?.content ?? "").slice(0, MAX_MSG_LEN),
+    }))
+    .filter((m) => m.text);
+  return {
+    type: "session.context",
+    sessionId: String(sessionId || ""),
+    title: String(title || ""),
+    phase: String(phase || ""),
+    queueLength: Number.isFinite(queueLength) ? queueLength : 0,
+    recent: items,
+  };
+}
+
+module.exports = { mobileProjectionFrame, buildSessionContextFrame, TERMINAL_STATUS, MAX_RECENT };
