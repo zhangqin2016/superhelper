@@ -127,7 +127,7 @@ assert.equal(hasCommittedScheduledDraftTurn({ committedMessages: [] }, ""), fals
 
 assert.equal(
   liveTurnRenderMode({
-    liveTurn: { turnId: "turn_1" },
+    liveTurn: { turnId: "turn_1", final: { type: "turn.completed" } },
     committedMessages: [
       { role: "assistant", turnId: "turn_1", meta: { scheduledDraft: { title: "Run later" } } },
     ],
@@ -137,10 +137,19 @@ assert.equal(
 );
 assert.equal(
   liveTurnRenderMode({
+    liveTurn: { turnId: "turn_1", final: { type: "turn.completed" } },
+    committedMessages: [{ role: "assistant", turnId: "turn_1", meta: {} }],
+  }),
+  "remove-duplicate",
+  "completed live turns should be removed once the committed assistant for the same turn exists",
+);
+assert.equal(
+  liveTurnRenderMode({
     liveTurn: { turnId: "turn_1" },
     committedMessages: [{ role: "assistant", turnId: "turn_1", meta: {} }],
   }),
   "render",
+  "active live turns keep rendering; committed duplicates are skipped elsewhere until the turn is final",
 );
 assert.equal(liveTurnRenderMode({ liveTurn: null, committedMessages: [] }), "none");
 assert.equal(liveTurnRenderMode({ committedMessages: [] }), "none");

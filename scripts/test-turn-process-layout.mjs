@@ -345,6 +345,22 @@ if (resolveAssistantStreamText(sealedAggregation) !== "结论：没有问题。"
   throw new Error("sealed aggregation must not re-duplicate earlier prose in the bubble");
 }
 
+const sealedAggregationWithEvidenceGate = {
+  ...interleavedTurn,
+  final: {
+    type: "turn.completed",
+    payload: {
+      assistant: [
+        "先看下文件。结论：没有问题。",
+        "证据门槛：上面的结论缺少可核验证据支撑，不能视为已确认事实。",
+      ].join("\n\n"),
+    },
+  },
+};
+if (resolveAssistantStreamText(sealedAggregationWithEvidenceGate) !== "结论：没有问题。\n\n证据门槛：上面的结论缺少可核验证据支撑，不能视为已确认事实。") {
+  throw new Error("evidence gate suffix must not make sealed aggregation re-render earlier prose");
+}
+
 const errorOverride = {
   ...interleavedTurn,
   final: { type: "turn.failed", payload: { assistant: "连接已重置，请重新发送。" } },

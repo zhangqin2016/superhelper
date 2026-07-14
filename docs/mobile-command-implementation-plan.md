@@ -2,15 +2,17 @@
 
 ## 执行摘要
 
-本计划基于现有规范文档，实现完整的移动端观察控制桌面端功能，集成阿里云智能语音 ASR。
+本计划基于现有规范文档，描述 Mobile Command Pro 的完整方向。当前已完成的是 Phase 1 web demo core；完整的移动端观察/控制桌面端功能和语音 ASR 仍属于后续 Phase 2/生产证据范围。
 
 **目标**：
-- ✅ 移动端语音输入（阿里云 Dashscope ASR）
-- ✅ 移动端观察桌面屏幕（Windows + macOS）
-- ✅ 移动端控制桌面操作（鼠标/键盘输入）
-- ✅ 文件上传到桌面端 Agent
+- ✅ Phase 1 web demo：扫码免登录配对、桌面批准、手机发任务/图片、回复投影、中断、历史、配对管理
+- ✅ Server-local v1：聊天级远程会话、文件上传、产物描述/下载令牌、能力元数据
+- 🔶 移动端语音输入（ASR provider/privacy/evidence 未放行）
+- 🔶 移动端观察桌面屏幕（Windows + macOS 证据未放行）
+- 🔶 移动端控制桌面操作（鼠标/键盘输入，OS 权限和隐私证据未放行）
+- 🔶 大文件/后台上传到桌面端 Agent（demo 仅有 server-local v1；生产存储、隐私、重试证据未放行）
 
-**当前状态**：规范完整，实施代码缺失
+**当前状态**：Phase 1 web demo core 已可用；生产远控和原生能力仍阻塞。当前 demo 状态见 [Mobile Command Current Demo Status](mobile-command-current-demo-status.md)。
 
 ---
 
@@ -32,7 +34,7 @@ POST /api/mobile/pairing/consume   // 移动端扫码后消费 token
 
 ### 1.2 远程会话管理
 
-**文件**：`server/src/routes/public/mobile-sessions.js`
+**文件**：`server/src/routes/public/mobile-command-surface.js`, `server/src/services/mobile-command-remote-session.js`
 
 ```javascript
 // 会话管理
@@ -43,9 +45,11 @@ POST /api/mobile/sessions/{id}/permissions     // 请求权限提升
 POST /api/mobile/sessions/{id}/turn-credentials // 获取 TURN 凭证
 ```
 
+当前实现状态：`POST /api/mobile/sessions`、`refresh`、`DELETE` 已实现 server-local chat-level v1；权限提升和 TURN 凭证仍返回证据门控的 typed disabled response。
+
 ### 1.3 文件上传服务
 
-**文件**：`server/src/routes/public/mobile-uploads.js`
+**文件**：`server/src/routes/public/mobile-command-surface.js`, `server/src/services/mobile-command-file-transfer.js`
 
 ```javascript
 // 分片上传
@@ -54,6 +58,8 @@ PUT /api/mobile/uploads/{id}/chunks/{index}    // 上传分片
 POST /api/mobile/uploads/{id}/complete         // 完成上传
 GET /api/mobile/uploads/{id}                   // 查询状态
 ```
+
+当前实现状态：server-local v1 已支持上传创建、分片、完成、状态、产物描述和短期 `mobile-artifact://` 下载令牌；生产对象存储、后台上传和桌面 staging 仍需要证据放行。
 
 ---
 
@@ -714,46 +720,45 @@ const PERMISSION_MATRIX = {
 ## 实施检查清单
 
 ### 服务器端
-- [ ] 数据库迁移 - 添加 mobile_pairing_challenges 表
-- [ ] 数据库迁移 - 添加 mobile_pairing_grants 表
-- [ ] 数据库迁移 - 添加 mobile_remote_sessions 表
-- [ ] 数据库迁移 - 添加 mobile_approvals 表
-- [ ] 数据库迁移 - 添加 mobile_uploads 表
-- [ ] 实现配对路由
-- [ ] 实现会话路由
-- [ ] 实现上传路由
-- [ ] 实现 TURN 凭证路由
+- [x] 数据库迁移 - 添加 mobile_pairing_challenges 表
+- [x] 数据库迁移 - 添加 mobile_pairing_grants 表
+- [ ] 数据库迁移 - 添加 mobile_remote_sessions 表（生产持久化未放行；demo 为 server-local v1）
+- [ ] 数据库迁移 - 添加 mobile_approvals 表（生产审批流未放行）
+- [ ] 数据库迁移 - 添加 mobile_uploads 表（生产对象存储/持久化未放行；demo 为 server-local v1）
+- [x] 实现配对路由
+- [x] 实现会话路由（server-local chat-level v1）
+- [x] 实现上传路由（server-local v1）
+- [ ] 实现 TURN 凭证路由（证据门控 typed disabled）
 
 ### 桌面端
 - [ ] 实现屏幕捕获服务
 - [ ] 实现 Windows 输入注入 helper
 - [ ] 实现 macOS 输入注入 helper
-- [ ] 实现 Agent 桥接
-- [ ] 实现事件投影
+- [x] 实现 Agent 桥接（文本/图片命令 demo 路径）
+- [x] 实现事件投影（demo 回复/历史/状态投影）
 - [ ] 实现权限策略
 - [ ] 实现审批服务
 - [ ] 实现 WebRTC 信令
 - [ ] 实现 DataChannel 协议
 
 ### 移动端
-- [ ] 初始化 Next.js 项目
-- [ ] 实现登录/设备列表页面
-- [ ] 实现配对比对页面
+- [x] 初始化 Next.js 项目
+- [x] 实现免登录配对页面
 - [ ] 实现语音输入组件
 - [ ] 实现屏幕观察组件
 - [ ] 实现控制输入组件
-- [ ] 实现文件上传组件
-- [ ] 实现 WebSocket 连接管理
+- [x] 实现图片附件组件
+- [x] 实现 WebSocket/relay 连接管理（demo 路径）
 - [ ] 实现 WebRTC 连接管理
 
 ### 测试
-- [ ] 配对流程测试
-- [ ] 会话管理测试
+- [x] 配对流程测试
+- [x] 会话管理测试（server-local chat-level v1）
 - [ ] 语音识别测试
 - [ ] 屏幕捕获测试
 - [ ] 输入注入测试
 - [ ] 权限审批测试
-- [ ] 文件上传测试
+- [x] 文件上传测试（server-local v1）
 
 ---
 

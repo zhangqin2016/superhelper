@@ -21,6 +21,53 @@ function normalizedContent(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+// The comparable text of a message. A rich assistant turn often keeps its answer
+// in `record.assistantText` (result/content blocks) with an EMPTY top-level
+// `content`, while the official OpenCode refresh of the same turn carries the
+// plain text in `content`. Comparing only `content`/`text` then misses the match
+// and the official copy is appended as a duplicate turn on every reopen — so we
+// fall back to the record's assistant text.
+function comparableMessageText(message = {}) {
+  return normalizedContent(
+    message?.content || message?.text || message?.record?.assistantText || "",
+  );
+}
+
+function contentOverlaps(a = "", b = "") {
+  const left = normalizedContent(a);
+  const right = normalizedContent(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function countArray(value) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function recordRichness(record = null) {
+  if (!record || typeof record !== "object") return 0;
+  let score = 1;
+  score += countArray(record.resultBlocks) * 5;
+  score += countArray(record.artifacts) * 4;
+  score += countArray(record.contentBlocks) * 4;
+  score += countArray(record.timeline) * 2;
+  score += countArray(record.processEvents) * 2;
+  score += countArray(record.notices);
+  score += countArray(record.tools);
+  if (record.assistantText) score += 1;
+  if (record.engineMessageId) score += 1;
+  if (record.persistenceCompact) score -= 4;
+  return score;
+}
+
+function mergeConversationRecord(existingRecord = null, incomingRecord = null) {
+  if (!existingRecord) return incomingRecord || null;
+  if (!incomingRecord) return existingRecord;
+  return recordRichness(incomingRecord) >= recordRichness(existingRecord)
+    ? incomingRecord
+    : existingRecord;
+}
+
 function findEquivalentMessageIndex(messages, message) {
   const key = stableConversationMessageKey(message);
   if (key) {
@@ -28,12 +75,15 @@ function findEquivalentMessageIndex(messages, message) {
     if (index >= 0) return index;
   }
 
-  const text = normalizedContent(message?.content || message?.text || "");
+  const text = comparableMessageText(message);
   if (!message?.role || !text) return -1;
   const messageTime = timestampMs(message.timestamp);
   return messages.findIndex((item) => {
     if (item?.role !== message.role) return false;
-    if (normalizedContent(item.content || item.text || "") !== text) return false;
+    const itemText = comparableMessageText(item);
+    if (itemText !== text) {
+      if (message.role !== "assistant" || !contentOverlaps(itemText, text)) return false;
+    }
     const itemTime = timestampMs(item.timestamp);
     if (!Number.isFinite(messageTime) || !Number.isFinite(itemTime)) return true;
     return Math.abs(itemTime - messageTime) <= 10 * 60 * 1000;
@@ -41,12 +91,13 @@ function findEquivalentMessageIndex(messages, message) {
 }
 
 function mergeConversationMessage(existing = {}, incoming = {}) {
+  const record = mergeConversationRecord(existing.record, incoming.record);
   return {
     ...existing,
     ...incoming,
     files: incoming.files || existing.files,
     turnId: incoming.turnId || existing.turnId,
-    record: incoming.record || existing.record || null,
+    record,
     failed: Boolean(existing.failed || incoming.failed),
     meta: {
       ...(existing.meta || {}),

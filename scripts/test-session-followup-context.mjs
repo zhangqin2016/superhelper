@@ -38,6 +38,27 @@ assert.match(context, /incomplete/);
 assert.match(context, /cst-\*/);
 assert.match(context, /last substantive request/);
 assert.match(context, /substituted neighboring subsystem/);
+// Smart: the previous turn genuinely failed → assert the known incomplete status
+// (don't ask the model to "infer" it) and tell it to deliver the missing result.
+assert.match(context, /did NOT finish/);
+assert.match(context, /missing final result/);
+// Anti-scaffolding: status/handoff reports stay internal, never the reply.
+assert.match(context, /never send it as the user-facing reply/);
+assert.doesNotMatch(context, /infer what needs to continue/, "must not ask the model to guess completion status");
+
+// Completed previous turn → assert COMPLETED + answer directly, no status report.
+const completedContext = buildShortFollowupContext({
+  userText: "继续",
+  summary: { pendingTask: "定位 127.0.0.1:3002" },
+  messages: [
+    { role: "user", content: "127.0.0.1:3002 在哪个表" },
+    { role: "assistant", content: "在 public.agent_registrations。", record: { terminal: "turn.completed" } },
+  ],
+});
+assert.match(completedContext, /already COMPLETED/);
+assert.match(completedContext, /directly and conversationally/);
+assert.match(completedContext, /never send it as the user-facing reply/);
+assert.doesNotMatch(completedContext, /did NOT finish/, "a completed turn must not be described as unfinished");
 
 const layered = withShortFollowupContext({
   userText: "？",

@@ -29,6 +29,26 @@ export function shouldCollapseProcessGroups(liveTurn = {}, sealed = false) {
 // permanently false statement in history).
 export const LIVENESS_NOTICE_CODES = new Set(["toolProgress", "longWait"]);
 
+function normalizeSealedProcessTimeline(timeline = []) {
+  const out = [];
+  let todoIndex = -1;
+  for (const raw of timeline) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = { ...raw };
+    if ((entry.kind === "thinking" || entry.kind === "text") && entry.status === "streaming") {
+      entry.status = "done";
+    }
+    if (entry.kind === "tool" && isTodoTool(entry.name)) {
+      if (todoIndex >= 0) out.splice(todoIndex, 1);
+      out.push(entry);
+      todoIndex = out.length - 1;
+      continue;
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
 function hasRunningToolEntry(liveTurn = {}) {
   const tools = liveTurn.tools;
   const values = tools instanceof Map ? [...tools.values()] : Array.isArray(tools) ? tools : [];
@@ -50,7 +70,9 @@ function isLegacyDiscardSinkProgress(entry = {}) {
 }
 
 export function timelineForProcessView(liveTurn, sealed) {
-  const timeline = getRenderableTimeline(liveTurn);
+  const timeline = sealed
+    ? normalizeSealedProcessTimeline(getRenderableTimeline(liveTurn))
+    : getRenderableTimeline(liveTurn);
   const lastIndex = timeline.length - 1;
   return collapseRepeatedReadTools(timeline.filter((entry, index) => {
     if (sealed && isLegacyDiscardSinkProgress(entry)) return false;

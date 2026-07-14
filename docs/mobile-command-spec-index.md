@@ -4,6 +4,8 @@
 
 This document is the canonical navigation and ownership map for Mobile Command specification closure. It records the dependency order and prevents two documents from independently deciding the same fact. It does not authorize production implementation.
 
+Current demo implementation status is tracked separately in [Mobile Command Current Demo Status](mobile-command-current-demo-status.md). That document is an implementation evidence note for the Phase 1 web demo; it is not a production release authorization record and does not change the closure status of the MC-SPEC rows below.
+
 The only valid index statuses are:
 
 - `draft`: content exists but canonical review is incomplete.
@@ -87,3 +89,5 @@ No artifact in this index is accepted as of 2026-07-12. `review-ready` means rea
 The machine-checkable blocking IDs are exactly: `MC-SPEC-001`, `MC-SPEC-002`, `MC-SPEC-003`, `MC-SPEC-004`, `MC-SPEC-005`, `MC-SPEC-006`, `MC-SPEC-007`, `MC-SPEC-008`, `MC-SPEC-009`, `MC-SPEC-010`, `MC-SPEC-011`, `MC-SPEC-012`, `MC-SPEC-013`, `MC-SPEC-014`, `MC-SPEC-015`, `MC-SPEC-016`, `MC-SPEC-017`, `MC-SPEC-018`, `MC-SPEC-019`, `MC-SPEC-020`, `MC-SPEC-021`, `MC-SPEC-022`, `MC-SPEC-023`, `MC-SPEC-024`, `MC-SPEC-025`, `MC-SPEC-026`, `MC-SPEC-027`, `MC-SPEC-028`, `MC-SPEC-029`, `MC-SPEC-030`, `MC-SPEC-031`, `MC-SPEC-032`, `MC-SPEC-033`, `MC-SPEC-034`, `MC-SPEC-035`, `MC-SPEC-036`, `MC-SPEC-037`, `MC-SPEC-038`, and `MC-SPEC-040`.
 
 MC-SPEC-039 is explicitly `superseded` and non-blocking. Specification Freeze passes only when every blocking row has `Status = accepted`, every mandatory MC-ADR row has `Status: accepted`, and MC-SPEC-004 records the [Task 11 final-freeze review](superpowers/plans/2026-07-12-mobile-command-specification-closure.md#task-11-final-specification-freeze-review) as passed. No implicit range or unindexed document may alter that result.
+
+Non-normative implementation status notes, including [Mobile Command Current Demo Status](mobile-command-current-demo-status.md), may summarize what the demo can do today. They cannot mark a blocking MC-SPEC row accepted or authorize production release.

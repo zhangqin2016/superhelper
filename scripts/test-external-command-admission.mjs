@@ -25,6 +25,7 @@ const base = {
   mobileDeviceId: "dmob",
   desktopDeviceId: "dtop",
   remoteSessionId: "rs_1",
+  correlationId: "corr_1",
   text: "帮我整理今天的会议纪要",
   mode: "queue",
   sourceSequence: 7,
@@ -46,8 +47,10 @@ assert(validateEnvelope({ ...base, text: "", attachments: [{ ref: "a" }] }).ok, 
   assert.equal(d.record.effectiveMode, "queue");
   assert.equal(d.record.downgradeReason, null);
   assert.equal(d.record.commandId, "cmd_1");
+  assert.equal(d.record.correlationId, "corr_1", "correlation id is retained for diagnostics");
   assert.equal(d.record.payloadHash, "hash_abc");
   assert.equal(d.response.state, "admitted");
+  assert.equal(d.response.correlationId, "corr_1", "mobile receives the correlation id");
   assert(d.record.retainUntil > d.record.createdAt, "retainUntil is in the future");
 }
 

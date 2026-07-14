@@ -55,7 +55,9 @@ export function isCommittedRenderCurrent(input = {}) {
 export function shouldSkipCommittedAssistantForLiveTurn(runtime = {}, message = {}) {
   if (message.role !== "assistant") return false;
   if (message.meta?.scheduledDraft) return false;
-  return Boolean(message.turnId && runtime.liveTurn?.turnId === message.turnId);
+  if (runtime.liveTurn?.final) return false;
+  const turnId = message.turnId || message.record?.turnId || "";
+  return Boolean(turnId && runtime.liveTurn?.turnId === turnId);
 }
 
 export function copyActionText(message = {}) {

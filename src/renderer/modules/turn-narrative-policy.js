@@ -7,6 +7,8 @@ const CLI_ASSISTANT_TERMINALS = new Set([
   "turn.failed",
 ]);
 
+const EVIDENCE_GATE_NOTICE_RE = /^证据门槛：/;
+
 export function normalizeForDedup(text = "") {
   return String(text).trim().replace(/\s+/g, " ");
 }
@@ -49,6 +51,15 @@ export function resolveAssistantStreamText(liveTurn = {}) {
   if (liveTurn.final?.payload?.assistant != null) {
     const finalText = String(liveTurn.final.payload.assistant).trim();
     if (blockText && finalText.endsWith(blockText)) return blockText;
+    if (blockText) {
+      const blockIndex = finalText.lastIndexOf(blockText);
+      if (blockIndex >= 0) {
+        const suffix = finalText.slice(blockIndex + blockText.length).trim();
+        if (EVIDENCE_GATE_NOTICE_RE.test(suffix)) {
+          return `${blockText}\n\n${suffix}`;
+        }
+      }
+    }
     return finalText;
   }
   if (blockText != null) return blockText;

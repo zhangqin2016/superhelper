@@ -107,9 +107,13 @@ export default function MobilePairPage() {
   const [task, setTask] = useState("");
   const [log, setLog] = useState([]);
   const [reply, setReply] = useState("");
-  const [turnState, setTurnState] = useState("idle"); // idle|running|completed|failed|interrupted|stalled
+  const [turnState, setTurnState] = useState("idle"); // idle|queued|running|completed|failed|interrupted|stalled
   const [sessionCtx, setSessionCtx] = useState(null); // { title, phase, recent: [{role,text}] }
+  const [sessions, setSessions] = useState([]);
+  const [selectedSessionId, setSelectedSessionId] = useState("");
   const [attachment, setAttachment] = useState(null); // { name, mimeType, dataBase64, preview }
+  const [capabilities, setCapabilities] = useState(null);
+  const [listeningVoice, setListeningVoice] = useState(false);
   const wsRef = useRef(null);
   const grantRef = useRef({ url: "", grantId: "" });
   const autoPairedRef = useRef(false);
@@ -130,6 +134,16 @@ export default function MobilePairPage() {
     return { ok: res.ok && json?.ok !== false, json, status: res.status };
   }, []);
 
+  const loadCapabilities = useCallback(async (base) => {
+    try {
+      const res = await fetch(`${base || pageOrigin()}/api/mobile/capabilities`);
+      const json = await res.json().catch(() => null);
+      if (json?.ok) setCapabilities(json.capabilities || null);
+    } catch {
+      // Capability metadata is informational; pairing/command remains usable.
+    }
+  }, []);
+
   const connectRelay = useCallback((base, grantId, mobileToken) => {
     const url = `${wsOrigin(base)}/api/mobile/relay?role=mobile&grantId=${encodeURIComponent(grantId)}&deviceId=${encodeURIComponent(deviceId)}&token=${encodeURIComponent(mobileToken)}`;
     let attempts = 0;
@@ -139,22 +153,39 @@ export default function MobilePairPage() {
       ws.onopen = () => {
         setStatus("connected");
         setMessage("已连接，手机现在可以发送任务");
+        try { ws.send(JSON.stringify({ type: "sessions.request" })); } catch { /* noop */ }
         try { ws.send(JSON.stringify({ type: "session.request" })); } catch { /* noop */ }
       };
       ws.onmessage = (e) => {
         try {
           const frame = JSON.parse(e.data);
           switch (frame.type) {
-            case "command.admitted": setLog((l) => [`✓ 已送达桌面（${frame.effectiveMode}）`, ...l].slice(0, 20)); break;
-            case "command.rejected": setLog((l) => [`✗ 被拒绝：${frame.code}`, ...l].slice(0, 20)); break;
+            case "relay.peer_offline": setLog((l) => [`桌面暂时离线，任务未送达${frame.correlationId ? ` · ${frame.correlationId}` : ""}`, ...l].slice(0, 20)); break;
+            case "command.admitted": setLog((l) => {
+              const attachmentNote = frame.attachmentStatus === "dropped"
+                ? " · 图片未送达"
+                : frame.attachmentStatus === "partial"
+                  ? " · 部分图片未送达"
+                  : "";
+              return [`✓ 已送达桌面（${frame.effectiveMode}）${attachmentNote}${frame.correlationId ? ` · ${frame.correlationId}` : ""}`, ...l].slice(0, 20);
+            }); break;
+            case "command.rejected": setLog((l) => [`✗ 被拒绝：${frame.code}${frame.correlationId ? ` · ${frame.correlationId}` : ""}`, ...l].slice(0, 20)); break;
             // Projected desktop turn output — the phone sees the reply it triggered.
             case "turn.started": setReply(""); setTurnState("running"); break;
             case "assistant.delta": setReply((r) => (r + String(frame.text || "")).slice(-8000)); break;
             case "assistant.final": if (frame.text) setReply(String(frame.text).slice(-8000)); break;
             case "tool.started": setLog((l) => [`🔧 正在使用 ${frame.tool}`, ...l].slice(0, 20)); break;
             case "turn.ended": setTurnState(frame.status || "completed"); break;
-            case "interrupt.ack": setLog((l) => [frame.ok ? "⏹ 已请求停止" : `停止失败：${frame.code || ""}`, ...l].slice(0, 20)); break;
-            case "session.context": setSessionCtx({ title: frame.title || "", phase: frame.phase || "", recent: Array.isArray(frame.recent) ? frame.recent : [] }); break;
+            case "interrupt.ack": setLog((l) => [frame.ok ? `⏹ 已请求停止${frame.correlationId ? ` · ${frame.correlationId}` : ""}` : `停止失败：${frame.code || ""}${frame.correlationId ? ` · ${frame.correlationId}` : ""}`, ...l].slice(0, 20)); break;
+            case "sessions.list":
+              setSessions(Array.isArray(frame.sessions) ? frame.sessions : []);
+              setSelectedSessionId(frame.selectedSessionId || frame.activeSessionId || "");
+              break;
+            case "session.context":
+              setSessionCtx({ title: frame.title || "", sessionId: frame.sessionId || "", phase: frame.phase || "", recent: Array.isArray(frame.recent) ? frame.recent : [] });
+              if (frame.sessionId) setSelectedSessionId(frame.sessionId);
+              break;
+            case "session.select.ack": if (!frame.ok) setLog((l) => [`会话切换失败：${frame.code || ""}`, ...l].slice(0, 20)); break;
             default: break;
           }
         } catch { /* ignore */ }
@@ -162,9 +193,16 @@ export default function MobilePairPage() {
       ws.onclose = () => {
         // Before approval the relay refuses (grant not active): retry a few times.
         if (wsRef.current === ws && attempts < 30 && grantRef.current.grantId === grantId) {
+          const firstRetry = attempts === 0;
           attempts += 1;
           setStatus("waiting");
+          setMessage("连接已断开，正在重新连接桌面…");
+          if (firstRetry) setLog((l) => ["连接已断开，正在重连…", ...l].slice(0, 20));
           setTimeout(tryOnce, 2000);
+        } else if (wsRef.current === ws && grantRef.current.grantId === grantId) {
+          setStatus("error");
+          setMessage("无法连接桌面，请确认桌面端在线后重新扫码配对");
+          setLog((l) => ["无法连接桌面，请重新配对", ...l].slice(0, 20));
         }
       };
       ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
@@ -179,6 +217,7 @@ export default function MobilePairPage() {
     consumingRef.current = true;
     setStatus("consuming");
     setMessage("正在配对…");
+    loadCapabilities(url);
     // No login: consume with just this browser's device id + the one-time token.
     const r = await post(url, "/api/mobile/pairing/consume", { deviceId, token });
     if (!r.ok || !r.json?.grantId || !r.json?.mobileToken) {
@@ -194,7 +233,7 @@ export default function MobilePairPage() {
     setStatus("waiting");
     setMessage("已提交配对请求，请在桌面上点击“批准”…");
     connectRelay(url, r.json.grantId, r.json.mobileToken);
-  }, [codeInput, deviceId, post, connectRelay]);
+  }, [codeInput, deviceId, post, connectRelay, loadCapabilities]);
 
   useEffect(() => {
     const id = ensureDeviceId();
@@ -205,8 +244,9 @@ export default function MobilePairPage() {
       if (scanned) setCodeInput(`${scanned.url}#${scanned.token}`);
       else setCodeInput(decodeURIComponent(window.location.hash.slice(1)));
     }
+    loadCapabilities(pageOrigin());
     return () => { try { wsRef.current?.close(); } catch { /* noop */ } };
-  }, []);
+  }, [loadCapabilities]);
 
   // Auto-pair once when opened via a scanned deep link — scanning is the whole
   // interaction; the only remaining step is the desktop tapping “批准”.
@@ -229,31 +269,89 @@ export default function MobilePairPage() {
     setAttachment(att);
   }, []);
 
+  const selectSession = useCallback((sessionId) => {
+    setSelectedSessionId(sessionId);
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setLog((l) => ["手机尚未连接桌面，无法切换会话", ...l].slice(0, 20));
+      return;
+    }
+    try {
+      ws.send(JSON.stringify({ type: "session.select", sessionId }));
+      setLog((l) => ["已请求切换手机目标会话", ...l].slice(0, 20));
+    } catch {
+      setLog((l) => ["会话切换发送失败", ...l].slice(0, 20));
+    }
+  }, []);
+
+  const startVoiceInput = useCallback(() => {
+    const SpeechRecognition = typeof window !== "undefined"
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : null;
+    if (!SpeechRecognition) {
+      setLog((l) => ["语音输入不可用：当前浏览器不支持听写，请直接输入文字", ...l].slice(0, 20));
+      return;
+    }
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "zh-CN";
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      setListeningVoice(true);
+      recognition.onresult = (event) => {
+        let text = "";
+        for (let i = event.resultIndex || 0; i < event.results.length; i += 1) {
+          text += event.results[i]?.[0]?.transcript || "";
+        }
+        if (text.trim()) setTask((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${text.trim()}`);
+      };
+      recognition.onerror = () => {
+        setLog((l) => ["语音输入不可用：请检查浏览器麦克风权限", ...l].slice(0, 20));
+      };
+      recognition.onend = () => setListeningVoice(false);
+      recognition.start();
+    } catch {
+      setListeningVoice(false);
+      setLog((l) => ["语音输入不可用：请直接输入文字", ...l].slice(0, 20));
+    }
+  }, []);
+
   const sendTask = useCallback(() => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setLog((l) => ["手机尚未连接桌面，任务未发送", ...l].slice(0, 20));
+      return;
+    }
     if (!task.trim() && !attachment) return;
     const commandId = `cmd_${(crypto.randomUUID?.() || Date.now()).toString().replace(/-/g, "")}`;
+    const correlationId = `corr_${commandId.slice(4, 14) || Date.now()}`;
     ws.send(JSON.stringify({
       type: "command",
       commandId,
+      correlationId,
       idempotencyKey: commandId,
       text: task.trim(),
       attachments: attachment ? [{ name: attachment.name, mimeType: attachment.mimeType, dataBase64: attachment.dataBase64 }] : [],
       mobileDeviceId: deviceId,
-      lilySessionId: "",
       mode: "queue",
+      lilySessionId: selectedSessionId,
     }));
-    setLog((l) => [`→ ${attachment ? "🖼 " : ""}${task.trim() || "(图片)"}`, ...l].slice(0, 20));
+    setReply("");
+    setTurnState("queued");
+    setLog((l) => [`→ ${attachment ? "🖼 " : ""}${task.trim() || "(图片)"} · ${correlationId}`, ...l].slice(0, 20));
     setTask("");
     setAttachment(null);
-  }, [task, attachment, deviceId]);
+  }, [task, attachment, deviceId, selectedSessionId]);
 
   const sendInterrupt = useCallback(() => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: "interrupt" }));
-    setLog((l) => ["⏹ 发送停止…", ...l].slice(0, 20));
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setLog((l) => ["手机尚未连接桌面，无法停止", ...l].slice(0, 20));
+      return;
+    }
+    const stopCorrelationId = `corr_stop_${(crypto.randomUUID?.() || Date.now()).toString().replace(/-/g, "").slice(0, 10)}`;
+    ws.send(JSON.stringify({ type: "interrupt", correlationId: stopCorrelationId }));
+    setLog((l) => [`⏹ 发送停止… · ${stopCorrelationId}`, ...l].slice(0, 20));
   }, []);
 
   return (
@@ -261,6 +359,15 @@ export default function MobilePairPage() {
       <h1 className="text-xl font-semibold">手机控制桌面</h1>
       <p className="mt-1 text-sm text-slate-500">用手机相机扫描桌面「设置 → 手机控制」里的二维码；扫码后在桌面点“批准”即可，无需登录。</p>
       {message ? <p className="mt-3 rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">{message}</p> : null}
+      {capabilities ? (
+        <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+          <span className="font-medium text-slate-700">已开放</span>
+          <span>：任务、图片、文件上传、产物、回复、中断、历史、会话选择、浏览器听写</span>
+          {capabilities.observeControl?.enabled || capabilities.voice?.enabled ? null : (
+            <span className="block pt-1">屏幕、鼠标键盘控制、生产语音/ASR等待桌面证据放行</span>
+          )}
+        </div>
+      ) : null}
 
       {status === "idle" || status === "error" ? (
         <>
@@ -278,6 +385,16 @@ export default function MobilePairPage() {
                 <span className="truncate">{sessionCtx.title || "当前会话"}</span>
                 {sessionCtx.phase && sessionCtx.phase !== "idle" ? <span className="ml-auto text-xs text-indigo-500">忙碌</span> : <span className="ml-auto text-xs text-slate-400">空闲</span>}
               </div>
+              {sessions.length ? (
+                <div className="border-b border-slate-100 px-3 py-2">
+                  <label className="mb-1 block text-xs text-slate-400">手机发送到</label>
+                  <select className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm" value={selectedSessionId} onChange={(e) => selectSession(e.target.value)}>
+                    {sessions.map((session) => (
+                      <option key={session.id} value={session.id}>{session.title || "未命名会话"}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               {sessionCtx.recent?.length ? (
                 <ul className="max-h-40 space-y-1 overflow-y-auto px-3 py-2 text-xs">
                   {sessionCtx.recent.map((m, i) => (
@@ -304,6 +421,7 @@ export default function MobilePairPage() {
               📷
               <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
             </label>
+            <button type="button" className={listeningVoice ? "rounded border border-indigo-300 bg-indigo-50 px-2 text-lg text-indigo-600" : "rounded border border-slate-300 px-2 text-lg text-slate-500"} title="语音输入" onClick={startVoiceInput}>🎙</button>
             <input className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm" value={task} onChange={(e) => setTask(e.target.value)} placeholder="例如：整理今天的会议纪要" onKeyDown={(e) => { if (e.key === "Enter") sendTask(); }} />
             <button type="button" className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white" onClick={sendTask}>发送</button>
           </div>
@@ -312,6 +430,7 @@ export default function MobilePairPage() {
             <div className="mt-4">
               <div className="mb-1 flex items-center gap-2 text-xs text-slate-400">
                 <span>桌面回复</span>
+                {turnState === "queued" ? <span className="text-slate-500">等待桌面执行</span> : null}
                 {turnState === "running" ? <span className="text-indigo-500">运行中…</span> : null}
                 {turnState === "running" ? <button type="button" className="ml-auto rounded bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-600" onClick={sendInterrupt}>停止</button> : null}
                 {turnState === "completed" ? <span className="text-emerald-500">已完成</span> : null}

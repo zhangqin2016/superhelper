@@ -25,6 +25,7 @@ const serverRequire = createRequire(path.join(ROOT, "server/package.json"));
 const Fastify = serverRequire("fastify");
 const { WebSocket } = serverRequire("ws");
 const { registerMobileRelay } = await import(path.join(ROOT, "server/src/services/mobile-relay.js"));
+const { createGrantToken } = await import(path.join(ROOT, "server/src/services/mobile-grant-token.js"));
 const { decideExternalCommandAdmission, admissionResponse } = require(path.join(ROOT, "src/main/external-command-admission.js"));
 const { createMobileAgentBridge } = require(path.join(ROOT, "src/main/mobile-agent-bridge.js"));
 
@@ -48,10 +49,10 @@ const fakeOrchestrator = {
 
 // --- real relay with fake pairing auth --------------------------------------
 const grant = { id: "g1", status: "active", user_id: "u1", desktop_device_id: "dtop", mobile_device_id: "dmob" };
+const mobileToken = createGrantToken({ grantId: grant.id, mobileDeviceId: grant.mobile_device_id });
 const app = Fastify({ logger: false });
 registerMobileRelay(app, {
   verifyAccessToken: (t) => t === "tok_dtop" ? { ok: true, userId: "u1", sessionId: "s", deviceId: "dtop" }
-                        : t === "tok_dmob" ? { ok: true, userId: "u1", sessionId: "s", deviceId: "dmob" }
                         : { ok: false, code: "BAD" },
   lookupActiveGrant: async (id) => (id === "g1" ? grant : null),
 });
@@ -71,7 +72,7 @@ const bridge = createMobileAgentBridge({
 bridge.start();
 
 // --- mobile client -----------------------------------------------------------
-const mobile = new WebSocket(`${relayBase}?role=mobile&grantId=g1&deviceId=dmob&token=tok_dmob`);
+const mobile = new WebSocket(`${relayBase}?role=mobile&grantId=g1&deviceId=dmob&token=${encodeURIComponent(mobileToken)}`);
 const mobileFrames = [];
 mobile.on("message", (d) => { try { mobileFrames.push(JSON.parse(d.toString())); } catch { /* ignore */ } });
 
@@ -82,6 +83,7 @@ await wait(150); // let the desktop bridge connect too
 mobile.send(JSON.stringify({
   type: "command",
   commandId: "c_e2e_1",
+  correlationId: "corr_e2e_1",
   idempotencyKey: "i_e2e_1",
   text: "端到端:帮我整理会议纪要",
   mobileDeviceId: "dmob",
@@ -99,6 +101,7 @@ assert.equal(queue[0].text, "端到端:帮我整理会议纪要", "the exact com
 const ack = mobileFrames.find((f) => f.type === "command.admitted");
 assert.ok(ack, "an admission ack was projected back to mobile");
 assert.equal(ack.commandId, "c_e2e_1");
+assert.equal(ack.correlationId, "corr_e2e_1", "the correlation id crosses mobile → desktop → mobile");
 assert.equal(ack.effectiveMode, "queue");
 
 // Idempotent replay: same command again admits no second queue item.

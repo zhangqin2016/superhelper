@@ -14,7 +14,7 @@ function makeManager(overrides = {}) {
   const calls = [];
   const bridges = [];
   const mgr = createMobilePairingManager({
-    serviceFetch: overrides.serviceFetch || (async (pathname, opts) => { calls.push({ pathname, body: JSON.parse(opts.body), headers: opts.headers }); return { ok: true, json: { ok: true } }; }),
+    serviceFetch: overrides.serviceFetch || (async (pathname, opts = {}) => { calls.push({ pathname, body: opts.body ? JSON.parse(opts.body) : null, headers: opts.headers || {}, method: opts.method || "GET" }); return { ok: true, json: { ok: true } }; }),
     getAccountToken: overrides.getAccountToken || (async () => ({ ok: true, accessToken: "acc_tok" })),
     getDesktopDeviceId: () => "dtop",
     getServerBaseUrl: () => "https://lily.example",
@@ -132,6 +132,28 @@ function makeManager(overrides = {}) {
   const res = await mgr.revoke("mpg_1", "user_action");
   assert.equal(res.ok, true);
   assert.equal(mgr.isBridged(), false, "revoking the active grant stops the bridge");
+}
+
+// --- desktop status includes the server capability contract -----------------
+{
+  const seen = [];
+  const { mgr } = makeManager({
+    serviceFetch: async (pathname, opts = {}) => {
+      seen.push({ pathname, method: opts.method || "GET" });
+      if (pathname === "/api/mobile/capabilities") {
+        return { ok: true, json: { ok: true, phase: "phase1-web-demo", fallback: "chat_only", capabilities: { pairing: { enabled: true }, observeControl: { enabled: false } } } };
+      }
+      return { ok: true, json: { ok: true } };
+    },
+  });
+  const status = await mgr.status();
+  assert.equal(status.ok, true);
+  assert.equal(status.bridged, false);
+  assert.equal(status.capabilityPhase, "phase1-web-demo");
+  assert.equal(status.capabilityFallback, "chat_only");
+  assert.equal(status.capabilities.pairing.enabled, true);
+  assert.equal(status.capabilities.observeControl.enabled, false);
+  assert.ok(seen.some((call) => call.pathname === "/api/mobile/capabilities" && call.method === "GET"), "status fetches capability metadata");
 }
 
 console.log("mobile-pairing-manager: ok");

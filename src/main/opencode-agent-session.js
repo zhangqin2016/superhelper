@@ -880,7 +880,12 @@ class OpencodeAgentSession extends EventEmitter {
     try {
       const server = this._server || (await this._ensureStarted());
       if (!server?.summarize) return false;
-      await server.summarize(body);
+      // Pre-turn compaction calls the model to summarize a large context. If that
+      // call HANGS (slow/stuck gateway, oversized context), an unbounded await
+      // freezes the turn forever at "Preparing to compact…". Bound it and let the
+      // timeout fall into the catch below → return false → the caller fails open
+      // and runs the turn WITHOUT compaction (baseline), never stuck.
+      await runWithTimeout(server.summarize(body), compactionTimeoutMs(), "COMPACTION_TIMEOUT");
       try {
         require("./session-memory").markSessionCompacted(this.sessionId, {
           runtime: "opencode",
@@ -2696,4 +2701,27 @@ function toOpencodeAnswers(response, questions) {
   });
 }
 
-module.exports = { OpencodeAgentSession, detectIncompleteDeliverable };
+// Bound for pre-turn context compaction (model summarize call). Configurable via
+// LILY_COMPACTION_TIMEOUT_MS; floored at 15s so a legit large summary is not cut
+// short, defaulting to 90s. Past this we fail open and run the turn uncompacted.
+function compactionTimeoutMs() {
+  const raw = Number(process.env.LILY_COMPACTION_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.max(15_000, raw) : 90_000;
+}
+
+// Await a promise but reject with `label` if it does not settle within timeoutMs.
+// Used so a hung engine call degrades to a caught error (fail-open) instead of an
+// unbounded await that freezes the turn.
+async function runWithTimeout(promise, timeoutMs, label = "TIMEOUT") {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label)), timeoutMs); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+module.exports = { OpencodeAgentSession, detectIncompleteDeliverable, runWithTimeout, compactionTimeoutMs };

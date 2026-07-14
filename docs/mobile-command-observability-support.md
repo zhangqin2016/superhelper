@@ -9,6 +9,8 @@
 
 This document defines the allowed contract and evidence gate. The ops runbook owns incident actions.
 
+Machine-readable contract note: `docs/schemas/mobile-command-observability.schema.json` now defines the telemetry envelope, customer-visible status advisory, and diagnostics manifest shapes. `scripts/test-mobile-command-observability-contracts.mjs` compiles those schemas and verifies bounded fields, redaction requirements, status fallback invariants, and rejection of sensitive/free-text fields. This is contract evidence only; deployed telemetry ingestion, dashboards, SLOs, support RBAC, retention, and drills remain blocked below.
+
 ## 2. Telemetry Envelope And Event Allowlist
 
 Every accepted event must use a versioned schema and reject unknown fields:
@@ -155,4 +157,4 @@ RBAC roles, identity provider, approval path, maximum access duration, audit ret
 
 ## 9. Acceptance Gate
 
-MC-SPEC-025 remains `evidence-needed` until schemas enforce the event and infrastructure-metric allowlists/redaction/cardinality rules; SLOs and alerts are based on measured data and drilled routes; dashboards and telemetry retention are approved; customer-visible status publication/recovery is accessible, localized and human-approved; diagnostics pass adversarial privacy tests; support access is time-bound/audited; and cost/capacity evidence is attached. This document does not assert implementation.
+MC-SPEC-025 remains `evidence-needed` until deployed systems enforce the event and infrastructure-metric allowlists/redaction/cardinality rules; SLOs and alerts are based on measured data and drilled routes; dashboards and telemetry retention are approved; customer-visible status publication/recovery is accessible, localized and human-approved; diagnostics pass adversarial privacy tests; support access is time-bound/audited; and cost/capacity evidence is attached. The local JSON schema and redline test are necessary contract evidence, not production implementation.

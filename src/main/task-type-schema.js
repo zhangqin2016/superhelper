@@ -8,6 +8,12 @@ const PLATFORM_BASELINE_RULES = Object.freeze([
   "For non-trivial work, identify the impact surface before changing files or running risky commands.",
   "Keep progress visible when the engine is thinking, reading files, running tools, or waiting on permissions.",
   "Before finishing, report what was verified; if verification was not possible, state that explicitly.",
+  // Reply shape: the deliverable, not the tracker. Objective/plan/work-state are
+  // internal execution scaffolding the platform maintains for you — mirroring
+  // them back as the answer (Objective / Work State / Completed / Active /
+  // Blocked / Next Move headers) is what makes a simple reply look robotic.
+  "Your reply IS the answer or deliverable, in natural prose for the user. Objective, plan, work-state, blocked items, and next steps are INTERNAL execution tracking — never render them back as your reply (no \"Objective / Work State / Completed / Active / Blocked / Next Move\" status-report sections).",
+  "When continuing or resuming a task, build on what is already done and give the next result directly. Do not restate or re-send the previous turn's conclusion as a recap.",
 ]);
 
 const TASK_TYPES = Object.freeze({

@@ -16,6 +16,8 @@
 const crypto = require("node:crypto");
 
 const MAX_COMMAND_TEXT = 8000;
+const MAX_ATTACHMENTS = 6;
+const SUPPORTED_PROTOCOL_VERSION = 1;
 
 function payloadHashFor(text, attachments) {
   const canonical = JSON.stringify({ text: String(text || ""), attachments: attachments || [] });
@@ -29,7 +31,16 @@ function payloadHashFor(text, attachments) {
  * @returns {Promise<{reply: object|null}>} reply is the frame to send to mobile
  *   (or null when the frame is not a command we handle).
  */
-async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionContext, materializeAttachments, desktopDeviceId = "", lilySessionId = "" } = {}) {
+async function handleRelayCommandFrame(rawFrame, {
+  admit,
+  interrupt,
+  getSessionContext,
+  getSessionList,
+  selectSession,
+  materializeAttachments,
+  desktopDeviceId = "",
+  lilySessionId = "",
+} = {}) {
   let frame;
   try {
     frame = typeof rawFrame === "string" ? JSON.parse(rawFrame) : rawFrame;
@@ -49,26 +60,64 @@ async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionC
     }
   }
 
+  if (frame.type === "sessions.request") {
+    if (typeof getSessionList !== "function") return { reply: null };
+    try {
+      const list = await getSessionList();
+      return { reply: list || null };
+    } catch {
+      return { reply: null };
+    }
+  }
+
+  if (frame.type === "session.select") {
+    const sessionId = String(frame.sessionId || "");
+    if (!sessionId) return { reply: { type: "session.select.ack", ok: false, sessionId: "", code: "SESSION_INVALID" } };
+    if (typeof selectSession !== "function") {
+      return { reply: { type: "session.select.ack", ok: false, sessionId, code: "SESSION_SELECT_UNAVAILABLE" } };
+    }
+    try {
+      const ctx = await selectSession(sessionId);
+      return { reply: ctx || { type: "session.select.ack", ok: false, sessionId, code: "SESSION_NOT_FOUND" } };
+    } catch {
+      return { reply: { type: "session.select.ack", ok: false, sessionId, code: "SESSION_SELECT_ERROR" } };
+    }
+  }
+
   // Mobile "stop": interrupt the running turn through the controlled seam
   // (never the runner directly). Fail-open — a failed interrupt just acks false.
   if (frame.type === "interrupt") {
-    if (typeof interrupt !== "function") return { reply: { type: "interrupt.ack", ok: false, code: "INTERRUPT_UNAVAILABLE" } };
+    const correlationId = String(frame.correlationId || "");
+    if (typeof interrupt !== "function") return { reply: { type: "interrupt.ack", ok: false, correlationId: correlationId || null, code: "INTERRUPT_UNAVAILABLE" } };
     try {
-      const r = await interrupt({ turnId: String(frame.turnId || "") });
-      return { reply: { type: "interrupt.ack", ok: Boolean(r?.ok ?? true), turnId: frame.turnId || null } };
+      const r = await interrupt({ turnId: String(frame.turnId || ""), correlationId });
+      return { reply: { type: "interrupt.ack", ok: Boolean(r?.ok ?? true), turnId: frame.turnId || null, correlationId: correlationId || null } };
     } catch (err) {
-      return { reply: { type: "interrupt.ack", ok: false, code: "INTERRUPT_ERROR", detail: String(err?.message || err) } };
+      return { reply: { type: "interrupt.ack", ok: false, correlationId: correlationId || null, code: "INTERRUPT_ERROR", detail: String(err?.message || err) } };
     }
   }
 
   if (frame.type !== "command") return { reply: null };
 
-  const text = String(frame.text || "").slice(0, MAX_COMMAND_TEXT);
-  const attachments = Array.isArray(frame.attachments) ? frame.attachments : [];
-  const targetSession = String(frame.lilySessionId || lilySessionId || "");
+  const protocolVersion = Number(frame.protocolVersion || SUPPORTED_PROTOCOL_VERSION);
   const commandId = String(frame.commandId || "");
+  const correlationId = String(frame.correlationId || commandId || "");
+  if (protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
+    return { reply: { type: "command.rejected", commandId: commandId || null, correlationId: correlationId || null, code: "CLIENT_UPGRADE_REQUIRED" } };
+  }
+
+  const rawText = String(frame.text || "");
+  if (rawText.length > MAX_COMMAND_TEXT) {
+    return { reply: { type: "command.rejected", commandId: commandId || null, correlationId: correlationId || null, code: "COMMAND_TEXT_TOO_LARGE" } };
+  }
+  const text = rawText;
+  const attachments = Array.isArray(frame.attachments) ? frame.attachments : [];
+  if (attachments.length > MAX_ATTACHMENTS) {
+    return { reply: { type: "command.rejected", commandId: commandId || null, correlationId: correlationId || null, code: "ATTACHMENT_COUNT_EXCEEDED" } };
+  }
+  const targetSession = String(frame.lilySessionId || lilySessionId || "");
   if (!commandId || (!text && attachments.length === 0)) {
-    return { reply: { type: "command.rejected", commandId: commandId || null, code: "COMMAND_INVALID" } };
+    return { reply: { type: "command.rejected", commandId: commandId || null, correlationId: correlationId || null, code: "COMMAND_INVALID" } };
   }
 
   // Materialize any phone-sent attachments (base64) to local temp files so the
@@ -77,14 +126,19 @@ async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionC
   // text-only (never worse than baseline); the agent also has its own
   // unreadable-file fallback manifest.
   let files = [];
+  let attachmentStatus = attachments.length ? "dropped" : "none";
   if (attachments.length && typeof materializeAttachments === "function") {
     try { files = (await materializeAttachments(attachments)) || []; }
     catch { files = []; }
+  }
+  if (attachments.length && files.length > 0) {
+    attachmentStatus = files.length >= attachments.length ? "attached" : "partial";
   }
 
   const envelope = {
     commandId,
     idempotencyKey: String(frame.idempotencyKey || commandId),
+    correlationId,
     payloadHash: payloadHashFor(text, attachments),
     lilySessionId: targetSession,
     desktopDeviceId,
@@ -93,6 +147,9 @@ async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionC
     text,
     attachments,
     files,
+    attachmentStatus,
+    attachmentCount: attachments.length,
+    materializedFileCount: files.length,
     mode: frame.mode === "steer" ? "steer" : "queue",
     sourceSequence: Number.isFinite(frame.sourceSequence) ? frame.sourceSequence : null,
   };
@@ -101,16 +158,20 @@ async function handleRelayCommandFrame(rawFrame, { admit, interrupt, getSessionC
   try {
     result = await admit(envelope);
   } catch (err) {
-    return { reply: { type: "command.rejected", commandId, code: "COMMAND_ADMISSION_ERROR", detail: String(err?.message || err) } };
+    return { reply: { type: "command.rejected", commandId, correlationId, code: "COMMAND_ADMISSION_ERROR", detail: String(err?.message || err) } };
   }
   if (!result?.ok) {
-    return { reply: { type: "command.rejected", commandId, code: result?.code || "COMMAND_REJECTED" } };
+    return { reply: { type: "command.rejected", commandId, correlationId, code: result?.code || "COMMAND_REJECTED" } };
   }
   // Forward the exact mode fields mobile must render distinctly (contract §3.3).
   return {
     reply: {
       type: "command.admitted",
       commandId: result.commandId,
+      correlationId: result.correlationId || correlationId,
+      attachmentStatus,
+      attachmentCount: attachments.length,
+      materializedFileCount: files.length,
       state: result.state,
       requestedMode: result.requestedMode,
       effectiveMode: result.effectiveMode,
@@ -132,6 +193,8 @@ function createMobileAgentBridge({
   admit,
   interrupt,
   getSessionContext,
+  getSessionList,
+  selectSession,
   materializeAttachments,
   WebSocketCtor = globalThis.WebSocket,
   reconnectDelayMs = 3000,
@@ -156,7 +219,17 @@ function createMobileAgentBridge({
     }
     ws.onopen = () => log.info("mobile bridge connected: grant=%s", grantId);
     ws.onmessage = async (event) => {
-      const { reply } = await handleRelayCommandFrame(event?.data, { admit, interrupt, getSessionContext, materializeAttachments, desktopDeviceId });
+      const { reply } = await handleRelayCommandFrame(event?.data, {
+        admit,
+        interrupt,
+        getSessionContext,
+        getSessionList,
+        selectSession,
+        materializeAttachments,
+        desktopDeviceId,
+      });
+      if (reply?.type === "command.admitted") log.info("mobile command admitted: correlation=%s command=%s mode=%s", reply.correlationId || "", reply.commandId || "", reply.effectiveMode || "");
+      if (reply?.type === "command.rejected") log.warn("mobile command rejected: correlation=%s command=%s code=%s", reply.correlationId || "", reply.commandId || "", reply.code || "");
       if (reply && ws && ws.readyState === (WebSocketCtor.OPEN ?? 1)) {
         try { ws.send(JSON.stringify(reply)); } catch { /* best effort */ }
       }
@@ -195,7 +268,9 @@ function createMobileAgentBridge({
 }
 
 module.exports = {
+  MAX_ATTACHMENTS,
   MAX_COMMAND_TEXT,
+  SUPPORTED_PROTOCOL_VERSION,
   payloadHashFor,
   handleRelayCommandFrame,
   createMobileAgentBridge,

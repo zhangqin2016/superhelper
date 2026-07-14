@@ -31,7 +31,11 @@ function timestampMs(value) {
 }
 
 function messageText(message = {}) {
-  return String(message.content || message.text || "");
+  // Fall back to the record's assistant text: a rich assistant turn can carry an
+  // empty top-level `content` while its answer lives in `record.assistantText`.
+  // Without this, such a turn fails to dedup against the official OpenCode copy
+  // (which has the plain text in `content`) and shows up twice on reopen.
+  return String(message.content || message.text || message.record?.assistantText || "");
 }
 
 function normalizedText(value) {
@@ -253,6 +257,42 @@ function roleTurnKey(message = {}) {
   return message.turnId && message.role ? `${message.role}:${message.turnId}` : "";
 }
 
+function countArray(value) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function recordRichness(record = null) {
+  if (!record || typeof record !== "object") return 0;
+  let score = 1;
+  score += countArray(record.resultBlocks) * 5;
+  score += countArray(record.artifacts) * 4;
+  score += countArray(record.contentBlocks) * 4;
+  score += countArray(record.timeline) * 2;
+  score += countArray(record.processEvents) * 2;
+  score += countArray(record.notices);
+  score += countArray(record.tools);
+  if (record.assistantText) score += 1;
+  if (record.engineMessageId) score += 1;
+  if (record.persistenceCompact) score -= 4;
+  return score;
+}
+
+function mergeAssistantRecords(existingRecord = null, incomingRecord = null) {
+  if (!existingRecord) return incomingRecord || null;
+  if (!incomingRecord) return existingRecord;
+  const existingRichness = recordRichness(existingRecord);
+  const incomingRichness = recordRichness(incomingRecord);
+  const base = incomingRichness > existingRichness ? incomingRecord : existingRecord;
+  const other = base === incomingRecord ? existingRecord : incomingRecord;
+  return {
+    ...base,
+    meta: {
+      ...(other.meta || {}),
+      ...(base.meta || {}),
+    },
+  };
+}
+
 function isSameUserMessage(a = {}, b = {}) {
   if (a.role !== "user" || b.role !== "user") return false;
   const aText = normalizedText(messageText(a));
@@ -310,20 +350,16 @@ function mergeProjectionConversation(messages = [], projections = []) {
     }
     const existing = out[existingIndex];
     if (projected.role !== "assistant") continue;
-    if (existing.record && existing.content) continue;
-    out[existingIndex] = mergeMetadata(
-      {
-        ...existing,
-        content: existing.content || projected.content || "",
-        record: existing.record || projected.record || null,
-        failed: Boolean(existing.failed || projected.failed),
-        meta: {
-          ...(projected.meta || {}),
-          ...(existing.meta || {}),
-        },
+    out[existingIndex] = {
+      ...existing,
+      content: existing.content || projected.content || "",
+      record: mergeAssistantRecords(existing.record, projected.record),
+      failed: Boolean(existing.failed || projected.failed),
+      meta: {
+        ...(projected.meta || {}),
+        ...(existing.meta || {}),
       },
-      projected,
-    );
+    };
   }
 
   return out.sort((a, b) => {
@@ -419,7 +455,8 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
       ...opts,
       includeOpen: true,
     });
-    const conversation = mergeProjectionConversation(mergedOfficial, projections);
+    const withProjections = mergeProjectionConversation(mergedOfficial, projections);
+    const conversation = mergeProjectionConversation(withProjections, localConversation);
     return {
       ...page,
       projectId: session.projectId,

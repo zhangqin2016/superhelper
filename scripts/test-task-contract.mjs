@@ -134,6 +134,16 @@ assert.equal(quality.active, true);
 assert.equal(quality.kind, "agent_quality");
 assert.equal(quality.taskType, "agent_quality");
 
+const topTierContinuation = classifyTask({ text: "继续按顶级设计 系统更聪明" });
+assert.equal(topTierContinuation.active, true, "goalful continuation should not be flattened into casual chat");
+assert.equal(topTierContinuation.kind, "architecture_audit");
+assert.equal(topTierContinuation.taskType, "architecture_audit");
+
+const finalShapePush = classifyTask({ text: "全部推进最终形态，把系统智能度补齐" });
+assert.equal(finalShapePush.active, true, "final-shape intelligence requests should activate agent-quality work");
+assert.equal(finalShapePush.kind, "agent_quality");
+assert.equal(finalShapePush.taskType, "agent_quality");
+
 const architectureAudit = classifyTask({ text: "分析我们系统有哪些比较笨的地方" });
 assert.equal(architectureAudit.active, true, "system weakness analysis should activate a grounded architecture audit");
 assert.equal(architectureAudit.kind, "architecture_audit");
@@ -161,6 +171,15 @@ assert(qualityContract.verificationStrategy.includes("routing_contract"));
 assert.equal(qualityContract.workspaceGroundingPolicy.required, true);
 assert.equal(qualityContract.workspaceGroundingPolicy.mode, "reuse_existing_workspace");
 assert.equal(qualityContract.workspaceGroundingPolicy.allowNewTopLevel, false);
+
+const finalShapeContract = buildTaskContract({
+  text: "全部推进最终形态，把系统智能度补齐",
+  project: { path: ROOT },
+});
+assert.equal(finalShapeContract.taskType, "agent_quality");
+assert(finalShapeContract.evidencePolicy.requiredEvidenceKinds.includes("file_search"));
+assert(finalShapeContract.evidencePolicy.requiredEvidenceKinds.includes("file_read"));
+assert(finalShapeContract.checklist.some((item) => item.includes("deterministic intent routing")));
 
 const imsdkAnalysis = buildTaskContract({
   text: "分析 imsdk 流转流程",
@@ -376,5 +395,28 @@ withRemoteTaskIntelligence({ enabled: false }, () => {
   assert.equal(loadTaskIntelligenceRegistry().enabled, false);
   assert.equal(classifyTask({ text: "修复 bug" }).active, false, "remote kill switch should disable task contract");
 });
+
+// Reply-shape rule: an active task contract must tell the model that its reply
+// is the deliverable and that objective/plan/work-state tracking stays internal
+// (no status-report recap) — while KEEPING the evidence-grounding discipline.
+{
+  const contract = buildTaskContract({
+    text: "修复 turn 渲染的 bug 并验证",
+    files: [],
+    session: { id: "s-contract" },
+    project: { path: ROOT },
+  });
+  assert.equal(contract.active, true, "an operational task should produce an active contract");
+  const prefixed = withTaskContractPrefix("继续", contract);
+  assert.match(prefixed, /Your reply IS the answer or deliverable/, "contract must state the reply is the deliverable, not a status tracker");
+  assert.match(prefixed, /never render them back as your reply/, "contract must forbid mirroring internal tracking back as the reply");
+  assert.match(prefixed, /Work State \/ Completed \/ Active \/ Blocked \/ Next Move/, "contract must name the exact status-report sections to avoid");
+  assert.match(prefixed, /Do not restate or re-send the previous turn's conclusion as a recap/, "contract must forbid re-sending the prior conclusion on continuation");
+  // No regression: evidence-grounding discipline is preserved (not weakened).
+  assert.match(prefixed, /Unsupported factual claims must be downgraded to uncertainty/, "evidence grounding discipline must remain");
+  assert.match(prefixed, /do NOT append a blanket evidence disclaimer/, "grounded answers must not get a blanket evidence disclaimer");
+  // Fail-open: a non-active contract injects nothing (today's behavior).
+  assert.equal(withTaskContractPrefix("hi", { active: false }), "hi", "inactive contract must not alter the prompt");
+}
 
 console.log("task-contract: ok");

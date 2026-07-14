@@ -33,8 +33,20 @@ assert.match(page, /token=\$\{encodeURIComponent\(mobileToken\)\}/, "relay is au
 // Command envelope shape the desktop bridge expects.
 assert.match(page, /type: "command"/, "sends a command envelope");
 assert.match(page, /commandId/, "the command carries a commandId (idempotency)");
+assert.match(page, /correlationId/, "the command carries a correlationId for diagnostics");
+assert.match(page, /corr_/, "correlation ids are visually distinct from command ids");
 assert.match(page, /command\.admitted/, "renders the admission ack");
 assert.match(page, /command\.rejected/, "renders a rejection");
+assert.match(page, /setTurnState\("queued"\)/, "send clears old reply into a queued state");
+assert.match(page, /等待桌面执行/, "queued commands have a visible waiting state");
+assert.match(page, /relay\.peer_offline/, "renders desktop-offline relay feedback");
+assert.match(page, /frame\.correlationId/, "desktop-offline feedback includes the command correlation id when present");
+assert.match(page, /连接已断开/, "shows a clear message when the relay disconnects");
+assert.match(page, /无法连接桌面/, "shows a terminal message after reconnect retries are exhausted");
+assert.match(page, /手机尚未连接桌面/, "send/stop while disconnected is visible");
+assert.match(page, /attachmentStatus/, "renders whether phone attachments reached desktop");
+assert.match(page, /图片未送达/, "warns when image attachment materialization fails");
+assert.match(page, /部分图片未送达/, "warns when only some attachments materialize");
 
 // Projected desktop turn output — the phone sees the reply it triggered.
 assert.match(page, /"assistant\.delta"/, "accumulates streaming assistant text");
@@ -44,8 +56,15 @@ assert.match(page, /桌面回复/, "renders a reply panel");
 // Interrupt a running turn from the phone.
 assert.match(page, /type: "interrupt"/, "can send an interrupt frame");
 assert.match(page, /interrupt\.ack/, "renders the interrupt ack");
+assert.match(page, /stopCorrelationId/, "interrupt frames carry a correlation id");
+assert.match(page, /corr_stop_/, "stop correlation ids are visually distinct");
 // Session context + recent history.
 assert.match(page, /type: "session\.request"/, "requests session context on connect");
+assert.match(page, /type: "sessions\.request"/, "requests selectable session list on connect");
+assert.match(page, /"sessions\.list"/, "renders selectable sessions from the desktop");
+assert.match(page, /type: "session\.select"/, "can select which desktop session receives mobile commands");
+assert.match(page, /selectedSessionId/, "keeps the selected target session id");
+assert.match(page, /<select/, "renders a mobile session picker");
 assert.match(page, /"session\.context"/, "renders the session context");
 assert.match(page, /sessionCtx/, "keeps session context state (title + recent history)");
 // Attachments: pick + downscale an image and send it with the command.
@@ -53,6 +72,14 @@ assert.match(page, /type="file"/, "has an image picker");
 assert.match(page, /accept="image\/\*"/, "picker accepts images");
 assert.match(page, /fileToDownscaledAttachment/, "downscales the image before sending");
 assert.match(page, /attachments: attachment \?/, "includes the attachment in the command frame");
+assert.match(page, /lilySessionId: selectedSessionId/, "commands target the mobile-selected session");
+
+// Browser dictation: speech-to-text is a mobile input convenience, distinct
+// from gated production/native voice control.
+assert.match(page, /SpeechRecognition/, "checks for browser speech recognition support");
+assert.match(page, /startVoiceInput/, "has a browser voice dictation entry point");
+assert.match(page, /语音输入不可用/, "falls back loudly when browser dictation is unavailable");
+assert.match(page, /🎙/, "renders a microphone button");
 
 // Retry-until-approved: the relay refuses until the desktop approves.
 assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");
@@ -67,5 +94,13 @@ assert.match(page, /autoPairedRef/, "auto-pairs once when opened via a scanned d
 assert.match(page, /consumingRef/, "guards against a double consume of the one-time token");
 assert.match(page, /if \(consumingRef\.current\) return/, "pair() returns early if a consume is already in flight/done");
 assert.match(page, /PAIRING_CHALLENGE_INVALID_OR_EXPIRED/, "shows a clear message when the code expired/was used");
+
+// Final-shape capability metadata: the page shows the current demo surface and
+// explicitly keeps Phase 2 live/voice/control disabled unless the server enables it.
+assert.match(page, /\/api\/mobile\/capabilities/, "loads Mobile Command capability metadata");
+assert.match(page, /文件上传、产物/, "capability copy includes local file upload/artifacts");
+assert.match(page, /capabilities\.observeControl\?\.enabled/, "renders observe/control as server-gated");
+assert.match(page, /capabilities\.voice\?\.enabled/, "renders voice as server-gated");
+assert.match(page, /屏幕、鼠标键盘控制、生产语音\/ASR等待桌面证据放行/, "does not advertise Phase 2 as live");
 
 console.log("mobile-pair-web: ok");

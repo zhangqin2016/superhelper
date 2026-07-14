@@ -2,7 +2,7 @@
 
 ## 1. Gate Semantics
 
-This document is the sole authorization record. A gate is `PASS` only when every required item is evidenced; an unrun, unapproved, or externally blocked item is `BLOCKED`, never implicitly passed. Specification coverage is not implementation evidence.
+This document is the sole authorization record for production release. A gate is `PASS` only when every required item is evidenced; an unrun, unapproved, or externally blocked item is `BLOCKED`, never implicitly passed. Specification coverage is not implementation evidence. The Phase 1 web demo core is separately tracked in [Mobile Command Current Demo Status](mobile-command-current-demo-status.md).
 
 ## 2. Specification Freeze — BLOCKED
 
@@ -25,15 +25,15 @@ Production Release cannot pass while Specification Freeze is blocked.
 
 | Gate | Requirement | Required evidence | Current evidence | Result |
 |---|---|---|---|---|
-| PR-01 | Reproducible signed builds and accepted release coupling | iOS/Android/desktop/server/web artifacts, provenance, notarization/signing, store-lag and rollback policy | No production implementation or signed artifacts; MC-ADR-001/002/012 proposed | BLOCKED |
-| PR-02 | Command/pairing/bridge implementation tests | Unit, integration, contract and E2E suites mapped to MC-TC IDs | Test cases are specifications only | BLOCKED |
-| PR-03 | Security, replay, revocation and approval race tests | Automated adversarial tests plus security approval | No implementation evidence | BLOCKED |
-| PR-04 | Integrity, idempotency, malformed/forged/oversized tests | Full automated negative suite and artifact logs | No implementation evidence | BLOCKED |
-| PR-05 | Reconnect, relay loss, version skew and local preservation | Chaos/network matrix with durable replay and local-baseline assertions | No implementation/chaos evidence | BLOCKED |
+| PR-01 | Reproducible signed builds and accepted release coupling | iOS/Android/desktop/server/web artifacts, provenance, notarization/signing, store-lag and rollback policy | Phase 1 web demo code exists, but no production signed artifacts or release coupling evidence; MC-ADR-001/002/012 proposed | BLOCKED |
+| PR-02 | Command/pairing/bridge implementation tests | Unit, integration, contract and E2E suites mapped to MC-TC IDs | Phase 1 demo has automated pairing/relay/bridge/admission/attachment checks; full production MC-TC mapping, native/live/control coverage, and owner approval remain absent | BLOCKED |
+| PR-03 | Security, replay, revocation and approval race tests | Automated adversarial tests plus security approval | Phase 1 demo covers selected grant isolation, re-scan, idempotency, and revoke refusal; full adversarial/security approval is absent | BLOCKED |
+| PR-04 | Integrity, idempotency, malformed/forged/oversized tests | Full automated negative suite and artifact logs | Phase 1 demo covers selected command idempotency and bounded attachment materialization; full production negative suite and artifact logs are absent | BLOCKED |
+| PR-05 | Reconnect, relay loss, version skew and local preservation | Chaos/network matrix with durable replay and local-baseline assertions | Phase 1 demo has local fail-open behavior for selected bridge failures; no production chaos/network/version-skew matrix | BLOCKED |
 | PR-06 | TURN capacity and live-session reliability | Regional relay credentials, load/abuse/cost results and SLO approval | MC-ADR-004 proposed; provider/load evidence absent | BLOCKED |
 | PR-07 | Representative platform QA | Every advertised Windows/macOS/Linux × iOS/Android/PWA pair, permissions, background, accessibility and visual QA | MC-ADR-005–009 proposed; platform matrix unverified/blocked; visual artifact absent | BLOCKED |
-| PR-08 | Monitoring, privacy, retention and support readiness | Dashboards/alerts, redaction tests, consent/legal approvals, deletion/export drill, support RBAC | Pipeline/legal/provider/deletion evidence absent | BLOCKED |
-| PR-09 | Staged kill switches and rollback rehearsal | Server/desktop/mobile flags exercised in canary and rollback drill | Configuration seam is specified; no implementation or rehearsal evidence | BLOCKED |
+| PR-08 | Monitoring, privacy, retention and support readiness | Dashboards/alerts, redaction tests, consent/legal approvals, deletion/export drill, support RBAC | Observability/status/diagnostics JSON schema and sensitive-field rejection tests exist; deployed pipeline/legal/provider/deletion/support evidence remains absent | BLOCKED |
+| PR-09 | Staged kill switches and rollback rehearsal | Server/desktop/mobile flags exercised in canary and rollback drill | Demo capability flags and HTTP route-boundary fail-closed tests exist; production remote-config propagation, canary, rollback, and rehearsal evidence remain absent | BLOCKED |
 
 Production Release result: **BLOCKED**. No checklist item is waived and none is `PASS`.
 

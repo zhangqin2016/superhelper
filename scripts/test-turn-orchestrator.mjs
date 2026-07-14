@@ -611,6 +611,34 @@ sent.length = 0;
 messages.length = 0;
 runner.sentPayloads.length = 0;
 
+const agentQualityCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "继续按顶级设计 系统更聪明", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+  skipVision: true,
+  skipDocument: true,
+});
+if (!agentQualityCapabilityTurn.ok || !runner.isBusy()) {
+  throw new Error(`agent-quality capability turn should start: ${JSON.stringify(agentQualityCapabilityTurn)}`);
+}
+const agentQualityPayload = runner.sentPayloads.at(-1);
+const agentQualityRecommendedSkills = agentQualityPayload.trace?.capabilityContext?.recommendedSkillIds || [];
+if (agentQualityRecommendedSkills[0] !== "lily-intent-eval") {
+  throw new Error(`agent-quality capability trace should put intent eval first: ${JSON.stringify(agentQualityPayload.trace?.capabilityContext)}\n${agentQualityPayload.text}`);
+}
+if (!agentQualityRecommendedSkills.includes("lily-skill-quality-gate")) {
+  throw new Error(`agent-quality capability trace should include skill quality gate: ${JSON.stringify(agentQualityPayload.trace?.capabilityContext)}\n${agentQualityPayload.text}`);
+}
+const intentEvalIndex = agentQualityPayload.text.indexOf("- lily-intent-eval ");
+const browserQaAgentQualityIndex = agentQualityPayload.text.indexOf("- lily-browser-qa ");
+if (intentEvalIndex < 0 || (browserQaAgentQualityIndex >= 0 && intentEvalIndex > browserQaAgentQualityIndex)) {
+  throw new Error(`agent-quality capability context should not put browser QA before intent eval:\n${agentQualityPayload.text}`);
+}
+runner.finish("Agent-quality capability route selected.");
+ctx.eventBus.flush();
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+
 const appCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "帮我做一个 CRM 管理后台应用，包含客户列表和统计看板", [], {
   spawnEngine: false,
   skipPreflight: true,

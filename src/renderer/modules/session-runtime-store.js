@@ -193,6 +193,29 @@ function isLikelyProjectionDuplicate(a = {}, b = {}) {
   );
 }
 
+// A rich assistant turn keeps its answer in `record.assistantText` with an empty
+// top-level `content`; the official OpenCode refresh of the same turn carries the
+// plain text in `content`. With different keys (the official copy did not inherit
+// the Lily turnId) and no shared text, the two would survive as separate bubbles
+// and the finished turn duplicates on reopen. Match them on comparable text
+// (content/text/record.assistantText) within a window so they collapse into one.
+function assistantComparableText(message = {}) {
+  return normalizedMessageText({
+    content: message.content || message.text || message.record?.assistantText || "",
+  });
+}
+
+function sameAssistantTurnWithinWindow(a = {}, b = {}, windowMs = 30 * 60 * 1000) {
+  if (a.role !== "assistant" || b.role !== "assistant") return false;
+  const aText = assistantComparableText(a);
+  const bText = assistantComparableText(b);
+  if (!aText || !bText || aText !== bText) return false;
+  const at = timestampMs(a.timestamp);
+  const bt = timestampMs(b.timestamp);
+  if (!Number.isFinite(at) || !Number.isFinite(bt)) return false;
+  return Math.abs(at - bt) <= windowMs;
+}
+
 function messageQuality(message = {}) {
   let score = 0;
   if (message.id) score += 1;
@@ -201,6 +224,34 @@ function messageQuality(message = {}) {
   if (message.meta) score += 2;
   if (message.files?.length) score += 1;
   return score;
+}
+
+function countArray(value) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function recordRichness(record = null) {
+  if (!record || typeof record !== "object") return 0;
+  let score = 1;
+  score += countArray(record.resultBlocks) * 5;
+  score += countArray(record.artifacts) * 4;
+  score += countArray(record.contentBlocks) * 4;
+  score += countArray(record.timeline) * 2;
+  score += countArray(record.processEvents) * 2;
+  score += countArray(record.notices);
+  score += countArray(record.tools);
+  if (record.assistantText) score += 1;
+  if (record.engineMessageId) score += 1;
+  if (record.persistenceCompact) score -= 4;
+  return score;
+}
+
+function mergeCommittedRecord(existingRecord = null, incomingRecord = null) {
+  if (!existingRecord) return incomingRecord || null;
+  if (!incomingRecord) return existingRecord;
+  return recordRichness(incomingRecord) >= recordRichness(existingRecord)
+    ? incomingRecord
+    : existingRecord;
 }
 
 function equivalentCommittedMessageIndex(messages, message) {
@@ -212,6 +263,7 @@ function equivalentCommittedMessageIndex(messages, message) {
     if (scheduledDraftsMatch(existing, message)) return i;
     if (draftKey && scheduledDraftFingerprint(existing) === draftKey) return i;
     if (isLikelyProjectionDuplicate(existing, message)) return i;
+    if (sameAssistantTurnWithinWindow(existing, message)) return i;
   }
   return -1;
 }
@@ -219,13 +271,14 @@ function equivalentCommittedMessageIndex(messages, message) {
 function mergeCommittedMessage(existing = {}, incoming = {}) {
   const preferIncoming = messageQuality(incoming) >= messageQuality(existing);
   const base = preferIncoming ? { ...existing, ...incoming } : { ...incoming, ...existing };
+  const record = mergeCommittedRecord(existing.record, incoming.record);
   return {
     ...base,
     id: incoming.id || existing.id,
     content: incoming.content || existing.content || "",
     files: incoming.files || existing.files,
     turnId: incoming.turnId || existing.turnId,
-    record: incoming.record || existing.record || null,
+    record,
     failed: Boolean(incoming.failed || existing.failed),
     meta: {
       ...(existing.meta || {}),
@@ -248,6 +301,14 @@ function dedupeCommittedMessages(messages = []) {
   return out;
 }
 
+function mergeIncomingCommittedMessages(existingMessages = [], incomingMessages = []) {
+  return (incomingMessages || []).map((message) => {
+    if (!message?.role) return message;
+    const index = equivalentCommittedMessageIndex(existingMessages, message);
+    return index >= 0 ? mergeCommittedMessage(existingMessages[index], message) : message;
+  });
+}
+
 function upsertCommittedMessage(runtime, message) {
   const index = equivalentCommittedMessageIndex(runtime.committedMessages, message);
   if (index < 0) {
@@ -267,13 +328,14 @@ export function syncCommittedMessages(sessionId, messages) {
   if (!sessionId) return;
   const runtime = getRuntimeSession(sessionId);
   const incoming = Array.isArray(messages) ? messages : [];
+  const mergedIncoming = mergeIncomingCommittedMessages(runtime.committedMessages, incoming);
 
   const shouldPreserveLocal =
     runtime.phase !== "idle" ||
     Boolean(runtime.turnId) ||
     Boolean(runtime.queue?.length);
   if (!shouldPreserveLocal) {
-    runtime.committedMessages = dedupeCommittedMessages(incoming);
+    runtime.committedMessages = dedupeCommittedMessages(mergedIncoming);
     return;
   }
 
@@ -282,7 +344,7 @@ export function syncCommittedMessages(sessionId, messages) {
   // active turn. Unrelated local-only user messages are queued work and must
   // not be appended to history, or session switches can visually attach the
   // wrong question to the running turn.
-  const seen = new Set(incoming.map((message) => committedMessageKey(message)));
+  const seen = new Set(mergedIncoming.map((message) => committedMessageKey(message)));
   const localOnly = [];
   for (const message of runtime.committedMessages) {
     const key = committedMessageKey(message);
@@ -291,7 +353,7 @@ export function syncCommittedMessages(sessionId, messages) {
     seen.add(key);
     localOnly.push(message);
   }
-  runtime.committedMessages = dedupeCommittedMessages([...incoming, ...localOnly]);
+  runtime.committedMessages = dedupeCommittedMessages([...mergedIncoming, ...localOnly]);
 }
 
 export function hydrateRuntimeFromState(state) {

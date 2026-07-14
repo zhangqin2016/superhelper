@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "https://lilyworkbench.local/schemas/mobile-command-observability.schema.json",
+  "title": "Lily Mobile Command observability and support contracts v1",
+  "definitions": {
+    "boundedCode": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "correlationId": { "type": "string", "pattern": "^corr_[A-Za-z0-9_-]{8,128}$" },
+    "telemetryEnvelope": {
+      "type": "object",
+      "required": [
+        "eventName",
+        "schemaVersion",
+        "occurredAt",
+        "environment",
+        "region",
+        "appPlatform",
+        "appVersion",
+        "protocolVersion",
+        "correlationId",
+        "resultCode",
+        "durationBucket",
+        "count"
+      ],
+      "properties": {
+        "eventName": {
+          "enum": [
+            "mobile.pairing.completed",
+            "mobile.remote_session.transition",
+            "mobile.signaling.connection",
+            "mobile.webrtc.connection",
+            "mobile.permission.decision",
+            "mobile.upload.transition",
+            "mobile.push.delivery",
+            "mobile.device.revocation",
+            "mobile.kill_switch.evaluated",
+            "mobile.diagnostics.created"
+          ]
+        },
+        "schemaVersion": { "const": 1 },
+        "occurredAt": { "$ref": "#/definitions/isoDateTime" },
+        "environment": { "enum": ["dev", "staging", "production"] },
+        "region": { "$ref": "#/definitions/boundedCode" },
+        "appPlatform": { "enum": ["desktop", "ios", "android", "web"] },
+        "appVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "protocolVersion": { "type": "integer", "minimum": 1 },
+        "correlationId": { "$ref": "#/definitions/correlationId" },
+        "resultCode": { "$ref": "#/definitions/boundedCode" },
+        "durationBucket": { "$ref": "#/definitions/boundedCode" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "fromState": { "$ref": "#/definitions/boundedCode" },
+        "toState": { "$ref": "#/definitions/boundedCode" },
+        "sourceMode": { "enum": ["chat", "observe", "control", "voice"] },
+        "transport": { "enum": ["websocket", "datachannel", "polling"] },
+        "attemptBucket": { "$ref": "#/definitions/boundedCode" },
+        "connectionMode": { "enum": ["p2p", "turn", "failed"] },
+        "rttBucket": { "$ref": "#/definitions/boundedCode" },
+        "lossBucket": { "$ref": "#/definitions/boundedCode" },
+        "reconnectBucket": { "$ref": "#/definitions/boundedCode" },
+        "permissionKind": { "enum": ["screen", "input", "clipboard", "microphone", "file", "push", "diagnostics"] },
+        "decision": { "enum": ["granted", "denied", "expired", "revoked"] },
+        "sizeBucket": { "$ref": "#/definitions/boundedCode" },
+        "riskBucket": { "$ref": "#/definitions/boundedCode" },
+        "platform": { "enum": ["ios", "android", "web", "desktop"] },
+        "activeSessionBucket": { "$ref": "#/definitions/boundedCode" },
+        "switchName": { "$ref": "#/definitions/boundedCode" },
+        "effectiveState": { "enum": ["enabled", "disabled"] },
+        "configAgeBucket": { "$ref": "#/definitions/boundedCode" },
+        "manifestVersion": { "const": 1 },
+        "uploadConsent": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "customerStatusAdvisory": {
+      "type": "object",
+      "required": [
+        "service",
+        "region",
+        "capability",
+        "phase",
+        "impact",
+        "fallback",
+        "startedAt",
+        "updatedAt",
+        "resolvedAt",
+        "incidentId"
+      ],
+      "properties": {
+        "service": { "enum": ["mobile_command"] },
+        "region": { "$ref": "#/definitions/boundedCode" },
+        "capability": { "enum": ["pairing", "chat", "projection", "upload", "push", "observe", "control", "voice", "diagnostics"] },
+        "phase": { "enum": ["investigating", "identified", "monitoring", "resolved"] },
+        "impact": { "enum": ["unavailable", "partial", "degraded", "none"] },
+        "fallback": { "enum": ["chat_only", "observe_only", "local_desktop_only", "none"] },
+        "startedAt": { "$ref": "#/definitions/isoDateTime" },
+        "updatedAt": { "$ref": "#/definitions/isoDateTime" },
+        "resolvedAt": { "oneOf": [{ "$ref": "#/definitions/isoDateTime" }, { "type": "null" }] },
+        "incidentId": { "type": "string", "pattern": "^inc_[A-Za-z0-9_-]{8,64}$" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "phase": { "const": "resolved" } }, "required": ["phase"] },
+          "then": { "properties": { "impact": { "const": "none" }, "fallback": { "const": "none" }, "resolvedAt": { "$ref": "#/definitions/isoDateTime" } } }
+        },
+        {
+          "if": { "properties": { "phase": { "enum": ["investigating", "identified", "monitoring"] } }, "required": ["phase"] },
+          "then": { "properties": { "resolvedAt": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "impact": { "enum": ["partial", "degraded"] } }, "required": ["impact"] },
+          "then": { "not": { "properties": { "fallback": { "const": "none" } }, "required": ["fallback"] } }
+        },
+        {
+          "if": { "properties": { "impact": { "const": "none" } }, "required": ["impact"] },
+          "then": { "properties": { "phase": { "const": "resolved" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "diagnosticsManifest": {
+      "type": "object",
+      "required": [
+        "manifestVersion",
+        "createdAt",
+        "expiresAt",
+        "appVersion",
+        "platform",
+        "protocolVersion",
+        "region",
+        "configVersion",
+        "killSwitchStates",
+        "correlationIds",
+        "errorCodes",
+        "networkCounters",
+        "schemaValidation",
+        "packageIntegrityDigests",
+        "redactionReport"
+      ],
+      "properties": {
+        "manifestVersion": { "const": 1 },
+        "createdAt": { "$ref": "#/definitions/isoDateTime" },
+        "expiresAt": { "$ref": "#/definitions/isoDateTime" },
+        "appVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "platform": { "enum": ["desktop", "ios", "android", "web"] },
+        "protocolVersion": { "type": "integer", "minimum": 1 },
+        "region": { "$ref": "#/definitions/boundedCode" },
+        "configVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "killSwitchStates": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": { "$ref": "#/definitions/boundedCode" },
+          "additionalProperties": { "enum": ["enabled", "disabled"] }
+        },
+        "correlationIds": { "type": "array", "maxItems": 50, "uniqueItems": true, "items": { "$ref": "#/definitions/correlationId" } },
+        "errorCodes": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "pattern": "^MC-ERR-[A-Z0-9-]+$" } },
+        "networkCounters": {
+          "type": "object",
+          "properties": {
+            "rttBucket": { "$ref": "#/definitions/boundedCode" },
+            "lossBucket": { "$ref": "#/definitions/boundedCode" },
+            "reconnectBucket": { "$ref": "#/definitions/boundedCode" }
+          },
+          "additionalProperties": false
+        },
+        "schemaValidation": {
+          "type": "object",
+          "required": ["passed", "failureCount"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "failureCount": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "packageIntegrityDigests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "redactionReport": {
+          "type": "object",
+          "required": ["redacted", "droppedFieldCount"],
+          "properties": {
+            "redacted": { "const": true },
+            "droppedFieldCount": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/telemetryEnvelope" },
+    { "$ref": "#/definitions/customerStatusAdvisory" },
+    { "$ref": "#/definitions/diagnosticsManifest" }
+  ]
+}

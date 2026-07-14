@@ -2,9 +2,9 @@
 
 ## 1. Current Gate
 
-Status: **not build-ready**. The existing set supports architecture review, but production implementation remains unauthorized. The canonical artifact states are in the [specification index](mobile-command-spec-index.md); unresolved alternatives are in the [decision log](mobile-command-decision-log.md).
+Status: **production not build-ready**. The existing set supports architecture review, but production implementation remains unauthorized. Phase 1 web demo core is now usable and tracked separately in [Mobile Command Current Demo Status](mobile-command-current-demo-status.md). The canonical artifact states are in the [specification index](mobile-command-spec-index.md); unresolved alternatives are in the [decision log](mobile-command-decision-log.md).
 
-This dashboard reports closure work, not product implementation work. Generated code, CI jobs, native helpers, deployed infrastructure, and production routes belong to a later implementation plan unless evidence gathering explicitly requires a disposable prototype.
+This dashboard reports production closure work, not demo implementation work. The Phase 1 demo now has generated code and tests, but native helpers, deployed production infrastructure, WebRTC/TURN, ASR, OS input, support/ops, and production release gates remain governed by the closure artifacts unless evidence gathering explicitly requires a disposable prototype.
 
 This dashboard is a projection, never a second source of truth. Projection references use `@ID.Field`: `@MC-SPEC-*.DependsOn`, `@MC-SPEC-*.EvidenceApproval`, and `@MC-SPEC-*.Status` resolve to the matching index row; `@MC-ADR-*.EvidenceRefs` and `@MC-ADR-*.Status` resolve to the matching decision record. Owners are canonical IDs, not duplicated descriptions.
 
@@ -51,7 +51,7 @@ A later gate may reopen an earlier artifact. The canonical owner must be correct
 - MC-SPEC-015/016/019 and MC-ADR-005/006/007 remain `evidence-needed`/`proposed`. macOS evidence is limited to Electron API presence with an asleep display returning 0 sources/empty thumbnails, ScreenCaptureKit typecheck, CGEvent permission `false`, and blocked signing/notarization prerequisites. Windows and Linux have no real device/VM evidence.
 - MC-SPEC-017/021 and MC-ADR-008 remain `evidence-needed`/`proposed`. Official sources prove candidate API capability only; no shared corpus, real mobile device, credentials, latency, accuracy, mixed-language, privacy-deployment, cost, or battery result exists.
 - MC-SPEC-022 remains `evidence-needed` and its planned visual-system document was not created. High-fidelity screens, brand-derived token proof, required state screenshots, accessibility QA, and design approval are missing.
-- The evidence gate therefore remains blocked. Unverified Live, control, native, and ASR capabilities must not be advertised; the required design degradation is explicit Chat Only/text input while today's local Lily remains unchanged.
+- The production evidence gate therefore remains blocked. The Phase 1 web demo may be described as usable for command/image/projection/interrupt/history/pairing management, but unverified Live, control, native, push, large-upload, and ASR capabilities must not be advertised; the required design degradation is explicit Chat Only/text input while today's local Lily remains unchanged.
 
 ## 4. Historical Gap Disposition
 

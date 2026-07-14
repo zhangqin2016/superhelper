@@ -1154,6 +1154,13 @@ app.whenReady().then(async () => {
         renderConversation(sessionId, { force: true, forceScrollBottom: true });
         await frame();
         await frame();
+        {
+          const panel = document.querySelector('.session-messages[data-session-id="' + sessionId + '"] .runtime-messages');
+          const oldAssistantArticles = panel?.querySelectorAll('.assistant-turn-article[data-turn-id="turn_old_completed_live"]') || [];
+          if (oldAssistantArticles.length !== 1) {
+            throw new Error("completed live turn must collapse to one committed assistant article, got " + oldAssistantArticles.length);
+          }
+        }
 
         // This is the preflight gap that previously caused disorder: the next
         // user message is committed before the new live turn has started.

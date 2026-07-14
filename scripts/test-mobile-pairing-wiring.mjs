@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Static guard: the desktop pairing manager is actually wired into the app —
-// IPC handlers registered, preload exposed, admit routed to the active session
-// via admitExternalCommand (never sendUserMessage), and the relay URL delivered
-// by the server. Cheap file checks so the wiring can't silently regress.
+// IPC handlers registered, preload exposed, admit routed through the selected
+// mobile target (defaulting to the active session) via admitExternalCommand
+// (never sendUserMessage), and the relay URL delivered by the server. Cheap
+// file checks so the wiring can't silently regress.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -17,8 +18,13 @@ const ipc = read("src/main/ipc-mobile-pairing.js");
 assert.match(ipc, /createMobilePairingManager/, "IPC instantiates the pairing manager");
 assert.match(ipc, /admitExternalCommand/, "commands enter via the sanctioned admission seam");
 assert.doesNotMatch(ipc, /\.sendUserMessage\s*\(/, "the bridge must NOT call sendUserMessage directly");
-assert.match(ipc, /getActive\?\.\(\)/, "admit targets the currently active Lily session");
+assert.match(ipc, /selectedMobileSessionId/, "desktop tracks the phone-selected target session");
+assert.match(ipc, /getSessionList/, "bridge exposes the selectable session list");
+assert.match(ipc, /selectSession/, "bridge can select the mobile target session");
+assert.match(ipc, /findById\?\.\(lilySessionId\)/, "admit validates the selected session before dispatch");
+assert.match(ipc, /getActive\?\.\(\)/, "admit still defaults to the currently active Lily session");
 assert.match(ipc, /LILY_MOBILE_COMMAND\s*===\s*"0"/, "there is a kill switch");
+assert.match(ipc, /manager\.status\(\)/, "status exposes the manager capability contract");
 for (const ch of ["create-challenge", "poll-pending", "approve", "deny", "revoke", "status"]) {
   assert.match(ipc, new RegExp(`mobile-pairing:${ch}`), `IPC handler ${ch} registered`);
 }

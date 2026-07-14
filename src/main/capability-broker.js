@@ -239,6 +239,8 @@ function queryFacts(opts = {}) {
     /检查|review|audit|质量|门槛|符合|验收|评审/i.test(`${text} ${zh}`);
   const intentEval = /意图|intent|路由|routing|触发哪个|prompt regression|评估这句话/i.test(`${text} ${zh}`) &&
     /评估|evaluate|测试|test|触发|识别/i.test(`${text} ${zh}`);
+  const agentQuality = intentEval || skillQuality ||
+    /顶级设计|顶级系统|最终形态|系统智能|智能度|更聪明|大智慧|变笨|不够聪明|能力退化|deterministic intent routing|agent quality|system intelligence/i.test(`${text} ${zh}`);
   const mail = /邮件|邮箱|email|mail|inbox|客户.*回复|回复客户|收件箱|发信|send mail/i.test(`${text} ${zh}`);
   const codeSignal = /debug|fix|TypeError|ReferenceError|SyntaxError|build failure|test failure|runtime error|cannot read|stack trace|exception|npm|node|python|java|代码|编译|构建|测试失败/i.test(`${text} ${zh}`);
   const codeRepair = !files.image && !files.pdf && !files.docx && !files.pptx && !spreadsheet &&
@@ -295,6 +297,7 @@ function queryFacts(opts = {}) {
     sourceResearch,
     skillQuality,
     intentEval,
+    agentQuality,
     mail,
     uiArtifact,
     uiReview,
@@ -346,6 +349,9 @@ function skillRelevance(skill, facts) {
   if (skill.id === "lily-research-synthesis" && facts.sourceResearch) score += facts.stockResearch ? 90 : 150;
   if (skill.id === "lily-skill-quality-gate" && facts.skillQuality) score += 160;
   if (skill.id === "lily-intent-eval" && facts.intentEval) score += 160;
+  if (skill.id === "lily-intent-eval" && facts.agentQuality && !facts.skillQuality) score += facts.intentEval ? 0 : 175;
+  if (skill.id === "lily-skill-quality-gate" && facts.agentQuality) score += facts.skillQuality ? 0 : 145;
+  if (skill.id === "lily-engineering-rules" && facts.agentQuality) score += facts.engineeringRules ? 0 : 120;
   if (skill.id === "lily-mail-assistant" && facts.mail) score += 160;
   if (skill.id === "lily-ui-quality" && facts.uiQuality) score += 160;
   if (skill.id === "lily-code-repair" && facts.codeRepair) score += 160;

@@ -17,7 +17,7 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { OpencodeAgentSession } = require("../src/main/opencode-agent-session.js");
+const { OpencodeAgentSession, runWithTimeout, compactionTimeoutMs } = require("../src/main/opencode-agent-session.js");
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -260,7 +260,7 @@ async function newSession() {
     await sleep(35);
     assert(orch.calls.done.length === 0, "busy official status keeps the turn open");
     fake.idleState = true;
-    await sleep(60);
+    await waitFor(() => orch.calls.done.length === 1, "official idle probe completes without session.idle", 200);
     assert(orch.calls.done.length === 1, "official idle probe completes without session.idle");
     assert(orch.calls.done[0].output === "probe final answer", "probe completion syncs official final output");
     assert(orch.calls.done[0].engineMessageId === "msg_idle_probe_final", "probe completion preserves official message id");
@@ -329,7 +329,7 @@ async function newSession() {
     await sleep(35);
     assert(orch.calls.done.length === 0, "busy official status keeps v2 task turn open");
     fake.idleState = true;
-    await sleep(60);
+    await waitFor(() => orch.calls.done.length === 1, "v2 task progress triggers idle probe completion without session.idle", 200);
     assert(orch.calls.done.length === 1, "v2 task progress triggers idle probe completion without session.idle");
     assert(orch.calls.done[0].output === "Task result summarized by parent", "v2 task idle probe syncs final parent answer");
     assert(draftTypes(orch).includes("tool.started"), "v2 task called is visible to orchestrator");
@@ -2805,6 +2805,35 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   assert(session.agentResumeId === resumeBefore, "the engine session id survives for resume");
   assert(session.isAlive() === false || session._starting === null, "no phantom start is left behind");
   session.terminate();
+}
+
+// Pre-turn context compaction must be BOUNDED: a hung model summarize call
+// cannot be allowed to freeze the turn forever at "Preparing to compact…".
+{
+  // Timeout mechanism: fast promise resolves; a hang rejects with the label
+  // within the bound (fail-open catch turns that into "skip compaction").
+  const fast = await runWithTimeout(Promise.resolve("ok"), 1000, "X");
+  assert(fast === "ok", "runWithTimeout passes through a fast result");
+  let caught = "";
+  const started = Date.now();
+  try { await runWithTimeout(new Promise(() => {}), 100, "COMPACTION_TIMEOUT"); }
+  catch (err) { caught = err.message; }
+  assert(caught === "COMPACTION_TIMEOUT", "a hung promise rejects with the timeout label");
+  assert(Date.now() - started < 800, "the timeout fires promptly, not after an unbounded wait");
+  // Bound is env-configurable but floored so a legit large summary is not cut short.
+  assert(compactionTimeoutMs() === 90000, "default compaction timeout is 90s");
+  process.env.LILY_COMPACTION_TIMEOUT_MS = "5000";
+  assert(compactionTimeoutMs() === 15000, "compaction timeout floors at 15s");
+  delete process.env.LILY_COMPACTION_TIMEOUT_MS;
+
+  // compactContext fails OPEN (returns false) when the summarize call errors,
+  // so the caller runs the turn without compaction instead of blocking.
+  const fakeServer = { summarize: async () => { throw new Error("summarize boom"); }, terminate: () => {} };
+  const session = new OpencodeAgentSession("compact_fail_open", { createServer: () => fakeServer });
+  session._server = fakeServer;
+  const compacted = await session.compactContext({ reason: "test" });
+  assert(compacted === false, "compactContext returns false (fail-open) when summarize fails");
+  session.terminate?.();
 }
 
 console.log("opencode-agent-session: ok");

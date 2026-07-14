@@ -66,9 +66,21 @@ export function hasCommittedScheduledDraftTurn(runtime = {}, turnId = "") {
   );
 }
 
+function committedMessageTurnId(message = {}) {
+  return message.turnId || message.record?.turnId || "";
+}
+
+export function hasCommittedAssistantTurn(runtime = {}, turnId = "") {
+  return Boolean(turnId) && (runtime.committedMessages || []).some(
+    (message) => committedMessageTurnId(message) === turnId &&
+      message.role === "assistant",
+  );
+}
+
 export function liveTurnRenderMode(runtime = {}) {
   const turnId = runtime.liveTurn?.turnId || "";
   if (!turnId) return "none";
+  if (runtime.liveTurn?.final && hasCommittedAssistantTurn(runtime, turnId)) return "remove-duplicate";
   return hasCommittedScheduledDraftTurn(runtime, turnId) ? "remove-duplicate" : "render";
 }
 

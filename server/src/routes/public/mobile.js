@@ -17,6 +17,11 @@ import {
   listPendingGrants,
   listGrantsForDesktop,
 } from "../../services/mobile-pairing.js";
+import {
+  DISABLED_CAPABILITIES,
+  disabledCapability,
+} from "../../services/mobile-command-capabilities.js";
+import { registerMobileCommandSurfaceRoutes } from "./mobile-command-surface.js";
 
 // Mobile Command Phase 1 pairing routes. Thin HTTP layer over the pure pairing
 // decisions in services/mobile-pairing.js: it authenticates (device signature
@@ -246,4 +251,7 @@ export function registerPublicMobileRoutes(app) {
       return reply.send({ ok: true, grants: result.grants });
     },
   );
+  registerMobileCommandSurfaceRoutes(app);
 }
+
+export { DISABLED_CAPABILITIES, disabledCapability };

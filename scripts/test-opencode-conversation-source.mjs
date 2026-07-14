@@ -515,4 +515,78 @@ assert.equal(
   "partial projection user is deduped against official user while preserving assistant",
 );
 
+const richLocalRecord = {
+  turnId: "turn_rich",
+  assistantText: "先看下文件。最终答案。\n\n证据门槛：上面的结论缺少可核验证据支撑。",
+  artifacts: [{ path: "/tmp/report.md", relativePath: "output/report.md" }],
+  resultBlocks: [{ type: "artifact", artifactType: "markdown", path: "/tmp/report.md" }],
+  timeline: [
+    { kind: "text", id: "text_1", text: "先看下文件。", status: "done", ts: 1000 },
+    { kind: "tool", id: "tool_1", name: "Write", status: "done", ts: 2000 },
+    { kind: "text", id: "text_2", text: "最终答案。", status: "done", ts: 3000 },
+  ],
+  meta: { canonicalSource: "lily" },
+};
+const restartedOfficialPage = await getConversationPageFromSource({
+  sessionManager: {
+    findById: () => baseSession,
+    getActive: () => baseSession,
+    getConversationPage: () => ({
+      ok: true,
+      source: "lily",
+      conversation: [{
+        id: "local_rich_assistant",
+        role: "assistant",
+        content: richLocalRecord.assistantText,
+        timestamp: "2026-06-23T16:00:10.000Z",
+        turnId: "turn_rich",
+        record: richLocalRecord,
+      }],
+    }),
+    getConversation: () => [{
+      id: "local_rich_assistant",
+      role: "assistant",
+      content: richLocalRecord.assistantText,
+      timestamp: "2026-06-23T16:00:10.000Z",
+      turnId: "turn_rich",
+      record: richLocalRecord,
+    }],
+    getProjectedConversation: () => [],
+  },
+  runnerPool: {
+    get: () => ({
+      isAlive: () => true,
+      getConversationPage: async () => ({
+        ok: true,
+        source: "opencode",
+        sessionId: "s1",
+        conversation: [{
+          id: "official_rich_assistant_without_engine_match",
+          role: "assistant",
+          content: richLocalRecord.assistantText,
+          timestamp: "2026-06-23T16:00:11.000Z",
+          record: {
+            assistantText: richLocalRecord.assistantText,
+            artifacts: [],
+            resultBlocks: [],
+            timeline: [],
+            meta: { opencode: { messageId: "official_rich_assistant_without_engine_match" } },
+          },
+        }],
+      }),
+    }),
+  },
+}, "s1", {});
+const restartedAssistant = restartedOfficialPage.conversation.find((message) => message.role === "assistant");
+assert.equal(
+  restartedAssistant?.record?.resultBlocks?.length,
+  1,
+  "restart official history must keep the richer local renderer record when engine ids do not match",
+);
+assert.equal(
+  restartedAssistant?.record?.timeline?.length,
+  3,
+  "restart official history must keep local timeline needed for final-text de-duplication",
+);
+
 console.log("opencode-conversation-source: ok");

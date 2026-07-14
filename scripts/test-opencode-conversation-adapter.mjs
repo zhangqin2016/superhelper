@@ -204,4 +204,60 @@ const toolMerge = adaptOpencodeMessagesPage({
 });
 assert.equal(toolMerge.conversation[0].record.tools.length, 2, "tools from all coalesced assistant fragments survive");
 
+const staleTimelineMerge = coalesceAssistantMessageRuns([
+  {
+    id: "a_timeline_1",
+    role: "assistant",
+    content: "phase one",
+    record: {
+      assistantText: "phase one",
+      timeline: [
+        { kind: "thinking", id: "think_1", text: "plan", status: "streaming", ts: 1 },
+        {
+          kind: "tool",
+          id: "todo_1",
+          name: "TodoWrite",
+          status: "done",
+          input: { todos: [{ content: "one", status: "completed" }, { content: "two", status: "pending" }] },
+          ts: 2,
+        },
+      ],
+    },
+  },
+  {
+    id: "a_timeline_2",
+    role: "assistant",
+    content: "phase two",
+    record: {
+      assistantText: "phase two",
+      timeline: [
+        {
+          kind: "tool",
+          id: "todo_2",
+          name: "todowrite",
+          status: "done",
+          input: { todos: [{ content: "one", status: "completed" }, { content: "two", status: "completed" }] },
+          ts: 3,
+        },
+      ],
+    },
+  },
+]);
+const mergedTimeline = staleTimelineMerge[0].record.timeline;
+assert.equal(
+  mergedTimeline.filter((entry) => entry.kind === "thinking" && entry.status === "streaming").length,
+  0,
+  "coalesced completed history must not preserve a streaming thinking block",
+);
+assert.equal(
+  mergedTimeline.filter((entry) => entry.kind === "tool" && String(entry.name).toLowerCase() === "todowrite").length,
+  1,
+  "coalesced completed history must keep only the latest TodoWrite snapshot",
+);
+assert.deepEqual(
+  mergedTimeline.find((entry) => String(entry.name).toLowerCase() === "todowrite")?.input?.todos?.map((todo) => todo.status),
+  ["completed", "completed"],
+  "the surviving TodoWrite snapshot is the final task list",
+);
+
 console.log("opencode-conversation-adapter: ok");

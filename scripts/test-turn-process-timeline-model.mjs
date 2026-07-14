@@ -98,6 +98,43 @@ assert.equal(separatedReads.length, 3);
 assert.equal(separatedReads[2].kind, "toolGroup");
 assert.equal(separatedReads[2].status, "failed");
 
+const staleCompletedHistory = timelineForProcessView({
+  timeline: [
+    { kind: "thinking", id: "think_1", text: "plan", status: "streaming", ts: 1 },
+    {
+      kind: "tool",
+      id: "todo_1",
+      name: "TodoWrite",
+      status: "done",
+      input: { todos: [{ content: "one", status: "completed" }, { content: "two", status: "pending" }] },
+      ts: 2,
+    },
+    {
+      kind: "tool",
+      id: "todo_2",
+      name: "todowrite",
+      status: "done",
+      input: { todos: [{ content: "one", status: "completed" }, { content: "two", status: "completed" }] },
+      ts: 3,
+    },
+  ],
+}, true);
+assert.equal(
+  staleCompletedHistory.filter((entry) => entry.kind === "thinking" && entry.status === "streaming").length,
+  0,
+  "sealed process view must not render stale history thinking as live",
+);
+assert.equal(
+  staleCompletedHistory.filter((entry) => entry.kind === "tool" && String(entry.name).toLowerCase() === "todowrite").length,
+  1,
+  "sealed process view must collapse historical TodoWrite snapshots to the final card",
+);
+assert.deepEqual(
+  staleCompletedHistory.find((entry) => String(entry.name).toLowerCase() === "todowrite")?.input?.todos?.map((todo) => todo.status),
+  ["completed", "completed"],
+  "sealed process view keeps the latest TodoWrite content",
+);
+
 const layoutSource = readFileSync(
   new URL("../src/renderer/modules/turn-process-layout.js", import.meta.url),
   "utf8",

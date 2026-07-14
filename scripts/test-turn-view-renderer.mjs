@@ -31,6 +31,7 @@ import {
 const translate = (key, params = {}) => {
   const table = {
     "turn.thinking.title": "思考中",
+    "turn.thinking.doneTitle": "思考过程",
     "turn.thinking.liveSummary": `思考中 · ${params.preview || ""}`,
     "turn.thinking.doneSummary": `思考了 ${params.seconds} 秒`,
     "turn.status.escHint": "Esc 停止",
@@ -86,7 +87,7 @@ const preview = thinkingSummaryPreview(long);
 assert.ok(preview.startsWith("…"));
 assert.equal(preview.length, THINKING_SUMMARY_MAX);
 
-assert.equal(buildThinkingSummaryLabel("plan", false, translate), "思考中");
+assert.equal(buildThinkingSummaryLabel("plan", false, translate), "思考过程");
 assert.equal(
   buildThinkingSummaryLabel("先分析章节结构再写开场", true, translate),
   "思考中 · 先分析章节结构再写开场",
@@ -107,7 +108,7 @@ assert.equal(
     false,
     translate,
   ),
-  "思考中",
+  "思考过程",
 );
 // Streaming blocks tick with the latest delta timestamp so the user sees how
 // long the model has been thinking; sub-second blocks keep the plain label.

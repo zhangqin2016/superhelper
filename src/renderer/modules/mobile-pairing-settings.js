@@ -139,11 +139,22 @@ async function refreshDevices() {
 
 async function refreshBridgeStatus() {
   const el = $("mobilePairBridgeStatus");
-  if (!el) return;
+  const capEl = $("mobilePairCapabilityStatus");
+  if (!el && !capEl) return;
   const res = await api().mobilePairingStatus?.();
   const bridged = Boolean(res?.bridged);
-  el.hidden = !bridged;
-  if (bridged) el.textContent = t("settings.mobilePairBridged");
+  if (el) {
+    el.hidden = !bridged;
+    if (bridged) el.textContent = t("settings.mobilePairBridged");
+  }
+  if (capEl) {
+    const caps = res?.capabilities || {};
+    const liveDisabled = caps.observeControl?.enabled === false && caps.voice?.enabled === false;
+    capEl.hidden = !res?.ok;
+    capEl.textContent = liveDisabled
+      ? t("settings.mobilePairCapabilitiesDemo")
+      : t("settings.mobilePairCapabilitiesLive");
+  }
 }
 
 async function startPairing(btn) {

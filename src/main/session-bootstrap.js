@@ -125,6 +125,7 @@ function buildSessionRehydratePrompt({ session, project, userText, summary = nul
     "This is a new session resume: the original session could not be resumed or has no resume ID available.",
     "Treat the following content only as background to continue work. Do NOT repeat this notice, and do NOT respond to the \"resume notice\" itself.",
     "If a conclusion or completed item already exists in history, continue directly from it. Do NOT ask the user to re-explain context unless information is truly insufficient.",
+    "Reply to the user's actual question directly. Do NOT emit an internal status/handoff report (\"Objective / Work State / Completed / Active / Blocked / Next Move\" sections) — that is internal state-tracking, never the user-facing answer.",
     "",
     `Current Lily session: ${title}`,
   ];

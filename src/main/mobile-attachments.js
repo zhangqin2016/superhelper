@@ -12,6 +12,7 @@
 
 const MAX_FILES = 6;
 const MAX_BYTES = 512 * 1024; // per file, after base64 decode
+const DEFAULT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 const EXT_BY_MIME = {
   "image/jpeg": "jpg",
@@ -53,6 +54,37 @@ function decodeAttachment(att) {
   return { buffer, name: safeBaseName(att.name, ext), ext };
 }
 
+function cleanupExpiredMobileAttachments(tmpDir, deps = {}) {
+  if (!tmpDir) return { scanned: 0, removed: 0, failed: 0 };
+  const path = deps.path || require("node:path");
+  const fs = deps.fs || require("node:fs");
+  const nowMs = Number.isFinite(deps.nowMs) ? deps.nowMs : Date.now();
+  const ttlMs = Number.isFinite(deps.ttlMs) ? deps.ttlMs : DEFAULT_ATTACHMENT_TTL_MS;
+  let entries = [];
+  try { entries = (deps.readdirSync || fs.readdirSync)(tmpDir); } catch { return { scanned: 0, removed: 0, failed: 0 }; }
+  let scanned = 0;
+  let removed = 0;
+  let failed = 0;
+  for (const entry of entries) {
+    scanned += 1;
+    const name = String(entry || "");
+    if (!name.startsWith("mcmd_")) continue;
+    const full = (deps.join || path.join)(tmpDir, name);
+    try {
+      const stat = (deps.statSync || fs.statSync)(full);
+      if (!stat?.isFile?.()) continue;
+      const mtimeMs = Number(stat.mtimeMs || 0);
+      if (Number.isFinite(mtimeMs) && nowMs - mtimeMs > ttlMs) {
+        (deps.unlinkSync || fs.unlinkSync)(full);
+        removed += 1;
+      }
+    } catch {
+      failed += 1;
+    }
+  }
+  return { scanned, removed, failed };
+}
+
 /**
  * Materialize up to MAX_FILES attachments to temp files. `deps`:
  *  - tmpDir: directory to write into
@@ -69,6 +101,7 @@ function materializeMobileAttachments(attachments, deps = {}) {
   if (!tmpDir) return [];
   const stamp = String(deps.stamp || "");
   try { (deps.mkdirSync || ((d) => fs.mkdirSync(d, { recursive: true })))(tmpDir); } catch { /* may exist */ }
+  try { cleanupExpiredMobileAttachments(tmpDir, { ...deps, path, fs }); } catch { /* best effort */ }
   const out = [];
   list.forEach((att, i) => {
     const decoded = decodeAttachment(att);
@@ -83,4 +116,12 @@ function materializeMobileAttachments(attachments, deps = {}) {
   return out;
 }
 
-module.exports = { MAX_FILES, MAX_BYTES, decodeAttachment, materializeMobileAttachments, safeBaseName };
+module.exports = {
+  MAX_FILES,
+  MAX_BYTES,
+  DEFAULT_ATTACHMENT_TTL_MS,
+  decodeAttachment,
+  cleanupExpiredMobileAttachments,
+  materializeMobileAttachments,
+  safeBaseName,
+};

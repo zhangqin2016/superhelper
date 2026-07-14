@@ -13,12 +13,14 @@
  * so the desktop behaves exactly as before.
  */
 
-// Build the controlled (foreground) session's context frame for the phone:
+// Build the controlled session's context frame for the phone:
 // title + live phase/queue + recent conversation. Fail-open to null.
-function buildActiveSessionContext(ctx) {
+function buildSessionContext(ctx, sessionId = "") {
   try {
     const { buildSessionContextFrame } = require("./mobile-projection");
-    const active = ctx.sessionManager?.getActive?.();
+    const active = sessionId
+      ? ctx.sessionManager?.findById?.(sessionId)
+      : ctx.sessionManager?.getActive?.();
     if (!active?.id) return null;
     let recent = [];
     try { recent = ctx.sessionManager.getProjectedConversation(active.id, { limit: 12 }) || []; } catch { /* best effort */ }
@@ -36,6 +38,10 @@ function buildActiveSessionContext(ctx) {
   }
 }
 
+function buildActiveSessionContext(ctx) {
+  return buildSessionContext(ctx);
+}
+
 function registerMobilePairingIpc(ctx) {
   if (process.env.LILY_MOBILE_COMMAND === "0") return { registered: false };
   const { ipcMain } = require("electron");
@@ -45,6 +51,43 @@ function registerMobilePairingIpc(ctx) {
   const { createMobilePairingManager } = require("./mobile-pairing-manager");
   const { createMobileAgentBridge } = require("./mobile-agent-bridge");
   const log = require("./logger").getLogger("mobile-pairing");
+  let selectedMobileSessionId = "";
+
+  function currentProjectId() {
+    try { return ctx.projectManager?.getActive?.()?.id || ""; } catch { return ""; }
+  }
+
+  function mobileTargetSessionId() {
+    const selected = selectedMobileSessionId ? ctx.sessionManager?.findById?.(selectedMobileSessionId) : null;
+    if (selected?.id && (!currentProjectId() || selected.projectId === currentProjectId())) return selected.id;
+    selectedMobileSessionId = "";
+    return ctx.sessionManager?.getActive?.()?.id || "";
+  }
+
+  function buildMobileSessionList() {
+    const projectId = currentProjectId();
+    const sessions = projectId ? (ctx.sessionManager?.listForProject?.(projectId) || []) : [];
+    const activeSessionId = ctx.sessionManager?.activeSessionId || ctx.sessionManager?.getActive?.()?.id || "";
+    const selectedSessionId = mobileTargetSessionId();
+    return {
+      type: "sessions.list",
+      activeSessionId,
+      selectedSessionId,
+      sessions: sessions.map((session) => ({
+        id: String(session.id || ""),
+        title: String(session.title || "当前会话"),
+        updatedAt: session.updatedAt || "",
+        messageCount: Number.isInteger(session.messageCount) ? session.messageCount : 0,
+      })).filter((session) => session.id),
+    };
+  }
+
+  function selectMobileSession(sessionId) {
+    const target = ctx.sessionManager?.findById?.(sessionId);
+    if (!target?.id || (currentProjectId() && target.projectId !== currentProjectId())) return null;
+    selectedMobileSessionId = target.id;
+    return buildSessionContext(ctx, target.id);
+  }
 
   const manager = createMobilePairingManager({
     serviceFetch,
@@ -79,12 +122,15 @@ function registerMobilePairingIpc(ctx) {
       ...opts,
       log,
       admit: (envelope) => {
-        // Phase 1 target selection: a mobile command lands in whatever Lily
-        // session is active on the desktop right now (contract §3.1 MVP).
-        let lilySessionId = envelope.lilySessionId;
+        // Phase 1 default remains the desktop's foreground session. When the
+        // phone explicitly selected a session from the current project, honor
+        // that target without changing the desktop UI's active session.
+        let lilySessionId = envelope.lilySessionId || mobileTargetSessionId();
         try {
-          const active = ctx.sessionManager?.getActive?.();
-          if (active?.id) lilySessionId = active.id;
+          const target = lilySessionId ? ctx.sessionManager?.findById?.(lilySessionId) : null;
+          if (!target?.id || (currentProjectId() && target.projectId !== currentProjectId())) {
+            lilySessionId = ctx.sessionManager?.getActive?.()?.id || "";
+          }
         } catch { /* fall back to the envelope's target */ }
         return ctx.turnOrchestrator.admitExternalCommand({ ...envelope, lilySessionId });
       },
@@ -100,7 +146,9 @@ function registerMobilePairingIpc(ctx) {
           return { ok: false, code: "INTERRUPT_ERROR" };
         }
       },
-      getSessionContext: () => buildActiveSessionContext(ctx),
+      getSessionContext: () => buildSessionContext(ctx, mobileTargetSessionId()),
+      getSessionList: () => buildMobileSessionList(),
+      selectSession: (sessionId) => selectMobileSession(String(sessionId || "")),
       // Write phone-sent attachments to a temp dir under userData; the turn gets
       // real paths. Fail-open to [] (command runs text-only).
       materializeAttachments: (attachments) => {
@@ -135,7 +183,7 @@ function registerMobilePairingIpc(ctx) {
   ipcMain.handle("mobile-pairing:approve", guard((_e, grantId) => manager.approve(String(grantId || ""))));
   ipcMain.handle("mobile-pairing:deny", guard((_e, grantId) => manager.deny(String(grantId || ""))));
   ipcMain.handle("mobile-pairing:revoke", guard((_e, payload = {}) => manager.revoke(String(payload.grantId || ""), payload.reason)));
-  ipcMain.handle("mobile-pairing:status", guard(() => ({ ok: true, bridged: manager.isBridged() })));
+  ipcMain.handle("mobile-pairing:status", guard(() => manager.status()));
 
   // Project the ACTIVE session's turn output back to the paired phone, so the
   // phone sees the reply it triggered — not just the admit ack. Passive + fully
@@ -146,8 +194,8 @@ function registerMobilePairingIpc(ctx) {
     const { mobileProjectionFrame } = require("./mobile-projection");
     ctx.eventBus?.addObserver?.((sessionId, events) => {
       if (!manager.isBridged()) return;
-      const activeId = ctx.sessionManager?.getActive?.()?.id;
-      if (!activeId || sessionId !== activeId) return;
+      const targetId = mobileTargetSessionId();
+      if (!targetId || sessionId !== targetId) return;
       let turnEnded = false;
       for (const event of events) {
         const frame = mobileProjectionFrame(event);
@@ -156,7 +204,7 @@ function registerMobilePairingIpc(ctx) {
       // After a turn settles, refresh the phone's session context (recent
       // history now includes this turn's result).
       if (turnEnded) {
-        const context = buildActiveSessionContext(ctx);
+        const context = buildSessionContext(ctx, targetId);
         if (context) manager.project(context);
       }
     });

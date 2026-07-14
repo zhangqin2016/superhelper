@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 process.env.SESSION_SECRET ||= "test-session-secret-abcdefghijklmnop";
 process.env.DATABASE_URL ||= "postgres://localhost:5432/test";
 
-const { authenticateRelayConnection } = await import("../server/src/services/mobile-relay.js");
+const { authenticateRelayConnection, peerOfflineFrameForMessage } = await import("../server/src/services/mobile-relay.js");
 
 const mobileAuth = { kind: "grant", ok: true, grantId: "g1", mobileDeviceId: "dmob" };
 const desktopAuth = { kind: "account", ok: true, userId: "u1", deviceId: "dtop" };
@@ -60,5 +60,12 @@ assert.equal(authenticateRelayConnection({ auth: desktopAuth, role: "mobile", gr
 assert.equal(authenticateRelayConnection({ auth: desktopAuth, role: "desktop", grantId: "g1", deviceId: "dtop", grant: { ...activeGrant, user_id: "u2" } }).code, "RELAY_GRANT_ACCOUNT_MISMATCH");
 // desktop device not the grant's desktop device
 assert.equal(authenticateRelayConnection({ auth: { ...desktopAuth, deviceId: "dX" }, role: "desktop", grantId: "g1", deviceId: "dX", grant: activeGrant }).code, "RELAY_GRANT_DEVICE_MISMATCH");
+
+// peer-offline feedback preserves command diagnostics when the relay can parse it
+{
+  const frame = peerOfflineFrameForMessage(JSON.stringify({ type: "command", commandId: "cmd_1", correlationId: "corr_1" }));
+  assert.deepEqual(frame, { type: "relay.peer_offline", commandId: "cmd_1", correlationId: "corr_1" });
+  assert.deepEqual(peerOfflineFrameForMessage("{bad json"), { type: "relay.peer_offline" });
+}
 
 console.log("mobile-relay-auth: ok");

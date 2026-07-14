@@ -84,6 +84,10 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "不聪明",
         "不够聪明",
         "顶级设计",
+        "顶级系统",
+        "未完成",
+        "所有未完成",
+        "全部未完成",
         "不忘初心",
       ],
       weakTerms: ["系统分析"],
@@ -107,6 +111,13 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "准确",
         "一次通过",
         "闭环",
+        "智能度",
+        "系统智能",
+        "更聪明",
+        "补齐",
+        "最终形态",
+        "全部推进",
+        "大步推进",
       ],
       weakTerms: ["识别", "准确", "原因"],
     },
@@ -771,6 +782,7 @@ function evidenceSourcesForTaskType(taskType) {
 function requiredEvidenceKindsForTaskType(taskType) {
   switch (taskType) {
     case "architecture_audit":
+    case "agent_quality":
       return ["file_search", "file_read"];
     case "document_work":
       return ["document"];
@@ -789,7 +801,7 @@ function buildEvidencePolicy(classification) {
     allowedSources: evidenceSourcesForTaskType(taskType),
     requiredEvidenceKinds: active ? requiredEvidenceKindsForTaskType(taskType) : [],
     unsupportedClaimPolicy: active
-      ? "Unsupported factual claims must be downgraded to uncertainty. Do not state causes, completion, deployment, correctness, data values, or external facts as confirmed without an allowed evidence source."
+      ? "Unsupported factual claims must be downgraded to uncertainty. Do not state causes, completion, deployment, correctness, data values, or external facts as confirmed without an allowed evidence source. Flag only the claims that actually lack support, inline where they occur — do NOT append a blanket evidence disclaimer to an answer that is already grounded in the evidence you have."
       : "Use evidence when making factual claims; if evidence is unavailable, say what is unknown instead of inventing details.",
     finalAnswerRequirements: active
       ? [

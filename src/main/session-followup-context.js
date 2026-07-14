@@ -43,6 +43,22 @@ function formatRecentMessages(messages = []) {
     .join("\n");
 }
 
+// Lily already tracks whether the previous turn finished (record.terminal), so
+// resolve that ground truth here rather than asking the model to "infer
+// incomplete status". Making the model guess is exactly what pushes it to
+// defensively emit an internal status report (Work State / Next Move / …) as its
+// answer. Telling it the known fact lets it just answer.
+function lastAssistantCompletion(messages = []) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role !== "assistant") continue;
+    const terminal = String(message.record?.terminal || "");
+    const incomplete = Boolean(message.failed) || ["turn.failed", "turn.stalled", "turn.interrupted"].includes(terminal);
+    return { known: true, incomplete, terminal: terminal.replace(/^turn\./, "") };
+  }
+  return { known: false, incomplete: false, terminal: "" };
+}
+
 function buildShortFollowupContext({ userText = "", messages = [], summary = null } = {}) {
   if (!isTerseFollowup(userText)) return "";
   const recentMessages = Array.isArray(messages) ? messages.slice(-8) : [];
@@ -50,15 +66,28 @@ function buildShortFollowupContext({ userText = "", messages = [], summary = nul
   const summaryText = summary ? require("./session-memory").formatSessionSummary(summary) : "";
   if (!recent && !summaryText) return "";
 
+  const status = lastAssistantCompletion(recentMessages);
   const parts = [
     "[Short Follow-up Continuity]",
     "The user's current message is very short, so treat it as a follow-up to the immediately preceding task, not as a new standalone request.",
-    "Use the most recent user intent, corrections, incomplete turn status, and assistant output below to infer what needs to continue or be corrected.",
-    "If the previous answer was incomplete, continue from the missing final result instead of starting a different topic.",
+  ];
+  if (status.known && status.incomplete) {
+    parts.push(
+      `Lily's turn records show the previous turn did NOT finish (it ${status.terminal || "was interrupted"}). Silently pick up where it stopped and deliver the missing final result the user was waiting for — do not re-explain or narrate the interruption.`,
+    );
+  } else {
+    parts.push(
+      "Lily's turn records show the previous task already COMPLETED. Answer this short follow-up directly and conversationally, building on the finished work — do not restart or re-summarize the completed task.",
+    );
+  }
+  parts.push(
+    // Anti-scaffolding, framed as capability not suppression: give the answer,
+    // not the internal tracking view. This is what the user actually sees.
+    "Reply like a capable assistant continuing the conversation: produce the answer itself. An internal status/handoff report (\"Objective / Work State / Completed / Active / Blocked / Next Move\" sections) is state-tracking scaffolding — keep it internal, never send it as the user-facing reply.",
     "If the user is challenging a prior answer, identify the exact mismatch and re-check the workspace before answering.",
     "The user's last substantive request and explicit corrections outrank any topic or subsystem invented by a previous assistant answer.",
     "Do not continue a substituted neighboring subsystem unless the user's own words or workspace evidence prove it belongs to the requested scope.",
-  ];
+  );
   if (summaryText) parts.push("", "Session summary:", summaryText);
   if (recent) parts.push("", "Recent visible conversation:", recent);
   parts.push("", `Current short follow-up: ${trimText(userText, 200)}`, "[End short follow-up continuity]");

@@ -55,7 +55,24 @@ function createMobilePairingManager({
     return res;
   }
 
+  async function fetchCapabilities() {
+    const res = await serviceFetch("/api/mobile/capabilities", { method: "GET" });
+    if (!res?.ok || !res.json?.ok) {
+      return { ok: false, code: res?.json?.code || res?.code || res?.error || "MOBILE_CAPABILITIES_UNAVAILABLE" };
+    }
+    return {
+      ok: true,
+      phase: res.json.phase || "",
+      fallback: res.json.fallback || "chat_only",
+      capabilities: res.json.capabilities || {},
+    };
+  }
+
   return {
+    async capabilities() {
+      return fetchCapabilities();
+    },
+
     /** Create a challenge and return the QR payload for the mobile to scan. */
     async createChallenge() {
       const res = await authedPost("/api/mobile/pairing/challenge", {});
@@ -152,6 +169,18 @@ function createMobilePairingManager({
 
     isBridged() {
       return Boolean(activeBridge?.isConnected?.());
+    },
+
+    async status() {
+      const caps = await fetchCapabilities();
+      return {
+        ok: true,
+        bridged: this.isBridged(),
+        capabilities: caps.ok ? caps.capabilities : null,
+        capabilityPhase: caps.ok ? caps.phase : "",
+        capabilityFallback: caps.ok ? caps.fallback : "chat_only",
+        capabilityError: caps.ok ? null : caps.code,
+      };
     },
 
     /** Project a local turn frame out to the paired phone (no-op if no live

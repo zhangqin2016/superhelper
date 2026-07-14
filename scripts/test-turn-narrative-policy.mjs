@@ -76,6 +76,18 @@ assert.equal(resolveFinalText({
   ...interleavedTurn,
   final: { type: "turn.completed", payload: { assistant: "先看下文件。结论：没有问题。" } },
 }), "结论：没有问题。");
+assert.equal(resolveFinalText({
+  ...interleavedTurn,
+  final: {
+    type: "turn.completed",
+    payload: {
+      assistant: [
+        "先看下文件。结论：没有问题。",
+        "证据门槛：上面的结论缺少可核验证据支撑，不能视为已确认事实。",
+      ].join("\n\n"),
+    },
+  },
+}), "结论：没有问题。\n\n证据门槛：上面的结论缺少可核验证据支撑，不能视为已确认事实。");
 assert.equal(resolveAssistantStreamText({
   ...interleavedTurn,
   final: { type: "turn.failed", payload: { assistant: "连接已重置，请重新发送。" } },

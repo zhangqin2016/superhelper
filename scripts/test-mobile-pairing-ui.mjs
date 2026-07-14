@@ -19,6 +19,7 @@ assert.match(index, /id="mobilePairStartBtn"/, "the generate-code button exists"
 assert.match(index, /id="mobilePairQr"/, "the scannable QR image host exists");
 assert.match(index, /id="mobilePairPendingList"/, "the pending list host exists");
 assert.match(index, /id="mobilePairDeviceList"/, "the paired-devices management host exists");
+assert.match(index, /id="mobilePairCapabilityStatus"/, "the capability status host exists");
 
 const panel = read("src/renderer/modules/settings-panel.js");
 assert.match(panel, /"mobile"/, "mobile is a registered settings page");
@@ -34,6 +35,11 @@ for (const call of ["mobilePairingCreateChallenge", "mobilePairingPollPending", 
 }
 // Feature-off / kill-switch hides the nav entry instead of showing a dead page.
 assert.match(mod, /nav\.hidden = true/, "the nav entry hides when the feature is unavailable");
+assert.match(mod, /mobilePairCapabilityStatus/, "the renderer updates capability status");
+assert.match(mod, /settings\.mobilePairCapabilitiesDemo/, "the renderer labels demo-only capability state");
+assert.match(mod, /settings\.mobilePairCapabilitiesLive/, "the renderer labels server-enabled live capability state");
+assert.match(mod, /caps\.observeControl\?\.enabled/, "observe/control is rendered from server capabilities");
+assert.match(mod, /caps\.voice\?\.enabled/, "voice is rendered from server capabilities");
 
 // Every i18n key the UI/module reference exists in all three locales.
 const keys = [
@@ -41,6 +47,7 @@ const keys = [
   "settings.mobilePairExpiry", "settings.mobilePairPending", "settings.mobilePairNoPending",
   "settings.mobilePairDevice", "settings.mobilePairApprove", "settings.mobilePairDeny",
   "settings.mobilePairApproved", "settings.mobilePairBridged", "settings.mobilePairLoginRequired",
+  "settings.mobilePairCapabilitiesDemo", "settings.mobilePairCapabilitiesLive",
   "settings.mobilePairChallengeFailed", "settings.mobilePairActionFailed",
   "settings.mobilePairPaired", "settings.mobilePairNoPaired", "settings.mobilePairRevoke", "settings.mobilePairRevoked",
 ];

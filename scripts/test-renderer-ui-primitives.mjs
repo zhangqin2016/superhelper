@@ -106,6 +106,30 @@ if (!primitiveText.includes(".dialog-btn")) {
   }
 }
 
+// Many generated file references must not become a long vertical wall. Compact
+// artifacts flow in a bounded grid, while rich previews still span the full row.
+{
+  const artifactsGrid = runtimeChatText.match(/\.assistant-turn-artifacts\s*\{[^}]*\}/s)?.[0] || "";
+  if (!artifactsGrid.includes("display: grid") || !artifactsGrid.includes("repeat(3, minmax(0, 1fr))")) {
+    throw new Error("assistant turn artifacts must render compact file references in a three-column grid");
+  }
+  const fullSpan = runtimeChatText.match(/\.assistant-turn-artifacts\s*>\s*:not\(\.assistant-renderer-artifact\.is-compact\)\s*\{[^}]*\}/s)?.[0] || "";
+  if (!fullSpan.includes("grid-column: 1 / -1")) {
+    throw new Error("expanded artifact previews must span the full artifact grid");
+  }
+  const compactCaption = runtimeChatText.match(/\.assistant-renderer-artifact\.is-compact figcaption\s*\{[^}]*\}/s)?.[0] || "";
+  if (!compactCaption.includes("grid-template-columns: minmax(0, 1fr) auto auto")) {
+    throw new Error("compact artifact captions must keep filename, size, and reveal action in a stable grid");
+  }
+  const compactPath = runtimeChatText.match(/\.assistant-renderer-artifact\.is-compact \.assistant-generated-file-path\s*\{[^}]*\}/s)?.[0] || "";
+  if (!compactPath.includes("text-overflow: ellipsis") || !compactPath.includes("white-space: nowrap")) {
+    throw new Error("compact artifact filenames must truncate to keep the grid dense");
+  }
+  if (!turnBlockRendererText.includes('title=${name}>${name}</code>')) {
+    throw new Error("compact artifact filenames must expose the full path in a title tooltip");
+  }
+}
+
 function listCssFiles(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

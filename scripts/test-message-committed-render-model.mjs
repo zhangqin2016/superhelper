@@ -96,6 +96,23 @@ assert.deepEqual(
 );
 assert.deepEqual(buildMinimapItems(null), []);
 
+assert.equal(
+  shouldSkipCommittedAssistantForLiveTurn(
+    { liveTurn: { turnId: "turn_1" } },
+    { role: "assistant", turnId: "turn_1" },
+  ),
+  true,
+  "active live turns own the screen until the terminal record arrives",
+);
+assert.equal(
+  shouldSkipCommittedAssistantForLiveTurn(
+    { liveTurn: { turnId: "turn_1", final: { type: "turn.completed" } } },
+    { role: "assistant", turnId: "turn_1" },
+  ),
+  false,
+  "completed live turns must not block the committed final article",
+);
+
 assert.equal(copyActionText({ content: "  final answer  " }), "final answer");
 assert.equal(copyActionText({ content: "" }), "");
 assert.equal(copyActionText({ content: "   " }), "");

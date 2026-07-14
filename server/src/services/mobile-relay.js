@@ -59,6 +59,18 @@ export function authenticateRelayConnection({ auth, role, grantId, deviceId, gra
   return { ok: true, conn: { role, grantId, deviceId, userId: grant.user_id } };
 }
 
+export function peerOfflineFrameForMessage(message) {
+  const frame = { type: "relay.peer_offline" };
+  try {
+    const parsed = JSON.parse(String(message || ""));
+    if (parsed?.commandId) frame.commandId = String(parsed.commandId);
+    if (parsed?.correlationId) frame.correlationId = String(parsed.correlationId);
+  } catch {
+    // Keep relay dumb and fail-open: unparseable frames still get generic offline feedback.
+  }
+  return frame;
+}
+
 async function lookupActiveGrant(grantId) {
   if (!grantId) return null;
   return db
@@ -137,7 +149,7 @@ export function registerMobileRelay(app, deps = {}) {
       // desktop via admitExternalCommand, not here.
       const text = data.toString("utf8");
       if (!targets.length) {
-        send(connId, JSON.stringify({ type: "relay.peer_offline" }));
+        send(connId, JSON.stringify(peerOfflineFrameForMessage(text)));
         return;
       }
       for (const target of targets) send(target, text);

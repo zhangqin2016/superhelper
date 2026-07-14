@@ -105,6 +105,32 @@ function sumUsage(usages = []) {
   });
 }
 
+function isTodoTimelineEntry(entry = {}) {
+  return entry?.kind === "tool" && String(entry.name || "").toLowerCase() === "todowrite";
+}
+
+function normalizeCompletedTimeline(timeline = []) {
+  const out = [];
+  let todoIndex = -1;
+  for (const raw of timeline) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = { ...raw };
+    if ((entry.kind === "thinking" || entry.kind === "text") && entry.status === "streaming") {
+      entry.status = "done";
+    }
+    if (isTodoTimelineEntry(entry)) {
+      if (todoIndex >= 0) {
+        out.splice(todoIndex, 1);
+      }
+      out.push(entry);
+      todoIndex = out.length - 1;
+      continue;
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
 function timestampMs(value) {
   const n = Date.parse(value || "");
   return Number.isFinite(n) ? n : null;
@@ -143,7 +169,7 @@ function mergeAssistantGroup(group = []) {
     return Number.isFinite(cost) ? sum + cost : sum;
   }, 0);
   const hasCost = group.some((message) => Number.isFinite(message.record?.totalCostUsd));
-  const timeline = group.flatMap((m) => m.record?.timeline || []);
+  const timeline = normalizeCompletedTimeline(group.flatMap((m) => m.record?.timeline || []));
   const tools = group.flatMap((m) => m.record?.tools || []);
   const processEvents = group.flatMap((m) => m.record?.processEvents || []);
   const notices = group.flatMap((m) => m.record?.notices || []);

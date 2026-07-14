@@ -230,7 +230,7 @@ export function buildThinkingSummaryLabel(entry, live, translate) {
   if (!live) {
     const seconds = thinkingDurationSeconds(block);
     if (seconds >= 1) return translate("turn.thinking.doneSummary", { seconds });
-    return translate("turn.thinking.title");
+    return translate("turn.thinking.doneTitle");
   }
   const preview = thinkingSummaryPreview(block.text);
   if (!preview) return translate("turn.thinking.title");

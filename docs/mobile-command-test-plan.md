@@ -55,4 +55,10 @@ Verification command (reads the catalog, expands any declared patch, canonicaliz
 node scripts/test-mobile-command-spec-closure.mjs --fixtures docs/fixtures/mobile-command-test-fixtures.json --manifest docs/mobile-command-test-cases.md
 ```
 
-Until Task 10 creates that validator, the equivalent inline Node verification recorded with Task 9 must recompute every manifest row; visual comparison or trusting a pasted digest is not acceptable.
+The validator is implemented at `scripts/test-mobile-command-spec-closure.mjs` and must be run after any MC-TC manifest or fixture change:
+
+```bash
+node scripts/test-mobile-command-spec-closure.mjs --fixtures docs/fixtures/mobile-command-test-fixtures.json --manifest docs/mobile-command-test-cases.md
+```
+
+Visual comparison or trusting a pasted digest is not acceptable.

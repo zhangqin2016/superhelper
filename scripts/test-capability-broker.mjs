@@ -391,6 +391,28 @@ assert.ok(
   "prompt wording inside a routing-eval request must not pull in prompt enhancement"
 );
 
+const topTierAgentRecommendations = recommendSkillCapabilityGraph({
+  text: "继续按顶级设计 系统更聪明",
+});
+assert.equal(
+  topTierAgentRecommendations[0]?.id,
+  "lily-intent-eval",
+  "top-tier system intelligence work should put deterministic intent evaluation before browser QA"
+);
+assert.ok(
+  topTierAgentRecommendations.some((skill) => skill.id === "lily-skill-quality-gate"),
+  "top-tier system intelligence work should include skill/capability quality checks"
+);
+
+const finalShapeAgentRecommendations = recommendSkillCapabilityGraph({
+  text: "全部推进最终形态，把系统智能度补齐",
+});
+assert.equal(
+  finalShapeAgentRecommendations[0]?.id,
+  "lily-intent-eval",
+  "final-shape intelligence work should route to agent-quality capability checks"
+);
+
 const mailDraftRecommendations = recommendSkillCapabilityGraph({
   text: "给我写一封邮件回复客户，语气专业",
 });

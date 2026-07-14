@@ -3,13 +3,8 @@
 // one user's command reaches another user's desktop. Pure, no sockets.
 
 import assert from "node:assert/strict";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { createRelayRegistry } = require(path.join(ROOT, "server/src/services/mobile-relay-core.js"));
+const { createRelayRegistry } = await import("../server/src/services/mobile-relay-core.js");
 
 // --- register + route within one grant --------------------------------------
 {

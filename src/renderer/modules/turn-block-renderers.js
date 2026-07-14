@@ -168,7 +168,7 @@ function renderCompactArtifact(block) {
   return el(html`
     <figure class="assistant-renderer-block assistant-renderer-artifact is-file is-compact">
       <figcaption>
-        <code class="assistant-generated-file-path">${name}</code>
+        <code class="assistant-generated-file-path" title=${name}>${name}</code>
         ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}
         ${revealButton(block)}
       </figcaption>

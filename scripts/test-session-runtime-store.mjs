@@ -876,4 +876,69 @@ if (cachedIds.includes("cache-idle-0")) {
   throw new Error("runtime cache eviction should drop the oldest idle session first");
 }
 
+// Regression: on idle reopen the committed-message dedup must collapse a rich
+// local assistant turn (answer in record.assistantText, empty content) and its
+// official OpenCode refresh (plain text, different key) into ONE bubble — else
+// the finished turn duplicates below itself every time the conversation opens.
+store.syncCommittedMessages("dup-reopen", [
+  { id: "u1", role: "user", turnId: "T1", content: "q", timestamp: "2026-07-14T10:00:00.000Z" },
+  { role: "assistant", turnId: "T1", engineMessageId: "E1", content: "", timestamp: "2026-07-14T10:00:06.000Z", record: { resultBlocks: [{ title: "Relevant Files" }], assistantText: "完成了。" } },
+  { id: "oe1", role: "assistant", content: "完成了。", timestamp: "2026-07-14T10:00:06.000Z" },
+]);
+const dupReopen = store.getRuntimeSession("dup-reopen").committedMessages.filter((m) => m.role === "assistant");
+if (dupReopen.length !== 1) {
+  throw new Error(`idle-reopen dedup must collapse the rich local turn and its official refresh into one assistant bubble, got ${dupReopen.length}`);
+}
+if (!dupReopen[0].record?.resultBlocks?.length) {
+  throw new Error("idle-reopen dedup must keep the richer local render record");
+}
+
+// Regression: a later canonical sync may carry the same assistant turn with a
+// stable id but a compact/poor record. The renderer must use that incoming
+// message for canonical identity while keeping the richer local render record,
+// otherwise artifact grids/process collapse disappear or re-expand after a
+// delayed refresh.
+store.syncCommittedMessages("rich-record-refresh", [
+  {
+    role: "assistant",
+    turnId: "rich-turn",
+    content: "done",
+    timestamp: "2026-07-14T10:10:00.000Z",
+    record: {
+      turnId: "rich-turn",
+      assistantText: "done",
+      resultBlocks: [{ type: "artifact", path: "/tmp/report.md" }],
+      artifacts: [{ path: "/tmp/report.md" }],
+      timeline: [{ kind: "tool", id: "write_1", name: "Write", status: "done" }],
+    },
+  },
+]);
+store.syncCommittedMessages("rich-record-refresh", [
+  {
+    id: "official-rich-turn",
+    role: "assistant",
+    turnId: "rich-turn",
+    content: "done",
+    timestamp: "2026-07-14T10:10:01.000Z",
+    record: {
+      turnId: "rich-turn",
+      assistantText: "done",
+      resultBlocks: [],
+      artifacts: [],
+      timeline: [],
+      persistenceCompact: true,
+    },
+  },
+]);
+const richRefresh = store.getRuntimeSession("rich-record-refresh").committedMessages.filter((m) => m.role === "assistant");
+if (richRefresh.length !== 1) {
+  throw new Error(`canonical refresh should still be one assistant turn, got ${richRefresh.length}`);
+}
+if (richRefresh[0].id !== "official-rich-turn") {
+  throw new Error(`canonical incoming identity should survive, got ${richRefresh[0].id}`);
+}
+if (!richRefresh[0].record?.resultBlocks?.length || !richRefresh[0].record?.artifacts?.length) {
+  throw new Error(`canonical refresh must keep richer existing render record: ${JSON.stringify(richRefresh[0].record)}`);
+}
+
 console.log("session-runtime-store: ok");
