@@ -6,27 +6,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const {
-  LargeOutputGuardPlugin,
-  boundToolOutput,
-  resultText,
-} = await import(path.join(__dirname, "../resources/opencode-plugins/large-output-guard.js"));
+const mod = await import(path.join(__dirname, "../resources/opencode-plugins/large-output-guard.js"));
+const { LargeOutputGuardPlugin } = mod;
 
-// --- boundToolOutput (pure) -------------------------------------------------
-assert.equal(boundToolOutput("short", { maxChars: 100 }), null, "within-budget text is left untouched");
-const big = "A".repeat(5000) + "MID" + "Z".repeat(5000);
-const bounded = boundToolOutput(big, { maxChars: 2000, ref: "/tmp/full.txt" });
-assert.ok(bounded && bounded.length < big.length, "oversized text is shortened");
-assert.ok(bounded.includes("[lily: large tool output externalized]"), "bounded text carries the marker");
-assert.ok(bounded.includes("/tmp/full.txt"), "bounded text points to the sidecar file");
-assert.ok(bounded.startsWith("AAAA"), "head is preserved");
-assert.ok(bounded.trimEnd().endsWith("ZZZZ"), "tail is preserved");
-assert.equal(boundToolOutput(bounded, { maxChars: 2000 }), null, "already-bounded text is idempotent (not re-bounded)");
-
-// --- resultText across shapes ----------------------------------------------
-assert.equal(resultText({ output: "x" }), "x", "reads {output}");
-assert.equal(resultText({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] }), "ab", "reads {content}");
-assert.equal(resultText(null), "", "null → empty");
+// The plugin file must export ONLY the factory (named + default) — the OpenCode
+// loader instantiates every export as a plugin, so exporting helper functions
+// makes it call them as factories → they return a non-object → `.config` crash →
+// every turn fails at createUserMessage. Guard that regression here.
+{
+  const exported = Object.keys(mod).filter((k) => k !== "default");
+  assert.deepEqual(exported, ["LargeOutputGuardPlugin"], `plugin must export only the factory, got: ${exported.join(",")}`);
+  assert.equal(typeof mod.default, "function", "default export is the factory");
+}
 
 // --- the tool.execute.after hook -------------------------------------------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-tool-guard-"));

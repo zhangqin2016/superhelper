@@ -18,9 +18,15 @@ import crypto from "node:crypto";
 const MAX_CHARS = Math.max(8_000, Number(process.env.LILY_TOOL_OUTPUT_MAX_CHARS) || 32_000);
 const MARKER = "[lily: large tool output externalized]";
 
+// NOTE: only the plugin factory is exported. The OpenCode plugin loader
+// instantiates EVERY export of a plugin file as a plugin, so exporting helper
+// functions here makes it call them as factories → they return a string/null →
+// the engine crashes reading `.config` and every turn fails at createUserMessage.
+// Keep all helpers INTERNAL (module-private).
+
 // A stable text view of a tool result across the shapes the engine passes
 // ({output:string}, {content:[{type:"text",text}]}, or a raw value).
-export function resultText(output) {
+function resultText(output) {
   if (output == null) return "";
   if (typeof output === "string") return output;
   if (typeof output.output === "string") return output.output;
@@ -44,9 +50,9 @@ function writeSidecar(baseDir, tool, text) {
   return file;
 }
 
-// Pure, testable: given the full text, produce the bounded head+tail view + a
-// pointer note. Returns null when the text is within budget (no change needed).
-export function boundToolOutput(text, { maxChars = MAX_CHARS, ref = "" } = {}) {
+// Given the full text, produce the bounded head+tail view + a pointer note.
+// Returns null when the text is within budget (no change needed). INTERNAL.
+function boundToolOutput(text, { maxChars = MAX_CHARS, ref = "" } = {}) {
   if (typeof text !== "string" || text.length <= maxChars) return null;
   if (text.includes(MARKER)) return null; // already bounded — idempotent
   const headLen = Math.floor(maxChars * 0.7);
