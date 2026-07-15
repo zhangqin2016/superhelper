@@ -290,4 +290,17 @@ assert.equal(smallNumbers.ok, true, "small/round numbers are not numeric-groundi
 const numNotice = appendEvidenceGateNotice("答案正文", { ok: false, reason: "numeric_claim_not_in_evidence", ungroundedNumbers: ["27,448", "39%"] });
 assert.match(numNotice, /27,448、39%/, "the notice names the exact ungrounded numbers");
 
+// Image/vision turns are EXEMPT from numeric grounding — the numbers were READ
+// from the image (vision is the evidence), so flagging them is a false positive
+// (the field regression: an image analysis got its numbers flagged, then an
+// enabled verify-retry re-ran and drifted to an unrelated task).
+const imageAnalysis = assessFinalAnswerEvidence({
+  assistant: "编号 0016953543，总游玩 1,286 局，夺冠率约 47%，赛季潮流度 3242。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+  turnPolicy: { taskType: "general" }, toolCount: 1,
+  evidenceText: "Image analysis complete", userText: "分析",
+  skipNumericGrounding: true,
+});
+assert.equal(imageAnalysis.ok, true, "image-read numbers are NOT numeric-grounding-flagged (vision is the evidence)");
+
 console.log("evidence-gate: ok");

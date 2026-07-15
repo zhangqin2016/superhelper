@@ -139,6 +139,7 @@ function assessFinalAnswerEvidence({
   evidenceSummary = null,
   evidenceText = "",
   userText = "",
+  skipNumericGrounding = false,
 } = {}) {
   const text = String(assistant || "").trim();
   const required = Boolean(evidencePolicy?.required);
@@ -180,7 +181,10 @@ function assessFinalAnswerEvidence({
   // Deterministic numeric grounding runs EVEN when hasEvidence is true — the 张钦
   // failure was exactly "tools ran, but the specific numbers were fabricated", so
   // the coarse hasEvidence check passed while the numbers were unsupported.
-  if (strongClaim || required) {
+  // Skip for image/vision turns: numbers there are READ from the image (vision is
+  // the evidence) and can't be checked against countable tool output — treating
+  // them as ungrounded is a false positive.
+  if ((strongClaim || required) && !skipNumericGrounding) {
     const ungroundedNumbers = ungroundedSignificantNumbers(text, evidenceText, userText);
     if (ungroundedNumbers.length) {
       return {

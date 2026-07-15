@@ -2542,6 +2542,14 @@ class TurnOrchestrator {
         };
         evidenceText = [...(state.tools?.values?.() || [])].map(toolText).filter(Boolean).join("\n").slice(0, 40000);
       } catch { evidenceText = ""; }
+      // Image/vision input: the answer's numbers were READ from the image, not
+      // computed by a tool — exempt from numeric grounding (else a false positive
+      // flags image-derived numbers and, worse, an enabled verify-retry re-runs
+      // the turn with nothing to verify and drifts to an unrelated task).
+      const inputFiles = Array.isArray(state.enginePayload?.files) ? state.enginePayload.files : [];
+      const hasImageInput = inputFiles.some(
+        (f) => f && (f.isImage === true || /^image\//i.test(String(f.mime || f.type || f.mimeType || ""))),
+      );
       const assessment = assessFinalAnswerEvidence({
         assistant,
         evidencePolicy: state.taskContract.evidencePolicy,
@@ -2551,6 +2559,7 @@ class TurnOrchestrator {
         fileChangeCount: record?.fileChanges?.length || 0,
         evidenceText,
         userText: String(state.enginePayload?.rawText || ""),
+        skipNumericGrounding: hasImageInput,
       });
       evidenceGateAssessment = assessment;
       if (!assessment.ok) {
@@ -2564,14 +2573,13 @@ class TurnOrchestrator {
         }
         try {
           const sideEffectFree = require("./tool-call-rescue").isSideEffectFreeToolRun([...(state.tools?.values?.() || [])]);
-          const hardOff = process.env.LILY_EVIDENCE_VERIFY_RETRY === "0";
-          // Numeric/data claims (unverified counts/percentages) verify by DEFAULT
-          // — cheap to recompute, high value ("这些数据全吗" → actually count).
-          // Other ungrounded strong claims stay opt-in (LILY_EVIDENCE_VERIFY_RETRY=1)
-          // so we don't broadly re-run turns.
-          const numericClaim = assessment.reason === "numeric_claim_not_in_evidence";
-          const optIn = process.env.LILY_EVIDENCE_VERIFY_RETRY === "1";
-          triggerVerifyRetry = Boolean(assessment.strongClaim) && sideEffectFree && !hardOff && (numericClaim || optIn);
+          // OPT-IN only (LILY_EVIDENCE_VERIFY_RETRY=1). Auto-re-running a turn to
+          // "verify" is too risky as a default: on an image/vision turn the numbers
+          // come from the image (not a tool), so a re-run has nothing to verify and
+          // the model drifted into an UNRELATED task. The zero-latency numeric
+          // grounding annotation stays; the re-run is user-enabled only.
+          triggerVerifyRetry = Boolean(assessment.strongClaim) && sideEffectFree &&
+            process.env.LILY_EVIDENCE_VERIFY_RETRY === "1";
         } catch { triggerVerifyRetry = false; }
       }
     }
