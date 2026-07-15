@@ -1844,7 +1844,7 @@ class TurnOrchestrator {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
       const { readSessionSummary } = require("./session-memory");
       const { withShortFollowupContext } = require("./session-followup-context");
-      const { buildContextMemory } = require("./memory-registry");
+      const { buildContextMemoryAsync } = require("./memory-registry");
       const { readProjectMemoryIndex } = require("./project-memory");
       const { buildWorkspaceDigest, readLearnedConventions } = require("./learned-context");
       const { readMemoryPreferences } = require("./memory-preferences");
@@ -1887,7 +1887,7 @@ class TurnOrchestrator {
           Boolean(ensured.coldStart) ||
           rehydrated ||
           shortFollowupContext);
-      contextMemory = buildContextMemory({
+      contextMemory = await buildContextMemoryAsync({
         userText: rawUserText,
         sessionSummary: summary,
         project,

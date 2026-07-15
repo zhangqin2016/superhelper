@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { rankWithDurableVectorIndex } = require("./memory-vector-index");
+const { rankWithDurableVectorIndex, entryKey, makeEmbeddingCaller, resolveEmbeddingConfig, semanticRelevanceMap } = require("./memory-vector-index");
 
 const DEFAULT_MAX_CHARS = 3_000;
 
@@ -48,13 +48,20 @@ function memoryRelevanceScore(item = {}, query = "") {
 }
 
 function rankMemoryItemsWithDiagnostics(items = [], query = "", opts = {}) {
-  const ranked = rankWithDurableVectorIndex(Array.isArray(items) ? items : [], query, {
-    projectKey: opts.projectKey || "",
-  });
+  const list = Array.isArray(items) ? items : [];
+  // When a REAL-embedding semantic map is supplied (opts.semanticMap), use it for
+  // semanticRelevance; otherwise fall back to the lexical hash vector index. The
+  // keyword relevance score always applies on top, so both paths stay grounded.
+  const semanticMap = opts.semanticMap instanceof Map ? opts.semanticMap : null;
+  const ranked = semanticMap
+    ? { items: list, diagnostics: { semanticIndex: "embedding", entries: semanticMap.size } }
+    : rankWithDurableVectorIndex(list, query, { projectKey: opts.projectKey || "" });
   return {
     items: ranked.items.map((item) => {
     const relevance = memoryRelevanceScore(item, query);
-    const semanticRelevance = Number(item.semanticRelevance || 0);
+    const semanticRelevance = semanticMap
+      ? Number(semanticMap.get(entryKey(item)) || 0)
+      : Number(item.semanticRelevance || 0);
     const critical = Number(item?.priority || 0) >= 90;
     return {
       ...item,
@@ -346,11 +353,14 @@ function memoryFingerprint(items = []) {
 
 function buildContextMemory(input = {}) {
   const disabledKinds = new Set(Array.isArray(input.disabledKinds) ? input.disabledKinds.map(String) : []);
-  const ranked = rankMemoryItemsWithDiagnostics(
-    buildMemoryItems(input).filter((item) => !disabledKinds.has(item.kind)),
-    input.userText || input.query || "",
-    { projectKey: input.project?.id || input.project?.path || "" },
-  );
+  const items = buildMemoryItems(input).filter((item) => !disabledKinds.has(item.kind));
+  const query = input.userText || input.query || "";
+  const projectKey = input.project?.id || input.project?.path || "";
+  // input.semanticMap (optional, from buildContextMemoryAsync) carries REAL-embedding
+  // relevance. Absent → rankMemoryItemsWithDiagnostics uses the lexical hash rank,
+  // exactly as before. This sync path is 100% unchanged for every existing caller.
+  const semanticMap = input.semanticMap instanceof Map ? input.semanticMap : null;
+  const ranked = rankMemoryItemsWithDiagnostics(items, query, { projectKey, semanticMap });
   const rawItems = ranked.items;
   const maxChars = resolveMemoryMaxChars(rawItems, input);
   const selection = selectMemoryItemsWithDiagnostics(rawItems, { maxChars });
@@ -368,9 +378,44 @@ function buildContextMemory(input = {}) {
   };
 }
 
+// Async front door for callers that want REAL-embedding recall when it is
+// configured (LILY_EMBEDDING_*). It computes the semantic map, then hands off to
+// the sync buildContextMemory. FAIL-OPEN + OPT-IN: no caller configured, or any
+// embed failure → semanticMap stays null → identical to the plain sync path.
+async function buildContextMemoryAsync(input = {}) {
+  let semanticMap = null;
+  try {
+    let caller = null;
+    let model = "injected";
+    if (typeof input.embeddingCaller === "function") {
+      caller = input.embeddingCaller;
+      model = input.embeddingModel || "injected";
+    } else {
+      const config = resolveEmbeddingConfig();
+      if (config) {
+        caller = makeEmbeddingCaller(config);
+        model = config.model;
+      }
+    }
+    if (caller) {
+      const disabledKinds = new Set(Array.isArray(input.disabledKinds) ? input.disabledKinds.map(String) : []);
+      const items = buildMemoryItems(input).filter((item) => !disabledKinds.has(item.kind));
+      semanticMap = await semanticRelevanceMap(items, input.userText || input.query || "", {
+        caller,
+        projectKey: input.project?.id || input.project?.path || "",
+        model,
+      });
+    }
+  } catch {
+    semanticMap = null;
+  }
+  return buildContextMemory(semanticMap ? { ...input, semanticMap } : input);
+}
+
 module.exports = {
   DEFAULT_MAX_CHARS,
   buildContextMemory,
+  buildContextMemoryAsync,
   buildMemoryItems,
   formatMemoryContext,
   memoryFingerprint,
