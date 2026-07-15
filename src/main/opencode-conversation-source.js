@@ -301,6 +301,31 @@ function isSameUserMessage(a = {}, b = {}) {
   return timeDistanceMs(a.timestamp, b.timestamp) <= PROJECTION_TIME_MATCH_WINDOW_MS;
 }
 
+// A rich local assistant record and the official engine copy of the SAME turn
+// often carry text that is NOT byte-identical: the rich record can prepend a
+// step summary / ✓ checklist or append report sections, so one is a superset of
+// the other. Requiring exact equality then misses the match and the turn is
+// appended twice on reopen (the reopen-duplicate). Treat them as the same turn
+// when the texts are equal OR — for substantial text — one contains the other.
+// The length guard keeps short, genuinely-different replies from over-merging.
+function assistantTextEquivalent(a, b) {
+  // Compare with ALL whitespace removed (insignificant for CJK) and accept equal,
+  // one-contains-the-other, OR a long shared prefix — the official engine copy
+  // and the Lily copy of the same turn differ only by whitespace/length and share
+  // no key, so exact/plain-includes misses them.
+  const sa = String(a || "").replace(/\s+/g, "");
+  const sb = String(b || "").replace(/\s+/g, "");
+  if (!sa || !sb) return false;
+  if (sa === sb) return true;
+  const shorter = sa.length <= sb.length ? sa : sb;
+  const longer = sa.length <= sb.length ? sb : sa;
+  if (shorter.length < 80) return false;
+  if (longer.includes(shorter)) return true;
+  let k = 0;
+  while (k < shorter.length && shorter.charCodeAt(k) === longer.charCodeAt(k)) k += 1;
+  return k >= 80;
+}
+
 function findEquivalentProjectionIndex(out, projected) {
   const directKey = messageKey(projected);
   for (let i = 0; i < out.length; i += 1) {
@@ -320,10 +345,9 @@ function findEquivalentProjectionIndex(out, projected) {
       const projectedText = normalizedText(messageText(projected));
       const existingText = normalizedText(messageText(existing));
       if (
-        projectedText &&
-        existingText === projectedText &&
         existing.role === "assistant" &&
-        timeDistanceMs(existing.timestamp, projected.timestamp) <= PROJECTION_TIME_MATCH_WINDOW_MS
+        timeDistanceMs(existing.timestamp, projected.timestamp) <= PROJECTION_TIME_MATCH_WINDOW_MS &&
+        assistantTextEquivalent(existingText, projectedText)
       ) {
         return i;
       }

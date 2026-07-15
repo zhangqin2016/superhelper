@@ -34,10 +34,25 @@ function comparableMessageText(message = {}) {
 }
 
 function contentOverlaps(a = "", b = "") {
-  const left = normalizedContent(a);
-  const right = normalizedContent(b);
+  // Compare with ALL whitespace removed (insignificant for CJK) and accept equal,
+  // one-contains-the-other, OR a long shared prefix. The official engine copy and
+  // the Lily copy of the same turn differ only by whitespace/length, so a plain
+  // normalized `includes` misses them; this catches the near-duplicate.
+  const left = String(a || "").replace(/\s+/g, "");
+  const right = String(b || "").replace(/\s+/g, "");
   if (!left || !right) return false;
-  return left === right || left.includes(right) || right.includes(left);
+  // Unguarded equality/containment preserves the prior behavior (this is only
+  // called for assistant messages already within the time window).
+  if (left === right || left.includes(right) || right.includes(left)) return true;
+  // NEW: a long shared prefix catches near-identical copies that diverge in the
+  // middle/tail (official vs Lily rendering of the same turn). Guarded so short
+  // different replies don't over-merge.
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length <= right.length ? right : left;
+  if (shorter.length < 80) return false;
+  let k = 0;
+  while (k < shorter.length && shorter.charCodeAt(k) === longer.charCodeAt(k)) k += 1;
+  return k >= 80;
 }
 
 function countArray(value) {

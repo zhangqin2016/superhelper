@@ -941,4 +941,48 @@ if (!richRefresh[0].record?.resultBlocks?.length || !richRefresh[0].record?.arti
   throw new Error(`canonical refresh must keep richer existing render record: ${JSON.stringify(richRefresh[0].record)}`);
 }
 
+// Reopen-duplicate (the real 张钦 case) at the renderer store: reopen loads the
+// RICH committed turn (local-first) and the official refresh copy of the SAME
+// turn. The rich text is a SUPERSET of the official plain answer (✓ step summary
+// + report sections), and the two have different keys (engine re-issued ids). The
+// old exact-text dedup let both survive → the answer showed twice. Substantial
+// overlap must now collapse them into ONE assistant that keeps the richer record.
+// Note the internal SPACE in "金水。 调候" — the official engine copy keeps it, the
+// Lily copy drops it, and lengths differ. Exact/plain-includes miss this; only
+// whitespace-insensitive comparison catches the near-duplicate (the real bug).
+const zqOfficialPlain =
+  "壬水日主，偏印格，身弱，用神火，忌神金水。 调候申月壬水，专用戊土，次取丁火佐戊制庚。事业方面偏印格配华盖三重，适合技术研究与学术，当前壬辰大运三十四至四十三岁为事业上升积累期。财运偏财透干但身弱难担，四十四岁后木火大运渐入佳境，五十岁前后达到高峰。感情方面妻宫七杀坐戌，配偶能力强但需要磨合。";
+const zqRichSuperset =
+  "✓ 八字排盘 ✓ 紫微斗数 ✓ 六爻占卜\n\n" + zqOfficialPlain.replace("。 调候", "。调候") + "\n\n📦 交付物：报告.pdf、分析全图.svg。";
+store.syncCommittedMessages("s_reopen_dup", [
+  { id: "u_zq", role: "user", turnId: "turn_zq", content: "帮我分析张钦", timestamp: "2026-06-23T16:00:00.000Z" },
+  {
+    id: "local_rich_zq",
+    role: "assistant",
+    turnId: "turn_zq",
+    content: zqRichSuperset,
+    timestamp: "2026-06-23T16:00:10.000Z",
+    record: {
+      assistantText: zqRichSuperset,
+      resultBlocks: [{ type: "artifact", artifactType: "svg", path: "/tmp/chart.svg" }],
+      artifacts: [{ path: "/tmp/report.pdf" }],
+    },
+  },
+  {
+    id: "official_plain_zq_no_engine_match",
+    role: "assistant",
+    content: zqOfficialPlain,
+    timestamp: "2026-06-23T16:00:11.000Z",
+    record: { assistantText: zqOfficialPlain },
+  },
+]);
+runtime = store.getRuntimeSession("s_reopen_dup");
+const zqAssistants = runtime.committedMessages.filter((m) => m.role === "assistant");
+if (zqAssistants.length !== 1) {
+  throw new Error(`reopen must not duplicate a rich-superset turn: got ${zqAssistants.length} assistants`);
+}
+if (!zqAssistants[0].record?.resultBlocks?.length) {
+  throw new Error("the surviving single assistant must keep the richer local record");
+}
+
 console.log("session-runtime-store: ok");

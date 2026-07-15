@@ -205,11 +205,39 @@ function assistantComparableText(message = {}) {
   });
 }
 
+// A rich committed turn (loaded local-first) and the official refresh copy of the
+// SAME turn rarely have byte-identical text: the rich record prepends a ✓ step
+// summary / appends report sections, so one is a SUPERSET of the other. Requiring
+// exact equality let both survive as separate bubbles → the finished turn shows
+// twice on reopen. Treat them as the same turn when the texts are equal OR — for
+// substantial text — one contains the other. The length guard keeps short,
+// genuinely-different replies from over-merging.
+function assistantTextEquivalent(a, b) {
+  // The official engine copy and the Lily copy of the SAME turn are only NEARLY
+  // identical: whitespace differs (CJK "问题。 定位" vs "问题。定位") and lengths
+  // differ (one is richer/longer), and they share no key (the official copy has
+  // no turnId, different message ids). So compare with ALL whitespace removed
+  // (insignificant for CJK) and accept equal, one-contains-the-other, OR a long
+  // shared prefix (tolerates mid/tail divergence). The length guard keeps short,
+  // genuinely-different replies from over-merging.
+  const sa = String(a || "").replace(/\s+/g, "");
+  const sb = String(b || "").replace(/\s+/g, "");
+  if (!sa || !sb) return false;
+  if (sa === sb) return true;
+  const shorter = sa.length <= sb.length ? sa : sb;
+  const longer = sa.length <= sb.length ? sb : sa;
+  if (shorter.length < 80) return false;
+  if (longer.includes(shorter)) return true;
+  let k = 0;
+  while (k < shorter.length && shorter.charCodeAt(k) === longer.charCodeAt(k)) k += 1;
+  return k >= 80;
+}
+
 function sameAssistantTurnWithinWindow(a = {}, b = {}, windowMs = 30 * 60 * 1000) {
   if (a.role !== "assistant" || b.role !== "assistant") return false;
   const aText = assistantComparableText(a);
   const bText = assistantComparableText(b);
-  if (!aText || !bText || aText !== bText) return false;
+  if (!assistantTextEquivalent(aText, bText)) return false;
   const at = timestampMs(a.timestamp);
   const bt = timestampMs(b.timestamp);
   if (!Number.isFinite(at) || !Number.isFinite(bt)) return false;

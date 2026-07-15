@@ -589,4 +589,69 @@ assert.equal(
   "restart official history must keep local timeline needed for final-text de-duplication",
 );
 
+// Reopen-duplicate (the real 张钦 case): after restart the engine re-issues
+// message ids (no engineMessageId match → no turnId propagation) AND the rich
+// local record's text is a SUPERSET of the official plain answer (it prepends a
+// ✓ step summary and appends report sections). Exact-equality dedup missed this
+// and appended the turn twice. It must now merge to ONE assistant via
+// substantial-overlap matching.
+// Internal SPACE in "金水。 调候" present in the official copy, absent in the rich
+// local copy + different length — only whitespace-insensitive comparison matches
+// (the real failure: plain `includes` missed it because of that one space).
+const officialAnswerText =
+  "壬水日主，偏印格，身弱，用神火，忌神金水。 调候申月壬水，专用戊土，次取丁火佐戊制庚。事业方面偏印格配华盖三重，适合技术研究与学术，当前壬辰大运三十四至四十三岁为事业上升积累期。财运偏财透干但身弱难担，四十四岁后木火大运渐入佳境，五十岁前后达到高峰。感情方面妻宫七杀坐戌，配偶能力强但需要磨合，当前辰戌相冲婚姻宫，注意沟通与经营。综合建议以深度思考为核心竞争力，事业宜技术型方向发展。";
+const supersetLocalText =
+  "✓ 八字排盘 ✓ 紫微斗数 ✓ 六爻占卜\n\n" + officialAnswerText.replace("。 调候", "。调候") + "\n\n📦 交付物：报告.pdf、分析全图.svg、网页版报告.html。";
+const supersetLocalRecord = {
+  turnId: "turn_zhangqin",
+  assistantText: supersetLocalText,
+  resultBlocks: [{ type: "artifact", artifactType: "svg", path: "/tmp/chart.svg" }],
+  timeline: [{ kind: "text", id: "t1", text: "先排盘", status: "done", ts: 1 }],
+  meta: { canonicalSource: "lily" },
+};
+const supersetLocalMsg = {
+  id: "local_zhangqin_assistant",
+  role: "assistant",
+  content: supersetLocalText,
+  timestamp: "2026-06-23T16:05:10.000Z",
+  turnId: "turn_zhangqin",
+  record: supersetLocalRecord,
+};
+const restartedSupersetPage = await getConversationPageFromSource({
+  sessionManager: {
+    findById: () => baseSession,
+    getActive: () => baseSession,
+    getConversationPage: () => ({ ok: true, source: "lily", conversation: [supersetLocalMsg] }),
+    getConversation: () => [supersetLocalMsg],
+    getProjectedConversation: () => [],
+  },
+  runnerPool: {
+    get: () => ({
+      isAlive: () => true,
+      getConversationPage: async () => ({
+        ok: true,
+        source: "opencode",
+        sessionId: "s1",
+        conversation: [{
+          id: "official_zhangqin_no_engine_match",
+          role: "assistant",
+          content: officialAnswerText,
+          timestamp: "2026-06-23T16:05:11.000Z",
+          record: { assistantText: officialAnswerText, meta: { opencode: { messageId: "official_zhangqin_no_engine_match" } } },
+        }],
+      }),
+    }),
+  },
+}, "s1", {});
+assert.equal(
+  restartedSupersetPage.conversation.filter((m) => m.role === "assistant").length,
+  1,
+  "reopen must NOT duplicate a turn whose rich local text is a superset of the official plain answer",
+);
+assert.equal(
+  restartedSupersetPage.conversation.find((m) => m.role === "assistant")?.record?.resultBlocks?.length,
+  1,
+  "the surviving single assistant keeps the richer local record",
+);
+
 console.log("opencode-conversation-source: ok");
