@@ -52,25 +52,64 @@ function registerMobilePairingIpc(ctx) {
   const { createMobileAgentBridge } = require("./mobile-agent-bridge");
   const log = require("./logger").getLogger("mobile-pairing");
   let selectedMobileSessionId = "";
+  let selectedMobileProjectId = "";
 
-  function currentProjectId() {
+  function activeProjectId() {
     try { return ctx.projectManager?.getActive?.()?.id || ""; } catch { return ""; }
   }
 
+  // The workspace the phone is driving: its explicit pick (if still valid),
+  // else the desktop's active project. Mobile-scoped — never changes the desktop
+  // foreground.
+  function mobileTargetProjectId() {
+    const picked = selectedMobileProjectId ? ctx.projectManager?.find?.(selectedMobileProjectId) : null;
+    if (picked?.id) return picked.id;
+    selectedMobileProjectId = "";
+    return activeProjectId();
+  }
+
   function mobileTargetSessionId() {
+    const projectId = mobileTargetProjectId();
     const selected = selectedMobileSessionId ? ctx.sessionManager?.findById?.(selectedMobileSessionId) : null;
-    if (selected?.id && (!currentProjectId() || selected.projectId === currentProjectId())) return selected.id;
+    if (selected?.id && (!projectId || selected.projectId === projectId)) return selected.id;
     selectedMobileSessionId = "";
-    return ctx.sessionManager?.getActive?.()?.id || "";
+    // Default to the active session only when driving the active project.
+    if (projectId === activeProjectId()) return ctx.sessionManager?.getActive?.()?.id || "";
+    const list = projectId ? (ctx.sessionManager?.listForProject?.(projectId) || []) : [];
+    return list[0]?.id || "";
+  }
+
+  function buildMobileProjectList() {
+    let state = { activeProjectId: "", projects: [] };
+    try { state = ctx.projectManager?.getAppState?.() || state; } catch { /* best effort */ }
+    return {
+      type: "projects.list",
+      activeProjectId: state.activeProjectId || "",
+      selectedProjectId: mobileTargetProjectId(),
+      projects: (state.projects || []).map((p) => ({
+        id: String(p.id || ""),
+        name: String(p.name || p.title || p.path || "工作空间"),
+        pinned: Boolean(p.pinned),
+      })).filter((p) => p.id),
+    };
+  }
+
+  function selectMobileProject(projectId) {
+    const target = ctx.projectManager?.find?.(projectId);
+    if (!target?.id) return null;
+    selectedMobileProjectId = target.id;
+    selectedMobileSessionId = ""; // reset session pick when switching workspace
+    return buildMobileSessionList();
   }
 
   function buildMobileSessionList() {
-    const projectId = currentProjectId();
+    const projectId = mobileTargetProjectId();
     const sessions = projectId ? (ctx.sessionManager?.listForProject?.(projectId) || []) : [];
     const activeSessionId = ctx.sessionManager?.activeSessionId || ctx.sessionManager?.getActive?.()?.id || "";
     const selectedSessionId = mobileTargetSessionId();
     return {
       type: "sessions.list",
+      projectId,
       activeSessionId,
       selectedSessionId,
       sessions: sessions.map((session) => ({
@@ -83,8 +122,9 @@ function registerMobilePairingIpc(ctx) {
   }
 
   function selectMobileSession(sessionId) {
+    const projectId = mobileTargetProjectId();
     const target = ctx.sessionManager?.findById?.(sessionId);
-    if (!target?.id || (currentProjectId() && target.projectId !== currentProjectId())) return null;
+    if (!target?.id || (projectId && target.projectId !== projectId)) return null;
     selectedMobileSessionId = target.id;
     return buildSessionContext(ctx, target.id);
   }
@@ -122,16 +162,18 @@ function registerMobilePairingIpc(ctx) {
       ...opts,
       log,
       admit: (envelope) => {
-        // Phase 1 default remains the desktop's foreground session. When the
-        // phone explicitly selected a session from the current project, honor
-        // that target without changing the desktop UI's active session.
-        let lilySessionId = envelope.lilySessionId || mobileTargetSessionId();
+        // Target a session within the workspace the phone is driving. Honor the
+        // phone's requested session only if it belongs to that workspace; else
+        // fall back to the workspace's selected/first session. Mobile-scoped —
+        // does not change the desktop UI's foreground.
+        let lilySessionId = String(envelope.lilySessionId || "");
         try {
-          const target = lilySessionId ? ctx.sessionManager?.findById?.(lilySessionId) : null;
-          if (!target?.id || (currentProjectId() && target.projectId !== currentProjectId())) {
-            lilySessionId = ctx.sessionManager?.getActive?.()?.id || "";
+          const targetProject = mobileTargetProjectId();
+          const requested = lilySessionId ? ctx.sessionManager?.findById?.(lilySessionId) : null;
+          if (!requested?.id || (targetProject && requested.projectId !== targetProject)) {
+            lilySessionId = mobileTargetSessionId();
           }
-        } catch { /* fall back to the envelope's target */ }
+        } catch { lilySessionId = ctx.sessionManager?.getActive?.()?.id || ""; }
         return ctx.turnOrchestrator.admitExternalCommand({ ...envelope, lilySessionId });
       },
       // Mobile "stop": interrupt the running turn in the foreground session via
@@ -149,6 +191,8 @@ function registerMobilePairingIpc(ctx) {
       getSessionContext: () => buildSessionContext(ctx, mobileTargetSessionId()),
       getSessionList: () => buildMobileSessionList(),
       selectSession: (sessionId) => selectMobileSession(String(sessionId || "")),
+      getProjectList: () => buildMobileProjectList(),
+      selectProject: (projectId) => selectMobileProject(String(projectId || "")),
       // Write phone-sent attachments to a temp dir under userData; the turn gets
       // real paths. Fail-open to [] (command runs text-only).
       materializeAttachments: (attachments) => {

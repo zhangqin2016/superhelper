@@ -114,6 +114,9 @@ export default function MobilePairPage() {
   const [sessionCtx, setSessionCtx] = useState(null); // { title, phase, recent: [{role,text}] }
   const [sessions, setSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false); // workspace/session sheet
   const [attachment, setAttachment] = useState(null); // { name, mimeType, dataBase64, preview }
   const [capabilities, setCapabilities] = useState(null);
   const [listeningVoice, setListeningVoice] = useState(false);
@@ -156,6 +159,7 @@ export default function MobilePairPage() {
       ws.onopen = () => {
         setStatus("connected");
         setMessage("已连接，手机现在可以发送任务");
+        try { ws.send(JSON.stringify({ type: "projects.request" })); } catch { /* noop */ }
         try { ws.send(JSON.stringify({ type: "sessions.request" })); } catch { /* noop */ }
         try { ws.send(JSON.stringify({ type: "session.request" })); } catch { /* noop */ }
       };
@@ -180,9 +184,15 @@ export default function MobilePairPage() {
             case "tool.started": setLog((l) => [`🔧 正在使用 ${frame.tool}`, ...l].slice(0, 20)); break;
             case "turn.ended": setTurnState(frame.status || "completed"); break;
             case "interrupt.ack": setLog((l) => [frame.ok ? `⏹ 已请求停止${frame.correlationId ? ` · ${frame.correlationId}` : ""}` : `停止失败：${frame.code || ""}${frame.correlationId ? ` · ${frame.correlationId}` : ""}`, ...l].slice(0, 20)); break;
+            case "projects.list":
+              setProjects(Array.isArray(frame.projects) ? frame.projects : []);
+              setSelectedProjectId(frame.selectedProjectId || frame.activeProjectId || "");
+              break;
+            case "project.select.ack": if (!frame.ok) setLog((l) => [`工作空间切换失败：${frame.code || ""}`, ...l].slice(0, 20)); break;
             case "sessions.list":
               setSessions(Array.isArray(frame.sessions) ? frame.sessions : []);
               setSelectedSessionId(frame.selectedSessionId || frame.activeSessionId || "");
+              if (frame.projectId) setSelectedProjectId(frame.projectId);
               break;
             case "session.context":
               setSessionCtx({ title: frame.title || "", sessionId: frame.sessionId || "", phase: frame.phase || "", recent: Array.isArray(frame.recent) ? frame.recent : [] });
@@ -318,6 +328,14 @@ export default function MobilePairPage() {
     }
   }, []);
 
+  const selectProject = useCallback((projectId) => {
+    setSelectedProjectId(projectId);
+    setSessions([]); setSelectedSessionId("");
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    try { ws.send(JSON.stringify({ type: "project.select", projectId })); } catch { /* noop */ }
+  }, []);
+
   const startVoiceInput = useCallback(() => {
     const SpeechRecognition = typeof window !== "undefined"
       ? (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -388,114 +406,157 @@ export default function MobilePairPage() {
     setLog((l) => [`⏹ 发送停止… · ${stopCorrelationId}`, ...l].slice(0, 20));
   }, []);
 
+  const connected = status === "connected";
+  const busy = turnState === "running" || turnState === "queued";
+  const dot = connected ? (busy ? "bg-amber-400" : "bg-emerald-400") : status === "error" ? "bg-rose-400" : "bg-slate-300";
+  const statusText = connected ? (busy ? "运行中" : "在线") : status === "waiting" || status === "consuming" ? "连接中" : status === "error" ? "已断开" : "未连接";
+  const workspaceName = projects.find((p) => p.id === selectedProjectId)?.name || "默认工作空间";
+  const sessionName = sessions.find((s) => s.id === selectedSessionId)?.title || sessionCtx?.title || "当前会话";
+  const history = Array.isArray(sessionCtx?.recent) ? sessionCtx.recent : [];
+
   return (
-    <section className="mx-auto max-w-md p-4">
-      <h1 className="text-xl font-semibold">手机控制桌面</h1>
-      <p className="mt-1 text-sm text-slate-500">用手机相机扫描桌面「设置 → 手机控制」里的二维码；扫码后在桌面点“批准”即可，无需登录。</p>
-      {message ? <p className="mt-3 rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">{message}</p> : null}
-      {capabilities ? (
-        <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
-          <span className="font-medium text-slate-700">已开放</span>
-          <span>：任务、图片、文件上传、产物、回复、中断、历史、会话选择、浏览器听写</span>
-          {capabilities.observeControl?.enabled || capabilities.voice?.enabled ? null : (
-            <span className="block pt-1">屏幕、鼠标键盘控制、生产语音/ASR等待桌面证据放行</span>
-          )}
+    <div className="mx-auto flex h-[100dvh] max-w-md flex-col bg-slate-50 text-slate-900">
+      {/* Header */}
+      <header className="flex-shrink-0 bg-gradient-to-br from-indigo-600 to-violet-600 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white shadow-md">
+        <div className="flex items-center gap-2">
+          <h1 className="text-base font-semibold">手机控制桌面</h1>
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs">
+            <span className={`h-2 w-2 rounded-full ${dot} ${busy ? "animate-pulse" : ""}`} />
+            {statusText}
+          </span>
         </div>
-      ) : null}
+        {connected ? (
+          <button type="button" onClick={() => setPickerOpen(true)} className="mt-2 flex w-full items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-left text-sm backdrop-blur active:bg-white/20">
+            <span className="truncate">
+              <span className="opacity-70">🗂 {workspaceName}</span>
+              <span className="mx-1 opacity-40">/</span>
+              <span className="font-medium">{sessionName}</span>
+            </span>
+            <span className="ml-auto text-xs opacity-70">切换 ▾</span>
+          </button>
+        ) : null}
+      </header>
 
-      {status === "idle" || status === "error" ? (
+      {message && !connected ? <p className="mx-4 mt-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">{message}</p> : null}
+
+      {/* Pairing view */}
+      {!connected ? (
+        <main className="flex-1 overflow-y-auto px-4 py-4">
+          <p className="text-sm text-slate-500">用相机扫描桌面「设置 → 手机控制」的二维码；或用授权码直连，无需登录。</p>
+          {capabilities && !(capabilities.observeControl?.enabled || capabilities.voice?.enabled) ? (
+            <p className="mt-2 text-xs text-slate-400">当前支持：任务、图片、回复、历史、工作空间/会话选择、浏览器听写。屏幕、语音、鼠标键盘控制等待桌面证据放行。</p>
+          ) : null}
+          <div className="mt-4 flex gap-1 rounded-xl bg-slate-200/70 p-1 text-sm">
+            <button type="button" className={`flex-1 rounded-lg py-2 font-medium transition ${pairMode === "scan" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500"}`} onClick={() => setPairMode("scan")}>扫码 / 配对码</button>
+            <button type="button" className={`flex-1 rounded-lg py-2 font-medium transition ${pairMode === "direct" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500"}`} onClick={() => setPairMode("direct")}>授权码直连</button>
+          </div>
+          <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+            {pairMode === "scan" ? (
+              <>
+                <label className="block text-sm font-medium text-slate-700">配对码（扫不了码时手动粘贴）</label>
+                <input className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="粘贴桌面显示的配对码" />
+                <button type="button" className="mt-4 w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white active:bg-indigo-700" onClick={() => pair()} disabled={status === "consuming"}>{status === "consuming" || status === "waiting" ? "连接中…" : "配对并连接"}</button>
+              </>
+            ) : (
+              <>
+                <label className="block text-sm font-medium text-slate-700">授权码 + 密码</label>
+                <p className="mt-1 text-xs text-slate-400">桌面「手机控制 → 生成直控码」</p>
+                <input className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-lg uppercase tracking-[0.3em] focus:border-indigo-400 focus:outline-none" value={directCode} onChange={(e) => setDirectCode(e.target.value)} placeholder="授权码" autoCapitalize="characters" />
+                <input className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-lg uppercase tracking-[0.3em] focus:border-indigo-400 focus:outline-none" value={directPassword} onChange={(e) => setDirectPassword(e.target.value)} placeholder="密码" autoCapitalize="characters" />
+                <button type="button" className="mt-4 w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white active:bg-indigo-700" onClick={() => directConnect()} disabled={status === "consuming"}>{status === "consuming" || status === "waiting" ? "连接中…" : "直接连接"}</button>
+                <p className="mt-2 text-xs text-slate-400">直连无需桌面批准，请只在你信任的网络输入。</p>
+              </>
+            )}
+          </div>
+        </main>
+      ) : (
         <>
-          <div className="mt-4 flex gap-2 text-sm">
-            <button type="button" className={`flex-1 rounded px-3 py-1.5 ${pairMode === "scan" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setPairMode("scan")}>扫码 / 配对码</button>
-            <button type="button" className={`flex-1 rounded px-3 py-1.5 ${pairMode === "direct" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setPairMode("direct")}>授权码直连</button>
-          </div>
-          {pairMode === "scan" ? (
-            <>
-              <label className="mt-4 block text-sm font-medium">配对码（扫不了码时手动粘贴）</label>
-              <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="粘贴桌面显示的配对码" />
-              <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => pair()}>配对并连接</button>
-            </>
-          ) : (
-            <>
-              <label className="mt-4 block text-sm font-medium">授权码 + 密码（桌面「手机控制 → 生成直控码」）</label>
-              <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm uppercase tracking-widest" value={directCode} onChange={(e) => setDirectCode(e.target.value)} placeholder="授权码" autoCapitalize="characters" />
-              <input className="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-sm uppercase tracking-widest" value={directPassword} onChange={(e) => setDirectPassword(e.target.value)} placeholder="密码" autoCapitalize="characters" />
-              <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => directConnect()}>直接连接</button>
-              <p className="mt-2 text-xs text-slate-400">直连无需桌面批准，请只在你信任的网络输入。</p>
-            </>
-          )}
-        </>
-      ) : null}
-
-      {status === "connected" ? (
-        <div className="mt-6">
-          {sessionCtx ? (
-            <div className="mb-4 rounded border border-slate-200 bg-white">
-              <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm font-medium text-slate-700">
-                <span className="truncate">{sessionCtx.title || "当前会话"}</span>
-                {sessionCtx.phase && sessionCtx.phase !== "idle" ? <span className="ml-auto text-xs text-indigo-500">忙碌</span> : <span className="ml-auto text-xs text-slate-400">空闲</span>}
-              </div>
-              {sessions.length ? (
-                <div className="border-b border-slate-100 px-3 py-2">
-                  <label className="mb-1 block text-xs text-slate-400">手机发送到</label>
-                  <select className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm" value={selectedSessionId} onChange={(e) => selectSession(e.target.value)}>
-                    {sessions.map((session) => (
-                      <option key={session.id} value={session.id}>{session.title || "未命名会话"}</option>
-                    ))}
-                  </select>
+          {/* Chat */}
+          <main className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            {history.length === 0 && !reply && turnState === "idle" ? (
+              <p className="mt-10 text-center text-sm text-slate-400">发送第一个任务，或说句话试试 🎙</p>
+            ) : null}
+            {history.map((m, i) => (
+              <div key={i} className={`flex ${m.role === "assistant" ? "justify-start" : "justify-end"}`}>
+                <div className={`max-w-[82%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm shadow-sm ${m.role === "assistant" ? "rounded-tl-sm bg-white text-slate-800" : "rounded-tr-sm bg-indigo-600 text-white"}`}>
+                  {m.text.length > 1200 ? `${m.text.slice(0, 1200)}…` : m.text}
                 </div>
-              ) : null}
-              {sessionCtx.recent?.length ? (
-                <ul className="max-h-40 space-y-1 overflow-y-auto px-3 py-2 text-xs">
-                  {sessionCtx.recent.map((m, i) => (
-                    <li key={i} className={m.role === "assistant" ? "text-slate-600" : "text-slate-900"}>
-                      <span className="mr-1 text-slate-400">{m.role === "assistant" ? "AI" : "我"}</span>
-                      <span className="whitespace-pre-wrap">{m.text.length > 200 ? `${m.text.slice(0, 200)}…` : m.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="px-3 py-2 text-xs text-slate-400">暂无历史</p>}
-            </div>
-          ) : null}
-          <label className="block text-sm font-medium">发送任务到桌面</label>
-          {attachment ? (
-            <div className="mt-1 flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={attachment.preview} alt="" className="h-10 w-10 rounded object-cover" />
-              <span className="flex-1 truncate text-xs text-slate-500">{attachment.name}</span>
-              <button type="button" className="text-xs text-rose-500" onClick={() => setAttachment(null)}>移除</button>
-            </div>
-          ) : null}
-          <div className="mt-1 flex gap-2">
-            <label className="flex cursor-pointer items-center rounded border border-slate-300 px-2 text-lg text-slate-500" title="添加图片">
-              📷
-              <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
-            </label>
-            <button type="button" className={listeningVoice ? "rounded border border-indigo-300 bg-indigo-50 px-2 text-lg text-indigo-600" : "rounded border border-slate-300 px-2 text-lg text-slate-500"} title="语音输入" onClick={startVoiceInput}>🎙</button>
-            <input className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm" value={task} onChange={(e) => setTask(e.target.value)} placeholder="例如：整理今天的会议纪要" onKeyDown={(e) => { if (e.key === "Enter") sendTask(); }} />
-            <button type="button" className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white" onClick={sendTask}>发送</button>
-          </div>
-
-          {reply || turnState !== "idle" ? (
-            <div className="mt-4">
-              <div className="mb-1 flex items-center gap-2 text-xs text-slate-400">
-                <span>桌面回复</span>
-                {turnState === "queued" ? <span className="text-slate-500">等待桌面执行</span> : null}
-                {turnState === "running" ? <span className="text-indigo-500">运行中…</span> : null}
-                {turnState === "running" ? <button type="button" className="ml-auto rounded bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-600" onClick={sendInterrupt}>停止</button> : null}
-                {turnState === "completed" ? <span className="text-emerald-500">已完成</span> : null}
-                {turnState === "failed" || turnState === "stalled" ? <span className="text-rose-500">出错</span> : null}
-                {turnState === "interrupted" ? <span className="text-slate-500">已中断</span> : null}
               </div>
-              <div className="whitespace-pre-wrap rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 min-h-[3rem]">{reply || "…"}</div>
-            </div>
-          ) : null}
+            ))}
+            {reply || turnState !== "idle" ? (
+              <div className="flex justify-start">
+                <div className="max-w-[82%] rounded-2xl rounded-tl-sm bg-white px-3.5 py-2 text-sm text-slate-800 shadow-sm">
+                  <div className="mb-1 flex items-center gap-2 text-xs">
+                    {turnState === "queued" ? <span className="text-slate-400">排队中…</span> : null}
+                    {turnState === "running" ? <span className="text-indigo-500">运行中</span> : null}
+                    {turnState === "completed" ? <span className="text-emerald-500">已完成</span> : null}
+                    {turnState === "failed" || turnState === "stalled" ? <span className="text-rose-500">出错</span> : null}
+                    {turnState === "interrupted" ? <span className="text-slate-400">已中断</span> : null}
+                    {turnState === "running" ? <button type="button" className="ml-auto rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600" onClick={sendInterrupt}>停止</button> : null}
+                  </div>
+                  <div className="whitespace-pre-wrap">{reply || (turnState === "queued" || turnState === "running" ? "…" : "")}</div>
+                </div>
+              </div>
+            ) : null}
+          </main>
 
-          <ul className="mt-3 space-y-1 text-sm text-slate-600">
-            {log.map((line, i) => <li key={i}>{line}</li>)}
-          </ul>
+          {/* Composer */}
+          <footer className="flex-shrink-0 border-t border-slate-200 bg-white px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+            {attachment ? (
+              <div className="mb-2 flex items-center gap-2 rounded-xl bg-slate-50 p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={attachment.preview} alt="" className="h-11 w-11 rounded-lg object-cover" />
+                <span className="flex-1 truncate text-xs text-slate-500">{attachment.name}</span>
+                <button type="button" className="text-xs font-medium text-rose-500" onClick={() => setAttachment(null)}>移除</button>
+              </div>
+            ) : null}
+            {listeningVoice ? <p className="mb-1 text-center text-xs text-indigo-500">🎙 正在聆听，说完自动填入…</p> : null}
+            <div className="flex items-end gap-2">
+              <label className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-slate-100 text-lg active:bg-slate-200" title="添加图片">
+                📷<input type="file" accept="image/*" className="hidden" onChange={pickImage} />
+              </label>
+              <button type="button" onClick={startVoiceInput} title="语音输入"
+                className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg transition ${listeningVoice ? "animate-pulse bg-indigo-600 text-white" : "bg-slate-100 active:bg-slate-200"}`}>🎙</button>
+              <textarea rows={1} className="max-h-28 min-h-[2.5rem] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                value={task} onChange={(e) => setTask(e.target.value)} placeholder="发消息 / 派任务给桌面…"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTask(); } }} />
+              <button type="button" onClick={sendTask} disabled={!task.trim() && !attachment}
+                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white disabled:bg-slate-300 active:bg-indigo-700" title="发送">➤</button>
+            </div>
+          </footer>
+        </>
+      )}
+
+      {/* Workspace / session bottom sheet */}
+      {pickerOpen ? (
+        <div className="fixed inset-0 z-20 flex flex-col justify-end bg-black/30" onClick={() => setPickerOpen(false)}>
+          <div className="max-h-[75vh] overflow-y-auto rounded-t-2xl bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300" />
+            <h2 className="text-sm font-semibold text-slate-700">工作空间</h2>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {projects.length ? projects.map((p) => (
+                <button key={p.id} type="button" onClick={() => selectProject(p.id)}
+                  className={`rounded-full px-3 py-1.5 text-sm ${p.id === selectedProjectId ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>
+                  {p.pinned ? "📌 " : ""}{p.name}
+                </button>
+              )) : <span className="text-xs text-slate-400">仅当前工作空间</span>}
+            </div>
+            <h2 className="mt-5 text-sm font-semibold text-slate-700">会话</h2>
+            <ul className="mt-2 space-y-1">
+              {sessions.length ? sessions.map((s) => (
+                <li key={s.id}>
+                  <button type="button" onClick={() => { selectSession(s.id); setPickerOpen(false); }}
+                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${s.id === selectedSessionId ? "bg-indigo-50 text-indigo-700" : "active:bg-slate-100"}`}>
+                    <span className="flex-1 truncate">{s.title || "未命名会话"}</span>
+                    {s.id === selectedSessionId ? <span className="text-xs">✓</span> : null}
+                  </button>
+                </li>
+              )) : <li className="px-3 py-2 text-xs text-slate-400">该工作空间暂无会话</li>}
+            </ul>
+            <button type="button" className="mt-4 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-medium text-slate-600" onClick={() => setPickerOpen(false)}>关闭</button>
+          </div>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }

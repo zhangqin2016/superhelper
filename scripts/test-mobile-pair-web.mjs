@@ -38,7 +38,7 @@ assert.match(page, /corr_/, "correlation ids are visually distinct from command 
 assert.match(page, /command\.admitted/, "renders the admission ack");
 assert.match(page, /command\.rejected/, "renders a rejection");
 assert.match(page, /setTurnState\("queued"\)/, "send clears old reply into a queued state");
-assert.match(page, /等待桌面执行/, "queued commands have a visible waiting state");
+assert.match(page, /排队中/, "queued commands have a visible waiting state");
 assert.match(page, /relay\.peer_offline/, "renders desktop-offline relay feedback");
 assert.match(page, /frame\.correlationId/, "desktop-offline feedback includes the command correlation id when present");
 assert.match(page, /连接已断开/, "shows a clear message when the relay disconnects");
@@ -52,7 +52,7 @@ assert.match(page, /部分图片未送达/, "warns when only some attachments ma
 assert.match(page, /"assistant\.delta"/, "accumulates streaming assistant text");
 assert.match(page, /"turn\.started"/, "resets the reply on a new turn");
 assert.match(page, /"turn\.ended"/, "marks the turn done/failed/interrupted");
-assert.match(page, /桌面回复/, "renders a reply panel");
+assert.match(page, /setReply\(/, "renders the streaming desktop reply");
 // Interrupt a running turn from the phone.
 assert.match(page, /type: "interrupt"/, "can send an interrupt frame");
 assert.match(page, /interrupt\.ack/, "renders the interrupt ack");
@@ -64,9 +64,14 @@ assert.match(page, /type: "sessions\.request"/, "requests selectable session lis
 assert.match(page, /"sessions\.list"/, "renders selectable sessions from the desktop");
 assert.match(page, /type: "session\.select"/, "can select which desktop session receives mobile commands");
 assert.match(page, /selectedSessionId/, "keeps the selected target session id");
-assert.match(page, /<select/, "renders a mobile session picker");
+assert.match(page, /selectSession\(s\.id\)/, "renders a mobile session picker (bottom sheet)");
 assert.match(page, /"session\.context"/, "renders the session context");
 assert.match(page, /sessionCtx/, "keeps session context state (title + recent history)");
+// Workspace (project) selection.
+assert.match(page, /type: "projects\.request"/, "requests the workspace list on connect");
+assert.match(page, /type: "project\.select"/, "can switch workspace");
+assert.match(page, /selectProject/, "has a workspace-select flow");
+assert.match(page, /工作空间/, "renders the workspace picker");
 // Attachments: pick + downscale an image and send it with the command.
 assert.match(page, /type="file"/, "has an image picker");
 assert.match(page, /accept="image\/\*"/, "picker accepts images");
@@ -104,9 +109,9 @@ assert.match(page, /PAIRING_CHALLENGE_INVALID_OR_EXPIRED/, "shows a clear messag
 // Final-shape capability metadata: the page shows the current demo surface and
 // explicitly keeps Phase 2 live/voice/control disabled unless the server enables it.
 assert.match(page, /\/api\/mobile\/capabilities/, "loads Mobile Command capability metadata");
-assert.match(page, /文件上传、产物/, "capability copy includes local file upload/artifacts");
+assert.match(page, /工作空间\/会话选择/, "capability copy lists the truly-open surfaces (incl. workspace/session selection)");
 assert.match(page, /capabilities\.observeControl\?\.enabled/, "renders observe/control as server-gated");
 assert.match(page, /capabilities\.voice\?\.enabled/, "renders voice as server-gated");
-assert.match(page, /屏幕、鼠标键盘控制、生产语音\/ASR等待桌面证据放行/, "does not advertise Phase 2 as live");
+assert.match(page, /屏幕、语音、鼠标键盘控制等待桌面证据放行/, "does not advertise Phase 2 as live");
 
 console.log("mobile-pair-web: ok");

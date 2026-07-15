@@ -37,6 +37,8 @@ async function handleRelayCommandFrame(rawFrame, {
   getSessionContext,
   getSessionList,
   selectSession,
+  getProjectList,
+  selectProject,
   materializeAttachments,
   desktopDeviceId = "",
   lilySessionId = "",
@@ -81,6 +83,23 @@ async function handleRelayCommandFrame(rawFrame, {
       return { reply: ctx || { type: "session.select.ack", ok: false, sessionId, code: "SESSION_NOT_FOUND" } };
     } catch {
       return { reply: { type: "session.select.ack", ok: false, sessionId, code: "SESSION_SELECT_ERROR" } };
+    }
+  }
+
+  // Phone asks for the workspace (project) list, or selects one.
+  if (frame.type === "projects.request") {
+    if (typeof getProjectList !== "function") return { reply: null };
+    try { return { reply: (await getProjectList()) || null }; } catch { return { reply: null }; }
+  }
+  if (frame.type === "project.select") {
+    const projectId = String(frame.projectId || "");
+    if (!projectId) return { reply: { type: "project.select.ack", ok: false, projectId: "", code: "PROJECT_INVALID" } };
+    if (typeof selectProject !== "function") return { reply: { type: "project.select.ack", ok: false, projectId, code: "PROJECT_SELECT_UNAVAILABLE" } };
+    try {
+      const list = await selectProject(projectId);
+      return { reply: list || { type: "project.select.ack", ok: false, projectId, code: "PROJECT_NOT_FOUND" } };
+    } catch {
+      return { reply: { type: "project.select.ack", ok: false, projectId, code: "PROJECT_SELECT_ERROR" } };
     }
   }
 
@@ -195,6 +214,8 @@ function createMobileAgentBridge({
   getSessionContext,
   getSessionList,
   selectSession,
+  getProjectList,
+  selectProject,
   materializeAttachments,
   WebSocketCtor = globalThis.WebSocket,
   reconnectDelayMs = 3000,
