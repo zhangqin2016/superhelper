@@ -2527,6 +2527,21 @@ class TurnOrchestrator {
     let triggerVerifyRetry = false;
     if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
       const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
+      // Render this turn's real tool OUTPUT text so the gate can deterministically
+      // check the answer's numbers against it (the ledger keeps only counts/paths).
+      let evidenceText = "";
+      try {
+        const toolText = (t) => {
+          const r = t?.result;
+          if (typeof r === "string") return r;
+          if (r && typeof r.output === "string") return r.output;
+          if (Array.isArray(r?.content)) return r.content.map((c) => (c && typeof c.text === "string" ? c.text : "")).join(" ");
+          if (typeof t?.content === "string") return t.content;
+          if (typeof t?.output === "string") return t.output;
+          try { return JSON.stringify(r ?? t?.content ?? t?.output ?? ""); } catch { return ""; }
+        };
+        evidenceText = [...(state.tools?.values?.() || [])].map(toolText).filter(Boolean).join("\n").slice(0, 40000);
+      } catch { evidenceText = ""; }
       const assessment = assessFinalAnswerEvidence({
         assistant,
         evidencePolicy: state.taskContract.evidencePolicy,
@@ -2534,6 +2549,8 @@ class TurnOrchestrator {
         evidenceSummary,
         toolCount: state.tools?.size || 0,
         fileChangeCount: record?.fileChanges?.length || 0,
+        evidenceText,
+        userText: String(state.enginePayload?.rawText || ""),
       });
       evidenceGateAssessment = assessment;
       if (!assessment.ok) {

@@ -100,6 +100,36 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
   return null;
 }
 
+// Deterministic numeric grounding (zero model calls). Data-like numbers — counts
+// with thousands separators (27,448), bare 4+ digit counts (19407), and
+// percentages (39%) — in a factual answer must come from a real tool run. If such
+// a number appears NOWHERE in the turn's tool output OR the user's own prompt, it
+// was almost certainly fabricated (a model can't derive "27,448 records" by
+// reasoning — only by counting). We flag exactly those numbers. 3-digit and
+// smaller bare numbers are deliberately NOT checked (round/derived values → false
+// positives). A strong model whose numbers come from tool output is never flagged
+// (not made dumber); a weak model's invented counts are caught deterministically.
+const SIGNIFICANT_NUMBER_RE = /\d{1,3}(?:,\d{3})+|\d{4,}|\d+(?:\.\d+)?%/g;
+
+function ungroundedSignificantNumbers(answer, evidenceText, userText) {
+  if (process.env.LILY_NUMERIC_GROUNDING === "0") return [];
+  const matches = String(answer || "").match(SIGNIFICANT_NUMBER_RE);
+  if (!matches) return [];
+  // Comma-stripped haystack so "27,448" (answer) matches "27448" (tool output).
+  const haystack = `${String(evidenceText || "")}\n${String(userText || "")}`.replace(/,/g, "");
+  const seen = new Set();
+  const ungrounded = [];
+  for (const raw of matches) {
+    const norm = raw.replace(/[,\s%]/g, "");
+    if (!norm || seen.has(norm)) continue;
+    seen.add(norm);
+    if (haystack.includes(norm)) continue; // the digits appear in evidence / prompt → grounded
+    ungrounded.push(raw.trim());
+    if (ungrounded.length >= 8) break;
+  }
+  return ungrounded;
+}
+
 function assessFinalAnswerEvidence({
   assistant = "",
   evidencePolicy = null,
@@ -107,6 +137,8 @@ function assessFinalAnswerEvidence({
   fileChangeCount = 0,
   turnPolicy = null,
   evidenceSummary = null,
+  evidenceText = "",
+  userText = "",
 } = {}) {
   const text = String(assistant || "").trim();
   const required = Boolean(evidencePolicy?.required);
@@ -145,6 +177,22 @@ function assessFinalAnswerEvidence({
       hasCount(evidenceSummary, "events"),
   );
   const hasEvidence = toolCount > 0 || fileChangeCount > 0 || hasLedgerEvidence || EVIDENCE_MARKER_RE.test(text);
+  // Deterministic numeric grounding runs EVEN when hasEvidence is true — the 张钦
+  // failure was exactly "tools ran, but the specific numbers were fabricated", so
+  // the coarse hasEvidence check passed while the numbers were unsupported.
+  if (strongClaim || required) {
+    const ungroundedNumbers = ungroundedSignificantNumbers(text, evidenceText, userText);
+    if (ungroundedNumbers.length) {
+      return {
+        ok: false,
+        required,
+        strongClaim: true,
+        hasEvidence,
+        reason: "numeric_claim_not_in_evidence",
+        ungroundedNumbers,
+      };
+    }
+  }
   if (!strongClaim || hasEvidence) {
     return { ok: true, required, strongClaim, hasEvidence, reason: "" };
   }
@@ -160,6 +208,11 @@ function assessFinalAnswerEvidence({
 function appendEvidenceGateNotice(assistant, assessment) {
   const text = String(assistant || "").trim();
   if (assessment?.ok !== false) return text;
+  // Targeted notice when specific numbers are ungrounded — name them, so the user
+  // sees exactly which values to distrust instead of a blanket disclaimer.
+  if (assessment.reason === "numeric_claim_not_in_evidence" && assessment.ungroundedNumbers?.length) {
+    return `${text}\n\n证据门槛：以下数字未出现在本轮工具输出中，可能是估计或臆造，未经核实，请勿当作已确认事实：${assessment.ungroundedNumbers.join("、")}。`;
+  }
   const notice = [
     "",
     "证据门槛：上面的结论缺少可核验证据支撑，不能视为已确认事实。需要通过文件引用、命令/测试输出、日志、接口返回或线上检查结果验证后才能确认。",
