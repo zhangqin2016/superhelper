@@ -102,6 +102,9 @@ async function fileToDownscaledAttachment(file, { maxDim = 1280, maxBytes = 170 
 export default function MobilePairPage() {
   const [deviceId, setDeviceId] = useState("");
   const [codeInput, setCodeInput] = useState("");
+  const [pairMode, setPairMode] = useState("scan"); // scan | direct
+  const [directCode, setDirectCode] = useState("");
+  const [directPassword, setDirectPassword] = useState("");
   const [status, setStatus] = useState("idle"); // idle|consuming|waiting|connected|error
   const [message, setMessage] = useState("");
   const [task, setTask] = useState("");
@@ -234,6 +237,37 @@ export default function MobilePairPage() {
     setMessage("已提交配对请求，请在桌面上点击“批准”…");
     connectRelay(url, r.json.grantId, r.json.mobileToken);
   }, [codeInput, deviceId, post, connectRelay, loadCapabilities]);
+
+  // Direct connect (TeamViewer/ToDesk-style): code + password → active grant, no
+  // approval. The base is this page's own origin (the server it's served from).
+  const directConnect = useCallback(async () => {
+    if (consumingRef.current) return;
+    const code = directCode.trim();
+    const password = directPassword.trim();
+    if (!code || !password) { setMessage("请输入授权码和密码"); return; }
+    const url = pageOrigin();
+    consumingRef.current = true;
+    setStatus("consuming");
+    setMessage("正在连接…");
+    loadCapabilities(url);
+    const r = await post(url, "/api/mobile/direct/consume", { deviceId, code, password });
+    if (!r.ok || !r.json?.grantId || !r.json?.mobileToken) {
+      consumingRef.current = false;
+      setStatus("error");
+      const c = r.json?.code || r.status;
+      setMessage(
+        c === "DIRECT_CODE_LOCKED" ? "尝试次数过多，请在桌面重新生成直控码后再试"
+          : c === "DIRECT_CODE_INVALID" ? "授权码或密码错误"
+            : `连接失败：${c}`,
+      );
+      return;
+    }
+    grantRef.current = { url, grantId: r.json.grantId };
+    setStatus("waiting");
+    setMessage("已连接授权，正在建立通道…");
+    // Grant is already active (no approval) → the relay accepts immediately.
+    connectRelay(url, r.json.grantId, r.json.mobileToken);
+  }, [directCode, directPassword, deviceId, post, connectRelay, loadCapabilities]);
 
   useEffect(() => {
     const id = ensureDeviceId();
@@ -371,9 +405,25 @@ export default function MobilePairPage() {
 
       {status === "idle" || status === "error" ? (
         <>
-          <label className="mt-4 block text-sm font-medium">配对码（扫不了码时手动粘贴）</label>
-          <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="粘贴桌面显示的配对码" />
-          <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => pair()}>配对并连接</button>
+          <div className="mt-4 flex gap-2 text-sm">
+            <button type="button" className={`flex-1 rounded px-3 py-1.5 ${pairMode === "scan" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setPairMode("scan")}>扫码 / 配对码</button>
+            <button type="button" className={`flex-1 rounded px-3 py-1.5 ${pairMode === "direct" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setPairMode("direct")}>授权码直连</button>
+          </div>
+          {pairMode === "scan" ? (
+            <>
+              <label className="mt-4 block text-sm font-medium">配对码（扫不了码时手动粘贴）</label>
+              <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="粘贴桌面显示的配对码" />
+              <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => pair()}>配对并连接</button>
+            </>
+          ) : (
+            <>
+              <label className="mt-4 block text-sm font-medium">授权码 + 密码（桌面「手机控制 → 生成直控码」）</label>
+              <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm uppercase tracking-widest" value={directCode} onChange={(e) => setDirectCode(e.target.value)} placeholder="授权码" autoCapitalize="characters" />
+              <input className="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-sm uppercase tracking-widest" value={directPassword} onChange={(e) => setDirectPassword(e.target.value)} placeholder="密码" autoCapitalize="characters" />
+              <button type="button" className="mt-4 w-full rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" onClick={() => directConnect()}>直接连接</button>
+              <p className="mt-2 text-xs text-slate-400">直连无需桌面批准，请只在你信任的网络输入。</p>
+            </>
+          )}
         </>
       ) : null}
 

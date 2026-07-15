@@ -178,6 +178,7 @@ function registerMobilePairingIpc(ctx) {
   };
 
   ipcMain.handle("mobile-pairing:create-challenge", guard(() => manager.createChallenge()));
+  ipcMain.handle("mobile-pairing:create-direct-code", guard(() => manager.createDirectCode()));
   ipcMain.handle("mobile-pairing:poll-pending", guard(() => manager.pollPending()));
   ipcMain.handle("mobile-pairing:list-devices", guard(() => manager.listDevices()));
   ipcMain.handle("mobile-pairing:approve", guard((_e, grantId) => manager.approve(String(grantId || ""))));

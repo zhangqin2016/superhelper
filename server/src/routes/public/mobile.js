@@ -8,6 +8,7 @@ import {
 } from "../../services/device-identity.js";
 import { requireAccountSession } from "../../services/account-session-guard.js";
 import { createGrantToken } from "../../services/mobile-grant-token.js";
+import { createDirectCode, consumeDirectCode } from "../../services/mobile-direct-connect.js";
 import {
   createPairingChallenge,
   consumePairingChallenge,
@@ -39,6 +40,8 @@ const challengeSchema = z.object({ ...deviceBase });
 const consumeSchema = z.object({ ...deviceBase, token: z.string().min(10).max(400) });
 const grantDecisionSchema = z.object({ ...deviceBase, grantId: z.string().min(6).max(120) });
 const revokeSchema = z.object({ ...deviceBase, grantId: z.string().min(6).max(120), reason: z.string().max(40).optional() });
+const directCreateSchema = z.object({ ...deviceBase });
+const directConsumeSchema = z.object({ ...deviceBase, code: z.string().min(4).max(40), password: z.string().min(3).max(40) });
 
 export function registerPublicMobileRoutes(app) {
   // Both guards: the device signature proves key possession, the account token
@@ -251,6 +254,75 @@ export function registerPublicMobileRoutes(app) {
       return reply.send({ ok: true, grants: result.grants });
     },
   );
+  // --- Direct-connect codes (TeamViewer/ToDesk-style): short code + password,
+  // no approval. Opt-in; QR + approval stays the default. ---
+  app.post(
+    "/api/mobile/direct/create",
+    { schema: { tags: ["public:mobile"], summary: "Desktop generates a direct-connect code + password", body: zodBody(directCreateSchema), response: { 200: okResponse({ codeId: { type: "string" }, code: { type: "string" }, password: { type: "string" }, expiresAt: { type: "string" } }) } } },
+    async (request, reply) => {
+      const input = directCreateSchema.parse(request.body);
+      const account = await bothGuards(request, reply, input);
+      if (!account) return;
+      const result = await createDirectCode({
+        userId: account.userId,
+        accountSessionId: account.sessionId,
+        desktopDeviceId: account.deviceId,
+        revokePriorActive: ({ desktopDeviceId }) => db
+          .updateTable("mobile_direct_codes")
+          .set({ status: "revoked" })
+          .where("desktop_device_id", "=", desktopDeviceId)
+          .where("status", "=", "active")
+          .execute(),
+        insertCode: (row) => db.insertInto("mobile_direct_codes").values(row).execute(),
+      });
+      if (!result.ok) return reply.code(400).send({ ok: false, code: result.code });
+      return reply.send({ ok: true, codeId: result.codeId, code: result.code, password: result.password, expiresAt: result.expiresAt });
+    },
+  );
+
+  app.post(
+    "/api/mobile/direct/consume",
+    { schema: { tags: ["public:mobile"], summary: "Phone connects directly via code + password (no approval)", body: zodBody(directConsumeSchema), response: { 200: okResponse({ grantId: { type: "string" }, mobileToken: { type: "string" }, desktopDeviceId: { type: "string" } }) } } },
+    async (request, reply) => {
+      const input = directConsumeSchema.parse(request.body);
+      if (!(await deviceOnly(request, reply, input))) return;
+      const result = await consumeDirectCode({
+        code: input.code,
+        password: input.password,
+        mobileDeviceId: input.deviceId,
+        findActiveCodeByHash: (codeHash, nowIso) => db
+          .selectFrom("mobile_direct_codes")
+          .selectAll()
+          .where("code_hash", "=", codeHash)
+          .where("status", "=", "active")
+          .where("expires_at", ">", nowIso)
+          .executeTakeFirst(),
+        registerFailedAttempt: ({ id, attemptCount, lockedUntil }) => db
+          .updateTable("mobile_direct_codes")
+          .set({ attempt_count: attemptCount, locked_until: lockedUntil })
+          .where("id", "=", id)
+          .execute(),
+        resetAttempts: ({ id }) => db
+          .updateTable("mobile_direct_codes")
+          .set({ attempt_count: 0, locked_until: null })
+          .where("id", "=", id)
+          .execute(),
+        resolveDesktopLicense: async (deviceId) => (await validLicenseScope({ deviceId })) || null,
+        supersedeLivePairs: ({ desktopDeviceId, mobileDeviceId, now }) => db
+          .updateTable("mobile_pairing_grants")
+          .set({ status: "revoked", terminal_at: now.toISOString(), revoked_reason: "superseded" })
+          .where("desktop_device_id", "=", desktopDeviceId)
+          .where("mobile_device_id", "=", mobileDeviceId)
+          .where("status", "in", ["pending_approval", "active"])
+          .execute(),
+        insertGrant: (row) => db.insertInto("mobile_pairing_grants").values(row).execute(),
+        issueGrantToken: ({ grantId, mobileDeviceId }) => createGrantToken({ grantId, mobileDeviceId }),
+      });
+      if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
+      return reply.send({ ok: true, grantId: result.grantId, mobileToken: result.mobileToken, desktopDeviceId: result.desktopDeviceId });
+    },
+  );
+
   registerMobileCommandSurfaceRoutes(app);
 }
 

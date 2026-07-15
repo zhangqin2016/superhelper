@@ -192,6 +192,32 @@ async function startPairing(btn) {
   }
 }
 
+async function startDirectCode(btn) {
+  btn.disabled = true;
+  try {
+    const res = await api().mobilePairingCreateDirectCode?.();
+    if (!res?.ok) {
+      const key = res?.code === "ACCOUNT_LOGIN_REQUIRED" ? "settings.mobilePairLoginRequired" : "settings.mobilePairChallengeFailed";
+      showToast(t(key), res?.code === "ACCOUNT_LOGIN_REQUIRED" ? "info" : "warning");
+      return;
+    }
+    const wrap = $("mobilePairDirect");
+    const codeEl = $("mobilePairDirectCode");
+    const passEl = $("mobilePairDirectPassword");
+    if (codeEl) codeEl.textContent = res.code || "";
+    if (passEl) passEl.textContent = res.password || "";
+    if (wrap) wrap.hidden = false;
+    const expiry = $("mobilePairDirectExpiry");
+    if (expiry && res.expiresAt) {
+      expiry.textContent = t("settings.mobilePairExpiry", { time: new Date(res.expiresAt).toLocaleTimeString() });
+    }
+  } catch {
+    showToast(t("settings.mobilePairChallengeFailed"), "warning");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 export function initMobilePairingSettings() {
   const startBtn = $("mobilePairStartBtn");
   if (!startBtn || !window.assistantClient?.mobilePairingCreateChallenge) {
@@ -201,6 +227,12 @@ export function initMobilePairingSettings() {
     return;
   }
   startBtn.addEventListener("click", () => void startPairing(startBtn));
+  const directBtn = $("mobilePairDirectBtn");
+  if (directBtn && window.assistantClient?.mobilePairingCreateDirectCode) {
+    directBtn.addEventListener("click", () => void startDirectCode(directBtn));
+  } else if (directBtn) {
+    directBtn.hidden = true;
+  }
 }
 
 /** Called when the settings panel opens the mobile page — start polling. */

@@ -200,6 +200,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   uninstallRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:uninstall", { id }),
 
   mobilePairingCreateChallenge: () => ipcRenderer.invoke("mobile-pairing:create-challenge"),
+  mobilePairingCreateDirectCode: () => ipcRenderer.invoke("mobile-pairing:create-direct-code"),
   mobilePairingPollPending: () => ipcRenderer.invoke("mobile-pairing:poll-pending"),
   mobilePairingListDevices: () => ipcRenderer.invoke("mobile-pairing:list-devices"),
   mobilePairingApprove: (grantId) => ipcRenderer.invoke("mobile-pairing:approve", grantId),

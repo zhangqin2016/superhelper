@@ -241,6 +241,31 @@ try {
     assert.equal(refused, "refused", "relay refuses after the grant is revoked");
   }
 
+  // --- 10. Direct connect (TeamViewer/ToDesk-style): code + password, no
+  // approval → an ACTIVE grant the relay accepts immediately. ---
+  const dc = await desktopPost("/api/mobile/direct/create", desktopBody({}));
+  assert.equal(dc.statusCode, 200, `direct create ok: ${dc.body}`);
+  const { code: directCode, password: directPassword } = dc.json();
+  assert.ok(directCode && directPassword, "direct create returns code + password once");
+
+  // wrong password is rejected (opaque)
+  const wrong = await app.inject({ method: "POST", url: "/api/mobile/direct/consume", payload: { deviceId: mobileDeviceId, code: directCode, password: "WRONG9" } });
+  assert.equal(wrong.statusCode, 409, "wrong password refused");
+  assert.equal(wrong.json().code, "DIRECT_CODE_INVALID");
+
+  // correct code+password (lowercase, to prove normalization) → active grant
+  const dconsume = await app.inject({ method: "POST", url: "/api/mobile/direct/consume", payload: { deviceId: mobileDeviceId, code: directCode.toLowerCase(), password: directPassword.toLowerCase() } });
+  assert.equal(dconsume.statusCode, 200, `direct consume ok: ${dconsume.body}`);
+  const directGrant = dconsume.json().grantId;
+  const directToken = dconsume.json().mobileToken;
+  assert.ok(directGrant && directToken, "direct consume yields an active grant + token");
+
+  // the relay accepts it right away (no approval step)
+  const directWs = connectRelay(base, { role: "mobile", grantId: directGrant, deviceId: mobileDeviceId, token: directToken });
+  const directReady = await waitForFrame(directWs, (f) => f.type === "relay.ready", "direct relay.ready");
+  assert.equal(directReady.role, "mobile", "direct-connected phone joins the relay without approval");
+  try { directWs.close(); } catch { /* noop */ }
+
   console.log("mobile-command-e2e: ok");
 } finally {
   try { await app?.close(); } catch { /* noop */ }

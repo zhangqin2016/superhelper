@@ -455,7 +455,16 @@
               <p class="settings-section-desc" data-i18n="settings.mobileDesc">用手机扫码配对本机，配对成功后可以从手机把任务发送到当前对话。</p>
               <div class="settings-actions settings-page-actions">
                 <button id="mobilePairStartBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.mobilePairStart">生成配对码</button>
+                <button id="mobilePairDirectBtn" class="settings-action-btn" type="button" data-i18n="settings.mobilePairDirectStart">生成直控码</button>
                 <span id="mobilePairBridgeStatus" class="settings-section-desc" hidden></span>
+              </div>
+              <div id="mobilePairDirect" class="settings-field" hidden>
+                <h4 class="settings-subsection-title" data-i18n="settings.mobilePairDirectTitle">在手机上输入以下授权码 + 密码，直接连接（无需批准）</h4>
+                <div class="mobile-pair-direct-grid">
+                  <div><span class="settings-section-desc" data-i18n="settings.mobilePairDirectCode">授权码</span><div id="mobilePairDirectCode" class="mobile-pair-code" role="textbox" aria-readonly="true"></div></div>
+                  <div><span class="settings-section-desc" data-i18n="settings.mobilePairDirectPassword">密码</span><div id="mobilePairDirectPassword" class="mobile-pair-code" role="textbox" aria-readonly="true"></div></div>
+                </div>
+                <p id="mobilePairDirectExpiry" class="settings-section-desc"></p>
               </div>
               <p id="mobilePairCapabilityStatus" class="settings-section-desc" hidden></p>
               <div id="mobilePairChallenge" class="settings-field" hidden>

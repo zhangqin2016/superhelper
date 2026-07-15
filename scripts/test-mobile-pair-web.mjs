@@ -81,6 +81,12 @@ assert.match(page, /startVoiceInput/, "has a browser voice dictation entry point
 assert.match(page, /语音输入不可用/, "falls back loudly when browser dictation is unavailable");
 assert.match(page, /🎙/, "renders a microphone button");
 
+// Direct connect (TeamViewer/ToDesk-style): code + password, no approval.
+assert.match(page, /\/api\/mobile\/direct\/consume/, "direct-connect consumes code + password");
+assert.match(page, /directConnect/, "has a direct-connect flow");
+assert.match(page, /DIRECT_CODE_LOCKED/, "shows a lockout message after too many attempts");
+assert.match(page, /授权码直连/, "offers a direct-code mode");
+
 // Retry-until-approved: the relay refuses until the desktop approves.
 assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");
 

@@ -2490,6 +2490,17 @@ body.settings-open {
 }
 
 /* Mobile Command pairing panel */
+.mobile-pair-direct-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0;
+}
+.mobile-pair-direct-grid .mobile-pair-code {
+  font-size: 20px;
+  letter-spacing: 2px;
+  text-align: center;
+}
 .mobile-pair-qr {
   display: block;
   width: 200px;

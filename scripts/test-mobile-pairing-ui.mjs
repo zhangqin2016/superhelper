@@ -16,6 +16,9 @@ const index = read("src/renderer/index.html");
 assert.match(index, /data-settings-page="mobile"/, "the mobile settings page/nav exists");
 assert.match(index, /id="settingsPageMobile"/, "the mobile settings page section exists");
 assert.match(index, /id="mobilePairStartBtn"/, "the generate-code button exists");
+assert.match(index, /id="mobilePairDirectBtn"/, "the generate-direct-code button exists");
+assert.match(index, /id="mobilePairDirectCode"/, "the direct code display exists");
+assert.match(index, /id="mobilePairDirectPassword"/, "the direct password display exists");
 assert.match(index, /id="mobilePairQr"/, "the scannable QR image host exists");
 assert.match(index, /id="mobilePairPendingList"/, "the pending list host exists");
 assert.match(index, /id="mobilePairDeviceList"/, "the paired-devices management host exists");
@@ -30,7 +33,7 @@ const app = read("src/renderer/app.js");
 assert.match(app, /initMobilePairingSettings/, "app initializes the mobile pairing UI");
 
 const mod = read("src/renderer/modules/mobile-pairing-settings.js");
-for (const call of ["mobilePairingCreateChallenge", "mobilePairingPollPending", "mobilePairingListDevices", "mobilePairingApprove", "mobilePairingDeny", "mobilePairingRevoke", "mobilePairingStatus"]) {
+for (const call of ["mobilePairingCreateChallenge", "mobilePairingCreateDirectCode", "mobilePairingPollPending", "mobilePairingListDevices", "mobilePairingApprove", "mobilePairingDeny", "mobilePairingRevoke", "mobilePairingStatus"]) {
   assert.match(mod, new RegExp(call), `renderer calls preload ${call}`);
 }
 // Feature-off / kill-switch hides the nav entry instead of showing a dead page.
@@ -44,6 +47,7 @@ assert.match(mod, /caps\.voice\?\.enabled/, "voice is rendered from server capab
 // Every i18n key the UI/module reference exists in all three locales.
 const keys = [
   "settings.nav.mobile", "settings.mobileDesc", "settings.mobilePairStart", "settings.mobilePairScan", "settings.mobilePairCodeHint",
+  "settings.mobilePairDirectStart", "settings.mobilePairDirectTitle", "settings.mobilePairDirectCode", "settings.mobilePairDirectPassword",
   "settings.mobilePairExpiry", "settings.mobilePairPending", "settings.mobilePairNoPending",
   "settings.mobilePairDevice", "settings.mobilePairApprove", "settings.mobilePairDeny",
   "settings.mobilePairApproved", "settings.mobilePairBridged", "settings.mobilePairLoginRequired",

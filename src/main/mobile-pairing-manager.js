@@ -99,6 +99,16 @@ function createMobilePairingManager({
       };
     },
 
+    /** Generate a direct-connect code + password (TeamViewer/ToDesk-style). The
+     *  plaintext code+password come back ONCE for the desktop to display. */
+    async createDirectCode() {
+      const res = await authedPost("/api/mobile/direct/create", {});
+      if (!res?.ok || !res.json?.ok) {
+        return { ok: false, code: res?.json?.code || res?.code || res?.error || "DIRECT_CREATE_FAILED" };
+      }
+      return { ok: true, codeId: res.json.codeId, code: res.json.code, password: res.json.password, expiresAt: res.json.expiresAt };
+    },
+
     /** List live pairings (pending + active) for this desktop, for management. */
     async listDevices() {
       const res = await authedPost("/api/mobile/pairing/list", {});
