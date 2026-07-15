@@ -65,6 +65,7 @@ export function liveTurnFromRecord(record) {
     totalCostUsd: record.totalCostUsd ?? null,
     usage: record.usage ?? null,
     taskRun: record.meta?.taskRun || null,
+    memoryUsage: record.meta?.memoryUsage || null,
     tools,
     fileChanges: record.fileChanges || [],
     notices,

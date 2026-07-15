@@ -251,6 +251,15 @@ class TurnArchive {
     } catch {
       record.meta.contextOsScorecard = null;
     }
+    try {
+      // Compact "which memories this turn used" summary for the renderer's memory
+      // chip. Read-only over the trace; fail-open to null (chip simply hidden).
+      record.meta.memoryUsage = require("./memory-usage-summary").summarizeMemoryUsage(
+        record.meta?.engine?.trace?.contextMemory,
+      );
+    } catch {
+      record.meta.memoryUsage = null;
+    }
     return record;
   }
 

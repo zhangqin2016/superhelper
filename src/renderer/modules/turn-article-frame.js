@@ -3,6 +3,7 @@ import { normalizeTurnArticleLayout } from "./turn-article-layout.js";
 import { renderFooter } from "./turn-footer.js";
 import { applyStatusDisplay } from "./turn-status-dom.js";
 import { buildStatusText } from "./turn-view-status.js";
+import { renderTurnMemoryChip } from "./turn-memory-chip.js";
 
 export function syncTurnArticleFrame(article, liveTurn, viewModel, ctx = {}, {
   normalizeLayout = normalizeTurnArticleLayout,
@@ -31,5 +32,12 @@ export function refreshLiveTurnStatusDisplay(article, liveTurn, ctx = {}, {
     const text = buildStatus(liveTurn, { failed, sealed }, translate);
     applyStatus(status, text, { sealed: sealed && Boolean(liveTurn.final), live: !sealed });
   }
-  if (header) header.hidden = !status?.textContent;
+  // Memory-usage chip: reflects which memories the turn used (sealed turns only).
+  let memoryChip = null;
+  try {
+    memoryChip = renderTurnMemoryChip(header, liveTurn);
+  } catch {
+    memoryChip = null;
+  }
+  if (header) header.hidden = !status?.textContent && !memoryChip;
 }

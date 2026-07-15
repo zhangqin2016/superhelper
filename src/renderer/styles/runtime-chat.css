@@ -191,8 +191,33 @@
 }
 
 .assistant-turn-header {
-  display: block;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   min-height: 0;
+}
+
+/* Memory-usage chip: sits inline after the sealed-turn status (duration · tokens).
+   Mirrors the pill styling used elsewhere; semantic recall gets the accent tint. */
+.assistant-turn-memory-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.assistant-turn-memory-chip.is-semantic {
+  background: var(--accent-subtle, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent, var(--text-secondary));
 }
 
 /* Spacing rides on the status line itself: a hidden status (sealed turn with

@@ -37,7 +37,7 @@ const recordTurn = liveTurnFromRecord({
   tools: [{ id: "tool_1", name: "Read", status: "done" }],
   processEvents: [{ payload: { detail: "event" } }],
   notices: [{ code: "notice" }],
-  meta: { taskRun: { status: "completed" } },
+  meta: { taskRun: { status: "completed" }, memoryUsage: { used: true, count: 2, mode: "semantic", items: [] } },
   startedAt: 10,
   endedAt: 20,
 });
@@ -46,7 +46,9 @@ assert.equal(recordTurn.tools.get("tool_1").name, "Read");
 assert.equal(recordTurn.processEvents[0].type, "process.event");
 assert.equal(recordTurn.notices[0].type, "engine.notice");
 assert.equal(recordTurn.taskRun.status, "completed");
+assert.equal(recordTurn.memoryUsage?.count, 2, "memoryUsage round-trips from record.meta for the memory chip");
 assert.equal(recordTurn.final.ts, 20);
+assert.equal(liveTurnFromRecord({ turnId: "r3", tools: [] }).memoryUsage, null, "absent memoryUsage → null (chip hidden)");
 assert.equal(compatLiveTurnFromRecord({ turnId: "record_2", tools: [] }).turnId, "record_2");
 
 const viewModelSource = readFileSync(

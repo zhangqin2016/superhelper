@@ -827,6 +827,9 @@ export function applyRuntimeEvent(event, opts = {}) {
         if (event.payload?.record?.meta?.taskRun) {
           live.taskRun = compactTaskRunForStore(event.payload.record.meta.taskRun);
         }
+        if (event.payload?.record?.meta?.memoryUsage) {
+          live.memoryUsage = event.payload.record.meta.memoryUsage;
+        }
         runtime.phase = "idle";
         runtime.turnId = null;
         terminalTurns.add(turnKey);
