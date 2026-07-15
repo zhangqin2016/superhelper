@@ -691,6 +691,25 @@ assert.equal(
     { id: "y", role: "assistant", turnId: "t", content: "hi there", timestamp: "2026-07-15T10:00:02.000Z" },
   ];
   assert.equal(stripInternalContinuationTurns(clean).length, 2, "a normal conversation is untouched");
+
+  // Status-report SCAFFOLD dumped as an answer (the field case: resume made the
+  // model emit Objective/Work State/Next Move/Relevant Files as its reply). It
+  // must be hidden whatever triggered it, even paired with a REAL user question.
+  const scaffold = [
+    { id: "uq", role: "user", turnId: "tq", content: "这些数据全吗", timestamp: "2026-07-15T10:00:00.000Z" },
+    { id: "aq", role: "assistant", turnId: "tq", content: "数据完整性分析：覆盖完整…（真答案）", timestamp: "2026-07-15T10:00:05.000Z" },
+    { id: "as", role: "assistant", turnId: "tq2", content: "Objective\n补全阿语名\nImportant Details\n…\nWork State\nCompleted\n…\nNext Move\n(none)\nRelevant Files\n…", timestamp: "2026-07-15T10:00:20.000Z" },
+  ];
+  const s3 = stripInternalContinuationTurns(scaffold);
+  assert.ok(!s3.some((m) => m.id === "as"), "the status-report scaffold answer is hidden");
+  assert.ok(s3.some((m) => m.id === "aq"), "the genuine analysis answer is kept");
+
+  // False-positive guard: a normal answer that merely uses one of these words is NOT hidden.
+  const normalUseOfWord = [
+    { id: "u", role: "user", turnId: "t", content: "下一步做什么", timestamp: "2026-07-15T10:00:00.000Z" },
+    { id: "a", role: "assistant", turnId: "t", content: "我的目标(objective)是先补全数据,下一步(next move)是导出。仅两个词,不是脚手架。", timestamp: "2026-07-15T10:00:03.000Z" },
+  ];
+  assert.equal(stripInternalContinuationTurns(normalUseOfWord).length, 2, "a normal reply using 1-2 of the words is not hidden (needs ≥4 headers)");
 }
 
 console.log("opencode-conversation-source: ok");

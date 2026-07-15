@@ -38,20 +38,47 @@ function timestampMs(value) {
 // PLUS the assistant response(s) that follow it before the next real user turn.
 // (Disabling autocontinue stops NEW ones; this also cleans the ones already
 // persisted in a session's history.)
+// The internal state-tracking / handoff SCAFFOLD ("Objective / Work State /
+// Completed / Active / Blocked / Next Move / Relevant Files" etc.). The model is
+// told never to emit it as an answer, but weak models sometimes dump it verbatim
+// on a resume/rehydrate — it is internal tracking, never a user-facing reply. We
+// require several distinct headers to co-occur so a normal answer that happens to
+// use one of these words is never hidden.
+const SCAFFOLD_HEADERS = [
+  "objective", "important details", "work state", "completed", "active",
+  "blocked", "next move", "relevant files", "key decisions", "next steps",
+];
+function looksLikeStatusReportScaffolding(text) {
+  const t = normalizedText(text).toLowerCase();
+  if (!t) return false;
+  let hits = 0;
+  for (const h of SCAFFOLD_HEADERS) {
+    if (t.includes(h) && (hits += 1) >= 4) return true;
+  }
+  return false;
+}
+
 function stripInternalContinuationTurns(conversation = []) {
   const list = Array.isArray(conversation) ? conversation.slice() : [];
   list.sort((a, b) => (timestampMs(a?.timestamp) ?? 0) - (timestampMs(b?.timestamp) ?? 0));
   const drop = new Set();
   for (let i = 0; i < list.length; i += 1) {
     const m = list[i];
+    // (a) an assistant turn whose content IS the internal status-report scaffold
+    // — never a valid answer, hide it whatever triggered it (resume rehydrate,
+    // auto-continue, etc.).
+    if (m?.role === "assistant" && looksLikeStatusReportScaffolding(messageText(m))) {
+      drop.add(m);
+      continue;
+    }
+    // (b) the internal auto-continue turn: the "Continue if you have next steps…"
+    // prompt PLUS the assistant response(s) before the next real user turn.
     if (m?.role !== "user" || !isInternalOnlyUserPromptText(messageText(m))) continue;
     drop.add(m);
     const turnId = m.turnId || "";
     for (let j = i + 1; j < list.length; j += 1) {
       const n = list[j];
       if (n?.role === "user") break; // the next real turn starts here
-      // the auto-continue answer(s): same turnId, or untagged, sitting between
-      // the internal prompt and the next user message.
       if (n?.role === "assistant" && (!turnId || !n.turnId || n.turnId === turnId)) drop.add(n);
     }
   }
