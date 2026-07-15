@@ -221,6 +221,18 @@ async function refreshRuntimeSnapshot(sessionId) {
   }
 }
 
+// Whether the session's panel is currently pinned to the bottom (showing the
+// latest). Used by the background official-history refresh to decide between
+// "stick to bottom" (the user is at the latest — keep them there even though the
+// refreshed content changed height) and "preserve position" (the user scrolled
+// up to read older messages — don't yank them to the bottom). No panel yet =
+// treat as bottom, since a fresh open scrolls to the latest.
+export function isSessionViewAtBottom(sessionId) {
+  const panel = sessionViews.get(sessionId)?.panel;
+  if (!panel) return true;
+  return !isUserScrollDetached(panel) && isNearBottom(panel);
+}
+
 export function renderConversation(sessionId, opts = {}) {
   const v = ensurePanel(sessionId);
   if (!v.listEl) return;

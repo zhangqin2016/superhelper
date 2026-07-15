@@ -220,9 +220,14 @@ async function refreshOfficialConversation(sessionId, opts = {}) {
   store.set("conversation", messages);
   patchSessionMessagesInStore(sessionId, messages, total);
   syncCommittedMessages(sessionId, messages);
-  const { renderConversation } = await import("./message.js");
-  renderConversation(sessionId, { force: true, preserveScroll: true });
-  resumeLiveSessionUi(sessionId, { forceScrollBottom: false });
+  const { renderConversation, isSessionViewAtBottom } = await import("./message.js");
+  // Stick to the latest if the user is still at the bottom (the first-open case:
+  // we just scrolled there). Blind preserveScroll drifts a few messages up here
+  // because the refreshed history has a different height than the local-first
+  // render. Only preserve position when the user has scrolled up to read.
+  const atBottom = isSessionViewAtBottom(sessionId);
+  renderConversation(sessionId, { force: true, forceScrollBottom: atBottom, preserveScroll: !atBottom });
+  resumeLiveSessionUi(sessionId, { forceScrollBottom: atBottom });
   return true;
 }
 
