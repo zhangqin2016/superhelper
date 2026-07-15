@@ -51,12 +51,24 @@ const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");
 const { TurnArchive } = require("../src/main/turn-archive.js");
 const { TurnOrchestrator } = require("../src/main/turn-orchestrator.js");
-const { resetRescueStateForTests, correctiveHintFor, isSideEffectFreeToolRun } = require("../src/main/tool-call-rescue.js");
+const { resetRescueStateForTests, correctiveHintFor, evidenceVerifyHintFor, rescueStrategyFor, isSideEffectFreeToolRun } = require("../src/main/tool-call-rescue.js");
 
 // Read-only whitelist: replaying pure-read turns is safe; anything else is not.
 assert.equal(isSideEffectFreeToolRun([{ name: "read" }, { name: "glob" }, { name: "websearch" }]), true);
 assert.equal(isSideEffectFreeToolRun([{ name: "read" }, { name: "write" }]), false);
 assert.equal(isSideEffectFreeToolRun([{ name: "lily_tb_mail_send" }]), false, "MCP tools are never assumed safe");
+
+// Verify-before-assert is OPT-IN (default OFF) so there is no default behavior
+// change; enabling it routes an unsupported strong claim to a one-shot retry that
+// steers the model to verify with tools first (language-aware hint).
+assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED"), null, "verify-before-assert is off by default — degrades to the evidence-gate caveat");
+{
+  process.env.LILY_EVIDENCE_VERIFY_RETRY = "1";
+  assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED")?.kind, "evidence_verify_retry", "opt-in enables the verify-before-assert retry");
+  delete process.env.LILY_EVIDENCE_VERIFY_RETRY;
+}
+assert.match(evidenceVerifyHintFor({}), /verify it with a tool/i, "verify hint tells the model to verify with tools before asserting");
+assert.match(evidenceVerifyHintFor({ instructionLanguage: "zh" }), /先用工具核实/, "verify hint is language-aware (zh)");
 assert.equal(isSideEffectFreeToolRun([]), true, "a tool-less turn is trivially safe to replay");
 
 // Recipe-aware corrective hint: the probe's instructionLanguage finding picks

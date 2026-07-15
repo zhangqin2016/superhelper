@@ -1233,7 +1233,9 @@ class TurnOrchestrator {
       // actually follows (capability.recipes.instructionLanguage).
       const hint = strategy.kind === "tool_call_rescue"
         ? rescue.correctiveHintFor(this._modelRecipes())
-        : strategy.hint;
+        : strategy.kind === "evidence_verify_retry"
+          ? rescue.evidenceVerifyHintFor(this._modelRecipes())
+          : strategy.hint;
       const retried = await this.sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
         recordUser: false,
         spawnEngine: true,
@@ -2519,6 +2521,10 @@ class TurnOrchestrator {
     const evidenceSummary = state.evidenceLedger?.summary?.() || null;
     let record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
     let evidenceGateAssessment = null;
+    // Verify-before-assert: set only when the answer made an unsupported strong
+    // claim AND the turn was side-effect-free (captured HERE, while state.tools is
+    // still populated — a turn that wrote files/sent mail must never be replayed).
+    let triggerVerifyRetry = false;
     if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
       const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
       const assessment = assessFinalAnswerEvidence({
@@ -2539,6 +2545,10 @@ class TurnOrchestrator {
             evidenceGate: assessment,
           };
         }
+        try {
+          triggerVerifyRetry = Boolean(assessment.strongClaim) &&
+            require("./tool-call-rescue").isSideEffectFreeToolRun([...(state.tools?.values?.() || [])]);
+        } catch { triggerVerifyRetry = false; }
       }
     }
     this._completeTaskRun(sessionId, type, {
@@ -2619,6 +2629,21 @@ class TurnOrchestrator {
     state.pendingPermissions.clear();
     state.pendingQuestions.clear();
     state.pendingHooks.clear();
+    // Verify-before-assert: the answer asserted facts WITHOUT evidence and the
+    // turn was side-effect-free — fire ONE silent retry that steers the model to
+    // verify with tools first, turning "caveat a shaky answer" into "go actually
+    // check". Reuses the rescue's idle / one-shot / side-effect / cooldown guards
+    // (the session is now idle). Non-blocking + fail-open: it must NEVER affect
+    // turn completion. Only fires on an ungrounded strong claim, so a strong model
+    // that already grounds its answers is never asked to redo (not made dumber).
+    if (triggerVerifyRetry && process.env.LILY_EVIDENCE_VERIFY_RETRY === "1") {
+      try {
+        void this._maybeToolCallRescueRetry(sessionId, { code: "EVIDENCE_UNVERIFIED" })
+          .catch((err) => log.warn("evidence verify retry failed open: %s", err?.message || err));
+      } catch (err) {
+        log.warn("evidence verify retry dispatch failed open: %s", err?.message || err);
+      }
+    }
     if (type === "turn.completed") this._scheduleBackgroundCompaction(sessionId);
   }
 

@@ -60,6 +60,30 @@ function correctiveHintFor(recipes = {}) {
   return recipes?.instructionLanguage === "zh" ? CORRECTIVE_HINT_ZH : CORRECTIVE_HINT;
 }
 
+// Verify-before-assert: when the evidence gate found the answer asserted facts
+// (causes, numbers, coverage, fixed/verified) WITHOUT backing evidence, the retry
+// carries this hint so the model goes and VERIFIES first instead of us merely
+// caveating a possibly-fabricated answer. Weak models hallucinate most, so this
+// helps them most; a strong model that already grounds its answers never trips
+// the gate, so it is never asked to redo — it is not made dumber.
+const EVIDENCE_VERIFY_HINT = [
+  "[system correction] Your previous answer stated facts (causes, numbers, data completeness, fixed/verified/deployed) WITHOUT verifiable evidence. Redo it with evidence discipline:",
+  "1. Before asserting ANY factual claim, verify it with a tool — read the actual file, run the check/command, inspect the real data. Cite the evidence (file path + line, or command output).",
+  "2. If a claim cannot be verified, state it as unknown/unverified. NEVER present an unverified specific (a number, a cause, a coverage %) as if it were fact.",
+  "3. Answer the user's question directly, grounded only in what you actually verified this turn.",
+].join("\n");
+
+const EVIDENCE_VERIFY_HINT_ZH = [
+  "[系统纠正] 你上一条回答陈述了事实（原因、数字、数据完整度、已修复/已验证/已部署）却没有可核验的证据。请带着证据纪律重做：",
+  "1. 断言任何事实之前，先用工具核实——真的去读那个文件、跑那条检查/命令、查看真实数据，并给出证据（文件路径+行号，或命令输出）。",
+  "2. 无法核实的，就说未知/未验证。绝不能把未核实的具体值（数字、原因、覆盖率）当作事实呈现。",
+  "3. 直接回答用户的问题，只基于你本轮真正核实过的内容。",
+].join("\n");
+
+function evidenceVerifyHintFor(recipes = {}) {
+  return recipes?.instructionLanguage === "zh" ? EVIDENCE_VERIFY_HINT_ZH : EVIDENCE_VERIFY_HINT;
+}
+
 // Per-code rescue strategy. `hint` (when set) rides the engine-facing text of
 // the retried message; `enabled` reads the code's kill switch at call time.
 const RESCUE_STRATEGIES = Object.freeze({
@@ -67,6 +91,20 @@ const RESCUE_STRATEGIES = Object.freeze({
     kind: "tool_call_rescue",
     hint: CORRECTIVE_HINT,
     enabled: () => process.env.LILY_TOOL_CALL_RESCUE !== "0",
+  }),
+  // Evidence gate found unsupported strong claims → one silent retry that steers
+  // the model to VERIFY with tools before asserting (verify-before-assert). Only
+  // fires for side-effect-free turns (guarded by isSideEffectFreeToolRun), so a
+  // turn that already wrote files/sent mail falls back to the caveat instead.
+  // OPT-IN (default OFF): firing a silent resend on every ungrounded strong
+  // claim would silently re-run many read-only analysis turns and shift turn
+  // timing broadly — a real behavior change. So it degrades to baseline (the
+  // evidence-gate caveat) unless explicitly enabled; flip the default only after
+  // validating it. Enable with LILY_EVIDENCE_VERIFY_RETRY=1.
+  EVIDENCE_UNVERIFIED: Object.freeze({
+    kind: "evidence_verify_retry",
+    hint: EVIDENCE_VERIFY_HINT,
+    enabled: () => process.env.LILY_EVIDENCE_VERIFY_RETRY === "1",
   }),
   EMPTY_ASSISTANT_COMPLETION: Object.freeze({
     kind: "empty_completion_retry",
@@ -164,6 +202,7 @@ module.exports = {
   CORRECTIVE_HINT,
   CORRECTIVE_HINT_ZH,
   correctiveHintFor,
+  evidenceVerifyHintFor,
   rescueStrategyFor,
   isRescuableFailureCode,
   isSideEffectFreeToolRun,
