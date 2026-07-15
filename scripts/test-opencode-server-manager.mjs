@@ -110,8 +110,18 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   });
   const filePart = nativeWf.parts.find((p) => p.type === "file");
   assert(filePart && filePart.url === "file:///a.png" && filePart.mime === "image/png", "native-vision {uri,mime} -> file part");
+  // Non-image URI files are path-first by default — sending them as raw file
+  // parts breaks image-only providers (AI_UnsupportedFunctionalityError). They
+  // become file parts only when the active model DECLARES support via
+  // allowedFilePartMimes (capabilities.filePartMimes).
   const textFile = buildOpencodePromptBody({ text: "see text", files: [{ uri: "file:///a.txt", mime: "text/plain", name: "a.txt" }] });
-  assert(textFile.parts.some((p) => p.type === "file"), "safe non-image URI files still become file parts");
+  assert(!textFile.parts.some((p) => p.type === "file"), "non-image URI files are path-first, not raw file parts");
+  const optInTextFile = buildOpencodePromptBody({
+    text: "see text",
+    files: [{ uri: "file:///a.txt", mime: "text/plain", name: "a.txt" }],
+    allowedFilePartMimes: ["text/plain"],
+  });
+  assert(optInTextFile.parts.some((p) => p.type === "file"), "a declared-supported mime opts a URI file back into a file part");
 
   // Lily composer images ({path,name,isImage}) are path-first by default; native
   // vision must opt in before they are read into a base64 data: URL.

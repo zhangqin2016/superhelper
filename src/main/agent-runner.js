@@ -94,6 +94,22 @@ const ERROR_PATTERNS = [
     retryable: false,
   },
   {
+    code: "ATTACHMENT_UNSUPPORTED",
+    category: "model",
+    // The engine's AI SDK refused to BUILD the request because the conversation
+    // carries a file part whose media type the active model/provider can't take
+    // (e.g. a JSON/XML attachment on a model that only accepts image file parts).
+    // This throws in getArgs BEFORE any HTTP call, so it never reaches the
+    // gateway and no server-side sanitize can catch it — it must be classified
+    // here. MUST precede MODEL_UNAVAILABLE/MODEL_CONNECTION_FAILED so their broad
+    // "not supported"/"failed" catches don't relabel it as a dead model or a
+    // network drop. Not retryable: the stored history still holds the file part,
+    // so a blind resend fails the same way — the user must change the input.
+    test: /AI_UnsupportedFunctionalityError|file part.{0,48}not supported|media type.{0,48}not supported|unsupported.{0,24}file part/i,
+    message: "This conversation includes an attachment the selected model can't read directly (for example a JSON or data file on an image-only model). The file is still available by its path — ask me to open it with file tools, switch to a model that accepts that file type, or start a new chat without the attachment.",
+    retryable: false,
+  },
+  {
     code: "MODEL_UNAVAILABLE",
     category: "model",
     // The selected managed model is gone from the gateway — e.g. its provider

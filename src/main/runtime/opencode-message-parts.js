@@ -29,7 +29,28 @@ const DEFAULT_MAX_INLINE_FILE_BYTES =
 const DEFAULT_MAX_TEXT_ATTACHMENT_CHARS =
   Number(process.env.LILY_OPENCODE_MAX_TEXT_ATTACHMENT_CHARS) || 80_000;
 
+// `.svg` is an IMAGE mime but text content, so it has always been inlined as
+// text rather than sent as an image file part.
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([".svg"]);
+
+// Text-like structured/data/markup files. These used to be sent as raw file
+// parts (mime application/json etc.), which breaks every model whose provider
+// adapter only accepts image file parts (deepseek, most custom/BYOK) — the AI
+// SDK throws AI_UnsupportedFunctionalityError while building the request, before
+// it ever reaches the gateway. They are TEXT, so we inline them as fenced text
+// (bounded by the size/char limits — oversized ones fall through to a source
+// path). Text is understood by every model, so nothing is lost and no provider
+// can reject it.
+const STRUCTURED_TEXT_EXTENSIONS = new Set([
+  ".json", ".geojson", ".ndjson", ".jsonl",
+  ".xml", ".xhtml", ".html", ".htm",
+  ".yaml", ".yml", ".toml", ".ini",
+  ".csv", ".tsv", ".txt", ".md", ".log",
+]);
+
+function isInlineTextExtension(ext) {
+  return TEXT_ATTACHMENT_EXTENSIONS.has(ext) || STRUCTURED_TEXT_EXTENSIONS.has(ext);
+}
 const RASTER_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([
   ".pdf",
@@ -107,8 +128,33 @@ function truncateAttachmentText(text, limit = DEFAULT_MAX_TEXT_ATTACHMENT_CHARS)
 }
 
 function textFenceForExtension(ext) {
-  if (ext === ".svg") return "svg";
-  return "";
+  switch (ext) {
+    case ".svg":
+    case ".xml":
+    case ".xhtml":
+      return "xml";
+    case ".html":
+    case ".htm":
+      return "html";
+    case ".json":
+    case ".geojson":
+    case ".ndjson":
+    case ".jsonl":
+      return "json";
+    case ".yaml":
+    case ".yml":
+      return "yaml";
+    case ".toml":
+      return "toml";
+    case ".ini":
+      return "ini";
+    case ".csv":
+      return "csv";
+    case ".md":
+      return "markdown";
+    default:
+      return "";
+  }
 }
 
 function fileExtension(file = {}, filePath = "") {
@@ -150,19 +196,28 @@ function isRasterImageAttachment(file = {}, filePath = "", mime = "") {
   return imageMimeLike(mime || file.mime || file.type || file.mimeType || file.mediaType || "");
 }
 
-function isSafeInlineFilePartMime(mime = "") {
+// Whether the ACTIVE model is declared to accept this mime as a raw file part.
+// There is NO universal allow-list: a hardcoded list (the old behavior) sent
+// e.g. application/json file parts to every model, but only image file parts are
+// broadly supported — deepseek and most custom/BYOK providers reject anything
+// else and the engine's AI SDK throws AI_UnsupportedFunctionalityError while
+// BUILDING the request (before the gateway, so nothing server-side can rescue
+// it). Images are gated separately by `allowImageFileParts`; this covers the
+// non-image case and defaults to DENY. A preset opts specific types in via
+// `capabilities.filePartMimes` → threaded here as `allowedFilePartMimes`.
+// Everything denied here still reaches the model as inline text or a source path
+// (see isInlineTextExtension / the skipped-attachment note), so no content is
+// lost — it just takes a universally-supported shape.
+function filePartMimeAllowed(mime, opts = {}) {
   const value = String(mime || "").toLowerCase();
-  if (value.startsWith("image/")) return true;
-  if (value.startsWith("text/")) return true;
-  return [
-    "application/json",
-    "application/geo+json",
-    "application/x-ndjson",
-    "application/xml",
-    "application/xhtml+xml",
-    "application/javascript",
-    "application/x-javascript",
-  ].includes(value);
+  if (!value) return false;
+  // Images are governed by allowImageFileParts (the raster-image check runs
+  // before this gate); reaching here with an image mime means it was already
+  // approved for native vision, so let it through.
+  if (value.startsWith("image/") && opts.allowImageFileParts === true) return true;
+  const allowed = Array.isArray(opts.allowedFilePartMimes) ? opts.allowedFilePartMimes : [];
+  if (!allowed.length) return false;
+  return allowed.map((m) => String(m || "").toLowerCase()).includes(value);
 }
 
 function skipPathOnlyAttachment(filePath, filename, opts = {}, reason = "not an explicitly safe inline type; use the source path with local tools") {
@@ -185,7 +240,7 @@ function fileToTextAttachment(file, opts = {}) {
   const filePath = file.path || file.filePath;
   if (!filePath || !fs.existsSync(filePath)) return null;
   const ext = fileExtension(file, filePath);
-  if (!TEXT_ATTACHMENT_EXTENSIONS.has(ext)) return null;
+  if (!isInlineTextExtension(ext)) return null;
   const filename = file.name || path.basename(filePath);
   const maxInlineFileBytes =
     Number.isFinite(opts.maxInlineFileBytes) && opts.maxInlineFileBytes >= 0
@@ -244,7 +299,7 @@ function fileToPart(file, opts = {}) {
       );
       return null;
     }
-    if (!isSafeInlineFilePartMime(file.mime)) {
+    if (!filePartMimeAllowed(file.mime, opts)) {
       skipPathOnlyAttachment(file.path || file.filePath || "", file.name || file.filename || "", opts);
       return null;
     }
@@ -260,7 +315,7 @@ function fileToPart(file, opts = {}) {
   const ext = fileExtension(file, filePath);
   const mime = file.mime || FILE_MIME[ext] || "application/octet-stream";
   const filename = file.name || path.basename(filePath);
-  if (TEXT_ATTACHMENT_EXTENSIONS.has(ext)) {
+  if (isInlineTextExtension(ext)) {
     if (typeof opts.onSkip === "function") {
       opts.onSkip({
         path: filePath,
@@ -283,7 +338,7 @@ function fileToPart(file, opts = {}) {
     skipImageAttachment(filePath, filename, opts);
     return null;
   }
-  if (!isSafeInlineFilePartMime(mime)) {
+  if (!filePartMimeAllowed(mime, opts)) {
     skipPathOnlyAttachment(filePath, filename, opts);
     return null;
   }
@@ -337,9 +392,18 @@ function buildOpencodePromptBody(opts = {}) {
         textAttachments.push(textAttachment);
         continue;
       }
+      // A DISK text-type attachment that did not inline (too big / unreadable)
+      // must NOT be resent as a raw file part — its content lives at the source
+      // path and it was already noted. Sending it as a file part is exactly what
+      // throws AI_UnsupportedFunctionalityError on image-only models. (URI
+      // attachments have no disk path to inline, so they fall through to the
+      // capability-gated file-part path below.)
+      const diskPath = file && (file.path || file.filePath);
+      if (diskPath && isInlineTextExtension(fileExtension(file, diskPath))) continue;
       const part = fileToPart(file, {
         maxInlineFileBytes: opts.maxInlineFileBytes,
         allowImageFileParts: opts.allowImageFileParts === true,
+        allowedFilePartMimes: opts.allowedFilePartMimes,
         onSkip: (item) => skipped.push(item),
       });
       if (part) parts.push(part);
@@ -532,4 +596,6 @@ module.exports = {
   truncateSystemGuidance,
   fileToTextAttachment,
   fileToPart,
+  filePartMimeAllowed,
+  isInlineTextExtension,
 };

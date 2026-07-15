@@ -114,12 +114,63 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
 
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-parts-"));
+  // Text-like files (txt/json/xml/...) are NEVER sent as raw file parts — they
+  // inline as fenced TEXT (every model reads text; no provider can reject it).
+  // This is the fix for AI_UnsupportedFunctionalityError: an image-only model
+  // (deepseek, most custom/BYOK) used to receive an application/json file part
+  // and the engine's AI SDK threw before the request ever reached the gateway.
   const small = path.join(dir, "small.txt");
   fs.writeFileSync(small, "hello");
-  const part = fileToPart({ path: small, name: "small.txt" }, { maxInlineFileBytes: 16 });
-  assert.equal(part?.type, "file", "small files are still inlined");
-  assert.equal(part.filename, "small.txt", "filename is preserved");
-  assert.match(part.url, /^data:text\/plain;base64,/, "small local file becomes a data URL");
+  const txtSkipped = [];
+  const txtPart = fileToPart({ path: small, name: "small.txt" }, { maxInlineFileBytes: 16, onSkip: (i) => txtSkipped.push(i) });
+  assert.equal(txtPart, null, "text files are not sent as raw model file parts");
+  assert.equal(txtSkipped[0]?.reason, "txt_text_attachment", "text file is routed to the inline-text path");
+
+  const jsonPath = path.join(dir, "data.json");
+  fs.writeFileSync(jsonPath, JSON.stringify({ places: [{ id: 1 }] }));
+  const jsonPart = fileToPart({ path: jsonPath, name: "data.json", mime: "application/json" }, { maxInlineFileBytes: 1024 });
+  assert.equal(jsonPart, null, "JSON is never a raw file part by default (would break image-only providers)");
+
+  const jsonBody = buildOpencodePromptBody({
+    text: "summarize this data",
+    files: [{ path: jsonPath, name: "data.json", mime: "application/json" }],
+    maxInlineFileBytes: 1024,
+  });
+  assert.equal(jsonBody.parts.filter((p) => p.type === "file").length, 0, "JSON attachment produces no file part");
+  assert.match(jsonBody.parts.at(-1).text, /\[Attached JSON: data\.json\]/, "JSON content is inlined as labeled text");
+  assert.match(jsonBody.parts.at(-1).text, /```json/, "JSON inline text is fenced as json");
+  assert.match(jsonBody.parts.at(-1).text, /"places"/, "JSON content survives inline — nothing is lost");
+
+  // Oversized JSON exceeds the inline text limit → falls back to a source-path
+  // note, still NEVER a file part (so it can't poison an image-only model).
+  const bigJson = path.join(dir, "big.json");
+  fs.writeFileSync(bigJson, JSON.stringify({ blob: "x".repeat(5000) }));
+  const bigJsonBody = buildOpencodePromptBody({
+    text: "load it",
+    files: [{ path: bigJson, name: "big.json", mime: "application/json" }],
+    maxInlineFileBytes: 64,
+    maxTextAttachmentChars: 64,
+  });
+  assert.equal(bigJsonBody.parts.filter((p) => p.type === "file").length, 0, "oversized JSON still never becomes a file part");
+  assert.match(bigJsonBody.parts.at(-1).text, /big\.json/, "oversized JSON is named in the fallback note");
+
+  // Default DENY for a pre-staged (uri) non-image attachment: no capability
+  // declared → not forwarded as a raw file part.
+  const uriDefault = fileToPart(
+    { uri: "data:application/json;base64,e30=", mime: "application/json", name: "d.json" },
+    {},
+  );
+  assert.equal(uriDefault, null, "a uri attachment is not a file part unless the model declares support");
+
+  // Capability OPT-IN: a model that DECLARES it accepts a mime as a file part
+  // (capabilities.filePartMimes → allowedFilePartMimes) may send it — keeps
+  // strong models capable without endangering unknown/custom ones.
+  const optInPart = fileToPart(
+    { uri: "data:application/json;base64,e30=", mime: "application/json", name: "d.json" },
+    { allowedFilePartMimes: ["application/json"] },
+  );
+  assert.equal(optInPart?.type, "file", "a declared-supported mime opts back into file parts");
+  assert.equal(optInPart.mime, "application/json", "opt-in file part keeps its mime");
 
   const png = path.join(dir, "image.png");
   fs.writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));

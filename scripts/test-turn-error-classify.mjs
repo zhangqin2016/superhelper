@@ -224,4 +224,24 @@ assert(skillParse?.code === "RUNTIME_SKILL_PARSE_FAILED", "skill parse failures 
 assert(skillParse?.category === "runtime_diagnostic", "skill parse failures carry runtime diagnostic category");
 assert(skillParse.retryable === false, "skill parse failures are not blindly retried as network errors");
 
+// ATTACHMENT_UNSUPPORTED: the engine's AI SDK refuses to BUILD the request when
+// the conversation carries a file part the model can't take (e.g. a JSON file
+// on an image-only model). This throws pre-gateway (getArgs), so no server-side
+// sanitize can catch it — it must classify here, and NOT be relabeled as a dead
+// model (its "not supported" wording) or a network drop (its "turn failed").
+const filePartUnsupported = classifyAssistantError(
+  "opencode turn failed: AI_UnsupportedFunctionalityError: 'file part media type application/json' functionality not supported.",
+);
+assert(filePartUnsupported?.code === "ATTACHMENT_UNSUPPORTED",
+  "an unsupported file-part media type is its own class, not model-unavailable or a connection drop");
+assert(filePartUnsupported?.retryable === false,
+  "a blind resend fails the same way — the stored history still holds the file part");
+assert(/attachment/i.test(filePartUnsupported?.message || ""),
+  "the user is told an attachment is the cause, with concrete next steps");
+const filePartPlainWording = classifyAssistantError(
+  "Error: file part media type application/pdf functionality not supported by this provider",
+);
+assert(filePartPlainWording?.code === "ATTACHMENT_UNSUPPORTED",
+  "the plain 'file part media type … not supported' wording also classifies");
+
 console.log("turn-error-classify: ok");

@@ -208,9 +208,34 @@ class OpencodeServerManager extends EventEmitter {
     if (this._recentRouting.length > 120) this._recentRouting.splice(0, this._recentRouting.length - 120);
   }
 
-  async sendPrompt({ text, files, guidance, allowImageFileParts }) {
+  async sendPrompt({ text, files, guidance, allowImageFileParts, allowedFilePartMimes }) {
     if (!this.sessionID) throw new Error("no session");
     if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
+    // Non-image file-part support is opt-in per model (default: none). Resolve
+    // from the active preset when the caller didn't pass it, fail-safe to [].
+    let filePartMimes = Array.isArray(allowedFilePartMimes) ? allowedFilePartMimes : null;
+    if (!filePartMimes) {
+      try { filePartMimes = require("../model-presets").activePresetFilePartMimes(); }
+      catch { filePartMimes = []; }
+    }
+
+    // Top-tier ingestion: a huge pasted message is a data dump, not a prompt.
+    // Stage it to a workspace file and send a compact directive + preview so the
+    // model RETRIEVES from it (lily_file_intelligence) instead of us dumping the
+    // whole thing into the context window. Only bites above a high threshold
+    // (normal messages untouched); fail-open leaves the text unchanged.
+    let promptText = text;
+    try {
+      const { stageLargeInputText } = require("../large-input-staging");
+      const staged = stageLargeInputText({
+        text: promptText,
+        cwd: this.cwd,
+        grade: this.env?.LILY_MODEL_CAPABILITY_GRADE,
+      });
+      if (staged.staged && staged.text) promptText = staged.text;
+    } catch {
+      /* fail open — send the original text */
+    }
     // prompt_async forks the turn in the BACKGROUND and returns 204 immediately;
     // the turn is driven entirely by SSE (session.idle -> turn_result, session.error
     // -> runtime_error). The old blocking /message held one request open for the
@@ -218,13 +243,14 @@ class OpencodeServerManager extends EventEmitter {
     // serialized turns (a long turn in one session blocked every other session's
     // prompt). Async returns at once, so sessions run truly concurrently.
     const body = buildOpencodePromptBody({
-      text,
+      text: promptText,
       files,
       guidance,
       agent: this.agent,
       model: this.model,
       maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
       allowImageFileParts: allowImageFileParts === true,
+      allowedFilePartMimes: filePartMimes,
     });
     const textPart = body.parts.find((part) => part?.type === "text");
     this.lastPromptText = typeof textPart?.text === "string" ? textPart.text : "";

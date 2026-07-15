@@ -179,6 +179,31 @@ class SessionRunnerPool {
       /* non-fatal: plugin then finds no dir and leaves compaction untouched */
     }
 
+    // Model-aware budget for the context-window-guard plugin: derive it from the
+    // ACTIVE model's real context window (server-delivered LILY_CONTEXT_WINDOW_TOKENS)
+    // minus the output reserve, so the guard caps history to what THIS model can
+    // actually hold — deepseek's ~1M and a 128k custom model each get the right
+    // ceiling instead of one hardcoded guess (never over-trims a big model, never
+    // overflows a small one). resolveContextBudget falls back to a safe default
+    // window when unknown; fail-open leaves the plugin's own conservative default.
+    try {
+      const { resolveContextBudget } = require("./context-budget-manager");
+      const windowTokens = Number(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS) || undefined;
+      const budget = resolveContextBudget({ contextWindowTokens: windowTokens });
+      // The guard only trims TRUNCATABLE content (tool io + text); the system
+      // prompt and tool schemas also consume the window but can't be trimmed
+      // there. Reserve a proportional 15% headroom for that non-trimmable
+      // overhead so bounding the trimmable slots to this budget keeps the TOTAL
+      // request under the window. Proportional (not a fixed subtraction) so it
+      // scales safely from a 32k model to a 1M one.
+      const guardBudget = Math.floor(budget.usableInputTokens * 0.85);
+      if (!env.LILY_CONTEXT_TOKEN_BUDGET && guardBudget > 0) {
+        env.LILY_CONTEXT_TOKEN_BUDGET = String(guardBudget);
+      }
+    } catch {
+      /* guard keeps its own conservative default */
+    }
+
     runner.ensureProcess(cwd, {
       agentCommand,
       permissionMode,
@@ -449,7 +474,7 @@ class SessionRunnerPool {
         candidates.push(path.join(PROJECT_ROOT, rel));
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
-      return ["verify-edit.js", "compaction-memory.js", "loop-detector.js", "subtask-guard.js", "large-output-guard.js"].map(resolve).filter(Boolean);
+      return ["verify-edit.js", "compaction-memory.js", "loop-detector.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "context-window-guard.js"].map(resolve).filter(Boolean);
     } catch {
       return [];
     }

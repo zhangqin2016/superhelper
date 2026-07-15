@@ -628,6 +628,27 @@ function activePresetSupportsVision() {
   }
 }
 
+/**
+ * The non-image file-part media types the active model is DECLARED to accept as
+ * raw file parts (e.g. an Anthropic-family managed model that takes
+ * "application/pdf"). This is opt-in per preset via `capabilities.filePartMimes`
+ * — there is no safe default because arbitrary custom/BYOK models reject file
+ * parts they don't understand (the AI SDK throws AI_UnsupportedFunctionalityError
+ * while building the request). So the default is EMPTY: non-image attachments go
+ * as inline text or a source path (universally supported), never as a raw file
+ * part, unless a preset explicitly says the model supports the type. Images stay
+ * governed by `capabilities.vision` (activePresetSupportsVision), not this list.
+ */
+function activePresetFilePartMimes() {
+  try {
+    const mimes = getActivePreset()?.capabilities?.filePartMimes;
+    if (!Array.isArray(mimes)) return [];
+    return mimes.map((m) => String(m || "").trim().toLowerCase()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function getActivePresetEnv() {
   const preset = getActivePreset();
   if (!preset?.env) return {};
@@ -1277,6 +1298,7 @@ module.exports = {
   buildCompatibilityProfileRuntimeEnv,
   getActivePreset,
   activePresetSupportsVision,
+  activePresetFilePartMimes,
   getActivePresetEnv,
   getUserApiEnv,
   getActiveModelConnectionStatus,
