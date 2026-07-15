@@ -99,6 +99,57 @@ async function fileToDownscaledAttachment(file, { maxDim = 1280, maxBytes = 170 
   return { name: (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg", mimeType: "image/jpeg", dataBase64: b64, preview: out };
 }
 
+// Minimal, dependency-free, XSS-safe markdown → React nodes (renders elements,
+// never dangerouslySetInnerHTML). Covers what desktop replies actually use:
+// code blocks, headings, bullet/numbered lists, bold, inline code, links.
+function mdInline(text, kp) {
+  const nodes = [];
+  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)\s]+\))/g;
+  let last = 0; let m; let k = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith("`")) nodes.push(<code key={`${kp}c${k}`} className="rounded bg-slate-100 px-1 text-[0.85em]">{tok.slice(1, -1)}</code>);
+    else if (tok.startsWith("**")) nodes.push(<strong key={`${kp}b${k}`}>{tok.slice(2, -2)}</strong>);
+    else { const lm = /\[([^\]]+)\]\(([^)\s]+)\)/.exec(tok); nodes.push(<a key={`${kp}a${k}`} href={lm[2]} target="_blank" rel="noreferrer" className="text-indigo-600 underline">{lm[1]}</a>); }
+    last = m.index + tok.length; k += 1;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+function renderMarkdown(src) {
+  const lines = String(src || "").split("\n");
+  const out = []; let i = 0; let key = 0;
+  const isBlock = (l) => l.trim().startsWith("```") || /^#{1,6}\s/.test(l) || /^\s*[-*]\s/.test(l) || /^\s*\d+\.\s/.test(l);
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim().startsWith("```")) {
+      const buf = []; i += 1;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) { buf.push(lines[i]); i += 1; }
+      i += 1;
+      out.push(<pre key={key++} className="my-1 overflow-x-auto rounded-lg bg-slate-900 p-2 text-xs text-slate-100"><code>{buf.join("\n")}</code></pre>);
+      continue;
+    }
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) { out.push(<p key={key++} className={`mt-1 font-semibold ${h[1].length <= 2 ? "text-base" : "text-sm"}`}>{mdInline(h[2], `h${key}`)}</p>); i += 1; continue; }
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = []; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*]\s+/, "")); i += 1; }
+      out.push(<ul key={key++} className="my-1 list-disc pl-5">{items.map((it, ix) => <li key={ix}>{mdInline(it, `u${key}-${ix}`)}</li>)}</ul>);
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = []; while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i += 1; }
+      out.push(<ol key={key++} className="my-1 list-decimal pl-5">{items.map((it, ix) => <li key={ix}>{mdInline(it, `o${key}-${ix}`)}</li>)}</ol>);
+      continue;
+    }
+    if (line.trim() === "") { i += 1; continue; }
+    const buf = []; while (i < lines.length && lines[i].trim() !== "" && !isBlock(lines[i])) { buf.push(lines[i]); i += 1; }
+    out.push(<p key={key++} className="whitespace-pre-wrap break-words">{buf.map((b, bi) => <span key={bi}>{mdInline(b, `p${key}-${bi}`)}{bi < buf.length - 1 ? <br /> : null}</span>)}</p>);
+  }
+  return out;
+}
+
 export default function MobilePairPage() {
   const [deviceId, setDeviceId] = useState("");
   const [codeInput, setCodeInput] = useState("");
@@ -580,8 +631,10 @@ export default function MobilePairPage() {
             ) : null}
             {history.map((m, i) => (
               <div key={i} className={`flex ${m.role === "assistant" ? "justify-start" : "justify-end"}`}>
-                <div className={`max-w-[82%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm shadow-sm ${m.role === "assistant" ? "rounded-tl-sm bg-white text-slate-800" : "rounded-tr-sm bg-indigo-600 text-white"}`}>
-                  {m.text.length > 1200 ? `${m.text.slice(0, 1200)}…` : m.text}
+                <div className={`max-w-[82%] rounded-2xl px-3.5 py-2 text-sm shadow-sm ${m.role === "assistant" ? "rounded-tl-sm bg-white text-slate-800" : "whitespace-pre-wrap rounded-tr-sm bg-indigo-600 text-white"}`}>
+                  {m.role === "assistant"
+                    ? renderMarkdown(m.text.length > 4000 ? `${m.text.slice(0, 4000)}…` : m.text)
+                    : (m.text.length > 1200 ? `${m.text.slice(0, 1200)}…` : m.text)}
                 </div>
               </div>
             ))}
@@ -596,7 +649,7 @@ export default function MobilePairPage() {
                     {turnState === "interrupted" ? <span className="text-slate-400">已中断</span> : null}
                     {turnState === "running" ? <button type="button" className="ml-auto rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600" onClick={sendInterrupt}>停止</button> : null}
                   </div>
-                  <div className="whitespace-pre-wrap">{reply || (turnState === "queued" || turnState === "running" ? "…" : "")}</div>
+                  <div>{reply ? renderMarkdown(reply) : (turnState === "queued" || turnState === "running" ? "…" : "")}</div>
                 </div>
               </div>
             ) : null}

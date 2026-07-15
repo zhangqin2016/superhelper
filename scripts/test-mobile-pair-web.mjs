@@ -55,6 +55,8 @@ assert.match(page, /"assistant\.delta"/, "accumulates streaming assistant text")
 assert.match(page, /"turn\.started"/, "resets the reply on a new turn");
 assert.match(page, /"turn\.ended"/, "marks the turn done/failed/interrupted");
 assert.match(page, /setReply\(/, "renders the streaming desktop reply");
+assert.match(page, /renderMarkdown\(/, "renders assistant replies as markdown");
+assert.doesNotMatch(page, /dangerouslySetInnerHTML=/, "markdown is rendered as elements, never raw HTML (XSS-safe)");
 // Interrupt a running turn from the phone.
 assert.match(page, /type: "interrupt"/, "can send an interrupt frame");
 assert.match(page, /interrupt\.ack/, "renders the interrupt ack");
