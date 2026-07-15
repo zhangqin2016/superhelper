@@ -58,13 +58,13 @@ assert.equal(isSideEffectFreeToolRun([{ name: "read" }, { name: "glob" }, { name
 assert.equal(isSideEffectFreeToolRun([{ name: "read" }, { name: "write" }]), false);
 assert.equal(isSideEffectFreeToolRun([{ name: "lily_tb_mail_send" }]), false, "MCP tools are never assumed safe");
 
-// Verify-before-assert is OPT-IN (default OFF) so there is no default behavior
-// change; enabling it routes an unsupported strong claim to a one-shot retry that
-// steers the model to verify with tools first (language-aware hint).
-assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED"), null, "verify-before-assert is off by default — degrades to the evidence-gate caveat");
+// Verify-before-assert: the strategy is available by default (the orchestrator
+// invokes it by default for numeric/data-claim failures, opt-in for others).
+// A one-shot retry steers the model to verify with tools first (language-aware).
+assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED")?.kind, "evidence_verify_retry", "verify-before-assert strategy is available by default");
 {
-  process.env.LILY_EVIDENCE_VERIFY_RETRY = "1";
-  assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED")?.kind, "evidence_verify_retry", "opt-in enables the verify-before-assert retry");
+  process.env.LILY_EVIDENCE_VERIFY_RETRY = "0";
+  assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED"), null, "hard-off (LILY_EVIDENCE_VERIFY_RETRY=0) disables it entirely");
   delete process.env.LILY_EVIDENCE_VERIFY_RETRY;
 }
 assert.match(evidenceVerifyHintFor({}), /verify it with a tool/i, "verify hint tells the model to verify with tools before asserting");

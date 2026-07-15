@@ -96,15 +96,14 @@ const RESCUE_STRATEGIES = Object.freeze({
   // the model to VERIFY with tools before asserting (verify-before-assert). Only
   // fires for side-effect-free turns (guarded by isSideEffectFreeToolRun), so a
   // turn that already wrote files/sent mail falls back to the caveat instead.
-  // OPT-IN (default OFF): firing a silent resend on every ungrounded strong
-  // claim would silently re-run many read-only analysis turns and shift turn
-  // timing broadly — a real behavior change. So it degrades to baseline (the
-  // evidence-gate caveat) unless explicitly enabled; flip the default only after
-  // validating it. Enable with LILY_EVIDENCE_VERIFY_RETRY=1.
+  // Available by default; the orchestrator decides WHEN to invoke it — numeric/
+  // data-claim failures (unverified counts/percentages) verify by DEFAULT (cheap
+  // to recompute, high value), while other ungrounded strong claims stay opt-in
+  // to avoid broadly re-running turns. Hard-off with LILY_EVIDENCE_VERIFY_RETRY=0.
   EVIDENCE_UNVERIFIED: Object.freeze({
     kind: "evidence_verify_retry",
     hint: EVIDENCE_VERIFY_HINT,
-    enabled: () => process.env.LILY_EVIDENCE_VERIFY_RETRY === "1",
+    enabled: () => process.env.LILY_EVIDENCE_VERIFY_RETRY !== "0",
   }),
   EMPTY_ASSISTANT_COMPLETION: Object.freeze({
     kind: "empty_completion_retry",

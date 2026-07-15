@@ -2563,8 +2563,15 @@ class TurnOrchestrator {
           };
         }
         try {
-          triggerVerifyRetry = Boolean(assessment.strongClaim) &&
-            require("./tool-call-rescue").isSideEffectFreeToolRun([...(state.tools?.values?.() || [])]);
+          const sideEffectFree = require("./tool-call-rescue").isSideEffectFreeToolRun([...(state.tools?.values?.() || [])]);
+          const hardOff = process.env.LILY_EVIDENCE_VERIFY_RETRY === "0";
+          // Numeric/data claims (unverified counts/percentages) verify by DEFAULT
+          // — cheap to recompute, high value ("这些数据全吗" → actually count).
+          // Other ungrounded strong claims stay opt-in (LILY_EVIDENCE_VERIFY_RETRY=1)
+          // so we don't broadly re-run turns.
+          const numericClaim = assessment.reason === "numeric_claim_not_in_evidence";
+          const optIn = process.env.LILY_EVIDENCE_VERIFY_RETRY === "1";
+          triggerVerifyRetry = Boolean(assessment.strongClaim) && sideEffectFree && !hardOff && (numericClaim || optIn);
         } catch { triggerVerifyRetry = false; }
       }
     }
@@ -2653,7 +2660,7 @@ class TurnOrchestrator {
     // (the session is now idle). Non-blocking + fail-open: it must NEVER affect
     // turn completion. Only fires on an ungrounded strong claim, so a strong model
     // that already grounds its answers is never asked to redo (not made dumber).
-    if (triggerVerifyRetry && process.env.LILY_EVIDENCE_VERIFY_RETRY === "1") {
+    if (triggerVerifyRetry) {
       try {
         void this._maybeToolCallRescueRetry(sessionId, { code: "EVIDENCE_UNVERIFIED" })
           .catch((err) => log.warn("evidence verify retry failed open: %s", err?.message || err));
