@@ -112,7 +112,14 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
 const SIGNIFICANT_NUMBER_RE = /\d{1,3}(?:,\d{3})+|\d{4,}|\d+(?:\.\d+)?%/g;
 
 function ungroundedSignificantNumbers(answer, evidenceText, userText) {
-  if (process.env.LILY_NUMERIC_GROUNDING === "0") return [];
+  // DEFAULT OFF (opt-in via LILY_NUMERIC_GROUNDING=1). In practice it false-flags
+  // CORRECT numbers too often: many are computed by a script and written to a
+  // file/image without being echoed to stdout (e.g. the bazi engine's five-element
+  // 30%/22%/17%), or read from an image by vision — none of which land in the
+  // rendered tool-output text this compares against. Flagging a correct answer as
+  // "unverified" makes the platform look like it distrusts its own right work, so
+  // it degrades to the conservative pre-existing gate unless explicitly enabled.
+  if (process.env.LILY_NUMERIC_GROUNDING !== "1") return [];
   const matches = String(answer || "").match(SIGNIFICANT_NUMBER_RE);
   if (!matches) return [];
   // Comma-stripped haystack so "27,448" (answer) matches "27448" (tool output).

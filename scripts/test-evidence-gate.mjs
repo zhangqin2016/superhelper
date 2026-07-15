@@ -231,58 +231,67 @@ const mediaWithOutput = assessFinalAnswerEvidence({
 });
 assert.equal(mediaWithOutput.ok, true);
 
-// --- deterministic numeric grounding (zero model calls) ---------------------
-// The 张钦 failure: tools ran, so hasEvidence was true, but the specific counts
-// were fabricated. A data number absent from the tool output AND the user prompt
-// is flagged by name.
-const fabricatedNumber = assessFinalAnswerEvidence({
+// --- numeric grounding (DEFAULT OFF; opt-in LILY_NUMERIC_GROUNDING=1) --------
+// It false-flagged correct numbers too often (computed-then-written-to-file /
+// vision-read values that never appear in stdout), so by default it is disabled
+// and the gate keeps its conservative pre-existing behavior.
+const numericDefaultOff = assessFinalAnswerEvidence({
   assistant: "数据共 27,448 条记录，阿语覆盖率 39%。",
   evidencePolicy: { required: true, requiredEvidenceKinds: [] },
-  turnPolicy: { taskType: "general" },
+  turnPolicy: { taskType: "general" }, toolCount: 1,
   evidenceSummary: { counts: { events: 1 } },
-  toolCount: 1,
-  evidenceText: "ls output/ => uae-data.json (6.6 MB); file exists",
-  userText: "这些数据全吗",
+  evidenceText: "ls output/ => uae-data.json", userText: "这些数据全吗",
 });
-assert.equal(fabricatedNumber.ok, false, "a fabricated count absent from tool output is flagged even though tools ran");
-assert.equal(fabricatedNumber.reason, "numeric_claim_not_in_evidence");
-assert.ok(fabricatedNumber.ungroundedNumbers.includes("27,448"), "the ungrounded number is named");
+assert.equal(numericDefaultOff.ok, true, "numeric grounding is OFF by default — no false 'unverified' on a computed answer");
 
-// Same number present in the tool output (comma-normalized) → grounded.
-const groundedNumber = assessFinalAnswerEvidence({
-  assistant: "数据共 27,448 条记录。",
-  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
-  turnPolicy: { taskType: "general" }, toolCount: 1,
-  evidenceText: "python count => total 27448 records", userText: "",
-});
-assert.equal(groundedNumber.ok, true, "a number present in the tool output (27448) is grounded");
-
-// A number the user themselves supplied is not treated as fabricated.
-const fromUser = assessFinalAnswerEvidence({
-  assistant: "你提供的 12345 条记录我已纳入本次分析。",
-  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
-  turnPolicy: { taskType: "general" }, toolCount: 1,
-  evidenceText: "", userText: "帮我核对这 12345 条记录",
-});
-assert.equal(fromUser.ok, true, "a number from the user's own prompt is grounded");
-
-// Small/round numbers (<=3 digits, no separator, no %) are NOT checked → no false positive.
-const smallNumbers = assessFinalAnswerEvidence({
-  assistant: "有 7 个酋长国，约 100 个区域。",
-  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
-  turnPolicy: { taskType: "general" }, toolCount: 1,
-  evidenceText: "output without those values", userText: "",
-});
-assert.equal(smallNumbers.ok, true, "small/round numbers are not numeric-grounding-flagged");
-
-// Kill switch.
+// Opt-in behavior (LILY_NUMERIC_GROUNDING=1): flags data numbers absent from tool output/prompt.
 {
-  process.env.LILY_NUMERIC_GROUNDING = "0";
-  const off = assessFinalAnswerEvidence({
-    assistant: "共 27,448 条。", evidencePolicy: { required: true, requiredEvidenceKinds: [] },
-    turnPolicy: { taskType: "general" }, toolCount: 1, evidenceText: "nothing here", userText: "",
+  process.env.LILY_NUMERIC_GROUNDING = "1";
+
+  const fabricatedNumber = assessFinalAnswerEvidence({
+    assistant: "数据共 27,448 条记录，阿语覆盖率 39%。",
+    evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+    turnPolicy: { taskType: "general" }, toolCount: 1,
+    evidenceSummary: { counts: { events: 1 } },
+    evidenceText: "ls output/ => uae-data.json (6.6 MB); file exists", userText: "这些数据全吗",
   });
-  assert.equal(off.ok, true, "LILY_NUMERIC_GROUNDING=0 disables numeric grounding");
+  assert.equal(fabricatedNumber.ok, false, "opt-in: a fabricated count absent from tool output is flagged");
+  assert.equal(fabricatedNumber.reason, "numeric_claim_not_in_evidence");
+  assert.ok(fabricatedNumber.ungroundedNumbers.includes("27,448"), "the ungrounded number is named");
+
+  const groundedNumber = assessFinalAnswerEvidence({
+    assistant: "数据共 27,448 条记录。",
+    evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+    turnPolicy: { taskType: "general" }, toolCount: 1,
+    evidenceText: "python count => total 27448 records", userText: "",
+  });
+  assert.equal(groundedNumber.ok, true, "opt-in: a number present in the tool output (27448) is grounded");
+
+  const fromUser = assessFinalAnswerEvidence({
+    assistant: "你提供的 12345 条记录我已纳入本次分析。",
+    evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+    turnPolicy: { taskType: "general" }, toolCount: 1,
+    evidenceText: "", userText: "帮我核对这 12345 条记录",
+  });
+  assert.equal(fromUser.ok, true, "opt-in: a number from the user's own prompt is grounded");
+
+  const smallNumbers = assessFinalAnswerEvidence({
+    assistant: "有 7 个酋长国，约 100 个区域。",
+    evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+    turnPolicy: { taskType: "general" }, toolCount: 1,
+    evidenceText: "output without those values", userText: "",
+  });
+  assert.equal(smallNumbers.ok, true, "opt-in: small/round numbers are not flagged");
+
+  // Even opt-in, image/vision turns are exempt.
+  const imgOptIn = assessFinalAnswerEvidence({
+    assistant: "编号 0016953543，总游玩 1,286 局。",
+    evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+    turnPolicy: { taskType: "general" }, toolCount: 1,
+    evidenceText: "Image analysis complete", userText: "分析", skipNumericGrounding: true,
+  });
+  assert.equal(imgOptIn.ok, true, "opt-in: image-read numbers still exempt (skipNumericGrounding)");
+
   delete process.env.LILY_NUMERIC_GROUNDING;
 }
 
