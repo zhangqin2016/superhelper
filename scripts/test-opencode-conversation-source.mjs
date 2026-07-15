@@ -11,6 +11,7 @@ const {
   mergeMetadata,
   mergeProjectionConversation,
   mergeUserDisplayText,
+  stripInternalContinuationTurns,
   getConversationPageFromSource,
 } = require("../src/main/opencode-conversation-source.js");
 const {
@@ -653,5 +654,43 @@ assert.equal(
   1,
   "the surviving single assistant keeps the richer local record",
 );
+
+// Compaction auto-continue junk: opencode injects a synthetic "Continue if you
+// have next steps…" user turn and the model answers it (a status report / "task
+// done, anything else?"). We hide that internal user prompt but its assistant
+// answer was left orphaned. stripInternalContinuationTurns must drop the WHOLE
+// internal-continue turn (prompt + its assistant response), for both freshly
+// disabled and ALREADY-persisted history.
+{
+  const CONT = "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.";
+  const conv = [
+    { id: "u1", role: "user", turnId: "t1", content: "这些数据全吗", timestamp: "2026-07-15T10:00:00.000Z" },
+    { id: "a1", role: "assistant", turnId: "t1", content: "数据完整性分析：…（真正的答案）", timestamp: "2026-07-15T10:00:05.000Z" },
+    { id: "u2", role: "user", turnId: "t2", content: CONT, timestamp: "2026-07-15T10:01:00.000Z" },
+    { id: "a2", role: "assistant", turnId: "t2", content: "Objective\n…\nWork State\n…\nNext Move\n(none)", timestamp: "2026-07-15T10:01:08.000Z" },
+    { id: "a3", role: "assistant", turnId: "t2", content: "目前所有计划内的任务已完成，是否还有其他需要？", timestamp: "2026-07-15T10:01:12.000Z" },
+  ];
+  const stripped = stripInternalContinuationTurns(conv);
+  assert.equal(stripped.length, 2, "the internal-continue prompt + its two auto-continue answers are all dropped");
+  assert.ok(stripped.every((m) => m.id !== "u2" && m.id !== "a2" && m.id !== "a3"), "only the real question + its answer survive");
+  assert.ok(stripped.some((m) => m.id === "u1") && stripped.some((m) => m.id === "a1"), "the genuine turn is preserved");
+
+  // Untagged assistant answer after the internal prompt (no turnId) is still caught positionally.
+  const untagged = [
+    { id: "u", role: "user", content: CONT, timestamp: "2026-07-15T10:00:00.000Z" },
+    { id: "a", role: "assistant", content: "任务已完成。", timestamp: "2026-07-15T10:00:03.000Z" },
+    { id: "u3", role: "user", turnId: "t3", content: "真问题", timestamp: "2026-07-15T10:02:00.000Z" },
+    { id: "a4", role: "assistant", turnId: "t3", content: "真回答", timestamp: "2026-07-15T10:02:04.000Z" },
+  ];
+  const s2 = stripInternalContinuationTurns(untagged);
+  assert.deepEqual(s2.map((m) => m.id), ["u3", "a4"], "untagged auto-continue answer is dropped; the next real turn survives");
+
+  // No internal-continue prompt → untouched (no false positives).
+  const clean = [
+    { id: "x", role: "user", turnId: "t", content: "hello", timestamp: "2026-07-15T10:00:00.000Z" },
+    { id: "y", role: "assistant", turnId: "t", content: "hi there", timestamp: "2026-07-15T10:00:02.000Z" },
+  ];
+  assert.equal(stripInternalContinuationTurns(clean).length, 2, "a normal conversation is untouched");
+}
 
 console.log("opencode-conversation-source: ok");

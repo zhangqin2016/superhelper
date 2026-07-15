@@ -30,6 +30,35 @@ function timestampMs(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// After an AUTO compaction, opencode injects a synthetic user turn ("Continue if
+// you have next steps, or stop and ask…") and the model answers it — a junk turn
+// (a status-report scaffold / "task done, anything else?"). We already HIDE that
+// internal user prompt, but its assistant answer was left orphaned in the
+// conversation. Drop the whole internal-continue turn: the internal user prompt
+// PLUS the assistant response(s) that follow it before the next real user turn.
+// (Disabling autocontinue stops NEW ones; this also cleans the ones already
+// persisted in a session's history.)
+function stripInternalContinuationTurns(conversation = []) {
+  const list = Array.isArray(conversation) ? conversation.slice() : [];
+  list.sort((a, b) => (timestampMs(a?.timestamp) ?? 0) - (timestampMs(b?.timestamp) ?? 0));
+  const drop = new Set();
+  for (let i = 0; i < list.length; i += 1) {
+    const m = list[i];
+    if (m?.role !== "user" || !isInternalOnlyUserPromptText(messageText(m))) continue;
+    drop.add(m);
+    const turnId = m.turnId || "";
+    for (let j = i + 1; j < list.length; j += 1) {
+      const n = list[j];
+      if (n?.role === "user") break; // the next real turn starts here
+      // the auto-continue answer(s): same turnId, or untagged, sitting between
+      // the internal prompt and the next user message.
+      if (n?.role === "assistant" && (!turnId || !n.turnId || n.turnId === turnId)) drop.add(n);
+    }
+  }
+  if (!drop.size) return Array.isArray(conversation) ? conversation : [];
+  return (Array.isArray(conversation) ? conversation : []).filter((m) => !drop.has(m));
+}
+
 function messageText(message = {}) {
   // Fall back to the record's assistant text: a rich assistant turn can carry an
   // empty top-level `content` while its answer lives in `record.assistantText`.
@@ -427,6 +456,9 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
 
   const fallback = () => {
     const page = ctx.sessionManager.getConversationPage(session.id, opts);
+    if (page && Array.isArray(page.conversation)) {
+      page.conversation = stripInternalContinuationTurns(page.conversation);
+    }
     const projections = projectedConversationFor(ctx, session.id, {
       ...opts,
       includeOpen: true,
@@ -469,9 +501,9 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
 
   try {
     const page = await runner.getConversationPage(opts);
-    const localConversation = ctx.sessionManager.getConversation(session.id);
+    const localConversation = stripInternalContinuationTurns(ctx.sessionManager.getConversation(session.id));
     const metadata = buildMetadataIndex(localConversation);
-    const mergedOfficial = mergeUserDisplayText(page.conversation || [], localConversation).map((message) => {
+    const mergedOfficial = mergeUserDisplayText(stripInternalContinuationTurns(page.conversation || []), localConversation).map((message) => {
       const key = metadataKey(message);
       return mergeMetadata(message, key ? metadata.get(key) : null);
     });
@@ -504,5 +536,6 @@ module.exports = {
   mergeMetadata,
   mergeProjectionConversation,
   mergeUserDisplayText,
+  stripInternalContinuationTurns,
   getConversationPageFromSource,
 };
