@@ -32,23 +32,58 @@ function stripRememberPrefix(text) {
   return normalizeProposalText(String(text || "").replace(/^(记住|请记住|帮我记住|remember|please remember)\s*[:：,，]?\s*/i, ""));
 }
 
+// A tool "errored" if the engine marked it failed/error, or its result flagged
+// an error. Used to detect a genuine struggle→recovery (a reusable debugging win).
+function toolErrored(tool) {
+  if (!tool) return false;
+  if (/error|fail/i.test(String(tool.status || ""))) return true;
+  const r = tool.result;
+  return Boolean(r && typeof r === "object" && (r.is_error || r.isError));
+}
+
+// Autonomous solution learning (OPT-IN: LILY_MEMORY_LEARN_SOLUTIONS=1). Distills a
+// reusable "how it was solved" note from a turn that OVERCAME tool errors and still
+// completed — a high-precision, low-noise signal (skips trivial one-shot successes,
+// so it can't spam the approval queue). Human-approved like every other proposal;
+// deterministic (no model call, never blocks the turn). null when the signal is weak.
+function detectSolutionLesson(record = {}) {
+  if (process.env.LILY_MEMORY_LEARN_SOLUTIONS !== "1") return null;
+  if (record.terminal !== "turn.completed") return null;
+  const problem = normalizeProposalText(record.user?.text || "");
+  if (problem.length < 20) return null; // needs a substantive problem to be a lesson
+  const tools = Array.isArray(record.tools) ? record.tools : [];
+  const errored = tools.filter(toolErrored);
+  if (!errored.length) return null; // require a real struggle→recovery, not a trivial win
+  const usedTools = [...new Set(tools.map((t) => t && t.name).filter(Boolean))].slice(0, 6);
+  if (!usedTools.length) return null;
+  const problemShort = problem.length > 100 ? `${problem.slice(0, 99)}…` : problem;
+  const text = normalizeProposalText(
+    `处理「${problemShort}」的有效路径:${usedTools.join(" → ")}（克服了 ${errored.length} 处报错）`,
+  );
+  if (text.length < MIN_MEMORY_CHARS) return null;
+  return { text, source: "distilled_solution" };
+}
+
 function extractMemoryProposalFromRecord(record = {}) {
   if (record.terminal && !["turn.completed", "turn.interrupted"].includes(record.terminal)) return null;
   const text = normalizeProposalText(record.user?.text || "");
-  if (!text) return null;
 
-  if (/^(记住|请记住|帮我记住)\s*[:：,，]?|^(remember|please remember)\b/i.test(text)) {
-    const value = stripRememberPrefix(text);
-    if (value.length >= MIN_MEMORY_CHARS) return { text: value, source: "explicit_remember" };
+  if (text) {
+    if (/^(记住|请记住|帮我记住)\s*[:：,，]?|^(remember|please remember)\b/i.test(text)) {
+      const value = stripRememberPrefix(text);
+      if (value.length >= MIN_MEMORY_CHARS) return { text: value, source: "explicit_remember" };
+    }
+
+    const correctionMatch = text.match(/(?:不是这个意思|不对|以后|下次|以后都|以后.*?先|以后.*?不要)([\s\S]{8,220})/);
+    if (correctionMatch) {
+      const value = normalizeProposalText(correctionMatch[0]);
+      if (value.length >= MIN_MEMORY_CHARS) return { text: value, source: "user_correction" };
+    }
   }
 
-  const correctionMatch = text.match(/(?:不是这个意思|不对|以后|下次|以后都|以后.*?先|以后.*?不要)([\s\S]{8,220})/);
-  if (correctionMatch) {
-    const value = normalizeProposalText(correctionMatch[0]);
-    if (value.length >= MIN_MEMORY_CHARS) return { text: value, source: "user_correction" };
-  }
-
-  return null;
+  // Autonomous solution learning (opt-in) — evaluated last so explicit user intent
+  // (remember/correction) always wins.
+  return detectSolutionLesson(record);
 }
 
 function readProposalFile(projectId) {
@@ -133,6 +168,7 @@ function promoteMemoryProposalsFromRecord(projectId, record = {}) {
 
 module.exports = {
   approveMemoryProposal,
+  detectSolutionLesson,
   dismissMemoryProposal,
   extractMemoryProposalFromRecord,
   listMemoryProposals,

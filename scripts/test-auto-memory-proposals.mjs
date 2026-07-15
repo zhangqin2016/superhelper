@@ -52,6 +52,46 @@ try {
   assert.equal(extractMemoryProposalFromRecord({ user: { text: "你好" }, terminal: "turn.completed" }), null);
   assert.equal(extractMemoryProposalFromRecord({ user: { text: "记住：短" }, terminal: "turn.completed" }), null);
 
+  // --- ② autonomous solution learning (opt-in, human-approved) ---
+  const solvedRecord = {
+    terminal: "turn.completed",
+    user: { text: "帮我修好本地起不来的开发服务器，端口一直被占用报错" },
+    tools: [
+      { name: "Bash", status: "failed" },
+      { name: "Bash", status: "done" },
+      { name: "Edit", status: "done", result: { is_error: false } },
+    ],
+    assistantText: "已解决",
+  };
+  // OFF by default → no autonomous proposal (zero behavior change / no approval spam)
+  delete process.env.LILY_MEMORY_LEARN_SOLUTIONS;
+  assert.equal(extractMemoryProposalFromRecord(solvedRecord), null, "solution learning off by default");
+
+  // ON → distills a reusable path proposal, high-precision
+  process.env.LILY_MEMORY_LEARN_SOLUTIONS = "1";
+  const solved = extractMemoryProposalFromRecord(solvedRecord);
+  assert.equal(solved?.source, "distilled_solution");
+  assert.match(solved.text, /端口一直被占用/, "lesson names the problem");
+  assert.match(solved.text, /Bash|Edit/, "lesson names the tools that worked");
+  assert.match(solved.text, /克服了 1 处报错/, "counts the overcome errors (deduped by errored tools)");
+
+  // ON but trivial (no errored tool) → null (skips one-shot wins → no noise)
+  assert.equal(
+    extractMemoryProposalFromRecord({ terminal: "turn.completed", user: { text: solvedRecord.user.text }, tools: [{ name: "Read", status: "done" }] }),
+    null,
+    "no struggle → no solution lesson",
+  );
+  // ON but non-substantive problem → null
+  assert.equal(
+    extractMemoryProposalFromRecord({ terminal: "turn.completed", user: { text: "跑一下" }, tools: [{ name: "Bash", status: "error" }] }),
+    null,
+    "trivial problem → no lesson",
+  );
+  // explicit remember still wins over an otherwise-qualifying solution turn
+  const bothSignals = extractMemoryProposalFromRecord({ ...solvedRecord, user: { text: "记住：本机开发服务器端口冲突时先 kill 占用进程" } });
+  assert.equal(bothSignals?.source, "explicit_remember", "explicit intent wins over autonomous distillation");
+  delete process.env.LILY_MEMORY_LEARN_SOLUTIONS;
+
   const first = promoteMemoryProposalsFromRecord("p1", {
     turnId: "t1",
     user: { text: "记住：回答金融报告时先给结论，再给依据" },
