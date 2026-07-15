@@ -196,6 +196,9 @@ export default function MobilePairPage() {
               setSessions(Array.isArray(frame.sessions) ? frame.sessions : []);
               setSelectedSessionId(frame.selectedSessionId || frame.activeSessionId || "");
               if (frame.projectId) setSelectedProjectId(frame.projectId);
+              // The list changed (e.g. after a workspace switch) — refresh the
+              // shown session context so the chat isn't stuck on the old one.
+              try { wsRef.current?.send(JSON.stringify({ type: "session.request" })); } catch { /* noop */ }
               break;
             case "session.context":
               setSessionCtx({ title: frame.title || "", sessionId: frame.sessionId || "", phase: frame.phase || "", recent: Array.isArray(frame.recent) ? frame.recent : [] });
@@ -318,6 +321,7 @@ export default function MobilePairPage() {
 
   const selectSession = useCallback((sessionId) => {
     setSelectedSessionId(sessionId);
+    setSessionCtx(null); setReply(""); setTurnState("idle"); // avoid showing the old session while the new context loads
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       setLog((l) => ["手机尚未连接桌面，无法切换会话", ...l].slice(0, 20));
@@ -334,6 +338,9 @@ export default function MobilePairPage() {
   const selectProject = useCallback((projectId) => {
     setSelectedProjectId(projectId);
     setSessions([]); setSelectedSessionId("");
+    // Clear the old workspace's shown context/reply so it doesn't linger while
+    // the new workspace's session list + context arrive.
+    setSessionCtx(null); setReply(""); setTurnState("idle");
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     try { ws.send(JSON.stringify({ type: "project.select", projectId })); } catch { /* noop */ }
