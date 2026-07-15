@@ -128,6 +128,41 @@ try {
     payload,
   });
   assert.equal(wrongProvider.statusCode, 400);
+
+  // Embeddings proxy (powers managed semantic memory recall): forwards to
+  // {baseUrl}/embeddings, passes the client embedding model through, returns the
+  // vector, and rejects non-OpenAI providers.
+  upstreamRequests.length = 0;
+  globalThis.fetch = async (url, init) => {
+    const reqBody = JSON.parse(init.body);
+    upstreamRequests.push({ url: String(url), init, body: reqBody });
+    return new Response(JSON.stringify({
+      object: "list",
+      model: reqBody.model,
+      data: (Array.isArray(reqBody.input) ? reqBody.input : [reqBody.input]).map((_, i) => ({
+        object: "embedding", index: i, embedding: [0.1, 0.2, 0.3],
+      })),
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const embedResponse = await app.inject({
+    method: "POST",
+    url: "/llm/iluvatar-vllm/v1/embeddings",
+    headers: { Authorization: `Bearer ${token}` },
+    payload: { model: "text-embedding-v3", input: ["数据库连不上", "postgres refused"] },
+  });
+  assert.equal(embedResponse.statusCode, 200);
+  assert.equal(upstreamRequests[0].url, "http://127.0.0.1:18000/v1/embeddings", "embeddings forwards to {baseUrl}/embeddings");
+  assert.equal(upstreamRequests[0].body.model, "text-embedding-v3", "client embedding model passes through unchanged");
+  assert.equal(embedResponse.json().data.length, 2, "one embedding per input");
+  assert.deepEqual(embedResponse.json().data[0].embedding, [0.1, 0.2, 0.3]);
+
+  const wrongEmbed = await app.inject({
+    method: "POST",
+    url: "/llm/anthropic_only/v1/embeddings",
+    headers: { Authorization: `Bearer ${wrongToken}` },
+    payload: { model: "text-embedding-v3", input: ["x"] },
+  });
+  assert.equal(wrongEmbed.statusCode, 400, "embeddings rejects non-OpenAI providers");
 } finally {
   globalThis.fetch = originalFetch;
   await app.close();

@@ -10,6 +10,7 @@ import {
   approximateAnthropicInputTokens,
   forwardOpenAi,
   forwardOpenAiChatCompletions,
+  forwardOpenAiEmbeddings,
   forwardOpenAiModels,
   pipeOpenAiStreamAsAnthropic,
   sendJsonFromOpenAi,
@@ -352,6 +353,45 @@ async function handleOpenAiChatCompletionsRequest(request, reply) {
   return reply.send(source.pipe(meteredPassthrough(billing)));
 }
 
+async function handleOpenAiEmbeddingsRequest(request, reply) {
+  const context = providerContextForRequest(request, reply);
+  if (!context) return reply;
+  const { providerId, provider } = context;
+  if (provider.type !== "openai") {
+    return reply.code(400).send({
+      error: {
+        type: "invalid_request_error",
+        message: "OpenAI embeddings gateway requires an OpenAI-compatible provider",
+      },
+    });
+  }
+
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  let upstream;
+  try {
+    upstream = await forwardOpenAiEmbeddings(provider, body);
+  } catch (err) {
+    const timedOut = err?.name === "AbortError" || err?.name === "TimeoutError";
+    return reply.code(timedOut ? 504 : 502).send({
+      error: {
+        type: timedOut ? "upstream_timeout" : "upstream_error",
+        message: timedOut
+          ? `model provider '${providerId}' did not respond in time (check baseUrl/key/model)`
+          : `model provider '${providerId}' request failed: ${err?.message || err}`,
+      },
+    });
+  }
+
+  // Auth is enforced by the gateway token (providerContextForRequest); embeddings
+  // are cheap and non-streaming, so — like /models and count_tokens — this route
+  // does not meter the wallet. Pass the upstream response straight through.
+  reply.code(upstream.status);
+  for (const [key, value] of upstream.headers.entries()) {
+    if (["content-type", "cache-control"].includes(key.toLowerCase())) reply.header(key, value);
+  }
+  return reply.send(upstream.body ? Readable.fromWeb(upstream.body) : null);
+}
+
 async function handleCountTokensRequest(request, reply) {
   const provider = providerForRequest(request, reply);
   if (!provider) return reply;
@@ -427,12 +467,22 @@ export async function modelGatewayRoutes(app) {
         "Authenticates the gateway token and forwards the OpenAI-compatible chat/completions body to an OpenAI-compatible upstream provider without Anthropic conversion.",
     },
   };
+  const openAiEmbeddingsSchema = {
+    schema: {
+      tags: ["gateway:model"],
+      summary: "Proxy an OpenAI-compatible embeddings request",
+      description:
+        "Authenticates the gateway token and forwards the OpenAI-compatible /embeddings body to an OpenAI-compatible upstream provider. Powers semantic memory recall for managed users (client posts {baseUrl}/embeddings).",
+    },
+  };
   app.post("/llm/:provider/v1/messages", messagesSchema, handleGatewayRequest);
   app.post("/llm/:provider/messages", messagesSchema, handleGatewayRequest);
   app.post("/llm/v1/messages", messagesSchema, handleGatewayRequest);
   app.post("/llm/messages", messagesSchema, handleGatewayRequest);
   app.post("/llm/:provider/v1/chat/completions", openAiChatSchema, handleOpenAiChatCompletionsRequest);
   app.post("/llm/v1/chat/completions", openAiChatSchema, handleOpenAiChatCompletionsRequest);
+  app.post("/llm/:provider/v1/embeddings", openAiEmbeddingsSchema, handleOpenAiEmbeddingsRequest);
+  app.post("/llm/v1/embeddings", openAiEmbeddingsSchema, handleOpenAiEmbeddingsRequest);
   app.post("/llm/:provider/v1/messages/count_tokens", countTokensSchema, handleCountTokensRequest);
   app.post("/llm/v1/messages/count_tokens", countTokensSchema, handleCountTokensRequest);
   app.get("/llm/:provider/v1/models", modelsSchema, handleModelsRequest);

@@ -222,6 +222,23 @@ export async function forwardOpenAiModels(provider) {
   });
 }
 
+// Proxy an OpenAI-compatible /embeddings request. The client-specified embedding
+// model (e.g. text-embedding-v3) passes through unchanged — do NOT substitute the
+// provider's chat model, and do not apply chat-only fields (max_tokens/stream).
+export async function forwardOpenAiEmbeddings(provider, body) {
+  const target = `${provider.baseUrl}/embeddings`;
+  const payload = body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
+  return fetch(target, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${provider.apiKey}`,
+      ...provider.headers,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function approximateAnthropicInputTokens(body) {
   const text = [
     textFromContent(body.system),
