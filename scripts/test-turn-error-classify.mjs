@@ -178,6 +178,21 @@ const leakedReasoningToolCall = ec.classifyTurnFailure(
 assert(leakedReasoningToolCall?.code === "MALFORMED_TOOL_CALL_TEXT", "leaked tool-call fragments in reasoning are not successful answers");
 assert(ec.looksLikeLeakedToolCallText("<tool_call><function=bash><parameter=timeout>10000</parameter>"), "detects tool-call XML");
 assert(!ec.looksLikeLeakedToolCallText("Please set the timeout parameter to 10000."), "does not flag normal prose");
+// Anthropic-style leak (field: a whole bash/python tool call printed as text):
+// `<tool_calls><invoke name="bash"><parameter name="command">python3 …</parameter></invoke></tool_calls>`.
+// The plural `tool_calls` + `invoke` opener must count, even with a LONG script body
+// (the old detector missed it: only `parameter` hit, and the long body defeated the
+// short-fragment fallback, so the leak rendered as a normal answer).
+{
+  const anthropicLeak =
+    '好的。<tool_calls><invoke name="bash"><parameter name="command">python3 << \'PYEOF\'\nimport json, os\n' +
+    "wd = '/Users/zhangqin/points'\n" + "x = 1\n".repeat(60) +
+    "PYEOF</parameter><parameter name=\"timeout\">15000</parameter></invoke></tool_calls>";
+  assert(ec.looksLikeLeakedToolCallText(anthropicLeak), "detects a leaked <tool_calls>/<invoke> Anthropic-style tool call even with a long body");
+  const classified = ec.classifyTurnFailure({ code: 0 }, { text: anthropicLeak }, {});
+  assert(classified?.code === "MALFORMED_TOOL_CALL_TEXT", "a leaked <tool_calls>/<invoke> blob is a protocol failure, not a finished answer");
+}
+assert(!ec.looksLikeLeakedToolCallText("先 invoke 这个 API,再设置 parameter"), "prose mentioning invoke/parameter without tags is not flagged");
 
 const toolState = {
   tools: new Map([

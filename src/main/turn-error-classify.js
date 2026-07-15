@@ -21,7 +21,12 @@ function looksLikeLeakedToolCallText(value) {
   if (!text) return false;
   const compact = text.replace(/\s+/g, " ");
   const markers = [
-    /<\/?tool_call\b/i,
+    // tool_call AND tool_calls (plural); the old `tool_call\b` missed the plural
+    // opener `<tool_calls>` that Anthropic-style leaks use.
+    /<\/?tool_calls?\b/i,
+    // Anthropic-style invoke opener (optionally namespaced), the sibling of the
+    // <parameter> tags in a leaked `<tool_calls><invoke name="…"><parameter …>` blob.
+    /<\/?(?:[a-z]+:)?invoke\b/i,
     /<\/?function(?:=|\b)/i,
     /<\/?parameter(?:=|\b)/i,
   ];
