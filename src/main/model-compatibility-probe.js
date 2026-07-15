@@ -28,7 +28,12 @@ function messageShape(json) {
   const choice = json?.choices?.[0] || {};
   const message = choice.message || {};
   const content = typeof message.content === "string" ? message.content : "";
-  const reasoning = typeof message.reasoning === "string" ? message.reasoning : "";
+  // Reasoning models expose their chain under `reasoning` OR `reasoning_content`
+  // (DeepSeek/OpenAI-compat). Recognize both so a thinking model is classified as
+  // reasoning, not mistaken for a dead no-content endpoint.
+  const reasoning = typeof message.reasoning === "string"
+    ? message.reasoning
+    : typeof message.reasoning_content === "string" ? message.reasoning_content : "";
   const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
   return {
     hasContent: content.trim().length > 0,
@@ -53,7 +58,8 @@ function streamShape(text) {
       const choice = json?.choices?.[0] || {};
       const delta = choice.delta || {};
       if (typeof delta.content === "string" && delta.content.trim()) hasContent = true;
-      if (typeof delta.reasoning === "string" && delta.reasoning.trim()) hasReasoning = true;
+      if ((typeof delta.reasoning === "string" && delta.reasoning.trim()) ||
+          (typeof delta.reasoning_content === "string" && delta.reasoning_content.trim())) hasReasoning = true;
       if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) hasToolCalls = true;
       if (typeof choice.finish_reason === "string" && choice.finish_reason) finishReason = choice.finish_reason;
     } catch {
@@ -132,7 +138,14 @@ function toolProbeFields(extraTools = [], toolChoice = null) {
   };
 }
 
-async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, extraTools = [], toolChoice = null, systemText = "", userText = "", maxTokens = 16, timeoutMs = 10_000 }) {
+// maxTokens default 512 (not 16): a reasoning model spends its output budget on
+// reasoning_content FIRST, so a tiny probe finishes with reason "length" and EMPTY
+// content/no tool_call — falsely read as a dead endpoint or "tool calls
+// unavailable". 512 leaves room for the reasoning chain AND the final "pong" or
+// tool_call across the non-stream + stream + decoy passes (confirmed:
+// deepseek-v4-pro uses ~20-50 reasoning tokens then answers/tool-calls). Real
+// turns pass explicit larger budgets; the max_tokens ceiling walk sets its own.
+async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, extraTools = [], toolChoice = null, systemText = "", userText = "", maxTokens = 512, timeoutMs = 10_000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("MODEL_PROBE_TIMEOUT")), Math.max(500, timeoutMs));
   const messages = [];
@@ -171,13 +184,32 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
   }
 }
 
+// Some reasoning models reject a FORCED tool_choice outright (e.g. deepseek
+// thinking mode → 400 "Thinking mode does not support this tool_choice"). That's
+// a request-shape constraint, not a lack of tool support, so detect it and retry
+// with tool_choice:"auto" — which is what real turns use anyway.
+function isForcedToolChoiceRejection(result) {
+  if (!result || result.ok) return false;
+  const err = result.json?.error;
+  const text = [typeof err === "string" ? err : "", err?.message, err?.code, err?.type, result.json?.message]
+    .filter((v) => typeof v === "string" && v).join(" ").toLowerCase();
+  if (!text) return false;
+  return /tool[_\s-]?choice/.test(text) || (/thinking|reasoning/.test(text) && /tool/.test(text));
+}
+
 async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs, extraTools = [] }) {
-  const nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, timeoutMs });
+  let toolChoice = null; // forced (default) — the most discriminating shape
+  let nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, timeoutMs });
+  if (!nonStream.ok && isForcedToolChoiceRejection(nonStream)) {
+    toolChoice = "auto";
+    nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, timeoutMs });
+  }
   if (!nonStream.ok) return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
-  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, stream: true, timeoutMs });
+  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, stream: true, timeoutMs });
   if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}` };
   return {
     ok: true,
+    toolChoice: toolChoice || "forced",
     nonStreamShape: nonStream.shape,
     streamShape: stream.shape,
     hasToolCalls: Boolean(nonStream.shape?.hasToolCalls && stream.shape?.hasToolCalls),

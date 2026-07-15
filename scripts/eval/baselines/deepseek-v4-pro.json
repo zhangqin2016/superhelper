@@ -1,0 +1,26 @@
+{
+  "model": "deepseek-v4-pro",
+  "updatedAt": "2026-07-15T23:13:54.989Z",
+  "results": {
+    "basic-instruction": {
+      "pass": true,
+      "sample": "PONG"
+    },
+    "chinese-reply": {
+      "pass": true,
+      "sample": "我是 Lily Workbench 智能编程助手。"
+    },
+    "reasoning-arith": {
+      "pass": true,
+      "sample": "96%"
+    },
+    "tool-roundtrip": {
+      "pass": true,
+      "sample": "暗号是 LILY-EVAL-7391"
+    },
+    "negative-constraint": {
+      "pass": true,
+      "sample": "苹果、香蕉、橙子"
+    }
+  }
+}

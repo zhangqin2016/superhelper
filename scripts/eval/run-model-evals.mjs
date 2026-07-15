@@ -105,7 +105,10 @@ async function buildPlatformConfig() {
   // mapping plus the runner's lite/recipe guidance. MCP/session orchestration
   // remains outside this direct-CLI eval and is covered by focused tests.
   const { probeCustomModelProfile } = require("../../src/main/model-compatibility-probe.js");
-  const probe = await probeCustomModelProfile({ protocol: "openai", baseUrl, apiKey, model, timeoutMs: 20_000 });
+  // Reasoning models emit a chain before answering/tool-calling; 20s across the
+  // probe's sequential content+tools (non-stream+stream) passes is too tight and
+  // times out a capable-but-slow model. 60s is reasoning-tolerant.
+  const probe = await probeCustomModelProfile({ protocol: "openai", baseUrl, apiKey, model, timeoutMs: 60_000 });
   if (!probe.ok) {
     console.error(`compatibility probe rejected the endpoint: ${probe.error}`);
     process.exit(2);
