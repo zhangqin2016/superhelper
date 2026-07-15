@@ -120,6 +120,9 @@ export default function MobilePairPage() {
   const [attachment, setAttachment] = useState(null); // { name, mimeType, dataBase64, preview }
   const [capabilities, setCapabilities] = useState(null);
   const [listeningVoice, setListeningVoice] = useState(false);
+  const [toast, setToast] = useState("");
+  const recognitionRef = useRef(null);
+  const toastTimerRef = useRef(null);
   const wsRef = useRef(null);
   const grantRef = useRef({ url: "", grantId: "" });
   const autoPairedRef = useRef(false);
@@ -336,37 +339,70 @@ export default function MobilePairPage() {
     try { ws.send(JSON.stringify({ type: "project.select", projectId })); } catch { /* noop */ }
   }, []);
 
-  const startVoiceInput = useCallback(() => {
+  const flash = useCallback((msg) => {
+    setToast(msg);
+    setLog((l) => [msg, ...l].slice(0, 20));
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(""), 3500);
+  }, []);
+
+  // Voice: a clear tap-to-start / tap-to-stop toggle with visible feedback.
+  // Browser SpeechRecognition is on-device + free but unsupported on some
+  // mobile browsers (notably iOS Safari) — when missing, say so plainly instead
+  // of failing silently.
+  const toggleVoice = useCallback(() => {
+    // Already listening → stop.
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch { /* noop */ }
+      recognitionRef.current = null;
+      setListeningVoice(false);
+      return;
+    }
     const SpeechRecognition = typeof window !== "undefined"
       ? (window.SpeechRecognition || window.webkitSpeechRecognition)
       : null;
     if (!SpeechRecognition) {
-      setLog((l) => ["语音输入不可用：当前浏览器不支持听写，请直接输入文字", ...l].slice(0, 20));
+      flash("此浏览器不支持语音输入，请用 Chrome 打开，或直接输入文字");
       return;
     }
+    let recognition;
     try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = "zh-CN";
-      recognition.interimResults = true;
-      recognition.continuous = false;
-      setListeningVoice(true);
-      recognition.onresult = (event) => {
-        let text = "";
-        for (let i = event.resultIndex || 0; i < event.results.length; i += 1) {
-          text += event.results[i]?.[0]?.transcript || "";
-        }
-        if (text.trim()) setTask((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${text.trim()}`);
-      };
-      recognition.onerror = () => {
-        setLog((l) => ["语音输入不可用：请检查浏览器麦克风权限", ...l].slice(0, 20));
-      };
-      recognition.onend = () => setListeningVoice(false);
-      recognition.start();
+      recognition = new SpeechRecognition();
     } catch {
-      setListeningVoice(false);
-      setLog((l) => ["语音输入不可用：请直接输入文字", ...l].slice(0, 20));
+      flash("语音输入启动失败，请直接输入文字");
+      return;
     }
-  }, []);
+    recognition.lang = "zh-CN";
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognition.onresult = (event) => {
+      let text = "";
+      for (let i = event.resultIndex || 0; i < event.results.length; i += 1) {
+        if (event.results[i]?.isFinal) text += event.results[i]?.[0]?.transcript || "";
+      }
+      if (text.trim()) setTask((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${text.trim()}`);
+    };
+    recognition.onerror = (e) => {
+      const code = e?.error || "";
+      recognitionRef.current = null;
+      setListeningVoice(false);
+      if (code === "not-allowed" || code === "service-not-allowed") flash("麦克风被拒绝：请在浏览器里允许麦克风权限");
+      else if (code === "no-speech") flash("没听到声音，请再试一次");
+      else if (code === "aborted") { /* user stopped; no toast */ }
+      else flash(`语音输入出错：${code || "未知"}`);
+    };
+    recognition.onend = () => { recognitionRef.current = null; setListeningVoice(false); };
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+      setListeningVoice(true);
+      flash("🎙 正在聆听，说完点一下麦克风停止");
+    } catch {
+      recognitionRef.current = null;
+      setListeningVoice(false);
+      flash("语音输入启动失败，请直接输入文字");
+    }
+  }, [flash]);
 
   const sendTask = useCallback(() => {
     const ws = wsRef.current;
@@ -510,13 +546,14 @@ export default function MobilePairPage() {
                 <button type="button" className="text-xs font-medium text-rose-500" onClick={() => setAttachment(null)}>移除</button>
               </div>
             ) : null}
-            {listeningVoice ? <p className="mb-1 text-center text-xs text-indigo-500">🎙 正在聆听，说完自动填入…</p> : null}
+            {toast ? <p className="mb-1 rounded-lg bg-slate-800/90 px-3 py-1.5 text-center text-xs text-white">{toast}</p> : null}
+            {listeningVoice ? <p className="mb-1 text-center text-xs font-medium text-indigo-500">🎙 正在聆听… 点麦克风停止</p> : (!toast && log[0] ? <p className="mb-1 truncate text-center text-xs text-slate-400">{log[0]}</p> : null)}
             <div className="flex items-end gap-2">
               <label className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-slate-100 text-lg active:bg-slate-200" title="添加图片">
                 📷<input type="file" accept="image/*" className="hidden" onChange={pickImage} />
               </label>
-              <button type="button" onClick={startVoiceInput} title="语音输入"
-                className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg transition ${listeningVoice ? "animate-pulse bg-indigo-600 text-white" : "bg-slate-100 active:bg-slate-200"}`}>🎙</button>
+              <button type="button" onClick={toggleVoice} title="语音输入"
+                className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg transition ${listeningVoice ? "animate-pulse bg-rose-500 text-white ring-4 ring-rose-200" : "bg-slate-100 active:bg-slate-200"}`}>🎙</button>
               <textarea rows={1} className="max-h-28 min-h-[2.5rem] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
                 value={task} onChange={(e) => setTask(e.target.value)} placeholder="发消息 / 派任务给桌面…"
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTask(); } }} />

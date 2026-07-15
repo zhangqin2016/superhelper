@@ -82,8 +82,9 @@ assert.match(page, /lilySessionId: selectedSessionId/, "commands target the mobi
 // Browser dictation: speech-to-text is a mobile input convenience, distinct
 // from gated production/native voice control.
 assert.match(page, /SpeechRecognition/, "checks for browser speech recognition support");
-assert.match(page, /startVoiceInput/, "has a browser voice dictation entry point");
-assert.match(page, /语音输入不可用/, "falls back loudly when browser dictation is unavailable");
+assert.match(page, /toggleVoice/, "has a browser voice dictation toggle (start/stop)");
+assert.match(page, /此浏览器不支持语音输入/, "says so plainly (visible toast) when browser dictation is unavailable");
+assert.match(page, /\{toast\}/, "surfaces voice + status feedback in a visible toast (not a hidden log)");
 assert.match(page, /🎙/, "renders a microphone button");
 
 // Direct connect (TeamViewer/ToDesk-style): code + password, no approval.
