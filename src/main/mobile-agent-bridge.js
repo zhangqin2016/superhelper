@@ -246,6 +246,8 @@ function createMobileAgentBridge({
         getSessionContext,
         getSessionList,
         selectSession,
+        getProjectList,
+        selectProject,
         materializeAttachments,
         desktopDeviceId,
       });

@@ -228,6 +228,22 @@ const {
   assert.deepEqual(missingSelector.reply, { type: "session.select.ack", ok: false, sessionId: "s2", code: "SESSION_SELECT_UNAVAILABLE" });
 }
 
+// --- projects.request + project.select expose workspace selection -----------
+{
+  const projectList = { type: "projects.list", activeProjectId: "p1", selectedProjectId: "p1", projects: [{ id: "p1", name: "A" }, { id: "p2", name: "B" }] };
+  const listReply = await handleRelayCommandFrame({ type: "projects.request" }, { getProjectList: async () => projectList });
+  assert.deepEqual(listReply.reply, projectList, "projects.request replies with the workspace list");
+
+  let pickedProject = "";
+  const newSessions = { type: "sessions.list", projectId: "p2", sessions: [{ id: "s9", title: "X" }] };
+  const selReply = await handleRelayCommandFrame({ type: "project.select", projectId: "p2" }, { selectProject: async (id) => { pickedProject = id; return newSessions; } });
+  assert.equal(pickedProject, "p2", "project.select passes the workspace id to the desktop");
+  assert.deepEqual(selReply.reply, newSessions, "project.select re-lists that workspace's sessions");
+
+  const noSel = await handleRelayCommandFrame({ type: "project.select", projectId: "p2" }, {});
+  assert.deepEqual(noSel.reply, { type: "project.select.ack", ok: false, projectId: "p2", code: "PROJECT_SELECT_UNAVAILABLE" });
+}
+
 // --- bridge lifecycle against a fake WebSocket ------------------------------
 {
   class FakeWS {
@@ -243,6 +259,7 @@ const {
     relayUrl: "ws://relay.example/api/mobile/relay",
     token: "tok", grantId: "g1", desktopDeviceId: "dtop",
     admit: async (env) => { admits.push(env); return { ok: true, commandId: env.commandId, state: "admitted", requestedMode: env.mode, effectiveMode: "queue", downgradeReason: null }; },
+    getProjectList: async () => ({ type: "projects.list", projects: [{ id: "p1", name: "A" }] }),
     WebSocketCtor: FakeWS,
   });
   bridge.start();
@@ -257,6 +274,13 @@ const {
   assert.equal(admits[0].commandId, "c9");
   const ack = JSON.parse(ws.sent.at(-1));
   assert.equal(ack.type, "command.admitted", "the ack is sent back to mobile");
+  // Regression guard: the bridge must forward getProjectList to the frame
+  // handler (a prior bug omitted it, so workspaces never reached the phone).
+  await ws.message(JSON.stringify({ type: "projects.request" }));
+  await new Promise((r) => setTimeout(r, 0));
+  const projFrame = JSON.parse(ws.sent.at(-1));
+  assert.equal(projFrame.type, "projects.list", "projects.request is answered through the live bridge");
+  assert.equal(projFrame.projects[0].id, "p1", "the workspace list reaches the phone");
   bridge.stop();
   assert.equal(bridge.isConnected(), false, "stop closes the connection");
 }
