@@ -63,6 +63,22 @@ export const CompactionMemoryPlugin = async () => ({
       /* fail open — compaction must never break */
     }
   },
+  // After an AUTO compaction, opencode injects a synthetic user message
+  // ("Continue if you have next steps, or stop and ask for clarification…") and
+  // RUNS the model on it — generating a spurious turn (a status report / "task
+  // done, anything else?") even when nothing is running. Reopening a large
+  // session resumes the engine → auto-compacts → auto-continues → that junk turn
+  // is appended, and it multiplies on every reopen. Lily owns continuation (its
+  // turn orchestrator / the user), so opencode must NOT auto-continue: compaction
+  // still summarizes, it just doesn't force a model turn. Re-enable with
+  // LILY_COMPACTION_AUTOCONTINUE=1. Fail-open: on error, leave the engine default.
+  "experimental.compaction.autocontinue": async (_input, output) => {
+    try {
+      if (output && process.env.LILY_COMPACTION_AUTOCONTINUE !== "1") output.enabled = false;
+    } catch {
+      /* fail open */
+    }
+  },
 });
 
 export default CompactionMemoryPlugin;

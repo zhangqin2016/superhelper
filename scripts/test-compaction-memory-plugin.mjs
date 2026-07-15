@@ -70,5 +70,27 @@ const capped = await compact("ses_huge");
 assert.ok(capped.context.join("").length <= 1800 + 200, "injection stays within the budget ceiling");
 assert.ok(capped.context.length < huge.length, "not all oversized blocks are injected");
 
+// --- auto-continue is disabled: compaction must NOT spawn a synthetic "continue"
+// model turn (that generated spurious status-report/"task done" turns that
+// appeared on every reopen of a large session). Compaction still summarizes; it
+// just doesn't force a model turn. Lily owns continuation.
+const autocontinue = hooks["experimental.compaction.autocontinue"];
+assert.equal(typeof autocontinue, "function", "plugin registers the experimental.compaction.autocontinue hook");
+{
+  const out = { enabled: true };
+  await autocontinue({ sessionID: "ses_x", agent: "build" }, out);
+  assert.equal(out.enabled, false, "auto-continue is disabled by default — no spurious continue turn after compaction");
+}
+{
+  // kill switch re-enables the engine default
+  process.env.LILY_COMPACTION_AUTOCONTINUE = "1";
+  const out = { enabled: true };
+  await autocontinue({ sessionID: "ses_x" }, out);
+  assert.equal(out.enabled, true, "LILY_COMPACTION_AUTOCONTINUE=1 restores the engine default");
+  delete process.env.LILY_COMPACTION_AUTOCONTINUE;
+}
+// fail-open: bad output never throws
+await autocontinue({}, null);
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("compaction-memory-plugin: ok");
