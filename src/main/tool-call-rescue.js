@@ -39,7 +39,7 @@ const COOLDOWN_MS = 5_000;
 const lastRescueByKey = new Map();
 
 const CORRECTIVE_HINT = [
-  "[system correction] Your previous reply wrote a tool call as plain text (e.g. <tool_call> / <function=...> markup). That text is NOT executed — nothing happened.",
+  "[system correction] Your previous reply wrote a tool call as plain text — any tool-call markup in the text channel (e.g. <tool_call>, <function=...>, <invoke name=...>, <parameter ...>, or special-token forms like ｜｜…｜｜). That text is NOT executed — nothing happened.",
   "Retry now and follow these rules strictly:",
   "1. To use a tool, emit a NATIVE structured tool/function call through the tool-calling interface. Never write tool-call markup, XML, or raw JSON inside your text reply.",
   "2. Make one tool call at a time and wait for its result before the next step.",
@@ -47,7 +47,7 @@ const CORRECTIVE_HINT = [
 ].join("\n");
 
 const CORRECTIVE_HINT_ZH = [
-  "[系统纠正] 你上一条回复把工具调用写成了纯文本（例如 <tool_call> / <function=...> 标记）。这些文本不会被执行——什么都没有发生。",
+  "[系统纠正] 你上一条回复把工具调用写成了纯文本——任何在正文里出现的工具调用标记（例如 <tool_call>、<function=...>、<invoke name=...>、<parameter ...>，或 ｜｜…｜｜ 之类的特殊 token 形式）。这些文本不会被执行——什么都没有发生。",
   "现在重试，并严格遵守：",
   "1. 需要使用工具时，必须通过工具调用接口发起原生的结构化调用，绝不能在文本回复里写工具调用标记、XML 或 JSON。",
   "2. 一次只调用一个工具，等拿到结果再进行下一步。",
