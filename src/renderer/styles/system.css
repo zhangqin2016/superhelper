@@ -24,16 +24,31 @@
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
-/* Final disabled filled-button guard. This file loads after settings.css and
-   prevents primary setting buttons from falling back to a ghosted purple fill
-   when disabled. */
-.settings-action-btn--primary:disabled,
-.settings-action-btn--primary[aria-disabled="true"] {
-  border-color: var(--border-light);
-  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
-  color: var(--text-tertiary);
-  box-shadow: none;
-  opacity: 1;
+/* Final disabled-button guard. This file loads after settings.css and keeps
+   every settings action readable even when an older cached rule is present. */
+.settings-action-btn:disabled:not([data-busy="1"]),
+.settings-action-btn[aria-disabled="true"]:not([data-busy="1"]),
+.settings-action-btn--primary:disabled:not([data-busy="1"]),
+.settings-action-btn--primary[aria-disabled="true"]:not([data-busy="1"]) {
+  border-color: var(--border-light) !important;
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-elevated) 12%) !important;
+  color: var(--text-tertiary) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.workspace-app-card-actions .settings-action-btn:disabled:not([data-busy="1"]),
+.workspace-app-card-actions .settings-action-btn[aria-disabled="true"]:not([data-busy="1"]),
+.workspace-app-card-actions .settings-action-btn--primary:disabled:not([data-busy="1"]),
+.workspace-app-card-actions .settings-action-btn--primary[aria-disabled="true"]:not([data-busy="1"]),
+.workspace-app-card-actions .workspace-app-open:disabled:not([data-busy="1"]) {
+  border-color: var(--border-light) !important;
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-elevated) 12%) !important;
+  color: var(--text-tertiary) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 
 /* =========================================================================

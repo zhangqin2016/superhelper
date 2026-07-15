@@ -87,6 +87,20 @@ function registerNoopHandlers() {
           installedPath: "/Users/zhangqin/Lily Apps/anjaz/web-system-learning",
           requiredSkillPackages: ["lily-web-system-learning"],
         },
+        {
+          id: "uninstalled-workspace-create",
+          name: "合同审阅工作台",
+          latestVersion: "1.0.2",
+          category: "legal",
+          appType: "workspace",
+          riskLevel: "low",
+          sizeBytes: 4096,
+          summary: "创建一个用于合同审阅和归档的示范工作区。",
+          installed: false,
+          gated: true,
+          downloadUrl: "https://example.com/contract-review.zip",
+          requiredSkillPackages: [],
+        },
       ],
     },
   }));
@@ -205,7 +219,7 @@ app.whenReady().then(async () => {
   )()`);
   const workspaceButtonStyles = await win.webContents.executeJavaScript(`(
     () => {
-      const button = Array.from(document.querySelectorAll(".workspace-app-card-actions .settings-action-btn--primary"))
+      const button = Array.from(document.querySelectorAll(".workspace-app-card-actions .workspace-app-open"))
         .find((item) => item.textContent.trim() === "打开工作空间");
       if (!button) return null;
       const style = getComputedStyle(button);
@@ -224,6 +238,42 @@ app.whenReady().then(async () => {
         boxShadow: style.boxShadow,
       };
     }
+  )()`);
+  const workspaceCreateButtonStyles = await win.webContents.executeJavaScript(`(
+    () => {
+      const button = Array.from(document.querySelectorAll(".workspace-app-card-actions .workspace-app-download"))
+        .find((item) => ["创建工作空间", "Create workspace"].includes(item.textContent.trim()));
+      if (!button) return null;
+      const style = getComputedStyle(button);
+      return {
+        text: button.textContent.trim(),
+        disabled: button.disabled,
+        className: button.className,
+        borderColor: style.borderColor,
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        color: style.color,
+        opacity: style.opacity,
+        outlineColor: style.outlineColor,
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+        boxShadow: style.boxShadow,
+      };
+    }
+  )()`);
+  const settingsPrimaryButtonStyles = await win.webContents.executeJavaScript(`(
+    () => Array.from(document.querySelectorAll(".settings-action-btn--primary")).map((button) => {
+      const style = getComputedStyle(button);
+      return {
+        id: button.id || "",
+        text: button.textContent.trim(),
+        disabled: button.disabled,
+        color: style.color,
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        opacity: style.opacity,
+      };
+    })
   )()`);
   const appsShot = await win.webContents.capturePage();
   const appsPath = writePng("settings-apps.png", appsShot);
@@ -265,7 +315,7 @@ app.whenReady().then(async () => {
   const mobileShot = await win.webContents.capturePage();
   const mobilePath = writePng("mobile-settings.png", mobileShot);
 
-  console.log(JSON.stringify({ mainPath, settingsPath, appsPath, mobilePath, workspaceButtonStyles, mobilePairButtonStyles }, null, 2));
+  console.log(JSON.stringify({ mainPath, settingsPath, appsPath, mobilePath, workspaceButtonStyles, workspaceCreateButtonStyles, settingsPrimaryButtonStyles, mobilePairButtonStyles }, null, 2));
   await win.close();
   app.quit();
 }).catch((err) => {

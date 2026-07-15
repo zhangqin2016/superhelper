@@ -16,7 +16,7 @@ const stylesEntryText = fs.readFileSync(stylesEntry, "utf8");
 if (!/@import\s+"\.\/styles\/ui-primitives\.css(?:\?[^"]+)?";/.test(stylesEntryText)) {
   throw new Error("styles.css must import ui-primitives.css");
 }
-if (!/@import\s+"\.\/styles\/settings\.css\?v=20260713-light-theme";/.test(stylesEntryText)) {
+if (!/@import\s+"\.\/styles\/settings\.css\?v=20260715-workspace-button";/.test(stylesEntryText)) {
   throw new Error("styles.css must cache-bust settings.css for the light theme button refresh");
 }
 
@@ -73,11 +73,17 @@ if (!primitiveText.includes(".dialog-btn")) {
   }
 }
 
-// Disabled FILLED buttons must go neutral, not opacity-ghost the accent fill:
-// a washed-out purple gradient reads as a rendering bug (the disabled
-// "打开工作空间" case), not as "unavailable".
+// Disabled buttons must go neutral, and settings primary actions must remain
+// readable outline controls rather than reintroducing white text on a fill.
 {
   const settingsCss = fs.readFileSync(settingsPath, "utf8");
+  const genericDisabled = settingsCss.match(/\.settings-action-btn:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
+  if (/opacity:\s*0?\.\d/.test(genericDisabled)) {
+    throw new Error("settings-action-btn:disabled must not use opacity ghosting; it must use a neutral fill and readable text");
+  }
+  if (!genericDisabled.includes("color: var(--text-tertiary)") || !genericDisabled.includes("opacity: 1")) {
+    throw new Error("settings-action-btn:disabled must use readable neutral text at full opacity");
+  }
   const primaryDisabled = settingsCss.match(/\.settings-action-btn--primary:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
   if (!primaryDisabled.includes("opacity: 1")) {
     throw new Error("settings-action-btn--primary:disabled must override the 0.45 opacity ghosting with a neutral fill");
@@ -88,13 +94,48 @@ if (!primitiveText.includes(".dialog-btn")) {
   if (settingsCss.indexOf(".settings-action-btn--primary:disabled") < settingsCss.indexOf(".settings-action-btn--primary {")) {
     throw new Error("settings-action-btn--primary:disabled must be declared after the primary fill so it wins the cascade");
   }
+  const primaryStyle = settingsCss.match(/\.settings-action-btn--primary\s*\{[^}]*\}/s)?.[0] || "";
+  if (
+    !primaryStyle.includes("background: color-mix(in srgb, var(--accent) 10%, var(--bg-input))") ||
+    !primaryStyle.includes("color: var(--accent)") ||
+    primaryStyle.includes("var(--text-inverse)") ||
+    primaryStyle.includes("linear-gradient")
+  ) {
+    throw new Error("settings-action-btn--primary must use the readable outline treatment globally; filled white text is not allowed");
+  }
+  const primaryHover = settingsCss.match(/\.settings-action-btn--primary:hover[^}]*\{[^}]*\}/s)?.[0] || "";
+  if (!primaryHover.includes("color: var(--accent)")) {
+    throw new Error("settings-action-btn--primary hover state must keep readable accent text");
+  }
   const workspacePrimaryDisabled = settingsCss.match(/\.workspace-app-card-actions\s+\.settings-action-btn--primary:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
   if (!workspacePrimaryDisabled.includes("border-color: var(--border-light)")) {
     throw new Error("disabled workspace app primary actions must use a neutral border");
   }
+  const workspaceOpenDisabled = settingsCss.match(/\.workspace-app-open:disabled,\s*\.workspace-app-download:disabled:not\(\[data-busy="1"\]\)\s*\{[^}]*\}/s)?.[0] || "";
+  if (
+    !workspaceOpenDisabled.includes("opacity: 1") ||
+    !workspaceOpenDisabled.includes("border-color: var(--border-light)") ||
+    !workspaceOpenDisabled.includes("color: var(--text-tertiary)")
+  ) {
+    throw new Error("disabled workspace app open buttons must render as neutral buttons, not ghosted primary buttons");
+  }
   const finalPrimaryDisabled = systemText.match(/\.settings-action-btn--primary:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
-  if (!finalPrimaryDisabled.includes("opacity: 1") || !finalPrimaryDisabled.includes("border-color: var(--border-light)")) {
-    throw new Error("system.css must final-override disabled primary setting buttons to neutral after all imports");
+  if (
+    !finalPrimaryDisabled.includes(":not([data-busy=\"1\"])") ||
+    !finalPrimaryDisabled.includes("color: var(--text-tertiary) !important") ||
+    !finalPrimaryDisabled.includes("opacity: 1 !important") ||
+    !finalPrimaryDisabled.includes("border-color: var(--border-light) !important")
+  ) {
+    throw new Error("system.css must final-override disabled primary setting buttons to neutral after all imports while preserving busy buttons");
+  }
+  const finalWorkspaceOpenDisabled = systemText.match(/\.workspace-app-card-actions\s+\.settings-action-btn:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
+  if (
+    !finalWorkspaceOpenDisabled.includes(".workspace-app-card-actions .workspace-app-open:disabled:not([data-busy=\"1\"])") ||
+    !finalWorkspaceOpenDisabled.includes("color: var(--text-tertiary) !important") ||
+    !finalWorkspaceOpenDisabled.includes("opacity: 1 !important") ||
+    !finalWorkspaceOpenDisabled.includes("border-color: var(--border-light) !important")
+  ) {
+    throw new Error("system.css must final-override disabled workspace app open buttons after cached settings CSS");
   }
   const dialogPrimaryDisabled = primitiveText.match(/\.dialog-btn--primary:disabled\s*\{[^}]*\}/s)?.[0] || "";
   if (!dialogPrimaryDisabled.includes("opacity: 1")) {
@@ -103,6 +144,27 @@ if (!primitiveText.includes(".dialog-btn")) {
   const sendDisabled = composerText.match(/\.send-btn:disabled\s*\{[^}]*\}/s)?.[0] || "";
   if (/opacity:\s*0?\.\d/.test(sendDisabled)) {
     throw new Error("send-btn:disabled must use a neutral fill, not opacity ghosting");
+  }
+}
+
+{
+  const workspaceAppsText = fs.readFileSync(path.join(root, "src/renderer/modules/workspace-apps.js"), "utf8");
+  if (workspaceAppsText.includes('app.installedAvailable ? "settings-action-btn--primary" : ""')) {
+    throw new Error("workspace app open button must not use primary styling; primary creates fragile white text on light backgrounds");
+  }
+  if (/workspace-app-download[^\n"]*settings-action-btn--primary|settings-action-btn--primary[^\n"]*workspace-app-download/.test(workspaceAppsText)) {
+    throw new Error("workspace app create/update buttons must not use primary styling; use the dedicated outline style instead");
+  }
+  if (!workspaceAppsText.includes("workspace-app-open")) {
+    throw new Error("workspace app open button must carry a stable class for its disabled neutral style");
+  }
+  const workspaceAppActionStyle = settingsText.match(/\.workspace-app-open,\s*\.workspace-app-download\s*\{[^}]*\}/s)?.[0] || "";
+  if (!workspaceAppActionStyle.includes("color: var(--accent)") || !workspaceAppActionStyle.includes("font-weight: 650")) {
+    throw new Error("workspace app primary row actions must share the dedicated readable outline style");
+  }
+  const mediaSaveStyle = settingsText.match(/\.media-save-btn\s*\{[^}]*\}/s)?.[0] || "";
+  if (mediaSaveStyle.includes("var(--text-inverse)") || mediaSaveStyle.includes("linear-gradient")) {
+    throw new Error("media save action must follow the global readable outline treatment instead of reintroducing white text");
   }
 }
 

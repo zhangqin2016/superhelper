@@ -652,9 +652,15 @@
   color: var(--danger-text-soft);
 }
 
-.settings-action-btn:disabled {
-  opacity: 0.45;
+.settings-action-btn:disabled,
+.settings-action-btn[aria-disabled="true"] {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-elevated) 12%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
   cursor: not-allowed;
+  transform: none;
 }
 
 .settings-actions {
@@ -703,25 +709,23 @@
 
 .settings-action-btn--primary {
   border-color: var(--accent-border);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white 18%), var(--accent));
-  color: var(--text-inverse);
-  font-weight: 600;
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 22%, transparent), var(--top-highlight);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-input));
+  color: var(--accent);
+  font-weight: 650;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 10%, transparent), var(--top-highlight);
 }
 
 .settings-action-btn--primary:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--text-inverse);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-input));
+  color: var(--accent);
 }
 
-/* Disabled FILLED buttons go neutral instead of ghosting the accent fill:
-   an accent gradient at 45% opacity reads as a broken washed-out outline
-   (the disabled "打开工作空间" case), not as "unavailable". Keep this AFTER
-   .settings-action-btn--primary so it wins the cascade. */
-.settings-action-btn--primary:disabled,
-.settings-action-btn--primary[aria-disabled="true"] {
+/* Disabled primary actions go neutral instead of pretending to be clickable. */
+.settings-action-btn--primary:disabled:not([data-busy="1"]),
+.settings-action-btn--primary[aria-disabled="true"]:not([data-busy="1"]) {
   border-color: var(--border-light);
-  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-elevated) 12%);
   color: var(--text-tertiary);
   box-shadow: none;
   opacity: 1;
@@ -1518,6 +1522,30 @@
 .workspace-app-card-actions .settings-action-btn--primary[aria-disabled="true"] {
   border-color: var(--border-light);
   background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.workspace-app-open,
+.workspace-app-download {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border-light) 56%);
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--accent-subtle) 12%);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.workspace-app-open:hover:not(:disabled),
+.workspace-app-download:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--bg-input) 78%, var(--accent-subtle) 22%);
+  color: var(--accent);
+}
+
+.workspace-app-open:disabled,
+.workspace-app-download:disabled:not([data-busy="1"]) {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-elevated) 12%);
   color: var(--text-tertiary);
   box-shadow: none;
   opacity: 1;
@@ -2449,14 +2477,16 @@ body.settings-open {
   min-height: 42px;
   border: 1px solid var(--accent-border);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 84%, white 16%), var(--accent));
-  color: var(--text-inverse);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-input));
+  color: var(--accent);
   font-weight: 700;
-  box-shadow: 0 12px 26px color-mix(in srgb, var(--accent) 22%, transparent), var(--top-highlight);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 10%, transparent), var(--top-highlight);
 }
 
 .media-save-btn:hover {
-  filter: brightness(0.98);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-input));
+  color: var(--accent);
 }
 
 /* Mobile Command pairing panel */

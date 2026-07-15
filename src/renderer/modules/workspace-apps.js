@@ -139,14 +139,13 @@ function renderAppCard(app) {
   if (app.installed && !app.updateAvailable) {
     const open = document.createElement("button");
     open.type = "button";
-    open.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact";
+    open.className = "settings-action-btn settings-action-btn--compact workspace-app-open";
     open.textContent = t("apps.openInstalled");
     open.disabled = !app.installedAvailable;
     open.addEventListener("click", () => void openInstalledWorkspaceApp(app, open));
     actions.append(open);
 
-    // One primary per action row: opening the installed workspace is the main
-    // action; creating another instance is secondary.
+    // Keep the main workspace action first; secondary actions follow it.
     const createAnother = document.createElement("button");
     createAnother.type = "button";
     createAnother.className = "settings-action-btn settings-action-btn--compact";
@@ -186,7 +185,7 @@ function renderAppCard(app) {
 
     const download = document.createElement("button");
     download.type = "button";
-    download.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact workspace-app-download";
+    download.className = "settings-action-btn settings-action-btn--compact workspace-app-download";
     download.textContent = app.installed && app.updateAvailable ? t("apps.upgrade") : t("apps.install");
     // Gated apps carry no inline downloadUrl (resolved via the signed endpoint at
     // install time), so they must stay clickable — only disable when there is no
