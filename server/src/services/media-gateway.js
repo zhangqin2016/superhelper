@@ -195,6 +195,40 @@ async function handleVision(request, reply) {
   return forwardJson(reply, upstream);
 }
 
+// Semantic memory recall for managed (gateway-mode) clients. They reuse the
+// vision base+token already in their DASHSCOPE_BASE_URL/DASHSCOPE_API_KEY slots
+// (client posts {DASHSCOPE_BASE_URL}/embeddings → /llm/vision/embeddings), so the
+// same server-side DashScope key (compatible-mode, supports text-embedding-v3)
+// serves embeddings with no extra credential delivery.
+async function handleVisionEmbeddings(request, reply) {
+  if (!config.modelGatewayEnabled) {
+    return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
+  }
+  const token = verifyModelGatewayToken(bearerToken(request), "vision");
+  if (!token.ok) {
+    return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
+  }
+  const { apiKey, baseUrl } = resolveCredential("vision", config.dashscopeApiKey, config.visionUpstreamBaseUrl);
+  if (!apiKey) {
+    return reply.code(503).send({ error: { type: "configuration_error", message: "vision key not configured" } });
+  }
+  const url = `${baseUrl.replace(/\/+$/, "")}/embeddings`;
+  let upstream;
+  try {
+    upstream = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request.body && typeof request.body === "object" ? request.body : {}),
+    });
+  } catch (error) {
+    return reply.code(502).send({ error: { type: "upstream_error", message: String(error?.message || error) } });
+  }
+  return forwardJson(reply, upstream);
+}
+
 async function handleSearch(request, reply) {
   if (!config.modelGatewayEnabled) {
     return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
@@ -560,6 +594,18 @@ export async function mediaGatewayRoutes(app) {
       },
     },
     handleVision,
+  );
+  app.post(
+    "/llm/vision/embeddings",
+    {
+      schema: {
+        tags: ["gateway:media"],
+        summary: "Proxy a vision-key embeddings request",
+        description:
+          "Injects the server-side vision (DashScope compatible-mode) key and forwards the OpenAI-compatible /embeddings body upstream. Powers semantic memory recall for managed clients, reusing the vision token.",
+      },
+    },
+    handleVisionEmbeddings,
   );
   app.post(
     "/llm/search",

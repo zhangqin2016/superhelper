@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 process.env.MODEL_GATEWAY_ENABLED = "true";
 process.env.MODEL_GATEWAY_TOKEN_SECRET = "test-media-gateway-secret";
 process.env.DASHSCOPE_API_KEY = "dashscope-secret";
+process.env.VISION_UPSTREAM_BASE_URL = "https://vision-compatible.test.local/compatible-mode/v1";
 process.env.DASHSCOPE_MEDIA_BASE_URL = "https://dashscope-media.test.local/api/v1";
 process.env.VOLCENGINE_API_KEY = "volc-secret";
 process.env.VOLCENGINE_BASE_URL = "https://ark.test.local/api/v3";
@@ -110,6 +111,17 @@ const captures = [];
 globalThis.fetch = async (url, init) => {
   captured = { url, init };
   captures.push(captured);
+  if (String(url).endsWith("/embeddings")) {
+    return {
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify({
+        object: "list",
+        model: JSON.parse(init.body).model,
+        data: [{ object: "embedding", index: 0, embedding: [0.1, 0.2, 0.3] }],
+      }),
+    };
+  }
   if (url === "http://127.0.0.1:18012/generate") {
     return {
       status: 200,
@@ -252,6 +264,39 @@ try {
   assert.equal(dashscopeReply._code, 200);
   assert.equal(captured.url, "https://dashscope-media.test.local/api/v1/services/audio/tts/SpeechSynthesizer");
   assert.equal(captured.init.headers.Authorization, "Bearer vision-secret");
+
+  // Vision-key embeddings relay: managed semantic memory recall reuses the vision
+  // token + server-side DashScope key, forwarding to the compatible-mode
+  // /embeddings endpoint. Wrong-provider tokens are rejected.
+  assert.ok(routes["POST /llm/vision/embeddings"], "vision embeddings relay must be registered");
+  const embedReply = fakeReply();
+  await routes["POST /llm/vision/embeddings"](
+    {
+      method: "POST",
+      url: "/llm/vision/embeddings",
+      headers: { authorization: `Bearer ${dashscopeToken}` },
+      body: { model: "text-embedding-v3", input: ["数据库连不上", "postgres refused"] },
+    },
+    embedReply,
+  );
+  assert.equal(embedReply._code, 200, "valid vision token should proxy embeddings");
+  assert.equal(captured.url, "https://vision-compatible.test.local/compatible-mode/v1/embeddings", "embeddings forwards to the vision compatible-mode /embeddings");
+  assert.equal(captured.init.headers.Authorization, "Bearer vision-secret", "server injects the real server-side vision/DashScope key, never the client token");
+  assert.equal(JSON.parse(captured.init.body).model, "text-embedding-v3", "client embedding model passes through");
+  assert.deepEqual(JSON.parse(embedReply._sent).data[0].embedding, [0.1, 0.2, 0.3]);
+
+  const wrongEmbedToken = signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId, providerId: "volcengine-media" });
+  const wrongEmbedReply = fakeReply();
+  await routes["POST /llm/vision/embeddings"](
+    {
+      method: "POST",
+      url: "/llm/vision/embeddings",
+      headers: { authorization: `Bearer ${wrongEmbedToken}` },
+      body: { model: "text-embedding-v3", input: ["x"] },
+    },
+    wrongEmbedReply,
+  );
+  assert.equal(wrongEmbedReply._code, 401, "token bound to a non-vision provider must be rejected");
 
   // Kling proxy: server must mint a JWT (iss=AccessKey, signed with SecretKey),
   // never forward the raw token.
