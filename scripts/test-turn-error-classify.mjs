@@ -193,6 +193,19 @@ assert(!ec.looksLikeLeakedToolCallText("Please set the timeout parameter to 1000
   assert(classified?.code === "MALFORMED_TOOL_CALL_TEXT", "a leaked <tool_calls>/<invoke> blob is a protocol failure, not a finished answer");
 }
 assert(!ec.looksLikeLeakedToolCallText("先 invoke 这个 API,再设置 parameter"), "prose mentioning invoke/parameter without tags is not flagged");
+// Real field case (screenshot): DeepSeek/DSML control tokens leaking as text — the
+// tag name is NOT right after `<` (a `｜｜DSML｜｜` full-width delimiter sits between),
+// which defeated the earlier tag-name markers. Must flag on sight.
+{
+  const dsmlLeak =
+    '先验证一下当前数据文件。<｜｜DSML｜｜tool_calls> <｜｜DSML｜｜invoke name="bash"> ' +
+    '<｜｜DSML｜｜parameter name="command" string="true">python3 << \'PYEOF\'\nimport json, os\nwd = "/Users/zhangqin/points"\n' +
+    "x = 1\n".repeat(40) +
+    'PYEOF</｜｜DSML｜｜parameter> <｜｜DSML｜｜parameter name="timeout" string="false">15000</｜｜DSML｜｜parameter> </｜｜DSML｜｜invoke> </｜｜DSML｜｜tool_calls>';
+  assert(ec.looksLikeLeakedToolCallText(dsmlLeak), "detects DSML/full-width-｜ control tokens even with the delimiter between < and the tag name");
+  const c = ec.classifyTurnFailure({ code: 0 }, { text: dsmlLeak }, {});
+  assert(c?.code === "MALFORMED_TOOL_CALL_TEXT", "a leaked DSML tool-call blob classifies as a protocol failure, not a finished answer");
+}
 
 const toolState = {
   tools: new Map([

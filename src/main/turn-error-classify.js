@@ -19,6 +19,14 @@ function compactFailureDetail(raw) {
 function looksLikeLeakedToolCallText(value) {
   const text = String(value || "").trim();
   if (!text) return false;
+  // Model tool-call CONTROL TOKENS leaking as text. These use special delimiters
+  // that never occur in real prose: a DSML marker and/or full-width ｜ (U+FF5C) /
+  // ▁ bars, e.g. `<｜｜DSML｜｜tool_calls>` / `<｜｜DSML｜｜invoke name="bash">` /
+  // `<｜｜DSML｜｜parameter …>`. The tag name is NOT right after `<` here (the
+  // delimiter sits in between), so the tag-name markers below miss it — flag on
+  // sight instead. Any occurrence is unambiguously a leak.
+  if (/[｜|▁]{1,3}\s*DSML\s*[｜|▁]{1,3}/i.test(text)) return true;
+  if (/<\s*[｜｜|▁]{1,3}[^<>]{0,48}\b(?:tool_calls?|invoke|parameter|function)\b/i.test(text)) return true;
   const compact = text.replace(/\s+/g, " ");
   const markers = [
     // tool_call AND tool_calls (plural); the old `tool_call\b` missed the plural
