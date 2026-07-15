@@ -122,6 +122,7 @@ export default function MobilePairPage() {
   const [listeningVoice, setListeningVoice] = useState(false);
   const [toast, setToast] = useState("");
   const recognitionRef = useRef(null);
+  const asrRef = useRef(null); // server-ASR session { stream, ctx, processor, sessionId, base, token, abort, stopped }
   const toastTimerRef = useRef(null);
   const wsRef = useRef(null);
   const grantRef = useRef({ url: "", grantId: "" });
@@ -248,7 +249,7 @@ export default function MobilePairPage() {
         : `配对失败：${code}`);
       return;
     }
-    grantRef.current = { url, grantId: r.json.grantId };
+    grantRef.current = { url, grantId: r.json.grantId, mobileToken: r.json.mobileToken };
     setStatus("waiting");
     setMessage("已提交配对请求，请在桌面上点击“批准”…");
     connectRelay(url, r.json.grantId, r.json.mobileToken);
@@ -278,7 +279,7 @@ export default function MobilePairPage() {
       );
       return;
     }
-    grantRef.current = { url, grantId: r.json.grantId };
+    grantRef.current = { url, grantId: r.json.grantId, mobileToken: r.json.mobileToken };
     setStatus("waiting");
     setMessage("已连接授权，正在建立通道…");
     // Grant is already active (no approval) → the relay accepts immediately.
@@ -353,63 +354,121 @@ export default function MobilePairPage() {
     toastTimerRef.current = setTimeout(() => setToast(""), 3500);
   }, []);
 
-  // Voice: a clear tap-to-start / tap-to-stop toggle with visible feedback.
-  // Browser SpeechRecognition is on-device + free but unsupported on some
-  // mobile browsers (notably iOS Safari) — when missing, say so plainly instead
-  // of failing silently.
-  const toggleVoice = useCallback(() => {
-    // Already listening → stop.
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch { /* noop */ }
-      recognitionRef.current = null;
-      setListeningVoice(false);
-      return;
-    }
-    const SpeechRecognition = typeof window !== "undefined"
-      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
-      : null;
-    if (!SpeechRecognition) {
-      flash("此浏览器不支持语音输入，请用 Chrome 打开，或直接输入文字");
-      return;
-    }
+  const appendTranscript = useCallback((text) => {
+    const t = String(text || "").trim();
+    if (t) setTask((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${t}`);
+  }, []);
+
+  // Fallback: on-device browser dictation (free, but unsupported on iOS Safari).
+  const startBrowserSr = useCallback(() => {
+    const SpeechRecognition = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+    if (!SpeechRecognition) { flash("此浏览器不支持语音输入，请用 Chrome 打开，或直接输入文字"); return; }
     let recognition;
-    try {
-      recognition = new SpeechRecognition();
-    } catch {
-      flash("语音输入启动失败，请直接输入文字");
-      return;
-    }
-    recognition.lang = "zh-CN";
-    recognition.interimResults = true;
-    recognition.continuous = true;
+    try { recognition = new SpeechRecognition(); } catch { flash("语音输入启动失败，请直接输入文字"); return; }
+    recognition.lang = "zh-CN"; recognition.interimResults = true; recognition.continuous = true;
     recognition.onresult = (event) => {
       let text = "";
-      for (let i = event.resultIndex || 0; i < event.results.length; i += 1) {
-        if (event.results[i]?.isFinal) text += event.results[i]?.[0]?.transcript || "";
-      }
-      if (text.trim()) setTask((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${text.trim()}`);
+      for (let i = event.resultIndex || 0; i < event.results.length; i += 1) if (event.results[i]?.isFinal) text += event.results[i]?.[0]?.transcript || "";
+      appendTranscript(text);
     };
     recognition.onerror = (e) => {
-      const code = e?.error || "";
-      recognitionRef.current = null;
-      setListeningVoice(false);
+      const code = e?.error || ""; recognitionRef.current = null; setListeningVoice(false);
       if (code === "not-allowed" || code === "service-not-allowed") flash("麦克风被拒绝：请在浏览器里允许麦克风权限");
       else if (code === "no-speech") flash("没听到声音，请再试一次");
-      else if (code === "aborted") { /* user stopped; no toast */ }
-      else flash(`语音输入出错：${code || "未知"}`);
+      else if (code !== "aborted") flash(`语音输入出错：${code || "未知"}`);
     };
     recognition.onend = () => { recognitionRef.current = null; setListeningVoice(false); };
+    try { recognition.start(); recognitionRef.current = recognition; setListeningVoice(true); flash("🎙 正在聆听，说完点一下麦克风停止"); }
+    catch { recognitionRef.current = null; setListeningVoice(false); flash("语音输入启动失败，请直接输入文字"); }
+  }, [flash, appendTranscript]);
+
+  const stopServerAsr = useCallback(() => {
+    const a = asrRef.current; asrRef.current = null;
+    if (!a) return;
+    a.stopped = true;
+    try { a.processor.disconnect(); } catch { /* noop */ }
+    try { a.source.disconnect(); } catch { /* noop */ }
+    try { a.ctx.close(); } catch { /* noop */ }
+    try { a.stream.getTracks().forEach((t) => t.stop()); } catch { /* noop */ }
+    try { a.abort.abort(); } catch { /* noop */ }
+    if (a.sessionId) fetch(`${a.base}/llm/asr/sessions/${a.sessionId}/finish`, { method: "POST", headers: { Authorization: `Bearer ${a.token}` } }).catch(() => {});
+    setListeningVoice(false);
+  }, []);
+
+  // Preferred: server ASR (works cross-platform incl. iOS). Returns true if it
+  // took over the mic (success OR an error we've already surfaced) — false means
+  // "not available, try browser dictation".
+  const startServerAsr = useCallback(async () => {
+    const g = grantRef.current;
+    if (!g?.url || !g?.grantId || !g?.mobileToken) return false;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return false;
+    const AC = typeof window !== "undefined" ? (window.AudioContext || window.webkitAudioContext) : null;
+    if (!AC) return false;
+    let asrToken = "";
     try {
-      recognition.start();
-      recognitionRef.current = recognition;
-      setListeningVoice(true);
-      flash("🎙 正在聆听，说完点一下麦克风停止");
-    } catch {
-      recognitionRef.current = null;
-      setListeningVoice(false);
-      flash("语音输入启动失败，请直接输入文字");
-    }
-  }, [flash]);
+      const r = await post(g.url, "/api/mobile/asr/token", { deviceId, grantId: g.grantId, token: g.mobileToken });
+      if (!r.ok || !r.json?.asrToken) return false; // not authorized → let browser SR try
+      asrToken = r.json.asrToken;
+    } catch { return false; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }); }
+    catch { flash("麦克风被拒绝：请在浏览器里允许麦克风权限"); return true; }
+    let sessionId = "";
+    try {
+      const res = await fetch(`${g.url}/llm/asr/sessions`, { method: "POST", headers: { Authorization: `Bearer ${asrToken}`, "Content-Type": "application/json" }, body: "{}" });
+      const j = await res.json().catch(() => ({}));
+      sessionId = j.sessionId || j.id || "";
+      if (!res.ok || !sessionId) { stream.getTracks().forEach((t) => t.stop()); flash("语音服务暂不可用，改用浏览器听写"); return false; }
+    } catch { stream.getTracks().forEach((t) => t.stop()); return false; }
+    const ctx = new AC();
+    const source = ctx.createMediaStreamSource(stream);
+    const processor = ctx.createScriptProcessor(4096, 1, 1);
+    const abort = new AbortController();
+    const st = { stream, ctx, source, processor, sessionId, base: g.url, token: asrToken, abort, stopped: false };
+    asrRef.current = st;
+    const outRate = 16000;
+    processor.onaudioprocess = (ev) => {
+      if (st.stopped) return;
+      const input = ev.inputBuffer.getChannelData(0);
+      const ratio = ctx.sampleRate / outRate; // resample (iOS ignores the 16k hint)
+      const outLen = Math.max(0, Math.floor(input.length / ratio));
+      const pcm = new Int16Array(outLen);
+      for (let i = 0; i < outLen; i += 1) { const s = Math.max(-1, Math.min(1, input[Math.floor(i * ratio)] || 0)); pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+      let bin = ""; const bytes = new Uint8Array(pcm.buffer);
+      for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+      fetch(`${st.base}/llm/asr/sessions/${st.sessionId}/audio`, { method: "POST", headers: { Authorization: `Bearer ${st.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ audio: btoa(bin) }) }).catch(() => {});
+    };
+    source.connect(processor); processor.connect(ctx.destination);
+    setListeningVoice(true);
+    flash("🎙 正在聆听(服务器识别)…点麦克风停止");
+    (async () => {
+      try {
+        const res = await fetch(`${st.base}/llm/asr/sessions/${st.sessionId}/events`, { headers: { Authorization: `Bearer ${st.token}` }, signal: abort.signal });
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+        while (!st.stopped) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n"); buf = parts.pop() || "";
+          for (const part of parts) {
+            const line = part.split("\n").find((l) => l.startsWith("data:"));
+            if (!line) continue;
+            try { const evt = JSON.parse(line.slice(5).trim()); if (evt.kind === "final" && evt.transcript) appendTranscript(evt.transcript); }
+            catch { /* ignore keepalive / partial parses */ }
+          }
+        }
+      } catch { /* aborted or stream ended */ }
+    })();
+    return true;
+  }, [deviceId, post, flash, appendTranscript]);
+
+  const toggleVoice = useCallback(() => {
+    if (asrRef.current) { stopServerAsr(); return; }
+    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch { /* noop */ } recognitionRef.current = null; setListeningVoice(false); return; }
+    (async () => {
+      const tookOver = await startServerAsr();
+      if (!tookOver) startBrowserSr();
+    })();
+  }, [startServerAsr, stopServerAsr, startBrowserSr]);
 
   const sendTask = useCallback(() => {
     const ws = wsRef.current;

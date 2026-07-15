@@ -7,8 +7,9 @@ import {
   validLicenseScope,
 } from "../../services/device-identity.js";
 import { requireAccountSession } from "../../services/account-session-guard.js";
-import { createGrantToken } from "../../services/mobile-grant-token.js";
+import { createGrantToken, verifyGrantToken } from "../../services/mobile-grant-token.js";
 import { createDirectCode, consumeDirectCode } from "../../services/mobile-direct-connect.js";
+import { signModelGatewayToken } from "../../services/model-gateway/auth.js";
 import {
   createPairingChallenge,
   consumePairingChallenge,
@@ -42,6 +43,7 @@ const grantDecisionSchema = z.object({ ...deviceBase, grantId: z.string().min(6)
 const revokeSchema = z.object({ ...deviceBase, grantId: z.string().min(6).max(120), reason: z.string().max(40).optional() });
 const directCreateSchema = z.object({ ...deviceBase });
 const directConsumeSchema = z.object({ ...deviceBase, code: z.string().min(4).max(40), password: z.string().min(3).max(40) });
+const asrTokenSchema = z.object({ ...deviceBase, grantId: z.string().min(6).max(120), token: z.string().min(10).max(400) });
 
 export function registerPublicMobileRoutes(app) {
   // Both guards: the device signature proves key possession, the account token
@@ -320,6 +322,36 @@ export function registerPublicMobileRoutes(app) {
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
       return reply.send({ ok: true, grantId: result.grantId, mobileToken: result.mobileToken, desktopDeviceId: result.desktopDeviceId });
+    },
+  );
+
+  // Mobile ASR token: a paired phone (grant token) exchanges it for a short
+  // "vision"-scoped model-gateway token so it can use the server ASR relay
+  // (/llm/asr/*) for dictation. Scoped to the desktop's license + the vision
+  // provider only — strictly less power than the command control the phone
+  // already holds.
+  app.post(
+    "/api/mobile/asr/token",
+    { schema: { tags: ["public:mobile"], summary: "Paired phone gets a vision-scoped token for server ASR", body: zodBody(asrTokenSchema), response: { 200: okResponse({ asrToken: { type: "string" } }) } } },
+    async (request, reply) => {
+      const input = asrTokenSchema.parse(request.body);
+      if (!(await deviceOnly(request, reply, input))) return;
+      const v = verifyGrantToken(input.token);
+      if (!v.ok) return reply.code(401).send({ ok: false, code: v.code || "GRANT_TOKEN_INVALID" });
+      if (v.grantId !== input.grantId || v.mobileDeviceId !== input.deviceId) {
+        return reply.code(403).send({ ok: false, code: "GRANT_MISMATCH" });
+      }
+      const grant = await db.selectFrom("mobile_pairing_grants").selectAll()
+        .where("id", "=", input.grantId).where("status", "=", "active").executeTakeFirst();
+      if (!grant) return reply.code(409).send({ ok: false, code: "GRANT_INACTIVE" });
+      if (grant.mobile_device_id !== input.deviceId) return reply.code(403).send({ ok: false, code: "DEVICE_MISMATCH" });
+      const asrToken = signModelGatewayToken({
+        deviceId: input.deviceId,
+        licenseId: grant.license_id,
+        providerId: "vision",
+        userId: grant.user_id,
+      });
+      return reply.send({ ok: true, asrToken });
     },
   );
 

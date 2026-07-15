@@ -266,6 +266,14 @@ try {
   assert.equal(directReady.role, "mobile", "direct-connected phone joins the relay without approval");
   try { directWs.close(); } catch { /* noop */ }
 
+  // --- 11. Mobile ASR token: the grant token buys a vision-scoped gateway
+  // token for server dictation. Wrong grant/device is refused. ---
+  const asrOk = await app.inject({ method: "POST", url: "/api/mobile/asr/token", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: directToken } });
+  assert.equal(asrOk.statusCode, 200, `asr token ok: ${asrOk.body}`);
+  assert.ok(asrOk.json().asrToken, "returns a vision-scoped ASR token");
+  const asrBadDevice = await app.inject({ method: "POST", url: "/api/mobile/asr/token", payload: { deviceId: "dev_other_xxxx", grantId: directGrant, token: directToken } });
+  assert.equal(asrBadDevice.statusCode, 403, "a mismatched device is refused an ASR token");
+
   console.log("mobile-command-e2e: ok");
 } finally {
   try { await app?.close(); } catch { /* noop */ }

@@ -14,10 +14,12 @@ const page = fs.readFileSync(path.join(ROOT, "web/app/m/pair/page.js"), "utf8");
 
 assert.match(page, /^"use client";/, "the pairing page is a client component");
 
-// NO login: the phone must not call any auth/SMS endpoints or hold a bearer.
+// NO login: the phone must not call any auth/SMS endpoints or hold an account
+// token. (It MAY carry a scoped, grant-derived ASR gateway token — that's not an
+// account credential.)
 assert.doesNotMatch(page, /\/api\/auth\/sms\//, "the phone does not send/verify SMS codes");
 assert.doesNotMatch(page, /accessToken/, "the phone holds no account access token");
-assert.doesNotMatch(page, /Authorization/, "the phone sends no bearer");
+assert.doesNotMatch(page, /\/api\/account\//, "the phone calls no account endpoints");
 
 // Pairing: consume with just a device id + one-time token, get a grant token.
 assert.match(page, /\/api\/mobile\/pairing\/consume/, "consumes the pairing challenge");
@@ -82,8 +84,13 @@ assert.match(page, /lilySessionId: selectedSessionId/, "commands target the mobi
 // Browser dictation: speech-to-text is a mobile input convenience, distinct
 // from gated production/native voice control.
 assert.match(page, /SpeechRecognition/, "checks for browser speech recognition support");
-assert.match(page, /toggleVoice/, "has a browser voice dictation toggle (start/stop)");
+assert.match(page, /toggleVoice/, "has a voice dictation toggle (start/stop)");
 assert.match(page, /此浏览器不支持语音输入/, "says so plainly (visible toast) when browser dictation is unavailable");
+// Prefer server ASR (cross-platform incl. iOS), fall back to browser dictation.
+assert.match(page, /\/api\/mobile\/asr\/token/, "fetches a scoped server-ASR token");
+assert.match(page, /\/llm\/asr\/sessions/, "streams audio to the server ASR relay");
+assert.match(page, /startServerAsr/, "prefers server ASR");
+assert.match(page, /startBrowserSr/, "falls back to browser dictation when server ASR is unavailable");
 assert.match(page, /\{toast\}/, "surfaces voice + status feedback in a visible toast (not a hidden log)");
 assert.match(page, /🎙/, "renders a microphone button");
 
