@@ -43,6 +43,18 @@ python scripts/office/soffice.py --headless --convert-to pdf document.docx
 pdftoppm -jpeg -r 150 document.pdf page
 ```
 
+**RULE 5 — Layout overflow is a delivery GATE, not a warning.** After generating any
+document, render it to images (above) and **look** at every page before delivering. Reject
+and fix the document if you see any of these occlusion symptoms:
+- table columns clipped at the right page edge,
+- any content running past the left/right/bottom margins,
+- body text colliding with or running under the header/footer,
+- Chinese/CJK text overflowing or clipped inside a cell.
+
+If any symptom appears, fix the width math (RULES 1-4) and re-render. Do not deliver a
+document with occluded content. (Fail-open: if rendering is unavailable in the environment,
+still enforce the width invariants arithmetically before delivering.)
+
 ### Accepting Tracked Changes
 
 To produce a clean document with all tracked changes accepted (requires LibreOffice):
@@ -104,10 +116,28 @@ sections: [{
 
 **Common page sizes (DXA units, 1440 DXA = 1 inch):**
 
-| Paper | Width | Height | Content Width (1" margins) |
+| Paper | Width | Height | Printable Width (1" margins) |
 |-------|-------|--------|---------------------------|
 | US Letter | 12,240 | 15,840 | 9,360 |
 | A4 (default) | 11,906 | 16,838 | 9,026 |
+
+**RULE 1 — Page size is mandatory, and all widths derive from it.**
+docx-js defaults to **A4**, not US Letter. If you compute content/table widths for one
+page size but the document renders at another, right-edge content is **clipped/occluded**.
+To prevent this:
+- ALWAYS set `page.size` explicitly. Never rely on the default.
+- Compute the single **printable width** for the chosen page and reuse it everywhere:
+
+```javascript
+// Printable width = page width - left margin - right margin (the ONLY width for full-width content)
+const PAGE = { width: 12240, height: 15840 };            // US Letter (A4 = 11906 x 16838)
+const MARGIN = { top: 1440, right: 1440, bottom: 1440, left: 1440 };
+const PRINTABLE_WIDTH = PAGE.width - MARGIN.left - MARGIN.right; // Letter: 9360, A4: 9026
+```
+
+- Reference printable widths (1" margins): **US Letter = 9360 DXA**, **A4 = 9026 DXA**.
+- Derive every full-width table, image, and column layout from `PRINTABLE_WIDTH`.
+  Never hardcode a width larger than `PRINTABLE_WIDTH` — that is the occlusion bug.
 
 **Landscape orientation:** docx-js swaps width/height internally, so pass portrait dimensions and let it handle the swap:
 ```javascript
@@ -181,7 +211,21 @@ const doc = new Document({
 
 ### Tables
 
-**CRITICAL: Tables need dual widths** - set both `columnWidths` on the table AND `width` on each cell. Without both, tables render incorrectly on some platforms.
+**RULE 2 — Table width invariant (hard requirement).** Every table MUST set:
+1. the table-level `width` (DXA),
+2. the table-level `columnWidths` array, AND
+3. a `width` on **each** cell matching its column.
+
+And the following invariant MUST hold, or the table's right columns get clipped at the
+page edge:
+
+> `sum(columnWidths) === table.width === PRINTABLE_WIDTH` (for full-width tables), and
+> `sum(columnWidths)` must be **≤ PRINTABLE_WIDTH — never exceed it**.
+
+A table whose columns sum to more than the printable width overflows the right margin and
+is occluded on render. Verify the sum arithmetically before rendering.
+
+**Tables need dual widths** - set both `columnWidths` on the table AND `width` on each cell. Without both, tables render incorrectly on some platforms.
 
 ```javascript
 // CRITICAL: Always set table width for consistent rendering
@@ -224,7 +268,18 @@ columnWidths: [7000, 2360]  // Must sum to table width
 - Table width must equal the sum of `columnWidths`
 - Cell `width` must match corresponding `columnWidth`
 - Cell `margins` are internal padding - they reduce content area, not add to cell width
-- For full-width tables: use content width (page width minus left and right margins)
+- For full-width tables: use `PRINTABLE_WIDTH` (page width minus left and right margins)
+- **`sum(columnWidths)` must be ≤ `PRINTABLE_WIDTH`** — exceeding it clips the right columns
+
+**RULE 4 — CJK / Chinese cells need extra width or explicit wrapping.**
+Long unbroken Chinese (or Japanese/Korean) text has **no spaces to break on**, so a narrow
+cell either overflows or clips. When a cell holds CJK content:
+- Give it generous width; do not author edge-to-edge (leave slack inside `PRINTABLE_WIDTH`).
+- Assume the renderer **substitutes a wider font** (e.g. when Arial lacks glyphs), so real
+  rendered text is wider than you estimate — budget for it.
+- Cell padding (`margins`) reduces usable text width; account for it in the column budget.
+- If a column must stay narrow, keep its content short, or the text will be occluded.
+- The engine may not break mid-CJK-run reliably; prefer wider columns over relying on wrap.
 
 ### Images
 
@@ -364,10 +419,23 @@ new TableOfContents("Table of Contents", { hyperlink: true, headingStyleRange: "
 
 ### Headers/Footers
 
+**RULE 3 — Reserve space for headers/footers via margins, or body text collides with them.**
+The header sits in the top margin and the footer in the bottom margin. If a header/footer is
+taller than the space the margin leaves for it, body text runs **under** it (occlusion).
+- When a document has a header/footer, ensure `page.margin.top` / `page.margin.bottom` are
+  large enough to hold it (e.g. bump to `1800`+ for a multi-line or image header).
+- Optionally set `page.margin.header` / `page.margin.footer` (distance from page edge to the
+  header/footer) smaller than `top` / `bottom` so the band never overlaps the body.
+
 ```javascript
 sections: [{
   properties: {
-    page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } // 1440 = 1 inch
+    page: {
+      margin: {
+        top: 1440, right: 1440, bottom: 1440, left: 1440, // 1440 = 1 inch
+        header: 720, footer: 720 // header/footer band sits inside the top/bottom margin
+      }
+    }
   },
   headers: {
     default: new Header({ children: [new Paragraph({ children: [new TextRun("Header")] })] })
@@ -383,7 +451,10 @@ sections: [{
 
 ### Critical Rules for docx-js
 
-- **Set page size explicitly** - docx-js defaults to A4; use US Letter (12240 x 15840 DXA) for US documents
+- **Set page size explicitly (RULE 1)** - docx-js defaults to A4; use US Letter (12240 x 15840 DXA) for US documents, and compute all widths from `PRINTABLE_WIDTH = page width − left − right margin` (Letter 9360, A4 9026)
+- **Table width invariant (RULE 2)** - `sum(columnWidths) === table.width`, and `≤ PRINTABLE_WIDTH` for full-width tables; exceeding it clips the right columns
+- **Reserve header/footer space (RULE 3)** - top/bottom margins must be tall enough to hold the header/footer or body text runs under them
+- **CJK cells need width (RULE 4)** - Chinese/CJK text has no spaces to wrap on and substituted fonts render wider; give such cells slack, never author edge-to-edge
 - **Landscape: pass portrait dimensions** - docx-js swaps width/height internally; pass short edge as `width`, long edge as `height`, and set `orientation: PageOrientation.LANDSCAPE`
 - **Never use `\n`** - use separate Paragraph elements
 - **Never use unicode bullets** - use `LevelFormat.BULLET` with numbering config

@@ -385,38 +385,73 @@ with pdfplumber.open("complex_table.pdf") as pdf:
 ### reportlab Advanced Features
 
 #### Create Professional Reports with Tables
+
+**RULES (prevent occlusion / 遮挡):**
+1. ALWAYS pass explicit `colWidths=[...]` whose sum is `<=` the printable width
+   (`doc.width`, i.e. pagesize width minus left+right margins). A `Table(data)` with no
+   colWidths auto-sizes to content and overflows the frame off the page edge.
+2. Wrap every text cell in a `Paragraph` (with a style), NOT a raw string. A raw string
+   cannot wrap and will push the column wider than its colWidth. Paragraphs wrap within
+   the column, growing the row height instead of overflowing.
+3. For non-Latin/Chinese content, register a CJK font first (see SKILL.md) and set it on
+   BOTH the Paragraph styles AND the `TableStyle` `FONTNAME` entries — otherwise Chinese
+   headers/cells render as tofu boxes.
+
 ```python
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 
-# Sample data
+# Register a CJK font if any cell may contain non-Latin text (fail open to Helvetica).
+# See SKILL.md "RULE: Register a CJK/Unicode font before drawing non-Latin text".
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
+FONT_NAME = "Helvetica"
+for _p in (os.environ.get("LILY_CJK_FONT_PATH"),
+           "/System/Library/Fonts/PingFang.ttc",
+           "C:\\Windows\\Fonts\\msyh.ttc"):
+    if _p and os.path.exists(_p):
+        try:
+            pdfmetrics.registerFont(TTFont("CJK", _p, subfontIndex=0))
+            FONT_NAME = "CJK"
+            break
+        except Exception:
+            pass
+
+styles = getSampleStyleSheet()
+cell = styles["BodyText"]
+cell.fontName = FONT_NAME          # so wrapped cell text uses the CJK face
+styles["Title"].fontName = FONT_NAME
+
+# Wrap cell text in Paragraphs so long values wrap instead of overflowing
+def P(t):
+    return Paragraph(str(t), cell)
+
 data = [
-    ['Product', 'Q1', 'Q2', 'Q3', 'Q4'],
-    ['Widgets', '120', '135', '142', '158'],
-    ['Gadgets', '85', '92', '98', '105']
+    [P('Product'), P('Q1'), P('Q2'), P('Q3'), P('Q4')],
+    [P('Widgets 小部件 with a long wrapping description'), P('120'), P('135'), P('142'), P('158')],
+    [P('Gadgets 小工具'), P('85'), P('92'), P('98'), P('105')],
 ]
 
-# Create PDF with table
-doc = SimpleDocTemplate("report.pdf")
-elements = []
+doc = SimpleDocTemplate("report.pdf", pagesize=letter)
+elements = [Paragraph("Quarterly Sales Report 季度销售报告", styles['Title'])]
 
-# Add title
-styles = getSampleStyleSheet()
-title = Paragraph("Quarterly Sales Report", styles['Title'])
-elements.append(title)
+# Explicit column widths that sum to <= the printable width (doc.width)
+col_widths = [doc.width * f for f in (0.40, 0.15, 0.15, 0.15, 0.15)]
+assert sum(col_widths) <= doc.width + 0.5  # never exceed the frame
 
-# Add table with advanced styling
-table = Table(data)
+table = Table(data, colWidths=col_widths)
 table.setStyle(TableStyle([
     ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),   # CJK-safe for the whole table
     ('FONTSIZE', (0, 0), (-1, 0), 14),
     ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
     ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ('GRID', (0, 0), (-1, -1), 1, colors.black),
 ]))
 elements.append(table)
 

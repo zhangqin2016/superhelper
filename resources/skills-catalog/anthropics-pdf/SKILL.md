@@ -120,6 +120,63 @@ if all_tables:
 
 ### reportlab - Create PDFs
 
+#### RULE: Register a CJK/Unicode font before drawing non-Latin text (REQUIRED)
+
+**IMPORTANT**: reportlab's built-in fonts (Helvetica, Times, Courier) contain ONLY Latin
+glyphs. Any Chinese/Japanese/Korean — or any non-Latin — text drawn with a built-in font
+renders as tofu/solid black boxes (occlusion / 遮挡). For ANY non-Latin or Chinese text you
+MUST register a TrueType/OpenType CJK font and use it as the default font for every style and
+every `canvas` string. Resolve the font path robustly and fail open (fall back to a built-in
+font only for pure-ASCII output).
+
+```python
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+def resolve_cjk_font():
+    """Return (font_name, font_path) after registering, or ('Helvetica', None) if none found.
+    Checks LILY_CJK_FONT_PATH, then common system paths. Fail open: never raises."""
+    import os, glob
+    candidates = []
+    env = os.environ.get("LILY_CJK_FONT_PATH")
+    if env:
+        candidates.append(env)
+    candidates += [
+        "/System/Library/Fonts/PingFang.ttc",              # macOS
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",      # macOS
+        "C:\\Windows\\Fonts\\msyh.ttc",                    # Windows (Microsoft YaHei)
+        "C:\\Windows\\Fonts\\simsun.ttc",                  # Windows (SimSun)
+    ]
+    candidates += glob.glob("/usr/share/fonts/**/NotoSansCJK*", recursive=True)  # Linux
+    for path in candidates:
+        if path and os.path.exists(path):
+            try:
+                # .ttc collections need subfontIndex=0
+                kwargs = {"subfontIndex": 0} if path.lower().endswith(".ttc") else {}
+                pdfmetrics.registerFont(TTFont("CJK", path, **kwargs))
+                return "CJK", path
+            except Exception:
+                continue
+    return "Helvetica", None  # fail open: built-in is fine for pure ASCII
+
+FONT_NAME, _ = resolve_cjk_font()
+
+# canvas: set it as the current font
+from reportlab.pdfgen import canvas
+c = canvas.Canvas("out.pdf")
+c.setFont(FONT_NAME, 12)
+c.drawString(72, 720, "你好，世界")   # renders correctly, not tofu boxes
+
+# platypus: set fontName on every style you use
+from reportlab.lib.styles import getSampleStyleSheet
+styles = getSampleStyleSheet()
+for s in styles.byName.values():
+    s.fontName = FONT_NAME
+```
+
+Apply `FONT_NAME` to Paragraph styles AND `TableStyle` `FONTNAME` entries — a table styled with
+`Helvetica-Bold` will still tofu-box a Chinese header even if the body cells use the CJK font.
+
 #### Basic PDF Creation
 ```python
 from reportlab.lib.pagesizes import letter
@@ -168,7 +225,12 @@ doc.build(story)
 
 #### Subscripts and Superscripts
 
-**IMPORTANT**: Never use Unicode subscript/superscript characters (₀₁₂₃₄₅₆₇₈₉, ⁰¹²³⁴⁵⁶⁷⁸⁹) in ReportLab PDFs. The built-in fonts do not include these glyphs, causing them to render as solid black boxes.
+**IMPORTANT**: reportlab's built-in fonts (Helvetica/Times/Courier) contain ONLY Latin glyphs.
+ANY character they lack — Unicode subscript/superscript characters (₀₁₂₃₄₅₆₇₈₉, ⁰¹²³⁴⁵⁶⁷⁸⁹),
+Chinese/CJK, and any other non-Latin text — renders as tofu/solid black boxes (occlusion).
+For non-Latin/Chinese text, register a CJK TrueType font first (see "RULE: Register a CJK/Unicode
+font before drawing non-Latin text" above). The rest of this section covers sub/superscripts
+specifically, but the box-glyph problem applies to all non-Latin text.
 
 Instead, use ReportLab's XML markup tags in Paragraph objects:
 ```python

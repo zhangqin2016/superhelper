@@ -132,6 +132,52 @@ Choose colors that match your topic — don't default to generic blue. Use these
 - 0.3-0.5" between content blocks
 - Leave breathing room—don't fill every inch
 
+### Preventing Overflow & Occlusion (Required)
+
+Fixed, absolutely-positioned text boxes are the #1 cause of occluded slides:
+long strings overflow the box and stack onto neighbors. This is especially
+severe for Chinese/CJK because CJK text does not wrap on spaces and the
+renderer substitutes fonts whose glyphs are WIDER than what you authored, so a
+box that looks fine in code overflows in the rendered PDF. Follow these rules
+when authoring — a box with no overflow risk is unaffected.
+
+- **Never trust a fixed box to hold an unknown-length string.** Every text box
+  must either auto-fit or be sized to its content. In `python-pptx`:
+
+  ```python
+  from pptx.enum.text import MSO_AUTO_SIZE
+  tf = shape.text_frame
+  tf.word_wrap = True                          # wrap instead of running off the edge
+  tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE  # shrink text to fit the box
+  ```
+
+  In `pptxgenjs`, pass `{ shrinkText: true, autoFit: true }` and `wrap: true`
+  (or `fit: 'shrink'`) on every text object. If a box's width/height is fixed
+  and its content length is not known ahead of time, one of these MUST be set.
+
+- **Keep a safe margin from every slide edge: >= 0.5in (1.27cm).** No text box
+  may start or extend past this margin. Content clipped at the edge is a
+  delivery blocker.
+
+- **Never overlap text boxes with other shapes.** Position boxes so their
+  bounding rectangles do not intersect any other shape or box. Do not pack
+  boxes edge-to-edge; keep the 0.3-0.5in gaps from the Spacing rules.
+
+- **Reserve a dedicated footer band.** Keep page numbers, source citations, and
+  logos in a fixed strip at the bottom (e.g. the bottom 0.5-0.7in) and keep ALL
+  body content out of that band. Footers colliding with body text is a common
+  failure — the footer band is off-limits for content.
+
+- **For Chinese/CJK, assume substituted fonts are WIDER than authored.** Leave
+  horizontal headroom (do not fill a box to its nominal width), always set
+  `word_wrap = True`, cap font sizes (prefer the smaller end of the ranges in
+  the Typography table), and never pack CJK boxes edge-to-edge.
+
+- **Cap text per box; split long content across slides.** Do not let a box grow
+  or shrink to absurd sizes to swallow long content. If content is too long to
+  fit the box comfortably at a readable size, move the overflow to a new slide
+  rather than overflowing or auto-shrinking text to unreadable sizes.
+
 ### Avoid (Common Mistakes)
 
 - **Don't repeat the same layout** — vary columns, cards, and callouts across slides
@@ -210,6 +256,23 @@ Report ALL issues found, including minor ones.
 5. Repeat until a full pass reveals no new issues
 
 **Do not declare success until you've completed at least one fix-and-verify cycle.**
+
+### Occlusion Gate (Hard Stop)
+
+The visual QA above is a GATE, not an advisory check. If the rendered slide
+shows ANY of the following, it MUST be fixed before delivering — do not ship the
+deck:
+
+- Text overflowing its box or stacking onto a neighboring box (classic CJK
+  overflow: long Chinese strings running past the box and onto adjacent text)
+- Any text or shape clipped at a slide edge, or violating the >= 0.5in margin
+- Text drawn through/over a shape, or two shapes/boxes overlapping
+- Footer/page-number/citation band colliding with body content
+
+If you see any of these, apply the authoring rules in **Preventing Overflow &
+Occlusion** (enable `word_wrap` / auto-fit, shrink the font, enlarge the box,
+move it inside the margins, or split content across slides), then re-verify the
+affected slides. Repeat until a full pass shows none of the above.
 
 ---
 
