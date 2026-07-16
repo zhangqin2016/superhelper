@@ -168,11 +168,131 @@
 }
 
 .left-footer {
+  position: relative;
   margin-top: auto;
   padding: 10px 14px 12px;
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-left) 88%, var(--bg-surface) 12%);
   flex-shrink: 0;
+}
+
+/* Bottom-left account + quick-actions menu */
+.account-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.account-menu-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-light);
+  box-shadow: var(--top-highlight);
+}
+
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-subtle, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent, var(--text-secondary));
+}
+
+.account-menu-labels {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.account-menu-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-sub {
+  font-size: 11px;
+  color: var(--text-tertiary, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-caret {
+  flex-shrink: 0;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.account-menu-popover {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% - 4px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.account-menu-popover[hidden] {
+  display: none;
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+
+.account-menu-item:hover {
+  background: var(--bg-surface-hover);
+}
+
+.account-menu-item svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.account-menu-item[hidden] {
+  display: none;
+}
+
+.account-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-subtle);
 }
 
 .left-settings-btn {

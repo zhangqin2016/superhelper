@@ -62,10 +62,12 @@ function ensureElement() {
       }
     });
   }
-  const settingsBtn = document.getElementById("settingsBtn");
-  if (settingsBtn?.parentElement) {
-    settingsBtn.parentElement.classList.add("left-footer--with-runtime-progress");
-    settingsBtn.insertAdjacentElement("afterend", root);
+  // Anchor the runtime-progress ring next to the footer account button (the
+  // 设置 button moved into the account-menu popover).
+  const footerBtn = document.getElementById("accountMenuBtn") || document.getElementById("settingsBtn");
+  if (footerBtn?.parentElement) {
+    footerBtn.parentElement.classList.add("left-footer--with-runtime-progress");
+    footerBtn.insertAdjacentElement("afterend", root);
   } else {
     document.body.appendChild(root);
   }

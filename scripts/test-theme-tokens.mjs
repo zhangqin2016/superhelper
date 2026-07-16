@@ -94,7 +94,7 @@ const indexHtml = read(indexHtmlPath);
 assert(indexHtml.includes("lily.themeMode"), "index.html must apply persisted theme before CSS loads");
 assert(indexHtml.includes("lily.textSizeMode"), "index.html must apply persisted text size before CSS loads");
 assert(
-  indexHtml.includes('./styles.css?v=20260716-memory-chip'),
+  indexHtml.includes('./styles.css?v=20260716-account-menu'),
   "index.html must cache-bust the stylesheet entry after stylesheet changes",
 );
 assert(indexHtml.includes("themeModeSelect"), "settings UI must expose the theme selector");

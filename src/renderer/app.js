@@ -14,6 +14,7 @@ import { initRuntimePackProgress } from "./modules/runtime-pack-progress.js";
 import { initVoiceDictation } from "./modules/voice-dictation.js";
 import { renderProjectTree, initAddProject, initTopbarSessionRename } from "./modules/project-tree.js";
 import { initSettingsPanel } from "./modules/settings-panel.js";
+import { initAccountMenu } from "./modules/account-menu.js";
 import { initModelSettings } from "./modules/model-settings.js";
 import { initPermissionSettings } from "./modules/permission-settings.js";
 import { initSearchSettings } from "./modules/search-settings.js";
@@ -200,6 +201,7 @@ async function init() {
   initAddProject();
   initTopbarSessionRename();
   await initSettingsPanel();
+  initAccountMenu();
   initModelSettings();
   initLocaleSettings();
   initPermissionSettings();

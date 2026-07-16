@@ -72,7 +72,7 @@ let refreshInFlight = null;
 let appPolicy = { region: "china", features: { account: true, billing: true, accountLogin: true, purchase: true, usage: true } };
 let appPolicyRefreshSeq = 0;
 
-function accountFeatureEnabled() {
+export function accountFeatureEnabled() {
   const features = appPolicy?.features || {};
   return features.account !== false && features.accountLogin !== false;
 }

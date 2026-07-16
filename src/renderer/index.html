@@ -26,7 +26,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260716-memory-chip" />
+    <link rel="stylesheet" href="./styles.css?v=20260716-account-menu" />
   </head>
   <body>
     <div id="dropOverlay" class="drop-overlay" hidden>
@@ -65,13 +65,39 @@
         </div>
 
         <div class="left-footer">
-          <button id="settingsBtn" class="left-settings-btn" type="button" data-i18n-title="sidebar.settings" title="设置">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-            <span data-i18n="sidebar.settings">设置</span>
+          <button id="accountMenuBtn" class="account-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" data-i18n-title="account.menu.title" title="账户与快捷操作">
+            <span class="account-avatar" id="accountMenuAvatar" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <span class="account-menu-labels">
+              <span class="account-menu-name" id="accountMenuName" data-i18n="account.menu.signedOut">未登录</span>
+              <span class="account-menu-sub" id="accountMenuSub" data-i18n="account.menu.signInHint">点击登录 / 快捷操作</span>
+            </span>
+            <svg class="account-menu-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
           </button>
+          <div id="accountMenuPopover" class="account-menu-popover" role="menu" data-i18n-aria-label="account.menu.title" aria-label="账户与快捷操作" hidden>
+            <button type="button" class="account-menu-item" role="menuitem" id="accountMenuItemAccount" data-account-action="account">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-i18n="account.menu.account">账户</span>
+            </button>
+            <button type="button" class="account-menu-item" role="menuitem" data-account-action="license">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="3.5"/><path d="m10 13 8-8"/><path d="m14 5 3 3"/><path d="m18 9 2-2"/></svg>
+              <span data-i18n="settings.nav.license">授权</span>
+            </button>
+            <button type="button" class="account-menu-item" role="menuitem" data-account-action="mobile">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+              <span data-i18n="account.menu.mobile">手机远程控制</span>
+            </button>
+            <div class="account-menu-sep" role="separator"></div>
+            <button type="button" class="account-menu-item" role="menuitem" id="settingsBtn" data-i18n-title="sidebar.settings" title="设置">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-i18n="sidebar.settings">设置</span>
+            </button>
+            <button type="button" class="account-menu-item" role="menuitem" data-account-action="help">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+              <span data-i18n="settings.nav.help">帮助与关于</span>
+            </button>
+          </div>
         </div>
 
       </aside>
