@@ -302,6 +302,11 @@ app.on("before-quit", () => {
   scheduledTaskManagerRef?.save();
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
+  // Backstop: reap the shared opencode serve + its whole tool-process tree even
+  // if a session leaked its view. This is what keeps closing the app from
+  // leaving node/python/engine children alive that lock the install dir (the
+  // Windows updater's "could not be closed").
+  try { require("./main/runtime/opencode-shared-server").resetSharedServer(); } catch { /* best effort */ }
   stopConnectorBridge();
   try {
     const { fileStagingDir } = require("./main/config");
