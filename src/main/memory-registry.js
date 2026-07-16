@@ -63,11 +63,17 @@ function rankMemoryItemsWithDiagnostics(items = [], query = "", opts = {}) {
       ? Number(semanticMap.get(entryKey(item)) || 0)
       : Number(item.semanticRelevance || 0);
     const critical = Number(item?.priority || 0) >= 90;
+    // Reinforcement (④): a small, BOUNDED nudge for memories that keep proving
+    // useful. opts.reinforcement is a Map(entryKey → boost ≤ MAX_BOOST). Deliberately
+    // tiny vs relevance*25 so it only reorders already-relevant items — never
+    // surfaces an irrelevant one. Not applied to critical items (they're pinned).
+    const reinforcement = opts.reinforcement instanceof Map ? Number(opts.reinforcement.get(entryKey(item)) || 0) : 0;
     return {
       ...item,
       relevance,
       semanticRelevance,
-      effectivePriority: Number(item?.priority || 0) + (critical ? 0 : relevance * 25 + semanticRelevance * 18),
+      reinforcement,
+      effectivePriority: Number(item?.priority || 0) + (critical ? 0 : relevance * 25 + semanticRelevance * 18 + reinforcement),
     };
     }),
     diagnostics: ranked.diagnostics || { semanticIndex: "local_fallback" },
@@ -360,11 +366,30 @@ function buildContextMemory(input = {}) {
   // relevance. Absent → rankMemoryItemsWithDiagnostics uses the lexical hash rank,
   // exactly as before. This sync path is 100% unchanged for every existing caller.
   const semanticMap = input.semanticMap instanceof Map ? input.semanticMap : null;
-  const ranked = rankMemoryItemsWithDiagnostics(items, query, { projectKey, semanticMap });
+  // Reinforcement (④, OPT-IN LILY_MEMORY_REINFORCE=1): load bounded usage boosts
+  // for the candidate items so useful memories rank a little higher. Fail-open →
+  // no boosts → identical to the plain rank.
+  let reinforcement = null;
+  if (process.env.LILY_MEMORY_REINFORCE === "1") {
+    try {
+      const { reinforcementBoosts } = require("./memory-reinforcement");
+      reinforcement = reinforcementBoosts(items.map((item) => entryKey(item)), projectKey, Date.now());
+    } catch {
+      reinforcement = null;
+    }
+  }
+  const ranked = rankMemoryItemsWithDiagnostics(items, query, { projectKey, semanticMap, reinforcement });
   const rawItems = ranked.items;
   const maxChars = resolveMemoryMaxChars(rawItems, input);
   const selection = selectMemoryItemsWithDiagnostics(rawItems, { maxChars });
   const selected = selection.selected;
+  // Record which memories were actually USED (selected) this turn — the positive
+  // reinforcement signal. Fail-open, best-effort, never blocks.
+  if (reinforcement && selected.length) {
+    try {
+      require("./memory-reinforcement").recordUsage(projectKey, selected.map((item) => entryKey(item)), Date.now());
+    } catch { /* best-effort */ }
+  }
   return {
     items: selected,
     skipped: selection.skipped,
