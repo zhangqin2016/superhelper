@@ -117,6 +117,7 @@ function parseArgs(argv) {
     apps: true,
     version: "",
     appId: "",
+    only: null,
     bucket: process.env.RELEASE_QINIU_BUCKET || process.env.QINIU_BUCKET || DEFAULT_QINIU_BUCKET,
     domain: process.env.RELEASE_QINIU_DOMAIN || process.env.QINIU_PUBLIC_BASE_URL || DEFAULT_QINIU_DOMAIN,
     qiniuUpHost: process.env.QINIU_UP_HOST || DEFAULT_QINIU_UP_HOST,
@@ -136,6 +137,7 @@ function parseArgs(argv) {
     else if (key === "channel") out.channel = argv[++i] || "";
     else if (key === "version") out.version = argv[++i] || "";
     else if (key === "app") out.appId = argv[++i] || "";
+    else if (key === "only") { out.only = out.only || new Set(); out.only.add(argv[++i] || ""); }
     else if (key === "bucket") out.bucket = argv[++i] || "";
     else if (key === "domain") out.domain = argv[++i] || "";
     else if (key === "qiniu-up-host") out.qiniuUpHost = argv[++i] || "";
@@ -650,7 +652,12 @@ async function publishSkills(options, auth) {
     : new Map();
   const results = [];
   const localSkillIds = new Set();
+  const only = options.only instanceof Set && options.only.size ? options.only : null;
   for (const skillDir of localSkillDirs()) {
+    // --only <skillId>: publish just the named skill(s), skipping the rest (and
+    // the metadata sync below). Lets us ship one small skill reliably without
+    // re-uploading every large pack over a flaky link.
+    if (only && !only.has(path.basename(skillDir))) continue;
     const pack = buildJson(process.execPath, [
       "scripts/build-skill-pack.mjs",
       "--skill",
@@ -682,6 +689,7 @@ async function publishSkills(options, auth) {
     results.push({ kind: "skill", id: pack.skillId, version: pack.version, action: "uploaded" });
   }
   for (const entry of registryEntries()) {
+    if (only) break; // --only: don't touch other skills' metadata
     if (!entry?.id || localSkillIds.has(entry.id)) continue;
     const current = existing.get(`${entry.id}@${entry.latestVersion}`) || existingLatest.get(entry.id);
     if (!current) {

@@ -1916,7 +1916,7 @@
       "id": "lily-web-system-learning",
       "name": "网页系统学习",
       "description": "学习 OA、ERP、CRM、后台等 Web 系统，生成系统画像、页面地图、业务对象模型、动作 Playbook、风险策略并保存为当前工作区技能。",
-      "latestVersion": "1.0.23",
+      "latestVersion": "1.0.24",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1925,7 +1925,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.48",
-      "category": "dev",
+      "category": "professional",
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
