@@ -33,6 +33,23 @@ Use for an existing implementation or screenshot. Identify observable problems, 
 - **Localization stress:** test Chinese, English, Arabic/RTL, long text, long numbers, empty values, and translated button labels. Mirroring must not reverse semantic icons or data direction.
 - **Content stress:** test realistic long names, dense tables, validation errors, missing images, many/few items, and permission-limited states.
 
+## Concrete Defaults (use these values, not adjectives)
+
+When there is no existing project design system, do not invent values ad hoc — that is what makes output look cheap. Start from `lily-app-builder`'s shipped base (`assets/base.css` + `InterVariable.woff2` + `page-shell.html`) which encodes all of the below, or reproduce these values inline:
+
+- **Font:** `"InterVariable", -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif`. Bundle/self-host the font — never rely on the OS having it (the default face is the #1 cheap tell). Always name a CJK fallback so Chinese never drops to a serif/tofu face.
+- **Type scale (1.25):** 12 / 14 / 16 / 18 / 22 / 28 / 36 / 48 px. Body line-height 1.65, headings 1.2, reading measure ~68ch. Enable `font-variant-numeric: tabular-nums` so numbers do not jitter.
+- **Spacing scale (8px):** 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 px. Every gap comes from the scale — no arbitrary values.
+- **Palette — warm paper, not cold SaaS gray:** paper `#faf8f4`, raised `#fff`, sunken `#f3f0ea`; ink `#1c1a17`, secondary `#55514a`, tertiary `#8a857c`. **One** brand accent (Lily periwinkle `#5a4fd6`); muted status only (success `#2f855a`, warning `#b7791f`, danger `#c53030`). Dark mode = warm-dark, not pure black.
+- **Lines & elevation:** hairlines `rgba(28,26,23,0.10)`, not hard 1px gray borders. Radius 6/10/16. Shadows soft and low (`0 2px 4px / 0 12px 28px` at ≤7% alpha).
+
+### No cheap tells (do NOT)
+
+- No default/system serif or link-blue `#0000EE` — always ship the font + accent.
+- No big glowy drop-shadows, no gradient-washed alert boxes (Bootstrap-alert look), no rainbow of accent colors — one accent, muted status.
+- No hard full-black `#000` on pure `#fff`; no cramped or arbitrary spacing; no full-viewport-width prose (cap at the measure).
+- No decorative color used to carry meaning; no heavy table gridlines (use hairline zebra).
+
 ## Workflow
 
 1. Select Creation mode or Review mode and state the primary user path.

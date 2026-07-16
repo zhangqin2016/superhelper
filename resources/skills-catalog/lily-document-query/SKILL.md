@@ -1,5 +1,5 @@
 ---
-name: document-query
+name: lily-document-query
 description: Use this skill when the user asks follow-up questions about documents already uploaded in the current Lily app. It queries Lily's lightweight index over text that was already extracted by the app; it does not parse Office or PDF files itself.
 license: Proprietary
 intent: Retrieve evidence snippets from the latest uploaded document index so answers can cite document and chunk ids.

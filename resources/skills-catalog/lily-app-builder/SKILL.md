@@ -24,7 +24,8 @@ Turn a plain-language request into a runnable artifact. The user should not need
 
 1. Define the smallest useful deliverable and its success check.
 2. Read the existing entrypoints, callers, styles, tests, and build commands. Preserve the current stack and user changes.
-3. For a new artifact, choose the lowest-dependency option that satisfies the request. For an existing project, follow its conventions.
+3. For a new artifact, choose the lowest-dependency option that satisfies the request. For an existing project, follow its conventions and reuse its tokens/stack.
+   - **For a NEW standalone web page, report, dashboard, or landing page, start from the shipped premium base — do NOT hand-roll CSS from scratch** (that is what makes output look cheap/default). Copy `{{SKILL_DIR}}/assets/base.css` and `{{SKILL_DIR}}/assets/InterVariable.woff2` next to the output file and `<link rel="stylesheet" href="base.css">`; use `{{SKILL_DIR}}/assets/page-shell.html` as the starting HTML. The base ships a real font, a warm-paper palette, a type + spacing scale, tasteful components (`.card`, `.btn`, `.badge`, tables), dark mode and print margins. Write semantic HTML and extend the tokens for the user's brand; do not fight the base. This is opt-out: only skip it if the user supplied their own design/stack.
 4. Put files in one clear workspace location and make only the changes needed for the core user path.
 5. Run scripts with a representative small input. For a long-lived dev server, use the `lily_process_jobs` MCP: start with `job_start`, inspect readiness and the actual port with `job_status` and `job_logs`, and keep the job id.
 6. If `lily_process_jobs` is unavailable, fail open to the normal foreground shell workflow. Never hide the server with `nohup`, `&`, `disown`, or an untracked detached process.
