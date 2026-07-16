@@ -1909,6 +1909,20 @@ class TurnOrchestrator {
       );
       const platformContextParts = [];
       if (contextMemory.text && !contextMemory.deduped) platformContextParts.push(contextMemory.text);
+      // Proactive workspace retrieval (opt-in LILY_WORKSPACE_AUTOINJECT=1): on
+      // substantive (grounded/coverage) turns only — never casual/fast chat, so
+      // no context dilution on ordinary turns. Bounded, freshness-verified
+      // (no deleted files), "retrieval not proof", fail-open → floor = baseline.
+      if (process.env.LILY_WORKSPACE_AUTOINJECT === "1" && project?.path &&
+          (turnPolicy.rigor === "grounded" || turnPolicy.rigor === "coverage")) {
+        try {
+          const hit = require("./mcp/file-intelligence-index").retrieveWorkspaceContext({
+            workspacePath: project.path,
+            query: rawUserText,
+          });
+          if (hit?.text) platformContextParts.push(hit.text);
+        } catch { /* fail-open — inject nothing */ }
+      }
       if (dependencyAdvisory?.text) platformContextParts.push(dependencyAdvisory.text);
       if (capabilityReadinessTrace?.status === "degraded") {
         const unavailable = capabilityReadinessTrace.unavailablePackIds || [];

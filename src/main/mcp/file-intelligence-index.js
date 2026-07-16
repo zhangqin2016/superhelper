@@ -533,6 +533,41 @@ async function reconcileWorkspaceIndex(input = {}) {
   return { ok: true, indexId, scanned, indexed, skipped, evicted };
 }
 
+// Proactive retrieval for turn injection: query the workspace auto-index for the
+// user's message and return a COMPACT, freshness-verified, "retrieval not proof"
+// context block (or null). Bounded + fail-open; the caller gates WHEN to inject.
+function retrieveWorkspaceContext(input = {}) {
+  const workspacePath = input.workspacePath ? path.resolve(String(input.workspacePath)) : "";
+  const query = String(input.query || "").trim();
+  const minQueryChars = Math.max(1, Number(input.minQueryChars || 8));
+  if (!workspacePath || query.length < minQueryChars) return null;
+  const indexId = autoIndexId(workspacePath);
+  const limit = Math.max(1, Math.min(Number(input.limit || 5), 12));
+  const maxChars = Math.max(200, Number(input.maxChars || 1200));
+  let store = null;
+  try {
+    store = openWorkspaceKnowledgeStore({ workspacePath, rootDir: input.storeRoot || undefined });
+    const res = store.queryIndex({ indexId, query, limit, verifyFreshness: true });
+    if (!res.ok || !Array.isArray(res.matches) || !res.matches.length) return null;
+    const lines = ["Workspace index hits (RETRIEVAL, not proof — open the file to confirm before relying on it):"];
+    let used = lines[0].length;
+    for (const m of res.matches) {
+      const loc = m.rangeType === "lines" && m.rangeStart ? `:${m.rangeStart}-${m.rangeEnd}` : "";
+      const ex = String(m.excerpt || "").replace(/\s+/g, " ").trim().slice(0, 180);
+      const line = `- ${m.sourcePath}${loc}${ex ? ` — ${ex}` : ""}`;
+      if (used + line.length + 1 > maxChars) break;
+      lines.push(line);
+      used += line.length + 1;
+    }
+    if (lines.length === 1) return null;
+    return { ok: true, indexId, count: res.matches.length, injected: lines.length - 1, text: lines.join("\n") };
+  } catch {
+    return null;
+  } finally {
+    try { store?.close(); } catch { /* ignore */ }
+  }
+}
+
 function queryIndex(input = {}) {
   const workspaceStoreRoot = input.storeRoot || "";
   if (input.indexId) {
@@ -590,6 +625,7 @@ module.exports = {
   autoIndexChangedFiles,
   autoIndexId,
   reconcileWorkspaceIndex,
+  retrieveWorkspaceContext,
   indexPath,
   queryIndex,
   readIndex,
