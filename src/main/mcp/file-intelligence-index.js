@@ -413,12 +413,16 @@ function autoIndexChangedFiles(input = {}) {
   let skipped = 0;
   try {
     store = openWorkspaceKnowledgeStore({ workspacePath, rootDir: input.storeRoot || undefined });
+    // Base rel paths on the STORE's workspacePath (realpath), which is what the
+    // freshness check resolves against — else a symlinked workspace stores a rel
+    // that ENOENTs on verify → wrongful eviction of live files.
+    const base = store.workspacePath;
     const seen = new Set();
     for (const change of changes.slice(0, maxFiles)) {
       const rawPath = String(change?.filePath || change?.path || change?.fileName || "");
       if (!rawPath) { skipped += 1; continue; }
-      const abs = path.isAbsolute(rawPath) ? rawPath : path.resolve(workspacePath, rawPath);
-      const rel = path.relative(workspacePath, abs) || path.basename(abs);
+      const abs = path.isAbsolute(rawPath) ? rawPath : path.resolve(base, rawPath);
+      const rel = path.relative(base, abs) || path.basename(abs);
       // Only index sources INSIDE the workspace.
       if (rel.startsWith("..") || path.isAbsolute(rel)) { skipped += 1; continue; }
       if (seen.has(rel)) continue;
@@ -483,12 +487,18 @@ async function reconcileWorkspaceIndex(input = {}) {
   let evicted = 0;
   try {
     store = openWorkspaceKnowledgeStore({ workspacePath, rootDir: input.storeRoot || undefined });
+    const base = store.workspacePath; // realpath — matches the freshness resolution
     const stamps = store.getSourceStamps(indexId);
-    const files = candidateFiles(workspacePath, { maxFiles });
+    const files = candidateFiles(base, { maxFiles });
+    // If the walk hit the cap it is TRUNCATED — we did NOT see every file, so
+    // unseen stamps must NOT be treated as deleted (that would evict live files
+    // beyond the cap on every scan = silent data loss). Only reconcile-evict on a
+    // COMPLETE walk; the per-query freshness guard still catches real deletes.
+    const walkComplete = files.length < maxFiles;
     const seen = new Set();
     let inBatch = 0;
     for (const abs of files) {
-      const rel = path.relative(workspacePath, abs) || path.basename(abs);
+      const rel = path.relative(base, abs) || path.basename(abs);
       if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
       seen.add(rel);
       scanned += 1;
@@ -522,9 +532,13 @@ async function reconcileWorkspaceIndex(input = {}) {
       }
       if ((inBatch += 1) >= batchSize) { inBatch = 0; await yieldToLoop(); }
     }
-    // Externally-deleted files: stamps whose source no longer appeared in the walk.
-    const gone = [...stamps.keys()].filter((rel) => !seen.has(rel));
-    for (const rel of gone) evicted += store.evictSources([rel]);
+    // Externally-deleted files: stamps whose source no longer appeared in the walk
+    // — trusted ONLY when the walk was complete (a truncated walk hasn't "seen" the
+    // files past the cap, and they are NOT deleted).
+    if (walkComplete) {
+      const gone = [...stamps.keys()].filter((rel) => !seen.has(rel));
+      for (const rel of gone) evicted += store.evictSources([rel]);
+    }
   } catch (err) {
     return { ok: false, error: String(err?.message || err), indexId };
   } finally {

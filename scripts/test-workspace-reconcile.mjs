@@ -67,6 +67,27 @@ assert.ok(r.evicted >= 1, "externally deleted file evicted");
 // no workspace → error (fail-safe)
 assert.equal((await reconcileWorkspaceIndex({})).ok, false);
 
+// CRITICAL: a TRUNCATED walk (more files than maxFiles) must NOT evict the files
+// it didn't get to — they exist, they're just past the cap. (Regression guard for
+// the data-loss bug where every file beyond maxFiles was wrongly evicted.)
+{
+  const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), "lily-recon-trunc-"));
+  const root2 = fs.mkdtempSync(path.join(os.tmpdir(), "lily-recon-trunc-root-"));
+  for (const n of ["f1.txt", "f2.txt", "f3.txt", "f4.txt"]) fs.writeFileSync(path.join(ws2, n), `content of ${n} alpha`);
+  const id2 = autoIndexId(ws2);
+  // full scan indexes + stamps all 4
+  await reconcileWorkspaceIndex({ workspacePath: ws2, storeRoot: root2 });
+  // now scan with maxFiles=2 → walk truncated, 2 of 4 files unseen
+  const trunc = await reconcileWorkspaceIndex({ workspacePath: ws2, storeRoot: root2, maxFiles: 2 });
+  assert.equal(trunc.evicted, 0, "truncated walk must not evict unseen live files");
+  const s2 = openWorkspaceKnowledgeStore({ workspacePath: ws2, rootDir: root2 });
+  const stampCount = s2.getSourceStamps(id2).size;
+  s2.close();
+  assert.equal(stampCount, 4, "all 4 files still indexed after a truncated scan (no data loss)");
+  fs.rmSync(ws2, { recursive: true, force: true });
+  fs.rmSync(root2, { recursive: true, force: true });
+}
+
 fs.rmSync(ws, { recursive: true, force: true });
 fs.rmSync(root, { recursive: true, force: true });
 console.log("workspace-reconcile: ok");

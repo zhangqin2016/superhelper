@@ -26,6 +26,15 @@ assert.equal(
   "concept aliases improve cross-language semantic recall",
 );
 
+// cosine must be MAGNITUDE-NORMALIZED (real API embeddings aren't guaranteed
+// unit-length): same-direction low-magnitude vectors score ~1, not their raw dot.
+assert.ok(cosineSimilarity([0.1, 0], [0.1, 0]) > 0.99, "same-direction vectors → ~1 regardless of magnitude (was 0.01 as raw dot)");
+assert.ok(cosineSimilarity([3, 0], [0, 5]) < 0.01, "orthogonal → ~0");
+assert.ok(Math.abs(cosineSimilarity([1, 0], [10, 0]) - cosineSimilarity([1, 0], [2, 0])) < 1e-6, "score is magnitude-invariant");
+// dimension mismatch → 0 (never dot a truncated prefix into garbage)
+assert.equal(cosineSimilarity([1, 1, 1], [1, 1]), 0, "dimension mismatch → 0");
+assert.equal(cosineSimilarity([], []), 0, "empty → 0");
+
 const ranked = rankByVectorSimilarity([
   { id: "evidence", text: "证据图回放和来源引用" },
   { id: "runtime", text: "运行时下载 LibreOffice" },

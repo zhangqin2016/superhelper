@@ -60,11 +60,28 @@ function embedText(value, { dimensions = DEFAULT_DIMENSIONS } = {}) {
 }
 
 function cosineSimilarity(left = [], right = []) {
-  const size = Math.min(left.length || 0, right.length || 0);
-  if (!size) return 0;
+  const a = Array.isArray(left) ? left : [];
+  const b = Array.isArray(right) ? right : [];
+  // Reject empty or DIMENSION-MISMATCHED vectors (e.g. a stale cached embedding
+  // of a different size) rather than dot-product a truncated prefix → garbage.
+  if (!a.length || a.length !== b.length) return 0;
   let dot = 0;
-  for (let i = 0; i < size; i += 1) dot += Number(left[i] || 0) * Number(right[i] || 0);
-  return Math.max(0, Math.min(1, dot));
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = Number(a[i]) || 0;
+    const y = Number(b[i]) || 0;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  // TRUE cosine (magnitude-normalized). The lexical embedText vectors are already
+  // unit-length (so this is a no-op there), but real API embeddings are NOT
+  // guaranteed normalized — a raw dot would let magnitude dominate and the clamp
+  // would flatten scores to ~1, collapsing the ranking. Normalize so the semantic
+  // path is correct, not silently worse than lexical.
+  if (na === 0 || nb === 0) return 0;
+  return Math.max(0, Math.min(1, dot / Math.sqrt(na * nb)));
 }
 
 function memoryItemText(item = {}) {
@@ -240,6 +257,7 @@ function makeEmbeddingCaller({ baseUrl = "", apiKey = "", model = "" } = {}) {
 // the DASHSCOPE_API_KEY existing users already have.
 const DASHSCOPE_EMBEDDING_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-v3";
+const MAX_SEMANTIC_CACHE_ENTRIES = 512; // bound the durable per-model vector cache
 
 // Read a value from agent settings (remote-config → user → bundled → process.env),
 // falling back to the passed env. Lazy + fail-safe so this module stays testable
@@ -322,9 +340,20 @@ async function semanticRelevanceMap(items = [], query = "", { caller, projectKey
       if (!Array.isArray(vectors) || vectors.length !== missing.length) return null;
       missing.forEach((m, i) => { if (Array.isArray(vectors[i]) && vectors[i].length) cache.set(m.key, vectors[i]); });
       if (filePath) {
+        // Cap the durable cache: entryKey embeds a textHash, so every edit mints a
+        // new key and the old vector would linger forever → the JSON grows without
+        // bound and each recall reads+rewrites the whole file. Keep this turn's live
+        // keys plus the most-recent others (dropped keys just re-embed on demand).
+        let entries = [...cache.entries()];
+        if (entries.length > MAX_SEMANTIC_CACHE_ENTRIES) {
+          const live = new Set(source.map((item) => entryKey(item)));
+          const liveEntries = entries.filter(([key]) => live.has(key));
+          const rest = entries.filter(([key]) => !live.has(key)).slice(-(Math.max(0, MAX_SEMANTIC_CACHE_ENTRIES - liveEntries.length)));
+          entries = [...liveEntries, ...rest];
+        }
         writeIndex(filePath, {
           schemaVersion: 2,
-          entries: [...cache.entries()].map(([key, vector]) => ({ key, vector })),
+          entries: entries.map(([key, vector]) => ({ key, vector })),
         });
       }
     }

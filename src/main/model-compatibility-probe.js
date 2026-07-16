@@ -190,22 +190,36 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
 // with tool_choice:"auto" — which is what real turns use anyway.
 function isForcedToolChoiceRejection(result) {
   if (!result || result.ok) return false;
+  // Only a client-side (4xx) rejection is a request-SHAPE constraint; a 5xx/timeout
+  // is transient, not "forced tool_choice unsupported".
+  const status = Number(result.status || 0);
+  if (status && (status < 400 || status >= 500)) return false;
   const err = result.json?.error;
   const text = [typeof err === "string" ? err : "", err?.message, err?.code, err?.type, result.json?.message]
     .filter((v) => typeof v === "string" && v).join(" ").toLowerCase();
-  if (!text) return false;
-  return /tool[_\s-]?choice/.test(text) || (/thinking|reasoning/.test(text) && /tool/.test(text));
+  // Must explicitly name tool_choice. (Dropped the loose "thinking && tool" branch:
+  // "reasoning models cannot use tools" is genuine no-tool-support, NOT a forced-
+  // choice constraint.) The auto-retry is self-validating regardless — it only
+  // accepts if tools actually work under auto — so this just avoids a wasted retry.
+  return /tool[_\s-]?choice/.test(text);
 }
 
 async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs, extraTools = [] }) {
   let toolChoice = null; // forced (default) — the most discriminating shape
+  let maxTokens = 512;
   let nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, timeoutMs });
   if (!nonStream.ok && isForcedToolChoiceRejection(nonStream)) {
     toolChoice = "auto";
     nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, timeoutMs });
   }
-  if (!nonStream.ok) return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
-  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, stream: true, timeoutMs });
+  if (!nonStream.ok) {
+    // Low output-cap gateway may reject 512; retry tiny (a non-reasoning model
+    // still emits a tool_call in 16 tokens). Reuse the working budget for stream.
+    const small = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, maxTokens: 16, timeoutMs });
+    if (small.ok) { nonStream = small; maxTokens = 16; }
+    else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
+  }
+  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, maxTokens, stream: true, timeoutMs });
   if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}` };
   return {
     ok: true,
@@ -217,16 +231,18 @@ async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutM
 }
 
 async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
-  let nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
-  // The reasoning-tolerant default (512) can be rejected by a strict gateway whose
-  // OUTPUT cap is below it. Don't false-reject such a model: retry once at the old
-  // tiny budget (which used to pass) — a non-reasoning model then answers fine.
+  let maxTokens = 512; // reasoning-tolerant default
+  let nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens, timeoutMs });
+  // A strict gateway whose OUTPUT cap is below 512 rejects the default. Don't
+  // false-reject it: retry once at the old tiny budget (which used to pass) — a
+  // non-reasoning model answers fine — and REUSE that budget for the stream call
+  // too (else the stream request would re-hit the same cap and reject the model).
   if (!nonStream.ok) {
     const small = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens: 16, timeoutMs });
-    if (small.ok) nonStream = small;
+    if (small.ok) { nonStream = small; maxTokens = 16; }
     else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
   }
-  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, stream: true, timeoutMs });
+  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens, stream: true, timeoutMs });
   if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}`, nonStreamShape: nonStream.shape };
   return {
     ok: true,

@@ -1,6 +1,8 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { buildTurnArtifacts } = require("./turn-artifacts");
 const { ARTIFACT_SCHEMA_VERSION } = require("./session-artifact-backfill");
 const { buildTurnResultBlocks, RESULT_BLOCK_SCHEMA_VERSION } = require("./turn-result-blocks");
@@ -354,10 +356,15 @@ class TurnArchive {
     try {
       const intervalMs = Math.max(60_000, Number(process.env.LILY_WORKSPACE_RECONCILE_MS || 900_000));
       if (!this._reconciledAt) this._reconciledAt = new Map();
-      const last = this._reconciledAt.get(workspacePath) || 0;
+      // Normalize the debounce key (realpath, fall back to resolve) so path-form
+      // variations — trailing slash, symlink, relative — don't each get their own
+      // slot and silently defeat the once-per-interval throttle.
+      let key = workspacePath;
+      try { key = fs.realpathSync(workspacePath); } catch { key = path.resolve(workspacePath); }
+      const last = this._reconciledAt.get(key) || 0;
       const now = Date.now();
       if (now - last < intervalMs) return;
-      this._reconciledAt.set(workspacePath, now);
+      this._reconciledAt.set(key, now);
       setImmediate(() => {
         Promise.resolve()
           .then(() => require("./mcp/file-intelligence-index").reconcileWorkspaceIndex({ workspacePath }))
