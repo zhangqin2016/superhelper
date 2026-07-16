@@ -47,6 +47,14 @@ function memoryRelevanceScore(item = {}, query = "") {
   return hits / queryTokens.length;
 }
 
+// STABLE identity for reinforcement — id+kind+sourceVersion, NOT the text-hash
+// entryKey. Selection can COMPACT an over-budget item's text, which would change
+// entryKey; keying reinforcement off identity keeps record-time and load-time keys
+// aligned so the boost actually applies (and survives cosmetic text changes).
+function reinforcementKey(item = {}) {
+  return `${item.id || ""}:${item.kind || ""}:${item.sourceVersion || ""}`;
+}
+
 function rankMemoryItemsWithDiagnostics(items = [], query = "", opts = {}) {
   const list = Array.isArray(items) ? items : [];
   // When a REAL-embedding semantic map is supplied (opts.semanticMap), use it for
@@ -67,7 +75,7 @@ function rankMemoryItemsWithDiagnostics(items = [], query = "", opts = {}) {
     // useful. opts.reinforcement is a Map(entryKey → boost ≤ MAX_BOOST). Deliberately
     // tiny vs relevance*25 so it only reorders already-relevant items — never
     // surfaces an irrelevant one. Not applied to critical items (they're pinned).
-    const reinforcement = opts.reinforcement instanceof Map ? Number(opts.reinforcement.get(entryKey(item)) || 0) : 0;
+    const reinforcement = opts.reinforcement instanceof Map ? Number(opts.reinforcement.get(reinforcementKey(item)) || 0) : 0;
     return {
       ...item,
       relevance,
@@ -373,7 +381,7 @@ function buildContextMemory(input = {}) {
   if (process.env.LILY_MEMORY_REINFORCE === "1") {
     try {
       const { reinforcementBoosts } = require("./memory-reinforcement");
-      reinforcement = reinforcementBoosts(items.map((item) => entryKey(item)), projectKey, Date.now());
+      reinforcement = reinforcementBoosts(items.map(reinforcementKey), projectKey, Date.now());
     } catch {
       reinforcement = null;
     }
@@ -387,7 +395,7 @@ function buildContextMemory(input = {}) {
   // reinforcement signal. Deferred off the turn path (fire-and-forget) so the
   // sync disk write never adds latency; fail-open, best-effort.
   if (reinforcement && selected.length) {
-    const usedKeys = selected.map((item) => entryKey(item));
+    const usedKeys = selected.map(reinforcementKey);
     setImmediate(() => {
       try {
         require("./memory-reinforcement").recordUsage(projectKey, usedKeys, Date.now());
@@ -451,6 +459,7 @@ module.exports = {
   memoryRelevanceScore,
   rankMemoryItems,
   rankMemoryItemsWithDiagnostics,
+  reinforcementKey,
   resolveMemoryMaxChars,
   selectMemoryItems,
   selectMemoryItemsWithDiagnostics,

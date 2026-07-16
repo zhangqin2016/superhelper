@@ -10,8 +10,7 @@ process.env.LILY_USER_DATA_DIR = tmp;
 
 const require = createRequire(import.meta.url);
 const { MAX_BOOST, scoreFrom, recordUsage, loadReinforcement, reinforcementBoosts } = require("../src/main/memory-reinforcement.js");
-const { rankMemoryItemsWithDiagnostics } = require("../src/main/memory-registry.js");
-const { entryKey } = require("../src/main/memory-vector-index.js");
+const { rankMemoryItemsWithDiagnostics, reinforcementKey } = require("../src/main/memory-registry.js");
 
 const NOW = 1_800_000_000_000;
 const DAY = 86_400_000;
@@ -42,8 +41,14 @@ const items = [
   { id: "b", kind: "reference", text: "database connection pool tuning", priority: 50 }, // same as a
   { id: "c", kind: "reference", text: "unrelated css color palette notes", priority: 50 },
 ];
-const kb = entryKey(items[1]); // boost item b
-const kc = entryKey(items[2]); // heavily boost the irrelevant item c
+// reinforcement key is text-INDEPENDENT so it survives selection compaction
+assert.equal(
+  reinforcementKey({ id: "x", kind: "k", sourceVersion: "1", text: "full long text" }),
+  reinforcementKey({ id: "x", kind: "k", sourceVersion: "1", text: "compact…" }),
+  "reinforcement key ignores text (survives compaction) — record/load keys stay aligned",
+);
+const kb = reinforcementKey(items[1]); // boost item b
+const kc = reinforcementKey(items[2]); // heavily boost the irrelevant item c
 const reinforcement = new Map([[kb, MAX_BOOST], [kc, MAX_BOOST]]);
 const ranked = rankMemoryItemsWithDiagnostics(items, "database connection pool", { reinforcement }).items;
 const byId = Object.fromEntries(ranked.map((r) => [r.id, r]));
