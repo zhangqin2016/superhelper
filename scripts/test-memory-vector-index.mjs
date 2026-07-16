@@ -87,6 +87,29 @@ assert.equal(makeEmbeddingCaller({}), null, "no baseUrl/model → null");
 assert.equal(makeEmbeddingCaller({ baseUrl: "https://x/v1" }), null, "missing model → null");
 assert.equal(typeof makeEmbeddingCaller({ baseUrl: "https://x/v1", model: "m" }), "function", "complete → caller");
 
+// ordering: embeddings API may return `data` OUT OF ORDER (each with `index`);
+// the caller must realign so vector[i] matches input[i] (else recall is poisoned).
+{
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      data: [
+        { index: 2, embedding: [2, 2] },
+        { index: 0, embedding: [0, 0] },
+        { index: 1, embedding: [1, 1] },
+      ],
+    }),
+  });
+  try {
+    const caller = makeEmbeddingCaller({ baseUrl: "https://x/v1", model: "m" });
+    const vecs = await caller(["zero", "one", "two"]);
+    assert.deepEqual(vecs, [[0, 0], [1, 1], [2, 2]], "out-of-order embeddings realigned to input order by index");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
 // kill switch: explicit "0" disables even with a key present (no egress)
 assert.equal(resolveEmbeddingConfig({ LILY_MEMORY_EMBEDDING: "0", LILY_EMBEDDING_BASE_URL: "https://x/v1", LILY_EMBEDDING_API_KEY: "sk-t" }), null, "explicit 0 → null (kill switch)");
 assert.equal(resolveEmbeddingCaller({ LILY_MEMORY_EMBEDDING: "0", LILY_EMBEDDING_API_KEY: "sk-t" }), null, "kill switch → no caller (lexical-only)");

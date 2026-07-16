@@ -222,7 +222,15 @@ function makeEmbeddingCaller({ baseUrl = "", apiKey = "", model = "" } = {}) {
     if (!response.ok) throw new Error(`embeddings http ${response.status}`);
     const data = await response.json();
     const rows = Array.isArray(data?.data) ? data.data : [];
-    return rows.map((r) => (Array.isArray(r?.embedding) ? r.embedding : []));
+    // The embeddings spec lets `data` come back in ANY order, each row carrying
+    // its input `index`. Place each vector at its declared index so vector[i]
+    // ALWAYS matches input[i] — a silent misalignment would poison recall.
+    const out = new Array(input.length).fill(null);
+    rows.forEach((r, i) => {
+      const idx = Number.isInteger(r?.index) ? r.index : i;
+      if (idx >= 0 && idx < out.length) out[idx] = Array.isArray(r?.embedding) ? r.embedding : [];
+    });
+    return out.map((v) => (Array.isArray(v) ? v : []));
   };
 }
 

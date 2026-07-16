@@ -31,14 +31,19 @@ function resolveSource(sourcePath, workspacePath) {
   return path.join(String(workspacePath || ""), sp);
 }
 
-// true = file present, false = DEFINITIVELY gone, null = can't tell (keep).
+// true = file present, false = DEFINITIVELY gone (ENOENT), null = can't tell (keep).
 function sourceIsPresent(sourcePath, workspacePath) {
   if (!looksLikeLocalPath(sourcePath)) return null;
   const resolved = resolveSource(sourcePath, workspacePath);
   try {
-    return fs.existsSync(resolved) ? true : false;
-  } catch {
-    return null; // fs error → ambiguous → keep (fail-open)
+    fs.statSync(resolved);
+    return true;
+  } catch (err) {
+    // Only a confirmed "not found" means the file is gone. Any OTHER error
+    // (permission, transient, EMFILE) is ambiguous → keep, never wrongfully
+    // evict (existsSync would have returned false and destroyed real chunks).
+    if (err && err.code === "ENOENT") return false;
+    return null;
   }
 }
 

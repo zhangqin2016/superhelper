@@ -384,11 +384,15 @@ function buildContextMemory(input = {}) {
   const selection = selectMemoryItemsWithDiagnostics(rawItems, { maxChars });
   const selected = selection.selected;
   // Record which memories were actually USED (selected) this turn — the positive
-  // reinforcement signal. Fail-open, best-effort, never blocks.
+  // reinforcement signal. Deferred off the turn path (fire-and-forget) so the
+  // sync disk write never adds latency; fail-open, best-effort.
   if (reinforcement && selected.length) {
-    try {
-      require("./memory-reinforcement").recordUsage(projectKey, selected.map((item) => entryKey(item)), Date.now());
-    } catch { /* best-effort */ }
+    const usedKeys = selected.map((item) => entryKey(item));
+    setImmediate(() => {
+      try {
+        require("./memory-reinforcement").recordUsage(projectKey, usedKeys, Date.now());
+      } catch { /* best-effort */ }
+    });
   }
   return {
     items: selected,

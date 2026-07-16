@@ -217,8 +217,15 @@ async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutM
 }
 
 async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
-  const nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
-  if (!nonStream.ok) return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
+  let nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
+  // The reasoning-tolerant default (512) can be rejected by a strict gateway whose
+  // OUTPUT cap is below it. Don't false-reject such a model: retry once at the old
+  // tiny budget (which used to pass) — a non-reasoning model then answers fine.
+  if (!nonStream.ok) {
+    const small = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens: 16, timeoutMs });
+    if (small.ok) nonStream = small;
+    else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
+  }
   const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, stream: true, timeoutMs });
   if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}`, nonStreamShape: nonStream.shape };
   return {
