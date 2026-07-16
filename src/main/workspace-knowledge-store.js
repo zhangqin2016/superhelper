@@ -358,6 +358,37 @@ class WorkspaceKnowledgeStore {
         return terms.some((term) => haystack.includes(term));
       }).slice(0, max);
     }
+    let matches = rows.map((row) => {
+      const chunk = hydrateChunk(row);
+      return {
+        score: typeof row.rank === "number" ? -row.rank : 1,
+        chunkId: chunk.chunkId,
+        sourcePath: chunk.sourcePath,
+        sourceType: chunk.sourceType,
+        rangeType: chunk.rangeType,
+        rangeStart: chunk.rangeStart,
+        rangeEnd: chunk.rangeEnd,
+        coverage: chunk.coverage,
+        confidence: chunk.confidence,
+        excerpt: chunk.excerpt,
+      };
+    });
+    let evicted = 0;
+    // Freshness guard: never cite a chunk whose local source file was deleted.
+    // Stale hits are dropped from the result AND evicted from the store. Default
+    // on (a safety guarantee); kill switch LILY_WORKSPACE_INDEX_VERIFY=0. Fail-open.
+    if (process.env.LILY_WORKSPACE_INDEX_VERIFY !== "0") {
+      try {
+        const { partitionMatchesByFreshness } = require("./workspace-index-freshness");
+        const { fresh, stalePaths } = partitionMatchesByFreshness(matches, { workspacePath: this.workspacePath });
+        if (stalePaths.length) {
+          matches = fresh;
+          try { evicted = this.evictSources(stalePaths); } catch { /* eviction best-effort */ }
+        }
+      } catch {
+        // freshness helper unavailable — keep raw matches (fail-open)
+      }
+    }
     return {
       ok: true,
       coverage: record.coverage,
@@ -367,22 +398,25 @@ class WorkspaceKnowledgeStore {
       workspaceKey: this.workspaceKey,
       workspacePath: this.workspacePath,
       sourcePath: record.sourcePath,
-      matches: rows.map((row) => {
-        const chunk = hydrateChunk(row);
-        return {
-          score: typeof row.rank === "number" ? -row.rank : 1,
-          chunkId: chunk.chunkId,
-          sourcePath: chunk.sourcePath,
-          sourceType: chunk.sourceType,
-          rangeType: chunk.rangeType,
-          rangeStart: chunk.rangeStart,
-          rangeEnd: chunk.rangeEnd,
-          coverage: chunk.coverage,
-          confidence: chunk.confidence,
-          excerpt: chunk.excerpt,
-        };
-      }),
+      ...(evicted ? { evictedStale: evicted } : {}),
+      matches,
     };
+  }
+
+  // Remove all chunks for the given source paths (e.g. deleted files). The
+  // chunks_ad trigger keeps the FTS mirror in sync. Returns rows removed.
+  evictSources(sourcePaths = []) {
+    const paths = [...new Set((Array.isArray(sourcePaths) ? sourcePaths : []).map((p) => String(p || "")).filter(Boolean))];
+    if (!paths.length) return 0;
+    let removed = 0;
+    const tx = this.db.transaction(() => {
+      for (const sp of paths) {
+        const res = this.db.run("DELETE FROM chunks WHERE source_path = ?", sp);
+        removed += Number(res?.changes || 0);
+      }
+    });
+    tx();
+    return removed;
   }
 
   close() {
