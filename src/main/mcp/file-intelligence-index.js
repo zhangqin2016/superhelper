@@ -10,6 +10,7 @@ const {
 const {
   openStoreForIndex,
   openWorkspaceKnowledgeStore,
+  workspaceKeyForPath,
 } = require("../workspace-knowledge-store");
 
 const DEFAULT_CHUNK_LINE_COUNT = 80;
@@ -387,6 +388,74 @@ function scoreChunk(chunk, terms) {
   return score;
 }
 
+// Stable per-workspace auto-index id (survives across turns/sessions).
+function autoIndexId(workspacePath) {
+  return safeId(`auto_${workspaceKeyForPath(workspacePath)}`);
+}
+
+// Incremental auto-ingest: keep the workspace auto-index current with a turn's
+// file changes. Indexes created/edited files (replacing just that source's
+// chunks) and evicts deleted ones — reusing the same chunkers as full indexing.
+// Bounded + fail-open (per-file try/catch; the freshness guard is the backstop
+// if a delete is ever missed). Deterministic; no model call.
+function autoIndexChangedFiles(input = {}) {
+  const workspacePath = input.workspacePath ? path.resolve(String(input.workspacePath)) : "";
+  if (!workspacePath) return { ok: false, error: "WORKSPACE_REQUIRED" };
+  const indexId = autoIndexId(workspacePath);
+  const changes = Array.isArray(input.changes) ? input.changes : [];
+  if (!changes.length) return { ok: true, indexId, indexed: 0, evicted: 0, skipped: 0 };
+  const maxFiles = Math.max(1, Math.min(Number(input.maxFiles || 40), DEFAULT_MAX_FILES));
+  const maxFileBytes = Math.max(1024, Number(input.maxFileBytes || DEFAULT_MAX_FILE_BYTES));
+  const linesPerChunk = Math.max(1, Math.min(Number(input.chunkLineCount || DEFAULT_CHUNK_LINE_COUNT), 500));
+  let store = null;
+  let indexed = 0;
+  let evicted = 0;
+  let skipped = 0;
+  try {
+    store = openWorkspaceKnowledgeStore({ workspacePath, rootDir: input.storeRoot || undefined });
+    const seen = new Set();
+    for (const change of changes.slice(0, maxFiles)) {
+      const rawPath = String(change?.filePath || change?.path || change?.fileName || "");
+      if (!rawPath) { skipped += 1; continue; }
+      const abs = path.isAbsolute(rawPath) ? rawPath : path.resolve(workspacePath, rawPath);
+      const rel = path.relative(workspacePath, abs) || path.basename(abs);
+      // Only index sources INSIDE the workspace.
+      if (rel.startsWith("..") || path.isAbsolute(rel)) { skipped += 1; continue; }
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      const status = String(change?.status || "").toLowerCase();
+      try {
+        if (status === "deleted" || !fs.existsSync(abs)) {
+          evicted += store.evictSources([rel, abs]);
+          continue;
+        }
+        const info = inspectPath({ path: abs });
+        let fileChunks = [];
+        if (info?.ok && isMetadataIndexable(info)) {
+          fileChunks = chunksForMetadata(info);
+        } else if (info?.ok && info.kind === "text") {
+          const text = readTextFile(abs, maxFileBytes);
+          if (text != null) fileChunks = chunksForText(abs, text, linesPerChunk);
+        }
+        if (!fileChunks.length) { skipped += 1; continue; }
+        fileChunks.forEach((chunk, i) => {
+          chunk.chunkId = `${indexId}:${safeId(rel)}:${i + 1}`;
+          chunk.sourcePath = rel;
+        });
+        store.upsertSourceChunks(indexId, rel, fileChunks);
+        indexed += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err), indexId };
+  } finally {
+    try { store?.close(); } catch { /* ignore */ }
+  }
+  return { ok: true, indexId, indexed, evicted, skipped };
+}
+
 function queryIndex(input = {}) {
   const workspaceStoreRoot = input.storeRoot || "";
   if (input.indexId) {
@@ -395,7 +464,9 @@ function queryIndex(input = {}) {
       store = openStoreForIndex(input.indexId, workspaceStoreRoot);
       if (store) {
         try {
-          return store.queryIndex(input);
+          // file-intelligence indexes are file-backed → verify freshness by
+          // default so a deleted source is never cited (opt out with false).
+          return store.queryIndex({ ...input, verifyFreshness: input.verifyFreshness !== false });
         } finally {
           store.close();
         }
@@ -439,6 +510,8 @@ function queryIndex(input = {}) {
 }
 
 module.exports = {
+  autoIndexChangedFiles,
+  autoIndexId,
   indexPath,
   queryIndex,
   readIndex,

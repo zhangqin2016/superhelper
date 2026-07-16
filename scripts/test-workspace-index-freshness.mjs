@@ -40,7 +40,7 @@ store.writeIndex({
   ],
 });
 
-const res = store.queryIndex({ indexId: "idx1", query: "alpha" });
+const res = store.queryIndex({ indexId: "idx1", query: "alpha", verifyFreshness: true });
 assert.equal(res.ok, true);
 const paths = res.matches.map((m) => m.sourcePath);
 assert.ok(paths.includes("exists.txt"), "present file cited");
@@ -49,7 +49,7 @@ assert.ok(!paths.includes("deleted.txt"), "DELETED file must NOT be cited");
 assert.ok(res.evictedStale >= 1, "stale chunk evicted from the store");
 
 // stale chunk is gone permanently — a later query never resurrects it
-const res2 = store.queryIndex({ indexId: "idx1", query: "alpha" });
+const res2 = store.queryIndex({ indexId: "idx1", query: "alpha", verifyFreshness: true });
 assert.ok(!res2.matches.map((m) => m.sourcePath).includes("deleted.txt"), "evicted chunk stays gone");
 
 // kill switch → verification off → deleted chunk would be returned (baseline)
@@ -59,7 +59,7 @@ store.writeIndex({
   chunks: [{ chunkId: "d1", sourcePath: "deleted.txt", sourceType: "file", text: "alpha still indexed", excerpt: "x" }],
 });
 process.env.LILY_WORKSPACE_INDEX_VERIFY = "0";
-const off = store.queryIndex({ indexId: "idx2", query: "alpha" });
+const off = store.queryIndex({ indexId: "idx2", query: "alpha", verifyFreshness: true });
 assert.ok(off.matches.map((m) => m.sourcePath).includes("deleted.txt"), "kill switch restores unverified behavior");
 delete process.env.LILY_WORKSPACE_INDEX_VERIFY;
 

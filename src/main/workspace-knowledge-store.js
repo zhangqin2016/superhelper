@@ -244,44 +244,7 @@ class WorkspaceKnowledgeStore {
         JSON.stringify(Array.isArray(record.skipped) ? record.skipped : []),
       );
       for (const chunk of chunks) {
-        const tokens = Array.isArray(chunk.tokens) && chunk.tokens.length
-          ? chunk.tokens
-          : tokenize(`${chunk.sourcePath || ""} ${chunk.text || chunk.excerpt || ""}`);
-        const searchText = compactWhitespace([
-          chunk.sourcePath,
-          path.basename(String(chunk.sourcePath || "")),
-          chunk.sourceType,
-          chunk.rangeType,
-          chunk.excerpt,
-          chunk.text,
-          tokens.join(" "),
-          chunk.indexPolicy,
-          ...(Array.isArray(chunk.requiredPacks) ? chunk.requiredPacks : []),
-          ...(Array.isArray(chunk.recommendedActions) ? chunk.recommendedActions : []),
-        ].filter(Boolean).join(" "));
-        this.db.run(
-          `INSERT INTO chunks (
-            index_id, chunk_id, source_path, source_type, range_type, range_start,
-            range_end, coverage, confidence, excerpt, text, tokens_json,
-            search_text, index_policy, required_packs_json, recommended_actions_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          indexId,
-          String(chunk.chunkId || `${indexId}-chunk`),
-          String(chunk.sourcePath || ""),
-          String(chunk.sourceType || ""),
-          String(chunk.rangeType || ""),
-          Number(chunk.rangeStart || 0),
-          Number(chunk.rangeEnd || 0),
-          String(chunk.coverage || ""),
-          String(chunk.confidence || ""),
-          String(chunk.excerpt || ""),
-          String(chunk.text || ""),
-          encodeArray(tokens),
-          searchText,
-          String(chunk.indexPolicy || ""),
-          encodeArray(chunk.requiredPacks),
-          encodeArray(chunk.recommendedActions),
-        );
+        this._insertChunk(indexId, chunk);
       }
     });
     tx();
@@ -300,6 +263,82 @@ class WorkspaceKnowledgeStore {
       dbPath: this.dbPath,
       chunkCount: chunks.length,
     };
+  }
+
+  // Insert one chunk row (shared by writeIndex + upsertSourceChunks). The
+  // chunks_ai trigger mirrors it into the FTS table.
+  _insertChunk(indexId, chunk) {
+    const tokens = Array.isArray(chunk.tokens) && chunk.tokens.length
+      ? chunk.tokens
+      : tokenize(`${chunk.sourcePath || ""} ${chunk.text || chunk.excerpt || ""}`);
+    const searchText = compactWhitespace([
+      chunk.sourcePath,
+      path.basename(String(chunk.sourcePath || "")),
+      chunk.sourceType,
+      chunk.rangeType,
+      chunk.excerpt,
+      chunk.text,
+      tokens.join(" "),
+      chunk.indexPolicy,
+      ...(Array.isArray(chunk.requiredPacks) ? chunk.requiredPacks : []),
+      ...(Array.isArray(chunk.recommendedActions) ? chunk.recommendedActions : []),
+    ].filter(Boolean).join(" "));
+    this.db.run(
+      `INSERT INTO chunks (
+        index_id, chunk_id, source_path, source_type, range_type, range_start,
+        range_end, coverage, confidence, excerpt, text, tokens_json,
+        search_text, index_policy, required_packs_json, recommended_actions_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      indexId,
+      String(chunk.chunkId || `${indexId}-chunk`),
+      String(chunk.sourcePath || ""),
+      String(chunk.sourceType || ""),
+      String(chunk.rangeType || ""),
+      Number(chunk.rangeStart || 0),
+      Number(chunk.rangeEnd || 0),
+      String(chunk.coverage || ""),
+      String(chunk.confidence || ""),
+      String(chunk.excerpt || ""),
+      String(chunk.text || ""),
+      encodeArray(tokens),
+      searchText,
+      String(chunk.indexPolicy || ""),
+      encodeArray(chunk.requiredPacks),
+      encodeArray(chunk.recommendedActions),
+    );
+  }
+
+  // Incremental ingest (auto-index): replace ONLY this source's chunks inside a
+  // shared index, creating the index row on first write. Used by turn-driven
+  // auto-indexing so one changed file updates without wiping the whole index.
+  upsertSourceChunks(indexId, sourcePath, chunks = []) {
+    const id = String(indexId || "");
+    const sp = String(sourcePath || "");
+    if (!id || !sp) return { ok: false, error: "INDEX_AND_SOURCE_REQUIRED" };
+    const list = Array.isArray(chunks) ? chunks : [];
+    const tx = this.db.transaction(() => {
+      const existing = this.db.get("SELECT index_id FROM indexes WHERE index_id = ?", id);
+      if (!existing) {
+        this.db.run(
+          `INSERT INTO indexes (index_id, workspace_key, workspace_path, source_path, created_at, coverage)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          id, this.workspaceKey, this.workspacePath, this.workspacePath, new Date().toISOString(), "auto",
+        );
+      }
+      this.db.run("DELETE FROM chunks WHERE index_id = ? AND source_path = ?", id, sp);
+      for (const chunk of list) this._insertChunk(id, { ...chunk, sourcePath: sp });
+    });
+    tx();
+    try {
+      registerIndexLocation(this.rootDir, {
+        indexId: id,
+        workspaceKey: this.workspaceKey,
+        workspacePath: this.workspacePath,
+        dbPath: this.dbPath,
+        sourcePath: this.workspacePath,
+      });
+    } catch { /* registry best-effort */ }
+    return { ok: true, indexId: id, sourcePath: sp, chunkCount: list.length };
   }
 
   readIndex(indexId) {
@@ -326,7 +365,7 @@ class WorkspaceKnowledgeStore {
     };
   }
 
-  queryIndex({ indexId, query = "", limit = 8 } = {}) {
+  queryIndex({ indexId, query = "", limit = 8, verifyFreshness = false } = {}) {
     const record = this.readIndex(indexId);
     if (!record.ok) return record;
     const ftsQuery = buildFtsQuery(query);
@@ -375,9 +414,11 @@ class WorkspaceKnowledgeStore {
     });
     let evicted = 0;
     // Freshness guard: never cite a chunk whose local source file was deleted.
-    // Stale hits are dropped from the result AND evicted from the store. Default
-    // on (a safety guarantee); kill switch LILY_WORKSPACE_INDEX_VERIFY=0. Fail-open.
-    if (process.env.LILY_WORKSPACE_INDEX_VERIFY !== "0") {
+    // Stale hits are dropped from the result AND evicted from the store. OPT-IN
+    // (verifyFreshness) because this general FTS store also holds non-file
+    // sources; file-backed retrieval paths (workspace/auto index) turn it on.
+    // Kill switch LILY_WORKSPACE_INDEX_VERIFY=0 forces it off even when opted in.
+    if (verifyFreshness && process.env.LILY_WORKSPACE_INDEX_VERIFY !== "0") {
       try {
         const { partitionMatchesByFreshness } = require("./workspace-index-freshness");
         const { fresh, stalePaths } = partitionMatchesByFreshness(matches, { workspacePath: this.workspacePath });

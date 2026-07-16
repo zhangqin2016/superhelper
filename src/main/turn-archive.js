@@ -322,6 +322,25 @@ class TurnArchive {
     } catch (err) {
       console.warn("[auto-memory] proposal failed:", err?.message || err);
     }
+    // Auto-index the workspace files this turn changed (opt-in
+    // LILY_WORKSPACE_AUTOINDEX=1). Keeps the knowledge index current so retrieval
+    // reflects the latest files; deletes are evicted. Fail-open + non-blocking;
+    // the freshness guard is the backstop if a change is ever missed.
+    if (process.env.LILY_WORKSPACE_AUTOINDEX === "1" && Array.isArray(record.fileChanges) && record.fileChanges.length) {
+      const workspacePath = this._resolveWorkspacePath(sessionId);
+      if (workspacePath) {
+        setImmediate(() => {
+          try {
+            require("./mcp/file-intelligence-index").autoIndexChangedFiles({
+              workspacePath,
+              changes: record.fileChanges,
+            });
+          } catch (err) {
+            console.warn("[auto-index] workspace ingest failed:", err?.message || err);
+          }
+        });
+      }
+    }
     return extra;
   }
 
