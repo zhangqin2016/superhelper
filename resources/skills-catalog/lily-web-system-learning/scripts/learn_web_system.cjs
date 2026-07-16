@@ -298,6 +298,27 @@ function buildPlan(args) {
       outputs: [paths.closureManifest, paths.closureScan],
     },
     {
+      // Active read-only probing of frontend-hinted endpoints not seen in traffic
+      // (+ templated detail endpoints via harvested ids), to push coverage from
+      // "reached in the scan" toward "all reachable APIs". Needs the authed
+      // session; skipped without one. Read-only + permission-respecting + bounded.
+      id: "probeCoverage",
+      required: false,
+      kind: "node",
+      command: [
+        process.execPath,
+        scriptPath("probe_api_coverage.cjs"),
+        "--base-url", args.baseUrl,
+        ...allowDomainArgs(args),
+        "--frontend-source", paths.frontendSource,
+        "--contracts", paths.contracts,
+        ...(args.storageState ? ["--storage-state", args.storageState] : []),
+        "--out", paths.contracts,
+      ],
+      outputs: [paths.contracts],
+      skipWhen: args.storageState ? "" : "missing-storage-state",
+    },
+    {
       id: "authRecipe",
       required: false,
       kind: "node",

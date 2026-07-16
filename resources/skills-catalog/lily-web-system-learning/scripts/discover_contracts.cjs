@@ -664,6 +664,8 @@ module.exports = {
   isHostAllowed,
   isUrlAllowed,
   cookieHeaderFor,
+  fetchResource,
+  joinUrl,
   derefSchema,
   jsonType,
   responseShapeFromSchema,

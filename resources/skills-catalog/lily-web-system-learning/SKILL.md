@@ -133,6 +133,30 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    but keeps Lily's deterministic scanner, domain allowlist, and no-ad-hoc-script
    safety boundary. If the loop does not converge, finalize anyway and record the
    exact gap in `health.json`; never call that a complete system map.
+
+   **Active coverage probing (contract-less systems).** For a system with NO
+   published OpenAPI/GraphQL contract, HAR + scan only reveal endpoints the scan
+   happened to trigger — endpoints the app's own JS references but that weren't
+   reached (permission-gated menus, detail views, unused features) stay as
+   unverified `apiHints`. After coverage-closure, the orchestrator runs
+   `node scripts/probe_api_coverage.cjs --base-url <url> --allow-domain <host>
+   --frontend-source frontend-source-map.json --contracts api-contracts.json
+   --storage-state <sessionPath> --out api-contracts.json` to push coverage from
+   "reached in the scan" toward "all reachable APIs". It does a bounded,
+   authenticated, READ-ONLY probe of each hinted GET endpoint to confirm it exists
+   and learn its real response schema, and fills templated detail endpoints
+   (`/users/{id}`) with an id harvested from a verified collection response
+   (parameter-space probing). STRICT SAFETY: only GET/HEAD are ever sent —
+   POST/PUT/PATCH/DELETE hints are recorded UNVERIFIED and never executed
+   (no mutation risk); a 401/403 is respected and recorded as `access:"forbidden"`
+   (exists, no permission) and never retried or bypassed; the domain allowlist is
+   enforced; probes are capped, rate-limited, and time-bounded; only the existing
+   authed session cookies are used (no UA/webdriver spoofing). It merges new
+   contracts WITHOUT overriding authoritative/HAR ones and reports an honest
+   coverage delta (verified / gated / stale). It runs only with a session; without
+   one it is skipped. This raises coverage on contract-less systems but still does
+   not guarantee completeness — templated endpoints with no harvestable id, and
+   write-only APIs, remain recorded-but-unverified gaps in `health.json`.
    For SPAs (Vue/React/Angular): ALWAYS pass `--storage-state <sessionPath>` so the
    scan runs authenticated, and use `--interactive-readonly`. The scanner waits for
    the app to render before snapshotting (so it no longer captures only an empty
