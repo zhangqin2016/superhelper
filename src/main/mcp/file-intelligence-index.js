@@ -442,7 +442,9 @@ function autoIndexChangedFiles(input = {}) {
           chunk.chunkId = `${indexId}:${safeId(rel)}:${i + 1}`;
           chunk.sourcePath = rel;
         });
-        store.upsertSourceChunks(indexId, rel, fileChunks);
+        let stamp = null;
+        try { const st = fs.statSync(abs); stamp = { mtimeMs: Math.floor(st.mtimeMs), size: st.size }; } catch { /* no stamp */ }
+        store.upsertSourceChunks(indexId, rel, fileChunks, { stamp });
         indexed += 1;
       } catch {
         skipped += 1;
@@ -454,6 +456,81 @@ function autoIndexChangedFiles(input = {}) {
     try { store?.close(); } catch { /* ignore */ }
   }
   return { ok: true, indexId, indexed, evicted, skipped };
+}
+
+// Background reconciliation: catch EXTERNAL changes (files edited/added/deleted
+// outside the agent, so not in any turn's record.fileChanges). Walks the bounded
+// workspace file set, SKIPS files whose mtime+size are unchanged (source_stamps),
+// (re)indexes new/changed ones, and evicts stamps whose files are gone.
+//
+// ASYNC + THROTTLED by contract (must never affect UX): yields to the event loop
+// every `batchSize` files so it can't stall the main thread, bounded by maxFiles,
+// fully fail-open. Meant to be fired in the background (setImmediate / on idle),
+// never on the turn path.
+async function reconcileWorkspaceIndex(input = {}) {
+  const workspacePath = input.workspacePath ? path.resolve(String(input.workspacePath)) : "";
+  if (!workspacePath) return { ok: false, error: "WORKSPACE_REQUIRED" };
+  const indexId = autoIndexId(workspacePath);
+  const maxFiles = Math.max(1, Math.min(Number(input.maxFiles || 800), 5000));
+  const maxFileBytes = Math.max(1024, Number(input.maxFileBytes || DEFAULT_MAX_FILE_BYTES));
+  const linesPerChunk = Math.max(1, Math.min(Number(input.chunkLineCount || DEFAULT_CHUNK_LINE_COUNT), 500));
+  const batchSize = Math.max(1, Math.min(Number(input.batchSize || 8), 200));
+  const yieldToLoop = () => new Promise((resolve) => setImmediate(resolve));
+  let store = null;
+  let scanned = 0;
+  let indexed = 0;
+  let skipped = 0;
+  let evicted = 0;
+  try {
+    store = openWorkspaceKnowledgeStore({ workspacePath, rootDir: input.storeRoot || undefined });
+    const stamps = store.getSourceStamps(indexId);
+    const files = candidateFiles(workspacePath, { maxFiles });
+    const seen = new Set();
+    let inBatch = 0;
+    for (const abs of files) {
+      const rel = path.relative(workspacePath, abs) || path.basename(abs);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
+      seen.add(rel);
+      scanned += 1;
+      try {
+        const st = fs.statSync(abs);
+        const prev = stamps.get(rel);
+        if (prev && prev.mtimeMs === Math.floor(st.mtimeMs) && prev.size === Number(st.size)) {
+          skipped += 1; // unchanged → skip (the whole point of stamps)
+        } else {
+          const info = inspectPath({ path: abs });
+          let fileChunks = [];
+          if (info?.ok && isMetadataIndexable(info)) {
+            fileChunks = chunksForMetadata(info);
+          } else if (info?.ok && info.kind === "text") {
+            const text = readTextFile(abs, maxFileBytes);
+            if (text != null) fileChunks = chunksForText(abs, text, linesPerChunk);
+          }
+          if (fileChunks.length) {
+            fileChunks.forEach((chunk, i) => {
+              chunk.chunkId = `${indexId}:${safeId(rel)}:${i + 1}`;
+              chunk.sourcePath = rel;
+            });
+            store.upsertSourceChunks(indexId, rel, fileChunks, { stamp: { mtimeMs: Math.floor(st.mtimeMs), size: Number(st.size) } });
+            indexed += 1;
+          } else {
+            skipped += 1;
+          }
+        }
+      } catch {
+        skipped += 1;
+      }
+      if ((inBatch += 1) >= batchSize) { inBatch = 0; await yieldToLoop(); }
+    }
+    // Externally-deleted files: stamps whose source no longer appeared in the walk.
+    const gone = [...stamps.keys()].filter((rel) => !seen.has(rel));
+    for (const rel of gone) evicted += store.evictSources([rel]);
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err), indexId };
+  } finally {
+    try { store?.close(); } catch { /* ignore */ }
+  }
+  return { ok: true, indexId, scanned, indexed, skipped, evicted };
 }
 
 function queryIndex(input = {}) {
@@ -512,6 +589,7 @@ function queryIndex(input = {}) {
 module.exports = {
   autoIndexChangedFiles,
   autoIndexId,
+  reconcileWorkspaceIndex,
   indexPath,
   queryIndex,
   readIndex,

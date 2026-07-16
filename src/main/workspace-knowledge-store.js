@@ -216,6 +216,20 @@ class WorkspaceKnowledgeStore {
           END;
         `);
       },
+      // v2: per-source freshness stamps so the background reconcile scan can
+      // SKIP unchanged files (mtime+size) and evict externally-deleted ones.
+      (db) => {
+        db.exec(`
+          CREATE TABLE source_stamps (
+            index_id    TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            mtime_ms    INTEGER NOT NULL DEFAULT 0,
+            size        INTEGER NOT NULL DEFAULT 0,
+            indexed_at  TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (index_id, source_path)
+          );
+        `);
+      },
     ]);
   }
 
@@ -311,7 +325,7 @@ class WorkspaceKnowledgeStore {
   // Incremental ingest (auto-index): replace ONLY this source's chunks inside a
   // shared index, creating the index row on first write. Used by turn-driven
   // auto-indexing so one changed file updates without wiping the whole index.
-  upsertSourceChunks(indexId, sourcePath, chunks = []) {
+  upsertSourceChunks(indexId, sourcePath, chunks = [], { stamp = null } = {}) {
     const id = String(indexId || "");
     const sp = String(sourcePath || "");
     if (!id || !sp) return { ok: false, error: "INDEX_AND_SOURCE_REQUIRED" };
@@ -327,6 +341,14 @@ class WorkspaceKnowledgeStore {
       }
       this.db.run("DELETE FROM chunks WHERE index_id = ? AND source_path = ?", id, sp);
       for (const chunk of list) this._insertChunk(id, { ...chunk, sourcePath: sp });
+      if (stamp) {
+        this.db.run(
+          `INSERT INTO source_stamps (index_id, source_path, mtime_ms, size, indexed_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(index_id, source_path) DO UPDATE SET mtime_ms=excluded.mtime_ms, size=excluded.size, indexed_at=excluded.indexed_at`,
+          id, sp, Math.floor(Number(stamp.mtimeMs || 0)), Math.floor(Number(stamp.size || 0)), new Date().toISOString(),
+        );
+      }
     });
     tx();
     try {
@@ -454,10 +476,25 @@ class WorkspaceKnowledgeStore {
       for (const sp of paths) {
         const res = this.db.run("DELETE FROM chunks WHERE source_path = ?", sp);
         removed += Number(res?.changes || 0);
+        this.db.run("DELETE FROM source_stamps WHERE source_path = ?", sp);
       }
     });
     tx();
     return removed;
+  }
+
+  // Per-source freshness stamps for one index → Map(source_path → {mtimeMs,size}).
+  // Lets the reconcile scan skip files whose mtime+size are unchanged.
+  getSourceStamps(indexId) {
+    const id = String(indexId || "");
+    const out = new Map();
+    if (!id) return out;
+    try {
+      for (const row of this.db.all("SELECT source_path, mtime_ms, size FROM source_stamps WHERE index_id = ?", id)) {
+        out.set(String(row.source_path), { mtimeMs: Number(row.mtime_ms || 0), size: Number(row.size || 0) });
+      }
+    } catch { /* table missing / fail-open → empty */ }
+    return out;
   }
 
   close() {

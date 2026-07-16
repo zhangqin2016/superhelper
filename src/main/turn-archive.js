@@ -326,22 +326,44 @@ class TurnArchive {
     // LILY_WORKSPACE_AUTOINDEX=1). Keeps the knowledge index current so retrieval
     // reflects the latest files; deletes are evicted. Fail-open + non-blocking;
     // the freshness guard is the backstop if a change is ever missed.
-    if (process.env.LILY_WORKSPACE_AUTOINDEX === "1" && Array.isArray(record.fileChanges) && record.fileChanges.length) {
+    if (process.env.LILY_WORKSPACE_AUTOINDEX === "1") {
       const workspacePath = this._resolveWorkspacePath(sessionId);
       if (workspacePath) {
-        setImmediate(() => {
-          try {
-            require("./mcp/file-intelligence-index").autoIndexChangedFiles({
-              workspacePath,
-              changes: record.fileChanges,
-            });
-          } catch (err) {
-            console.warn("[auto-index] workspace ingest failed:", err?.message || err);
-          }
-        });
+        if (Array.isArray(record.fileChanges) && record.fileChanges.length) {
+          setImmediate(() => {
+            try {
+              require("./mcp/file-intelligence-index").autoIndexChangedFiles({
+                workspacePath,
+                changes: record.fileChanges,
+              });
+            } catch (err) {
+              console.warn("[auto-index] workspace ingest failed:", err?.message || err);
+            }
+          });
+        }
+        this._maybeReconcileWorkspace(workspacePath);
       }
     }
     return extra;
+  }
+
+  // Debounced background reconcile to catch EXTERNAL edits (not in this turn's
+  // fileChanges). At most once per workspace per RECONCILE_INTERVAL, fired via
+  // setImmediate so it's fully off the turn/UX path (reconcile itself yields).
+  _maybeReconcileWorkspace(workspacePath) {
+    try {
+      const intervalMs = Math.max(60_000, Number(process.env.LILY_WORKSPACE_RECONCILE_MS || 900_000));
+      if (!this._reconciledAt) this._reconciledAt = new Map();
+      const last = this._reconciledAt.get(workspacePath) || 0;
+      const now = Date.now();
+      if (now - last < intervalMs) return;
+      this._reconciledAt.set(workspacePath, now);
+      setImmediate(() => {
+        Promise.resolve()
+          .then(() => require("./mcp/file-intelligence-index").reconcileWorkspaceIndex({ workspacePath }))
+          .catch((err) => console.warn("[auto-index] reconcile failed:", err?.message || err));
+      });
+    } catch { /* fail-open */ }
   }
 
   _resolveWorkspacePath(sessionId) {
