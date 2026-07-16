@@ -194,6 +194,11 @@ async function refreshOfficialConversation(sessionId, opts = {}) {
   if (!sessionId) return false;
   const result = await window.assistantClient.getSessionConversation(sessionId, {
     limit: CONVERSATION_PAGE_SIZE,
+    // Reconciling official history on switch must not boot the engine (the
+    // few-second stall). If the runner is already warm we get official history
+    // for free; if it's cold we keep the local store and let the next send
+    // resume the engine and reconcile.
+    allowEngineSpawn: false,
   });
   if (!result?.ok || result.source === "lily-local-first") return false;
   if (typeof opts.isCurrent === "function" && !opts.isCurrent()) return false;

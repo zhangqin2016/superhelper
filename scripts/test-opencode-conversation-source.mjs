@@ -390,6 +390,50 @@ assert.equal(ensuredSessionId, "s1", "passive history read starts an idle OpenCo
 assert.equal(passivePage.source, "opencode", "resumable session uses official OpenCode history even without a live runner");
 assert.equal(passivePage.conversation[0].content, "fresh after restart");
 
+// The "切换会话卡几秒" fix: a passive read with allowEngineSpawn:false (what the
+// session-switch history refresh now sends) must NEVER boot the engine. It
+// returns the local store immediately; the engine resumes on the next send.
+let spawnedOnPassiveSwitch = false;
+const noSpawnCtx = {
+  ensureConversationRunner: async () => {
+    spawnedOnPassiveSwitch = true;
+    throw new Error("passive switch read must not start OpenCode");
+  },
+  sessionManager: {
+    findById: () => resumableSession,
+    getActive: () => resumableSession,
+    getConversationPage: () => fallbackPage,
+    getConversation: () => [],
+    getProjectedConversation: () => [],
+  },
+  runnerPool: { get: () => null },
+};
+const noSpawnPage = await getConversationPageFromSource(noSpawnCtx, "s1", { allowEngineSpawn: false });
+assert.equal(spawnedOnPassiveSwitch, false, "allowEngineSpawn:false never boots the engine for a passive read");
+assert.equal(noSpawnPage.source, "lily-local-first", "no-spawn passive read returns the local store immediately");
+assert.equal(noSpawnPage.officialRefreshRecommended, false, "no-spawn read does not request a follow-up refresh (would loop)");
+
+// Kill-switch restores the eager boot even when the caller opted out.
+process.env.LILY_SESSION_SWITCH_EAGER_RESUME = "1";
+let eagerSpawned = "";
+const eagerCtx = {
+  ensureConversationRunner: async (_c, sid) => {
+    eagerSpawned = sid;
+    return { runner: { isAlive: () => true, getConversationPage: async () => ({ ok: true, source: "opencode", sessionId: sid, conversation: [] }) } };
+  },
+  sessionManager: {
+    findById: () => resumableSession,
+    getActive: () => resumableSession,
+    getConversationPage: () => fallbackPage,
+    getConversation: () => [],
+    getProjectedConversation: () => [],
+  },
+  runnerPool: { get: () => null },
+};
+await getConversationPageFromSource(eagerCtx, "s1", { allowEngineSpawn: false });
+assert.equal(eagerSpawned, "s1", "LILY_SESSION_SWITCH_EAGER_RESUME=1 restores eager engine boot even when the caller opted out");
+delete process.env.LILY_SESSION_SWITCH_EAGER_RESUME;
+
 const ctx = {
   sessionManager: {
     findById: () => baseSession,

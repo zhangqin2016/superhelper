@@ -87,6 +87,9 @@ function registerSessionHandlers(ctx) {
       before: Number.isInteger(payload?.before) ? payload.before : undefined,
       limit: Number.isInteger(payload?.limit) ? payload.limit : undefined,
       preferLocal: Boolean(payload?.preferLocal),
+      // Passive reads opt OUT of engine boot (default stays true for callers,
+      // e.g. the send path, that legitimately need canonical history now).
+      allowEngineSpawn: payload?.allowEngineSpawn !== false,
     });
   });
 

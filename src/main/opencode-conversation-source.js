@@ -504,14 +504,27 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     };
   };
   let runner = ctx.runnerPool?.get?.(session.id);
-  if (opts.preferLocal && opts.before == null && !runner?.isAlive?.()) {
+  // Passive reads (session switch / history refresh) must NOT pay to boot the
+  // engine: spawning + resuming opencode serve stalls the main loop for
+  // seconds (the "切换会话卡几秒"). Only spawn when the caller opts in — a
+  // message send does (turn-orchestrator ensures the runner anyway, which
+  // reconciles official history for free); a plain switch passes
+  // allowEngineSpawn:false / preferLocal and reads the local store now.
+  // Kill-switch: LILY_SESSION_SWITCH_EAGER_RESUME=1 restores eager boot.
+  const allowEngineSpawn =
+    opts.allowEngineSpawn !== false || process.env.LILY_SESSION_SWITCH_EAGER_RESUME === "1";
+  const runnerAlive = Boolean(runner?.getConversationPage && runner?.isAlive?.());
+  if (!runnerAlive && opts.before == null && (opts.preferLocal || !allowEngineSpawn)) {
     return {
       ...fallback(),
       source: "lily-local-first",
-      officialRefreshRecommended: Boolean(session.agentResumeId),
+      // Only recommend a follow-up official refresh when a spawn is actually
+      // permitted; otherwise the refresh would just no-op and re-render.
+      officialRefreshRecommended: allowEngineSpawn && Boolean(session.agentResumeId),
     };
   }
-  if ((!runner?.getConversationPage || !runner?.isAlive?.()) && session.agentResumeId) {
+  if (allowEngineSpawn && !runnerAlive && session.agentResumeId) {
+    const spawnStartedAt = Date.now();
     try {
       const ensureConversationRunner =
         ctx.ensureConversationRunner ||
@@ -522,6 +535,10 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
       // Official OpenCode history is best-effort here. If the engine cannot be
       // started for a passive read, Lily's metadata/legacy store remains the
       // offline fallback.
+    }
+    const spawnMs = Date.now() - spawnStartedAt;
+    if (spawnMs > 500) {
+      console.info("[session] engine resume for history read took %dms (session=%s)", spawnMs, session.id);
     }
   }
   if (!runner?.getConversationPage || !runner?.isAlive?.()) return fallback();
