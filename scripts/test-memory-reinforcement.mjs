@@ -56,6 +56,7 @@ assert.ok(byId.b.effectivePriority > byId.a.effectivePriority, "among equal-rele
 assert.equal(byId.b.effectivePriority - byId.a.effectivePriority, MAX_BOOST, "boost is exactly the bounded term");
 assert.ok(byId.a.effectivePriority > byId.c.effectivePriority, "a relevant unboosted item still beats an irrelevant max-boosted one (can't dumb the model)");
 assert.equal(byId.a.reinforcement, 0, "unboosted item carries no reinforcement");
+assert.equal(byId.c.reinforcement, 0, "boost is GATED OFF for an item irrelevant to THIS query — past popularity can't resurrect it (no 越用越笨 loop)");
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("memory-reinforcement: ok");

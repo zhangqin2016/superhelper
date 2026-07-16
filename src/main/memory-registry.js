@@ -72,10 +72,13 @@ function rankMemoryItemsWithDiagnostics(items = [], query = "", opts = {}) {
       : Number(item.semanticRelevance || 0);
     const critical = Number(item?.priority || 0) >= 90;
     // Reinforcement (④): a small, BOUNDED nudge for memories that keep proving
-    // useful. opts.reinforcement is a Map(entryKey → boost ≤ MAX_BOOST). Deliberately
-    // tiny vs relevance*25 so it only reorders already-relevant items — never
-    // surfaces an irrelevant one. Not applied to critical items (they're pinned).
-    const reinforcement = opts.reinforcement instanceof Map ? Number(opts.reinforcement.get(reinforcementKey(item)) || 0) : 0;
+    // useful. opts.reinforcement is a Map(reinforcementKey → boost ≤ MAX_BOOST).
+    // GATED on this-query relevance so past popularity can only REORDER items
+    // already relevant to the current query — it can never resurrect an
+    // irrelevant-but-frequently-used memory (the "越用越笨" feedback trap). Tiny vs
+    // relevance*25, and never applied to critical (pinned) items.
+    const rawBoost = opts.reinforcement instanceof Map ? Number(opts.reinforcement.get(reinforcementKey(item)) || 0) : 0;
+    const reinforcement = (relevance > 0 || semanticRelevance > 0) ? rawBoost : 0;
     return {
       ...item,
       relevance,
