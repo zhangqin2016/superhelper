@@ -56,21 +56,33 @@
   ${endif}
 !macroend
 
-; Force-terminate Lily: the app process tree (both exe names, /T kills children),
-; PLUS anything running from the install dir — the bundled engine/runtime (node,
-; opencode, python helpers) that Lily spawns can outlive the main window and hold
-; a lock on the install folder, which is what blocks the file replacement.
+; Force-terminate Lily WITHOUT killing this installer. Two self-kill traps the
+; earlier /T version fell into: (1) in-app updates launch setup as a DESCENDANT
+; of "Lily Workbench.exe", so `taskkill /T` (kill children) took setup down too;
+; (2) a blind install-dir sweep can match the setup process itself. So:
+;  - taskkill the app by image name only (NO /T) — kills the app windows but not
+;    their descendants, so a setup launched under the app survives;
+;  - reap the bundled engine/runtime children that hold the install-dir lock
+;    (node/opencode/python) via a path sweep that EXCLUDES this installer's PID
+;    and its whole ancestor chain. Win11-safe (CIM Win32_Process, no wmic).
 !macro _lilyForceKill
+  Push $R8
+  Push $R9
   DetailPrint "Closing Lily Workbench before installing..."
-  nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "Lily Workbench.exe" /T /F`
-  Pop $1
-  nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "LilyWorkbench.exe" /T /F`
-  Pop $1
-  ; Path-based sweep (Win11 has no wmic): kill every process whose image lives
-  ; under $INSTDIR. `Where-Object Path -Like` avoids $_ so NSIS won't mangle it.
-  nsExec::Exec `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "Get-Process | Where-Object Path -Like '$INSTDIR\*' | Stop-Process -Force -ErrorAction SilentlyContinue"`
-  Pop $1
+  nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "Lily Workbench.exe" /F`
+  Pop $R8
+  nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "LilyWorkbench.exe" /F`
+  Pop $R8
+  ; $$ escapes an NSIS '$' so PowerShell receives a literal $var; $INSTDIR is the
+  ; NSIS var (real path). Build the protected set = self + all ancestors, then
+  ; Stop-Process everything named Lily / living under $INSTDIR that isn't in it.
+  System::Call 'kernel32::GetCurrentProcessId() i .s'
+  Pop $R9
+  nsExec::Exec `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "$$prot=@{}; $$p=[int]$R9; while($$p -and -not $$prot.ContainsKey($$p)){ $$prot[$$p]=$$true; $$pr=Get-CimInstance Win32_Process -Filter ('ProcessId='+$$p) -ErrorAction SilentlyContinue; if($$pr){$$p=[int]$$pr.ParentProcessId}else{break} }; Get-CimInstance Win32_Process | Where-Object { ($$_.Name -eq 'Lily Workbench.exe' -or $$_.Name -eq 'LilyWorkbench.exe' -or ($$_.ExecutablePath -and $$_.ExecutablePath -like '$INSTDIR\*')) -and (-not $$prot.ContainsKey([int]$$_.ProcessId)) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+  Pop $R8
   Sleep 1200
+  Pop $R9
+  Pop $R8
 !macroend
 
 !macro customCheckAppRunning
