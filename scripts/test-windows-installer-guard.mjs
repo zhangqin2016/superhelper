@@ -19,6 +19,19 @@ assert.match(installerInclude, /!macro customCheckAppRunning/, "Installer guard 
 assert.match(installerInclude, /LilyWorkbench\.exe/, "Installer guard must detect the current executable name.");
 assert.match(installerInclude, /Lily Workbench\.exe/, "Installer guard must detect legacy executable names.");
 assert.match(installerInclude, /taskkill/, "Installer guard must close running app processes before extraction.");
+// SELF-KILL GUARD: taskkill must NOT use /T on the app image name. In-app
+// updates launch setup as a descendant of Lily Workbench.exe, so /T (kill the
+// whole descendant tree) would take the installer down with it.
+assert.doesNotMatch(
+  installerInclude,
+  /taskkill[^\n]*\/IM[^\n]*\/T\b/i,
+  "Installer must NOT taskkill the app image with /T — /T kills the descendant tree, which includes an in-app-update setup process (self-kill).",
+);
+// The install-dir/engine sweep must exclude THIS installer and its whole
+// ancestor chain, so setup never kills itself or the process that launched it.
+assert.match(installerInclude, /GetCurrentProcessId/, "Force-kill must resolve the installer's own PID to protect it.");
+assert.match(installerInclude, /ParentProcessId/, "Force-kill must walk the installer's ancestor chain to protect it.");
+assert.match(installerInclude, /ContainsKey/, "Force-kill must exclude the protected (self + ancestors) set before Stop-Process.");
 assert.match(installerInclude, /MB_OKCANCEL/, "Installer guard must ask before closing the app.");
 assert.match(installerInclude, /MB_RETRYCANCEL/, "Installer guard must let users retry after manual close.");
 assert.equal(packageJson?.build?.nsis?.installerIcon, "icon.ico", "Windows installer icon must use the Lily icon asset.");
