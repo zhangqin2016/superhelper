@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { purgeMacJunk } from "./lib/clean-archive.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
@@ -99,9 +100,12 @@ function ensureSource(source, platform) {
 
 function makeZip({ sourceDir, outFile, dryRun }) {
   if (!commandExists("zip")) fail("zip command not found");
+  // Keep the customer download clean: drop Finder junk from the tree and tell
+  // zip to never store .DS_Store / AppleDouble entries.
+  purgeMacJunk(sourceDir);
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   if (fs.existsSync(outFile)) fs.rmSync(outFile, { force: true });
-  run("zip", ["-qry", outFile, "."], { cwd: sourceDir, dryRun });
+  run("zip", ["-qry", outFile, ".", "-x", ".DS_Store", "-x", "*/.DS_Store", "-x", "._*", "-x", "*/._*", "-x", "__MACOSX/*"], { cwd: sourceDir, dryRun });
 }
 
 async function adminHeaders(api) {

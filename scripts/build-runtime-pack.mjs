@@ -26,6 +26,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { healthProbeForSpec, updateRuntimePackLock } from "./lib/runtime-pack-lock.mjs";
+import { createCleanTarball } from "./lib/clean-archive.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -240,8 +241,11 @@ try {
   const outFile = path.join(outDir, fileName);
   console.log(`[build-runtime-pack] packing → ${outFile}`);
   // -C stageDir . : archive contents at the root, so the app extracts a flat
-  // PYTHONPATH dir (matching runtime-packs.js extraction).
-  execFileSync("tar", ["-czf", outFile, "-C", stageDir, "."], { stdio: "inherit" });
+  // PYTHONPATH dir (matching runtime-packs.js extraction). createCleanTarball
+  // strips macOS xattrs/Finder junk and disables AppleDouble, then VERIFIES the
+  // result has no ._*/.DS_Store/__MACOSX and (for a non-darwin pack) no darwin
+  // binaries — so what the customer downloads is clean whatever host built it.
+  createCleanTarball(stageDir, outFile, { platform });
 
   const sizeBytes = fs.statSync(outFile).size;
   const sha256 = sha256File(outFile);
