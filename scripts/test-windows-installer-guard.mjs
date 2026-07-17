@@ -45,6 +45,8 @@ assert.match(
   /toolsets\.winCodeSign=1\.1\.0/,
   "Windows packaging must use the split winCodeSign toolset so unrelated macOS symlinks cannot block Windows releases.",
 );
+assert.match(distWinScript, /SIGNTOOL_PATH/, "Windows packaging must reuse cached signtool when available.");
+assert.match(distWinScript, /ELECTRON_BUILDER_RCEDIT_PATH/, "Windows packaging must reuse cached rcedit when available.");
 
 const mainProcess = await readFile(path.join(repoRoot, "src", "main.js"), "utf8");
 assert.match(mainProcess, /setAppUserModelId\("cn\.lilywb\.workbench"\)/, "Windows runtime AppUserModelId must match the packaged app identity.");

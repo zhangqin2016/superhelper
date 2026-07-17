@@ -113,6 +113,27 @@ fi
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
 
+if [[ -z "${SIGNTOOL_PATH:-}" || -z "${ELECTRON_BUILDER_RCEDIT_PATH:-}" ]]; then
+  cache_root=""
+  if [[ -n "${LOCALAPPDATA:-}" && -x "$(command -v cygpath 2>/dev/null || true)" ]]; then
+    cache_root="$(cygpath -u "$LOCALAPPDATA")/electron-builder/Cache/winCodeSign"
+  fi
+  if [[ -n "$cache_root" && -d "$cache_root" ]]; then
+    while IFS= read -r -d '' dir; do
+      if [[ -z "${ELECTRON_BUILDER_RCEDIT_PATH:-}" && -f "$dir/rcedit-x64.exe" ]]; then
+        export ELECTRON_BUILDER_RCEDIT_PATH="$(cygpath -w "$dir")"
+      fi
+      signtool="$dir/windows-10/x64/signtool.exe"
+      if [[ -z "${SIGNTOOL_PATH:-}" && -f "$signtool" ]]; then
+        export SIGNTOOL_PATH="$(cygpath -w "$signtool")"
+      fi
+      if [[ -n "${SIGNTOOL_PATH:-}" && -n "${ELECTRON_BUILDER_RCEDIT_PATH:-}" ]]; then
+        break
+      fi
+    done < <(find "$cache_root" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+  fi
+fi
+
 if [[ ! -e "bundles/win32-x64/opencode/bin/opencode.exe" && ! -e "bundles/win32-x64/opencode/bin/opencode" ]]; then
   echo "[dist-win] 错误: 缺少 bundles/win32-x64/opencode 引擎"
   echo "[dist-win] 先运行: node scripts/fetch-opencode-engine.mjs --platform win32-x64"
