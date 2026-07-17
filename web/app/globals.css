@@ -571,6 +571,14 @@ a {
   background: rgba(255, 255, 255, 0.98);
 }
 
+.site-brand-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 14px rgba(88, 108, 232, 0.18));
+}
+
 .language-switcher select {
   min-width: 118px;
   border: 1px solid #dce1eb;

@@ -13,7 +13,8 @@ export default function AccountLayout({ children }) {
     <main className="min-h-screen bg-slate-50 text-slate-950">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-5 py-4 sm:justify-between sm:px-6">
-          <Link href="/" className="shrink-0 text-base font-semibold sm:text-lg">
+          <Link href="/" className="flex shrink-0 items-center gap-2 text-base font-semibold sm:text-lg">
+            <img className="h-8 w-8 rounded-lg object-contain" src="/brand/icon.png" alt="" width="32" height="32" />
             <span className="sm:hidden">Lily</span>
             <span className="hidden sm:inline">Lily Workbench</span>
           </Link>

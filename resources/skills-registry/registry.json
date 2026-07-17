@@ -1407,7 +1407,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1444,7 +1444,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1481,7 +1481,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1703,7 +1703,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -2258,7 +2258,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -2303,8 +2303,8 @@
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "workflow",
       "riskLevel": "low",
-      "defaultEligible": true,
-      "featured": true,
+      "defaultEligible": false,
+      "featured": false,
       "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Document Coauthoring",
@@ -2340,8 +2340,8 @@
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
       "riskLevel": "low",
-      "defaultEligible": true,
-      "featured": true,
+      "defaultEligible": false,
+      "featured": false,
       "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Word Document",
@@ -2377,8 +2377,8 @@
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
       "riskLevel": "low",
-      "defaultEligible": true,
-      "featured": true,
+      "defaultEligible": false,
+      "featured": false,
       "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "PDF Document",
@@ -2414,8 +2414,8 @@
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
       "riskLevel": "low",
-      "defaultEligible": true,
-      "featured": true,
+      "defaultEligible": false,
+      "featured": false,
       "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Presentation Decks",
@@ -2451,8 +2451,8 @@
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
       "riskLevel": "low",
-      "defaultEligible": true,
-      "featured": true,
+      "defaultEligible": false,
+      "featured": false,
       "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Spreadsheets",

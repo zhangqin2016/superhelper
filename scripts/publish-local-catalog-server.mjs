@@ -338,11 +338,20 @@ function stringMapField(...candidates) {
   return Object.keys(out).length > 0 ? JSON.stringify(out) : "";
 }
 
+function normalizeSkillCategory(category) {
+  const value = String(category || "").trim();
+  if (value === "dev") return "coding";
+  return value || "core";
+}
+
 function skillUploadFields({ pack, skillDir, channel }) {
   const manifest = readJson(path.join(skillDir, "skill.manifest.json"), {});
   const entry = registryById().get(pack.skillId) || {};
   const riskLevel = entry.riskLevel || manifest.riskLevel || "low";
-  const defaultEligible = riskLevel === "high" ? false : Boolean(entry.defaultEligible);
+  const publisher = entry.publisher || manifest.publisher || "Lily Workbench";
+  const sourceKind = entry.sourceKind || manifest.sourceKind || "lily";
+  const lilyReviewed = publisher === "Lily Workbench" && sourceKind === "lily";
+  const defaultEligible = riskLevel === "high" || !lilyReviewed ? false : Boolean(entry.defaultEligible);
   const featured = riskLevel === "high" ? false : Boolean(entry.featured && defaultEligible);
   return {
     skillId: pack.skillId,
@@ -351,13 +360,13 @@ function skillUploadFields({ pack, skillDir, channel }) {
     description: extendedDescription(entry, manifest),
     descriptionI18n: stringMapField(manifest.description_i18n, entry.description_i18n),
     version: pack.version,
-    category: entry.category || manifest.category || "core",
+    category: normalizeSkillCategory(entry.category || manifest.category),
     categoryLabel: entry.categoryLabel || manifest.categoryLabel || "",
     categoryLabelI18n: stringMapField(manifest.categoryLabel_i18n, entry.categoryLabel_i18n),
     capabilityLayer: entry.capabilityLayer || manifest.capabilityLayer || "core",
     capabilityContract: entry.capability ? JSON.stringify(entry.capability) : "",
-    publisher: entry.publisher || manifest.publisher || "Lily Workbench",
-    sourceKind: entry.sourceKind || manifest.sourceKind || "lily",
+    publisher,
+    sourceKind,
     sourceRepo: entry.sourceRepo || manifest.sourceRepo || "lily-workbench/skills",
     minAppVersion: entry.minAppVersion || manifest.minAppVersion || "0.1.0",
     channel,
@@ -374,6 +383,13 @@ function registryMetadataUploadFields({ entry, existing, channel }) {
   if (!existing?.artifact_url && !existing?.download_url) {
     throw new Error(`existing skill package ${entry.id} is missing artifact_url`);
   }
+  const publisher = entry.publisher || existing.publisher || "Lily Workbench";
+  const sourceKind = entry.sourceKind || existing.source_kind || "lily";
+  const riskLevel = entry.riskLevel || existing.risk_level || "low";
+  const lilyReviewed = publisher === "Lily Workbench" && sourceKind === "lily";
+  const defaultEligible = riskLevel === "high" || !lilyReviewed
+    ? false
+    : Boolean(entry.defaultEligible ?? existing.default_eligible);
   return {
     skillId: entry.id,
     name: entry.name || entry.id,
@@ -381,19 +397,19 @@ function registryMetadataUploadFields({ entry, existing, channel }) {
     description: extendedDescription(entry, {}),
     descriptionI18n: stringMapField(entry.description_i18n),
     version: existing.version || entry.latestVersion || "1.0.0",
-    category: entry.category || existing.category || "core",
+    category: normalizeSkillCategory(entry.category || existing.category),
     categoryLabel: entry.categoryLabel || existing.category_label || "",
     categoryLabelI18n: stringMapField(entry.categoryLabel_i18n),
     capabilityLayer: entry.capabilityLayer || existing.capability_layer || "core",
     capabilityContract: entry.capability ? JSON.stringify(entry.capability) : "",
-    publisher: entry.publisher || existing.publisher || "Lily Workbench",
-    sourceKind: entry.sourceKind || existing.source_kind || "lily",
+    publisher,
+    sourceKind,
     sourceRepo: entry.sourceRepo || existing.source_repo || "",
     minAppVersion: entry.minAppVersion || existing.min_app_version || "0.1.0",
     channel,
-    riskLevel: entry.riskLevel || existing.risk_level || "low",
-    defaultEligible: String(Boolean(entry.defaultEligible ?? existing.default_eligible)),
-    featured: String(Boolean(entry.featured ?? existing.featured)),
+    riskLevel,
+    defaultEligible: String(defaultEligible),
+    featured: String(Boolean(entry.featured ?? existing.featured) && defaultEligible),
     displayInCatalog: String(entry.displayInCatalog !== false),
     notes: entry.changelog || existing.notes || `Metadata synchronized from bundled registry for ${entry.id}`,
     artifactUrl: existing.artifact_url || existing.download_url,

@@ -6,13 +6,22 @@
   "version": "1.1.0",
   "minAppVersion": "0.1.0",
   "runtime": "node",
-  "category": "dev",
+  "category": "coding",
   "publisher": "Lily Workbench",
   "capabilityLayer": "quality",
   "riskLevel": "low",
-  "permissions": { "network": true, "filesystem": "read", "subprocess": true },
-  "requiredRuntimePacks": ["web-automation"],
-  "name_i18n": { "en": "Browser QA", "ar": "اختبار المتصفح" },
+  "permissions": {
+    "network": true,
+    "filesystem": "read",
+    "subprocess": true
+  },
+  "requiredRuntimePacks": [
+    "web-automation"
+  ],
+  "name_i18n": {
+    "en": "Browser QA",
+    "ar": "اختبار المتصفح"
+  },
   "description_i18n": {
     "en": "Uses the managed browser runtime to verify interactions, viewports, console output, and screenshot evidence.",
     "ar": "يستخدم وقت تشغيل المتصفح المُدار للتحقق من التفاعلات وأبعاد العرض والكونسول وأدلة لقطات الشاشة."

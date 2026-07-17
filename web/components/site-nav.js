@@ -19,9 +19,7 @@ export function SiteNav({ initialLocale }) {
     <header className="site-nav fixed left-0 right-0 top-0 border-b backdrop-blur-xl">
       <div className="shell flex h-[72px] items-center justify-between gap-3 text-slate-900">
         <Link href="/" className="flex items-center gap-3 text-lg font-semibold">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#586ce8] font-mono text-sm text-white shadow-sm">
-            LW
-          </span>
+          <img className="site-brand-icon" src="/brand/icon.png" alt="" width="36" height="36" />
           <span className="site-brand-text">Lily Workbench</span>
         </Link>
         <nav className="hidden items-center gap-7 text-sm text-slate-600 lg:flex">

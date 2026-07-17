@@ -11,6 +11,10 @@ export const metadata = {
     description: "A personal AI desktop workbench for turning scattered project material into finished work.",
     type: "website",
   },
+  icons: {
+    icon: "/brand/icon.png",
+    apple: "/brand/icon.png",
+  },
 };
 
 export default async function RootLayout({ children }) {
