@@ -128,7 +128,7 @@
           "to": "bundles/darwin-arm64",
           "filter": [
             "**/*",
-            "!runtime/**",
+            "!runtime/libreoffice/**",
             "!runtime-packs/**",
             "!**/__MACOSX/**",
             "!**/.DS_Store",
@@ -140,7 +140,7 @@
           "to": "bundles/darwin-x64",
           "filter": [
             "**/*",
-            "!runtime/**",
+            "!runtime/libreoffice/**",
             "!runtime-packs/**",
             "!**/__MACOSX/**",
             "!**/.DS_Store",

@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * After `electron-builder --mac --dir`, verify the default Mac app bundle stays slim.
+ * After `electron-builder --mac --dir`, verify the packaged Mac app bundle.
+ *
+ * Mac ships the base Python runtime (built natively per-arch) so document/image
+ * Python skills work out of the box; LibreOffice + optional runtime-packs stay
+ * on-demand.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -56,11 +60,27 @@ const activeBundleRoot = path.join(bundlesRoot, activeBundle);
 if (!fs.existsSync(activeBundleRoot)) {
   fail(`缺少当前架构 bundle: bundles/${activeBundle}`);
 }
-if (fs.existsSync(path.join(activeBundleRoot, "runtime"))) {
-  fail(`默认 Mac 安装包必须保持 slim，不应内置 bundles/${activeBundle}/runtime；依赖请通过设置页或运行时包安装`);
+// Mac bundles the base Python runtime (built natively per-arch, no cross-build)
+// so pillow/opencv/numpy/document parsing work out of the box; LibreOffice +
+// optional runtime-packs stay on-demand to bound the dmg size.
+const runtimeDir = path.join(activeBundleRoot, "runtime");
+const runtimeManifestFile = path.join(runtimeDir, "runtime-manifest.json");
+const runtimePython = path.join(runtimeDir, "venv", "bin", "python3");
+const runtimeUv = path.join(runtimeDir, "bin", "uv");
+if (!fs.existsSync(runtimeManifestFile)) {
+  fail(`缺少内置基础 Python 运行时清单：bundles/${activeBundle}/runtime/runtime-manifest.json。先运行 \`npm run build:runtime\`（在 ${appArch} Mac 上）生成运行时再打包。`);
+}
+if (!fs.existsSync(runtimePython)) {
+  fail(`缺少内置基础 Python：bundles/${activeBundle}/runtime/venv/bin/python3（客户端无 Python 会导致 pillow/文档处理等全部不可用）。`);
+}
+if (!fs.existsSync(runtimeUv)) {
+  fail(`缺少内置 uv：bundles/${activeBundle}/runtime/bin/uv。`);
+}
+if (fs.existsSync(path.join(runtimeDir, "libreoffice"))) {
+  fail(`默认 Mac 包不应内置 incomplete base LibreOffice runtime（体积过大）；它应通过设置页按需下载。请从打包中排除 runtime/libreoffice。`);
 }
 if (fs.existsSync(path.join(activeBundleRoot, "runtime-packs"))) {
-  fail(`默认 Mac 安装包必须保持 slim，不应内置 bundles/${activeBundle}/runtime-packs；依赖请通过设置页或运行时包安装`);
+  fail(`默认 Mac 安装包不应内置 bundled runtime-packs；可选依赖请通过设置页按需安装。`);
 }
 
 // The OpenCode engine is excluded from electron-builder signing (signIgnore),
@@ -110,4 +130,4 @@ try {
   fail("Mac 安装包 Resources 内含有 __MACOSX / .DS_Store 等元数据");
 }
 
-console.log(`[verify-mac-pack] ok — ${path.relative(ROOT, appPath)}`);
+console.log(`[verify-mac-pack] ok — base Python runtime present — ${path.relative(ROOT, appPath)}`);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Mac 默认安装包保持 slim：仅打入当前架构 OpenCode 引擎，不内置 runtime / runtime-packs 依赖。
-# 重依赖通过运行时包按需安装，和 Windows 保持同一套发布策略。
+# Mac 安装包内置基础 Python 运行时（当前架构原生 venv），使 pillow/opencv/numpy/文档解析
+# 开箱即用；LibreOffice 与可选 runtime-packs 仍按需下载。和 Windows 同一套发布策略。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,7 +14,14 @@ if [[ "$ARCH" != "arm64" && "$ARCH" != "x64" ]]; then
   exit 1
 fi
 
-echo "[dist-mac] 打包 darwin-${ARCH} slim 安装包（runtime/runtime-packs 按需安装）"
+MAC_VENV_PY="bundles/darwin-${ARCH}/runtime/venv/bin/python3"
+if [[ ! -e "$MAC_VENV_PY" ]]; then
+  echo "[dist-mac] 错误: 缺少内置 Python 运行时 ($MAC_VENV_PY)。" >&2
+  echo "[dist-mac] 先在 ${ARCH} Mac 上生成运行时: npm run build:runtime -- --platform darwin-${ARCH}" >&2
+  echo "[dist-mac] (客户端无 Python 会导致 pillow/文档处理等不可用)" >&2
+  exit 1
+fi
+echo "[dist-mac] 打包 darwin-${ARCH}（内置 Python 运行时；LibreOffice/runtime-packs 按需下载）"
 node scripts/fix-runtime-symlinks.mjs
 node scripts/purge-macos-junk.mjs --check
 

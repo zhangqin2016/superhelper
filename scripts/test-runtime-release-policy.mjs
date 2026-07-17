@@ -12,8 +12,12 @@ const macFilters = macResources.flatMap((resource) =>
   Array.isArray(resource.filter) ? resource.filter.map(String) : [],
 );
 assert(
-  macFilters.includes("!runtime/**"),
-  "Mac installer resources must hard-exclude bundled runtime dependencies",
+  !macFilters.includes("!runtime/**"),
+  "Mac installer resources must include the base Python runtime so local Python capabilities work offline",
+);
+assert(
+  macFilters.includes("!runtime/libreoffice/**"),
+  "Mac installer resources must exclude the incomplete generated LibreOffice folder",
 );
 assert(
   macFilters.includes("!runtime-packs/**"),
@@ -23,12 +27,12 @@ assert(
 assert.doesNotMatch(
   pkg.scripts["dist:mac:arm64"],
   /verify-runtime-bundle\.mjs|--require-libreoffice/,
-  "Mac arm64 release must stay slim and must not require bundled runtime dependencies before packaging",
+  "Mac arm64 release must not rebuild/require LibreOffice or a full runtime bundle before packaging (Python venv is prebuilt natively)",
 );
 assert.doesNotMatch(
   pkg.scripts["dist:mac:x64"],
   /verify-runtime-bundle\.mjs|--require-libreoffice/,
-  "Mac x64 release must stay slim and must not require bundled runtime dependencies before packaging",
+  "Mac x64 release must not rebuild/require LibreOffice or a full runtime bundle before packaging (Python venv is prebuilt natively)",
 );
 assert.match(
   pkg.scripts["dist:mac:arm64"],
@@ -98,8 +102,18 @@ assert.match(
 const verifyMacPack = fs.readFileSync(path.join(ROOT, "scripts/verify-mac-pack.mjs"), "utf8");
 assert.match(
   verifyMacPack,
-  /slim/,
-  "Mac package verifier must fail if the default installer accidentally includes runtime dependencies",
+  /base Python runtime present/,
+  "Mac package verifier must require the base Python runtime",
+);
+assert.match(
+  verifyMacPack,
+  /incomplete base LibreOffice runtime/,
+  "Mac package verifier must reject the incomplete generated LibreOffice folder",
+);
+assert.match(
+  verifyMacPack,
+  /bundled runtime-packs/,
+  "Mac package verifier must fail if optional runtime packs are bundled",
 );
 assert.doesNotMatch(
   verifyMacPack,
