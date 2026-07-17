@@ -81,7 +81,7 @@ function detectBasePythonModules(moduleByPackId) {
   const { execFileSync } = require("node:child_process");
   const { resolveVenvPython } = require("./runtime-python");
   const python = resolveVenvPython();
-  if (!python || !moduleByPackId.length) return new Map();
+  if (!python || !moduleByPackId.length) return null;
   const code = [
     "import importlib.util, json",
     `items = ${JSON.stringify(moduleByPackId)}`,
@@ -95,7 +95,7 @@ function detectBasePythonModules(moduleByPackId) {
     });
     return new Map(Object.entries(JSON.parse(raw)).filter(([, ok]) => ok));
   } catch {
-    return new Map();
+    return null;
   }
 }
 
@@ -122,7 +122,9 @@ function baseProvidedRuntimePackMap() {
   if (baseProvidedCache) return baseProvidedCache;
   const provided = new Map();
   baseProvidedLibreOffice(provided);
-  for (const [id] of detectBasePythonModules(baseModulePairs())) {
+  const detected = detectBasePythonModules(baseModulePairs());
+  if (!detected) return provided;
+  for (const [id] of detected) {
     provided.set(id, { source: "base", path: "", version: null });
   }
   baseProvidedCache = provided;
@@ -157,7 +159,8 @@ async function warmBaseProvidedRuntimePacks() {
         if (ok) provided.set(id, { source: "base", path: "", version: null });
       }
     } catch {
-      // Fail open: an unprobed base module just means the pack looks absent.
+      // Fail open without poisoning the cache; a later warm runtime can retry.
+      return provided;
     }
   }
   baseProvidedCache = provided;

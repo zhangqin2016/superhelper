@@ -500,6 +500,7 @@ try {
     run(scriptNode, ["scripts/release-preflight.mjs"], {
       env: {
         ...process.env,
+        LILY_RELEASE_TARGET: target,
         ...(options.upload ? { LILY_RELEASE_ONLINE_PREFLIGHT: "1" } : {}),
       },
     });

@@ -58,6 +58,30 @@ try {
   });
 
   const installer = require("../src/main/runtime-pack-installer.js");
+  const childProcess = require("node:child_process");
+  const runtimePython = require("../src/main/runtime-python.js");
+  const originalExecFileSync = childProcess.execFileSync;
+  const originalResolveVenvPython = runtimePython.resolveVenvPython;
+  const originalGetRuntimeEnvExtras = runtimePython.getRuntimeEnvExtras;
+  runtimePython.resolveVenvPython = () => path.join(tmp, "fake-python.exe");
+  runtimePython.getRuntimeEnvExtras = () => ({});
+  childProcess.execFileSync = () => {
+    throw new Error("simulated cold base-runtime probe failure");
+  };
+  assert.equal(
+    installer.baseProvidedRuntimePackMap().has("pillow"),
+    false,
+    "a transient base-runtime probe failure should not invent installed packs",
+  );
+  childProcess.execFileSync = () => JSON.stringify({ pillow: true, opencv: true, rapidocr: true });
+  assert.equal(
+    installer.baseProvidedRuntimePackMap().has("pillow"),
+    true,
+    "a transient base-runtime probe failure must not permanently cache an empty base pack map",
+  );
+  childProcess.execFileSync = originalExecFileSync;
+  runtimePython.resolveVenvPython = originalResolveVenvPython;
+  runtimePython.getRuntimeEnvExtras = originalGetRuntimeEnvExtras;
   assert.equal(
     installer.archiveExtensionForArtifact({ format: "zip", url: "https://cdn.example.com/libreoffice.zip" }),
     ".zip",

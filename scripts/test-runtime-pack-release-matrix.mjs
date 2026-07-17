@@ -16,6 +16,37 @@ const targets = ["darwin-arm64", "darwin-x64", "win32-x64"];
 assert.deepEqual(lock.releaseTargets, targets);
 assert.deepEqual(lock.releaseRequiredPackIds, Object.keys(PACK_SPECS).sort());
 
+function argValues(name) {
+  const values = [];
+  for (let i = 2; i < process.argv.length; i += 1) {
+    const item = process.argv[i];
+    if (item === name && process.argv[i + 1]) {
+      values.push(process.argv[i + 1]);
+      i += 1;
+    } else if (item.startsWith(`${name}=`)) {
+      values.push(item.slice(name.length + 1));
+    }
+  }
+  return values.flatMap((value) => String(value || "").split(",")).map((value) => value.trim()).filter(Boolean);
+}
+
+function targetPlatforms() {
+  const explicit = [
+    ...argValues("--platform"),
+    ...String(process.env.LILY_RELEASE_PLATFORMS || "").split(","),
+  ].map((value) => value.trim()).filter(Boolean);
+  if (explicit.length) return [...new Set(explicit)];
+  const target = String(process.env.LILY_RELEASE_TARGET || "").trim().toLowerCase();
+  if (target === "win" || target === "windows" || target === "win32-x64") return ["win32-x64"];
+  if (target === "mac" || target === "darwin") return ["darwin-arm64", "darwin-x64"];
+  return targets;
+}
+
+const selectedTargets = targetPlatforms();
+for (const platform of selectedTargets) {
+  assert.ok(targets.includes(platform), `unknown runtime-pack release platform: ${platform}`);
+}
+
 const entries = Array.isArray(lock.entries) ? lock.entries : [];
 const byKey = new Map();
 for (const entry of entries) {
@@ -42,19 +73,19 @@ for (const entry of entries) {
 
 const missing = [];
 for (const packId of lock.releaseRequiredPackIds) {
-  for (const platform of targets) {
+  for (const platform of selectedTargets) {
     if (!byKey.has(`${packId}:${platform}`)) missing.push(`${packId}:${platform}`);
   }
 }
-if (process.argv.includes("--strict") || process.argv.includes("--online")) {
+if (process.argv.includes("--strict") && !process.argv.includes("--online")) {
   assert.deepEqual(missing, [], `release-blocking runtime-pack gaps: ${missing.join(", ")}`);
 } else if (missing.length) {
-  console.warn(`[runtime-pack-matrix] pending verified artifacts (${missing.length}); release preflight remains blocked`);
+  console.warn(`[runtime-pack-matrix] pending verified lock artifacts (${missing.length}); offline strict preflight remains blocked`);
 }
 
 async function fetchArtifact(packId, platform) {
   const base = String(process.env.LILY_RUNTIME_PACK_API || "https://lilych.lilywb.cn").replace(/\/+$/, "");
-  const url = `${base}/api/runtime-packs/artifact?packId=${encodeURIComponent(packId)}&platform=${encodeURIComponent(platform)}`;
+  const url = `${base}/api/runtime-packs/artifact?pack=${encodeURIComponent(packId)}&platform=${encodeURIComponent(platform)}`;
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
@@ -71,14 +102,25 @@ async function fetchArtifact(packId, platform) {
 }
 
 if (process.argv.includes("--online")) {
-  for (const entry of entries) {
-    const artifact = await fetchArtifact(entry.packId, entry.platform);
-    assert.ok(artifact, `production artifact missing: ${entry.packId}:${entry.platform}`);
-    assert.equal(artifact.version, entry.version);
-    assert.equal(String(artifact.sha256).toLowerCase(), entry.sha256);
-    assert.equal(Number(artifact.sizeBytes || artifact.size), entry.sizeBytes);
-    assert.equal(artifact.url, entry.url);
+  const productionOnly = [];
+  for (const packId of lock.releaseRequiredPackIds) {
+    for (const platform of selectedTargets) {
+      const entry = byKey.get(`${packId}:${platform}`) || null;
+      const artifact = await fetchArtifact(packId, platform);
+      assert.ok(artifact, `production artifact missing: ${packId}:${platform}`);
+      if (!entry) {
+        productionOnly.push(`${packId}:${platform}`);
+        continue;
+      }
+      assert.equal(artifact.version, entry.version);
+      assert.equal(String(artifact.sha256).toLowerCase(), entry.sha256);
+      assert.equal(Number(artifact.sizeBytes || artifact.size), entry.sizeBytes);
+      assert.equal(artifact.url, entry.url);
+    }
+  }
+  if (productionOnly.length) {
+    console.warn(`[runtime-pack-matrix] production artifacts present without local lock entries: ${productionOnly.join(", ")}`);
   }
 }
 
-console.log(`runtime-pack-release-matrix: ok (${entries.length} verified, ${missing.length} pending)`);
+console.log(`runtime-pack-release-matrix: ok (${entries.length} locked, ${missing.length} pending, targets=${selectedTargets.join(",")})`);

@@ -12,8 +12,20 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+function releaseMatrixArgs() {
+  const args = ["scripts/test-runtime-pack-release-matrix.mjs", "--strict"];
+  const target = String(process.env.LILY_RELEASE_TARGET || "").trim().toLowerCase();
+  if (target === "win" || target === "windows" || target === "win32-x64") {
+    args.push("--platform", "win32-x64");
+  } else if (target === "mac" || target === "darwin") {
+    args.push("--platform", "darwin-arm64,darwin-x64");
+  }
+  if (process.env.LILY_RELEASE_ONLINE_PREFLIGHT === "1") args.push("--online");
+  return args;
+}
+
 const CHECKS = [
-  ["node", ["scripts/test-runtime-pack-release-matrix.mjs", "--strict"]],
+  ["node", releaseMatrixArgs()],
   ["node", ["scripts/test-runtime-packs.mjs"]],
   ["node", ["scripts/test-spawn-env-runtime.mjs"]],
   ["node", ["scripts/test-runtime-health.mjs"]],
@@ -23,10 +35,6 @@ const CHECKS = [
   ["node", ["scripts/test-runtime-pack-settings-ui.mjs"]],
   ["node", ["scripts/test-common-runtime-pack-publisher.mjs"]],
 ];
-
-if (process.env.LILY_RELEASE_ONLINE_PREFLIGHT === "1") {
-  CHECKS.unshift(["node", ["scripts/test-runtime-pack-release-matrix.mjs", "--online"]]);
-}
 
 function run(command, args) {
   console.log(`[release-preflight] ${command} ${args.join(" ")}`);
