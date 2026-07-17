@@ -203,10 +203,6 @@ npm install --os=win32 --cpu=x64 --include=optional
 # Windows 安装包默认不内置依赖 runtime；压缩等级保持中等，避免 macOS/ARM 交叉打包被系统终止。
 export ELECTRON_BUILDER_COMPRESSION_LEVEL="${ELECTRON_BUILDER_COMPRESSION_LEVEL:-5}"
 
-if [[ "${#builder_args[@]}" -gt 0 ]]; then
-  exec npx electron-builder --win --x64 "${builder_args[@]}" "$@"
-fi
-
 if [[ "${LILY_REQUIRE_WIN_SIGNING:-0}" != "1" ]]; then
   export CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-false}"
 fi
