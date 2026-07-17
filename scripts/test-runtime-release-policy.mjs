@@ -45,34 +45,24 @@ const distWin = pkg.scripts["dist:win"] || "";
 assert.doesNotMatch(
   distWin,
   /ensure-win-libreoffice-runtime|verify-runtime-bundle\.mjs|--require-libreoffice/,
-  "dist:win must stay slim and must not build, restore, or verify bundled Windows runtime dependencies",
-);
-assert.doesNotMatch(
-  distWin,
-  /--expect-runtime/,
-  "dist:win must verify the default slim package, not a full offline runtime package",
+  "dist:win must not rebuild or restore Windows runtime dependencies during packaging",
 );
 assert.match(
   distWin,
   /verify-win-pack\.mjs/,
-  "dist:win must verify the packaged Windows installer after packaging",
+  "dist:win must verify the packaged Windows installer and base runtime after packaging",
 );
 
 const distWinSigned = pkg.scripts["dist:win:signed"] || "";
 assert.doesNotMatch(
   distWinSigned,
   /ensure-win-libreoffice-runtime|verify-runtime-bundle\.mjs|--require-libreoffice/,
-  "dist:win:signed must stay slim and must not build, restore, or verify bundled Windows runtime dependencies",
-);
-assert.doesNotMatch(
-  distWinSigned,
-  /--expect-runtime/,
-  "dist:win:signed must verify the default slim package, not a full offline runtime package",
+  "dist:win:signed must not rebuild or restore Windows runtime dependencies during packaging",
 );
 assert.match(
   distWinSigned,
   /verify-win-pack\.mjs/,
-  "dist:win:signed must verify the packaged Windows installer after packaging",
+  "dist:win:signed must verify the packaged Windows installer and base runtime after packaging",
 );
 
 const winResources = pkg.build?.win?.extraResources || [];
@@ -80,8 +70,12 @@ const winFilters = winResources.flatMap((resource) =>
   Array.isArray(resource.filter) ? resource.filter.map(String) : [],
 );
 assert(
-  winFilters.includes("!runtime/**"),
-  "Windows installer resources must hard-exclude bundled runtime dependencies",
+  !winFilters.includes("!runtime/**"),
+  "Windows installer resources must include the base Python runtime so local Python capabilities work offline",
+);
+assert(
+  winFilters.includes("!runtime/libreoffice/**"),
+  "Windows installer resources must exclude the incomplete generated LibreOffice folder",
 );
 assert(
   winFilters.includes("!runtime-packs/**"),
@@ -89,20 +83,27 @@ assert(
 );
 
 const verifyWinPack = fs.readFileSync(path.join(ROOT, "scripts/verify-win-pack.mjs"), "utf8");
+assert.match(verifyWinPack, /base Python runtime present/, "Windows package verifier must require the base Python runtime");
 assert.match(
   verifyWinPack,
-  /默认 Windows 安装包必须保持 slim/,
-  "Windows package verifier must fail if the default installer accidentally includes runtime dependencies",
+  /incomplete base LibreOffice runtime/,
+  "Windows package verifier must reject the incomplete generated LibreOffice folder",
 );
+assert.match(
+  verifyWinPack,
+  /bundled runtime-packs/,
+  "Windows package verifier must fail if optional runtime packs are bundled",
+);
+
 const verifyMacPack = fs.readFileSync(path.join(ROOT, "scripts/verify-mac-pack.mjs"), "utf8");
 assert.match(
   verifyMacPack,
-  /默认 Mac 安装包必须保持 slim/,
+  /slim/,
   "Mac package verifier must fail if the default installer accidentally includes runtime dependencies",
 );
 assert.doesNotMatch(
   verifyMacPack,
-  /完整 Mac 包必须内置 LibreOffice|首次使用 Office 能力时再下载/,
+  /LibreOffice.*first use|first use.*LibreOffice/,
   "Mac package verifier must not require LibreOffice in the default installer",
 );
 
@@ -115,7 +116,7 @@ for (const workflow of [
   assert.doesNotMatch(
     text,
     /Build runtime bundle \(win32-x64\)|verify-win-pack\.mjs --expect-runtime/,
-    `${workflow} must build and verify the default slim Windows installer`,
+    `${workflow} must build and verify the default Windows installer`,
   );
 }
 assert(
@@ -136,6 +137,7 @@ assert.equal(
   "node scripts/release-preflight.mjs && node scripts/check-baota-compose.mjs",
   "server deploys must expose a shared preflight gate",
 );
+
 const releaseOne = fs.readFileSync(path.join(ROOT, "scripts/release-one-click.mjs"), "utf8");
 assert.match(
   releaseOne,
@@ -143,7 +145,12 @@ assert.match(
   "one-click release must run dependency/runtime-pack preflight before build/publish",
 );
 assert.match(releaseOne, /LILY_RELEASE_ONLINE_PREFLIGHT/, "one-click uploads must compare locked packs with production");
-assert.match(releaseOne, /LILY_RELEASE_TARGET:\s*target/, "one-click release must scope runtime-pack preflight to the selected release target");
+assert.match(
+  releaseOne,
+  /LILY_RELEASE_TARGET:\s*target/,
+  "one-click release must scope runtime-pack preflight to the selected release target",
+);
+
 const releasePreflight = fs.readFileSync(path.join(ROOT, "scripts/release-preflight.mjs"), "utf8");
 for (const test of [
   "test-runtime-packs.mjs",
@@ -154,12 +161,17 @@ for (const test of [
   "test-runtime-pack-preflight.mjs",
   "test-common-runtime-pack-publisher.mjs",
 ]) {
-  assert.match(releasePreflight, new RegExp(test.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `release preflight must run ${test}`);
+  assert.match(
+    releasePreflight,
+    new RegExp(test.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `release preflight must run ${test}`,
+  );
 }
 assert.match(releasePreflight, /--strict/, "release preflight must require complete verified platform coverage");
 assert.match(releasePreflight, /LILY_RELEASE_ONLINE_PREFLIGHT/, "release preflight must support production artifact comparison");
 assert.match(releasePreflight, /LILY_RELEASE_TARGET/, "release preflight must support target-scoped runtime-pack checks");
 assert.match(releasePreflight, /--platform/, "release preflight must pass explicit platform scope to the runtime-pack matrix");
+
 for (const deployScript of ["deploy/baota/push-via-qiniu.sh", "deploy/baota/push-images-via-qiniu.sh"]) {
   const text = fs.readFileSync(path.join(ROOT, deployScript), "utf8");
   assert.match(text, /npm run deploy:preflight/, `${deployScript} must run deploy preflight before pushing`);

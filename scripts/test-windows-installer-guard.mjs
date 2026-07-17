@@ -14,6 +14,7 @@ assert.equal(installerIncludePath, "build/installer.nsh", "Windows NSIS installe
 const installerInclude = await readFile(path.join(repoRoot, installerIncludePath), "utf8");
 const afterPackHook = await readFile(path.join(repoRoot, "scripts", "electron-after-pack.cjs"), "utf8");
 const distWinScript = await readFile(path.join(repoRoot, "scripts", "dist-win.sh"), "utf8");
+const bashWrapper = await readFile(path.join(repoRoot, "scripts", "run-bash-script.mjs"), "utf8");
 
 assert.match(installerInclude, /!macro customCheckAppRunning/, "Installer guard must override app-running detection.");
 assert.match(installerInclude, /LilyWorkbench\.exe/, "Installer guard must detect the current executable name.");
@@ -54,6 +55,8 @@ assert.match(distWinScript, /SIGNTOOL_PATH/, "Windows packaging must reuse cache
 assert.match(distWinScript, /ELECTRON_BUILDER_RCEDIT_PATH/, "Windows packaging must reuse cached rcedit when available.");
 assert.match(distWinScript, /resolve_win_codesign_cache_env/, "Windows packaging must resolve cached signing tools without depending on a specific bash flavor.");
 assert.match(distWinScript, /process\.env\.LOCALAPPDATA/, "Windows packaging must resolve the electron-builder cache from the native Windows LOCALAPPDATA path.");
+assert.match(packageJson?.scripts?.["dist:win"], /run-bash-script\.mjs/, "Windows packaging must use the Git Bash wrapper instead of whichever bash appears first on PATH.");
+assert.match(bashWrapper, /Git", "bin", "bash\.exe"/, "Windows bash wrapper must prefer Git Bash over WSL bash.");
 assert.ok(
   distWinScript.indexOf("CSC_IDENTITY_AUTO_DISCOVERY") < distWinScript.indexOf("exec npx electron-builder"),
   "Unsigned Windows packaging must disable automatic certificate discovery before electron-builder starts.",
