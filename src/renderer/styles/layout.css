@@ -208,6 +208,25 @@
   border-radius: 50%;
   background: var(--accent-subtle, color-mix(in srgb, var(--accent) 14%, transparent));
   color: var(--accent, var(--text-secondary));
+  transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+/* Signed in: accent-filled monogram tile (identity without exposing the number). */
+.account-avatar.is-signed-in {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+.account-avatar-monogram {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Member: a gapped accent ring so a paid member reads distinct from a free
+   signed-in user at a glance. */
+.account-avatar.is-member {
+  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 3px var(--accent);
 }
 
 .account-menu-labels {
@@ -254,10 +273,19 @@
   border-radius: var(--radius-md, 10px);
   background: var(--bg-surface);
   box-shadow: var(--shadow-floating);
+  /* Scale up from the anchor (it opens upward, so origin is the bottom edge) —
+     matches the fade/slide every other overlay in the app already uses. */
+  transform-origin: bottom left;
+  animation: account-menu-pop var(--dur) var(--ease);
 }
 
 .account-menu-popover[hidden] {
   display: none;
+}
+
+@keyframes account-menu-pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .account-menu-item {
@@ -470,6 +498,23 @@
 
 .project-sessions {
   padding: 1px 0 5px;
+  position: relative;
+}
+/* Faint indent guide so sessions read as belonging to their project while
+   scrolling — aligned under the collapse-icon center. */
+.project-sessions:not(:empty)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  left: 15px;
+  width: 1px;
+  background: var(--border-subtle);
+  pointer-events: none;
+}
+[dir="rtl"] .project-sessions:not(:empty)::before {
+  left: auto;
+  right: 15px;
 }
 
 .project-sessions-empty {
@@ -545,9 +590,12 @@
 }
 /* Idle = nothing to see (muted). running/done/error draw the eye via a pulse. */
 .session-status.idle { background: color-mix(in srgb, var(--text-dim) 65%, transparent); opacity: 0.34; box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 7%, transparent); }
+/* running keeps pulsing (it's still happening). done/error pulse a few times to
+   catch the eye, then settle to a static filled dot — a settled outcome
+   shouldn't twitch forever in the sidebar until the session is opened. */
 .session-status.running { background: var(--info-text); box-shadow: 0 0 0 4px var(--info-bg-soft); animation: status-pulse 1.4s ease-in-out infinite; }
-.session-status.done { background: var(--success-text); box-shadow: 0 0 0 4px var(--success-dot-ring); animation: status-pulse 1.4s ease-in-out infinite; }
-.session-status.error { background: var(--danger-text); box-shadow: 0 0 0 4px var(--danger-dot-ring); animation: status-pulse 1.4s ease-in-out infinite; }
+.session-status.done { background: var(--success-text); box-shadow: 0 0 0 4px var(--success-dot-ring); animation: status-pulse 1.4s ease-in-out 3; }
+.session-status.error { background: var(--danger-text); box-shadow: 0 0 0 4px var(--danger-dot-ring); animation: status-pulse 1.4s ease-in-out 3; }
 
 /* Legacy flat session list */
 .session-list {

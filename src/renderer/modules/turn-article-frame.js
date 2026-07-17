@@ -13,6 +13,17 @@ export function syncTurnArticleFrame(article, liveTurn, viewModel, ctx = {}, {
   article.classList.toggle("is-sealed", viewModel.articleClassFlags.isSealed);
   article.classList.toggle("is-live", viewModel.articleClassFlags.isLive);
   article.classList.toggle("is-working", viewModel.articleClassFlags.isWorking);
+  // Distinguish terminal outcomes so each reads as a designed state (not just a
+  // recolored line): failed (danger), stalled (warning), interrupted-by-you
+  // (calm neutral — it was intentional). Styled in runtime-chat.css.
+  const finalType = liveTurn.final?.type;
+  const terminal = liveTurn.final
+    ? ((ctx.failed || finalType === "turn.failed") ? "failed"
+      : finalType === "turn.interrupted" ? "interrupted"
+        : finalType === "turn.stalled" ? "stalled" : "")
+    : "";
+  if (terminal) article.dataset.terminal = terminal;
+  else delete article.dataset.terminal;
   normalizeLayout(article, viewModel.slotOrder);
   refreshStatus(article, liveTurn, ctx);
   renderFooterSlot(article.querySelector('[data-role="footer"]'), liveTurn, ctx.sealed);

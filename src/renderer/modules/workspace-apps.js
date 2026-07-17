@@ -100,16 +100,35 @@ function renderAppCard(app) {
 
   titleBox.append(title, meta);
 
+  // Leading app mark — a monogram tile from the app name. Turns the card from a
+  // titled text block into something that reads as a store listing. Deterministic
+  // and monochrome (accent tint) to stay within the color discipline.
+  const lead = document.createElement("div");
+  lead.className = "workspace-app-card-lead";
+  const icon = document.createElement("div");
+  icon.className = "workspace-app-card-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = [...String(app.name || app.id || "·").trim()][0] || "·";
+  lead.append(icon, titleBox);
+
   const chips = document.createElement("div");
   chips.className = "workspace-app-chips";
   if (app.minPlan && app.minPlan !== "free") {
     appendChip(chips, t("apps.planBadge", { plan: app.minPlan.toUpperCase() }), "workspace-app-chip workspace-app-chip--accent");
   }
   if (app.featured) appendChip(chips, t("apps.featured"), "workspace-app-chip workspace-app-chip--accent");
-  if (app.installed) appendChip(chips, app.updateAvailable ? t("apps.updateAvailable") : t("apps.installed"), "workspace-app-chip workspace-app-chip--accent");
+  if (app.installed) {
+    // Install-state gets its own success treatment so it reads as status, not as
+    // just another category/plan pill. An available update stays accent (action).
+    appendChip(
+      chips,
+      app.updateAvailable ? t("apps.updateAvailable") : t("apps.installed"),
+      app.updateAvailable ? "workspace-app-chip workspace-app-chip--accent" : "workspace-app-chip workspace-app-chip--installed",
+    );
+  }
   for (const tag of app.tags || []) appendChip(chips, tag);
 
-  header.append(titleBox, chips);
+  header.append(lead, chips);
 
   const summary = document.createElement("p");
   summary.className = "workspace-app-card-summary";

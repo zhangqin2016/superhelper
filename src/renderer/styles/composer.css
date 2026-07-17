@@ -912,6 +912,23 @@ textarea:disabled { opacity: 0.5; }
   background: var(--accent);
 }
 
+/* Stop mode: while a turn streams and the composer is empty, the send button
+   morphs in place into a neutral stop control (zero eye-travel to halt). The
+   moment there's something to send it reverts to the accent send arrow. */
+.send-btn .send-icon-stop { display: none; }
+.send-btn.is-stop .send-icon-arrow { display: none; }
+.send-btn.is-stop .send-icon-stop { display: block; }
+.send-btn.is-stop {
+  background: color-mix(in srgb, var(--text-primary) 78%, transparent);
+  color: var(--bg-surface);
+  box-shadow: none;
+}
+.send-btn.is-stop:hover {
+  background: var(--text-primary);
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
 .scheduled-task-card {
   width: min(760px, 94vw);
 }

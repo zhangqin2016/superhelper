@@ -1404,12 +1404,7 @@
   margin-top: auto;
 }
 
-.skills-toggle {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-  accent-color: var(--accent);
-}
+/* .skills-toggle is styled as a switch in the unified boolean-switch block. */
 
 .skills-restore-btn {
   padding: 4px 8px;
@@ -1466,6 +1461,29 @@
   gap: 12px;
 }
 
+.workspace-app-card-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-app-card-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .workspace-app-card-titlebox {
   min-width: 0;
 }
@@ -1510,6 +1528,19 @@
 .workspace-app-chip--accent {
   background: var(--accent-subtle);
   color: var(--accent-hover);
+}
+
+.workspace-app-chip--installed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+.workspace-app-chip--installed::before {
+  content: "✓";
+  font-size: 10px;
+  line-height: 1;
 }
 
 .workspace-app-card-actions {
@@ -1782,10 +1813,57 @@
   font-size: 13px;
   cursor: pointer;
 }
-.settings-check-row input {
+/* Boolean switch. Built directly on the native checkbox (appearance:none) so
+   every existing `.checked` reader keeps working with ZERO JS change. Applied to
+   settings toggles only — via .settings-check-row checkbox, .skills-toggle, and
+   the explicit .lily-switch class. Markdown task-lists and multi-select
+   checkboxes are intentionally NOT matched, so they stay ordinary checkboxes. */
+.settings-check-row input[type="checkbox"],
+.skills-toggle,
+.lily-switch {
+  appearance: none;
+  -webkit-appearance: none;
   flex-shrink: 0;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-dim) 42%, transparent);
+  position: relative;
   cursor: pointer;
-  accent-color: var(--accent);
+  vertical-align: middle;
+  transition: background var(--dur) var(--ease);
+}
+.settings-check-row input[type="checkbox"]::after,
+.skills-toggle::after,
+.lily-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-inverse);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur) var(--ease);
+}
+.settings-check-row input[type="checkbox"]:checked,
+.skills-toggle:checked,
+.lily-switch:checked {
+  background: var(--accent);
+}
+.settings-check-row input[type="checkbox"]:checked::after,
+.skills-toggle:checked::after,
+.lily-switch:checked::after {
+  transform: translateX(14px);
+}
+.settings-check-row input[type="checkbox"]:disabled,
+.skills-toggle:disabled,
+.lily-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .skills-actions {

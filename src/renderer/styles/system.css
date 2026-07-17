@@ -24,6 +24,24 @@
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
+/* =========================================================================
+   Reduced motion — honor the OS "reduce motion" accessibility setting
+   ========================================================================= */
+
+/* This only ever removes motion; it never changes layout, color, or which
+   elements are shown. Infinite pulses/spinners settle, entrances become
+   instant. A user who has asked their OS to calm animation gets a calm app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Final disabled-button guard. This file loads after settings.css and keeps
    every settings action readable even when an older cached rule is present. */
 .settings-action-btn:disabled:not([data-busy="1"]),

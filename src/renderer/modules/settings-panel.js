@@ -229,12 +229,34 @@ function switchSettingsPage(pageId) {
   else onMobilePairingPageHidden();
 }
 
+// Element that opened the panel — focus returns here on close (keyboard a11y).
+let settingsOpener = null;
+
+function focusableIn(container) {
+  if (!container) return [];
+  return [...container.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter((elm) => elm.getClientRects().length > 0);
+}
+
 function setPanelOpen(open) {
   panelOpen = open;
   const panel = $("settingsPanel");
-  if (panel) panel.hidden = !open;
+  if (panel) {
+    panel.hidden = !open;
+    if (open) panel.setAttribute("aria-modal", "true");
+  }
   document.body.classList.toggle("settings-open", open);
-  if (open) switchSettingsPage(activeSettingsPage);
+  if (open) {
+    settingsOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    switchSettingsPage(activeSettingsPage);
+    // Initial focus lands in the dialog (the close button is always present and
+    // unambiguous), so Tab is trapped inside rather than walking the chat behind.
+    ($("settingsCloseBtn") || focusableIn(panel)[0])?.focus();
+  } else if (settingsOpener) {
+    settingsOpener.focus();
+    settingsOpener = null;
+  }
 }
 
 /** @param {string} [pageId] */
@@ -326,6 +348,23 @@ export async function initSettingsPanel() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && panelOpen) setPanelOpen(false);
+  });
+
+  // Focus trap: keep Tab / Shift+Tab cycling within the open dialog instead of
+  // leaking into the chat behind it.
+  panel.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab" || !panelOpen) return;
+    const items = focusableIn(panel);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
 
   $("permissionModeSelect")?.addEventListener("change", async () => {

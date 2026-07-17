@@ -51,7 +51,7 @@ import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { patchLiveToolClocks } from "./turn-live-clock-patch.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import { updateTopbarTitles } from "./session-chrome.js";
-import { renderMessageQueue } from "./composer.js";
+import { renderMessageQueue, refreshSendEnabled } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
 import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
@@ -817,14 +817,13 @@ export function syncComposerForActiveSession() {
   store.set("runningSessionId", busy ? sid : null);
   $("composer")?.classList.toggle("composer-busy", busy);
   const input = $("promptInput");
-  const submit = $("sendBtn");
   const interrupt = $("interruptBtn");
   if (input) {
     input.placeholder = busy
       ? (canInterrupt(sid) ? t("composer.placeholderBusy") : t("composer.placeholderWaiting"))
       : t("composer.placeholder");
   }
-  if (submit) submit.disabled = false;
+  refreshSendEnabled();
   if (interrupt) interrupt.hidden = !busy;
   if (sid) renderMessageQueue(sid, getRuntimeSession(sid).queue);
 }

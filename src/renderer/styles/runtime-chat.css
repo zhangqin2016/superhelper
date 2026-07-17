@@ -17,7 +17,7 @@
   width: 46px;
   z-index: 5;
   pointer-events: none;
-  opacity: 0.58;
+  opacity: 0.72;
   transition: opacity var(--dur) var(--ease);
 }
 
@@ -67,7 +67,7 @@
   width: var(--rib-w);
   height: var(--rib-h);
   border-radius: 1px;
-  background: color-mix(in srgb, var(--text-muted) 50%, transparent);
+  background: color-mix(in srgb, var(--text-muted) 60%, transparent);
   transition: width 0.08s ease, height 0.08s ease, background 0.12s ease;
 }
 .conversation-minimap-rib.is-prompt::before { background: var(--text-muted); } /* your messages a touch darker */
@@ -264,6 +264,37 @@
 .assistant-turn-final.markdown-body {
   color: var(--text-primary);
   font-weight: 400;
+}
+
+/* Live-turn liveness. The streamed answer carries a blinking caret at its tail
+   so a running turn reads as alive rather than frozen. Scoped to .is-live
+   (removed the instant the turn seals) and neutralized under
+   prefers-reduced-motion by the global guard in system.css. The status line
+   itself is intentionally NOT animated — it already ticks (timer + "Working…")
+   and must keep a stable baseline (see the status guard in the UI test). */
+/* New live turn rises in once (fresh element per turn; history turns are
+   .is-sealed and never animate). Neutralized under prefers-reduced-motion. */
+.assistant-turn-article.is-live {
+  animation: turn-enter var(--dur) var(--ease);
+}
+@keyframes turn-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.assistant-turn-article.is-live .assistant-turn-narrative-text::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.02em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  animation: stream-caret 1.05s steps(1, end) infinite;
+}
+@keyframes stream-caret {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
 }
 
 .assistant-turn-narrative.markdown-body p,
@@ -532,7 +563,7 @@
 }
 
 .assistant-taskrun-summary > summary::before {
-  content: "›";
+  content: "";
   display: inline-block;
   width: 14px;
   color: var(--text-muted);
@@ -540,6 +571,26 @@
 
 .assistant-taskrun-summary[open] > summary::before {
   transform: rotate(90deg);
+}
+
+/* Disclosure chevrons use one shared SVG (via mask) instead of the font glyph
+   "›", so they match the app's Feather icon set and never get font-substituted
+   at the Inter/PingFang boundary. Each block keeps its own color (currentColor)
+   and font-size (1em box); the existing [open] rules still rotate 90°. */
+.assistant-taskrun-summary > summary::before,
+.assistant-process-thinking-group > summary::before,
+.assistant-process-group > summary::before,
+.assistant-process-subgroup > summary::before,
+.assistant-tool-summary::before,
+.assistant-subagent-panel-summary::before,
+.assistant-process-event > summary::before {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E") center / 0.72em 0.72em no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E") center / 0.72em 0.72em no-repeat;
 }
 
 .assistant-taskrun-summary-body {
@@ -580,7 +631,7 @@
 }
 
 .assistant-process-thinking-group > summary::before {
-  content: "›";
+  content: "";
   display: inline-block;
   color: var(--muted, var(--text-muted));
   font-size: 14px;
@@ -1042,7 +1093,7 @@
 }
 
 .assistant-process-group > summary::before {
-  content: "›";
+  content: "";
   justify-self: center;
   color: var(--muted, var(--text-muted));
   font-size: 16px;
@@ -1087,7 +1138,7 @@
 }
 
 .assistant-process-subgroup > summary::before {
-  content: "›";
+  content: "";
   display: inline-block;
   color: var(--muted, var(--text-muted));
   justify-self: center;
@@ -1187,7 +1238,7 @@
 }
 
 .assistant-tool-summary::before {
-  content: "›";
+  content: "";
   display: inline-block;
   color: var(--text-muted);
   font-size: 14px;
@@ -1258,7 +1309,7 @@
 }
 
 .assistant-subagent-panel-summary::before {
-  content: "›";
+  content: "";
   display: inline-block;
   color: var(--text-muted);
   justify-self: center;
@@ -2226,7 +2277,7 @@
 }
 
 .assistant-process-event > summary::before {
-  content: "›";
+  content: "";
   color: var(--text-secondary);
   font-size: 18px;
   line-height: 1;
@@ -2327,6 +2378,21 @@
   background: var(--accent-subtle);
 }
 
+/* Recovering from a failed turn is the primary action — promote retry to an
+   accent control so it reads as the obvious next step, not a generic button.
+   Declared after .assistant-action-btn so it wins the cascade. */
+.assistant-retry-btn {
+  margin-top: 8px;
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: 500;
+}
+.assistant-retry-btn:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 .assistant-question-label {
   display: block;
   margin-top: 10px;
@@ -2376,6 +2442,39 @@
 .assistant-turn-article[data-failed="true"] .assistant-turn-status,
 .assistant-turn-article .assistant-process-group .assistant-tool-row[data-status="failed"] {
   color: var(--danger-text);
+}
+
+/* Terminal outcomes as designed states, not just a recolored line: a compact
+   pill with a leading dot. Failed = danger, stalled = warning, interrupted-by-you
+   = calm neutral (it was intentional, so it must not alarm). */
+.assistant-turn-article[data-terminal] .assistant-turn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 2px 10px 2px 8px;
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+}
+.assistant-turn-article[data-terminal] .assistant-turn-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.assistant-turn-article[data-terminal="failed"] .assistant-turn-status {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+.assistant-turn-article[data-terminal="stalled"] .assistant-turn-status {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+.assistant-turn-article[data-terminal="interrupted"] .assistant-turn-status {
+  background: var(--bg-surface-hover);
+  color: var(--text-secondary);
 }
 
 .assistant-turn-article .assistant-prompt-card {

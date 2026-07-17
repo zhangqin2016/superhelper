@@ -23,6 +23,29 @@ window.assistantClient?.getFeatureFlags?.()
   .then((flags) => { steerEnabled = Boolean(flags?.steer); })
   .catch(() => { steerEnabled = false; });
 
+/** Arm the send button only when there's something to send. While a turn is
+ *  running the button keeps its prior behavior (enabled) so nothing regresses;
+ *  when idle with an empty input it disables, lighting up the already-designed
+ *  .send-btn:disabled state instead of looking armed over an empty field. */
+export function refreshSendEnabled() {
+  const submit = $("sendBtn");
+  if (!submit) return;
+  const busy = !!store.get("isBusy");
+  const hasText = !!$("promptInput")?.value.trim();
+  const hasFiles = ((store.get("pendingFiles") || []).length) > 0;
+  const hasContent = hasText || hasFiles;
+  // While a turn streams with nothing queued to send, the send button becomes a
+  // stop control (see .send-btn.is-stop + the submit handler). With content to
+  // send it stays a send button (a send-while-busy opens the queue/steer/stop
+  // dialog, which is a real decision). Idle + empty → disabled.
+  const stopMode = busy && !hasContent;
+  submit.classList.toggle("is-stop", stopMode);
+  submit.disabled = !busy && !hasContent;
+  const label = stopMode ? t("composer.stop") : t("composer.send");
+  submit.title = label;
+  submit.setAttribute("aria-label", label);
+}
+
 const COMPOSER_MIN_INPUT_H = 44;
 
 function composerMaxInputHeight() {
@@ -368,8 +391,26 @@ export function initComposer() {
   let imeComposing = false;
 
   if (composer) {
-    composer.addEventListener("submit", (e) => { e.preventDefault(); sendPrompt(); });
+    composer.addEventListener("submit", (e) => {
+      e.preventDefault();
+      // In stop mode the send button is a halt control — interrupt the running
+      // turn instead of sending. Falls through to a normal send otherwise.
+      if ($("sendBtn")?.classList.contains("is-stop")) {
+        const sid = store.get("runningSessionId") || store.get("activeSessionId");
+        if (sid) {
+          markSessionStopping(sid);
+          void window.assistantClient.interrupt(sid);
+        }
+        return;
+      }
+      sendPrompt();
+    });
   }
+
+  // Keep the send/stop button in sync when the turn's busy state or the pending
+  // attachments change (typing is handled by the input listener below).
+  store.on("isBusy", refreshSendEnabled);
+  store.on("pendingFiles", refreshSendEnabled);
 
   if (promptInput) {
     promptInput.addEventListener("compositionstart", () => {
@@ -608,6 +649,10 @@ export function initComposer() {
     promptInput.addEventListener("input", syncComposerInputHeight);
     syncComposerInputHeight();
 
+    // Keep the send button honest about empty input as the user types.
+    promptInput.addEventListener("input", refreshSendEnabled);
+    refreshSendEnabled();
+
     // Per-session draft: typing is saved as you go, switching sessions
     // restores what you were writing. In-memory only by design.
     promptInput.addEventListener("input", () => {
@@ -617,6 +662,7 @@ export function initComposer() {
     store.on("activeSessionId", (nextId) => {
       promptInput.value = (nextId && sessionDrafts.get(nextId)) || "";
       syncComposerInputHeight();
+      refreshSendEnabled();
     });
   }
 

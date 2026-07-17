@@ -20,14 +20,14 @@
   --color-scheme: dark;
 
   /* Accent: single vivid periwinkle-violet — actions & focus only */
-  --accent: #7c6cf6;
-  --accent-hover: #8b7cf8;
-  --accent-dim: rgba(124, 108, 246, 0.14);
-  --accent-subtle: rgba(124, 108, 246, 0.08);
-  --accent-border: rgba(124, 108, 246, 0.35);
-  --accent-strong-border: rgba(124, 108, 246, 0.72);
-  --accent-strong-bg: rgba(124, 108, 246, 0.22);
-  --accent-ring: rgba(124, 108, 246, 0.40);
+  --accent: #6366f1;
+  --accent-hover: #7a7cf5;
+  --accent-dim: rgba(99, 102, 241, 0.14);
+  --accent-subtle: rgba(99, 102, 241, 0.08);
+  --accent-border: rgba(99, 102, 241, 0.35);
+  --accent-strong-border: rgba(99, 102, 241, 0.72);
+  --accent-strong-bg: rgba(99, 102, 241, 0.22);
+  --accent-ring: rgba(99, 102, 241, 0.40);
 
   /* Surface ladder: near-black NEUTRAL, layered by lightness (not borders) */
   --bg-body: #07080b;
@@ -56,7 +56,7 @@
   --bg-tool-detail-strong: rgba(0, 0, 0, 0.22);
   --bg-media: rgba(10, 11, 13, 0.72);
   --bg-choice-backdrop: rgba(0, 0, 0, 0.28);
-  --bg-pdf-active: rgba(124, 108, 246, 0.10);
+  --bg-pdf-active: rgba(99, 102, 241, 0.10);
   --bg-pdf-viewport-sheen: rgba(255, 255, 255, 0.035);
   --bg-user-chip: rgba(255, 255, 255, 0.15);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.1);
@@ -138,18 +138,24 @@
   --image-control-hover: rgba(255, 255, 255, 0.25);
   --scrollbar-thumb: #2a2b30;
 
+  --radius-xs: 4px;
   --radius: 8px;
   --radius-sm: 6px;
   --radius-md: var(--radius);
   --radius-lg: 12px;
+  --radius-pill: 999px;
 
   /* "Lit from above" hairline + soft elevation, used in place of hard borders */
   --hairline: rgba(255, 255, 255, 0.06);
   --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.075);
 
-  /* Motion system */
+  /* Motion system. One easing curve; a small duration scale (fast/base/slow) so
+     timing reads like one hand set it. All motion is neutralized under the OS
+     "reduce motion" setting via the global guard in system.css. */
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 90ms;
   --dur: 160ms;
+  --dur-slow: 240ms;
 
   /* Overlay stack. Keep these centralized so nested flows can open dialogs safely. */
   --z-topbar: 80;
@@ -195,14 +201,14 @@
 :root[data-theme="light"] {
   --color-scheme: light;
 
-  --accent: #6257e8;
-  --accent-hover: #5248d8;
-  --accent-dim: rgba(98, 87, 232, 0.13);
-  --accent-subtle: rgba(98, 87, 232, 0.075);
-  --accent-border: rgba(98, 87, 232, 0.32);
-  --accent-strong-border: rgba(98, 87, 232, 0.5);
-  --accent-strong-bg: rgba(98, 87, 232, 0.13);
-  --accent-ring: rgba(98, 87, 232, 0.13);
+  --accent: #5145e5;
+  --accent-hover: #4338d4;
+  --accent-dim: rgba(81, 69, 229, 0.13);
+  --accent-subtle: rgba(81, 69, 229, 0.075);
+  --accent-border: rgba(81, 69, 229, 0.32);
+  --accent-strong-border: rgba(81, 69, 229, 0.5);
+  --accent-strong-bg: rgba(81, 69, 229, 0.13);
+  --accent-ring: rgba(81, 69, 229, 0.13);
 
   /* Porcelain neutral: cool enough to avoid cream/yellow, soft enough that the
      workbench does not become a sterile blue-grey dashboard. */
@@ -229,7 +235,7 @@
   --bg-tool-detail-strong: rgba(31, 41, 55, 0.06);
   --bg-media: rgba(248, 250, 252, 0.96);
   --bg-choice-backdrop: rgba(15, 23, 42, 0.27);
-  --bg-pdf-active: rgba(98, 87, 232, 0.075);
+  --bg-pdf-active: rgba(81, 69, 229, 0.075);
   --bg-pdf-viewport-sheen: rgba(31, 41, 55, 0.035);
   --bg-user-chip: rgba(255, 255, 255, 0.22);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);

@@ -16,7 +16,7 @@ const stylesEntryText = fs.readFileSync(stylesEntry, "utf8");
 if (!/@import\s+"\.\/styles\/ui-primitives\.css(?:\?[^"]+)?";/.test(stylesEntryText)) {
   throw new Error("styles.css must import ui-primitives.css");
 }
-if (!/@import\s+"\.\/styles\/settings\.css\?v=20260715-workspace-button";/.test(stylesEntryText)) {
+if (!/@import\s+"\.\/styles\/settings\.css\?v=20260716-motion";/.test(stylesEntryText)) {
   throw new Error("styles.css must cache-bust settings.css for the light theme button refresh");
 }
 
