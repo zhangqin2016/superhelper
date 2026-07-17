@@ -86,6 +86,22 @@ assert(
   "Windows installer resources must hard-exclude bundled runtime packs",
 );
 
+// Clean-package guarantee (option A): every installer target must rebuild a
+// clean base venv (only requirements-runtime.txt, no LibreOffice) right before
+// packaging, so a dev-polluted venv (with optional packs like opencv/rembg)
+// can never accidentally ship and bloat the installer.
+for (const [target, plat] of [
+  ["dist:win", "win32-x64"],
+  ["dist:mac:arm64", "darwin-arm64"],
+  ["dist:mac:x64", "darwin-x64"],
+]) {
+  assert.match(
+    pkg.scripts[target] || "",
+    new RegExp(`build-runtime-bundle\\.mjs --platform ${plat} --skip-libreoffice`),
+    `${target} must rebuild a clean base venv (--skip-libreoffice) before packaging`,
+  );
+}
+
 const verifyWinPack = fs.readFileSync(path.join(ROOT, "scripts/verify-win-pack.mjs"), "utf8");
 assert.match(verifyWinPack, /base Python runtime present/, "Windows package verifier must require the base Python runtime");
 assert.match(
