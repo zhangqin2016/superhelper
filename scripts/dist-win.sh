@@ -9,6 +9,12 @@ source "$(dirname "$0")/setup-proxy.sh"
 
 builder_args=()
 
+# electron-builder's legacy winCodeSign bundle includes macOS symlinks. On some
+# Windows hosts without symlink privilege, extracting that cross-platform bundle
+# fails before the Windows installer is built. Use the split Windows toolset so
+# Windows-only releases never depend on creating unrelated Darwin symlinks.
+builder_args+=("-c.toolsets.winCodeSign=1.1.0")
+
 if [[ "${LILY_REQUIRE_WIN_SIGNING:-0}" == "1" ]]; then
   has_pfx=0
   if { [[ -n "${WIN_CSC_LINK:-}" ]] || [[ -n "${CSC_LINK:-}" ]]; } && \

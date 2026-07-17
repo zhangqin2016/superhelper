@@ -40,6 +40,11 @@ assert.equal(packageJson?.build?.nsis?.installerHeaderIcon, "icon.ico", "Windows
 assert.match(afterPackHook, /"resources",\s*"icon\.ico"/, "Windows exe icon must come from the source icon asset.");
 assert.doesNotMatch(afterPackHook, /"dist",\s*"\.icon-ico"/, "Windows exe icon must not come from stale build cache.");
 assert.doesNotMatch(distWinScript, /signAndEditExecutable=false/, "Windows cross-build must not disable executable resource editing; that drops the app icon on unsigned builds.");
+assert.match(
+  distWinScript,
+  /toolsets\.winCodeSign=1\.1\.0/,
+  "Windows packaging must use the split winCodeSign toolset so unrelated macOS symlinks cannot block Windows releases.",
+);
 
 const mainProcess = await readFile(path.join(repoRoot, "src", "main.js"), "utf8");
 assert.match(mainProcess, /setAppUserModelId\("cn\.lilywb\.workbench"\)/, "Windows runtime AppUserModelId must match the packaged app identity.");
