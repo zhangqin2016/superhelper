@@ -172,6 +172,7 @@
     "win": {
       "icon": "icon.ico",
       "executableName": "LilyWorkbench",
+      "signAndEditExecutable": false,
       "signExts": [
         "!opencode.exe"
       ],

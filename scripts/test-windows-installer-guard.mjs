@@ -37,10 +37,14 @@ assert.match(installerInclude, /MB_RETRYCANCEL/, "Installer guard must let users
 assert.equal(packageJson?.build?.nsis?.installerIcon, "icon.ico", "Windows installer icon must use the Lily icon asset.");
 assert.equal(packageJson?.build?.nsis?.uninstallerIcon, "icon.ico", "Windows uninstaller icon must use the Lily icon asset.");
 assert.equal(packageJson?.build?.nsis?.installerHeaderIcon, "icon.ico", "Windows installer header icon must use the Lily icon asset.");
+assert.equal(packageJson?.build?.win?.signAndEditExecutable, false, "Windows packaging must bypass electron-builder's legacy app-builder rcedit path.");
 assert.ok(packageJson?.build?.win?.signExts?.includes("!opencode.exe"), "Windows packaging must not code-sign the bundled OpenCode engine.");
 assert.match(afterPackHook, /"resources",\s*"icon\.ico"/, "Windows exe icon must come from the source icon asset.");
 assert.doesNotMatch(afterPackHook, /"dist",\s*"\.icon-ico"/, "Windows exe icon must not come from stale build cache.");
-assert.doesNotMatch(distWinScript, /signAndEditExecutable=false/, "Windows cross-build must not disable executable resource editing; that drops the app icon on unsigned builds.");
+assert.match(afterPackHook, /ELECTRON_BUILDER_RCEDIT_PATH/, "Windows afterPack must use the rcedit path resolved by dist-win.");
+assert.match(afterPackHook, /--set-icon/, "Windows afterPack must apply the Lily executable icon.");
+assert.match(afterPackHook, /--set-version-string/, "Windows afterPack must preserve executable version metadata.");
+assert.match(afterPackHook, /rcedit not found/, "Windows afterPack must fail loudly instead of shipping without the Lily icon.");
 assert.match(
   distWinScript,
   /toolsets\.winCodeSign=1\.1\.0/,
