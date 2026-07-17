@@ -172,6 +172,9 @@
     "win": {
       "icon": "icon.ico",
       "executableName": "LilyWorkbench",
+      "signExts": [
+        "!opencode.exe"
+      ],
       "extraResources": [
         {
           "from": "bundles/win32-x64",
