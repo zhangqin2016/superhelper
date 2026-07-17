@@ -164,6 +164,25 @@ assert.match(
   /LILY_RELEASE_TARGET:\s*target/,
   "one-click release must scope runtime-pack preflight to the selected release target",
 );
+assert.doesNotMatch(
+  releaseOne,
+  /publishArgs\.push\("--upload"\)/,
+  "one-click release must not upload latest.json during release-admin publish; mutable pointers must be last",
+);
+assert.match(
+  releaseOne,
+  /immutable release artifacts/,
+  "one-click release must upload immutable versioned artifacts before publishing latest pointers",
+);
+assert.match(
+  releaseOne,
+  /mutable latest pointers/,
+  "one-click release must upload latest pointers explicitly at the end",
+);
+assert(
+  releaseOne.indexOf("if (publishServerRelease)") < releaseOne.indexOf("mutable latest pointers"),
+  "server release rows must be published before mutable latest pointers are uploaded",
+);
 
 const releasePreflight = fs.readFileSync(path.join(ROOT, "scripts/release-preflight.mjs"), "utf8");
 for (const test of [

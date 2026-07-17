@@ -5,6 +5,7 @@ import http from "node:http";
 import https from "node:https";
 
 const fetchImpl = globalThis.fetch || nodeFetch;
+const DEFAULT_ATTEMPTS = 3;
 
 function nodeFetch(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -133,8 +134,36 @@ if (!authHeaders) {
   authHeaders = { Cookie: `lily_admin_session=${session}` };
 }
 
-for (const artifact of options.artifact.map(parseArtifact)) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sameRelease(row, artifact, version) {
+  return (
+    String(row?.version || "") === String(version || "") &&
+    String(row?.platform || "") === String(artifact.platform || "") &&
+    String(row?.url || "") === String(artifact.url || "") &&
+    String(row?.sha256 || "").toLowerCase() === String(artifact.sha256 || "").toLowerCase() &&
+    Number(row?.size_bytes ?? row?.sizeBytes ?? 0) === Number(artifact.sizeBytes || 0) &&
+    row?.enabled !== false
+  );
+}
+
+async function findExistingRelease(artifact) {
   const response = await fetchImpl(`${api}/api/admin/releases`, {
+    method: "GET",
+    headers: authHeaders,
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`admin release lookup failed: ${response.status} ${json.code || ""}`);
+  }
+  const releases = Array.isArray(json.releases) ? json.releases : [];
+  return releases.find((row) => sameRelease(row, artifact, options.version)) || null;
+}
+
+async function createRelease(artifact) {
+  return fetchImpl(`${api}/api/admin/releases`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -151,9 +180,40 @@ for (const artifact of options.artifact.map(parseArtifact)) {
       enabled: !options.disabled,
     }),
   });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(`${artifact.platform} failed: ${response.status} ${json.code || ""}`);
+}
+
+for (const artifact of options.artifact.map(parseArtifact)) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= DEFAULT_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await createRelease(artifact);
+      const json = await response.json().catch(() => ({}));
+      if (response.ok) {
+        console.log(`[release-server] ${artifact.platform} -> ${json.id}`);
+        lastError = null;
+        break;
+      }
+      const existing = await findExistingRelease(artifact).catch(() => null);
+      if (existing) {
+        console.log(`[release-server] ${artifact.platform} already exists -> ${existing.id}`);
+        lastError = null;
+        break;
+      }
+      lastError = new Error(`${artifact.platform} failed: ${response.status} ${json.code || ""}`);
+    } catch (error) {
+      const existing = await findExistingRelease(artifact).catch(() => null);
+      if (existing) {
+        console.log(`[release-server] ${artifact.platform} already exists -> ${existing.id}`);
+        lastError = null;
+        break;
+      }
+      lastError = error;
+    }
+    if (attempt < DEFAULT_ATTEMPTS) {
+      await sleep(1000 * attempt);
+    }
   }
-  console.log(`[release-server] ${artifact.platform} -> ${json.id}`);
+  if (lastError) {
+    throw lastError;
+  }
 }

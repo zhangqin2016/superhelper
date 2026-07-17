@@ -3,7 +3,7 @@
  * One command release:
  * 1. bump package version
  * 2. build installers
- * 3. publish signed latest.json + installers to Qiniu
+ * 3. publish immutable artifacts first, then server rows, then latest pointers
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -37,7 +37,7 @@ defaults:
   --qiniu-up-host https://upload.qiniup.com
 
 release flow:
-  build -> Qiniu upload -> server release rows -> local skills/apps publish -> CDN refresh -> public verification
+  build -> immutable artifact upload -> server release rows -> latest pointers -> CDN refresh -> public verification
 
 useful options:
   --skip-build             reuse existing dist artifacts
@@ -169,6 +169,45 @@ function publicArtifactUrl({ domain, prefix, platform, version, file }) {
   const base = String(domain || "").replace(/\/+$/g, "");
   const normalizedPrefix = String(prefix || "").replace(/^\/+|\/+$/g, "");
   return `${base}/${normalizedPrefix}/${platform}/${version}/${path.basename(file)}`;
+}
+
+function releaseObjectKey({ prefix, platform, version, file }) {
+  return `${String(prefix || "").replace(/^\/+|\/+$/g, "")}/${platform}/${version}/${path.basename(file)}`;
+}
+
+function latestManifestPath(version) {
+  return path.join("release", version, "latest.json");
+}
+
+function uploadItem({ scriptNode, bucket, key, file, qiniuUpHost, dryRun }) {
+  const uploadArgs = [
+    "scripts/release-admin.mjs",
+    "upload",
+    "--bucket",
+    bucket,
+    "--key",
+    key,
+    "--file",
+    file,
+    "--up-host",
+    qiniuUpHost,
+  ];
+  if (dryRun) uploadArgs.push("--dry-run");
+  run(scriptNode, uploadArgs);
+}
+
+function uploadItems({ label, items, scriptNode, bucket, domain, qiniuUpHost, dryRun }) {
+  if (!items.length) return;
+  console.log(`[release-one] ${label}:`);
+  for (const item of items) {
+    console.log(`  ${domain.replace(/\/+$/g, "")}/${item.key}`);
+    uploadItem({ scriptNode, bucket, qiniuUpHost, dryRun, ...item });
+  }
+}
+
+function isMutablePointerUpload(item) {
+  const name = path.basename(item.file);
+  return name === "latest.json" || name === "latest-mac.yml" || name === "latest.yml";
 }
 
 function appBuilderBinPath() {
@@ -494,6 +533,7 @@ const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 console.log(`[release-one] version ${currentVersion} -> ${nextVersion}`);
 console.log("[release-one] universal client package; runtime region policy is delivered by /api/client/bootstrap");
 const versionSnapshot = snapshotVersionFiles();
+let keepVersionFiles = false;
 
 try {
   if (!options["skip-preflight"]) {
@@ -538,10 +578,13 @@ try {
     publishArgs.push("--artifact", `${platform}=${file}`);
   }
   if (options.force) publishArgs.push("--force");
-  if (options.upload) publishArgs.push("--upload");
-  if (options["dry-run"]) publishArgs.push("--dry-run");
 
   run(scriptNode, publishArgs);
+
+  const releaseArtifactUploads = artifacts.map(([platform, file]) => ({
+    key: releaseObjectKey({ prefix, platform, version: nextVersion, file }),
+    file,
+  }));
 
   const autoUploads = [];
   for (const item of autoUpdateCandidates(target, pkg.build?.productName || pkg.name, nextVersion)) {
@@ -560,29 +603,31 @@ try {
       autoUploads.push({ key: `${feedPrefix}/${path.basename(item.blockmap)}`, file: item.blockmap });
     }
   }
+  const autoPointerUploads = autoUploads.filter(isMutablePointerUpload);
+  const autoArtifactUploads = autoUploads.filter((item) => !isMutablePointerUpload(item));
 
-  if (autoUploads.length) {
-    console.log(`[release-one] auto update feeds:`);
-    for (const item of autoUploads) {
-      console.log(`  ${domain.replace(/\/+$/g, "")}/${item.key}`);
-      const uploadArgs = [
-        "scripts/release-admin.mjs",
-        "upload",
-        "--bucket",
-        bucket,
-        "--key",
-        item.key,
-        "--file",
-        item.file,
-        "--up-host",
-        qiniuUpHost,
-      ];
-      if (options["dry-run"]) uploadArgs.push("--dry-run");
-      if (options.upload || options["dry-run"]) {
-        run(scriptNode, uploadArgs);
-      } else {
-        console.log(`  upload skipped: ${item.file}`);
-      }
+  if (options.upload || options["dry-run"]) {
+    uploadItems({
+      label: "immutable release artifacts",
+      items: releaseArtifactUploads,
+      scriptNode,
+      bucket,
+      domain,
+      qiniuUpHost,
+      dryRun: Boolean(options["dry-run"]),
+    });
+    uploadItems({
+      label: "immutable auto-update artifacts",
+      items: autoArtifactUploads,
+      scriptNode,
+      bucket,
+      domain,
+      qiniuUpHost,
+      dryRun: Boolean(options["dry-run"]),
+    });
+  } else {
+    for (const item of [...releaseArtifactUploads, ...autoArtifactUploads, ...autoPointerUploads]) {
+      console.log(`  upload skipped: ${item.file}`);
     }
   }
 
@@ -603,6 +648,7 @@ try {
     if (notes) serverArgs.push("--notes", notes);
     if (options.force) serverArgs.push("--force");
     run(scriptNode, serverArgs);
+    keepVersionFiles = true;
   } else if (options.upload && !options["dry-run"]) {
     console.log("[release-one] server release publish skipped by --skip-server-publish.");
   }
@@ -625,6 +671,23 @@ try {
     run(scriptNode, catalogArgs);
   } else if (options["skip-catalog-publish"]) {
     console.log("[release-one] local skill/app catalog publish skipped by --skip-catalog-publish.");
+  }
+
+  const pointerUploads = [
+    { key: `${String(prefix).replace(/^\/+|\/+$/g, "")}/latest.json`, file: latestManifestPath(nextVersion) },
+    ...autoPointerUploads,
+  ];
+  if (options.upload || options["dry-run"]) {
+    uploadItems({
+      label: "mutable latest pointers",
+      items: pointerUploads,
+      scriptNode,
+      bucket,
+      domain,
+      qiniuUpHost,
+      dryRun: Boolean(options["dry-run"]),
+    });
+    keepVersionFiles = true;
   }
 
   if (options.upload && !options["dry-run"]) {
@@ -673,6 +736,9 @@ try {
   console.log(`[release-one] manifest: ${domain.replace(/\/+$/g, "")}/${prefix.replace(/^\/+|\/+$/g, "")}/latest.json`);
   console.log(`[release-one] auto feed base: ${domain.replace(/\/+$/g, "")}/${String(autoPrefix).replace(/^\/+|\/+$/g, "")}`);
 } catch (err) {
+  if (keepVersionFiles) {
+    fail(`${err.message}; kept package version files at ${nextVersion} because the release is already visible`);
+  }
   restoreVersionFiles(versionSnapshot);
   fail(`${err.message}; restored package version files to ${currentVersion}`);
 }
