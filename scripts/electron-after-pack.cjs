@@ -65,15 +65,25 @@ exports.default = async function afterPack(context) {
     pruneMacRuntimeBundles(resources, context.arch);
   }
 
-  const imgRoot = path.join(resources, "app.asar.unpacked", "node_modules", "@img");
-  if (!fs.existsSync(imgRoot)) return;
-
+  // Prune foreign-platform native binary subpackages that npm pulled in on the
+  // BUILD host (e.g. @img/sharp-darwin-*, @napi-rs/canvas-darwin-*). They select
+  // by process.platform at runtime, so the wrong-OS copy is dead weight — but in
+  // a Windows build it is genuine Mac pollution and bloats the package. Keep only
+  // the variant whose name carries the TARGET platform's OS token.
+  const unpackedNm = path.join(resources, "app.asar.unpacked", "node_modules");
   const platformPrefix = platformName === "win32" ? "win32" : platformName;
-  for (const entry of fs.readdirSync(imgRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const name = entry.name;
-    if (!name.startsWith("sharp-") && !name.startsWith("sharp-libvips-")) continue;
-    if (name.includes(`-${platformPrefix}-`)) continue;
-    removeDir(path.join(imgRoot, name));
-  }
+  const pruneForeignVariants = (nsDir, families) => {
+    if (!fs.existsSync(nsDir)) return;
+    for (const entry of fs.readdirSync(nsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const name = entry.name;
+      if (!families.some((f) => name.startsWith(f))) continue;
+      // Only touch dirs that clearly name an OS, so the base package is never hit.
+      if (!/-(darwin|linux|win32)(-|$)/.test(name)) continue;
+      if (name.includes(`-${platformPrefix}-`) || name.endsWith(`-${platformPrefix}`)) continue;
+      removeDir(path.join(nsDir, name));
+    }
+  };
+  pruneForeignVariants(path.join(unpackedNm, "@img"), ["sharp-", "sharp-libvips-"]);
+  pruneForeignVariants(path.join(unpackedNm, "@napi-rs"), ["canvas-"]);
 };

@@ -37,7 +37,7 @@ const DEFAULT_API = "https://lilych.lilywb.cn";
 
 function parseArgs(argv) {
   const args = {};
-  const booleans = new Set(["upload", "register", "dry-run"]);
+  const booleans = new Set(["upload", "register", "dry-run", "force-cross"]);
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
     if (!key.startsWith("--")) continue;
@@ -172,6 +172,21 @@ const UV_PYTHON_PLATFORM = {
 const PY_VERSION = "3.12"; // matches the bundled runtime
 
 const cross = platform !== detectPlatform();
+// GUARD: a cross-built pack is wheel-only (--only-binary) and is NEVER
+// probe-verified on the target OS (see the NOTE below + skipped lock update).
+// Uploading/registering one is exactly how a Mac-built Windows pack reaches
+// users broken (missing/unbuildable wheels -> client 404, or wrong arch ->
+// health-check fail). Refuse to publish a cross build unless the operator
+// explicitly forces it (dev only). Build-to-disk (no --upload/--register) is
+// still allowed for local testing. Mirrors publish-common-runtime-pack.mjs's
+// assertCurrentPlatform for native/browser packs.
+if (cross && (args.upload || args.register) && !args["force-cross"]) {
+  die(
+    `refusing to ${args.upload ? "upload" : "register"} a cross-built ${platform} pack from ${detectPlatform()}: ` +
+      `it is wheel-only and unverified on ${platform}. Build it on a real ${platform} host, ` +
+      `or pass --force-cross to override (dev only, may ship a broken pack).`,
+  );
+}
 // uv is the host's bundled binary either way — it resolves for any platform.
 const hostRoot = path.join(ROOT, "bundles", detectPlatform(), "runtime");
 const uv = path.join(hostRoot, "bin", "uv");

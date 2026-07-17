@@ -66,6 +66,17 @@ if (fs.existsSync(imgRoot)) {
   }
 }
 
+// @napi-rs/canvas (transitive via pdf-parse/pdfjs) also ships per-OS native
+// subpackages; the Mac variant must not leak into the Windows package.
+const napiRoot = path.join(unpacked, "resources", "app.asar.unpacked", "node_modules", "@napi-rs");
+if (fs.existsSync(napiRoot)) {
+  for (const entry of fs.readdirSync(napiRoot)) {
+    if (/-(darwin|linux)(-|$)/.test(entry)) {
+      fail(`Windows 包不应包含 Mac/Linux 原生包 @napi-rs/${entry}（Mac 污染）`);
+    }
+  }
+}
+
 if (expectRuntime) {
   const manifest = path.join(winBundle, "runtime", "runtime-manifest.json");
   if (!fs.existsSync(manifest)) {
