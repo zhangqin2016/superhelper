@@ -15,6 +15,12 @@ const pexecFile = promisify(execFile);
 // then "fixed" with a full re-download that failed the same probe again.
 const CHECK_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 20_000;
 const LIBREOFFICE_CHECK_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 45_000;
+// A heavy pack's FIRST `import` after a fresh install compiles thousands of .pyc
+// and initializes native runtimes (numba/onnxruntime): rembg cold-imports in
+// ~35s, far past the 20s CHECK_TIMEOUT_MS, so its health check timed out and the
+// install was (intermittently, once .pyc cached) marked failed. This one-time
+// install-time probe can afford a generous ceiling.
+const PYTHON_PROBE_TIMEOUT_MS = process.platform === "win32" ? 180_000 : 120_000;
 
 const REQUIRED_BASE_PYTHON_MODULES = [
   { id: "pandas", module: "pandas" },
@@ -58,6 +64,21 @@ function missingCheck(id, error = "MISSING", detail = {}) {
   return { id, ok: false, status: "missing", error, ...detail };
 }
 
+/** Turn an execFile rejection into a meaningful reason. execFile's `error.message`
+ *  is only "Command failed: <cmd>" — the ACTUAL cause (Python ImportError, a
+ *  disallowed library load, a numpy/numba version mismatch, or a timeout) lives in
+ *  `error.stderr`, which was being discarded. Surface the traceback tail (and flag
+ *  timeouts) so a failed health check is self-diagnosing instead of "操作失败". */
+function describeExecError(error) {
+  if (!error) return "FAILED";
+  if (error.killed || error.signal === "SIGTERM" || /timed?\s*out/i.test(String(error.message || ""))) {
+    return "TIMED_OUT";
+  }
+  const stderr = String(error.stderr || "").trim();
+  if (stderr) return stderr.length > 1500 ? `…${stderr.slice(-1500)}` : stderr;
+  return String(error.message || error);
+}
+
 async function runExecutable(id, exe, args = [], env = process.env, opts = {}) {
   if (!exe || !fs.existsSync(exe)) return missingCheck(id, "EXECUTABLE_MISSING", { path: exe || "" });
   const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(String(exe || ""));
@@ -72,7 +93,7 @@ async function runExecutable(id, exe, args = [], env = process.env, opts = {}) {
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim().split(/\r?\n/)[0] || "";
     return okCheck(id, { path: exe, output });
   } catch (error) {
-    return failedCheck(id, error?.message || error, { path: exe });
+    return failedCheck(id, describeExecError(error), { path: exe });
   }
 }
 
@@ -205,14 +226,14 @@ async function checkPythonProbe(id, probe, packDir = "") {
   if (packDir && !fs.existsSync(packDir)) return missingCheck(id, "PACK_DIR_MISSING", { path: packDir || "" });
   try {
     await pexecFile(python, ["-c", String(probe || "")], {
-      timeout: CHECK_TIMEOUT_MS,
+      timeout: PYTHON_PROBE_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
       env: buildPythonProbeEnv(packDir),
       windowsHide: true,
     });
     return okCheck(id, { path: packDir, probe });
   } catch (error) {
-    return failedCheck(id, error?.message || error, { path: packDir, probe });
+    return failedCheck(id, describeExecError(error), { path: packDir, probe });
   }
 }
 

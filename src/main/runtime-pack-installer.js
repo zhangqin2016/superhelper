@@ -167,6 +167,24 @@ async function warmBaseProvidedRuntimePacks() {
   return provided;
 }
 
+/** Strip com.apple.quarantine recursively so the pack's downloaded binaries can
+ *  execute during the health check. Best-effort: any failure resolves quietly —
+ *  the health check still runs and reports the real state. */
+function dequarantineMacPack(dir) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => { if (!settled) { settled = true; resolve(); } };
+    try {
+      const child = spawn("xattr", ["-rd", "com.apple.quarantine", dir], { stdio: "ignore" });
+      const timer = setTimeout(done, 20_000);
+      child.on("error", () => { clearTimeout(timer); done(); });
+      child.on("close", () => { clearTimeout(timer); done(); });
+    } catch {
+      done();
+    }
+  });
+}
+
 function sha256File(filePath) {
   const hash = crypto.createHash("sha256");
   const fd = fs.openSync(filePath, "r");
@@ -831,6 +849,13 @@ async function runRuntimePackInstall(id, job) {
       id,
       onProgress: (progress) => job.publish({ ...packProgressMeta(id), ...progress, path: target }),
     });
+    // macOS marks app-downloaded files with com.apple.quarantine; on Apple
+    // Silicon a quarantined native binary is SIGKILLed by Gatekeeper, so the
+    // health check (which launches soffice/python/…) fails and every pack reads
+    // as "install failed". Strip quarantine before the health check runs.
+    if (process.platform === "darwin") {
+      await dequarantineMacPack(stagingPath);
+    }
     let healthCheckedAt = null;
     if (PACK_SPECS[id]) {
       publishProgress(job, id, "health-checking", { path: stagingPath });

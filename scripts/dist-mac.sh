@@ -57,6 +57,30 @@ codesign --force --options runtime \
 codesign --verify --strict --verbose=2 "$ENGINE"
 echo "[dist-mac] 引擎签名校验通过"
 
+# --- 给内置 Python/Node 运行时补签 (hardened + disable-library-validation) ------
+# venv python 是加载按需下载的 runtime-pack 原生扩展(rembg 的 onnxruntime、numba
+# 等,由第三方签名)的"宿主进程"。它同样在 signIgnore 排除的 bundles/ 下,原先只靠
+# App 的 --deep 兜底签 —— 而 --deep 不可靠地把 entitlements 传给嵌套二进制,导致
+# hardened 的 python 没有 disable-library-validation,dlopen 外部签名的 .so 时被
+# taskgated 以 "Library load disallowed by system policy" 拒绝 → 依赖健康检查失败
+# ("下载完成、健康检查时操作失败")。这里按引擎同样的方式单独补签宿主解释器。
+RUNTIME_DIR="${APP_PATH}/Contents/Resources/bundles/darwin-${ARCH}/runtime"
+for RT_BIN in \
+  "$RUNTIME_DIR"/python/*/bin/python3.* \
+  "$RUNTIME_DIR"/venv/bin/python3 \
+  "$RUNTIME_DIR"/bin/node; do
+  for RT_FILE in $RT_BIN; do
+    [[ -f "$RT_FILE" ]] || continue
+    if codesign --force --options runtime \
+      --entitlements "${ROOT}/build/entitlements.mac.inherit.plist" \
+      --sign "${SIGN_ID}" "$RT_FILE" 2>/dev/null; then
+      echo "[dist-mac] 补签运行时二进制 $(basename "$RT_FILE")"
+    else
+      echo "[dist-mac] 警告: 补签失败(跳过) $RT_FILE" >&2
+    fi
+  done
+done
+
 # electron-builder 在没有可用 Developer ID 时，某些架构会直接跳过 App
 # bundle 签名。未签名的 .app 仍能被打包，但发布后会在更严格的 macOS
 # 环境里出现启动/更新问题。真实证书签名通过时不覆盖；只有验证失败才用
