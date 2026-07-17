@@ -113,6 +113,53 @@ fi
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
 
+resolve_win_codesign_cache_env() {
+  node <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+
+function bashQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
+
+const localAppData = process.env.LOCALAPPDATA;
+if (!localAppData) {
+  process.exit(0);
+}
+
+const cacheRoot = path.join(localAppData, "electron-builder", "Cache", "winCodeSign");
+if (!fs.existsSync(cacheRoot)) {
+  process.exit(0);
+}
+
+const candidates = fs
+  .readdirSync(cacheRoot, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => path.join(cacheRoot, entry.name))
+  .sort((left, right) => {
+    try {
+      return fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs;
+    } catch {
+      return 0;
+    }
+  });
+
+for (const dir of candidates) {
+  const rcedit = path.join(dir, "rcedit-x64.exe");
+  const signtool = path.join(dir, "windows-10", "x64", "signtool.exe");
+  if (fs.existsSync(rcedit) && fs.existsSync(signtool)) {
+    console.log(`export ELECTRON_BUILDER_RCEDIT_PATH=${bashQuote(dir)}`);
+    console.log(`export SIGNTOOL_PATH=${bashQuote(signtool)}`);
+    break;
+  }
+}
+NODE
+}
+
+if [[ -z "${SIGNTOOL_PATH:-}" || -z "${ELECTRON_BUILDER_RCEDIT_PATH:-}" ]]; then
+  eval "$(resolve_win_codesign_cache_env)"
+fi
+
 if [[ -z "${SIGNTOOL_PATH:-}" || -z "${ELECTRON_BUILDER_RCEDIT_PATH:-}" ]]; then
   cache_root=""
   if [[ -n "${LOCALAPPDATA:-}" && -x "$(command -v cygpath 2>/dev/null || true)" ]]; then
@@ -132,6 +179,10 @@ if [[ -z "${SIGNTOOL_PATH:-}" || -z "${ELECTRON_BUILDER_RCEDIT_PATH:-}" ]]; then
       fi
     done < <(find "$cache_root" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
   fi
+fi
+
+if [[ -n "${SIGNTOOL_PATH:-}" && -n "${ELECTRON_BUILDER_RCEDIT_PATH:-}" ]]; then
+  echo "[dist-win] Using cached Windows signing tools: ${ELECTRON_BUILDER_RCEDIT_PATH}"
 fi
 
 if [[ ! -e "bundles/win32-x64/opencode/bin/opencode.exe" && ! -e "bundles/win32-x64/opencode/bin/opencode" ]]; then

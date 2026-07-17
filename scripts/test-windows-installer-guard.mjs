@@ -47,6 +47,8 @@ assert.match(
 );
 assert.match(distWinScript, /SIGNTOOL_PATH/, "Windows packaging must reuse cached signtool when available.");
 assert.match(distWinScript, /ELECTRON_BUILDER_RCEDIT_PATH/, "Windows packaging must reuse cached rcedit when available.");
+assert.match(distWinScript, /resolve_win_codesign_cache_env/, "Windows packaging must resolve cached signing tools without depending on a specific bash flavor.");
+assert.match(distWinScript, /process\.env\.LOCALAPPDATA/, "Windows packaging must resolve the electron-builder cache from the native Windows LOCALAPPDATA path.");
 
 const mainProcess = await readFile(path.join(repoRoot, "src", "main.js"), "utf8");
 assert.match(mainProcess, /setAppUserModelId\("cn\.lilywb\.workbench"\)/, "Windows runtime AppUserModelId must match the packaged app identity.");
