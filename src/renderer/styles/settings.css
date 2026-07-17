@@ -1587,6 +1587,26 @@
   pointer-events: none;
 }
 
+/* Busy settings action (e.g. "添加模型" runs a connectivity probe that can take
+   several seconds): show a spinner + keep it visible as working, instead of a
+   dead click that only "responds" when a toast finally appears. */
+.settings-action-btn[data-busy="1"]:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+.settings-action-btn[data-busy="1"]::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: lily-btn-spin 0.6s linear infinite;
+}
+
 /* Installing… — keep the accent fill (not the neutral disabled look) and show
    a spinner so a long download/unpack reads as progress, not a freeze. */
 .workspace-app-download[data-busy="1"]:disabled {

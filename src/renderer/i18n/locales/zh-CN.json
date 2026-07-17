@@ -452,6 +452,7 @@
   "settings.modelCustomApiKeyPlaceholder": "sk-...",
   "settings.modelCustomOwnKey": "已配置独立密钥",
   "settings.modelCustomAdd": "添加",
+  "settings.modelVerifying": "验证中…",
   "settings.modelCustomEdit": "编辑",
   "settings.modelCustomSave": "保存",
   "settings.modelCustomCancel": "取消",

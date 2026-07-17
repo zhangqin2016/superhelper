@@ -453,28 +453,43 @@ export async function initModelSettings() {
       showToast(t("toast.modelApiInvalidKey"), "error");
       return;
     }
-    const result = await window.assistantClient.saveCustomModel({
-      label: provider.label,
-      model,
-      baseUrl: provider.baseUrl,
-      apiKey,
-      protocol: provider.protocol,
-    });
-    if (!result.ok) {
-      showToast(apiErrorMessage(result.error), "error");
-      return;
+    const catalogBtn = $("modelCatalogAddBtn");
+    const catalogPrevLabel = catalogBtn ? catalogBtn.textContent : "";
+    if (catalogBtn) {
+      catalogBtn.disabled = true;
+      catalogBtn.dataset.busy = "1";
+      catalogBtn.textContent = t("settings.modelVerifying");
     }
-    if ($("modelCatalogKey")) $("modelCatalogKey").value = "";
-    showToast(
-      result.probeDeferred ? t("toast.modelProbeDeferred") : t("toast.modelCustomSaved"),
-      result.probeDeferred ? "warning" : "success",
-    );
-    await refreshModelSelect();
-    if (result.preset?.id) {
-      const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
-      if (switchResult.ok) {
-        await refreshModelSelect();
-        showToast(t("toast.modelSwitched", { label: tModel(result.preset) || result.preset.label }), "success");
+    try {
+      const result = await window.assistantClient.saveCustomModel({
+        label: provider.label,
+        model,
+        baseUrl: provider.baseUrl,
+        apiKey,
+        protocol: provider.protocol,
+      });
+      if (!result.ok) {
+        showToast(apiErrorMessage(result.error), "error");
+        return;
+      }
+      if ($("modelCatalogKey")) $("modelCatalogKey").value = "";
+      showToast(
+        result.probeDeferred ? t("toast.modelProbeDeferred") : t("toast.modelCustomSaved"),
+        result.probeDeferred ? "warning" : "success",
+      );
+      await refreshModelSelect();
+      if (result.preset?.id) {
+        const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
+        if (switchResult.ok) {
+          await refreshModelSelect();
+          showToast(t("toast.modelSwitched", { label: tModel(result.preset) || result.preset.label }), "success");
+        }
+      }
+    } finally {
+      if (catalogBtn) {
+        catalogBtn.disabled = false;
+        delete catalogBtn.dataset.busy;
+        catalogBtn.textContent = catalogPrevLabel;
       }
     }
   });
@@ -488,33 +503,47 @@ export async function initModelSettings() {
     // form no longer collects Haiku/Sonnet/Opus — just the model + API, matching
     // OpenCode Desktop. The backend defaults the (omitted) tiers to the main model.
     const payload = customFormPayload();
-    const result = editingCustomPresetId
-      ? await window.assistantClient.updateCustomModel(editingCustomPresetId, payload)
-      : await window.assistantClient.saveCustomModel(payload);
-    if (!result.ok) {
-      showToast(apiErrorMessage(result.error), "error");
-      return;
+    const customBtn = $("modelCustomAddBtn");
+    if (customBtn) {
+      customBtn.disabled = true;
+      customBtn.dataset.busy = "1";
+      customBtn.textContent = t("settings.modelVerifying");
     }
+    try {
+      const result = editingCustomPresetId
+        ? await window.assistantClient.updateCustomModel(editingCustomPresetId, payload)
+        : await window.assistantClient.saveCustomModel(payload);
+      if (!result.ok) {
+        showToast(apiErrorMessage(result.error), "error");
+        return;
+      }
 
-    const wasEditing = Boolean(editingCustomPresetId);
-    setCustomEditMode(null);
+      const wasEditing = Boolean(editingCustomPresetId);
+      setCustomEditMode(null);
 
-    showToast(
-      result.probeDeferred
-        ? t("toast.modelProbeDeferred")
-        : t(wasEditing ? "toast.modelCustomUpdated" : "toast.modelCustomSaved"),
-      result.probeDeferred ? "warning" : "success",
-    );
-    await refreshModelSelect();
+      showToast(
+        result.probeDeferred
+          ? t("toast.modelProbeDeferred")
+          : t(wasEditing ? "toast.modelCustomUpdated" : "toast.modelCustomSaved"),
+        result.probeDeferred ? "warning" : "success",
+      );
+      await refreshModelSelect();
 
-    if (!wasEditing && result.preset?.id) {
-      const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
-      if (switchResult.ok) {
-        await refreshModelSelect();
-        showToast(
-          t("toast.modelSwitched", { label: tModel(result.preset) || result.preset.label }),
-          "success",
-        );
+      if (!wasEditing && result.preset?.id) {
+        const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
+        if (switchResult.ok) {
+          await refreshModelSelect();
+          showToast(
+            t("toast.modelSwitched", { label: tModel(result.preset) || result.preset.label }),
+            "success",
+          );
+        }
+      }
+    } finally {
+      if (customBtn) {
+        customBtn.disabled = false;
+        delete customBtn.dataset.busy;
+        customBtn.textContent = t(editingCustomPresetId ? "settings.modelCustomSave" : "settings.modelCustomAdd");
       }
     }
   });

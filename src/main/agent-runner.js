@@ -130,7 +130,7 @@ const ERROR_PATTERNS = [
   {
     code: "MODEL_CONNECTION_FAILED",
     category: "model",
-    test: /API Error:|Connection to the model service was interrupted|model service .*interrupted|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
+    test: /API Error:|Connection to the model service was interrupted|model service .*interrupted|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|bad gateway|gateway time?out|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
     message: "Connection to the model service was interrupted. Please check your network and API settings, then retry.",
     retryable: true,
   },

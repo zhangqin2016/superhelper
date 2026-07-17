@@ -452,6 +452,7 @@
   "settings.modelTlsSkipVerifyDesc": "يُستخدم فقط لخدمات النماذج الداخلية ذات الشهادات الذاتية. لا يتم تغيير عنوان API.",
   "settings.modelCustomOwnKey": "مفتاح مستقل مُعد",
   "settings.modelCustomAdd": "إضافة",
+  "settings.modelVerifying": "جارٍ التحقق…",
   "settings.modelCustomEdit": "تعديل",
   "settings.modelCustomSave": "حفظ",
   "settings.modelCustomCancel": "إلغاء",

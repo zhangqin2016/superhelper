@@ -12,7 +12,9 @@ let cachedCatalog = null;
 let cachedUserChoice = null;
 
 const CUSTOM_ID_PREFIX = "custom-";
-const MODEL_ID_RE = /^[A-Za-z0-9._:/-]{1,128}$/;
+// Some gateways use bracketed model aliases (e.g. `k3[1m]` selects the 1M-context
+// K3 variant), so `[` and `]` are valid model-id characters — not just [A-Za-z0-9].
+const MODEL_ID_RE = /^[A-Za-z0-9._:/\[\]-]{1,128}$/;
 const URL_RE = /^https?:\/\/.+/i;
 const API_KEY_RE = /^[\x20-\x7E]{8,512}$/;
 const DEFAULT_PROTOCOL = "openai";

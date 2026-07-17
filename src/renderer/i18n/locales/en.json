@@ -452,6 +452,7 @@
   "settings.modelTlsSkipVerifyDesc": "Use only for intranet self-signed model services. The API URL is not changed.",
   "settings.modelCustomOwnKey": "Custom key configured",
   "settings.modelCustomAdd": "Add",
+  "settings.modelVerifying": "Verifying…",
   "settings.modelCustomEdit": "Edit",
   "settings.modelCustomSave": "Save",
   "settings.modelCustomCancel": "Cancel",
