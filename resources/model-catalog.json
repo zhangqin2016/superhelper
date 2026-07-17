@@ -759,6 +759,16 @@
       "protocol": "openai",
       "models": [
         {
+          "id": "kimi-k3",
+          "name": "Kimi K3",
+          "reasoning": true,
+          "toolCall": true,
+          "attachment": true,
+          "contextLimit": 1048576,
+          "outputLimit": 262144,
+          "releaseDate": "2026-07-01"
+        },
+        {
           "id": "kimi-k2.7-code",
           "name": "Kimi K2.7 Code",
           "reasoning": true,
@@ -799,54 +809,34 @@
           "releaseDate": "2026-01"
         },
         {
-          "id": "kimi-k2-thinking",
-          "name": "Kimi K2 Thinking",
-          "reasoning": true,
-          "toolCall": true,
-          "attachment": false,
-          "contextLimit": 262144,
-          "outputLimit": 262144,
-          "releaseDate": "2025-11-06"
-        },
-        {
-          "id": "kimi-k2-thinking-turbo",
-          "name": "Kimi K2 Thinking Turbo",
-          "reasoning": true,
-          "toolCall": true,
-          "attachment": false,
-          "contextLimit": 262144,
-          "outputLimit": 262144,
-          "releaseDate": "2025-11-06"
-        },
-        {
-          "id": "kimi-k2-0905-preview",
-          "name": "Kimi K2 0905",
-          "reasoning": false,
-          "toolCall": true,
-          "attachment": false,
-          "contextLimit": 262144,
-          "outputLimit": 262144,
-          "releaseDate": "2025-09-05"
-        },
-        {
-          "id": "kimi-k2-turbo-preview",
-          "name": "Kimi K2 Turbo",
-          "reasoning": false,
-          "toolCall": true,
-          "attachment": false,
-          "contextLimit": 262144,
-          "outputLimit": 262144,
-          "releaseDate": "2025-09-05"
-        },
-        {
-          "id": "kimi-k2-0711-preview",
-          "name": "Kimi K2 0711",
+          "id": "moonshot-v1-128k",
+          "name": "Moonshot v1 128K",
           "reasoning": false,
           "toolCall": true,
           "attachment": false,
           "contextLimit": 131072,
-          "outputLimit": 16384,
-          "releaseDate": "2025-07-14"
+          "outputLimit": 8192,
+          "releaseDate": "2024-01"
+        },
+        {
+          "id": "moonshot-v1-32k",
+          "name": "Moonshot v1 32K",
+          "reasoning": false,
+          "toolCall": true,
+          "attachment": false,
+          "contextLimit": 32768,
+          "outputLimit": 8192,
+          "releaseDate": "2024-01"
+        },
+        {
+          "id": "moonshot-v1-8k",
+          "name": "Moonshot v1 8K",
+          "reasoning": false,
+          "toolCall": true,
+          "attachment": false,
+          "contextLimit": 8192,
+          "outputLimit": 4096,
+          "releaseDate": "2024-01"
         }
       ]
     },

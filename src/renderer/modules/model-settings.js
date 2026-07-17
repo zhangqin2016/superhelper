@@ -465,7 +465,10 @@ export async function initModelSettings() {
       return;
     }
     if ($("modelCatalogKey")) $("modelCatalogKey").value = "";
-    showToast(t("toast.modelCustomSaved"), "success");
+    showToast(
+      result.probeDeferred ? t("toast.modelProbeDeferred") : t("toast.modelCustomSaved"),
+      result.probeDeferred ? "warning" : "success",
+    );
     await refreshModelSelect();
     if (result.preset?.id) {
       const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
@@ -496,7 +499,12 @@ export async function initModelSettings() {
     const wasEditing = Boolean(editingCustomPresetId);
     setCustomEditMode(null);
 
-    showToast(t(wasEditing ? "toast.modelCustomUpdated" : "toast.modelCustomSaved"), "success");
+    showToast(
+      result.probeDeferred
+        ? t("toast.modelProbeDeferred")
+        : t(wasEditing ? "toast.modelCustomUpdated" : "toast.modelCustomSaved"),
+      result.probeDeferred ? "warning" : "success",
+    );
     await refreshModelSelect();
 
     if (!wasEditing && result.preset?.id) {

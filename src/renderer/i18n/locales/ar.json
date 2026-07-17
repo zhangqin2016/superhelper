@@ -718,6 +718,7 @@
   "toast.engineSwitched": "تم تبديل المحرك إلى: {label}",
   "toast.engineSwitchFailed": "فشل تبديل المحرك. يرجى المحاولة مرة أخرى.",
   "toast.modelCustomSaved": "تمت إضافة النموذج المخصص",
+  "toast.modelProbeDeferred": "تمت الإضافة، لكن المزوّد مشغول حاليًا (تقييد/حمل زائد) فتعذّر التحقق الآن؛ ستتم إعادة المحاولة تلقائيًا عند الاستخدام",
   "toast.modelCustomUpdated": "تم تحديث النموذج المخصص",
   "toast.modelCustomSaveFailed": "فشل إضافة النموذج المخصص",
   "toast.modelCustomInvalidLabel": "أدخل اسماً للعرض (1–40 حرفاً)",

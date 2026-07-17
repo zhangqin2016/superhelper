@@ -1015,6 +1015,23 @@ function updateCustomPreset(presetId, {
   return { ok: true, preset: customPresetRecord(entry), ...listPresetsPublic() };
 }
 
+/** A transient upstream condition — provider overloaded / rate-limited (429),
+ *  gateway 5xx, or a network timeout — is NOT a model incompatibility. Refusing
+ *  to save on these would lock the user out of a model that works minutes later,
+ *  so the caller saves it unverified and lets the runtime self-heal (re-probe on
+ *  first use). Genuine config errors (bad key 401/403, missing model 404, no
+ *  tool support) are NOT transient and still hard-fail. */
+function isTransientProbeError(error) {
+  const e = String(error || "");
+  if (/TIMEOUT|ABORT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network|fetch failed|socket hang|overload/i.test(e)) {
+    return true;
+  }
+  const m = e.match(/HTTP_(\d+)/);
+  if (!m) return false;
+  const s = Number(m[1]);
+  return s === 408 || s === 425 || s === 429 || (s >= 500 && s <= 599);
+}
+
 async function saveCustomPresetWithProbe(input = {}) {
   const protocol = normalizeProtocol(input.protocol) || legacyProtocolForBaseUrl(input.baseUrl);
   if (normalizeRequestBodyOverlay(input.requestBodyOverlay) || protocol !== "openai") {
@@ -1038,6 +1055,20 @@ async function saveCustomPresetWithProbe(input = {}) {
     timeoutMs: Number(input.probeTimeoutMs || 10_000),
   });
   if (!probe.ok) {
+    // Transient upstream (provider 429/overloaded, gateway 5xx, timeout): save
+    // it unverified rather than locking the user out; the runtime self-heals by
+    // re-probing on first use. Real config errors still hard-fail below.
+    if (isTransientProbeError(probe.error)) {
+      const saved = saveCustomPreset({
+        ...input,
+        protocol,
+        baseUrl: urlValidated.baseUrl,
+        apiKey: keyValidated.apiKey,
+      });
+      return saved.ok
+        ? { ...saved, probeDeferred: true, probeWarning: probe.error || "MODEL_PROBE_UNREACHABLE" }
+        : saved;
+    }
     return {
       ok: false,
       error: probe.error || "MODEL_PROBE_FAILED",
@@ -1106,6 +1137,19 @@ async function updateCustomPresetWithProbe(presetId, input = {}) {
     timeoutMs: Number(input.probeTimeoutMs || 10_000),
   });
   if (!probe.ok) {
+    // Transient upstream (429/overloaded/5xx/timeout): keep the existing profile
+    // and save the edit unverified rather than blocking it; runtime self-heals.
+    if (isTransientProbeError(probe.error)) {
+      const updated = updateCustomPreset(presetId, {
+        ...input,
+        protocol,
+        baseUrl: urlValidated.baseUrl,
+        apiKey: keyValidated.apiKey,
+      });
+      return updated.ok
+        ? { ...updated, probeDeferred: true, probeWarning: probe.error || "MODEL_PROBE_UNREACHABLE" }
+        : updated;
+    }
     return {
       ok: false,
       error: probe.error || "MODEL_PROBE_FAILED",

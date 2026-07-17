@@ -718,6 +718,7 @@
   "toast.engineSwitched": "Engine switched to: {label}",
   "toast.engineSwitchFailed": "Failed to switch engine. Please retry.",
   "toast.modelCustomSaved": "Custom model added",
+  "toast.modelProbeDeferred": "Added, but the provider is busy (rate-limited/overloaded) so it couldn't be verified yet; it'll be retried automatically on use",
   "toast.modelCustomUpdated": "Custom model updated",
   "toast.modelCustomSaveFailed": "Failed to add custom model",
   "toast.modelCustomInvalidLabel": "Enter a display name (1–40 characters)",

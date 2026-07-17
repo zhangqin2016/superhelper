@@ -718,6 +718,7 @@
   "toast.engineSwitched": "已切换引擎：{label}",
   "toast.engineSwitchFailed": "引擎切换失败，请重试。",
   "toast.modelCustomSaved": "自定义模型已添加",
+  "toast.modelProbeDeferred": "已添加,但供应商当前繁忙(限流/过载)暂未能验证;稍后使用时会自动重试",
   "toast.modelCustomUpdated": "自定义模型已更新",
   "toast.modelCustomSaveFailed": "添加自定义模型失败",
   "toast.modelCustomInvalidLabel": "请输入 1–40 个字符的显示名称",
