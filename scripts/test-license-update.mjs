@@ -306,6 +306,9 @@ const updateManagerSource = fs.readFileSync(require.resolve("../src/main/update-
 if (!updateManagerSource.includes("disableDifferentialDownload = true")) {
   throw new Error("auto updater must avoid Windows differential downloads; missing blockmap metadata breaks silent updates");
 }
+if (!updateManagerSource.includes("quitAndInstall(true, true)")) {
+  throw new Error("manual restart update must install silently instead of showing the Windows installer wizard");
+}
 const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
 if (packageJson.build?.nsis?.differentialPackage !== false) {
   throw new Error("Windows release builds must keep the stable zip-backed NSIS installer; generate blockmap separately");

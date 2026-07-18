@@ -544,7 +544,7 @@ async function installUpdate(options = {}) {
     console.warn("[updates] save before install failed", err?.message || err);
   }
   setTimeout(() => {
-    instance.quitAndInstall(false, true);
+    instance.quitAndInstall(true, true);
   }, 150);
   return getUpdateState();
 }
