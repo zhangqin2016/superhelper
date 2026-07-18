@@ -14,7 +14,11 @@ const pexecFile = promisify(execFile);
 // "unhealthy" verdicts on intact installs — which the startup auto-repair
 // then "fixed" with a full re-download that failed the same probe again.
 const CHECK_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 20_000;
-const LIBREOFFICE_CHECK_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 45_000;
+// LibreOffice is the heaviest binary (~333MB): the first cold headless launch
+// (fresh profile + hundreds of dylibs + first-run Gatekeeper verification) can
+// run long on a loaded Mac — the same class of one-time cold-start cost that
+// timed rembg out. Give mac a comfortable ceiling instead of the tight 45s.
+const LIBREOFFICE_CHECK_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 90_000;
 // A heavy pack's FIRST `import` after a fresh install compiles thousands of .pyc
 // and initializes native runtimes (numba/onnxruntime): rembg cold-imports in
 // ~35s, far past the 20s CHECK_TIMEOUT_MS, so its health check timed out and the
