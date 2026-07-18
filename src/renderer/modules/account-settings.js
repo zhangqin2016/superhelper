@@ -75,6 +75,15 @@ function formatCount(value) {
   return Number(value || 0).toLocaleString();
 }
 
+/** Membership expiry arrives as an ISO timestamp (e.g. 2027-01-01T00:00:00.000Z);
+ *  show a readable local date instead of the raw string. */
+function formatDate(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
 function renderEntitlements(entitlements) {
   const root = $("accountEntitlements");
   if (!root) return;
@@ -86,7 +95,7 @@ function renderEntitlements(entitlements) {
     [t("settings.accountTokens"), formatCount(entitlements.tokenBalance)],
     [t("settings.accountImages"), formatCount(entitlements.imageGenerationsRemaining)],
     [t("settings.accountVideos"), formatCount(entitlements.videoGenerationsRemaining)],
-    [t("settings.accountMembership"), entitlements.membershipExpiresAt || t("settings.accountInactive")],
+    [t("settings.accountMembership"), entitlements.membershipExpiresAt ? formatDate(entitlements.membershipExpiresAt) : t("settings.accountInactive")],
   ];
   root.replaceChildren(...items.map(([label, value]) => {
     const card = document.createElement("div");
