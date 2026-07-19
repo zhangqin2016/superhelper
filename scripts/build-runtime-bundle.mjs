@@ -33,6 +33,10 @@ const UV_VERSION = "0.6.14";
 
 // python-build-standalone downloads for cross-platform builds
 const PYTHON_STANDALONE = {
+  "darwin-x64": {
+    url: `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_TAG}/cpython-${PYTHON_FULL_VERSION}%2B${PYTHON_BUILD_TAG}-x86_64-apple-darwin-install_only_stripped.tar.gz`,
+    sha256: null, // not verified for cross-builds
+  },
   "win32-x64": {
     // Release tag is the build date only (e.g. 20260510), not cpython-3.12.13+20260510.
     url: `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_TAG}/cpython-${PYTHON_FULL_VERSION}%2B${PYTHON_BUILD_TAG}-x86_64-pc-windows-msvc-install_only_stripped.tar.gz`,
@@ -333,12 +337,36 @@ async function installPythonAndVenv(uvPath, platform, runtimeRoot) {
   return { pythonExe, venvPython };
 }
 
+const UV_PYTHON_PLATFORM = {
+  "darwin-x64": "x86_64-apple-darwin",
+  "win32-x64": "x86_64-pc-windows-msvc",
+};
+
+function findPythonLibDir(pythonInstallDir) {
+  const stack = [pythonInstallDir];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === `python${PYTHON_VERSION}` && path.basename(path.dirname(full)) === "lib") {
+          return full;
+        }
+        stack.push(full);
+      }
+    }
+  }
+  throw new Error(`Python lib dir not found under ${pythonInstallDir}`);
+}
+
 /**
- * Cross-build Windows runtime from macOS/Linux.
- * 1. Download Windows CPython standalone build from python-build-standalone
- * 2. Extract it as the Python install
- * 3. Create venv structure manually (Scripts/python.exe, Lib/site-packages/)
- * 4. Use macOS uv pip install --python-platform windows --target to install packages
+ * Cross-build runtime from macOS/Linux.
+ * 1. Download CPython standalone build from python-build-standalone.
+ * 2. Extract it as the Python install.
+ * 3. For Windows, create a Windows-like venv structure.
+ * 4. For Unix targets, install packages into the standalone site-packages and
+ *    create a venv/bin/python3 shim to the target interpreter.
+ * 5. Use host uv with --python-platform so dependencies match the target arch.
  */
 async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
   const pythonRoot = path.join(runtimeRoot, "python");
@@ -365,6 +393,42 @@ async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
   const pythonExe = findPythonExecutable(pythonInstallDir, { windowsLayout: true });
   log(`cross python at ${pythonExe}`);
 
+  if (!isWindowsPlatform(platform)) {
+    const libDir = findPythonLibDir(pythonInstallDir);
+    const sitePackages = path.join(libDir, "site-packages");
+    ensureDir(sitePackages);
+
+    const uvPlatform = UV_PYTHON_PLATFORM[platform];
+    if (!uvPlatform) throw new Error(`No uv python platform for ${platform}`);
+    log(`cross pip install --python-platform ${uvPlatform}`);
+    run(uvPath, [
+      "pip", "install",
+      "--python-platform", uvPlatform,
+      "--python-version", PYTHON_VERSION,
+      "--only-binary", ":all:",
+      "--target", sitePackages,
+      "-r", REQUIREMENTS,
+    ]);
+
+    const binDir = path.join(venvDir, "bin");
+    ensureDir(binDir);
+    for (const name of ["python", "python3"]) {
+      const shim = path.join(binDir, name);
+      fs.writeFileSync(shim, `#!/bin/sh\nexec "${pythonExe}" "$@"\n`);
+      fs.chmodSync(shim, 0o755);
+    }
+
+    const cfg = [
+      `home = ${pythonInstallDir}`,
+      "include-system-site-packages = false",
+      `version = ${PYTHON_FULL_VERSION}`,
+      `executable = ${path.join(binDir, "python3")}`,
+    ].join("\n");
+    fs.writeFileSync(path.join(venvDir, "pyvenv.cfg"), `${cfg}\n`);
+
+    return { pythonExe, venvPython: path.join(binDir, "python3") };
+  }
+
   // Build Windows venv structure
   const scriptsDir = path.join(venvDir, "Scripts");
   ensureDir(scriptsDir);
@@ -386,7 +450,8 @@ async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
   const sitePackages = path.join(venvDir, "Lib", "site-packages");
   ensureDir(sitePackages);
 
-  const uvPlatform = "x86_64-pc-windows-msvc";
+  const uvPlatform = UV_PYTHON_PLATFORM[platform];
+  if (!uvPlatform) throw new Error(`No uv python platform for ${platform}`);
   log(`cross pip install --python-platform ${uvPlatform}`);
   run(uvPath, [
     "pip", "install",
