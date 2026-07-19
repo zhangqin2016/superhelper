@@ -1,6 +1,6 @@
 "use strict";
 
-const TASK_TYPE_SCHEMA_VERSION = 1;
+const TASK_TYPE_SCHEMA_VERSION = 5;
 
 const PLATFORM_BASELINE_RULES = Object.freeze([
   "Preserve the user's original request and never rewrite the visible user message.",
@@ -87,6 +87,13 @@ const TASK_TYPES = Object.freeze({
     active: true,
     verification: ["entry_point", "callers", "focused_test", "no_unrelated_refactor"],
   },
+  content_extraction: {
+    id: "content_extraction",
+    label: "Attached content understanding",
+    categories: ["content_extraction"],
+    active: true,
+    verification: ["source_content", "request_aligned_reading", "coverage_disclosed", "uncertainties_disclosed"],
+  },
   document_work: {
     id: "document_work",
     label: "Document work",
@@ -101,9 +108,17 @@ const TASK_TYPES = Object.freeze({
     active: true,
     verification: ["progress_visible", "preview_or_openable_path", "provider_error_surface"],
   },
+  external_fact: {
+    id: "external_fact",
+    label: "External fact research",
+    categories: ["external_fact"],
+    active: true,
+    verification: ["external_source", "source_date", "citation_provenance", "ranking_or_comparison_criteria"],
+  },
 });
 
 const TASK_TYPE_PRIORITY = Object.freeze([
+  "external_fact",
   "release_deploy",
   "runtime_protocol",
   "architecture_audit",
@@ -112,6 +127,7 @@ const TASK_TYPE_PRIORITY = Object.freeze([
   "ui_change",
   "configuration_change",
   "code_change",
+  "content_extraction",
   "document_work",
   "media_generation",
   "bug_investigation",
@@ -137,12 +153,32 @@ function modelDraftSchema() {
   return {
     schemaVersion: TASK_TYPE_SCHEMA_VERSION,
     type: "object",
-    required: ["taskType", "objective", "impactSurface", "verificationPlan"],
+    required: [
+      "taskType",
+      "operation",
+      "sourceKinds",
+      "outputMode",
+      "relation",
+      "objective",
+      "deliverables",
+      "successCriteria",
+      "impactSurface",
+      "verificationPlan",
+    ],
     properties: {
       taskType: { enum: Object.keys(TASK_TYPES) },
+      operation: { enum: ["unknown", "extract", "understand", "create", "modify", "convert", "implement", "debug", "refactor", "optimize", "inspect"] },
+      sourceKinds: { type: "array", items: { type: "string" } },
+      outputMode: { enum: ["answer", "artifact", "workspace_change", "unknown"] },
+      relation: { enum: ["new", "continue", "refine", "correct", "cancel"] },
       objective: { type: "string" },
+      currentInstruction: { type: "string" },
+      deliverables: { type: "array", items: { type: "string" } },
+      successCriteria: { type: "array", items: { type: "string" } },
       impactSurface: { type: "array", items: { type: "string" } },
       assumptions: { type: "array", items: { type: "string" } },
+      criticalUnknowns: { type: "array", items: { type: "string" } },
+      neededCapabilities: { type: "array", items: { type: "string" } },
       risks: { type: "array", items: { type: "string" } },
       verificationPlan: { type: "array", items: { type: "string" } },
     },

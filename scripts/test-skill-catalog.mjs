@@ -207,6 +207,22 @@ if (!globalGuide.includes("Slow is not failure") && !globalGuide.includes("慢�
   throw new Error("AGENT guide must forbid downgrading a long-running task just because it is slow");
 }
 if (
+  !globalGuide.includes("rankings/top lists/best/latest/most recent") &&
+  !globalGuide.includes("排行榜/排名/前十/最好/最新/最近")
+) {
+  throw new Error("AGENT guide must route rankings and latest facts through external verification");
+}
+if (
+  (!globalGuide.includes("source links, source dates, and the ranking/comparison criteria") &&
+    !globalGuide.includes("来源链接、来源日期和排名/比较口径")) ||
+  (!globalGuide.includes("ask one concise scope question first; do not silently choose") &&
+    !globalGuide.includes("先问一个简短的口径问题，不得静默代选")) ||
+  (!globalGuide.includes("never fill in a plausible-looking authoritative answer or list from memory") &&
+    !globalGuide.includes("禁止凭记忆补齐一个看似权威的答案或列表"))
+) {
+  throw new Error("AGENT guide must require sourced ranking answers and fail explicitly when evidence is insufficient");
+}
+if (
   (!globalGuide.includes("Do not run native `skill <id>`") &&
     !globalGuide.includes("禁止对这些平台能力执行原生 `skill <id>`")) ||
   !globalGuide.includes("anthropics-*")

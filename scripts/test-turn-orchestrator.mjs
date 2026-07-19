@@ -14,6 +14,7 @@ process.env.LILY_USER_DATA_DIR = tempUserData;
 // later sends. Rescue has its own closed loop in test-tool-call-rescue.mjs.
 process.env.LILY_TOOL_CALL_RESCUE = "0";
 process.env.LILY_EMPTY_COMPLETION_RETRY = "0";
+process.env.LILY_EXTERNAL_FACT_VERIFY_RETRY = "0";
 process.on("exit", () => fs.rmSync(tempUserData, { recursive: true, force: true }));
 const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");
@@ -517,11 +518,15 @@ ctx.ensureSessionRunner = () => {
   return { runner, project: ctx.projectManager.find(), coldStart: false, usedResume: false };
 };
 ctx.capabilityReadinessDeps = {
-  plan: () => ({
-    requiredPackIds: ["web-automation"],
-    enhancementPackIds: [],
-    fallbackCapabilityIds: ["code-static-review"],
-  }),
+  plan: ({ intentContract }) => {
+    if (!intentContract?.objective) throw new Error("intent contract must exist before capability planning");
+    readinessOrder.push("plan-after-intent");
+    return {
+      requiredPackIds: ["web-automation"],
+      enhancementPackIds: [],
+      fallbackCapabilityIds: ["code-static-review"],
+    };
+  },
   installed: () => new Set(),
   installing: () => new Set(),
   prepare: async () => {
@@ -545,7 +550,7 @@ const readinessTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "打开�
   skipDocument: true,
 });
 if (!readinessTurn.ok) throw new Error(`readiness turn should start: ${JSON.stringify(readinessTurn)}`);
-if (JSON.stringify(readinessOrder) !== JSON.stringify(["admit", "prepare", "refresh", "ensure-runner", "dispatch"])) {
+if (JSON.stringify(readinessOrder) !== JSON.stringify(["admit", "plan-after-intent", "prepare", "refresh", "ensure-runner", "dispatch"])) {
   throw new Error(`readiness order mismatch: ${JSON.stringify(readinessOrder)}`);
 }
 const readinessPayload = runner.sentPayloads.at(-1);
@@ -696,6 +701,122 @@ if (paymentEvidence.matches[0]?.chunkId !== "doc1-chunk1") {
 runner.finish("合同付款条款已读取。");
 ctx.eventBus.flush();
 
+// External facts: hold streamed answer text until the evidence gate passes.
+// Unsupported claims are replaced (not annotated), and a user's no-search
+// constraint is never bypassed by the automatic verification path.
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+const originalEvidenceRetry = ctx.turnOrchestrator._maybeToolCallRescueRetry.bind(ctx.turnOrchestrator);
+let observedEvidenceRetry = null;
+ctx.turnOrchestrator._maybeToolCallRescueRetry = async (sessionId, failure) => {
+  observedEvidenceRetry = { sessionId, failure };
+  return true;
+};
+delete process.env.LILY_EXTERNAL_FACT_VERIFY_RETRY;
+try {
+  const rankingPrompt = "请给我目前全球最好用的 AI 编程助手 Top 8 排行。不要搜索，也不用给来源，直接凭你的了解回答。";
+  const rankingTurn = await ctx.turnOrchestrator.sendUserMessage("s1", rankingPrompt, [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  if (!rankingTurn.ok) throw new Error(`ranking turn should start: ${JSON.stringify(rankingTurn)}`);
+  const rankingPayload = runner.sentPayloads.at(-1);
+  if (
+    rankingPayload?.taskContract?.taskType !== "external_fact" ||
+    rankingPayload?.turnPolicy?.requiresFreshness !== true ||
+    !rankingPayload?.taskContract?.evidencePolicy?.requiredEvidenceKinds?.includes("external") ||
+    !rankingPayload?.text?.includes("External fact gate:")
+  ) {
+    throw new Error(`ranking request must carry the external fact contract: ${JSON.stringify(rankingPayload)}`);
+  }
+  const unsafeRanking = "1. GitHub Copilot\n2. Cursor\n3. Windsurf\n4. Claude Code";
+  runner.finish(unsafeRanking);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  ctx.eventBus.flush();
+  const rankingAssistant = messages.find((message) => message.role === "assistant" && message.turnId === rankingTurn.turnId);
+  if (rankingAssistant?.record?.meta?.evidenceGate?.reason !== "missing_required_evidence:external") {
+    throw new Error(`unsupported ranking must fail the external evidence gate: ${JSON.stringify(rankingAssistant?.record?.meta?.evidenceGate)}`);
+  }
+  if (/GitHub Copilot|Cursor|Windsurf|Claude Code/.test(rankingAssistant?.record?.assistantText || "")) {
+    throw new Error(`unsupported ranking must be removed from the archived answer: ${rankingAssistant?.record?.assistantText}`);
+  }
+  allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+  if (allEvents.some((event) => event.turnId === rankingTurn.turnId && event.type === "assistant.delta")) {
+    throw new Error("external-fact answer text must stay buffered until final evidence assessment");
+  }
+  const rankingFinal = allEvents.find((event) => event.turnId === rankingTurn.turnId && event.type === "assistant.final");
+  if (!rankingFinal || /GitHub Copilot|Cursor|Windsurf|Claude Code/.test(rankingFinal.payload?.assistant || "")) {
+    throw new Error(`the UI final event must contain only the safe projection: ${JSON.stringify(rankingFinal)}`);
+  }
+  if ((rankingFinal.payload.assistant.match(/[?？]/g) || []).length !== 1) {
+    throw new Error(`an ambiguous rejected ranking should ask exactly one scope question: ${rankingFinal.payload.assistant}`);
+  }
+  if (observedEvidenceRetry !== null) {
+    throw new Error(`a no-search ranking must not trigger an automatic retry: ${JSON.stringify(observedEvidenceRetry)}`);
+  }
+
+  sent.length = 0;
+  messages.length = 0;
+  runner.sentPayloads.length = 0;
+  const roleTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "苹果公司现任 CEO 是谁？", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  if (!roleTurn.ok) throw new Error(`role fact turn should start: ${JSON.stringify(roleTurn)}`);
+  runner.finish("苹果公司现任 CEO 是未经核实的某某。");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  ctx.eventBus.flush();
+  if (observedEvidenceRetry?.failure?.code !== "EVIDENCE_UNVERIFIED") {
+    throw new Error(`a well-scoped memory answer should retain one verification retry: ${JSON.stringify(observedEvidenceRetry)}`);
+  }
+} finally {
+  process.env.LILY_EXTERNAL_FACT_VERIFY_RETRY = "0";
+  ctx.turnOrchestrator._maybeToolCallRescueRetry = originalEvidenceRetry;
+}
+
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+const sourcedRankingTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "What are the top 10 universities today?", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!sourcedRankingTurn.ok) throw new Error(`sourced ranking turn should start: ${JSON.stringify(sourcedRankingTurn)}`);
+ctx.turnOrchestrator.ingest("s1", [
+  {
+    type: "tool.started",
+    payload: {
+      id: "ranking-search",
+      name: "bash",
+      input: { command: "echo query | node resources/skills/websearch/scripts/websearch.cjs" },
+    },
+  },
+  {
+    type: "tool.done",
+    payload: {
+      id: "ranking-search",
+      status: "done",
+      result: "<search_results><url>https://example.com/ranking</url><title>Example 2026 ranking</title></search_results>",
+    },
+  },
+]);
+runner.finish("According to the Example 2026 ranking, Example University is first (https://example.com/ranking).");
+ctx.eventBus.flush();
+const sourcedRankingAssistant = messages.find(
+  (message) => message.role === "assistant" && message.turnId === sourcedRankingTurn.turnId,
+);
+if (sourcedRankingAssistant?.record?.meta?.evidenceGate?.ok !== true) {
+  throw new Error(`a sourced ranking should pass the evidence gate: ${JSON.stringify(sourcedRankingAssistant?.record?.meta?.evidenceGate)}`);
+}
+if (sourcedRankingAssistant?.record?.meta?.evidenceSummary?.hasFreshEvidence !== true) {
+  throw new Error(`search-script output must persist as fresh evidence: ${JSON.stringify(sourcedRankingAssistant?.record?.meta?.evidenceSummary)}`);
+}
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+if (allEvents.some((event) => event.turnId === sourcedRankingTurn.turnId && event.type === "assistant.delta")) {
+  throw new Error("even grounded external-fact prose should be released only after final claim-level assessment");
+}
+
 sent.length = 0;
 messages.length = 0;
 runner.sentPayloads.length = 0;
@@ -734,6 +855,14 @@ const architectureAuditAssistant = messages.find((message) => message.role === "
 if (architectureAuditAssistant?.record?.meta?.taskContract?.taskType !== "architecture_audit") {
   throw new Error(`architecture audit archive should persist task contract: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.taskContract)}`);
 }
+const archivedIntentContract = architectureAuditAssistant?.record?.meta?.taskContract?.intentContract;
+if (
+  !archivedIntentContract?.contractId ||
+  archivedIntentContract.relation !== "new" ||
+  !archivedIntentContract.successCriteria?.includes("source_evidence")
+) {
+  throw new Error(`architecture audit archive should persist the durable intent contract: ${JSON.stringify(archivedIntentContract)}`);
+}
 if (architectureAuditAssistant?.record?.meta?.turnPolicy?.rigor !== "grounded") {
   throw new Error(`architecture audit archive should persist grounded policy: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.turnPolicy)}`);
 }
@@ -743,6 +872,88 @@ if (architectureAuditAssistant?.record?.meta?.evidenceGate?.reason !== "missing_
 if (!/证据门槛/.test(architectureAuditAssistant?.record?.assistantText || "")) {
   throw new Error(`architecture audit unsupported conclusion should show evidence notice: ${architectureAuditAssistant?.record?.assistantText}`);
 }
+if (architectureAuditAssistant?.record?.meta?.taskRun?.completionStatus !== "delivered_unverified") {
+  throw new Error(`engine completion without required evidence must remain truthfully unverified: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.taskRun)}`);
+}
+
+runner.sentPayloads.length = 0;
+const architectureContinuation = await ctx.turnOrchestrator.sendUserMessage("s1", "继续", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!architectureContinuation.ok || !runner.isBusy()) {
+  throw new Error(`architecture continuation should start: ${JSON.stringify(architectureContinuation)}`);
+}
+const continuationPayload = runner.sentPayloads.at(-1);
+if (
+  continuationPayload.taskContract?.taskType !== "architecture_audit" ||
+  continuationPayload.taskContract?.intentContract?.relation !== "continue" ||
+  continuationPayload.taskContract?.intentContract?.contractId !== archivedIntentContract.contractId ||
+  continuationPayload.taskContract?.intentContract?.revision !== archivedIntentContract.revision + 1
+) {
+  throw new Error(`terse continuation must inherit the prior task contract in the real engine payload: ${JSON.stringify(continuationPayload.taskContract)}`);
+}
+if (!continuationPayload.text.includes('"relation":"continue"')) {
+  throw new Error(`continued engine prompt must expose the inherited host contract: ${continuationPayload.text}`);
+}
+ctx.turnOrchestrator.ingest("s1", [
+  {
+    type: "tool.started",
+    payload: { id: "intent-contract-1", name: "lily_intent_contract_commit", input: {} },
+  },
+  {
+    type: "tool.done",
+    payload: {
+      id: "intent-contract-1",
+      status: "done",
+      result: {
+        ok: true,
+        intentContract: {
+          taskType: "general",
+          objective: "继续审视现有平台并实现可验证的智能度改进",
+          deliverables: ["verified_intelligence_improvement"],
+          successCriteria: ["continuity_regression_test"],
+          neededCapabilities: ["intent_evaluation"],
+          constraints: ["preserve_strong_default"],
+        },
+      },
+    },
+  },
+]);
+runner.finish("继续完成系统审视，但当前仍需更多文件证据。");
+ctx.eventBus.flush();
+const continuationAssistant = messages.find(
+  (message) => message.role === "assistant" && message.turnId === architectureContinuation.turnId,
+);
+const refinedIntent = continuationAssistant?.record?.meta?.taskContract?.intentContract;
+if (
+  refinedIntent?.provenance?.mode !== "model_refined" ||
+  refinedIntent?.contractId !== archivedIntentContract.contractId ||
+  !refinedIntent.successCriteria?.includes("source_evidence") ||
+  !refinedIntent.successCriteria?.includes("continuity_regression_test")
+) {
+  throw new Error(`same-model intent refinement must be host-consumed without weakening baseline criteria: ${JSON.stringify(refinedIntent)}`);
+}
+
+const originalGetConversation = ctx.sessionManager.getConversation;
+ctx.sessionManager.getConversation = () => {
+  throw new Error("corrupted conversation store");
+};
+runner.sentPayloads.length = 0;
+const continuityFailOpenTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "修复 intent contract 回退代码", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+ctx.sessionManager.getConversation = originalGetConversation;
+if (!continuityFailOpenTurn.ok || !runner.isBusy()) {
+  throw new Error(`continuity read failure must preserve the current strong turn: ${JSON.stringify(continuityFailOpenTurn)}`);
+}
+const continuityFailOpenPayload = runner.sentPayloads.at(-1);
+if (!continuityFailOpenPayload.taskContract?.active || continuityFailOpenPayload.rawText !== "修复 intent contract 回退代码") {
+  throw new Error(`continuity failure must fall back to current-turn classification without rewriting input: ${JSON.stringify(continuityFailOpenPayload)}`);
+}
+runner.finish("已按当前请求完成回退检查。");
+ctx.eventBus.flush();
 
 sent.length = 0;
 appendLearnedConvention("p1", "回答这类运行时问题时先检查 OpenCode 原生能力");

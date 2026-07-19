@@ -60,5 +60,18 @@ assert(summary.coverage.missingCandidates.includes("src/main/evidence-gate.js"))
 assert(summary.coverage.readFiles.includes("src/main/turn-orchestrator.js"));
 assert(summary.hasVerificationEvidence);
 assert(summary.hasDocumentEvidence);
+assert(summary.hasSourceContentEvidence);
+assert.equal(summary.sourceContentCoverage.status, "complete");
+
+const failedSourceLedger = new EvidenceLedger();
+failedSourceLedger.recordVisionObservation({
+  method: "vision_bridge",
+  status: "unavailable",
+  sourceCount: 1,
+  failedCount: 1,
+});
+const failedSourceSummary = failedSourceLedger.summary();
+assert.equal(failedSourceSummary.hasSourceContentEvidence, false, "failed recognition must not become source evidence");
+assert.equal(failedSourceSummary.sourceContentCoverage.status, "unavailable");
 
 console.log("evidence-ledger: ok");

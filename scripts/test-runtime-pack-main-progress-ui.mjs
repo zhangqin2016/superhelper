@@ -31,8 +31,12 @@ assert.doesNotMatch(composer, /ensureRuntimePacksBeforeSend/);
 assert.doesNotMatch(composer, /ensureRuntimePacks\s*\(/);
 
 const turnOrchestrator = read("src/main/turn-orchestrator.js");
-assert.match(turnOrchestrator, /buildRuntimePackAdvisory/);
 assert.match(turnOrchestrator, /dependencyAdvisory/);
+assert.match(turnOrchestrator, /prepareTurnCapabilityReadiness/);
+
+const turnCapabilityReadiness = read("src/main/turn-capability-readiness.js");
+assert.match(turnCapabilityReadiness, /buildRuntimePackAdvisory/);
+assert.match(turnCapabilityReadiness, /buildDependencyAdvisoryForTurn/);
 
 const progressUi = read("src/renderer/modules/runtime-pack-progress.js");
 assert.match(progressUi, /onRuntimePackProgress/);

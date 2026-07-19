@@ -47,6 +47,13 @@ function withRemoteTaskIntelligence(taskIntelligence, fn) {
 }
 
 assert.equal(classifyTask({ text: "你好" }).active, false, "casual chat should not get heavy process");
+const colloquialProgram = buildTaskContract({ text: "给我写一个牛逼的程序" });
+assert.equal(colloquialProgram.active, true, "colloquial program creation must receive the coding execution contract");
+assert.equal(colloquialProgram.taskType, "code_change");
+assert.equal(colloquialProgram.semanticIntent?.domain, "programming");
+assert.equal(colloquialProgram.semanticIntent?.operation, "implement");
+assert.equal(colloquialProgram.modelDraft.localFallback.outputMode, "workspace_change");
+assert(colloquialProgram.intentContract.deliverables.includes("requested_workspace_change"));
 for (const text of ["继续", "就行", "好", "然后呢", "继续说", "展开", "继续讲", "可以", "嗯"]) {
   assert.equal(
     classifyTask({ text }).active,
@@ -99,18 +106,41 @@ assert.equal(
   "generic image recognition must not be routed as platform agent-quality work",
 );
 assert.equal(imageRecognition.active, true, "image work should get a lightweight media evidence contract");
-assert.equal(imageRecognition.kind, "media");
-assert.equal(imageRecognition.taskType, "media_generation");
+assert.equal(imageRecognition.kind, "content_extraction");
+assert.equal(imageRecognition.taskType, "content_extraction");
+assert.equal(imageRecognition.contentIntent.operation, "extract");
+assert.deepEqual(extractNegativeConstraints("帮我识别这张图片里的内容"), [], "识别 must not be parsed as the negation 别");
 
 const documentQuestion = buildTaskContract({
   text: "分析这个 PDF 文档",
   project: { path: ROOT },
 });
 assert.equal(documentQuestion.active, true, "document work should get an evidence contract");
-assert.equal(documentQuestion.kind, "document");
-assert.equal(documentQuestion.taskType, "document_work");
-assert(documentQuestion.evidencePolicy.requiredEvidenceKinds.includes("document"));
+assert.equal(documentQuestion.kind, "content_extraction");
+assert.equal(documentQuestion.taskType, "content_extraction");
+assert(documentQuestion.evidencePolicy.requiredEvidenceKinds.includes("source_content"));
 assert(documentQuestion.evidencePolicy.allowedSources.includes("document_evidence"));
+assert(documentQuestion.intentContract.deliverables.includes("extracted_or_explained_source_content"));
+
+const detailedFollowUp = buildTaskContract({
+  text: "再详细点",
+  messages: [{
+    role: "assistant",
+    record: {
+      meta: {
+        taskContract: documentQuestion,
+        evidenceSummary: {
+          hasSourceContentEvidence: true,
+          sourceContentCoverage: { status: "complete", sourceCount: 1, observedCount: 1, complete: true },
+        },
+      },
+    },
+  }],
+});
+assert.equal(detailedFollowUp.taskType, "content_extraction", "source-content follow-ups should inherit the prior semantic task");
+assert.equal(detailedFollowUp.intentContract.relation, "refine");
+assert.equal(detailedFollowUp.contentIntent.operation, "understand");
+assert.equal(detailedFollowUp.priorSourceContentEvidence?.sourceCount, 1, "only proven prior source context should carry forward");
 
 const mediaRepair = buildTaskContract({
   text: "修复这张图片",
@@ -223,7 +253,7 @@ const contract = buildTaskContract({
   project: { path: tmp },
 });
 assert.equal(contract.active, true);
-assert.equal(contract.schemaVersion, 1);
+assert.equal(contract.schemaVersion, 5);
 assert.equal(contract.taskType, "runtime_protocol");
 assert.equal(contract.workspaceProfile, "desktop-fullstack");
 assert(contract.workspaceSignals.includes("electron"));
@@ -238,6 +268,9 @@ assert.equal(contract.workspaceGroundingPolicy.allowNewTopLevel, false);
 assert(contract.workspaceGroundingPolicy.requiredEvidence.includes("workspace_tree_or_manifest"));
 assert.equal(contract.modelDraft.requested, true);
 assert.equal(contract.modelDraft.localFallback.taskType, "runtime_protocol");
+assert.equal(contract.modelDraft.localFallback.relation, "new");
+assert(contract.modelDraft.localFallback.deliverables.includes("verified_runtime_behavior"));
+assert(contract.modelDraft.localFallback.successCriteria.includes("event_ordering"));
 
 const scheduleContract = buildTaskContract({
   text: "知识方案里需要有逐小时预报，不是创建定时任务",
@@ -253,6 +286,8 @@ assert(prefixed.includes("<lily_task_contract>"));
 assert(prefixed.includes("Platform baseline rules:"));
 assert(prefixed.includes("User negative constraints and blocked intents:"));
 assert(prefixed.includes("Evidence gate:"));
+assert(prefixed.includes("Host-resolved intent contract:"));
+assert(prefixed.includes('"relation":"new"'));
 assert(prefixed.includes("Unsupported factual claims must be downgraded"));
 assert(prefixed.includes("Source coverage gate:"));
 assert(prefixed.includes("Workspace grounding gate:"));
@@ -392,8 +427,17 @@ withRemoteTaskIntelligence(
 );
 
 withRemoteTaskIntelligence({ enabled: false }, () => {
-  assert.equal(loadTaskIntelligenceRegistry().enabled, false);
-  assert.equal(classifyTask({ text: "修复 bug" }).active, false, "remote kill switch should disable task contract");
+  const registry = loadTaskIntelligenceRegistry();
+  assert.equal(registry.enabled, true, "remote config must not disable the local task-intelligence baseline");
+  assert.equal(registry.remoteEnhancementsEnabled, false);
+  assert.equal(classifyTask({ text: "修复 bug" }).active, true, "remote disable must fail open to local intelligence");
+});
+
+withRemoteTaskIntelligence({ schemaVersion: 999, categories: { remote_only: { terms: ["remote-only"] } } }, () => {
+  const registry = loadTaskIntelligenceRegistry();
+  assert.equal(registry.remoteEnhancementsEnabled, false, "unknown remote schema must be ignored");
+  assert.equal(classifyTask({ text: "修复 bug" }).active, true, "unknown remote schema must preserve local intelligence");
+  assert.equal(registry.categories.remote_only, undefined);
 });
 
 // Reply-shape rule: an active task contract must tell the model that its reply

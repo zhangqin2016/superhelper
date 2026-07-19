@@ -15,6 +15,7 @@ function names(context, deps) {
 const PLATFORM_TOOLS = [
   "lily_capability_list",
   "lily_capability_status",
+  "lily_intent_contract_commit",
   "runtime_pack_install",
   "runtime_pack_list",
   "schedule_task_create",
@@ -68,6 +69,19 @@ try {
     "broker-native tools should declare their execution surface",
   );
   assert(findBrokerTool(runtime, "lily_capability_status").annotations.readOnlyHint === true, "capability status is read-only");
+  const intentCommit = findBrokerTool(runtime, "lily_intent_contract_commit");
+  assert(intentCommit?.annotations?.readOnlyHint === true, "intent contract commit is a bounded logical update, not an external side effect");
+  const intentCandidate = await intentCommit.handler({
+    objective: "fix the existing login flow",
+    deliverables: ["verified fix"],
+    successCriteria: ["regression test passes"],
+  }, runtime);
+  assert(
+    intentCandidate.ok === true &&
+    intentCandidate.intentContract.objective === "fix the existing login flow" &&
+    intentCandidate.intentContract.successCriteria[0] === "regression test passes",
+    "intent contract tool should return a structured candidate for main-process validation",
+  );
   const runtimeStatus = await findBrokerTool(runtime, "lily_capability_status").handler({}, runtime);
   assert(
     runtimeStatus.toolDetails.some((tool) => (

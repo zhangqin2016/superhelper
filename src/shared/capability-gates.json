@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "gates": [
+    {
+      "id": "task-intelligence-baseline",
+      "protects": "Local task classification and verification cannot be disabled by remote configuration.",
+      "baseline": "The bundled deterministic task registry remains active.",
+      "failureFallback": "Ignore malformed, disabled, or unsupported remote overlays and use the local baseline.",
+      "tests": [
+        "scripts/test-task-contract.mjs",
+        "scripts/test-program-task-intent.mjs"
+      ]
+    },
+    {
+      "id": "tool-semantics-single-source",
+      "protects": "Retry, rescue, evidence, and TaskRun code agree about side effects and replay safety.",
+      "baseline": "Unknown tools and shell commands are never replayed automatically.",
+      "failureFallback": "Treat unknown semantics as external-side-effectful and not replay-safe.",
+      "tests": [
+        "scripts/test-tool-semantics.mjs",
+        "scripts/test-tool-call-rescue.mjs",
+        "scripts/test-tool-broker-registry.mjs"
+      ]
+    },
+    {
+      "id": "intent-to-capability-plan",
+      "protects": "Durable user intent is resolved before capability preparation and dispatch.",
+      "baseline": "Current-turn deterministic classification uses the original selected model, tools, context, and user text.",
+      "failureFallback": "Planner or continuity errors return the current-turn baseline without blocking dispatch.",
+      "tests": [
+        "scripts/test-intent-contract.mjs",
+        "scripts/test-platform-intent-eval.mjs",
+        "scripts/test-capability-readiness.mjs",
+        "scripts/test-turn-dependency-readiness.mjs",
+        "scripts/test-turn-orchestrator.mjs"
+      ]
+    },
+    {
+      "id": "runtime-contract",
+      "protects": "Main, persistence, and renderer share versioned RuntimeEvent and TaskRun contracts.",
+      "baseline": "Existing event names and TaskRun fields stay compatible.",
+      "failureFallback": "Reject unsupported versions and malformed typed producer payloads before persistence or rendering.",
+      "tests": [
+        "scripts/test-runtime-contract-manifest.mjs",
+        "scripts/test-runtime-event-schema.mjs",
+        "scripts/test-session-runtime-store.mjs"
+      ]
+    },
+    {
+      "id": "prompt-envelope",
+      "protects": "Internal prompt layers cannot crowd out the original user request.",
+      "baseline": "Normal-size prompt layers and the full visible user message remain byte-identical.",
+      "failureFallback": "Bound only oversized internal layers and preserve explicit truncation diagnostics.",
+      "tests": ["scripts/test-engine-message-layers.mjs"]
+    },
+    {
+      "id": "external-claim-evidence",
+      "protects": "Rankings and current external facts cannot be asserted from model memory alone.",
+      "baseline": "External fact requests require fresh evidence, source links, and honest uncertainty.",
+      "failureFallback": "Ask one scope question or disclose the evidence gap; never fabricate a plausible ranking.",
+      "tests": ["scripts/test-external-fact-grounding.mjs"]
+    },
+    {
+      "id": "attachment-content-grounding",
+      "protects": "Image and document reading requests cannot be routed as generation or answered without readable source content.",
+      "baseline": "The platform resolves operation, source kind, and expected output before routing, then records source coverage separately from tool activity.",
+      "failureFallback": "Preserve the original attachment and strong model path, disclose the read failure, and replace unsupported source claims before projection.",
+      "tests": [
+        "scripts/test-content-task-intent.mjs",
+        "scripts/test-send-preflight.mjs",
+        "scripts/test-evidence-ledger.mjs",
+        "scripts/test-evidence-gate.mjs",
+        "scripts/test-answer-evidence-finalizer.mjs",
+        "scripts/test-task-run-policy.mjs"
+      ]
+    },
+    {
+      "id": "truthful-completion",
+      "protects": "Delivered output is not presented as verified completion without required evidence.",
+      "baseline": "Legacy status remains compatible while completionStatus records verification truth.",
+      "failureFallback": "Use delivered_unverified or observed_work instead of verified_complete.",
+      "tests": [
+        "scripts/test-task-run-policy.mjs",
+        "scripts/test-turn-view-renderer.mjs"
+      ]
+    },
+    {
+      "id": "architecture-ratchet",
+      "protects": "Critical modules do not grow new mixed responsibilities or cross process boundaries.",
+      "baseline": "Existing hotspots may be split and reduced but not enlarged.",
+      "failureFallback": "The architecture test fails before a capability change can merge.",
+      "tests": ["scripts/test-architecture-boundaries.mjs"]
+    }
+  ]
+}

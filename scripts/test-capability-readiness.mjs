@@ -37,6 +37,28 @@ const media = planCapabilityReadiness({
 });
 assert.deepEqual(media.requiredPackIds, ["ffmpeg"]);
 
+const contractRequired = planCapabilityReadiness({
+  text: "process the attached recording",
+  files: [],
+  intentContract: { neededCapabilities: ["ffmpeg"] },
+});
+assert.equal(contractRequired.requiredPackIds.includes("ffmpeg"), true, "explicit contract capability must drive readiness");
+
+const catalogPlanned = planCapabilityReadiness({
+  text: "fill this Word template with customer data",
+  files: [{ name: "template.docx" }],
+});
+assert.equal(catalogPlanned.recommendedSkillIds.includes("lily-template-fill"), true);
+assert.equal(catalogPlanned.enhancementPackIds.includes("libreoffice"), true);
+assert.deepEqual(catalogPlanned.fallbackCapabilityIds, catalogPlanned.fallbackCapabilityIds.map((item) => item.trim()));
+
+const unrelated = planCapabilityReadiness({
+  text: "Implement a retry helper and add focused tests.",
+  files: [],
+});
+assert.deepEqual(unrelated.recommendedSkillIds, [], "unmatched work must not receive unrelated router skills");
+assert.deepEqual(unrelated.enhancementPackIds, [], "unmatched work must not suggest unrelated runtime packs");
+
 const ready = resolveCapabilityReadiness(browser, {
   installedPackIds: new Set(["web-automation"]),
   installingPackIds: new Set(),

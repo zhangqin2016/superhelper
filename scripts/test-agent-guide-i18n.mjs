@@ -161,6 +161,11 @@ const allLocalGuideSkills = [
 const enGuide = skillManager.buildAgentGuideContent([], "en");
 assert.match(enGuide, /Reply in the primary language of the user's latest message/);
 assert.match(enGuide, /do not invent global skills or describe project memory as a skill/i);
+assert.match(enGuide, /rankings\/top lists\/best\/latest\/most recent/);
+assert.match(enGuide, /Even when the user does not say "search" or "look it up"/);
+assert.match(enGuide, /source links, source dates, and the ranking\/comparison criteria/);
+assert.match(enGuide, /ask one concise scope question first; do not silently choose/);
+assert.match(enGuide, /never fill in a plausible-looking authoritative answer or list from memory/);
 assert.doesNotMatch(enGuide, /Reply in English by default/);
 assertNoLocalizedGuideLeak(enGuide, "English agent guide");
 assertNoStaticDependencyClaims(enGuide, "English agent guide");
@@ -175,6 +180,11 @@ assertAgentGuideWithinStaticBudget(arGuide, "Arabic base agent guide");
 
 const zhGuide = skillManager.buildAgentGuideContent([], "zh-CN");
 assert.match(zhGuide, /禁止编造“全局技能”或把项目记忆误说成技能/);
+assert.match(zhGuide, /排行榜\/排名\/前十\/最好\/最新\/最近/);
+assert.match(zhGuide, /即使用户没有说“搜索\/查一下”/);
+assert.match(zhGuide, /来源链接、来源日期和排名\/比较口径/);
+assert.match(zhGuide, /先问一个简短的口径问题，不得静默代选/);
+assert.match(zhGuide, /禁止凭记忆补齐一个看似权威的答案或列表/);
 assertNoStaticDependencyClaims(zhGuide, "Chinese agent guide");
 assertAgentGuideWithinStaticBudget(zhGuide, "Chinese base agent guide");
 

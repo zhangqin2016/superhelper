@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { resolveToolSemantics } = require("./tool-semantics");
 const { fileURLToPath } = require("node:url");
 const { registerArtifactPath } = require("./artifact-registry");
 
@@ -241,7 +242,6 @@ function addCandidate(
 // Tools that only READ — their result is file content / search hits, which is
 // full of path-like strings that were NOT produced this turn. Scraping those
 // is the main source of false-positive artifacts, so we skip it for these.
-const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "ls", "webfetch", "websearch", "notebookread"]);
 // Tools that write files — their input carries the produced path explicitly, so
 // we trust the structured input rather than guessing from text.
 const FILE_WRITE_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit"]);
@@ -291,6 +291,7 @@ function buildTurnArtifacts({
 
   for (const tool of tools || []) {
     const name = String(tool?.name || "").toLowerCase();
+    const readOnly = resolveToolSemantics(tool).readOnly;
 
     if (tool?.input && typeof tool.input === "object") {
       for (const key of FILE_WRITE_INPUT_KEYS) {
@@ -298,7 +299,7 @@ function buildTurnArtifacts({
         const resolved = canon(tool.input[key]);
         if (!resolved) continue;
         // Read-tool inputs are references; write-tool inputs are produced.
-        if (READ_ONLY_TOOLS.has(name)) readPaths.add(resolved);
+        if (readOnly) readPaths.add(resolved);
         else if (FILE_WRITE_TOOLS.has(name)) producedPaths.add(resolved);
       }
     }
@@ -314,7 +315,7 @@ function buildTurnArtifacts({
 
     // Result represents what the tool produced — scrape it, except for pure
     // read tools whose result is just content the model looked at.
-    if (!READ_ONLY_TOOLS.has(name)) {
+    if (!readOnly) {
       const candidates = new Set();
       collectPathStrings(tool?.result, candidates);
       if (!FILE_WRITE_TOOLS.has(name) && toolInputMayCreateArtifacts(name)) collectPathStrings(tool?.input, candidates);

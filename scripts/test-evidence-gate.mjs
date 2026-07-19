@@ -214,6 +214,48 @@ const mediaRecognitionWithoutOutput = assessFinalAnswerEvidence({
 });
 assert.equal(mediaRecognitionWithoutOutput.ok, true, "image recognition should not require an output file");
 
+const sourceClaimWithoutRead = assessFinalAnswerEvidence({
+  assistant: "图片里是一张产品海报。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["source_content"] },
+  turnPolicy: { rigor: "grounded", taskType: "content_extraction" },
+  evidenceSummary: { counts: { sourceContentSources: 1 }, hasSourceContentEvidence: false },
+});
+assert.equal(sourceClaimWithoutRead.ok, false);
+assert.equal(sourceClaimWithoutRead.reason, "missing_required_evidence:source_content");
+
+const sourceClaimWithRead = assessFinalAnswerEvidence({
+  assistant: "图片里是一张产品海报。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["source_content"] },
+  turnPolicy: { rigor: "grounded", taskType: "content_extraction" },
+  evidenceSummary: { counts: { sourceContentSources: 1 }, hasSourceContentEvidence: true },
+});
+assert.equal(sourceClaimWithRead.ok, true);
+
+const partialSourceWithoutDisclosure = assessFinalAnswerEvidence({
+  assistant: "这份文档完整说明了项目实施计划。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["source_content"] },
+  turnPolicy: { rigor: "grounded", taskType: "content_extraction" },
+  evidenceSummary: {
+    counts: { sourceContentSources: 2 },
+    hasSourceContentEvidence: true,
+    sourceContentCoverage: { status: "partial" },
+  },
+});
+assert.equal(partialSourceWithoutDisclosure.ok, false);
+assert.equal(partialSourceWithoutDisclosure.reason, "partial_source_content_without_disclosure");
+
+const partialSourceWithDisclosure = assessFinalAnswerEvidence({
+  assistant: "目前只读取到部分页面；在已读取部分中，文档说明了项目实施计划。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["source_content"] },
+  turnPolicy: { rigor: "grounded", taskType: "content_extraction" },
+  evidenceSummary: {
+    counts: { sourceContentSources: 2 },
+    hasSourceContentEvidence: true,
+    sourceContentCoverage: { status: "partial" },
+  },
+});
+assert.equal(partialSourceWithDisclosure.ok, true);
+
 const mediaOutputWithoutEvidence = assessFinalAnswerEvidence({
   assistant: "图片已生成。",
   evidencePolicy: { required: true, requiredEvidenceKinds: [] },

@@ -129,6 +129,12 @@ function addSkillRuntimePacks(ids, skillIds = []) {
   }
 }
 
+function runtimePackIdsForSkills(skillIds = []) {
+  const ids = [];
+  addSkillRuntimePacks(ids, skillIds);
+  return ids;
+}
+
 function planRuntimePacks(payload = {}) {
   const text = textOf(payload.text || payload.prompt || payload.message);
   const facts = collectFileFacts(payload.files || payload.attachments || []);
@@ -280,6 +286,7 @@ function preflightRuntimePacks(payload = {}) {
 module.exports = {
   buildRuntimePackAdvisory,
   inferRuntimePackIds,
+  runtimePackIdsForSkills,
   planRuntimePacks,
   preflightRuntimePacks,
   collectSkillIds,

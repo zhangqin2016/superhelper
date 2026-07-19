@@ -37,9 +37,9 @@ const {
   mergeMentionedDocumentFiles,
   resolveMentionedDocumentFiles,
 } = require("./workspace-document-mentions");
-const { buildTaskContract, withTaskContractPrefix } = require("./task-contract");
+const { withTaskContractPrefix } = require("./task-contract");
 const { EvidenceLedger } = require("./evidence-ledger");
-const { buildTurnPolicy } = require("./turn-policy");
+const { evaluateAnswerEvidence, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const {
   compactCapabilityContext,
   recommendSkillCapabilityGraph,
@@ -50,8 +50,10 @@ const { TurnRunCoordinator } = require("./turn-run-coordinator");
 const {
   addTaskEvidence,
   addTaskRisk,
+  applyIntentContractToTaskRun,
   applyTaskPlanFromTodos,
   assessTaskVerification,
+  buildTaskToolEvidence,
   compactTaskRun,
   completeTaskRun,
   createTaskRun,
@@ -59,6 +61,12 @@ const {
   noteTaskToolUse,
   updateTaskLiveness,
 } = require("./task-run-state");
+const { resolveModelIntentContractUpdate } = require("./intent-contract");
+const { resolveTurnIntelligence } = require("./turn-intelligence");
+const {
+  buildDependencyAdvisoryForTurn,
+  prepareTurnCapabilityReadiness,
+} = require("./turn-capability-readiness");
 const {
   findBlockingRunningProcessJobs,
   runningProcessJobNotice,
@@ -241,104 +249,6 @@ const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 
 function appendPreflightFallback(text, context, title) {
   return require("./engine-message-layers").appendExtractedContext(text, context, title);
-}
-
-function buildDependencyAdvisoryForTurn(text, files) {
-  try {
-    const {
-      buildRuntimePackAdvisory,
-      preflightRuntimePacks,
-    } = require("./runtime-pack-preflight");
-    const preflight = preflightRuntimePacks({ text, files });
-    const advisory = buildRuntimePackAdvisory(preflight);
-    if (!advisory) return null;
-    return {
-      text: advisory,
-      requiredPackIds: preflight.requiredPackIds || [],
-      missingPackIds: preflight.missingPackIds || [],
-      installingPackIds: preflight.installingPackIds || [],
-    };
-  } catch (err) {
-    log.warn("runtime pack advisory failed open: %s", err?.message || err);
-    return null;
-  }
-}
-
-async function prepareTurnCapabilityReadiness({ ctx, sessionId, turnId, text, files, deps = {} }) {
-  try {
-    const readiness = require("./capability-readiness");
-    const installer = require("./runtime-pack-installer");
-    const plan = (deps.plan || readiness.planCapabilityReadiness)({ text, files });
-    const installedPackIds = (deps.installed || installer.installedRuntimePackIds)();
-    const installingPackIds = (deps.installing || installer.installingRuntimePackIds)();
-    const resolved = readiness.resolveCapabilityReadiness(plan, {
-      installedPackIds,
-      installingPackIds,
-      unavailablePackIds: new Set(),
-    });
-    const unresolvedPackIds = [...new Set([
-      ...(resolved.missingRequiredPackIds || []),
-      ...(resolved.installingPackIds || []),
-    ])];
-    if (unresolvedPackIds.length) {
-      const prepare = deps.prepare || ((payload) => {
-        const coordinator = ctx?.runtimePackCoordinator || require("./runtime-pack-coordinator").runtimePackCoordinator;
-        return coordinator.prepare(payload);
-      });
-      const prepared = await prepare({ turnId, requiredPackIds: unresolvedPackIds });
-      if (prepared.refreshRequired) {
-        const refresh = deps.refresh || ctx?.refreshPreparedRuntimeForTurn
-          || require("./runner-live-config").refreshPreparedRuntimeForTurn;
-        const progressId = prepared.readyPackIds?.[0] || unresolvedPackIds[0];
-        const jobId = `runtime_refresh_${turnId}`;
-        const publishProgress = deps.progress || installer.publishRuntimePackProgress;
-        publishProgress({ id: progressId, jobId, turnId, phase: "refreshing", at: new Date().toISOString() });
-        try {
-          refresh(ctx, sessionId);
-        } catch (error) {
-          publishProgress({
-            id: progressId,
-            jobId,
-            turnId,
-            phase: "failed",
-            error: error?.message || String(error),
-            at: new Date().toISOString(),
-          });
-          return {
-            status: "degraded",
-            requiredPackIds: plan.requiredPackIds || [],
-            enhancementPackIds: plan.enhancementPackIds || [],
-            readyPackIds: prepared.readyPackIds || [],
-            failedPackIds: unresolvedPackIds,
-            unavailablePackIds: prepared.unavailablePackIds || [],
-            fallbackCapabilityIds: plan.fallbackCapabilityIds || [],
-            error: error?.message || String(error),
-          };
-        }
-        publishProgress({ id: progressId, jobId, turnId, phase: "installed", at: new Date().toISOString() });
-      }
-      return {
-        status: prepared.ok ? "ready" : "degraded",
-        requiredPackIds: plan.requiredPackIds || [],
-        enhancementPackIds: plan.enhancementPackIds || [],
-        readyPackIds: prepared.readyPackIds || [],
-        failedPackIds: prepared.failedPackIds || [],
-        unavailablePackIds: prepared.unavailablePackIds || [],
-        fallbackCapabilityIds: plan.fallbackCapabilityIds || [],
-      };
-    }
-    return {
-      status: resolved.status,
-      requiredPackIds: plan.requiredPackIds || [],
-      enhancementPackIds: plan.enhancementPackIds || [],
-      readyPackIds: resolved.readyPackIds || [],
-      failedPackIds: [],
-      unavailablePackIds: resolved.unavailablePackIds || [],
-      fallbackCapabilityIds: plan.fallbackCapabilityIds || [],
-    };
-  } catch (error) {
-    return { status: "baseline", error: error?.message || String(error) };
-  }
 }
 
 function compactToolInput(input, name = "Tool") {
@@ -639,8 +549,10 @@ class TurnOrchestrator {
       case "assistant.delta":
         state.phase = "streaming";
         state.assistantText += String(payload.text || "");
-        appendTimelineText(state, String(payload.text || ""), Date.now());
-        this._emit(sessionId, "assistant.delta", { text: String(payload.text || "") });
+        if (!shouldBufferAssistantAnswer(state.taskContract)) {
+          appendTimelineText(state, String(payload.text || ""), Date.now());
+          this._emit(sessionId, "assistant.delta", { text: String(payload.text || "") });
+        }
         break;
       case "assistant.supersedes":
         state.supersedes = payload.supersedes || "";
@@ -771,15 +683,21 @@ class TurnOrchestrator {
         if (payload.title) tool.title = payload.title;
         tool.endedAt = Date.now();
         if (Number.isFinite(tool.startedAt)) tool.durationMs = Math.max(0, tool.endedAt - tool.startedAt);
+        if (String(tool.name || "").toLowerCase().endsWith("lily_intent_contract_commit")) {
+          try {
+            const refined = resolveModelIntentContractUpdate(state.taskContract?.intentContract, tool.result);
+            if (refined) {
+              state.taskContract.intentContract = refined;
+              applyIntentContractToTaskRun(state.taskRun, refined);
+            }
+          } catch (err) {
+            log.warn("model intent contract refinement failed open: %s", err?.message || err);
+          }
+        }
         this._clearSubagentWatch(sessionId, toolId);
         this._emitSubagentDoneNotice(sessionId, tool);
         state.evidenceLedger?.recordTool?.(tool);
-        this._addTaskEvidence(sessionId, {
-          kind: "tool_result",
-          label: `${tool.name || "Tool"} ${tool.status || "done"}`,
-          status: tool.status,
-          refId: toolId,
-        }, { tool });
+        this._addTaskEvidence(sessionId, buildTaskToolEvidence(tool), { tool });
         upsertTimelineTool(state, tool, Date.now());
         const subagent = this._syncSubagentFromTool(sessionId, tool);
         if (subagent) this._emit(sessionId, "subagent.event", { subagent: this._compactSubagent(subagent) });
@@ -1223,7 +1141,8 @@ class TurnOrchestrator {
           // Fail open: the plain same-runner retry is still better than nothing.
         }
       }
-      this.transcriptStore.removeLastAssistantMessage(sessionId);
+      const deferAssistantRemoval = strategy.kind === "evidence_verify_retry";
+      if (!deferAssistantRemoval) this.transcriptStore.removeLastAssistantMessage(sessionId);
       // skipPreflight: the model connection was proven live THIS turn (the
       // request reached the model); a full preflight could spuriously block
       // the silent retry. A dead runner just fails the send → logged → the
@@ -1249,6 +1168,14 @@ class TurnOrchestrator {
         ...(hint ? { engineText: `${content}\n\n${hint}` } : {}),
       });
       if (!retried?.ok) log.warn(`turn rescue retry not sent: ${retried?.error || "unknown"}`);
+      if (retried?.ok && deferAssistantRemoval) {
+        this.transcriptStore.removeLastAssistantMessage(sessionId);
+        if (failure?.supersedesTurnId) {
+          this._emit(sessionId, "assistant.supersedes", { supersedes: failure.supersedesTurnId }, {
+            turnId: failure.supersedesTurnId,
+          });
+        }
+      }
       return true;
     } catch (err) {
       log.warn(`turn rescue failed open: ${err?.message || String(err)}`);
@@ -1650,6 +1577,36 @@ class TurnOrchestrator {
       }, { turnId: state.turnId });
     }
 
+    const turnIntelligence = resolveTurnIntelligence({
+      ctx: this.ctx,
+      session,
+      project,
+      text: rawUserText,
+      files,
+      turnId: state.turnId,
+    });
+    const taskContract = turnIntelligence.taskContract;
+    const turnPolicy = turnIntelligence.turnPolicy;
+    const committedMessages = turnIntelligence.committedMessages || [];
+    const sessionSummary = turnIntelligence.sessionSummary || null;
+    state.taskContract = taskContract.active ? taskContract : null;
+    state.turnPolicy = turnPolicy;
+    if (taskContract.taskType === "content_extraction" && taskContract.priorSourceContentEvidence) {
+      state.evidenceLedger?.recordSourceContentObservation?.({
+        sourceType: "conversation_context",
+        method: "prior_turn_source_context",
+        status: "available",
+        sourceCount: Number(taskContract.priorSourceContentEvidence.sourceCount || 1),
+      });
+    }
+    if (this._shouldBeginTaskRunAtTurnStart({ taskContract, turnPolicy, scheduledTask: state.scheduledTask })) {
+      this._beginTaskRun(session.id, rawUserText, {
+        displayFiles,
+        scheduledTask: state.scheduledTask,
+        intentContract: taskContract.intentContract || null,
+      });
+    }
+
     const capabilityReadinessTrace = opts.skipPreflight
       ? null
       : await prepareTurnCapabilityReadiness({
@@ -1658,6 +1615,8 @@ class TurnOrchestrator {
           turnId: state.turnId,
           text: rawUserText,
           files,
+          taskContract,
+          turnPolicy,
           deps: this.ctx.capabilityReadinessDeps,
         });
     if (capabilityReadinessTrace?.status === "ready") {
@@ -1738,6 +1697,7 @@ class TurnOrchestrator {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
         nativeVision: allowImageFileParts,
       });
+      if (vision.visionEvidence) state.evidenceLedger?.recordVisionObservation?.(vision.visionEvidence);
       if (!vision.ok) {
         log.warn(
           "vision preflight returned non-ok; degrading instead of failing turn: session=%s turn=%s error=%s detail=%s",
@@ -1804,16 +1764,6 @@ class TurnOrchestrator {
       }
     }
 
-    const taskContract = buildTaskContract({ text, files, session, project });
-    state.taskContract = taskContract.active ? taskContract : null;
-    const turnPolicy = buildTurnPolicy({ text, taskContract });
-    state.turnPolicy = turnPolicy;
-    if (this._shouldBeginTaskRunAtTurnStart({ taskContract, turnPolicy, scheduledTask: state.scheduledTask })) {
-      this._beginTaskRun(session.id, rawUserText, {
-        displayFiles,
-        scheduledTask: state.scheduledTask,
-      });
-    }
     if (
       project?.path &&
       (turnPolicy.rigor === "coverage" || turnPolicy.requiresSourceCoverage) &&
@@ -1842,18 +1792,13 @@ class TurnOrchestrator {
     let capabilityContextTrace = null;
     {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
-      const { readSessionSummary } = require("./session-memory");
       const { withShortFollowupContext } = require("./session-followup-context");
       const { buildContextMemoryAsync } = require("./memory-registry");
       const { readProjectMemoryIndex } = require("./project-memory");
       const { buildWorkspaceDigest, readLearnedConventions } = require("./learned-context");
       const { readMemoryPreferences } = require("./memory-preferences");
       const { addLayersToEngineText } = require("./engine-message-layers");
-      const committedMessages =
-        typeof this.ctx.sessionManager.getConversation === "function"
-          ? this.ctx.sessionManager.getConversation(session.id)
-          : session.messages || [];
-      const summary = readSessionSummary(session.id);
+      const summary = sessionSummary;
       const historySession = {
         ...session,
         messages: committedMessages.filter((message) => message.turnId !== state.turnId),
@@ -2535,71 +2480,38 @@ class TurnOrchestrator {
     const evidenceSummary = state.evidenceLedger?.summary?.() || null;
     let record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
     let evidenceGateAssessment = null;
-    // Verify-before-assert: set only when the answer made an unsupported strong
-    // claim AND the turn was side-effect-free (captured HERE, while state.tools is
-    // still populated — a turn that wrote files/sent mail must never be replayed).
     let triggerVerifyRetry = false;
     if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
-      const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
-      // Render this turn's real tool OUTPUT text so the gate can deterministically
-      // check the answer's numbers against it (the ledger keeps only counts/paths).
-      let evidenceText = "";
-      try {
-        const toolText = (t) => {
-          const r = t?.result;
-          if (typeof r === "string") return r;
-          if (r && typeof r.output === "string") return r.output;
-          if (Array.isArray(r?.content)) return r.content.map((c) => (c && typeof c.text === "string" ? c.text : "")).join(" ");
-          if (typeof t?.content === "string") return t.content;
-          if (typeof t?.output === "string") return t.output;
-          try { return JSON.stringify(r ?? t?.content ?? t?.output ?? ""); } catch { return ""; }
-        };
-        evidenceText = [...(state.tools?.values?.() || [])].map(toolText).filter(Boolean).join("\n").slice(0, 40000);
-      } catch { evidenceText = ""; }
-      // Image/vision input: the answer's numbers were READ from the image, not
-      // computed by a tool — exempt from numeric grounding (else a false positive
-      // flags image-derived numbers and, worse, an enabled verify-retry re-runs
-      // the turn with nothing to verify and drifts to an unrelated task).
-      const inputFiles = Array.isArray(state.enginePayload?.files) ? state.enginePayload.files : [];
-      const hasImageInput = inputFiles.some(
-        (f) => f && (f.isImage === true || /^image\//i.test(String(f.mime || f.type || f.mimeType || ""))),
-      );
-      const assessment = assessFinalAnswerEvidence({
+      const guarded = evaluateAnswerEvidence({
         assistant,
-        evidencePolicy: state.taskContract.evidencePolicy,
+        taskContract: state.taskContract,
         turnPolicy: state.turnPolicy,
         evidenceSummary,
-        toolCount: state.tools?.size || 0,
+        tools: [...(state.tools?.values?.() || [])],
         fileChangeCount: record?.fileChanges?.length || 0,
-        evidenceText,
         userText: String(state.enginePayload?.rawText || ""),
-        skipNumericGrounding: hasImageInput,
+        inputFiles: Array.isArray(state.enginePayload?.files) ? state.enginePayload.files : [],
       });
-      evidenceGateAssessment = assessment;
-      if (!assessment.ok) {
-        assistant = appendEvidenceGateNotice(assistant, assessment);
-        if (record) {
-          record.assistantText = assistant;
-          record.meta = {
-            ...(record.meta || {}),
-            evidenceGate: assessment,
-          };
-        }
-        try {
-          const sideEffectFree = require("./tool-call-rescue").isSideEffectFreeToolRun([...(state.tools?.values?.() || [])]);
-          // OPT-IN only (LILY_EVIDENCE_VERIFY_RETRY=1). Auto-re-running a turn to
-          // "verify" is too risky as a default: on an image/vision turn the numbers
-          // come from the image (not a tool), so a re-run has nothing to verify and
-          // the model drifted into an UNRELATED task. The zero-latency numeric
-          // grounding annotation stays; the re-run is user-enabled only.
-          triggerVerifyRetry = Boolean(assessment.strongClaim) && sideEffectFree &&
-            process.env.LILY_EVIDENCE_VERIFY_RETRY === "1";
-        } catch { triggerVerifyRetry = false; }
+      assistant = guarded.assistant;
+      evidenceGateAssessment = guarded.assessment;
+      triggerVerifyRetry = guarded.triggerVerifyRetry;
+      if (record) {
+        record.assistantText = assistant;
+        record.meta = {
+          ...(record.meta || {}),
+          ...(guarded.assessment ? { evidenceGate: guarded.assessment } : {}),
+        };
       }
+    }
+    if (shouldBufferAssistantAnswer(state.taskContract) && assistant) {
+      appendTimelineText(state, assistant, Date.now());
+      if (record) record.timeline = (state.timeline || []).slice(-100);
     }
     this._completeTaskRun(sessionId, type, {
       evidenceGateAssessment,
       evidenceSummary,
+      fileChangeCount: record?.fileChanges?.length || 0,
+      artifactCount: record?.artifacts?.length || 0,
     });
     if (record && state.taskRun) {
       record.meta = {
@@ -2684,7 +2596,10 @@ class TurnOrchestrator {
     // that already grounds its answers is never asked to redo (not made dumber).
     if (triggerVerifyRetry) {
       try {
-        void this._maybeToolCallRescueRetry(sessionId, { code: "EVIDENCE_UNVERIFIED" })
+        void this._maybeToolCallRescueRetry(sessionId, {
+          code: "EVIDENCE_UNVERIFIED",
+          supersedesTurnId: completedTurnId,
+        })
           .catch((err) => log.warn("evidence verify retry failed open: %s", err?.message || err));
       } catch (err) {
         log.warn("evidence verify retry dispatch failed open: %s", err?.message || err);
@@ -3064,6 +2979,7 @@ class TurnOrchestrator {
         sessionId,
         turnId: state.turnId,
         objective,
+        intentContract: opts.intentContract || state.taskContract?.intentContract || null,
         startedAt: state.startedAt || Date.now(),
       });
       if (opts.scheduledTask) {
@@ -3326,6 +3242,11 @@ class TurnOrchestrator {
             taskType: state.turnPolicy?.taskType || state.taskContract?.taskType || "",
             evidence: state.taskRun.evidence || [],
             evidenceGateAssessment: opts.evidenceGateAssessment || null,
+            evidenceSummary: opts.evidenceSummary || null,
+            successCriteria: state.taskRun.successCriteria || [],
+            deliverables: state.taskRun.deliverables || [],
+            fileChangeCount: opts.fileChangeCount || 0,
+            artifactCount: opts.artifactCount || 0,
           })
         : { status: "not_verified", reason: "" };
       completeTaskRun(state.taskRun, terminalType, verification);
@@ -3339,6 +3260,7 @@ class TurnOrchestrator {
       this._emitTaskEvent(sessionId, eventType, {
         taskRunId: state.taskRun.id,
         status: state.taskRun.status,
+        completionStatus: state.taskRun.completionStatus,
         verification: state.taskRun.verification,
         evidenceSummary: opts.evidenceSummary || null,
         taskRun: compactTaskRun(state.taskRun),

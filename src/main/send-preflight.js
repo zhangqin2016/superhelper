@@ -16,6 +16,7 @@
 const path = require("node:path");
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
+const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".xlsx", ".pptx", ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".rtf"]);
 
 function isVisionRasterFile(file) {
   if (!file) return false;
@@ -28,6 +29,32 @@ function withoutVisionFiles(files = []) {
     if (!file) return false;
     return !isVisionRasterFile(file);
   });
+}
+
+function documentInputFiles(files = [], isExtractableDocumentFile = null) {
+  if (typeof isExtractableDocumentFile === "function") {
+    return (files || []).filter((file) => isExtractableDocumentFile(file));
+  }
+  return (files || []).filter((file) => DOCUMENT_EXTENSIONS.has(
+    path.extname(String(file?.path || file?.name || "")).toLowerCase(),
+  ));
+}
+
+function sourceContentEvidence({ sourceType, method, status, sourceCount = 0, observedCount = 0, failedCount = 0, extractedChars = 0, coverageLimited = false } = {}) {
+  const normalizedSourceCount = Math.max(0, Number(sourceCount || 0));
+  const normalizedObservedCount = Math.max(0, Number(observedCount || 0));
+  const normalizedFailedCount = Math.max(0, Number(failedCount || 0));
+  return {
+    sourceType: String(sourceType || "unknown"),
+    method: String(method || "unknown"),
+    status: String(status || "unavailable"),
+    sourceCount: normalizedSourceCount,
+    observedCount: normalizedObservedCount,
+    failedCount: normalizedFailedCount,
+    extractedChars: Math.max(0, Number(extractedChars || 0)),
+    coverageLimited: Boolean(coverageLimited),
+    complete: status === "complete" && normalizedSourceCount > 0 && normalizedObservedCount >= normalizedSourceCount,
+  };
 }
 
 function buildVisionFailureContext(files = [], detail = "") {
@@ -73,12 +100,23 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
     translateImages,
   } = require("./vision-translator");
   const notify = typeof emitNotice === "function" ? emitNotice : () => {};
+  const visionFiles = (files || []).filter(isVisionRasterFile);
 
   // The active model recognizes images itself — skip the Qwen bridge entirely
   // and let images pass through untouched so they reach the engine as image
   // blocks (agent-session.buildUserMessagePayload).
   if (nativeVision) {
-    return { ok: true, text, files };
+    return {
+      ok: true,
+      text,
+      files,
+      visionEvidence: visionFiles.length ? sourceContentEvidence({
+        sourceType: "image",
+        method: "native_model_input",
+        status: "available",
+        sourceCount: visionFiles.length,
+      }) : null,
+    };
   }
 
   if (!hasVisionInputFiles(files)) {
@@ -103,6 +141,13 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
       text: buildEnrichedUserText(text, fallbackText),
       files,
       visionDegraded: true,
+      visionEvidence: sourceContentEvidence({
+        sourceType: "image",
+        method: "vision_bridge",
+        status: "unavailable",
+        sourceCount: visionFiles.length,
+        failedCount: visionFiles.length,
+      }),
     };
   }
 
@@ -122,6 +167,13 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
       text: buildEnrichedUserText(text, fallbackText),
       files,
       visionDegraded: true,
+      visionEvidence: sourceContentEvidence({
+        sourceType: "image",
+        method: "vision_bridge",
+        status: "unavailable",
+        sourceCount: visionFiles.length,
+        failedCount: visionFiles.length,
+      }),
     };
   }
 
@@ -136,7 +188,23 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
 
   const enrichedText = buildEnrichedUserText(text, result.text);
   const outboundFiles = result.keepOriginal ? files : withoutVisionFiles(files);
-  return { ok: true, text: enrichedText, files: outboundFiles };
+  const sourceCount = Number(result.sourceCount || visionFiles.length);
+  const observedCount = Number(result.recognizedCount ?? Math.max(0, sourceCount - Number(result.failedCount || 0)));
+  const status = observedCount >= sourceCount && sourceCount > 0 ? "complete" : observedCount > 0 ? "partial" : "unavailable";
+  return {
+    ok: true,
+    text: enrichedText,
+    files: outboundFiles,
+    visionEvidence: sourceContentEvidence({
+      sourceType: "image",
+      method: "vision_bridge",
+      status,
+      sourceCount,
+      observedCount,
+      failedCount: Number(result.failedCount || Math.max(0, sourceCount - observedCount)),
+      extractedChars: String(result.text || "").length,
+    }),
+  };
 }
 
 async function runDocumentPreflight(text, files, { emitNotice } = {}) {
@@ -144,8 +212,10 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
     buildEnrichedUserText,
     extractDocuments,
     hasDocumentInputFiles,
+    isExtractableDocumentFile,
   } = require("./document-translator");
   const notify = typeof emitNotice === "function" ? emitNotice : () => {};
+  const sourceFiles = documentInputFiles(files, isExtractableDocumentFile);
 
   if (!hasDocumentInputFiles(files)) {
     return { ok: true, text, files };
@@ -184,7 +254,25 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
     },
   });
   if (result === null) {
-    return { ok: true, text, files };
+    return {
+      ok: true,
+      text,
+      files,
+      documentEvidence: {
+        index: null,
+        documents: [],
+        chunks: [],
+        extractedPaths: [],
+        ...sourceContentEvidence({
+          sourceType: "document",
+          method: "local_document_extraction",
+          status: "unavailable",
+          sourceCount: sourceFiles.length,
+          failedCount: sourceFiles.length,
+        }),
+      },
+      documentDegraded: sourceFiles.length > 0,
+    };
   }
 
   if (!result.ok) {
@@ -206,6 +294,13 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
         documents: [],
         chunks: [],
         extractedPaths: [],
+        ...sourceContentEvidence({
+          sourceType: "document",
+          method: "local_document_extraction",
+          status: "unavailable",
+          sourceCount: sourceFiles.length,
+          failedCount: sourceFiles.length,
+        }),
       },
       documentDegraded: true,
     };
@@ -237,6 +332,13 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
     : (files || []).filter((file) => !extracted.has(file.path));
   const documentContext = [result.text, result.documentIndexText].filter(Boolean).join("\n\n");
   const enrichedText = buildEnrichedUserText(text, documentContext);
+  const extractedCount = (result.extractedPaths || []).length;
+  const coverageLimited = /\[Content truncated, original length:/i.test(String(result.text || ""));
+  const status = extractedCount <= 0
+    ? "unavailable"
+    : result.degraded || coverageLimited || extractedCount < sourceFiles.length
+      ? "partial"
+      : "complete";
   return {
     ok: true,
     text: enrichedText,
@@ -246,6 +348,16 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
       documents: Array.isArray(result.documentIndex?.documents) ? result.documentIndex.documents : [],
       chunks: Array.isArray(result.documentIndex?.chunks) ? result.documentIndex.chunks : [],
       extractedPaths: result.extractedPaths || [],
+      ...sourceContentEvidence({
+        sourceType: "document",
+        method: "local_document_extraction",
+        status,
+        sourceCount: sourceFiles.length,
+        observedCount: extractedCount,
+        failedCount: Math.max(0, sourceFiles.length - extractedCount),
+        extractedChars: String(result.text || "").length,
+        coverageLimited,
+      }),
     },
     documentDegraded: Boolean(result.degraded),
   };

@@ -1,6 +1,7 @@
 import store from "./state.js";
 import { sanitizeNoticeForIngest } from "./engine-notice-policy.js";
 import { alertTaskDone } from "./task-alert.js";
+import { removeSupersededAssistant } from "./assistant-supersession.js";
 import {
   activityFromEngineNotice,
   setActivityLabel,
@@ -17,7 +18,6 @@ import {
   hasRunningTool,
   upsertTimelineTool,
 } from "./turn-tool-timeline.js";
-
 const sessions = new Map();
 const sessionAccessOrder = new Set();
 const batchSeqBySession = new Map();
@@ -26,7 +26,6 @@ const terminalTurns = new Set();
 const listeners = new Set();
 let notifyQueued = false;
 export const SESSION_RUNTIME_CACHE_LIMIT = 40;
-
 const TERMINAL_TYPES = new Set([
   "turn.completed",
   "turn.failed",
@@ -496,11 +495,18 @@ function hasPendingPrompts(live = {}) {
 function compactTaskRunForStore(taskRun = null) {
   if (!taskRun || typeof taskRun !== "object") return null;
   return {
+    schemaVersion: Number(taskRun.schemaVersion || 1),
     id: taskRun.id || "",
     sessionId: taskRun.sessionId || "",
     turnId: taskRun.turnId || "",
     objective: taskRun.objective || "",
     status: taskRun.status || "",
+    completionStatus: taskRun.completionStatus || taskRun.status || "",
+    intentContractId: taskRun.intentContractId || "",
+    intentRevision: Number(taskRun.intentRevision || 0),
+    intentRelation: taskRun.intentRelation || "new",
+    deliverables: Array.isArray(taskRun.deliverables) ? taskRun.deliverables : [],
+    successCriteria: Array.isArray(taskRun.successCriteria) ? taskRun.successCriteria : [],
     phase: taskRun.phase || "",
     plan: Array.isArray(taskRun.plan) ? taskRun.plan : [],
     activeStep: taskRun.activeStep || "",
@@ -517,6 +523,8 @@ function compactTaskRunForStore(taskRun = null) {
   };
 }
 
+export { compactTaskRunForStore };
+
 function applyTaskRunEvent(live, event = {}) {
   const payload = event.payload || {};
   const full = compactTaskRunForStore(payload.taskRun || null);
@@ -526,6 +534,7 @@ function applyTaskRunEvent(live, event = {}) {
     id: payload.taskRunId || current.id || "",
     turnId: event.turnId || current.turnId || "",
     status: payload.status || current.status || "",
+    completionStatus: payload.completionStatus || current.completionStatus || payload.status || current.status || "",
     phase: payload.phase || current.phase || "",
     activeStep: payload.activeStep || current.activeStep || "",
     progress: payload.progress || current.progress || null,
@@ -544,6 +553,7 @@ function applyTaskRunEvent(live, event = {}) {
   }
   if (event.type === "task.completed" || event.type === "task.failed" || event.type === "task.interrupted" || event.type === "task.stalled") {
     live.taskRun.status = payload.status || live.taskRun.status || event.type.slice("task.".length);
+    live.taskRun.completionStatus = payload.completionStatus || live.taskRun.completionStatus || live.taskRun.status;
     live.taskRun.endedAt = live.taskRun.endedAt || event.ts || Date.now();
   }
 }
@@ -566,6 +576,7 @@ export function applyRuntimeEvent(event, opts = {}) {
   if (Number.isInteger(event.seq)) eventSeqBySession.set(event.sessionId, event.seq);
 
   const runtime = getRuntimeSession(event.sessionId);
+  if (event.type === "assistant.supersedes") return void removeSupersededAssistant(runtime, String(event.payload?.supersedes || ""));
   if (event.type === "user.committed") {
     const turnKey = event.turnId ? `${event.sessionId}:${event.turnId}` : "";
     if (turnKey && terminalTurns.has(turnKey)) return;

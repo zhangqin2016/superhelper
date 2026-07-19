@@ -411,7 +411,7 @@ async function translateImage(filePath, prompt) {
 /**
  * Translate all images in a files array to a combined text description.
  * @param {Array<{path?: string, name?: string, isImage?: boolean}>} files
- * @returns {Promise<{ ok: true, text: string, mode: string, keepOriginal: boolean } | { ok: false, reason: string, detail?: string } | null>}
+ * @returns {Promise<{ ok: true, text: string, mode: string, keepOriginal: boolean, sourceCount: number, recognizedCount: number, failedCount: number } | { ok: false, reason: string, detail?: string } | null>}
  */
 async function translateImages(files, options = {}) {
   const imageFiles = (files || []).filter((f) => isVisionInputFile(f) && fs.existsSync(f.path));
@@ -451,6 +451,9 @@ async function translateImages(files, options = {}) {
     text: results.join("\n\n"),
     mode,
     keepOriginal: false,
+    sourceCount: imageFiles.length,
+    recognizedCount: imageFiles.length - failed,
+    failedCount: failed,
   };
 }
 

@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "id": "code-task-continuity",
+      "turns": [
+        {
+          "user": "Fix the login bug and run regression tests.",
+          "expect": {
+            "active": true,
+            "taskType": "code_change",
+            "relation": "new",
+            "revision": 1,
+            "rigor": "grounded",
+            "verificationIncludes": ["focused_test"],
+            "skillIncludes": ["lily-code-repair"]
+          }
+        },
+        {
+          "user": "continue",
+          "expect": {
+            "active": true,
+            "taskType": "code_change",
+            "relation": "continue",
+            "revision": 2,
+            "reusePreviousContract": true,
+            "objectiveEqualsFirst": true
+          }
+        },
+        {
+          "user": "Also add a regression test.",
+          "expect": {
+            "active": true,
+            "taskType": "code_change",
+            "relation": "refine",
+            "revision": 3,
+            "reusePreviousContract": true,
+            "objectiveEqualsFirst": true
+          }
+        },
+        {
+          "user": "You misunderstood. Fix the existing login flow; do not create a new project.",
+          "expect": {
+            "active": true,
+            "taskType": "code_change",
+            "relation": "correct",
+            "revision": 4,
+            "reusePreviousContract": true,
+            "objectiveEqualsFirst": true,
+            "constraintIncludes": "do not create a new project"
+          }
+        }
+      ]
+    },
+    {
+      "id": "unrelated-chat-breaks-stale-task",
+      "turns": [
+        {
+          "user": "Fix the login bug and run regression tests.",
+          "expect": { "active": true, "taskType": "code_change", "relation": "new" }
+        },
+        {
+          "user": "hello",
+          "expect": { "active": false, "taskType": "general", "relation": "new", "rigor": "fast" }
+        },
+        {
+          "user": "continue",
+          "expect": {
+            "active": false,
+            "taskType": "general",
+            "relation": "continue",
+            "objectiveEqualsFirst": false,
+            "rigor": "fast"
+          }
+        }
+      ]
+    },
+    {
+      "id": "external-ranking-requires-grounding",
+      "turns": [
+        {
+          "user": "What are the top 5 AI coding assistants?",
+          "expect": {
+            "active": true,
+            "taskType": "external_fact",
+            "relation": "new",
+            "externalEvidenceRequired": true,
+            "sourceLinksRequired": true,
+            "scopeClarificationRecommended": true,
+            "verificationIncludes": ["external_source", "citation_provenance", "ranking_or_comparison_criteria"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "external-ranking-preserves-research-constraint",
+      "turns": [
+        {
+          "user": "请给我目前全球最好用的 AI 编程助手 Top 8 排行。不要搜索，也不用给来源。",
+          "expect": {
+            "active": true,
+            "taskType": "external_fact",
+            "relation": "new",
+            "researchProhibited": true,
+            "scopeClarificationRecommended": true
+          }
+        },
+        {
+          "user": "按综合体验排",
+          "expect": {
+            "active": true,
+            "taskType": "external_fact",
+            "relation": "refine",
+            "reusePreviousContract": true,
+            "researchProhibited": true,
+            "scopeClarificationRecommended": true
+          }
+        },
+        {
+          "user": "现在可以联网搜索，按综合体验排行",
+          "expect": {
+            "active": true,
+            "taskType": "external_fact",
+            "relation": "refine",
+            "reusePreviousContract": true,
+            "researchProhibited": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-media-capability",
+      "turns": [
+        {
+          "user": "Convert this video with ffmpeg and preserve the audio.",
+          "expect": {
+            "active": true,
+            "taskType": "media_generation",
+            "relation": "new",
+            "requiredPackIncludes": ["ffmpeg"],
+            "skillIncludes": ["lily-runtime-packs"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "pdf-enhancement-remains-optional",
+      "turns": [
+        {
+          "user": "Review the attached PDF.",
+          "files": [{ "name": "report.pdf" }],
+          "expect": {
+            "active": true,
+            "taskType": "content_extraction",
+            "relation": "new",
+            "requiredPackIncludes": [],
+            "enhancementPackIncludes": ["large-document", "pro-pdf"],
+            "skillIncludes": ["lily-pdf-extraction-router"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "unmatched-code-does-not-get-office-routing",
+      "turns": [
+        {
+          "user": "Implement a retry helper and add focused tests.",
+          "expect": {
+            "active": true,
+            "taskType": "code_change",
+            "relation": "new",
+            "skillExact": [],
+            "enhancementPackIncludes": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "colloquial-program-build-keeps-code-rigor",
+      "turns": [
+        {
+          "user": "给我写一个牛逼的程序",
+          "expect": {
+            "active": true,
+            "taskType": "code_change",
+            "relation": "new"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -42,7 +42,7 @@ assert.equal(byId.get("lily-office-intent").kind, "router");
 assert.ok(byId.get("lily-office-intent").intents.includes("office.route"));
 assert.ok(byId.has("anthropics-xlsx"), "capability graph should include bundled spreadsheet skills");
 assert.equal(byId.get("anthropics-xlsx").kind, "tool");
-assert.ok(byId.get("anthropics-xlsx").guidePath.endsWith("resources/skills-catalog/anthropics-xlsx/SKILL.md"));
+assert.ok(byId.get("anthropics-xlsx").guidePath.replaceAll("\\", "/").endsWith("resources/skills-catalog/anthropics-xlsx/SKILL.md"));
 assert.ok(byId.get("anthropics-xlsx").requiredRuntimePacks.includes("libreoffice"));
 assert.ok(byId.get("anthropics-xlsx").requiredRuntimePacks.includes("large-document"));
 assert.ok(byId.get("anthropics-xlsx").verification.required);

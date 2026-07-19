@@ -9,6 +9,32 @@ const {
   modelDraftSchema,
   taskTypeDefinition,
 } = require("./task-type-schema");
+const {
+  buildExternalFactPolicy,
+  classifyExternalFactIntent,
+  inheritExternalFactIntent,
+  shouldActivateExternalFact,
+} = require("./external-fact-policy");
+const {
+  buildIntentContract,
+  compactIntentContract,
+  findLatestTaskContractSnapshot,
+  isInheritedRelation,
+  relationForText,
+  snapshotFromSummary,
+} = require("./intent-contract");
+const {
+  extractExplicitNegativePhrases,
+  inferContentTaskIntent,
+} = require("./content-task-intent");
+const { inferProgramTaskIntent } = require("./program-task-intent");
+const { buildEvidencePolicy } = require("./task-evidence-policy");
+
+const TASK_INTELLIGENCE_SCHEMA_VERSION = 1;
+const TASK_INTELLIGENCE_MAX_LIST_ITEMS = 256;
+const TASK_INTELLIGENCE_MAX_STRING_LENGTH = 500;
+const TASK_INTELLIGENCE_MAX_PROFILES = 64;
+const TASK_INTELLIGENCE_MAX_CATEGORIES = 64;
 
 const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
   schemaVersion: 1,
@@ -40,8 +66,8 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
     ".yaml",
     ".yml",
   ],
-  priority: ["release", "runtime", "architecture_audit", "agent_quality", "server", "ui", "config", "code", "document", "media", "bugfix"],
-  activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "architecture_audit", "agent_quality", "config", "code"],
+  priority: ["external_fact", "release", "runtime", "architecture_audit", "agent_quality", "server", "ui", "config", "code", "content_extraction", "document", "media", "bugfix"],
+  activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "architecture_audit", "agent_quality", "config", "code", "external_fact"],
   lowInformationContinuation: {
     terms: ["继续", "接着", "然后", "展开", "继续说", "继续讲", "continue", "go on", "next"],
     genericObjects: [
@@ -65,6 +91,10 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
     ],
   },
   categories: {
+    external_fact: {
+      terms: [],
+      weakTerms: [],
+    },
     architecture_audit: {
       terms: [
         "architecture audit",
@@ -278,7 +308,7 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
       terms: ["docx", "pdf", "ppt", "pptx", "excel", "xlsx", "word", "文档", "表格", "报告", "简历", "合同"],
     },
     media: {
-      terms: ["image", "video", "audio", "voice", "图片", "视频", "语音", "截图", "识别", "生成图"],
+      terms: ["image", "video", "audio", "voice", "图片", "视频", "语音", "截图", "生成图"],
     },
   },
   workspaceSignals: [
@@ -340,12 +370,20 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
       config: ["For config/model work, separate local override, server-managed config, secret handling, and inactive-device update access."],
       document: ["For document work, verify page coverage, OCR needs, tables/images, output format, and whether the output opens."],
       media: ["For media work, keep generation progress visible and provide a preview or directly openable path."],
+      external_fact: [
+        "For external facts, search or query a live/authoritative source before answering and preserve source links, dates, and comparison criteria.",
+      ],
     },
   },
 });
 
 function arrayOfStrings(value) {
-  return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean) : null;
+  return Array.isArray(value)
+    ? value
+        .slice(0, TASK_INTELLIGENCE_MAX_LIST_ITEMS)
+        .map((item) => String(item || "").trim().slice(0, TASK_INTELLIGENCE_MAX_STRING_LENGTH))
+        .filter(Boolean)
+    : null;
 }
 
 function uniqueStrings(...lists) {
@@ -383,7 +421,9 @@ function mergeWorkspaceProfiles(baseProfiles, remoteProfiles) {
     if (!profile?.id) continue;
     byId.set(String(profile.id), { ...profile });
   }
-  for (const profile of Array.isArray(remoteProfiles) ? remoteProfiles : []) {
+  for (const profile of Array.isArray(remoteProfiles)
+    ? remoteProfiles.slice(0, TASK_INTELLIGENCE_MAX_PROFILES)
+    : []) {
     if (!profile?.id) continue;
     const id = String(profile.id);
     const prev = byId.get(id) || {};
@@ -407,12 +447,19 @@ function mergeVerificationStrategies(base = {}, remote = {}) {
 }
 
 function mergeTaskIntelligenceRegistry(base = DEFAULT_TASK_INTELLIGENCE_REGISTRY, remote = null) {
-  const normalizedRemote = remote && typeof remote === "object" ? remote : {};
+  const remoteCandidate = remote && typeof remote === "object" && !Array.isArray(remote) ? remote : {};
+  const remoteSchemaVersion = Number(remoteCandidate.schemaVersion || TASK_INTELLIGENCE_SCHEMA_VERSION);
+  const remoteEnhancementsEnabled =
+    remoteCandidate.enabled !== false && remoteSchemaVersion === TASK_INTELLIGENCE_SCHEMA_VERSION;
+  // Server delivery may extend the local intelligence registry, but it can
+  // never disable or replace the client baseline. Invalid/disabled overlays
+  // therefore collapse to an empty additive layer.
+  const normalizedRemote = remoteEnhancementsEnabled ? remoteCandidate : {};
   const categories = {};
-  const categoryIds = new Set([
+  const categoryIds = [...new Set([
     ...Object.keys(base.categories || {}),
     ...Object.keys(normalizedRemote.categories || {}),
-  ]);
+  ])].slice(0, TASK_INTELLIGENCE_MAX_CATEGORIES);
   for (const categoryId of categoryIds) {
     const baseCategory = base.categories?.[categoryId] || {};
     const remoteCategory = normalizedRemote.categories?.[categoryId] || {};
@@ -440,7 +487,8 @@ function mergeTaskIntelligenceRegistry(base = DEFAULT_TASK_INTELLIGENCE_REGISTRY
 
   return {
     schemaVersion: 1,
-    enabled: normalizedRemote.enabled !== false && base.enabled !== false,
+    enabled: base.enabled !== false,
+    remoteEnhancementsEnabled,
     fileExtensions: uniqueStrings(base.fileExtensions, normalizedRemote.fileExtensions),
     priority: nonEmptyStrings(normalizedRemote.priority) || arrayOfStrings(base.priority) || [],
     activatingCategories:
@@ -543,10 +591,7 @@ function extractNegativeConstraints(text = "") {
       evidence: "explicit scheduled-task negation in user request",
     });
   }
-  const explicit = source.match(/(?:不要|别|无需|不需要|不用|禁止|不是|并非|do not|don't|dont|never|no need to|not)\s*[^，。；;.!?\n]{0,80}/gi);
-  for (const item of explicit || []) {
-    const value = item.trim();
-    if (!value) continue;
+  for (const value of extractExplicitNegativePhrases(source)) {
     constraints.push({
       intent: "user_negative_constraint",
       rule: `Preserve this negative constraint exactly: ${value}`,
@@ -615,16 +660,65 @@ function classifyTask({ text = "", files = [], registry = loadTaskIntelligenceRe
   }
   if (attachedCodeFiles(files, registry) && !categories.includes("code")) categories.push("code");
 
+  const contentIntent = inferContentTaskIntent({ text, files });
+  const programIntent = inferProgramTaskIntent({ text, files });
+  if (programIntent.routeTaskType === "code_change" && !categories.includes("code")) categories.push("code");
+  const routedCategory = contentIntent.routeTaskType === "content_extraction"
+    ? "content_extraction"
+    : contentIntent.routeTaskType === "media_generation"
+      ? "media"
+      : contentIntent.routeTaskType === "document_work"
+        ? "document"
+        : "";
+  if (routedCategory && !categories.includes(routedCategory)) categories.push(routedCategory);
+
+  const detectedExternalFact = classifyExternalFactIntent(text);
+  const registryExternalFact = categories.includes("external_fact");
+  const activateExternalFact = registryExternalFact || shouldActivateExternalFact(detectedExternalFact, categories);
+  if (activateExternalFact && !categories.includes("external_fact")) categories.push("external_fact");
+  const externalFactIntent = {
+    ...detectedExternalFact,
+    active: activateExternalFact,
+    detected: Boolean(detectedExternalFact.detected || registryExternalFact),
+    reasonCodes: detectedExternalFact.reasonCodes?.length
+      ? detectedExternalFact.reasonCodes
+      : registryExternalFact
+        ? ["registry_external_fact"]
+        : [],
+    requiresFreshness: activateExternalFact
+      ? registryExternalFact && !detectedExternalFact.detected
+        ? true
+        : detectedExternalFact.requiresFreshness !== false
+      : false,
+    requiresSourceLinks: activateExternalFact
+      ? registryExternalFact && !detectedExternalFact.detected
+        ? true
+        : detectedExternalFact.requiresSourceLinks !== false
+      : false,
+    suppressedByOperationalTask: Boolean(detectedExternalFact.detected && !activateExternalFact),
+  };
+
   const activatingCategories = new Set(arrayOfStrings(registry.activatingCategories) || []);
   const taskType = canonicalTaskTypeFromCategories(categories);
+  const semanticIntent = taskType === "code_change" && programIntent.active
+    ? programIntent
+    : contentIntent.active
+      ? { domain: "content", ...contentIntent }
+      : null;
   const definition = taskTypeDefinition(taskType);
   const active = categories.some((category) => activatingCategories.has(category)) || Boolean(definition.active);
-  const kind = (arrayOfStrings(registry.priority) || []).find((category) => categories.includes(category)) || "general";
+  const kind = taskType === "content_extraction"
+    ? "content_extraction"
+    : (arrayOfStrings(registry.priority) || []).find((category) => categories.includes(category)) || "general";
   return {
     active,
     kind,
     taskType,
     categories,
+    contentIntent,
+    programIntent,
+    semanticIntent,
+    externalFactIntent,
   };
 }
 
@@ -686,9 +780,27 @@ function detectWorkspaceProfile(projectPath, registry = loadTaskIntelligenceRegi
   return { type: "generic", signals: [], hints: [] };
 }
 
+const WORKSPACE_OPERATION_CATEGORIES = new Set([
+  "agent_quality",
+  "architecture_audit",
+  "bugfix",
+  "code",
+  "config",
+  "document",
+  "media",
+  "runtime",
+  "server",
+  "ui",
+]);
+
+function isPureExternalFactClassification(classification = {}) {
+  if (!classification.externalFactIntent?.active || classification.externalFactIntent?.operationalRequest) return false;
+  return !(classification.categories || []).some((category) => WORKSPACE_OPERATION_CATEGORIES.has(category));
+}
+
 function buildImpactChecklist(classification, profile, registry = loadTaskIntelligenceRegistry()) {
   const checklists = registry.checklists || {};
-  const checklist = uniqueStrings(checklists.base);
+  const checklist = isPureExternalFactClassification(classification) ? [] : uniqueStrings(checklists.base);
   for (const category of classification.categories || []) {
     checklist.push(...(arrayOfStrings(checklists.byCategory?.[category]) || []));
   }
@@ -704,113 +816,6 @@ function buildVerificationStrategy(classification, registry = loadTaskIntelligen
     definition.verification || [],
     registry.verificationStrategies?.[classification.taskType],
   );
-}
-
-function evidenceSourcesForTaskType(taskType) {
-  const common = ["user_request", "tool_output"];
-  switch (taskType) {
-    case "architecture_audit":
-      return uniqueStrings([
-        ...common,
-        "workspace_tree_or_manifest",
-        "code_file_reference",
-        "runtime_event_or_log",
-        "test_or_command_output",
-        "document_evidence",
-      ]);
-    case "bug_investigation":
-    case "runtime_protocol":
-    case "code_change":
-    case "agent_quality":
-      return uniqueStrings([
-        ...common,
-        "code_file_reference",
-        "test_or_command_output",
-        "runtime_event_or_log",
-        "official_history_or_fixture",
-      ]);
-    case "release_deploy":
-      return uniqueStrings([
-        ...common,
-        "artifact_or_version_manifest",
-        "upload_or_deploy_command_output",
-        "live_service_check",
-      ]);
-    case "server_change":
-      return uniqueStrings([
-        ...common,
-        "route_or_service_code_reference",
-        "database_or_migration_record",
-        "api_response_or_server_log",
-        "server_test_output",
-      ]);
-    case "ui_change":
-      return uniqueStrings([
-        ...common,
-        "renderer_code_reference",
-        "screenshot_or_dom_observation",
-        "renderer_test_or_manual_check",
-      ]);
-    case "configuration_change":
-      return uniqueStrings([
-        ...common,
-        "config_file_or_database_record",
-        "effective_runtime_config",
-        "secret_boundary_check",
-      ]);
-    case "document_work":
-      return uniqueStrings([
-        ...common,
-        "document_evidence",
-        "page_or_sheet_coverage",
-        "extracted_text_or_table",
-        "output_file_or_open_check",
-      ]);
-    case "media_generation":
-      return uniqueStrings([
-        ...common,
-        "source_media_or_prompt",
-        "generated_or_modified_file",
-        "preview_or_openable_path",
-        "provider_or_tool_output",
-      ]);
-    default:
-      return uniqueStrings(common);
-  }
-}
-
-function requiredEvidenceKindsForTaskType(taskType) {
-  switch (taskType) {
-    case "architecture_audit":
-    case "agent_quality":
-      return ["file_search", "file_read"];
-    case "document_work":
-      return ["document"];
-    case "release_deploy":
-      return ["verification"];
-    default:
-      return [];
-  }
-}
-
-function buildEvidencePolicy(classification) {
-  const taskType = classification?.taskType || "general";
-  const active = Boolean(classification?.active);
-  return {
-    required: active,
-    allowedSources: evidenceSourcesForTaskType(taskType),
-    requiredEvidenceKinds: active ? requiredEvidenceKindsForTaskType(taskType) : [],
-    unsupportedClaimPolicy: active
-      ? "Unsupported factual claims must be downgraded to uncertainty. Do not state causes, completion, deployment, correctness, data values, or external facts as confirmed without an allowed evidence source. Flag only the claims that actually lack support, inline where they occur — do NOT append a blanket evidence disclaimer to an answer that is already grounded in the evidence you have."
-      : "Use evidence when making factual claims; if evidence is unavailable, say what is unknown instead of inventing details.",
-    finalAnswerRequirements: active
-      ? [
-          "For each important conclusion, cite the evidence type used.",
-          "If evidence is missing, explicitly say it is unverified or unknown.",
-          "Do not claim fixed/completed/deployed/verified unless tool output or a concrete record supports it.",
-        ]
-      : [],
-  };
 }
 
 const GREENFIELD_TERMS = Object.freeze([
@@ -871,7 +876,11 @@ function extractExplicitUserTerms(text = "") {
 
 function buildSourceCoveragePolicy({ text = "", classification = {} } = {}) {
   const terms = extractExplicitUserTerms(text);
-  const required = Boolean(classification.active && (terms.length || classification.taskType === "architecture_audit"));
+  const required = Boolean(
+    classification.active &&
+      !isPureExternalFactClassification(classification) &&
+      (terms.length || classification.taskType === "architecture_audit"),
+  );
   return {
     required,
     explicitTerms: terms,
@@ -893,6 +902,7 @@ function buildWorkspaceGroundingPolicy({ text = "", classification = {}, profile
   const categories = new Set(classification.categories || []);
   const needsGrounding =
     active &&
+    !isPureExternalFactClassification(classification) &&
     (
       ["code", "ui", "server", "runtime", "config", "bugfix", "agent_quality", "release"].some((category) =>
         categories.has(category),
@@ -920,22 +930,73 @@ function buildWorkspaceGroundingPolicy({ text = "", classification = {}, profile
   };
 }
 
-function buildLocalDraft({ text, classification, profile, verificationStrategy }) {
+function buildLocalDraft({ text, classification, profile, verificationStrategy, intentContract }) {
   return {
     schemaVersion: TASK_TYPE_SCHEMA_VERSION,
     taskType: classification.taskType,
-    objective: String(text || "").trim().slice(0, 500),
+    operation: classification.semanticIntent?.operation || "unknown",
+    sourceKinds: classification.semanticIntent?.sourceKinds || [],
+    outputMode: classification.semanticIntent?.outputMode || "unknown",
+    relation: intentContract?.relation || "new",
+    objective: intentContract?.objective || String(text || "").trim().slice(0, 500),
+    currentInstruction: intentContract?.currentInstruction || String(text || "").trim().slice(0, 500),
+    deliverables: intentContract?.deliverables || [],
+    successCriteria: intentContract?.successCriteria || verificationStrategy,
     impactSurface: profile.hints || [],
-    assumptions: [],
+    assumptions: intentContract?.assumptions || [],
+    criticalUnknowns: intentContract?.criticalUnknowns || [],
+    neededCapabilities: intentContract?.neededCapabilities || classification.categories || [],
     risks: [],
     verificationPlan: verificationStrategy,
   };
 }
 
-function buildTaskContract({ text = "", files = [], session = null, project = null } = {}) {
+function buildTaskContract({
+  text = "",
+  files = [],
+  session = null,
+  project = null,
+  messages = null,
+  previousIntentContract = null,
+} = {}) {
   const registry = loadTaskIntelligenceRegistry();
-  const classification = classifyTask({ text, files, registry });
+  const history = Array.isArray(messages) ? messages : Array.isArray(session?.messages) ? session.messages : [];
+  const historySnapshot = findLatestTaskContractSnapshot(history);
+  const historyHasAssistantTurn = history.some((message) => message?.role === "assistant");
+  const previousSnapshot = historySnapshot || (!historyHasAssistantTurn ? snapshotFromSummary(previousIntentContract) : null);
+  const relation = relationForText(text, Boolean(previousSnapshot));
+  let classification = classifyTask({ text, files, registry });
+  if (!classification.active && previousSnapshot?.active && isInheritedRelation(relation)) {
+    classification = {
+      ...classification,
+      active: true,
+      kind: previousSnapshot.kind || "operational",
+      taskType: previousSnapshot.taskType,
+      categories: previousSnapshot.categories || [],
+      contentIntent: previousSnapshot.contentIntent || classification.contentIntent,
+      programIntent: previousSnapshot.programIntent || classification.programIntent,
+      semanticIntent: previousSnapshot.semanticIntent || classification.semanticIntent,
+      externalFactIntent: inheritExternalFactIntent(
+        previousSnapshot.taskType,
+        classification.externalFactIntent,
+        previousSnapshot,
+      ),
+    };
+  }
+  const externalFactPolicy = buildExternalFactPolicy(classification.externalFactIntent);
+  const priorSourceContentEvidence = isInheritedRelation(relation)
+    ? previousSnapshot?.sourceContentEvidence || null
+    : null;
   const negativeConstraints = extractNegativeConstraints(text);
+  const verificationStrategy = buildVerificationStrategy(classification, registry);
+  const intentContract = buildIntentContract({
+    text,
+    taskType: classification.taskType,
+    categories: classification.categories,
+    verificationStrategy,
+    negativeConstraints,
+    previousSnapshot,
+  });
   if (!classification.active) {
     return {
       active: false,
@@ -943,8 +1004,14 @@ function buildTaskContract({ text = "", files = [], session = null, project = nu
       taskType: classification.taskType,
       categories: classification.categories,
       negativeConstraints,
+      externalFactPolicy,
+      contentIntent: classification.contentIntent || null,
+      programIntent: classification.programIntent || null,
+      semanticIntent: classification.semanticIntent || null,
+      priorSourceContentEvidence,
       evidencePolicy: buildEvidencePolicy(classification),
       sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
+      intentContract,
       workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({
         text,
         classification,
@@ -953,9 +1020,10 @@ function buildTaskContract({ text = "", files = [], session = null, project = nu
     };
   }
   const projectPath = project?.path || session?.workspacePath || "";
-  const profile = detectWorkspaceProfile(projectPath, registry);
+  const profile = isPureExternalFactClassification(classification)
+    ? { type: "external-research", signals: [], hints: [] }
+    : detectWorkspaceProfile(projectPath, registry);
   const checklist = buildImpactChecklist(classification, profile, registry);
-  const verificationStrategy = buildVerificationStrategy(classification, registry);
   return {
     active: true,
     schemaVersion: TASK_TYPE_SCHEMA_VERSION,
@@ -971,15 +1039,21 @@ function buildTaskContract({ text = "", files = [], session = null, project = nu
     blockedIntents: negativeConstraints
       .filter((item) => item.intent && item.intent !== "user_negative_constraint")
       .map((item) => item.intent),
+    externalFactPolicy,
+    contentIntent: classification.contentIntent || null,
+    programIntent: classification.programIntent || null,
+    semanticIntent: classification.semanticIntent || null,
+    priorSourceContentEvidence,
     evidencePolicy: buildEvidencePolicy(classification),
     sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
     workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({ text, classification, profile }),
+    intentContract,
     checklist,
     verificationStrategy,
     modelDraft: {
       requested: true,
       schema: modelDraftSchema(),
-      localFallback: buildLocalDraft({ text, classification, profile, verificationStrategy }),
+      localFallback: buildLocalDraft({ text, classification, profile, verificationStrategy, intentContract }),
     },
   };
 }
@@ -994,6 +1068,10 @@ function withTaskContractPrefix(text, contract) {
     `task_kind: ${contract.kind}`,
     `task_type: ${contract.taskType || "general"}`,
     `categories: ${contract.categories.join(", ") || "general"}`,
+    `semantic_domain: ${contract.semanticIntent?.domain || "unknown"}`,
+    `semantic_operation: ${contract.semanticIntent?.operation || "unknown"}`,
+    `semantic_sources: ${(contract.semanticIntent?.sourceKinds || []).join(", ") || "none"}`,
+    `expected_output: ${contract.semanticIntent?.outputMode || "unknown"}`,
     `workspace_profile: ${contract.workspaceProfile || "unknown"}`,
     `workspace_signals: ${(contract.workspaceSignals || []).join(", ") || "none"}`,
     `registry_version: ${contract.registryVersion || "local-default"}`,
@@ -1021,6 +1099,18 @@ function withTaskContractPrefix(text, contract) {
     ...(contract.evidencePolicy?.finalAnswerRequirements?.length
       ? ["Final answer requirements:", ...contract.evidencePolicy.finalAnswerRequirements.map((item) => `- ${item}`)]
       : []),
+    ...(contract.externalFactPolicy?.required
+      ? [
+          "",
+          "External fact gate:",
+          `reason_codes: ${(contract.externalFactPolicy.reasonCodes || []).join(", ") || "external_fact"}`,
+          `requires_freshness: ${contract.externalFactPolicy.requiresFreshness ? "yes" : "no"}`,
+          `requires_source_links: ${contract.externalFactPolicy.requiresSourceLinks ? "yes" : "no"}; research_prohibited_by_user: ${contract.externalFactPolicy.researchProhibited ? "yes" : "no"}`,
+          `scope_clarification_recommended: ${contract.externalFactPolicy.scopeClarificationRecommended ? "yes" : "no"}`,
+          contract.externalFactPolicy.policy || "",
+          ...contract.externalFactPolicy.finalAnswerRequirements.map((item) => `- ${item}`),
+        ]
+      : []),
     "",
     "Source coverage gate:",
     `required: ${contract.sourceCoveragePolicy?.required ? "yes" : "no"}`,
@@ -1033,6 +1123,13 @@ function withTaskContractPrefix(text, contract) {
     `allow_new_top_level: ${contract.workspaceGroundingPolicy?.allowNewTopLevel ? "yes" : "no"}`,
     `required_evidence: ${(contract.workspaceGroundingPolicy?.requiredEvidence || []).join(", ") || "none"}`,
     contract.workspaceGroundingPolicy?.policy || "",
+    "",
+    "Host-resolved intent contract:",
+    "This is the platform's durable baseline for the task. The current user instruction outranks inherited fields. Treat assumptions as provisional, not as facts.",
+    JSON.stringify(compactIntentContract(contract.intentContract)),
+    "Ask a clarification only when criticalUnknowns is non-empty or when acting would be irreversible and materially ambiguous. Otherwise proceed with the stated constraints and reasonable assumptions.",
+    "Do not claim the task complete until every deliverable and machine-verifiable success criterion has supporting evidence.",
+    "If the session exposes lily_intent_contract_commit and your semantic interpretation materially improves the objective, deliverables, success criteria, assumptions, or critical unknowns, call it once before the first side effect. It is optional: if unavailable or rejected, continue immediately with this host baseline.",
     "",
     "Model task draft:",
     `schema_version: ${TASK_TYPE_SCHEMA_VERSION}`,
@@ -1047,10 +1144,10 @@ function withTaskContractPrefix(text, contract) {
     "5. If the task is small/read-only, keep the process lightweight but still ground the answer in available context.",
     "",
     "Impact checklist:",
-    ...contract.checklist.map((item) => `- ${item}`),
+    ...contract.checklist.slice(0, 24).map((item) => `- ${item}`),
     "",
     "Verification strategy:",
-    ...(contract.verificationStrategy || []).map((item) => `- ${item}`),
+    ...(contract.verificationStrategy || []).slice(0, 20).map((item) => `- ${item}`),
     "</lily_task_contract>",
   ].join("\n");
   return addLayersToEngineText(text, {

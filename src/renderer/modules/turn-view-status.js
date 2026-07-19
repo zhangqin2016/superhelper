@@ -326,7 +326,7 @@ export function taskRunSummaryForView(taskRun, translate) {
     : 0;
   const verification = taskRun.verification?.status || "";
   return translate("task.summary.compact", {
-    status: taskRun.status || "completed",
+    status: taskRun.completionStatus || taskRun.status || "completed",
     evidence,
     risks,
     verification,

@@ -10,6 +10,7 @@ const {
   extractLayerText,
   extractUserOriginalRequest,
   hasLayeredEngineText,
+  promptEnvelopeDiagnostics,
 } = require("../src/main/engine-message-layers.js");
 
 const layered = buildLayeredEngineText({
@@ -50,5 +51,14 @@ assert(multiLayer.indexOf('title="execution_constraints"') < multiLayer.indexOf(
 assert(!multiLayer.includes('title="user_original_request">\nHighest priority. Preserve the user\'s intent, especially explicit negations such as do not, don\'t, no need, 不是, 不要, 别, 无需.\n<lily_layer'), "original request layer must not contain nested platform layers");
 assert(multiLayer.includes("resume context"), "merged platform context preserves later content");
 assert(multiLayer.includes("task contract"), "merged execution constraints preserve later content");
+
+const hugeConstraints = "x".repeat(80 * 1024);
+const bounded = buildLayeredEngineText({ executionConstraints: hugeConstraints, userText: "original-user-request" });
+assert(Buffer.byteLength(extractLayerText(bounded, "execution_constraints"), "utf8") <= 64 * 1024, "execution layer is bounded");
+assert(extractUserOriginalRequest(bounded) === "original-user-request", "prompt budgeting never truncates the user request");
+assert(bounded.includes("lily layer truncated"), "bounded layers carry an explicit internal marker");
+const diagnostics = promptEnvelopeDiagnostics({ execution_constraints: hugeConstraints, user_original_request: "original-user-request" });
+assert(diagnostics.layers.find((item) => item.title === "execution_constraints")?.truncated === true, "diagnostics expose truncation");
+assert(diagnostics.layers.find((item) => item.title === "user_original_request")?.truncated === false, "user layer is unbounded");
 
 console.log("PASS: test-engine-message-layers");

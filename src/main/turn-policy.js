@@ -100,7 +100,7 @@ function hasBroadCoverageIntent(text = "") {
 
 function buildTurnPolicy({ text = "", taskContract = null } = {}) {
   const active = Boolean(taskContract?.active);
-  const requiresFreshness = hasAnyTerm(text, FRESHNESS_TERMS);
+  const requiresFreshness = Boolean(taskContract?.externalFactPolicy?.requiresFreshness) || hasAnyTerm(text, FRESHNESS_TERMS);
   const requiresSourceCoverage = Boolean(taskContract?.sourceCoveragePolicy?.required);
   const requiresWorkspaceGrounding = Boolean(taskContract?.workspaceGroundingPolicy?.required);
   const broadCoverageIntent = hasBroadCoverageIntent(text);

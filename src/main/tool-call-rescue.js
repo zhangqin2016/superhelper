@@ -1,5 +1,7 @@
 "use strict";
 
+const { isSideEffectFreeToolRun } = require("./tool-semantics");
+
 /**
  * Turn rescue (turn 级救援) — immediate, silent retry-once for turn failures
  * that a retry plausibly fixes WITHOUT any config change:
@@ -19,7 +21,8 @@
  *
  * Capability-gate guard rails (Rule 13):
  * - kill switches: LILY_TOOL_CALL_RESCUE=0 (malformed),
- *   LILY_EMPTY_COMPLETION_RETRY=0 (empty)
+ *   LILY_EMPTY_COMPLETION_RETRY=0 (empty), LILY_EVIDENCE_VERIFY_RETRY=0
+ *   (all evidence retries), LILY_EXTERNAL_FACT_VERIFY_RETRY=0 (external facts)
  * - side-effect guard: rescue only fires when the failed turn executed NO
  *   tools — a retry re-runs the whole turn, and replaying a turn that already
  *   sent mail / edited files is worse than failing honestly
@@ -71,6 +74,7 @@ const EVIDENCE_VERIFY_HINT = [
   "1. Before asserting ANY factual claim, verify it with a tool — read the actual file, run the check/command, inspect the real data. Cite the evidence (file path + line, or command output).",
   "2. If a claim cannot be verified, state it as unknown/unverified. NEVER present an unverified specific (a number, a cause, a coverage %) as if it were fact.",
   "3. Answer the user's question directly, grounded only in what you actually verified this turn.",
+  "4. For rankings, latest/current facts, prices, laws, news, roles, releases, or statistics, use websearch/webfetch or a live authoritative API. Cite only links returned by those tools, with the source date and ranking/comparison criteria.",
 ].join("\n");
 
 const EVIDENCE_VERIFY_HINT_ZH = [
@@ -78,6 +82,7 @@ const EVIDENCE_VERIFY_HINT_ZH = [
   "1. 断言任何事实之前，先用工具核实——真的去读那个文件、跑那条检查/命令、查看真实数据，并给出证据（文件路径+行号，或命令输出）。",
   "2. 无法核实的，就说未知/未验证。绝不能把未核实的具体值（数字、原因、覆盖率）当作事实呈现。",
   "3. 直接回答用户的问题，只基于你本轮真正核实过的内容。",
+  "4. 对排行榜、最新/当前事实、价格、法规、新闻、人物任职、版本或统计，使用 websearch/webfetch 或实时权威 API；只引用工具真实返回的链接，并写明来源日期和排名/比较口径。",
 ].join("\n");
 
 function evidenceVerifyHintFor(recipes = {}) {
@@ -96,10 +101,10 @@ const RESCUE_STRATEGIES = Object.freeze({
   // the model to VERIFY with tools before asserting (verify-before-assert). Only
   // fires for side-effect-free turns (guarded by isSideEffectFreeToolRun), so a
   // turn that already wrote files/sent mail falls back to the caveat instead.
-  // Available by default; the orchestrator decides WHEN to invoke it — numeric/
-  // data-claim failures (unverified counts/percentages) verify by DEFAULT (cheap
-  // to recompute, high value), while other ungrounded strong claims stay opt-in
-  // to avoid broadly re-running turns. Hard-off with LILY_EVIDENCE_VERIFY_RETRY=0.
+  // Available by default; the orchestrator decides WHEN to invoke it. High-risk
+  // external facts verify by default when the turn was side-effect-free; other
+  // ungrounded strong claims stay opt-in to avoid broadly replaying turns.
+  // Hard-off with LILY_EVIDENCE_VERIFY_RETRY=0.
   EVIDENCE_UNVERIFIED: Object.freeze({
     kind: "evidence_verify_retry",
     hint: EVIDENCE_VERIFY_HINT,
@@ -160,19 +165,10 @@ const RESCUE_STRATEGIES = Object.freeze({
 // A rescue retry re-runs the WHOLE turn, so it is only dispatched when every
 // tool the failed turn executed is on this list — replaying a turn that sent
 // mail or edited files would be worse than failing honestly. Names are the
-// engine's core tool names; MCP tools are deliberately NOT listed (their
-// side effects are unknown to the host).
-const READ_ONLY_TOOLS = Object.freeze(new Set([
-  "read", "glob", "grep", "list", "ls", "lsp",
-  "webfetch", "websearch",
-  "todowrite", "todoread", "question",
-]));
-
+// engine's core tool names. MCP tools are deliberately NOT listed unless the
+// host owns the implementation and can prove it is idempotent and external-
+// side-effect-free; the intent-contract commit is that single internal case.
 /** True when every executed tool is side-effect-free → a turn replay is safe. */
-function isSideEffectFreeToolRun(tools = []) {
-  return tools.every((tool) => READ_ONLY_TOOLS.has(String(tool?.name || "").toLowerCase()));
-}
-
 function rescueStrategyFor(code) {
   const strategy = RESCUE_STRATEGIES[String(code || "")] || null;
   if (!strategy || !strategy.enabled()) return null;

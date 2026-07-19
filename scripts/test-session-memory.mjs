@@ -62,6 +62,39 @@ try {
     throw new Error("formatted summary should include recent files");
   }
 
+  updateSessionSummaryFromRecord("s_intent", {
+    turnId: "turn_intent_1",
+    terminal: "turn.completed",
+    user: { text: "修复登录代码" },
+    assistantText: "完成。",
+    meta: {
+      taskContract: {
+        intentContract: {
+          taskType: "code_change",
+          objective: "修复登录代码",
+          currentInstruction: "修复登录代码",
+          deliverables: ["requested_workspace_change"],
+          successCriteria: ["focused_test"],
+        },
+      },
+    },
+  });
+  let intentSummary = readSessionSummary("s_intent");
+  if (intentSummary.lastIntentContract?.taskType !== "code_change") {
+    throw new Error(`session summary should retain the latest durable intent contract: ${JSON.stringify(intentSummary)}`);
+  }
+  updateSessionSummaryFromRecord("s_intent", {
+    turnId: "turn_intent_2",
+    terminal: "turn.completed",
+    user: { text: "你好" },
+    assistantText: "你好。",
+    meta: {},
+  });
+  intentSummary = readSessionSummary("s_intent");
+  if (intentSummary.lastIntentContract !== null) {
+    throw new Error(`a later non-task turn must clear stale intent inheritance: ${JSON.stringify(intentSummary)}`);
+  }
+
   updateSessionSummaryFromRecord("s1", {
     terminal: "turn.stalled",
     user: { text: "继续第二章" },

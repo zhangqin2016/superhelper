@@ -724,6 +724,23 @@ if (store.getSessionAttention("att2") !== null) {
   throw new Error("replayed terminals must not raise the attention flag");
 }
 
+// A successful evidence retry supersedes its already-committed safe fallback.
+// The event arrives after the old terminal, so it must bypass terminal-event
+// suppression and remove only that assistant bubble, preserving the user turn.
+store.applyRuntimeBatch({
+  sessionId: "supersession",
+  batchSeq: 1,
+  events: [
+    { id: "sup-1", type: "turn.started", sessionId: "supersession", turnId: "old", seq: 1, ts: 6000, source: "test", payload: {} },
+    { id: "sup-2", type: "turn.completed", sessionId: "supersession", turnId: "old", seq: 2, ts: 6001, source: "test", payload: { assistant: "正在等待可靠证据。" } },
+    { id: "sup-3", type: "assistant.supersedes", sessionId: "supersession", turnId: "old", seq: 3, ts: 6002, source: "test", payload: { supersedes: "old" } },
+  ],
+});
+runtime = store.getRuntimeSession("supersession");
+if (runtime.committedMessages.some((message) => message.role === "assistant" && message.turnId === "old")) {
+  throw new Error("assistant.supersedes must remove the replaced fallback bubble");
+}
+
 // --- TaskRun observability -------------------------------------------------
 store.applyRuntimeBatch({
   sessionId: "task-store",
@@ -814,6 +831,7 @@ store.applyRuntimeBatch({
               id: "task_run_1",
               turnId: "task-turn",
               status: "completed",
+              completionStatus: "delivered_unverified",
               phase: "completed",
               liveness: { status: "completed" },
               evidence: [{ kind: "tool_result", label: "Read done", status: "done" }],
@@ -828,6 +846,9 @@ store.applyRuntimeBatch({
 runtime = store.getRuntimeSession("task-store");
 if (runtime.liveTurn?.taskRun?.status !== "completed") {
   throw new Error(`terminal record should preserve TaskRun status: ${JSON.stringify(runtime.liveTurn?.taskRun)}`);
+}
+if (runtime.liveTurn?.taskRun?.completionStatus !== "delivered_unverified") {
+  throw new Error(`renderer state must preserve truthful completion status: ${JSON.stringify(runtime.liveTurn?.taskRun)}`);
 }
 if (runtime.liveTurn?.taskRun?.evidence?.[0]?.kind !== "tool_result") {
   throw new Error(`TaskRun evidence should be visible in renderer state: ${JSON.stringify(runtime.liveTurn?.taskRun)}`);

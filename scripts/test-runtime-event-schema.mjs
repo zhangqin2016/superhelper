@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -19,6 +20,26 @@ const event = createRuntimeEvent({
   payload: { text: "hello" },
 });
 assertRuntimeEvent(event);
+assert.throws(
+  () => createRuntimeEvent({
+    type: "assistant.delta",
+    sessionId: "s1",
+    turnId: "t1",
+    payload: { text: 42 },
+  }),
+  /payload\.text must be string/,
+  "typed payload contracts must reject malformed producer output",
+);
+assert.throws(
+  () => createRuntimeEvent({
+    type: "tool.started",
+    sessionId: "s1",
+    turnId: "t1",
+    payload: { id: "tool_1" },
+  }),
+  /payload requires name/,
+  "required payload fields must be enforced",
+);
 if (event.type !== "assistant.delta" || event.payload.text !== "hello") {
   throw new Error("runtime event shape failed");
 }
@@ -29,7 +50,7 @@ const terminal = createRuntimeEvent({
   sessionId: "s1",
   turnId: "t1",
   seq: 2,
-  payload: { assistant: "done" },
+  payload: { assistant: "done", toolsSummary: { count: 0 } },
 });
 if (!isTerminalEvent(terminal)) throw new Error("turn.completed should be terminal");
 
@@ -88,7 +109,7 @@ const fakeWindow = {
 };
 const bus = new RuntimeEventBus(() => fakeWindow);
 const emitted = bus.emitBatch("s2", [
-  { type: "turn.started", turnId: "t2", payload: {} },
+  { type: "turn.started", turnId: "t2", payload: { text: "start" } },
   { type: "assistant.delta", turnId: "t2", payload: { text: "x" } },
 ]);
 if (emitted[0].seq !== 1 || emitted[1].seq !== 2) {
@@ -119,7 +140,7 @@ if (persisted[0].events[0]?.seq !== 1 || persisted[0].events[0]?.payload?.text !
 }
 
 const terminalEvents = bus.emitBatch("s2", [
-  { type: "turn.completed", turnId: "t2", payload: { assistant: "done" } },
+  { type: "turn.completed", turnId: "t2", payload: { assistant: "done", toolsSummary: { count: 0 } } },
   { type: "turn.failed", turnId: "t2", payload: { assistant: "failed" } },
   { type: "assistant.delta", turnId: "t2", payload: { text: "late" } },
 ]);

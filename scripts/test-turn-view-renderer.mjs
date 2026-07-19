@@ -309,23 +309,24 @@ assert.equal(
 
 assert.equal(
   taskRunSummaryForView(
-    { status: "completed", evidence: [{}, {}], risks: [{}], verification: { status: "verified" } },
+    { status: "completed", completionStatus: "verified_complete", evidence: [{}, {}], risks: [{}], verification: { status: "verified" } },
     translate,
   ),
-  "completed/2/1/verified",
+  "verified_complete/2/1/verified",
 );
 
 assert.equal(
   taskRunSummaryForView(
     {
       status: "completed",
+      completionStatus: "delivered_unverified",
       evidence: [{}],
       risks: [{ code: "NO_VISIBLE_PROGRESS", status: "resolved" }, { code: "ENGINE_WARNING", status: "active" }],
       verification: { status: "observed" },
     },
     translate,
   ),
-  "completed/1/1/observed",
+  "delivered_unverified/1/1/observed",
 );
 
 console.log("turn-view-renderer: ok");

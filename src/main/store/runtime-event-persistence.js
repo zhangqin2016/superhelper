@@ -1,5 +1,7 @@
 "use strict";
 
+const { taskRunSchemaVersion: TASK_RUN_SCHEMA_VERSION } = require("../../shared/runtime-contract.json");
+
 const DEFAULT_STRING_LIMIT = 2_000;
 const ASSISTANT_LIMIT = 16_000;
 const TOOL_RESULT_LIMIT = 4_000;
@@ -170,11 +172,18 @@ function compactSubagentPayload(payload = {}) {
 function compactTaskRun(taskRun = {}) {
   if (!taskRun || typeof taskRun !== "object") return null;
   return {
+    schemaVersion: TASK_RUN_SCHEMA_VERSION,
     id: taskRun.id || "",
     sessionId: taskRun.sessionId || "",
     turnId: taskRun.turnId || "",
     objective: truncateString(taskRun.objective || "", 1_000),
     status: taskRun.status || "",
+    completionStatus: taskRun.completionStatus || taskRun.status || "",
+    intentContractId: truncateString(taskRun.intentContractId || "", 120),
+    intentRevision: Number(taskRun.intentRevision || 0),
+    intentRelation: truncateString(taskRun.intentRelation || "", 40),
+    deliverables: compactValue(Array.isArray(taskRun.deliverables) ? taskRun.deliverables.slice(0, 12) : [], 500),
+    successCriteria: compactValue(Array.isArray(taskRun.successCriteria) ? taskRun.successCriteria.slice(0, 20) : [], 500),
     phase: taskRun.phase || "",
     plan: Array.isArray(taskRun.plan)
       ? taskRun.plan.slice(0, 12).map((step = {}) => ({
@@ -332,6 +341,7 @@ function compactRuntimeEventForPersistence(event = {}) {
 }
 
 module.exports = {
+  compactTaskRun,
   compactRuntimeEventForPersistence,
   truncateString,
 };

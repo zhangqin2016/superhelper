@@ -165,6 +165,14 @@ function updateSessionSummaryFromRecord(sessionId, record) {
     .filter(Boolean)
     .slice(-8);
   const evidenceGap = evidenceGapFromRecord(record);
+  let lastIntentContract = null;
+  try {
+    lastIntentContract = require("./intent-contract").compactIntentContract(
+      record.meta?.taskContract?.intentContract,
+    );
+  } catch {
+    lastIntentContract = null;
+  }
   const promptChars = Number(record.meta?.engine?.promptChars || 0);
   const promptTokens = Number(record.meta?.engine?.estimatedPromptTokens || 0);
   const usageInputTokens = Number(
@@ -230,6 +238,9 @@ function updateSessionSummaryFromRecord(sessionId, record) {
       : (previous.recentTurnPointers || []),
     lastUserIntent: userText || previous.lastUserIntent || "",
     lastAssistantResult: assistantText || previous.lastAssistantResult || "",
+    // Clear on a later non-task turn so a future terse "continue" cannot jump
+    // across an unrelated conversation and resurrect stale operational scope.
+    lastIntentContract,
     recentUserIntents: uniqueAppend(previous.recentUserIntents, userText, MAX_ITEMS),
     recentFiles: [...new Set([...(previous.recentFiles || []), ...fileNames])].slice(-MAX_ITEMS),
     recentEvidenceGaps: evidenceGap

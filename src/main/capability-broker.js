@@ -143,14 +143,14 @@ function skillGuidePath(skillId) {
 function listSkillCapabilityGraph(opts = {}) {
   try {
     const { loadBundledRegistry } = require("./skill-registry");
-    const { inferRuntimePackIds } = require("./runtime-pack-preflight");
+    const { runtimePackIdsForSkills } = require("./runtime-pack-preflight");
     const registry = opts.registry || loadBundledRegistry();
     const skills = Array.isArray(registry?.skills) ? registry.skills : [];
     return skills
       .filter((skill) => skill?.id && skill.capability)
       .map((skill) => {
         const capability = skill.capability || {};
-        const requiredRuntimePacks = inferRuntimePackIds({ skillIds: [skill.id] });
+        const requiredRuntimePacks = runtimePackIdsForSkills([skill.id]);
         const failureRoutes = compactArray(capability.failure?.recovery, 4);
         return {
           id: String(skill.id),
@@ -372,21 +372,17 @@ function recommendSkillCapabilityGraph(opts = {}) {
   const graph = listSkillCapabilityGraph(opts);
   const active = new Set((Array.isArray(opts.activeSkillIds) ? opts.activeSkillIds : []).map(String));
   const facts = queryFacts(opts);
-  const operational = Object.values(facts).some(Boolean);
   const ranked = graph
     .map((skill) => {
       let score = skillRelevance(skill, facts);
       if (score > 0 && active.has(skill.id)) score += 10;
       return { skill, score };
     })
-    .filter((item) => item.score > 0 || (!operational && (item.skill.kind === "router" || item.skill.id === "lily-runtime-packs")))
+    .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id))
     .slice(0, maxSkills)
     .map((item) => item.skill);
-  if (ranked.length) return ranked;
-  return graph
-    .filter((skill) => skill.kind === "router" || skill.id === "lily-runtime-packs")
-    .slice(0, maxSkills);
+  return ranked;
 }
 
 function hasScoredCapabilityRecommendation(opts = {}) {

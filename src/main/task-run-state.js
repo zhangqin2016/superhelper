@@ -1,22 +1,23 @@
 "use strict";
 
 const crypto = require("node:crypto");
-
-const READ_ONLY_TOOLS = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
-const DANGEROUS_TOOLS = new Set([
-  "edit",
-  "multiedit",
-  "write",
-  "delete",
-  "rm",
-  "mv",
-  "cp",
-  "git",
-  "apply_patch",
-  "notebookedit",
-]);
+const { resolveToolSemantics } = require("./tool-semantics");
+const { taskRunSchemaVersion: TASK_RUN_SCHEMA_VERSION } = require("../shared/runtime-contract.json");
 const TRANSIENT_RISK_CODES = new Set(["NO_VISIBLE_PROGRESS"]);
-const DANGEROUS_SHELL_RE = /(^|\s)(rm\s+-[^\n;|&]*[rf]|git\s+(?:commit|push|tag|reset|checkout|clean)|npm\s+publish|pnpm\s+publish|yarn\s+publish|curl\b[^\n;|&]*(?:-X\s*(?:POST|PUT|PATCH|DELETE)|--request\s+(?:POST|PUT|PATCH|DELETE))|kubectl\s+(?:delete|apply|replace|patch)|docker\s+(?:push|rm|rmi)|mv\s+|cp\s+)/i;
+const CODE_VERIFICATION_TASK_TYPES = new Set([
+  "agent_quality",
+  "bug_investigation",
+  "code",
+  "code_change",
+  "configuration_change",
+  "runtime_protocol",
+  "server_change",
+  "ui_change",
+]);
+const TEST_EVIDENCE_RE = /\b(test|tests|testing|lint|typecheck|type-check|build|pytest|jest|vitest|mocha|regression|unit)\b/i;
+const TEST_CRITERION_RE = /(test|lint|typecheck|type-check|build|pytest|jest|vitest|mocha|regression|unit)/i;
+const MANUAL_ALTERNATIVE_RE = /(manual|screenshot|visual|browser|dom)/i;
+const MANUAL_EVIDENCE_RE = /\b(manual|screenshot|visual|browser|playwright|dom)\b/i;
 
 function nowMs() {
   return Date.now();
@@ -37,12 +38,25 @@ function defaultPlan() {
 function createTaskRun(input = {}) {
   const ts = Number.isFinite(input.startedAt) ? input.startedAt : nowMs();
   const turnId = safeText(input.turnId, 120);
+  let intentContract = null;
+  try {
+    intentContract = require("./intent-contract").compactIntentContract(input.intentContract);
+  } catch {
+    intentContract = null;
+  }
   return {
+    schemaVersion: TASK_RUN_SCHEMA_VERSION,
     id: input.id || `task_${crypto.randomUUID()}`,
     sessionId: safeText(input.sessionId, 120),
     turnId,
     objective: safeText(input.objective, 1_000),
     status: "running",
+    completionStatus: "running",
+    intentContractId: intentContract?.contractId || "",
+    intentRevision: intentContract?.revision || 0,
+    intentRelation: intentContract?.relation || "new",
+    deliverables: intentContract?.deliverables || [],
+    successCriteria: intentContract?.successCriteria || [],
     phase: "starting",
     plan: defaultPlan(),
     activeStep: "execute",
@@ -79,11 +93,18 @@ function createTaskRun(input = {}) {
 function compactTaskRun(taskRun = {}) {
   if (!taskRun || typeof taskRun !== "object") return null;
   return {
+    schemaVersion: TASK_RUN_SCHEMA_VERSION,
     id: taskRun.id || "",
     sessionId: taskRun.sessionId || "",
     turnId: taskRun.turnId || "",
     objective: safeText(taskRun.objective, 1_000),
     status: taskRun.status || "running",
+    completionStatus: taskRun.completionStatus || taskRun.status || "running",
+    intentContractId: safeText(taskRun.intentContractId, 120),
+    intentRevision: Number(taskRun.intentRevision || 0),
+    intentRelation: safeText(taskRun.intentRelation || "new", 40),
+    deliverables: Array.isArray(taskRun.deliverables) ? taskRun.deliverables.slice(0, 12).map((item) => safeText(item)) : [],
+    successCriteria: Array.isArray(taskRun.successCriteria) ? taskRun.successCriteria.slice(0, 20).map((item) => safeText(item)) : [],
     phase: taskRun.phase || "starting",
     plan: Array.isArray(taskRun.plan) ? taskRun.plan.slice(0, 12).map((step) => ({
       id: safeText(step.id, 80),
@@ -209,10 +230,9 @@ function applyTaskPlanFromTodos(taskRun, todos = []) {
 
 function noteTaskToolUse(taskRun, tool = {}) {
   if (!taskRun) return null;
-  const name = String(tool.name || "").toLowerCase();
-  const readOnly = READ_ONLY_TOOLS.has(name);
-  const command = String(tool.input?.command || tool.input?.cmd || "");
-  const dangerous = DANGEROUS_TOOLS.has(name) || (name === "bash" && DANGEROUS_SHELL_RE.test(command));
+  const semantics = resolveToolSemantics(tool);
+  const readOnly = semantics.readOnly || semantics.replaySafe;
+  const dangerous = semantics.destructive;
   const hadSideEffects = Boolean(taskRun.resumeState?.hasSideEffects);
   const previousLevel = taskRun.resumeState?.recoveryLevel || "safe";
   const recoveryLevel = dangerous || previousLevel === "dangerous"
@@ -237,26 +257,134 @@ function noteTaskToolUse(taskRun, tool = {}) {
   return taskRun.resumeState;
 }
 
-function assessTaskVerification({ taskType = "", evidence = [], evidenceGateAssessment = null } = {}) {
-  if (evidenceGateAssessment) {
+function buildTaskToolEvidence(tool = {}) {
+  const command = safeText(
+    tool.input?.command || tool.input?.cmd || tool.input?.script || tool.input?.path || tool.input?.file_path || "",
+    320,
+  );
+  const label = [tool.name || "Tool", tool.title || "", command, tool.status || "done"]
+    .map((value) => safeText(value, 320))
+    .filter(Boolean)
+    .join(" ");
+  return {
+    kind: "tool_result",
+    label,
+    status: tool.status || "done",
+    refId: tool.id || "",
+  };
+}
+
+function applyIntentContractToTaskRun(taskRun, intentContractValue) {
+  if (!taskRun) return null;
+  let intentContract = null;
+  try {
+    intentContract = require("./intent-contract").compactIntentContract(intentContractValue);
+  } catch {
+    intentContract = null;
+  }
+  if (!intentContract) return null;
+  taskRun.intentContractId = intentContract.contractId;
+  taskRun.intentRevision = intentContract.revision;
+  taskRun.intentRelation = intentContract.relation;
+  taskRun.objective = safeText(intentContract.objective || taskRun.objective, 1_000);
+  taskRun.deliverables = intentContract.deliverables;
+  taskRun.successCriteria = intentContract.successCriteria;
+  touch(taskRun);
+  return taskRun;
+}
+
+function assessTaskVerification({
+  taskType = "",
+  evidence = [],
+  evidenceGateAssessment = null,
+  evidenceSummary = null,
+  successCriteria = [],
+  deliverables = [],
+  fileChangeCount = 0,
+  artifactCount = 0,
+} = {}) {
+  if (evidenceGateAssessment?.ok === false) {
     return {
-      status: evidenceGateAssessment.ok ? "verified" : "unverified",
-      reason: evidenceGateAssessment.ok
-        ? ""
-        : safeText(evidenceGateAssessment.reason || evidenceGateAssessment.code || "evidence_gate_failed", 500),
+      status: "unverified",
+      reason: safeText(evidenceGateAssessment.reason || evidenceGateAssessment.code || "evidence_gate_failed", 500),
+      criteria: [],
     };
   }
   const normalizedTaskType = String(taskType || "").toLowerCase();
-  const labels = (Array.isArray(evidence) ? evidence : [])
+  if (normalizedTaskType === "content_extraction") {
+    const coverage = evidenceSummary?.sourceContentCoverage || {};
+    if (!evidenceSummary?.hasSourceContentEvidence) {
+      return { status: "unverified", reason: "missing_source_content_evidence", criteria: [] };
+    }
+    if (coverage.status === "complete") {
+      return { status: "verified", reason: "source_content_extracted", criteria: [] };
+    }
+    return {
+      status: "observed",
+      reason: coverage.status === "partial" ? "partial_source_content" : "source_content_available",
+      criteria: [],
+    };
+  }
+  const successfulEvidence = (Array.isArray(evidence) ? evidence : []).filter(
+    (item) => !/fail|error/i.test(String(item?.status || "")),
+  );
+  const labels = successfulEvidence
     .map((item) => String(item?.label || "").toLowerCase())
     .join("\n");
-  if (normalizedTaskType === "code") {
-    const hasTest = /\b(test|lint|typecheck|build)\b/.test(labels);
-    return hasTest
-      ? { status: "verified", reason: "test_or_build_evidence" }
-      : { status: "unverified", reason: "missing_test_or_build_evidence" };
+  const criteria = (Array.isArray(successCriteria) ? successCriteria : [])
+    .map((criterion) => safeText(criterion, 180))
+    .filter(Boolean);
+  const requiresTest = CODE_VERIFICATION_TASK_TYPES.has(normalizedTaskType) && criteria.some(
+    (criterion) => TEST_CRITERION_RE.test(criterion) && !MANUAL_ALTERNATIVE_RE.test(criterion),
+  );
+  const hasTest = TEST_EVIDENCE_RE.test(labels);
+  const hasManualEvidence = MANUAL_EVIDENCE_RE.test(labels);
+  let missingMachineCriterion = false;
+  const criterionResults = criteria.map((criterion) => {
+    if (TEST_CRITERION_RE.test(criterion) && CODE_VERIFICATION_TASK_TYPES.has(normalizedTaskType)) {
+      const allowsManual = MANUAL_ALTERNATIVE_RE.test(criterion);
+      const satisfied = hasTest || (allowsManual && hasManualEvidence);
+      if (!satisfied) missingMachineCriterion = true;
+      return {
+        criterion,
+        status: satisfied ? "verified" : "unverified",
+        evidence: hasTest ? "test_or_build_evidence" : hasManualEvidence ? "manual_or_visual_evidence" : "",
+      };
+    }
+    if (/artifact|output|preview|openable|document|media/i.test(criterion)) {
+      const hasArtifact = Number(fileChangeCount) > 0 || Number(artifactCount) > 0;
+      return { criterion, status: hasArtifact ? "verified" : "not_observed", evidence: hasArtifact ? "artifact_record" : "" };
+    }
+    return {
+      criterion,
+      status: successfulEvidence.length ? "observed" : "not_observed",
+      evidence: successfulEvidence.length ? "tool_evidence_present" : "",
+    };
+  });
+  if (missingMachineCriterion) {
+    return { status: "unverified", reason: requiresTest ? "missing_test_or_build_evidence" : "missing_manual_or_test_evidence", criteria: criterionResults };
   }
-  return evidence?.length ? { status: "observed", reason: "evidence_present" } : { status: "not_required", reason: "" };
+  if (requiresTest) {
+    return hasTest
+      ? { status: "verified", reason: "test_or_build_evidence", criteria: criterionResults }
+      : { status: "unverified", reason: "missing_test_or_build_evidence", criteria: criterionResults };
+  }
+  if (normalizedTaskType === "code" || normalizedTaskType === "code_change") {
+    return hasTest
+      ? { status: "verified", reason: "test_or_build_evidence", criteria: criterionResults }
+      : { status: "unverified", reason: "missing_test_or_build_evidence", criteria: criterionResults };
+  }
+  if (evidenceGateAssessment?.ok === true) {
+    return { status: "verified", reason: "evidence_gate_passed", criteria: criterionResults };
+  }
+  if (successfulEvidence.length || Number(fileChangeCount) > 0 || Number(artifactCount) > 0) {
+    return { status: "observed", reason: "evidence_present", criteria: criterionResults };
+  }
+  return {
+    status: Array.isArray(deliverables) && deliverables.length ? "unverified" : "not_required",
+    reason: Array.isArray(deliverables) && deliverables.length ? "missing_delivery_evidence" : "",
+    criteria: criterionResults,
+  };
 }
 
 function completeTaskRun(taskRun, terminalType, verification = {}) {
@@ -266,6 +394,19 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
   const interrupted = terminalType === "turn.interrupted";
   const stalled = terminalType === "turn.stalled";
   taskRun.status = failed ? "failed" : interrupted ? "interrupted" : stalled ? "stalled" : "completed";
+  taskRun.completionStatus = failed
+    ? "failed"
+    : interrupted
+      ? "interrupted"
+      : stalled
+        ? "stalled"
+        : verification.status === "verified"
+          ? "verified_complete"
+          : verification.status === "unverified"
+            ? "delivered_unverified"
+            : verification.status === "observed"
+              ? "completed_observed"
+              : "completed";
   taskRun.phase = taskRun.status;
   taskRun.activeStep = "verify";
   taskRun.plan = (taskRun.plan || []).map((step) => {
@@ -290,8 +431,10 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
     lastHeartbeatAt: ts,
   };
   taskRun.verification = {
+    ...verification,
     status: verification.status || assessTaskVerification({ evidence: taskRun.evidence }).status,
     reason: safeText(verification.reason || "", 500),
+    criteria: Array.isArray(verification.criteria) ? verification.criteria.slice(0, 20) : [],
   };
   taskRun.endedAt = ts;
   touch(taskRun, ts);
@@ -299,6 +442,7 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
 }
 
 module.exports = {
+  TASK_RUN_SCHEMA_VERSION,
   createTaskRun,
   compactTaskRun,
   markTaskPhase,
@@ -307,6 +451,8 @@ module.exports = {
   updateTaskLiveness,
   applyTaskPlanFromTodos,
   noteTaskToolUse,
+  buildTaskToolEvidence,
+  applyIntentContractToTaskRun,
   assessTaskVerification,
   completeTaskRun,
 };

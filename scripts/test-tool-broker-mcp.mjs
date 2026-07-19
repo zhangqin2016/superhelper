@@ -31,10 +31,22 @@ async function clientForServer(server) {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["lily_capability_list", "lily_capability_status", "runtime_pack_install", "runtime_pack_list", "schedule_task_create", "schedule_task_list"],
+    ["lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "runtime_pack_install", "runtime_pack_list", "schedule_task_create", "schedule_task_list"],
     "tools/list always exposes platform capabilities",
   );
   assert.ok(!tools.some((tool) => tool.name.startsWith("mail_")), "mail tools hidden when bridge is unavailable");
+
+  const intentResult = await client.callTool({
+    name: "lily_intent_contract_commit",
+    arguments: {
+      objective: "fix the existing login flow",
+      deliverables: ["verified fix"],
+      successCriteria: ["regression test passes"],
+    },
+  });
+  const intentBody = JSON.parse(intentResult.content[0].text);
+  assert.equal(intentBody.ok, true, "intent contract candidate should travel through the real MCP surface");
+  assert.equal(intentBody.intentContract.objective, "fix the existing login flow");
 
   const capabilityResult = await client.callTool({ name: "lily_capability_list", arguments: {} });
   const capabilityBody = JSON.parse(capabilityResult.content[0].text);
@@ -637,7 +649,7 @@ async function clientForServer(server) {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["lily_capability_list", "lily_capability_status", "runtime_pack_install", "runtime_pack_list", "schedule_task_create", "schedule_task_list"],
+    ["lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "runtime_pack_install", "runtime_pack_list", "schedule_task_create", "schedule_task_list"],
     "stdio broker reads explicit context and exposes platform capabilities",
   );
   await client.close();

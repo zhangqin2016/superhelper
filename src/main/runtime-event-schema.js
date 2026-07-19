@@ -1,97 +1,41 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const RUNTIME_CONTRACT = require("../shared/runtime-contract.json");
 
-const TERMINAL_EVENT_TYPES = new Set([
-  "turn.completed",
-  "turn.failed",
-  "turn.interrupted",
-  "turn.stalled",
-]);
+const RUNTIME_EVENT_SCHEMA_VERSION = RUNTIME_CONTRACT.schemaVersion;
+const TERMINAL_EVENT_TYPES = new Set(RUNTIME_CONTRACT.terminalEventTypes);
 
-const USER_BLOCKING_EVENT_TYPES = new Set([
-  "permission.requested",
-  "user_question.requested",
-  "hook.requested",
-]);
+const USER_BLOCKING_EVENT_TYPES = new Set(RUNTIME_CONTRACT.userBlockingEventTypes);
 
-const RUNTIME_EVENT_TYPES = new Set([
-  "session.hydrated",
-  "user.committed",
-  "turn.started",
-  "turn.accepted",
-  "turn.steered",
-  "turn.self_heal_retry",
-  "turn.self_heal_notice",
-  "task.created",
-  "task.plan.updated",
-  "task.step.started",
-  "task.step.progress",
-  "task.step.completed",
-  "task.step.failed",
-  "task.evidence.added",
-  "task.risk.detected",
-  "task.liveness.updated",
-  "task.stalled",
-  "task.resumed",
-  "task.completed",
-  "task.failed",
-  "task.interrupted",
-  "assistant.thinking.delta",
-  "assistant.delta",
-  "assistant.supersedes",
-  "assistant.message_stop",
-  "assistant.final",
-  "content.block",
-  "stream.metadata",
-  "protocol.unknown",
-  "process.event",
-  "tool.started",
-  "tool.input.delta",
-  "tool.input.done",
-  "tool.done",
-  "subagent.event",
-  "todo.updated",
-  "permission.requested",
-  "permission.resolved",
-  "permission.timeout",
-  "user_question.requested",
-  "user_question.resolved",
-  "hook.requested",
-  "hook.resolved",
-  "queue.updated",
-  "engine.notice",
-  "engine.warning",
-  "engine.stderr",
-  "context.compactionDecision",
-  "memory.proposal",
-  "usage.updated",
-  "resume.updated",
-  "resume.invalid",
-  "prompt_suggestions.updated",
-  "runtime.control",
-  "turn.completed",
-  "turn.failed",
-  "turn.interrupted",
-  "turn.stalled",
-]);
+const RUNTIME_EVENT_TYPES = new Set(RUNTIME_CONTRACT.eventTypes);
 
-const TURN_OPTIONAL_TYPES = new Set([
-  "session.hydrated",
-  "resume.updated",
-  "resume.invalid",
-  "queue.updated",
-  "user.committed",
-  "turn.steered",
-  // Fired after the failed turn already finalized (no active turnId).
-  "turn.self_heal_retry",
-  "turn.self_heal_notice",
-  "engine.notice",
-  "engine.warning",
-  "engine.stderr",
-  "context.compactionDecision",
-  "prompt_suggestions.updated",
-]);
+const TURN_OPTIONAL_TYPES = new Set(RUNTIME_CONTRACT.turnOptionalEventTypes);
+
+function payloadValueMatchesType(value, expectedType) {
+  if (expectedType === "array") return Array.isArray(value);
+  if (expectedType === "object") return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  if (expectedType === "integer") return Number.isInteger(value);
+  if (expectedType === "number") return Number.isFinite(value);
+  return typeof value === expectedType;
+}
+
+function assertRuntimePayload(type, payload) {
+  const contract = RUNTIME_CONTRACT.payloadContracts?.[type];
+  if (!contract) return true;
+  for (const key of contract.required || []) {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) {
+      throw new Error(`RuntimeEvent ${type} payload requires ${key}`);
+    }
+  }
+  for (const [key, expectedType] of Object.entries(contract.properties || {})) {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+    if (!payloadValueMatchesType(payload[key], expectedType)) {
+      throw new Error(`RuntimeEvent ${type} payload.${key} must be ${expectedType}`);
+    }
+  }
+  return true;
+}
 
 function createRuntimeEvent(input) {
   const type = String(input?.type || "");
@@ -105,6 +49,7 @@ function createRuntimeEvent(input) {
   }
 
   const event = {
+    schemaVersion: RUNTIME_EVENT_SCHEMA_VERSION,
     id: input.id || `evt_${crypto.randomUUID()}`,
     type,
     sessionId,
@@ -127,9 +72,14 @@ function assertRuntimeEvent(event) {
   if (!Number.isInteger(event.seq)) throw new Error("RuntimeEvent seq must be an integer");
   if (!Number.isFinite(event.ts)) throw new Error("RuntimeEvent ts must be a timestamp");
   if (!event.payload || typeof event.payload !== "object") throw new Error("RuntimeEvent payload must be an object");
+  const schemaVersion = Number(event.schemaVersion || RUNTIME_EVENT_SCHEMA_VERSION);
+  if (schemaVersion !== RUNTIME_EVENT_SCHEMA_VERSION) {
+    throw new Error(`Unsupported RuntimeEvent schemaVersion: ${schemaVersion}`);
+  }
   if (!event.turnId && !TURN_OPTIONAL_TYPES.has(event.type)) {
     throw new Error(`RuntimeEvent ${event.type} requires turnId`);
   }
+  assertRuntimePayload(event.type, event.payload);
   return true;
 }
 
@@ -142,11 +92,13 @@ function isUserBlockingEvent(event) {
 }
 
 module.exports = {
+  RUNTIME_EVENT_SCHEMA_VERSION,
   TERMINAL_EVENT_TYPES,
   USER_BLOCKING_EVENT_TYPES,
   RUNTIME_EVENT_TYPES,
   createRuntimeEvent,
   assertRuntimeEvent,
+  assertRuntimePayload,
   isTerminalEvent,
   isUserBlockingEvent,
 };

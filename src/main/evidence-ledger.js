@@ -41,6 +41,13 @@ function commandLooksLikeVerification(command = "") {
   return /\b(npm\s+(?:run\s+)?test|node\s+scripts\/test-|pytest|vitest|jest|playwright|tsc|eslint|lint|cargo\s+test|go\s+test)\b/i.test(command);
 }
 
+function commandExternalEvidenceKind(command = "") {
+  const source = String(command || "");
+  if (/(?:^|[\\/])websearch\.cjs\b/i.test(source)) return "web_search";
+  if (/(?:^|[\\/])webfetch\.cjs\b/i.test(source)) return "web_fetch";
+  return "";
+}
+
 function normalizePathKey(value = "") {
   return String(value || "")
     .replace(/\\/g, "/")
@@ -95,10 +102,12 @@ function normalizeToolEvidence(tool = {}) {
 
   if (name === "bash") {
     const command = firstString(input, ["command", "cmd"]);
+    const externalKind = commandExternalEvidenceKind(command);
     return {
       ...base,
-      kind: commandLooksLikeVerification(command) ? "verification" : "command",
+      kind: externalKind || (commandLooksLikeVerification(command) ? "verification" : "command"),
       command,
+      ...(externalKind ? { query: command.slice(0, 2000) } : {}),
     };
   }
 
@@ -110,7 +119,39 @@ function normalizeToolEvidence(tool = {}) {
     };
   }
 
+  if (/(?:^|[_.-])(?:finance|weather|sports|news|market|browser|http|api)(?:[_.-]|$)/i.test(name)) {
+    return {
+      ...base,
+      kind: "external_observation",
+      query: firstString(input, ["query", "q", "url", "ticker", "location", "endpoint"]),
+    };
+  }
+
   return { ...base, kind: "tool_observation" };
+}
+
+function normalizeSourceContentEvidence(input = {}) {
+  const sourceCount = Math.max(0, Number(input.sourceCount || 0));
+  const observedCount = Math.max(0, Number(input.observedCount || 0));
+  const failedCount = Math.max(0, Number(input.failedCount || 0));
+  const status = String(input.status || (observedCount > 0 ? "partial" : "unavailable")).toLowerCase();
+  const success = ["available", "complete", "partial"].includes(status) && sourceCount > 0 && (
+    status === "available" || observedCount > 0
+  );
+  return {
+    kind: "source_content",
+    sourceType: String(input.sourceType || "unknown"),
+    method: String(input.method || "unknown"),
+    status,
+    sourceCount,
+    observedCount,
+    failedCount,
+    extractedChars: Math.max(0, Number(input.extractedChars || 0)),
+    coverageLimited: Boolean(input.coverageLimited),
+    complete: Boolean(input.complete || (status === "complete" && observedCount >= sourceCount && sourceCount > 0)),
+    success,
+    timestamp: Date.now(),
+  };
 }
 
 class EvidenceLedger {
@@ -118,6 +159,7 @@ class EvidenceLedger {
     this.events = [];
     this.workspaceCandidates = new Map();
     this.documents = [];
+    this.sourceContent = [];
   }
 
   addWorkspaceCandidates(candidates = []) {
@@ -144,6 +186,17 @@ class EvidenceLedger {
   recordDocumentExtraction(documentEvidence = {}) {
     const documents = Array.isArray(documentEvidence.documents) ? documentEvidence.documents : [];
     const chunks = Array.isArray(documentEvidence.chunks) ? documentEvidence.chunks : [];
+    this.recordSourceContentObservation({
+      sourceType: "document",
+      method: documentEvidence.method || "local_document_extraction",
+      status: documentEvidence.status || (documents.length || chunks.length ? "complete" : "unavailable"),
+      sourceCount: documentEvidence.sourceCount || documents.length,
+      observedCount: documentEvidence.observedCount || documents.length,
+      failedCount: documentEvidence.failedCount || 0,
+      extractedChars: documentEvidence.extractedChars || documents.reduce((total, doc) => total + Number(doc?.charLength || 0), 0),
+      coverageLimited: documentEvidence.coverageLimited,
+      complete: documentEvidence.complete ?? Boolean(documents.length || chunks.length),
+    });
     if (!documents.length && !chunks.length) return null;
     const event = {
       kind: "document_extraction",
@@ -160,21 +213,47 @@ class EvidenceLedger {
     return event;
   }
 
+  recordSourceContentObservation(evidence = {}) {
+    const event = normalizeSourceContentEvidence(evidence);
+    if (!event.sourceCount && event.status === "unavailable") return null;
+    this.sourceContent.push(event);
+    this.events.push(event);
+    return event;
+  }
+
+  recordVisionObservation(visionEvidence = {}) {
+    return this.recordSourceContentObservation({ sourceType: "image", ...visionEvidence });
+  }
+
   summary() {
     const filesRead = new Set();
     const searches = [];
     const verifications = [];
     const writes = [];
-    const web = [];
+    const external = [];
     for (const event of this.events) {
       if (event.kind === "file_search") searches.push(event);
       if (event.kind === "file_read" && event.path) filesRead.add(normalizePathKey(event.path));
       if (event.kind === "verification") verifications.push(event);
       if (event.kind === "file_write" && event.path) writes.push(event);
-      if (event.kind === "web_search" || event.kind === "web_fetch") web.push(event);
+      if (["web_search", "web_fetch", "external_observation"].includes(event.kind)) external.push(event);
     }
     const documentCount = this.documents.reduce((count, event) => count + event.documents.length, 0);
     const documentChunkCount = this.documents.reduce((count, event) => count + Number(event.chunkCount || 0), 0);
+    const successfulSourceContent = this.sourceContent.filter((event) => event.success);
+    const sourceCount = this.sourceContent.reduce((count, event) => count + event.sourceCount, 0);
+    const observedSourceCount = this.sourceContent.reduce((count, event) => count + event.observedCount, 0);
+    const hasUnavailableSource = this.sourceContent.some((event) => !event.success);
+    const hasAvailableOnlySource = successfulSourceContent.some((event) => event.status === "available");
+    const sourceContentStatus = !this.sourceContent.length
+      ? "none"
+      : !successfulSourceContent.length
+        ? "unavailable"
+        : hasUnavailableSource || successfulSourceContent.some((event) => event.status === "partial")
+          ? "partial"
+          : hasAvailableOnlySource
+            ? "available"
+            : "complete";
     const candidates = [...this.workspaceCandidates.keys()];
     const inspectedCandidates = candidates.filter((candidate) => [...filesRead].some((file) => pathMatchesCandidate(file, candidate)));
     const missingCandidates = candidates.filter((candidate) => !inspectedCandidates.includes(candidate));
@@ -190,9 +269,12 @@ class EvidenceLedger {
         filesRead: filesRead.size,
         verifications: verifications.length,
         fileWrites: writes.length,
-        webSources: web.length,
+        webSources: external.filter((event) => event.kind === "web_search" || event.kind === "web_fetch").length,
+        externalSources: external.length,
         documents: documentCount,
         documentChunks: documentChunkCount,
+        sourceContentSources: sourceCount,
+        sourceContentObservations: this.sourceContent.length,
       },
       coverage: {
         candidateCount,
@@ -209,8 +291,16 @@ class EvidenceLedger {
       hasFileReadEvidence: filesRead.size > 0,
       hasVerificationEvidence: verifications.some((event) => event.success),
       hasFileChangeEvidence: writes.length > 0,
-      hasFreshEvidence: web.some((event) => event.success),
+      hasFreshEvidence: external.some((event) => event.success),
       hasDocumentEvidence: documentCount > 0 || documentChunkCount > 0,
+      hasSourceContentEvidence: successfulSourceContent.length > 0,
+      sourceContentCoverage: {
+        status: sourceContentStatus,
+        sourceCount,
+        observedCount: observedSourceCount,
+        complete: sourceContentStatus === "complete",
+      },
+      sourceContent: this.sourceContent.slice(-20),
       documents: this.documents.slice(-20),
       events: this.events.slice(-50),
     };

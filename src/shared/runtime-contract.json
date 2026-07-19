@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "taskRunSchemaVersion": 1,
+  "terminalEventTypes": [
+    "turn.completed",
+    "turn.failed",
+    "turn.interrupted",
+    "turn.stalled"
+  ],
+  "userBlockingEventTypes": [
+    "permission.requested",
+    "user_question.requested",
+    "hook.requested"
+  ],
+  "turnOptionalEventTypes": [
+    "session.hydrated",
+    "resume.updated",
+    "resume.invalid",
+    "queue.updated",
+    "user.committed",
+    "turn.steered",
+    "turn.self_heal_retry",
+    "turn.self_heal_notice",
+    "engine.notice",
+    "engine.warning",
+    "engine.stderr",
+    "context.compactionDecision",
+    "prompt_suggestions.updated"
+  ],
+  "eventTypes": [
+    "session.hydrated",
+    "user.committed",
+    "turn.started",
+    "turn.accepted",
+    "turn.steered",
+    "turn.self_heal_retry",
+    "turn.self_heal_notice",
+    "task.created",
+    "task.plan.updated",
+    "task.step.started",
+    "task.step.progress",
+    "task.step.completed",
+    "task.step.failed",
+    "task.evidence.added",
+    "task.risk.detected",
+    "task.liveness.updated",
+    "task.stalled",
+    "task.resumed",
+    "task.completed",
+    "task.failed",
+    "task.interrupted",
+    "assistant.thinking.delta",
+    "assistant.delta",
+    "assistant.supersedes",
+    "assistant.message_stop",
+    "assistant.final",
+    "content.block",
+    "stream.metadata",
+    "protocol.unknown",
+    "process.event",
+    "tool.started",
+    "tool.input.delta",
+    "tool.input.done",
+    "tool.done",
+    "subagent.event",
+    "todo.updated",
+    "permission.requested",
+    "permission.resolved",
+    "permission.timeout",
+    "user_question.requested",
+    "user_question.resolved",
+    "hook.requested",
+    "hook.resolved",
+    "queue.updated",
+    "engine.notice",
+    "engine.warning",
+    "engine.stderr",
+    "context.compactionDecision",
+    "memory.proposal",
+    "usage.updated",
+    "resume.updated",
+    "resume.invalid",
+    "prompt_suggestions.updated",
+    "runtime.control",
+    "turn.completed",
+    "turn.failed",
+    "turn.interrupted",
+    "turn.stalled"
+  ],
+  "payloadContracts": {
+    "assistant.delta": {
+      "required": ["text"],
+      "properties": { "text": "string" }
+    },
+    "assistant.thinking.delta": {
+      "required": ["text"],
+      "properties": { "text": "string" }
+    },
+    "assistant.supersedes": {
+      "required": ["supersedes"],
+      "properties": { "supersedes": "string" }
+    },
+    "assistant.final": {
+      "required": ["assistant"],
+      "properties": { "assistant": "string" }
+    },
+    "tool.started": {
+      "required": ["id", "name"],
+      "properties": { "id": "string", "name": "string", "input": "object" }
+    },
+    "tool.done": {
+      "required": ["id", "status"],
+      "properties": { "id": "string", "status": "string" }
+    },
+    "task.created": {
+      "required": ["taskRun"],
+      "properties": { "taskRun": "object" }
+    },
+    "task.plan.updated": {
+      "required": ["taskRunId", "plan"],
+      "properties": { "taskRunId": "string", "plan": "array" }
+    },
+    "task.completed": {
+      "required": ["taskRunId", "status", "completionStatus", "taskRun"],
+      "properties": {
+        "taskRunId": "string",
+        "status": "string",
+        "completionStatus": "string",
+        "taskRun": "object"
+      }
+    },
+    "turn.started": {
+      "properties": { "text": "string" }
+    },
+    "turn.completed": {
+      "properties": { "assistant": "string", "toolsSummary": "object" }
+    }
+  },
+  "taskRunFields": [
+    "schemaVersion",
+    "id",
+    "sessionId",
+    "turnId",
+    "objective",
+    "status",
+    "completionStatus",
+    "intentContractId",
+    "intentRevision",
+    "intentRelation",
+    "deliverables",
+    "successCriteria",
+    "phase",
+    "plan",
+    "activeStep",
+    "progress",
+    "liveness",
+    "evidence",
+    "risks",
+    "resumeState",
+    "verification",
+    "startedAt",
+    "updatedAt",
+    "lastActivityAt",
+    "endedAt"
+  ]
+}

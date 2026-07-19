@@ -55,11 +55,16 @@ const { resetRescueStateForTests, correctiveHintFor, evidenceVerifyHintFor, resc
 
 // Read-only whitelist: replaying pure-read turns is safe; anything else is not.
 assert.equal(isSideEffectFreeToolRun([{ name: "read" }, { name: "glob" }, { name: "websearch" }]), true);
+assert.equal(
+  isSideEffectFreeToolRun([{ name: "lily_intent_contract_commit" }, { name: "websearch" }]),
+  true,
+  "the host-owned idempotent intent commit must not disable safe evidence recovery",
+);
 assert.equal(isSideEffectFreeToolRun([{ name: "read" }, { name: "write" }]), false);
 assert.equal(isSideEffectFreeToolRun([{ name: "lily_tb_mail_send" }]), false, "MCP tools are never assumed safe");
 
 // Verify-before-assert: the strategy is available by default (the orchestrator
-// invokes it by default for numeric/data-claim failures, opt-in for others).
+// invokes it by default for side-effect-free external facts, opt-in for others).
 // A one-shot retry steers the model to verify with tools first (language-aware).
 assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED")?.kind, "evidence_verify_retry", "verify-before-assert strategy is available by default");
 {
@@ -69,6 +74,8 @@ assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED")?.kind, "evidence_verify_re
 }
 assert.match(evidenceVerifyHintFor({}), /verify it with a tool/i, "verify hint tells the model to verify with tools before asserting");
 assert.match(evidenceVerifyHintFor({ instructionLanguage: "zh" }), /先用工具核实/, "verify hint is language-aware (zh)");
+assert.match(evidenceVerifyHintFor({}), /websearch\/webfetch or a live authoritative API/i, "external fact retry names the executable research path");
+assert.match(evidenceVerifyHintFor({ instructionLanguage: "zh" }), /只引用工具真实返回的链接/, "external fact retry forbids invented citations");
 assert.equal(isSideEffectFreeToolRun([]), true, "a tool-less turn is trivially safe to replay");
 
 // Recipe-aware corrective hint: the probe's instructionLanguage finding picks
@@ -148,6 +155,41 @@ const flushEvents = () => {
   return events;
 };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+// Evidence retries remove the safe placeholder only AFTER the replacement turn
+// is accepted. A failed dispatch keeps the honest fallback, while a successful
+// one emits a typed supersession so the renderer removes the duplicate bubble.
+{
+  const sequence = [];
+  const originalSend = ctx.turnOrchestrator.sendUserMessage.bind(ctx.turnOrchestrator);
+  const originalRemove = ctx.transcriptStore.removeLastAssistantMessage.bind(ctx.transcriptStore);
+  messages.push({ role: "user", content: "Who is the current CEO?", files: [] });
+  ctx.transcriptStore.removeLastAssistantMessage = () => { sequence.push("remove"); return true; };
+  ctx.turnOrchestrator.sendUserMessage = async () => { sequence.push("send"); return { ok: true }; };
+  resetRescueStateForTests();
+  const dispatched = await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
+    code: "EVIDENCE_UNVERIFIED",
+    supersedesTurnId: "fact-turn-old",
+  });
+  assert.equal(dispatched, true);
+  assert.deepEqual(sequence, ["send", "remove"], "evidence fallback is removed only after retry acceptance");
+  const supersession = flushEvents().find((event) => event.type === "assistant.supersedes");
+  assert.equal(supersession?.turnId, "fact-turn-old");
+  assert.equal(supersession?.payload?.supersedes, "fact-turn-old");
+
+  sequence.length = 0;
+  ctx.turnOrchestrator.sendUserMessage = async () => { sequence.push("send"); return { ok: false, error: "BUSY" }; };
+  resetRescueStateForTests();
+  await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
+    code: "EVIDENCE_UNVERIFIED",
+    supersedesTurnId: "fact-turn-kept",
+  });
+  assert.deepEqual(sequence, ["send"], "failed retry dispatch must keep the existing safe fallback");
+  assert.equal(flushEvents().some((event) => event.type === "assistant.supersedes"), false);
+  messages.pop();
+  ctx.turnOrchestrator.sendUserMessage = originalSend;
+  ctx.transcriptStore.removeLastAssistantMessage = originalRemove;
+}
 
 // --- rescue fires once, silently, on the engine text only --------------------
 

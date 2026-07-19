@@ -1,11 +1,13 @@
 "use strict";
 
+const { boundPromptLayer, promptEnvelopeDiagnostics } = require("./prompt-envelope");
+
 function cleanText(value) {
   return String(value || "").trim();
 }
 
 function layerBlock(title, body) {
-  const text = cleanText(body);
+  const text = boundPromptLayer(title, cleanText(body)).text;
   if (!text) return "";
   return [
     `<lily_layer title="${title}">`,
@@ -126,4 +128,5 @@ module.exports = {
   extractUserOriginalRequest,
   hasLayeredEngineText,
   layerBlock,
+  promptEnvelopeDiagnostics,
 };

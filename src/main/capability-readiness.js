@@ -3,7 +3,7 @@
 const path = require("node:path");
 
 function unique(values) {
-  return [...new Set((values || []).filter(Boolean))];
+  return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
 function fileExtensions(files = []) {
@@ -12,7 +12,7 @@ function fileExtensions(files = []) {
   )));
 }
 
-function planCapabilityReadiness({ text = "", files = [] } = {}) {
+function planCapabilityReadiness({ text = "", files = [], intentContract = null, turnPolicy = null } = {}) {
   const body = String(text || "");
   const extensions = fileExtensions(files);
   const browser = /localhost|截图|控制台|浏览器|playwright|browser|responsive|响应式/i.test(body);
@@ -25,7 +25,7 @@ function planCapabilityReadiness({ text = "", files = [] } = {}) {
   const mediaTransform = /转码|转换视频|裁剪视频|压缩视频|提取音频|合并音频|合并视频|ffmpeg|transcode|convert video|trim video|compress video|extract audio/i.test(body);
   const media = mediaTransform || (mediaFile && /转换|转码|裁剪|压缩|合并|提取|convert|trim|compress|merge|extract/i.test(body));
 
-  return {
+  const baseline = {
     capabilityIds: unique([
       browser ? "browser-qa" : "",
       pdf ? "pdf-read" : "",
@@ -47,6 +47,37 @@ function planCapabilityReadiness({ text = "", files = [] } = {}) {
       media ? "media-source-inspection" : "",
     ]),
   };
+
+  try {
+    const { recommendSkillCapabilityGraph } = require("./capability-broker");
+    const { PACK_SPECS } = require("./runtime-pack-specs");
+    const recommended = recommendSkillCapabilityGraph({ text, files, turnPolicy, maxSkills: 8 });
+    const explicitPackIds = (intentContract?.neededCapabilities || []).filter((id) => PACK_SPECS[id]);
+    const recommendedPackIds = recommended.flatMap((skill) => skill.requiredRuntimePacks || []);
+    return {
+      capabilityIds: unique([
+        ...baseline.capabilityIds,
+        ...(intentContract?.neededCapabilities || []),
+        ...recommended.map((skill) => skill.id),
+      ]),
+      requiredPackIds: unique([
+        ...baseline.requiredPackIds,
+        ...explicitPackIds,
+      ]),
+      enhancementPackIds: unique([
+        ...baseline.enhancementPackIds,
+        ...recommendedPackIds.filter((id) => !baseline.requiredPackIds.includes(id) && !explicitPackIds.includes(id)),
+      ]),
+      fallbackCapabilityIds: unique([
+        ...baseline.fallbackCapabilityIds,
+        ...recommended.flatMap((skill) => String(skill.failOpen || "").split(",")),
+      ]),
+      recommendedSkillIds: recommended.map((skill) => skill.id),
+      source: recommended.length ? "intent_and_catalog" : "baseline",
+    };
+  } catch {
+    return { ...baseline, recommendedSkillIds: [], source: "baseline" };
+  }
 }
 
 function resolveCapabilityReadiness(plan = {}, state = {}) {

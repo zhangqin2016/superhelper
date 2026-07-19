@@ -30,6 +30,7 @@ const documentMock = {
   buildEnrichedUserText: (text, extracted) => require(path.join(ROOT, "src/main/engine-message-layers.js")).appendExtractedContext(text, `[doc:${extracted}]`, "Document extraction result"),
   extractDocuments: async () => documentMock._next,
   hasDocumentInputFiles: (files) => (files || []).some((f) => /\.docx$/.test(f?.path || "")),
+  isExtractableDocumentFile: (file) => /\.docx$/.test(file?.path || ""),
   isDocumentOnlyUserMessage: (text, files) => !text && (files || []).some((f) => /\.docx$/.test(f?.path || "")),
   _next: null,
 };
@@ -77,6 +78,7 @@ r = await runVisionPreflight("", [img], { emitNotice: (n) => notices.push(n.code
 assert(r.ok && r.visionDegraded === true, "image-only NO_KEY should degrade, not fail");
 assert(r.text.includes("Image recognition fallback"), "image-only NO_KEY should include fallback context");
 assert(r.files.includes(img), "image-only NO_KEY should keep original image for engine/tools");
+assert(r.visionEvidence?.status === "unavailable" && r.visionEvidence?.complete === false, "vision failure must not create successful source evidence");
 assert(notices[0] === "visionPreparing" && notices.includes("visionSkipped"), "emits preparing then skipped on failure");
 
 // FAIL-OPEN FIX: vision failure WITH accompanying text must not drop the image
@@ -118,6 +120,7 @@ r = await runVisionPreflight("分析这张图", [img, txtFile], {
 assert(r.ok && r.text === "分析这张图", "native vision passes text through unchanged");
 assert(r.files.includes(img) && r.files.includes(txtFile), "native vision keeps the image for the engine");
 assert(visionMock._calls === 0, "native vision never calls the Qwen bridge");
+assert(r.visionEvidence?.status === "available" && r.visionEvidence?.method === "native_model_input", "native input should be available without pretending host extraction completed");
 
 // Vision success → enriched text + image pruned from outbound, ready notice.
 visionMock._next = { ok: true, text: "a cat", keepOriginal: false };
@@ -127,6 +130,7 @@ assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includ
 assert(r.text.includes('title="user_original_request"') && r.text.includes("look"), "vision success preserves original request layer");
 assert(!r.files.some((f) => f.isImage), "image pruned from outbound files on success");
 assert(notices.includes("visionReady"), "emits ready on success");
+assert(r.visionEvidence?.status === "complete" && r.visionEvidence?.observedCount === 1, "vision bridge success should record complete source evidence");
 
 // Document success → enriched + extracted file pruned.
 documentMock._next = {
@@ -143,6 +147,16 @@ assert(r.documentEvidence?.documents?.length === 0, "mock without structured ind
 assert(r.text.includes('title="user_original_request"') && r.text.includes("review"), "document success preserves original request layer");
 assert(!r.files.some((f) => f.path === "/a/report.docx"), "extracted document pruned from outbound");
 assert(r.files.some((f) => f === txtFile), "non-extracted files kept");
+assert(r.documentEvidence?.status === "complete" && r.documentEvidence?.observedCount === 1, "document extraction should expose source coverage evidence");
+
+documentMock._next = {
+  ok: true,
+  text: "partial text\n[Content truncated, original length: 120000 characters]",
+  extractedPaths: ["/a/report.docx"],
+  keepOriginal: false,
+};
+r = await runDocumentPreflight("review", [docFile], {});
+assert(r.documentEvidence?.status === "partial" && r.documentEvidence?.coverageLimited === true, "truncated extraction must disclose partial coverage");
 
 // FAIL-SAFE: document failure must not stop the whole turn. It must also not
 // silently become "answer from the user's prompt only" — the engine receives an
@@ -157,6 +171,7 @@ assert(r.text.includes("/a/report.docx"), "document fallback should include sour
 assert(r.text.includes("Do not summarize"), "document fallback must prevent blind answers");
 assert(r.files.includes(docFile), "failed document should remain in outbound files for follow-up tooling");
 assert(r.documentDegraded === true, "document failure should be marked degraded");
+assert(r.documentEvidence?.status === "unavailable" && r.documentEvidence?.observedCount === 0, "failed document extraction must not count as observed content");
 r = await runDocumentPreflight("", [docFile], {});
 assert(r.ok && r.text.includes("Document extraction fallback"), "doc-only document failure should still reach the engine with fallback context");
 

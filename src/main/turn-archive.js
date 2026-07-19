@@ -7,6 +7,7 @@ const { buildTurnArtifacts } = require("./turn-artifacts");
 const { ARTIFACT_SCHEMA_VERSION } = require("./session-artifact-backfill");
 const { buildTurnResultBlocks, RESULT_BLOCK_SCHEMA_VERSION } = require("./turn-result-blocks");
 const { estimateTokensForText } = require("./context-budget-manager");
+const { compactIntentContract } = require("./intent-contract");
 
 class TurnArchive {
   constructor(sessionManager, options = {}) {
@@ -179,12 +180,26 @@ class TurnArchive {
         toolsSummary: { count: tools.length },
         taskContract: state.taskContract
           ? {
+              active: true,
               kind: state.taskContract.kind,
               taskType: state.taskContract.taskType || "",
               categories: state.taskContract.categories || [],
               workspaceProfile: state.taskContract.workspaceProfile || "",
               workspaceSignals: state.taskContract.workspaceSignals || [],
               verificationStrategy: state.taskContract.verificationStrategy || [],
+              contentIntent: state.taskContract.contentIntent || null,
+              programIntent: state.taskContract.programIntent || null,
+              semanticIntent: state.taskContract.semanticIntent || null,
+              intentContract: compactIntentContract(state.taskContract.intentContract),
+              externalFact: state.taskContract.externalFactPolicy?.required
+                ? {
+                    reasonCodes: state.taskContract.externalFactPolicy.reasonCodes || [],
+                    requiresFreshness: Boolean(state.taskContract.externalFactPolicy.requiresFreshness),
+                    requiresSourceLinks: Boolean(state.taskContract.externalFactPolicy.requiresSourceLinks),
+                    researchProhibited: Boolean(state.taskContract.externalFactPolicy.researchProhibited),
+                    scopeClarificationRecommended: Boolean(state.taskContract.externalFactPolicy.scopeClarificationRecommended),
+                  }
+                : null,
             }
           : null,
         turnPolicy: state.turnPolicy

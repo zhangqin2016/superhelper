@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { z } = require("zod");
 const { buildSystemTools } = require("./web-system-mcp");
+const { registerToolDefinitions } = require("../tool-semantics");
 
 const SKILLS = {
   mail: "lily-mail-assistant",
@@ -191,6 +192,41 @@ function resolveInstalledRuntimePackIds(deps = {}) {
 }
 
 const STATIC_TOOL_DEFINITIONS = [
+  {
+    id: "lily_intent_contract_commit",
+    name: "lily_intent_contract_commit",
+    group: "task-contracts",
+    requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
+    description: "Commit one semantic refinement of the current turn's host-owned intent contract. Use only when it materially improves the objective, deliverables, success criteria, assumptions, or critical unknowns; the main process validates and preserves all baseline constraints.",
+    inputSchema: {
+      objective: z.string().min(1).max(1000).describe("the user's intended outcome, not a restatement of internal process"),
+      deliverables: z.array(z.string().min(1).max(500)).max(12).optional(),
+      successCriteria: z.array(z.string().min(1).max(500)).max(20).optional(),
+      assumptions: z.array(z.string().min(1).max(500)).max(12).optional(),
+      criticalUnknowns: z.array(z.string().min(1).max(500)).max(10).optional(),
+      neededCapabilities: z.array(z.string().min(1).max(500)).max(16).optional(),
+      constraints: z.array(z.string().min(1).max(500)).max(20).optional(),
+      riskLevel: z.enum(["low", "medium", "high"]).optional(),
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args) => ({
+      ok: true,
+      intentContract: {
+        taskType: "general",
+        objective: args.objective,
+        deliverables: args.deliverables || [],
+        successCriteria: args.successCriteria || [],
+        assumptions: args.assumptions || [],
+        criticalUnknowns: args.criticalUnknowns || [],
+        neededCapabilities: args.neededCapabilities || [],
+        constraints: args.constraints || [],
+        riskLevel: args.riskLevel || "low",
+        provenance: { mode: "model_candidate" },
+      },
+    }),
+  },
   {
     id: "lily_capability_list",
     name: "lily_capability_list",
@@ -524,8 +560,12 @@ function learnedWebSystemTools(context, deps = {}) {
 }
 
 function allToolDefinitions(context, deps = {}) {
-  return [...STATIC_TOOL_DEFINITIONS, ...learnedWebSystemTools(context || {}, deps)];
+  const definitions = [...STATIC_TOOL_DEFINITIONS, ...learnedWebSystemTools(context || {}, deps)];
+  registerToolDefinitions(definitions);
+  return definitions;
 }
+
+registerToolDefinitions(STATIC_TOOL_DEFINITIONS);
 
 function toolAllowed(context, tool) {
   return availabilityReason(context, tool) === "";

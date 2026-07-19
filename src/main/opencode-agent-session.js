@@ -29,10 +29,10 @@ const { decidePermission } = require("./runtime/opencode-permission-policy");
 const { truncateToolResultForUi } = require("./cli-process-payload");
 const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 const { getLogger } = require("./logger");
+const { isReplaySafeTool } = require("./tool-semantics");
 
 const log = getLogger("opencode-agent-session");
 const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
-const REPLAY_SAFE_TOOL_NAMES = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
 const DOCUMENT_RECOVERY_EXTENSIONS = new Set([
   ".pdf",
   ".doc",
@@ -367,10 +367,7 @@ function messageCompletedMs(info = {}) {
 }
 
 function isReplaySafeToolName(name) {
-  const value = String(name || "").trim().toLowerCase();
-  if (!value) return false;
-  if (REPLAY_SAFE_TOOL_NAMES.has(value)) return true;
-  return [...REPLAY_SAFE_TOOL_NAMES].some((safe) => value === `tool.${safe}` || value.endsWith(`.${safe}`));
+  return isReplaySafeTool(name);
 }
 
 function isTurnOwnedEngineEvent(ev) {
