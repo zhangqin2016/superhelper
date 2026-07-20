@@ -395,6 +395,7 @@ if (queuedSnapshot?.composerVisible !== false || queuedSnapshot.visibility !== "
 const cancelBackground = ctx.turnOrchestrator.cancelQueuedMessage("s1", backgroundQueued.itemId);
 if (!cancelBackground.ok || cancelBackground.queueLength !== 0) throw new Error("background queue cancel by id failed");
 runner.finish("answer");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
@@ -558,6 +559,9 @@ if (readinessPayload?.trace?.capabilityReadiness?.status !== "ready" || runner.s
   throw new Error(`prepared turn must dispatch once with readiness trace: ${JSON.stringify(readinessPayload?.trace)}`);
 }
 runner.finish("browser ready");
+// finalize is async (evidence entailment judge) — let it settle before the
+// next sendUserMessage so the turn boundary is fully closed.
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 runner.sendUserMessage = originalSendUserMessage;
 delete ctx.sessionManager.admitTurnInput;
@@ -588,6 +592,7 @@ if (recommendedSkills.includes("anthropics-xlsx")) {
   throw new Error(`PDF capability trace must not recommend spreadsheet skills: ${JSON.stringify(pdfCapabilityPayload.trace?.capabilityContext)}\n${pdfCapabilityPayload.text}`);
 }
 runner.finish("PDF capability route selected.");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 sent.length = 0;
 messages.length = 0;
@@ -611,6 +616,7 @@ if (mailRecommendedSkills.includes("lily-office-intent")) {
   throw new Error(`mail capability trace must not fall back to Office routing: ${JSON.stringify(mailCapabilityPayload.trace?.capabilityContext)}\n${mailCapabilityPayload.text}`);
 }
 runner.finish("Mail capability route selected.");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 sent.length = 0;
 messages.length = 0;
@@ -639,6 +645,7 @@ if (intentEvalIndex < 0 || (browserQaAgentQualityIndex >= 0 && intentEvalIndex >
   throw new Error(`agent-quality capability context should not put browser QA before intent eval:\n${agentQualityPayload.text}`);
 }
 runner.finish("Agent-quality capability route selected.");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 sent.length = 0;
 messages.length = 0;
@@ -664,6 +671,7 @@ if (appBuilderIndex < 0 || browserQaIndex < 0 || appBuilderIndex > browserQaInde
   throw new Error(`app capability context should preserve recommendation order:\n${appCapabilityPayload.text}`);
 }
 runner.finish("App capability route selected.");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 sent.length = 0;
 messages.length = 0;
@@ -699,11 +707,12 @@ if (paymentEvidence.matches[0]?.chunkId !== "doc1-chunk1") {
   throw new Error(`persisted query index should be searchable by follow-up terms: ${JSON.stringify(paymentEvidence)}`);
 }
 runner.finish("合同付款条款已读取。");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 
-// External facts: hold streamed answer text until the evidence gate passes.
-// Unsupported claims are replaced (not annotated), and a user's no-search
-// constraint is never bypassed by the automatic verification path.
+// External facts: keep the normal streaming baseline, then let the evidence
+// gate replace unsupported final claims. A user's no-search constraint is
+// never bypassed by the automatic verification path.
 sent.length = 0;
 messages.length = 0;
 runner.sentPayloads.length = 0;
@@ -742,8 +751,12 @@ try {
     throw new Error(`unsupported ranking must be removed from the archived answer: ${rankingAssistant?.record?.assistantText}`);
   }
   allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+  // Risk-tier contract: THIS ask (a replacement-capable ranking — the archive
+  // assertion above requires the unsafe ranking to be wholesale-replaced) is
+  // buffered, so the user never watches the ranking stream out and then get
+  // erased. Ordinary external facts still stream (asserted further below).
   if (allEvents.some((event) => event.turnId === rankingTurn.turnId && event.type === "assistant.delta")) {
-    throw new Error("external-fact answer text must stay buffered until final evidence assessment");
+    throw new Error("a replacement-capable ranking must gate before rendering, not stream-then-erase");
   }
   const rankingFinal = allEvents.find((event) => event.turnId === rankingTurn.turnId && event.type === "assistant.final");
   if (!rankingFinal || /GitHub Copilot|Cursor|Windsurf|Claude Code/.test(rankingFinal.payload?.assistant || "")) {
@@ -866,8 +879,8 @@ if (sourcedRankingAssistant?.record?.meta?.evidenceSummary?.hasFreshEvidence !==
   throw new Error(`search-script output must persist as fresh evidence: ${JSON.stringify(sourcedRankingAssistant?.record?.meta?.evidenceSummary)}`);
 }
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
-if (allEvents.some((event) => event.turnId === sourcedRankingTurn.turnId && event.type === "assistant.delta")) {
-  throw new Error("even grounded external-fact prose should be released only after final claim-level assessment");
+if (!allEvents.some((event) => event.turnId === sourcedRankingTurn.turnId && event.type === "assistant.delta")) {
+  throw new Error("grounded external-fact prose should stream normally while final claim-level assessment is preserved");
 }
 
 sent.length = 0;
@@ -908,12 +921,22 @@ if (
   throw new Error(`observed research must promote the generic contract into the final evidence gate: ${JSON.stringify({ promotedSemanticContract, turnId: semanticState.turnId, phase: semanticState.phase, pendingTaskContract: semanticState.pendingTaskContract, tools: [...semanticState.tools.values()] })}`);
 }
 runner.finish("Nimbus Cloud has the requested assurance status. https://authority.test/assurance");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 const semanticResearchAssistant = messages.find(
   (message) => message.role === "assistant" && message.turnId === semanticResearchTurn.turnId,
 );
-if (semanticResearchAssistant?.record?.meta?.evidenceGate?.ok !== true) {
-  throw new Error(`grounded unfamiliar-domain research should pass after runtime promotion: ${JSON.stringify(semanticResearchAssistant?.record?.meta?.evidenceGate)}`);
+const semanticGate = semanticResearchAssistant?.record?.meta?.evidenceGate;
+// New model-first semantics: entity PRESENCE in evidence is not SUPPORT — that
+// ruling belongs to the semantic judge. With no judge available (test env),
+// ordinary research fails OPEN bounded: content is delivered under a banner,
+// never refused. The judge-accepted pass path is covered in
+// test-evidence-entailment-judge.mjs.
+if (semanticGate?.reason !== "semantic_support_unverified" || semanticGate?.boundedAnswer !== true) {
+  throw new Error(`grounded unfamiliar-domain research should fail open bounded without a judge verdict: ${JSON.stringify(semanticGate)}`);
+}
+if (!String(semanticResearchAssistant?.record?.assistantText || "").includes("Nimbus Cloud")) {
+  throw new Error(`bounded fail-open must keep the researched content: ${JSON.stringify(semanticResearchAssistant?.record?.assistantText)}`);
 }
 
 sent.length = 0;
@@ -949,6 +972,7 @@ if (
   throw new Error(`architecture audit prompt must include the quality contract without replacing the user request:\n${architectureAuditPayload.text}`);
 }
 runner.finish("系统比较笨的地方是任务入口没有稳定契约。");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 const architectureAuditAssistant = messages.find((message) => message.role === "assistant" && message.turnId === architectureAuditTurn.turnId);
 if (architectureAuditAssistant?.record?.meta?.taskContract?.taskType !== "architecture_audit") {
@@ -1020,6 +1044,7 @@ ctx.turnOrchestrator.ingest("s1", [
   },
 ]);
 runner.finish("继续完成系统审视，但当前仍需更多文件证据。");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 const continuationAssistant = messages.find(
   (message) => message.role === "assistant" && message.turnId === architectureContinuation.turnId,
@@ -1052,6 +1077,7 @@ if (!continuityFailOpenPayload.taskContract?.active || continuityFailOpenPayload
   throw new Error(`continuity failure must fall back to current-turn classification without rewriting input: ${JSON.stringify(continuityFailOpenPayload)}`);
 }
 runner.finish("已按当前请求完成回退检查。");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 
 sent.length = 0;
@@ -1091,6 +1117,7 @@ ctx.turnOrchestrator.ingest("s1", [
   { type: "tool.done", payload: { id: "task_coverage", status: "done", result: { content: "subagent handoff complete" } } },
 ]);
 runner.finish("已经找出全部 session.idle 问题。");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 const coverageEvents = sent.flatMap((entry) => entry.payload?.events || []);
 const subagentPhaseEvent = coverageEvents.find((event) => (
@@ -1166,6 +1193,7 @@ if (typeof followupPayload.trace?.contextMemory?.contextEpoch !== "number") {
   throw new Error(`context memory trace should expose context epoch: ${JSON.stringify(followupPayload.trace?.contextMemory)}`);
 }
 runner.finish("继续 imsdk 分析");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 
 const repeatedFollowupTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "？", [], {
@@ -1183,6 +1211,7 @@ if (repeatedFollowupPayload.text.includes("[Lily Memory Context]")) {
   throw new Error("deduped memory context should not be injected into engine text again");
 }
 runner.finish("继续 imsdk 分析 2");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 
 markSessionCompacted("s1", {
@@ -1209,6 +1238,7 @@ if (!afterCompactionPayload.text.includes("[Lily Memory Context]")) {
   throw new Error("post-compaction memory context should be injected again");
 }
 runner.finish("继续 imsdk 分析 3");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 
 await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1546,6 +1576,7 @@ if (!emptyCompletionTurn.ok || !runner.isBusy()) {
   throw new Error(`empty completion guard turn should start: ${JSON.stringify(emptyCompletionTurn)}`);
 }
 runner.finish("");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
 const emptyCompletionTerminal = allEvents.find((event) => (
@@ -1651,6 +1682,7 @@ if (!urgentQueueEvent || urgentQueueEvent.payload?.items?.length !== 0) {
   throw new Error(`priority queue should flush only after replacement turn starts: ${JSON.stringify(urgentQueueEvent)}`);
 }
 runner.finish("urgent answer");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 if (!messages.some((message) => message.role === "user" && message.content === "urgent follow-up")) {
   throw new Error("priority message must be committed as the next user turn");
@@ -1668,6 +1700,7 @@ if (!memoryProposalTurn.ok) {
   throw new Error(`memory proposal turn should start: ${JSON.stringify(memoryProposalTurn)}`);
 }
 runner.finish("已记下候选");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 const proposals = listMemoryProposals("p1");
 if (!proposals.some((item) => item.text.includes("以后回答运行时问题先检查 OpenCode 原生能力") && item.status === "proposed")) {

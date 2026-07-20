@@ -21,7 +21,13 @@ const noSearchResult = evaluateAnswerEvidence({
   evidenceSummary: { counts: {}, hasFreshEvidence: false, hasDocumentEvidence: false },
   userText: noSearchText,
 });
-assert.equal(shouldBufferAssistantAnswer(noSearchContract), true);
+// Risk-tier contract: THIS ask (a ranking whose unverified answer is wholesale
+// replaced — see the assertions below) buffers, so the user never watches an
+// answer stream out and then get erased. Ordinary external facts still stream:
+// their failure path keeps a bounded answer instead of replacing it.
+assert.equal(shouldBufferAssistantAnswer(noSearchContract), true, "replacement-capable ranking answers must gate before rendering");
+const genericFreshContract = buildTaskContract({ text: "现在最新的美元兑人民币汇率是多少?" });
+assert.equal(shouldBufferAssistantAnswer(genericFreshContract), false, "ordinary external facts must keep streaming");
 assert.equal(noSearchResult.assessment.ok, false);
 assert.equal(noSearchResult.triggerVerifyRetry, false);
 assert(!noSearchResult.assistant.includes("GitHub Copilot"), "rejected claims must not survive final projection");

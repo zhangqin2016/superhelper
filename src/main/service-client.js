@@ -855,7 +855,7 @@ module.exports = {
   loginWithSms,
   refreshAccountAccessToken,
   logoutAccount,
-  fetchAccountEntitlements,
+  configuredServiceApiBaseUrl, fetchAccountEntitlements,
   createBillingLink,
   registerDevice,
   activateLicenseKey,

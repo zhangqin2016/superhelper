@@ -33,8 +33,6 @@ function buildIntentContractToolDefinition({ executionSurface, mcpServerName } =
         evidenceAnchorGroups: z.array(
           z.array(z.string().min(1).max(120)).min(1).max(8),
         ).max(12).optional().describe("semantic evidence requirements; every group is required, while strings inside one group are equivalent source-wording alternatives"),
-        forbiddenInferenceIds: z.array(z.enum(["ordered_directory_implies_classification"])).max(8).optional(),
-        conflictRuleIds: z.array(z.enum(["negative_or_revoked_classification", "subordinate_vs_independent_tier"])).max(8).optional(),
       }).optional().describe("additive evidence plan for an external claim; omitted fields never weaken the host baseline"),
     },
     annotations: { readOnlyHint: true },

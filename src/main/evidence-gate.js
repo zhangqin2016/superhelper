@@ -3,10 +3,10 @@
 const { assessClaimEvidenceCoverage } = require("./claim-evidence-map");
 const {
   assessPlanAfterCitations,
-  assessPlanBeforeCitations,
   isExternalClaimClarification,
 } = require("./external-claim-gate");
 const { extractHttpUrls } = require("./external-source-authority");
+const { externalFactRiskTier } = require("./external-fact-policy");
 
 const STRONG_CLAIM_RE =
   /(已(?:修复|完成|部署|发布|验证|解决|确认)|修好了|完成了|部署完成|发布完成|生效了|原因是|根因是|问题在于|会导致|导致|失败|缺陷|fixed|completed|deployed|verified|root cause|the cause is|bug|regression|failed|unsupported)/i;
@@ -73,19 +73,10 @@ function isScopeClarification(text = "", evidencePolicy = null) {
   );
 }
 
-function assessExternalFactCitations(text, { evidencePolicy = null, evidenceSummary = null, evidenceText = "", userText = "" } = {}) {
+function assessExternalFactCitations(text, { evidencePolicy = null, evidenceSummary = null, evidenceText = "", userText = "", acceptedClaimLabels = [], acceptedAuthorityUrls = [], judgedUnsupportedClaims = [], judgedConflictingClaims = [] } = {}) {
   if (!evidencePolicy?.externalFact) return null;
   if (evidencePolicy.allowClarificationWithoutEvidence && isScopeClarification(text, evidencePolicy)) {
     return { ok: true, clarification: true, citationCount: 0, groundedCitationCount: 0 };
-  }
-  const preCitationAssessment = assessPlanBeforeCitations(text, evidencePolicy.verificationPlan);
-  if (preCitationAssessment.ok === false) {
-    return {
-      ok: false,
-      reason: preCitationAssessment.reason,
-      citationCount: 0,
-      groundedCitationCount: 0,
-    };
   }
   if (
     EVIDENCE_GAP_DISCLOSURE_RE.test(text) &&
@@ -119,6 +110,10 @@ function assessExternalFactCitations(text, { evidencePolicy = null, evidenceSumm
     answerUrls,
     evidenceText,
     verificationPlan: evidencePolicy.verificationPlan,
+    acceptedClaimLabels,
+    acceptedAuthorityUrls,
+    judgedUnsupportedClaims,
+    judgedConflictingClaims,
   });
   if (planAssessment.ok === false) {
     return {
@@ -126,8 +121,11 @@ function assessExternalFactCitations(text, { evidencePolicy = null, evidenceSumm
       reason: planAssessment.reason,
       citationCount: answerUrls.length,
       groundedCitationCount: answerUrls.length,
+      authorityPending: Boolean(planAssessment.authorityPending),
+      authorityPinned: Boolean(planAssessment.authorityPinned),
       entityCoverage: planAssessment.entityCoverage,
       unsupportedClaims: planAssessment.unsupportedClaims || [],
+      pendingClaims: planAssessment.pendingClaims || [],
       conflictingClaims: planAssessment.conflictingClaims || [],
     };
   }
@@ -246,11 +244,22 @@ function assessFinalAnswerEvidence({
   evidenceText = "",
   userText = "",
   skipNumericGrounding = false,
+  acceptedClaimLabels = [],
+  acceptedAuthorityUrls = [],
+  judgedUnsupportedClaims = [],
+  judgedConflictingClaims = [],
 } = {}) {
   const text = String(assistant || "").trim();
   const required = Boolean(evidencePolicy?.required);
   if (!required || !text) {
     return { ok: true, required, strongClaim: false, hasEvidence: false, reason: "" };
+  }
+  // Advisory-tier external facts (everyday domain vocabulary without any
+  // claim-bearing signal) are assessed like ordinary tasks: strong definitive
+  // claims still draw a notice, but citations are not mandatory and the answer
+  // is never eligible for replacement. See externalFactRiskTier.
+  if (evidencePolicy?.externalFact && externalFactRiskTier(evidencePolicy) === "advisory") {
+    evidencePolicy = { ...evidencePolicy, externalFact: false, requireSourceLinks: false };
   }
   if (evidencePolicy?.externalFact && evidencePolicy.allowClarificationWithoutEvidence && isScopeClarification(text, evidencePolicy)) {
     return {
@@ -306,6 +315,10 @@ function assessFinalAnswerEvidence({
     evidenceSummary,
     evidenceText,
     userText,
+    acceptedClaimLabels,
+    acceptedAuthorityUrls,
+    judgedUnsupportedClaims,
+    judgedConflictingClaims,
   });
   if (citationAssessment?.ok === false) {
     return {
@@ -317,8 +330,11 @@ function assessFinalAnswerEvidence({
       citationCount: citationAssessment.citationCount,
       groundedCitationCount: citationAssessment.groundedCitationCount,
       ungroundedUrls: citationAssessment.ungroundedUrls || [],
+      authorityPending: Boolean(citationAssessment.authorityPending),
+      authorityPinned: Boolean(citationAssessment.authorityPinned),
       entityCoverage: citationAssessment.entityCoverage || null,
       unsupportedClaims: citationAssessment.unsupportedClaims || [],
+      pendingClaims: citationAssessment.pendingClaims || [],
       conflictingClaims: citationAssessment.conflictingClaims || [],
     };
   }
@@ -425,7 +441,8 @@ function appendEvidenceGateNotice(assistant, assessment) {
     "authoritative_source_required",
     "entity_claim_not_in_evidence",
     "entity_claim_conflicts_with_evidence",
-  ].includes(assessmentReason) || assessmentReason.startsWith("forbidden_inference:");
+    "semantic_support_unverified",
+  ].includes(assessmentReason);
   const sourceContentFailure = assessment.reason === "missing_required_evidence:source_content";
   const externalMessages = {
     zh: "证据门槛：这条外部事实回答没有取得可核验的本轮来源，或引用链接并非来自本轮工具结果，不能视为已确认答案。系统应先联网/API核验；核验不了就明确说无法确认。",

@@ -87,26 +87,31 @@ const necessaryClarification = evaluateAnswerEvidence({
 assert.equal(necessaryClarification.assessment.ok, true);
 assert.equal(necessaryClarification.assessment.clarification, true);
 
-const deterministicContract = buildTaskContract({ text: "中国有哪些建筑公司是副部级别" });
-const attemptedWeakening = {
-  intentContract: {
-    objective: "answer the classification question",
+// Model-first: the turn-start detector stays SILENT on this informal-label
+// question (no request-shape trigger, and "副部级" is not coded anywhere). The
+// model itself supplies the semantics through its verification-plan candidate,
+// which ACTIVATES the gate on a general task — no regex profile involved.
+const informalLabelContract = buildTaskContract({ text: "中国有哪些建筑公司是副部级别" });
+assert.equal(informalLabelContract.externalFactPolicy.required, false, "no request-shape trigger: the gate waits for the model or observed research");
+const informalActivation = applyModelTurnContractRefinement({
+  taskContract: informalLabelContract,
+  toolResult: {
+    intentContract: { objective: "answer the classification question" },
+    verificationPlan: {
+      externalFact: true,
+      claimKinds: ["classification"],
+      entityEvidenceRequired: true,
+      classificationEvidenceRequired: true,
+    },
   },
-  verificationPlan: {
-    claimKinds: ["classification"],
-    resolvedScopeDimensions: ["entity_population", "classification_basis"],
-    sourceAuthority: "standard",
-    entityEvidenceRequired: false,
-    classificationEvidenceRequired: false,
-  },
-};
-applyModelTurnContractRefinement({ taskContract: deterministicContract, toolResult: attemptedWeakening });
-assert.equal(deterministicContract.externalFactPolicy.scopeClarificationRequired, false);
-assert.equal(deterministicContract.externalFactPolicy.scopeDisclosureRequired, true);
-assert.equal(deterministicContract.externalFactPolicy.sourceAuthority, "official_primary");
-assert.equal(deterministicContract.externalFactPolicy.verificationPlan.entityEvidenceRequired, true);
-assert.equal(deterministicContract.externalFactPolicy.verificationPlan.classificationEvidenceRequired, true);
-assert.deepEqual(deterministicContract.externalFactPolicy.verificationPlan.resolvedScopeDimensions, []);
+});
+assert.equal(informalActivation.externalFactActivated, true);
+assert.equal(informalLabelContract.externalFactPolicy.required, true);
+assert(informalLabelContract.externalFactPolicy.reasonCodes.includes("model_external_fact"));
+assert.equal(informalLabelContract.externalFactPolicy.scopeClarificationRequired, false);
+assert.equal(informalLabelContract.externalFactPolicy.verificationPlan.entityEvidenceRequired, true);
+assert.equal(informalLabelContract.externalFactPolicy.verificationPlan.classificationEvidenceRequired, true);
+assert.equal(informalLabelContract.evidencePolicy.entityEvidenceRequired, true);
 
 const localCodeContract = buildTaskContract({ text: "开发一个库存管理程序并写测试" });
 const localPlanBefore = localCodeContract.externalFactPolicy.verificationPlan;

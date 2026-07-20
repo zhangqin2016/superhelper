@@ -49,7 +49,7 @@ function previousResearchSummary(evidenceSummary = null, language = "en") {
 
 function reasonRecoveryStep(reason = "", language = "en") {
   const value = String(reason || "");
-  if (/authoritative_source_required|forbidden_inference:/.test(value)) {
+  if (/authoritative_source_required/.test(value)) {
     return language === "zh"
       ? "上轮来源层级不够或使用了间接推断。不要重复同一条宽泛搜索；先确定负责定义、监管、认定、任免或发布该事实的官方机构，再用机构名称和原始术语检索；发现官方域名后用 site:<域名> 收敛，并打开原始页面。"
       : "The prior source tier was too weak or the answer used an indirect inference. Do not repeat the same broad query. Identify the responsible regulator, accreditor, appointing authority, registry, or original publisher; search with that owner and the source terminology, then use site:<host> and open the original page.";
@@ -128,11 +128,15 @@ function safeExternalFactFallback({ policy = null, evidenceSummary = null, userT
     const strict = policy?.verificationPlan?.sourceAuthority === "official_primary" ||
       policy?.verificationPlan?.entityEvidenceRequired;
     if (strict) {
-      return {
+      // Fail-CLOSED remainder: only high-stakes asks (or empty-content/fabrication
+      // cases the bounded composer refused) reach this text — ordinary turns with
+      // real research are intercepted earlier by composeFramedBoundedAnswer.
+      const strictBody = {
         zh: `${recoveryAttempt ? "平台已更换策略自动复核一次，但" : "现有材料仍"}没有用负责认定或监管机构的一手材料，或原始发布者材料逐项闭合证据。当前能可靠确定的是：目录顺序、相邻条目、搜索摘要和行业俗称都不能代替正式认定；没有直接证据的具体对象不会被补进答案。`,
         ar: "لم تغلق المواد الحالية سلسلة الأدلة لكل بند بمصدر أولي من الجهة المسؤولة. ترتيب الدليل وملخصات البحث والتسميات الشائعة لا تعوض الإثبات المباشر، لذلك لن تضاف جهات غير مثبتة.",
         en: `${recoveryAttempt ? "The platform changed strategy and retried once, but " : "The available material "}still does not close the item-level evidence chain with primary sources from the responsible authority or original publisher. Directory order, neighboring entries, search snippets, and industry shorthand cannot replace direct evidence, so unsupported entities are omitted.`,
       }[language];
+      return strictBody;
     }
     return {
       zh: `${recoveryAttempt ? "平台已自动换策略复核一次；" : ""}本轮材料不足以逐项支撑全部结论，不能把未核实的排行、价格、数字或对象补成完整答案。已确认部分应单独交付，其余明确标为未验证。`,
@@ -160,9 +164,16 @@ function normalizeComparable(value = "") {
 const COMPLETENESS_CLAIM_RE =
   /(?:共|合计|总计|仅|只有)\s*[一二三四五六七八九十百\d]+\s*(?:家|个|所|项|名)?|(?:完整|全部|全量|唯一)(?:名单|列表|结果)?|\b(?:total|only)\s+\d+\b|\b(?:complete|exhaustive)\s+(?:list|roster|result)/i;
 
+const SALVAGEABLE_CLAIM_REASONS = [
+  "entity_claim_not_in_evidence",
+  "entity_claim_conflicts_with_evidence",
+  "external_claim_not_in_evidence",
+  "numeric_claim_not_in_evidence",
+];
+
 function salvageSupportedExternalAnswer({ assistant = "", assessment = null, userText = "", reassess = null } = {}) {
   if (typeof reassess !== "function") return null;
-  if (!["entity_claim_not_in_evidence", "entity_claim_conflicts_with_evidence"].includes(assessment?.reason)) return null;
+  if (!SALVAGEABLE_CLAIM_REASONS.includes(assessment?.reason)) return null;
   const labels = [...new Set([
     ...(Array.isArray(assessment?.unsupportedClaims) ? assessment.unsupportedClaims : []),
     ...(Array.isArray(assessment?.conflictingClaims) ? assessment.conflictingClaims : []),
@@ -177,6 +188,17 @@ function salvageSupportedExternalAnswer({ assistant = "", assessment = null, use
   });
   const candidate = keptLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   if (!candidate || candidate === String(assistant || "").trim()) return null;
+  // The surviving subset must still SAY something. If stripping the unsupported
+  // claims leaves only headings/citations, the salvage no longer answers the
+  // question — fall through to the tier logic (which preserves the real failure
+  // reason) instead of delivering a hollow shell marked ok. A content line is
+  // one that still carries prose after URL removal and is not a bare heading.
+  const hasContentLine = candidate.split(/\r?\n/).some((line) => {
+    const withoutUrls = line.replace(/https?:\/\/[^\s<>"]+/g, "").trim();
+    if (!withoutUrls || /[：:]\s*$/.test(withoutUrls)) return false;
+    return /[\p{L}\p{N}]/u.test(withoutUrls.replace(/^[\s\d.、)(]+/u, ""));
+  });
+  if (!hasContentLine) return null;
   const disclosure = answerLanguage(userText) === "zh"
     ? "仅列出本轮一手证据能够逐项支持的对象；未获逐项证明或存在冲突的候选未列入。"
     : "Only items supported individually by primary evidence from this pass are listed; unsupported or conflicting candidates are omitted.";
@@ -193,10 +215,268 @@ function salvageSupportedExternalAnswer({ assistant = "", assessment = null, use
   };
 }
 
+/** verification-status banner for a bounded (kept-but-labeled) answer. */
+function boundedAnswerBanner({ language = "en", recoveryAttempt = false, researchProhibited = false } = {}) {
+  if (researchProhibited) {
+    return {
+      zh: "⚠️ 核实说明:应你的要求本轮未联网查证。以下内容基于我已有的知识,请作为待核实信息使用;时效性细节可能已变化。",
+      ar: "⚠️ ملاحظة تحقق: بناء على طلبك لم يتم البحث في هذه الجولة. المحتوى التالي من معرفتي الحالية؛ يرجى اعتباره غير متحقق منه وقد تتغير التفاصيل الزمنية.",
+      en: "⚠️ Verification note: per your request, no online research was done this pass. The following is from my existing knowledge — treat it as unverified; time-sensitive details may have changed.",
+    }[language];
+  }
+  return {
+    zh: `⚠️ 核实说明:${recoveryAttempt ? "平台已自动换策略复核一次,仍" : "本轮"}未能完成来源核实。以下内容以我已有的知识为准(截至训练数据),请作为待核实信息使用;重要决策前请自行确认时效性细节。`,
+    ar: `⚠️ ملاحظة تحقق: ${recoveryAttempt ? "أعادت المنصة المحاولة تلقائيا لكن " : ""}لم يكتمل التحقق من المصادر في هذه الجولة. المحتوى التالي من معرفتي الحالية؛ يرجى اعتباره غير متحقق منه وتأكيد التفاصيل الزمنية قبل القرارات المهمة.`,
+    en: `⚠️ Verification note: ${recoveryAttempt ? "the platform retried with a changed strategy but " : ""}source verification did not complete this pass. The following reflects my existing knowledge (as of training data) — treat it as unverified and confirm time-sensitive details before important decisions.`,
+  }[language];
+}
+
+/**
+ * Bounded-answer composer — the delivery-content invariant for verify_soft tier:
+ * the gate may relabel, trim, or bound content, but it must NEVER reduce the
+ * delivered task content to zero while any supported content exists.
+ *   1. Claim-specific failures: strip only the unsupported items (salvage).
+ *   2. Roster/ranking-critical plans with ZERO fresh external evidence: return
+ *      null (caller falls back) — a fabricated roster labeled "unverified" is
+ *      still a fabricated roster.
+ *   3. Everything else: keep the original answer under a verification banner —
+ *      the honest-expert behavior ("as of my knowledge…"), instead of erasing
+ *      a useful answer and delivering a zero-content meta-explanation.
+ */
+function composeBoundedExternalAnswer({
+  assistant = "",
+  assessment = null,
+  policy = null,
+  evidenceSummary = null,
+  userText = "",
+  recoveryAttempt = false,
+  retryPending = false,
+  reassess = null,
+} = {}) {
+  const original = String(assistant || "").trim();
+  if (!original) return null;
+  const salvaged = salvageSupportedExternalAnswer({ assistant: original, assessment, userText, reassess });
+  if (salvaged) return { ...salvaged, bounded: true };
+  // Banner-keeping is a FINAL-state move. While an auto-verify retry is about
+  // to run, the interim projection stays conservative (the retry's verified
+  // answer supersedes it) — an unverified name/number should not flash up only
+  // to be corrected seconds later.
+  if (retryPending) return null;
+  const plan = policy?.verificationPlan || {};
+  const reasons = (policy?.reasonCodes || []).map(String);
+  // Roster/ranking asks are the fabrication zone: a made-up top-10 labeled
+  // "unverified" is still a made-up top-10. They improve only via salvage
+  // (supported subset) or the auto-verify retry — never via banner-keeping.
+  const rosterCritical = Boolean(plan.entityEvidenceRequired) ||
+    (Array.isArray(plan.claimKinds) && plan.claimKinds.includes("ranking")) ||
+    reasons.includes("ranking") || reasons.includes("superlative_comparison");
+  if (rosterCritical) return null;
+  // Claim-specific failure whose unsupported items could NOT be stripped down
+  // to a passing subset: the specifics ARE the problem — banner-keeping them
+  // would deliver labeled fabrications. Fall back.
+  if (SALVAGEABLE_CLAIM_REASONS.includes(assessment?.reason)) return null;
+  const language = answerLanguage(userText);
+  const banner = boundedAnswerBanner({
+    language,
+    recoveryAttempt,
+    researchProhibited: Boolean(policy?.researchProhibited),
+  });
+  const kept = original
+    .split(/\r?\n/)
+    .filter((line) => !COMPLETENESS_CLAIM_RE.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const body = kept || original;
+  return {
+    assistant: `${banner}\n\n${body}`,
+    assessment: {
+      ...(assessment || {}),
+      ok: false,
+      boundedAnswer: true,
+    },
+    bounded: true,
+  };
+}
+
+/**
+ * Framed bounded answer — the fail-open delivery for ordinary external-fact
+ * turns once real research happened. Replaces both the old zero-content
+ * refusal and the vocabulary-triggered informal-classification path: it is
+ * now driven by the turn judge's semantic verdict (framing.informalLabel /
+ * framing.framingNote) or by judge-unavailable fail-open, never by regexes.
+ * Guards (literal only):
+ *   - fresh evidence exists in the ledger (a researched answer, not memory);
+ *   - no judge-ruled conflicts (contradicted content is never banner-kept);
+ *   - no ungrounded numbers (numeric grounding caught literal fabrications);
+ *   - entities ABSENT from the evidence are fabricated roster members: their
+ *     lines are STRIPPED (with a disclosure note), never banner-kept. Entities
+ *     present but unproven ("found, assertion unverified") may stay — that is
+ *     the honest fail-open state.
+ * Completeness claims ("共N家") are always stripped.
+ */
+function composeFramedBoundedAnswer({
+  assistant = "",
+  assessment = null,
+  evidenceSummary = null,
+  evidenceText = "",
+  userText = "",
+  recoveryAttempt = false,
+  framing = null,
+} = {}) {
+  const original = String(assistant || "").trim();
+  if (!original) return null;
+  if (!evidenceSummary?.hasFreshEvidence) return null;
+  if (Array.isArray(assessment?.conflictingClaims) && assessment.conflictingClaims.length) return null;
+  // Ungrounded numbers are literal fabrications (numeric grounding caught
+  // digits absent from every tool output) — never banner-kept.
+  if (Array.isArray(assessment?.ungroundedNumbers) && assessment.ungroundedNumbers.length) return null;
+  const language = answerLanguage(userText);
+  const unsupportedLabels = (Array.isArray(assessment?.unsupportedClaims) ? assessment.unsupportedClaims : [])
+    .map(claimLabel)
+    .filter(Boolean);
+  let absentNormalized = [];
+  if (unsupportedLabels.length) {
+    const normalizedEvidence = normalizeComparable(evidenceText);
+    if (!normalizedEvidence && unsupportedLabels.length) return null;
+    absentNormalized = unsupportedLabels
+      .filter((label) => !normalizedEvidence.includes(normalizeComparable(label)))
+      .map(normalizeComparable)
+      .filter(Boolean);
+  }
+  const kept = original
+    .split(/\r?\n/)
+    .filter((line) => !COMPLETENESS_CLAIM_RE.test(line))
+    .filter((line) => {
+      if (!absentNormalized.length) return true;
+      const normalizedLine = normalizeComparable(line);
+      return !absentNormalized.some((label) => normalizedLine.includes(label));
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!kept) return null;
+  // Fabricated entities had to survive stripping for the keep to be honest.
+  if (absentNormalized.length && kept === original) return null;
+  const strippedNote = absentNormalized.length
+    ? {
+        zh: "附注：本轮证据中未出现的对象已从上方名单移除；保留内容未经逐项核实。",
+        ar: "ملاحظة: أزيلت من القائمة جهات لم ترد في أدلة هذه الجولة؛ والمحتوى المتبقي غير مثبت بندا ببندا.",
+        en: "Note: entities absent from this turn's evidence were removed from the list above; the remaining content is not item-verified.",
+      }[language]
+    : "";
+  const informalBanner = {
+    zh: `⚠️ 口径说明：${framing?.framingNote || "这类称呼是行业俗称或对底层事实的解释，并非官方正式认定。以下内容基于本轮查到的公开材料整理，未逐项取得官方认定，请以官方发布为准。"}`,
+    ar: `⚠️ ملاحظة حول المعيار: ${framing?.framingNote || "هذا الوصف اصطلاح شائع أو تفسير لحقائق أساسية وليس تصنيفا رسميا. المحتوى التالي مبني على مواد هذه الجولة دون إثبات رسمي لكل بند؛ يرجى الرجوع إلى النشر الرسمي."}`,
+    en: `⚠️ Framing note: ${framing?.framingNote || "This label is an informal convention or an interpretation of underlying facts, not a formal official designation. The following is based on material retrieved this turn without per-item official confirmation; defer to official releases."}`,
+  }[language];
+  const banner = framing?.informalLabel
+    ? informalBanner
+    : boundedAnswerBanner({ language, recoveryAttempt, researchProhibited: false });
+  return {
+    assistant: `${banner}\n\n${kept}${strippedNote ? `\n\n${strippedNote}` : ""}`,
+    assessment: {
+      ...(assessment || {}),
+      ok: false,
+      boundedAnswer: true,
+      framedBounded: true,
+      informalLabelFramed: framing?.informalLabel === true,
+      ...(absentNormalized.length ? { strippedFabricatedClaims: true } : {}),
+    },
+    bounded: true,
+  };
+}
+
+/** Prepend the judge's framing note to a PASSING answer — the claims are
+ *  supported, but the label itself is an informal convention and the user
+ *  deserves that caveat up front. */
+function prependFramingNote(assistant = "", framing = null, userText = "") {
+  const text = String(assistant || "").trim();
+  if (!text || framing?.informalLabel !== true) return String(assistant || "");
+  const language = answerLanguage(userText);
+  const banner = {
+    zh: `⚠️ 口径说明：${framing?.framingNote || "这类称呼是行业俗称或对底层事实的解释，并非官方正式认定。"}`,
+    ar: `⚠️ ملاحظة حول المعيار: ${framing?.framingNote || "هذا الوصف اصطلاح شائع أو تفسير لحقائق أساسية وليس تصنيفا رسميا."}`,
+    en: `⚠️ Framing note: ${framing?.framingNote || "This label is an informal convention or an interpretation of underlying facts, not a formal official designation."}`,
+  }[language];
+  return `${banner}\n\n${text}`;
+}
+
+/**
+ * Citation repair — a citation-DISCIPLINE failure must not destroy real
+ * research. Two deterministic, honest moves (no model call):
+ *   1. Fabricated citations (URLs absent from this turn's tool evidence) are
+ *      STRIPPED — a made-up link may never be delivered.
+ *   2. When the answer then carries no grounded citation but the evidence
+ *      ledger holds real source URLs, a truthful "sources consulted this turn"
+ *      section is appended, listing ONLY urls that actually appear in the tool
+ *      evidence (so the re-run's grounding check passes on merit).
+ * The full gate re-runs afterwards: authority tier, entity/claim coverage and
+ * conflicts all still apply, so repair cannot launder unsupported claims —
+ * it only fixes the citation LAYER. Returns null when there is nothing honest
+ * to repair with (e.g. the ledger is empty — retrieval genuinely failed).
+ */
+function repairAnswerCitations({
+  assistant = "",
+  evidenceText = "",
+  evidenceSummary = null,
+  assessment = null,
+  userText = "",
+} = {}) {
+  const original = String(assistant || "").trim();
+  if (!original) return null;
+  const reason = String(assessment?.reason || "");
+  if (!["external_fact_without_source_link", "source_link_not_in_evidence"].includes(reason)) return null;
+  const { extractHttpUrls, normalizeHttpUrl } = require("./external-source-authority");
+  const groundedUrls = extractHttpUrls(evidenceText);
+  if (!groundedUrls.length) return null;
+  const groundedSet = new Set(groundedUrls.map(normalizeHttpUrl));
+
+  // 1. Strip fabricated citations.
+  let repaired = original;
+  const answerUrls = extractHttpUrls(original);
+  const strippedUrls = answerUrls.filter((url) => !groundedSet.has(normalizeHttpUrl(url)));
+  for (const url of strippedUrls) {
+    repaired = repaired.split(url).join("");
+  }
+  repaired = repaired
+    .replace(/[（(]\s*[；;，,、\s]*[)）]/g, "")
+    .replace(/(?:来源|Source|المصدر)\s*[:：]\s*$/gim, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!repaired) return null;
+
+  // 2. Append the truthful sources section when no grounded citation remains.
+  const remaining = extractHttpUrls(repaired).filter((url) => groundedSet.has(normalizeHttpUrl(url)));
+  let appendedSources = [];
+  if (!remaining.length) {
+    // Prefer pages that were actually OPENED this turn (web_fetch inputs),
+    // then any url present in the tool evidence. Both sets are restricted to
+    // urls that appear in evidenceText, so grounding passes on merit.
+    const fetched = (Array.isArray(evidenceSummary?.events) ? evidenceSummary.events : [])
+      .filter((event) => event?.kind === "web_fetch")
+      .map((event) => String(event.query || ""))
+      .filter((url) => groundedSet.has(normalizeHttpUrl(url)));
+    appendedSources = [...new Set([...fetched, ...groundedUrls])].slice(0, 5);
+    if (!appendedSources.length) return null;
+    const language = answerLanguage(userText);
+    const heading = { zh: "本轮检索来源:", ar: "المصادر المسترجعة في هذه الجولة:", en: "Sources consulted this turn:" }[language];
+    repaired = `${repaired}\n\n${heading}\n${appendedSources.map((url) => `- ${url}`).join("\n")}`;
+  }
+  if (repaired === original) return null;
+  return { assistant: repaired, strippedUrls, appendedSources };
+}
+
 module.exports = {
   answerLanguage,
+  boundedAnswerBanner,
   buildEvidenceRecoveryHint,
+  composeBoundedExternalAnswer,
+  composeFramedBoundedAnswer,
   initialResearchRequirements,
+  prependFramingNote,
+  repairAnswerCitations,
   safeExternalFactFallback,
   salvageSupportedExternalAnswer,
 };

@@ -129,41 +129,39 @@
       ]
     },
     {
-      "id": "public-enterprise-status-assumes-scope-and-requires-authority",
+      "id": "informal-label-ask-is-domain-blind-at-turn-start",
       "turns": [
         {
           "user": "中国有哪些建筑公司是副部级别",
           "expect": {
-            "active": true,
-            "taskType": "external_fact",
+            "active": false,
+            "taskType": "general",
             "relation": "new",
-            "externalEvidenceRequired": true,
-            "sourceLinksRequired": true,
+            "externalEvidenceRequired": false,
+            "sourceLinksRequired": false,
             "scopeClarificationRecommended": false,
             "scopeClarificationRequired": false,
-            "scopeDisclosureRequired": true,
-            "sourceAuthority": "official_primary",
-            "verificationProfileIncludes": ["regulated_organization_classification"]
+            "scopeDisclosureRequired": false,
+            "sourceAuthority": "standard"
           }
         },
         {
           "user": "只算国务院国资委直接监管的一级央企",
           "expect": {
-            "active": true,
-            "taskType": "external_fact",
+            "taskType": "general",
+            "externalEvidenceRequired": false,
             "scopeClarificationRequired": false,
-            "scopeDisclosureRequired": true,
-            "sourceAuthority": "official_primary"
+            "scopeDisclosureRequired": false,
+            "sourceAuthority": "standard"
           }
         },
         {
           "user": "按领导人员干部管理权限核验",
           "expect": {
-            "active": true,
-            "taskType": "external_fact",
+            "externalEvidenceRequired": false,
             "scopeClarificationRequired": false,
             "scopeDisclosureRequired": false,
-            "sourceAuthority": "official_primary"
+            "sourceAuthority": "standard"
           }
         }
       ]

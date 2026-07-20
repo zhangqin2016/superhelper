@@ -282,6 +282,16 @@ Replace the current regex-only evidence gate with a policy-aware gate:
 
 Keep the initial gate conservative and explain residual risk instead of forcing expensive continuation.
 
+> **Status 2026-07-20 — implemented, then re-architected model-first.** The
+> policy-aware gate shipped, but its semantic decisions were still driven by
+> trilingual regex vocabularies (domain profiles, classification/conflict
+> rules, gov-domain authority), which produced a zero-content refusal on the
+> live "副部级建筑公司" question. The gate is now model-first: code decides only
+> literals (URL/entity/number grounding, ledger counts), ONE unified semantic
+> judge call per turn rules support/authority/conflicts/framing/stakes, and
+> delivery fails open (bounded banner) for ordinary tiers and closed only for
+> high-stakes. See `memory/2026-07-20-evidence-gate-model-first.md`.
+
 ### Phase 4: Workspace Index
 
 Add an incremental index for cheap path and symbol lookup. Use it only for grounded and coverage turns.

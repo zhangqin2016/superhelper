@@ -1,20 +1,12 @@
 "use strict";
 
-const { evidenceSupportsAnchorGroups, isEvidenceAnchorLabel } = require("./external-claim-contract");
-const { satisfiesAuthorityUrlPolicy } = require("./external-source-authority");
-const {
-  hasClaimConflict,
-  hasClaimEvidenceSupport,
-  hasClassificationSupport,
-  isClassificationAssertion,
-  isClassificationRejection,
-  normalizeVerificationPlan,
-} = require("./external-claim-profiles");
+const { isEvidenceAnchorLabel } = require("./external-claim-contract");
+const { normalizeVerificationPlan } = require("./external-claim-profiles");
 
 const INLINE_NAMED_ORG_RE =
-  /(?:中国|国家)[\u3400-\u9fffA-Za-z0-9（）()·-]{1,50}?(?:集团有限公司|股份有限公司|有限责任公司|集团公司|工程集团|建设集团|集团|公司|医院|大学|学院|研究院|研究所|协会|委员会|中心)/gu;
+  /(?:中国|国家)[㐀-鿿A-Za-z0-9（）()·-]{1,50}?(?:集团有限公司|股份有限公司|有限责任公司|集团公司|工程集团|建设集团|集团|公司|医院|大学|学院|研究院|研究所|协会|委员会|中心)/gu;
 const LINE_ENTITY_RE =
-  /^(?:[-*+]\s*|\d{1,3}[.)、:]\s*|\|\s*)?([\u3400-\u9fffA-Za-z0-9（）()·&.' -]{2,70}?(?:集团有限公司|股份有限公司|有限责任公司|集团公司|集团|公司|医院|大学|学院|研究院|研究所|协会|委员会|中心|University|College|Hospital|Institute|Association|Corporation|Corp\.?|Inc\.?))(?=\s*(?:\||[-–—:：]|[（(]|$))/iu;
+  /^(?:[-*+]\s*|\d{1,3}[.)、:]\s*|\|\s*)?([㐀-鿿A-Za-z0-9（）()·&.' -]{2,70}?(?:集团有限公司|股份有限公司|有限责任公司|集团公司|集团|公司|医院|大学|学院|研究院|研究所|协会|委员会|中心|University|College|Hospital|Institute|Association|Corporation|Corp\.?|Inc\.?))(?=\s*(?:\||[-–—:：]|[（(]|$))/iu;
 const LATIN_NAMED_ENTITY_RE = /\b([A-Z][A-Za-z0-9.&'-]{1,30}(?:\s+[A-Z][A-Za-z0-9.&'-]{1,30}){0,4})\b/g;
 const LATIN_ENTITY_STOPWORDS = new Set(["According", "Classification", "Evidence", "Grade", "Level", "Official", "Source", "The", "Tier"]);
 const STRUCTURED_ITEM_RE = /^(?:[-*+]\s+|\d{1,3}[.)、]\s+|\|\s*)(?:\*\*|__)?([^|:：\n（(]{1,100}?)(?:\*\*|__)?(?=\s*(?:\||[-–—:：（(]|$))/u;
@@ -26,18 +18,21 @@ function normalize(value = "", limit = 400) {
     .slice(0, limit);
 }
 
+/**
+ * Entity-claim extraction is deliberately MECHANICAL: line shapes and
+ * organization suffixes, no domain vocabulary. Whether the evidence actually
+ * SUPPORTS what the answer says about an entity is a semantic question and
+ * belongs to the turn judge (evidence-entailment-judge) — never to regexes.
+ */
 function extractEntityClaims(assistant = "", verificationPlan = null) {
   const plan = normalizeVerificationPlan(verificationPlan);
   const claims = [];
   const claimByName = new Map();
-  let activeClassificationContext = "";
   for (const rawLine of String(assistant || "").split(/\r?\n/)) {
-    const line = rawLine.trim();
+    // Strip URLs first so citation lines ("本轮检索来源：https://…") do not
+    // yield pseudo-entities like "https" from the latin extractor.
+    const line = rawLine.trim().replace(/https?:\/\/\S+/gi, "").trim();
     if (!line) continue;
-    if (isClassificationAssertion(line, plan) && /[:：]\s*$/.test(line)) {
-      activeClassificationContext = line;
-      continue;
-    }
     const labels = [...line.matchAll(INLINE_NAMED_ORG_RE)].map((match) => match[0]);
     const lineMatch = line.match(LINE_ENTITY_RE);
     if (lineMatch) labels.push(lineMatch[1].trim());
@@ -50,23 +45,17 @@ function extractEntityClaims(assistant = "", verificationPlan = null) {
         .filter((label) => !LATIN_ENTITY_STOPWORDS.has(label))
         .filter((label) => !isEvidenceAnchorLabel(label, plan.evidenceAnchorGroups)));
     }
-    if (isClassificationAssertion(line, plan) && !labels.length) activeClassificationContext = line;
-    if (/^#{1,6}\s+/.test(line) && !isClassificationAssertion(line, plan)) activeClassificationContext = "";
+    // A line that is ONLY an entity label plus a trailing colon is a section
+    // header ("某等级医院："), not a claim about that entity — mechanical
+    // line shape, no vocabulary.
+    if (labels.length && /[:：]\s*$/.test(line)) {
+      const body = normalize(line.replace(/^(?:[-*+]\s*|\d{1,3}[.)、:]\s*)/, "").replace(/[:：]\s*$/, ""));
+      if (body && labels.every((label) => normalize(label) === body)) continue;
+    }
     for (const label of [...new Set(labels)]) {
       const normalizedLabel = normalize(label);
-      if (!normalizedLabel) continue;
-      const genericClaim = plan.claimEvidenceRequired && (
-        label === structuredLabel ||
-        evidenceSupportsAnchorGroups(`${activeClassificationContext}\n${line}`, plan.evidenceAnchorGroups)
-      );
-      const classificationClaim = (genericClaim || isClassificationAssertion(`${activeClassificationContext}\n${line}`, plan)) &&
-        !isClassificationRejection(line);
-      const existing = claimByName.get(normalizedLabel);
-      if (existing) {
-        existing.classificationClaim ||= classificationClaim;
-        continue;
-      }
-      const claim = { label, normalizedLabel, classificationClaim };
+      if (!normalizedLabel || claimByName.has(normalizedLabel)) continue;
+      const claim = { label, normalizedLabel };
       claimByName.set(normalizedLabel, claim);
       claims.push(claim);
       if (claims.length >= 50) return claims;
@@ -88,68 +77,65 @@ function evidenceWindows(evidenceText, label, radius = 240) {
   return windows;
 }
 
-function evidenceSentenceWindows(evidenceText, label) {
-  const source = String(evidenceText || "");
-  const windows = [];
-  let offset = 0;
-  while (windows.length < 8) {
-    const index = source.indexOf(label, offset);
-    if (index < 0) break;
-    const before = source.slice(Math.max(0, index - 260), index);
-    const after = source.slice(index + label.length, index + label.length + 300);
-    const leftBoundary = Math.max(before.lastIndexOf("\n"), before.lastIndexOf("。"), before.lastIndexOf("！"), before.lastIndexOf("？"));
-    const rightOffsets = [after.indexOf("\n"), after.indexOf("。"), after.indexOf("！"), after.indexOf("？")]
-      .filter((value) => value >= 0);
-    const rightBoundary = rightOffsets.length ? Math.min(...rightOffsets) + 1 : after.length;
-    windows.push(`${before.slice(leftBoundary + 1)}${label}${after.slice(0, rightBoundary)}`);
-    offset = index + label.length;
-  }
-  return windows;
-}
-
-function hasRequiredClassificationEvidence(windows, plan) {
-  return windows.some((window) => {
-    const authorityOk = satisfiesAuthorityUrlPolicy(
-      window.match(/https?:\/\/\S+/gi) || [],
-      plan.authorityUrlPolicy,
-      plan.authorityHosts,
-    );
-    return authorityOk && (
-      plan.claimEvidenceRequired
-        ? hasClaimEvidenceSupport(window, plan)
-        : hasClassificationSupport(window)
-    );
-  });
-}
-
-function assessEntityClaimEvidence({ assistant = "", evidenceText = "", verificationPlan = null } = {}) {
+/**
+ * Split entity claims into three literal buckets:
+ *   unsupportedClaims — entity ABSENT from this turn's evidence. Fabrication
+ *     floor: never judged, never banner-kept; salvage must strip them.
+ *   conflictingClaims — the turn judge ruled the evidence CONTRADICTS the
+ *     claim (passed in via judgedConflictingClaims; never overridable).
+ *   pendingClaims — entity present in evidence (real windows exist) whose
+ *     support has not been semantically ruled on yet. Empties once the judge
+ *     verdict arrives: supported labels come back via acceptedClaimLabels,
+ *     rejected ones via judgedUnsupportedClaims (they become unsupported for
+ *     salvage purposes, but they DID have windows, so a bounded answer may
+ *     keep them under a banner in fail-open tiers).
+ */
+function assessEntityClaimEvidence({
+  assistant = "",
+  evidenceText = "",
+  verificationPlan = null,
+  acceptedClaimLabels = [],
+  judgedUnsupportedClaims = [],
+  judgedConflictingClaims = [],
+} = {}) {
   const plan = normalizeVerificationPlan(verificationPlan);
   if (!plan.entityEvidenceRequired) return null;
   const claims = extractEntityClaims(assistant, plan);
   if (!claims.length) return null;
+  const toSet = (values) => new Set((Array.isArray(values) ? values : [])
+    .map((label) => normalize(label)).filter(Boolean));
+  const accepted = toSet(acceptedClaimLabels);
+  const judgedUnsupported = toSet(judgedUnsupportedClaims);
+  const judgedConflicting = toSet(judgedConflictingClaims);
   const normalizedEvidence = normalize(evidenceText, 40_000);
-  const unsupported = claims.filter((claim) => !normalizedEvidence.includes(claim.normalizedLabel));
-  const unsupportedClassification = plan.classificationEvidenceRequired || plan.claimEvidenceRequired
-    ? claims.filter((claim) => claim.classificationClaim &&
-        !hasRequiredClassificationEvidence(evidenceWindows(evidenceText, claim.label, 700), plan))
-    : [];
-  const conflicts = claims.filter((claim) => {
-    if (!claim.classificationClaim) return false;
-    const windows = evidenceSentenceWindows(evidenceText, claim.label);
-    return windows.some((window) => hasClaimConflict(window, plan));
-  });
-  const unsupportedLabels = [...new Set([...unsupported, ...unsupportedClassification].map(({ label }) => label))];
+  const unsupported = [];
+  const pending = [];
+  const conflicts = [];
+  for (const claim of claims) {
+    if (accepted.has(claim.normalizedLabel)) continue;
+    if (judgedConflicting.has(claim.normalizedLabel)) {
+      conflicts.push(claim);
+      continue;
+    }
+    const present = normalizedEvidence.includes(claim.normalizedLabel);
+    if (judgedUnsupported.has(claim.normalizedLabel) || !present) {
+      unsupported.push(claim);
+      continue;
+    }
+    pending.push(claim);
+  }
   return {
-    ok: unsupportedLabels.length === 0 && conflicts.length === 0,
-    schemaVersion: 1,
+    ok: unsupported.length === 0 && pending.length === 0 && conflicts.length === 0,
+    schemaVersion: 2,
     claimCount: claims.length,
-    unsupportedClaims: unsupportedLabels.slice(0, 10),
-    unsupportedClassificationClaims: unsupportedClassification.map(({ label }) => label).slice(0, 10),
+    unsupportedClaims: unsupported.map(({ label }) => label).slice(0, 10),
+    pendingClaims: pending.map(({ label }) => label).slice(0, 10),
     conflictingClaims: conflicts.map(({ label }) => label).slice(0, 10),
   };
 }
 
 module.exports = {
   assessEntityClaimEvidence,
+  evidenceWindows,
   extractEntityClaims,
 };

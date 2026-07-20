@@ -1,55 +1,59 @@
 "use strict";
 
 const {
-  buildExternalClaimPlan,
   emptyVerificationPlan,
   mergeExternalClaimPlans,
   mergeModelVerificationPlan,
   normalizeVerificationPlan,
-  reasonCodesForPlan,
   requirementsForPlan,
 } = require("./external-claim-profiles");
 
+// Trigger vocabularies cover zh / en / ar — the platform ships all three locales,
+// and gate protection must not silently switch off for one language.
 const RANKING_PATTERNS = [
   /(?:排行榜?|排名|榜单|第\s*[一二三四五六七八九十百\d]+\s*名|前\s*\d+\s*(?:名|个)?)/i,
   /\b(?:top\s*(?:\d+|ten|twenty|hundred)|rank(?:ing|ed|s)?|leaderboard)\b/i,
+  /(?:تصنيف|ترتيب|قائمة\s*أفضل|أفضل\s*\d+|المراكز\s*ال)/i,
 ];
 
 const SUPERLATIVE_PATTERNS = [
   /(?:哪个|哪些|谁|什么).{0,12}(?:产品|公司|国家|城市|学校|大学|医院|模型|手机|电脑|软件|品牌|景点|餐厅|电影|歌曲|游戏).{0,12}(?:最好|最佳|最强|最高|最低|最多|最少|最受欢迎)/i,
   /(?:最好|最佳|最强|最受欢迎).{0,20}(?:产品|公司|国家|城市|学校|大学|医院|模型|手机|电脑|软件|品牌|景点|餐厅|电影|歌曲|游戏)/i,
   /\b(?:best|most popular|highest|lowest|largest|smallest)\b.{0,32}\b(?:product|company|country|city|school|university|hospital|model|phone|computer|software|brand|restaurant|movie|game)\b/i,
+  /(?:الأفضل|الأكثر\s*شعبية|الأعلى|الأكبر|الأقل).{0,40}(?:منتج|شركة|دولة|مدينة|جامعة|مستشفى|هاتف|برنامج|علامة|مطعم|فيلم|لعبة)|(?:منتج|شركة|دولة|مدينة|جامعة|مستشفى|هاتف|برنامج|علامة|مطعم|فيلم|لعبة).{0,40}(?:الأفضل|الأكثر\s*شعبية|الأعلى|الأكبر)/i,
 ];
 
 const EXPLICIT_WEB_RE =
-  /(?:联网|上网|网上查|网络搜索|browse\s+(?:the\s+)?web|search\s+(?:the\s+)?web|search\s+online|verify\s+online|check\s+online)/i;
+  /(?:联网|上网|网上查|网络搜索|browse\s+(?:the\s+)?web|search\s+(?:the\s+)?web|search\s+online|verify\s+online|check\s+online|ابحث\s*(?:في|على)\s*(?:الإنترنت|الويب|الشبكة)|تحقق\s*عبر\s*الإنترنت)/i;
 const RESEARCH_PROHIBITED_RE =
-  /(?:不要|不用|无需|禁止|不许|不可以|别)(?:联网|上网|搜索|检索|查资料|找来源)|(?:不要|不用|无需)(?:给|提供|附)(?:来源|链接|引用)|\b(?:do\s+not|don't|dont|without)\s+(?:search(?:ing)?|brows(?:e|ing)|look(?:ing)?\s+up)|\bno\s+(?:search|sources?|citations?)\b/i;
+  /(?:不要|不用|无需|禁止|不许|不可以|别)(?:联网|上网|搜索|检索|查资料|找来源)|(?:不要|不用|无需)(?:给|提供|附)(?:来源|链接|引用)|\b(?:do\s+not|don't|dont|without)\s+(?:search(?:ing)?|brows(?:e|ing)|look(?:ing)?\s+up)|\bno\s+(?:search|sources?|citations?)\b|(?:بدون|دون|لا)\s*(?:بحث|تبحث|إنترنت|مصادر)/i;
 const RESEARCH_ALLOWED_RE =
-  /(?:可以|允许|请|现在)(?:我|你|系统)?(?:联网|上网|搜索|检索|查资料|找来源)|\b(?:you\s+may|please|now)\s+(?:search|browse|look\s+up)|\bsearch\s+(?:the\s+)?web\s+now\b/i;
-const CONTEXTUAL_LOOKUP_RE = /(?:搜索一下|查一下|查证|核实|找来源|官网查询|look\s+it\s+up|look\s+up)/i;
+  /(?:可以|允许|请|现在)(?:我|你|系统)?(?:联网|上网|搜索|检索|查资料|找来源)|\b(?:you\s+may|please|now)\s+(?:search|browse|look\s+up)|\bsearch\s+(?:the\s+)?web\s+now\b|يمكنك\s*البحث|ابحث\s*الآن/i;
+const CONTEXTUAL_LOOKUP_RE = /(?:搜索一下|查一下|查证|核实|找来源|官网查询|look\s+it\s+up|look\s+up|ابحث\s*عن|تحقق\s*من|تأكد\s*من)/i;
 const URL_RE = /https?:\/\/[^\s<>"]+/i;
-const FRESHNESS_RE = /(?:最新|最近|当前|现在|目前|今天|今日|实时|截至|现任|刚刚|latest|current|today|recent|real[- ]?time|right now|as of|incumbent)/i;
+const FRESHNESS_RE = /(?:最新|最近|当前|现在|目前|今天|今日|实时|截至|现任|刚刚|latest|current|today|recent|real[- ]?time|right now|as of|incumbent|أحدث|الآن|حالي(?:ًا|ا)?|اليوم|مؤخر(?:ًا|ا)|حتى\s*الآن|في\s*الوقت\s*الحالي)/i;
 const REQUEST_RE =
-  /[?？]|(?:什么|多少|几|谁|哪个|哪些|哪家|是否|有没有|告诉我|给我|列出|比较|查|搜索|查询|分析|解读|总结|how much|how many|who is|what is|which|show me|list|compare|find|tell me)/i;
+  /[?？؟]|(?:什么|多少|几|谁|哪个|哪些|哪家|是否|有没有|告诉我|给我|列出|比较|查|搜索|查询|分析|解读|总结|how much|how many|who is|what is|which|show me|list|compare|find|tell me|ما\s*(?:هو|هي)|من\s*(?:هو|هي)|كم|أي|هل|أخبرني|اعرض|قارن|ابحث)/i;
 const CREATIVE_ONLY_RE =
-  /(?:写一首|写首|编一个|虚构|纯创作|小说|诗歌|故事|段子|creative writing|write (?:a|an) (?:poem|story|joke)|fictional)/i;
+  /(?:写一首|写首|编一个|虚构|纯创作|小说|诗歌|故事|段子|笑话|creative writing|write (?:a|an) (?:poem|story|joke)|fictional|اكتب\s*(?:قصيدة|قصة)|قصة\s*خيالية|نكتة)/i;
+// Questions about the ASSISTANT ITSELF (capabilities, identity) are not
+// external facts — a time word there ("今天能帮我做什么") is not an evidence
+// need. Request-shape guard, not domain vocabulary.
+const ASSISTANT_SELF_RE =
+  /(?:你.{0,8}(?:能|可以|会).{0,6}(?:做|干)(?:什么|啥)|你会什么|你(?:是|叫)谁|介绍一下你自己|你是谁|what can you do|who are you|ماذا\s*يمكنك\s*(?:أن\s*)?فعل|من\s*أنت)/i;
 const OPERATIONAL_ACTION_RE =
-  /(?:修复|实现|开发|创建|新建|设计|修改|改造|重构|部署|发布|上线|打包|测试|排查|调试|接入|配置|写代码|fix|implement|build|create|design|edit|refactor|deploy|publish|release|package|test|debug|integrate|configure)/i;
+  /(?:修复|实现|开发|创建|新建|设计|修改|改造|重构|部署|发布|上线|打包|测试|排查|调试|接入|配置|写代码|fix|implement|build|create|design|edit|refactor|deploy|publish|release|package|test|debug|integrate|configure|أصلح|نف(?:ّ)?ذ|طو(?:ّ)?ر|أنشئ|صم(?:ّ)?م|عد(?:ّ)?ل|انشر|اختبر|اضبط)/i;
 const INTERNAL_DATA_RE =
-  /(?:我们公司|本公司|公司内部|内部数据|团队成员|员工|销售员|门店|班级|学生成绩|数据库里|表格里|文件里|这份数据|our company|internal data|our team|employees?|sales reps?|class grades?|in (?:the|this) (?:database|spreadsheet|file))/i;
-const EXTERNAL_SCOPE_RE = /(?:全球|世界|全国|行业|市场|公开榜单|global|worldwide|national|industry|market|public ranking)/i;
+  /(?:我们公司|本公司|公司内部|内部数据|团队成员|员工|销售员|门店|班级|学生成绩|数据库里|表格里|文件里|这份数据|our company|internal data|our team|employees?|sales reps?|class grades?|in (?:the|this) (?:database|spreadsheet|file)|شركتنا|بيانات\s*داخلية|فريقنا|الموظف(?:ون|ين)|في\s*(?:قاعدة\s*البيانات|الجدول|الملف))/i;
+const EXTERNAL_SCOPE_RE = /(?:全球|世界|全国|行业|市场|公开榜单|global|worldwide|national|industry|market|public ranking|عالمي|العالم|السوق|الصناعة|تصنيف\s*عام)/i;
 
+// Model-first refactor (2026-07-20): the ONLY domain vocabulary left in the
+// gate is the high-stakes floor (medical/legal/finance). It exists solely for
+// the fail-CLOSED boundary and turn-start buffering — never for content
+// judgment. Every other "is this question about domain X" call is semantic
+// and belongs to the model (verification-plan candidate + turn judge).
 const DYNAMIC_DOMAINS = Object.freeze([
-  ["news", /(?:新闻|热搜|头条|时事|突发|news|headline|breaking)/i],
-  ["price_market", /(?:价格|报价|股价|行情|汇率|利率|市值|票房|销量|油价|金价|房价|price|stock price|quote|market cap|exchange rate|interest rate|box office|sales)/i],
-  ["role", /(?:ceo|cfo|cto|president|prime minister|chair(?:man|person)|mayor|governor|董事长|总裁|负责人|总统|总理|首相|部长|主席|市长|州长|现任|任职)/i],
-  ["law_policy", /(?:法律|法规|政策|规定|监管|标准|条例|办法|税率|law|regulation|policy|standard|rule|tax rate)/i],
-  ["release_version", /(?:版本|发布|发行|上线|更新|补丁|release|version|launch|update|patch)/i],
-  ["statistics", /(?:统计|数据|比例|占比|人口|gdp|增长率|失业率|通胀率|覆盖率|statistics?|population|growth rate|unemployment|inflation|coverage rate)/i],
-  ["sports_schedule", /(?:比分|赛程|积分榜|战绩|冠军|score|schedule|standings|champion)/i],
-  ["weather", /(?:天气|气温|降雨|台风|weather|temperature|rainfall|typhoon)/i],
-  ["high_stakes", /(?:医疗|医学|药物|剂量|诊断|治疗|法律意见|诉讼|税务|投资|理财|证券|保险|medical|medicine|dosage|diagnosis|treatment|legal advice|lawsuit|tax|investment|finance|insurance)/i],
+  ["high_stakes", /(?:医疗|医学|药物|剂量|诊断|治疗|法律意见|诉讼|税务|投资|理财|证券|保险|medical|medicine|dosage|diagnosis|treatment|legal advice|lawsuit|tax|investment|finance|insurance|طبي|دواء|جرعة|تشخيص|علاج|استشارة\s*قانونية|دعوى|ضريبي|استثمار|تأمين)/i],
 ]);
 
 const LOCAL_ONLY_CATEGORIES = new Set([
@@ -64,7 +68,32 @@ const LOCAL_ONLY_CATEGORIES = new Set([
   "server",
   "ui",
 ]);
-const RETRYABLE_RESEARCH_GAP_RE = /^(?:missing_required_evidence:external|authoritative_source_required|entity_claim_not_in_evidence|external_claim_not_in_evidence|numeric_claim_not_in_evidence|external_fact_without_source_link|source_link_not_in_evidence|entity_claim_conflicts_with_evidence|forbidden_inference:)/;
+const RETRYABLE_RESEARCH_GAP_RE = /^(?:missing_required_evidence:external|authoritative_source_required|entity_claim_not_in_evidence|external_claim_not_in_evidence|numeric_claim_not_in_evidence|external_fact_without_source_link|source_link_not_in_evidence|entity_claim_conflicts_with_evidence)/;
+
+// ---------------------------------------------------------------------------
+// Risk tiers. The evidence gate's job is to prevent fabrication presented as
+// fact — not to prevent answers. Tiers:
+//   hard        — unverified content may be replaced. Reserved for genuinely
+//                 high-stakes asks (the high_stakes floor, or the turn judge's
+//                 stakes=high verdict). Fail-closed.
+//   verify_soft — auto-verify once; on final failure deliver a BOUNDED answer
+//                 (supported subset, or original + verification banner) —
+//                 never zero content when any supported content exists.
+//   advisory    — evidence enriches the answer but never controls rendering.
+// Kill switch: LILY_EVIDENCE_RISK_TIERS=0 -> everything behaves as "hard"
+// (the exact legacy behavior).
+const HARD_RISK_REASONS = new Set(["high_stakes"]);
+
+/** Accepts an externalFactPolicy ({required, reasonCodes, …}) or an
+ *  evidencePolicy ({externalFact, externalFactReasonCodes, …}). */
+function externalFactRiskTier(policy = null) {
+  if (process.env.LILY_EVIDENCE_RISK_TIERS === "0") return "hard";
+  const required = Boolean(policy?.required ?? policy?.externalFact);
+  if (!required) return "advisory";
+  const reasons = (policy.reasonCodes || policy.externalFactReasonCodes || []).map(String);
+  if (reasons.some((code) => HARD_RISK_REASONS.has(code))) return "hard";
+  return "verify_soft";
+}
 
 function hasAny(text, patterns) {
   return patterns.some((pattern) => pattern.test(text));
@@ -102,9 +131,9 @@ function classifyExternalFactIntent(text = "") {
   const dynamicReasons = DYNAMIC_DOMAINS
     .filter(([, pattern]) => pattern.test(source))
     .map(([code]) => code);
-  const verificationPlan = buildExternalClaimPlan(source);
-  const claimPlanRefinement = verificationPlan.profileIds.length > 0 &&
-    /^(?:只算|只要|包括|不包括|按|按照|口径|scope|include|exclude|use)/i.test(source);
+  const verificationPlan = emptyVerificationPlan();
+  const creativeOnly = CREATIVE_ONLY_RE.test(source);
+  const assistantSelfRef = ASSISTANT_SELF_RE.test(source);
   const explicitResearch =
     researchAllowed || EXPLICIT_WEB_RE.test(source) ||
     (CONTEXTUAL_LOOKUP_RE.test(source) && (ranking || superlative || freshness || hasUrl || dynamicReasons.length > 0));
@@ -113,12 +142,15 @@ function classifyExternalFactIntent(text = "") {
   if (superlative) reasonCodes.push("superlative_comparison");
   if (explicitResearch) reasonCodes.push("explicit_web_research");
   if (hasUrl) reasonCodes.push("user_url");
-  if (freshness && (dynamicReasons.length || ranking || superlative)) reasonCodes.push("freshness");
+  // Freshness is a request-SHAPE trigger (最新/今天/现任…), not a domain call:
+  // coupled to an actual question it marks the ask as time-sensitive. False
+  // positives are harmless — ordinary tiers fail open downstream. Creative
+  // asks ("现在讲个笑话") and assistant-self questions ("今天能帮我做什么")
+  // are exempt: a time word there is not an evidence need.
+  if (freshness && requestsAnswer && !creativeOnly && !assistantSelfRef) reasonCodes.push("freshness");
   if (requestsAnswer || ranking || superlative || explicitResearch) reasonCodes.push(...dynamicReasons);
-  if (requestsAnswer || claimPlanRefinement) reasonCodes.push(...reasonCodesForPlan(verificationPlan));
 
   const uniqueReasons = [...new Set(reasonCodes)];
-  const creativeOnly = CREATIVE_ONLY_RE.test(source);
   const operationalRequest = OPERATIONAL_ACTION_RE.test(source);
   const internalDataOnly = INTERNAL_DATA_RE.test(source) && !EXTERNAL_SCOPE_RE.test(source) && !explicitResearch;
   const hasNonRankingEvidenceNeed = uniqueReasons.some((code) => !["ranking", "superlative_comparison"].includes(code));
@@ -133,18 +165,9 @@ function classifyExternalFactIntent(text = "") {
       "explicit_web_research",
       "user_url",
       "freshness",
-      "news",
-      "role",
-      "law_policy",
-      "release_version",
-      "statistics",
       "high_stakes",
-      "organization_status",
-      "regulated_classification",
     ].includes(code),
   );
-  const scopeClarificationRequired = verificationPlan.clarificationRequired &&
-    uniqueReasons.some((code) => ["organization_status", "regulated_classification"].includes(code));
 
   return {
     detected,
@@ -155,9 +178,9 @@ function classifyExternalFactIntent(text = "") {
     reasonCodes: uniqueReasons,
     requiresFreshness: detected,
     requiresSourceLinks,
-    scopeClarificationRecommended: scopeClarificationRequired,
-    scopeClarificationRequired,
-    scopeDisclosureRequired: verificationPlan.scopeDisclosureRequired,
+    scopeClarificationRecommended: false,
+    scopeClarificationRequired: false,
+    scopeDisclosureRequired: false,
     verificationPlan,
   };
 }
@@ -281,7 +304,6 @@ function applyModelVerificationPlanCandidate(policy = null, candidate = null, { 
     reasonCodes: [...new Set([
       ...(policy?.reasonCodes || []),
       ...(activationRequested ? ["model_external_fact"] : []),
-      ...reasonCodesForPlan(verificationPlan),
     ])],
     requiresFreshness: activationRequested || policy?.requiresFreshness,
     requiresSourceLinks: activationRequested || policy?.requiresSourceLinks,
@@ -310,12 +332,28 @@ function activateExternalFactPolicyFromObservation(policy = null) {
   });
 }
 
+/**
+ * Fail-CLOSED boundary (user decision 2026-07-20): only genuinely high-stakes
+ * asks refuse delivery when verification fails or the judge is unavailable —
+ * everything else fail-opens with a bounded, honestly-labeled answer. The
+ * high_stakes floor regex (medical/legal/finance) is the ONLY domain
+ * vocabulary left in the gate; the turn judge's stakes verdict may upgrade
+ * but never downgrade it.
+ */
+function isHighStakesPolicy(policy = null, semanticVerdict = null) {
+  if (semanticVerdict?.stakes === "high") return true;
+  const reasons = (policy?.reasonCodes || policy?.externalFactReasonCodes || []).map(String);
+  return reasons.includes("high_stakes");
+}
+
 module.exports = {
   activateExternalFactPolicyFromObservation,
   applyModelVerificationPlanCandidate,
   buildExternalFactPolicy,
   classifyExternalFactIntent,
+  externalFactRiskTier,
   inheritExternalFactIntent,
+  isHighStakesPolicy,
   shouldActivateExternalFact,
   shouldAutoVerifyExternalFact,
 };

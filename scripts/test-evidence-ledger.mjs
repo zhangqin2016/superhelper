@@ -33,22 +33,54 @@ const bash = normalizeToolEvidence({
 assert.equal(bash.kind, "verification");
 assert.equal(bash.success, true);
 
+const list = normalizeToolEvidence({
+  name: "list",
+  input: { path: "src/main" },
+  result: "src/main/evidence-gate.js\nsrc/main/tool-semantics.js",
+  status: "done",
+});
+assert.equal(list.kind, "file_search", "ledger must follow registered read-only search tool semantics");
+assert(list.candidates.some((item) => item.includes("evidence-gate.js")));
+
+const lsp = normalizeToolEvidence({
+  name: "lsp",
+  input: { file_path: "src/main/evidence-ledger.js" },
+  result: "symbols",
+  status: "done",
+});
+assert.equal(lsp.kind, "file_read", "ledger must follow registered file-read tool semantics");
+assert.equal(lsp.path, "src/main/evidence-ledger.js");
+
+const patchResult = "Success. Updated the following files:\nM src/main/evidence-ledger.js";
+const patch = normalizeToolEvidence({
+  name: "apply_patch",
+  input: { file_path: "src/main/evidence-ledger.js" },
+  result: patchResult,
+  status: "done",
+});
+assert.equal(patch.kind, "file_write", "ledger must count apply_patch as file-write evidence");
+assert.equal(patch.path, "src/main/evidence-ledger.js");
+
 const ledger = new EvidenceLedger();
 ledger.addWorkspaceCandidates([
   { relativePath: "src/main/turn-orchestrator.js" },
   { relativePath: "src/main/evidence-gate.js" },
 ]);
 ledger.recordTool({ name: "grep", input: { pattern: "session.idle" }, result: grep.candidates.join("\n"), status: "done" });
+ledger.recordTool({ name: "list", input: { path: "src/main" }, result: list.candidates.join("\n"), status: "done" });
 ledger.recordTool({ name: "read", input: { file_path: "src/main/turn-orchestrator.js" }, result: "content", status: "done" });
+ledger.recordTool({ name: "lsp", input: { file_path: "src/main/evidence-ledger.js" }, result: "symbols", status: "done" });
+ledger.recordTool({ name: "apply_patch", input: { file_path: "src/main/evidence-ledger.js" }, result: patchResult, status: "done" });
 ledger.recordTool({ name: "bash", input: { command: "npm test" }, result: "passed", status: "done" });
 ledger.recordDocumentExtraction({
   documents: [{ id: "doc1", label: "contract.pdf", charLength: 1200 }],
   chunks: [{ chunkId: "doc1-chunk1" }, { chunkId: "doc1-chunk2" }],
 });
 const summary = ledger.summary();
-assert.equal(summary.counts.fileSearches, 1);
-assert.equal(summary.counts.filesRead, 1);
+assert.equal(summary.counts.fileSearches, 2);
+assert.equal(summary.counts.filesRead, 2);
 assert.equal(summary.counts.verifications, 1);
+assert.equal(summary.counts.fileWrites, 1);
 assert.equal(summary.counts.documents, 1);
 assert.equal(summary.counts.documentChunks, 2);
 assert(summary.coverage.candidateCount >= 2);

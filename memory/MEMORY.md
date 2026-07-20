@@ -21,3 +21,4 @@
 - [Document Attachment Model Interruption](2026-07-02-document-attachment-model-interruption.md) — raw Office/PDF binaries must not enter model file parts; document attachment model disconnects isolate to a fresh engine session
 - [Activation Config Repair License State](2026-07-07-activation-config-repair-license-state.md) — activation-time managed config repair must not persist repairable device signature/key errors as invalid license state
 - [Managed Gateway Token Invalid](2026-07-07-managed-gateway-token-invalid.md) — stale/placeholder Lily gateway tokens must refresh remote config and replay instead of surfacing 401 to users
+- [Evidence Gate Model-First](2026-07-20-evidence-gate-model-first.md) — regex vocabularies caused the 副部级 zero-content refusal; the model judges semantics, code judges literals, ordinary fail-open / high-stakes fail-closed

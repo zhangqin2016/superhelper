@@ -1,7 +1,7 @@
 "use strict";
 
 const path = require("node:path");
-const { commandExternalEvidenceKind } = require("./tool-semantics");
+const { commandExternalEvidenceKind, resolveToolSemantics } = require("./tool-semantics");
 
 const PATH_RE = /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[\w@./\\-]+\.[A-Za-z0-9]{1,8})(?::\d+)?/g;
 
@@ -67,8 +67,10 @@ function normalizeToolEvidence(tool = {}) {
   const status = String(tool.status || "").toLowerCase();
   const success = status !== "failed" && status !== "error";
   const base = { tool: name || "unknown", success, timestamp: Date.now() };
+  const semantics = resolveToolSemantics(tool);
+  const evidenceKind = semantics?.evidenceKind || "tool_observation";
 
-  if (["grep", "glob", "rg", "search"].includes(name)) {
+  if (evidenceKind === "file_search" || ["grep", "glob", "rg", "search"].includes(name)) {
     return {
       ...base,
       kind: "file_search",
@@ -77,7 +79,7 @@ function normalizeToolEvidence(tool = {}) {
     };
   }
 
-  if (["read", "notebookread"].includes(name)) {
+  if (evidenceKind === "file_read" || ["read", "notebookread"].includes(name)) {
     return {
       ...base,
       kind: "file_read",
@@ -86,11 +88,11 @@ function normalizeToolEvidence(tool = {}) {
     };
   }
 
-  if (["write", "edit", "multiedit", "notebookedit"].includes(name)) {
+  if (evidenceKind === "file_write" || ["write", "edit", "multiedit", "notebookedit"].includes(name)) {
     return {
       ...base,
       kind: "file_write",
-      path: firstString(input, ["file_path", "path", "filePath", "notebook_path", "target_file"]),
+      path: firstString(input, ["file_path", "path", "filePath", "notebook_path", "target_file"]) || extractPathCandidates(result, 1)[0] || "",
     };
   }
 
@@ -105,10 +107,10 @@ function normalizeToolEvidence(tool = {}) {
     };
   }
 
-  if (["websearch", "web_search", "webfetch", "web_fetch"].includes(name)) {
+  if (["web_search", "web_fetch"].includes(evidenceKind) || ["websearch", "web_search", "webfetch", "web_fetch"].includes(name)) {
     return {
       ...base,
-      kind: name.includes("search") ? "web_search" : "web_fetch",
+      kind: evidenceKind === "web_search" || name.includes("search") ? "web_search" : "web_fetch",
       query: firstString(input, ["query", "q", "url"]),
     };
   }

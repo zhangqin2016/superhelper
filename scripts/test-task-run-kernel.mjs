@@ -128,6 +128,7 @@ function createContext({ eventBus } = {}) {
     throw new Error(`plain chat turn should start: ${JSON.stringify(started)}`);
   }
   runner.finish("hello back");
+  await new Promise((resolve) => setTimeout(resolve, 5));
   ctx.eventBus.flush();
   const events = sent.flatMap((entry) => entry.payload?.events || []);
   if (events.some((event) => event.type === "task.created")) {
@@ -151,6 +152,7 @@ function createContext({ eventBus } = {}) {
     { type: "engine.notice", payload: { notice: { code: "longWait", level: "progress", panel: true } } },
   ]);
   runner.finish("plain answer");
+  await new Promise((resolve) => setTimeout(resolve, 5));
   ctx.eventBus.flush();
   const events = sent.flatMap((entry) => entry.payload?.events || []);
   if (events.some((event) => event.type === "task.created")) {
@@ -186,6 +188,7 @@ function createContext({ eventBus } = {}) {
     { type: "tool.done", payload: { id: "read_1", status: "done", result: "read ok" } },
   ]);
   runner.finish("done");
+  await new Promise((resolve) => setTimeout(resolve, 5));
   ctx.eventBus.flush();
   const events = sent.flatMap((entry) => entry.payload?.events || []);
   const taskCreated = events.find((event) => event.type === "task.created");
@@ -235,6 +238,8 @@ function createContext({ eventBus } = {}) {
     { type: "tool.done", payload: { id: "bash_1", status: "done", result: "ok" } },
   ]);
   runner.finish("done");
+  // finalize is async (evidence entailment judge) — let it settle.
+  await new Promise((resolve) => setTimeout(resolve, 5));
   ctx.eventBus.flush();
   const events = sent.flatMap((entry) => entry.payload?.events || []);
   const taskCompleted = events.find((event) => event.type === "task.completed");

@@ -55,11 +55,13 @@
     },
     {
       "id": "external-claim-evidence",
-      "protects": "External factual claims in known or previously unseen domains cannot be asserted from model memory alone.",
-      "baseline": "External fact requests require fresh evidence, grounded source links, claim-appropriate authority, item-level support when declared, and honest uncertainty.",
-      "failureFallback": "Malformed semantic plans or recovery context preserve the existing strict host gate. A single changed-strategy retry may inherit only bounded successful read-only external evidence from the immediately completed turn; internal retry prompts stay hidden and durable supersession prevents pre-gate engine text from returning on history reload. Otherwise disclose the limit without fabricating an answer.",
+      "protects": "External factual claims in known or previously unseen domains cannot be asserted from model memory alone, and the evidence gate cannot make the platform dumber by erasing supported content.",
+      "baseline": "External fact requests are risk-tiered (hard / verify_soft / advisory) and model-first: only high-stakes asks (the medical/legal/finance floor, or the turn judge's stakes=high verdict) fail closed; ordinary asks auto-verify once and on final failure keep a BOUNDED answer (supported subset or original under a verification banner) — delivered content never drops to zero while any supported content exists. Semantic judgments (support, authority, conflicts, informal labels) belong to one unified judge call per turn, never to domain regex vocabularies; the deterministic layer keeps the literal floor (URL/entity/number grounding, ledger counts) and fabricated entities are never banner-kept. Protection vocabulary covers zh/en/ar equally.",
+      "failureFallback": "LILY_EVIDENCE_RISK_TIERS=0 restores exact legacy all-hard behavior. Internal gate errors fail closed only on the hard tier; verify_soft/advisory fail open with the original answer. Malformed semantic plans or recovery context preserve the existing strict host gate. A single changed-strategy retry may inherit only bounded successful read-only external evidence from the immediately completed turn; internal retry prompts stay hidden and durable supersession prevents pre-gate engine text from returning on history reload. Otherwise disclose the limit without fabricating an answer.",
       "tests": [
         "scripts/test-answer-evidence-finalizer.mjs",
+        "scripts/test-evidence-risk-tiers.mjs",
+        "scripts/test-evidence-entailment-judge.mjs",
         "scripts/test-external-evidence-recovery.mjs",
         "scripts/test-external-fact-grounding.mjs",
         "scripts/test-general-claim-verification.mjs",

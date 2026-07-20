@@ -1,8 +1,11 @@
 "use strict";
 
-const { satisfiesAuthorityHosts } = require("./external-claim-contract");
-
-const HTTP_URL_RE = /https?:\/\/[^\s<>"'\])}）】》]+/gi;
+// Stop at citation separators (; ， 、) too: models frequently join two source
+// links as "(url1;url2)", which otherwise merges into one unmatchable URL and
+// falsely fails source_link_not_in_evidence. Both the answer and the evidence
+// are extracted with THIS regex, so any truncation is consistent on both sides
+// and never breaks matching.
+const HTTP_URL_RE = /https?:\/\/[^\s<>"'\])}）】》;；，、]+/gi;
 
 function normalizeHttpUrl(value = "") {
   try {
@@ -24,26 +27,7 @@ function extractHttpUrls(value = "") {
   return [...new Set(matches.map(normalizeHttpUrl).filter(Boolean))].slice(0, 50);
 }
 
-function isGovernmentAuthorityUrl(value = "") {
-  try {
-    const hostname = new URL(value).hostname.toLowerCase();
-    const labels = hostname.split(".");
-    return labels.some((label) => ["gov", "govt", "gouv", "government"].includes(label));
-  } catch {
-    return false;
-  }
-}
-
-function satisfiesAuthorityUrlPolicy(urls = [], policy = "none", authorityHosts = []) {
-  if (!satisfiesAuthorityHosts(urls, authorityHosts)) return false;
-  if (policy === "none") return true;
-  if (policy === "government") return urls.some(isGovernmentAuthorityUrl);
-  return true;
-}
-
 module.exports = {
   extractHttpUrls,
-  isGovernmentAuthorityUrl,
   normalizeHttpUrl,
-  satisfiesAuthorityUrlPolicy,
 };

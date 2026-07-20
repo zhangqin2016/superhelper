@@ -1,6 +1,6 @@
 "use strict";
 
-const { evaluateAnswerEvidence, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
+const { evaluateAnswerEvidenceWithJudge, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const { clearDocumentDeliveryTurnState } = require("./document-delivery-turn");
 const { getLogger } = require("./logger");
 const { compactTaskRun } = require("./task-run-state");
@@ -54,6 +54,7 @@ function collectLearnedSkills(ctx, sessionId, state) {
 function clearTurnState(state) {
   state.phase = "idle";
   state.turnId = null;
+  state.finalizing = false;
   state.steerCount = 0;
   state.admittedSeq = null;
   state.assistantText = "";
@@ -97,9 +98,28 @@ function createTurnTerminalFinalizer(options = {}) {
     return getState(sessionId);
   }
 
+  // finalize awaits the (fail-open) evidence entailment judge, so it is async.
+  // Callers fire-and-forget; this wrapper keeps that contract crash-safe.
   function finalize(sessionId, type, payload = {}) {
+    return finalizeAsync(sessionId, type, payload).catch((err) => {
+      log.warn("turn finalize failed open: %s", err?.message || err);
+      // Release the re-entrancy latch so a later terminal (e.g. the stall
+      // watchdog) can still finalize this turn instead of leaving it stuck.
+      try {
+        stateFor(sessionId).finalizing = false;
+      } catch {
+        /* state already gone */
+      }
+    });
+  }
+
+  async function finalizeAsync(sessionId, type, payload = {}) {
     const state = stateFor(sessionId);
     if (!state.turnId || state.terminalEmitted) return;
+    // Re-entrancy latch: the judge await yields the event loop, so a racing
+    // second terminal (e.g. stall watchdog vs completion) must not double-run.
+    if (state.finalizing) return;
+    state.finalizing = true;
     if (!TERMINAL_TYPES.has(type)) throw new Error(`Invalid terminal event ${type}`);
     const completedTurnId = state.turnId;
     try {
@@ -135,7 +155,7 @@ function createTurnTerminalFinalizer(options = {}) {
     let documentDelivery = null;
 
     if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
-      const guarded = evaluateAnswerEvidence({
+      const guarded = await evaluateAnswerEvidenceWithJudge({
         assistant,
         taskContract: state.taskContract,
         turnPolicy: state.turnPolicy,

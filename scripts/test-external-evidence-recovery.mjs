@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   buildEvidenceRecoveryHint,
+  composeFramedBoundedAnswer,
   initialResearchRequirements,
 } = require("../src/main/external-evidence-recovery.js");
 const {
@@ -16,7 +17,7 @@ const {
   isInternalRecoveryPromptText,
   restoreEvidenceRecoveryContext,
 } = require("../src/main/turn-recovery-context.js");
-const { evaluateAnswerEvidence } = require("../src/main/answer-evidence-finalizer.js");
+const { evaluateAnswerEvidence, evaluateAnswerEvidenceWithJudge } = require("../src/main/answer-evidence-finalizer.js");
 const { extractLayerText, extractUserOriginalRequest } = require("../src/main/engine-message-layers.js");
 const { buildTaskContract, withTaskContractPrefix } = require("../src/main/task-contract.js");
 const { buildTurnPolicy } = require("../src/main/turn-policy.js");
@@ -98,10 +99,39 @@ assert.match(extractLayerText(internalRecoveryPrompt, "execution_constraints"), 
 assert.equal(isInternalRecoveryPromptText(internalRecoveryPrompt), true);
 assert.doesNotMatch(extractUserOriginalRequest(internalRecoveryPrompt), /missing primary source/);
 
-const userText = "某地区有哪些正式认证的医院？";
+const userText = "某地区目前有哪些正式认证的医院？";
 const contract = buildTaskContract({ text: userText });
+// Turn-start detection fires on the freshness word only — the EMPTY baseline
+// plan knows nothing about accreditation. The model declares the semantics.
+assert.equal(contract.externalFactPolicy.verificationPlan.entityEvidenceRequired, false);
+{
+  const { normalizeVerificationPlan } = require("../src/main/external-claim-profiles.js");
+  const { buildExternalFactPolicy } = require("../src/main/external-fact-policy.js");
+  const { withExternalFactPolicy } = require("../src/main/task-evidence-policy.js");
+  const externalFact = buildExternalFactPolicy({
+    active: true,
+    reasonCodes: [...contract.externalFactPolicy.reasonCodes, "model_external_fact"],
+    requiresFreshness: true,
+    requiresSourceLinks: true,
+    verificationPlan: normalizeVerificationPlan({ profileIds: ["model_semantic_claim"], ...classificationPlan }),
+  });
+  contract.externalFactPolicy = externalFact;
+  contract.evidencePolicy = withExternalFactPolicy(contract.evidencePolicy, externalFact);
+}
 const authorityUrl = "https://health.example.gov.cn/accreditation";
-const partial = evaluateAnswerEvidence({
+// Model-first: the semantic judge rules support from the quoted evidence
+// window ("被评定为三级甲等" entails the accreditation claim); the fabricated
+// entity has NO window and is stripped by the literal floor.
+const supportJudge = async () => ({
+  supportedClaims: ["示例市人民医院"],
+  unsupportedClaims: [],
+  authoritativeUrls: [authorityUrl],
+  conflictingClaims: [],
+  informalLabel: false,
+  framingNote: "",
+  stakes: "low",
+});
+const partial = await evaluateAnswerEvidenceWithJudge({
   assistant: [
     "正式认证医院（共 2 家）：",
     "示例市人民医院",
@@ -114,7 +144,7 @@ const partial = evaluateAnswerEvidence({
   tools: [{ result: `示例市人民医院被评定为三级甲等医院。\n${authorityUrl}` }],
   userText,
   recoveryAttempt: true,
-});
+}, { judge: supportJudge });
 assert.equal(partial.assessment.ok, true);
 assert.equal(partial.assessment.salvagedSupportedSubset, true);
 assert.match(partial.assistant, /示例市人民医院/);
@@ -133,8 +163,11 @@ const firstPass = evaluateAnswerEvidence({
 });
 assert.equal(firstPass.assessment.reason, "entity_claim_not_in_evidence");
 assert.equal(firstPass.triggerVerifyRetry, true);
-assert.doesNotMatch(firstPass.assistant, /不能交付这份名单/);
-assert.match(firstPass.assistant, /搜索摘要和行业俗称/);
+// Ordinary fail-open: the fabricated entity's line is stripped, the rest is
+// delivered under a banner — never the old zero-content refusal.
+assert.doesNotMatch(firstPass.assistant, /虚构市人民医院/);
+assert.match(firstPass.assistant, /⚠️/);
+assert.match(firstPass.assistant, /已从上方名单移除/);
 
 const contractPrefix = withTaskContractPrefix(userText, contract);
 assert.match(contractPrefix, /Verify the premise before building the roster/);
@@ -143,7 +176,94 @@ assert.match(contractPrefix, /Deliver every supported conclusion or an honestly 
 const production = fs.readFileSync("src/main/external-evidence-recovery.js", "utf8");
 assert.doesNotMatch(production, /中国建筑集团|中国冶金科工|中冶|副部级建筑/);
 
+// Domain-vocabulary leak guard (model-first refactor 2026-07-20): the gate's
+// production sources must not hardcode any domain's defining vocabulary —
+// semantics belong to the model. The ONLY exception is external-fact-policy's
+// high-stakes fail-closed floor (medical/legal/finance), which is excluded here.
+const gateSources = [
+  "src/main/external-claim-profiles.js",
+  "src/main/external-claim-gate.js",
+  "src/main/entity-claim-evidence.js",
+  "src/main/evidence-gate.js",
+  "src/main/external-source-authority.js",
+  "src/main/evidence-entailment-judge.js",
+  "src/main/answer-evidence-finalizer.js",
+].map((file) => fs.readFileSync(file, "utf8")).join("\n");
+assert.doesNotMatch(gateSources, /副部级|正部级|正厅级|副厅级|中管企业|中管|三甲|三级甲等|双一流|vice[- ]ministerial|ministerial[- ]level/i);
+
 const recoveryContextProduction = fs.readFileSync("src/main/turn-recovery-context.js", "utf8");
 assert.doesNotMatch(recoveryContextProduction, /China Construction|metallurgical|vice-ministerial/i);
+
+// ---------------------------------------------------------------------------
+// Framed bounded answer (fail-open delivery): real research → banner-kept;
+// fabricated entities are stripped line-wise; nothing honest left → null.
+{
+  const zhUserText = "中国有哪些建筑公司是副部级别";
+  const baseAssessment = {
+    ok: false,
+    reason: "entity_claim_not_in_evidence",
+    unsupportedClaims: ["中国样例建筑集团有限公司"],
+  };
+  const kept = composeFramedBoundedAnswer({
+    assistant: "副部级建筑央企共1家：\n中国样例建筑集团有限公司",
+    assessment: baseAssessment,
+    evidenceSummary: { hasFreshEvidence: true },
+    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
+    userText: zhUserText,
+    framing: { informalLabel: true, framingNote: "副部级是行业俗称,并非官方正式认定。" },
+  });
+  assert(kept);
+  assert.match(kept.assistant, /行业俗称/);
+  assert.match(kept.assistant, /中国样例建筑集团/);
+  assert.doesNotMatch(kept.assistant, /共1家/);
+  assert.equal(kept.assessment.ok, false);
+  assert.equal(kept.assessment.framedBounded, true);
+  assert.equal(kept.assessment.informalLabelFramed, true);
+
+  // Fabrication floor: an entity absent from the evidence is stripped — and
+  // when nothing honest survives, the composer returns null (→ fallback).
+  assert.equal(composeFramedBoundedAnswer({
+    assistant: "虚构建筑集团有限公司",
+    assessment: { ...baseAssessment, unsupportedClaims: ["虚构建筑集团有限公司"] },
+    evidenceSummary: { hasFreshEvidence: true },
+    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
+    userText: zhUserText,
+  }), null);
+  const stripped = composeFramedBoundedAnswer({
+    assistant: "名单：\n虚构建筑集团有限公司\n中国样例建筑集团有限公司",
+    assessment: { ...baseAssessment, unsupportedClaims: ["虚构建筑集团有限公司", "中国样例建筑集团有限公司"] },
+    evidenceSummary: { hasFreshEvidence: true },
+    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
+    userText: zhUserText,
+  });
+  assert(stripped);
+  assert.doesNotMatch(stripped.assistant, /虚构建筑集团/);
+  assert.match(stripped.assistant, /中国样例建筑集团/);
+  assert.match(stripped.assistant, /已从上方名单移除/);
+  assert.equal(stripped.assessment.strippedFabricatedClaims, true);
+
+  // No fresh evidence, judge-ruled conflicts, ungrounded numbers → stay gated.
+  assert.equal(composeFramedBoundedAnswer({
+    assistant: "中国样例建筑集团有限公司",
+    assessment: baseAssessment,
+    evidenceSummary: { hasFreshEvidence: false },
+    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
+    userText: zhUserText,
+  }), null);
+  assert.equal(composeFramedBoundedAnswer({
+    assistant: "中国样例建筑集团有限公司",
+    assessment: { ...baseAssessment, conflictingClaims: ["中国样例建筑集团有限公司"] },
+    evidenceSummary: { hasFreshEvidence: true },
+    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
+    userText: zhUserText,
+  }), null);
+  assert.equal(composeFramedBoundedAnswer({
+    assistant: "准确率 99.9%。",
+    assessment: { ok: false, reason: "numeric_claim_not_in_evidence", ungroundedNumbers: ["99.9%"] },
+    evidenceSummary: { hasFreshEvidence: true },
+    evidenceText: "国资委央企名录。",
+    userText: zhUserText,
+  }), null);
+}
 
 console.log("external-evidence-recovery: ok");

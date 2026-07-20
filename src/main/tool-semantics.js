@@ -131,16 +131,16 @@ function isSideEffectFreeToolRun(tools = []) {
   ["todowrite", { idempotent: true, replaySafe: true, externalSideEffect: false }],
   ["question", { idempotent: true, replaySafe: true, externalSideEffect: false }],
   ["lily_intent_contract_commit", { readOnly: true, evidenceKind: "intent_contract" }],
-  ["edit", { destructive: true }],
-  ["multiedit", { destructive: true }],
-  ["write", { destructive: true }],
+  ["edit", { destructive: true, evidenceKind: "file_write" }],
+  ["multiedit", { destructive: true, evidenceKind: "file_write" }],
+  ["write", { destructive: true, evidenceKind: "file_write" }],
   ["delete", { destructive: true }],
   ["rm", { destructive: true }],
   ["mv", { destructive: true }],
   ["cp", { destructive: true }],
   ["git", { destructive: true }],
-  ["apply_patch", { destructive: true }],
-  ["notebookedit", { destructive: true }],
+  ["apply_patch", { destructive: true, evidenceKind: "file_write" }],
+  ["notebookedit", { destructive: true, evidenceKind: "file_write" }],
 ].forEach(([name, semantics]) => registerToolSemantics(name, semantics));
 
 module.exports = {

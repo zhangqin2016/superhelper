@@ -36,8 +36,7 @@ assert.match(noResearchRanking.externalFactPolicy.policy, /Do not use web\/API t
 
 const currentRole = buildTaskContract({ text: "苹果公司现任 CEO 是谁？" });
 assert.equal(currentRole.taskType, "external_fact");
-assert(currentRole.externalFactPolicy.reasonCodes.includes("role"));
-assert(currentRole.externalFactPolicy.reasonCodes.includes("freshness"));
+assert(currentRole.externalFactPolicy.reasonCodes.includes("freshness"), "incumbent questions are time-sensitive; the domain itself is not coded");
 
 const currentVersion = buildTaskContract({ text: "最新 Node.js 版本是什么？" });
 assert.equal(currentVersion.taskType, "external_fact", "a version question is research, not a release operation");

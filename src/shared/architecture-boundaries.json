@@ -5,6 +5,7 @@
   "hotspotLineBudgets": {
     "server/src/services/client-config.js": 975,
     "server/src/services/media-gateway.js": 651,
+    "src/main/answer-evidence-finalizer.js": 578,
     "src/main/capability-broker.js": 502,
     "src/main/data-migration.js": 1156,
     "src/main/ipc-projects.js": 503,

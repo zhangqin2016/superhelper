@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { evaluateAnswerEvidence } = require("../src/main/answer-evidence-finalizer.js");
+const { evaluateAnswerEvidence, evaluateAnswerEvidenceWithJudge } = require("../src/main/answer-evidence-finalizer.js");
 const { findBrokerTool } = require("../src/main/mcp/tool-broker-registry.js");
 const {
   applyModelTurnContractRefinement,
@@ -65,20 +65,57 @@ assert(unknownContract.evidencePolicy.requiredEvidenceKinds.includes("external")
 assert.deepEqual(unknownContract.externalFactPolicy.verificationPlan.claimKinds, ["zeta_assurance_status"]);
 assert.deepEqual(unknownContract.externalFactPolicy.verificationPlan.authorityHosts, ["authority.test"]);
 
+// Entity present in evidence but support unproven → PENDING the semantic
+// judge (was: anchor-group vocabulary). The judge then rules from the quoted
+// window: a directory mention does not entail authorization.
 const irrelevantEvidence = assess(
   unknownContract,
   `Nimbus Cloud is Zeta Assurance authorized.\n${authorityUrl}`,
   `Nimbus Cloud appears in a provider directory. Zeta Assurance is a program.\n${authorityUrl}`,
 );
-assert.equal(irrelevantEvidence.reason, "entity_claim_not_in_evidence");
-assert(irrelevantEvidence.entityCoverage.unsupportedClassificationClaims.includes("Nimbus Cloud"));
+assert.equal(irrelevantEvidence.reason, "semantic_support_unverified");
+assert(irrelevantEvidence.entityCoverage.pendingClaims.includes("Nimbus Cloud"));
 
-const groundedEvidence = assess(
-  unknownContract,
-  `Nimbus Cloud is Zeta Assurance authorized.\n${authorityUrl}`,
-  `Nimbus Cloud is Zeta Assurance authorized.\n${authorityUrl}`,
-);
-assert.equal(groundedEvidence.ok, true);
+const judgedIrrelevant = await evaluateAnswerEvidenceWithJudge({
+  assistant: `Nimbus Cloud is Zeta Assurance authorized.\n${authorityUrl}`,
+  taskContract: unknownContract,
+  turnPolicy: buildTurnPolicy({ text: userText, taskContract: unknownContract }),
+  evidenceSummary: { hasFreshEvidence: true, hasDocumentEvidence: false, counts: { webSources: 1 } },
+  tools: [{ name: "websearch", result: `Nimbus Cloud appears in a provider directory. Zeta Assurance is a program.\n${authorityUrl}` }],
+  userText,
+}, {
+  judge: async () => ({
+    supportedClaims: [],
+    unsupportedClaims: ["Nimbus Cloud"],
+    authoritativeUrls: [],
+    conflictingClaims: [],
+    informalLabel: false,
+    framingNote: "",
+    stakes: "low",
+  }),
+});
+assert.equal(judgedIrrelevant.assessment.ok, false);
+assert(judgedIrrelevant.assessment.unsupportedClaims.includes("Nimbus Cloud"));
+
+const groundedEvidence = await evaluateAnswerEvidenceWithJudge({
+  assistant: `Nimbus Cloud is Zeta Assurance authorized.\n${authorityUrl}`,
+  taskContract: unknownContract,
+  turnPolicy: buildTurnPolicy({ text: userText, taskContract: unknownContract }),
+  evidenceSummary: { hasFreshEvidence: true, hasDocumentEvidence: false, counts: { webSources: 1 } },
+  tools: [{ name: "websearch", result: `Nimbus Cloud is Zeta Assurance authorized.\n${authorityUrl}` }],
+  userText,
+}, {
+  judge: async () => ({
+    supportedClaims: ["Nimbus Cloud"],
+    unsupportedClaims: [],
+    authoritativeUrls: [],
+    conflictingClaims: [],
+    informalLabel: false,
+    framingNote: "",
+    stakes: "low",
+  }),
+});
+assert.equal(groundedEvidence.assessment.ok, true);
 
 const wrongAuthority = assess(
   unknownContract,

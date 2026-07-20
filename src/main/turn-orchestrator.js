@@ -1576,6 +1576,7 @@ class TurnOrchestrator {
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
 
+    let finalizeDone = null;
     const terminalMeta = {
       durationMs: state.durationMs ?? null,
       totalCostUsd: state.totalCostUsd ?? null,
@@ -1584,13 +1585,13 @@ class TurnOrchestrator {
       engineMessageId: payload?.engineMessageId || null,
     };
     if (interrupted) {
-      this._finalize(sessionId, "turn.interrupted", {
+      finalizeDone = this._finalize(sessionId, "turn.interrupted", {
         interrupted: true,
         assistant: normalized.text || state.assistantText,
         ...terminalMeta,
       });
     } else if (stalled) {
-      this._finalize(sessionId, "turn.stalled", {
+      finalizeDone = this._finalize(sessionId, "turn.stalled", {
         stalled: true,
         assistant: appendIncompleteTurnSummary(normalized.text || state.assistantText, state, payload),
         ...terminalMeta,
@@ -1605,7 +1606,7 @@ class TurnOrchestrator {
       }
       const rawFailureText = collectFailureTextFromState(state) || normalized.text || payload?.error || payload?.message || friendly;
       const failedTurnId = state.turnId;
-      this._finalize(sessionId, "turn.failed", {
+      finalizeDone = this._finalize(sessionId, "turn.failed", {
         failed: true,
         assistant: failure.suppressIncompleteSummary ? friendly : appendIncompleteTurnSummary(friendly, state, payload),
         errorCode: failure.code,
@@ -1629,7 +1630,7 @@ class TurnOrchestrator {
       void this._maybeSelfHealAndRetry(sessionId, failure);
     } else if (blockingProcessJobs.length) {
       const notice = runningProcessJobNotice(blockingProcessJobs);
-      this._finalize(sessionId, "turn.stalled", {
+      finalizeDone = this._finalize(sessionId, "turn.stalled", {
         stalled: true,
         assistant: appendIncompleteTurnSummary(
           [normalized.text || state.assistantText, notice].filter(Boolean).join("\n\n"),
@@ -1645,7 +1646,7 @@ class TurnOrchestrator {
         rawText: String(state.enginePayload?.rawText || ""),
         tools: [...(state.tools?.values?.() || [])],
       };
-      this._finalize(sessionId, "turn.completed", {
+      finalizeDone = this._finalize(sessionId, "turn.completed", {
         assistant: normalized.text || state.assistantText,
         resultFromCli: Boolean(payload?.resultFromCli),
         ...terminalMeta,
@@ -1662,7 +1663,7 @@ class TurnOrchestrator {
         runner?.agentResumeId || null,
       );
     }
-    this._afterTurnFinalized(sessionId);
+    Promise.resolve(finalizeDone).then(() => this._afterTurnFinalized(sessionId));
   }
 
   /** Post-completion procedure-card distillation. Fail-open and async — the
@@ -1705,7 +1706,7 @@ class TurnOrchestrator {
       raw,
       classified,
     });
-    this._finalize(sessionId, "turn.failed", {
+    const finalizeDone = this._finalize(sessionId, "turn.failed", {
       failed: true,
       assistant: text,
       errorCode: classified?.code || "ENGINE_ERROR",
@@ -1714,7 +1715,7 @@ class TurnOrchestrator {
       error: raw,
     });
     void this._maybeSelfHealAndRetry(sessionId, classified);
-    this._afterTurnFinalized(sessionId);
+    Promise.resolve(finalizeDone).then(() => this._afterTurnFinalized(sessionId));
   }
 
   _finalize(sessionId, type, payload = {}) {
