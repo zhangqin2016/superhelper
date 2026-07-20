@@ -8,6 +8,7 @@ imageio>=2.34,<3
 numpy>=1.26,<3
 markitdown[pptx,pdf,docx]>=0.0.1a2
 pypdf>=4.0,<7
+reportlab>=4.2,<5
 pdf2image>=1.17,<2
 lxml>=5.0,<6
 defusedxml>=0.7,<1

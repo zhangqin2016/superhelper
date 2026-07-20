@@ -1,5 +1,15 @@
 "use strict";
 
+const {
+  buildExternalClaimPlan,
+  emptyVerificationPlan,
+  mergeExternalClaimPlans,
+  mergeModelVerificationPlan,
+  normalizeVerificationPlan,
+  reasonCodesForPlan,
+  requirementsForPlan,
+} = require("./external-claim-profiles");
+
 const RANKING_PATTERNS = [
   /(?:排行榜?|排名|榜单|第\s*[一二三四五六七八九十百\d]+\s*名|前\s*\d+\s*(?:名|个)?)/i,
   /\b(?:top\s*(?:\d+|ten|twenty|hundred)|rank(?:ing|ed|s)?|leaderboard)\b/i,
@@ -21,7 +31,7 @@ const CONTEXTUAL_LOOKUP_RE = /(?:搜索一下|查一下|查证|核实|找来源|
 const URL_RE = /https?:\/\/[^\s<>"]+/i;
 const FRESHNESS_RE = /(?:最新|最近|当前|现在|目前|今天|今日|实时|截至|现任|刚刚|latest|current|today|recent|real[- ]?time|right now|as of|incumbent)/i;
 const REQUEST_RE =
-  /[?？]|(?:什么|多少|几|谁|哪个|哪些|是否|有没有|告诉我|给我|列出|比较|查|搜索|查询|分析|解读|总结|how much|how many|who is|what is|which|show me|list|compare|find|tell me)/i;
+  /[?？]|(?:什么|多少|几|谁|哪个|哪些|哪家|是否|有没有|告诉我|给我|列出|比较|查|搜索|查询|分析|解读|总结|how much|how many|who is|what is|which|show me|list|compare|find|tell me)/i;
 const CREATIVE_ONLY_RE =
   /(?:写一首|写首|编一个|虚构|纯创作|小说|诗歌|故事|段子|creative writing|write (?:a|an) (?:poem|story|joke)|fictional)/i;
 const OPERATIONAL_ACTION_RE =
@@ -54,9 +64,7 @@ const LOCAL_ONLY_CATEGORIES = new Set([
   "server",
   "ui",
 ]);
-
-const NAMED_RANKING_SOURCE_RE =
-  /(?:\bqs\b|times higher education|u\.?s\.? news|fortune|forbes|软科|校友会|世界银行|国家统计局|官方榜单|按.{0,16}(?:销量|营收|市值|评分|用户数|gdp|人口|票房|下载量)|according to|ranked by)/i;
+const RETRYABLE_RESEARCH_GAP_RE = /^(?:missing_required_evidence:external|authoritative_source_required|entity_claim_not_in_evidence|external_claim_not_in_evidence|numeric_claim_not_in_evidence|external_fact_without_source_link|source_link_not_in_evidence|entity_claim_conflicts_with_evidence|forbidden_inference:)/;
 
 function hasAny(text, patterns) {
   return patterns.some((pattern) => pattern.test(text));
@@ -73,6 +81,9 @@ function inactiveIntent() {
     requiresFreshness: false,
     requiresSourceLinks: false,
     scopeClarificationRecommended: false,
+    scopeClarificationRequired: false,
+    scopeDisclosureRequired: false,
+    verificationPlan: emptyVerificationPlan(),
   };
 }
 
@@ -91,6 +102,9 @@ function classifyExternalFactIntent(text = "") {
   const dynamicReasons = DYNAMIC_DOMAINS
     .filter(([, pattern]) => pattern.test(source))
     .map(([code]) => code);
+  const verificationPlan = buildExternalClaimPlan(source);
+  const claimPlanRefinement = verificationPlan.profileIds.length > 0 &&
+    /^(?:只算|只要|包括|不包括|按|按照|口径|scope|include|exclude|use)/i.test(source);
   const explicitResearch =
     researchAllowed || EXPLICIT_WEB_RE.test(source) ||
     (CONTEXTUAL_LOOKUP_RE.test(source) && (ranking || superlative || freshness || hasUrl || dynamicReasons.length > 0));
@@ -101,6 +115,7 @@ function classifyExternalFactIntent(text = "") {
   if (hasUrl) reasonCodes.push("user_url");
   if (freshness && (dynamicReasons.length || ranking || superlative)) reasonCodes.push("freshness");
   if (requestsAnswer || ranking || superlative || explicitResearch) reasonCodes.push(...dynamicReasons);
+  if (requestsAnswer || claimPlanRefinement) reasonCodes.push(...reasonCodesForPlan(verificationPlan));
 
   const uniqueReasons = [...new Set(reasonCodes)];
   const creativeOnly = CREATIVE_ONLY_RE.test(source);
@@ -124,8 +139,12 @@ function classifyExternalFactIntent(text = "") {
       "release_version",
       "statistics",
       "high_stakes",
+      "organization_status",
+      "regulated_classification",
     ].includes(code),
   );
+  const scopeClarificationRequired = verificationPlan.clarificationRequired &&
+    uniqueReasons.some((code) => ["organization_status", "regulated_classification"].includes(code));
 
   return {
     detected,
@@ -136,7 +155,10 @@ function classifyExternalFactIntent(text = "") {
     reasonCodes: uniqueReasons,
     requiresFreshness: detected,
     requiresSourceLinks,
-    scopeClarificationRecommended: ranking && !NAMED_RANKING_SOURCE_RE.test(source),
+    scopeClarificationRecommended: scopeClarificationRequired,
+    scopeClarificationRequired,
+    scopeDisclosureRequired: verificationPlan.scopeDisclosureRequired,
+    verificationPlan,
   };
 }
 
@@ -153,31 +175,45 @@ function shouldActivateExternalFact(intent = inactiveIntent(), categories = []) 
 
 function buildExternalFactPolicy(intent = inactiveIntent()) {
   const required = Boolean(intent?.active);
+  const reasonCodes = required ? [...new Set(intent.reasonCodes || [])] : [];
+  const verificationPlan = required
+    ? normalizeVerificationPlan(intent.verificationPlan)
+    : emptyVerificationPlan();
+  const scopeClarificationRequired = required && Boolean(verificationPlan.clarificationRequired);
+  const researchedRequirements = [
+    "State the as-of date or source date for time-sensitive facts.",
+    "For rankings or comparisons, name the ranking source and comparison criteria.",
+    "Cite only source links that appeared in this turn's tool results or the user's supplied material.",
+    "If evidence is unavailable, stale, or conflicting, say what cannot be confirmed instead of completing a plausible answer from memory.",
+    ...requirementsForPlan(verificationPlan),
+  ];
   return {
     required,
-    reasonCodes: required ? [...new Set(intent.reasonCodes || [])] : [],
+    reasonCodes,
     requiresFreshness: required && intent.requiresFreshness !== false,
     requiresSourceLinks: required && Boolean(intent.requiresSourceLinks),
-    researchProhibited: required && Boolean(intent.researchProhibited),
+    researchProhibited: Boolean(intent.researchProhibited),
     scopeClarificationRecommended: required && Boolean(intent.scopeClarificationRecommended),
+    scopeClarificationRequired,
+    scopeDisclosureRequired: required && Boolean(verificationPlan.scopeDisclosureRequired),
+    verificationPlan,
+    sourceAuthority: verificationPlan.sourceAuthority,
+    entityEvidenceRequired: verificationPlan.entityEvidenceRequired,
     policy: required
       ? intent.researchProhibited
-        ? "The user explicitly prohibited research. Do not use web/API tools and do not present current external facts or rankings as verified from memory. Ask one concise scope question when needed; otherwise state that the requested current fact cannot be confirmed under this constraint."
-        : "Verify this external factual request before answering, even if the user did not explicitly ask to search. Use websearch/webfetch, a live API, or an authoritative supplied document. If region, time period, category, ranking source, or metric would materially change the answer, ask one concise scope question instead of silently choosing."
+        ? "The user explicitly prohibited research. Do not use web/API tools and do not present current external facts or rankings as verified from memory. Use reasonable disclosed assumptions for non-blocking ambiguity; otherwise state that the requested current fact cannot be confirmed under this constraint."
+        : scopeClarificationRequired
+          ? "Clarify every unresolved scope dimension in the verification plan before researching toward or presenting a definitive list or classification."
+          : "Verify this external factual request before answering, even if the user did not explicitly ask to search. Use websearch/webfetch, a live API, or an authoritative supplied document. For reversible information requests, choose a reasonable scope or comparison basis, state it explicitly, and mention materially different interpretations; ask only when no useful answer is possible without the user's choice."
       : "No external-fact override is required for this turn.",
     finalAnswerRequirements: required
       ? intent.researchProhibited
         ? [
             "Honor the no-research constraint: do not invoke web/API tools.",
             "Do not provide a current ranking or changing external fact as if verified from memory.",
-            "Ask one concise scope question when useful; otherwise state what cannot be confirmed under the constraint.",
+            "Use reasonable disclosed assumptions for non-blocking ambiguity; state what cannot be confirmed under the constraint.",
           ]
-        : [
-            "State the as-of date or source date for time-sensitive facts.",
-            "For rankings or comparisons, name the ranking source and comparison criteria.",
-            "Cite only source links that appeared in this turn's tool results or the user's supplied material.",
-            "If evidence is unavailable, stale, or conflicting, say what cannot be confirmed instead of completing a plausible answer from memory.",
-          ]
+        : researchedRequirements
       : [],
   };
 }
@@ -188,19 +224,27 @@ function inheritExternalFactIntent(taskType, current = {}, previousSnapshot = nu
   const constraints = (previousSnapshot?.intentContract?.constraints || []).join("\n");
   const inheritedNoResearch = Boolean(previous.researchProhibited) || RESEARCH_PROHIBITED_RE.test(constraints);
   const currentIsExplicit = Boolean(current.detected || current.explicitResearch || current.researchProhibited);
+  const inheritedReasons = [...new Set([
+    ...(previous.reasonCodes || []),
+    ...(current.reasonCodes || []),
+  ])];
+  if (!inheritedReasons.length) inheritedReasons.push("inherited_external_fact");
+  const verificationPlan = mergeExternalClaimPlans(
+    current.verificationPlan,
+    previous.verificationPlan,
+  );
   return {
     ...current,
     active: true,
     detected: true,
-    reasonCodes: current.reasonCodes?.length
-      ? current.reasonCodes
-      : previous.reasonCodes?.length ? previous.reasonCodes : ["inherited_external_fact"],
+    reasonCodes: inheritedReasons,
     requiresFreshness: true,
     requiresSourceLinks: true,
     researchProhibited: currentIsExplicit ? Boolean(current.researchProhibited) : inheritedNoResearch,
-    scopeClarificationRecommended: currentIsExplicit
-      ? Boolean(current.scopeClarificationRecommended)
-      : Boolean(previous.scopeClarificationRecommended),
+    scopeClarificationRecommended: verificationPlan.clarificationRequired,
+    scopeClarificationRequired: verificationPlan.clarificationRequired,
+    scopeDisclosureRequired: verificationPlan.scopeDisclosureRequired,
+    verificationPlan,
     suppressedByOperationalTask: false,
   };
 }
@@ -212,19 +256,63 @@ function shouldAutoVerifyExternalFact({
   sideEffectFree = false,
   enabled = true,
 } = {}) {
+  const researchCanImprove = !evidenceSummary?.hasFreshEvidence ||
+    RETRYABLE_RESEARCH_GAP_RE.test(String(assessment?.reason || ""));
   return Boolean(
     enabled &&
       policy?.required &&
       !policy?.researchProhibited &&
       !policy?.scopeClarificationRecommended &&
-      !evidenceSummary?.hasFreshEvidence &&
+      researchCanImprove &&
       assessment?.ok === false &&
       assessment?.strongClaim &&
       sideEffectFree,
   );
 }
 
+function applyModelVerificationPlanCandidate(policy = null, candidate = null, { allowActivation = false } = {}) {
+  if (!candidate || typeof candidate !== "object") return null;
+  const activationRequested = !policy?.required && allowActivation && candidate.externalFact === true;
+  if (!policy?.required && !activationRequested) return null;
+  const verificationPlan = mergeModelVerificationPlan(policy?.verificationPlan, candidate);
+  if (activationRequested && !verificationPlan.claimKinds.length) return null;
+  return buildExternalFactPolicy({
+    active: true,
+    reasonCodes: [...new Set([
+      ...(policy?.reasonCodes || []),
+      ...(activationRequested ? ["model_external_fact"] : []),
+      ...reasonCodesForPlan(verificationPlan),
+    ])],
+    requiresFreshness: activationRequested || policy?.requiresFreshness,
+    requiresSourceLinks: activationRequested || policy?.requiresSourceLinks,
+    researchProhibited: Boolean(policy?.researchProhibited),
+    scopeClarificationRecommended:
+      Boolean(policy?.scopeClarificationRecommended) || verificationPlan.clarificationRequired,
+    scopeClarificationRequired: verificationPlan.clarificationRequired,
+    scopeDisclosureRequired: verificationPlan.scopeDisclosureRequired,
+    verificationPlan,
+  });
+}
+
+function activateExternalFactPolicyFromObservation(policy = null) {
+  if (policy?.required) return null;
+  return buildExternalFactPolicy({
+    active: true,
+    reasonCodes: ["observed_external_research"],
+    requiresFreshness: true,
+    requiresSourceLinks: true,
+    researchProhibited: Boolean(policy?.researchProhibited),
+    verificationPlan: normalizeVerificationPlan({
+      profileIds: ["observed_external_research"],
+      claimKinds: ["external_fact"],
+      entityEvidenceRequired: true,
+    }),
+  });
+}
+
 module.exports = {
+  activateExternalFactPolicyFromObservation,
+  applyModelVerificationPlanCandidate,
   buildExternalFactPolicy,
   classifyExternalFactIntent,
   inheritExternalFactIntent,

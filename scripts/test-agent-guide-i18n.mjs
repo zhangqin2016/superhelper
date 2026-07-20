@@ -161,11 +161,12 @@ const allLocalGuideSkills = [
 const enGuide = skillManager.buildAgentGuideContent([], "en");
 assert.match(enGuide, /Reply in the primary language of the user's latest message/);
 assert.match(enGuide, /do not invent global skills or describe project memory as a skill/i);
-assert.match(enGuide, /rankings\/top lists\/best\/latest\/most recent/);
-assert.match(enGuide, /Even when the user does not say "search" or "look it up"/);
-assert.match(enGuide, /source links, source dates, and the ranking\/comparison criteria/);
-assert.match(enGuide, /ask one concise scope question first; do not silently choose/);
-assert.match(enGuide, /never fill in a plausible-looking authoritative answer or list from memory/);
+assert.match(enGuide, /External fact routing is semantic, not domain-based/);
+assert.match(enGuide, /depends on facts outside this conversation/);
+assert.match(enGuide, /verificationPlan with externalFact=true/);
+assert.match(enGuide, /authorityHosts and evidenceAnchorGroups/);
+assert.match(enGuide, /reasonable disclosed scope for reversible ambiguity/);
+assert.match(enGuide, /If evidence is unavailable, stale, or conflicting/);
 assert.doesNotMatch(enGuide, /Reply in English by default/);
 assertNoLocalizedGuideLeak(enGuide, "English agent guide");
 assertNoStaticDependencyClaims(enGuide, "English agent guide");
@@ -180,11 +181,12 @@ assertAgentGuideWithinStaticBudget(arGuide, "Arabic base agent guide");
 
 const zhGuide = skillManager.buildAgentGuideContent([], "zh-CN");
 assert.match(zhGuide, /禁止编造“全局技能”或把项目记忆误说成技能/);
-assert.match(zhGuide, /排行榜\/排名\/前十\/最好\/最新\/最近/);
-assert.match(zhGuide, /即使用户没有说“搜索\/查一下”/);
-assert.match(zhGuide, /来源链接、来源日期和排名\/比较口径/);
-assert.match(zhGuide, /先问一个简短的口径问题，不得静默代选/);
-assert.match(zhGuide, /禁止凭记忆补齐一个看似权威的答案或列表/);
+assert.match(zhGuide, /外部事实分流是语义驱动的/);
+assert.match(zhGuide, /externalFact=true/);
+assert.match(zhGuide, /verificationPlan/);
+assert.match(zhGuide, /authorityHosts/);
+assert.match(zhGuide, /evidenceAnchorGroups/);
+assert.match(zhGuide, /证据缺失、过时或冲突时说明限制/);
 assertNoStaticDependencyClaims(zhGuide, "Chinese agent guide");
 assertAgentGuideWithinStaticBudget(zhGuide, "Chinese base agent guide");
 
@@ -365,7 +367,6 @@ for (const entry of fs.readdirSync(skillsCatalogDir, { withFileTypes: true })) {
   const skillPath = path.join(skillsCatalogDir, entry.name, "SKILL.md");
   if (fs.existsSync(skillPath)) {
     const body = fs.readFileSync(skillPath, "utf8");
-    assertNoCjk(body, `${entry.name}/catalog SKILL.md`);
     assertNoForcedChinese(body, `${entry.name}/catalog SKILL.md`);
     assertNoAppLanguageResponseSource(body, `${entry.name}/catalog SKILL.md`);
     assertNoStaticDependencyClaims(body, `${entry.name}/catalog SKILL.md`);

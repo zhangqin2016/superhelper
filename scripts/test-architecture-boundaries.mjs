@@ -78,6 +78,158 @@ const intentCall = orchestrator.indexOf("const turnIntelligence = resolveTurnInt
 const readinessCall = orchestrator.indexOf("await prepareTurnCapabilityReadiness(");
 assert(intentCall >= 0 && readinessCall > intentCall, "turn intent must resolve before capability readiness");
 
+const subagentProjectionSource = manifest.singleSources.subagentRuntimeProjection;
+assert(
+  orchestrator.includes('require("./subagent-runtime-projection")'),
+  `turn orchestration must delegate subagent state projection to ${subagentProjectionSource}`,
+);
+for (const formerMethod of [
+  "_applySubagentEvent",
+  "_compactSubagent",
+  "_refreshSubagentPhase",
+  "_scheduleSubagentWatch",
+  "_syncSubagentFromTool",
+]) {
+  assert(
+    !orchestrator.includes(`${formerMethod}(`),
+    `${formerMethod} belongs in ${subagentProjectionSource}, not the turn orchestrator`,
+  );
+}
+
+const taskRunRuntimeSource = manifest.singleSources.taskRunRuntime;
+assert(
+  orchestrator.includes('require("./task-run-runtime")'),
+  `turn orchestration must delegate TaskRun state transitions to ${taskRunRuntimeSource}`,
+);
+for (const formerMethod of [
+  "_addTaskEvidence",
+  "_beginTaskRun",
+  "_completeTaskRun",
+  "_markTaskProgress",
+  "_updateTaskLivenessFromNotice",
+  "_updateTaskPlanFromTodos",
+]) {
+  assert(
+    !orchestrator.includes(`${formerMethod}(`),
+    `${formerMethod} belongs in ${taskRunRuntimeSource}, not the turn orchestrator`,
+  );
+}
+
+const externalCommandRuntimeSource = manifest.singleSources.externalCommandRuntime;
+assert(
+  orchestrator.includes('require("./external-command-runtime")'),
+  `external command admission must delegate to ${externalCommandRuntimeSource}`,
+);
+for (const formerOwner of ["_buildLedgerStore(", "_externalLedger(", "_persistExternalLedgers("]) {
+  assert(
+    !orchestrator.includes(formerOwner),
+    `${formerOwner} belongs in ${externalCommandRuntimeSource}, not the turn orchestrator`,
+  );
+}
+
+const turnRecoveryRuntimeSource = manifest.singleSources.turnRecoveryRuntime;
+assert(
+  orchestrator.includes('require("./turn-recovery-runtime")'),
+  `turn recovery policy must delegate to ${turnRecoveryRuntimeSource}`,
+);
+assert(
+  !orchestrator.includes('require("./tool-call-rescue")'),
+  `tool rescue strategy belongs in ${turnRecoveryRuntimeSource}, not the turn orchestrator`,
+);
+
+const contextCompactionRuntimeSource = manifest.singleSources.contextCompactionRuntime;
+assert(
+  orchestrator.includes('require("./context-compaction-runtime")'),
+  `context compaction must delegate to ${contextCompactionRuntimeSource}`,
+);
+for (const movedDependency of ["context-budget-manager", "runtime/runtime-capabilities"]) {
+  assert(
+    !orchestrator.includes(movedDependency),
+    `${movedDependency} belongs behind ${contextCompactionRuntimeSource}`,
+  );
+}
+
+const terminalFinalizerSource = manifest.singleSources.turnTerminalFinalizer;
+assert(
+  orchestrator.includes('require("./turn-terminal-finalizer")'),
+  `terminal turn projection must delegate to ${terminalFinalizerSource}`,
+);
+for (const movedDependency of ["evaluateAnswerEvidence", "clearDocumentDeliveryTurnState"]) {
+  assert(
+    !orchestrator.includes(movedDependency),
+    `${movedDependency} belongs behind ${terminalFinalizerSource}`,
+  );
+}
+
+const runtimeEventRouterSource = manifest.singleSources.turnRuntimeEventRouter;
+assert(
+  orchestrator.includes('require("./turn-runtime-event-router")'),
+  `runtime draft projection must delegate to ${runtimeEventRouterSource}`,
+);
+for (const movedRuntimeCase of ['case "tool.started"', 'case "permission.requested"', 'case "process.event"']) {
+  assert(
+    !orchestrator.includes(movedRuntimeCase),
+    `${movedRuntimeCase} belongs in ${runtimeEventRouterSource}`,
+  );
+}
+assert(
+  orchestrator.includes('require("./turn-event-types")'),
+  `turn event sets must use ${manifest.singleSources.turnEventTypes}`,
+);
+
+const opencodeSession = sourceText("src/main/opencode-agent-session.js");
+for (const [ownerKey, importPath] of [
+  ["opencodeHistoryRecovery", "./opencode-history-recovery"],
+  ["opencodeSessionFailurePolicy", "./opencode-session-failure-policy"],
+  ["opencodeSubagentRuntime", "./opencode-subagent-runtime"],
+  ["opencodeTodoCompletionPolicy", "./opencode-todo-completion-policy"],
+  ["opencodeTurnLiveness", "./opencode-turn-liveness"],
+]) {
+  assert(
+    opencodeSession.includes(`require("${importPath}")`),
+    `OpenCode session must delegate to ${manifest.singleSources[ownerKey]}`,
+  );
+}
+for (const movedDefinition of [
+  "function buildAttachmentFallbackPromptPayload(",
+  "function buildTodoContinuationPrompt(",
+  "function detectIncompleteDeliverable(",
+  "function messageTextFromOpenCodeItem(",
+  "function shouldDropResumeAfterVisibleFailure(",
+]) {
+  assert(
+    !opencodeSession.includes(movedDefinition),
+    `${movedDefinition} has a focused OpenCode owner and must not return to the session coordinator`,
+  );
+}
+for (const movedTimerField of ["this._responseTimer", "this._turnWatchdogTimer", "this._healthTimer"]) {
+  assert(
+    !opencodeSession.includes(movedTimerField),
+    `${movedTimerField} belongs in ${manifest.singleSources.opencodeTurnLiveness}`,
+  );
+}
+
+const skillManager = sourceText("src/main/skill-manager.js");
+assert(
+  skillManager.includes('require("./bundled-skill-sync")'),
+  `bundled skill installation must delegate to ${manifest.singleSources.bundledSkillSync}`,
+);
+assert(
+  skillManager.includes('require("./skill-platform-overlays")'),
+  `skill guide overlays must delegate to ${manifest.singleSources.skillPlatformOverlays}`,
+);
+for (const movedDefinition of [
+  "function installSkillFromSource(",
+  "function shouldRefreshBundledSkill(",
+  "function syncManifestI18nFromBundled(",
+  "const SKILL_PLATFORM_OVERLAYS =",
+]) {
+  assert(
+    !skillManager.includes(movedDefinition),
+    `${movedDefinition} must not return to the skill manager coordinator`,
+  );
+}
+
 const semanticsSource = manifest.singleSources.toolSemantics;
 for (const relativePath of walk("src/main")) {
   if (relativePath === semanticsSource) continue;

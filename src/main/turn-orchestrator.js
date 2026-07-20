@@ -13,14 +13,9 @@ const { getLogger } = require("./logger");
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const {
   activityFromEngineNotice,
-  activityFromProcessPayload,
   appendTimelineNotice,
-  appendTimelineText,
-  closeStreamingBlocks,
   resetTimelineState,
   setActivityLabel,
-  upsertTimelineThinking,
-  upsertTimelineTool,
 } = require("./turn-timeline");
 const {
   classifyTurnFailure,
@@ -38,8 +33,8 @@ const {
   resolveMentionedDocumentFiles,
 } = require("./workspace-document-mentions");
 const { withTaskContractPrefix } = require("./task-contract");
-const { EvidenceLedger } = require("./evidence-ledger");
-const { evaluateAnswerEvidence, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
+const { applyInternalRecoveryLayer, initializeTurnEvidenceState } = require("./turn-recovery-context");
+const { applyDocumentDeliveryTurnState, documentDeliveryDispatchOptions, documentDeliveryTurnIntelligence } = require("./document-delivery-turn");
 const {
   compactCapabilityContext,
   recommendSkillCapabilityGraph,
@@ -47,21 +42,7 @@ const {
 } = require("./capability-broker");
 const { PROJECT_ROOT } = require("./config");
 const { TurnRunCoordinator } = require("./turn-run-coordinator");
-const {
-  addTaskEvidence,
-  addTaskRisk,
-  applyIntentContractToTaskRun,
-  applyTaskPlanFromTodos,
-  assessTaskVerification,
-  buildTaskToolEvidence,
-  compactTaskRun,
-  completeTaskRun,
-  createTaskRun,
-  markTaskPhase,
-  noteTaskToolUse,
-  updateTaskLiveness,
-} = require("./task-run-state");
-const { resolveModelIntentContractUpdate } = require("./intent-contract");
+const { compactTaskRun } = require("./task-run-state");
 const { resolveTurnIntelligence } = require("./turn-intelligence");
 const {
   buildDependencyAdvisoryForTurn,
@@ -71,35 +52,21 @@ const {
   findBlockingRunningProcessJobs,
   runningProcessJobNotice,
 } = require("./process-job-turn-guard");
+const { createSubagentRuntimeProjection } = require("./subagent-runtime-projection");
+const {
+  createTaskRunRuntime,
+  shouldBeginTaskRunAtTurnStart,
+} = require("./task-run-runtime");
+const { createExternalCommandRuntime } = require("./external-command-runtime");
+const { createTurnRecoveryRuntime, modelRecipes, selfHealProbeText } = require("./turn-recovery-runtime");
+const { createContextCompactionRuntime } = require("./context-compaction-runtime");
+const { createTurnTerminalFinalizer } = require("./turn-terminal-finalizer");
+const { TERMINAL_TYPES, TURN_OPTIONAL_TYPES } = require("./turn-event-types");
+const { createTurnRuntimeEventRouter } = require("./turn-runtime-event-router");
 
 const log = getLogger("turn-orchestrator");
 const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
 const RUNTIME_DIAGNOSTIC_TEXT_LIMIT = 4000;
-
-const TERMINAL_TYPES = new Set([
-  "turn.completed",
-  "turn.failed",
-  "turn.interrupted",
-  "turn.stalled",
-]);
-
-const TURN_OPTIONAL_TYPES = new Set([
-  "session.hydrated",
-  "resume.updated",
-  "resume.invalid",
-  "queue.updated",
-  "user.committed",
-  "turn.steered",
-  // Emitted AFTER the failed turn finalized (state.turnId already null), so it
-  // must be deliverable without an active turn or the renderer never sees it.
-  "turn.self_heal_retry",
-  "turn.self_heal_notice",
-  "engine.notice",
-  "engine.warning",
-  "engine.stderr",
-  "context.compactionDecision",
-  "prompt_suggestions.updated",
-]);
 
 function newTurnId() {
   return `turn_${crypto.randomUUID()}`;
@@ -107,19 +74,6 @@ function newTurnId() {
 
 function newQueueId() {
   return `queue_${crypto.randomUUID()}`;
-}
-
-function progressValueFromNotice(notice = {}) {
-  const progress = notice?.progress;
-  if (!progress || typeof progress !== "object") return null;
-  const explicit = Number(progress.percent ?? progress.value);
-  if (Number.isFinite(explicit)) return Math.max(0, Math.min(100, explicit));
-  const current = Number(progress.current ?? progress.done ?? progress.writtenBytes ?? progress.currentBytes);
-  const total = Number(progress.total ?? progress.max ?? progress.totalBytes);
-  if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
-    return Math.max(0, Math.min(100, (current / total) * 100));
-  }
-  return null;
 }
 
 function queueDispatchOptions(opts = {}) {
@@ -131,6 +85,8 @@ function queueDispatchOptions(opts = {}) {
     (opts.scheduledTaskId ? "scheduled_task" : localAssistant ? "local_assistant" : "user");
   return {
     engineText: typeof opts.engineText === "string" ? opts.engineText : null,
+    recordUser: opts.recordUser !== false,
+    recovery: opts.recovery && typeof opts.recovery === "object" ? opts.recovery : null,
     localAssistant,
     reloadSkillsBeforeStart: Boolean(opts.reloadSkillsBeforeStart),
     spawnEngine: opts.spawnEngine,
@@ -143,6 +99,7 @@ function queueDispatchOptions(opts = {}) {
     permissionMode: opts.permissionMode || undefined,
     queueOrigin,
     queueVisibility: opts.queueVisibility === "background" ? "background" : "composer",
+    ...documentDeliveryDispatchOptions(opts),
     // Mobile Command: durable command metadata must survive _tryStartQueuedItem
     // dispatch into the started turn (contract §3.2), so it rides the options.
     externalCommand: opts.externalCommand && typeof opts.externalCommand === "object"
@@ -245,18 +202,8 @@ function compactQueueItem(item) {
   };
 }
 
-const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
-
 function appendPreflightFallback(text, context, title) {
   return require("./engine-message-layers").appendExtractedContext(text, context, title);
-}
-
-function compactToolInput(input, name = "Tool") {
-  if (!input || typeof input !== "object") return {};
-  return {
-    ...input,
-    preview: buildToolPreviewLabel({ name, input }),
-  };
 }
 
 class TurnOrchestrator {
@@ -275,40 +222,63 @@ class TurnOrchestrator {
     this.boundRunners = new WeakSet();
     this.runCoordinator = ctx.turnRunCoordinator || new TurnRunCoordinator();
     this.dispatchRetryTimers = new Map();
+    this.subagentRuntime = createSubagentRuntimeProjection({
+      getState: (sessionId) => this._state(sessionId),
+      emitEngineNotice: (sessionId, notice) => this._emitEngineNotice(sessionId, notice),
+      onEngineError: (sessionId, childSessionId, message) => (
+        this._noteSubagentEngineError(sessionId, childSessionId, message)
+      ),
+    });
+    this.taskRunRuntime = createTaskRunRuntime({
+      getState: (sessionId) => this._state(sessionId),
+      emitEvent: (sessionId, event) => this.eventBus.emit(sessionId, event),
+    });
     // External-command dedup ledgers, keyed by lilySessionId → Map(commandId →
     // record). Backed by a durable store so exactly-once ADMISSION survives a
     // desktop restart (contract §3.3): a replayed mobile commandId resolves to
     // its original admission instead of enqueuing a second turn. Fail-open — if
     // the store can't be built or loaded, fall back to an in-memory-only Map
     // (the prior behaviour), never worse.
-    this._ledgerStore = this._buildLedgerStore(ctx);
-    this.externalLedgers = this._ledgerStore ? this._ledgerStore.loadSync() : new Map();
-  }
-
-  _buildLedgerStore(ctx) {
-    try {
-      if (ctx && ctx.externalCommandLedgerStore) return ctx.externalCommandLedgerStore;
-      const { createExternalCommandLedgerStore } = require("./external-command-ledger-store");
-      const { userDataPath } = require("./config");
-      return createExternalCommandLedgerStore({ filePath: userDataPath("mobile-command-ledger.json") });
-    } catch (err) {
-      log.warn("external command ledger store unavailable, in-memory only: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _persistExternalLedgers() {
-    try { this._ledgerStore && this._ledgerStore.scheduleFlush(this.externalLedgers); }
-    catch (err) { log.warn("external ledger flush schedule failed open: %s", err?.message || err); }
-  }
-
-  _externalLedger(sessionId) {
-    let ledger = this.externalLedgers.get(sessionId);
-    if (!ledger) {
-      ledger = new Map();
-      this.externalLedgers.set(sessionId, ledger);
-    }
-    return ledger;
+    this.externalCommandRuntime = createExternalCommandRuntime({
+      ledgerStore: ctx.externalCommandLedgerStore || null,
+      findSession: (sessionId) => this.ctx.sessionManager.findById(sessionId),
+      getState: (sessionId) => this._state(sessionId),
+      createQueueId: newQueueId,
+      buildQueueOptions: queueDispatchOptions,
+      emitQueue: (sessionId) => this._emitQueue(sessionId),
+      dispatchNext: (sessionId) => this._dispatchNext(sessionId),
+    });
+    this.turnRecoveryRuntime = createTurnRecoveryRuntime({
+      ctx: this.ctx,
+      transcriptStore: this.transcriptStore,
+      getState: (sessionId) => this._state(sessionId),
+      emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
+      sendUserMessage: (sessionId, text, files, opts) => this.sendUserMessage(sessionId, text, files, opts),
+      attemptRescue: (sessionId, failure) => this._maybeToolCallRescueRetry(sessionId, failure),
+    });
+    this.contextCompactionRuntime = createContextCompactionRuntime({
+      ctx: this.ctx,
+      emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
+    });
+    this.terminalFinalizer = createTurnTerminalFinalizer({
+      ctx: this.ctx,
+      turnArchive: this.turnArchive,
+      taskRunRuntime: this.taskRunRuntime,
+      subagentRuntime: this.subagentRuntime,
+      getState: (sessionId) => this._state(sessionId),
+      emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
+      attemptVerifyRetry: (sessionId, failure) => this._maybeToolCallRescueRetry(sessionId, failure),
+      scheduleBackgroundCompaction: (sessionId) => this._scheduleBackgroundCompaction(sessionId),
+    });
+    this.runtimeEventRouter = createTurnRuntimeEventRouter({
+      ctx: this.ctx,
+      taskRunRuntime: this.taskRunRuntime,
+      subagentRuntime: this.subagentRuntime,
+      getState: (sessionId) => this._state(sessionId),
+      emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
+      claimAgentResumeId: (sessionId, agentResumeId) => this._claimAgentResumeId(sessionId, agentResumeId),
+      handleRuntimeControl: (sessionId, payload) => this._handleRuntimeControl(sessionId, payload),
+    });
   }
 
   /**
@@ -322,67 +292,7 @@ class TurnOrchestrator {
    * errors surface as a structured non-admission, never a thrown turn.
    */
   async admitExternalCommand(envelope = {}, checks = {}) {
-    try {
-      const admission = require("./external-command-admission");
-      const sessionId = String(envelope?.lilySessionId || "");
-      const session = sessionId ? this.ctx.sessionManager.findById(sessionId) : null;
-      const sessionExists = typeof checks.sessionExists === "boolean"
-        ? checks.sessionExists
-        : Boolean(session);
-      const sessionOwned = typeof checks.sessionOwned === "boolean"
-        ? checks.sessionOwned
-        : true; // ownership resolved by the caller (pairing grant) in Phase 1
-      const ledger = this._externalLedger(sessionId);
-      const existingRecord = envelope?.commandId ? ledger.get(envelope.commandId) || null : null;
-
-      const decision = admission.decideExternalCommandAdmission({
-        envelope,
-        existingRecord,
-        sessionExists,
-        sessionOwned,
-      });
-      if (decision.outcome === "invalid") return { ok: false, code: decision.code };
-      if (decision.outcome === "payload_conflict") return { ok: false, code: decision.code };
-      if (decision.outcome === "session_absent") return { ok: false, code: decision.code };
-      if (decision.outcome === "ownership_mismatch") return { ok: false, code: decision.code };
-      if (decision.outcome === "idempotent_hit") return decision.response;
-
-      // admit: create ONE FIFO item carrying durable command metadata, record
-      // the ledger entry, then let the normal dispatcher run it. The ledger
-      // write + enqueue happen together before any async dispatch, so a
-      // duplicate arriving concurrently finds the record and no second enqueue.
-      const state = this._state(sessionId);
-      const item = {
-        id: newQueueId(),
-        text: String(envelope.text || ""),
-        files: Array.isArray(envelope.files) ? envelope.files : [],
-        displayFiles: mergeDisplayFileMetadata(envelope.files || [], envelope.displayFiles),
-        options: queueDispatchOptions({
-          queueOrigin: "mobile_command",
-          queueVisibility: "composer",
-          externalCommand: {
-            commandId: decision.record.commandId,
-            idempotencyKey: decision.record.idempotencyKey,
-            payloadHash: decision.record.payloadHash,
-            requestedMode: decision.record.requestedMode,
-            effectiveMode: decision.record.effectiveMode,
-            downgradeReason: decision.record.downgradeReason,
-            mobileDeviceId: decision.record.mobileDeviceId,
-            remoteSessionId: decision.record.remoteSessionId,
-          },
-        }),
-      };
-      decision.record.queueItemId = item.id;
-      ledger.set(decision.record.commandId, decision.record);
-      this._persistExternalLedgers();
-      state.queue.push(item);
-      this._emitQueue(sessionId);
-      void this._dispatchNext(sessionId);
-      return admission.admissionResponse(decision.record);
-    } catch (err) {
-      log.warn("admitExternalCommand failed open: %s", err?.message || err);
-      return { ok: false, code: "COMMAND_ADMISSION_ERROR" };
-    }
+    return this.externalCommandRuntime.admit(envelope, checks);
   }
 
   snapshot(sessionId) {
@@ -504,7 +414,7 @@ class TurnOrchestrator {
     if (!sessionId || !Array.isArray(drafts) || drafts.length === 0) return;
     for (const draft of drafts) {
       if (!draft?.type) continue;
-      this._applyDraft(sessionId, draft);
+      this.runtimeEventRouter.applyDraft(sessionId, draft);
     }
   }
 
@@ -514,362 +424,6 @@ class TurnOrchestrator {
 
   notifyRunnerError(sessionId, message) {
     void this._handleError(sessionId, message);
-  }
-
-  _resolveToolId(state, payload) {
-    if (payload?.id) return payload.id;
-    if (payload?.index != null && state.blockIndexToToolId.has(payload.index)) {
-      return state.blockIndexToToolId.get(payload.index);
-    }
-    return null;
-  }
-
-  _resolveToolDoneId(state, payload) {
-    const explicit = this._resolveToolId(state, payload);
-    if (explicit) return explicit;
-    const running = [...state.tools.values()].filter((tool) => tool?.status === "running");
-    return running.length === 1 ? running[0].id : null;
-  }
-
-  _applyDraft(sessionId, draft) {
-    const type = draft.type;
-    const payload = draft.payload || {};
-    const state = this._state(sessionId);
-    if (!state.turnId && !TURN_OPTIONAL_TYPES.has(type)) {
-      log.debug("dropped orphan %s (no active turn)", type);
-      return;
-    }
-
-    try {
-    switch (type) {
-      case "turn.accepted":
-        state.phase = "streaming";
-        this._emit(sessionId, "turn.accepted", { status: payload.status || "thinking" });
-        break;
-      case "assistant.delta":
-        state.phase = "streaming";
-        state.assistantText += String(payload.text || "");
-        if (!shouldBufferAssistantAnswer(state.taskContract)) {
-          appendTimelineText(state, String(payload.text || ""), Date.now());
-          this._emit(sessionId, "assistant.delta", { text: String(payload.text || "") });
-        }
-        break;
-      case "assistant.supersedes":
-        state.supersedes = payload.supersedes || "";
-        this._emit(sessionId, "assistant.supersedes", payload);
-        break;
-      case "assistant.thinking.delta": {
-        const thinkingPiece = String(payload.text || "");
-        state.phase = "streaming";
-        state.thinkingText += thinkingPiece;
-        upsertTimelineThinking(state, thinkingPiece, Date.now());
-        this._emit(sessionId, "assistant.thinking.delta", { text: thinkingPiece });
-        break;
-      }
-      case "content.block": {
-        state.phase = "streaming";
-        const block = {
-          blockType: payload.blockType || "unknown",
-          mediaType: payload.mediaType || "",
-          data: payload.data || "",
-          ts: Date.now(),
-        };
-        state.contentBlocks.push(block);
-        if (state.contentBlocks.length > 20) {
-          state.contentBlocks.splice(0, state.contentBlocks.length - 20);
-        }
-        this._emit(sessionId, "content.block", payload);
-        break;
-      }
-      case "stream.metadata":
-        this._emit(sessionId, "stream.metadata", payload);
-        break;
-      case "protocol.unknown": {
-        const entry = {
-          kind: payload.kind || "unknown_runtime_event",
-          notice: payload.notice || null,
-          event: payload.event || null,
-          ts: Date.now(),
-        };
-        state.protocolUnknown.push(entry);
-        if (state.protocolUnknown.length > 20) {
-          state.protocolUnknown.splice(0, state.protocolUnknown.length - 20);
-        }
-        this._emit(sessionId, "protocol.unknown", payload);
-        break;
-      }
-      case "tool.started": {
-        state.phase = "tool_running";
-        const toolId = payload.id || `tool_${state.tools.size + 1}`;
-        if (payload.index != null) state.blockIndexToToolId.set(payload.index, toolId);
-        const tool = this._trackTool(sessionId, toolId, {
-          name: payload.name,
-          input: payload.input || {},
-          metadata: payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
-          title: payload.title || "",
-          status: "running",
-          parentToolUseId: payload.parentToolUseId || null,
-          startedAt: Date.now(),
-        });
-        this._markTaskProgress(sessionId, "tool_running", `Running ${tool.name || payload.name || "tool"}`, {
-          tool,
-          resumeState: {
-            lastToolId: toolId,
-            lastToolName: tool.name || payload.name || "unknown",
-          },
-        });
-        this._scheduleSubagentWatch(sessionId, toolId, tool);
-        if (payload.name && payload.input && Object.keys(payload.input).length) {
-          require("./usage-reporter").recordToolCall(sessionId, {
-            id: toolId,
-            name: payload.name,
-            input: payload.input,
-          });
-          const { captureBeforeSnapshot } = require("./diff-capture");
-          captureBeforeSnapshot(sessionId, toolId, payload.name, payload.input);
-        }
-        upsertTimelineTool(state, {
-          id: toolId,
-          name: tool.name || payload.name || "unknown",
-          input: tool.input || payload.input || {},
-          metadata: tool.metadata || payload.metadata || {},
-          title: tool.title || payload.title || "",
-          status: "running",
-          parentToolUseId: payload.parentToolUseId || null,
-        }, Date.now());
-        const subagent = this._syncSubagentFromTool(sessionId, tool);
-        if (subagent) this._emit(sessionId, "subagent.event", { subagent: this._compactSubagent(subagent) });
-        this._emit(sessionId, "tool.started", {
-          id: toolId,
-          name: tool.name || payload.name || "unknown",
-          input: compactToolInput(tool.input || payload.input || {}, tool.name || payload.name || "unknown"),
-          metadata: tool.metadata || payload.metadata || {},
-          title: tool.title || payload.title || "",
-          parentToolUseId: payload.parentToolUseId || null,
-        });
-        break;
-      }
-      case "tool.input.delta": {
-        const toolId = this._resolveToolId(state, payload);
-        if (!toolId) break;
-        const tool = this._trackTool(sessionId, toolId, {});
-        tool.partialJson = (tool.partialJson || "") + String(payload.partialJson || "");
-        upsertTimelineTool(state, tool, Date.now());
-        this._emit(sessionId, "tool.input.delta", {
-          id: toolId,
-          partialJson: String(payload.partialJson || ""),
-        });
-        break;
-      }
-      case "tool.input.done": {
-        const toolId = this._resolveToolId(state, payload);
-        if (!toolId) break;
-        const tool = this._trackTool(sessionId, toolId, { input: payload.input || {} });
-        tool.input = payload.input || tool.input || {};
-        upsertTimelineTool(state, tool, Date.now());
-        this._emit(sessionId, "tool.input.done", {
-          id: toolId,
-          input: compactToolInput(tool.input, tool.name || "unknown"),
-        });
-        break;
-      }
-      case "tool.done": {
-        const toolId = this._resolveToolDoneId(state, payload);
-        if (!toolId) break;
-        const tool = this._trackTool(sessionId, toolId, {});
-        tool.status = payload.status || (payload.isError ? "failed" : "done");
-        tool.result = payload.result ?? payload.content ?? null;
-        if (payload.metadata && typeof payload.metadata === "object") tool.metadata = payload.metadata;
-        if (payload.title) tool.title = payload.title;
-        tool.endedAt = Date.now();
-        if (Number.isFinite(tool.startedAt)) tool.durationMs = Math.max(0, tool.endedAt - tool.startedAt);
-        if (String(tool.name || "").toLowerCase().endsWith("lily_intent_contract_commit")) {
-          try {
-            const refined = resolveModelIntentContractUpdate(state.taskContract?.intentContract, tool.result);
-            if (refined) {
-              state.taskContract.intentContract = refined;
-              applyIntentContractToTaskRun(state.taskRun, refined);
-            }
-          } catch (err) {
-            log.warn("model intent contract refinement failed open: %s", err?.message || err);
-          }
-        }
-        this._clearSubagentWatch(sessionId, toolId);
-        this._emitSubagentDoneNotice(sessionId, tool);
-        state.evidenceLedger?.recordTool?.(tool);
-        this._addTaskEvidence(sessionId, buildTaskToolEvidence(tool), { tool });
-        upsertTimelineTool(state, tool, Date.now());
-        const subagent = this._syncSubagentFromTool(sessionId, tool);
-        if (subagent) this._emit(sessionId, "subagent.event", { subagent: this._compactSubagent(subagent) });
-        this._emit(sessionId, "tool.done", {
-          id: toolId,
-          status: tool.status,
-          result: tool.result,
-          metadata: tool.metadata || {},
-          title: tool.title || "",
-        });
-        const { emitDiffForTool } = require("./diff-capture");
-        emitDiffForTool(sessionId, toolId, this.ctx, state.turnId);
-        break;
-      }
-      case "subagent.event": {
-        const update = this._applySubagentEvent(sessionId, payload);
-        if (update) this._emit(sessionId, "subagent.event", update);
-        break;
-      }
-      case "todo.updated": {
-        state.phase = "streaming";
-        const toolId = payload.id || `todo_${sessionId}`;
-        const todos = Array.isArray(payload.todos) ? payload.todos : [];
-        const tool = {
-          id: toolId,
-          name: "todowrite",
-          input: { todos },
-          status: "done",
-          result: null,
-          parentToolUseId: null,
-        };
-        upsertTimelineTool(state, tool, Date.now());
-        this._updateTaskPlanFromTodos(sessionId, todos);
-        this._emit(sessionId, "todo.updated", {
-          id: toolId,
-          todos,
-        });
-        break;
-      }
-      case "permission.requested":
-        state.phase = "awaiting_user";
-        state.pendingPermissions.set(payload.requestId, payload);
-        this._markTaskAwaitingUser(sessionId, "permission_requested", "Waiting for permission");
-        this._emit(sessionId, "permission.requested", payload);
-        break;
-      case "user_question.requested":
-        state.phase = "awaiting_user";
-        state.pendingQuestions.set(payload.requestId, payload);
-        this._markTaskAwaitingUser(sessionId, "user_question_requested", "Waiting for user answer");
-        this._emit(sessionId, "user_question.requested", payload);
-        break;
-      case "permission.resolved":
-        state.pendingPermissions.delete(payload.requestId);
-        state.pendingQuestions.delete(payload.requestId);
-        if (state.phase === "awaiting_user" && !this._hasPendingUserBlocks(state)) state.phase = "streaming";
-        this._emit(sessionId, "permission.resolved", payload);
-        break;
-      case "user_question.resolved":
-        state.pendingQuestions.delete(payload.requestId);
-        if (state.phase === "awaiting_user" && !this._hasPendingUserBlocks(state)) state.phase = "streaming";
-        this._emit(sessionId, "user_question.resolved", payload);
-        break;
-      case "hook.requested":
-        state.phase = "awaiting_user";
-        state.pendingHooks.set(payload.requestId, payload);
-        this._markTaskAwaitingUser(sessionId, "hook_requested", "Waiting for hook decision");
-        this._emit(sessionId, "hook.requested", payload);
-        break;
-      case "hook.resolved":
-        state.pendingHooks.delete(payload.requestId);
-        if (state.phase === "awaiting_user" && !this._hasPendingUserBlocks(state)) state.phase = "streaming";
-        this._emit(sessionId, "hook.resolved", payload);
-        break;
-      case "permission.timeout":
-        this._emit(sessionId, "permission.timeout", payload);
-        break;
-      case "engine.notice":
-      case "engine.warning": {
-        const notice = payload.notice || payload;
-        const activity = activityFromEngineNotice(notice);
-        if (activity) setActivityLabel(state, activity);
-        if (activity) this._markTaskProgress(sessionId, "runtime_progress", activity);
-        this._updateTaskLivenessFromNotice(sessionId, notice, type);
-        if (notice) appendTimelineNotice(state, notice, Date.now());
-        const noticeEvent = {
-          type,
-          turnId: state.turnId,
-          source: draft.source || "runtime",
-          payload,
-          ts: Date.now(),
-        };
-        if (state.turnId) state.notices.push(noticeEvent);
-        this._emit(sessionId, type, payload);
-        break;
-      }
-      case "engine.stderr":
-        if (state.turnId) {
-          const text = String(payload.text || payload.message || "").trim();
-          const notice = {
-            code: "stderr",
-            level: "warning",
-            message: text,
-            panel: true,
-            done: false,
-          };
-          state.notices.push({
-            type: "engine.stderr",
-            turnId: state.turnId,
-            source: draft.source || "runtime",
-            payload: { notice },
-            ts: Date.now(),
-          });
-        }
-        this._emit(sessionId, "engine.stderr", payload);
-        break;
-      case "usage.updated": {
-        state.usage = payload.usage || payload;
-        // Track finish reasons for the truncation guard: a final "unknown" on
-        // a turn whose earlier steps reported REAL reasons means the gateway
-        // cut the stream mid-turn (classifyTurnFailure -> TRUNCATED_TURN_END).
-        const stopReason = String(payload.stopReason || "");
-        if (stopReason) {
-          state.lastStopReason = stopReason;
-          if (stopReason !== "unknown") state.sawRecognizedStopReason = true;
-        }
-        this._emit(sessionId, "usage.updated", payload);
-        break;
-      }
-      case "assistant.message_stop":
-        closeStreamingBlocks(state, Date.now());
-        this._emit(sessionId, "assistant.message_stop", payload);
-        break;
-      case "process.event": {
-        const activity = activityFromProcessPayload(payload);
-        if (activity) setActivityLabel(state, activity);
-        if (activity) this._markTaskProgress(sessionId, "runtime_progress", activity);
-        state.processEvents.push(payload);
-        if (state.processEvents.length > 200) {
-          state.processEvents.splice(0, state.processEvents.length - 200);
-        }
-        this._emit(sessionId, "process.event", payload);
-        break;
-      }
-      case "session.hydrated":
-        if (payload.agentResumeId) {
-          const claim = this._claimAgentResumeId(sessionId, payload.agentResumeId);
-          if (!claim?.ok) break;
-        }
-        this._emit(sessionId, "session.hydrated", payload, { turnId: null });
-        break;
-      case "resume.updated":
-        this._emit(sessionId, "resume.updated", payload, { turnId: null });
-        break;
-      case "prompt_suggestions.updated":
-        this._emit(sessionId, "prompt_suggestions.updated", payload, { turnId: null });
-        break;
-      case "runtime.control":
-        this._handleRuntimeControl(sessionId, payload);
-        break;
-      default:
-        if (TERMINAL_TYPES.has(type)) break;
-        this._emit(sessionId, "engine.warning", {
-          notice: {
-            code: "unknownRuntimeDraft",
-            level: "warning",
-            detail: `Unhandled runtime draft ${type}`,
-          },
-        });
-    }
-    } catch (err) {
-      log.warn("_applyDraft handler error: %s", err?.message || err);
-    }
   }
 
 
@@ -1042,50 +596,7 @@ class TurnOrchestrator {
    *  after the turn already finalized as failed, so every internal error here
    *  fails open to the normal failure UX. */
   async _maybeSelfHealAndRetry(sessionId, failure) {
-    try {
-      // Tool-call rescue runs FIRST for leaked-tool-call failures: a corrective
-      // retry fixes model behavior in seconds, while a re-probe only fixes
-      // gateway config. The probe still learns in the background either way.
-      if (await this._maybeToolCallRescueRetry(sessionId, failure)) return;
-      const { attemptModelSelfHeal, isHealableFailureCode } = require("./model-self-heal");
-      if (!isHealableFailureCode(failure?.code)) return;
-      const result = await attemptModelSelfHeal({
-        code: failure.code,
-        systemPromptProbeText: this._selfHealProbeText(sessionId),
-      });
-      if (result?.attempted && !result.healed) {
-        // The probe ran and found nothing to change — tell the user, or the
-        // self-heal machinery looks like it silently disappeared.
-        this._emit(sessionId, "turn.self_heal_notice", {
-          kind: "probe_no_change",
-          errorCode: failure?.code || "",
-        });
-      }
-      if (!result?.healed) return;
-      // Don't fight the user: retry only while the session is still idle with
-      // nothing queued (they may already have resent or moved on).
-      const state = this._state(sessionId);
-      if (state.turnId || state.queue.length) return;
-      if (this.ctx.runnerPool.get(sessionId)?.isBusy?.()) return;
-      // Same side-effect guard as turn rescue: a heal retry re-runs the WHOLE
-      // turn, so it is only safe when every executed tool was read-only —
-      // replaying a turn that already wrote files or sent mail is worse than
-      // failing honestly (the healed profile still helps the user's own retry).
-      const { isSideEffectFreeToolRun } = require("./tool-call-rescue");
-      if (!isSideEffectFreeToolRun([...(state.tools?.values?.() || [])])) {
-        log.info(`model self-heal retry skipped (non-read-only tools ran): session=${sessionId}`);
-        return;
-      }
-      // Idle runners still hold the pre-heal model config; recycle them so the
-      // retry binds with the repaired profile.
-      require("./runner-live-config").terminateIdleRunners(this.ctx.runnerPool);
-      log.info(`model self-heal retry: session=${sessionId} code=${failure.code}`);
-      this._emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code });
-      const retried = await this.retryLastMessage(sessionId);
-      if (!retried?.ok) log.warn(`model self-heal retry not sent: ${retried?.error || "unknown"}`);
-    } catch (err) {
-      log.warn(`model self-heal failed open: ${err?.message || String(err)}`);
-    }
+    return this.turnRecoveryRuntime.maybeSelfHealAndRetry(sessionId, failure);
   }
 
   /** Turn rescue: immediate silent retry-once for failures a retry plausibly
@@ -1096,129 +607,22 @@ class TurnOrchestrator {
    *  path is then skipped for this failure; the background probe still runs so
    *  the platform keeps learning). Fail-open: any error → normal failure flow. */
   async _maybeToolCallRescueRetry(sessionId, failure) {
-    try {
-      const rescue = require("./tool-call-rescue");
-      const strategy = rescue.rescueStrategyFor(failure?.code);
-      if (!strategy) return false;
-      // A failed RESCUE turn never chains into another rescue: one silent
-      // attempt per user action, so automation can never loop — and the time
-      // cooldown can stay a tiny debounce instead of punishing the user's own
-      // resend minutes later.
-      if (this._state(sessionId).wasRescueAttempt) return false;
-      if (!rescue.shouldAttemptRescue(sessionId, failure.code)) return false;
-      // Strategies with delayMs wait out a transient cause (engine start
-      // failures) BEFORE the idle checks below, so a user who already resent
-      // during the wait is never fought.
-      if (strategy.delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, strategy.delayMs));
-      }
-      // Don't fight the user: only while the session is idle with nothing queued.
-      const state = this._state(sessionId);
-      if (state.turnId || state.queue.length) return false;
-      if (this.ctx.runnerPool.get(sessionId)?.isBusy?.()) return false;
-      // Side-effect guard: a retry re-runs the WHOLE turn. Only rescue turns
-      // whose executed tools are ALL side-effect-free (reads/research) —
-      // replaying a turn that already sent mail or edited files is worse than
-      // failing honestly.
-      if (!rescue.isSideEffectFreeToolRun([...(state.tools?.values?.() || [])])) return false;
-      const lastUser = this.ctx.sessionManager.getLastUserMessage(sessionId);
-      if (!lastUser) return false;
-      rescue.markRescueAttempt(sessionId, failure.code);
-      // Deliberately NO probe here: firing the self-heal probe now would burn
-      // its per-preset cooldown, so a deterministic gateway defect could no
-      // longer take the probe→profile-change→retry recovery on the SECOND
-      // failure (the rescue cooldown routes it there untouched). Flakes are
-      // absorbed by this retry; defects keep the exact old recovery path.
-      log.info(`turn rescue retry: session=${sessionId} kind=${strategy.kind}`);
-      this._emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code, kind: strategy.kind });
-      // Fresh engine sockets for strategies that fight poisoned keep-alive
-      // pools; the recycled engine resumes the same session id. Optional so
-      // synthetic runners without the method are unaffected.
-      if (strategy.recycleEngine) {
-        try {
-          this.ctx.runnerPool.get(sessionId)?.recycleIdleEngine?.("turn_rescue");
-        } catch {
-          // Fail open: the plain same-runner retry is still better than nothing.
-        }
-      }
-      const deferAssistantRemoval = strategy.kind === "evidence_verify_retry";
-      if (!deferAssistantRemoval) this.transcriptStore.removeLastAssistantMessage(sessionId);
-      // skipPreflight: the model connection was proven live THIS turn (the
-      // request reached the model); a full preflight could spuriously block
-      // the silent retry. A dead runner just fails the send → logged → the
-      // user keeps the normal failure UX they already saw.
-      const content = String(lastUser.content || "").trim();
-      // The corrective hint speaks the language the probe showed this model
-      // actually follows (capability.recipes.instructionLanguage).
-      const hint = strategy.kind === "tool_call_rescue"
-        ? rescue.correctiveHintFor(this._modelRecipes())
-        : strategy.kind === "evidence_verify_retry"
-          ? rescue.evidenceVerifyHintFor(this._modelRecipes())
-          : strategy.hint;
-      const retried = await this.sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
-        recordUser: false,
-        spawnEngine: true,
-        // Belt over the cooldown: a rescue resend that fails at preflight
-        // again must not schedule another rescue from inside itself.
-        rescueAttempt: true,
-        // Strategies with preflight (RUNNER_TERMINATED / RUNNER_ERROR) lost
-        // their runner — pool.get() would return null, so the resend must run
-        // the full ensure path and build a fresh one.
-        skipPreflight: !strategy.preflight,
-        ...(hint ? { engineText: `${content}\n\n${hint}` } : {}),
-      });
-      if (!retried?.ok) log.warn(`turn rescue retry not sent: ${retried?.error || "unknown"}`);
-      if (retried?.ok && deferAssistantRemoval) {
-        this.transcriptStore.removeLastAssistantMessage(sessionId);
-        if (failure?.supersedesTurnId) {
-          this._emit(sessionId, "assistant.supersedes", { supersedes: failure.supersedesTurnId }, {
-            turnId: failure.supersedesTurnId,
-          });
-        }
-      }
-      return true;
-    } catch (err) {
-      log.warn(`turn rescue failed open: ${err?.message || String(err)}`);
-      return false;
-    }
+    return this.turnRecoveryRuntime.maybeToolCallRescueRetry(sessionId, failure);
   }
 
   /** The active model's probed recipes (capability.recipes), or {} — never throws. */
   _modelRecipes() {
-    try {
-      return JSON.parse(require("./spawn-env").resolveLilyEnv().LILY_MODEL_RECIPES || "{}") || {};
-    } catch {
-      return {};
-    }
+    return modelRecipes();
   }
 
   /** The active session guide (AGENT.md + protocol appendices) — same text the
    *  save-time probe uses, so the re-probe measures realistic prompt sizes. */
   _selfHealProbeText(sessionId) {
-    try {
-      const fs = require("node:fs");
-      const path = require("node:path");
-      const guide = path.join(require("./config").sessionGuideDir(sessionId), "AGENT.md");
-      const base = fs.existsSync(guide) ? fs.readFileSync(guide, "utf8") : "";
-      if (!base.trim()) return "";
-      const { appendLargeInputProtocolGuidance } = require("./large-input-protocol");
-      const { appendProcessJobProtocolGuidance } = require("./process-job-protocol");
-      return appendProcessJobProtocolGuidance(appendLargeInputProtocolGuidance(base));
-    } catch {
-      return "";
-    }
+    return selfHealProbeText(sessionId);
   }
 
   async retryLastMessage(sessionId) {
-    const session = this.ctx.sessionManager.findById(sessionId);
-    if (!session) return { ok: false, error: "NO_SESSION" };
-    const lastUser = this.ctx.sessionManager.getLastUserMessage(sessionId);
-    if (!lastUser) return { ok: false, error: "NO_USER_MESSAGE" };
-    this.transcriptStore.removeLastAssistantMessage(sessionId);
-    return this.sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
-      recordUser: false,
-      spawnEngine: true,
-    });
+    return this.turnRecoveryRuntime.retryLastMessage(sessionId);
   }
 
   respondPermission(sessionId, requestId, decision) {
@@ -1320,7 +724,7 @@ class TurnOrchestrator {
     return await this._startTurn(session, item.text, item.files, {
       fromQueue: true,
       displayFiles: item.displayFiles,
-      recordUser: true,
+      recordUser: item.options?.recordUser !== false,
       spawnEngine: item.options?.spawnEngine !== false,
       skipPreflight: Boolean(item.options?.skipPreflight),
       skipVision: Boolean(item.options?.skipVision),
@@ -1329,6 +733,8 @@ class TurnOrchestrator {
       scheduledTaskRunId: item.options?.scheduledTaskRunId || null,
       scheduledTaskTitle: item.options?.scheduledTaskTitle || null,
       engineText: item.options?.engineText || null,
+      recovery: item.options?.recovery || null,
+      ...documentDeliveryDispatchOptions(item.options),
     });
   }
 
@@ -1342,7 +748,8 @@ class TurnOrchestrator {
     // Sticky across finalize (deliberately NOT cleared in the idle reset):
     // the rescue hook runs after the turn state was reset, and must know the
     // turn it is inspecting was itself a rescue attempt.
-    state.wasRescueAttempt = Boolean(opts.rescueAttempt);
+    state.wasRescueAttempt = Boolean(opts.rescueAttempt || opts.recovery);
+    applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
     state.admittedSeq = null;
     state.assistantText = "";
@@ -1356,7 +763,7 @@ class TurnOrchestrator {
     state.sawRecognizedStopReason = false;
     state.taskContract = null;
     state.turnPolicy = null;
-    state.evidenceLedger = new EvidenceLedger();
+    initializeTurnEvidenceState(state);
     state.taskRun = null;
     state.enginePayload = null;
     state.legacyContextHydrated = false;
@@ -1370,7 +777,7 @@ class TurnOrchestrator {
     state.startedAt = Date.now();
     state.updatedAt = state.startedAt;
     const displayFiles = mergeDisplayFileMetadata(files, opts.displayFiles);
-    this._beginTaskRun(session.id, rawUserText, {
+    this.taskRunRuntime.begin(session.id, rawUserText, {
       displayFiles,
       localAssistant: true,
     });
@@ -1501,7 +908,8 @@ class TurnOrchestrator {
     const allowImageFileParts = Boolean(require("./model-presets").activePresetSupportsVision());
     state.phase = "starting";
     state.turnId = newTurnId();
-    state.wasRescueAttempt = Boolean(opts.rescueAttempt);
+    state.wasRescueAttempt = Boolean(opts.rescueAttempt || opts.recovery);
+    applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
     state.admittedSeq = null;
     state.assistantText = "";
@@ -1515,7 +923,7 @@ class TurnOrchestrator {
     state.sawRecognizedStopReason = false;
     state.taskContract = null;
     state.turnPolicy = null;
-    state.evidenceLedger = new EvidenceLedger();
+    initializeTurnEvidenceState(state, opts.recovery);
     state.taskRun = null;
     state.enginePayload = null;
     state.legacyContextHydrated = false;
@@ -1585,10 +993,10 @@ class TurnOrchestrator {
       files,
       turnId: state.turnId,
     });
-    const taskContract = turnIntelligence.taskContract;
-    const turnPolicy = turnIntelligence.turnPolicy;
+    const { taskContract, turnPolicy } = documentDeliveryTurnIntelligence(turnIntelligence, state.documentDeliveryRecovery);
     const committedMessages = turnIntelligence.committedMessages || [];
     const sessionSummary = turnIntelligence.sessionSummary || null;
+    state.pendingTaskContract = taskContract;
     state.taskContract = taskContract.active ? taskContract : null;
     state.turnPolicy = turnPolicy;
     if (taskContract.taskType === "content_extraction" && taskContract.priorSourceContentEvidence) {
@@ -1599,8 +1007,8 @@ class TurnOrchestrator {
         sourceCount: Number(taskContract.priorSourceContentEvidence.sourceCount || 1),
       });
     }
-    if (this._shouldBeginTaskRunAtTurnStart({ taskContract, turnPolicy, scheduledTask: state.scheduledTask })) {
-      this._beginTaskRun(session.id, rawUserText, {
+    if (shouldBeginTaskRunAtTurnStart({ taskContract, turnPolicy, scheduledTask: state.scheduledTask })) {
+      this.taskRunRuntime.begin(session.id, rawUserText, {
         displayFiles,
         scheduledTask: state.scheduledTask,
         intentContract: taskContract.intentContract || null,
@@ -1949,6 +1357,7 @@ class TurnOrchestrator {
         };
       }
     }
+    engineText = applyInternalRecoveryLayer(engineText, opts.recovery);
     engineText = withTaskContractPrefix(engineText, taskContract);
     state.enginePayload = {
       rawText: rawUserText,
@@ -2144,119 +1553,7 @@ class TurnOrchestrator {
   }
 
   async _maybeCompactBeforeTurn(sessionId, runner, enginePayload = {}) {
-    try {
-      if (!runner?.compactContext) {
-        return { action: "skip", reason: "adapter_missing_compaction" };
-      }
-      const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime/runtime-capabilities");
-      const { decidePreTurnCompaction, estimateTokensForText } = require("./context-budget-manager");
-      const { markSessionCompactionFailed, readSessionSummary } = require("./session-memory");
-      const sessionSummary = readSessionSummary(sessionId) || {};
-      const model = runner.spawnOptions?.model || null;
-      const promptEstimate = estimateTokensForText(String(enginePayload?.text || ""), {
-        provider: model?.providerID || enginePayload?.provider || enginePayload?.trace?.provider || "",
-        model: model?.modelID || enginePayload?.model || enginePayload?.trace?.model || "",
-      });
-      const decision = decidePreTurnCompaction({
-        capabilities: OPENCODE_RUNTIME_CAPABILITIES,
-        model,
-        runner: {
-          alive: Boolean(runner.isAlive?.()),
-          canStart: true,
-          busy: Boolean(runner.isBusy?.()),
-        },
-        sessionSummary,
-        currentPromptTokens: promptEstimate.tokens,
-        currentPromptTokenSource: promptEstimate.source,
-        contextWindowTokens: model?.contextWindowTokens || undefined,
-      });
-      const event = {
-        action: decision.action,
-        reason: decision.reason,
-        mode: decision.mode || null,
-        phase: "pre_turn",
-        turnCount: Number(sessionSummary.turnCount || 0),
-        estimatedPromptTokens: decision.estimatedPromptTokens || 0,
-        currentPromptTokens: decision.currentPromptTokens || promptEstimate.tokens || 0,
-        previousPromptTokens: decision.previousPromptTokens || Number(
-          sessionSummary.retainedContextTokens ?? sessionSummary.lastEnginePromptTokens ?? 0,
-        ),
-        contextWindowTokens: decision.contextWindowTokens || null,
-        outputReserveTokens: decision.outputReserveTokens || null,
-        usableInputTokens: decision.usableInputTokens || null,
-        compactionTriggerTokens: decision.compactionTriggerTokens || null,
-        tokenPressureThreshold: decision.tokenPressureThreshold || null,
-        tokenSource: decision.tokenSource || promptEstimate.source || "",
-        budgetSource: decision.budgetSource || "",
-        providerID: decision.providerID || model?.providerID || "",
-        modelID: decision.modelID || model?.modelID || "",
-        unsupportedReason: decision.unsupportedReason || "",
-      };
-      this._emit(sessionId, "context.compactionDecision", event, { turnId: null });
-      if (decision.action !== "compact") return event;
-
-      const beforeFailureAt = sessionSummary.lastCompactionFailedAt || "";
-      this._emit(sessionId, "engine.notice", {
-        notice: {
-          code: "compactBoundary",
-          level: "progress",
-          panel: true,
-          done: false,
-          detail: "Preparing to compact conversation context before this turn.",
-        },
-      }, { turnId: null });
-      const compacted = await runner.compactContext({
-        ...(model?.providerID && model?.modelID
-          ? { providerID: model.providerID, modelID: model.modelID }
-          : {}),
-        auto: true,
-        reason: decision.reason,
-      });
-      if (!compacted) {
-        const afterSummary = readSessionSummary(sessionId) || {};
-        if ((afterSummary.lastCompactionFailedAt || "") === beforeFailureAt) {
-          markSessionCompactionFailed(sessionId, {
-            runtime: "opencode",
-            mode: "native",
-            reason: decision.reason,
-            providerID: model?.providerID || "",
-            modelID: model?.modelID || "",
-            code: "compact_returned_false",
-            error: "Runtime compaction returned false.",
-          });
-        }
-        this._emit(sessionId, "engine.notice", {
-          notice: {
-            code: "compactFailed",
-            level: "info",
-            panel: true,
-            done: true,
-            replace: true,
-            replacesCode: "compactBoundary",
-            detail: "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.",
-          },
-        }, { turnId: null });
-        return { ...event, compacted: false };
-      }
-      this._emit(sessionId, "engine.notice", {
-        notice: {
-          code: "compactBoundary",
-          level: "info",
-          panel: true,
-          done: true,
-          replace: true,
-          detail: "Conversation context was compacted before this turn.",
-        },
-      }, { turnId: null });
-      return { ...event, compacted: true };
-    } catch (err) {
-      log.warn(`pre-turn context compaction failed open: ${err?.message || String(err)}`);
-      return {
-        action: "skip",
-        reason: "pre_turn_compaction_exception",
-        error: err?.message || String(err),
-      };
-    }
+    return this.contextCompactionRuntime.maybeCompactBeforeTurn(sessionId, runner, enginePayload);
   }
 
   async _handleDone(sessionId, payload) {
@@ -2421,310 +1718,11 @@ class TurnOrchestrator {
   }
 
   _finalize(sessionId, type, payload = {}) {
-    const state = this._state(sessionId);
-    if (!state.turnId || state.terminalEmitted) return;
-    if (!TERMINAL_TYPES.has(type)) throw new Error(`Invalid terminal event ${type}`);
-    const completedTurnId = state.turnId;
-    try {
-      this.ctx.sessionManager?.markTurnInputTerminal?.(completedTurnId, type, {
-        errorCode: payload.errorCode || payload.code || "",
-      });
-    } catch (err) {
-      log.warn("turn input terminal mark failed: %s", err?.message || err);
-    }
-    const scheduledTaskRunId = state.scheduledTask?.runId || null;
-    state.phase = "finalizing";
-    for (const tool of state.tools.values()) {
-      if (tool?.status !== "running") continue;
-      tool.status = type === "turn.completed" ? "done" : "failed";
-      upsertTimelineTool(state, tool, Date.now());
-    }
-    if (type === "turn.completed") {
-      try {
-        const { collectLearnedSkillDrafts } = require("./learned-skills");
-        const skillManager = require("./skill-manager");
-        const session = this.ctx.sessionManager?.findById?.(sessionId) || null;
-        const project = session?.projectId && this.ctx.projectManager?.find
-          ? this.ctx.projectManager.find(session.projectId)
-          : null;
-        const learned = collectLearnedSkillDrafts(
-          skillManager.registerLearnedSkillDir,
-          undefined,
-          {
-            sessionId,
-            projectId: session?.projectId || "",
-            workspacePath: project?.path || "",
-          },
-        );
-        if (learned.length) {
-          if (session) {
-            try {
-              skillManager.writeSessionAgentGuide(sessionId, session, project?.path || "");
-            } catch (err) {
-              log.warn("learned skill guide refresh failed: %s", err?.message || err);
-            }
-          }
-          appendTimelineNotice(state, {
-            code: "learnedSkillDraft",
-            level: "info",
-            panel: true,
-            done: true,
-          }, Date.now());
-        }
-      } catch (err) {
-        log.warn("learned skill collection failed: %s", err?.message || err);
-      }
-    }
-    closeStreamingBlocks(state, Date.now());
-    let assistant = String(payload.assistant || state.assistantText || "").trim();
-    const evidenceSummary = state.evidenceLedger?.summary?.() || null;
-    let record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
-    let evidenceGateAssessment = null;
-    let triggerVerifyRetry = false;
-    if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
-      const guarded = evaluateAnswerEvidence({
-        assistant,
-        taskContract: state.taskContract,
-        turnPolicy: state.turnPolicy,
-        evidenceSummary,
-        tools: [...(state.tools?.values?.() || [])],
-        fileChangeCount: record?.fileChanges?.length || 0,
-        userText: String(state.enginePayload?.rawText || ""),
-        inputFiles: Array.isArray(state.enginePayload?.files) ? state.enginePayload.files : [],
-      });
-      assistant = guarded.assistant;
-      evidenceGateAssessment = guarded.assessment;
-      triggerVerifyRetry = guarded.triggerVerifyRetry;
-      if (record) {
-        record.assistantText = assistant;
-        record.meta = {
-          ...(record.meta || {}),
-          ...(guarded.assessment ? { evidenceGate: guarded.assessment } : {}),
-        };
-      }
-    }
-    if (shouldBufferAssistantAnswer(state.taskContract) && assistant) {
-      appendTimelineText(state, assistant, Date.now());
-      if (record) record.timeline = (state.timeline || []).slice(-100);
-    }
-    this._completeTaskRun(sessionId, type, {
-      evidenceGateAssessment,
-      evidenceSummary,
-      fileChangeCount: record?.fileChanges?.length || 0,
-      artifactCount: record?.artifacts?.length || 0,
-    });
-    if (record && state.taskRun) {
-      record.meta = {
-        ...(record.meta || {}),
-        taskRun: compactTaskRun(state.taskRun),
-      };
-    }
-    // Don't archive a turn that produced literally nothing — e.g. an interrupt
-    // before any output. Otherwise an empty assistant bubble lands in history.
-    // Any real content (text, a tool call, a file change, a result block) makes
-    // it worth keeping; failed turns carry a friendly error string as `assistant`.
-    const meaningful = Boolean(
-      assistant ||
-      state.tools?.size ||
-      record?.fileChanges?.length ||
-      record?.resultBlocks?.length,
-    );
-    if (!meaningful) record = null;
-    // The committed assistant message's backend id (msg_…). The renderer needs it
-    // so the scheduled-task "create" button can call back with a messageId the
-    // backend can find; without it the committed message has no id and the button
-    // silently no-ops.
-    let committedMessageId = "";
-    if (record) {
-      if (assistant) {
-        this._emit(sessionId, "assistant.final", {
-          assistant,
-          failed: type === "turn.failed",
-          ...(payload.scheduledDraft ? { scheduledDraft: payload.scheduledDraft } : {}),
-        });
-      }
-      try {
-        const committed = this.turnArchive.commit(sessionId, record);
-        committedMessageId = committed?.id || "";
-      } catch (err) { log.warn("turn archive commit failed: %s", err?.message || err); }
-    }
-    state.terminalEmitted = true;
-    this._emit(sessionId, type, {
-      ...payload,
-      assistant,
-      record,
-      messageId: committedMessageId,
-      toolsSummary: { count: state.tools.size },
-    });
-    if (scheduledTaskRunId) {
-      try { this.ctx.scheduledTaskManager?.completeRun?.(sessionId, completedTurnId, type, payload); } catch (err) { log.warn("scheduled task completeRun failed: %s", err?.message || err); }
-    }
-    for (const toolId of [...(state.subagentTimers?.keys?.() || [])]) {
-      this._clearSubagentWatch(sessionId, toolId);
-    }
-    state.phase = "idle";
-    state.turnId = null;
-    state.steerCount = 0;
-    state.admittedSeq = null;
-    state.assistantText = "";
-    state.thinkingText = "";
-    state.contentBlocks = [];
-    state.protocolUnknown = [];
-    state.processEvents = [];
-    state.notices = [];
-    state.usage = null;
-    state.lastStopReason = "";
-    state.sawRecognizedStopReason = false;
-    state.taskContract = null;
-    state.turnPolicy = null;
-    state.evidenceLedger = null;
-    state.taskRun = null;
-    state.enginePayload = null;
-    resetTimelineState(state);
-    state.blockIndexToToolId = new Map();
-    state.currentPayload = null;
-    state.scheduledTask = null;
-    state.pendingPermissions.clear();
-    state.pendingQuestions.clear();
-    state.pendingHooks.clear();
-    // Verify-before-assert: the answer asserted facts WITHOUT evidence and the
-    // turn was side-effect-free — fire ONE silent retry that steers the model to
-    // verify with tools first, turning "caveat a shaky answer" into "go actually
-    // check". Reuses the rescue's idle / one-shot / side-effect / cooldown guards
-    // (the session is now idle). Non-blocking + fail-open: it must NEVER affect
-    // turn completion. Only fires on an ungrounded strong claim, so a strong model
-    // that already grounds its answers is never asked to redo (not made dumber).
-    if (triggerVerifyRetry) {
-      try {
-        void this._maybeToolCallRescueRetry(sessionId, {
-          code: "EVIDENCE_UNVERIFIED",
-          supersedesTurnId: completedTurnId,
-        })
-          .catch((err) => log.warn("evidence verify retry failed open: %s", err?.message || err));
-      } catch (err) {
-        log.warn("evidence verify retry dispatch failed open: %s", err?.message || err);
-      }
-    }
-    if (type === "turn.completed") this._scheduleBackgroundCompaction(sessionId);
+    return this.terminalFinalizer.finalize(sessionId, type, payload);
   }
 
   _scheduleBackgroundCompaction(sessionId) {
-    const timer = setTimeout(async () => {
-      try {
-        const runner = this.ctx.runnerPool?.get?.(sessionId);
-        if (!runner?.compactContext) {
-          this._emit(sessionId, "context.compactionDecision", {
-            action: "skip",
-            reason: "adapter_missing_compaction",
-          }, { turnId: null });
-          return;
-        }
-        const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime/runtime-capabilities");
-        const { decideBackgroundCompaction } = require("./context-budget-manager");
-        const { markSessionCompactionFailed, readSessionSummary } = require("./session-memory");
-        const sessionSummary = readSessionSummary(sessionId) || {};
-        const model = runner.spawnOptions?.model || null;
-        const decision = decideBackgroundCompaction({
-          capabilities: OPENCODE_RUNTIME_CAPABILITIES,
-          model,
-          runner: {
-            alive: Boolean(runner.isAlive?.()),
-            busy: Boolean(runner.isBusy?.()),
-          },
-          sessionSummary,
-          contextWindowTokens: model?.contextWindowTokens || undefined,
-        });
-        this._emit(sessionId, "context.compactionDecision", {
-          action: decision.action,
-          reason: decision.reason,
-          mode: decision.mode || null,
-          turnCount: Number(sessionSummary.turnCount || 0),
-          lastCompactedAt: sessionSummary.lastCompactedAt || null,
-          lastCompactionFailedAt: sessionSummary.lastCompactionFailedAt || null,
-          estimatedPromptTokens: decision.estimatedPromptTokens || Number(
-            sessionSummary.retainedContextTokens ?? sessionSummary.lastEnginePromptTokens ?? 0,
-          ),
-          contextWindowTokens: decision.contextWindowTokens || null,
-          outputReserveTokens: decision.outputReserveTokens || null,
-          usableInputTokens: decision.usableInputTokens || null,
-          compactionTriggerTokens: decision.compactionTriggerTokens || null,
-          tokenPressureThreshold: decision.tokenPressureThreshold || null,
-          tokenSource: decision.tokenSource || sessionSummary.retainedContextTokenSource || sessionSummary.lastEnginePromptTokenSource || "",
-          budgetSource: decision.budgetSource || "",
-          providerID: decision.providerID || model?.providerID || "",
-          modelID: decision.modelID || model?.modelID || "",
-          unsupportedReason: decision.unsupportedReason || "",
-        }, { turnId: null });
-        if (decision.action !== "compact") return;
-        const beforeFailureAt = sessionSummary.lastCompactionFailedAt || "";
-        this._emit(sessionId, "engine.notice", {
-          notice: {
-            code: "compactBoundary",
-            level: "progress",
-            panel: true,
-            done: false,
-            detail: "Preparing to compact conversation context.",
-          },
-        }, { turnId: null });
-        const compacted = await runner.compactContext({
-          ...(model?.providerID && model?.modelID
-            ? { providerID: model.providerID, modelID: model.modelID }
-            : {}),
-          auto: true,
-          reason: decision.reason,
-        });
-        if (!compacted) {
-          const afterSummary = readSessionSummary(sessionId) || {};
-          if ((afterSummary.lastCompactionFailedAt || "") === beforeFailureAt) {
-            markSessionCompactionFailed(sessionId, {
-              runtime: "opencode",
-              mode: "native",
-              reason: decision.reason,
-              providerID: model?.providerID || "",
-              modelID: model?.modelID || "",
-              code: "compact_returned_false",
-              error: "Runtime compaction returned false.",
-            });
-          }
-          this._emit(sessionId, "engine.notice", {
-            notice: {
-              code: "compactFailed",
-              level: "info",
-              panel: true,
-              done: true,
-              replace: true,
-              replacesCode: "compactBoundary",
-              detail: "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.",
-            },
-          }, { turnId: null });
-        }
-      } catch (err) {
-        log.warn(`background context compaction failed: ${err?.message || String(err)}`);
-        try {
-          require("./session-memory").markSessionCompactionFailed(sessionId, {
-            runtime: "opencode",
-            mode: "native",
-            reason: "background_compaction_exception",
-            code: err?.name || "exception",
-            error: err?.message || String(err),
-          });
-        } catch (memoryErr) {
-          log.warn(`background compaction failure memory update failed: ${memoryErr?.message || String(memoryErr)}`);
-        }
-        this._emit(sessionId, "engine.notice", {
-          notice: {
-            code: "compactFailed",
-            level: "info",
-            panel: true,
-            done: true,
-            replace: true,
-            replacesCode: "compactBoundary",
-            detail: "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.",
-          },
-        }, { turnId: null });
-      }
-    }, 0);
-    timer.unref?.();
+    this.contextCompactionRuntime.scheduleBackgroundCompaction(sessionId);
   }
 
   async _dispatchNext(sessionId) {
@@ -2846,541 +1844,6 @@ class TurnOrchestrator {
     }
   }
 
-  _trackTool(sessionId, id, patch) {
-    const state = this._state(sessionId);
-    const toolId = id || `tool_${state.tools.size + 1}`;
-    const existing = state.tools.get(toolId) || { id: toolId };
-    Object.assign(existing, patch || {});
-    state.tools.set(toolId, existing);
-    return existing;
-  }
-
-  _scheduleSubagentWatch(sessionId, toolId, tool = {}) {
-    const { isSubagentTool, SLOW_SUBAGENT_MS, VERY_SLOW_SUBAGENT_MS, subagentTitle } = require("./subagent-telemetry");
-    if (!isSubagentTool(tool)) return;
-    const state = this._state(sessionId);
-    if (!state.subagentTimers) state.subagentTimers = new Map();
-    this._clearSubagentWatch(sessionId, toolId);
-    const timers = [];
-    const title = subagentTitle(tool);
-    for (const [ms, code] of [[SLOW_SUBAGENT_MS, "subagentSlow"], [VERY_SLOW_SUBAGENT_MS, "subagentVerySlow"]]) {
-      const timer = setTimeout(() => {
-        const current = this._state(sessionId).tools.get(toolId);
-        if (!current || current.status !== "running") return;
-        this._emitEngineNotice(sessionId, {
-          code,
-          level: "progress",
-          panel: true,
-          replace: true,
-          replacesCode: `subagent:${toolId}`,
-          detail: `子任务仍在运行：${title}（已 ${Math.round(ms / 1000)} 秒）。正在等待 Lily 子任务回传结果。`,
-        });
-      }, ms);
-      timer.unref?.();
-      timers.push(timer);
-    }
-    state.subagentTimers.set(toolId, timers);
-  }
-
-  _clearSubagentWatch(sessionId, toolId) {
-    const state = this._state(sessionId);
-    const timers = state.subagentTimers?.get(toolId) || [];
-    for (const timer of timers) clearTimeout(timer);
-    state.subagentTimers?.delete(toolId);
-  }
-
-  _emitSubagentDoneNotice(sessionId, tool = {}) {
-    const { isSubagentTool, SLOW_SUBAGENT_MS, subagentTitle } = require("./subagent-telemetry");
-    if (!isSubagentTool(tool)) return;
-    const durationMs = Number(tool.durationMs || 0);
-    if (durationMs < SLOW_SUBAGENT_MS) return;
-    const seconds = Math.max(1, Math.round(durationMs / 1000));
-    this._emitEngineNotice(sessionId, {
-      code: "subagentCompleted",
-      level: "progress",
-      panel: true,
-      replace: true,
-      replacesCode: `subagent:${tool.id}`,
-      done: true,
-      detail: `子任务完成：${subagentTitle(tool)}（${seconds} 秒）。`,
-    });
-  }
-
-  _syncSubagentFromTool(sessionId, tool = {}) {
-    const { isSubagentTool, subagentTitle } = require("./subagent-telemetry");
-    if (!isSubagentTool(tool)) return null;
-    const meta = tool.metadata || {};
-    const childSessionId = meta.sessionId || meta.sessionID || "";
-    if (!childSessionId) return null;
-    const state = this._state(sessionId);
-    if (!state.subagents) state.subagents = new Map();
-    const current = state.subagents.get(childSessionId) || {
-      sessionId: childSessionId,
-      parentToolId: tool.id || "",
-      label: String(tool.input?.subagent_type || tool.input?.subagentType || "general"),
-      description: subagentTitle(tool),
-      status: "running",
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
-      tools: new Map(),
-      textPreview: "",
-      thinkingPreview: "",
-      textFull: "",
-      thinkingFull: "",
-      metadata: {},
-      pendingPermissions: [],
-      pendingQuestions: [],
-      phase: "starting",
-      phaseDetail: "",
-      stats: {},
-    };
-    current.parentToolId = tool.id || current.parentToolId || "";
-    current.label = String(tool.input?.subagent_type || tool.input?.subagentType || current.label || "general");
-    current.description = subagentTitle(tool) || current.description || "";
-    current.status = tool.status === "failed" ? "failed" : (tool.status === "done" || tool.status === "completed") ? "done" : "running";
-    current.metadata = { ...(current.metadata || {}), ...meta };
-    current.updatedAt = Date.now();
-    this._refreshSubagentPhase(current);
-    state.subagents.set(childSessionId, current);
-    return current;
-  }
-
-  _compactSubagent(item = {}) {
-    this._refreshSubagentPhase(item);
-    return {
-      sessionId: item.sessionId || "",
-      parentToolId: item.parentToolId || "",
-      label: item.label || "general",
-      description: item.description || "",
-      status: item.status || "running",
-      startedAt: item.startedAt || 0,
-      updatedAt: item.updatedAt || 0,
-      metadata: item.metadata || {},
-      currentToolId: item.currentToolId || "",
-      tools: [...(item.tools?.values?.() || [])].slice(-20),
-      textPreview: item.textPreview || "",
-      thinkingPreview: item.thinkingPreview || "",
-      textFull: item.textFull || "",
-      pendingPermissions: item.pendingPermissions || [],
-      pendingQuestions: item.pendingQuestions || [],
-      phase: item.phase || "starting",
-      phaseDetail: item.phaseDetail || "",
-      stats: item.stats || {},
-      ...(item.lastError ? { lastError: item.lastError } : {}),
-    };
-  }
-
-  _beginTaskRun(sessionId, objective, opts = {}) {
-    try {
-      const state = this._state(sessionId);
-      if (state.taskRun) return state.taskRun;
-      if (!state.turnId) return null;
-      state.taskRun = createTaskRun({
-        sessionId,
-        turnId: state.turnId,
-        objective,
-        intentContract: opts.intentContract || state.taskContract?.intentContract || null,
-        startedAt: state.startedAt || Date.now(),
-      });
-      if (opts.scheduledTask) {
-        state.taskRun.resumeState = {
-          ...(state.taskRun.resumeState || {}),
-          scheduledTaskId: opts.scheduledTask.id || "",
-          scheduledTaskRunId: opts.scheduledTask.runId || "",
-        };
-      }
-      if (opts.localAssistant) {
-        markTaskPhase(state.taskRun, "local_assistant", "Preparing local assistant response");
-      }
-      this._emitTaskEvent(sessionId, "task.created", {
-        taskRun: compactTaskRun(state.taskRun),
-      });
-      this._emitTaskEvent(sessionId, "task.plan.updated", {
-        taskRunId: state.taskRun.id,
-        plan: state.taskRun.plan,
-        activeStep: state.taskRun.activeStep,
-      });
-      return state.taskRun;
-    } catch (err) {
-      log.warn("TaskRun begin failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _shouldBeginTaskRunAtTurnStart({ taskContract = null, turnPolicy = null, scheduledTask = null } = {}) {
-    if (scheduledTask?.runId) return true;
-    if (taskContract?.active) return true;
-    return Boolean(turnPolicy && turnPolicy.rigor && turnPolicy.rigor !== "fast");
-  }
-
-  _ensureTaskRun(sessionId, reason = "runtime_event") {
-    try {
-      const state = this._state(sessionId);
-      if (state.taskRun) return state.taskRun;
-      if (!state.turnId) return null;
-      const payload = state.currentPayload || {};
-      const taskRun = this._beginTaskRun(sessionId, payload.rawText || payload.text || "", {
-        displayFiles: payload.displayFiles || [],
-        scheduledTask: state.scheduledTask || null,
-      });
-      if (taskRun) {
-        taskRun.resumeState = {
-          ...(taskRun.resumeState || {}),
-          createdBy: reason,
-        };
-      }
-      return taskRun;
-    } catch (err) {
-      log.warn("TaskRun ensure failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _markTaskProgress(sessionId, phase, label, opts = {}) {
-    try {
-      const state = this._state(sessionId);
-      if (!state.taskRun) this._ensureTaskRun(sessionId, "tool_or_progress");
-      if (!state.taskRun) return null;
-      if (opts.tool) noteTaskToolUse(state.taskRun, opts.tool);
-      markTaskPhase(state.taskRun, phase, label, {
-        resumeState: opts.resumeState || null,
-      });
-      this._emitTaskEvent(sessionId, "task.step.progress", {
-        taskRunId: state.taskRun.id,
-        phase: state.taskRun.phase,
-        activeStep: state.taskRun.activeStep,
-        progress: state.taskRun.progress,
-        tool: opts.tool
-          ? {
-              id: opts.tool.id || "",
-              name: opts.tool.name || "unknown",
-              status: opts.tool.status || "",
-              title: opts.tool.title || "",
-            }
-          : null,
-        taskRun: compactTaskRun(state.taskRun),
-      });
-      return state.taskRun;
-    } catch (err) {
-      log.warn("TaskRun progress failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _markTaskAwaitingUser(sessionId, code, message) {
-    try {
-      const state = this._state(sessionId);
-      if (!state.taskRun) this._ensureTaskRun(sessionId, "awaiting_user");
-      if (!state.taskRun) return null;
-      markTaskPhase(state.taskRun, "awaiting_user", message, { status: "awaiting_user" });
-      const risk = addTaskRisk(state.taskRun, {
-        code,
-        level: "info",
-        message,
-      });
-      this._emitTaskEvent(sessionId, "task.risk.detected", {
-        taskRunId: state.taskRun.id,
-        risk,
-        taskRun: compactTaskRun(state.taskRun),
-      });
-      return risk;
-    } catch (err) {
-      log.warn("TaskRun awaiting-user mark failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _addTaskEvidence(sessionId, evidence, opts = {}) {
-    try {
-      const state = this._state(sessionId);
-      if (!state.taskRun && opts.tool) this._ensureTaskRun(sessionId, "tool_evidence");
-      if (!state.taskRun) return null;
-      const item = addTaskEvidence(state.taskRun, evidence);
-      this._emitTaskEvent(sessionId, "task.evidence.added", {
-        taskRunId: state.taskRun.id,
-        evidence: item,
-        tool: opts.tool
-          ? {
-              id: opts.tool.id || "",
-              name: opts.tool.name || "unknown",
-              status: opts.tool.status || "",
-              title: opts.tool.title || "",
-            }
-          : null,
-        taskRun: compactTaskRun(state.taskRun),
-      });
-      return item;
-    } catch (err) {
-      log.warn("TaskRun evidence failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _updateTaskPlanFromTodos(sessionId, todos = []) {
-    try {
-      const state = this._state(sessionId);
-      if (!state.taskRun) this._ensureTaskRun(sessionId, "todo_updated");
-      if (!state.taskRun) return null;
-      const before = JSON.stringify(state.taskRun.plan || []);
-      applyTaskPlanFromTodos(state.taskRun, todos);
-      const after = JSON.stringify(state.taskRun.plan || []);
-      if (after === before) return state.taskRun;
-      this._emitTaskEvent(sessionId, "task.plan.updated", {
-        taskRunId: state.taskRun.id,
-        plan: state.taskRun.plan,
-        activeStep: state.taskRun.activeStep,
-        taskRun: compactTaskRun(state.taskRun),
-      });
-      return state.taskRun;
-    } catch (err) {
-      log.warn("TaskRun plan fusion failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _updateTaskLivenessFromNotice(sessionId, notice = {}, eventType = "engine.notice") {
-    try {
-      const state = this._state(sessionId);
-      if (!notice) return null;
-      const code = String(notice.code || "").trim();
-      const detail = String(notice.detail || notice.message || "").trim();
-      let status = "runtime_notice";
-      let phase = "";
-      let countsAsActivity = false;
-      if (code === "longWait" || code === "waitingForFirstResponse") {
-        status = "no_visible_progress";
-        phase = "waiting";
-      } else if (code === "toolProgress" || code === "shellLongRunning") {
-        status = "tool_running";
-        phase = "tool_running";
-      } else if (code === "workProgress") {
-        status = "work_running";
-        phase = "work_running";
-        countsAsActivity = true;
-      } else if (eventType === "engine.warning" || notice.level === "warning") {
-        status = "warning";
-      } else if (notice.level === "progress") {
-        status = "running";
-      }
-      if (!state.taskRun) return null;
-      const ts = Date.now();
-      const livenessSig = `${status}\0${code}\0${detail}`;
-      const previousLiveness = state.taskRun._lastLivenessEmit || null;
-      if (
-        previousLiveness?.sig === livenessSig &&
-        Number.isFinite(previousLiveness.ts) &&
-        ts - previousLiveness.ts < 750
-      ) {
-        return state.taskRun.liveness || null;
-      }
-      state.taskRun._lastLivenessEmit = { sig: livenessSig, ts };
-      const liveness = updateTaskLiveness(state.taskRun, {
-        status,
-        detail,
-        noticeCode: code,
-        countsAsActivity,
-      });
-      if (phase && detail) {
-        const progressValue = progressValueFromNotice(notice);
-        state.taskRun.phase = phase;
-        state.taskRun.progress = {
-          label: detail,
-          value: progressValue,
-        };
-        state.taskRun.resumeState = {
-          ...(state.taskRun.resumeState || {}),
-          lastLivenessCode: code,
-        };
-      }
-      this._emitTaskEvent(sessionId, "task.liveness.updated", {
-        taskRunId: state.taskRun.id,
-        liveness,
-        notice: {
-          code,
-          level: notice.level || "",
-          detail,
-          progress: notice.progress && typeof notice.progress === "object" ? notice.progress : null,
-        },
-        taskRun: compactTaskRun(state.taskRun),
-      });
-      if (status === "no_visible_progress") {
-        const risk = addTaskRisk(state.taskRun, {
-          code: "NO_VISIBLE_PROGRESS",
-          level: "info",
-          message: detail || "NO_VISIBLE_PROGRESS",
-        });
-        this._emitTaskEvent(sessionId, "task.risk.detected", {
-          taskRunId: state.taskRun.id,
-          risk,
-          taskRun: compactTaskRun(state.taskRun),
-        });
-      } else if (status === "warning") {
-        const risk = addTaskRisk(state.taskRun, {
-          code: code || "ENGINE_WARNING",
-          level: "warning",
-          message: detail || code || "ENGINE_WARNING",
-        });
-        this._emitTaskEvent(sessionId, "task.risk.detected", {
-          taskRunId: state.taskRun.id,
-          risk,
-          taskRun: compactTaskRun(state.taskRun),
-        });
-      }
-      return liveness;
-    } catch (err) {
-      log.warn("TaskRun liveness update failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _completeTaskRun(sessionId, terminalType, opts = {}) {
-    try {
-      const state = this._state(sessionId);
-      if (!state.taskRun) return null;
-      const verification = terminalType === "turn.completed"
-        ? assessTaskVerification({
-            taskType: state.turnPolicy?.taskType || state.taskContract?.taskType || "",
-            evidence: state.taskRun.evidence || [],
-            evidenceGateAssessment: opts.evidenceGateAssessment || null,
-            evidenceSummary: opts.evidenceSummary || null,
-            successCriteria: state.taskRun.successCriteria || [],
-            deliverables: state.taskRun.deliverables || [],
-            fileChangeCount: opts.fileChangeCount || 0,
-            artifactCount: opts.artifactCount || 0,
-          })
-        : { status: "not_verified", reason: "" };
-      completeTaskRun(state.taskRun, terminalType, verification);
-      const eventType = terminalType === "turn.failed"
-        ? "task.failed"
-        : terminalType === "turn.interrupted"
-          ? "task.interrupted"
-          : terminalType === "turn.stalled"
-            ? "task.stalled"
-            : "task.completed";
-      this._emitTaskEvent(sessionId, eventType, {
-        taskRunId: state.taskRun.id,
-        status: state.taskRun.status,
-        completionStatus: state.taskRun.completionStatus,
-        verification: state.taskRun.verification,
-        evidenceSummary: opts.evidenceSummary || null,
-        taskRun: compactTaskRun(state.taskRun),
-      });
-      return state.taskRun;
-    } catch (err) {
-      log.warn("TaskRun completion failed: %s", err?.message || err);
-      return null;
-    }
-  }
-
-  _emitTaskEvent(sessionId, type, payload = {}) {
-    try {
-      const state = this._state(sessionId);
-      if (!state.turnId) return null;
-      return this.eventBus.emit(sessionId, {
-        type,
-        turnId: state.turnId,
-        source: "task-run",
-        payload,
-      })[0] || null;
-    } catch (err) {
-      log.warn("TaskRun event dropped (%s): %s", type, err?.message || err);
-      return null;
-    }
-  }
-
-  _applySubagentEvent(sessionId, payload = {}) {
-    const childSessionId = String(payload.sessionId || "").trim();
-    if (!childSessionId) return null;
-    const state = this._state(sessionId);
-    if (!state.subagents) state.subagents = new Map();
-    const item = state.subagents.get(childSessionId) || {
-      sessionId: childSessionId,
-      parentToolId: "",
-      label: "general",
-      description: "",
-      status: "running",
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
-      tools: new Map(),
-      textPreview: "",
-      thinkingPreview: "",
-      textFull: "",
-      thinkingFull: "",
-      metadata: {},
-      pendingPermissions: [],
-      pendingQuestions: [],
-      phase: "starting",
-      phaseDetail: "",
-      stats: {},
-    };
-    for (const event of payload.events || []) {
-      if (event.kind === "tool") {
-        const id = event.id || `tool_${item.tools.size + 1}`;
-        const existing = item.tools.get(id) || { id, startedAt: event.ts || Date.now() };
-        const next = {
-          ...existing,
-          id,
-          name: event.name || existing.name || "unknown",
-          status: event.status || existing.status || "running",
-          input: event.input || existing.input || {},
-          result: event.result ?? existing.result ?? null,
-          metadata: event.metadata || existing.metadata || {},
-          title: event.title || existing.title || "",
-          updatedAt: event.ts || Date.now(),
-        };
-        item.tools.set(id, next);
-        item.currentToolId = id;
-        item.status = next.status === "failed" ? "failed" : item.status === "done" ? "done" : "running";
-      } else if (event.kind === "text") {
-        item.textPreview = `${item.textPreview || ""}${event.text || ""}`.slice(-600);
-        item.textFull = `${item.textFull || ""}${event.text || ""}`.slice(-8_000);
-      } else if (event.kind === "thinking") {
-        item.thinkingPreview = `${item.thinkingPreview || ""}${event.text || ""}`.slice(-300);
-        item.thinkingFull = `${item.thinkingFull || ""}${event.text || ""}`.slice(-4_000);
-      } else if (event.kind === "usage") {
-        item.usage = event.usage || {};
-      } else if (event.kind === "permission") {
-        const requestId = event.requestId || event.rawRequestId || "";
-        item.pendingPermissions = Array.isArray(item.pendingPermissions) ? item.pendingPermissions : [];
-        if (event.status === "requested" && requestId && !item.pendingPermissions.some((p) => p.requestId === requestId)) {
-          item.pendingPermissions.push({
-            requestId,
-            rawRequestId: event.rawRequestId || "",
-            toolName: event.toolName || "",
-            status: event.status,
-            ts: event.ts || Date.now(),
-          });
-        } else if (requestId && event.status !== "requested") {
-          item.pendingPermissions = item.pendingPermissions.filter((p) => p.requestId !== requestId && p.rawRequestId !== requestId);
-        }
-      } else if (event.kind === "question") {
-        const requestId = event.requestId || event.rawRequestId || "";
-        item.pendingQuestions = Array.isArray(item.pendingQuestions) ? item.pendingQuestions : [];
-        if (event.status === "requested" && requestId && !item.pendingQuestions.some((q) => q.requestId === requestId)) {
-          item.pendingQuestions.push({
-            requestId,
-            rawRequestId: event.rawRequestId || "",
-            status: event.status,
-            ts: event.ts || Date.now(),
-          });
-        } else if (requestId && event.status !== "requested") {
-          item.pendingQuestions = item.pendingQuestions.filter((q) => q.requestId !== requestId && q.rawRequestId !== requestId);
-        }
-      } else if (event.kind === "error") {
-        item.status = "failed";
-        item.lastError = {
-          message: String(event.message || "").slice(0, 500),
-          ts: event.ts || Date.now(),
-        };
-        this._noteSubagentEngineError(sessionId, childSessionId, item.lastError.message);
-      }
-      item.updatedAt = event.ts || Date.now();
-    }
-    this._refreshSubagentPhase(item);
-    state.subagents.set(childSessionId, item);
-    return { subagent: this._compactSubagent(item) };
-  }
-
   /** A subagent's ENGINE died (model/gateway failure inside the child session).
    *  This signal used to be dropped entirely — the parent only saw a generic
    *  "Task failed". Feed it to the SAME learning loops the parent turn already
@@ -3419,68 +1882,6 @@ class TurnOrchestrator {
     }
   }
 
-  _refreshSubagentPhase(item = {}) {
-    const tools = [...(item.tools?.values?.() || [])];
-    const runningTools = tools.filter((tool) => {
-      const status = String(tool.status || "");
-      return status === "running" || status === "pending";
-    });
-    const failedTools = tools.filter((tool) => String(tool.status || "") === "failed");
-    const doneTools = tools.filter((tool) => ["done", "completed"].includes(String(tool.status || "")));
-    const nestedTasks = tools.filter((tool) => String(tool.name || "").toLowerCase() === "task");
-    const pending = (item.pendingPermissions?.length || 0) + (item.pendingQuestions?.length || 0);
-    const current =
-      runningTools.find((tool) => tool.id === item.currentToolId) ||
-      runningTools.at(-1) ||
-      tools.find((tool) => tool.id === item.currentToolId) ||
-      tools.at(-1) ||
-      null;
-    item.stats = {
-      totalTools: tools.length,
-      runningTools: runningTools.length,
-      doneTools: doneTools.length,
-      failedTools: failedTools.length,
-      nestedTasks: nestedTasks.length,
-      pendingPrompts: pending,
-    };
-    item.phaseDetail = this._subagentPhaseDetail(current);
-    if (item.status === "failed" || failedTools.length) item.phase = "failed";
-    else if (item.status === "done" || item.status === "completed") item.phase = "done";
-    else if (pending > 0) item.phase = "awaiting_user";
-    else if (current && String(current.name || "").toLowerCase() === "task" && ["running", "pending"].includes(String(current.status || ""))) item.phase = "delegating";
-    else if (current && ["running", "pending"].includes(String(current.status || ""))) item.phase = this._subagentToolPhase(current.name);
-    else if (String(item.textPreview || "").trim()) item.phase = "summarizing";
-    else if (String(item.thinkingPreview || "").trim()) item.phase = "planning";
-    else item.phase = "starting";
-    return item;
-  }
-
-  _subagentToolPhase(name) {
-    const tool = String(name || "").toLowerCase();
-    if (["read", "grep", "glob", "list", "ls"].includes(tool)) return "searching";
-    if (tool === "bash") return "running_command";
-    if (["edit", "write", "patch", "multiedit"].includes(tool)) return "editing";
-    if (tool.includes("web")) return "researching";
-    return "using_tool";
-  }
-
-  _subagentPhaseDetail(tool = null) {
-    if (!tool) return "";
-    const input = tool.input || {};
-    return String(
-      input.file_path ||
-      input.path ||
-      input.pattern ||
-      input.query ||
-      input.command ||
-      input.description ||
-      input.prompt ||
-      tool.title ||
-      tool.name ||
-      "",
-    ).trim().slice(0, 180);
-  }
-
   _emitEngineNotice(sessionId, notice) {
     if (!notice) return;
     notice = sanitizeNoticeForIngest(notice);
@@ -3500,14 +1901,6 @@ class TurnOrchestrator {
       });
     }
     this._emit(sessionId, type, payload);
-  }
-
-  _hasPendingUserBlocks(state = {}) {
-    return Boolean(
-      state.pendingPermissions?.size ||
-      state.pendingQuestions?.size ||
-      state.pendingHooks?.size,
-    );
   }
 
   _emit(sessionId, type, payload = {}, opts = {}) {
@@ -3541,8 +1934,10 @@ class TurnOrchestrator {
         notices: [],
         usage: null,
         taskContract: null,
+        pendingTaskContract: null,
         turnPolicy: null,
         evidenceLedger: null,
+        inheritedEvidenceTools: [],
         taskRun: null,
         enginePayload: null,
         legacyContextHydrated: false,

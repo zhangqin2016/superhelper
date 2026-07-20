@@ -53,6 +53,27 @@ const { TurnArchive } = require("../src/main/turn-archive.js");
 const { TurnOrchestrator } = require("../src/main/turn-orchestrator.js");
 const { resetRescueStateForTests, correctiveHintFor, evidenceVerifyHintFor, rescueStrategyFor, isSideEffectFreeToolRun } = require("../src/main/tool-call-rescue.js");
 
+{
+  const durableMessages = [{
+    id: "assistant_old",
+    role: "assistant",
+    turnId: "turn_old",
+    content: "safe fallback",
+    meta: {},
+  }];
+  const durableStore = new TranscriptStore({
+    getConversation: () => durableMessages,
+    updateMessageMeta: (_sessionId, messageId, updater) => {
+      const message = durableMessages.find((item) => item.id === messageId);
+      if (!message) return null;
+      message.meta = updater(message.meta || {}, message);
+      return message;
+    },
+  });
+  assert.ok(durableStore.supersedeAssistantTurn("s1", "turn_old", "turn_recovery"));
+  assert.deepEqual(durableMessages[0].meta, { superseded: true, supersededByTurnId: "turn_recovery" });
+}
+
 // Read-only whitelist: replaying pure-read turns is safe; anything else is not.
 assert.equal(isSideEffectFreeToolRun([{ name: "read" }, { name: "glob" }, { name: "websearch" }]), true);
 assert.equal(
@@ -67,15 +88,33 @@ assert.equal(isSideEffectFreeToolRun([{ name: "lily_tb_mail_send" }]), false, "M
 // invokes it by default for side-effect-free external facts, opt-in for others).
 // A one-shot retry steers the model to verify with tools first (language-aware).
 assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED")?.kind, "evidence_verify_retry", "verify-before-assert strategy is available by default");
+assert.equal(rescueStrategyFor("DOCUMENT_DELIVERY_UNVERIFIED")?.kind, "document_verify_retry");
 {
   process.env.LILY_EVIDENCE_VERIFY_RETRY = "0";
   assert.equal(rescueStrategyFor("EVIDENCE_UNVERIFIED"), null, "hard-off (LILY_EVIDENCE_VERIFY_RETRY=0) disables it entirely");
   delete process.env.LILY_EVIDENCE_VERIFY_RETRY;
 }
+{
+  process.env.LILY_DOCUMENT_DELIVERY_RETRY = "0";
+  assert.equal(rescueStrategyFor("DOCUMENT_DELIVERY_UNVERIFIED"), null);
+  delete process.env.LILY_DOCUMENT_DELIVERY_RETRY;
+}
 assert.match(evidenceVerifyHintFor({}), /verify it with a tool/i, "verify hint tells the model to verify with tools before asserting");
 assert.match(evidenceVerifyHintFor({ instructionLanguage: "zh" }), /先用工具核实/, "verify hint is language-aware (zh)");
+assert.match(evidenceVerifyHintFor({}), /do not return only a scope question/i, "verify hint rejects avoidable clarification-only answers");
+assert.match(evidenceVerifyHintFor({ instructionLanguage: "zh" }), /不要只把范围问题抛回用户/, "zh verify hint rejects avoidable clarification-only answers");
 assert.match(evidenceVerifyHintFor({}), /websearch\/webfetch or a live authoritative API/i, "external fact retry names the executable research path");
 assert.match(evidenceVerifyHintFor({ instructionLanguage: "zh" }), /只引用工具真实返回的链接/, "external fact retry forbids invented citations");
+assert.match(
+  evidenceVerifyHintFor({ instructionLanguage: "zh" }, { reason: "authoritative_source_required" }),
+  /不要重复同一条宽泛搜索.*官方机构/,
+  "authority gaps tell the retry to change search strategy",
+);
+assert.match(
+  evidenceVerifyHintFor({}, { reason: "entity_claim_not_in_evidence" }),
+  /verify each one against primary material/i,
+  "entity coverage gaps require item-by-item primary evidence",
+);
 assert.equal(isSideEffectFreeToolRun([]), true, "a tool-less turn is trivially safe to replay");
 
 // Recipe-aware corrective hint: the probe's instructionLanguage finding picks
@@ -156,15 +195,17 @@ const flushEvents = () => {
 };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
-// Evidence retries remove the safe placeholder only AFTER the replacement turn
-// is accepted. A failed dispatch keeps the honest fallback, while a successful
-// one emits a typed supersession so the renderer removes the duplicate bubble.
+// Evidence retries supersede the safe placeholder only AFTER the replacement
+// turn is accepted. The durable marker protects history reload, while the typed
+// event removes the duplicate bubble immediately.
 {
   const sequence = [];
   const originalSend = ctx.turnOrchestrator.sendUserMessage.bind(ctx.turnOrchestrator);
   const originalRemove = ctx.transcriptStore.removeLastAssistantMessage.bind(ctx.transcriptStore);
+  const originalSupersede = ctx.transcriptStore.supersedeAssistantTurn.bind(ctx.transcriptStore);
   messages.push({ role: "user", content: "Who is the current CEO?", files: [] });
   ctx.transcriptStore.removeLastAssistantMessage = () => { sequence.push("remove"); return true; };
+  ctx.transcriptStore.supersedeAssistantTurn = () => { sequence.push("supersede"); return { ok: true }; };
   ctx.turnOrchestrator.sendUserMessage = async () => { sequence.push("send"); return { ok: true }; };
   resetRescueStateForTests();
   const dispatched = await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
@@ -172,7 +213,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
     supersedesTurnId: "fact-turn-old",
   });
   assert.equal(dispatched, true);
-  assert.deepEqual(sequence, ["send", "remove"], "evidence fallback is removed only after retry acceptance");
+  assert.deepEqual(sequence, ["send", "supersede"], "evidence fallback receives a durable supersession only after retry acceptance");
   const supersession = flushEvents().find((event) => event.type === "assistant.supersedes");
   assert.equal(supersession?.turnId, "fact-turn-old");
   assert.equal(supersession?.payload?.supersedes, "fact-turn-old");
@@ -189,6 +230,96 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
   messages.pop();
   ctx.turnOrchestrator.sendUserMessage = originalSend;
   ctx.transcriptStore.removeLastAssistantMessage = originalRemove;
+  ctx.transcriptStore.supersedeAssistantTurn = originalSupersede;
+}
+
+// A first-party Bash web search is semantically read-only, so a repairable
+// authority gap may retry once with a reason-specific strategy. Arbitrary Bash
+// remains blocked because replaying the whole turn could repeat side effects.
+{
+  const state = ctx.turnOrchestrator._state("s1");
+  const originalTools = state.tools;
+  const originalSend = ctx.turnOrchestrator.sendUserMessage.bind(ctx.turnOrchestrator);
+  const originalRemove = ctx.transcriptStore.removeLastAssistantMessage.bind(ctx.transcriptStore);
+  messages.push({ role: "user", content: "Which organizations have this classification?", files: [] });
+  state.tools = new Map([["search", {
+    name: "Bash",
+    input: { command: String.raw`echo '{"query":"classification"}' | "C:\runtime-bin\node.cmd" "C:\skills\websearch\scripts\websearch.cjs"` },
+  }]]);
+  let captured = null;
+  ctx.turnOrchestrator.sendUserMessage = async (...args) => { captured = args; return { ok: true }; };
+  ctx.transcriptStore.removeLastAssistantMessage = () => true;
+  resetRescueStateForTests();
+  const evidenceRecoveryContext = {
+    schemaVersion: 1,
+    mode: "evidence_verify_retry",
+    sourceTurnId: "weak-source-turn",
+    tools: [],
+  };
+  const upgraded = await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
+    code: "EVIDENCE_UNVERIFIED",
+    evidenceReason: "authoritative_source_required",
+    supersedesTurnId: "weak-source-turn",
+    evidenceRecoveryContext,
+  });
+  assert.equal(upgraded, true);
+  assert.equal(captured?.[3]?.engineText, undefined, "internal recovery guidance must not replace the visible user text");
+  assert.equal(captured?.[3]?.recovery?.kind, "evidence_verify_retry");
+  assert.equal(captured?.[3]?.recovery?.evidenceContext, evidenceRecoveryContext);
+  assert.match(captured?.[3]?.recovery?.guidance || "", /Do not repeat the same broad query/);
+  assert.match(captured?.[3]?.recovery?.guidance || "", /responsible regulator/);
+
+  state.tools = new Map([["shell", { name: "Bash", input: { command: "rg classification src" } }]]);
+  captured = null;
+  resetRescueStateForTests();
+  const blocked = await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
+    code: "EVIDENCE_UNVERIFIED",
+    evidenceReason: "authoritative_source_required",
+    supersedesTurnId: "unsafe-shell-turn",
+  });
+  assert.equal(blocked, false);
+  assert.equal(captured, null);
+
+  messages.pop();
+  state.tools = originalTools;
+  ctx.turnOrchestrator.sendUserMessage = originalSend;
+  ctx.transcriptStore.removeLastAssistantMessage = originalRemove;
+  flushEvents();
+}
+
+// Document QA is a continuation over explicit files, not a replay of the
+// authoring request. It is therefore allowed after a write tool and receives
+// full preflight plus the inherited artifact list.
+{
+  const documentPath = path.join(tempUserData, "delivery.pdf");
+  fs.writeFileSync(documentPath, "%PDF-1.7\n%%EOF\n");
+  const state = ctx.turnOrchestrator._state("s1");
+  state.wasRescueAttempt = false;
+  state.tools.set("write-for-delivery", { id: "write-for-delivery", name: "write", status: "done" });
+  let captured = null;
+  const originalSend = ctx.turnOrchestrator.sendUserMessage.bind(ctx.turnOrchestrator);
+  const originalRemove = ctx.transcriptStore.removeLastAssistantMessage.bind(ctx.transcriptStore);
+  ctx.turnOrchestrator.sendUserMessage = async (...args) => { captured = args; return { ok: true }; };
+  ctx.transcriptStore.removeLastAssistantMessage = () => true;
+  resetRescueStateForTests();
+  const dispatched = await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
+    code: "DOCUMENT_DELIVERY_UNVERIFIED",
+    supersedesTurnId: "document-turn-old",
+    userText: "Create a polished report",
+    documentDelivery: { artifacts: [{ path: documentPath }], missing: ["visual_inspection"] },
+  });
+  assert.equal(dispatched, true, "a document QA continuation is allowed after file writes");
+  assert.match(captured[1], /internal continuation/i);
+  assert.deepEqual(captured[2], []);
+  assert.equal(captured[3].recordUser, false);
+  assert.equal(captured[3].skipPreflight, false, "managed document runtime preflight remains enabled");
+  assert.equal(captured[3].documentDeliveryRecovery, true);
+  assert.deepEqual(captured[3].expectedArtifactPaths, [documentPath]);
+  state.tools.clear();
+  state.wasRescueAttempt = false;
+  ctx.turnOrchestrator.sendUserMessage = originalSend;
+  ctx.transcriptStore.removeLastAssistantMessage = originalRemove;
+  flushEvents();
 }
 
 // --- rescue fires once, silently, on the engine text only --------------------

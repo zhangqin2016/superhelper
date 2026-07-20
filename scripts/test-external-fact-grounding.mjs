@@ -19,7 +19,7 @@ const ranking = buildTaskContract({ text: "全球大学排名前十" });
 assert.equal(ranking.active, true);
 assert.equal(ranking.taskType, "external_fact");
 assert.equal(ranking.externalFactPolicy.required, true);
-assert.equal(ranking.externalFactPolicy.scopeClarificationRecommended, true);
+assert.equal(ranking.externalFactPolicy.scopeClarificationRecommended, false);
 assert.deepEqual(ranking.evidencePolicy.requiredEvidenceKinds, ["external"]);
 assert.equal(ranking.evidencePolicy.requireSourceLinks, true);
 const aiProductRanking = buildTaskContract({ text: "What are the top 5 AI coding assistants?" });
@@ -121,8 +121,8 @@ const clarification = assess("你想看哪个地区、哪一年，以及按什�
   hasFreshEvidence: false,
   hasDocumentEvidence: false,
 });
-assert.equal(clarification.ok, true, "a scope clarification must not be punished for not searching yet");
-assert.equal(clarification.clarification, true);
+assert.equal(clarification.ok, false, "a defaultable ranking scope must not turn into a question-only answer");
+assert.equal(clarification.reason, "missing_required_evidence:external");
 
 const honestGap = assess("当前搜索不可用，我无法确认这个排名。", {
   counts: {},
@@ -233,12 +233,22 @@ assert.equal(
 assert.equal(
   shouldAutoVerifyExternalFact({
     policy: retryPolicy,
-    assessment: unsupported,
+    assessment: { ...unsupported, reason: "authoritative_source_required" },
+    evidenceSummary: { hasFreshEvidence: true },
+    sideEffectFree: true,
+  }),
+  true,
+  "a weak completed search gets one evidence-upgrade retry instead of ending at the fallback",
+);
+assert.equal(
+  shouldAutoVerifyExternalFact({
+    policy: retryPolicy,
+    assessment: { ...unsupported, reason: "unrelated_internal_failure" },
     evidenceSummary: { hasFreshEvidence: true },
     sideEffectFree: true,
   }),
   false,
-  "a completed research attempt must not be duplicated by another automatic turn",
+  "fresh research is retried only for evidence gaps that a better search can plausibly repair",
 );
 
 console.log("external-fact-grounding: ok");

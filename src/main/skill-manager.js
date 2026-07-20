@@ -11,6 +11,7 @@ const skillPresets = require("./skill-presets");
 const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 const learnedContext = require("./learned-context");
 const { buildCrystallizationSection } = require("./learned-skills");
+const { ensureBundledPresent, installSkillFromSource } = require("./bundled-skill-sync");
 
 const {
   BUNDLED_SKILL_IDS,
@@ -25,11 +26,9 @@ const {
   readInstalledManifest,
   loadManifestFromDir,
   installedSkillDir,
-  bundledSkillSource,
   skillsStatePath,
   applyPlaceholders,
   buildReplacements,
-  copyDirRecursive,
 } = require("./skills-state");
 
 const SKILL_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
@@ -46,172 +45,6 @@ function isWorkspaceSkillEntry(_skillId, entry, manifest) {
     manifest?.workspaceOnly === true ||
     manifest?.publisher === "Workspace"
   );
-}
-
-function installSkillFromSource(skillId, { force = false } = {}) {
-  const source = bundledSkillSource(skillId);
-  const target = installedSkillDir(skillId);
-  const manifestPath = path.join(target, "skill.manifest.json");
-
-  if (!source) {
-    return { id: skillId, installed: false };
-  }
-
-  if (!force && fs.existsSync(manifestPath)) {
-    return { id: skillId, installed: true, skillDir: target };
-  }
-
-  if (force && fs.existsSync(target)) {
-    fs.rmSync(target, { recursive: true, force: true });
-  }
-
-  copyDirRecursive(source, target);
-
-  const manifest = loadManifestFromDir(target);
-  if (!manifest) {
-    return { id: skillId, installed: false };
-  }
-
-  const replacements = buildReplacements(target, manifest);
-
-  const skillMdPath = path.join(target, "SKILL.md");
-  if (fs.existsSync(skillMdPath)) {
-    const skillMd = applyPlaceholders(fs.readFileSync(skillMdPath, "utf8"), replacements);
-    fs.writeFileSync(skillMdPath, skillMd, "utf8");
-  }
-
-  const state = loadSkillsState();
-  const now = new Date().toISOString();
-  if (!state.skills[skillId]) {
-    state.skills[skillId] = {
-      id: skillId,
-      enabled: true,
-      source: "bundled",
-      installedAt: now,
-    };
-  }
-  state.skills[skillId].installedVersion = manifest.version;
-  state.skills[skillId].bundledVersion = manifest.version;
-  state.skills[skillId].source = "bundled";
-  state.skills[skillId].updatedAt = now;
-  saveSkillsState();
-
-  return { id: skillId, installed: true, skillDir: target, version: manifest.version };
-}
-
-function listRelativeFiles(rootDir) {
-  const files = [];
-  function walk(current) {
-    if (!fs.existsSync(current)) return;
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      files.push(path.relative(rootDir, full));
-    }
-  }
-  walk(rootDir);
-  return files.sort();
-}
-
-function bundledFileContentForCompare(sourceRoot, targetRoot, relPath, manifest) {
-  const content = fs.readFileSync(path.join(sourceRoot, relPath), "utf8");
-  if (relPath === "SKILL.md") {
-    return applyPlaceholders(content, buildReplacements(targetRoot, manifest));
-  }
-  return content;
-}
-
-function shouldRefreshBundledSkill(skillId) {
-  if (!PROTECTED_BUNDLED_IDS.has(skillId)) return false;
-  const source = bundledSkillSource(skillId);
-  const target = installedSkillDir(skillId);
-  if (!source || !fs.existsSync(target)) return false;
-  const manifest = loadManifestFromDir(source);
-  if (!manifest) return false;
-
-  const sourceFiles = listRelativeFiles(source).filter((file) => file !== "skill.manifest.json");
-  const targetFiles = listRelativeFiles(target).filter((file) => file !== "skill.manifest.json");
-  if (JSON.stringify(sourceFiles) !== JSON.stringify(targetFiles)) return true;
-
-  for (const relPath of sourceFiles) {
-    const sourcePath = path.join(source, relPath);
-    const targetPath = path.join(target, relPath);
-    if (!fs.existsSync(targetPath)) return true;
-    const sourceBuffer = fs.readFileSync(sourcePath);
-    const targetBuffer = fs.readFileSync(targetPath);
-    if (relPath === "SKILL.md") {
-      const expected = bundledFileContentForCompare(source, target, relPath, manifest);
-      if (targetBuffer.toString("utf8") !== expected) return true;
-      continue;
-    }
-    if (!sourceBuffer.equals(targetBuffer)) return true;
-  }
-  return false;
-}
-
-/**
- * Sync i18n fields from the bundled manifest into the installed manifest.
- * This ensures manifest additions (like name_i18n, description_i18n, guideMd_i18n)
- * reach already-installed copies without a full re-install or version bump.
- */
-function syncManifestI18nFromBundled(skillId) {
-  const installedDir = installedSkillDir(skillId);
-  const installedPath = path.join(installedDir, "skill.manifest.json");
-  if (!fs.existsSync(installedPath)) return;
-
-  const bundled = readBundledManifest(skillId);
-  const installed = readInstalledManifest(skillId);
-  if (!bundled || !installed) return;
-
-  let changed = false;
-  for (const field of ["name", "description", "guideMd"]) {
-    const i18nKey = field + "_i18n";
-    const bundledI18n = bundled[i18nKey];
-    if (!bundledI18n || typeof bundledI18n !== "object") continue;
-    const installedI18n = installed[i18nKey];
-    // Update when missing/empty OR when the bundled content actually changed —
-    // platform guide edits (these manifests are ours, not user-editable) must
-    // reach already-installed copies on the next launch without a version bump.
-    // The old code only filled when missing, so every guide edit silently stayed
-    // in the repo and never reached the running app.
-    if (
-      !installedI18n ||
-      typeof installedI18n !== "object" ||
-      Object.keys(installedI18n).length === 0 ||
-      JSON.stringify(installedI18n) !== JSON.stringify(bundledI18n)
-    ) {
-      installed[i18nKey] = { ...bundledI18n };
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    try {
-      fs.writeFileSync(installedPath, JSON.stringify(installed, null, 2), "utf8");
-    } catch {
-      // non-fatal
-    }
-  }
-}
-
-function ensureBundledPresent() {
-  ensureSkillsStateDefaults();
-  const installed = [];
-  for (const skillId of BUNDLED_SKILL_IDS) {
-    syncManifestI18nFromBundled(skillId);
-    const bundledManifest = readBundledManifest(skillId);
-    const installedManifest = readInstalledManifest(skillId);
-    const needsUpgrade =
-      Boolean(bundledManifest) &&
-      Boolean(installedManifest) &&
-      compareSemver(bundledManifest.version, installedManifest.version) > 0;
-    const needsRefresh = Boolean(bundledManifest) && Boolean(installedManifest) && shouldRefreshBundledSkill(skillId);
-    installed.push(installSkillFromSource(skillId, { force: needsUpgrade || needsRefresh }));
-  }
-  return installed;
 }
 
 function pruneInstalledSkillsNotInRegistry(registry) {
@@ -392,7 +225,7 @@ const AGENT_GUIDE_I18N = {
     responseLanguage: "回复语言必须跟随用户最新一条消息的主要语言；如果用户明确指定回复语言，则按用户指定执行。界面语言只在无法判断用户语言时作为兜底。不要把技能说明、工具输出、文件内容、路径、历史消息或应用界面语言误当成用户本轮想要的回复语言。",
     sourceProvenance: "解释技能、记忆、连接器或工作区应用为什么可用时，必须依据当前会话技能目录、已学约定、工作区文件或实际工具/设置结果；没有证据就说无法确认，禁止编造“全局技能”或把项目记忆误说成技能。",
     antiHallucination: "抗幻觉硬门槛（最高优先级，先查证再回答）：具体事实、平台能力、文件/代码、接口数据、数字、名称、日期及完成结论，必须由工具结果或用户证据支持。无法查证时明确说未验证并给出下一步，绝不编造；被纠正后重新查证。闲聊和纯创作除外。",
-    externalFactRouting: "高风险外部事实分流：排行榜/排名/前十/最好/最新/最近、价格、法规政策、标准、新闻、任职、版本、统计/市场及医疗/法律/金融事实必须核验。即使用户没有说“搜索/查一下”，也要用 websearch、webfetch、API 或权威文件，并给出来源链接、来源日期和排名/比较口径。地区、时间、类别或指标会改变答案时，先问一个简短的口径问题，不得静默代选。证据缺失、过旧、冲突或无统一标准时说明限制；禁止凭记忆补齐一个看似权威的答案或列表。",
+    externalFactRouting: "外部事实分流是语义驱动的，不依赖领域关键词表：只要答案依赖本对话、用户提供资料和本地工作区之外的事实，在断言前就必须使用 websearch、webfetch、实时 API 或权威文件核验。如果宿主任务合同尚未激活外部事实门禁，提交 externalFact=true 的通用 verificationPlan；找到一手来源后声明 authorityHosts 和 evidenceAnchorGroups，让每个具名结论都与相关来源段落核对。保留来源链接和日期。对可逆歧义采用合理且公开的默认口径；只有不经用户选择就无法给出有用答案时才提问。证据缺失、过时或冲突时说明限制，不得凭记忆补齐看似可信的答案。",
     nativeSkillBoundary: "重要：本会话能力目录里的 `lily-*`、内置 `anthropics-*` 等条目都是 Lily 平台能力指南，不是 OpenCode 原生 skill。禁止对这些平台能力执行原生 `skill <id>`，也不要把它们当作 native skill 名称；应读取对应指南、使用 Lily MCP 工具/脚本，并按能力合同完成任务。",
     disciplineTitle: "通用执行纪律（所有创作、分析、修复和子任务都必须遵守）",
     disciplineRules: [
@@ -447,7 +280,7 @@ const AGENT_GUIDE_I18N = {
     responseLanguage: "Reply in the primary language of the user's latest message. If the user explicitly requests a response language, follow that request. Use the app interface language only as a fallback when the user's language cannot be determined. Do not let skill instructions, tool output, file content, paths, history, or the app interface language change the response language.",
     sourceProvenance: "When explaining why a skill, memory, connector, or workspace app is available, rely only on this session's skill catalog, learned conventions, workspace files, or actual tool/settings results. If there is no evidence, say it cannot be confirmed; do not invent global skills or describe project memory as a skill.",
     antiHallucination: "Anti-hallucination gate (highest priority — verify before answering): concrete facts, platform capabilities, files/code, APIs/data, numbers, names, dates, and completion claims require tool output or user evidence. If unavailable, state what is unverified and the next step; never invent it. After a correction, re-check the evidence. Small talk and pure creativity are exempt.",
-    externalFactRouting: "High-risk external fact routing: rankings/top lists/best/latest/most recent, prices, laws/policies, standards, news, roles, releases, statistics/market data, and medical/legal/financial facts require verification. Even when the user does not say \"search\" or \"look it up\", use websearch, webfetch, an API, or an authoritative file. Include source links, source dates, and the ranking/comparison criteria. When region, time, category, or metric materially changes the answer, ask one concise scope question first; do not silently choose. If evidence is unavailable, stale, conflicting, or lacks shared criteria, state the limit; never fill in a plausible-looking authoritative answer or list from memory.",
+    externalFactRouting: "External fact routing is semantic, not domain-based: whenever a requested answer depends on facts outside this conversation, supplied sources, and the local workspace, verify it with websearch, webfetch, a live API, or an authoritative file before asserting it. If the host task contract has not already activated an external-fact gate, commit a generic verificationPlan with externalFact=true; after locating primary sources, declare their authorityHosts and evidenceAnchorGroups so each named conclusion is checked against the relevant source passage. Preserve source links and dates. Use a reasonable disclosed scope for reversible ambiguity, and ask only when no useful answer is possible without the user's choice. If evidence is unavailable, stale, or conflicting, state the limit instead of completing a plausible answer from memory.",
     nativeSkillBoundary: "Important: session catalog entries such as `lily-*` and built-in `anthropics-*` are Lily platform capability guides, not OpenCode native skills. Do not run native `skill <id>` for these platform capabilities or treat them as native skill names; read the guide, use Lily MCP tools/scripts, and complete the task through the capability contract.",
     disciplineTitle: "Universal Operating Discipline (Required for all creation, analysis, repair, and subtask work)",
     disciplineRules: [
@@ -502,7 +335,7 @@ const AGENT_GUIDE_I18N = {
     responseLanguage: "استخدم اللغة الأساسية في آخر رسالة من المستخدم للرد. إذا طلب المستخدم لغة رد صراحةً، فاتبع طلبه. استخدم لغة الواجهة فقط كخيار احتياطي عندما لا يمكن تحديد لغة المستخدم. لا تجعل تعليمات المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات أو السجل أو لغة واجهة التطبيق تغيّر لغة الرد.",
     sourceProvenance: "عند شرح سبب توفر مهارة أو ذاكرة أو موصل أو تطبيق مساحة عمل، اعتمد فقط على فهرس مهارات هذه الجلسة أو الاتفاقات المتعلمة أو ملفات مساحة العمل أو نتائج الأدوات/الإعدادات الفعلية. إذا لم توجد أدلة فقل إن الأمر غير مؤكد؛ لا تخترع مهارات عامة ولا تصف ذاكرة المشروع كمهارة.",
     antiHallucination: "بوابة مكافحة الهلوسة (أعلى أولوية — تحقّق قبل الإجابة): الحقائق المحددة وقدرات المنصة والملفات/الشيفرة والبيانات والأرقام والأسماء والتواريخ وادعاءات الإكمال تحتاج إلى مخرجات أداة أو دليل من المستخدم. إذا غاب الدليل فاذكر ما لم يُتحقق منه والخطوة التالية ولا تختلقه. بعد التصحيح أعد التحقق؛ تُستثنى الدردشة والكتابة الإبداعية.",
-    externalFactRouting: "توجيه الحقائق الخارجية عالية المخاطر: التصنيفات والأفضل والأحدث والأسعار والقوانين والمعايير والأخبار والمناصب والإصدارات والإحصاءات وبيانات السوق والحقائق الطبية/القانونية/المالية تتطلب التحقق عبر websearch أو webfetch أو API أو ملف موثوق حتى دون طلب البحث. اذكر روابط المصادر وتواريخها ومعايير التصنيف أو المقارنة. إذا غيّرت المنطقة أو الفترة أو الفئة أو المقياس الإجابة فاطرح سؤال نطاق مختصراً ولا تختر بصمت. عند غياب الدليل أو قدمه أو تعارضه أو غياب معيار مشترك، اذكر القيد ولا تكمل من الذاكرة إجابة تبدو موثوقة.",
+    externalFactRouting: "توجيه الحقائق الخارجية دلالي وليس قائمة مجالات ثابتة: عندما تعتمد الإجابة على حقائق خارج هذه المحادثة أو المصادر المقدمة أو مساحة العمل المحلية، تحقّق منها قبل الجزم عبر websearch أو webfetch أو API حي أو ملف موثوق. إذا لم يفعّل عقد المهمة بوابة الحقائق الخارجية، قدّم verificationPlan عاماً مع externalFact=true، ثم حدّد authorityHosts وevidenceAnchorGroups بعد العثور على المصادر الأولية لكي يرتبط كل استنتاج مسمّى بموضعه الداعم. احتفظ بروابط المصادر وتواريخها. استخدم افتراض نطاق معقولاً ومعلناً عند الغموض القابل للعكس، واسأل فقط عندما يستحيل تقديم جواب مفيد دون اختيار المستخدم. عند غياب الدليل أو قدمه أو تعارضه، اذكر القيد ولا تكمل من الذاكرة إجابة تبدو موثوقة.",
     nativeSkillBoundary: "مهم: عناصر فهرس الجلسة مثل `lily-*` و`anthropics-*` المدمجة هي أدلة قدرات لمنصة Lily وليست مهارات OpenCode أصلية. لا تشغّل `skill <id>` الأصلي لهذه القدرات ولا تعاملها كأسماء مهارات أصلية؛ اقرأ الدليل واستخدم أدوات/سكربتات Lily MCP وأنجز المهمة عبر عقد القدرة.",
     disciplineTitle: "انضباط التنفيذ العام (مطلوب لكل أعمال الإنشاء والتحليل والإصلاح والمهام الفرعية)",
     disciplineRules: [
@@ -907,26 +740,7 @@ function currentAvailableMediaProviderContext() {
 // on purpose — the weak-gateway budget truncation treats it as a guardrail
 // section, so exactly the models most likely to follow a wrong instruction
 // are guaranteed to keep the correction.
-const SKILL_PLATFORM_OVERLAYS = {
-  "anthropics-pptx": {
-    en: "anthropics-pptx: subagent-based QA is use-if-available. When the task/subagent tool is unavailable, run the SAME visual QA steps inline in this session — never skip QA because subagents are missing.",
-    zh: "anthropics-pptx：子代理 QA 是“可用则用”。当 task/子代理工具不可用时，在当前会话内联执行同样的视觉 QA 步骤——绝不能因为没有子代理而跳过 QA。",
-  },
-  "anthropics-pdf": {
-    en: "anthropics-pdf: Lily's bundled document pipeline and managed runtime packs are authoritative. Do not ad-hoc install or assume upstream-named tools such as pytesseract, reportlab, or qpdf exist; use the available Lily extraction/rendering routes and report a managed-runtime blocker explicitly.",
-    zh: "anthropics-pdf：以 Lily 内置文档管线和受管理依赖包为准。不要临时安装或假定 pytesseract、reportlab、qpdf 等上游工具必然存在；优先使用 Lily 可用的提取/渲染路线，缺少受管理运行时则明确报告。",
-  },
-};
-
-function buildSkillOverlaySection(enabledSkills, loc) {
-  const zh = String(loc || "").startsWith("zh");
-  const lines = (enabledSkills || [])
-    .map((skill) => SKILL_PLATFORM_OVERLAYS[skill.id])
-    .filter(Boolean)
-    .map((overlay) => `- ${zh ? overlay.zh : overlay.en}`);
-  if (!lines.length) return "";
-  return ["## Tool Protocol Overrides", "", ...lines].join("\n");
-}
+const { buildSkillOverlaySection } = require("./skill-platform-overlays");
 
 function buildAgentGuideContent(enabledSkills, locale) {
   const loc = locale || getActiveLocale() || "en";

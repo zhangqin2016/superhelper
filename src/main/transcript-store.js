@@ -21,6 +21,19 @@ class TranscriptStore {
     return this.sessionManager.popLastAssistantMessage(sessionId);
   }
 
+  supersedeAssistantTurn(sessionId, turnId, supersededByTurnId = "") {
+    const messages = this.sessionManager.getConversation?.(sessionId) || [];
+    const target = [...messages].reverse().find(
+      (message) => message?.role === "assistant" && message?.turnId === turnId && !message?.meta?.superseded,
+    );
+    if (!target?.id || typeof this.sessionManager.updateMessageMeta !== "function") return null;
+    return this.sessionManager.updateMessageMeta(sessionId, target.id, (meta) => ({
+      ...meta,
+      superseded: true,
+      supersededByTurnId: String(supersededByTurnId || ""),
+    }));
+  }
+
   getCommittedMessages(sessionId) {
     return this.sessionManager.getConversation(sessionId) || [];
   }

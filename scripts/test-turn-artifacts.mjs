@@ -131,6 +131,19 @@ try {
   }
 
   {
+    const turnStart = Date.now();
+    setFileMtime(pdfPath, turnStart - 60_000);
+    const artifacts = buildTurnArtifacts({
+      workspacePath: workspace,
+      startedAt: turnStart,
+      expectedArtifactPaths: [pdfPath],
+    });
+    assert.equal(artifacts.length, 1, "delivery QA inherits the original artifact despite its older mtime");
+    assert.equal(artifacts[0].relativePath, "output/report.pdf");
+    assert.equal(artifacts[0].source, "inherited_delivery");
+  }
+
+  {
     const artifacts = buildTurnArtifacts({
       workspacePath: workspace,
       fileChanges: [{ filePath: svgPath }],

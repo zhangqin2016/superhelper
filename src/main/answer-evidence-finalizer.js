@@ -1,8 +1,19 @@
 "use strict";
 
 const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
+const {
+  answerLanguage,
+  safeExternalFactFallback,
+  salvageSupportedExternalAnswer,
+} = require("./external-evidence-recovery");
 const { shouldAutoVerifyExternalFact } = require("./external-fact-policy");
 const { isSideEffectFreeToolRun } = require("./tool-call-rescue");
+const {
+  assessDocumentDelivery,
+  requiresDocumentDelivery,
+  safeDocumentDeliveryFallback,
+  withDocumentOutputEvidence,
+} = require("./document-delivery-gate");
 
 function isExternalFactContract(taskContract = null) {
   return Boolean(taskContract?.externalFactPolicy?.required);
@@ -13,46 +24,9 @@ function isSourceContentContract(taskContract = null) {
 }
 
 function shouldBufferAssistantAnswer(taskContract = null) {
-  return isExternalFactContract(taskContract) || isSourceContentContract(taskContract);
-}
-
-function answerLanguage(value = "") {
-  const text = String(value || "");
-  if (/[㐀-鿿]/u.test(text)) return "zh";
-  if (/[؀-ۿ]/u.test(text)) return "ar";
-  return "en";
-}
-
-function safeExternalFactFallback({ policy = null, evidenceSummary = null, userText = "" } = {}) {
-  const language = answerLanguage(userText);
-  const scopedQuestion = {
-    zh: "这类排行没有统一客观答案，而且会随时间和评价口径变化。在没有完成可靠核验前，我不会直接给出一个看似确定的榜单。你希望按代码能力、Agent 能力、团队协作、价格，还是综合体验来排？",
-    ar: "لا يوجد ترتيب موضوعي موحد لهذا النوع، كما أنه يتغير حسب الوقت والمعايير. لن أقدم قائمة تبدو مؤكدة قبل التحقق الموثوق. هل تريد الترتيب حسب جودة البرمجة، أو قدرات الوكيل، أو تعاون الفريق، أو السعر، أو التقييم الشامل؟",
-    en: "There is no single objective ranking here, and the result changes with time and criteria. I will not present a definite-looking list before reliable verification. Should I rank by coding quality, agent capability, team collaboration, price, or overall experience?",
-  };
-  if (policy?.scopeClarificationRecommended) return scopedQuestion[language];
-
-  if (policy?.researchProhibited) {
-    return {
-      zh: "这个问题涉及会变化的外部事实；在不搜索或查验来源的前提下，我无法可靠确认具体结论，因此不会凭记忆编造答案。",
-      ar: "يتعلق هذا السؤال بحقائق خارجية متغيرة. وبما أن البحث والتحقق من المصادر غير مسموحين، فلا يمكنني تأكيد نتيجة محددة بشكل موثوق ولن أخمنها من الذاكرة.",
-      en: "This depends on changing external facts. Without searching or checking sources, I cannot confirm a specific answer reliably, so I will not guess from memory.",
-    }[language];
-  }
-
-  if (evidenceSummary?.hasFreshEvidence) {
-    return {
-      zh: "本轮检索结果不足以逐项支撑这些结论，我不会把未核实的排行、价格或数字作为答案。需要基于更完整的一手来源重新核验。",
-      ar: "لا تكفي نتائج البحث في هذه الجولة لدعم الاستنتاجات بندا بندا، لذلك لن أقدم ترتيبا أو سعرا أو أرقاما غير متحققة كإجابة. يلزم تحقق جديد من مصادر أولية أكمل.",
-      en: "This turn's research does not support the conclusions item by item, so I will not present an unverified ranking, price, or number as the answer. It needs another check against more complete primary sources.",
-    }[language];
-  }
-
-  return {
-    zh: "我没有取得可核验的实时来源，暂时不能可靠确认这个外部事实，因此不会用记忆补全一个看似具体的答案。",
-    ar: "لم أحصل على مصدر آني قابل للتحقق، لذلك لا يمكنني تأكيد هذه الحقيقة الخارجية بشكل موثوق ولن أكملها بتخمين يبدو محددا.",
-    en: "I did not obtain a verifiable current source, so I cannot confirm this external fact reliably and will not fill the gap with a specific-looking guess.",
-  }[language];
+  return isExternalFactContract(taskContract) ||
+    isSourceContentContract(taskContract) ||
+    requiresDocumentDelivery(taskContract);
 }
 
 function safeSourceContentFallback({ evidenceSummary = null, userText = "" } = {}) {
@@ -103,24 +77,92 @@ function evaluateAnswerEvidence({
   fileChangeCount = 0,
   inputFiles = [],
   userText = "",
+  artifacts = [],
+  recoveryAttempt = false,
 } = {}) {
   const original = String(assistant || "").trim();
   const externalFact = isExternalFactContract(taskContract);
   const sourceContent = isSourceContentContract(taskContract);
+  const documentDeliveryRequired = requiresDocumentDelivery(taskContract);
   try {
     const evidenceText = toolEvidenceText(tools);
+    const documentDelivery = assessDocumentDelivery({
+      taskContract,
+      artifacts,
+      tools,
+      userText,
+    });
+    const effectiveEvidenceSummary = withDocumentOutputEvidence(evidenceSummary, artifacts, documentDelivery);
     const assessment = assessFinalAnswerEvidence({
       assistant: original,
       evidencePolicy: taskContract?.evidencePolicy,
       turnPolicy,
-      evidenceSummary,
+      evidenceSummary: effectiveEvidenceSummary,
       toolCount: tools.length,
       fileChangeCount,
       evidenceText,
       userText,
       skipNumericGrounding: hasImageInput(inputFiles),
     });
-    if (assessment.ok) return { assistant: original, assessment, triggerVerifyRetry: false, evidenceText };
+    if (documentDelivery.required && !documentDelivery.ok) {
+      return {
+        assistant: safeDocumentDeliveryFallback({ assessment: documentDelivery, userText }),
+        assessment: {
+          ok: false,
+          required: true,
+          strongClaim: true,
+          hasEvidence: documentDelivery.artifacts.length > 0,
+          reason: documentDelivery.reason,
+          documentDelivery,
+        },
+        documentDelivery,
+        evidenceSummary: effectiveEvidenceSummary,
+        triggerVerifyRetry: false,
+        triggerDocumentVerifyRetry: Boolean(documentDelivery.retryRecommended),
+        evidenceText,
+      };
+    }
+    if (assessment.ok) {
+      return {
+        assistant: original,
+        assessment: documentDelivery.required ? { ...assessment, documentDelivery } : assessment,
+        documentDelivery,
+        evidenceSummary: effectiveEvidenceSummary,
+        triggerVerifyRetry: false,
+        triggerDocumentVerifyRetry: false,
+        evidenceText,
+      };
+    }
+
+    if (externalFact && recoveryAttempt) {
+      const salvaged = salvageSupportedExternalAnswer({
+        assistant: original,
+        assessment,
+        userText,
+        reassess: (candidate) => assessFinalAnswerEvidence({
+          assistant: candidate,
+          evidencePolicy: taskContract?.evidencePolicy,
+          turnPolicy,
+          evidenceSummary: effectiveEvidenceSummary,
+          toolCount: tools.length,
+          fileChangeCount,
+          evidenceText,
+          userText,
+          skipNumericGrounding: hasImageInput(inputFiles),
+        }),
+      });
+      if (salvaged) {
+        return {
+          assistant: salvaged.assistant,
+          assessment: salvaged.assessment,
+          documentDelivery,
+          evidenceSummary: effectiveEvidenceSummary,
+          triggerVerifyRetry: false,
+          triggerDocumentVerifyRetry: false,
+          evidenceText,
+        };
+      }
+    }
 
     const policy = taskContract?.externalFactPolicy || null;
     const sideEffectFree = isSideEffectFreeToolRun(tools);
@@ -137,17 +179,43 @@ function evaluateAnswerEvidence({
       process.env.LILY_EVIDENCE_VERIFY_RETRY === "1";
     return {
       assistant: externalFact
-        ? safeExternalFactFallback({ policy, evidenceSummary, userText })
+        ? safeExternalFactFallback({ policy, evidenceSummary, userText, recoveryAttempt })
         : sourceContent
           ? safeSourceContentFallback({ evidenceSummary, userText })
           : appendEvidenceGateNotice(original, assessment),
       assessment,
+      documentDelivery,
+      evidenceSummary: effectiveEvidenceSummary,
       triggerVerifyRetry: externalFactRetry || legacyOptInRetry,
+      triggerDocumentVerifyRetry: false,
       evidenceText,
     };
   } catch (error) {
-    if (!externalFact && !sourceContent) {
-      return { assistant: original, assessment: null, triggerVerifyRetry: false, error };
+    if (!externalFact && !sourceContent && !documentDeliveryRequired) {
+      return {
+        assistant: original,
+        assessment: null,
+        evidenceSummary,
+        triggerVerifyRetry: false,
+        triggerDocumentVerifyRetry: false,
+        error,
+      };
+    }
+    if (documentDeliveryRequired) {
+      return {
+        assistant: original,
+        assessment: {
+          ok: false,
+          required: true,
+          strongClaim: false,
+          hasEvidence: false,
+          reason: "document_delivery_gate_internal_error",
+        },
+        evidenceSummary,
+        triggerVerifyRetry: false,
+        triggerDocumentVerifyRetry: false,
+        error,
+      };
     }
     return {
       assistant: externalFact
@@ -155,6 +223,7 @@ function evaluateAnswerEvidence({
             policy: taskContract?.externalFactPolicy,
             evidenceSummary,
             userText,
+            recoveryAttempt,
           })
         : safeSourceContentFallback({ evidenceSummary, userText }),
       assessment: {
@@ -164,7 +233,9 @@ function evaluateAnswerEvidence({
         hasEvidence: false,
         reason: "evidence_gate_internal_error",
       },
+      evidenceSummary,
       triggerVerifyRetry: false,
+      triggerDocumentVerifyRetry: false,
       error,
     };
   }

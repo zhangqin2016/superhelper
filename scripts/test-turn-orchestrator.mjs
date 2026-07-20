@@ -749,8 +749,8 @@ try {
   if (!rankingFinal || /GitHub Copilot|Cursor|Windsurf|Claude Code/.test(rankingFinal.payload?.assistant || "")) {
     throw new Error(`the UI final event must contain only the safe projection: ${JSON.stringify(rankingFinal)}`);
   }
-  if ((rankingFinal.payload.assistant.match(/[?？]/g) || []).length !== 1) {
-    throw new Error(`an ambiguous rejected ranking should ask exactly one scope question: ${rankingFinal.payload.assistant}`);
+  if ((rankingFinal.payload.assistant.match(/[?？]/g) || []).length !== 0 || !/无法可靠确认/.test(rankingFinal.payload.assistant)) {
+    throw new Error(`a no-search ranking should disclose the verification limit without an avoidable scope question: ${rankingFinal.payload.assistant}`);
   }
   if (observedEvidenceRetry !== null) {
     throw new Error(`a no-search ranking must not trigger an automatic retry: ${JSON.stringify(observedEvidenceRetry)}`);
@@ -764,11 +764,63 @@ try {
     skipPreflight: true,
   });
   if (!roleTurn.ok) throw new Error(`role fact turn should start: ${JSON.stringify(roleTurn)}`);
+  const rolePrompt = runner.sentPayloads.at(-1)?.rawText || "";
+  ctx.turnOrchestrator.ingest("s1", [
+    {
+      type: "tool.started",
+      payload: { id: "role-source", name: "websearch", input: { query: "current company leadership" } },
+    },
+    {
+      type: "tool.done",
+      payload: {
+        id: "role-source",
+        status: "done",
+        result: "Apple identifies Tim Cook as its CEO on the official leadership page. https://www.apple.com/leadership/tim-cook/",
+      },
+    },
+  ]);
   runner.finish("苹果公司现任 CEO 是未经核实的某某。");
   await new Promise((resolve) => setTimeout(resolve, 5));
   ctx.eventBus.flush();
   if (observedEvidenceRetry?.failure?.code !== "EVIDENCE_UNVERIFIED") {
     throw new Error(`a well-scoped memory answer should retain one verification retry: ${JSON.stringify(observedEvidenceRetry)}`);
+  }
+  if (!observedEvidenceRetry.failure.verificationPlan || !observedEvidenceRetry.failure.evidenceSummary) {
+    throw new Error(`evidence recovery must receive the verification plan and prior research trace: ${JSON.stringify(observedEvidenceRetry)}`);
+  }
+  if (observedEvidenceRetry.failure.evidenceRecoveryContext?.tools?.length !== 1) {
+    throw new Error(`evidence recovery must carry bounded prior external evidence: ${JSON.stringify(observedEvidenceRetry)}`);
+  }
+
+  const recoveryTurn = await ctx.turnOrchestrator.sendUserMessage("s1", rolePrompt, [], {
+    recordUser: false,
+    spawnEngine: false,
+    skipPreflight: true,
+    recovery: {
+      kind: "evidence_verify_retry",
+      guidance: "Use the inherited evidence and verify only remaining gaps.",
+      evidenceContext: observedEvidenceRetry.failure.evidenceRecoveryContext,
+    },
+  });
+  if (!recoveryTurn.ok) throw new Error(`evidence recovery turn should start: ${JSON.stringify(recoveryTurn)}`);
+  const recoveryState = ctx.turnOrchestrator._state("s1");
+  const recoveryPayload = runner.sentPayloads.at(-1);
+  if (recoveryState.inheritedEvidenceTools?.length !== 1 || recoveryState.evidenceLedger?.summary?.().hasFreshEvidence !== true) {
+    throw new Error(`recovery turn must seed the evidence ledger before new tools run: ${JSON.stringify(recoveryState.evidenceLedger?.summary?.())}`);
+  }
+  const { extractLayerText, extractUserOriginalRequest } = require("../src/main/engine-message-layers.js");
+  if (extractUserOriginalRequest(recoveryPayload.text) !== rolePrompt) {
+    throw new Error(`internal recovery guidance must not enter the visible user request layer: ${recoveryPayload.text}`);
+  }
+  if (!/inherited evidence/.test(extractLayerText(recoveryPayload.text, "execution_constraints"))) {
+    throw new Error(`recovery guidance must remain in the internal execution layer: ${recoveryPayload.text}`);
+  }
+  runner.finish("Apple identifies Tim Cook as its current CEO on the official leadership page: https://www.apple.com/leadership/tim-cook/");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  ctx.eventBus.flush();
+  const recoveredAssistant = messages.find((message) => message.role === "assistant" && message.turnId === recoveryTurn.turnId);
+  if (recoveredAssistant?.record?.meta?.evidenceGate?.ok !== true) {
+    throw new Error(`an inherited directly supporting source must pass the recovery gate: ${JSON.stringify(recoveredAssistant?.record?.meta?.evidenceGate)}`);
   }
 } finally {
   process.env.LILY_EXTERNAL_FACT_VERIFY_RETRY = "0";
@@ -802,6 +854,7 @@ ctx.turnOrchestrator.ingest("s1", [
   },
 ]);
 runner.finish("According to the Example 2026 ranking, Example University is first (https://example.com/ranking).");
+await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 const sourcedRankingAssistant = messages.find(
   (message) => message.role === "assistant" && message.turnId === sourcedRankingTurn.turnId,
@@ -815,6 +868,52 @@ if (sourcedRankingAssistant?.record?.meta?.evidenceSummary?.hasFreshEvidence !==
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
 if (allEvents.some((event) => event.turnId === sourcedRankingTurn.turnId && event.type === "assistant.delta")) {
   throw new Error("even grounded external-fact prose should be released only after final claim-level assessment");
+}
+
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+const semanticResearchTurn = await ctx.turnOrchestrator.sendUserMessage(
+  "s1",
+  "Which providers satisfy the requested assurance status?",
+  [],
+  { spawnEngine: false, skipPreflight: true },
+);
+if (!semanticResearchTurn.ok || semanticResearchTurn.queued || !runner.isBusy()) {
+  throw new Error(`semantic research turn should start immediately: ${JSON.stringify({ semanticResearchTurn, runnerBusy: runner.isBusy(), phase: ctx.turnOrchestrator._state("s1").phase })}`);
+}
+if (!ctx.turnOrchestrator._state("s1").turnId) {
+  throw new Error(`semantic research turn lost its turn id before tools: ${JSON.stringify({ semanticResearchTurn, state: ctx.turnOrchestrator._state("s1") })}`);
+}
+if (runner.sentPayloads.at(-1)?.taskContract) {
+  throw new Error("an unfamiliar domain should begin on the unchanged general-task baseline");
+}
+ctx.turnOrchestrator.ingest("s1", [
+  { type: "tool.started", payload: { id: "semantic-search", name: "websearch", input: { query: "provider assurance status" } } },
+  {
+    type: "tool.done",
+    payload: {
+      id: "semantic-search",
+      status: "done",
+      result: "Nimbus Cloud has the requested assurance status. https://authority.test/assurance",
+    },
+  },
+]);
+const promotedSemanticContract = ctx.turnOrchestrator._state("s1").taskContract;
+if (
+  promotedSemanticContract?.externalFactPolicy?.reasonCodes?.includes("observed_external_research") !== true ||
+  promotedSemanticContract?.evidencePolicy?.required !== true
+) {
+  const semanticState = ctx.turnOrchestrator._state("s1");
+  throw new Error(`observed research must promote the generic contract into the final evidence gate: ${JSON.stringify({ promotedSemanticContract, turnId: semanticState.turnId, phase: semanticState.phase, pendingTaskContract: semanticState.pendingTaskContract, tools: [...semanticState.tools.values()] })}`);
+}
+runner.finish("Nimbus Cloud has the requested assurance status. https://authority.test/assurance");
+ctx.eventBus.flush();
+const semanticResearchAssistant = messages.find(
+  (message) => message.role === "assistant" && message.turnId === semanticResearchTurn.turnId,
+);
+if (semanticResearchAssistant?.record?.meta?.evidenceGate?.ok !== true) {
+  throw new Error(`grounded unfamiliar-domain research should pass after runtime promotion: ${JSON.stringify(semanticResearchAssistant?.record?.meta?.evidenceGate)}`);
 }
 
 sent.length = 0;
@@ -1800,7 +1899,7 @@ if (queueState.queue.length !== 0) {
   // "Restart": a brand-new orchestrator over the same durable store.
   const orchB = new TurnOrchestrator({ ...ctx, externalCommandLedgerStore: makeStore() });
   orchB.bindRunner(runner);
-  must(orchB.externalLedgers.get("s1")?.has("cmd_restart_1"), "the reloaded ledger carries the pre-restart command");
+  must(orchB.externalCommandRuntime.ledgers.get("s1")?.has("cmd_restart_1"), "the reloaded ledger carries the pre-restart command");
   const st2 = orchB._state("s1");
   st2.phase = "streaming"; st2.turnId = "t_after"; st2.queue = [];
 

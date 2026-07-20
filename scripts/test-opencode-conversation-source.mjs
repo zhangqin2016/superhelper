@@ -18,6 +18,7 @@ const {
   buildLayeredEngineText,
   layerBlock,
 } = require("../src/main/engine-message-layers.js");
+const { applyInternalRecoveryLayer } = require("../src/main/turn-recovery-context.js");
 
 const legacy = {
   id: "legacy_msg",
@@ -60,6 +61,37 @@ assert.equal(merged.content, "fresh", "OpenCode text remains canonical");
 assert.equal(merged.turnId, "turn_1", "Lily turn id merged");
 assert.deepEqual(merged.record.artifacts, [{ path: "/tmp/out.pdf" }], "Lily artifacts merged");
 assert.equal(merged.record.meta.opencode.messageId, "msg_engine", "OpenCode meta preserved");
+const guardedMerge = mergeMetadata({
+  id: "msg_guarded",
+  role: "assistant",
+  content: "unsupported raw model answer",
+  record: { assistantText: "unsupported raw model answer", engineMessageId: "msg_guarded" },
+}, {
+  id: "local_guarded",
+  role: "assistant",
+  content: "honest evidence limit",
+  record: {
+    assistantText: "honest evidence limit",
+    engineMessageId: "msg_guarded",
+    meta: { evidenceGate: { ok: false, reason: "missing_required_evidence:external" } },
+  },
+});
+assert.equal(guardedMerge.content, "honest evidence limit", "official history cannot restore a pre-gate answer");
+assert.equal(guardedMerge.record.assistantText, "honest evidence limit", "the host evidence projection remains canonical after reopen");
+const supersededMetadata = {
+  id: "local_superseded",
+  role: "assistant",
+  turnId: "turn_old",
+  content: "honest evidence limit",
+  meta: { superseded: true, supersededByTurnId: "turn_recovery" },
+  record: { engineMessageId: "msg_guarded", assistantText: "honest evidence limit" },
+};
+assert.equal(
+  mergeMetadata({ id: "msg_guarded", role: "assistant", content: "unsupported raw model answer" }, supersededMetadata),
+  null,
+  "a durable supersession tombstone hides the old raw engine answer after reopen",
+);
+assert.equal(mergeProjectionConversation([], [supersededMetadata]).length, 0, "the local superseded fallback also stays hidden");
 
 const injectedPrompt = `# 智能工作台全局说明
 
@@ -88,6 +120,29 @@ assert.equal(layeredFallbackDisplay.length, 1, "layered official user prompt rem
 assert.equal(layeredFallbackDisplay[0].content, "继续", "layered engine prompt displays only the recovered original request");
 assert.equal(layeredFallbackDisplay[0].meta.opencodeEnginePromptHidden, true, "layered engine prompt is marked hidden");
 assert.equal(layeredFallbackDisplay[0].content.includes("platform_context"), false, "platform context never leaks into display");
+
+const recoveryPrompt = applyInternalRecoveryLayer("Original visible request", {
+  kind: "evidence_verify_retry",
+  guidance: "Internal evidence correction that must stay hidden.",
+});
+const recoveryRun = [
+  {
+    id: "official_recovery_user",
+    role: "user",
+    content: recoveryPrompt,
+    timestamp: "2026-06-23T10:01:10.000Z",
+    source: "opencode",
+  },
+  {
+    id: "official_recovery_answer",
+    role: "assistant",
+    content: "Recovered answer",
+    timestamp: "2026-06-23T10:01:20.000Z",
+    source: "opencode",
+  },
+];
+assert.equal(mergeUserDisplayText([recoveryRun[0]], []).length, 0, "automatic recovery prompts never appear as user tasks");
+assert.equal(stripInternalContinuationTurns(recoveryRun).length, 2, "hiding a recovery prompt must retain its recovered answer");
 
 const pureInternalDisplay = mergeUserDisplayText([
   {

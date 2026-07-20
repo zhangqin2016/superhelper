@@ -1,6 +1,12 @@
 "use strict";
 
 const { assessClaimEvidenceCoverage } = require("./claim-evidence-map");
+const {
+  assessPlanAfterCitations,
+  assessPlanBeforeCitations,
+  isExternalClaimClarification,
+} = require("./external-claim-gate");
+const { extractHttpUrls } = require("./external-source-authority");
 
 const STRONG_CLAIM_RE =
   /(已(?:修复|完成|部署|发布|验证|解决|确认)|修好了|完成了|部署完成|发布完成|生效了|原因是|根因是|问题在于|会导致|导致|失败|缺陷|fixed|completed|deployed|verified|root cause|the cause is|bug|regression|failed|unsupported)/i;
@@ -23,7 +29,6 @@ const SCOPE_CLARIFICATION_RE =
   /(?:地区|国家|市场|时间|年份|日期|类别|品类|指标|口径|榜单|排名来源|region|country|market|time period|year|date|category|metric|criteria|ranking source).{0,80}[?？]|[?？].{0,80}(?:地区|时间|年份|类别|指标|口径|榜单|region|time period|year|category|metric|criteria)/i;
 const EXTERNAL_FACT_ASSERTION_RE =
   /(?:排名|排行).{0,16}(?:第|前|top)|第\s*[一二三四五六七八九十百\d]+\s*名|(?:^|\n)\s*\d+\s*[.、)]|\b(?:ranks?|ranked)\s+(?:first|second|third|\d+)|\btop\s*\d+\b|(?:是|为|serves? as|is the).{0,24}(?:ceo|cfo|cto|president|prime minister|董事长|总裁|总统|总理|首相)|[$￥¥€£]\s*\d|\d+(?:\.\d+)?\s*(?:元|美元|欧元|英镑|%|％)|\bv?\d+\.\d+(?:\.\d+)?\b/im;
-const HTTP_URL_RE = /https?:\/\/[^\s<>"'\])}）】》]+/gi;
 
 function hasCount(summary, key) {
   const value = summary?.counts?.[key];
@@ -49,6 +54,8 @@ function hasEvidenceKind(summary = {}, kind = "") {
       return Boolean(hasCount(summary, "externalSources") || hasCount(summary, "webSources") || hasCount(summary, "documents"));
     case "document":
       return Boolean(summary.hasDocumentEvidence || hasCount(summary, "documents"));
+    case "document_output":
+      return Boolean(summary.hasDocumentOutputEvidence || hasCount(summary, "documentOutputs"));
     case "source_content":
       if (summary.hasSourceContentEvidence === true) return true;
       if (summary.hasSourceContentEvidence === false) return false;
@@ -58,30 +65,27 @@ function hasEvidenceKind(summary = {}, kind = "") {
   }
 }
 
-function normalizeHttpUrl(value = "") {
-  try {
-    const parsed = new URL(
-      String(value || "")
-        .replace(/&amp;/gi, "&")
-        .replace(/[.,;:!?，。；：！？）】》]+$/u, ""),
-    );
-    parsed.hash = "";
-    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-    return `${parsed.protocol}//${parsed.host.toLowerCase()}${pathname}${parsed.search}`;
-  } catch {
-    return "";
-  }
-}
-
-function extractHttpUrls(value = "") {
-  const matches = String(value || "").match(HTTP_URL_RE) || [];
-  return [...new Set(matches.map(normalizeHttpUrl).filter(Boolean))].slice(0, 50);
+function isScopeClarification(text = "", evidencePolicy = null) {
+  return isExternalClaimClarification(
+    text,
+    evidencePolicy?.verificationPlan,
+    SCOPE_CLARIFICATION_RE.test(text),
+  );
 }
 
 function assessExternalFactCitations(text, { evidencePolicy = null, evidenceSummary = null, evidenceText = "", userText = "" } = {}) {
   if (!evidencePolicy?.externalFact) return null;
-  if (evidencePolicy.allowClarificationWithoutEvidence && SCOPE_CLARIFICATION_RE.test(text)) {
+  if (evidencePolicy.allowClarificationWithoutEvidence && isScopeClarification(text, evidencePolicy)) {
     return { ok: true, clarification: true, citationCount: 0, groundedCitationCount: 0 };
+  }
+  const preCitationAssessment = assessPlanBeforeCitations(text, evidencePolicy.verificationPlan);
+  if (preCitationAssessment.ok === false) {
+    return {
+      ok: false,
+      reason: preCitationAssessment.reason,
+      citationCount: 0,
+      groundedCitationCount: 0,
+    };
   }
   if (
     EVIDENCE_GAP_DISCLOSURE_RE.test(text) &&
@@ -110,10 +114,28 @@ function assessExternalFactCitations(text, { evidencePolicy = null, evidenceSumm
       ungroundedUrls: ungroundedUrls.slice(0, 5),
     };
   }
+  const planAssessment = assessPlanAfterCitations({
+    assistant: text,
+    answerUrls,
+    evidenceText,
+    verificationPlan: evidencePolicy.verificationPlan,
+  });
+  if (planAssessment.ok === false) {
+    return {
+      ok: false,
+      reason: planAssessment.reason,
+      citationCount: answerUrls.length,
+      groundedCitationCount: answerUrls.length,
+      entityCoverage: planAssessment.entityCoverage,
+      unsupportedClaims: planAssessment.unsupportedClaims || [],
+      conflictingClaims: planAssessment.conflictingClaims || [],
+    };
+  }
   return {
     ok: true,
     citationCount: answerUrls.length,
     groundedCitationCount: answerUrls.length,
+    entityCoverage: planAssessment.entityCoverage,
   };
 }
 
@@ -230,7 +252,7 @@ function assessFinalAnswerEvidence({
   if (!required || !text) {
     return { ok: true, required, strongClaim: false, hasEvidence: false, reason: "" };
   }
-  if (evidencePolicy?.externalFact && evidencePolicy.allowClarificationWithoutEvidence && SCOPE_CLARIFICATION_RE.test(text)) {
+  if (evidencePolicy?.externalFact && evidencePolicy.allowClarificationWithoutEvidence && isScopeClarification(text, evidencePolicy)) {
     return {
       ok: true,
       required,
@@ -240,6 +262,15 @@ function assessFinalAnswerEvidence({
       clarification: true,
       citationCount: 0,
       groundedCitationCount: 0,
+    };
+  }
+  if (evidencePolicy?.externalFact && evidencePolicy.scopeClarificationRequired) {
+    return {
+      ok: false,
+      required,
+      strongClaim: true,
+      hasEvidence: false,
+      reason: "scope_clarification_required",
     };
   }
   const missingKind = missingRequiredEvidenceKind(evidencePolicy, evidenceSummary || {});
@@ -286,6 +317,9 @@ function assessFinalAnswerEvidence({
       citationCount: citationAssessment.citationCount,
       groundedCitationCount: citationAssessment.groundedCitationCount,
       ungroundedUrls: citationAssessment.ungroundedUrls || [],
+      entityCoverage: citationAssessment.entityCoverage || null,
+      unsupportedClaims: citationAssessment.unsupportedClaims || [],
+      conflictingClaims: citationAssessment.conflictingClaims || [],
     };
   }
   const claimCoverage = assessClaimEvidenceCoverage({
@@ -382,12 +416,16 @@ function appendEvidenceGateNotice(assistant, assessment) {
         : `Evidence gate: these numbers did not appear in this turn's tool output and remain unverified: ${assessment.ungroundedNumbers.join(", ")}.`;
     return `${text}\n\n${numericMessage}`;
   }
+  const assessmentReason = String(assessment.reason || "");
   const externalFactFailure = [
     "missing_required_evidence:external",
     "external_fact_without_source_link",
     "source_link_not_in_evidence",
     "external_claim_not_in_evidence",
-  ].includes(String(assessment.reason || ""));
+    "authoritative_source_required",
+    "entity_claim_not_in_evidence",
+    "entity_claim_conflicts_with_evidence",
+  ].includes(assessmentReason) || assessmentReason.startsWith("forbidden_inference:");
   const sourceContentFailure = assessment.reason === "missing_required_evidence:source_content";
   const externalMessages = {
     zh: "证据门槛：这条外部事实回答没有取得可核验的本轮来源，或引用链接并非来自本轮工具结果，不能视为已确认答案。系统应先联网/API核验；核验不了就明确说无法确认。",

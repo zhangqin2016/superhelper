@@ -26,7 +26,8 @@ assert.equal(noSearchResult.assessment.ok, false);
 assert.equal(noSearchResult.triggerVerifyRetry, false);
 assert(!noSearchResult.assistant.includes("GitHub Copilot"), "rejected claims must not survive final projection");
 assert(!noSearchResult.assistant.includes("Cursor"), "the safe projection must replace, not annotate, the unsafe answer");
-assert.equal((noSearchResult.assistant.match(/[?？]/g) || []).length, 1, "an ambiguous ranking should ask one scope question");
+assert.equal((noSearchResult.assistant.match(/[?？]/g) || []).length, 0, "a no-search ranking should disclose the verification limit instead of asking an avoidable scope question");
+assert.match(noSearchResult.assistant, /无法可靠确认/);
 
 const researchedText = "按官方榜单给 AI 编程助手做 Top 2 排行";
 const researchedContract = buildTaskContract({ text: researchedText });
@@ -43,13 +44,13 @@ const researchedResult = evaluateAnswerEvidence({
   tools: [{
     name: "bash",
     status: "done",
-    input: { command: "websearch AI coding assistants" },
+    input: { command: String.raw`echo '{"query":"AI coding assistants"}' | "C:\runtime-bin\node.cmd" "C:\skills\websearch\scripts\websearch.cjs"` },
     result: "https://example.com/ranking\n2026 ranking\n1. GitHub Copilot\n2. Cursor",
   }],
   userText: researchedText,
 });
 assert.equal(researchedResult.assessment.reason, "numeric_claim_not_in_evidence");
-assert.equal(researchedResult.triggerVerifyRetry, false, "a completed search must not create a duplicate answer turn");
+assert.equal(researchedResult.triggerVerifyRetry, true, "a side-effect-free search with repairable evidence gaps gets one upgraded research turn");
 assert(!researchedResult.assistant.includes("76.5%"));
 assert.match(researchedResult.assistant, /不足以逐项支撑/);
 

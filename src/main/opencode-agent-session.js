@@ -27,214 +27,34 @@ const {
 } = require("./runtime/opencode-runtime-reducer");
 const { decidePermission } = require("./runtime/opencode-permission-policy");
 const { truncateToolResultForUi } = require("./cli-process-payload");
-const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 const { getLogger } = require("./logger");
 const { isReplaySafeTool } = require("./tool-semantics");
+const { createOpencodeSubagentRuntime } = require("./opencode-subagent-runtime");
+const { createOpencodeTurnLiveness } = require("./opencode-turn-liveness");
+const { createOpencodeHistoryRecovery } = require("./opencode-history-recovery");
+const {
+  buildAttachmentFallbackPromptPayload,
+  errorCauseFromEffect,
+  isManagedGatewayAuthFailure,
+  isManagedModelConfigStale,
+  isOversizedContextFailure,
+  isRecoverableModelConnectionFailure,
+  isSafeReplayableModelFailure,
+  shouldDropResumeAfterVisibleFailure,
+  shouldIsolateAttachmentFallback,
+  transientClassificationText,
+} = require("./opencode-session-failure-policy");
+const {
+  TODO_COMPLETION_GATE_MAX_ATTEMPTS,
+  buildTodoContinuationPrompt,
+  detectIncompleteDeliverable,
+  nativeTodoSnapshot,
+  normalizeTodoStatus,
+  todoTitle,
+} = require("./opencode-todo-completion-policy");
 
 const log = getLogger("opencode-agent-session");
-const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
-const DOCUMENT_RECOVERY_EXTENSIONS = new Set([
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".odt",
-  ".ods",
-  ".odp",
-  ".rtf",
-]);
-const TOOL_PROGRESS_STALE_MS = 10_000;
-const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 3;
 
-function formatDuration(ms) {
-  const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
-  if (total < 60) return `${total}s`;
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  return rem ? `${hours}h ${rem}m` : `${hours}h`;
-}
-
-function compactProgressText(value = "", limit = 96) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (!text) return "";
-  if (text.length <= limit) return text;
-  return `${text.slice(0, Math.max(0, limit - 1))}…`;
-}
-
-function formatBytes(bytes) {
-  const n = Number(bytes || 0);
-  if (!Number.isFinite(n) || n < 0) return "unknown";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fileFallbackLine(file = {}, index = 0) {
-  const filePath = file.path || file.filePath || "";
-  const name = file.name || (filePath ? path.basename(filePath) : `attachment-${index + 1}`);
-  let stat = null;
-  if (filePath) {
-    try {
-      stat = fs.statSync(filePath);
-    } catch {
-      stat = null;
-    }
-  }
-  const size = Number.isFinite(Number(file.size))
-    ? Number(file.size)
-    : stat?.isFile?.()
-      ? stat.size
-      : null;
-  return [
-    `- ${name}`,
-    filePath ? `  source path: ${filePath}` : "  source path: unavailable",
-    file.type ? `  type: ${file.type}` : "",
-    typeof file.isImage === "boolean" ? `  image: ${file.isImage ? "yes" : "no"}` : "",
-    Number.isFinite(size) ? `  size: ${formatBytes(size)}` : "",
-    filePath ? `  readable now: ${stat?.isFile?.() ? "yes" : "no"}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-function buildAttachmentFallbackManifest(files = [], reason = "") {
-  const list = (Array.isArray(files) ? files : []).filter(Boolean);
-  if (!list.length) return "";
-  const shown = list.slice(0, 20).map((file, index) => fileFallbackLine(file, index));
-  const omitted = list.length > shown.length ? `\n\n${list.length - shown.length} more attachment(s) omitted from this manifest.` : "";
-  return [
-    "[Attachment fallback manifest]",
-    "The model file-upload request failed before the assistant could start. Continue the task inside Lily/CLI using these local source paths and available tools instead of failing the turn.",
-    "Do not ask the user to re-upload unless a source path is missing or unreadable.",
-    reason ? `Failure reason: ${reason}` : "",
-    "",
-    "Attached files:",
-    shown.join("\n"),
-    omitted,
-  ].filter(Boolean).join("\n");
-}
-
-function buildAttachmentFallbackPromptPayload(payload = {}, reason = "") {
-  const files = Array.isArray(payload.files) ? payload.files : [];
-  if (!files.length || payload.attachmentFallback) return payload;
-  const manifest = buildAttachmentFallbackManifest(files, reason);
-  if (!manifest) return payload;
-  return {
-    ...payload,
-    text: [String(payload.text || ""), manifest].filter(Boolean).join("\n\n"),
-    files: [],
-    attachmentFallback: true,
-  };
-}
-
-function isDocumentRecoveryAttachment(file = {}) {
-  const filePath = file.path || file.filePath || "";
-  const ext = path.extname(filePath).toLowerCase() || path.extname(file.name || file.filename || "").toLowerCase();
-  if (DOCUMENT_RECOVERY_EXTENSIONS.has(ext)) return true;
-  const type = String(file.type || file.mime || file.mimeType || file.mediaType || "").toLowerCase();
-  return /pdf|document|officedocument|msword|word|spreadsheet|excel|powerpoint|presentation/.test(type);
-}
-
-function shouldIsolateAttachmentFallback(payload = {}) {
-  const files = Array.isArray(payload.files) ? payload.files : [];
-  return files.some(isDocumentRecoveryAttachment);
-}
-
-function errorCauseFromEffect(effect = {}, message = "") {
-  const raw = effect.cause || effect.error;
-  if (raw instanceof Error) return raw;
-  const err = new Error(message || "Engine error");
-  if (raw && typeof raw === "object") {
-    err.details = raw;
-    if (raw.code) err.code = raw.code;
-  }
-  return err;
-}
-
-function failureCauseText(cause) {
-  if (!cause) return "";
-  if (typeof cause === "string") return cause;
-  if (cause instanceof Error) return cause.message || "";
-  if (typeof cause.message === "string") return cause.message;
-  if (typeof cause.data?.message === "string") return cause.data.message;
-  if (typeof cause.cause?.message === "string") return cause.cause.message;
-  return "";
-}
-
-function transientClassificationText(message, cause) {
-  return failureCauseText(cause) || String(message || "");
-}
-
-function isRecoverableModelConnectionFailure(classified, raw = "") {
-  if (classified?.retryable === false) return false;
-  if (classified && [
-    "MODEL_CONNECTION_FAILED",
-    "ENGINE_UNAVAILABLE",
-    "MODEL_OVERLOADED",
-    "RESPONSE_ERROR",
-    "RATE_LIMITED",
-    "MANAGED_MODEL_AUTH_INVALID",
-    "MANAGED_MODEL_AUTH_MISSING",
-  ].includes(classified.code)) {
-    return true;
-  }
-  return !classified && TRANSIENT_ERROR_RE.test(String(raw || ""));
-}
-
-function isManagedGatewayAuthFailure(classified, raw = "", spawnOptions = null) {
-  const text = String(raw || "");
-  if (classified?.code === "MANAGED_MODEL_AUTH_INVALID" || classified?.code === "MANAGED_MODEL_AUTH_MISSING") return true;
-  if (/MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)/i.test(text)) return true;
-  const audit = spawnOptions?.modelRouteAudit || {};
-  return audit.keyKind === "gateway-token"
-    && audit.route === "gateway"
-    && /unauthorized|401|403|auth|token|api.?key/i.test(text);
-}
-
-function isOversizedContextFailure(classified, raw = "") {
-  return classified?.code === "CONTEXT_LIMIT" || /request entity too large|request too large|payload too large|body too large|413\b/i.test(String(raw || ""));
-}
-
-// The managed model this client is pinned to no longer exists on the gateway —
-// e.g. its provider was removed server-side (gateway answers 404 "model provider
-// not configured"), or the client is running on a stale config cache from an
-// older app-name install that still lists a since-removed model. This is
-// recoverable by the same refresh+restart path as a stale token: refreshing the
-// remote config drops the dead preset, and the active-preset resolver falls the
-// selection back to a delivered model (e.g. deepseek) — instead of dead-looping
-// to "connection interrupted".
-function isManagedGatewayModelUnavailable(classified, raw = "", spawnOptions = null) {
-  const text = String(raw || "");
-  if (/model provider not configured|provider not configured|model provider not found|model gateway disabled/i.test(text)) return true;
-  const audit = spawnOptions?.modelRouteAudit || {};
-  const gatewayRoute = audit.route === "gateway" || audit.keyKind === "gateway-token";
-  return classified?.code === "MODEL_UNAVAILABLE" && gatewayRoute;
-}
-
-function isManagedModelConfigStale(classified, raw = "", spawnOptions = null) {
-  return isManagedGatewayAuthFailure(classified, raw, spawnOptions)
-    || isManagedGatewayModelUnavailable(classified, raw, spawnOptions);
-}
-
-function isSafeReplayableModelFailure(classified, raw = "", spawnOptions = null) {
-  return isManagedGatewayAuthFailure(classified, raw, spawnOptions)
-    || isManagedGatewayModelUnavailable(classified, raw, spawnOptions)
-    || isRecoverableModelConnectionFailure(classified, raw)
-    || isOversizedContextFailure(classified, raw);
-}
-
-function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false } = {}) {
-  if (classified?.code === "SESSION_INVALID") return true;
-  if (isOversizedContextFailure(classified, raw)) return true;
-  if (!isRecoverableModelConnectionFailure(classified, raw) && !isManagedGatewayAuthFailure(classified, raw)) return false;
-  if (wasResumed) return true;
-  if (payload?.attachmentFallback) return true;
-  return shouldIsolateAttachmentFallback(payload);
-}
 
 function rawToolFromEvent(ev = {}) {
   const p = ev.properties || {};
@@ -269,103 +89,6 @@ function rawToolFromEvent(ev = {}) {
   return null;
 }
 
-// Deliverable extensions worth gating on — things the user asked to be produced.
-const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip";
-// Absolute paths only (POSIX /… or Windows X:\…) ending in a deliverable ext, so
-// we never misread a relative mention or a bare filename in prose.
-const DELIVERABLE_PATH_RE = new RegExp(
-  String.raw`(?:^|[\s"'` + "`" + String.raw`(>])((?:/|[A-Za-z]:\\)[^\s"'` + "`" + String.raw`)<>|]+\.(?:${DELIVERABLE_EXT}))`,
-  "gi",
-);
-
-/**
- * High-precision, fail-open check for a turn that claims a file deliverable which
- * is actually missing or empty. Returns { path, reason } for the first violation,
- * or null. Conservative by design: only absolute paths with a deliverable
- * extension, and only flagged when the file is genuinely absent or zero-byte.
- * @param {string} output assistant's final text for the turn
- */
-function detectIncompleteDeliverable(output) {
-  const text = String(output || "");
-  if (!text) return null;
-  const seen = new Set();
-  for (const m of text.matchAll(DELIVERABLE_PATH_RE)) {
-    const p = m[1];
-    if (seen.has(p)) continue;
-    seen.add(p);
-    if (seen.size > 12) break; // bound the work
-    try {
-      if (!fs.existsSync(p)) return { path: p, reason: "does not exist" };
-      if (fs.statSync(p).size === 0) return { path: p, reason: "is empty" };
-    } catch {
-      /* fail open — unreadable path is not a confident violation */
-    }
-  }
-  return null;
-}
-
-function normalizeTodoStatus(status) {
-  const value = String(status || "").trim().toLowerCase();
-  if (value === "completed" || value === "done") return "completed";
-  if (value === "in_progress" || value === "in-progress" || value === "running" || value === "active") return "in_progress";
-  return "pending";
-}
-
-function todoTitle(todo = {}, index = 0) {
-  return String(todo.content || todo.activeForm || todo.title || todo.text || `Todo ${index + 1}`)
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 180);
-}
-
-function nativeTodoSnapshot(todos = []) {
-  const normalized = (Array.isArray(todos) ? todos : [])
-    .map((todo, index) => ({
-      title: todoTitle(todo, index),
-      status: normalizeTodoStatus(todo?.status),
-    }))
-    .filter((todo) => todo.title);
-  const unfinished = normalized.filter((todo) => todo.status !== "completed");
-  return {
-    total: normalized.length,
-    completed: normalized.length - unfinished.length,
-    unfinished,
-  };
-}
-
-function buildTodoContinuationPrompt(snapshot = {}, attempt = 1, maxAttempts = TODO_COMPLETION_GATE_MAX_ATTEMPTS) {
-  const unfinished = Array.isArray(snapshot.unfinished) ? snapshot.unfinished : [];
-  const listed = unfinished.slice(0, 12).map((todo, index) => (
-    `${index + 1}. [${todo.status || "pending"}] ${todo.title}`
-  ));
-  if (unfinished.length > listed.length) listed.push(`...and ${unfinished.length - listed.length} more`);
-  return [
-    "Task continuity check: the native todo list still has unfinished todo items.",
-    `Progress: ${snapshot.completed || 0}/${snapshot.total || 0} completed. Continue from the current unfinished item and do not stop after a partial todo update.`,
-    "Use tools as needed. When the requested work is genuinely complete, update every todo item to completed, then provide the final answer.",
-    `Continuation attempt: ${attempt}/${maxAttempts}.`,
-    "Unfinished todo items:",
-    ...listed,
-  ].join("\n");
-}
-
-function messageTextFromOpenCodeItem(item = {}) {
-  return (Array.isArray(item?.parts) ? item.parts : [])
-    .filter((part) => part?.type === "text" && !part.ignored && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("");
-}
-
-function messageCreatedMs(info = {}) {
-  const created = Number(info.time?.created || info.created || 0);
-  return Number.isFinite(created) && created > 0 ? created : null;
-}
-
-function messageCompletedMs(info = {}) {
-  const completed = Number(info.time?.completed || info.completed || 0);
-  return Number.isFinite(completed) && completed > 0 ? completed : null;
-}
-
 function isReplaySafeToolName(name) {
   return isReplaySafeTool(name);
 }
@@ -398,8 +121,6 @@ class OpencodeAgentSession extends EventEmitter {
     /** @type {OpencodeServerManager | null} */
     this._server = null;
     this._eventState = createOpencodeRuntimeState();
-    this._subagentEventStates = new Map();
-    this._knownSubagentSessionIDs = new Set();
     this.cwd = null;
     this.spawnOptions = null;
     this.agentResumeId = null;
@@ -413,7 +134,6 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe = new Map();
     this._activeTools = new Map();
-    this._lastGenericToolProgressNotice = "";
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
     this._gatedThisTurn = false;
@@ -424,16 +144,58 @@ class OpencodeAgentSession extends EventEmitter {
     this._pendingPermissions = new Map();
     /** @type {Map<string, { questions: Array, rawRequestId: string, sessionID: string }>} pending question id -> its questions (for answer mapping). */
     this._pendingQuestions = new Map();
+    this._subagentRuntime = createOpencodeSubagentRuntime({
+      getServer: () => this._server,
+      getPermissionContext: () => ({
+        mode: this.spawnOptions?.permissionMode || "ask",
+        cwd: this.cwd,
+        taskContract: this._activeTaskContract,
+      }),
+      pendingPermissions: this._pendingPermissions,
+      pendingQuestions: this._pendingQuestions,
+      ingest: (drafts) => this._ingest(drafts),
+      onProgress: () => {
+        this._sawActivity = true;
+        this._armResponseTimer();
+        this._armProgressNoticeTimer();
+        this._armIdleProbe();
+      },
+    });
+    this._turnLiveness = createOpencodeTurnLiveness({
+      sessionId: this.sessionId,
+      activeTools: this._activeTools,
+      getState: () => ({
+        busy: this.busy,
+        turnSettled: this._turnSettled,
+        collectedOutput: this.collectedOutput,
+      }),
+      getConfig: () => ({
+        responseTimeoutMs: OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS,
+        activeToolLeaseMs: OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS,
+        progressNoticeMs: OpencodeAgentSession.PROGRESS_NOTICE_MS,
+        turnWatchdogMs: OpencodeAgentSession.TURN_WATCHDOG_MS,
+        healthProbeMs: OpencodeAgentSession.HEALTH_PROBE_MS,
+        healthMaxFails: OpencodeAgentSession.HEALTH_MAX_FAILS,
+      }),
+      getServer: () => this._server,
+      hasKnownSubagents: () => this._subagentRuntime.hasKnownSubagents(),
+      ingest: (drafts) => this._ingest(drafts),
+      recoverStalledFinal: () => this._recoverStalledFinalFromOfficialState(),
+      completeTurn: (payload) => this._completeTurn(payload),
+      onServerError: (err) => this._onServerError(err),
+    });
+    this._historyRecovery = createOpencodeHistoryRecovery({
+      getServer: () => this._server,
+      getTurnStartedAt: () => this._turnStartedAt,
+      getPendingPromptPayload: () => this._pendingPromptPayload,
+      getSessionStatus: () => this._getSessionStatus(),
+      getSyncTimeoutMs: () => OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
+      onSupplementalOutput: ({ official, missing }) => {
+        this.collectedOutput = official;
+        this._ingest([{ type: "assistant.delta", payload: { text: missing } }]);
+      },
+    });
     this._orchestrator = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._responseTimer = null;
-    /** Wall-clock turn cap. Unlike _responseTimer (a no-progress timer that
-     *  re-arms on every event), this is armed ONCE per turn and fires regardless
-     *  of activity — the backstop for an actively-runaway turn (deep/wide subagent
-     *  work) that never goes idle. @type {ReturnType<typeof setTimeout> | null} */
-    this._turnWatchdogTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._progressNoticeTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._idleSettleTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
@@ -669,6 +431,7 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   diagnostics() {
+    const livenessTimers = this._turnLiveness.diagnostics();
     return {
       sessionId: this.sessionId,
       cwd: this.cwd || "",
@@ -683,13 +446,13 @@ class OpencodeAgentSession extends EventEmitter {
       pendingQuestions: this._pendingQuestions.size,
       pendingComplete: Boolean(this._pendingCompletePayload),
       timers: {
-        response: Boolean(this._responseTimer),
-        progressNotice: Boolean(this._progressNoticeTimer),
+        response: livenessTimers.response,
+        progressNotice: livenessTimers.progressNotice,
         idleSettle: Boolean(this._idleSettleTimer),
         idleProbe: Boolean(this._idleProbeTimer),
         promptAcceptance: Boolean(this._promptAcceptanceTimer),
         promptDispatchPending: Boolean(this._promptDispatchPendingTimer),
-        health: Boolean(this._healthTimer),
+        health: livenessTimers.health,
       },
       promptDispatchPending: Boolean(this._promptDispatchPending),
       server: this._server?.diagnostics?.() || null,
@@ -713,7 +476,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
     this._activeTools.clear();
-    this._lastGenericToolProgressNotice = "";
+    this._turnLiveness.resetProgressNotice();
     this._gatedThisTurn = false;
     this._latestTodos = [];
     this._latestTodosSignature = "";
@@ -994,7 +757,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
     this._activeTools.clear();
-    this._lastGenericToolProgressNotice = "";
+    this._turnLiveness.resetProgressNotice();
   }
 
   async _abortWithTimeout(server) {
@@ -1026,7 +789,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (!this.busy || this._turnSettled) return;
     const childSessionID = ev?.__lilySubagentSessionID || "";
     if (childSessionID) {
-      this._handleSubagentEvent(childSessionID, ev);
+      this._subagentRuntime.handleEvent(childSessionID, ev);
       return;
     }
     if (isTurnOwnedEngineEvent(ev)) {
@@ -1079,7 +842,7 @@ class OpencodeAgentSession extends EventEmitter {
     // (truncated), append the process.event timeline draft, then hand the batch
     // to the orchestrator.
     const drafts = [...(reduced.drafts || [])];
-    this._registerSubagentsFromDrafts(drafts);
+    this._subagentRuntime.registerFromDrafts(drafts);
     for (const draft of drafts) {
       if (draft.type === "todo.updated") {
         this._rememberLatestTodos(draft.payload?.todos);
@@ -1169,190 +932,6 @@ class OpencodeAgentSession extends EventEmitter {
     });
   }
 
-  _registerSubagentsFromDrafts(drafts = []) {
-    for (const draft of drafts) {
-      if (!String(draft?.type || "").startsWith("tool.")) continue;
-      const payload = draft.payload || {};
-      if (String(payload.name || "").toLowerCase() !== "task" && draft.type !== "tool.done") continue;
-      const meta = payload.metadata || {};
-      const child = meta.sessionId || meta.sessionID;
-      if (!child) continue;
-      this._knownSubagentSessionIDs.add(String(child));
-      this._server?.allowChildSession?.(child);
-    }
-  }
-
-  _subagentState(sessionID) {
-    const id = String(sessionID || "");
-    if (!this._subagentEventStates.has(id)) this._subagentEventStates.set(id, createOpencodeRuntimeState());
-    return this._subagentEventStates.get(id);
-  }
-
-  _resetSubagentRuntimeStates() {
-    this._subagentEventStates.clear();
-    this._knownSubagentSessionIDs.clear();
-  }
-
-  _handleSubagentEvent(sessionID, ev) {
-    if (sessionID) this._knownSubagentSessionIDs.add(String(sessionID));
-    let reduced;
-    try {
-      reduced = reduceOpencodeRuntimeEvent(ev, this._subagentState(sessionID));
-    } catch (err) {
-      log.warn("opencode subagent reducer failed: %s", err?.message || String(err));
-      return;
-    }
-    if (reduced.progress) {
-      this._sawActivity = true;
-      this._armResponseTimer();
-      this._armProgressNoticeTimer();
-      this._armIdleProbe();
-    }
-    const events = [];
-    for (const effect of reduced.effects || []) {
-      const mapped = this._handleSubagentEffect(sessionID, effect);
-      if (mapped) events.push(mapped);
-    }
-    for (const draft of reduced.drafts || []) {
-      const mapped = this._mapSubagentDraft(sessionID, draft);
-      if (mapped) {
-        events.push(mapped);
-        if (mapped.kind === "permission" && mapped.status === "resolved" && mapped.requestId) {
-          this._ingest([{ type: "permission.resolved", payload: { requestId: mapped.requestId } }]);
-        } else if (mapped.kind === "question" && mapped.status === "resolved" && mapped.requestId) {
-          this._ingest([{ type: "user_question.resolved", payload: { requestId: mapped.requestId } }]);
-        }
-      }
-    }
-    if (!events.length) return;
-    this._ingest([{ type: "subagent.event", payload: { sessionId: sessionID, events } }]);
-  }
-
-  _mapSubagentDraft(sessionID, draft) {
-    const payload = draft?.payload || {};
-    const ts = Date.now();
-    switch (draft?.type) {
-      case "tool.started":
-        return {
-          kind: "tool",
-          id: payload.id || "",
-          name: payload.name || "unknown",
-          status: "running",
-          input: payload.input || {},
-          metadata: payload.metadata || {},
-          title: payload.title || "",
-          ts,
-        };
-      case "tool.done":
-        return {
-          kind: "tool",
-          id: payload.id || "",
-          status: payload.isError ? "failed" : (payload.status || "done"),
-          result: payload.result ?? payload.content ?? null,
-          metadata: payload.metadata || {},
-          title: payload.title || "",
-          ts,
-        };
-      case "assistant.delta":
-        return { kind: "text", text: payload.text || "", ts };
-      case "assistant.thinking.delta":
-        return { kind: "thinking", text: payload.text || "", ts };
-      case "usage.updated":
-        return { kind: "usage", usage: payload.usage || {}, ts };
-      case "permission.resolved":
-        return {
-          kind: "permission",
-          status: "resolved",
-          requestId: payload.requestId ? this._childRequestId(sessionID, payload.requestId) : "",
-          rawRequestId: payload.requestId || "",
-          ts,
-        };
-      case "user_question.resolved":
-        return {
-          kind: "question",
-          status: "resolved",
-          requestId: payload.requestId ? this._childRequestId(sessionID, payload.requestId) : "",
-          rawRequestId: payload.requestId || "",
-          ts,
-        };
-      default:
-        return null;
-    }
-  }
-
-  _childRequestId(sessionID, rawRequestId) {
-    const safeSession = String(sessionID || "").replace(/[^a-zA-Z0-9_.:-]/g, "_");
-    const safeRequest = String(rawRequestId || "").replace(/[^a-zA-Z0-9_.:-]/g, "_");
-    return `subagent:${safeSession}:${safeRequest}`;
-  }
-
-  _handleSubagentEffect(sessionID, effect) {
-    if (!effect || !sessionID) return null;
-    const rawRequestId = effect.requestId || "";
-    const requestId = rawRequestId ? this._childRequestId(sessionID, rawRequestId) : "";
-    // A child ENGINE failure (session.error / step failed inside the subagent
-    // session) is a first-class learning signal: it carries the real reason a
-    // subtask died (gateway error page, stream with no content, tool-format
-    // rejection). Forward it instead of dropping it — the orchestrator feeds it
-    // to diagnostics + background self-heal, and the UI can finally show WHY.
-    if (effect.kind === "error") {
-      return {
-        kind: "error",
-        message: String(effect.message || "Engine error").slice(0, 600),
-        ts: Date.now(),
-      };
-    }
-    if (effect.kind === "permission") {
-      const mode = this.spawnOptions?.permissionMode || "ask";
-      const verdict = decidePermission(mode, effect.toolName, effect.input || {}, {
-        cwd: this.cwd,
-        taskContract: this._activeTaskContract,
-      });
-      if (verdict === "allow") {
-        void this._server
-          ?.respondPermission(rawRequestId, { reply: "once" }, { sessionID })
-          .catch((err) => log.warn("subagent auto permission reply failed: %s", err?.message || String(err)));
-        return { kind: "permission", status: "auto_allowed", requestId, rawRequestId, toolName: effect.toolName || "", ts: Date.now() };
-      }
-      if (verdict === "deny") {
-        void this._server
-          ?.respondPermission(rawRequestId, { reply: "reject" }, { sessionID })
-          .catch((err) => log.warn("subagent auto permission reply failed: %s", err?.message || String(err)));
-        return { kind: "permission", status: "auto_denied", requestId, rawRequestId, toolName: effect.toolName || "", ts: Date.now() };
-      }
-      this._pendingPermissions.set(requestId, { rawRequestId, sessionID });
-      this._ingest([{
-        type: "permission.requested",
-        payload: {
-          requestId,
-          toolName: effect.toolName,
-          input: effect.input || {},
-          title: effect.title || "",
-          description: effect.description || "",
-          decisionReason: effect.decisionReason || "",
-          suggestions: effect.suggestions || [],
-          planPreview: "",
-          planPreviewTruncated: false,
-          subagent: { sessionId: sessionID, rawRequestId },
-        },
-      }]);
-      return { kind: "permission", status: "requested", requestId, rawRequestId, toolName: effect.toolName || "", ts: Date.now() };
-    }
-    if (effect.kind === "question") {
-      const questions = effect.questions || [];
-      this._pendingQuestions.set(requestId, { questions, rawRequestId, sessionID });
-      this._ingest([{
-        type: "user_question.requested",
-        payload: {
-          requestId,
-          questions,
-          subagent: { sessionId: sessionID, rawRequestId },
-        },
-      }]);
-      return { kind: "question", status: "requested", requestId, rawRequestId, ts: Date.now() };
-    }
-    return null;
-  }
 
   _handleEffect(effect, opts = {}) {
     switch (effect.kind) {
@@ -1830,7 +1409,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._pendingTransientFailure = null;
     this._clearTransientFailureTimer(false);
     resetOpencodeRuntimeState(this._eventState);
-    this._resetSubagentRuntimeStates();
+    this._subagentRuntime.reset();
     this.collectedOutput = "";
     this._turnStartedAt = Date.now();
     this._sawActivity = false;
@@ -1884,7 +1463,7 @@ class OpencodeAgentSession extends EventEmitter {
 
     this._transientReplayCount += 1;
     resetOpencodeRuntimeState(this._eventState);
-    this._resetSubagentRuntimeStates();
+    this._subagentRuntime.reset();
     this.collectedOutput = "";
     this._turnStartedAt = Date.now();
     this._sawActivity = false;
@@ -1949,135 +1528,23 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   async _recoverCompletedAssistantFromHistory(opts = {}) {
-    return this._latestAssistantFromOfficialHistory(opts);
+    return this._historyRecovery.latestAssistant(opts);
   }
 
   async _latestAssistantFromOfficialHistory(opts = {}) {
-    if (!this._server?.messages || !this._turnStartedAt) return null;
-    const raw = await this._server.messages({ limit: 16 });
-    const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
-    const requireCurrentPrompt = Boolean(opts.requireCurrentPrompt);
-    let currentUser = null;
-    if (requireCurrentPrompt) {
-      const hasExactOutboundText = typeof this._server?.lastPromptText === "string";
-      const expectedText = hasExactOutboundText
-        ? this._server.lastPromptText
-        : String(this._pendingPromptPayload?.text || "");
-      if (!expectedText.trim()) return null;
-      const minPromptCreatedAt = this._turnStartedAt;
-      for (const item of items) {
-        const info = item?.info || {};
-        if (info.role !== "user") continue;
-        const createdAt = messageCreatedMs(info);
-        if (!createdAt || createdAt < minPromptCreatedAt) continue;
-        const text = messageTextFromOpenCodeItem(item);
-        if (text !== expectedText) continue;
-        const rank = createdAt;
-        if (!currentUser || rank >= currentUser.rank) {
-          currentUser = {
-            id: typeof info.id === "string" ? info.id : null,
-            createdAt,
-            rank,
-          };
-        }
-      }
-      if (!currentUser) return null;
-    }
-
-    const minCreatedAt = requireCurrentPrompt ? currentUser.createdAt : this._turnStartedAt - 10_000;
-    let best = null;
-    for (const item of items) {
-      const info = item?.info || {};
-      if (info.role !== "assistant") continue;
-      const createdAt = messageCreatedMs(info);
-      if (createdAt && createdAt < minCreatedAt) continue;
-      const { assistantTextFromOpenCodeMessageItem } = require("./runtime/opencode-conversation-adapter");
-      const output = assistantTextFromOpenCodeMessageItem(item);
-      if (!output) continue;
-      const completedAt = messageCompletedMs(info);
-      const rank = completedAt || createdAt || 0;
-      if (requireCurrentPrompt && rank < currentUser.rank) continue;
-      if (!best || rank >= best.rank) {
-        best = {
-          output,
-          engineMessageId: typeof info.id === "string" ? info.id : null,
-          completed: Boolean(completedAt),
-          completedAt,
-          createdAt,
-          rank,
-        };
-      }
-    }
-    return best ? {
-      output: best.output,
-      engineMessageId: best.engineMessageId,
-      completed: best.completed,
-      completedAt: best.completedAt,
-      createdAt: best.createdAt,
-    } : null;
+    return this._historyRecovery.latestAssistant(opts);
   }
 
   _withTimeout(promise, timeoutMs, fallback = null) {
-    let timer = null;
-    return Promise.race([
-      promise,
-      new Promise((resolve) => {
-        timer = setTimeout(() => resolve(fallback), timeoutMs);
-        timer.unref?.();
-      }),
-    ]).finally(() => {
-      if (timer) clearTimeout(timer);
-    });
+    return this._historyRecovery.withTimeout(promise, timeoutMs, fallback);
   }
 
   async _recoverStalledFinalFromOfficialState() {
-    const latest = await this._withTimeout(
-      this._latestAssistantFromOfficialHistory({ requireCurrentPrompt: true }),
-      OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
-      null,
-    );
-    const output = String(latest?.output || "").trim();
-    if (!output) return null;
-    if (latest.completed) return latest;
-
-    // Some OpenCode versions may not stamp completed time on the message item
-    // immediately. If the authoritative session status is already idle, the
-    // latest assistant text is still a better final source than Lily's live
-    // buffer.
-    const status = await this._withTimeout(
-      this._getSessionStatus(),
-      OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
-      "unknown",
-    );
-    return status === "idle" ? latest : null;
+    return this._historyRecovery.recoverStalledFinal();
   }
 
   async _syncFinalOutputFromOfficialHistory(payload) {
-    const current = String(payload?.output || "").trim();
-    let latest = null;
-    try {
-      latest = await this._latestAssistantFromOfficialHistory({ requireCurrentPrompt: true });
-    } catch (err) {
-      log.warn("opencode final history sync failed: %s", err?.message || String(err));
-      return payload;
-    }
-    const official = String(latest?.output || "").trim();
-    if (!official) return payload;
-    if (official !== current) {
-      let missing = "";
-      if (official.startsWith(current)) missing = official.slice(current.length);
-      else if (!current) missing = official;
-      if (missing) {
-        this.collectedOutput = official;
-        this._ingest([{ type: "assistant.delta", payload: { text: missing } }]);
-      }
-    }
-    return {
-      ...payload,
-      output: official || current,
-      engineMessageId: latest?.engineMessageId || payload?.engineMessageId || null,
-      resultFromOfficialHistory: official !== current,
-    };
+    return this._historyRecovery.syncFinalOutput(payload);
   }
 
   _completeTurn(payload) {
@@ -2180,7 +1647,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearTurnWatchdog();
     this._clearPendingPermissions();
     resetOpencodeRuntimeState(this._eventState);
-    this._resetSubagentRuntimeStates();
+    this._subagentRuntime.reset();
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
@@ -2192,7 +1659,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
     this._activeTools.clear();
-    this._lastGenericToolProgressNotice = "";
+    this._turnLiveness.resetProgressNotice();
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     this._latestTodos = [];
@@ -2263,7 +1730,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearTurnWatchdog();
     this._clearPendingPermissions();
     resetOpencodeRuntimeState(this._eventState);
-    this._resetSubagentRuntimeStates();
+    this._subagentRuntime.reset();
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
@@ -2275,7 +1742,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
     this._activeTools.clear();
-    this._lastGenericToolProgressNotice = "";
+    this._turnLiveness.resetProgressNotice();
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     this._latestTodos = [];
@@ -2377,226 +1844,32 @@ class OpencodeAgentSession extends EventEmitter {
   // No-progress watchdog: re-armed on each progress action (see _handleEvent), so
   // it only fires after a full window with NO forward movement — a stuck/silent
   // turn — never during a long task that keeps progressing.
-  _armResponseTimer() {
-    this._clearResponseTimer();
-    if (!this.busy || this._turnSettled) return;
-    this._responseTimer = setTimeout(() => {
-      if (this._hasActiveToolLease()) {
-        log.info("opencode no-progress window extended for active tool", {
-          sessionId: this.sessionId,
-          activeTools: this._activeTools.size,
-        });
-        this._emitGenericToolProgressNotice();
-        this._armProgressNoticeTimer();
-        this._armResponseTimer();
-        return;
-      }
-      this._forceEndTurn("no progress for the no-progress window");
-    }, OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS);
-  }
+  _armResponseTimer() { this._turnLiveness.armResponseTimer(); }
 
-  _clearResponseTimer() {
-    if (this._responseTimer) {
-      clearTimeout(this._responseTimer);
-      this._responseTimer = null;
-    }
-  }
+  _clearResponseTimer() { this._turnLiveness.clearResponseTimer(); }
 
-  _hasActiveToolLease() {
-    if (!this.busy || this._turnSettled) return false;
-    const now = Date.now();
-    const leaseMs = OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS;
-    let hasLease = false;
-    for (const [id, tool] of this._activeTools.entries()) {
-      if (!tool?.id) {
-        this._activeTools.delete(id);
-        continue;
-      }
-      const lastActivityAt = Number(tool.lastActivityAt || tool.startedAt || 0);
-      if (leaseMs > 0 && lastActivityAt > 0 && now - lastActivityAt > leaseMs) {
-        log.warn("opencode active tool lease expired", {
-          sessionId: this.sessionId,
-          tool: tool.name || "",
-          id,
-          idleMs: now - lastActivityAt,
-        });
-        this._activeTools.delete(id);
-        continue;
-      }
-      hasLease = true;
-    }
-    return hasLease;
-  }
+  _hasActiveToolLease() { return this._turnLiveness.hasActiveToolLease(); }
 
-  // Armed once at turn start; NOT re-armed on activity. Force-ends a turn that
-  // has run past the hard wall-clock budget even while still producing events
-  // (runaway deep/wide subagent work). _forceEndTurn recovers any official output
-  // and aborts the serve turn — graceful, not a crash.
-  _armTurnWatchdog() {
-    this._clearTurnWatchdog();
-    if (!this.busy || this._turnSettled) return;
-    const cap = OpencodeAgentSession.TURN_WATCHDOG_MS;
-    if (!(cap > 0)) return; // 0 / unset disables the hard cap
-    this._turnWatchdogTimer = setTimeout(() => {
-      this._forceEndTurn("turn exceeded the maximum time budget");
-    }, cap);
-  }
+  _armTurnWatchdog() { this._turnLiveness.armTurnWatchdog(); }
 
-  _clearTurnWatchdog() {
-    if (this._turnWatchdogTimer) {
-      clearTimeout(this._turnWatchdogTimer);
-      this._turnWatchdogTimer = null;
-    }
-  }
+  _clearTurnWatchdog() { this._turnLiveness.clearTurnWatchdog(); }
 
-  // Visible no-progress heartbeat: this is UX feedback only. It does not settle
-  // or abort the turn; the generous no-progress watchdog remains responsible for
-  // stopping genuinely stuck runs.
-  _armProgressNoticeTimer() {
-    this._clearProgressNoticeTimer();
-    if (!this.busy || this._turnSettled) return;
-    this._progressNoticeTimer = setTimeout(() => {
-      this._emitLongWaitNotice();
-    }, OpencodeAgentSession.PROGRESS_NOTICE_MS);
-    this._progressNoticeTimer.unref?.();
-  }
+  _armProgressNoticeTimer() { this._turnLiveness.armProgressNoticeTimer(); }
 
-  _clearProgressNoticeTimer() {
-    if (this._progressNoticeTimer) {
-      clearTimeout(this._progressNoticeTimer);
-      this._progressNoticeTimer = null;
-    }
-  }
+  _clearProgressNoticeTimer() { this._turnLiveness.clearProgressNoticeTimer(); }
 
-  _emitLongWaitNotice() {
-    this._progressNoticeTimer = null;
-    if (!this.busy || this._turnSettled) return;
-    if (this._knownSubagentSessionIDs.size > 0) return;
-    if (this._emitGenericToolProgressNotice()) {
-      this._armProgressNoticeTimer();
-      return;
-    }
-    this._ingest([{
-      type: "engine.notice",
-      payload: {
-        notice: {
-          code: "longWait",
-          level: "progress",
-          panel: true,
-          replace: true,
-          replacesCode: "longWait",
-        },
-      },
-    }]);
-  }
+  _emitLongWaitNotice() { this._turnLiveness.emitLongWaitNotice(); }
 
-  _genericToolProgressDetail() {
-    const running = [...this._activeTools.values()].filter((tool) => {
-      if (!tool?.id) return false;
-      const leaseMs = OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS;
-      const lastActivityAt = Number(tool.lastActivityAt || tool.startedAt || 0);
-      return !(leaseMs > 0 && lastActivityAt > 0 && Date.now() - lastActivityAt > leaseMs);
-    });
-    if (!running.length) return "";
-    running.sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
-    const now = Date.now();
-    const tool = running[0];
-    const label = compactProgressText(tool.title || buildToolPreviewLabel(tool) || tool.name || "Tool");
-    const elapsed = formatDuration(now - (tool.startedAt || now));
-    const idle = Math.max(0, now - (tool.lastActivityAt || tool.startedAt || now));
-    const activity = idle >= TOOL_PROGRESS_STALE_MS
-      ? `最近活动 ${formatDuration(idle)} 前`
-      : "仍有活动";
-    if (running.length > 1) {
-      return `${running.length} 个工具运行中 · 当前：${label} · 已运行 ${elapsed} · ${activity}`;
-    }
-    return `${label} 正在运行 · 已运行 ${elapsed} · ${activity}`;
-  }
+  _genericToolProgressDetail() { return this._turnLiveness.genericToolProgressDetail(); }
 
-  _emitGenericToolProgressNotice() {
-    const detail = this._genericToolProgressDetail();
-    if (!detail) return false;
-    if (detail === this._lastGenericToolProgressNotice) return true;
-    this._lastGenericToolProgressNotice = detail;
-    this._ingest([{
-      type: "engine.notice",
-      payload: {
-        notice: {
-          code: "toolProgress",
-          level: "progress",
-          panel: true,
-          replace: true,
-          replacesCode: "genericToolProgress",
-          detail,
-        },
-      },
-    }]);
-    return true;
-  }
+  _emitGenericToolProgressNotice() { return this._turnLiveness.emitGenericToolProgressNotice(); }
 
-  /** Give up on a stuck turn: abort the engine (so it isn't left working/looping
-   *  orphaned) then settle, so the UI can't sit in "正在处理" forever. */
-  _forceEndTurn(reason) {
-    if (!this.busy || this._turnSettled) return;
-    log.warn("opencode turn force-ended: %s", reason, { sessionId: this.sessionId });
-    void (async () => {
-      const recovered = await this._recoverStalledFinalFromOfficialState().catch((err) => {
-        log.warn("opencode stalled history sync failed: %s", err?.message || String(err));
-        return null;
-      });
-      if (!this.busy || this._turnSettled) return;
-      if (recovered?.output) {
-        this._completeTurn({
-          code: 0,
-          output: recovered.output,
-          interrupted: false,
-          engineMessageId: recovered.engineMessageId || null,
-          resultFromOfficialHistory: true,
-          recoveredFromStall: true,
-        });
-        return;
-      }
-      try { void this._server?.abort?.().catch(() => {}); } catch { /* best effort */ }
-      this._completeTurn({ code: 0, output: this.collectedOutput.trim(), stalled: true });
-    })();
-  }
+  _forceEndTurn(reason) { this._turnLiveness.forceEndTurn(reason); }
 
-  /** Active liveness probe during a turn. The silence watchdog can't tell a wedged
-   *  server from a model thinking quietly; this polls /global/health and fails the
-   *  turn fast ONLY when health actually fails N times in a row — so a slow-but-
-   *  healthy turn is never killed, but a dead/wedged engine is caught in ~90s
-   *  instead of the 300s silence timeout. */
-  _armHealthProbe() {
-    this._clearHealthProbe();
-    this._healthFails = 0;
-    const tick = async () => {
-      this._healthTimer = null;
-      if (!this.busy || this._turnSettled || !this._server) return;
-      const ok = await this._server.checkHealth().catch(() => false);
-      if (!this.busy || this._turnSettled || !this._server) return;
-      if (ok) {
-        this._healthFails = 0;
-      } else if (++this._healthFails >= OpencodeAgentSession.HEALTH_MAX_FAILS) {
-        log.warn("opencode health probe failed %d× — engine wedged/unreachable", this._healthFails, {
-          sessionId: this.sessionId,
-        });
-        this._onServerError(new Error("engine health check failed (wedged or unreachable)"));
-        return;
-      }
-      this._healthTimer = setTimeout(tick, OpencodeAgentSession.HEALTH_PROBE_MS);
-      this._healthTimer.unref?.();
-    };
-    this._healthTimer = setTimeout(tick, OpencodeAgentSession.HEALTH_PROBE_MS);
-    this._healthTimer.unref?.();
-  }
+  _armHealthProbe() { this._turnLiveness.armHealthProbe(); }
 
-  _clearHealthProbe() {
-    if (this._healthTimer) {
-      clearTimeout(this._healthTimer);
-      this._healthTimer = null;
-    }
-    this._healthFails = 0;
-  }
+  _clearHealthProbe() { this._turnLiveness.clearHealthProbe(); }
+
 
   _sanitize(message) {
     return require("./agent-runner").sanitizeError(message);

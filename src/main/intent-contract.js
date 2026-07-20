@@ -9,7 +9,7 @@ const MAX_ITEM_CHARS = 500;
 const RELATIONS = new Set(["new", "continue", "refine", "correct", "cancel"]);
 const CONTINUATION_RE = /^(?:继续(?:$|[，,。.!！?？\s]|刚才|之前|上面|按|把|做|完成|推进|优化|实现|修复)|接着(?:$|[，,。.!！?？\s]|做|刚才)|往下(?:$|[，,。.!！?？\s]|做)|按刚才|按照刚才|基于刚才|沿着刚才|continue(?:\s|$)|go on(?:\s|$)|keep going(?:\s|$)|proceed(?:\s|$))/i;
 const CORRECTION_RE = /(?:不是这个意思|理解错了|搞错了|答错了|方向错了|纠正一下|我的意思是|不是.+而是|not what i mean|you misunderstood|correction\s*:)/i;
-const REFINEMENT_RE = /^(?:改成|换成|调整为|调整成|再加|再详细|更详细|详细一点|再具体|具体一点|深入一点|加上|补上|补充|去掉|删掉|不要|必须|重点|只要|改为|按(?:照)?|现在(?:可以|允许)|make it|change it|also add|remove|instead)/i;
+const REFINEMENT_RE = /^(?:改成|换成|调整为|调整成|再加|再详细|更详细|详细一点|再具体|具体一点|深入一点|加上|补上|补充|去掉|删掉|不要|必须|重点|只要|只算|改为|按(?:照)?|现在(?:可以|允许)|make it|change it|also add|remove|instead)/i;
 const CANCELLATION_RE = /^(?:算了|不用了|先停|停止|取消|别做了|不要继续|cancel|stop|never mind)(?:\s|$|[，,。.!！?？])/i;
 const NEW_TASK_RE = /^(?:(?:新任务|另一个任务|另外一个任务|换个任务|接下来新做)(?:\s|$|[:：,，。.!！?？])|(?:new task|another task)\b)/i;
 
@@ -161,6 +161,12 @@ function findLatestTaskContractSnapshot(messages = []) {
             reasonCodes: stringList(archived.externalFact.reasonCodes, 12),
             researchProhibited: Boolean(archived.externalFact.researchProhibited),
             scopeClarificationRecommended: Boolean(archived.externalFact.scopeClarificationRecommended),
+            scopeClarificationRequired: Boolean(archived.externalFact.scopeClarificationRequired),
+            scopeDisclosureRequired: Boolean(archived.externalFact.scopeDisclosureRequired),
+            verificationPlan: archived.externalFact.verificationPlan &&
+              typeof archived.externalFact.verificationPlan === "object"
+              ? archived.externalFact.verificationPlan
+              : null,
           }
         : null,
       intentContract,

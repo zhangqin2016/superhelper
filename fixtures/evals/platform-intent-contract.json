@@ -86,7 +86,7 @@
             "relation": "new",
             "externalEvidenceRequired": true,
             "sourceLinksRequired": true,
-            "scopeClarificationRecommended": true,
+            "scopeClarificationRecommended": false,
             "verificationIncludes": ["external_source", "citation_provenance", "ranking_or_comparison_criteria"]
           }
         }
@@ -102,7 +102,7 @@
             "taskType": "external_fact",
             "relation": "new",
             "researchProhibited": true,
-            "scopeClarificationRecommended": true
+            "scopeClarificationRecommended": false
           }
         },
         {
@@ -113,7 +113,7 @@
             "relation": "refine",
             "reusePreviousContract": true,
             "researchProhibited": true,
-            "scopeClarificationRecommended": true
+            "scopeClarificationRecommended": false
           }
         },
         {
@@ -124,6 +124,46 @@
             "relation": "refine",
             "reusePreviousContract": true,
             "researchProhibited": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "public-enterprise-status-assumes-scope-and-requires-authority",
+      "turns": [
+        {
+          "user": "中国有哪些建筑公司是副部级别",
+          "expect": {
+            "active": true,
+            "taskType": "external_fact",
+            "relation": "new",
+            "externalEvidenceRequired": true,
+            "sourceLinksRequired": true,
+            "scopeClarificationRecommended": false,
+            "scopeClarificationRequired": false,
+            "scopeDisclosureRequired": true,
+            "sourceAuthority": "official_primary",
+            "verificationProfileIncludes": ["regulated_organization_classification"]
+          }
+        },
+        {
+          "user": "只算国务院国资委直接监管的一级央企",
+          "expect": {
+            "active": true,
+            "taskType": "external_fact",
+            "scopeClarificationRequired": false,
+            "scopeDisclosureRequired": true,
+            "sourceAuthority": "official_primary"
+          }
+        },
+        {
+          "user": "按领导人员干部管理权限核验",
+          "expect": {
+            "active": true,
+            "taskType": "external_fact",
+            "scopeClarificationRequired": false,
+            "scopeDisclosureRequired": false,
+            "sourceAuthority": "official_primary"
           }
         }
       ]

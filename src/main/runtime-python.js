@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { PROJECT_ROOT } = require("./config");
 const { platformBundleKeys } = require("./bundle-locator");
+const { resolveCjkFontPath } = require("./document-fonts");
 
 function bundledRuntimeCandidates() {
   const resourcesPath =
@@ -199,6 +200,8 @@ function getRuntimeEnvExtras() {
     extras.LILY_LIBREOFFICE_PROGRAM = sofficeDir;
     extras.UNO_PATH = resolveUnoPath(sofficeDir);
   }
+  const cjkFontPath = resolveCjkFontPath();
+  if (cjkFontPath) extras.LILY_CJK_FONT_PATH = cjkFontPath;
   return extras;
 }
 

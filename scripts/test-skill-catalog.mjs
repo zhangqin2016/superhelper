@@ -207,20 +207,18 @@ if (!globalGuide.includes("Slow is not failure") && !globalGuide.includes("慢�
   throw new Error("AGENT guide must forbid downgrading a long-running task just because it is slow");
 }
 if (
-  !globalGuide.includes("rankings/top lists/best/latest/most recent") &&
-  !globalGuide.includes("排行榜/排名/前十/最好/最新/最近")
+  !globalGuide.includes("depends on facts outside this conversation") ||
+  !globalGuide.includes("verificationPlan with externalFact=true")
 ) {
-  throw new Error("AGENT guide must route rankings and latest facts through external verification");
+  throw new Error("AGENT guide must route external facts semantically through a generic verification plan");
 }
 if (
-  (!globalGuide.includes("source links, source dates, and the ranking/comparison criteria") &&
-    !globalGuide.includes("来源链接、来源日期和排名/比较口径")) ||
-  (!globalGuide.includes("ask one concise scope question first; do not silently choose") &&
-    !globalGuide.includes("先问一个简短的口径问题，不得静默代选")) ||
-  (!globalGuide.includes("never fill in a plausible-looking authoritative answer or list from memory") &&
-    !globalGuide.includes("禁止凭记忆补齐一个看似权威的答案或列表"))
+  !globalGuide.includes("authorityHosts and evidenceAnchorGroups") ||
+  !globalGuide.includes("Preserve source links and dates") ||
+  !globalGuide.includes("reasonable disclosed scope for reversible ambiguity") ||
+  !globalGuide.includes("If evidence is unavailable, stale, or conflicting")
 ) {
-  throw new Error("AGENT guide must require sourced ranking answers and fail explicitly when evidence is insufficient");
+  throw new Error("AGENT guide must bind named conclusions to sources and fail explicitly when evidence is insufficient");
 }
 if (
   (!globalGuide.includes("Do not run native `skill <id>`") &&
@@ -344,8 +342,9 @@ for (const skillId of ["lily-web-system-learning", "lily-mail-assistant"]) {
     throw new Error(`${skillId} is high-risk/on-demand and must not be auto-enabled by default`);
   }
 }
+const presetSkillIds = new Set(skillPresets.SKILL_PRESETS.flatMap((preset) => preset.skillIds));
 for (const skill of bundledRegistry.skills || []) {
-  if (skill.defaultEligible === false && skill.riskLevel !== "high") {
+  if (skill.defaultEligible === false && skill.riskLevel !== "high" && !presetSkillIds.has(skill.id)) {
     throw new Error(`${skill.id} is ${skill.riskLevel || "unknown"} risk but defaultEligible=false; add an on-demand enabler or make it default`);
   }
 }

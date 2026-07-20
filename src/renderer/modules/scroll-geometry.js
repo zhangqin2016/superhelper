@@ -60,6 +60,20 @@ export function nextAutoFollowDetachedState(input = {}) {
   return previousDetached;
 }
 
+/**
+ * A delayed auto-follow request must yield to navigation that happened after it
+ * was scheduled. This keeps queued layout callbacks from undoing the user's
+ * first upward wheel/touch gesture while a live answer is still rendering.
+ */
+export function shouldRunScheduledAutoFollow(input = {}) {
+  const scheduledVersion = Number(input.scheduledNavigationVersion || 0);
+  const currentVersion = Number(input.currentNavigationVersion || 0);
+  if (scheduledVersion !== currentVersion) return false;
+  if (input.hasUserScrollIntent) return false;
+  if (!input.detachedAtSchedule && input.detachedNow) return false;
+  return true;
+}
+
 export function elementScrollTargetTop(input = {}) {
   const panelTop = Number(input?.panelTop || 0);
   const elementTop = Number(input?.elementTop || 0);

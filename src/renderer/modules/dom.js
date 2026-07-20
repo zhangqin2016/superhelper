@@ -1,14 +1,19 @@
 /** Shared DOM references and element factory functions. */
 
 import store from "./state.js";
-import { nextAutoFollowDetachedState } from "./scroll-geometry.js";
+import {
+  nextAutoFollowDetachedState,
+  shouldRunScheduledAutoFollow,
+} from "./scroll-geometry.js";
 
 export const $ = (id) => document.getElementById(id);
 
 const SCROLL_THRESHOLD = 72;
 const USER_SCROLL_DETACHED = "userScrollDetached";
 const USER_SCROLL_INTENT_UNTIL = "userScrollIntentUntil";
+const USER_SCROLL_NAVIGATION_VERSION = "userScrollNavigationVersion";
 const PROGRAMMATIC_SCROLL = "programmaticScroll";
+const scheduledAutoFollowVersions = new WeakMap();
 
 export function el(tag, className, attrs = {}) {
   const e = document.createElement(tag);
@@ -51,9 +56,8 @@ function setUserScrollDetached(panel, detached) {
 
 export function detachAutoFollowForUserNavigation(panel) {
   if (!panel?.dataset) return;
-  delete panel.dataset[PROGRAMMATIC_SCROLL];
+  markUserScrollIntent(panel);
   setUserScrollDetached(panel, true);
-  panel.dataset[USER_SCROLL_INTENT_UNTIL] = String(Date.now() + 1000);
   panel.dataset.lastScrollTop = String(panel.scrollTop || 0);
   updateScrollToBottomButton(panel);
 }
@@ -70,6 +74,17 @@ function markUserScrollIntent(panel) {
   if (!panel?.dataset) return;
   delete panel.dataset[PROGRAMMATIC_SCROLL];
   panel.dataset[USER_SCROLL_INTENT_UNTIL] = String(Date.now() + 1000);
+  panel.dataset[USER_SCROLL_NAVIGATION_VERSION] = String(
+    Number(panel.dataset[USER_SCROLL_NAVIGATION_VERSION] || 0) + 1,
+  );
+}
+
+function userScrollNavigationVersion(panel) {
+  return Number(panel?.dataset?.[USER_SCROLL_NAVIGATION_VERSION] || 0);
+}
+
+function hasUserScrollIntent(panel) {
+  return Number(panel?.dataset?.[USER_SCROLL_INTENT_UNTIL] || 0) > Date.now();
 }
 
 export function updateScrollToBottomButton(scrollEl) {
@@ -81,9 +96,27 @@ export function updateScrollToBottomButton(scrollEl) {
 
 /** Scroll after layout/markdown rendering has settled. */
 export function scrollToBottomAfterLayout(scrollEl, force = false) {
+  const panel = scrollEl || getActiveMessagesEl();
+  if (!panel) return;
+  const scheduledNavigationVersion = userScrollNavigationVersion(panel);
+  const detachedAtSchedule = isUserScrollDetached(panel);
+  const scheduleVersion = Number(scheduledAutoFollowVersions.get(panel) || 0) + 1;
+  scheduledAutoFollowVersions.set(panel, scheduleVersion);
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      scrollToBottom(force, scrollEl);
+      if (scheduledAutoFollowVersions.get(panel) !== scheduleVersion) return;
+      scheduledAutoFollowVersions.delete(panel);
+      if (!shouldRunScheduledAutoFollow({
+        scheduledNavigationVersion,
+        currentNavigationVersion: userScrollNavigationVersion(panel),
+        hasUserScrollIntent: hasUserScrollIntent(panel),
+        detachedAtSchedule,
+        detachedNow: isUserScrollDetached(panel),
+      })) {
+        updateScrollToBottomButton(panel);
+        return;
+      }
+      scrollToBottom(force, panel);
     });
   });
 }
@@ -116,7 +149,12 @@ export function bindPanelScroll(panel) {
   panel.dataset.scrollBound = "1";
   panel.dataset.lastScrollTop = String(panel.scrollTop || 0);
   const markIntent = () => markUserScrollIntent(panel);
-  panel.addEventListener("wheel", markIntent, { passive: true });
+  panel.addEventListener("wheel", (event) => {
+    markUserScrollIntent(panel);
+    if (!event.ctrlKey && Number(event.deltaY || 0) < 0) {
+      setUserScrollDetached(panel, true);
+    }
+  }, { passive: true });
   panel.addEventListener("touchstart", markIntent, { passive: true });
   panel.addEventListener("pointerdown", markIntent, { passive: true });
   panel.addEventListener(
@@ -127,19 +165,19 @@ export function bindPanelScroll(panel) {
       const currentTop = Number(panel.scrollTop || 0);
       const userScrolledUp = currentTop < previousTop - 1;
       const nearBottom = isNearBottom(panel);
-      const hasUserScrollIntent = Number(panel.dataset[USER_SCROLL_INTENT_UNTIL] || 0) > Date.now();
+      const hasUserScrollIntentNow = hasUserScrollIntent(panel);
       const programmaticScroll = panel.dataset[PROGRAMMATIC_SCROLL] === "1";
       const wasDetached = isUserScrollDetached(panel);
       const nextDetached = nextAutoFollowDetachedState({
         previousDetached: wasDetached,
-        hasUserScrollIntent,
+        hasUserScrollIntent: hasUserScrollIntentNow,
         programmaticScroll,
         userScrolledUp,
         nearBottom,
       });
       setUserScrollDetached(panel, nextDetached);
-      if (hasUserScrollIntent) delete panel.dataset[USER_SCROLL_INTENT_UNTIL];
-      if (!nextDetached && !nearBottom && !hasUserScrollIntent && !programmaticScroll) {
+      if (hasUserScrollIntentNow) delete panel.dataset[USER_SCROLL_INTENT_UNTIL];
+      if (!nextDetached && !nearBottom && !hasUserScrollIntentNow && !programmaticScroll) {
         scrollToBottomAfterLayout(panel, true);
       }
       panel.dataset.lastScrollTop = String(currentTop);

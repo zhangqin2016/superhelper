@@ -55,10 +55,22 @@
     },
     {
       "id": "external-claim-evidence",
-      "protects": "Rankings and current external facts cannot be asserted from model memory alone.",
-      "baseline": "External fact requests require fresh evidence, source links, and honest uncertainty.",
-      "failureFallback": "Ask one scope question or disclose the evidence gap; never fabricate a plausible ranking.",
-      "tests": ["scripts/test-external-fact-grounding.mjs"]
+      "protects": "External factual claims in known or previously unseen domains cannot be asserted from model memory alone.",
+      "baseline": "External fact requests require fresh evidence, grounded source links, claim-appropriate authority, item-level support when declared, and honest uncertainty.",
+      "failureFallback": "Malformed semantic plans or recovery context preserve the existing strict host gate. A single changed-strategy retry may inherit only bounded successful read-only external evidence from the immediately completed turn; internal retry prompts stay hidden and durable supersession prevents pre-gate engine text from returning on history reload. Otherwise disclose the limit without fabricating an answer.",
+      "tests": [
+        "scripts/test-answer-evidence-finalizer.mjs",
+        "scripts/test-external-evidence-recovery.mjs",
+        "scripts/test-external-fact-grounding.mjs",
+        "scripts/test-general-claim-verification.mjs",
+        "scripts/test-model-verification-plan.mjs",
+        "scripts/test-opencode-conversation-source.mjs",
+        "scripts/test-public-enterprise-grounding.mjs",
+        "scripts/test-semantic-external-fact-contract.mjs",
+        "scripts/test-tool-call-rescue.mjs",
+        "scripts/test-tool-semantics.mjs",
+        "scripts/test-turn-orchestrator.mjs"
+      ]
     },
     {
       "id": "attachment-content-grounding",
@@ -85,11 +97,46 @@
       ]
     },
     {
+      "id": "office-document-delivery",
+      "protects": "Generated or edited Office and PDF files cannot be presented as polished verified deliverables without an actual output, deterministic structure checks, rendering, and visual inspection.",
+      "baseline": "Bundled Python authoring remains available for Word, PowerPoint, Excel, and PDF, with managed LibreOffice rendering and CJK-safe font discovery.",
+      "failureFallback": "Preserve the generated file and label it delivered_unverified; run at most one path-scoped QA continuation, then disclose any remaining verification gap without replaying the authoring task.",
+      "tests": [
+        "scripts/test-document-delivery-gate.mjs",
+        "scripts/test-turn-artifacts.mjs",
+        "scripts/test-tool-call-rescue.mjs",
+        "scripts/test-document-fonts.mjs",
+        "scripts/test-office-authoring-contract.mjs"
+      ]
+    },
+    {
       "id": "architecture-ratchet",
       "protects": "Critical modules do not grow new mixed responsibilities or cross process boundaries.",
       "baseline": "Existing hotspots may be split and reduced but not enlarged.",
       "failureFallback": "The architecture test fails before a capability change can merge.",
-      "tests": ["scripts/test-architecture-boundaries.mjs"]
+      "tests": [
+        "scripts/test-architecture-boundaries.mjs",
+        "scripts/test-context-budget-manager.mjs",
+        "scripts/test-external-command-runtime.mjs",
+        "scripts/test-opencode-agent-session.mjs",
+        "scripts/test-opencode-session-policies.mjs",
+        "scripts/test-skill-catalog.mjs",
+        "scripts/test-skill-guide-sync.mjs",
+        "scripts/test-subagent-runtime-projection.mjs",
+        "scripts/test-task-run-kernel.mjs",
+        "scripts/test-turn-runtime-event-router.mjs"
+      ]
+    },
+    {
+      "id": "conversation-scroll-control",
+      "protects": "A user's first upward wheel or touch gesture cannot be overwritten by queued live-render auto-follow callbacks.",
+      "baseline": "The active conversation follows new output while the user remains at the latest message, and explicit Latest navigation re-enables following.",
+      "failureFallback": "Cancel stale scheduled auto-follow after any newer navigation intent, preserve the user's reading position, and keep explicit force-to-latest available.",
+      "tests": [
+        "scripts/test-scroll-geometry.mjs",
+        "scripts/test-scroll-autofollow.cjs",
+        "scripts/test-message-live-render-model.mjs"
+      ]
     }
   ]
 }

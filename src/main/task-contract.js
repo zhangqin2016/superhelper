@@ -983,6 +983,17 @@ function buildTaskContract({
       ),
     };
   }
+  if (
+    classification.taskType === "external_fact" &&
+    previousSnapshot?.taskType === "external_fact" &&
+    isInheritedRelation(relation)
+  ) {
+    classification.externalFactIntent = inheritExternalFactIntent(
+      "external_fact",
+      classification.externalFactIntent,
+      previousSnapshot,
+    );
+  }
   const externalFactPolicy = buildExternalFactPolicy(classification.externalFactIntent);
   const priorSourceContentEvidence = isInheritedRelation(relation)
     ? previousSnapshot?.sourceContentEvidence || null
@@ -1106,7 +1117,9 @@ function withTaskContractPrefix(text, contract) {
           `reason_codes: ${(contract.externalFactPolicy.reasonCodes || []).join(", ") || "external_fact"}`,
           `requires_freshness: ${contract.externalFactPolicy.requiresFreshness ? "yes" : "no"}`,
           `requires_source_links: ${contract.externalFactPolicy.requiresSourceLinks ? "yes" : "no"}; research_prohibited_by_user: ${contract.externalFactPolicy.researchProhibited ? "yes" : "no"}`,
-          `scope_clarification_recommended: ${contract.externalFactPolicy.scopeClarificationRecommended ? "yes" : "no"}`,
+          `scope_clarification_recommended: ${contract.externalFactPolicy.scopeClarificationRecommended ? "yes" : "no"}; scope_clarification_required: ${contract.externalFactPolicy.scopeClarificationRequired ? "yes" : "no"}; scope_disclosure_required: ${contract.externalFactPolicy.scopeDisclosureRequired ? "yes" : "no"}; source_authority: ${contract.externalFactPolicy.sourceAuthority || "standard"}; authority_url_policy: ${contract.externalFactPolicy.verificationPlan?.authorityUrlPolicy || "none"}`,
+          `claim_profiles: ${(contract.externalFactPolicy.verificationPlan?.profileIds || []).join(", ") || "none"}; claim_kinds: ${(contract.externalFactPolicy.verificationPlan?.claimKinds || []).join(", ") || "none"}`,
+          `required_scope_dimensions: ${(contract.externalFactPolicy.verificationPlan?.requiredScopeDimensions || []).join(", ") || "none"}; resolved_scope_dimensions: ${(contract.externalFactPolicy.verificationPlan?.resolvedScopeDimensions || []).join(", ") || "none"}; scope_resolution_mode: ${contract.externalFactPolicy.verificationPlan?.scopeResolutionMode || "assume_and_disclose"}`,
           contract.externalFactPolicy.policy || "",
           ...contract.externalFactPolicy.finalAnswerRequirements.map((item) => `- ${item}`),
         ]
@@ -1127,9 +1140,9 @@ function withTaskContractPrefix(text, contract) {
     "Host-resolved intent contract:",
     "This is the platform's durable baseline for the task. The current user instruction outranks inherited fields. Treat assumptions as provisional, not as facts.",
     JSON.stringify(compactIntentContract(contract.intentContract)),
-    "Ask a clarification only when criticalUnknowns is non-empty or when acting would be irreversible and materially ambiguous. Otherwise proceed with the stated constraints and reasonable assumptions.",
+    "Ask a clarification only when criticalUnknowns is non-empty or when acting would be irreversible and materially ambiguous. For reversible research or analysis, choose a reasonable scope, disclose the assumption, verify it, and proceed; a question-only response does not complete the task.",
     "Do not claim the task complete until every deliverable and machine-verifiable success criterion has supporting evidence.",
-    "If the session exposes lily_intent_contract_commit and your semantic interpretation materially improves the objective, deliverables, success criteria, assumptions, or critical unknowns, call it once before the first side effect. It is optional: if unavailable or rejected, continue immediately with this host baseline.",
+    "If the session exposes lily_intent_contract_commit and your semantic interpretation materially improves the objective, deliverables, success criteria, assumptions, critical unknowns, or an unfamiliar external claim's verification plan, call it once before the first side effect. It is optional: if unavailable or rejected, continue immediately with this host baseline.",
     "",
     "Model task draft:",
     `schema_version: ${TASK_TYPE_SCHEMA_VERSION}`,

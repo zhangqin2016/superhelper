@@ -12,6 +12,7 @@ import {
   revealScrollIntent,
   shouldLoadOlderOnScroll,
   shouldMarkBoundaryGesture,
+  shouldRunScheduledAutoFollow,
   OLDER_LOAD_TOP_THRESHOLD,
 } from "../src/renderer/modules/scroll-geometry.js";
 
@@ -76,6 +77,62 @@ assert.equal(
 );
 
 assert.equal(
+  shouldRunScheduledAutoFollow({
+    scheduledNavigationVersion: 4,
+    currentNavigationVersion: 4,
+    hasUserScrollIntent: false,
+    detachedAtSchedule: false,
+    detachedNow: false,
+  }),
+  true,
+  "unchanged navigation allows the latest scheduled auto-follow",
+);
+assert.equal(
+  shouldRunScheduledAutoFollow({
+    scheduledNavigationVersion: 4,
+    currentNavigationVersion: 5,
+    hasUserScrollIntent: false,
+    detachedAtSchedule: false,
+    detachedNow: true,
+  }),
+  false,
+  "one user navigation gesture cancels an older queued auto-follow",
+);
+assert.equal(
+  shouldRunScheduledAutoFollow({
+    scheduledNavigationVersion: 5,
+    currentNavigationVersion: 5,
+    hasUserScrollIntent: true,
+    detachedAtSchedule: false,
+    detachedNow: false,
+  }),
+  false,
+  "a gesture already in progress wins over a newly queued layout callback",
+);
+assert.equal(
+  shouldRunScheduledAutoFollow({
+    scheduledNavigationVersion: 5,
+    currentNavigationVersion: 5,
+    hasUserScrollIntent: false,
+    detachedAtSchedule: false,
+    detachedNow: true,
+  }),
+  false,
+  "detaching during layout prevents the pending callback from reattaching",
+);
+assert.equal(
+  shouldRunScheduledAutoFollow({
+    scheduledNavigationVersion: 5,
+    currentNavigationVersion: 5,
+    hasUserScrollIntent: false,
+    detachedAtSchedule: true,
+    detachedNow: true,
+  }),
+  true,
+  "an explicit force-to-latest request may reattach an already detached panel",
+);
+
+assert.equal(
   elementScrollTargetTop({
     panelTop: 100,
     elementTop: 240,
@@ -113,5 +170,10 @@ assert.equal(elementScrollTargetTop(null), 0, "missing geometry fails open to no
 const messageSource = readFileSync(new URL("../src/renderer/modules/message.js", import.meta.url), "utf8");
 assert.match(messageSource, /elementScrollTargetTop\(/);
 assert.doesNotMatch(messageSource, /getBoundingClientRect\(\)\.top - panel\.getBoundingClientRect\(\)\.top \+ panel\.scrollTop - 12/);
+
+const domSource = readFileSync(new URL("../src/renderer/modules/dom.js", import.meta.url), "utf8");
+assert.match(domSource, /shouldRunScheduledAutoFollow\(/);
+assert.match(domSource, /USER_SCROLL_NAVIGATION_VERSION/);
+assert.match(domSource, /scheduledAutoFollowVersions/);
 
 console.log("scroll-geometry: ok");

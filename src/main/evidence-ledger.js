@@ -1,6 +1,7 @@
 "use strict";
 
 const path = require("node:path");
+const { commandExternalEvidenceKind } = require("./tool-semantics");
 
 const PATH_RE = /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[\w@./\\-]+\.[A-Za-z0-9]{1,8})(?::\d+)?/g;
 
@@ -39,13 +40,6 @@ function normalizeLines(input = {}) {
 
 function commandLooksLikeVerification(command = "") {
   return /\b(npm\s+(?:run\s+)?test|node\s+scripts\/test-|pytest|vitest|jest|playwright|tsc|eslint|lint|cargo\s+test|go\s+test)\b/i.test(command);
-}
-
-function commandExternalEvidenceKind(command = "") {
-  const source = String(command || "");
-  if (/(?:^|[\\/])websearch\.cjs\b/i.test(source)) return "web_search";
-  if (/(?:^|[\\/])webfetch\.cjs\b/i.test(source)) return "web_fetch";
-  return "";
 }
 
 function normalizePathKey(value = "") {

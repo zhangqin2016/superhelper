@@ -106,7 +106,7 @@ function requiredEvidenceKindsForTaskType(taskType) {
     case "content_extraction":
       return ["source_content"];
     case "document_work":
-      return ["document"];
+      return ["document_output"];
     case "release_deploy":
       return ["verification"];
     case "external_fact":
@@ -136,8 +136,14 @@ function buildEvidencePolicy(classification = {}) {
     allowedSources: uniqueStrings(allowedSources),
     requiredEvidenceKinds: uniqueStrings(requiredEvidenceKinds),
     externalFact: externalFact.required,
+    externalFactReasonCodes: externalFact.reasonCodes || [],
     requireSourceLinks: externalFact.requiresSourceLinks,
-    allowClarificationWithoutEvidence: externalFact.required,
+    allowClarificationWithoutEvidence: Boolean(externalFact.scopeClarificationRequired),
+    scopeClarificationRequired: Boolean(externalFact.scopeClarificationRequired),
+    scopeDisclosureRequired: Boolean(externalFact.scopeDisclosureRequired),
+    verificationPlan: externalFact.verificationPlan || null,
+    sourceAuthority: externalFact.sourceAuthority || "standard",
+    entityEvidenceRequired: Boolean(externalFact.entityEvidenceRequired),
     unsupportedClaimPolicy: active
       ? "Unsupported factual claims must be downgraded to uncertainty. Do not state causes, completion, deployment, correctness, data values, or external facts as confirmed without an allowed evidence source. Flag only the claims that actually lack support, inline where they occur — do NOT append a blanket evidence disclaimer to an answer that is already grounded in the evidence you have."
       : "Use evidence when making factual claims; if evidence is unavailable, say what is unknown instead of inventing details.",
@@ -151,8 +157,38 @@ function buildEvidencePolicy(classification = {}) {
   };
 }
 
+function withExternalFactPolicy(evidencePolicy = null, externalFact = null) {
+  if (!evidencePolicy || !externalFact?.required) return evidencePolicy;
+  return {
+    ...evidencePolicy,
+    required: true,
+    allowedSources: uniqueStrings(evidencePolicy.allowedSources, [
+      "web_search_or_fetch_result",
+      "live_api_response",
+      "authoritative_external_document",
+      "user_supplied_source",
+    ]),
+    requiredEvidenceKinds: uniqueStrings(evidencePolicy.requiredEvidenceKinds, ["external"]),
+    externalFact: true,
+    externalFactReasonCodes: externalFact.reasonCodes || [],
+    requireSourceLinks: externalFact.requiresSourceLinks,
+    allowClarificationWithoutEvidence: Boolean(externalFact.scopeClarificationRequired),
+    scopeClarificationRequired: Boolean(externalFact.scopeClarificationRequired),
+    scopeDisclosureRequired: Boolean(externalFact.scopeDisclosureRequired),
+    verificationPlan: externalFact.verificationPlan || null,
+    sourceAuthority: externalFact.sourceAuthority || "standard",
+    entityEvidenceRequired: Boolean(externalFact.entityEvidenceRequired),
+    unsupportedClaimPolicy: "External factual claims require current evidence from this turn. Unsupported entities, attributes, quantities, or source links must be removed or stated as unverified; never complete them from memory.",
+    finalAnswerRequirements: uniqueStrings(
+      evidencePolicy.finalAnswerRequirements,
+      externalFact.finalAnswerRequirements,
+    ),
+  };
+}
+
 module.exports = {
   buildEvidencePolicy,
   evidenceSourcesForTaskType,
   requiredEvidenceKindsForTaskType,
+  withExternalFactPolicy,
 };

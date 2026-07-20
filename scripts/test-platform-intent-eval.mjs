@@ -32,6 +32,9 @@ function archivedAssistant(contract, userText) {
                 reasonCodes: contract.externalFactPolicy.reasonCodes,
                 researchProhibited: contract.externalFactPolicy.researchProhibited,
                 scopeClarificationRecommended: contract.externalFactPolicy.scopeClarificationRecommended,
+                scopeClarificationRequired: contract.externalFactPolicy.scopeClarificationRequired,
+                scopeDisclosureRequired: contract.externalFactPolicy.scopeDisclosureRequired,
+                verificationPlan: contract.externalFactPolicy.verificationPlan,
               }
             : null,
           intentContract: contract.intentContract,
@@ -88,6 +91,32 @@ for (const scenario of fixture.scenarios) {
         `${label} scope clarification`,
       );
     }
+    if ("scopeClarificationRequired" in expected) {
+      assert.equal(
+        contract.externalFactPolicy?.scopeClarificationRequired,
+        expected.scopeClarificationRequired,
+        `${label} required scope clarification`,
+      );
+    }
+    if ("scopeDisclosureRequired" in expected) {
+      assert.equal(
+        contract.externalFactPolicy?.scopeDisclosureRequired,
+        expected.scopeDisclosureRequired,
+        `${label} scope disclosure`,
+      );
+    }
+    if ("sourceAuthority" in expected) {
+      assert.equal(
+        contract.externalFactPolicy?.sourceAuthority,
+        expected.sourceAuthority,
+        `${label} source authority`,
+      );
+    }
+    assertIncludes(
+      contract.externalFactPolicy?.verificationPlan?.profileIds || [],
+      expected.verificationProfileIncludes,
+      `${label} verification profiles`,
+    );
     if (expected.reusePreviousContract) {
       assert.equal(contract.intentContract?.contractId, previousContract?.contractId, `${label} contract identity`);
     }

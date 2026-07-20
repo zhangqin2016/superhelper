@@ -206,6 +206,23 @@ const documentWithExtraction = assessFinalAnswerEvidence({
 });
 assert.equal(documentWithExtraction.ok, true);
 
+const documentOutputMissing = assessFinalAnswerEvidence({
+  assistant: "The requested report has been delivered.",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["document_output"] },
+  turnPolicy: { rigor: "grounded", taskType: "document_work" },
+  evidenceSummary: { counts: {}, hasDocumentOutputEvidence: false },
+});
+assert.equal(documentOutputMissing.ok, false);
+assert.equal(documentOutputMissing.reason, "missing_required_evidence:document_output");
+
+const documentOutputPresent = assessFinalAnswerEvidence({
+  assistant: "The requested report has been delivered.",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["document_output"] },
+  turnPolicy: { rigor: "grounded", taskType: "document_work" },
+  evidenceSummary: { counts: { documentOutputs: 1 }, hasDocumentOutputEvidence: true },
+});
+assert.equal(documentOutputPresent.ok, true);
+
 const mediaRecognitionWithoutOutput = assessFinalAnswerEvidence({
   assistant: "图片里是一张产品海报。",
   evidencePolicy: { required: true, requiredEvidenceKinds: [] },

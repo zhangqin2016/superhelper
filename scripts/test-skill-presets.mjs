@@ -165,10 +165,14 @@ const installedDocumentQueryGuide = fs.readFileSync(
   path.join(tmp, "lily-config", "skills", "lily-document-query", "SKILL.md"),
   "utf8",
 );
+const normalizedDocumentQueryGuide = installedDocumentQueryGuide.replace(/\\/g, "/");
+const expectedDocumentQueryScript = path
+  .join(tmp, "lily-config", "skills", "lily-document-query", "scripts", "query_document_index.cjs")
+  .replace(/\\/g, "/");
 if (
   installedDocumentQueryGuide.includes("{{SKILL_DIR}}") ||
   installedDocumentQueryGuide.includes("{{NODE_BIN}}") ||
-  !installedDocumentQueryGuide.includes(path.join(tmp, "lily-config", "skills", "lily-document-query", "scripts", "query_document_index.cjs"))
+  !normalizedDocumentQueryGuide.includes(expectedDocumentQueryScript)
 ) {
   throw new Error(`document-query guide should resolve script placeholders at install time: ${installedDocumentQueryGuide}`);
 }

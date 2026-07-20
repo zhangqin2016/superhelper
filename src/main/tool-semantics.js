@@ -1,6 +1,9 @@
 "use strict";
 
 const DANGEROUS_SHELL_RE = /(^|\s)(rm\s+-[^\n;|&]*[rf]|git\s+(?:commit|push|tag|reset|checkout|clean)|npm\s+publish|pnpm\s+publish|yarn\s+publish|curl\b[^\n;|&]*(?:-X\s*(?:POST|PUT|PATCH|DELETE)|--request\s+(?:POST|PUT|PATCH|DELETE))|kubectl\s+(?:delete|apply|replace|patch)|docker\s+(?:push|rm|rmi)|mv\s+|cp\s+)/i;
+const SHELL_MUTATION_OR_CHAIN_RE = /(?:&&|\|\||;|>>?|`|\$\(|\r|\n|\b(?:set-content|add-content|out-file|remove-item|move-item|copy-item|start-process)\b)/i;
+const NODE_COMMAND_RE = /\bnode(?:\.exe|\.cmd)?["']?\s+/i;
+const BUNDLED_RESEARCH_SCRIPT_RE = /[\\/]web(search|fetch)\.cjs\b/i;
 
 const registry = new Map();
 
@@ -62,19 +65,29 @@ function registeredSemantics(name = "") {
   return candidate ? registry.get(candidate) : null;
 }
 
+function commandExternalEvidenceKind(command = "") {
+  const source = String(command || "");
+  if (!NODE_COMMAND_RE.test(source) || SHELL_MUTATION_OR_CHAIN_RE.test(source)) return "";
+  const matches = [...source.matchAll(new RegExp(BUNDLED_RESEARCH_SCRIPT_RE.source, "ig"))];
+  if (matches.length !== 1 || (source.match(/\|/g) || []).length > 1) return "";
+  return matches[0][1].toLowerCase() === "search" ? "web_search" : "web_fetch";
+}
+
 function resolveToolSemantics(toolOrName = {}) {
   const tool = typeof toolOrName === "string" ? { name: toolOrName } : toolOrName || {};
   const name = normalizedName(tool.name || tool.tool);
   if (name === "bash" || name.endsWith(".bash") || name.endsWith("_bash")) {
     const command = String(tool.input?.command || tool.input?.cmd || "");
+    const externalEvidenceKind = commandExternalEvidenceKind(command);
+    const replaySafe = Boolean(externalEvidenceKind) && !DANGEROUS_SHELL_RE.test(command);
     return {
       name,
-      readOnly: false,
+      readOnly: replaySafe,
       destructive: DANGEROUS_SHELL_RE.test(command),
-      idempotent: false,
-      externalSideEffect: true,
-      replaySafe: false,
-      evidenceKind: "command",
+      idempotent: replaySafe,
+      externalSideEffect: !replaySafe,
+      replaySafe,
+      evidenceKind: externalEvidenceKind || "command",
     };
   }
   const annotations = semanticsFromAnnotations(tool.annotations || tool.metadata?.annotations);
@@ -112,6 +125,8 @@ function isSideEffectFreeToolRun(tools = []) {
   ["lsp", { readOnly: true, evidenceKind: "file_read" }],
   ["webfetch", { readOnly: true, evidenceKind: "web_fetch" }],
   ["websearch", { readOnly: true, evidenceKind: "web_search" }],
+  ["web_fetch", { readOnly: true, evidenceKind: "web_fetch" }],
+  ["web_search", { readOnly: true, evidenceKind: "web_search" }],
   ["todoread", { readOnly: true }],
   ["todowrite", { idempotent: true, replaySafe: true, externalSideEffect: false }],
   ["question", { idempotent: true, replaySafe: true, externalSideEffect: false }],
@@ -130,6 +145,7 @@ function isSideEffectFreeToolRun(tools = []) {
 
 module.exports = {
   DANGEROUS_SHELL_RE,
+  commandExternalEvidenceKind,
   isReplaySafeTool,
   isSideEffectFreeToolRun,
   registerToolDefinitions,

@@ -47,6 +47,34 @@ instead of treating the whole document task as impossible.
 10. For generated/edited office files, verify with rendering when layout matters.
 11. Return absolute output paths and note skipped or uncertain steps.
 
+## Authoring Quality Contract
+
+For create, redesign, or substantial edit tasks, use this adaptive contract:
+
+1. Derive a compact content and design brief from the request: audience,
+   purpose, format, page/slide/sheet scale, brand constraints, tone, and required
+   sections. Infer a restrained professional default when details are absent;
+   ask only when an unknown would materially change the deliverable.
+2. Preserve an existing template, theme, master, formulas, and document
+   structure when supplied. For scratch authoring, use the bundled Python stack:
+   `python-docx` for Word, `python-pptx` for PowerPoint, `openpyxl`/`xlsxwriter`
+   for Excel, and ReportLab for direct-drawn PDFs when it imports successfully.
+   Missing similarly named Node packages is not evidence that the capability is
+   unavailable; a stale runtime without ReportLab uses the structured-source
+   LibreOffice route instead of installing packages ad hoc.
+3. For layout-rich business PDFs, prefer a structured DOCX or other editable
+   source and export through managed LibreOffice. Use direct ReportLab drawing
+   when fixed coordinates are genuinely appropriate. Use
+   `LILY_CJK_FONT_PATH` whenever direct PDF drawing contains CJK text.
+4. Establish a small design system before authoring: page geometry, type scale,
+   CJK-safe font choices, spacing rhythm, color roles, table style, chart style,
+   headers/footers, and image treatment. Apply it consistently instead of
+   formatting elements one at a time.
+5. Reopen the generated file with its deterministic library and validate its
+   structure. Recalculate formula workbooks, render the final artifact, inspect
+   the required pages, fix observed defects, and repeat until the delivery gate
+   passes or the remaining blocker is explicitly reported.
+
 ## Guardrails
 
 - Do not invent document contents.

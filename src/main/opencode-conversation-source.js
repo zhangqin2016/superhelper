@@ -1,17 +1,13 @@
 "use strict";
 
-const {
-  extractUserOriginalRequest,
-  hasLayeredEngineText,
-} = require("./engine-message-layers");
-
+const { extractUserOriginalRequest, hasLayeredEngineText } = require("./engine-message-layers");
+const { isInternalRecoveryPromptText } = require("./turn-recovery-context");
 function metadataKey(message = {}) {
   return message.engineMessageId || message.record?.engineMessageId || message.id || "";
 }
 
 const USER_TIME_MATCH_WINDOW_MS = 10 * 60 * 1000;
 const PROJECTION_TIME_MATCH_WINDOW_MS = 30 * 60 * 1000;
-
 const INJECTED_USER_PROMPT_MARKERS = [
   "# 智能工作台全局说明",
   "## 身份问答（必读）",
@@ -24,7 +20,6 @@ const INJECTED_USER_PROMPT_MARKERS = [
 const INTERNAL_ONLY_USER_PROMPTS = new Set([
   "continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
 ]);
-
 function timestampMs(value) {
   const parsed = Date.parse(value || "");
   return Number.isFinite(parsed) ? parsed : null;
@@ -123,6 +118,7 @@ function normalizeVisibleUserMessage(message) {
   if (!message || message.role !== "user") return null;
   const text = messageText(message).trim();
   if (!text) return null;
+  if (isInternalRecoveryPromptText(text)) return null;
   if (isInternalOnlyUserPromptText(text)) return null;
   if (!isInjectedUserPromptText(text)) return message;
 
@@ -160,7 +156,10 @@ function buildMetadataIndex(messages = []) {
 
 function mergeMetadata(opencodeMessage, metadataMessage) {
   if (!metadataMessage) return opencodeMessage;
+  if (opencodeMessage.role === "assistant" && metadataMessage.meta?.superseded === true) return null;
   const merged = { ...opencodeMessage };
+  const guardedAssistant = metadataMessage.record?.meta?.evidenceGate ? messageText(metadataMessage).trim() : "";
+  if (guardedAssistant) merged.content = guardedAssistant;
   if (metadataMessage.turnId && !merged.turnId) merged.turnId = metadataMessage.turnId;
   if (metadataMessage.failed) merged.failed = true;
   if (metadataMessage.meta) {
@@ -173,6 +172,7 @@ function mergeMetadata(opencodeMessage, metadataMessage) {
     merged.record = {
       ...metadataMessage.record,
       ...(opencodeMessage.record || {}),
+      assistantText: guardedAssistant || opencodeMessage.record?.assistantText || metadataMessage.record.assistantText || "",
       artifacts: metadataMessage.record.artifacts || opencodeMessage.record?.artifacts || [],
       fileChanges: metadataMessage.record.fileChanges || opencodeMessage.record?.fileChanges || [],
       resultBlocks: metadataMessage.record.resultBlocks || opencodeMessage.record?.resultBlocks || [],
@@ -252,7 +252,7 @@ function mergeUserDisplayText(opencodeMessages = [], localMessages = []) {
 function normalizeVisibleConversationMessages(messages = []) {
   return (Array.isArray(messages) ? messages : [])
     .map((message) => (message?.role === "user" ? normalizeVisibleUserMessage(message) : message))
-    .filter(Boolean);
+    .filter((message) => Boolean(message) && !(message.role === "assistant" && message.meta?.superseded === true));
 }
 
 function isSteerMessage(message = {}) {

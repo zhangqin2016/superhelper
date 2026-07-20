@@ -12,14 +12,28 @@ Text extraction tells you what a document says; it cannot prove the document loo
 
 ## Workflow
 
-1. Render the document to page images with `{{RUNTIME_SCRIPTS_DIR}}/render_document.py`.
-2. Inspect each relevant page image for clipped text, broken tables, unexpected blank pages, missing images, extra pages, font fallback, and content outside page margins.
-3. Report honestly. Name the page and issue. If everything looks correct, say what was checked.
+1. Reopen the output with a deterministic library and confirm that its structure
+   is valid. For formula-bearing workbooks, run the managed recalculation route
+   and check for formula errors before visual QA.
+2. Render each final document to page images with
+   `{{RUNTIME_SCRIPTS_DIR}}/render_document.py`.
+3. Actually open the rendered images with an image-reading tool. Inspect every
+   page for artifacts up to 12 pages. For longer files, inspect the first page,
+   last page, and at least 6 pages distributed across the document; inspect
+   additional high-risk pages containing dense tables, charts, or images.
+4. Check clipped or overlapping text, overflow, broken tables/charts, unexpected
+   blank/extra pages, missing images, font fallback, inconsistent margins,
+   headers/footers, and content outside the page boundary.
+5. Fix only defects that were observed, then re-render and re-inspect affected
+   pages. Report the pages checked, defects fixed, and any remaining unverified
+   scope. Never label the artifact visually verified merely because rendering
+   completed; the page images must have been read.
 
 ## Notes
 
 - This is a final QA step. Pair it with document creation/editing skills.
-- For very large documents, verify the pages that matter instead of rendering hundreds of pages at high scale.
+- For very large documents, render at a practical scale and use the coverage
+  rule above; increase coverage when risk or observed inconsistency warrants it.
 - Route long render batches, many-file verification, and high-page-count visual
   checks through the generic `lily_process_jobs` supervisor. Observe with
   `job_status` and `job_logs`; render scripts should emit standard

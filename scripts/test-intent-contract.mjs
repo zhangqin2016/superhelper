@@ -31,6 +31,7 @@ function archivedAssistant(contract, userText = "修复登录问题") {
                 reasonCodes: contract.externalFactPolicy.reasonCodes,
                 researchProhibited: contract.externalFactPolicy.researchProhibited,
                 scopeClarificationRecommended: contract.externalFactPolicy.scopeClarificationRecommended,
+                scopeDisclosureRequired: contract.externalFactPolicy.scopeDisclosureRequired,
               }
             : null,
           intentContract: contract.intentContract,
@@ -120,7 +121,7 @@ const rankingHistory = [
 const rankingRefinement = buildTaskContract({ text: "按综合体验排", messages: rankingHistory });
 assert.equal(rankingRefinement.taskType, "external_fact");
 assert.equal(rankingRefinement.externalFactPolicy.researchProhibited, true, "a terse refinement must preserve no-search");
-assert.equal(rankingRefinement.externalFactPolicy.scopeClarificationRecommended, true);
+assert.equal(rankingRefinement.externalFactPolicy.scopeClarificationRecommended, false);
 const rankingResearchAllowed = buildTaskContract({
   text: "现在可以联网搜索，按综合体验排行",
   messages: rankingHistory,

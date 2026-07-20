@@ -49,6 +49,7 @@ class TurnArchive {
       tools,
       workspacePath,
       startedAt,
+      expectedArtifactPaths: state.expectedArtifactPaths || [],
     });
     const contentBlocks = (state.contentBlocks || []).slice(-20);
     // Typed blocks a tool/skill declared in its result — rendered directly, no
@@ -198,6 +199,9 @@ class TurnArchive {
                     requiresSourceLinks: Boolean(state.taskContract.externalFactPolicy.requiresSourceLinks),
                     researchProhibited: Boolean(state.taskContract.externalFactPolicy.researchProhibited),
                     scopeClarificationRecommended: Boolean(state.taskContract.externalFactPolicy.scopeClarificationRecommended),
+                    scopeClarificationRequired: Boolean(state.taskContract.externalFactPolicy.scopeClarificationRequired),
+                    scopeDisclosureRequired: Boolean(state.taskContract.externalFactPolicy.scopeDisclosureRequired),
+                    verificationPlan: state.taskContract.externalFactPolicy.verificationPlan || null,
                   }
                 : null,
             }

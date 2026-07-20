@@ -267,6 +267,7 @@ function buildTurnArtifacts({
   tools = [],
   workspacePath = "",
   startedAt = 0,
+  expectedArtifactPaths = [],
 } = {}) {
   const artifacts = new Map();
   const root = workspacePath ? path.resolve(workspacePath) : "";
@@ -282,6 +283,15 @@ function buildTurnArtifacts({
     const resolved = resolveCandidatePath(candidate, root);
     return resolved ? path.resolve(resolved) : "";
   };
+
+  // A delivery-QA continuation verifies an artifact created by the preceding
+  // turn. Its mtime can legitimately predate this turn, so preserve the file
+  // card through the explicit hand-off instead of rediscovering it from prose.
+  for (const candidate of expectedArtifactPaths || []) {
+    const key = canon(candidate);
+    if (key) producedPaths.add(key);
+    addCandidate(artifacts, candidate, "inherited_delivery", root, { allowInternalSupport: true });
+  }
 
   for (const change of fileChanges || []) {
     const key = canon(change?.filePath);

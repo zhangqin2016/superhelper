@@ -3,9 +3,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
 const registry = JSON.parse(fs.readFileSync(path.join(ROOT, "src/shared/capability-gates.json"), "utf8"));
 const tests = [
   "scripts/test-capability-gate-registry.mjs",
@@ -15,7 +17,8 @@ const tests = [
 const failures = [];
 for (const testFile of tests) {
   process.stdout.write(`\n[capability-gate] ${testFile}\n`);
-  const result = spawnSync(process.execPath, [testFile], {
+  const runtime = testFile.endsWith(".cjs") ? require("electron") : process.execPath;
+  const result = spawnSync(runtime, [testFile], {
     cwd: ROOT,
     env: process.env,
     stdio: "inherit",

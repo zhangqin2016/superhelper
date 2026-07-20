@@ -138,7 +138,7 @@ const canRunSmokeTest =
 if (canRunSmokeTest) {
   const probe = spawnSync(
     venvPython,
-    ["-c", "import pandas, openpyxl, pdfplumber, pypdfium2, rapidocr_onnxruntime; print('ok')"],
+    ["-c", "import docx, docxtpl, openpyxl, pandas, pdfplumber, pptx, pypdfium2, rapidocr_onnxruntime, reportlab; print('ok')"],
     { encoding: "utf8", timeout: 60_000 },
   );
   if (probe.status !== 0) {
