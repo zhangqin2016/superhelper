@@ -8,6 +8,16 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-turn-orchestrator-"));
+
+async function waitFor(predicate, { timeoutMs = 1_000, intervalMs = 5 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return Boolean(predicate());
+}
+
 process.env.LILY_USER_DATA_DIR = tempUserData;
 // Turn rescue would silently retry the synthetic empty/malformed failures this
 // harness uses to exercise failure paths, occupying the runner and queueing
@@ -15,6 +25,7 @@ process.env.LILY_USER_DATA_DIR = tempUserData;
 process.env.LILY_TOOL_CALL_RESCUE = "0";
 process.env.LILY_EMPTY_COMPLETION_RETRY = "0";
 process.env.LILY_EXTERNAL_FACT_VERIFY_RETRY = "0";
+process.env.LILY_MODEL_CONNECTION_RETRY = "0";
 process.on("exit", () => fs.rmSync(tempUserData, { recursive: true, force: true }));
 const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");
@@ -983,7 +994,7 @@ if (
   throw new Error(`architecture audit prompt must include the quality contract without replacing the user request:\n${architectureAuditPayload.text}`);
 }
 runner.finish("系统比较笨的地方是任务入口没有稳定契约。");
-await new Promise((resolve) => setTimeout(resolve, 5));
+await waitFor(() => ctx.turnOrchestrator._state("s1").phase === "idle");
 ctx.eventBus.flush();
 const architectureAuditAssistant = messages.find((message) => message.role === "assistant" && message.turnId === architectureAuditTurn.turnId);
 if (architectureAuditAssistant?.record?.meta?.taskContract?.taskType !== "architecture_audit") {
@@ -1655,7 +1666,13 @@ runner.emit("done", {
   code: 0,
   output: "Blender 还在渲染，等完成。",
 });
-await new Promise((resolve) => setTimeout(resolve, 0));
+await waitFor(() => {
+  ctx.eventBus.flush();
+  return sent.some((entry) => entry.payload?.events?.some((event) => (
+    event.turnId === runningProcessJobTurn.turnId
+    && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+  )));
+});
 ctx.eventBus.flush();
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
 const runningProcessJobTerminal = allEvents.find((event) => (
