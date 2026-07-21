@@ -95,6 +95,16 @@ assert(summary.hasDocumentEvidence);
 assert(summary.hasSourceContentEvidence);
 assert.equal(summary.sourceContentCoverage.status, "complete");
 
+// A successful plain command (syntax check / curl / build script — not a known test
+// runner) still counts as executed verification evidence; a failed one does not.
+const commandLedger = new EvidenceLedger();
+commandLedger.recordTool({ name: "bash", input: { command: "node --check output/app.js" }, result: "", status: "done" });
+assert(commandLedger.summary().hasCommandEvidence);
+assert(!commandLedger.summary().hasVerificationEvidence);
+const failedCommandLedger = new EvidenceLedger();
+failedCommandLedger.recordTool({ name: "bash", input: { command: "curl -sf http://localhost:9999" }, result: "refused", status: "failed" });
+assert(!failedCommandLedger.summary().hasCommandEvidence);
+
 const failedSourceLedger = new EvidenceLedger();
 failedSourceLedger.recordVisionObservation({
   method: "vision_bridge",

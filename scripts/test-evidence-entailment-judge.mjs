@@ -24,6 +24,7 @@ const {
   buildSemanticJudgePrompt,
   judgeTurnSemantics,
   parseSemanticVerdict,
+  resolveJudgeConnection,
 } = require("../src/main/evidence-entailment-judge.js");
 
 const userText = "中国有哪些建筑公司是副部级别";
@@ -86,6 +87,24 @@ assert.equal(parseSemanticVerdict('{"claims":[{"claim":1,"supported":true}]}', 1
   assert.equal(parsed.stakes, "high");
 }
 
+// Thinking-model output: reasoning first (itself full of braces), verdict JSON
+// LAST, often fenced. The parser must skip reasoning braces and take the final
+// verdict candidate — the greedy first-{-to-last-} match never parses this.
+{
+  const thinking = [
+    '先分析 {claim 1}：证据窗口提到任免权限，支持。再看 {claim 2}：{"无关": true} 只是草稿。',
+    "权衡来源权威性……",
+    "```json",
+    '{"claims":[{"claim":1,"supported":true},{"claim":2,"supported":false}],"sources":[],"conflicts":[],"informalLabel":false,"framingNote":"","stakes":"low"}',
+    "```",
+  ].join("\n");
+  const parsed = parseSemanticVerdict(thinking, 2, 0);
+  assert(parsed, "verdict JSON after brace-heavy reasoning must parse");
+  assert.deepEqual([...parsed.supported], [0]);
+  // Truncated output (token budget spent on reasoning) → no candidate → null.
+  assert.equal(parseSemanticVerdict('推理中……{"claims":[{"claim":1,"suppo', 1, 0), null);
+}
+
 // ---------------------------------------------------------------------------
 // judgeTurnSemantics: windowless claims are never sent to the model; transport
 // failure → null (caller applies the fail boundary).
@@ -113,6 +132,74 @@ assert.equal(parseSemanticVerdict('{"claims":[{"claim":1,"supported":true}]}', 1
     transport: async () => "garbage",
   });
   assert.equal(failed, null, "malformed judge output degrades to null");
+}
+
+// judgeTurnSemantics diagnostics: every null path records WHY (the field
+// lesson — a silently-never-running judge took a DB dig to diagnose).
+{
+  const unparseable = {};
+  await judgeTurnSemantics({
+    claims: [{ label: "有窗实体", windows: ["证据窗口提及有窗实体。"], sentence: "" }],
+    urls: [],
+    userText,
+    transport: async () => "garbage",
+    diagnostics: unparseable,
+  });
+  assert.equal(unparseable.reason, "verdict_unparseable");
+
+  const empty = {};
+  await judgeTurnSemantics({
+    claims: [{ label: "有窗实体", windows: ["证据窗口提及有窗实体。"], sentence: "" }],
+    urls: [],
+    userText,
+    transport: async () => "",
+    diagnostics: empty,
+  });
+  assert.equal(empty.reason, "transport_empty");
+
+  const noInput = {};
+  await judgeTurnSemantics({ claims: [], urls: [], userText, transport: async () => "{}", diagnostics: noInput });
+  assert.equal(noInput.reason, "no_judgable_input");
+}
+
+// resolveJudgeConnection: the preset's compatibility overlay (disable-thinking
+// chat_template_kwargs) rides the judge connection — thinking-disabled
+// gateways answer in seconds instead of burning the timeout on reasoning.
+{
+  const modelPresets = require("../src/main/model-presets.js");
+  const originalGetActivePreset = modelPresets.getActivePreset;
+  const originalGetActivePresetEnv = modelPresets.getActivePresetEnv;
+  modelPresets.getActivePreset = () => ({ id: "test-managed", custom: false, model: "test-model" });
+  modelPresets.getActivePresetEnv = () => ({
+    LILY_API_BASE_URL: "https://gateway.example.test/llm/test/v1",
+    LILY_API_KEY: "test-key",
+    LILY_MODEL: "test-model",
+    LILY_OPENCODE_BODY_OVERLAY_JSON: '{"chat_template_kwargs":{"enable_thinking":false}}',
+  });
+  try {
+    const connection = resolveJudgeConnection();
+    assert.equal(connection.model, "test-model");
+    assert.deepEqual(connection.bodyOverlay, { chat_template_kwargs: { enable_thinking: false } });
+  } finally {
+    modelPresets.getActivePreset = originalGetActivePreset;
+    modelPresets.getActivePresetEnv = originalGetActivePresetEnv;
+  }
+  // A malformed overlay never breaks resolution.
+  modelPresets.getActivePreset = () => ({ id: "test-managed", custom: false, model: "test-model" });
+  modelPresets.getActivePresetEnv = () => ({
+    LILY_API_BASE_URL: "https://gateway.example.test/llm/test/v1",
+    LILY_API_KEY: "test-key",
+    LILY_MODEL: "test-model",
+    LILY_OPENCODE_BODY_OVERLAY_JSON: "{broken",
+  });
+  try {
+    const connection = resolveJudgeConnection();
+    assert(connection, "malformed overlay must not break connection resolution");
+    assert.equal(connection.bodyOverlay, null);
+  } finally {
+    modelPresets.getActivePreset = originalGetActivePreset;
+    modelPresets.getActivePresetEnv = originalGetActivePresetEnv;
+  }
 }
 
 // The prompt quotes only real windows and forbids outside knowledge for claims.

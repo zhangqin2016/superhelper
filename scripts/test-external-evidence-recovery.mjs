@@ -188,6 +188,7 @@ const gateSources = [
   "src/main/external-source-authority.js",
   "src/main/evidence-entailment-judge.js",
   "src/main/answer-evidence-finalizer.js",
+  "src/main/turn-clock-context.js",
 ].map((file) => fs.readFileSync(file, "utf8")).join("\n");
 assert.doesNotMatch(gateSources, /副部级|正部级|正厅级|副厅级|中管企业|中管|三甲|三级甲等|双一流|vice[- ]ministerial|ministerial[- ]level/i);
 

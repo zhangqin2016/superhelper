@@ -18,6 +18,30 @@ function normalize(value = "", limit = 400) {
     .slice(0, limit);
 }
 
+// Mechanical label plausibility (line SHAPE and character classes only — no
+// domain vocabulary): entity labels never contain sentence punctuation, are
+// never sentence-length, and a CJK structured-item label never embeds digits
+// or whitespace (those captures are prose fragments like "中建一把手退休…65 岁").
+const LABEL_PUNCT_RE = /[，。、；！？;!?…"“”'‘’《》〈〉]/;
+const MAX_LABEL_LEN = 30;
+
+function isPlausibleEntityLabel(label, { structured = false } = {}) {
+  const value = String(label || "").trim();
+  if (!value || value.length > MAX_LABEL_LEN) return false;
+  if (LABEL_PUNCT_RE.test(value)) return false;
+  // Pure numbers ("2026", "1,000", "65%") are facts ABOUT entities, never
+  // entities — gating them fabricates claims the evidence can never "name".
+  if (/^\d[\d.,%]*$/.test(value)) return false;
+  // Bracket-wrapped tokens ("[央广网]") are citation/source markers in the
+  // answer's own source column, not entity claims.
+  if (/^\[.*\]$/.test(value)) return false;
+  if (structured && /[㐀-鿿]/.test(value) && /[\d\s]/.test(value)) return false;
+  // A long CJK structured label with no organization suffix is a sentence,
+  // not a name ("这是某队史第二座冠军") — real CJK names stay short.
+  if (structured && /[㐀-鿿]/.test(value) && value.length > 12) return false;
+  return true;
+}
+
 /**
  * Entity-claim extraction is deliberately MECHANICAL: line shapes and
  * organization suffixes, no domain vocabulary. Whether the evidence actually
@@ -28,17 +52,33 @@ function extractEntityClaims(assistant = "", verificationPlan = null) {
   const plan = normalizeVerificationPlan(verificationPlan);
   const claims = [];
   const claimByName = new Map();
-  for (const rawLine of String(assistant || "").split(/\r?\n/)) {
+  const answerLines = String(assistant || "").split(/\r?\n/);
+  for (let lineIndex = 0; lineIndex < answerLines.length; lineIndex += 1) {
+    const rawLine = answerLines[lineIndex];
     // Strip URLs first so citation lines ("本轮检索来源：https://…") do not
-    // yield pseudo-entities like "https" from the latin extractor.
-    const line = rawLine.trim().replace(/https?:\/\/\S+/gi, "").trim();
+    // yield pseudo-entities like "https" from the latin extractor. Strip
+    // markdown emphasis/backticks so labels match evidence text literally
+    // (evidenceWindows is a raw indexOf; "**中建**" never matches "中建").
+    const line = rawLine.trim()
+      .replace(/https?:\/\/\S+/gi, "")
+      .replace(/[*`]+/g, "")
+      .replace(/__/g, "")
+      .trim();
     if (!line) continue;
     const labels = [...line.matchAll(INLINE_NAMED_ORG_RE)].map((match) => match[0]);
     const lineMatch = line.match(LINE_ENTITY_RE);
     if (lineMatch) labels.push(lineMatch[1].trim());
     const structuredMatch = plan.entityEvidenceRequired ? line.match(STRUCTURED_ITEM_RE) : null;
     const structuredLabel = structuredMatch?.[1]?.trim() || "";
-    if (structuredLabel) labels.push(structuredLabel);
+    const structuredLabels = new Set();
+    // A table row immediately followed by a |---| separator is a HEADER row —
+    // its cells are column names ("企业"), not entity claims. Pure line shape.
+    const nextLine = String(answerLines[lineIndex + 1] || "");
+    const isTableHeaderRow = line.includes("|") && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(nextLine) && nextLine.includes("|");
+    if (structuredLabel && !isTableHeaderRow) {
+      labels.push(structuredLabel);
+      structuredLabels.add(structuredLabel);
+    }
     if (plan.entityEvidenceRequired) {
       labels.push(...[...line.matchAll(LATIN_NAMED_ENTITY_RE)]
         .map((match) => match[1].trim())
@@ -53,6 +93,7 @@ function extractEntityClaims(assistant = "", verificationPlan = null) {
       if (body && labels.every((label) => normalize(label) === body)) continue;
     }
     for (const label of [...new Set(labels)]) {
+      if (!isPlausibleEntityLabel(label, { structured: structuredLabels.has(label) })) continue;
       const normalizedLabel = normalize(label);
       if (!normalizedLabel || claimByName.has(normalizedLabel)) continue;
       const claim = { label, normalizedLabel };
@@ -138,4 +179,5 @@ module.exports = {
   assessEntityClaimEvidence,
   evidenceWindows,
   extractEntityClaims,
+  isPlausibleEntityLabel,
 };

@@ -124,15 +124,33 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     "assistant text snapshot is emitted once late role arrives");
 }
 
-// --- native compaction events become visible platform notices ---------------
+// --- native compaction: internal bookkeeping only, nothing user-visible ------
 {
   const result = reduce("session.compacted", { sessionID: "ses_1", messageID: "msg_summary", reason: "auto" });
   assert(result.progress === true, "session.compacted is meaningful progress");
-  assert(result.drafts[0]?.type === "engine.notice", "session.compacted -> engine.notice");
-  assert(result.drafts[0]?.payload?.notice?.code === "compactComplete", "compaction notice uses compactComplete code");
+  assert(result.drafts.length === 0, "session.compacted emits no visible draft (summary + notice hidden from chat)");
   assert(result.effects[0]?.kind === "context_compacted", "session.compacted carries context_compacted effect");
   assert(result.effects[0]?.sessionID === "ses_1", "context_compacted effect carries sessionID");
   assert(result.effects[0]?.messageID === "msg_summary", "context_compacted effect carries summary messageID");
+}
+
+// --- compaction summary message stream is suppressed --------------------------
+{
+  const state = createOpencodeRuntimeState();
+  reduce("message.updated", { info: { id: "msg_sum", role: "assistant", summary: true, agent: "compaction" } }, state);
+  const delta = reduce("message.part.delta", { partID: "prt_sum", messageID: "msg_sum", field: "text", delta: "Objective" }, state);
+  assert(delta.drafts.length === 0 && delta.effects.length === 0, "summary message deltas are not streamed");
+  const updated = reduce("message.part.updated", {
+    part: { id: "prt_sum", messageID: "msg_sum", type: "text", text: "Objective\nWork State" },
+  }, state);
+  assert(updated.drafts.length === 0, "summary message part.updated emits no assistant.delta");
+  // A later real assistant message in the same session still streams normally.
+  reduce("message.updated", { info: { id: "msg_real", role: "assistant" } }, state);
+  const real = reduce("message.part.updated", {
+    part: { id: "prt_real", messageID: "msg_real", type: "text", text: "real answer" },
+  }, state);
+  assert(real.drafts[0]?.type === "assistant.delta" && real.drafts[0]?.payload?.text === "real answer",
+    "non-summary assistant messages still stream");
 }
 
 // --- tool lifecycle: one tool.started + one tool.done -----------------------

@@ -156,7 +156,12 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
   if (FIXED_RE.test(text) && fileChangeCount <= 0 && !summary.hasFileChangeEvidence && !hasCount(summary, "fileWrites")) {
     return { ok: false, reason: "fixed_claim_without_change_evidence" };
   }
-  if (VERIFIED_RE.test(text) && !summary.hasVerificationEvidence && !hasCount(summary, "verifications")) {
+  if (
+    VERIFIED_RE.test(text) &&
+    !summary.hasVerificationEvidence &&
+    !summary.hasCommandEvidence &&
+    !hasCount(summary, "verifications")
+  ) {
     return { ok: false, reason: "verified_claim_without_verification" };
   }
   if (

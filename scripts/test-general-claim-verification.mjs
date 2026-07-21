@@ -187,4 +187,38 @@ const productionSources = [
 assert.doesNotMatch(productionSources, /中国建筑集团|中国冶金科工|中冶/);
 assert.doesNotMatch(productionSources, /publicEnterprise|authoritativeGovernment|forbidDirectoryRank/);
 
+// ---------------------------------------------------------------------------
+// Entity-claim extraction noise floor (mechanical rules only — markdown shape,
+// sentence punctuation, length, table-header line shape; NO domain词汇):
+// field answers came back polluted with prose fragments like
+// "有观点认为安能是**副部级**，因其首任董事长…" as pseudo-entities.
+{
+  const { extractEntityClaims } = require("../src/main/entity-claim-evidence.js");
+  const noisy = [
+    "- **样例控股集团有限公司**：符合条件。",
+    "| 企业 | 排名 |",
+    "| --- | --- |",
+    "| 样例建设集团 | 第3位 |",
+    "| 年份 | 冠军 |",
+    "| --- | --- |",
+    "| 2026 | 样例体育俱乐部 |",
+    "| [央广网] | 样例队1比0夺冠 |",
+    "- 有观点认为某集团是**某等级**，因其首任负责人被任命为**某职务**；",
+    "- 但按名录排名位列**第89位**，规则如此。",
+    "- 某负责人退休年龄为 **65 岁",
+    "- 这是样例队史第二座世界冠军",
+  ].join("\n");
+  const labels = extractEntityClaims(noisy, { entityEvidenceRequired: true }).map((claim) => claim.label);
+  assert(labels.includes("样例控股集团有限公司"), "real org survives markdown stripping");
+  assert(labels.includes("样例建设集团"), "table data row cells still yield entities");
+  assert(!labels.includes("企业"), "table header row cells are column names, not entities");
+  assert(!labels.includes("2026"), "pure numbers are facts about entities, never entities");
+  assert(!labels.some((label) => /^\[.*\]$/.test(label)), "bracket-wrapped citation markers are not entities");
+  assert(!labels.some((label) => /^\d[\d.,%]*$/.test(label)), "no numeric pseudo-entities");
+  assert(!labels.some((label) => /[，。；、]/.test(label)), "prose fragments with sentence punctuation are dropped");
+  assert(!labels.some((label) => label.length > 30), "over-long prose captures are dropped");
+  assert(!labels.some((label) => /[㐀-鿿]/.test(label) && /\d/.test(label)), "CJK prose with digits is dropped");
+  assert(!labels.includes("这是样例队史第二座世界冠军"), "long suffix-less CJK structured labels are sentences, not names");
+}
+
 console.log("general-claim-verification: ok");

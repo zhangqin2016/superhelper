@@ -345,8 +345,13 @@ if (result.userCommitted?.text !== "hello") {
   throw new Error(`userCommitted must preserve raw user text: ${JSON.stringify(result.userCommitted)}`);
 }
 const firstEnginePayload = runner.sentPayloads.at(-1);
-if (firstEnginePayload?.text !== "[contract]\nhello") {
+// The clock context rides every turn inside the platform_context layer, so the
+// effective engine text wraps the override in the layered envelope.
+if (!String(firstEnginePayload?.text || "").includes("[contract]\nhello")) {
   throw new Error(`runner should receive effective engine text: ${JSON.stringify(firstEnginePayload)}`);
+}
+if (!String(firstEnginePayload?.text || "").includes("Current date/time:")) {
+  throw new Error(`every turn must carry the clock context: ${JSON.stringify(firstEnginePayload)}`);
 }
 if (firstEnginePayload?.rawText !== "hello") {
   throw new Error(`engine payload must retain raw user text: ${JSON.stringify(firstEnginePayload)}`);

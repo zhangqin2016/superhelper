@@ -26,11 +26,11 @@ assert.equal(rendererSanitizeNoticeForIngest({ code: "workProgress", level: "pro
 assert.equal(rendererSanitizeNoticeForIngest({ code: "documentPreparing", level: "progress", panel: true, detail: "准备文档" }).panel, true);
 assert.equal(rendererSanitizeNoticeForIngest({ code: "thinkingProgress", level: "progress", panel: true, detail: "42 tokens" }).panel, false);
 
-// Context compaction must stay user-visible — it explains why the assistant
-// may have lost earlier conversation detail.
+// Pre-turn compaction progress stays user-visible (it explains a pause before
+// the reply); the post-compaction summary + "compactComplete" notice are no
+// longer emitted at all (internal handoff, hidden from chat since 2026-07-20).
 assert.equal(noticeVisibleInPanel({ code: "compactBoundary", level: "progress", panel: true }), true);
 assert.equal(rendererNoticeVisibleInPanel({ code: "compactBoundary", level: "progress", panel: true }), true);
-assert.equal(noticeVisibleInPanel({ code: "compactComplete", level: "info", panel: true }), true);
 assert.equal(noticeVisibleInPanel({ code: "compactFailed", level: "info", panel: true, done: true }), true);
 
 console.log("test-engine-notice-policy: ALL_OK");

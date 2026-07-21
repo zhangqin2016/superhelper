@@ -23,9 +23,17 @@
  * Kill switch: LILY_EVIDENCE_LLM_JUDGE=0.
  */
 
-const MAX_JUDGED_CLAIMS = 8;
+const MAX_JUDGED_CLAIMS = 5;
 const MAX_SEMANTIC_SOURCES = 6;
-const DEFAULT_TIMEOUT_MS = 8_000;
+// Thinking models burn seconds on reasoning before the verdict JSON; 8s AND
+// 15s both proved too tight in the field (judge silently never landed, then
+// timeout_15000ms in production). One call per turn, in the finalization
+// path — 30s is the acceptable worst case; the prompt is kept small (5
+// claims × 450-char windows) so the model spends its budget on the verdict.
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+const { getLogger } = require("./logger");
+const log = getLogger("evidence-judge");
 
 function judgeEnabled() {
   return process.env.LILY_EVIDENCE_LLM_JUDGE !== "0";
@@ -39,11 +47,11 @@ function judgeEnabled() {
  *  relative /llm/<provider> base, which is resolved against the service API
  *  base. Anything unresolved (expired token cache, placeholder) skips cleanly —
  *  the deterministic verdict stands (fail-open, never a crash). */
-function resolveJudgeConnection() {
+function resolveJudgeConnectionDetailed() {
   try {
     const presets = require("./model-presets");
     const preset = presets.getActivePreset?.();
-    if (!preset) return null;
+    if (!preset) return { connection: null, reason: "no_active_preset" };
     const env = preset.custom
       ? (typeof presets.getUserApiEnv === "function" ? presets.getUserApiEnv() : null)
       : (typeof presets.getActivePresetEnv === "function" ? presets.getActivePresetEnv() : null);
@@ -55,18 +63,34 @@ function resolveJudgeConnection() {
       const serviceBase = String(require("./service-client").configuredServiceApiBaseUrl?.() || "").trim();
       if (serviceBase) baseUrl = `${serviceBase.replace(/\/+$/, "")}${baseUrl}`;
     }
-    if (!/^https?:\/\//i.test(baseUrl) || !apiKey || !model || apiKey.startsWith("$")) return null;
-    return { baseUrl, apiKey, model, protocol };
-  } catch {
-    return null;
+    if (!/^https?:\/\//i.test(baseUrl)) return { connection: null, reason: "base_url_unresolved" };
+    if (!apiKey) return { connection: null, reason: "api_key_missing" };
+    if (apiKey.startsWith("$")) return { connection: null, reason: "api_key_placeholder" };
+    if (!model) return { connection: null, reason: "model_missing" };
+    // The compatibility probe's runtime contract (e.g. disable-thinking
+    // chat_template_kwargs) applies to ANY direct call to this gateway — the
+    // judge is latency-sensitive, so a thinking-disabled overlay is the
+    // difference between a 3s verdict and a 30s timeout.
+    let bodyOverlay = null;
+    try {
+      const raw = JSON.parse(String(env?.LILY_OPENCODE_BODY_OVERLAY_JSON || ""));
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) bodyOverlay = raw;
+    } catch { /* no overlay contract for this preset */ }
+    return { connection: { baseUrl, apiKey, model, protocol, bodyOverlay }, reason: "" };
+  } catch (error) {
+    return { connection: null, reason: `resolve_error:${error?.message || error}` };
   }
+}
+
+function resolveJudgeConnection() {
+  return resolveJudgeConnectionDetailed().connection;
 }
 
 function trimUrl(value = "") {
   return String(value || "").replace(/\/+$/, "");
 }
 
-async function postJudgeChat({ connection, prompt, timeoutMs }) {
+async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("JUDGE_TIMEOUT")), timeoutMs);
   try {
@@ -80,12 +104,15 @@ async function postJudgeChat({ connection, prompt, timeoutMs }) {
         },
         body: JSON.stringify({
           model: connection.model,
-          max_tokens: 2000,
+          max_tokens: 8000,
           messages: [{ role: "user", content: prompt }],
         }),
         signal: controller.signal,
       });
-      if (!response.ok) return "";
+      if (!response.ok) {
+        if (diagnostics) diagnostics.reason = `http_${response.status}`;
+        return "";
+      }
       const json = await response.json().catch(() => null);
       const parts = Array.isArray(json?.content) ? json.content : [];
       return parts.map((part) => (typeof part?.text === "string" ? part.text : "")).join("");
@@ -98,13 +125,17 @@ async function postJudgeChat({ connection, prompt, timeoutMs }) {
       },
       body: JSON.stringify({
         model: connection.model,
-        max_tokens: 2000,
+        max_tokens: 8000,
         temperature: 0,
+        ...(connection.bodyOverlay || {}),
         messages: [{ role: "user", content: prompt }],
       }),
       signal: controller.signal,
     });
-    if (!response.ok) return "";
+    if (!response.ok) {
+      if (diagnostics) diagnostics.reason = `http_${response.status}`;
+      return "";
+    }
     const json = await response.json().catch(() => null);
     const message = json?.choices?.[0]?.message || {};
     // Thinking models may spend the budget on reasoning_content and leave
@@ -113,7 +144,12 @@ async function postJudgeChat({ connection, prompt, timeoutMs }) {
     return [message.content, message.reasoning_content, message.reasoning]
       .filter((part) => typeof part === "string" && part.trim())
       .join("\n");
-  } catch {
+  } catch (error) {
+    if (diagnostics) {
+      diagnostics.reason = error?.message === "JUDGE_TIMEOUT"
+        ? `timeout_${timeoutMs}ms`
+        : `transport_error:${error?.message || error}`;
+    }
     return "";
   } finally {
     clearTimeout(timer);
@@ -164,16 +200,34 @@ function buildSemanticJudgePrompt({ userText = "", claims = [], urls = [] } = {}
   return sections.join("\n\n");
 }
 
-function parseSemanticVerdict(raw = "", claimCount = 0, sourceCount = 0) {
-  const match = String(raw || "").match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  let parsed = null;
-  try {
-    parsed = JSON.parse(match[0]);
-  } catch {
-    return null;
+/**
+ * Extract the verdict JSON from raw model output. Thinking models emit their
+ * reasoning first — which itself contains braces ("{claim 1} 成立吗…") — so a
+ * greedy first-{ -to-last-} match spans reasoning + verdict and never parses.
+ * Instead scan balanced one-level-deep objects and take the LAST candidate
+ * that parses AND carries verdict keys (the final answer trails the reasoning).
+ */
+function extractVerdictJson(raw = "") {
+  const candidates = String(raw || "").match(/\{(?:[^{}]|\{[^{}]*\})*\}/g) || [];
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(candidates[index]);
+    } catch {
+      continue;
+    }
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
+        ("claims" in parsed || "sources" in parsed || "conflicts" in parsed ||
+         "informalLabel" in parsed || "stakes" in parsed)) {
+      return parsed;
+    }
   }
-  if (!parsed || typeof parsed !== "object") return null;
+  return null;
+}
+
+function parseSemanticVerdict(raw = "", claimCount = 0, sourceCount = 0) {
+  const parsed = extractVerdictJson(raw);
+  if (!parsed) return null;
   const supported = new Set();
   for (const verdict of Array.isArray(parsed.claims) ? parsed.claims : []) {
     const index = Number(verdict?.claim);
@@ -218,24 +272,38 @@ async function judgeTurnSemantics({
   userText = "",
   timeoutMs = Number(process.env.LILY_EVIDENCE_JUDGE_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
   transport = postJudgeChat,
+  diagnostics,
 } = {}) {
-  if (!judgeEnabled()) return null;
+  const fail = (reason) => {
+    if (diagnostics) diagnostics.reason = diagnostics.reason || reason;
+    // One line per judged turn — this path failing silently is exactly what
+    // made the 2026-07-20 field diagnosis painful.
+    log.warn("judge unavailable: %s", diagnostics?.reason || reason);
+    return null;
+  };
+  if (!judgeEnabled()) return fail("disabled");
   const judgedClaims = (Array.isArray(claims) ? claims : [])
     .filter((claim) => claim && Array.isArray(claim.windows) && claim.windows.length)
     .slice(0, MAX_JUDGED_CLAIMS);
   const judgedUrls = [...new Set((Array.isArray(urls) ? urls : [])
     .map((url) => String(url || "").trim())
     .filter((url) => /^https?:\/\//i.test(url)))].slice(0, MAX_SEMANTIC_SOURCES);
-  if (!judgedClaims.length && !judgedUrls.length) return null;
-  const connection = resolveJudgeConnection();
-  if (!connection && transport === postJudgeChat) return null;
+  if (!judgedClaims.length && !judgedUrls.length) return fail("no_judgable_input");
+  let connection = null;
+  if (transport === postJudgeChat) {
+    const resolved = resolveJudgeConnectionDetailed();
+    connection = resolved.connection;
+    if (!connection) return fail(resolved.reason || "connection_unavailable");
+  }
   const raw = await transport({
     connection,
     prompt: buildSemanticJudgePrompt({ userText, claims: judgedClaims, urls: judgedUrls }),
     timeoutMs,
+    diagnostics,
   });
+  if (!String(raw || "").trim()) return fail(diagnostics?.reason || "transport_empty");
   const parsed = parseSemanticVerdict(raw, judgedClaims.length, judgedUrls.length);
-  if (!parsed) return null;
+  if (!parsed) return fail("verdict_unparseable");
   return {
     supportedClaims: judgedClaims.filter((_, index) => parsed.supported.has(index)).map((claim) => claim.label),
     unsupportedClaims: judgedClaims.filter((_, index) => !parsed.supported.has(index)).map((claim) => claim.label),
@@ -252,4 +320,5 @@ module.exports = {
   judgeTurnSemantics,
   parseSemanticVerdict,
   resolveJudgeConnection,
+  resolveJudgeConnectionDetailed,
 };

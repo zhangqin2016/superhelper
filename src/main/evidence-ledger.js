@@ -286,6 +286,12 @@ class EvidenceLedger {
       hasSearchEvidence: searches.length > 0 || candidates.length > 0,
       hasFileReadEvidence: filesRead.size > 0,
       hasVerificationEvidence: verifications.some((event) => event.success),
+      // Any command that actually ran and exited successfully (node --check, curl,
+      // build scripts…) is real executed verification, not just the hardcoded test
+      // runner patterns above — a "verified" claim after a zero tool run is the lie.
+      hasCommandEvidence: this.events.some(
+        (event) => (event.kind === "command" || event.kind === "verification") && event.success,
+      ),
       hasFileChangeEvidence: writes.length > 0,
       hasFreshEvidence: external.some((event) => event.success),
       hasDocumentEvidence: documentCount > 0 || documentChunkCount > 0,

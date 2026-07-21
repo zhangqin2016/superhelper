@@ -139,6 +139,24 @@ const repaired = context.window.__test.repairMarkdownTables(
 );
 assert.match(repaired, /\| --- \| --- \|/);
 
+// GFM allows 1+ hyphens in delimiter cells (`:--:`); marked needs 3+. Short
+// dashes are upgraded so the delimiter never leaks into the rendered table as
+// a visible data row.
+{
+  const short = context.window.__test.repairMarkdownTables(
+    "| 排名 | 国家 | 夺冠次数 |\n| :--: | ------ | :--: |\n| 1 | 巴西 | 5次 |",
+  );
+  assert.match(short, /\| :---: \| ------ \| :---: \|/, "short delimiter dashes upgrade to 3+");
+  assert(!/^ *\| *:--:/m.test(short), "no short-dash delimiter survives");
+  const shortTable = fakeElement();
+  context.window.__test.renderMarkdownWithCache(
+    shortTable,
+    "| 排名 | 国家 |\n| :--: | ------ |\n| 1 | 巴西 |",
+  );
+  assert.match(shortTable.innerHTML, /<table>/);
+  assert(!shortTable.innerHTML.includes(":--:"), "delimiter row must not render as a data row");
+}
+
 const table = fakeElement();
 context.window.__test.renderMarkdownWithCache(
   table,

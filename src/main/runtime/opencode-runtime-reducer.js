@@ -41,6 +41,8 @@ function createOpencodeRuntimeState() {
     parts: new Map(),
     partMessages: new Map(),
     roles: new Map(),
+    // Compaction summary messages: internal handoff text, deltas/parts suppressed.
+    summaryMessages: new Set(),
     textParts: new Map(),
     pendingDeltas: new Map(),
     pendingTextSnapshots: new Map(),
@@ -62,6 +64,7 @@ function resetOpencodeRuntimeState(state) {
   state?.parts?.clear?.();
   state?.partMessages?.clear?.();
   state?.roles?.clear?.();
+  state?.summaryMessages?.clear?.();
   state?.textParts?.clear?.();
   state?.pendingDeltas?.clear?.();
   state?.pendingTextSnapshots?.clear?.();
@@ -489,7 +492,8 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
     case "message.updated": {
       const info = p.info || {};
       if (info.id && info.role && state.roles) state.roles.set(info.id, info.role);
-      if (info.id && info.role && state.pendingTextSnapshots?.size) {
+      if (info.id && (info.summary === true || info.agent === "compaction")) state.summaryMessages?.add(info.id);
+      if (info.id && info.role && state.pendingTextSnapshots?.size && !state.summaryMessages?.has(info.id)) {
         const drafts = [];
         const effects = [];
         for (const [partID, snapshot] of state.pendingTextSnapshots.entries()) {
@@ -526,7 +530,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       return emptyResult(ev);
 
     case "message.removed":
-      if (p.messageID && state.roles) state.roles.delete(p.messageID);
+      if (p.messageID) { state.roles?.delete(p.messageID); state.summaryMessages?.delete(p.messageID); }
       if (p.messageID && state.partMessages) {
         for (const [partID, messageID] of state.partMessages.entries()) {
           if (messageID !== p.messageID) continue;
@@ -542,6 +546,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
     case "message.part.delta": {
       const delta = p.delta || "";
       if (!delta) return emptyResult(ev);
+      if (p.messageID && state.summaryMessages?.has(p.messageID)) return quietResult(ev);
       const partType = p.partID && state.parts ? state.parts.get(p.partID) : null;
       const isReasoning = partType === "reasoning" || (!partType && p.field === "reasoning");
       if (p.partID && p.messageID && state.partMessages) state.partMessages.set(p.partID, p.messageID);
@@ -596,6 +601,10 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
         const text = typeof part.text === "string" ? part.text : "";
         if (!part.id) return emptyResult(ev);
         const messageID = part.messageID || state.partMessages?.get(part.id) || "";
+        if (messageID && state.summaryMessages?.has(messageID)) {
+          state.textParts?.set(part.id, text);
+          return emptyResult(ev);
+        }
         const role = messageID ? state.roles?.get(messageID) : "";
         if (part.type === "text" && role === "user") {
           state.textParts?.set(part.id, text);
@@ -716,21 +725,12 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       });
 
     case "session.compacted":
+      // Bookkeeping only: summary + completion notice hidden from chat; the effect drives session memory.
       return withProcessEvent(ev, {
-        drafts: [runtimeDraft("engine.notice", {
-          notice: {
-            code: "compactComplete",
-            level: "info",
-            panel: true,
-            done: true,
-            detail: "Conversation context was compacted.",
-          },
-        })],
+        drafts: [],
         effects: [{
-          kind: "context_compacted",
-          reason: p.reason || "",
-          sessionID: p.sessionID || p.sessionId || "",
-          messageID: p.messageID || p.messageId || "",
+          kind: "context_compacted", reason: p.reason || "",
+          sessionID: p.sessionID || p.sessionId || "", messageID: p.messageID || p.messageId || "",
         }],
         progress: true,
         terminal: false,

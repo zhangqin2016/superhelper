@@ -1260,7 +1260,7 @@ class TurnOrchestrator {
         !ensured.coldStart &&
         !rehydrated,
       );
-      const platformContextParts = [];
+      const platformContextParts = [require("./turn-clock-context").currentDateTimeLine()];
       if (contextMemory.text && !contextMemory.deduped) platformContextParts.push(contextMemory.text);
       // Proactive workspace retrieval (opt-in LILY_WORKSPACE_AUTOINJECT=1): on
       // substantive (grounded/coverage) turns only — never casual/fast chat, so

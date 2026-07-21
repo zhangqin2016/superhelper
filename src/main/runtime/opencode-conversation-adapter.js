@@ -232,6 +232,9 @@ function coalesceAssistantMessageRuns(messages = []) {
 
 function adaptOpencodeMessageItem(item = {}, opts = {}) {
   const info = item.info || {};
+  // Compaction summary messages are internal handoff text (Objective/Work
+  // State/…) — never shown in the chat history.
+  if (info.summary === true) return null;
   const parts = Array.isArray(item.parts) ? item.parts : [];
   const role = roleOf(info);
   const content = textFromParts(parts, "text");
@@ -307,7 +310,7 @@ function adaptOpencodeMessagesPage(input = {}) {
       sessionId: input.sessionId,
       turnIdByMessageId: input.turnIdByMessageId,
     }))
-    .filter((message) => message.id);
+    .filter((message) => message?.id);
   const cursor = input.cursor || input.nextBefore || null;
   const complete = Boolean(input.complete);
   return {

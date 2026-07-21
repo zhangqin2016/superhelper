@@ -83,6 +83,24 @@ const ignored = adaptOpencodeMessageItem({
 });
 assert.equal(ignored.content, "");
 
+// Compaction summary messages (info.summary) are internal handoff text — hidden
+// from chat history and never merged into adjacent assistant runs.
+const summaryItem = adaptOpencodeMessageItem({
+  info: { id: "msg_sum", role: "assistant", summary: true, agent: "compaction", time: { created: 0 } },
+  parts: [{ type: "text", text: "Objective\nWork State" }],
+});
+assert.equal(summaryItem, null);
+const summaryPage = adaptOpencodeMessagesPage({
+  items: [
+    { info: { id: "msg_u3", role: "user", time: { created: 1 } }, parts: [{ type: "text", text: "q" }] },
+    { info: { id: "msg_a3", role: "assistant", time: { created: 2 } }, parts: [{ type: "text", text: "real answer" }] },
+    { info: { id: "msg_s3", role: "assistant", summary: true, agent: "compaction", time: { created: 3 } }, parts: [{ type: "text", text: "Objective\nWork State" }] },
+  ],
+  sessionId: "s",
+});
+assert.equal(summaryPage.conversation.length, 2);
+assert.equal(summaryPage.conversation[1].content, "real answer");
+
 const mergedPage = adaptOpencodeMessagesPage({
   items: [
     {

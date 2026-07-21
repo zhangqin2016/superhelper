@@ -447,18 +447,12 @@ function evaluateAnswerEvidence({
 }
 
 /**
- * evaluateAnswerEvidence + the unified semantic judge. The deterministic gate
- * runs first (fast path — a passing answer never pays a model call, and the
- * literal floor: URL/entity/number grounding, fabrication checks). When it
- * fails on something inherently SEMANTIC — claim entailment, source
- * authority, conflicts, informal-label framing, stakes — ONE judge call
- * (judgeTurnSemantics) rules on all of it, and the FULL deterministic gate
- * re-runs with the verdict as whitelists/rulings. Hard floors:
- *   - claims without real evidence windows are never judged (fabrication);
- *   - judge-ruled conflicts are never banner-kept or overridden;
- *   - judge unavailable/malformed → the deterministic verdict's own delivery
- *     applies (ordinary tiers fail open bounded, high-stakes fail closed).
- * Kill switch: LILY_EVIDENCE_LLM_JUDGE=0.
+ * evaluateAnswerEvidence + the unified semantic judge: deterministic gate first
+ * (fast path + literal floor), then ONE judgeTurnSemantics call rules on the
+ * semantic failures (entailment, authority, conflicts, informal label, stakes)
+ * and the full gate re-runs with the verdict as whitelists/rulings. Floors:
+ * windowless claims are never judged; judge-ruled conflicts are final; judge
+ * unavailable → the deterministic delivery applies. Kill: LILY_EVIDENCE_LLM_JUDGE=0.
  */
 async function evaluateAnswerEvidenceWithJudge(params = {}, { judge } = {}) {
   let params_ = params;
@@ -519,7 +513,7 @@ async function evaluateAnswerEvidenceWithJudge(params = {}, { judge } = {}) {
     for (const label of pendingLabels) {
       const windows = evidenceWindows(result.evidenceText || "", label, 320)
         .slice(0, 2)
-        .map((win) => win.slice(0, 700));
+        .map((win) => win.slice(0, 450));
       if (!windows.length) continue; // fabrication floor: no window, never judged
       claimParams.push({
         label,
@@ -535,14 +529,18 @@ async function evaluateAnswerEvidenceWithJudge(params = {}, { judge } = {}) {
     }
     if (!claimParams.length && !urls.length) return result;
     const judgeFn = judge || require("./evidence-entailment-judge").judgeTurnSemantics;
-    const verdict = await judgeFn({
-      claims: claimParams,
-      urls,
-      userText: String(params_.userText || ""),
-    });
-    // Judge unavailable/failed: the deterministic delivery already encodes the
-    // fail boundary (bounded fail-open ordinary, zero-content high-stakes).
-    if (!verdict) return result;
+    const judgeDiag = {};
+    const verdict = await judgeFn({ claims: claimParams, urls, userText: String(params_.userText || ""), diagnostics: judgeDiag });
+    // Judge unavailable/failed: the deterministic delivery encodes the fail boundary
+    // (bounded fail-open ordinary, zero-content high-stakes). Record WHY in the gate
+    // meta so field diagnosis reads messages.db (2026-07-20 silently-dead-judge lesson).
+    if (!verdict) {
+      const reason = String(judgeDiag.reason || "").slice(0, 120);
+      if (reason && result.assessment && typeof result.assessment === "object") {
+        result.assessment = { ...result.assessment, judgeUnavailable: reason };
+      }
+      return result;
+    }
     const rerun = evaluateAnswerEvidence({
       ...params_,
       acceptedClaimLabels: verdict.supportedClaims,

@@ -27,6 +27,11 @@ function isTableSeparatorLine(line = "") {
   return /^\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/.test(trimmed);
 }
 
+// GFM delimiter cells allow 1+ hyphens; marked needs 3+. Upgrade ONLY 1-2-dash
+// cells ((?<!-) guards long runs) so `:--:` never leaks as a visible data row.
+const normalizeShortSeparatorDashes = (line = "") => !/^\|?(?:\s*:?-+:?\s*\|)+\s*$/.test(String(line).trim()) ? String(line)
+  : String(line).trim().replace(/(?<!-):?-{1,2}:?(?=\s*\|)/g, (cell) => cell.replace(/-+/g, "---"));
+
 function isTableRowLine(line = "") {
   const trimmed = String(line).trim();
   if (!trimmed.includes("|")) return false;
@@ -34,21 +39,16 @@ function isTableRowLine(line = "") {
 }
 
 function pipeColumnCount(line = "") {
-  let inner = String(line).trim();
+  const inner = String(line).trim();
   if (!inner.includes("|")) return 0;
-  if (inner.startsWith("|")) inner = inner.slice(1);
-  if (inner.endsWith("|")) inner = inner.slice(0, -1);
-  return inner.split("|").length;
+  return inner.replace(/^\|/, "").replace(/\|$/, "").split("|").length;
 }
 
-function makeTableSeparator(columnCount) {
-  const cols = Math.max(2, columnCount);
-  return `| ${Array(cols).fill("---").join(" | ")} |`;
-}
+const makeTableSeparator = (columnCount) => `| ${Array(Math.max(2, columnCount)).fill("---").join(" | ")} |`;
 
 /** Insert a GFM separator row when models omit it between header and body rows. */
 export function repairMarkdownTables(text = "") {
-  const lines = String(text).split("\n");
+  const lines = String(text).split("\n").map(normalizeShortSeparatorDashes);
   const out = [];
   let i = 0;
   while (i < lines.length) {

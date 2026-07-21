@@ -63,6 +63,16 @@ const unsupportedVerification = assessFinalAnswerEvidence({
 assert.equal(unsupportedVerification.ok, false);
 assert.equal(unsupportedVerification.reason, "verified_claim_without_verification");
 
+// A "verified" claim after a real successful command run (node --check, curl HTTP
+// 200, build scripts — not a recognized test runner) is backed, not empty.
+const commandBackedVerification = assessFinalAnswerEvidence({
+  assistant: "语法检查通过，HTTP 200，验证通过。",
+  evidencePolicy: policy,
+  turnPolicy: { rigor: "grounded" },
+  evidenceSummary: { counts: { verifications: 0 }, hasVerificationEvidence: false, hasCommandEvidence: true },
+});
+assert.equal(commandBackedVerification.ok, true);
+
 const supportedFixFromDiff = assessFinalAnswerEvidence({
   assistant: "问题已经修复。",
   evidencePolicy: policy,

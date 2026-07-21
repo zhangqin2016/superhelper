@@ -51,7 +51,7 @@ Implemented first bridge slice:
 - `OpencodeAgentSession.compactContext()` passes through to OpenCode summarize only while idle, and records successful compaction in session memory.
 - `ContextBudgetManager` decides background compaction with constant-time checks: runtime capability, runner alive/busy, session turn count, and recent compaction interval.
 - `TurnOrchestrator` schedules background compaction after completed turns without blocking final answer rendering.
-- `session.compacted` runtime events become visible `compactComplete` notices and update session memory.
+- `session.compacted` runtime events update session memory only; the summary message and completion notice are hidden from chat (2026-07-20 product decision: internal handoff, not user-facing).
 
 Implemented second bridge slice:
 
