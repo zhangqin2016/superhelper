@@ -95,9 +95,20 @@ function createTurnRecoveryRuntime(options = {}) {
       const rescue = require("./tool-call-rescue");
       const strategy = rescue.rescueStrategyFor(failure?.code);
       if (!strategy) return false;
-      if (stateFor(sessionId).wasRescueAttempt) return false;
-      if (!rescue.shouldAttemptRescue(sessionId, failure.code)) return false;
-      if (strategy.delayMs > 0) await sleep(strategy.delayMs);
+      const maxAttempts = Number(strategy.maxAttempts) || 1;
+      // Single-attempt strategies keep the original no-chaining guard;
+      // multi-attempt strategies (model_connection_retry) may chain while
+      // their per-episode budget lasts — shouldAttemptRescue enforces it.
+      if (maxAttempts <= 1 && stateFor(sessionId).wasRescueAttempt) return false;
+      // LILY_RESCUE_DELAY_MS overrides the strategy delay (tests / ops tuning).
+      const delayMs = Number(process.env.LILY_RESCUE_DELAY_MS) || strategy.delayMs;
+      // The double-fire debounce must stay below the chain spacing: a fast-
+      // failing retried turn would otherwise eat the 5s default and never
+      // earn its next budgeted attempt. Same-failure double-fire arrives
+      // within milliseconds, so half the chain delay still catches it.
+      const debounceMs = maxAttempts > 1 ? Math.max(1, Math.floor(delayMs / 2)) : undefined;
+      if (!rescue.shouldAttemptRescue(sessionId, failure.code, Date.now(), maxAttempts, debounceMs)) return false;
+      if (delayMs > 0) await sleep(delayMs);
 
       const state = stateFor(sessionId);
       if (state.turnId || state.queue.length) return false;
@@ -112,6 +123,17 @@ function createTurnRecoveryRuntime(options = {}) {
       rescue.markRescueAttempt(sessionId, failure.code);
       log.info("turn rescue retry: session=%s kind=%s", sessionId, strategy.kind);
       emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code, kind: strategy.kind });
+      if (strategy.kind === "model_connection_retry") {
+        // Hot-refresh the model env (managed config, active preset, keys)
+        // before the retry — a stale route is a common cause of repeated
+        // connection failures and the refresh costs nothing when current.
+        try {
+          const liveConfig = require("./runner-live-config");
+          liveConfig.applyLiveEnvToPool(ctx.runnerPool, liveConfig.buildLiveEngineEnvPatch());
+        } catch (refreshErr) {
+          log.warn("model connection env refresh failed open: %s", refreshErr?.message || refreshErr);
+        }
+      }
       if (strategy.recycleEngine) {
         try {
           ctx.runnerPool?.get?.(sessionId)?.recycleIdleEngine?.("turn_rescue");
@@ -182,9 +204,17 @@ function createTurnRecoveryRuntime(options = {}) {
     }
   }
 
+  /** Blame-free "we already retried N times" suffix for the terminal copy. */
+  function rescueRetryNotice(sessionId, wasRescueAttempt) {
+    if (!wasRescueAttempt) return "";
+    const attempts = Math.max(1, require("./tool-call-rescue").rescueAttemptCount(sessionId));
+    return `\n\n（平台已自动修复重试 ${attempts} 次仍未恢复，判定为持续性故障。服务恢复后可随时继续。）`;
+  }
+
   return {
     maybeSelfHealAndRetry,
     maybeToolCallRescueRetry,
+    rescueRetryNotice,
     retryLastMessage,
   };
 }

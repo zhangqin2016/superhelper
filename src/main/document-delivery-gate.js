@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const zlib = require("node:zlib");
 
 const DOCUMENT_EXTENSIONS = new Set([
   ".doc",
@@ -20,10 +21,12 @@ const OOXML_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx"]);
 const DOCUMENT_OPERATIONS = new Set(["create", "modify", "convert"]);
 const MAX_DEEP_STRUCTURE_BYTES = 20 * 1024 * 1024;
 const MAX_SCAN_CHARS = 64 * 1024;
-const FORMULA_TASK_RE = /公式|重算|计算|财务模型|测算|formula|recalc|calculation|financial\s+model/i;
 const RENDER_COMMAND_RE = /(?:render_document\.py|convert_pdf_to_images\.py|pdftoppm\b|soffice(?:\.py)?[^\n]{0,160}--convert-to\s+pdf)/i;
 const RECALC_COMMAND_RE = /(?:recalc\.py|formula[^\n]{0,80}(?:recalc|recalculate))/i;
 const IMAGE_INSPECTION_TOOL_RE = /(?:^|_)(?:read|view_image|vision|inspect_image|open_image)(?:$|_)/i;
+// OCR over a rendered page IS inspecting the render — the route a non-vision
+// model legitimately takes when no image-reading tool is available.
+const OCR_COMMAND_RE = /(?:rapidocr|tesseract|paddleocr|easyocr)/i;
 
 function compactText(value, limit = MAX_SCAN_CHARS) {
   if (typeof value === "string") return value.slice(0, limit);
@@ -164,6 +167,52 @@ function structureCheck(artifact = {}) {
   return { ok: true, reason: "structure_valid" };
 }
 
+// Whether an .xlsx actually contains formula cells — the ground truth for the
+// recalculation requirement. A keyword match in the user prompt is NOT enough:
+// internal continuation prompts mention formulas/recalc too, which previously
+// made every recovery turn demand a recalc the original task never needed.
+// Reads the zip CENTRAL directory (offsets/sizes there are reliable even when
+// local headers use data descriptors) and inflates only worksheet parts.
+function xlsxContainsFormulas(file) {
+  let buf;
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size <= 22 || stat.size > MAX_DEEP_STRUCTURE_BYTES) return false;
+    buf = fs.readFileSync(file);
+  } catch {
+    return false;
+  }
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65536); i -= 1) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return false;
+  const count = buf.readUInt16LE(eocd + 10);
+  let offset = buf.readUInt32LE(eocd + 16);
+  for (let n = 0; n < count && offset + 46 <= buf.length; n += 1) {
+    if (buf.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(offset + 10);
+    const compressedSize = buf.readUInt32LE(offset + 20);
+    const nameLen = buf.readUInt16LE(offset + 28);
+    const extraLen = buf.readUInt16LE(offset + 30);
+    const commentLen = buf.readUInt16LE(offset + 32);
+    const localOffset = buf.readUInt32LE(offset + 42);
+    const name = buf.subarray(offset + 46, offset + 46 + nameLen).toString("utf8");
+    offset += 46 + nameLen + extraLen + commentLen;
+    if (!/^xl\/worksheets\/[^/]+\.xml$/i.test(name) || (method !== 0 && method !== 8)) continue;
+    try {
+      const nameLenL = buf.readUInt16LE(localOffset + 26);
+      const extraLenL = buf.readUInt16LE(localOffset + 28);
+      const raw = buf.subarray(localOffset + 30 + nameLenL + extraLenL, localOffset + 30 + nameLenL + extraLenL + compressedSize);
+      const xml = (method === 8 ? zlib.inflateRawSync(raw) : raw).toString("utf8");
+      if (/<f[\s>]/.test(xml)) return true;
+    } catch {
+      /* a single unreadable part must not fabricate a requirement either way */
+    }
+  }
+  return false;
+}
+
 function documentArtifacts(artifacts = []) {
   return (Array.isArray(artifacts) ? artifacts : [])
     .filter((artifact) => DOCUMENT_EXTENSIONS.has(String(artifact?.ext || path.extname(artifact?.path || "")).toLowerCase()))
@@ -177,7 +226,7 @@ function requiresDocumentDelivery(taskContract = null) {
   return DOCUMENT_OPERATIONS.has(operation) || outputMode === "artifact";
 }
 
-function assessArtifact(artifact, tools, { requireRecalc = false } = {}) {
+function assessArtifact(artifact, tools) {
   const structure = structureCheck(artifact);
   const successful = tools.map((tool, index) => ({ tool, index })).filter(({ tool }) => successfulTool(tool));
   const renderEntry = successful.find(({ tool }) => {
@@ -189,18 +238,29 @@ function assessArtifact(artifact, tools, { requireRecalc = false } = {}) {
   const inspectedImages = [];
   if (renderEntry) {
     for (const { tool, index } of successful) {
-      if (index <= renderEntry.index || !IMAGE_INSPECTION_TOOL_RE.test(String(tool.name || ""))) continue;
-      const inputImages = [...collectImagePaths(tool.input)];
-      for (const image of inputImages) {
-        if (!renderedImages.length || renderedImages.some((rendered) => imagePathMatches(rendered, image))) {
-          inspectedImages.push(image);
+      if (index <= renderEntry.index) continue;
+      if (IMAGE_INSPECTION_TOOL_RE.test(String(tool.name || ""))) {
+        for (const image of [...collectImagePaths(tool.input)]) {
+          if (!renderedImages.length || renderedImages.some((rendered) => imagePathMatches(rendered, image))) {
+            inspectedImages.push(image);
+          }
         }
+        continue;
+      }
+      // OCR over rendered pages counts as inspection of exactly those pages.
+      const text = toolText(tool);
+      if (!OCR_COMMAND_RE.test(text)) continue;
+      for (const image of [...collectImagePaths(text)]) {
+        if (renderedImages.some((rendered) => imagePathMatches(rendered, image))) inspectedImages.push(image);
       }
     }
   }
   const visual = visualCoverage(renderedImages, inspectedImages, pageCount);
   const ext = String(artifact.ext || path.extname(artifact.path || "")).toLowerCase();
-  const recalculated = ext !== ".xlsx" || !requireRecalc || successful.some(({ tool }) => {
+  // Recalc is required only when the workbook itself carries formulas — never
+  // from keywords in (possibly internal) prompt text.
+  const recalcNeeded = ext === ".xlsx" && xlsxContainsFormulas(String(artifact.path || ""));
+  const recalculated = !recalcNeeded || successful.some(({ tool }) => {
     const text = toolText(tool);
     return RECALC_COMMAND_RE.test(text) && artifactMentioned(text, artifact);
   });
@@ -239,8 +299,7 @@ function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [
       retryRecommended: false,
     };
   }
-  const requireRecalc = FORMULA_TASK_RE.test(String(userText || ""));
-  const results = documents.map((artifact) => assessArtifact(artifact, Array.isArray(tools) ? tools : [], { requireRecalc }));
+  const results = documents.map((artifact) => assessArtifact(artifact, Array.isArray(tools) ? tools : []));
   const missing = [...new Set(results.flatMap((item) => item.missing))];
   return {
     required: true,
@@ -278,10 +337,23 @@ function answerLanguage(value = "") {
   return "en";
 }
 
+// Missing-check identifiers are internal — users get plain-language labels.
+const MISSING_LABELS = {
+  zh: { output_file: "输出文件", structure: "结构校验", render: "页面渲染", visual_inspection: "视觉检查", formula_recalculation: "公式重算" },
+  en: { output_file: "output file", structure: "structure check", render: "page rendering", visual_inspection: "visual inspection", formula_recalculation: "formula recalculation" },
+  ar: { output_file: "ملف الإخراج", structure: "فحص البنية", render: "عرض الصفحات", visual_inspection: "الفحص المرئي", formula_recalculation: "إعادة حساب الصيغ" },
+};
+
+function missingLabels(missing = [], language = "en") {
+  const labels = MISSING_LABELS[language] || MISSING_LABELS.en;
+  const separator = language === "zh" ? "、" : ", ";
+  return (Array.isArray(missing) ? missing : []).map((item) => labels[item] || item).join(separator);
+}
+
 function safeDocumentDeliveryFallback({ assessment = null, userText = "" } = {}) {
   const language = answerLanguage(userText);
   const paths = (assessment?.artifacts || []).map((item) => item.path).filter(Boolean);
-  const missing = (assessment?.missing || []).join(", ") || "verification";
+  const missing = missingLabels(assessment?.missing || [], language) || (language === "zh" ? "验证" : "verification");
   const pathText = paths.length ? `\n${paths.map((item) => `- ${item}`).join("\n")}` : "";
   const messages = {
     zh: paths.length
@@ -308,9 +380,9 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
       "待验文件：",
       listed,
       "必须完成：",
-      "1. 用确定性库重新打开文件并确认结构有效；Excel 有公式时执行 recalc.py 并消除公式错误。",
+      "1. 用确定性库重新打开文件并确认结构有效；工作簿含公式时，用 xlsx 技能（anthropics-xlsx）自带的 recalc.py 重算并消除公式错误。",
       "2. 使用 Lily 的 render_document.py 将每个文件渲染为逐页图片。缺 LibreOffice 时走受管理 runtime pack；禁止临时 pip/npm/playwright install。",
-      "3. 真正用图像读取工具查看渲染页：12 页以内逐页查看；更多页至少查看首页、末页和分布在全文的 6 页。",
+      "3. 真正查看渲染页内容：模型支持视觉时用图像读取工具逐页查看；不支持视觉时用 OCR（如 RapidOCR）逐页识别渲染图文字。12 页以内逐页查看；更多页至少查看首页、末页和分布在全文的 6 页。",
       "4. 检查遮挡、溢出、截断、空白页、字体替换、表格/图表错位、图片缺失和页边距。只修复实际发现的问题，然后重新渲染受影响页。",
       "5. 最终直接交付同一文件，说明检查了什么、修了什么；仍无法验证的部分必须明确标为未验证。不要复述这段系统续检说明。",
     ].join("\n");
@@ -321,9 +393,9 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
     "Artifacts to verify:",
     listed,
     "Required:",
-    "1. Reopen each file with a deterministic library and confirm its structure. If an XLSX contains formulas, run recalc.py and resolve formula errors.",
+    "1. Reopen each file with a deterministic library and confirm its structure. If the workbook contains formulas, recalculate with the recalc.py bundled in the xlsx skill (anthropics-xlsx) and resolve formula errors.",
     "2. Render every artifact to page images with Lily's render_document.py. If LibreOffice is missing, use the managed runtime-pack route; never run ad-hoc pip/npm/playwright install.",
-    "3. Actually inspect rendered pages with an image-reading tool: inspect every page up to 12 pages; for longer files inspect the first, last, and at least 6 pages distributed through the document.",
+    "3. Actually inspect rendered pages: with a vision-capable model use an image-reading tool; otherwise OCR every rendered page (e.g. RapidOCR). Inspect every page up to 12 pages; for longer files inspect the first, last, and at least 6 pages distributed through the document.",
     "4. Check clipping, overlap, overflow, blank pages, font fallback, table/chart alignment, missing images, and margins. Fix only confirmed defects, then re-render affected pages.",
     "5. Deliver the same artifact directly and state what was checked and fixed. Explicitly label anything still unverified. Do not repeat this internal continuation notice.",
   ].join("\n");
@@ -334,9 +406,11 @@ module.exports = {
   assessDocumentDelivery,
   buildDocumentDeliveryRecoveryPrompt,
   documentArtifacts,
+  missingLabels,
   requiresDocumentDelivery,
   safeDocumentDeliveryFallback,
   structureCheck,
   visualCoverage,
   withDocumentOutputEvidence,
+  xlsxContainsFormulas,
 };

@@ -5,6 +5,7 @@ const path = require("node:path");
 const { userDataPath, PROJECT_ROOT } = require("./config");
 const { normalizeSkillCapabilityContract } = require("./skill-capability-contract");
 const { registryRevision } = require("./skill-registry-revision");
+const proxyAwareFetch = require("./proxy-aware-fetch");
 
 const REGISTRY_FETCH_TIMEOUT_MS = 30_000;
 const BUNDLED_REGISTRY_SOURCE = "bundled://local";
@@ -57,7 +58,11 @@ function normalizeStringMap(raw) {
 }
 
 function normalizeRegistryEntry(raw, capabilityOverride = null) {
-  if (!raw?.id || !raw.latestVersion) {
+  // The id is joined into filesystem paths (skills dir, skillpack zip names) —
+  // enforce the same whitelist as local skills so a malicious/buggy registry
+  // payload can't path-traverse ("../../x") or break on Windows-reserved
+  // characters (<>:"|?*, CON/NUL).
+  if (!raw?.id || !/^[a-z][a-z0-9-]{1,99}$/.test(String(raw.id)) || !raw.latestVersion) {
     return null;
   }
   const rawCapability = capabilityOverride || raw.capability || null;
@@ -198,7 +203,7 @@ async function fetchRegistry(url) {
   const timer = setTimeout(() => controller.abort(), REGISTRY_FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url.trim(), {
+    const response = await proxyAwareFetch(url.trim(), {
       signal: controller.signal,
       headers: { Accept: "application/json" },
     });

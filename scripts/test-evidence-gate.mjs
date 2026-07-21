@@ -5,18 +5,18 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   assessFinalAnswerEvidence,
-  appendEvidenceGateNotice,
 } = require("../src/main/evidence-gate.js");
 
 const policy = { required: true };
 
+// HARD GATE KEPT: a strong claim with zero evidence of any kind (no tools, no
+// ledger entries, no in-text evidence markers) still fails the literal floor.
 const unsupported = assessFinalAnswerEvidence({
   assistant: "问题已经修复，根因是连接池配置错误。",
   evidencePolicy: policy,
 });
 assert.equal(unsupported.ok, false);
 assert.equal(unsupported.reason, "strong_claim_without_evidence");
-assert.match(appendEvidenceGateNotice("问题已经修复。", unsupported), /证据门槛/);
 
 const withToolEvidence = assessFinalAnswerEvidence({
   assistant: "问题已经修复。",
@@ -37,14 +37,23 @@ const casual = assessFinalAnswerEvidence({
 });
 assert.equal(casual.ok, true);
 
-const unsupportedRootCause = assessFinalAnswerEvidence({
+// ADVISORY-ONLY (2026-07-20 model-first direction): the mechanical SEMANTIC
+// checks (root cause / verified / fixed / coverage / fresh / media output /
+// source claim keyword matching) may NEVER fail an answer — models have
+// infinite legitimate phrasings. They are recorded as advisoryReasons on an
+// otherwise-passing assessment for the learning loop. Each case below gives
+// the answer real evidence (so the literal strong-claim floor passes) and then
+// asserts ok === true with the corresponding advisory reason recorded.
+const advisoryRootCause = assessFinalAnswerEvidence({
   assistant: "根因是 session.idle 被广播到了同目录所有视图。",
   evidencePolicy: policy,
   turnPolicy: { rigor: "grounded" },
   evidenceSummary: { counts: {}, hasFileReadEvidence: false },
+  toolCount: 1,
 });
-assert.equal(unsupportedRootCause.ok, false);
-assert.equal(unsupportedRootCause.reason, "root_cause_without_source_evidence");
+assert.equal(advisoryRootCause.ok, true, "a keyword root-cause claim no longer fails the gate");
+assert.ok(advisoryRootCause.advisoryReasons.includes("root_cause_without_source_evidence"),
+  "the mismatch is recorded as advisory telemetry for the learning loop");
 
 const supportedRootCause = assessFinalAnswerEvidence({
   assistant: "根因是 session.idle 被广播到了同目录所有视图。",
@@ -53,15 +62,18 @@ const supportedRootCause = assessFinalAnswerEvidence({
   evidenceSummary: { counts: { filesRead: 2 }, hasFileReadEvidence: true },
 });
 assert.equal(supportedRootCause.ok, true);
+assert.ok(!supportedRootCause.advisoryReasons?.includes("root_cause_without_source_evidence"),
+  "real file-read evidence suppresses the advisory reason");
 
-const unsupportedVerification = assessFinalAnswerEvidence({
+const advisoryVerification = assessFinalAnswerEvidence({
   assistant: "已经验证通过。",
   evidencePolicy: policy,
   turnPolicy: { rigor: "grounded" },
   evidenceSummary: { counts: { verifications: 0 }, hasVerificationEvidence: false },
+  toolCount: 1,
 });
-assert.equal(unsupportedVerification.ok, false);
-assert.equal(unsupportedVerification.reason, "verified_claim_without_verification");
+assert.equal(advisoryVerification.ok, true, "a keyword verified claim no longer fails the gate");
+assert.ok(advisoryVerification.advisoryReasons.includes("verified_claim_without_verification"));
 
 // A "verified" claim after a real successful command run (node --check, curl HTTP
 // 200, build scripts — not a recognized test runner) is backed, not empty.
@@ -72,6 +84,8 @@ const commandBackedVerification = assessFinalAnswerEvidence({
   evidenceSummary: { counts: { verifications: 0 }, hasVerificationEvidence: false, hasCommandEvidence: true },
 });
 assert.equal(commandBackedVerification.ok, true);
+assert.ok(!commandBackedVerification.advisoryReasons?.includes("verified_claim_without_verification"),
+  "command evidence suppresses the verified-claim advisory reason");
 
 const supportedFixFromDiff = assessFinalAnswerEvidence({
   assistant: "问题已经修复。",
@@ -81,17 +95,18 @@ const supportedFixFromDiff = assessFinalAnswerEvidence({
   fileChangeCount: 1,
 });
 assert.equal(supportedFixFromDiff.ok, true);
+assert.ok(!supportedFixFromDiff.advisoryReasons?.includes("fixed_claim_without_change_evidence"));
 
-const unsupportedCoverage = assessFinalAnswerEvidence({
+const advisoryCoverage = assessFinalAnswerEvidence({
   assistant: "已经找出全部 session.idle 问题。",
   evidencePolicy: policy,
   turnPolicy: { rigor: "coverage" },
   evidenceSummary: { counts: {}, coverage: { candidateCount: 0, inspectedCount: 0 }, hasSearchEvidence: false },
 });
-assert.equal(unsupportedCoverage.ok, false);
-assert.equal(unsupportedCoverage.reason, "coverage_claim_without_candidate_set");
+assert.equal(advisoryCoverage.ok, true, "a keyword coverage claim no longer fails the gate");
+assert.ok(advisoryCoverage.advisoryReasons.includes("coverage_claim_without_candidate_set"));
 
-const unsupportedCoverageNoFinding = assessFinalAnswerEvidence({
+const advisoryCoverageNoFinding = assessFinalAnswerEvidence({
   assistant: "没有发现其他 session.idle 问题。",
   evidencePolicy: policy,
   turnPolicy: { rigor: "coverage" },
@@ -102,8 +117,8 @@ const unsupportedCoverageNoFinding = assessFinalAnswerEvidence({
     hasFileReadEvidence: true,
   },
 });
-assert.equal(unsupportedCoverageNoFinding.ok, false);
-assert.equal(unsupportedCoverageNoFinding.reason, "coverage_claim_without_full_inspection");
+assert.equal(advisoryCoverageNoFinding.ok, true, "partial coverage inspection no longer fails the gate");
+assert.ok(advisoryCoverageNoFinding.advisoryReasons.includes("coverage_claim_without_full_inspection"));
 
 const coverageProgressUpdate = assessFinalAnswerEvidence({
   assistant: "还需要继续检查剩余文件，暂时不下最终结论。",
@@ -130,15 +145,18 @@ const supportedCoverageNoFinding = assessFinalAnswerEvidence({
   },
 });
 assert.equal(supportedCoverageNoFinding.ok, true);
+assert.ok(!supportedCoverageNoFinding.advisoryReasons?.some((r) => r.startsWith("coverage_claim")),
+  "full inspection suppresses the coverage advisory reasons");
 
-const unsupportedFresh = assessFinalAnswerEvidence({
+const advisoryFresh = assessFinalAnswerEvidence({
   assistant: "最新版本已经发布。",
   evidencePolicy: policy,
   turnPolicy: { requiresFreshness: true },
   evidenceSummary: { counts: {}, hasFreshEvidence: false },
+  toolCount: 1,
 });
-assert.equal(unsupportedFresh.ok, false);
-assert.equal(unsupportedFresh.reason, "fresh_claim_without_fresh_evidence");
+assert.equal(advisoryFresh.ok, true, "a keyword freshness claim no longer fails the gate");
+assert.ok(advisoryFresh.advisoryReasons.includes("fresh_claim_without_fresh_evidence"));
 
 const architectureWithoutSearch = assessFinalAnswerEvidence({
   assistant: "系统比较笨的地方是任务入口没有稳定契约。",
@@ -174,14 +192,14 @@ const simpleCodeChangeWithoutSearch = assessFinalAnswerEvidence({
 });
 assert.equal(simpleCodeChangeWithoutSearch.ok, true, "narrow known-file edits should not require broad search");
 
-const codeFindingWithoutCallSearch = assessFinalAnswerEvidence({
+const advisoryCodeFinding = assessFinalAnswerEvidence({
   assistant: "这个 SQL 是 bug，会导致统计错误。",
   evidencePolicy: { required: true, requiredEvidenceKinds: [] },
   turnPolicy: { rigor: "grounded", taskType: "code_change", requiresSourceCoverage: true },
   evidenceSummary: { counts: { fileSearches: 0, filesRead: 1 }, hasSearchEvidence: false, hasFileReadEvidence: true },
 });
-assert.equal(codeFindingWithoutCallSearch.ok, false);
-assert.equal(codeFindingWithoutCallSearch.reason, "source_claim_without_search_evidence");
+assert.equal(advisoryCodeFinding.ok, true, "a keyword bug/cause claim no longer fails the gate");
+assert.ok(advisoryCodeFinding.advisoryReasons.includes("source_claim_without_search_evidence"));
 
 const codeFindingWithCallSearch = assessFinalAnswerEvidence({
   assistant: "这个 SQL 是 bug，会导致统计错误。",
@@ -190,6 +208,7 @@ const codeFindingWithCallSearch = assessFinalAnswerEvidence({
   evidenceSummary: { counts: { fileSearches: 1, filesRead: 1 }, hasSearchEvidence: true, hasFileReadEvidence: true },
 });
 assert.equal(codeFindingWithCallSearch.ok, true);
+assert.ok(!codeFindingWithCallSearch.advisoryReasons?.includes("source_claim_without_search_evidence"));
 
 const documentWithoutExtraction = assessFinalAnswerEvidence({
   assistant: "文档解析失败，无法确认文件内容。",
@@ -283,14 +302,14 @@ const partialSourceWithDisclosure = assessFinalAnswerEvidence({
 });
 assert.equal(partialSourceWithDisclosure.ok, true);
 
-const mediaOutputWithoutEvidence = assessFinalAnswerEvidence({
+const advisoryMediaOutput = assessFinalAnswerEvidence({
   assistant: "图片已生成。",
   evidencePolicy: { required: true, requiredEvidenceKinds: [] },
   turnPolicy: { rigor: "grounded", taskType: "media_generation" },
   evidenceSummary: { counts: { fileWrites: 0 }, hasFileChangeEvidence: false },
 });
-assert.equal(mediaOutputWithoutEvidence.ok, false);
-assert.equal(mediaOutputWithoutEvidence.reason, "media_output_without_file_evidence");
+assert.equal(advisoryMediaOutput.ok, true, "a keyword media-output claim no longer fails the gate");
+assert.ok(advisoryMediaOutput.advisoryReasons.includes("media_output_without_file_evidence"));
 
 const mediaWithOutput = assessFinalAnswerEvidence({
   assistant: "图片已生成。",
@@ -299,6 +318,7 @@ const mediaWithOutput = assessFinalAnswerEvidence({
   evidenceSummary: { counts: { fileWrites: 1 }, hasFileChangeEvidence: true },
 });
 assert.equal(mediaWithOutput.ok, true);
+assert.ok(!mediaWithOutput.advisoryReasons?.includes("media_output_without_file_evidence"));
 
 // --- numeric grounding (DEFAULT OFF; opt-in LILY_NUMERIC_GROUNDING=1) --------
 // It false-flagged correct numbers too often (computed-then-written-to-file /
@@ -363,10 +383,6 @@ assert.equal(numericDefaultOff.ok, true, "numeric grounding is OFF by default �
 
   delete process.env.LILY_NUMERIC_GROUNDING;
 }
-
-// The notice names the specific ungrounded numbers (targeted, not blanket).
-const numNotice = appendEvidenceGateNotice("答案正文", { ok: false, reason: "numeric_claim_not_in_evidence", ungroundedNumbers: ["27,448", "39%"] });
-assert.match(numNotice, /27,448、39%/, "the notice names the exact ungrounded numbers");
 
 // Image/vision turns are EXEMPT from numeric grounding — the numbers were READ
 // from the image (vision is the evidence), so flagging them is a false positive

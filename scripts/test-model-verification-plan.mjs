@@ -62,7 +62,9 @@ const unresolvedAnswer = evaluateAnswerEvidence({
 assert.equal(unresolvedContract.externalFactPolicy.scopeClarificationRequired, false);
 assert.equal(unresolvedContract.externalFactPolicy.scopeDisclosureRequired, true);
 assert.equal(unresolvedAnswer.assessment.reason, "missing_required_evidence:external");
-assert.match(unresolvedAnswer.assistant, /did not obtain a verifiable current source/i);
+// Fail-open: with a silent verify retry pending, the original answer is
+// delivered verbatim — no bounded fallback, no decoration.
+assert.equal(unresolvedAnswer.assistant, "The current CEO is Jane Doe.", "the original answer is delivered verbatim while a verify retry is pending");
 assert.doesNotMatch(unresolvedAnswer.assistant, /coding quality/i);
 assert.equal(unresolvedAnswer.triggerVerifyRetry, true);
 

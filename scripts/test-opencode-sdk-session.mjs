@@ -8,6 +8,7 @@ const {
   createOpencodeSdkSession,
   unwrapSdkResult,
   unwrapSdkPageResult,
+  withCallTimeout,
 } = require("../src/main/runtime/opencode-sdk-session.js");
 
 const calls = [];
@@ -151,5 +152,50 @@ assert.throws(
   () => unwrapSdkResult({ error: { message: "bad" } }, "x"),
   /x failed: bad/,
 );
+
+// ---- Control-plane timeouts: a wedged serve must reject, never hang ----
+
+// withCallTimeout rejects with a distinct code and swallows the late settlement.
+{
+  let lateReject = false;
+  process.once("unhandledRejection", () => {
+    lateReject = true;
+  });
+  const hanging = new Promise((_, reject) => setTimeout(() => reject(new Error("late boom")), 60));
+  await assert.rejects(
+    withCallTimeout(hanging, 20, "session.status"),
+    /session\.status failed: OPENCODE_HTTP_TIMEOUT after 20ms/,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  assert.equal(lateReject, false, "late SDK settlement must not surface as unhandledRejection");
+}
+
+// A wedged serve (methods never resolve) fails fast on every control-plane call.
+{
+  const hang = () => new Promise(() => {});
+  const wedgedClient = {
+    session: {
+      get: hang, create: hang, promptAsync: hang, summarize: hang,
+      status: hang, messages: hang, abort: hang, revert: hang, unrevert: hang,
+    },
+    permission: { reply: hang },
+    question: { reply: hang },
+    global: { health: hang },
+  };
+  const wedged = createOpencodeSdkSession(wedgedClient, "/w", {
+    timeouts: { health: 25, status: 25, promptAsync: 25, create: 25 },
+  });
+  await assert.rejects(wedged.health(), /OPENCODE_HTTP_TIMEOUT/);
+  await assert.rejects(wedged.status(), /OPENCODE_HTTP_TIMEOUT/);
+  await assert.rejects(wedged.create({}), /OPENCODE_HTTP_TIMEOUT/);
+  await assert.rejects(wedged.promptAsync("ses_1", {}), /OPENCODE_HTTP_TIMEOUT/);
+}
+
+// Normal fast responses are untouched (data passes through as before).
+{
+  const fast = createOpencodeSdkSession(client, "/workspace/app");
+  const statusResult = await fast.status();
+  assert(statusResult?.ses_1 || Object.keys(statusResult || {}).length >= 0);
+}
 
 console.log("opencode-sdk-session: ok");

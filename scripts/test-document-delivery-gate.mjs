@@ -66,7 +66,12 @@ try {
   });
   assert.equal(incompleteFinal.assessment.ok, false);
   assert.equal(incompleteFinal.triggerDocumentVerifyRetry, true);
-  assert(!incompleteFinal.assistant.includes("fully verified"), "an unverified completion claim must not reach the user");
+  // Fail-open delivery: the original answer reaches the user with one
+  // plain-language note about the incomplete automatic checks — the gate
+  // never rewrites or withholds a good-faith answer (2026-07-20 model-first).
+  assert(incompleteFinal.assistant.includes("fully verified"), "the original answer is delivered, never rewritten");
+  assert.match(incompleteFinal.assistant, /Note: the file was created, but automatic checks are incomplete/);
+  assert.equal(incompleteFinal.assessment.deliveredUnverifiedWithNote, true);
 
   const inspectedTools = [
     renderTool,
@@ -122,6 +127,97 @@ try {
   assert.equal(recoveryClassification.taskContract.semanticIntent.outputMode, "artifact");
   assert.deepEqual(recoveryClassification.taskContract.evidencePolicy.requiredEvidenceKinds, ["document_output"]);
   assert.equal(recoveryClassification.turnPolicy.taskType, "document_work");
+
+  // --- OCR over rendered pages counts as visual inspection ------------------
+  const ocrTools = [
+    renderTool,
+    {
+      name: "Bash",
+      status: "done",
+      input: { command: `python ocr_pages.py "${page1}" "${page2}"  # rapidocr_onnxruntime` },
+      result: { ok: true, output: `recognized text of ${page1}\nrecognized text of ${page2}` },
+    },
+  ];
+  const ocrInspected = assessDocumentDelivery({ taskContract: contract, artifacts: [artifact], tools: ocrTools });
+  assert.equal(ocrInspected.ok, true, "OCR of every rendered page satisfies visual inspection");
+  assert.equal(ocrInspected.artifacts[0].checks.visual.inspected, 2);
+
+  const ocrUnrelated = assessDocumentDelivery({
+    taskContract: contract,
+    artifacts: [artifact],
+    tools: [
+      renderTool,
+      { name: "Bash", status: "done", input: { command: "python ocr.py /tmp/other.png  # tesseract" }, result: { ok: true } },
+    ],
+  });
+  assert.equal(ocrUnrelated.ok, false, "OCR of unrelated images does not count");
+  assert.deepEqual(ocrUnrelated.missing, ["visual_inspection"]);
+
+  // --- recalc requirement is artifact-driven, not prompt-keyword-driven -----
+  const JSZip = require("jszip");
+  async function buildXlsx(file, sheetXml) {
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"/>");
+    zip.file("xl/worksheets/sheet1.xml", sheetXml);
+    fs.writeFileSync(file, await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+  }
+  const plainXlsx = path.join(workspace, "plain.xlsx");
+  await buildXlsx(plainXlsx, "<?xml version=\"1.0\"?><worksheet><sheetData><row><c><v>42</v></c></row></sheetData></worksheet>");
+  const formulaXlsx = path.join(workspace, "formula.xlsx");
+  await buildXlsx(formulaXlsx, "<?xml version=\"1.0\"?><worksheet><sheetData><row><c><f>SUM(A1:A2)</f><v>3</v></c></row></sheetData></worksheet>");
+
+  const { xlsxContainsFormulas } = require("../src/main/document-delivery-gate.js");
+  assert.equal(xlsxContainsFormulas(plainXlsx), false);
+  assert.equal(xlsxContainsFormulas(formulaXlsx), true);
+
+  const plainArtifact = { path: plainXlsx, ext: ".xlsx", fileName: "plain.xlsx" };
+  const formulaArtifact = { path: formulaXlsx, ext: ".xlsx", fileName: "formula.xlsx" };
+  const xlsxRender = (target) => ({
+    name: "Bash",
+    status: "done",
+    input: { command: `python render_document.py "${target.path}"` },
+    result: { pages: 1, output: [page1] },
+  });
+  const viewPage = { name: "view_image", status: "done", input: { path: page1 }, result: { ok: true } };
+
+  // The internal recovery prompt mentions formulas/recalc — it must NOT create
+  // a recalc requirement for a formula-free workbook (the 报销 case).
+  const { buildDocumentDeliveryRecoveryPrompt } = require("../src/main/document-delivery-gate.js");
+  const internalPrompt = buildDocumentDeliveryRecoveryPrompt({ artifacts: [plainArtifact] }, "重新生成excel 格式缺失");
+  const plainResult = assessDocumentDelivery({
+    taskContract: contract,
+    artifacts: [plainArtifact],
+    tools: [xlsxRender(plainArtifact), viewPage],
+    userText: internalPrompt,
+  });
+  assert.equal(plainResult.ok, true, "formula-free xlsx never requires recalc, even from internal prompt text");
+
+  // A workbook WITH formulas requires recalc evidence — regardless of keywords.
+  const formulaUnrecalced = assessDocumentDelivery({
+    taskContract: contract,
+    artifacts: [formulaArtifact],
+    tools: [xlsxRender(formulaArtifact), viewPage],
+    userText: "merge these receipts into one sheet",
+  });
+  assert.deepEqual(formulaUnrecalced.missing, ["formula_recalculation"]);
+  const formulaRecalced = assessDocumentDelivery({
+    taskContract: contract,
+    artifacts: [formulaArtifact],
+    tools: [
+      xlsxRender(formulaArtifact),
+      viewPage,
+      { name: "Bash", status: "done", input: { command: `python recalc.py "${formulaXlsx}"` }, result: { ok: true } },
+    ],
+  });
+  assert.equal(formulaRecalced.ok, true, "recalc.py over the artifact satisfies the requirement");
+
+  // --- fallback speaks the user's language, not internal identifiers --------
+  const zhFallback = safeDocumentDeliveryFallback({
+    assessment: { artifacts: [plainArtifact], missing: ["visual_inspection", "formula_recalculation"] },
+    userText: "重新生成excel 格式缺失",
+  });
+  assert(zhFallback.includes("视觉检查、公式重算"), "zh fallback uses plain labels");
+  assert(!zhFallback.includes("visual_inspection"), "no internal identifiers leak to users");
 
   console.log("document-delivery-gate: ok");
 } finally {

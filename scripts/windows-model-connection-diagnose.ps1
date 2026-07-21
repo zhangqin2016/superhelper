@@ -15,6 +15,7 @@
 
 param(
   [switch]$Repair,
+  [switch]$NoPause,
   [int]$Days = 7,
   [string]$OutputRoot = [Environment]::GetFolderPath("Desktop")
 )
@@ -41,6 +42,10 @@ $ConfigDir = Join-Path $WorkDir "redacted-config"
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 
+Write-Host "Running Lily Workbench connection diagnostics..."
+Write-Host "This may take 1-3 minutes. Please keep this window open."
+Write-Host ""
+
 function Add-Text {
   param([string]$Path, [string]$Text)
   Add-Content -Path $Path -Value $Text -Encoding UTF8
@@ -59,6 +64,7 @@ function Redact-Text {
   $Value = $Value -replace '(?i)Bearer\s+[A-Za-z0-9._~+/=-]{12,}', 'Bearer [REDACTED]'
   $Value = $Value -replace '(?i)\blilygw\.[A-Za-z0-9._~+/=-]{12,}', 'lilygw.[REDACTED]'
   $Value = $Value -replace '(?i)\bsk-[A-Za-z0-9._~+/=-]{12,}', 'sk-[REDACTED]'
+  $Value = $Value -replace '(?i)\bark-[A-Za-z0-9._~+/=-]{12,}', 'ark-[REDACTED]'
   $Value = $Value -replace '(?i)("?(api[_-]?key|apikey|token|access[_-]?token|refresh[_-]?token|license[_-]?key|secret)"?\s*[:=]\s*)"?[^",}\s]+', '$1"[REDACTED]"'
   $Value = $Value -replace '(?i)(authorization\s*[:=]\s*)"?[^",}\r\n]+', '$1"[REDACTED]"'
   return $Value
@@ -156,7 +162,46 @@ function Copy-RedactedFile {
     $Dest = Join-Path $ConfigDir $DestinationName
     Set-Content -Path $Dest -Value $Redacted -Encoding UTF8
   } catch {
-    Add-Text $SummaryPath "Failed to copy redacted config $Source: $($_.Exception.Message)"
+    Add-Text $SummaryPath "Failed to copy redacted config ${Source}: $($_.Exception.Message)"
+  }
+}
+
+function Repair-ModelSettingsJson {
+  param([string]$Root)
+  $Path = Join-Path $Root "model-settings.json"
+  Add-Section $RepairPath "Model settings JSON repair"
+  if (-not (Test-Path $Path)) {
+    Add-Text $RepairPath "No model-settings.json found at $Path"
+    return
+  }
+  try {
+    $Raw = Get-Content -Raw -Path $Path -ErrorAction Stop
+    $null = $Raw | ConvertFrom-Json -ErrorAction Stop
+    Add-Text $RepairPath "model-settings.json is valid JSON; no repair needed: $Path"
+  } catch {
+    $Backup = Join-Path $Root "model-settings.json.corrupt-$Stamp.bak"
+    try {
+      Copy-Item -LiteralPath $Path -Destination $Backup -Force -ErrorAction Stop
+      $DefaultModelSettings = @'
+{
+  "activePresetId": null,
+  "customPresets": [],
+  "apiGateway": {
+    "mode": "builtin",
+    "baseUrl": "",
+    "protocol": "openai",
+    "tlsSkipVerify": false,
+    "apiKeyProtected": null
+  }
+}
+'@
+      Set-Content -LiteralPath $Path -Value $DefaultModelSettings -Encoding UTF8 -ErrorAction Stop
+      Add-Text $RepairPath "Repaired corrupt model-settings.json: $Path"
+      Add-Text $RepairPath "Original file was backed up to: $Backup"
+      Add-Text $RepairPath ("Original parse error: " + (Redact-Text $_.Exception.Message))
+    } catch {
+      Add-Text $RepairPath "Failed to repair corrupt model-settings.json at ${Path}: $($_.Exception.Message)"
+    }
   }
 }
 
@@ -202,6 +247,12 @@ if ($AppRoots.Count -eq 0) {
     } catch {
       Add-Text $SummaryPath "$Root | ERROR $($_.Exception.Message)"
     }
+  }
+}
+
+if ($Repair) {
+  foreach ($Root in $AppRoots) {
+    Repair-ModelSettingsJson -Root $Root
   }
 }
 
@@ -378,4 +429,10 @@ try {
   Write-Host "Failed to create zip: $($_.Exception.Message)"
   Write-Host "Raw diagnostic folder:"
   Write-Host $WorkDir
+}
+
+if (-not $NoPause) {
+  Write-Host ""
+  Write-Host "Press Enter to close this window."
+  try { [void](Read-Host) } catch {}
 }

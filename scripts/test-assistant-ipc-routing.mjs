@@ -38,7 +38,10 @@ Module._load = function patchedLoad(request, parent, isMain) {
     };
   }
   if (request.endsWith("./license-manager") || request === "./license-manager") {
-    return { requireValidLicense: () => ({ ok: true }) };
+    return {
+      requireValidLicense: () => ({ ok: true }),
+      requireValidLicenseFresh: async () => ({ ok: true }),
+    };
   }
   if (request.endsWith("./scheduled-task-intent") || request === "./scheduled-task-intent") {
     return { looksLikeScheduledTaskIntent: () => false };

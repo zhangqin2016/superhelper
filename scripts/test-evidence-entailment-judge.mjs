@@ -233,7 +233,8 @@ assert.equal(det.assessment.reason, "authoritative_source_required");
 assert.equal(det.assessment.authorityPending, true);
 assert(det.assistant.includes("中国样例建筑集团"), "pending content is bounded, not erased");
 
-// Judge supports (and rules the label informal) → full pass WITH framing note.
+// Judge supports (and rules the label informal) → full pass. The informal-label
+// ruling is recorded for the learning loop but never decorates the delivery.
 const judged = await evaluateAnswerEvidenceWithJudge(params, {
   judge: async ({ urls }) => verdict({
     supportedClaims: ["中国样例建筑集团有限公司"],
@@ -244,28 +245,30 @@ const judged = await evaluateAnswerEvidenceWithJudge(params, {
 });
 assert.equal(judged.assessment.ok, true);
 assert(judged.assistant.includes("中国样例建筑集团"), "judge-accepted claim delivers the original answer");
-assert.match(judged.assistant, /口径说明/, "informal label carries the framing note even on pass");
+assert.doesNotMatch(judged.assistant, /口径说明|行业俗称/, "pass-path delivery is never decorated (2026-07-20 model-first)");
+assert.equal(judged.assessment.informalLabelFramed, true, "the informal-label ruling survives as assessment meta");
 assert.deepEqual(judged.assessment.judgeAcceptedClaims, ["中国样例建筑集团有限公司"]);
 
-// Judge rejects support → ordinary fail-open: bounded banner, content kept.
+// Judge rejects support → fail-open: the original answer is delivered verbatim
+// while a silent verify retry is pending — no banner, no erasure.
 const rejected = await evaluateAnswerEvidenceWithJudge(params, {
   judge: async () => verdict({ unsupportedClaims: ["中国样例建筑集团有限公司"] }),
 });
 assert.equal(rejected.assessment.ok, false);
-assert(rejected.assistant.includes("中国样例建筑集团"), "windowed-but-unproven claims stay under a banner");
-assert.match(rejected.assistant, /⚠️/);
+assert(rejected.assistant.includes("中国样例建筑集团"), "windowed-but-unproven claims are delivered, never erased");
+assert.doesNotMatch(rejected.assistant, /⚠️/, "no banner decoration on the failure path");
 
-// Judge crashes/unavailable → the deterministic (bounded) verdict stands.
+// Judge crashes/unavailable → the deterministic (fail-open) verdict stands.
 const crashed = await evaluateAnswerEvidenceWithJudge(params, {
   judge: async () => { throw new Error("boom"); },
 });
 assert.equal(crashed.assistant, det.assistant);
 
-// Judge-ruled conflict → never banner-kept.
+// Judge-ruled conflict → also fail-open: delivered, never erased.
 const conflicted = await evaluateAnswerEvidenceWithJudge(params, {
   judge: async () => verdict({ conflictingClaims: ["中国样例建筑集团有限公司"] }),
 });
-assert(!conflicted.assistant.includes("中国样例建筑集团"), "conflicts are never banner-kept");
+assert(conflicted.assistant.includes("中国样例建筑集团"), "conflicts are delivered verbatim, never erased");
 
 // Kill switch disables the judge entirely.
 process.env.LILY_EVIDENCE_LLM_JUDGE = "0";
@@ -319,11 +322,14 @@ delete process.env.LILY_EVIDENCE_LLM_JUDGE;
   assert.deepEqual(repairedB.assessment.citationStrippedUrls, ["https://baike.fake-site.com/entry/123"]);
 
   const emptyLedger = await evaluateAnswerEvidenceWithJudge(mk(noCite, { emptyLedger: true }), { judge: acceptAll });
-  assert(!emptyLedger.assistant.includes("第47位"), "empty ledger stays gated — nothing honest to repair or keep");
+  // Fail-open even with an empty ledger: nothing honest to repair from, so the
+  // original answer is delivered verbatim with the honesty note — never erased.
+  assert(emptyLedger.assistant.includes("第47位"), "empty ledger still delivers the original answer (fail-open)");
+  assert.match(emptyLedger.assistant, /备注：以上回答未能通过本轮逐项核实/, "the final failure state carries the honesty note");
 
   process.env.LILY_EVIDENCE_CITATION_REPAIR = "0";
   const repairKilled = await evaluateAnswerEvidenceWithJudge(mk(noCite), { judge: acceptAll });
-  assert(repairKilled.assistant.includes("第47位"), "with repair disabled the fail-open banner still keeps the researched content");
+  assert(repairKilled.assistant.includes("第47位"), "with repair disabled the fail-open delivery still keeps the researched content");
   delete process.env.LILY_EVIDENCE_CITATION_REPAIR;
 }
 

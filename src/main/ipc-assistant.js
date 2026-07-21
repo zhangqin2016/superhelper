@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const { ipcMain } = require("electron");
-const { requireValidLicense } = require("./license-manager");
+const { requireValidLicenseFresh } = require("./license-manager");
 const { looksLikeScheduledTaskIntent } = require("./scheduled-task-intent");
 const {
   buildWebSystemLearningPrompt,
@@ -35,7 +35,7 @@ function registerAssistantHandlers(ctx) {
   const { sessionManager, projectManager, turnOrchestrator, runnerPool } = ctx;
 
   ipcMain.handle("assistant:input", async (_event, payload) => {
-    const licensed = requireValidLicense();
+    const licensed = await requireValidLicenseFresh();
     if (!licensed.ok) return licensed;
 
     const text = typeof payload === "string" ? payload : payload.text;
@@ -114,7 +114,7 @@ function registerAssistantHandlers(ctx) {
   });
 
   ipcMain.handle("assistant:interrupt-and-send", async (_event, payload) => {
-    const licensed = requireValidLicense();
+    const licensed = await requireValidLicenseFresh();
     if (!licensed.ok) return licensed;
 
     const text = typeof payload === "string" ? payload : payload.text;
@@ -157,7 +157,7 @@ function registerAssistantHandlers(ctx) {
   // to queue inside the orchestrator when steering isn't possible (flag off, not
   // busy, engine rejects) — so the worst case equals today's queue behavior.
   ipcMain.handle("assistant:steer", async (_event, payload) => {
-    const licensed = requireValidLicense();
+    const licensed = await requireValidLicenseFresh();
     if (!licensed.ok) return licensed;
 
     const text = typeof payload === "string" ? payload : payload.text;
@@ -187,7 +187,7 @@ function registerAssistantHandlers(ctx) {
   }));
 
   ipcMain.handle("assistant:retry", async (_event, payload) => {
-    const licensed = requireValidLicense();
+    const licensed = await requireValidLicenseFresh();
     if (!licensed.ok) return licensed;
 
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;

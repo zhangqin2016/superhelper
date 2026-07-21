@@ -81,6 +81,36 @@ assert(openaiQuota?.code === "QUOTA_EXCEEDED", "the classic exceeded-quota billi
 const chineseArrears = classifyAssistantError("请求被拒绝：账户余额不足，请充值后重试");
 assert(chineseArrears?.code === "QUOTA_EXCEEDED", "Chinese arrears wording classifies as quota");
 
+// 403 is NOT mechanically auth (2026-07-21 auto-repair): with billing context
+// it is quota; only with explicit auth context is it a credential failure.
+// The field case: "403 usage limit for this billing cycle" was shown as
+// "Authentication failed. Please check your API key" — blaming a valid key.
+const quota403 = classifyAssistantError("403 You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.");
+assert(quota403?.code === "QUOTA_EXCEEDED", "a 403 with usage-limit/billing-cycle context is quota, not auth");
+assert(quota403?.retryable === false, "an exhausted quota is not fixed by blind retry");
+const invalidKey401 = classifyAssistantError("401 Unauthorized: invalid api key provided");
+assert(invalidKey401?.code === "AUTH_FAILED", "explicit credential failure still classifies as auth");
+const forbidden403 = classifyAssistantError("403 Forbidden");
+assert(forbidden403?.code === "AUTH_FAILED", "a bare 403 Forbidden is auth-shaped");
+const waf403 = classifyAssistantError("Request failed: 403 <!DOCTYPE html><title>Attention Required! | Cloudflare</title>");
+assert(waf403?.code !== "AUTH_FAILED", "a WAF 403 page must not blame the user's API key");
+
+// PERMISSION_DENIED: errno-grade only, and retryable (2026-07-21 auto-repair)
+// — an engine recycle rebuilds sandbox/handle state, so the platform gets its
+// silent attempts before anything reaches the user. Bare "not permitted"
+// prose (policy documents, provider messages) is not a local permission failure.
+const eacces = classifyAssistantError("Error: EACCES: permission denied, open '/tmp/x'");
+assert(eacces?.code === "PERMISSION_DENIED", "errno EACCES is a permission failure");
+assert(eacces?.retryable === true, "permission failures are recoverable via engine recycle");
+const proseNotPermitted = classifyAssistantError("This action is not permitted by your current plan tier.");
+assert(proseNotPermitted?.code !== "PERMISSION_DENIED", "bare 'not permitted' prose is not a local permission failure");
+
+// Blame-free copy: transient connection failures never instruct the user to
+// check their network/settings — the platform retries silently.
+const connFailed = classifyAssistantError("API Error: 502 bad gateway");
+assert(connFailed?.code === "MODEL_CONNECTION_FAILED", "a gateway 502 is a connection failure");
+assert(!/check your (network|API settings)/i.test(connFailed?.message || ""), "connection copy must not blame the user's network");
+
 const accountLoginStillWins = classifyAssistantError("Request failed: 402 payment_required ACCOUNT_LOGIN_REQUIRED");
 assert(accountLoginStillWins?.code === "MANAGED_MODEL_AUTH_MISSING", "login/activation-required 402 still wins over the balance classifier");
 

@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { finished } = require("node:stream/promises");
+const proxyAwareFetch = require("./proxy-aware-fetch");
 
 const DEFAULT_RETRY_DELAYS_MS = [250, 750, 1750];
 
@@ -100,7 +101,7 @@ async function downloadArtifact(options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
-      const response = await fetch(url, { headers, signal: controller.signal });
+      const response = await proxyAwareFetch(url, { headers, signal: controller.signal });
       if (!response.ok && response.status !== 206) {
         lastError = `RUNTIME_PACK_DOWNLOAD_FAILED_${response.status}`;
         if (!isRetryableStatus(response.status) || attempt >= maxAttempts) {

@@ -44,7 +44,10 @@ const ERROR_PATTERNS = [
   {
     code: "ENGINE_UNAVAILABLE",
     category: "runtime",
-    test: /command not found|ENOENT|assistant engine .*unreachable|engine .*unreachable|engine health check failed|engine wedged|wedged.*unreachable/i,
+    // Includes serve-startup failures (parse/port/early-exit) and the
+    // control-plane HTTP timeout: a wedged serve is engine-unavailable, not a
+    // model problem, and the rescue path recycles it.
+    test: /command not found|ENOENT|assistant engine .*unreachable|engine .*unreachable|engine health check failed|engine wedged|wedged.*unreachable|did not report a listening port|exited before listening|opencode serve|session\.create failed|OPENCODE_HTTP_TIMEOUT/i,
     message: "The assistant engine is temporarily unavailable. Please try again later.",
     retryable: true,
   },
@@ -70,18 +73,12 @@ const ERROR_PATTERNS = [
     retryable: true,
   },
   {
-    code: "AUTH_FAILED",
-    category: "model",
-    test: /unauthorized|401|403|auth.*failed|auth.*invalid|auth.*expired|key.*invalid|key.*expired|token.*invalid|token.*expired|api.?key|invalid.*api|not authenticated|access denied|forbidden/i,
-    message: "Authentication failed. Please check your API key in Settings, then retry.",
-    retryable: false,
-  },
-  {
     code: "QUOTA_EXCEEDED",
     category: "model",
-    // Gateway balance / entitlement rejections (HTTP 402). MUST be classified
-    // BEFORE MODEL_CONNECTION_FAILED — otherwise the broad "API Error:" catch
-    // there relabels a 402 as a network drop ("connection interrupted"), hiding
+    // Gateway balance / entitlement rejections (HTTP 402/403-with-billing-
+    // context). MUST be classified BEFORE AUTH_FAILED and
+    // MODEL_CONNECTION_FAILED — a bare 403/"API Error:" would otherwise
+    // relabel a quota exhaustion as an auth problem or a network drop, hiding
     // the real cause (out of balance) from the user. ACCOUNT_LOGIN_REQUIRED is
     // handled earlier (MANAGED_MODEL_AUTH_MISSING) so genuine login/activation
     // prompts still win over this.
@@ -89,8 +86,23 @@ const ERROR_PATTERNS = [
     // pages and told users to top up on an infra flake (a non-retryable label
     // on a retryable failure); bare `quota`/`billing`/`\b402\b` had the same
     // false-positive surface. Every alternative now requires billing context.
-    test: /ENTITLEMENT_INSUFFICIENT|payment.?required|(?:http|status|code|error)[^0-9a-z]{0,8}402\b|insufficient.{0,24}(credit|balance|quota|fund)|(credit|balance|quota|fund)s?.{0,24}insufficient|quota.{0,24}(exceed|exhaust|limit)|exceed.{0,24}quota|out of (credits?|balance|funds?)|余额不足|已欠费|欠费|额度不足|配额不足|account.{0,16}(disabled|suspended)|billing.{0,24}(limit|issue|error|problem)/i,
-    message: "Insufficient account balance. Please top up your account, then retry.",
+    // 402 is mechanically payment-required, so an error-context 402 alone
+    // suffices; a 403 only counts WITH billing context (it can equally be
+    // auth, region, or WAF).
+    test: /ENTITLEMENT_INSUFFICIENT|payment.?required|(?:http|status|code|error)[^0-9a-z]{0,8}(?:402\b|403\b[^.]{0,120}(?:usage|quota|billing|balance|credit|limit))|insufficient.{0,24}(credit|balance|quota|fund)|(credit|balance|quota|fund)s?.{0,24}insufficient|usage limit|quota.{0,24}(exceed|exhaust|limit|refresh)|exceed.{0,24}(quota|usage)|out of (credits?|balance|funds?)|billing cycle|余额不足|已欠费|欠费|额度不足|配额不足|account.{0,16}(disabled|suspended)|billing.{0,24}(limit|issue|error|problem)/i,
+    message: "Insufficient account balance or quota. Please top up your account, then retry.",
+    retryable: false,
+  },
+  {
+    code: "AUTH_FAILED",
+    category: "model",
+    // Only genuine credential failures land here — HTTP statuses and the words
+    // "api key" alone prove nothing (a gateway 403 page can mean quota,
+    // region, or WAF). Require explicit auth context so recoverable flakes
+    // fall through to the retryable buckets below instead of telling the user
+    // to check a key that is actually fine.
+    test: /unauthorized|authentication failed|invalid (api[- ]?)?key|api[- ]?key (invalid|expired|revoked)|token (invalid|expired|revoked)|not authenticated|access denied|forbidden.{0,32}(key|token|auth)|(?:401|403).{0,48}(auth|key|token|unauthorized|forbidden)/i,
+    message: "Authentication failed. Please check your API key in Settings, then retry.",
     retryable: false,
   },
   {
@@ -131,7 +143,10 @@ const ERROR_PATTERNS = [
     code: "MODEL_CONNECTION_FAILED",
     category: "model",
     test: /API Error:|Connection to the model service was interrupted|model service .*interrupted|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|bad gateway|gateway time?out|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
-    message: "Connection to the model service was interrupted. Please check your network and API settings, then retry.",
+    // Fact-only copy (2026-07-21 auto-repair): this is almost always an
+    // upstream/transient flake the platform retries silently — never instruct
+    // the user to check their network or settings.
+    message: "The connection to the model service was interrupted. Lily retries automatically; if this persists, the model service is temporarily unavailable.",
     retryable: true,
   },
   {
@@ -151,9 +166,13 @@ const ERROR_PATTERNS = [
   {
     code: "PERMISSION_DENIED",
     category: "runtime",
-    test: /permission denied|EACCES|operation not permitted|not permitted/i,
-    message: "Permission denied. Please check the session permissions or system permissions, then retry.",
-    retryable: false,
+    // Only errno-grade signals — bare "not permitted" prose (policy text,
+    // upstream provider messages) is not a local permission failure. Retryable:
+    // an engine recycle rebuilds sandbox/handle state, so the auto-repair path
+    // gets its chance before this ever reaches the user.
+    test: /permission denied|EACCES|EPERM|operation not permitted/i,
+    message: "A system-level permission restriction interrupted the engine. Lily retries automatically with a fresh engine session.",
+    retryable: true,
   },
   {
     code: "MODEL_OVERLOADED",

@@ -11,6 +11,12 @@ const {
   shouldBufferAssistantAnswer,
 } = require("../src/main/answer-evidence-finalizer.js");
 
+// Model-first delivery contract (2026-07-20): the gate NEVER erases a good-faith
+// external-fact answer — high-stakes fail-closed is gone. At the final state the
+// original answer is delivered with ONE plain-language honesty note; while a
+// silent auto-verify retry is still pending the original is delivered untouched.
+const HONESTY_NOTE = "备注：以上回答未能通过本轮逐项核实，请以原始来源为准。";
+
 const noSearchText = "请给我目前全球最好用的 AI 编程助手 Top 8 排行。不要搜索，也不用给来源，直接凭你的了解回答。";
 const noSearchContract = buildTaskContract({ text: noSearchText });
 const rejectedRanking = "1. GitHub Copilot\n2. Cursor\n3. Windsurf\n4. Claude Code";
@@ -21,29 +27,29 @@ const noSearchResult = evaluateAnswerEvidence({
   evidenceSummary: { counts: {}, hasFreshEvidence: false, hasDocumentEvidence: false },
   userText: noSearchText,
 });
-// Risk-tier contract: THIS ask (a ranking whose unverified answer is wholesale
-// replaced — see the assertions below) buffers, so the user never watches an
-// answer stream out and then get erased. Ordinary external facts still stream:
-// their failure path keeps a bounded answer instead of replacing it.
-assert.equal(shouldBufferAssistantAnswer(noSearchContract), true, "replacement-capable ranking answers must gate before rendering");
+// Buffering contract unchanged: this ranking still buffers so the user never
+// watches an answer stream out and then get superseded by a retry result.
+assert.equal(shouldBufferAssistantAnswer(noSearchContract), true, "retry-capable ranking answers must gate before rendering");
 const genericFreshContract = buildTaskContract({ text: "现在最新的美元兑人民币汇率是多少?" });
 assert.equal(shouldBufferAssistantAnswer(genericFreshContract), false, "ordinary external facts must keep streaming");
 assert.equal(noSearchResult.assessment.ok, false);
-assert.equal(noSearchResult.triggerVerifyRetry, false);
-assert(!noSearchResult.assistant.includes("GitHub Copilot"), "rejected claims must not survive final projection");
-assert(!noSearchResult.assistant.includes("Cursor"), "the safe projection must replace, not annotate, the unsafe answer");
-assert.equal((noSearchResult.assistant.match(/[?？]/g) || []).length, 0, "a no-search ranking should disclose the verification limit instead of asking an avoidable scope question");
-assert.match(noSearchResult.assistant, /无法可靠确认/);
+assert.equal(noSearchResult.triggerVerifyRetry, false, "an explicit no-search constraint is never bypassed by a retry");
+// Zero-content refusal is dead: the original answer is delivered verbatim...
+assert.ok(noSearchResult.assistant.startsWith(rejectedRanking), "the original answer is never replaced, even at the highest tier");
+// ...plus exactly one plain-language honesty note (Chinese context → Chinese note).
+assert.ok(noSearchResult.assistant.endsWith(HONESTY_NOTE), "final state appends the unverified honesty note");
+assert.equal(noSearchResult.assessment.deliveredUnverifiedWithNote, true, "the note delivery is recorded for the learning loop");
 
 const researchedText = "按官方榜单给 AI 编程助手做 Top 2 排行";
 const researchedContract = buildTaskContract({ text: researchedText });
+const researchedAnswer = [
+  "截至 2026 年，综合排行：",
+  "1. GitHub Copilot - SWE-bench 76.5%，模型 v4.8",
+  "2. Cursor - SWE-bench 69.2%",
+  "https://example.com/ranking",
+].join("\n");
 const researchedResult = evaluateAnswerEvidence({
-  assistant: [
-    "截至 2026 年，综合排行：",
-    "1. GitHub Copilot - SWE-bench 76.5%，模型 v4.8",
-    "2. Cursor - SWE-bench 69.2%",
-    "https://example.com/ranking",
-  ].join("\n"),
+  assistant: researchedAnswer,
   taskContract: researchedContract,
   turnPolicy: buildTurnPolicy({ text: researchedText, taskContract: researchedContract }),
   evidenceSummary: { counts: { webSources: 1 }, hasFreshEvidence: true, hasDocumentEvidence: false },
@@ -55,10 +61,33 @@ const researchedResult = evaluateAnswerEvidence({
   }],
   userText: researchedText,
 });
+// Literal numeric grounding still hard-fails, and the repairable gap earns one
+// silent auto-verify retry. While that retry is pending the FIRST pass delivers
+// the original untouched — no note, no replacement (the retry may supersede it).
 assert.equal(researchedResult.assessment.reason, "numeric_claim_not_in_evidence");
 assert.equal(researchedResult.triggerVerifyRetry, true, "a side-effect-free search with repairable evidence gaps gets one upgraded research turn");
-assert(!researchedResult.assistant.includes("76.5%"));
-assert.match(researchedResult.assistant, /不足以逐项支撑/);
+assert.equal(researchedResult.assistant, researchedAnswer, "first pass with a pending retry delivers the original verbatim (no note yet)");
+// The recovery pass is the FINAL state: no retry left, so the original is
+// delivered with the honesty note.
+const researchedRecoveryResult = evaluateAnswerEvidence({
+  assistant: researchedAnswer,
+  taskContract: researchedContract,
+  turnPolicy: buildTurnPolicy({ text: researchedText, taskContract: researchedContract }),
+  evidenceSummary: { counts: { webSources: 1 }, hasFreshEvidence: true, hasDocumentEvidence: false },
+  tools: [{
+    name: "bash",
+    status: "done",
+    input: { command: "echo query | node resources/skills/websearch/scripts/websearch.cjs" },
+    result: "https://example.com/ranking\n2026 ranking\n1. GitHub Copilot\n2. Cursor",
+  }],
+  userText: researchedText,
+  recoveryAttempt: true,
+});
+// The recovery pass is the FINAL state: even though the retry signal may still
+// be raised (the runtime's wasRescueAttempt guard is what bounds the loop), the
+// delivery is the original plus the honesty note.
+assert.equal(researchedRecoveryResult.assistant, `${researchedAnswer}\n\n${HONESTY_NOTE}`, "final state delivers the original plus the honesty note");
+assert.equal(researchedRecoveryResult.assessment.deliveredUnverifiedWithNote, true);
 
 const roleText = "苹果公司现任 CEO 是谁？";
 const roleContract = buildTaskContract({ text: roleText });
@@ -75,7 +104,7 @@ try {
     userText: roleText,
   });
   assert.equal(roleResult.triggerVerifyRetry, true, "a well-scoped memory answer still gets one verification attempt");
-  assert(!roleResult.assistant.includes("某某"), "the hidden first attempt must still be safely projected");
+  assert.equal(roleResult.assistant, "苹果公司现任 CEO 是某某。", "the hidden first attempt is delivered verbatim while the retry runs");
 } finally {
   if (previousGlobalRetry == null) delete process.env.LILY_EVIDENCE_VERIFY_RETRY;
   else process.env.LILY_EVIDENCE_VERIFY_RETRY = previousGlobalRetry;
@@ -89,6 +118,9 @@ assert.equal(shouldBufferAssistantAnswer(ordinaryContract), false, "ordinary cha
 const imageText = "识别这张图片里的内容";
 const imageContract = buildTaskContract({ text: imageText, files: [{ name: "screen.png", isImage: true }] });
 assert.equal(shouldBufferAssistantAnswer(imageContract), true, "source-content answers stay hidden until the evidence gate passes");
+// The ONE remaining wholesale replacement: zero attachment bytes were read, so
+// any content claim is fabricated by construction — a literal fact, not a
+// semantic judgment.
 const unreadImage = evaluateAnswerEvidence({
   assistant: "图片里是一张蓝色产品海报。",
   taskContract: imageContract,
@@ -98,7 +130,7 @@ const unreadImage = evaluateAnswerEvidence({
   userText: imageText,
 });
 assert.equal(unreadImage.assessment.ok, false);
-assert(!unreadImage.assistant.includes("蓝色产品海报"), "unsupported visual claims must be replaced before projection");
+assert(!unreadImage.assistant.includes("蓝色产品海报"), "claims about never-read attachment bytes must be replaced before projection");
 assert.match(unreadImage.assistant, /没有成功读取/);
 
 const partialImage = evaluateAnswerEvidence({

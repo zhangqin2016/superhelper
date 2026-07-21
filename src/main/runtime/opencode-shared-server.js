@@ -18,34 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { getLogger } = require("../logger");
-
-// Reap the serve's WHOLE process tree, not just the serve itself. `opencode
-// serve` spawns tool children (node/python/ripgrep/playwright/bash); a plain
-// child.kill("SIGTERM") on Windows is a single-process TerminateProcess, so
-// those children survive, keep running, and hold a lock on the install dir —
-// which is exactly what blocks the Windows updater ("could not be closed").
-//   - Windows: taskkill /T /F kills the pid + its descendants.
-//   - POSIX: the child is spawned detached (its own process group), so
-//     kill(-pid) signals the whole group; SIGTERM then a SIGKILL fallback.
-function killProcessTree(child, deps = {}) {
-  if (!child || child.pid == null) return null;
-  const pid = child.pid;
-  const platform = deps.platform || process.platform;
-  const spawnFn = deps.spawn || spawn;
-  const killFn = deps.kill || ((target, signal) => process.kill(target, signal));
-  if (platform === "win32") {
-    try { spawnFn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }); }
-    catch { try { child.kill("SIGKILL"); } catch { /* already gone */ } }
-    return null;
-  }
-  const killGroup = (signal) => {
-    try { killFn(-pid, signal); } catch { try { child.kill(signal); } catch { /* gone */ } }
-  };
-  killGroup("SIGTERM");
-  const hard = setTimeout(() => killGroup("SIGKILL"), deps.hardKillDelayMs ?? 2000);
-  hard.unref?.();
-  return hard;
-}
+const { killProcessTree } = require("../process-tree-kill");
 
 const log = getLogger("opencode-shared-server");
 

@@ -12,6 +12,18 @@ const DEFAULT_MAIN_LAG_MS = 2_000;
 const DEFAULT_TICK_MS = 1_000;
 const MAX_RECENT = 20;
 
+// The running instance, so passive consumers (support diagnostics) can read
+// the live snapshot instead of a perpetual null.
+let activeWatchdog = null;
+
+function getLastWatchdogSnapshot() {
+  try {
+    return activeWatchdog ? activeWatchdog.snapshot() : null;
+  } catch {
+    return null;
+  }
+}
+
 function safeMemoryUsage() {
   try {
     const mem = process.memoryUsage();
@@ -152,6 +164,7 @@ function startAppWatchdog(ctx = {}, options = {}) {
     appendRecord: options.appendRecord || appendJsonl,
     log,
   });
+  activeWatchdog = watchdog;
 
   ipcMain.on("app:renderer-heartbeat", (_event, payload) => {
     watchdog.receiveRendererHeartbeat(payload || {});
@@ -173,12 +186,19 @@ function startAppWatchdog(ctx = {}, options = {}) {
   timer.unref?.();
 
   log.info("watchdog started (tick=%dms rendererStale=%dms mainLag=%dms)", tickMs, rendererStaleMs, mainLagMs);
-  return { watchdog, stop: () => clearInterval(timer) };
+  return {
+    watchdog,
+    stop: () => {
+      clearInterval(timer);
+      if (activeWatchdog === watchdog) activeWatchdog = null;
+    },
+  };
 }
 
 module.exports = {
   createWatchdog,
   startAppWatchdog,
+  getLastWatchdogSnapshot,
   DEFAULT_RENDERER_STALE_MS,
   DEFAULT_MAIN_LAG_MS,
   DEFAULT_TICK_MS,

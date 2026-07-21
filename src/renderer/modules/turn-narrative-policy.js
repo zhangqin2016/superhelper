@@ -7,7 +7,11 @@ const CLI_ASSISTANT_TERMINALS = new Set([
   "turn.failed",
 ]);
 
-const EVIDENCE_GATE_NOTICE_RE = /^证据门槛：/;
+// Gate-authored suffixes appended AFTER streaming: the historical 证据门槛
+// notice (old archives) and the model-first honesty / document-delivery notes
+// (2026-07-20). When the final text is the streamed block plus one of these,
+// keep the block rendering and re-attach the note.
+const EVIDENCE_GATE_NOTICE_RE = /^(证据门槛：|备注：以上回答未能通过本轮逐项核实|备注：文件已生成|Note: this answer did not pass|Note: the file was created|ملاحظة: لم تُجتز|ملاحظة: تم إنشاء)/;
 
 export function normalizeForDedup(text = "") {
   return String(text).trim().replace(/\s+/g, " ");

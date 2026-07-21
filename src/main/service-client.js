@@ -319,7 +319,7 @@ async function refreshClientBootstrap({ force = false } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const response = await fetch(`${baseUrl}/api/client/bootstrap`, {
+      const response = await require("./proxy-aware-fetch")(`${baseUrl}/api/client/bootstrap`, {
         method: "GET",
         signal: controller.signal,
         headers: {
@@ -520,7 +520,7 @@ async function serviceFetch(pathname, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const response = await fetch(`${baseUrl}${pathname}`, {
+      const response = await require("./proxy-aware-fetch")(`${baseUrl}${pathname}`, {
         ...options,
         signal: controller.signal,
         headers: {
@@ -813,7 +813,7 @@ async function uploadFeedbackAttachment(upload, attachment) {
     form.append("token", upload.token);
     form.append("key", upload.key);
     form.append("file", new Blob([attachment.data], { type: attachment.mimeType }), attachment.name);
-    const response = await fetch(upload.uploadUrl, {
+    const response = await require("./proxy-aware-fetch")(upload.uploadUrl, {
       method: "POST",
       body: form,
       signal: controller.signal,

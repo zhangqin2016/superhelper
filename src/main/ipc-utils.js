@@ -14,6 +14,23 @@ const skillManager = require("./skill-manager");
 let sendPreflightConfigRefresh = null;
 let lastSendPreflightConfigRefreshAt = 0;
 
+// Below this the next message write is likely to die with SQLITE_FULL/ENOSPC.
+const SEND_MIN_FREE_BYTES = 100 * 1024 * 1024;
+
+/** statfs the userData volume; fail-open (unknown = plenty). */
+function checkSendDiskSpace(options = {}) {
+  try {
+    const statfs = options.statfsSync || fs.statfsSync;
+    const userData = require("./config").userDataPath(".");
+    const stats = statfs(userData);
+    const free = Number(stats?.bavail) * Number(stats?.bsize);
+    if (!Number.isFinite(free) || free >= SEND_MIN_FREE_BYTES) return null;
+    return { error: "LOW_DISK_SPACE" };
+  } catch {
+    return null; // statfs unsupported / path missing — never block a send on a probe
+  }
+}
+
 function sendToRenderer(window, channel, payload) {
   if (window && !window.isDestroyed()) {
     window.webContents.send(channel, payload);
@@ -56,6 +73,12 @@ function diagnoseSendBlocker(ctx, sessionId) {
       detail: `Engine file not found: ${cliPath}`,
     };
   }
+
+  // Disk-full is otherwise discovered as a raw SQLITE_FULL mid-send (and, on
+  // older builds, a wedged session queue). Fail BEFORE the turn starts, in
+  // plain language, while the session is still intact.
+  const disk = checkSendDiskSpace();
+  if (disk) return disk;
 
   const { resolveLilyEnv } = require("./spawn-env");
   const lilyEnv = resolveLilyEnv();
@@ -411,6 +434,7 @@ module.exports = {
   getRunningSessionIds,
   resolveProjectForSession,
   diagnoseSendBlocker,
+  checkSendDiskSpace,
   refreshRemoteConfigForSend,
   wireRunner,
   ensureSessionRunner,

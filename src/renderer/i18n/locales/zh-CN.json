@@ -1392,5 +1392,9 @@
   "tool.media.audioAlt": "生成音频 {index}",
   "tool.media.fileAlt": "生成文件 {index}",
   "tool.media.savedTo": "已保存到",
-  "pack.secretWarning": "⚠️ 检测到 {count} 个文件可能含密钥（如 {files}），分享前请确认是否需要移除。"
+  "pack.secretWarning": "⚠️ 检测到 {count} 个文件可能含密钥（如 {files}），分享前请确认是否需要移除。",
+  "startupHealth.title": "检测到可能影响使用的问题",
+  "startupHealth.action": "去诊断修复",
+  "turn.diagnoseRepair": "诊断修复",
+  "send.error.LOW_DISK_SPACE": "磁盘空间不足（剩余不到 100MB），消息无法保存。请清理磁盘后重试。"
 }

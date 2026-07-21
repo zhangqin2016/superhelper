@@ -37,7 +37,14 @@ async function installRuntimePackForIpc(ctx, payload = {}, deps = {}) {
 
 function uninstallRuntimePackForIpc(ctx, payload = {}, deps = {}) {
   const installer = deps.installer || require("./runtime-pack-installer");
-  const result = installer.uninstallRuntimePack(packIdFromPayload(payload));
+  let result;
+  try {
+    result = installer.uninstallRuntimePack(packIdFromPayload(payload));
+  } catch (err) {
+    // Same contract as install: structured failure, never an opaque
+    // "Error invoking remote method".
+    return { ok: false, error: err?.message || String(err) };
+  }
   if (result?.ok) {
     result.runnerRefresh = refreshRuntimePackRunnerEnv(ctx);
   }

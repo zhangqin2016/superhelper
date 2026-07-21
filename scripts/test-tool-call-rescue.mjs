@@ -99,6 +99,41 @@ assert.equal(rescueStrategyFor("DOCUMENT_DELIVERY_UNVERIFIED")?.kind, "document_
   assert.equal(rescueStrategyFor("DOCUMENT_DELIVERY_UNVERIFIED"), null);
   delete process.env.LILY_DOCUMENT_DELIVERY_RETRY;
 }
+
+// Model-connection auto-repair (2026-07-21 directive): connection-class
+// failures get silent multi-attempt rescue with engine recycle — while the
+// API is usable the user must never see them.
+{
+  const { shouldAttemptRescue, markRescueAttempt, rescueAttemptCount } = require("../src/main/tool-call-rescue.js");
+  const connStrategy = rescueStrategyFor("MODEL_CONNECTION_FAILED");
+  assert.equal(connStrategy?.kind, "model_connection_retry");
+  assert.equal(connStrategy?.recycleEngine, true, "connection retries ride fresh connections, not the poisoned pool");
+  assert.equal(connStrategy?.maxAttempts, 3, "a gateway restart loop outlasts one retry — bounded at three");
+  for (const code of ["ENGINE_UNAVAILABLE", "MODEL_OVERLOADED", "RATE_LIMITED", "PERMISSION_DENIED"]) {
+    assert.equal(rescueStrategyFor(code)?.kind, "model_connection_retry", `${code} joins the connection auto-repair family`);
+  }
+  process.env.LILY_MODEL_CONNECTION_RETRY = "0";
+  assert.equal(rescueStrategyFor("MODEL_CONNECTION_FAILED"), null, "kill switch disables connection auto-repair");
+  delete process.env.LILY_MODEL_CONNECTION_RETRY;
+
+  // Multi-attempt budget: attempts 1..maxAttempts pass, the next is refused;
+  // the budget resets after the episode window so a later failure earns a
+  // fresh set of silent attempts.
+  resetRescueStateForTests();
+  const t0 = Date.now();
+  assert.equal(shouldAttemptRescue("s-unit", "MODEL_CONNECTION_FAILED", t0, 3), true);
+  markRescueAttempt("s-unit", "MODEL_CONNECTION_FAILED", t0);
+  assert.equal(shouldAttemptRescue("s-unit", "MODEL_CONNECTION_FAILED", t0 + 1000, 3), false, "double-fire debounce");
+  markRescueAttempt("s-unit", "MODEL_CONNECTION_FAILED", t0 + 6000);
+  assert.equal(shouldAttemptRescue("s-unit", "MODEL_CONNECTION_FAILED", t0 + 12000, 3), true, "third attempt still within budget");
+  markRescueAttempt("s-unit", "MODEL_CONNECTION_FAILED", t0 + 12000);
+  assert.equal(shouldAttemptRescue("s-unit", "MODEL_CONNECTION_FAILED", t0 + 20000, 3), false, "budget exhausted after maxAttempts");
+  assert.equal(shouldAttemptRescue("s-unit", "MODEL_CONNECTION_FAILED", t0 + 20000, 1), false, "single-attempt strategies stop at one");
+  const later = t0 + 11 * 60_000;
+  assert.equal(shouldAttemptRescue("s-unit", "MODEL_CONNECTION_FAILED", later, 3), true, "a later episode earns a fresh budget");
+  assert.equal(rescueAttemptCount("s-unit", t0 + 20000), 3, "attempt counting feeds the terminal copy");
+  resetRescueStateForTests();
+}
 assert.match(evidenceVerifyHintFor({}), /verify it with a tool/i, "verify hint tells the model to verify with tools before asserting");
 assert.match(evidenceVerifyHintFor({ instructionLanguage: "zh" }), /先用工具核实/, "verify hint is language-aware (zh)");
 assert.match(evidenceVerifyHintFor({}), /do not return only a scope question/i, "verify hint rejects avoidable clarification-only answers");
@@ -706,7 +741,7 @@ resetRescueStateForTests();
   assert.equal(chainEvents.filter((e) => e.type === "turn.self_heal_retry").length, 0,
     "a failed rescue turn never chains into another rescue");
   const chainFailed = chainEvents.find((e) => e.type === "turn.failed");
-  assert.match(String(chainFailed?.payload?.assistant || ""), /已自动重试 1 次/,
+  assert.match(String(chainFailed?.payload?.assistant || ""), /已自动修复重试 1 次/,
     "the second failure tells the user the platform already retried");
   assert.equal(runner.sentPayloads.length, payloadsBefore + 1, "exactly one rescue dispatch");
 
@@ -734,6 +769,50 @@ resetRescueStateForTests();
   await settle();
   flushEvents();
 }
+
+// Model-connection auto-repair chain (2026-07-21 directive): while the episode
+// budget lasts, connection-class failures keep earning silent rescues (engine
+// recycle + env hot-refresh) — the user only ever sees anything after the
+// platform exhausted its attempts, and that copy admits the real count.
+process.env.LILY_RESCUE_DELAY_MS = "10";
+resetRescueStateForTests();
+{
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "你好", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  flushEvents();
+  const fail502 = async () => {
+    runner.busy = false;
+    runner.emit("done", { code: 1, error: "API Error: 502 bad gateway", output: "" });
+    await settle();
+  };
+  await fail502();
+  let events = flushEvents();
+  assert.equal(events.find((e) => e.type === "turn.failed")?.payload?.errorCode, "MODEL_CONNECTION_FAILED",
+    "a gateway 502 classifies as a connection failure");
+  assert.equal(events.find((e) => e.type === "turn.self_heal_retry")?.payload?.kind, "model_connection_retry",
+    "first connection failure gets a silent connection rescue");
+  await fail502();
+  events = flushEvents();
+  assert.equal(events.filter((e) => e.type === "turn.self_heal_retry").length, 1,
+    "multi-attempt budget allows the rescue to chain (attempt 2)");
+  await fail502();
+  events = flushEvents();
+  assert.equal(events.filter((e) => e.type === "turn.self_heal_retry").length, 1,
+    "multi-attempt budget allows the rescue to chain (attempt 3)");
+  await fail502();
+  events = flushEvents();
+  assert.equal(events.filter((e) => e.type === "turn.self_heal_retry").length, 0,
+    "budget exhausted — no fourth rescue");
+  const finalFailure = events.find((e) => e.type === "turn.failed");
+  assert.match(String(finalFailure?.payload?.assistant || ""), /已自动修复重试 3 次/,
+    "the terminal copy admits the real attempt count");
+  assert.doesNotMatch(String(finalFailure?.payload?.assistant || ""), /check your|请检查/,
+    "the terminal copy never blames the user's network or settings");
+}
+delete process.env.LILY_RESCUE_DELAY_MS;
 
 // Safety: a punctuation-less CJK greeting to a trivial ask has NO fragment
 // signature — it completes normally (no hidden retry, no failure).

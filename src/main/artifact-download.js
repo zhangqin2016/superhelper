@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const proxyAwareFetch = require("./proxy-aware-fetch");
 
 const DEFAULT_ATTEMPTS = 3;
 
@@ -34,7 +35,7 @@ async function fetchArtifactBuffer(url, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, {
+      const response = await proxyAwareFetch(url, {
         signal: controller.signal,
         headers: {
           // These artifacts are verified byte-for-byte by sha256. Do not let

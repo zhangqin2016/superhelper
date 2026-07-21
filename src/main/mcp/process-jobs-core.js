@@ -8,6 +8,7 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { stopPid } = require("../process-tree-kill");
 const { latestWorkProgress } = require("../work-progress-protocol");
 
 const DEFAULT_LOG_TAIL_BYTES = 64 * 1024;
@@ -492,11 +493,9 @@ async function stopJob(input = {}, options = {}) {
     return { ok: true, stopped: true, alreadyExited: true, ...compactJob(found.registry.jobs[found.id]) };
   }
   const signal = input.signal || "SIGTERM";
-  try {
-    process.kill(pid, signal);
-  } catch (err) {
-    return fail("STOP_FAILED", { jobId: found.id, pid, message: err?.message || String(err) });
-  }
+  // Windows has no signal semantics and the recorded pid is usually the cmd.exe wrapper — stopPid tree-kills there.
+  const killErr = stopPid(pid, signal);
+  if (killErr) return fail("STOP_FAILED", { jobId: found.id, pid, message: killErr?.message || String(killErr) });
   const deadline = Date.now() + Number(input.timeoutMs || DEFAULT_STOP_TIMEOUT_MS);
   while (isPidAlive(pid) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));

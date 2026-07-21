@@ -38,4 +38,17 @@ assert.equal(bundle.items.some((item) => item.kind === "file_change" && item.rep
 assert.equal(bundle.items.some((item) => item.kind === "artifact" && item.replay.path === "/repo/report.md"), true);
 assert.equal(bundle.items.some((item) => item.kind === "evidence_gap"), true);
 
+// Learning loop (2026-07-20 model-first): advisory-only findings (gate ok but
+// with telemetry reasons) also produce an evidence-gap item for the next turn.
+const advisoryBundle = buildEvidenceReplayBundle({
+  turnId: "turn_advisory",
+  tools: [],
+  meta: { evidenceGate: { ok: true, advisoryReasons: ["coverage_claim_without_full_inspection"] } },
+});
+const advisoryGap = advisoryBundle.items.find((item) => item.kind === "evidence_gap");
+assert.equal(advisoryGap?.replay?.reason, "coverage_claim_without_full_inspection");
+// A clean pass produces no gap item.
+const cleanBundle = buildEvidenceReplayBundle({ turnId: "turn_clean", tools: [], meta: { evidenceGate: { ok: true } } });
+assert.equal(cleanBundle.items.some((item) => item.kind === "evidence_gap"), false);
+
 console.log("evidence-replay-bundle: ok");

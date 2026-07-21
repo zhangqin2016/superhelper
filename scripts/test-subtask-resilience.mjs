@@ -214,7 +214,9 @@ assert.equal(selfHealCalls[0].code, "RESPONSE_ERROR", "self-heal receives the cl
 assert.equal(runtimeDiagnosticReports.length, 1, "model-category child errors must reach diagnostics");
 assert(runner.busy, "background learning must never interrupt the running turn");
 
-// Non-healable, non-model child error: observed but no heal, no model diagnostic.
+// Non-healable, non-model child error: observed but no heal. Since the open
+// telemetry gate (2026-07-21), runtime/protocol failures ALSO reach diagnostics
+// — a model-only gate blinds us to "activated but unusable" bugs.
 ctx.turnOrchestrator.ingest("s1", [{
   type: "subagent.event",
   payload: {
@@ -230,7 +232,8 @@ await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(sub.payload.subagent.status, "failed");
 }
 assert.equal(selfHealCalls.length, 1, "non-healable child errors must not trigger self-heal");
-assert.equal(runtimeDiagnosticReports.length, 1, "non-model child errors must not spam model diagnostics");
+assert.equal(runtimeDiagnosticReports.length, 2, "open telemetry gate reports non-model child errors too");
+assert.equal(runtimeDiagnosticReports[1]?.normalizedKind, "PERMISSION_DENIED", "runtime failure keeps its classified kind");
 
 runner.busy = false;
 runner.emit("done", { code: 0, output: "done" });

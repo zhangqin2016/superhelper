@@ -752,23 +752,26 @@ try {
   if (rankingAssistant?.record?.meta?.evidenceGate?.reason !== "missing_required_evidence:external") {
     throw new Error(`unsupported ranking must fail the external evidence gate: ${JSON.stringify(rankingAssistant?.record?.meta?.evidenceGate)}`);
   }
-  if (/GitHub Copilot|Cursor|Windsurf|Claude Code/.test(rankingAssistant?.record?.assistantText || "")) {
-    throw new Error(`unsupported ranking must be removed from the archived answer: ${rankingAssistant?.record?.assistantText}`);
+  // Fail-open (2026-07-20 model-first): the unsupported ranking is never
+  // erased. The archived answer carries the original text plus one
+  // plain-language honesty note; the gate verdict lives in meta.
+  if (!/GitHub Copilot|Cursor|Windsurf|Claude Code/.test(rankingAssistant?.record?.assistantText || "")) {
+    throw new Error(`fail-open: the original ranking must survive in the archived answer: ${rankingAssistant?.record?.assistantText}`);
+  }
+  if (!/备注：以上回答未能通过本轮逐项核实/.test(rankingAssistant?.record?.assistantText || "")) {
+    throw new Error(`the archived answer must carry the honesty note: ${rankingAssistant?.record?.assistantText}`);
   }
   allEvents = sent.flatMap((entry) => entry.payload?.events || []);
-  // Risk-tier contract: THIS ask (a replacement-capable ranking — the archive
-  // assertion above requires the unsafe ranking to be wholesale-replaced) is
-  // buffered, so the user never watches the ranking stream out and then get
-  // erased. Ordinary external facts still stream (asserted further below).
+  // Risk-tier contract: THIS ask (a research-prohibited ranking) is buffered —
+  // it can never acquire evidence, so the gated final state (original + note)
+  // is shown once instead of streaming an answer certain to fail verification.
+  // Ordinary external facts still stream (asserted further below).
   if (allEvents.some((event) => event.turnId === rankingTurn.turnId && event.type === "assistant.delta")) {
-    throw new Error("a replacement-capable ranking must gate before rendering, not stream-then-erase");
+    throw new Error("a research-prohibited ranking must gate before rendering");
   }
   const rankingFinal = allEvents.find((event) => event.turnId === rankingTurn.turnId && event.type === "assistant.final");
-  if (!rankingFinal || /GitHub Copilot|Cursor|Windsurf|Claude Code/.test(rankingFinal.payload?.assistant || "")) {
-    throw new Error(`the UI final event must contain only the safe projection: ${JSON.stringify(rankingFinal)}`);
-  }
-  if ((rankingFinal.payload.assistant.match(/[?？]/g) || []).length !== 0 || !/无法可靠确认/.test(rankingFinal.payload.assistant)) {
-    throw new Error(`a no-search ranking should disclose the verification limit without an avoidable scope question: ${rankingFinal.payload.assistant}`);
+  if (!rankingFinal || !/GitHub Copilot/.test(rankingFinal.payload?.assistant || "") || !/备注：以上回答未能通过本轮逐项核实/.test(rankingFinal.payload?.assistant || "")) {
+    throw new Error(`the UI final event must deliver the original answer with the honesty note: ${JSON.stringify(rankingFinal)}`);
   }
   if (observedEvidenceRetry !== null) {
     throw new Error(`a no-search ranking must not trigger an automatic retry: ${JSON.stringify(observedEvidenceRetry)}`);
@@ -934,14 +937,17 @@ const semanticResearchAssistant = messages.find(
 const semanticGate = semanticResearchAssistant?.record?.meta?.evidenceGate;
 // New model-first semantics: entity PRESENCE in evidence is not SUPPORT — that
 // ruling belongs to the semantic judge. With no judge available (test env),
-// ordinary research fails OPEN bounded: content is delivered under a banner,
-// never refused. The judge-accepted pass path is covered in
-// test-evidence-entailment-judge.mjs.
-if (semanticGate?.reason !== "semantic_support_unverified" || semanticGate?.boundedAnswer !== true) {
-  throw new Error(`grounded unfamiliar-domain research should fail open bounded without a judge verdict: ${JSON.stringify(semanticGate)}`);
+// ordinary research fails OPEN: the original answer is delivered verbatim
+// plus one plain-language honesty note — never refused, never bannered. The
+// judge-accepted pass path is covered in test-evidence-entailment-judge.mjs.
+if (semanticGate?.reason !== "semantic_support_unverified" || semanticGate?.deliveredUnverifiedWithNote !== true) {
+  throw new Error(`grounded unfamiliar-domain research should fail open with the honesty note without a judge verdict: ${JSON.stringify(semanticGate)}`);
 }
 if (!String(semanticResearchAssistant?.record?.assistantText || "").includes("Nimbus Cloud")) {
-  throw new Error(`bounded fail-open must keep the researched content: ${JSON.stringify(semanticResearchAssistant?.record?.assistantText)}`);
+  throw new Error(`fail-open must keep the researched content: ${JSON.stringify(semanticResearchAssistant?.record?.assistantText)}`);
+}
+if (!/Note: this answer did not pass this turn's item-level verification/.test(semanticResearchAssistant?.record?.assistantText || "")) {
+  throw new Error(`the final failure state must carry the honesty note: ${JSON.stringify(semanticResearchAssistant?.record?.assistantText)}`);
 }
 
 sent.length = 0;
@@ -997,8 +1003,11 @@ if (architectureAuditAssistant?.record?.meta?.turnPolicy?.rigor !== "grounded") 
 if (architectureAuditAssistant?.record?.meta?.evidenceGate?.reason !== "missing_required_evidence:file_search") {
   throw new Error(`architecture audit without source evidence should be downgraded: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.evidenceGate)}`);
 }
-if (!/证据门槛/.test(architectureAuditAssistant?.record?.assistantText || "")) {
-  throw new Error(`architecture audit unsupported conclusion should show evidence notice: ${architectureAuditAssistant?.record?.assistantText}`);
+// Model-first (2026-07-20): the gate never decorates a normal answer — no
+// 证据门槛 notice. The verdict lives in meta (gate reason + unverified
+// completion status) for the learning loop, not in the user's face.
+if (architectureAuditAssistant?.record?.assistantText !== "系统比较笨的地方是任务入口没有稳定契约。") {
+  throw new Error(`architecture audit answer must be delivered verbatim, never decorated: ${architectureAuditAssistant?.record?.assistantText}`);
 }
 if (architectureAuditAssistant?.record?.meta?.taskRun?.completionStatus !== "delivered_unverified") {
   throw new Error(`engine completion without required evidence must remain truthfully unverified: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.taskRun)}`);
@@ -1149,8 +1158,14 @@ if (!coverageAssistant?.record?.meta?.evidenceGraph?.nodes?.some((item) => item.
 if (coverageAssistant?.record?.meta?.contextOsScorecard?.checks?.find((item) => item.id === "beat_subagent_runtime_telemetry")?.ok !== true) {
   throw new Error(`coverage scorecard should recognize real subagent runtime telemetry: ${JSON.stringify(coverageAssistant?.record?.meta?.contextOsScorecard)}`);
 }
-if (!/证据门槛/.test(coverageAssistant?.record?.assistantText || "")) {
-  throw new Error(`unsupported coverage claim should be downgraded: ${coverageAssistant?.record?.assistantText}`);
+// Model-first (2026-07-20): unsupported coverage claims are telemetry, not a
+// user-facing notice — the answer is delivered verbatim and the advisory
+// reason rides on the gate meta for the learning loop.
+if (coverageAssistant?.record?.assistantText !== "已经找出全部 session.idle 问题。") {
+  throw new Error(`coverage answer must be delivered verbatim, never decorated: ${coverageAssistant?.record?.assistantText}`);
+}
+if (!(coverageAssistant?.record?.meta?.evidenceGate?.advisoryReasons || []).some((item) => item.startsWith("coverage_claim_without"))) {
+  throw new Error(`coverage advisory should be recorded for the learning loop: ${JSON.stringify(coverageAssistant?.record?.meta?.evidenceGate)}`);
 }
 
 messages.push(

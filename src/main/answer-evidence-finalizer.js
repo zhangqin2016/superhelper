@@ -1,18 +1,15 @@
 "use strict";
 
-const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
+const { assessFinalAnswerEvidence } = require("./evidence-gate");
 const {
   answerLanguage,
-  composeBoundedExternalAnswer,
-  composeFramedBoundedAnswer,
-  prependFramingNote,
-  safeExternalFactFallback,
   salvageSupportedExternalAnswer,
 } = require("./external-evidence-recovery");
-const { externalFactRiskTier, isHighStakesPolicy, shouldAutoVerifyExternalFact } = require("./external-fact-policy");
+const { externalFactRiskTier, shouldAutoVerifyExternalFact } = require("./external-fact-policy");
 const { isSideEffectFreeToolRun } = require("./tool-call-rescue");
 const {
   assessDocumentDelivery,
+  missingLabels,
   requiresDocumentDelivery,
   safeDocumentDeliveryFallback,
   withDocumentOutputEvidence,
@@ -28,12 +25,13 @@ function isSourceContentContract(taskContract = null) {
 
 function shouldBufferAssistantAnswer(taskContract = null) {
   if (isSourceContentContract(taskContract) || requiresDocumentDelivery(taskContract)) return true;
-  // Verify-before-stream for the only paths that may still REPLACE the final
-  // answer wholesale (hard tier; roster/ranking-critical verify_soft). Streaming
-  // an answer and then swapping it for a fallback reads as the platform erasing
-  // its own work; buffering shows the gated result once, cleanly. Other tiers
-  // never erase content, so they keep streaming. Legacy mode (tiers disabled)
-  // keeps legacy streaming.
+  // Verify-before-stream for paths whose gated verdict should be shown once,
+  // cleanly (hard tier; roster/ranking-critical verify_soft). Delivery itself
+  // is fail-open — the original answer plus at most one honesty note — but
+  // streaming an answer that is certain to fail verification reads as the
+  // platform changing its mind; buffering shows the final state directly.
+  // Other tiers keep streaming. Legacy mode (tiers disabled) keeps legacy
+  // streaming.
   if (process.env.LILY_EVIDENCE_RISK_TIERS === "0") return false;
   const policy = taskContract?.externalFactPolicy;
   if (!policy?.required) return false;
@@ -98,6 +96,29 @@ function hasImageInput(files = []) {
   );
 }
 
+// Model-first delivery (2026-07-20 user direction): the gate never decorates or
+// erases a good-faith answer. The ONLY user-visible addition at a failed final
+// state is one plain-language line — no internal identifiers, no boilerplate.
+// Everything else the gate knows lives in assessment meta for the learning loop.
+function unverifiedHonestyNote(userText = "") {
+  const language = answerLanguage(userText);
+  return {
+    zh: "\n\n备注：以上回答未能通过本轮逐项核实，请以原始来源为准。",
+    ar: "\n\nملاحظة: لم تُجتز هذه الإجابة التحقق البندي في هذه الجولة؛ يرجى الرجوع إلى المصادر الأصلية.",
+    en: "\n\nNote: this answer did not pass this turn's item-level verification; defer to original sources.",
+  }[language];
+}
+
+function documentDeliveryNote(delivery, userText = "") {
+  const language = answerLanguage(userText);
+  const labels = missingLabels(delivery?.missing || [], language);
+  return {
+    zh: `\n\n备注：文件已生成，但自动检查未全部完成（${labels}），可直接打开使用。`,
+    ar: `\n\nملاحظة: تم إنشاء الملف، لكن الفحوصات التلقائية لم تكتمل (${labels})؛ يمكن فتحه مباشرة.`,
+    en: `\n\nNote: the file was created, but automatic checks are incomplete (${labels}); it can be opened directly.`,
+  }[language];
+}
+
 function evaluateAnswerEvidence({
   assistant = "",
   taskContract = null,
@@ -144,8 +165,15 @@ function evaluateAnswerEvidence({
       judgedConflictingClaims,
     });
     if (documentDelivery.required && !documentDelivery.ok) {
+      // Structural failures (file missing/broken) are literal facts — keep the
+      // explanatory fallback. Incomplete quality CHECKS (render/visual/recalc)
+      // never erase the deliverable: original answer + one plain note; at most
+      // one silent verification retry runs and may supersede it.
+      const structural = (documentDelivery.missing || []).some((m) => m === "structure" || m === "output_file");
       return {
-        assistant: safeDocumentDeliveryFallback({ assessment: documentDelivery, userText }),
+        assistant: structural
+          ? safeDocumentDeliveryFallback({ assessment: documentDelivery, userText })
+          : `${original}${documentDeliveryNote(documentDelivery, userText)}`,
         assessment: {
           ok: false,
           required: true,
@@ -153,6 +181,7 @@ function evaluateAnswerEvidence({
           hasEvidence: documentDelivery.artifacts.length > 0,
           reason: documentDelivery.reason,
           documentDelivery,
+          ...(structural ? {} : { deliveredUnverifiedWithNote: true }),
         },
         documentDelivery,
         evidenceSummary: effectiveEvidenceSummary,
@@ -167,13 +196,13 @@ function evaluateAnswerEvidence({
       const okAssessment = externalFact
         ? { ...assessment, riskTier: externalFactRiskTier(taskContract?.externalFactPolicy) }
         : assessment;
-      // The claims passed, but the turn judge ruled the LABEL itself is an
-      // informal convention — deliver with the framing note up front.
-      const framed = semanticVerdict?.informalLabel === true;
-      const delivered = framed ? prependFramingNote(original, semanticVerdict, userText) : original;
-      const finalOkAssessment = framed ? { ...okAssessment, informalLabelFramed: true } : okAssessment;
+      // The turn judge's informal-label ruling is recorded for the learning loop
+      // but never decorates the delivered answer (2026-07-20 model-first).
+      const finalOkAssessment = semanticVerdict?.informalLabel === true
+        ? { ...okAssessment, informalLabelFramed: true }
+        : okAssessment;
       return {
-        assistant: delivered,
+        assistant: original,
         assessment: documentDelivery.required ? { ...finalOkAssessment, documentDelivery } : finalOkAssessment,
         documentDelivery,
         evidenceSummary: effectiveEvidenceSummary,
@@ -236,34 +265,6 @@ function evaluateAnswerEvidence({
 
     const policy = taskContract?.externalFactPolicy || null;
     const riskTier = externalFact ? externalFactRiskTier(policy) : "advisory";
-    // Delivery-time entity floor: whichever stage failed (the authority stage
-    // short-circuits the entity check), fabricated entities — absent from the
-    // evidence entirely — must reach the bounded composer's guard so the
-    // fail-open path can never banner-keep them.
-    let deliveryAssessment = assessment;
-    if (
-      externalFact &&
-      !assessment.entityCoverage &&
-      policy?.verificationPlan?.entityEvidenceRequired
-    ) {
-      const { assessEntityClaimEvidence } = require("./entity-claim-evidence");
-      const deliveryCoverage = assessEntityClaimEvidence({
-        assistant: original,
-        evidenceText,
-        verificationPlan: policy.verificationPlan,
-        acceptedClaimLabels,
-        judgedUnsupportedClaims,
-        judgedConflictingClaims,
-      });
-      if (deliveryCoverage?.ok === false) {
-        deliveryAssessment = {
-          ...assessment,
-          entityCoverage: deliveryCoverage,
-          unsupportedClaims: [...new Set([...(assessment.unsupportedClaims || []), ...deliveryCoverage.unsupportedClaims])],
-          conflictingClaims: [...new Set([...(assessment.conflictingClaims || []), ...deliveryCoverage.conflictingClaims])],
-        };
-      }
-    }
     const sideEffectFree = isSideEffectFreeToolRun(tools);
     const externalFactRetry = riskTier !== "advisory" && shouldAutoVerifyExternalFact({
       policy,
@@ -276,83 +277,19 @@ function evaluateAnswerEvidence({
     });
     const legacyOptInRetry = !externalFact && Boolean(assessment.strongClaim) && sideEffectFree &&
       process.env.LILY_EVIDENCE_VERIFY_RETRY === "1";
-    // Tiered failure delivery. Invariant: outside the hard tier, the gate may
-    // relabel/trim/bound the answer but never reduces delivered task content
-    // to zero while any supported content exists.
-    let finalAssistant;
-    let finalAssessment = deliveryAssessment;
-    if (externalFact && riskTier === "advisory") {
-      finalAssistant = appendEvidenceGateNotice(original, deliveryAssessment);
-    } else if (externalFact && riskTier === "verify_soft") {
-      const bounded = composeFramedBoundedAnswer({
-        assistant: original,
-        assessment: deliveryAssessment,
-        evidenceSummary: effectiveEvidenceSummary,
-        evidenceText,
-        userText,
-        recoveryAttempt,
-        framing: semanticVerdict,
-      }) || composeBoundedExternalAnswer({
-        assistant: original,
-        assessment: deliveryAssessment,
-        policy,
-        evidenceSummary: effectiveEvidenceSummary,
-        userText,
-        recoveryAttempt,
-        // The recovery pass IS the final state — no further retry will improve
-        // it, so the bounded-answer invariant applies there.
-        retryPending: externalFactRetry && !recoveryAttempt,
-        reassess: (candidate) => assessFinalAnswerEvidence({
-          assistant: candidate,
-          evidencePolicy: taskContract?.evidencePolicy,
-          turnPolicy,
-          evidenceSummary: effectiveEvidenceSummary,
-          toolCount: tools.length,
-          fileChangeCount,
-          evidenceText,
-          userText,
-          skipNumericGrounding: hasImageInput(inputFiles),
-      acceptedClaimLabels,
-      acceptedAuthorityUrls,
-      judgedUnsupportedClaims,
-      judgedConflictingClaims,
-        }),
-      });
-      if (bounded) {
-        finalAssistant = bounded.assistant;
-        finalAssessment = bounded.assessment;
-      } else {
-        finalAssistant = safeExternalFactFallback({ policy, evidenceSummary, userText, recoveryAttempt });
-      }
-    } else if (externalFact) {
-      // Fail boundary (user decision 2026-07-20): only genuinely high-stakes
-      // asks fail CLOSED (zero-content fallback). Ordinary hard-tier asks
-      // fail OPEN: with real research in the ledger the researched answer is
-      // delivered under an explicit banner — never a vocabulary decision,
-      // the guards in composeFramedBoundedAnswer are literal-only.
-      const legacyAllHard = process.env.LILY_EVIDENCE_RISK_TIERS === "0";
-      const failClosed = legacyAllHard || isHighStakesPolicy(policy, semanticVerdict);
-      const bounded = !failClosed
-        ? composeFramedBoundedAnswer({
-            assistant: original,
-            assessment: deliveryAssessment,
-            evidenceSummary: effectiveEvidenceSummary,
-            evidenceText,
-            userText,
-            recoveryAttempt,
-            framing: semanticVerdict,
-          })
-        : null;
-      if (bounded) {
-        finalAssistant = bounded.assistant;
-        finalAssessment = bounded.assessment;
-      } else {
-        finalAssistant = safeExternalFactFallback({ policy, evidenceSummary, userText, recoveryAttempt });
-      }
-    } else if (sourceContent) {
+    // Model-first failure delivery (2026-07-20 user direction): the gate never
+    // decorates and never erases a good-faith answer. At most one silent
+    // auto-verify retry may supersede it; at the final state the original
+    // answer stands with a single plain-language note. The only replacement
+    // left is source-content confabulation (no attachment bytes were read, so
+    // any content claim is fabricated by construction — a literal fact).
+    let finalAssistant = original;
+    let finalAssessment = assessment;
+    if (sourceContent) {
       finalAssistant = safeSourceContentFallback({ evidenceSummary, userText });
-    } else {
-      finalAssistant = appendEvidenceGateNotice(original, assessment);
+    } else if (externalFact && riskTier !== "advisory" && !(externalFactRetry && !recoveryAttempt)) {
+      finalAssistant = `${original}${unverifiedHonestyNote(userText)}`;
+      finalAssessment = { ...assessment, deliveredUnverifiedWithNote: true };
     }
     if (externalFact && finalAssessment && typeof finalAssessment === "object") {
       finalAssessment = { ...finalAssessment, riskTier };
@@ -393,50 +330,18 @@ function evaluateAnswerEvidence({
         error,
       };
     }
-    // Internal gate error: only the hard tier fails closed (its guarantees are
-    // the product promise). verify_soft/advisory fail OPEN with the original
-    // answer — a broken gate must never make the platform dumber than baseline.
-    let errorTier = "hard";
-    if (externalFact) {
-      try {
-        errorTier = externalFactRiskTier(taskContract?.externalFactPolicy);
-      } catch {
-        errorTier = "hard";
-      }
-    }
-    if (externalFact && errorTier !== "hard") {
-      return {
-        assistant: original,
-        assessment: {
-          ok: false,
-          required: true,
-          strongClaim: false,
-          hasEvidence: false,
-          reason: "evidence_gate_internal_error",
-          riskTier: errorTier,
-          failedOpen: true,
-        },
-        evidenceSummary,
-        triggerVerifyRetry: false,
-        triggerDocumentVerifyRetry: false,
-        error,
-      };
-    }
+    // Internal gate error: fail OPEN with the original answer for every tier —
+    // a broken gate must never make the platform dumber than baseline, and a
+    // gate error is never proof the answer is wrong (2026-07-20: hard included).
     return {
-      assistant: externalFact
-        ? safeExternalFactFallback({
-            policy: taskContract?.externalFactPolicy,
-            evidenceSummary,
-            userText,
-            recoveryAttempt,
-          })
-        : safeSourceContentFallback({ evidenceSummary, userText }),
+      assistant: original,
       assessment: {
         ok: false,
         required: true,
-        strongClaim: true,
+        strongClaim: false,
         hasEvidence: false,
         reason: "evidence_gate_internal_error",
+        failedOpen: true,
       },
       evidenceSummary,
       triggerVerifyRetry: false,
@@ -570,7 +475,6 @@ module.exports = {
   evaluateAnswerEvidence,
   evaluateAnswerEvidenceWithJudge,
   isExternalFactContract,
-  safeExternalFactFallback,
   shouldBufferAssistantAnswer,
   toolEvidenceText,
 };

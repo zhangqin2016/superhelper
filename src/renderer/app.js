@@ -10,6 +10,7 @@ import { initFileHandler } from "./modules/file-handler.js";
 import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
 import { wireMessageIpc, initMessageUi, syncComposerForActiveSession } from "./modules/message.js";
 import { initMigrationProgress } from "./modules/migration-progress.js";
+import { initStartupHealth } from "./modules/startup-health.js";
 import { initRuntimePackProgress } from "./modules/runtime-pack-progress.js";
 import { initVoiceDictation } from "./modules/voice-dictation.js";
 import { renderProjectTree, initAddProject, initTopbarSessionRename } from "./modules/project-tree.js";
@@ -188,6 +189,7 @@ async function init() {
   initMessageUi();
   wireMessageIpc();
   initMigrationProgress();
+  initStartupHealth();
   initRuntimePackProgress();
   initVoiceDictation();
   initCustomSelects();

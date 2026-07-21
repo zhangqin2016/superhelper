@@ -76,10 +76,16 @@ function buildEvidenceGraph(record = {}) {
     edges.push(edge(`turn:${turnId}`, id, "produced_artifact"));
   }
 
-  if (record.meta?.evidenceGate && record.meta.evidenceGate.ok === false) {
+  const evidenceGate = record.meta?.evidenceGate;
+  const advisoryReasons = Array.isArray(evidenceGate?.advisoryReasons) ? evidenceGate.advisoryReasons : [];
+  // Learning loop (2026-07-20 model-first): advisory (telemetry-only) findings
+  // also surface as evidence-gap nodes — strictness feeds the model's context,
+  // never user-facing decoration.
+  if (evidenceGate && (evidenceGate.ok === false || advisoryReasons.length)) {
+    const gapReason = evidenceGate.reason || advisoryReasons.join(", ") || "evidence gap";
     const id = `evidence_gap:${turnId}`;
-    nodes.push(node(id, "evidence_gap", record.meta.evidenceGate.reason || "evidence gap", {
-      reason: record.meta.evidenceGate.reason || "",
+    nodes.push(node(id, "evidence_gap", gapReason, {
+      reason: gapReason,
     }));
     edges.push(edge(`turn:${turnId}`, id, "has_gap"));
   }

@@ -152,8 +152,9 @@ function currentModelRouteFallback() {
 }
 
 async function reportModelFailureDiagnostic(ctx, sessionId, opts = {}) {
-  const classified = opts.classified || classifyAssistantError(opts.raw || "");
-  if (classified?.category !== "model" && classified?.code !== "ENGINE_UNAVAILABLE") return;
+  let classified = opts.classified || classifyAssistantError(opts.raw || "");
+  // Report EVERY failure class incl. unclassified — a model-only gate blinds us to "activated but unusable" bugs.
+  if (!classified?.code) classified = { code: "UNCLASSIFIED_FAILURE", category: "unknown", retryable: true };
   const raw = redactDiagnosticString(opts.raw || opts.message || "");
   const runner = runnerDiagnostics(ctx, sessionId);
   const session = ctx.sessionManager?.findById?.(sessionId) || null;
@@ -279,6 +280,8 @@ class TurnOrchestrator {
       claimAgentResumeId: (sessionId, agentResumeId) => this._claimAgentResumeId(sessionId, agentResumeId),
       handleRuntimeControl: (sessionId, payload) => this._handleRuntimeControl(sessionId, payload),
     });
+    // Safety net for phases no engine watchdog covers ("starting"/"finalizing").
+    this.stuckPhaseGuard = require("./turn-start-guard").startStuckPhaseGuard(this);
   }
 
   /**
@@ -461,7 +464,7 @@ class TurnOrchestrator {
       };
     }
 
-    return this._startTurn(session, displayText, files, opts);
+    return require("./turn-start-guard").guardTurnStart(this, session, displayText, files, opts);
   }
 
   // Inject a message into the in-flight turn via the engine's native steering (the
@@ -721,7 +724,7 @@ class TurnOrchestrator {
     if (item.options?.reloadSkillsBeforeStart && runner?.isAlive?.() && !runner.reloadSkills()) {
       this.ctx.runnerPool.terminateSession(sessionId);
     }
-    return await this._startTurn(session, item.text, item.files, {
+    return await require("./turn-start-guard").guardTurnStart(this, session, item.text, item.files, {
       fromQueue: true,
       displayFiles: item.displayFiles,
       recordUser: item.options?.recordUser !== false,
@@ -1598,12 +1601,9 @@ class TurnOrchestrator {
       });
     } else if (failed) {
       let friendly = failure.message || normalized.text || sanitizeError(collectFailureTextFromState(state)) || "The assistant engine encountered an error. Please retry.";
-      // Make the invisible self-heal visible: when THIS turn was already the
-      // silent rescue retry, say so — otherwise the user reads two naked
-      // failures and concludes the auto-recovery is gone.
-      if (state.wasRescueAttempt) {
-        friendly = `${friendly}\n\n（平台已自动重试 1 次仍然失败，判断为持续性故障。）`;
-      }
+      // Make the invisible self-heal visible: a retried turn that still fails
+      // must say so — two naked failures read as "no recovery".
+      friendly += this.turnRecoveryRuntime.rescueRetryNotice(sessionId, state.wasRescueAttempt);
       const rawFailureText = collectFailureTextFromState(state) || normalized.text || payload?.error || payload?.message || friendly;
       const failedTurnId = state.turnId;
       finalizeDone = this._finalize(sessionId, "turn.failed", {

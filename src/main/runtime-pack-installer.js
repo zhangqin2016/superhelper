@@ -538,47 +538,7 @@ async function extractArtifact(archivePath, targetDir, artifact, options = {}) {
   return "tar.gz";
 }
 
-const TRANSIENT_FS_CODES = new Set(["EPERM", "EBUSY", "EACCES", "ENOTEMPTY"]);
-
-/** Rename with retry: on Windows, antivirus real-time scanning briefly locks
- *  freshly extracted files, making the first rename fail EPERM/EBUSY even
- *  though the install is fine. Retrying over a few seconds absorbs the scan. */
-async function renameWithRetry(from, to, attempts = 6) {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      fs.renameSync(from, to);
-      return;
-    } catch (error) {
-      if (attempt >= attempts - 1 || !TRANSIENT_FS_CODES.has(error?.code)) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
-    }
-  }
-}
-
-async function replacePackDirectory(stagingPath, targetPath) {
-  const parentDir = path.dirname(targetPath);
-  const backupPath = path.join(parentDir, `.${path.basename(targetPath)}-${Date.now()}.previous`);
-  let backedUp = false;
-  fs.mkdirSync(parentDir, { recursive: true });
-  fs.rmSync(backupPath, { recursive: true, force: true });
-  if (fs.existsSync(targetPath)) {
-    await renameWithRetry(targetPath, backupPath);
-    backedUp = true;
-  }
-  try {
-    await renameWithRetry(stagingPath, targetPath);
-    if (backedUp) fs.rmSync(backupPath, { recursive: true, force: true });
-  } catch (error) {
-    if (backedUp && fs.existsSync(backupPath) && !fs.existsSync(targetPath)) {
-      try {
-        fs.renameSync(backupPath, targetPath);
-      } catch {
-        // If rollback fails, keep the original error; callers report the install failure.
-      }
-    }
-    throw error;
-  }
-}
+const { renameWithRetry, rmDirWithRetry, replacePackDirectory } = require("./fs-transient-retry");
 
 function archiveExtensionForArtifact(artifact = {}) {
   const format = String(artifact?.format || "").toLowerCase();
@@ -942,7 +902,15 @@ function uninstallRuntimePack(packId) {
   if (!hasUserPack && bundledPackDir(id)) {
     return { ok: false, id, error: "BUNDLED_RUNTIME_PACK_READ_ONLY" };
   }
-  fs.rmSync(packDir(id), { recursive: true, force: true });
+  // Windows: soffice.exe/python.exe linger after use and lock pack files;
+  // an unprotected rmSync throws MID-DELETE, leaving a half-removed pack whose
+  // state record still says "installed". Retry transient locks; on persistent
+  // failure keep the state record so the UI can offer uninstall again.
+  try {
+    rmDirWithRetry(packDir(id));
+  } catch (err) {
+    return { ok: false, id, error: "RUNTIME_PACK_UNINSTALL_FAILED", detail: err?.message || String(err) };
+  }
   if (state.installed && Object.prototype.hasOwnProperty.call(state.installed, id)) {
     delete state.installed[id];
     writeState(state);

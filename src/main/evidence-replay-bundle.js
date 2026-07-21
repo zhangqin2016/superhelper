@@ -121,15 +121,21 @@ function buildEvidenceReplayBundle(record = {}) {
     });
   }
 
-  if (record.meta?.evidenceGate && record.meta.evidenceGate.ok === false) {
+  const evidenceGate = record.meta?.evidenceGate;
+  const advisoryReasons = Array.isArray(evidenceGate?.advisoryReasons) ? evidenceGate.advisoryReasons : [];
+  // Learning loop (2026-07-20 model-first): advisory (telemetry-only) findings
+  // also feed the next turn's evidence-gap memory — strictness flows to the
+  // model, never to user-facing decoration.
+  if (evidenceGate && (evidenceGate.ok === false || advisoryReasons.length)) {
+    const gapReason = evidenceGate.reason || advisoryReasons.join(", ") || "evidence gap";
     items.push({
       id: `evidence_gap:${turnId || items.length}`,
       kind: "evidence_gap",
-      title: record.meta.evidenceGate.reason || "evidence gap",
+      title: gapReason,
       status: "attention",
       replay: {
         type: "evidence_gap",
-        reason: record.meta.evidenceGate.reason || "",
+        reason: gapReason,
       },
     });
   }

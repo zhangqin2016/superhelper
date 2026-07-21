@@ -273,7 +273,7 @@ async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await require("./proxy-aware-fetch")(url, { signal: controller.signal });
     if (!response.ok) {
       return { ok: false, error: "FETCH_FAILED", detail: `${response.status} ${response.statusText}` };
     }

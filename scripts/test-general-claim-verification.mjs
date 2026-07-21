@@ -109,7 +109,11 @@ const revokedHospital = await evaluate({
 });
 assert.equal(revokedHospital.result.assessment.reason, "entity_claim_conflicts_with_evidence");
 assert.deepEqual(revokedHospital.result.assessment.conflictingClaims, ["示例市人民医院"]);
-assert.doesNotMatch(revokedHospital.result.assistant, /示例市人民医院/, "judge-ruled conflicts are never banner-kept");
+// Fail-open (2026-07-20 model-first): even judge-ruled conflicts are delivered
+// verbatim — the gate never erases a good-faith answer. The only user-visible
+// addition at the final failure state is one plain-language honesty note.
+assert.match(revokedHospital.result.assistant, /示例市人民医院/, "conflicts are delivered, never erased");
+assert.match(revokedHospital.result.assistant, /备注：以上回答未能通过本轮逐项核实/, "final failure state carries the honesty note");
 
 const neighboringRevocation = await evaluate({
   userText: hospitalQuestion,

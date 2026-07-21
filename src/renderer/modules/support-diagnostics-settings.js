@@ -137,3 +137,8 @@ export function initSupportDiagnosticsSettings() {
   $("supportDiagnosticsRestoreBtn")?.addEventListener("click", () => void restoreDefaultModel());
   $("supportDiagnosticsSendBtn")?.addEventListener("click", () => void sendDiagnostics());
 }
+
+/** Entry for the failed-turn "诊断修复" action: open the page, then auto-run. */
+export function runSupportDiagnosticsNow() {
+  return runDiagnostics();
+}

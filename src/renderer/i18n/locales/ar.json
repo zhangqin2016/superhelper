@@ -1392,5 +1392,9 @@
   "tool.media.audioAlt": "صوت منشأ {index}",
   "tool.media.fileAlt": "ملف منشأ {index}",
   "tool.media.savedTo": "تم الحفظ في",
-  "pack.secretWarning": "⚠️ قد يحتوي {count} ملفاً على مفاتيح أو أسرار، مثل {files}. تحقق مما إذا كان يجب إزالتها قبل المشاركة."
+  "pack.secretWarning": "⚠️ قد يحتوي {count} ملفاً على مفاتيح أو أسرار، مثل {files}. تحقق مما إذا كان يجب إزالتها قبل المشاركة.",
+  "startupHealth.title": "تم اكتشاف مشكلات قد تؤثر على الاستخدام",
+  "startupHealth.action": "التشخيص والإصلاح",
+  "turn.diagnoseRepair": "التشخيص والإصلاح",
+  "send.error.LOW_DISK_SPACE": "مساحة القرص غير كافية (أقل من 100MB متبقية)، لا يمكن حفظ الرسائل. حرّر بعض المساحة وأعد المحاولة."
 }

@@ -147,14 +147,21 @@ function missingRequiredEvidenceKind(evidencePolicy = {}, summary = {}) {
   return "";
 }
 
-function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = null, fileChangeCount = 0 } = {}) {
-  if (!turnPolicy && !evidenceSummary) return null;
+// Mechanical SEMANTIC checks (keyword-matched "claims verified / fixed / root
+// cause / coverage / fresh") are ADVISORY TELEMETRY ONLY (2026-07-20 model-first
+// direction): models have infinite legitimate phrasings, so a keyword mismatch
+// may never fail or decorate an answer. Reasons are recorded on the assessment
+// for the learning loop; only LITERAL checks (numeric/URL grounding, entity
+// containment) stay hard. Semantics belong to the turn judge.
+function collectPolicyAdvisoryReasons(text, { turnPolicy = null, evidenceSummary = null, fileChangeCount = 0 } = {}) {
+  if (!turnPolicy && !evidenceSummary) return [];
   const summary = evidenceSummary || {};
+  const reasons = [];
   if (ROOT_CAUSE_RE.test(text) && !summary.hasFileReadEvidence && !hasCount(summary, "events")) {
-    return { ok: false, reason: "root_cause_without_source_evidence" };
+    reasons.push("root_cause_without_source_evidence");
   }
   if (FIXED_RE.test(text) && fileChangeCount <= 0 && !summary.hasFileChangeEvidence && !hasCount(summary, "fileWrites")) {
-    return { ok: false, reason: "fixed_claim_without_change_evidence" };
+    reasons.push("fixed_claim_without_change_evidence");
   }
   if (
     VERIFIED_RE.test(text) &&
@@ -162,7 +169,7 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
     !summary.hasCommandEvidence &&
     !hasCount(summary, "verifications")
   ) {
-    return { ok: false, reason: "verified_claim_without_verification" };
+    reasons.push("verified_claim_without_verification");
   }
   if (
     turnPolicy?.taskType === "media_generation" &&
@@ -171,14 +178,14 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
     !summary.hasFileChangeEvidence &&
     !hasCount(summary, "fileWrites")
   ) {
-    return { ok: false, reason: "media_output_without_file_evidence" };
+    reasons.push("media_output_without_file_evidence");
   }
   if (turnPolicy?.requiresSourceCoverage && SOURCE_CLAIM_RE.test(text)) {
     if (!summary.hasSearchEvidence && !hasCount(summary, "fileSearches") && (summary.coverage?.candidateCount || 0) <= 0) {
-      return { ok: false, reason: "source_claim_without_search_evidence" };
+      reasons.push("source_claim_without_search_evidence");
     }
     if (!summary.hasFileReadEvidence && !hasCount(summary, "filesRead")) {
-      return { ok: false, reason: "source_claim_without_file_read_evidence" };
+      reasons.push("source_claim_without_file_read_evidence");
     }
   }
   const coverageAssertion =
@@ -189,10 +196,9 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
     const candidateCount = summary?.coverage?.candidateCount || 0;
     const inspectedCount = summary?.coverage?.inspectedCount || 0;
     if (!summary.hasSearchEvidence && candidateCount <= 0) {
-      return { ok: false, reason: "coverage_claim_without_candidate_set" };
-    }
-    if (candidateCount > 0 && (summary?.coverage?.fullInspection === false || inspectedCount < candidateCount)) {
-      return { ok: false, reason: "coverage_claim_without_full_inspection" };
+      reasons.push("coverage_claim_without_candidate_set");
+    } else if (candidateCount > 0 && (summary?.coverage?.fullInspection === false || inspectedCount < candidateCount)) {
+      reasons.push("coverage_claim_without_full_inspection");
     }
   }
   if (
@@ -201,9 +207,9 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
     !summary.hasFreshEvidence &&
     !EVIDENCE_GAP_DISCLOSURE_RE.test(text)
   ) {
-    return { ok: false, reason: "fresh_claim_without_fresh_evidence" };
+    reasons.push("fresh_claim_without_fresh_evidence");
   }
-  return null;
+  return reasons;
 }
 
 // Deterministic numeric grounding (zero model calls). Data-like numbers — counts
@@ -360,16 +366,8 @@ function assessFinalAnswerEvidence({
       unsupportedClaims: claimCoverage.unsupportedClaims,
     };
   }
-  const policyBacked = assessPolicyBackedClaims(text, { turnPolicy, evidenceSummary, fileChangeCount });
-  if (policyBacked?.ok === false) {
-    return {
-      ok: false,
-      required,
-      strongClaim: true,
-      hasEvidence: false,
-      reason: policyBacked.reason,
-    };
-  }
+  const advisoryReasons = collectPolicyAdvisoryReasons(text, { turnPolicy, evidenceSummary, fileChangeCount });
+  const advisory = advisoryReasons.length ? { advisoryReasons } : {};
   const strongClaim = STRONG_CLAIM_RE.test(text);
   const hasLedgerEvidence = Boolean(
     evidenceSummary?.hasFileReadEvidence ||
@@ -401,6 +399,7 @@ function assessFinalAnswerEvidence({
         hasEvidence,
         reason: "numeric_claim_not_in_evidence",
         ungroundedNumbers,
+        ...advisory,
       };
     }
   }
@@ -412,6 +411,7 @@ function assessFinalAnswerEvidence({
       hasEvidence,
       reason: "",
       ...(citationAssessment || {}),
+      ...advisory,
     };
   }
   return {
@@ -420,62 +420,12 @@ function assessFinalAnswerEvidence({
     strongClaim,
     hasEvidence,
     reason: "strong_claim_without_evidence",
+    ...advisory,
   };
-}
-
-function appendEvidenceGateNotice(assistant, assessment) {
-  const text = String(assistant || "").trim();
-  if (assessment?.ok !== false) return text;
-  const language = /[\u3400-\u9fff]/u.test(text) ? "zh" : /[\u0600-\u06ff]/u.test(text) ? "ar" : "en";
-  // Targeted notice when specific numbers are ungrounded — name them, so the user
-  // sees exactly which values to distrust instead of a blanket disclaimer.
-  if (assessment.reason === "numeric_claim_not_in_evidence" && assessment.ungroundedNumbers?.length) {
-    const numericMessage = language === "zh"
-      ? `证据门槛：以下数字未出现在本轮工具输出中，可能是估计或臆造，未经核实，请勿当作已确认事实：${assessment.ungroundedNumbers.join("、")}。`
-      : language === "ar"
-        ? `بوابة الأدلة: لم تظهر هذه الأرقام في مخرجات أدوات هذه الجولة وما زالت غير متحققة: ${assessment.ungroundedNumbers.join("، ")}.`
-        : `Evidence gate: these numbers did not appear in this turn's tool output and remain unverified: ${assessment.ungroundedNumbers.join(", ")}.`;
-    return `${text}\n\n${numericMessage}`;
-  }
-  const assessmentReason = String(assessment.reason || "");
-  const externalFactFailure = [
-    "missing_required_evidence:external",
-    "external_fact_without_source_link",
-    "source_link_not_in_evidence",
-    "external_claim_not_in_evidence",
-    "authoritative_source_required",
-    "entity_claim_not_in_evidence",
-    "entity_claim_conflicts_with_evidence",
-    "semantic_support_unverified",
-  ].includes(assessmentReason);
-  const sourceContentFailure = assessment.reason === "missing_required_evidence:source_content";
-  const externalMessages = {
-    zh: "证据门槛：这条外部事实回答没有取得可核验的本轮来源，或引用链接并非来自本轮工具结果，不能视为已确认答案。系统应先联网/API核验；核验不了就明确说无法确认。",
-    ar: "بوابة الأدلة: تفتقر إجابة الحقائق الخارجية هذه إلى مصدر قابل للتحقق من هذه الجولة، أو تستشهد برابط لم تُرجعه الأدوات. ليست إجابة مؤكدة؛ يجب التحقق عبر الويب/API أو التصريح بتعذر التأكيد.",
-    en: "Evidence gate: this external-fact answer lacks a verifiable source from this turn, or cites a link that was not returned by the tools. It is not a confirmed answer; verify via web/API or state that it cannot be confirmed.",
-  };
-  const generalMessages = {
-    zh: "证据门槛：上面的结论缺少可核验证据支撑，不能视为已确认事实。需要通过文件引用、命令/测试输出、日志、接口返回或线上检查结果验证后才能确认。",
-    ar: "بوابة الأدلة: يفتقر الاستنتاج أعلاه إلى دليل قابل للتحقق ولا يُعد مؤكداً. يجب التحقق منه عبر مراجع الملفات أو مخرجات الأوامر/الاختبارات أو السجلات أو ردود API أو فحص مباشر.",
-    en: "Evidence gate: the conclusion above lacks verifiable evidence and is not confirmed. Verify it through file references, command/test output, logs, API responses, or a live check.",
-  };
-  const sourceContentMessages = {
-    zh: "附件证据门槛：本轮没有成功取得图片或文档的可读内容，因此上面的附件内容判断不能视为可靠结果。需要先完成识别或解析；读取失败时只能明确说明失败，不能根据文件名或上下文猜测。",
-    ar: "بوابة دليل المرفق: لم تحصل هذه الجولة على محتوى مقروء من الصورة أو المستند، لذلك لا تعد الاستنتاجات حول المرفق موثوقة. يجب قراءته أولا، أو التصريح بفشل القراءة دون تخمين.",
-    en: "Attachment evidence gate: this turn did not obtain readable image or document content, so the attachment claims above are not reliable. Read the source first, or disclose the read failure without guessing from metadata.",
-  };
-  const message = externalFactFailure
-    ? externalMessages[language]
-    : sourceContentFailure
-      ? sourceContentMessages[language]
-      : generalMessages[language];
-  const notice = ["", message].join("\n");
-  return `${text}${notice}`;
 }
 
 module.exports = {
   assessFinalAnswerEvidence,
-  appendEvidenceGateNotice,
   extractHttpUrls,
   hasEvidenceKind,
 };

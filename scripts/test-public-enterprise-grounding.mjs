@@ -46,7 +46,7 @@ assert(ambiguousContract.externalFactPolicy.finalAnswerRequirements.some((item) 
   /Map every named entity/.test(item)));
 // Risk-tier contract: informal-label rosters are verify_soft — only genuinely
 // high-stakes asks are hard-tier now. verify_soft answers keep streaming
-// (failures route to a bounded banner, never a wholesale swap).
+// (failures deliver the original answer, never a wholesale swap).
 const { shouldBufferAssistantAnswer } = require("../src/main/answer-evidence-finalizer.js");
 assert.equal(shouldBufferAssistantAnswer(ambiguousContract), false, "ordinary roster asks stream; only hard tier buffers");
 
@@ -58,8 +58,9 @@ const unverifiedAmbiguousAnswer = evaluateAnswerEvidence({
   userText: ambiguousUserText,
 });
 assert.equal(unverifiedAmbiguousAnswer.assessment.reason, "missing_required_evidence:external");
-assert.match(unverifiedAmbiguousAnswer.assistant, /没有取得可核验的实时来源/);
-assert.doesNotMatch(unverifiedAmbiguousAnswer.assistant, /中国建筑集团/);
+// Fail-open: zero-research answers are delivered verbatim while a silent
+// verify retry is pending — no bounded fallback, no erased claims.
+assert.equal(unverifiedAmbiguousAnswer.assistant, "副部级建筑央企仅有中国建筑集团有限公司。", "the original answer is delivered verbatim");
 assert.equal(unverifiedAmbiguousAnswer.triggerVerifyRetry, true);
 
 const avoidableClarification = evaluateAnswerEvidence({
@@ -70,7 +71,9 @@ const avoidableClarification = evaluateAnswerEvidence({
   userText: ambiguousUserText,
 });
 assert.equal(avoidableClarification.assessment.reason, "missing_required_evidence:external");
-assert.doesNotMatch(avoidableClarification.assistant, /一级央企还是/);
+// Fail-open: the original answer is delivered verbatim — an embedded
+// clarifying question is the model's choice, not the gate's to strip.
+assert.match(avoidableClarification.assistant, /一级央企还是/);
 assert.equal(avoidableClarification.triggerVerifyRetry, true);
 
 const scopedUserText = "按国务院国资委直接监管的一级中央企业、并以领导人员干部管理权限为口径，哪些建筑类企业通常被称为副部级？";
@@ -103,8 +106,8 @@ function verdict({ supported = [], unsupported = [], urls = [], conflicts = [], 
 
 // ---------------------------------------------------------------------------
 // Model-first gate: source authority is a JUDGE call, not a gov-TLD regex.
-// Secondary-only sourcing stays unverified — but ordinary asks fail OPEN with
-// a bounded banner answer instead of the old zero-content refusal.
+// Secondary-only sourcing stays unverified — and fails OPEN: the original
+// answer is delivered verbatim while a silent verify retry is pending.
 const secondaryUrl = "https://example.com/building-soe-list";
 const secondaryOnly = await evaluateAnswerEvidenceWithJudge({
   assistant: `中国建筑集团有限公司通常被称为副部级央企。\n${secondaryUrl}`,
@@ -127,15 +130,14 @@ const secondaryOnly = await evaluateAnswerEvidenceWithJudge({
 });
 assert.equal(secondaryOnly.assessment.reason, "authoritative_source_required");
 assert.equal(secondaryOnly.assessment.semanticJudged, true);
-assert.equal(secondaryOnly.assessment.framedBounded, true);
-assert.match(secondaryOnly.assistant, /⚠️/);
-assert.match(secondaryOnly.assistant, /中国建筑集团有限公司/);
-assert.doesNotMatch(secondaryOnly.assistant, /负责认定或监管机构的一手材料/);
+assert.equal(secondaryOnly.assistant, `中国建筑集团有限公司通常被称为副部级央企。\n${secondaryUrl}`, "fail-open: secondary-sourced answers deliver verbatim while a verify retry is pending");
+assert.doesNotMatch(secondaryOnly.assistant, /⚠️|负责认定或监管机构的一手材料/);
 assert.equal(secondaryOnly.triggerVerifyRetry, true);
 
 // A directory-order derivation is no longer a REGEX-forbidden inference — the
 // judge rules whether the excerpt entails the claim. When it does (and the
-// source is authoritative), the answer passes WITH the informal-label framing.
+// source is authoritative), the answer passes; the informal-label ruling is
+// recorded in assessment meta, never decorated onto the delivery.
 const directoryUrl = "https://www.sasac.gov.cn/n2588045/n27271785/index.html";
 const directoryInference = await evaluateAnswerEvidenceWithJudge({
   assistant: `国资委名录前54家属于副部级，因此中国建筑集团有限公司是副部级央企。\n${directoryUrl}`,
@@ -153,12 +155,12 @@ const directoryInference = await evaluateAnswerEvidenceWithJudge({
   }),
 });
 assert.equal(directoryInference.assessment.ok, true);
-assert.equal(directoryInference.assessment.informalLabelFramed, true);
-assert.match(directoryInference.assistant, /口径说明/);
+assert.equal(directoryInference.assessment.informalLabelFramed, true, "the informal-label ruling is recorded for the learning loop");
+assert.doesNotMatch(directoryInference.assistant, /口径说明/, "pass-path delivery is never decorated");
 assert.match(directoryInference.assistant, /中国建筑集团有限公司/);
 
 // Judge rules the excerpt does NOT entail the assertion (mere directory
-// presence): ordinary fail-open keeps the windowed claim under a banner.
+// presence): fail-open keeps the windowed claim — delivered verbatim, no banner.
 const officialDirectoryOnly = await evaluateAnswerEvidenceWithJudge({
   assistant: `先说明中国建筑集团有限公司是本题涉及的企业。\n副部级央企：\n中国建筑集团有限公司\n${directoryUrl}`,
   taskContract: scopedContract,
@@ -176,8 +178,8 @@ const officialDirectoryOnly = await evaluateAnswerEvidenceWithJudge({
 });
 assert.equal(officialDirectoryOnly.assessment.ok, false);
 assert.equal(officialDirectoryOnly.assessment.semanticJudged, true);
-assert.match(officialDirectoryOnly.assistant, /⚠️/);
-assert.match(officialDirectoryOnly.assistant, /中国建筑集团有限公司/);
+assert.match(officialDirectoryOnly.assistant, /中国建筑集团有限公司/, "unproven claims are delivered, never erased");
+assert.doesNotMatch(officialDirectoryOnly.assistant, /⚠️/, "no banner decoration on the failure path");
 
 const appointmentEvidence = [
   "中共中央决定，中国建筑集团有限公司主要负责人职务调整。",
@@ -201,8 +203,9 @@ const assumedScopeAnswer = await evaluateAnswerEvidenceWithJudge({
 assert.equal(assumedScopeAnswer.assessment.ok, true, "an ambiguous reversible query must be answerable in one turn with a disclosed scope and evidence");
 assert.match(assumedScopeAnswer.assistant, /中国建筑集团有限公司/);
 
-// Judge-ruled CONFLICT (the entity was merged into another group): never
-// banner-kept, never salvage-kept — the fail-closed remainder applies.
+// Judge-ruled CONFLICT (the entity was merged into another group): fail-open
+// like everything else — the original answer is delivered verbatim; the
+// conflict ruling lives in assessment meta for the learning loop.
 const mergerUrl = "https://wap.sasac.gov.cn/n2588045/n27271785/n27271802/c14159379/content.html";
 const mergerEvidence = [
   "中国冶金科工集团有限公司整体并入中国五矿集团有限公司，成为其全资子企业，不再作为国资委直接监管企业。",
@@ -225,7 +228,7 @@ const conflictingRoster = await evaluateAnswerEvidenceWithJudge({
 });
 assert.equal(conflictingRoster.assessment.reason, "entity_claim_conflicts_with_evidence");
 assert.deepEqual(conflictingRoster.assessment.conflictingClaims, ["中国冶金科工集团有限公司"]);
-assert.doesNotMatch(conflictingRoster.assistant, /正厅级建筑央企/);
+assert.match(conflictingRoster.assistant, /正厅级建筑央企/, "conflicts are delivered verbatim, never erased");
 
 const groundedAnswer = [
   "企业本身原则上不再套用行政级别，不能仅凭名录序号推导所谓级别。",

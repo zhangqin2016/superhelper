@@ -209,3 +209,39 @@ list); the VERIFIED_RE check accepts it. The guarded lie narrows to "claims
 verified with zero successful command runs", which is the actual failure mode.
 Tests: `test-evidence-ledger.mjs` (success→true, failed→false),
 `test-evidence-gate.mjs` (command-backed "验证通过" passes).
+
+## Field follow-up 8 — full fail-open: decorators retired, gate never rewrites (2026-07-20)
+
+User ruling: "感觉我们加了证据之后越来越蠢了" — four user-visible misfires in
+one day (副部级 refusal, World Cup banner, tower-defense "证据门槛", Excel
+"未通过" jargon) proved that EVERY gate-authored decoration or replacement
+degrades the product. Final direction: 判断交给大模型,贯彻到底.
+
+What changed (plan A, zero content refusals anywhere):
+- `answer-evidence-finalizer.js`: OK path delivers the original verbatim
+  (informal-label rulings are assessment meta only). External-fact failure
+  delivers `original` (retry pending) or `original + one plain-language
+  honesty note` ("备注:以上回答未能通过本轮逐项核实") — never a bounded
+  banner, never a stripped roster, and the high-stakes fail-closed branch is
+  deleted entirely. Document-delivery failure keeps the literal-fact
+  replacement only for missing output_file/structure; everything else gets
+  `original + documentDeliveryNote`. catch path fail-opens for every tier.
+  The ONLY surviving content replacement is `safeSourceContentFallback`
+  (attachment bytes never read ⇒ any content claim is fabricated by
+  construction — a literal fact, not semantics).
+- `external-evidence-recovery.js`: deleted `safeExternalFactFallback`,
+  `boundedAnswerBanner`, `composeBoundedExternalAnswer`,
+  `composeFramedBoundedAnswer`, `prependFramingNote`. Salvage (verified
+  subset + disclosure line) is unchanged — it is inherently safe because the
+  projected subset re-passes the full gate.
+- `evidence-gate.js`: the keyword-class semantic checks (VERIFIED /
+  ROOT_CAUSE / FIXED / COVERAGE / FRESH / MEDIA_OUTPUT / SOURCE_CLAIM) are
+  demoted to telemetry — `collectPolicyAdvisoryReasons` returns reason
+  strings riding on the assessment as `advisoryReasons`, never `ok:false`.
+  `appendEvidenceGateNotice` is gone. Literal checks (numbers, URLs,
+  citations, entities absent from evidence) stay hard.
+
+Strictness now flows to the learning loop (assessment meta → incident →
+eval case), never to the user's eyes. Tests rewritten to encode the new
+intent: fail-open verbatim delivery, honesty note at final failure, no
+banners, conflicts delivered; the domain-vocabulary leak guards are kept.

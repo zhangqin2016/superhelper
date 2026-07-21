@@ -15,6 +15,7 @@ import {
 } from "./dom.js";
 import { elementScrollTargetTop, revealScrollIntent, shouldLoadOlderOnScroll } from "./scroll-geometry.js";
 import { t } from "../i18n/index.js";
+import { buildDiagnoseAction } from "./diagnose-action.js";
 import {
   buildMinimapItems,
   COMMITTED_INITIAL_WINDOW,
@@ -488,10 +489,10 @@ function buildRewindAction(sessionId, message) {
         syncCommittedMessages(sessionId, res.conversation || []);
         renderConversation(sessionId, { force: true, forceScrollBottom: true });
       } else {
-        showScheduledToast(res?.error === "BUSY" ? t("message.rewindBusy") : t("message.rewindFailed"), "warning");
+        showToast(res?.error === "BUSY" ? t("message.rewindBusy") : t("message.rewindFailed"), "warning");
       }
     } catch (err) {
-      showScheduledToast(err?.message || t("message.rewindFailed"), "warning");
+      showToast(err?.message || t("message.rewindFailed"), "warning");
     } finally {
       if (btn.isConnected) btn.disabled = false;
     }
@@ -505,7 +506,7 @@ function buildRewindAction(sessionId, message) {
 function appendArticleActions(article, sessionId, message) {
   const actions = document.createElement("div");
   actions.className = "assistant-article-actions";
-  if (shouldShowRetryAction(message)) actions.appendChild(buildRetryAction(sessionId, message));
+  if (shouldShowRetryAction(message)) actions.append(buildRetryAction(sessionId, message), buildDiagnoseAction());
   const copyText = copyActionText(message);
   if (copyText) {
     const copy = document.createElement("button");
@@ -524,7 +525,7 @@ function appendArticleActions(article, sessionId, message) {
           copy.classList.remove("is-done");
         }, 1500);
       } catch {
-        showScheduledToast(t("common.copyFailed"), "warning");
+        showToast(t("common.copyFailed"), "warning");
       }
     });
     actions.appendChild(copy);
@@ -545,7 +546,7 @@ function buildRetryAction(sessionId, message) {
   retry.addEventListener("click", async () => {
     const committed = getRuntimeSession(sessionId).committedMessages;
     if (!isCurrentRetryTarget(committed, message)) {
-      showScheduledToast(t("turn.retryStale"), "warning");
+      showToast(t("turn.retryStale"), "warning");
       retry.remove();
       return;
     }
@@ -556,11 +557,11 @@ function buildRetryAction(sessionId, message) {
         retry.remove();
       } else {
         retry.disabled = false;
-        showScheduledToast(result?.detail || result?.error || t("turn.retryFailed"), "error");
+        showToast(result?.detail || result?.error || t("turn.retryFailed"), "error");
       }
     } catch (err) {
       retry.disabled = false;
-      showScheduledToast(err?.message || t("turn.retryFailed"), "error");
+      showToast(err?.message || t("turn.retryFailed"), "error");
     }
   });
   return retry;
@@ -638,26 +639,22 @@ async function createScheduledDraftFromMessage(sessionId, messageId, button) {
       messageId,
     });
     if (!result?.ok) {
-      showScheduledToast(t("scheduled.createFailed"), "error");
+      showToast(t("scheduled.createFailed"), "error");
       return;
     }
     if (Array.isArray(result.conversation)) {
       syncCommittedMessages(sessionId, result.conversation);
       renderConversation(sessionId, { force: true, forceScrollBottom: true });
     }
-    showScheduledToast(t("scheduled.created"), "success");
+    showToast(t("scheduled.created"), "success");
   } catch (error) {
-    showScheduledToast(error?.message || t("scheduled.createFailed"), "error");
+    showToast(error?.message || t("scheduled.createFailed"), "error");
   } finally {
     if (button?.isConnected) {
       button.disabled = false;
       button.textContent = originalText;
     }
   }
-}
-
-function showScheduledToast(message, type) {
-  void import("./toast.js").then((m) => m.showToast?.(message, type));
 }
 
 function renderFiles(container, files) {

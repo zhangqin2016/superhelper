@@ -45,6 +45,46 @@ function withDirectory(directory, extra = {}) {
   };
 }
 
+/**
+ * Every control-plane call gets a hard timeout. A wedged serve (alive but
+ * event-loop-stuck) used to suspend these awaits FOREVER — health probes
+ * never resolved, failures never accumulated, and the user watched a spinner
+ * for up to an hour until the turn watchdog fired. Rejecting with a distinct
+ * code lets liveness logic treat the serve as dead within seconds.
+ */
+const SDK_CALL_TIMEOUTS_MS = Object.freeze({
+  health: 5_000,
+  status: 5_000,
+  get: 10_000,
+  create: 30_000,
+  promptAsync: 30_000,
+  summarize: 30_000,
+  messages: 15_000,
+  abort: 10_000,
+  revert: 15_000,
+  unrevert: 15_000,
+  respondPermission: 10_000,
+  respondQuestion: 10_000,
+});
+
+function withCallTimeout(promise, timeoutMs, operation) {
+  let timer = null;
+  const tracked = Promise.resolve(promise);
+  // When the timeout wins the race the SDK promise lives on; attach a sink so
+  // its late settlement can never surface as an unhandledRejection.
+  tracked.catch(() => {});
+  return Promise.race([
+    tracked,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${operation} failed: OPENCODE_HTTP_TIMEOUT after ${timeoutMs}ms`));
+      }, timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 function summarizeParams(directory, sessionID, body = {}) {
   const params = { sessionID };
   if (body.providerID) params.providerID = body.providerID;
@@ -53,26 +93,28 @@ function summarizeParams(directory, sessionID, body = {}) {
   return withDirectory(directory, params);
 }
 
-function createOpencodeSdkSession(client, directory) {
+function createOpencodeSdkSession(client, directory, options = {}) {
   if (!client?.session) throw new Error("Lily runtime client has no session resource");
+  const timeouts = { ...SDK_CALL_TIMEOUTS_MS, ...(options.timeouts || {}) };
+  const call = (operation, promise) => withCallTimeout(promise, timeouts[operation] || 15_000, operation);
   return {
     async get(sessionID) {
       return unwrapSdkResult(
-        await client.session.get(withDirectory(directory, { sessionID })),
+        await call("get", client.session.get(withDirectory(directory, { sessionID }))),
         "session.get",
       );
     },
 
     async create(params = {}) {
       return unwrapSdkResult(
-        await client.session.create(withDirectory(directory, params)),
+        await call("create", client.session.create(withDirectory(directory, params))),
         "session.create",
       );
     },
 
     async promptAsync(sessionID, body = {}) {
       return unwrapSdkResult(
-        await client.session.promptAsync(withDirectory(directory, { sessionID, ...body })),
+        await call("promptAsync", client.session.promptAsync(withDirectory(directory, { sessionID, ...body }))),
         "session.promptAsync",
       );
     },
@@ -82,46 +124,46 @@ function createOpencodeSdkSession(client, directory) {
         throw new Error("Lily runtime client has no session.summarize resource");
       }
       return unwrapSdkResult(
-        await client.session.summarize(summarizeParams(directory, sessionID, body)),
+        await call("summarize", client.session.summarize(summarizeParams(directory, sessionID, body))),
         "session.summarize",
       );
     },
 
     async status() {
       return unwrapSdkResult(
-        await client.session.status(withDirectory(directory)),
+        await call("status", client.session.status(withDirectory(directory))),
         "session.status",
       );
     },
 
     async messages(sessionID, opts = {}) {
       return unwrapSdkPageResult(
-        await client.session.messages(withDirectory(directory, {
+        await call("messages", client.session.messages(withDirectory(directory, {
           sessionID,
           ...(Number.isInteger(opts.limit) ? { limit: opts.limit } : {}),
           ...(opts.before ? { before: opts.before } : {}),
-        })),
+        }))),
         "session.messages",
       );
     },
 
     async abort(sessionID) {
       return unwrapSdkResult(
-        await client.session.abort(withDirectory(directory, { sessionID })),
+        await call("abort", client.session.abort(withDirectory(directory, { sessionID }))),
         "session.abort",
       );
     },
 
     async revert(sessionID, messageID) {
       return unwrapSdkResult(
-        await client.session.revert(withDirectory(directory, { sessionID, messageID })),
+        await call("revert", client.session.revert(withDirectory(directory, { sessionID, messageID }))),
         "session.revert",
       );
     },
 
     async unrevert(sessionID) {
       return unwrapSdkResult(
-        await client.session.unrevert(withDirectory(directory, { sessionID })),
+        await call("unrevert", client.session.unrevert(withDirectory(directory, { sessionID }))),
         "session.unrevert",
       );
     },
@@ -131,20 +173,20 @@ function createOpencodeSdkSession(client, directory) {
       if (!permission) throw new Error("Lily runtime client has no permission resource");
       if (typeof permission.reply === "function") {
         return unwrapSdkResult(
-          await permission.reply(withDirectory(directory, {
+          await call("respondPermission", permission.reply(withDirectory(directory, {
             requestID: permissionID,
             reply: decision.reply,
             ...(decision.message ? { message: decision.message } : {}),
-          })),
+          }))),
           "permission.reply",
         );
       }
       return unwrapSdkResult(
-        await permission.respond(withDirectory(directory, {
+        await call("respondPermission", permission.respond(withDirectory(directory, {
           sessionID,
           permissionID,
           response: decision.reply,
-        })),
+        }))),
         "permission.respond",
       );
     },
@@ -153,7 +195,7 @@ function createOpencodeSdkSession(client, directory) {
       const question = client.question;
       if (!question) throw new Error("Lily runtime client has no question resource");
       return unwrapSdkResult(
-        await question.reply(withDirectory(directory, { requestID, answers })),
+        await call("respondQuestion", question.reply(withDirectory(directory, { requestID, answers }))),
         "question.reply",
       );
     },
@@ -161,7 +203,7 @@ function createOpencodeSdkSession(client, directory) {
     async health() {
       const global = client.global;
       if (!global) throw new Error("Lily runtime client has no global resource");
-      return unwrapSdkResult(await global.health(), "global.health");
+      return unwrapSdkResult(await call("health", global.health()), "global.health");
     },
   };
 }
@@ -171,4 +213,6 @@ module.exports = {
   unwrapSdkResult,
   unwrapSdkPageResult,
   summarizeParams,
+  withCallTimeout,
+  SDK_CALL_TIMEOUTS_MS,
 };

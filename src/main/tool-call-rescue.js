@@ -33,13 +33,17 @@ const { isSideEffectFreeToolRun } = require("./tool-semantics");
  */
 
 // Pure double-fire debounce. Loop prevention does NOT live here: a failed
-// rescue turn never chains into another rescue (the orchestrator's
-// wasRescueAttempt guard), so every USER action gets at most one silent
-// retry. The old 5-minute cooldown made a user's manual resend seconds after
-// a failure get WORSE treatment than their first send (no rescue at all).
+// rescue turn never chains into another rescue UNLESS the strategy explicitly
+// allows multiple attempts (maxAttempts > 1, e.g. model_connection_retry —
+// a gateway restart loop outlasts a single retry). The old 5-minute cooldown
+// made a user's manual resend seconds after a failure get WORSE treatment
+// than their first send (no rescue at all).
 const COOLDOWN_MS = 5_000;
+// Multi-attempt budgets reset after this gap: a failure episode ten minutes
+// later is a NEW episode and earns a fresh set of silent attempts.
+const ATTEMPT_WINDOW_MS = 10 * 60_000;
 
-/** @type {Map<string, number>} `${sessionId}:${code}` -> last attempt ts */
+/** @type {Map<string, {at: number, count: number}>} `${sessionId}:${code}` -> attempts */
 const lastRescueByKey = new Map();
 
 const CORRECTIVE_HINT = [
@@ -149,6 +153,54 @@ const RESCUE_STRATEGIES = Object.freeze({
     delayMs: 2000,
     enabled: () => process.env.LILY_RUNNER_START_RETRY !== "0",
   }),
+  // Model-service connection failures (2026-07-21 auto-repair directive):
+  // upstream flakes (gateway restart, rolling deploy, keep-alive poisoning)
+  // must be absorbed by the platform, never shown to the user while the API
+  // is actually usable. recycleEngine gets fresh connections (same poisoned
+  // pool reasoning as EMPTY_ASSISTANT_COMPLETION); the runtime additionally
+  // hot-refreshes the model env before each attempt. Multi-attempt because a
+  // gateway restart loop outlasts a single retry — bounded so a genuinely
+  // dead service still ends in an honest, blame-free message.
+  MODEL_CONNECTION_FAILED: Object.freeze({
+    kind: "model_connection_retry",
+    hint: "",
+    recycleEngine: true,
+    delayMs: 3000,
+    maxAttempts: 3,
+    enabled: () => process.env.LILY_MODEL_CONNECTION_RETRY !== "0",
+  }),
+  ENGINE_UNAVAILABLE: Object.freeze({
+    kind: "model_connection_retry",
+    hint: "",
+    recycleEngine: true,
+    delayMs: 4000,
+    maxAttempts: 2,
+    enabled: () => process.env.LILY_MODEL_CONNECTION_RETRY !== "0",
+  }),
+  MODEL_OVERLOADED: Object.freeze({
+    kind: "model_connection_retry",
+    hint: "",
+    recycleEngine: true,
+    delayMs: 8000,
+    maxAttempts: 2,
+    enabled: () => process.env.LILY_MODEL_CONNECTION_RETRY !== "0",
+  }),
+  RATE_LIMITED: Object.freeze({
+    kind: "model_connection_retry",
+    hint: "",
+    recycleEngine: true,
+    delayMs: 10000,
+    maxAttempts: 2,
+    enabled: () => process.env.LILY_MODEL_CONNECTION_RETRY !== "0",
+  }),
+  PERMISSION_DENIED: Object.freeze({
+    kind: "model_connection_retry",
+    hint: "",
+    recycleEngine: true,
+    delayMs: 2000,
+    maxAttempts: 2,
+    enabled: () => process.env.LILY_MODEL_CONNECTION_RETRY !== "0",
+  }),
 });
 
 // Tools whose re-execution is harmless (pure reads / research / planning).
@@ -169,13 +221,30 @@ function isRescuableFailureCode(code) {
   return Boolean(RESCUE_STRATEGIES[String(code || "")]);
 }
 
-function shouldAttemptRescue(sessionId, code, now = Date.now()) {
-  const last = lastRescueByKey.get(`${String(sessionId || "")}:${String(code || "")}`) || 0;
-  return now - last >= COOLDOWN_MS;
+function shouldAttemptRescue(sessionId, code, now = Date.now(), maxAttempts = 1, debounceMs = COOLDOWN_MS) {
+  const entry = lastRescueByKey.get(`${String(sessionId || "")}:${String(code || "")}`);
+  if (!entry) return true;
+  if (now - entry.at < debounceMs) return false;
+  if (now - entry.at >= ATTEMPT_WINDOW_MS) return true;
+  return (entry.count || 1) < (Number(maxAttempts) || 1);
 }
 
 function markRescueAttempt(sessionId, code, now = Date.now()) {
-  lastRescueByKey.set(`${String(sessionId || "")}:${String(code || "")}`, now);
+  const key = `${String(sessionId || "")}:${String(code || "")}`;
+  const entry = lastRescueByKey.get(key);
+  const count = entry && now - entry.at < ATTEMPT_WINDOW_MS ? (entry.count || 1) + 1 : 1;
+  lastRescueByKey.set(key, { at: now, count });
+}
+
+/** Silent rescue attempts already spent for this session in the current window. */
+function rescueAttemptCount(sessionId, now = Date.now()) {
+  const prefix = `${String(sessionId || "")}:`;
+  let total = 0;
+  for (const [key, entry] of lastRescueByKey) {
+    if (!key.startsWith(prefix) || now - entry.at >= ATTEMPT_WINDOW_MS) continue;
+    total += entry.count || 0;
+  }
+  return total;
 }
 
 /** Test hook: reset per-session cooldowns. */
@@ -193,5 +262,6 @@ module.exports = {
   isSideEffectFreeToolRun,
   shouldAttemptRescue,
   markRescueAttempt,
+  rescueAttemptCount,
   resetRescueStateForTests,
 };

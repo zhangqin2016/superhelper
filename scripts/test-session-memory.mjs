@@ -132,6 +132,43 @@ try {
     throw new Error("formatted summary should include recent evidence gaps");
   }
 
+  // Learning loop (2026-07-20 model-first): advisory-only findings (gate ok
+  // but with telemetry reasons) also land in evidence-gap memory so the next
+  // turn's model sees them — without any user-facing decoration.
+  updateSessionSummaryFromRecord("s1", {
+    turnId: "turn_gap_2",
+    terminal: "turn.completed",
+    user: { text: "彻底找出所有 session.idle 问题" },
+    assistantText: "已经找出全部 session.idle 问题。",
+    fileChanges: [],
+    meta: {
+      evidenceGate: {
+        ok: true,
+        advisoryReasons: ["coverage_claim_without_full_inspection"],
+      },
+    },
+  });
+  summary = readSessionSummary("s1");
+  if (
+    summary.lastEvidenceGap?.reason !== "coverage_claim_without_full_inspection" ||
+    summary.recentEvidenceGaps.length !== 2
+  ) {
+    throw new Error(`advisory findings should also be retained as evidence gaps: ${JSON.stringify(summary)}`);
+  }
+  // A clean pass adds no gap.
+  updateSessionSummaryFromRecord("s1", {
+    turnId: "turn_clean_1",
+    terminal: "turn.completed",
+    user: { text: "hello" },
+    assistantText: "hi",
+    fileChanges: [],
+    meta: { evidenceGate: { ok: true } },
+  });
+  summary = readSessionSummary("s1");
+  if (summary.recentEvidenceGaps.length !== 2) {
+    throw new Error(`a clean pass must not add evidence gaps: ${JSON.stringify(summary)}`);
+  }
+
   // Fallback accounting is cumulative because per-turn prompt estimates only
   // describe the new turn payload. Output is retained too. Runtime usage later
   // replaces (rather than adds to) the estimate because its input already

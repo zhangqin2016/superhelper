@@ -540,6 +540,57 @@
   transition: width 0.25s ease;
 }
 
+/* Startup health banner: shown once at launch when the local diagnostics
+   self-check already found breakage (engine missing, corrupt store, ...).
+   Persistent until dismissed or the user jumps to the diagnostics page. */
+.startup-health-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-notification-queue);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(640px, calc(100vw - 48px));
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--warning-text-soft);
+  box-shadow: var(--shadow-floating);
+  font-size: 12.5px;
+  backdrop-filter: blur(4px);
+}
+.startup-health-text { min-width: 0; }
+.startup-health-title { font-weight: 600; }
+.startup-health-detail {
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0.85;
+}
+.startup-health-action {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--warning-border);
+  background: transparent;
+  color: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.startup-health-action:hover { background: var(--warning-border); }
+.startup-health-close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  font-size: 12px;
+}
+.startup-health-close:hover { opacity: 1; }
+
 /* Dependency install progress: a quiet ring beside the sidebar settings
    button (the old floating banner shouted background plumbing at the user).
    Hover = tooltip with phase and bytes; click = Settings → dependencies. */

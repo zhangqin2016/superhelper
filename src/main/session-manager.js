@@ -784,7 +784,7 @@ class SessionManager {
     } catch { /* best effort */ }
     const tmp = `${indexPath}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
-    fs.renameSync(tmp, indexPath);
+    require("./fs-transient-retry").renameSyncWithRetry(tmp, indexPath); // retries transient locks, never throws (timer path)
     this._backupLegacySessionsFileIfNeeded();
   }
 

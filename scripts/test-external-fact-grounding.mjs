@@ -13,7 +13,7 @@ const {
 const { buildTaskContract, classifyTask, withTaskContractPrefix } = require("../src/main/task-contract.js");
 const { buildTurnPolicy } = require("../src/main/turn-policy.js");
 const { EvidenceLedger } = require("../src/main/evidence-ledger.js");
-const { assessFinalAnswerEvidence, appendEvidenceGateNotice, hasEvidenceKind } = require("../src/main/evidence-gate.js");
+const { assessFinalAnswerEvidence, hasEvidenceKind } = require("../src/main/evidence-gate.js");
 
 const ranking = buildTaskContract({ text: "全球大学排名前十" });
 assert.equal(ranking.active, true);
@@ -112,8 +112,9 @@ const assess = (assistant, evidenceSummary, evidenceText = "") =>
 const unsupported = assess("示例大学排名第一。", { counts: {}, hasFreshEvidence: false, hasDocumentEvidence: false });
 assert.equal(unsupported.ok, false);
 assert.equal(unsupported.reason, "missing_required_evidence:external");
-assert.match(appendEvidenceGateNotice("This ranking is first.", unsupported), /Evidence gate:/);
-assert.match(appendEvidenceGateNotice("هذا التصنيف هو الأول.", unsupported), /بوابة الأدلة:/);
+// No decoration at the gate layer anymore (2026-07-20 model-first): the gate
+// only reports the failure; whether anything user-visible is attached is the
+// finalizer's decision (one plain-language honesty note at the final state).
 
 const clarification = assess("你想看哪个地区、哪一年，以及按什么指标或榜单的排名？", {
   counts: {},

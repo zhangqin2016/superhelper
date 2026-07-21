@@ -8,6 +8,7 @@ const { buildManifestFromSkillMd } = require("./skill-md-convert");
 const { resolveBundledCatalogDir } = require("./skill-bundled-catalog");
 const { findSkillRoot } = require("./skill-root");
 const { copyDirRecursiveShipSafe, isShipIgnoredEntry } = require("./ship-ignore");
+const proxyAwareFetch = require("./proxy-aware-fetch");
 const {
   PROTECTED_BUNDLED_IDS,
   applyPlaceholders,
@@ -31,7 +32,7 @@ async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       signal: controller.signal,
       headers: { Accept: "application/vnd.github+json", "User-Agent": "lily-workbench" },
     });
@@ -48,7 +49,7 @@ async function fetchText(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       signal: controller.signal,
       headers: { "User-Agent": "lily-workbench" },
     });

@@ -189,6 +189,10 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+  require("./main/startup-health").scheduleStartupHealthCheck({
+    getWindow: () => mainWindow,
+    getAgentBootstrap: () => agentBootstrap,
+  });
   // Surface legacy-message migration progress to the renderer (non-blocking).
   sessionManager.setProgressNotifier((payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -283,6 +287,17 @@ app.whenReady().then(async () => {
     setTimeout(() => {
       require("./main/windows-legacy-installs")
         .maybeHealLegacyInstallsWindows({ mainWindow })
+        .then((result) => {
+          if (result?.found) console.info("[legacy-installs]", JSON.stringify(result));
+        })
+        .catch((err) => console.warn("[legacy-installs] check failed", err?.message || err));
+    }, 20_000);
+  } else if (process.platform === "darwin") {
+    // Same 改名遗留 problem on macOS: stale .app bundles pass their local
+    // license check but speak a dead protocol. Detect + offer Trash-with-consent.
+    setTimeout(() => {
+      require("./main/mac-legacy-installs")
+        .maybeHealLegacyInstallsMac({ mainWindow })
         .then((result) => {
           if (result?.found) console.info("[legacy-installs]", JSON.stringify(result));
         })

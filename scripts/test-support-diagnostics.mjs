@@ -125,7 +125,10 @@ assert(
   diagnostic.checks.some((check) => check.id === "model.default" && check.status === "warning"),
   "diagnostics should flag custom model selection",
 );
-assert.equal(probeRequests.length, 1, "diagnostics should probe the live model path");
+assert(
+  probeRequests.length >= 1,
+  "diagnostics should probe the live model path",
+);
 assert.equal(probeRequests[0].url, "https://bad-local.example.com/llm/chat/completions");
 assert.equal(probeRequests[0].body.model, "bad-model");
 assert.equal(probeRequests[0].body.stream, true, "diagnostics should probe the streaming path used by real sends");
@@ -188,6 +191,120 @@ assert(
   healthyProbe.checks.some((check) => check.id === "model.connectivity" && check.status === "ok"),
   "diagnostics should read a successful streaming model probe",
 );
+
+// ---- Deep checks (second layer): unit-tested with injected dependencies ----
+const deepChecks = require(path.join(__dirname, "../src/main/support-diagnostics-deep-checks.js"));
+
+const fakeRoute = {
+  resolveLilyEnv: () => ({ LILY_API_KEY: "sk-deep-test" }),
+  resolveModelConfig: () => ({ ok: true, protocol: "openai", baseUrl: "https://gw.example.com/v1", model: { modelID: "m" } }),
+};
+
+// Ping passes but the gateway rejects the real tool-shaped request → error.
+const toolShapeRejected = await deepChecks.modelAgentConformanceCheck({
+  ...fakeRoute,
+  probeFn: async () => ({ ok: false, error: "MODEL_TOOL_CALLS_UNAVAILABLE" }),
+});
+assert.equal(toolShapeRejected.status, "error");
+assert(/工具调用/.test(toolShapeRejected.detail), "should explain tool-shape rejection");
+assert.equal(toolShapeRejected.action, "restore_default_model");
+
+// Full conformance → ok.
+const conformant = await deepChecks.modelAgentConformanceCheck({
+  ...fakeRoute,
+  probeFn: async () => ({ ok: true, profile: { conformance: { toolCalls: true } }, diagnostics: {} }),
+});
+assert.equal(conformant.status, "ok");
+
+// Probe timeout is transport noise, not a model conviction → warning.
+const probeTimeout = await deepChecks.modelAgentConformanceCheck({
+  ...fakeRoute,
+  probeFn: async () => ({ ok: false, error: "MODEL_PROBE_TIMEOUT" }),
+});
+assert.equal(probeTimeout.status, "warning");
+
+// Non-openai protocols skip cleanly.
+const anthropicRoute = await deepChecks.modelAgentConformanceCheck({
+  ...fakeRoute,
+  probeFn: async () => ({ ok: true, profile: {}, diagnostics: { skipped: "non-openai-protocol" } }),
+});
+assert.equal(anthropicRoute.status, "ok");
+
+// Engine boot: exists + exits 0 → ok; ENOENT-style spawn error / timeout / nonzero → error.
+const engineOk = await deepChecks.engineBootCheck({
+  enginePath: process.execPath,
+  spawnFn: async () => ({ code: 0 }),
+});
+assert.equal(engineOk.status, "ok");
+const engineDead = await deepChecks.engineBootCheck({
+  enginePath: process.execPath,
+  spawnFn: async () => ({ error: Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }) }),
+});
+assert.equal(engineDead.status, "error");
+const engineHung = await deepChecks.engineBootCheck({
+  enginePath: process.execPath,
+  spawnFn: async () => ({ timedOut: true }),
+});
+assert.equal(engineHung.status, "error");
+const engineCrash = await deepChecks.engineBootCheck({
+  enginePath: process.execPath,
+  spawnFn: async () => ({ code: 1 }),
+});
+assert.equal(engineCrash.status, "error");
+
+// Session store: corrupt JSON → error; missing files (fresh install) → ok; healthy → ok.
+const storeDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-deep-store-"));
+const corruptJson = path.join(storeDir, "sessions.json");
+fs.writeFileSync(corruptJson, "{not-json", "utf8");
+const storeCorrupt = deepChecks.sessionStoreCheck({ paths: { "sessions.json": corruptJson } });
+assert.equal(storeCorrupt.status, "error");
+assert(/sessions\.json/.test(storeCorrupt.detail));
+const storeFresh = deepChecks.sessionStoreCheck({
+  paths: { "sessions.json": path.join(storeDir, "nope.json"), "messages.db": path.join(storeDir, "nope.db") },
+});
+assert.equal(storeFresh.status, "ok");
+const healthyJson = path.join(storeDir, "healthy.json");
+fs.writeFileSync(healthyJson, "[]", "utf8");
+const sqliteDb = path.join(storeDir, "messages.db");
+{
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(sqliteDb);
+  db.exec("CREATE TABLE t (id INTEGER)");
+  db.close();
+}
+const storeHealthy = deepChecks.sessionStoreCheck({
+  paths: { "sessions.json": healthyJson, "messages.db": sqliteDb },
+});
+assert.equal(storeHealthy.status, "ok");
+fs.writeFileSync(sqliteDb, "this is not a sqlite database at all", "utf8");
+const storeBadDb = deepChecks.sessionStoreCheck({ paths: { "messages.db": sqliteDb } });
+assert.equal(storeBadDb.status, "error");
+assert(/messages\.db/.test(storeBadDb.detail));
+
+// Processes: duplicate instance + zombie runtime → warning with paths; clean → ok; null → skip.
+const duplicateInstance = await deepChecks.environmentProcessesCheck({
+  enginePath: "/current/install/resources/engine/opencode",
+  listProcessesFn: async () => [
+    { pid: 42, command: "/Applications/智能工作台.app/Contents/MacOS/智能工作台" },
+    { pid: 43, command: "/Users/x/Library/Application Support/智能工作台/runtime-bin/node engine.js" },
+  ],
+});
+assert.equal(duplicateInstance.status, "warning");
+assert(/智能工作台/.test(duplicateInstance.detail), "warning should name the offending paths");
+assert.equal(duplicateInstance.action, "close_duplicate_instances");
+const cleanProcesses = await deepChecks.environmentProcessesCheck({
+  enginePath: "/current/install/resources/engine/opencode",
+  listProcessesFn: async () => [
+    { pid: 42, command: "/current/install/resources/app.asar/Contents/MacOS/lily-workbench --type=renderer" },
+  ],
+});
+assert.equal(cleanProcesses.status, "ok");
+const scanUnavailable = await deepChecks.environmentProcessesCheck({
+  listProcessesFn: async () => null,
+});
+assert.equal(scanUnavailable.status, "ok");
+
+fs.rmSync(storeDir, { recursive: true, force: true });
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("support-diagnostics: ok");

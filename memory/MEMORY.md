@@ -6,6 +6,7 @@
 - [Vision Pipeline](vision-pipeline.md) — main LLM is text-only; Qwen vision-to-text bridges images; the timeout/silent-drop bug + fix
 - [Config Delivery Scopes](config-delivery-scopes.md) — per-target model/config delivery: scopes global/group/license/device, priority merge, tier groups
 - [OpenCode Session Demux Idle Boundary](2026-06-24-opencode-session-demux-idle.md) — unowned shared-serve `session.idle` events must not broadcast across same-directory sessions
+- [Model Failure Auto-Repair](2026-07-21-model-failure-auto-repair.md) — connection-class failures self-heal silently (recycle + env refresh + bounded multi-attempt); classification trusts mechanical signals only (402 vs 403 billing context); blame-free fact-only copy
 - [Context OS And Memory Compaction](context-os-memory-compaction.md) — do not duplicate runtime raw history; build Lily's cross-runtime memory, compaction, budget, and evidence layer above OpenCode
 - [Context OS Gap Audit](context-os-gap-audit.md) — remaining work to reach/beat Claude Code-style context and memory management
 - [Workspace Pack Compatibility](2026-06-28-workspace-pack-compat.md) — new root-layout `.lilyspace.zip` exports must retain a legacy mirror so older clients can import shared apps
@@ -21,4 +22,9 @@
 - [Document Attachment Model Interruption](2026-07-02-document-attachment-model-interruption.md) — raw Office/PDF binaries must not enter model file parts; document attachment model disconnects isolate to a fresh engine session
 - [Activation Config Repair License State](2026-07-07-activation-config-repair-license-state.md) — activation-time managed config repair must not persist repairable device signature/key errors as invalid license state
 - [Managed Gateway Token Invalid](2026-07-07-managed-gateway-token-invalid.md) — stale/placeholder Lily gateway tokens must refresh remote config and replay instead of surfacing 401 to users
-- [Evidence Gate Model-First](2026-07-20-evidence-gate-model-first.md) — regex vocabularies caused the 副部级 zero-content refusal; the model judges semantics, code judges literals, ordinary fail-open / high-stakes fail-closed
+- [Evidence Gate Model-First](2026-07-20-evidence-gate-model-first.md) — regex vocabularies caused the 副部级 zero-content refusal; the model judges semantics, code judges literals, full fail-open delivery (no banners/refusals; strictness goes to the learning loop, not the user)
+- [Document Delivery Gate False Blocks](2026-07-20-document-delivery-gate-false-blocks.md) — recalc is artifact-driven (real `<f>` cells), OCR counts as visual inspection, fallback speaks user language
+- [Diagnostics Deep Checks](2026-07-21-diagnostics-deep-checks.md) — shallow "all green" checks missed real failures; deep layer reuses the real probe/engine-spawn/read-only-sqlite/process-scan paths, fail-open, positive evidence only
+- [Activated But Unusable Hardening](2026-07-21-activated-but-unusable-hardening.md) — turn-start guard + stuck-phase sweep, transient auth never signs out, bounded engine HTTP timeouts, open telemetry gate; "if the model API works, nothing else may block"
+- [Windows Compat Hardening](2026-07-21-windows-compat-hardening.md) — system-proxy-aware fetch (net.fetch), tree-kill via taskkill, CIM process scan, transient-fs retry module; skip-not-guess diagnostics; unsigned-installer decision pending
+- [Doc Style Reference Skill](2026-07-21-doc-style-reference-skill.md) — reference-based generation lost all styling because extraction is text-only; new lily- skill: render reference → vision → copy-as-base edit → visual compare; five test count pins per added skill

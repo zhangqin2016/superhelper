@@ -64,6 +64,19 @@ function tokenFresh() {
   return accessToken && accessExpiresAt && Date.now() + 30_000 < accessExpiresAt;
 }
 
+/**
+ * A refresh failure is only fatal when the server EXPLICITLY rejects the
+ * refresh token (401/403/404 with a body). Network timeouts, 5xx and 429 are
+ * transient: logging the user out for those turns "my wifi hiccupped" into
+ * "I was silently signed out and must re-login by SMS" — the single most
+ * confusing "activated but unusable" report.
+ */
+function isTransientRefreshFailure(result = {}) {
+  const status = Number(result.status || 0);
+  if (!status) return true; // network/timeout — server never answered
+  return status === 408 || status === 429 || status >= 500;
+}
+
 async function ensureAccessToken() {
   if (tokenFresh()) return { ok: true, accessToken };
   const state = readState();
@@ -71,6 +84,9 @@ async function ensureAccessToken() {
   if (!refreshToken) return { ok: false, error: "ACCOUNT_LOGIN_REQUIRED" };
   const refreshed = await serviceClient.refreshAccountAccessToken(refreshToken);
   if (!refreshed.ok) {
+    if (isTransientRefreshFailure(refreshed)) {
+      return { ok: false, error: refreshed.error || "SERVICE_REQUEST_FAILED", transient: true };
+    }
     clearAccount();
     return refreshed;
   }
@@ -194,6 +210,7 @@ function clearAccount() {
 module.exports = {
   accountStatus,
   accountAccessStatus,
+  isTransientRefreshFailure,
   sendSmsCode,
   loginWithSms,
   refreshEntitlements,

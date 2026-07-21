@@ -88,6 +88,20 @@ assert.equal(resolveFinalText({
     },
   },
 }), "结论：没有问题。\n\n证据门槛：上面的结论缺少可核验证据支撑，不能视为已确认事实。");
+// Model-first notes (2026-07-20): the honesty note appended after streaming
+// must survive block-vs-final resolution the same way the old notice did.
+assert.equal(resolveFinalText({
+  ...interleavedTurn,
+  final: {
+    type: "turn.completed",
+    payload: {
+      assistant: [
+        "先看下文件。结论：没有问题。",
+        "备注：以上回答未能通过本轮逐项核实，请以原始来源为准。",
+      ].join("\n\n"),
+    },
+  },
+}), "结论：没有问题。\n\n备注：以上回答未能通过本轮逐项核实，请以原始来源为准。");
 assert.equal(resolveAssistantStreamText({
   ...interleavedTurn,
   final: { type: "turn.failed", payload: { assistant: "连接已重置，请重新发送。" } },

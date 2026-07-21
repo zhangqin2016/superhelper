@@ -244,6 +244,25 @@ function getLicenseStatus() {
   const lastSeenMs = parseIsoTime(state.lastSeenTime);
   const now = nowIso();
   if (lastSeenMs && Date.now() + 5 * 60_000 < lastSeenMs) {
+    if (checked.ok) {
+      // Clock moved backwards but the SIGNED token is still valid. Rolling the
+      // clock back cannot extend an expired token (that stays blocked below),
+      // so this is almost always CMOS/NTP/travel, not tampering — and treating
+      // it as tampering bricks an activated user behind a bogus "please log in"
+      // prompt until real time overtakes the stale marker. Heal the marker and
+      // let the valid token through.
+      console.warn("[license] clock rollback detected (%s > now); token still valid, healing marker", state.lastSeenTime);
+      writeState({ ...state, lastSeenTime: now });
+      return {
+        ok: true,
+        activated: true,
+        valid: true,
+        license: checked.license || null,
+        source: "offline",
+        lastSeenTime: now,
+        clockAdjusted: true,
+      };
+    }
     return {
       ok: true,
       activated: true,
@@ -286,6 +305,34 @@ function requireValidLicense() {
     accountStatus: account.accountStatus || null,
     accountError: account.error || "",
   };
+}
+
+/**
+ * Send-path variant of requireValidLicense. A logged-in account whose
+ * entitlements cache went stale (>24h) or reads zero-balance is NOT "logged
+ * out" — but the sync check can't tell a stale cache from a real lack of
+ * access, and the only refresh trigger used to be the user manually opening
+ * the account settings page. Here we get one bounded live refresh before
+ * telling the user "please log in / buy", so a logged-in user never hits a
+ * bogus LICENSE_REQUIRED just because the cache aged out overnight.
+ */
+async function requireValidLicenseFresh(options = {}) {
+  const first = requireValidLicense();
+  if (first.ok) return first;
+  if (first.accountError !== "ACCOUNT_ENTITLEMENTS_STALE" && first.accountError !== "ACCOUNT_ENTITLEMENTS_INSUFFICIENT") {
+    return first;
+  }
+  const timeoutMs = Number(options.timeoutMs || 8_000);
+  try {
+    await Promise.race([
+      require("./account-manager").refreshEntitlements(),
+      new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  } catch {
+    // Refresh failing must never break the send path — fall through to the
+    // original verdict below.
+  }
+  return requireValidLicense();
 }
 
 async function refreshServerLicense() {
@@ -420,6 +467,7 @@ module.exports = {
   activateLicense,
   getLicenseStatus,
   requireValidLicense,
+  requireValidLicenseFresh,
   clearLicense,
   createLicenseToken,
   refreshServerLicense,

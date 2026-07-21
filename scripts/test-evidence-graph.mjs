@@ -32,4 +32,15 @@ assert.equal(graph.edges.some((item) => item.type === "delegated_subagent"), tru
 assert.equal(graph.edges.some((item) => item.type === "subagent_used_tool"), true);
 assert.equal(graph.edges.some((item) => item.type === "changed_file"), true);
 
+// Learning loop (2026-07-20 model-first): advisory-only findings also surface
+// as evidence-gap nodes; a clean pass produces none.
+const advisoryGraph = buildEvidenceGraph({
+  turnId: "turn_advisory",
+  meta: { evidenceGate: { ok: true, advisoryReasons: ["fresh_claim_without_fresh_evidence"] } },
+});
+const advisoryGap = advisoryGraph.nodes.find((item) => item.type === "evidence_gap");
+assert.equal(advisoryGap?.data?.reason, "fresh_claim_without_fresh_evidence");
+const cleanGraph = buildEvidenceGraph({ turnId: "turn_clean", meta: { evidenceGate: { ok: true } } });
+assert.equal(cleanGraph.nodes.some((item) => item.type === "evidence_gap"), false);
+
 console.log("evidence-graph: ok");

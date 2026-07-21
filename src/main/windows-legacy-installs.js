@@ -248,9 +248,16 @@ async function maybeHealLegacyInstallsWindows({ mainWindow } = {}) {
       }
       results.push({ install, ...(await runSilentUninstall(command)) });
     }
-    try { fs.writeFileSync(statePath, JSON.stringify({ handledSignature: signature, healedAt: new Date().toISOString(), results: results.map((r) => ({ name: r.install.displayName, ok: r.ok })) })); } catch {}
-
     const failed = results.filter((r) => !r.ok);
+    // Only mark the signature handled when EVERY uninstall reported success —
+    // otherwise the next launch must re-offer cleanup instead of leaving the
+    // user stuck with a half-removed legacy install we never mention again.
+    // (NSIS uninstallers also delete asynchronously after exiting, so a
+    // reported success can still leave residue; that residue keeps matching
+    // the SAME signature only if files remain, which re-scans will catch.)
+    if (!failed.length) {
+      try { fs.writeFileSync(statePath, JSON.stringify({ handledSignature: signature, healedAt: new Date().toISOString(), results: results.map((r) => ({ name: r.install.displayName, ok: r.ok })) })); } catch {}
+    }
     await dialog.showMessageBox(mainWindow || null, {
       type: failed.length ? "warning" : "info",
       buttons: [zh ? "好的" : "OK"],

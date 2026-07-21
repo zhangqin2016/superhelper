@@ -288,5 +288,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onMigrationProgress: (callback) => {
     ipcRenderer.on("sessions:migration-progress", (_event, data) => callback(data));
   },
+  onStartupHealth: (callback) => {
+    ipcRenderer.on("app:startup-health", (_event, data) => callback(data));
+  },
 
 });

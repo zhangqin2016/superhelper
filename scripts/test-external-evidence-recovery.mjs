@@ -7,7 +7,6 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   buildEvidenceRecoveryHint,
-  composeFramedBoundedAnswer,
   initialResearchRequirements,
 } = require("../src/main/external-evidence-recovery.js");
 const {
@@ -163,11 +162,12 @@ const firstPass = evaluateAnswerEvidence({
 });
 assert.equal(firstPass.assessment.reason, "entity_claim_not_in_evidence");
 assert.equal(firstPass.triggerVerifyRetry, true);
-// Ordinary fail-open: the fabricated entity's line is stripped, the rest is
-// delivered under a banner — never the old zero-content refusal.
-assert.doesNotMatch(firstPass.assistant, /虚构市人民医院/);
-assert.match(firstPass.assistant, /⚠️/);
-assert.match(firstPass.assistant, /已从上方名单移除/);
+// Model-first fail-open: with a silent verify retry still pending, the original
+// answer is delivered verbatim — no banner, no stripping, no honesty note yet.
+// Content judgment belongs to the judge/salvage path (see above), never to the
+// gate rewriting the user's answer.
+assert.equal(firstPass.assistant, "正式认证医院：\n虚构市人民医院\nhttps://secondary.example/list");
+assert.doesNotMatch(firstPass.assistant, /⚠️|已从上方名单移除|备注：以上回答/);
 
 const contractPrefix = withTaskContractPrefix(userText, contract);
 assert.match(contractPrefix, /Verify the premise before building the roster/);
@@ -194,77 +194,5 @@ assert.doesNotMatch(gateSources, /副部级|正部级|正厅级|副厅级|中管
 
 const recoveryContextProduction = fs.readFileSync("src/main/turn-recovery-context.js", "utf8");
 assert.doesNotMatch(recoveryContextProduction, /China Construction|metallurgical|vice-ministerial/i);
-
-// ---------------------------------------------------------------------------
-// Framed bounded answer (fail-open delivery): real research → banner-kept;
-// fabricated entities are stripped line-wise; nothing honest left → null.
-{
-  const zhUserText = "中国有哪些建筑公司是副部级别";
-  const baseAssessment = {
-    ok: false,
-    reason: "entity_claim_not_in_evidence",
-    unsupportedClaims: ["中国样例建筑集团有限公司"],
-  };
-  const kept = composeFramedBoundedAnswer({
-    assistant: "副部级建筑央企共1家：\n中国样例建筑集团有限公司",
-    assessment: baseAssessment,
-    evidenceSummary: { hasFreshEvidence: true },
-    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
-    userText: zhUserText,
-    framing: { informalLabel: true, framingNote: "副部级是行业俗称,并非官方正式认定。" },
-  });
-  assert(kept);
-  assert.match(kept.assistant, /行业俗称/);
-  assert.match(kept.assistant, /中国样例建筑集团/);
-  assert.doesNotMatch(kept.assistant, /共1家/);
-  assert.equal(kept.assessment.ok, false);
-  assert.equal(kept.assessment.framedBounded, true);
-  assert.equal(kept.assessment.informalLabelFramed, true);
-
-  // Fabrication floor: an entity absent from the evidence is stripped — and
-  // when nothing honest survives, the composer returns null (→ fallback).
-  assert.equal(composeFramedBoundedAnswer({
-    assistant: "虚构建筑集团有限公司",
-    assessment: { ...baseAssessment, unsupportedClaims: ["虚构建筑集团有限公司"] },
-    evidenceSummary: { hasFreshEvidence: true },
-    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
-    userText: zhUserText,
-  }), null);
-  const stripped = composeFramedBoundedAnswer({
-    assistant: "名单：\n虚构建筑集团有限公司\n中国样例建筑集团有限公司",
-    assessment: { ...baseAssessment, unsupportedClaims: ["虚构建筑集团有限公司", "中国样例建筑集团有限公司"] },
-    evidenceSummary: { hasFreshEvidence: true },
-    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
-    userText: zhUserText,
-  });
-  assert(stripped);
-  assert.doesNotMatch(stripped.assistant, /虚构建筑集团/);
-  assert.match(stripped.assistant, /中国样例建筑集团/);
-  assert.match(stripped.assistant, /已从上方名单移除/);
-  assert.equal(stripped.assessment.strippedFabricatedClaims, true);
-
-  // No fresh evidence, judge-ruled conflicts, ungrounded numbers → stay gated.
-  assert.equal(composeFramedBoundedAnswer({
-    assistant: "中国样例建筑集团有限公司",
-    assessment: baseAssessment,
-    evidenceSummary: { hasFreshEvidence: false },
-    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
-    userText: zhUserText,
-  }), null);
-  assert.equal(composeFramedBoundedAnswer({
-    assistant: "中国样例建筑集团有限公司",
-    assessment: { ...baseAssessment, conflictingClaims: ["中国样例建筑集团有限公司"] },
-    evidenceSummary: { hasFreshEvidence: true },
-    evidenceText: "国资委央企名录包含中国样例建筑集团有限公司。",
-    userText: zhUserText,
-  }), null);
-  assert.equal(composeFramedBoundedAnswer({
-    assistant: "准确率 99.9%。",
-    assessment: { ok: false, reason: "numeric_claim_not_in_evidence", ungroundedNumbers: ["99.9%"] },
-    evidenceSummary: { hasFreshEvidence: true },
-    evidenceText: "国资委央企名录。",
-    userText: zhUserText,
-  }), null);
-}
 
 console.log("external-evidence-recovery: ok");

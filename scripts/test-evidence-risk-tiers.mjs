@@ -1,16 +1,20 @@
 /**
- * Evidence risk tiers — the "delivered content never drops to zero" invariant.
+ * Evidence risk tiers — the "delivered content is never erased" invariant.
  *
  * The gate's job is to prevent fabrication presented as fact, not to prevent
  * answers. These tests pin the tiered contract end-to-end through the REAL
- * evaluateAnswerEvidence pipeline:
- *   hard        — high-stakes asks (medical/legal/finance floor, or judge
- *                   stakes=high) may still be replaced (fail closed)
- *   verify_soft — failure keeps a bounded answer (original + banner / supported subset)
- *   advisory    — everyday domain vocabulary never controls rendering
- * Plus: ranking fabrication still falls back, Arabic triggers fire, the kill
- * switch restores exact legacy (all-hard) behavior, and internal gate errors
- * fail OPEN outside the hard tier.
+ * evaluateAnswerEvidence pipeline under the 2026-07-20 model-first direction:
+ *   - NO tier replaces a good-faith answer anymore (high-stakes fail-closed
+ *     is dead). At most one silent auto-verify retry may supersede it.
+ *   - First pass with a retry pending: the original is delivered VERBATIM.
+ *   - Final state (retry spent): the original + ONE plain-language honesty
+ *     note; assessment.deliveredUnverifiedWithNote records it for the
+ *     learning loop.
+ *   - Salvage still delivers the verified subset + disclosure line when the
+ *     unsupported claims are separable (that projection re-passes the gate).
+ * Plus: tier classification still drives buffering/retries, Arabic triggers
+ * fire, and the kill switch still flattens tiers to hard without ever
+ * restoring content replacement.
  */
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -26,8 +30,9 @@ const {
   evaluateAnswerEvidenceWithJudge,
   shouldBufferAssistantAnswer,
 } = require("../src/main/answer-evidence-finalizer.js");
-const { composeBoundedExternalAnswer } = require("../src/main/external-evidence-recovery.js");
 const { normalizeVerificationPlan } = require("../src/main/external-claim-profiles.js");
+
+const HONESTY_NOTE = "备注：以上回答未能通过本轮逐项核实，请以原始来源为准。";
 
 let failures = 0;
 function check(name, condition, detail = "") {
@@ -101,72 +106,86 @@ console.log("advisory: everyday asks keep their answer:");
   const text = "Vue 3 新版本有什么特性?";
   const answer = "Vue 3 引入了组合式 API、Teleport 与 Fragments,渲染性能也比 Vue 2 有明显提升。";
   const result = runGate(text, answer);
-  check("advisory answer preserved verbatim or with notice", result.assistant.includes("组合式 API"),
+  check("advisory answer preserved verbatim", result.assistant === answer,
     `got: ${result.assistant.slice(0, 120)}`);
   check("advisory never triggers forced retry", result.triggerVerifyRetry === false);
 }
 
 // ---------------------------------------------------------------------------
-console.log("verify_soft: FINAL failure keeps a bounded answer (never zero content):");
+console.log("verify_soft: retry pends → verbatim; final state → original + honesty note:");
 {
   const text = "现在最新的美元兑人民币汇率是多少?";
   const answer = "美元兑人民币汇率大约在 7.2 左右,近期在 7.1-7.3 区间波动。";
-  // First pass: an auto-verify retry is pending → interim stays conservative
-  // (the retry's verified answer supersedes it).
+  // First pass: an auto-verify retry is pending → the original is delivered
+  // untouched (the retry's verified answer may supersede it).
   const firstPass = runGate(text, answer);
   check("verify_soft triggers auto verify retry", firstPass.triggerVerifyRetry === true);
-  check("interim projection stays conservative while retry pends", !firstPass.assistant.includes("7.2"));
-  // Final pass (retry already spent): the bounded-answer invariant applies.
+  check("first pass delivers the original verbatim while retry pends", firstPass.assistant === answer,
+    `got: ${firstPass.assistant.slice(0, 160)}`);
+  // Final pass (retry already spent): original + ONE plain-language note.
   const finalPass = runGate(text, answer, { recoveryAttempt: true });
-  check("final bounded answer keeps original content", finalPass.assistant.includes("7.2"),
+  check("final state keeps the original content", finalPass.assistant.includes("7.2"),
     `got: ${finalPass.assistant.slice(0, 160)}`);
-  check("final bounded answer carries verification banner", /核实说明|Verification note|ملاحظة تحقق/.test(finalPass.assistant));
-  check("assessment flags boundedAnswer", finalPass.assessment?.boundedAnswer === true);
+  check("final state appends the unverified honesty note", finalPass.assistant === `${answer}\n\n${HONESTY_NOTE}`,
+    `got: ${finalPass.assistant.slice(-120)}`);
+  check("assessment flags deliveredUnverifiedWithNote", finalPass.assessment?.deliveredUnverifiedWithNote === true);
   check("assessment records riskTier", finalPass.assessment?.riskTier === "verify_soft");
 }
 
 // ---------------------------------------------------------------------------
-console.log("verify_soft ranking with zero evidence: fabrication still falls back:");
+console.log("verify_soft ranking with zero evidence: still delivered, never a zero-content refusal:");
 {
   const text = "2026年全球手机销量排行榜前十是哪些?";
   const answer = "第一名是A公司,第二名是B公司,第三名是C公司,完整前十名单如下…";
-  const result = runGate(text, answer);
-  check("fabricated roster is NOT banner-kept", !result.assistant.includes("A公司"),
-    `got: ${result.assistant.slice(0, 160)}`);
+  const firstPass = runGate(text, answer);
+  check("zero-evidence roster is delivered verbatim while retry pends", firstPass.assistant === answer,
+    `got: ${firstPass.assistant.slice(0, 160)}`);
+  const finalPass = runGate(text, answer, { recoveryAttempt: true });
+  check("final state keeps the roster plus the honesty note", finalPass.assistant === `${answer}\n\n${HONESTY_NOTE}`,
+    `got: ${finalPass.assistant.slice(-120)}`);
 }
 
 // ---------------------------------------------------------------------------
-console.log("hard: high-stakes guarantee unchanged (fail closed):");
+console.log("hard: high-stakes fail-closed is DEAD — the original is always delivered:");
 {
   const text = "这个药每天的剂量应该是多少毫克?";
   const answer = "每天服用 500 毫克即可,一日三次。";
-  const result = runGate(text, answer);
-  check("unverified dosage answer is replaced", !result.assistant.includes("500 毫克"),
-    `got: ${result.assistant.slice(0, 160)}`);
+  const firstPass = runGate(text, answer);
+  check("hard tier no longer replaces the answer", firstPass.assistant === answer,
+    `got: ${firstPass.assistant.slice(0, 160)}`);
+  check("hard tier still earns a verification retry", firstPass.triggerVerifyRetry === true);
+  const finalPass = runGate(text, answer, { recoveryAttempt: true });
+  check("hard final state is original + honesty note, not a refusal", finalPass.assistant === `${answer}\n\n${HONESTY_NOTE}`,
+    `got: ${finalPass.assistant.slice(-120)}`);
+  check("hard final state records deliveredUnverifiedWithNote", finalPass.assessment?.deliveredUnverifiedWithNote === true);
+  check("hard final state records riskTier", finalPass.assessment?.riskTier === "hard");
 }
 
 // ---------------------------------------------------------------------------
-console.log("kill switch restores legacy all-hard behavior:");
+console.log("kill switch flattens tiers but NEVER restores content replacement:");
 {
   process.env.LILY_EVIDENCE_RISK_TIERS = "0";
   const text = "现在最新的美元兑人民币汇率是多少?";
   const answer = "美元兑人民币汇率大约在 7.2 左右。";
-  const result = runGate(text, answer);
-  check("kill switch: rate answer replaced like legacy", !result.assistant.includes("7.2"),
-    `got: ${result.assistant.slice(0, 160)}`);
+  check("kill switch: tiers flatten to hard",
+    externalFactRiskTier(buildExternalFactPolicy(classifyExternalFactIntent(text))) === "hard");
+  const finalPass = runGate(text, answer, { recoveryAttempt: true });
+  check("kill switch: the original is still delivered (replacement stays dead)", finalPass.assistant.includes("7.2"),
+    `got: ${finalPass.assistant.slice(0, 160)}`);
+  check("kill switch: final state still carries the honesty note", finalPass.assistant.endsWith(HONESTY_NOTE));
   check("kill switch: no buffering (legacy streaming)",
     shouldBufferAssistantAnswer(contractFor("这个药的剂量是多少?")) === false);
   delete process.env.LILY_EVIDENCE_RISK_TIERS;
 }
 
 // ---------------------------------------------------------------------------
-console.log("buffering (verify-before-stream) only where replacement is possible:");
+console.log("buffering (verify-before-stream) only where a retry may supersede:");
 {
   check("hard tier buffers", shouldBufferAssistantAnswer(contractFor("这个药的剂量是多少?")) === true);
   check("generic verify_soft streams", shouldBufferAssistantAnswer(contractFor("现在最新的美元汇率是多少?")) === false);
   check("researchable ranking streams (can pass the gate)",
     shouldBufferAssistantAnswer(contractFor("2026年全球手机销量排行榜前十")) === false);
-  check("no-research ranking buffers (guaranteed replacement)",
+  check("no-research ranking buffers (a superseding retry is guaranteed)",
     shouldBufferAssistantAnswer(contractFor("不要搜索,凭你的了解给我2026年全球手机销量排行榜前十")) === true);
   check("advisory streams", shouldBufferAssistantAnswer(contractFor("Vue 3 新版本有什么特性?")) === false);
   check("non-external contract streams", shouldBufferAssistantAnswer({ taskType: "general" }) === false);
@@ -217,7 +236,9 @@ console.log("verify_soft with real research: verified subset must be delivered (
   check("unsupported entities are stripped (fabrication floor)", !result.assistant.includes("湖南建工"));
   check("delivered content is never zero after real research",
     result.assistant.trim().length > 40 && !/^本轮没有取得可核验的实时来源/.test(result.assistant));
-  // Judge unavailable → ordinary fail-open: bounded banner, still not zero.
+  // Judge unavailable → fail open to the deterministic delivery: the original
+  // answer verbatim while a verification retry pends (the retry may still
+  // supersede it; at the final state the honesty note would be appended).
   const judgeDown = await evaluateAnswerEvidenceWithJudge({
     assistant: answer,
     taskContract: contractFor(text, informalPlan),
@@ -226,34 +247,9 @@ console.log("verify_soft with real research: verified subset must be delivered (
     tools: [{ name: "bash", input: { command: "echo q | node resources/skills/websearch/scripts/websearch.cjs" }, result: evidenceText }],
     userText: text,
   }, { judge: async () => null });
-  check("judge-down ordinary ask fail-opens with a banner", judgeDown.assistant.includes("⚠️"),
-    `got: ${judgeDown.assistant.slice(0, 160)}`);
-  check("judge-down still strips fabricated entities", !judgeDown.assistant.includes("湖南建工"),
+  check("judge-down fail-opens to the original answer verbatim", judgeDown.assistant === answer,
     `got: ${judgeDown.assistant.slice(0, 200)}`);
-}
-
-// ---------------------------------------------------------------------------
-console.log("bounded composer unit behavior:");
-{
-  const policy = buildExternalFactPolicy(classifyExternalFactIntent("现在最新的美元汇率是多少?"));
-  const bounded = composeBoundedExternalAnswer({
-    assistant: "汇率大约 7.2。\n共10家银行提供该牌价,完整名单如下。",
-    assessment: { ok: false, reason: "missing_required_evidence:external" },
-    policy,
-    evidenceSummary: { hasFreshEvidence: false },
-    userText: "现在最新的美元汇率是多少?",
-    recoveryAttempt: true,
-  });
-  check("composer keeps core content", Boolean(bounded?.assistant.includes("7.2")));
-  check("composer strips completeness claims", !bounded.assistant.includes("完整名单"));
-  const empty = composeBoundedExternalAnswer({
-    assistant: "",
-    assessment: { ok: false, reason: "missing_required_evidence:external" },
-    policy,
-    evidenceSummary: { hasFreshEvidence: false },
-    userText: "现在最新的美元汇率是多少?",
-  });
-  check("composer returns null for empty answers", empty === null);
+  check("judge-down still earns a verification retry", judgeDown.triggerVerifyRetry === true);
 }
 
 if (failures) {

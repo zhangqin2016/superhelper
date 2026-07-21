@@ -1232,9 +1232,8 @@ function ensureSessionConfigBridge(configDir) {
       if (type === "dir") {
         const symlinkType = process.platform === "win32" ? "junction" : "dir";
         fs.symlinkSync(src, dest, symlinkType);
-      } else {
-        fs.symlinkSync(src, dest, "file");
-      }
+      } else if (process.platform === "win32") fs.copyFileSync(src, dest); // file symlinks need admin/dev-mode on Windows — copy works for everyone
+      else fs.symlinkSync(src, dest, "file");
     } catch {
       // Non-fatal: AGENT.md still carries inlined guide with absolute script paths.
     }
@@ -1285,7 +1284,7 @@ async function fetchServiceRegistry() {
 
   let json = null;
   try {
-    const response = await fetch(sourceUrl, {
+    const response = await require("./proxy-aware-fetch")(sourceUrl, {
       headers: { "Content-Type": "application/json" },
     });
     json = await response.json().catch(() => null);

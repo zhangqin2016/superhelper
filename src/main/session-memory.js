@@ -85,9 +85,15 @@ function appendTurnPointer(list, pointer, limit = 8) {
 
 function evidenceGapFromRecord(record) {
   const gate = record?.meta?.evidenceGate;
-  if (!gate || gate.ok !== false || !gate.reason) return null;
+  if (!gate) return null;
+  // Learning loop (2026-07-20 model-first): advisory (telemetry-only) findings
+  // also count as evidence gaps for the next turn — strictness flows to the
+  // model's context, never to user-facing decoration.
+  const advisory = Array.isArray(gate.advisoryReasons) ? gate.advisoryReasons.filter(Boolean) : [];
+  const reason = gate.ok === false && gate.reason ? gate.reason : (advisory.length ? advisory.join(", ") : null);
+  if (!reason) return null;
   return {
-    reason: trimText(gate.reason, 180),
+    reason: trimText(reason, 180),
     turnId: trimText(record.turnId || "", 120),
     userIntent: trimText(record.user?.text || "", 360),
     assistantPreview: trimText(record.assistantText || "", 360),

@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const { appVersion } = require("./config");
+const deepChecks = require("./support-diagnostics-deep-checks");
 
 function safeCall(fn, fallback = null) {
   try {
@@ -267,7 +268,15 @@ async function runSupportDiagnosticsPublic(options = {}) {
   ];
   if (options.probeModel !== false) {
     checks.push(await modelConnectivityCheck(options));
+    // Deep layer: ping passing says nothing about the real tool-shaped
+    // request. Reuses the settings-repair probe against the effective route.
+    checks.push(await deepChecks.modelAgentConformanceCheck(options));
   }
+  if (options.includeEngine !== false) {
+    checks.push(await deepChecks.engineBootCheck(options));
+  }
+  checks.push(deepChecks.sessionStoreCheck(options));
+  checks.push(await deepChecks.environmentProcessesCheck(options));
   if (license) {
     checks.push(check(
       license.valid || license.activated ? "ok" : "warning",
@@ -285,6 +294,9 @@ async function runSupportDiagnosticsPublic(options = {}) {
   }
   if (checks.some((item) => item.action === "refresh_service_config")) {
     recommendedActions.push({ id: "refresh_service_config", label: "刷新服务配置" });
+  }
+  if (checks.some((item) => item.action === "close_duplicate_instances")) {
+    recommendedActions.push({ id: "close_duplicate_instances", label: "关闭所有实例，只保留当前安装重新打开" });
   }
 
   return redact({
