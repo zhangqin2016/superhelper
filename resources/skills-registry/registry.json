@@ -1002,6 +1002,44 @@
         ]
       }
     },
+    "lily-doc-style-reference": {
+      "kind": "tool",
+      "intents": [
+        "document.style_reference",
+        "document.generate_from_reference",
+        "document.edit_like_reference"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "render.preview",
+        "document.writer"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "render_reference_pages",
+          "copy_base_preserves_styles",
+          "visual_compare_with_reference"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "preserve_reference_file",
+          "report_style_mismatches"
+        ]
+      }
+    },
     "lily-document-query": {
       "kind": "tool",
       "intents": [
@@ -1429,7 +1467,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "bc4a0a79f7f3a2e04f96a79717855dd118486e78a914226121adac2e3a27f05e"
+      "contentRevision": "ec5ae42dcd83aa1dbb696ec59229d29d0ed0c014d7ffa03a77d2f1af1bdb6578"
     },
     {
       "id": "lily-app-builder",
@@ -1466,7 +1504,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "7440faf63812afbe9579a082199f56638a667362102b2a53fbf45398f1165915"
+      "contentRevision": "c05d3f6dd5dc6e3aa54f1d8dc95546de8147e1e8e5ab876342a5da3fed864e5b"
     },
     {
       "id": "lily-code-repair",
@@ -1503,7 +1541,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "0ae9fe153e9feac45884d15fe8215193caa33c64b1c21ee2de570b1ef24405df"
+      "contentRevision": "a9b698bbc2f81bd2923f1fa9eb1f24a03cf0ab08d40d8aaf4698307b6b6a5ac3"
     },
     {
       "id": "lily-office-intent",
@@ -1540,7 +1578,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "faf284fb4b6f9531fe39c4889a00fa2dc6c21263f88ea83f2096a42e8f0ec368"
+      "contentRevision": "8a7e8490754b0c83b720cac1438b1d01b5100292c776b0ad3077d23280687fc3"
     },
     {
       "id": "lily-pdf-extraction-router",
@@ -1688,7 +1726,7 @@
         "en": "Design & UI",
         "ar": "التصميم والواجهات"
       },
-      "contentRevision": "258bd7279255c21f2794eca1c7f831be40d13aebf4b7d30cca87c0a91969f943"
+      "contentRevision": "711f826f67cccf3ff5ca644ac4fbb9799324467b1f37addf9bd16398a3e0ba42"
     },
     {
       "id": "lily-browser-qa",
@@ -1725,7 +1763,7 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "b50b20fa20c4a9e2fef3dda880c1bf462cb112b074a5aa03b3527e51883fe82b"
+      "contentRevision": "46a5d39a9094cb9ebe5f765faa669ade8b103efde5a996dac1af14a150c9c080"
     },
     {
       "id": "lily-creative-director",
@@ -1873,7 +1911,7 @@
         "en": "Research",
         "ar": "البحث"
       },
-      "contentRevision": "017b7b6ff26692167643862a9028edbace54f668008de5537b349bc2556271d2"
+      "contentRevision": "d8e848aaf4a0517e1e775c66fa02ae806bc59ded5a4ca33b941a67a6c6a27f95"
     },
     {
       "id": "lily-stock-research",
@@ -1947,7 +1985,7 @@
         "en": "Automation",
         "ar": "الأتمتة"
       },
-      "contentRevision": "57da009686d695d14143cf335bcf81b3f9c9b39de8fda849bc46817d00dc612a"
+      "contentRevision": "23a57f388484cedc1e8fbceef60b181728dcd84dae78cf68e7fc2c8afed9ede4"
     },
     {
       "id": "lily-mail-assistant",
@@ -2132,7 +2170,44 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "31aa87994e4f1b82e96847e710f7367575e1d65972b2670185556aec82bdf6dd"
+      "contentRevision": "e3630c1785341444b612dacc24017c90d683c3793c94350a747e169e87ceefba"
+    },
+    {
+      "id": "lily-doc-style-reference",
+      "name": "参考样式生成",
+      "description": "以用户提供的参考文档为样式来源生成或编辑办公文档：先渲染参考文件逐页看图，再复制底版编辑或按观察到的样式重建，交付前与参考页面对比。",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "doc-style-reference",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "office",
+      "categoryLabel": "办公文档",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：参考文档样式保持",
+      "capabilityLayer": "quality",
+      "riskLevel": "low",
+      "defaultEligible": true,
+      "featured": true,
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Doc Style Reference",
+        "ar": "مرجع نمط المستند"
+      },
+      "description_i18n": {
+        "en": "Creates or edits Office documents using a user-supplied reference document as the style source: renders the reference to page images first, then edits a copy of it or rebuilds matching the observed style, and compares pages before delivery.",
+        "ar": "ينشئ مستندات Office أو يحررها باستخدام مستند مرجعي من المستخدم كمصدر للنمط: يعرض المرجع كصور صفحات أولاً، ثم يحرر نسخة منه أو يعيد البناء مطابقًا للنمط الملاحظ، ويقارن الصفحات قبل التسليم."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      },
+      "contentRevision": "44d5f0068a77358d21c19f674bdba63821fc858f21d22682af5c7f9535236530"
     },
     {
       "id": "lily-document-query",
@@ -2169,7 +2244,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "3dbff59a841ec49dcd0ee1cefa4d5c1e78d68db60c80b274f59e627ff1fd71e3"
+      "contentRevision": "76412e1ed3a7ab9cf9448c5b04b153694c578e90efb06c505fea44f663b96ac5"
     },
     {
       "id": "lily-pdf-form",
@@ -2206,7 +2281,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "57623c4c97b6eaec907074cb39820f72b66d560250d2d98f615a8a55a5db5bef"
+      "contentRevision": "6263ac3108dc14d4b463abc9c5a0c866373c2d854f29196e3856ccbb01a295b1"
     },
     {
       "id": "lily-runtime-packs",
@@ -2281,7 +2356,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "fcfcfbf599d292144541888cb1909e9f5ab0826a50cdaead4db5f5c35b4005d0"
+      "contentRevision": "65866b34aceeafae88ae0eab724bdda71bda7f6c9d937a39af4daa1db509ac0f"
     },
     {
       "id": "anthropics-doc-coauthoring",
@@ -2318,7 +2393,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "d906ae5baad9dd9c32ffa4bbc6035ad9f37692f78596981e61a5080b2e3be03a"
+      "contentRevision": "0097747b5911889cc6f75a81fff105d83d1cef6bbe77f542457e1fa20774afe8"
     },
     {
       "id": "anthropics-docx",
@@ -2355,7 +2430,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "6741a7d329da961ade7ba68701023177b8a2a47d30f362277bd02ae14615830b"
+      "contentRevision": "38e27665a893c56756a4e74d1bf3d567d343eabd1961bd7486060d41f49933f5"
     },
     {
       "id": "anthropics-pdf",
@@ -2392,7 +2467,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "fe122b807531e8d025b2620a72c80dca4da600ad1b51028f0d276e0a7f6a44a5"
+      "contentRevision": "a941ca1f79e5d94cfdf415a2ddd03c53f3fc74acf47392388769043d8d17a749"
     },
     {
       "id": "anthropics-pptx",
@@ -2429,7 +2504,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "404c0b38397bdd7a4792ce767ee4218388937ff99d2ceee8015a930ef9e74f8d"
+      "contentRevision": "17688b0123b5d20a96b96f66549e140cb34d0996eb30031325e4a7945b463d04"
     },
     {
       "id": "anthropics-xlsx",
@@ -2466,8 +2541,8 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "2cdea587933d1a0b7c07f87ac2d26a53f25d8cc59cc992ce9310fe85299081aa"
+      "contentRevision": "e72c2aa9e374ac77113e012b607fad761b07170b10b8615e944e162403205709"
     }
   ],
-  "registryRevision": "de9f5dc60c17121bc87116a7fb2b581ef8aa858a862010e7d382f1ddd4a4ac62"
+  "registryRevision": "2acc55d13323826f77bb4f6d3d230917c323d6111264e13c664644c94ba35a8e"
 }

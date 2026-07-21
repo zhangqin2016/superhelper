@@ -95,8 +95,8 @@ for (const preset of skillPresets.SKILL_PRESETS) {
   }
 }
 
-if (skillPresets.FEATURED_SKILL_IDS.length !== 23) {
-  throw new Error(`expected 23 featured skills, got ${skillPresets.FEATURED_SKILL_IDS.length}`);
+if (skillPresets.FEATURED_SKILL_IDS.length !== 24) {
+  throw new Error(`expected 24 featured skills, got ${skillPresets.FEATURED_SKILL_IDS.length}`);
 }
 
 fs.mkdirSync(tmp, { recursive: true });
@@ -111,7 +111,7 @@ if (!catalog.ok) throw new Error("catalog bootstrap failed");
 if (!Array.isArray(catalog.presets) || catalog.presets.length !== 4) {
   throw new Error("catalog should expose 4 canonical curated presets");
 }
-if (!Array.isArray(catalog.featuredSkillIds) || catalog.featuredSkillIds.length !== 23) {
+if (!Array.isArray(catalog.featuredSkillIds) || catalog.featuredSkillIds.length !== 24) {
   throw new Error("catalog should expose featuredSkillIds");
 }
 
@@ -124,7 +124,7 @@ if (guideBefore.guidePresetId !== "office-starter") {
 }
 
 const office = catalog.presets.find((p) => p.id === "office-starter");
-if (!office || office.total !== 14 || office.enabledCount !== 0) {
+if (!office || office.total !== 15 || office.enabledCount !== 0) {
   throw new Error(`unexpected office preset progress: ${JSON.stringify(office)}`);
 }
 
