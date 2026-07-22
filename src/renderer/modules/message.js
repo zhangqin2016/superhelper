@@ -410,7 +410,7 @@ function appendUserMessage(sessionId, message, beforeNode = null, key = "") {
     const badge = document.createElement("span");
     badge.className = "runtime-user-steer-badge";
     badge.textContent = t("message.steerBadge");
-    label.appendChild(badge);
+    article.appendChild(badge);
   }
 
   const body = document.createElement("div");
