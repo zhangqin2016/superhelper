@@ -29,57 +29,57 @@
   --accent-strong-bg: rgba(99, 102, 241, 0.22);
   --accent-ring: rgba(99, 102, 241, 0.40);
 
-  /* Surface ladder: near-black NEUTRAL, layered by lightness (not borders) */
-  --bg-body: #07080b;
-  --bg-left: #0b0c10;
-  --bg-center: #0d0e12;
-  --bg-right: #0b0c10;
-  --bg-topbar: #0f1015;
-  --bg-input: #111318;
+  /* Surface ladder: warm charcoal, layered by lightness (not borders) */
+  --bg-body: #131210;
+  --bg-left: #181713;
+  --bg-center: #1b1a16;
+  --bg-right: #181713;
+  --bg-topbar: #1e1d18;
+  --bg-input: #22211c;
   --bg-primary: var(--bg-center);
   --bg-secondary: var(--bg-surface-muted);
   --bg-elevated: var(--bg-surface-raised);
-  --bg-surface: #15171d;
-  --bg-surface-raised: #1b1e26;
-  --bg-surface-hover: #232631;
-  --bg-surface-active: #2a2e3a;
-  --bg-surface-muted: rgba(255, 255, 255, 0.035);
-  --bg-surface-subtle: rgba(255, 255, 255, 0.02);
+  --bg-surface: #24231e;
+  --bg-surface-raised: #2a2923;
+  --bg-surface-hover: #32312a;
+  --bg-surface-active: #3a3931;
+  --bg-surface-muted: rgba(255, 250, 240, 0.045);
+  --bg-surface-subtle: rgba(255, 250, 240, 0.025);
   --surface-subtle: var(--bg-surface-subtle);
   --hover-bg: var(--bg-surface-hover);
   --bg-status: var(--bg-topbar);
-  --bg-floating: rgba(18, 20, 26, 0.96);
+  --bg-floating: rgba(32, 31, 26, 0.96);
   --bg-backdrop: rgba(0, 0, 0, 0.5);
-  --bg-drop-overlay: rgba(6, 7, 8, 0.82);
-  --bg-drop-card: rgba(20, 21, 24, 0.92);
+  --bg-drop-overlay: rgba(10, 10, 8, 0.82);
+  --bg-drop-card: rgba(30, 29, 24, 0.94);
   --bg-tool-detail: rgba(0, 0, 0, 0.18);
   --bg-tool-detail-strong: rgba(0, 0, 0, 0.22);
-  --bg-media: rgba(10, 11, 13, 0.72);
+  --bg-media: rgba(16, 15, 12, 0.72);
   --bg-choice-backdrop: rgba(0, 0, 0, 0.28);
   --bg-pdf-active: rgba(99, 102, 241, 0.10);
-  --bg-pdf-viewport-sheen: rgba(255, 255, 255, 0.035);
+  --bg-pdf-viewport-sheen: rgba(255, 250, 240, 0.035);
   --bg-user-chip: rgba(255, 255, 255, 0.15);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.1);
 
-  --text-primary: #f2f3f5;
+  --text-primary: #efeeea;
   --text: var(--text-primary);
-  --text-secondary: #a0a3ab;
-  --text-tertiary: #7f838d;
-  --text-faint: #5e626d;
-  --text-dim: #6b6e78;
-  --text-muted: #787d90;
+  --text-secondary: #a8a7a0;
+  --text-tertiary: #86857e;
+  --text-faint: #63625c;
+  --text-dim: #73726b;
+  --text-muted: #7e7d76;
   --muted: var(--text-muted);
   --text-inverse: #ffffff;
-  --text-strong: #fbfbfd;
+  --text-strong: #faf9f6;
   --text-code: #f0a060;
-  --link: #7eb8f0;
+  --link: #9a9df7;
 
-  /* Hairlines, not hard borders — recede into the surface ladder */
-  --border: rgba(255, 255, 255, 0.07);
-  --border-light: rgba(255, 255, 255, 0.10);
-  --border-subtle: rgba(255, 255, 255, 0.06);
+  /* Hairlines, not hard borders — warm tint to match the charcoal ladder */
+  --border: rgba(255, 250, 240, 0.08);
+  --border-light: rgba(255, 250, 240, 0.11);
+  --border-subtle: rgba(255, 250, 240, 0.055);
   --border-soft: var(--border-subtle);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 250, 240, 0.15);
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.46), 0 16px 42px rgba(0, 0, 0, 0.28);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px rgba(0, 0, 0, 0.18);
@@ -128,26 +128,26 @@
 
   --code-bg: var(--bg-surface-hover);
   --code-text: var(--text-code);
-  --pre-bg: #0d1117;
-  --pre-text: #d7e1ea;
+  --pre-bg: #191814;
+  --pre-text: #e3dfd5;
   --copy-bg: rgba(15, 23, 42, 0.82);
   --copy-bg-hover: rgba(30, 41, 59, 0.95);
   --image-backdrop: rgba(0, 0, 0, 0.85);
   --document-page-bg: #ffffff;
   --image-control-bg: rgba(255, 255, 255, 0.12);
   --image-control-hover: rgba(255, 255, 255, 0.25);
-  --scrollbar-thumb: #2a2b30;
+  --scrollbar-thumb: #383731;
 
   --radius-xs: 4px;
-  --radius: 8px;
+  --radius: 10px;
   --radius-sm: 6px;
   --radius-md: var(--radius);
-  --radius-lg: 12px;
+  --radius-lg: 14px;
   --radius-pill: 999px;
 
   /* "Lit from above" hairline + soft elevation, used in place of hard borders */
-  --hairline: rgba(255, 255, 255, 0.06);
-  --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.075);
+  --hairline: rgba(255, 250, 240, 0.06);
+  --top-highlight: inset 0 1px 0 rgba(255, 250, 240, 0.07);
 
   /* Motion system. One easing curve; a small duration scale (fast/base/slow) so
      timing reads like one hand set it. All motion is neutralized under the OS
