@@ -735,9 +735,9 @@
   width: min(100%, var(--chat-col));
   margin: 0 auto;
   border: 1px solid var(--border-subtle);
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   background: var(--bg-input);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--bg-body) 18%, transparent), var(--top-highlight);
+  box-shadow: var(--shadow-sm);
   overflow: visible;
   min-width: 0;
   transition:
@@ -769,7 +769,7 @@
   border-top: 0;
   background: transparent;
   min-width: 0;
-  border-radius: 0 0 19px 19px;
+  border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
 }
 
 .composer-icon-btn {
