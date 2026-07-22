@@ -26,7 +26,8 @@ export function normalizeTurnArticleLayout(article, slotOrder = []) {
   const desired = desiredRoles.map((role) => roleNodes[role]).filter(Boolean);
   if (desired.length !== Object.keys(roleNodes).length) return;
   // Idempotent: only touch DOM when order is wrong, avoiding streamed markdown/image flicker.
-  const current = Array.from(article.children);
+  // Compare role-bearing children only — the speaker row (no data-role) sits first and stays out of scope.
+  const current = Array.from(article.children).filter((node) => node.dataset?.role);
   const sameOrder = current.length === desired.length && desired.every((n, i) => current[i] === n);
   if (!sameOrder) article.append(...desired);
 }

@@ -750,7 +750,7 @@
   /* One quiet ring, not a triple shout: the container communicates focus, so
      the textarea inside opts out of the global :focus-visible outline. */
   border-color: color-mix(in srgb, var(--accent-border) 62%, var(--border-light) 38%);
-  box-shadow: 0 16px 36px color-mix(in srgb, var(--bg-body) 22%, transparent), var(--top-highlight), 0 0 0 1px var(--accent-ring);
+  box-shadow: var(--shadow), 0 0 0 1px var(--accent-ring);
 }
 
 .composer-row textarea:focus-visible,
@@ -884,7 +884,7 @@ textarea:disabled { opacity: 0.5; }
   padding: 0;
   flex-shrink: 0;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--text-inverse);
   cursor: pointer;

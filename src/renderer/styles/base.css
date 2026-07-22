@@ -130,8 +130,8 @@
   --code-text: var(--text-code);
   --pre-bg: #191814;
   --pre-text: #e3dfd5;
-  --copy-bg: rgba(15, 23, 42, 0.82);
-  --copy-bg-hover: rgba(30, 41, 59, 0.95);
+  --copy-bg: rgba(24, 23, 19, 0.85);
+  --copy-bg-hover: rgba(40, 38, 32, 0.95);
   --image-backdrop: rgba(0, 0, 0, 0.85);
   --document-page-bg: #ffffff;
   --image-control-bg: rgba(255, 255, 255, 0.12);

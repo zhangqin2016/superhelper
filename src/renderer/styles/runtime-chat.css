@@ -102,9 +102,9 @@
   color-scheme: var(--color-scheme);
 }
 
-/* The user's message is QUIET: a softly tinted block, no alert stripe, no
-   floating shadow. Every message being loud means nothing is — the answer,
-   not the prompt, deserves the visual weight. */
+/* The user's message is QUIET: a softly tinted right-aligned bubble, no alert
+   stripe, no floating shadow. Every message being loud means nothing is — the
+   answer, not the prompt, deserves the visual weight. */
 .runtime-user-message {
   display: block;
   width: fit-content;
