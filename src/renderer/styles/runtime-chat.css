@@ -1214,12 +1214,13 @@
 }
 
 .assistant-tool-row {
-  margin-top: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 1px 2px;
-  background: transparent;
+  margin-top: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border-subtle));
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-surface));
   min-width: 0;
+  max-width: var(--chat-prose);
 }
 
 .assistant-tool-row[data-status="running"] .assistant-tool-command {
@@ -1238,8 +1239,6 @@
 
 .assistant-turn-article .assistant-tool-row,
 .assistant-turn-article .assistant-tool-row[open] {
-  background: transparent;
-  border: none;
   box-shadow: none;
 }
 
@@ -1319,6 +1318,14 @@
   justify-self: end;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.assistant-tool-row[data-status="done"] .assistant-tool-command::before {
+  content: "✓";
+  margin-right: 7px;
+  color: var(--success-text);
+  font-family: var(--font);
+  font-weight: 650;
 }
 
 .assistant-subagent-panel {
