@@ -1,6 +1,7 @@
 "use strict";
 
 const { shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
+const { scaffoldStreamGate } = require("./status-scaffold");
 const {
   activityFromEngineNotice,
   activityFromProcessPayload,
@@ -89,14 +90,28 @@ function createTurnRuntimeEventRouter(options = {}) {
           state.phase = "streaming";
           emit(sessionId, "turn.accepted", { status: payload.status || "thinking" });
           break;
-        case "assistant.delta":
+        case "assistant.delta": {
           state.phase = "streaming";
-          state.assistantText += String(payload.text || "");
-          if (!shouldBufferAssistantAnswer(state.taskContract)) {
-            appendTimelineText(state, String(payload.text || ""), now());
-            emit(sessionId, "assistant.delta", { text: String(payload.text || "") });
+          const piece = String(payload.text || "");
+          state.assistantText += piece;
+          if (shouldBufferAssistantAnswer(state.taskContract)) break;
+          let out = piece;
+          // Scaffold gate: hold the stream head until it is proven NOT to be an
+          // echoed compaction/handoff summary; a proven scaffold prefix is
+          // stripped so the user only ever sees the real reply (fail-open past
+          // the hold limit). Once open, the gate stays open for the turn.
+          if (state.scaffoldStreamGate == null) state.scaffoldStreamGate = "pending";
+          if (state.scaffoldStreamGate === "pending") {
+            const gate = scaffoldStreamGate(state.assistantText);
+            out = gate.action === "flush" ? gate.text : "";
+            if (gate.action === "flush") state.scaffoldStreamGate = "open";
+          }
+          if (out) {
+            appendTimelineText(state, out, now());
+            emit(sessionId, "assistant.delta", { text: out });
           }
           break;
+        }
         case "assistant.supersedes":
           state.supersedes = payload.supersedes || "";
           emit(sessionId, "assistant.supersedes", payload);

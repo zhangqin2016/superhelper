@@ -66,6 +66,7 @@ function clearTurnState(state) {
   state.usage = null;
   state.lastStopReason = "";
   state.sawRecognizedStopReason = false;
+  state.scaffoldStreamGate = null;
   state.taskContract = null;
   state.pendingTaskContract = null;
   state.turnPolicy = null;
@@ -140,6 +141,30 @@ function createTurnTerminalFinalizer(options = {}) {
     closeStreamingBlocks(state, Date.now());
 
     let assistant = String(payload.assistant || state.assistantText || "").trim();
+    // Strip an echoed compaction/handoff scaffold ("Objective / Work State / …")
+    // BEFORE the evidence gate judges and before anything is emitted or
+    // persisted — the user never sees internal tracking (2026-07-22 field case).
+    // Fail-open: an ambiguous boundary keeps the original verbatim; only a
+    // message that is ENTIRELY scaffold is replaced by a plain note.
+    let statusScaffoldAction = "";
+    try {
+      const { stripStatusScaffoldPrefix, statusScaffoldNote } = require("./status-scaffold");
+      const strip = stripStatusScaffoldPrefix(assistant);
+      if (strip.stripped) {
+        statusScaffoldAction = strip.pure ? "replaced-pure" : "stripped-prefix";
+        assistant = strip.pure
+          ? statusScaffoldNote(String(state.enginePayload?.rawText || ""))
+          : strip.text;
+        log.warn(
+          "status scaffold %s (%s, headers=%d)",
+          statusScaffoldAction,
+          type,
+          strip.analysis.headers.length,
+        );
+      }
+    } catch (err) {
+      log.warn("status scaffold strip failed open: %s", err?.message || err);
+    }
     const finalizerUserText = String(state.enginePayload?.rawText || "");
     const evidenceTools = [
       ...(Array.isArray(state.inheritedEvidenceTools) ? state.inheritedEvidenceTools : []),
@@ -149,6 +174,9 @@ function createTurnTerminalFinalizer(options = {}) {
     const verificationPlan = state.taskContract?.externalFactPolicy?.verificationPlan || null;
     let effectiveEvidenceSummary = evidenceSummary;
     let record = turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    if (record && statusScaffoldAction) {
+      record.meta = { ...(record.meta || {}), statusScaffold: statusScaffoldAction };
+    }
     let evidenceGateAssessment = null;
     let triggerVerifyRetry = false;
     let triggerDocumentVerifyRetry = false;

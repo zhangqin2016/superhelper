@@ -34,36 +34,34 @@ function timestampMs(value) {
 // (Disabling autocontinue stops NEW ones; this also cleans the ones already
 // persisted in a session's history.)
 // The internal state-tracking / handoff SCAFFOLD ("Objective / Work State /
-// Completed / Active / Blocked / Next Move / Relevant Files" etc.). The model is
-// told never to emit it as an answer, but weak models sometimes dump it verbatim
-// on a resume/rehydrate — it is internal tracking, never a user-facing reply. We
-// require several distinct headers to co-occur so a normal answer that happens to
-// use one of these words is never hidden.
-const SCAFFOLD_HEADERS = [
-  "objective", "important details", "work state", "completed", "active",
-  "blocked", "next move", "relevant files", "key decisions", "next steps",
-];
-function looksLikeStatusReportScaffolding(text) {
-  const t = normalizedText(text).toLowerCase();
-  if (!t) return false;
-  let hits = 0;
-  for (const h of SCAFFOLD_HEADERS) {
-    if (t.includes(h) && (hits += 1) >= 4) return true;
-  }
-  return false;
-}
+// … / Relevant Files"). Detection and prefix stripping live in status-scaffold.js.
+// A scaffold-PREFIXED message is rewritten to its real reply (the 2026-07-22
+// salvage case); a message that is entirely scaffold, or an unstripable
+// mid-text dump, is dropped as before.
+const { analyzeStatusScaffold, stripStatusScaffoldPrefix } = require("./status-scaffold");
 
 function stripInternalContinuationTurns(conversation = []) {
   const list = Array.isArray(conversation) ? conversation.slice() : [];
   list.sort((a, b) => (timestampMs(a?.timestamp) ?? 0) - (timestampMs(b?.timestamp) ?? 0));
   const drop = new Set();
+  const rewrites = new Map();
   for (let i = 0; i < list.length; i += 1) {
     const m = list[i];
     // (a) an assistant turn whose content IS the internal status-report scaffold
-    // — never a valid answer, hide it whatever triggered it (resume rehydrate,
-    // auto-continue, etc.).
-    if (m?.role === "assistant" && looksLikeStatusReportScaffolding(messageText(m))) {
-      drop.add(m);
+    // — never a valid answer. A scaffold PREFIX followed by a real reply is
+    // salvaged (rewritten to the reply); anything else scaffold is hidden,
+    // whatever triggered it (resume rehydrate, auto-continue, etc.).
+    if (m?.role === "assistant" && analyzeStatusScaffold(messageText(m)).isScaffold) {
+      const strip = stripStatusScaffoldPrefix(messageText(m));
+      if (strip.stripped && !strip.pure) {
+        rewrites.set(m, {
+          ...m,
+          content: strip.text,
+          ...(m.record ? { record: { ...m.record, assistantText: strip.text } } : {}),
+        });
+      } else {
+        drop.add(m);
+      }
       continue;
     }
     // (b) the internal auto-continue turn: the "Continue if you have next steps…"
@@ -77,8 +75,10 @@ function stripInternalContinuationTurns(conversation = []) {
       if (n?.role === "assistant" && (!turnId || !n.turnId || n.turnId === turnId)) drop.add(n);
     }
   }
-  if (!drop.size) return Array.isArray(conversation) ? conversation : [];
-  return (Array.isArray(conversation) ? conversation : []).filter((m) => !drop.has(m));
+  if (!drop.size && !rewrites.size) return Array.isArray(conversation) ? conversation : [];
+  return (Array.isArray(conversation) ? conversation : [])
+    .filter((m) => !drop.has(m))
+    .map((m) => rewrites.get(m) || m);
 }
 
 function messageText(message = {}) {
