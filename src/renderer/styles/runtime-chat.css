@@ -1242,21 +1242,12 @@
   box-shadow: none;
 }
 
-.assistant-process-group-body .assistant-tool-row,
-.assistant-process-subgroup-body .assistant-tool-row {
-  padding-left: 0;
-}
-
 .assistant-tool-group-body {
   display: grid;
   gap: 1px;
   margin-top: 2px;
   padding-left: 16px;
   min-width: 0;
-}
-
-.assistant-tool-group-body .assistant-tool-row {
-  padding-left: 0;
 }
 
 .assistant-tool-summary {
