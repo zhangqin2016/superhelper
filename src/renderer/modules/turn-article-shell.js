@@ -48,7 +48,18 @@ export function createLiveTurnArticleShell(liveTurn, {
   prompts.className = "assistant-turn-prompts";
   prompts.dataset.role = "prompts";
 
+  const speaker = document.createElement("div");
+  speaker.className = "assistant-turn-speaker";
+  const avatar = document.createElement("span");
+  avatar.className = "assistant-turn-avatar";
+  avatar.textContent = "L";
+  avatar.setAttribute("aria-hidden", "true");
+  const speakerName = document.createElement("span");
+  speakerName.className = "assistant-turn-name";
+  speakerName.textContent = "Lily";
+  speaker.append(avatar, speakerName);
+
   const roleNodes = { header, process, taskrun: taskRun, narrative, artifacts, footer, prompts };
-  article.append(...slotOrder.map((role) => roleNodes[role]).filter(Boolean));
+  article.append(speaker, ...slotOrder.map((role) => roleNodes[role]).filter(Boolean));
   return article;
 }

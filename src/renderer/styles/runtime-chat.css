@@ -208,6 +208,33 @@
   min-height: 0;
 }
 
+.assistant-turn-speaker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.assistant-turn-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.assistant-turn-name {
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
 /* Memory-usage chip: sits inline after the sealed-turn status (duration · tokens).
    Mirrors the pill styling used elsewhere; semantic recall gets the accent tint. */
 .assistant-turn-memory-chip {
