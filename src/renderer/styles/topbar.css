@@ -20,14 +20,12 @@
   z-index: var(--z-topbar);
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 11px 18px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 94%, var(--bg-surface-raised) 6%), color-mix(in srgb, var(--bg-topbar) 98%, var(--bg-surface) 2%)),
-    var(--bg-topbar);
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--bg-topbar);
   border-bottom: 1px solid var(--border-subtle);
-  min-height: 56px;
-  box-shadow: 0 10px 26px color-mix(in srgb, var(--bg-body) 7%, transparent), var(--top-highlight);
+  min-height: 46px;
+  box-shadow: none;
 }
 
 .topbar-left {
@@ -355,9 +353,9 @@
 .topbar-btn {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--control-bg) 88%, var(--bg-surface) 12%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -366,7 +364,7 @@
     border-color var(--dur) var(--ease),
     color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
-  box-shadow: var(--top-highlight);
+  box-shadow: none;
 }
 .topbar-btn:hover {
   background: var(--bg-surface-hover);
