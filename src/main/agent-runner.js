@@ -4,7 +4,7 @@ const ERROR_PATTERNS = [
   {
     code: "RUNTIME_SKILL_PARSE_FAILED",
     category: "runtime_diagnostic",
-    test: /Failed to parse skill .*SKILL\.md/i,
+    test: /Failed to parse skill .*SKILL\.md|skill failed to load|runtime skill parse error/i,
     message: "A workspace skill failed to load. Lily ignored unrelated diagnostics, but this turn hit a runtime skill parse error. Please check the workspace skill file or disable that project skill.",
     retryable: false,
   },
@@ -18,7 +18,7 @@ const ERROR_PATTERNS = [
   {
     code: "SESSION_BUSY",
     category: "session",
-    test: /Session ID .* already in use/i,
+    test: /Session ID .* already in use|previous request is still completing/i,
     message: "The previous request is still completing. Please try again in a moment.",
     retryable: true,
   },
@@ -30,7 +30,7 @@ const ERROR_PATTERNS = [
     // and safe to resend; the rescue path retries it silently with a fresh
     // runner. MUST precede MODEL_CONNECTION_FAILED — its broad "request failed"
     // catch previously relabeled this as a network interruption.
-    test: /RUNNER_TERMINATED|runner was recycled/i,
+    test: /RUNNER_TERMINATED|runner was recycled|engine session was recycled/i,
     message: "The engine session was recycled before the reply could start. It restarts automatically on retry — please send your message again.",
     retryable: true,
   },
@@ -47,7 +47,7 @@ const ERROR_PATTERNS = [
     // Includes serve-startup failures (parse/port/early-exit) and the
     // control-plane HTTP timeout: a wedged serve is engine-unavailable, not a
     // model problem, and the rescue path recycles it.
-    test: /command not found|ENOENT|assistant engine .*unreachable|engine .*unreachable|engine health check failed|engine wedged|wedged.*unreachable|did not report a listening port|exited before listening|opencode serve|session\.create failed|OPENCODE_HTTP_TIMEOUT/i,
+    test: /command not found|ENOENT|assistant engine .*unreachable|engine .*unreachable|engine health check failed|engine wedged|wedged.*unreachable|did not report a listening port|exited before listening|opencode serve|session\.create failed|OPENCODE_HTTP_TIMEOUT|assistant engine is temporarily unavailable/i,
     message: "The assistant engine is temporarily unavailable. Please try again later.",
     retryable: true,
   },
@@ -61,14 +61,14 @@ const ERROR_PATTERNS = [
   {
     code: "MANAGED_MODEL_AUTH_INVALID",
     category: "model",
-    test: /MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)/i,
+    test: /MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)|Managed model access expired/i,
     message: "Managed model access expired. Lily refreshed the service configuration and retried.",
     retryable: true,
   },
   {
     code: "MANAGED_MODEL_AUTH_MISSING",
     category: "model",
-    test: /ACCOUNT_LOGIN_REQUIRED/i,
+    test: /ACCOUNT_LOGIN_REQUIRED|Managed model access is missing/i,
     message: "Managed model access is missing account or activation authorization. Lily refreshed the service configuration and retried.",
     retryable: true,
   },
@@ -117,7 +117,7 @@ const ERROR_PATTERNS = [
     // "not supported"/"failed" catches don't relabel it as a dead model or a
     // network drop. Not retryable: the stored history still holds the file part,
     // so a blind resend fails the same way — the user must change the input.
-    test: /AI_UnsupportedFunctionalityError|file part.{0,48}not supported|media type.{0,48}not supported|unsupported.{0,24}file part/i,
+    test: /AI_UnsupportedFunctionalityError|file part.{0,48}not supported|media type.{0,48}not supported|unsupported.{0,24}file part|attachment the selected model can't read/i,
     message: "This conversation includes an attachment the selected model can't read directly (for example a JSON or data file on an image-only model). The file is still available by its path — ask me to open it with file tools, switch to a model that accepts that file type, or start a new chat without the attachment.",
     retryable: false,
   },
@@ -152,7 +152,7 @@ const ERROR_PATTERNS = [
   {
     code: "BUDGET_EXCEEDED",
     category: "model",
-    test: /maximum budget|budget exceeded|max budget|spend limit/i,
+    test: /maximum budget|budget exceeded|max budget|spend limit|budget limit/i,
     message: "This task has reached the budget limit and has been stopped. Please adjust the task scope or budget, then retry.",
     retryable: false,
   },
@@ -170,7 +170,7 @@ const ERROR_PATTERNS = [
     // upstream provider messages) is not a local permission failure. Retryable:
     // an engine recycle rebuilds sandbox/handle state, so the auto-repair path
     // gets its chance before this ever reaches the user.
-    test: /permission denied|EACCES|EPERM|operation not permitted/i,
+    test: /permission denied|EACCES|EPERM|operation not permitted|system-level permission restriction/i,
     message: "A system-level permission restriction interrupted the engine. Lily retries automatically with a fresh engine session.",
     retryable: true,
   },
@@ -206,6 +206,10 @@ function sanitizeError(raw) {
   const classified = classifyAssistantError(raw);
   if (classified) return classified.message;
   const cleaned = scrubVendorNames(String(raw || "").trim());
+  // Idempotency: an already-sanitized message passes through unchanged instead
+  // of gaining a second "Request failed:" wrapper (and misclassifying via the
+  // broad request-failed pattern on the next pass).
+  if (/^request failed:/i.test(cleaned)) return cleaned;
   if (cleaned) {
     const detail = cleaned.length > 200 ? `${cleaned.slice(0, 200)}…` : cleaned;
     return `Request failed: ${detail}`;
@@ -214,7 +218,9 @@ function sanitizeError(raw) {
 }
 
 function classifyAssistantError(raw) {
-  const cleaned = scrubVendorNames(raw);
+  // Strip our own wrapper so a re-sanitized message classifies by its payload,
+  // not by the generic "Request failed:" prefix.
+  const cleaned = scrubVendorNames(raw).replace(/^request failed:\s*/i, "");
   if (!cleaned.trim()) return null;
   for (const { code, category, test, message, retryable } of ERROR_PATTERNS) {
     if (test.test(cleaned)) {

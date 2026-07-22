@@ -35,6 +35,11 @@ try {
   assert.equal(failurePolicy.isOversizedContextFailure(null, "413 Request Entity Too Large"), true);
   assert.equal(failurePolicy.isSafeReplayableModelFailure(null, "socket closed"), true);
   assert.equal(failurePolicy.isSafeReplayableModelFailure({ retryable: false }, "socket closed"), false);
+  // PERMISSION_DENIED (macOS TCC / Windows Controlled Folder Access) gets one
+  // bounded silent replay with a fresh engine before anything reaches the user.
+  assert.equal(failurePolicy.isSafeReplayableModelFailure({ code: "PERMISSION_DENIED", retryable: true }, ""), true);
+  assert.equal(failurePolicy.isLocalPermissionFailure({ code: "PERMISSION_DENIED" }), true);
+  assert.equal(failurePolicy.isLocalPermissionFailure({ code: "QUOTA_EXCEEDED" }), false);
   assert.equal(failurePolicy.shouldDropResumeAfterVisibleFailure({ classified: { code: "SESSION_INVALID" } }), true);
   assert.equal(failurePolicy.shouldDropResumeAfterVisibleFailure({ classified: { code: "TOOL_FAILED", retryable: false } }), false);
 

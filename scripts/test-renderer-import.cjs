@@ -1279,7 +1279,9 @@ app.whenReady().then(async () => {
       async () => {
         const { renderConversation } = await import("./modules/message.js");
         const sessionId = "session_large_history_window_regression";
-        renderConversation(sessionId, { force: true, preserveScroll: true });
+        // Mirrors loadOlderConversationForSession: loading older history passes
+        // the merged range explicitly, and the session then REMEMBERS it.
+        renderConversation(sessionId, { force: true, preserveScroll: true, windowCount: 240 });
         // Poll until the full history range has painted (flaky as a fixed sleep
         // on CI): wait for both the oldest and newest message text to be present.
         const sel = \`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`;
@@ -1299,6 +1301,17 @@ app.whenReady().then(async () => {
         }
         if (count < 220) {
           throw new Error("preserve-scroll rerender should mount the loaded older page, got " + count);
+        }
+        // A later rerender without an explicit range keeps the remembered window
+        // (session switch / official-history reconcile must not snap back to 80).
+        renderConversation(sessionId, { force: true, preserveScroll: true });
+        for (let i = 0; i < 200 && !ready(); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          panel = document.querySelector(sel);
+        }
+        const retained = panel?.children?.length || 0;
+        if (retained < 220) {
+          throw new Error("remembered window should survive a range-less rerender, got " + retained);
         }
         return "large-history-preserve-scroll-regression: ok";
       }

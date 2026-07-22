@@ -3,12 +3,21 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { marked } from "marked";
 
+const segmentsSource = fs
+  .readFileSync(new URL("../src/renderer/modules/markdown-math-segments.js", import.meta.url), "utf8")
+  .replaceAll("export function", "function");
+const streamBlocksSource = fs
+  .readFileSync(new URL("../src/renderer/modules/markdown-stream-blocks.js", import.meta.url), "utf8")
+  .replaceAll("export function", "function");
+
 const source = fs
   .readFileSync(new URL("../src/renderer/modules/markdown.js", import.meta.url), "utf8")
   .replace('import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";', "")
   .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
   .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";', "")
   .replace('import { t } from "../i18n/index.js";', "")
+  .replace('import { mapPlainSegments } from "./markdown-math-segments.js";', "")
+  .replace('import { renderStreamBlocks } from "./markdown-stream-blocks.js";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
@@ -78,7 +87,7 @@ const context = {
   },
 };
 vm.createContext(context);
-vm.runInContext(`${source}\nwindow.__test = { appendStreamingText, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
+vm.runInContext(`${segmentsSource}\n${streamBlocksSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
 
 function fakeElement() {
   const classes = new Set();
@@ -213,6 +222,39 @@ context.window.__test.renderMarkdownWithCache(math, "公式：$a^2+b^2=c^2$\n\n$
 assert.match(math.innerHTML, /class="markdown-math-inline"/);
 assert.match(math.innerHTML, /class="markdown-math-block"/);
 assert.match(math.innerHTML, /class="katex"/);
+
+// Math preprocessing must never touch code: `$...$` inside fences and inline
+// spans is literal code, not a formula. Before segmentation, the fenced `$x$`
+// became KaTeX HTML that marked escaped into garbled text.
+const mathInFence = fakeElement();
+context.window.__test.renderMarkdownWithCache(mathInFence, "```js\nconst price = $a + $b;\n```");
+assert.doesNotMatch(mathInFence.innerHTML, /markdown-math-inline/, "no math inside fenced code");
+assert.match(mathInFence.innerHTML, /\$a \+ \$b/, "code keeps its literal $...$ text");
+
+const mathInInlineCode = fakeElement();
+context.window.__test.renderMarkdownWithCache(mathInInlineCode, "用 `$x + y$` 表示求和，而 $x + y$ 是公式");
+assert.match(mathInInlineCode.innerHTML, /<code>\$x \+ y\$<\/code>/, "inline code keeps literal math text");
+assert.match(mathInInlineCode.innerHTML, /class="markdown-math-inline"/, "real formula still renders");
+
+const mathAroundFence = fakeElement();
+context.window.__test.renderMarkdownWithCache(mathAroundFence, "$a=1$\n\n```txt\n$b=2$\n```\n\n$c=3$");
+assert.equal(mathAroundFence.innerHTML.match(/markdown-math-inline/g).length, 2, "math renders outside the fence only");
+
+// Streaming: repeated renders of a growing answer stay correct end-to-end
+// (prefix cache + tail parse + morphdom patch), including code fences that
+// span multiple ticks.
+const streamEl = fakeElement();
+streamEl.dataset = {};
+context.document = { createElement: () => fakeElement() };
+context.window.__test.renderStreamingMarkdown(streamEl, "第一段\n\n第二段");
+assert.match(streamEl.innerHTML, /第一段/);
+assert.match(streamEl.innerHTML, /第二段/);
+context.window.__test.renderStreamingMarkdown(streamEl, "第一段\n\n第二段继续生长\n\n第三段");
+assert.match(streamEl.innerHTML, /第二段继续生长/);
+assert.match(streamEl.innerHTML, /第三段/);
+context.window.__test.renderStreamingMarkdown(streamEl, "第一段\n\n```js\nconst a = 1;\n```\n\n结尾 $x+y$");
+assert.match(streamEl.innerHTML, /const a = 1;/);
+assert.match(streamEl.innerHTML, /markdown-math-inline/);
 
 const mermaid = fakeElement();
 context.window.__test.renderMarkdownWithCache(mermaid, "```mermaid\ngraph TD\nA-->B\n```");

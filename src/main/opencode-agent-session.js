@@ -37,11 +37,12 @@ const {
   errorCauseFromEffect,
   isManagedGatewayAuthFailure,
   isManagedModelConfigStale,
-  isOversizedContextFailure,
   isRecoverableModelConnectionFailure,
   isSafeReplayableModelFailure,
+  isVisibleFailureRecoverable,
   shouldDropResumeAfterVisibleFailure,
   shouldIsolateAttachmentFallback,
+  shouldRebuildEngineForRetry,
   transientClassificationText,
 } = require("./opencode-session-failure-policy");
 const {
@@ -1183,8 +1184,8 @@ class OpencodeAgentSession extends EventEmitter {
         if (refreshManagedConfig && !(await this._refreshManagedModelConfigForRetry(raw))) {
           throw new Error(raw || "managed model config refresh failed");
         }
-        const server = (refreshManagedConfig || isOversizedContextFailure(classified, raw))
-          ? await this._restartEngineSessionForSafeReplay(raw || "oversized prompt request")
+        const server = shouldRebuildEngineForRetry({ refreshManagedConfig, classified, raw })
+          ? await this._restartEngineSessionForSafeReplay(raw || "fresh engine session for retry")
           : this._server;
         await server.sendPrompt(retryPayload);
         this._pendingDispatchFailure = null;
@@ -1428,12 +1429,11 @@ class OpencodeAgentSession extends EventEmitter {
       if (refreshManagedConfig && !(await this._refreshManagedModelConfigForRetry(raw))) {
         throw new Error(raw || "managed model config refresh failed");
       }
-      const isolateOversizedContext = isOversizedContextFailure(classified, raw);
       const isolateDocumentAttachment =
         retryPayload.attachmentFallback && shouldIsolateAttachmentFallback(originalPayload);
       const isolateLegacyResume =
         !retryPayload.attachmentFallback && this._engineSessionWasResumed && isRecoverableModelConnectionFailure(classified, raw);
-      if (refreshManagedConfig || isolateOversizedContext || isolateDocumentAttachment || isolateLegacyResume) {
+      if (shouldRebuildEngineForRetry({ refreshManagedConfig, classified, raw, isolateAttachmentFallback: isolateDocumentAttachment, isolateLegacyResume })) {
         await this._restartEngineSessionForSafeReplay(raw || "transient model transport failure");
       }
       const server = await this._ensureStarted();
@@ -1755,8 +1755,7 @@ class OpencodeAgentSession extends EventEmitter {
   _invalidateEngineSessionAfterVisibleFailure(message, cause) {
     const raw = transientClassificationText(message, cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
-    const recoverable = isRecoverableModelConnectionFailure(classified, raw)
-      || isManagedModelConfigStale(classified, raw, this.spawnOptions);
+    const recoverable = isVisibleFailureRecoverable(classified, raw, this.spawnOptions);
     const dropResume = shouldDropResumeAfterVisibleFailure({
       classified,
       raw,

@@ -310,6 +310,70 @@ function defaultListProcesses(timeoutMs) {
   });
 }
 
+function workspaceAccessGuidance() {
+  if (process.platform === "darwin") {
+    return "这通常意味着系统隐私权限未授予：引擎无法读写文件时，每条消息都会失败。请前往 系统设置 → 隐私与安全性 → 文件和文件夹（或完全磁盘访问权限）允许本应用访问，然后重启应用。";
+  }
+  if (process.platform === "win32") {
+    return "这通常是 Windows“受控文件夹访问”（勒索软件防护）或杀毒软件阻止了写入：请在 Windows 安全中心 → 病毒和威胁防护 → 勒索软件防护 中允许本应用，或将工作区移到非受控目录后重启应用。";
+  }
+  return "请检查目录属主与读写权限（chmod/chown），或以有权限的身份重新启动应用。";
+}
+
+/**
+ * macOS TCC / Windows Controlled Folder Access leave every shallow check
+ * green while EVERY message fails with EPERM — the engine cannot read or
+ * write the workspace or userData. Real read + real write + real delete is
+ * the only honest evidence; a probe failure only convicts on EPERM/EACCES/
+ * EROFS, anything else (e.g. unexpected dir state) stays a skip.
+ */
+function workspaceAccessCheck(options = {}) {
+  const id = "workspace.access";
+  const label = "工作区权限";
+  try {
+    const targets = [];
+    const seen = new Set();
+    const add = (dir, kind) => {
+      const value = String(dir || "").trim();
+      if (value && !seen.has(value)) {
+        seen.add(value);
+        targets.push({ dir: value, kind });
+      }
+    };
+    for (const dir of [].concat(options.workspacePath || [])) add(dir, "workspace");
+    add(safeCall(() => require("electron").app.getPath("userData"), ""), "userdata");
+    if (!targets.length) {
+      return check("ok", id, label, "跳过：没有可探测的目录。");
+    }
+    const problems = [];
+    let probed = 0;
+    for (const target of targets) {
+      if (!fs.existsSync(target.dir)) continue;
+      probed += 1;
+      const where = target.kind === "workspace" ? "工作区目录" : "应用数据目录";
+      try {
+        fs.accessSync(target.dir, fs.constants.R_OK | fs.constants.W_OK);
+        const probeFile = path.join(target.dir, `.lily-access-probe-${process.pid}-${Date.now()}`);
+        fs.writeFileSync(probeFile, "probe");
+        fs.rmSync(probeFile, { force: true });
+      } catch (err) {
+        const code = String(err?.code || err?.message || err);
+        if (!/EPERM|EACCES|EROFS/.test(code)) continue; // inconclusive → fail open
+        problems.push(`${where}不可读写（${code}）：${target.dir}`);
+      }
+    }
+    if (problems.length) {
+      return check("error", id, label, `${problems.join("；")}。${workspaceAccessGuidance()}`, "grant_workspace_permission");
+    }
+    if (!probed) {
+      return check("ok", id, label, "跳过：工作区目录不存在。");
+    }
+    return check("ok", id, label, "工作区与应用数据目录可正常读写。");
+  } catch (err) {
+    return check("ok", id, label, `工作区权限探测跳过：${err?.message || err}`);
+  }
+}
+
 function currentInstallRoot() {
   const appPath = safeCall(() => require("electron").app.getAppPath(), "") || "";
   const normalized = appPath.replace(/\\/g, "/");
@@ -396,4 +460,5 @@ module.exports = {
   engineBootCheck,
   sessionStoreCheck,
   environmentProcessesCheck,
+  workspaceAccessCheck,
 };

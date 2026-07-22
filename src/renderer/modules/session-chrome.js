@@ -30,6 +30,7 @@ import {
   mergeOlderConversationPage,
   shouldContinueLoadingOlder,
 } from "./conversation-pagination.js";
+import { resetCommittedWindowCount } from "./message-committed-render-model.js";
 
 const CONVERSATION_PAGE_SIZE = 50;
 const conversationPages = new Map();
@@ -231,6 +232,9 @@ async function refreshOfficialConversation(sessionId, opts = {}) {
   // because the refreshed history has a different height than the local-first
   // render. Only preserve position when the user has scrolled up to read.
   const atBottom = isSessionViewAtBottom(sessionId);
+  // Bottom-readers snap back to the default tail window; scrolled-up readers keep
+  // the history range they loaded (the window is remembered per session).
+  if (atBottom) resetCommittedWindowCount(sessionId);
   renderConversation(sessionId, { force: true, forceScrollBottom: atBottom, preserveScroll: !atBottom });
   resumeLiveSessionUi(sessionId, { forceScrollBottom: atBottom });
   return true;
@@ -301,7 +305,7 @@ export async function loadOlderConversationForSession(sessionId, panel = null) {
     patchSessionMessagesInStore(sessionId, merged, total);
     syncCommittedMessages(sessionId, merged);
     const { renderConversation } = await import("./message.js");
-    renderConversation(sessionId, { force: true, preserveScroll: true });
+    renderConversation(sessionId, { force: true, preserveScroll: true, windowCount: merged.length });
     if (panel) {
       requestAnimationFrame(() => {
         panel.scrollTop = panel.scrollHeight - beforeHeight + beforeTop;

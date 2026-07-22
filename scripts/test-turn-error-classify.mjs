@@ -302,4 +302,40 @@ const filePartPlainWording = classifyAssistantError(
 assert(filePartPlainWording?.code === "ATTACHMENT_UNSUPPORTED",
   "the plain 'file part media type … not supported' wording also classifies");
 
+// Idempotency (2026-07-22 field case: "Request failed: A system-level
+// permission restriction interrupted the engine." was re-wrapped into
+// "Request failed: Request failed: …" and misclassified as a generic engine
+// error on the second pass, losing the retryable PERMISSION_DENIED code).
+// Classifying an already-sanitized message must return the SAME code, and
+// sanitizing twice must be a fixed point.
+{
+  const { sanitizeError } = require(path.join(ROOT, "src/main/agent-runner.js"));
+  const samples = [
+    "EPERM: operation not permitted, open '/x'",
+    "maximum budget exceeded",
+    "AI_UnsupportedFunctionalityError: 'file part media type application/json' functionality not supported",
+    "engine wedged and unreachable",
+    "Session ID abc-123 already in use",
+    "RUNNER_TERMINATED: the engine runner was recycled",
+    "some utterly unclassified glitch xyz",
+  ];
+  for (const raw of samples) {
+    const once = sanitizeError(raw);
+    const first = classifyAssistantError(raw);
+    const second = classifyAssistantError(once);
+    assert(
+      (first?.code || null) === (second?.code || null),
+      `re-classifying a sanitized message keeps the same code (${first?.code} vs ${second?.code} for "${raw}")`,
+    );
+    assert(sanitizeError(once) === once, `sanitize is a fixed point for "${raw}"`);
+    assert(!/^Request failed:\s*Request failed:/i.test(sanitizeError(once)), `no double "Request failed:" prefix for "${raw}"`);
+  }
+  // The exact customer-facing message from the field screenshot:
+  const permDenied = classifyAssistantError(
+    "Request failed: A system-level permission restriction interrupted the engine. Lily retries automatically with a fresh engine session.",
+  );
+  assert(permDenied?.code === "PERMISSION_DENIED", "the re-wrapped permission message still classifies as PERMISSION_DENIED");
+  assert(permDenied?.retryable === true, "the re-wrapped permission message stays retryable");
+}
+
 console.log("turn-error-classify: ok");

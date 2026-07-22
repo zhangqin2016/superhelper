@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import {
+  collectEvictedMessageKeys,
   collectUnrenderedCommittedMessages,
   messageKey,
+  removeCommittedArticlesByKeys,
 } from "../src/renderer/modules/message-render-keys.js";
 
 const messages = Array.from({ length: 8 }, (_, index) => ({
@@ -35,5 +37,35 @@ const steerKeys = new Set();
 const steerPass = collectUnrenderedCommittedMessages(sameTurnWithSteer, steerKeys);
 assert.equal(steerPass.length, sameTurnWithSteer.length);
 assert.equal(messageKey(sameTurnWithSteer[1], 1), "user:turn_live:steer:1");
+
+// Window eviction: keys outside the current render window are collected and
+// removed from the bookkeeping set; keys inside stay.
+const windowKeys = new Set();
+collectUnrenderedCommittedMessages(messages, windowKeys);
+const evicted = collectEvictedMessageKeys(messages.slice(-3), windowKeys);
+assert.deepEqual(evicted, messages.slice(0, 5).map((message, index) => messageKey(message, index)));
+assert.equal(windowKeys.size, 3);
+assert.deepEqual(collectEvictedMessageKeys(messages.slice(-3), windowKeys), [], "second pass evicts nothing");
+
+// DOM eviction removes only the articles carrying an evicted data-message-key.
+function fakeNode(key) {
+  return {
+    dataset: { messageKey: key },
+    removed: false,
+    remove() {
+      this.removed = true;
+    },
+  };
+}
+const kept = fakeNode("msg_6");
+const dropped = fakeNode("msg_1");
+const liveArticle = { dataset: {}, removed: false, remove() { this.removed = true; } };
+const listEl = { querySelectorAll: () => [kept, dropped, liveArticle] };
+removeCommittedArticlesByKeys(listEl, ["msg_1"]);
+assert.equal(dropped.removed, true);
+assert.equal(kept.removed, false);
+assert.equal(liveArticle.removed, false, "nodes without a message key are never touched");
+removeCommittedArticlesByKeys(listEl, []);
+removeCommittedArticlesByKeys(null, ["msg_1"]);
 
 console.log("message-render-keys: ok");

@@ -304,6 +304,34 @@ const scanUnavailable = await deepChecks.environmentProcessesCheck({
 });
 assert.equal(scanUnavailable.status, "ok");
 
+// Workspace access (2026-07-22 field case: macOS TCC / Windows Controlled
+// Folder Access leave every shallow check green while every message fails
+// with EPERM). Real read+write+delete is the only honest evidence.
+const accessDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-deep-access-"));
+const accessOk = deepChecks.workspaceAccessCheck({ workspacePath: accessDir });
+assert.equal(accessOk.status, "ok");
+assert(/可正常读写/.test(accessOk.detail));
+// userData probe also counts when no workspace is given (electron stub above
+// returns `tmp` for userData, which is writable).
+const accessUserData = deepChecks.workspaceAccessCheck({});
+assert.equal(accessUserData.status, "ok");
+// Missing workspace dir → that target is skipped, not an error (userData
+// probe still runs via the electron stub, so the overall result stays ok).
+const accessMissing = deepChecks.workspaceAccessCheck({ workspacePath: path.join(accessDir, "does-not-exist") });
+assert.equal(accessMissing.status, "ok");
+// Unwritable dir → error with platform guidance (skip the chmod assertion on
+// win32: ACLs don't follow POSIX modes, and CI/service accounts may bypass).
+if (process.platform !== "win32") {
+  fs.chmodSync(accessDir, 0o555);
+  const accessDenied = deepChecks.workspaceAccessCheck({ workspacePath: accessDir });
+  assert.equal(accessDenied.status, "error");
+  assert(/不可读写/.test(accessDenied.detail));
+  assert(/隐私与安全性|完全磁盘访问/.test(accessDenied.detail), "macOS guidance names the TCC settings path");
+  assert.equal(accessDenied.action, "grant_workspace_permission");
+  fs.chmodSync(accessDir, 0o755);
+}
+fs.rmSync(accessDir, { recursive: true, force: true });
+
 fs.rmSync(storeDir, { recursive: true, force: true });
 
 fs.rmSync(tmp, { recursive: true, force: true });

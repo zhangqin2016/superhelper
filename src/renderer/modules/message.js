@@ -55,7 +55,7 @@ import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue, refreshSendEnabled } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
-import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
+import { collectUnrenderedCommittedMessages, collectEvictedMessageKeys, removeCommittedArticlesByKeys } from "./message-render-keys.js";
 import {
   liveTurnRenderMode,
   runtimeVisualSig,
@@ -246,10 +246,9 @@ export function renderConversation(sessionId, opts = {}) {
   }
 
   const pendingCount = renderCommittedMessages(sessionId, {
-    preserveScroll: Boolean(opts.preserveScroll),
-    onComplete: opts.forceScrollBottom
-      ? () => scrollToBottomAfterLayout(v.panel, true)
-      : null,
+    ...opts,
+    allowEvict: true,
+    onComplete: opts.forceScrollBottom ? () => scrollToBottomAfterLayout(v.panel, true) : null,
   });
   renderRuntimeSession(sessionId, { preserveScroll: Boolean(opts.preserveScroll) });
   syncWorkbenchEmptyState(v.listEl);
@@ -270,7 +269,7 @@ export function isConversationRenderCurrent(sessionId) {
   const v = sessionViews.get(sessionId);
   const keys = renderedMessageKeys.get(sessionId);
   const runtime = getRuntimeSession(sessionId);
-  const renderMessages = committedMessagesForRender(runtime.committedMessages);
+  const renderMessages = committedMessagesForRender(runtime.committedMessages, { sessionId });
   const unrendered = keys
     ? collectUnrenderedCommittedMessages(renderMessages, new Set(keys)).length
     : renderMessages.length;
@@ -338,12 +337,12 @@ async function jumpToTurnForSession(sessionId, panel, turnId) {
   }
 }
 
-function appendCommittedMessage(sessionId, runtime, message) {
+function appendCommittedMessage(sessionId, runtime, message, key) {
   const anchor = committedInsertAnchor(sessionId, runtime);
-  if (message.role === "user") appendUserMessage(sessionId, message, anchor);
+  if (message.role === "user") appendUserMessage(sessionId, message, anchor, key);
   else if (message.role === "assistant") {
     if (shouldSkipCommittedAssistantForLiveTurn(runtime, message)) return;
-    appendFinalAssistantArticle(sessionId, message, anchor);
+    appendFinalAssistantArticle(sessionId, message, anchor, key);
   }
 }
 
@@ -363,13 +362,14 @@ function renderCommittedMessages(sessionId, opts = {}) {
   const keys = renderedMessageKeys.get(sessionId) || new Set();
   renderedMessageKeys.set(sessionId, keys);
 
-  const renderMessages = committedMessagesForRender(runtime.committedMessages, opts);
+  const renderMessages = committedMessagesForRender(runtime.committedMessages, { sessionId, windowCount: opts.windowCount });
   const pending = collectUnrenderedCommittedMessages(renderMessages, keys);
+  if (opts.allowEvict) removeCommittedArticlesByKeys(view(sessionId).listEl, collectEvictedMessageKeys(renderMessages, keys));
   if (pending.length === 0) return 0;
 
   if (pending.length <= COMMITTED_RENDER_CHUNK || renderMessages.length <= COMMITTED_INITIAL_WINDOW || opts.preserveScroll) {
-    for (const { message } of pending) {
-      appendCommittedMessage(sessionId, runtime, message);
+    for (const { key, message } of pending) {
+      appendCommittedMessage(sessionId, runtime, message, key);
     }
     opts.onComplete?.();
     return pending.length;
@@ -381,8 +381,8 @@ function renderCommittedMessages(sessionId, opts = {}) {
     if (view(sessionId).renderGeneration !== generation) return;
     const end = Math.min(cursor + COMMITTED_RENDER_CHUNK, pending.length);
     for (; cursor < end; cursor++) {
-      const { message } = pending[cursor];
-      appendCommittedMessage(sessionId, runtime, message);
+      const { key, message } = pending[cursor];
+      appendCommittedMessage(sessionId, runtime, message, key);
     }
     if (cursor < pending.length) {
       scheduleCommittedRenderPump(pump);
@@ -395,11 +395,12 @@ function renderCommittedMessages(sessionId, opts = {}) {
   return pending.length;
 }
 
-function appendUserMessage(sessionId, message, beforeNode = null) {
+function appendUserMessage(sessionId, message, beforeNode = null, key = "") {
   const v = ensurePanel(sessionId);
   const article = document.createElement("article");
   article.className = "runtime-user-message";
   if (message.turnId) article.dataset.turnId = message.turnId; // lets the minimap locate this prompt
+  if (key) article.dataset.messageKey = key; // lets window eviction locate this article
 
   const label = document.createElement("p");
   label.className = "runtime-user-label";
@@ -440,9 +441,9 @@ function appendUserMessage(sessionId, message, beforeNode = null) {
   else v.listEl?.appendChild(article);
 }
 
-function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
+function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key = "") {
   if (message?.meta?.scheduledDraft) {
-    appendScheduledDraftArticle(sessionId, message, beforeNode);
+    appendScheduledDraftArticle(sessionId, message, beforeNode, key);
     return;
   }
   const v = ensurePanel(sessionId);
@@ -450,6 +451,7 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
     ? liveTurnFromRecord(message.record)
     : legacyLiveTurnFromMessage(message);
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed));
+  if (key) article.dataset.messageKey = key; // lets window eviction locate this article
   appendArticleActions(article, sessionId, message);
   if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
   else v.listEl?.appendChild(article);
@@ -567,13 +569,14 @@ function buildRetryAction(sessionId, message) {
   return retry;
 }
 
-function appendScheduledDraftArticle(sessionId, message, beforeNode = null) {
+function appendScheduledDraftArticle(sessionId, message, beforeNode = null, key = "") {
   const v = ensurePanel(sessionId);
   const preview = scheduledDraftPreviewModel(message);
 
   const article = document.createElement("article");
   article.className = "assistant-turn-article scheduled-draft-article";
   article.dataset.messageId = preview.messageId;
+  if (key) article.dataset.messageKey = key; // lets window eviction locate this article
 
   const shell = document.createElement("div");
   shell.className = "scheduled-draft-chat-card";
@@ -698,7 +701,7 @@ function renderRuntimeSession(sessionId, opts = {}) {
     userScrollDetached: isUserScrollDetached(panel),
     nearBottom: isNearBottom(panel),
   });
-  renderCommittedMessages(sessionId);
+  renderCommittedMessages(sessionId, { allowEvict: shouldFollow });
   const liveMode = liveTurnRenderMode(runtime);
   if (runtime.liveTurn) {
     if (liveMode === "remove-duplicate") {

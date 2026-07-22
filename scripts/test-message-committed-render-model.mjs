@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   COMMITTED_INITIAL_WINDOW,
+  COMMITTED_MAX_WINDOW,
   COMMITTED_WINDOW_THRESHOLD,
   buildMinimapItems,
   committedMessagesForRender,
@@ -13,6 +14,7 @@ import {
   isCommittedRenderCurrent,
   liveInsertAnchorTurnId,
   orderCommittedMessages,
+  resetCommittedWindowCount,
   rewindActionTarget,
   scheduledDraftPreviewModel,
   shouldShowRetryAction,
@@ -41,8 +43,49 @@ const longList = Array.from({ length: COMMITTED_WINDOW_THRESHOLD + 5 }, (_, inde
 }));
 assert.equal(committedMessagesForRender(longList).length, COMMITTED_INITIAL_WINDOW);
 assert.equal(committedMessagesForRender(longList)[0].turnId, `t${longList.length - COMMITTED_INITIAL_WINDOW}`);
-assert.equal(committedMessagesForRender(longList, { preserveScroll: true }).length, longList.length);
+// preserveScroll is a chunking concern of the caller, not a window size: the
+// render list follows the default/remembered window either way.
+assert.equal(committedMessagesForRender(longList, { preserveScroll: true }).length, COMMITTED_INITIAL_WINDOW);
 assert.deepEqual(committedMessagesForRender("bad"), []);
+
+// Explicit windowCount (loading older history) is honored in full, even past
+// the max window — the user asked for this range.
+assert.equal(committedMessagesForRender(longList, { windowCount: longList.length }).length, longList.length);
+assert.equal(committedMessagesForRender(longList, { windowCount: 10 })[0].turnId, `t${longList.length - 10}`);
+
+// Remembered per-session window: loading older grows what later renders keep,
+// so a rebuild restores the loaded range instead of snapping back to the tail.
+const hugeList = Array.from({ length: COMMITTED_MAX_WINDOW * 2 }, (_, index) => ({
+  role: "user",
+  turnId: `h${index}`,
+  content: `h ${index}`,
+  timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+}));
+assert.equal(committedMessagesForRender(hugeList, { sessionId: "win-a" }).length, COMMITTED_INITIAL_WINDOW);
+assert.equal(committedMessagesForRender(hugeList, { sessionId: "win-a", windowCount: hugeList.length }).length, hugeList.length);
+assert.equal(
+  committedMessagesForRender(hugeList, { sessionId: "win-a" }).length,
+  COMMITTED_MAX_WINDOW,
+  "remembered window is restored but capped",
+);
+assert.equal(
+  committedMessagesForRender(hugeList, { sessionId: "win-b" }).length,
+  COMMITTED_INITIAL_WINDOW,
+  "windows are per session",
+);
+resetCommittedWindowCount("win-a");
+assert.equal(
+  committedMessagesForRender(hugeList, { sessionId: "win-a" }).length,
+  COMMITTED_INITIAL_WINDOW,
+  "reset returns the session to the default tail window",
+);
+
+// The remembered window never SHRINKS a small conversation: a session that fit
+// entirely keeps rendering everything as it grows toward the threshold.
+const smallList = longList.slice(0, COMMITTED_WINDOW_THRESHOLD - 60);
+assert.equal(committedMessagesForRender(smallList, { sessionId: "win-c" }).length, smallList.length);
+const grownSmall = [...smallList, ...longList.slice(0, 20)];
+assert.equal(committedMessagesForRender(grownSmall, { sessionId: "win-c" }).length, grownSmall.length);
 
 assert.equal(isCommittedRenderCurrent({
   hasSessionView: true,

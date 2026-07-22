@@ -164,7 +164,16 @@ function isSafeReplayableModelFailure(classified, raw = "", spawnOptions = null)
   return isManagedGatewayAuthFailure(classified, raw, spawnOptions)
     || isManagedGatewayModelUnavailable(classified, raw, spawnOptions)
     || isRecoverableModelConnectionFailure(classified, raw)
-    || isOversizedContextFailure(classified, raw);
+    || isOversizedContextFailure(classified, raw)
+    || isLocalPermissionFailure(classified);
+}
+
+/** Local errno-grade permission failure (EACCES/EPERM). Replay is bounded to
+ *  one silent retry against a FRESH engine session (recycling rebuilds
+ *  sandbox/handle state); a persistent restriction (macOS TCC, Windows
+ *  Controlled Folder Access) fails loud after that single retry. */
+function isLocalPermissionFailure(classified) {
+  return classified?.code === "PERMISSION_DENIED";
 }
 
 function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false } = {}) {
@@ -176,18 +185,43 @@ function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {
   return shouldIsolateAttachmentFallback(payload);
 }
 
+/**
+ * Retry-path engine rebuild decision. A fresh engine session is the only
+ * thing a retry can fix for stale managed config, oversized context, and
+ * local permission failures (recycling rebuilds sandbox/handle state).
+ */
+function shouldRebuildEngineForRetry({ refreshManagedConfig = false, classified = null, raw = "", isolateAttachmentFallback = false, isolateLegacyResume = false } = {}) {
+  return Boolean(
+    refreshManagedConfig
+    || isolateAttachmentFallback
+    || isolateLegacyResume
+    || isOversizedContextFailure(classified, raw)
+    || isLocalPermissionFailure(classified)
+  );
+}
+
+/** After a visible failure: may the engine session be reused for the next turn? */
+function isVisibleFailureRecoverable(classified, raw = "", spawnOptions = null) {
+  return isRecoverableModelConnectionFailure(classified, raw)
+    || isManagedModelConfigStale(classified, raw, spawnOptions)
+    || isLocalPermissionFailure(classified);
+}
+
 module.exports = {
   buildAttachmentFallbackManifest,
   buildAttachmentFallbackPromptPayload,
   errorCauseFromEffect,
   failureCauseText,
+  isLocalPermissionFailure,
   isManagedGatewayAuthFailure,
   isManagedGatewayModelUnavailable,
   isManagedModelConfigStale,
   isOversizedContextFailure,
   isRecoverableModelConnectionFailure,
   isSafeReplayableModelFailure,
+  isVisibleFailureRecoverable,
   shouldDropResumeAfterVisibleFailure,
   shouldIsolateAttachmentFallback,
+  shouldRebuildEngineForRetry,
   transientClassificationText,
 };

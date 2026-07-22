@@ -276,6 +276,7 @@ async function runSupportDiagnosticsPublic(options = {}) {
     checks.push(await deepChecks.engineBootCheck(options));
   }
   checks.push(deepChecks.sessionStoreCheck(options));
+  checks.push(deepChecks.workspaceAccessCheck(options));
   checks.push(await deepChecks.environmentProcessesCheck(options));
   if (license) {
     checks.push(check(

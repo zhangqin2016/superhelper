@@ -5,6 +5,8 @@
 import { revealLocalFileInFolder } from "./file-reveal.js";
 import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";
 import { t } from "../i18n/index.js";
+import { mapPlainSegments } from "./markdown-math-segments.js";
+import { renderStreamBlocks } from "./markdown-stream-blocks.js";
 import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
 
 let hljsReady = false;
@@ -429,23 +431,19 @@ function renderDiffBlock(text = "") {
   return `<pre class="markdown-diff"><code>${rendered}</code></pre>`;
 }
 
+// Math runs before marked, so it must skip code: `$x$` inside a fence or
+// inline span is literal code, not a formula.
 function renderMathBlocks(text = "", mathRenderer = null) {
   if (!mathRenderer || typeof mathRenderer.renderToString !== "function") return text;
-  let prepared = String(text);
-  prepared = prepared.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
-    return `\n<div class="markdown-math-block">${renderMath(expr, mathRenderer, true)}</div>\n`;
+  return mapPlainSegments(String(text), (plain) => {
+    const block = (expr) => `\n<div class="markdown-math-block">${renderMath(expr, mathRenderer, true)}</div>\n`;
+    const inline = (expr) => `<span class="markdown-math-inline">${renderMath(expr, mathRenderer, false)}</span>`;
+    return plain
+      .replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g, (_, a, b) => block(a ?? b))
+      .replace(/\\\(([^]+?)\\\)/g, (_, expr) => inline(expr))
+      .replace(/(^|[\s([:：，。；；,])\$([^$\n]{1,500})\$(?=([\s)\].,;!?，。；！？]|$))/g, (match, prefix, expr) =>
+        /^\s*$/.test(expr) ? match : `${prefix}${inline(expr)}`);
   });
-  prepared = prepared.replace(/\\\[([\s\S]+?)\\\]/g, (_, expr) => {
-    return `\n<div class="markdown-math-block">${renderMath(expr, mathRenderer, true)}</div>\n`;
-  });
-  prepared = prepared.replace(/\\\(([^]+?)\\\)/g, (_, expr) => {
-    return `<span class="markdown-math-inline">${renderMath(expr, mathRenderer, false)}</span>`;
-  });
-  prepared = prepared.replace(/(^|[\s([:：，。；；,])\$([^$\n]{1,500})\$(?=([\s)\].,;!?，。；！？]|$))/g, (match, prefix, expr) => {
-    if (/^\s*$/.test(expr)) return match;
-    return `${prefix}<span class="markdown-math-inline">${renderMath(expr, mathRenderer, false)}</span>`;
-  });
-  return prepared;
 }
 
 function renderMath(expr, mathRenderer, displayMode) {
@@ -726,6 +724,9 @@ async function copyText(text) {
 /** @type {Map<string, string>} 代码块内容hash → 已高亮的HTML */
 const codeCache = new Map();
 
+/** @type {WeakMap<Element, {prefix: string, html: string}>} 流式稳定前缀 → 已消毒HTML */
+const streamBlockCache = new WeakMap();
+
 function hashContent(text) {
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
@@ -787,13 +788,12 @@ export function renderStreamingMarkdown(element, markdownText, options = {}) {
   element.classList?.remove("markdown-fallback");
 
   const renderer = createMarkedRenderer({ basePath: options.basePath || "" });
-  const html = parser(prepareMarkdown(markdownText, { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
-  const sanitized = sanitizeMarkdownHtml(html);
-  // Patch in place via morphdom instead of replacing innerHTML: streaming text
-  // grows by extending the trailing nodes, so the block doesn't tear down and
-  // rebuild every tick — no flicker, smooth incremental output.
+  const parse = (md) => sanitizeMarkdownHtml(parser(prepareMarkdown(md, { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer }));
+  // Patch in place via morphdom, and parse only the unstable tail: the settled
+  // prefix (blank-line block boundaries, balanced fences/math) is cached per
+  // element, so each tick costs O(tail) instead of re-parsing the whole answer.
   const next = document.createElement(element.tagName || "DIV");
-  next.innerHTML = sanitized;
+  next.innerHTML = renderStreamBlocks(streamBlockCache, element, markdownText, parse);
   morphdom(element, next, MARKDOWN_MORPH_OPTS);
   enhanceRenderedMarkdown(element, { interactive: false });
   if (element.dataset) element.dataset.streamMode = "rendered";
