@@ -201,74 +201,74 @@
 :root[data-theme="light"] {
   --color-scheme: light;
 
-  --accent: #5145e5;
-  --accent-hover: #4338d4;
-  --accent-dim: rgba(81, 69, 229, 0.13);
-  --accent-subtle: rgba(81, 69, 229, 0.075);
-  --accent-border: rgba(81, 69, 229, 0.32);
-  --accent-strong-border: rgba(81, 69, 229, 0.5);
-  --accent-strong-bg: rgba(81, 69, 229, 0.13);
-  --accent-ring: rgba(81, 69, 229, 0.13);
+  /* Accent: brand violet, softened for daylight surfaces */
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-dim: rgba(99, 102, 241, 0.12);
+  --accent-subtle: rgba(99, 102, 241, 0.07);
+  --accent-border: rgba(99, 102, 241, 0.30);
+  --accent-strong-border: rgba(99, 102, 241, 0.55);
+  --accent-strong-bg: rgba(99, 102, 241, 0.14);
+  --accent-ring: rgba(99, 102, 241, 0.18);
 
-  /* Porcelain neutral: cool enough to avoid cream/yellow, soft enough that the
-     workbench does not become a sterile blue-grey dashboard. */
-  --bg-body: #f4f6f8;
-  --bg-left: #f8f9fb;
-  --bg-center: #fbfcfd;
-  --bg-right: #f8f9fb;
-  --bg-topbar: #fcfdff;
+  /* Warm-neutral daylight ladder (Notion-style #f7f7f5 family) */
+  --bg-body: #f7f7f5;
+  --bg-left: #fbfbfa;
+  --bg-center: #f7f7f5;
+  --bg-right: #fbfbfa;
+  --bg-topbar: #ffffff;
   --bg-input: #ffffff;
   --bg-primary: var(--bg-center);
   --bg-secondary: var(--bg-surface-muted);
   --bg-elevated: var(--bg-surface-raised);
   --bg-surface: #ffffff;
   --bg-surface-raised: #ffffff;
-  --bg-surface-hover: #eef1f5;
-  --bg-surface-active: #e5e9ef;
-  --bg-surface-muted: rgba(31, 41, 55, 0.045);
-  --bg-surface-subtle: rgba(31, 41, 55, 0.025);
+  --bg-surface-hover: #f0efec;
+  --bg-surface-active: #e8e6e1;
+  --bg-surface-muted: rgba(60, 56, 48, 0.05);
+  --bg-surface-subtle: rgba(60, 56, 48, 0.03);
   --bg-floating: rgba(255, 255, 255, 0.97);
-  --bg-backdrop: rgba(15, 23, 42, 0.14);
-  --bg-drop-overlay: rgba(15, 23, 42, 0.16);
+  --bg-backdrop: rgba(31, 27, 20, 0.16);
+  --bg-drop-overlay: rgba(31, 27, 20, 0.18);
   --bg-drop-card: rgba(255, 255, 255, 0.96);
-  --bg-tool-detail: rgba(31, 41, 55, 0.04);
-  --bg-tool-detail-strong: rgba(31, 41, 55, 0.06);
-  --bg-media: rgba(248, 250, 252, 0.96);
-  --bg-choice-backdrop: rgba(15, 23, 42, 0.27);
-  --bg-pdf-active: rgba(81, 69, 229, 0.075);
-  --bg-pdf-viewport-sheen: rgba(31, 41, 55, 0.035);
+  --bg-tool-detail: rgba(60, 56, 48, 0.04);
+  --bg-tool-detail-strong: rgba(60, 56, 48, 0.06);
+  --bg-media: rgba(250, 250, 248, 0.96);
+  --bg-choice-backdrop: rgba(31, 27, 20, 0.28);
+  --bg-pdf-active: rgba(99, 102, 241, 0.08);
+  --bg-pdf-viewport-sheen: rgba(60, 56, 48, 0.035);
   --bg-user-chip: rgba(255, 255, 255, 0.22);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
 
-  /* Neutral ink ladder: graphite, not sepia. */
-  --text-primary: #171a21;
+  /* Warm ink ladder */
+  --text-primary: #1f2328;
   --text: var(--text-primary);
-  --text-secondary: #4b5563;
-  --text-tertiary: #737b89;
-  --text-faint: #a3abb7;
-  --text-dim: #657080;
-  --text-muted: #8791a0;
+  --text-secondary: #5b5b56;
+  --text-tertiary: #83837d;
+  --text-faint: #b0aea6;
+  --text-dim: #6b6b66;
+  --text-muted: #8b8b85;
   --muted: var(--text-muted);
   --text-inverse: #ffffff;
-  --text-strong: #0f172a;
-  --text-code: #8f3f0a;
-  --link: #1f5fbf;
+  --text-strong: #17181c;
+  --text-code: #9a4a0e;
+  --link: #4f46e5;
 
-  /* Cool neutral hairlines, low contrast until interaction. */
-  --border: rgba(31, 41, 55, 0.10);
-  --border-light: rgba(31, 41, 55, 0.13);
-  --border-subtle: rgba(31, 41, 55, 0.07);
-  --border-strong: rgba(31, 41, 55, 0.18);
+  /* Warm hairlines */
+  --border: rgba(31, 27, 20, 0.09);
+  --border-light: rgba(31, 27, 20, 0.12);
+  --border-subtle: rgba(31, 27, 20, 0.06);
+  --border-strong: rgba(31, 27, 20, 0.17);
 
-  /* Blue-grey shadows avoid the old brown cast. */
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 14px 34px rgba(15, 23, 42, 0.055);
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 6px 16px rgba(15, 23, 42, 0.035);
-  --shadow-floating: 0 16px 40px rgba(15, 23, 42, 0.10);
-  --shadow-panel: -14px 0 42px rgba(15, 23, 42, 0.10);
-  --shadow-image: 0 8px 36px rgba(15, 23, 42, 0.18);
-  --shadow-modal: 0 22px 64px rgba(15, 23, 42, 0.14);
-  --shadow-pdf-page: 0 16px 40px rgba(15, 23, 42, 0.14);
-  --shadow-pdf-thumb: 0 1px 4px rgba(15, 23, 42, 0.08);
+  /* Soft warm-neutral shadows, three rungs */
+  --shadow: 0 1px 2px rgba(31, 27, 20, 0.05), 0 12px 32px rgba(31, 27, 20, 0.06);
+  --shadow-sm: 0 1px 2px rgba(31, 27, 20, 0.05), 0 4px 14px rgba(31, 27, 20, 0.04);
+  --shadow-floating: 0 16px 40px rgba(31, 27, 20, 0.10);
+  --shadow-panel: -14px 0 42px rgba(31, 27, 20, 0.08);
+  --shadow-image: 0 8px 36px rgba(31, 27, 20, 0.16);
+  --shadow-modal: 0 22px 64px rgba(31, 27, 20, 0.13);
+  --shadow-pdf-page: 0 16px 40px rgba(31, 27, 20, 0.12);
+  --shadow-pdf-thumb: 0 1px 4px rgba(31, 27, 20, 0.08);
 
   --success-bg: #e9f8ef;
   --success-bg-hover: #d8f1e2;
@@ -301,22 +301,26 @@
   --diff-add-text: #15803d;
   --diff-del-bg: rgba(220, 38, 38, 0.1);
   --diff-del-text: #dc2626;
-  --diff-hunk-bg: rgba(79, 91, 213, 0.1);
+  --diff-hunk-bg: rgba(99, 102, 241, 0.10);
   --diff-hunk-text: #4f46e5;
   --diff-meta-bg: rgba(100, 116, 139, 0.1);
   --diff-meta-text: #64748b;
 
-  --code-bg: #f1f5f9;
+  --code-bg: #f5f4f1;
   --code-text: var(--text-code);
-  --pre-bg: #f8fafc;
-  --pre-text: #1f2937;
-  --copy-bg: rgba(255, 255, 255, 0.86);
-  --copy-bg-hover: rgba(241, 245, 249, 0.96);
+  --pre-bg: #faf9f7;
+  --pre-text: #2a2d34;
+  --copy-bg: rgba(255, 255, 255, 0.88);
+  --copy-bg-hover: rgba(245, 244, 241, 0.96);
   --image-backdrop: var(--copy-bg);
   --document-page-bg: #ffffff;
-  --image-control-bg: rgba(15, 23, 42, 0.56);
-  --image-control-hover: rgba(15, 23, 42, 0.72);
-  --scrollbar-thumb: #cbd3dd;
+  --image-control-bg: rgba(31, 27, 20, 0.56);
+  --image-control-hover: rgba(31, 27, 20, 0.72);
+  --scrollbar-thumb: #d6d3cb;
+
+  /* Daylight "lit from above": hairline goes warm, highlight comes from the white surface */
+  --hairline: rgba(31, 27, 20, 0.06);
+  --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 :root[data-text-size="large"] {
