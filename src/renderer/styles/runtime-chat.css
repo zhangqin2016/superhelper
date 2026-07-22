@@ -823,7 +823,7 @@
 
 .conversation-find-bar {
   position: fixed;
-  top: 56px;
+  top: 46px;
   right: 24px;
   display: flex;
   gap: 2px;
