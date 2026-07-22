@@ -131,6 +131,9 @@ function isSideEffectFreeToolRun(tools = []) {
   ["todowrite", { idempotent: true, replaySafe: true, externalSideEffect: false }],
   ["question", { idempotent: true, replaySafe: true, externalSideEffect: false }],
   ["lily_intent_contract_commit", { readOnly: true, evidenceKind: "intent_contract" }],
+  // Local knowledge base retrieval (file-intelligence MCP): read-only,
+  // replay-safe, and a first-class evidence source for local/private facts.
+  ["query_index", { readOnly: true, evidenceKind: "knowledge_base" }],
   ["edit", { destructive: true, evidenceKind: "file_write" }],
   ["multiedit", { destructive: true, evidenceKind: "file_write" }],
   ["write", { destructive: true, evidenceKind: "file_write" }],

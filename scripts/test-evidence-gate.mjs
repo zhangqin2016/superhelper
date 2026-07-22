@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   assessFinalAnswerEvidence,
+  hasEvidenceKind: egHasEvidenceKind,
 } = require("../src/main/evidence-gate.js");
 
 const policy = { required: true };
@@ -396,5 +397,11 @@ const imageAnalysis = assessFinalAnswerEvidence({
   skipNumericGrounding: true,
 });
 assert.equal(imageAnalysis.ok, true, "image-read numbers are NOT numeric-grounding-flagged (vision is the evidence)");
+
+// knowledge_base is a first-class required-evidence kind: satisfied by a
+// successful local KB query, unsatisfied without one.
+assert.equal(egHasEvidenceKind({ hasKnowledgeBaseEvidence: true, counts: { knowledgeBaseQueries: 1 } }, "knowledge_base"), true);
+assert.equal(egHasEvidenceKind({ hasKnowledgeBaseEvidence: false, counts: { knowledgeBaseQueries: 0 } }, "knowledge_base"), false);
+assert.equal(egHasEvidenceKind({ counts: { knowledgeBaseQueries: 2 } }, "knowledge_base"), true, "count fallback satisfies the kind");
 
 console.log("evidence-gate: ok");

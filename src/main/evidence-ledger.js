@@ -123,6 +123,14 @@ function normalizeToolEvidence(tool = {}) {
     };
   }
 
+  if (evidenceKind === "knowledge_base") {
+    return {
+      ...base,
+      kind: "knowledge_base",
+      query: firstString(input, ["query", "q"]) || "",
+    };
+  }
+
   return { ...base, kind: "tool_observation" };
 }
 
@@ -227,12 +235,14 @@ class EvidenceLedger {
     const verifications = [];
     const writes = [];
     const external = [];
+    const knowledgeBase = [];
     for (const event of this.events) {
       if (event.kind === "file_search") searches.push(event);
       if (event.kind === "file_read" && event.path) filesRead.add(normalizePathKey(event.path));
       if (event.kind === "verification") verifications.push(event);
       if (event.kind === "file_write" && event.path) writes.push(event);
       if (["web_search", "web_fetch", "external_observation"].includes(event.kind)) external.push(event);
+      if (event.kind === "knowledge_base") knowledgeBase.push(event);
     }
     const documentCount = this.documents.reduce((count, event) => count + event.documents.length, 0);
     const documentChunkCount = this.documents.reduce((count, event) => count + Number(event.chunkCount || 0), 0);
@@ -271,6 +281,7 @@ class EvidenceLedger {
         documentChunks: documentChunkCount,
         sourceContentSources: sourceCount,
         sourceContentObservations: this.sourceContent.length,
+        knowledgeBaseQueries: knowledgeBase.length,
       },
       coverage: {
         candidateCount,
@@ -296,6 +307,9 @@ class EvidenceLedger {
       hasFreshEvidence: external.some((event) => event.success),
       hasDocumentEvidence: documentCount > 0 || documentChunkCount > 0,
       hasSourceContentEvidence: successfulSourceContent.length > 0,
+      // Local knowledge base retrieval (query_index) is a first-class evidence
+      // source for local/private facts — counted like any other tool evidence.
+      hasKnowledgeBaseEvidence: knowledgeBase.some((event) => event.success),
       sourceContentCoverage: {
         status: sourceContentStatus,
         sourceCount,

@@ -60,6 +60,8 @@ function hasEvidenceKind(summary = {}, kind = "") {
       if (summary.hasSourceContentEvidence === true) return true;
       if (summary.hasSourceContentEvidence === false) return false;
       return hasCount(summary, "sourceContentSources");
+    case "knowledge_base":
+      return Boolean(summary.hasKnowledgeBaseEvidence || hasCount(summary, "knowledgeBaseQueries"));
     default:
       return true;
   }

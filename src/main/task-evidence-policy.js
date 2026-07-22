@@ -17,7 +17,7 @@ function uniqueStrings(...lists) {
 }
 
 function evidenceSourcesForTaskType(taskType) {
-  const common = ["user_request", "tool_output"];
+  const common = ["user_request", "tool_output", "local_knowledge_base"];
   switch (taskType) {
     case "architecture_audit":
       return uniqueStrings(common, [

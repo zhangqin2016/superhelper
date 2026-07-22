@@ -116,4 +116,24 @@ const failedSourceSummary = failedSourceLedger.summary();
 assert.equal(failedSourceSummary.hasSourceContentEvidence, false, "failed recognition must not become source evidence");
 assert.equal(failedSourceSummary.sourceContentCoverage.status, "unavailable");
 
+// Local knowledge base retrieval (query_index, incl. MCP-namespaced names) is a
+// first-class evidence kind: counted in the summary and gated on success.
+const kbEvent = normalizeToolEvidence({
+  name: "lily-file-intelligence_query_index",
+  input: { indexId: "idx_1", query: "termination clause", limit: 5 },
+  result: [{ text: "chunk", path: "contract.docx" }],
+  status: "done",
+});
+assert.equal(kbEvent.kind, "knowledge_base");
+assert.equal(kbEvent.query, "termination clause");
+const kbLedger = new EvidenceLedger();
+kbLedger.recordTool({ name: "lily-file-intelligence_query_index", input: { query: "termination clause" }, result: "chunks", status: "done" });
+const kbSummary = kbLedger.summary();
+assert.equal(kbSummary.counts.knowledgeBaseQueries, 1);
+assert(kbSummary.hasKnowledgeBaseEvidence);
+const kbFailedLedger = new EvidenceLedger();
+kbFailedLedger.recordTool({ name: "query_index", input: { query: "x" }, result: "boom", status: "failed" });
+assert(!kbFailedLedger.summary().hasKnowledgeBaseEvidence, "a failed KB query is not evidence");
+assert.equal(kbFailedLedger.summary().counts.knowledgeBaseQueries, 1, "attempts are still counted");
+
 console.log("evidence-ledger: ok");
