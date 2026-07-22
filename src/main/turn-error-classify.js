@@ -210,6 +210,12 @@ function buildIncompleteTurnSummary(state = {}, payload = {}) {
   const parts = [
     "本轮没有形成完整最终回答。系统已停止继续等待，避免会话一直卡在处理中。",
   ];
+  // Honesty first: a stall while a permission/question card is still open is
+  // not "the model hung" — the turn died waiting for the user (the 2026-07-22
+  // field case: an rm -rf permission card sat unanswered for 20 minutes).
+  if (Number(state?.pendingPermissions?.size || 0) > 0 || Number(state?.pendingQuestions?.size || 0) > 0) {
+    parts.push("本轮中止时仍在等待你确认授权或回复：有操作需要你点击允许才能继续。重新发送任务，并在弹出确认卡片时及时处理（或切换到全自主模式自动允许）。");
+  }
   if (snapshot.failed.length || snapshot.running.length) {
     parts.push("原因：有子任务或工具未完成/失败，父任务没有进入最终回答阶段。");
   } else if (snapshot.done.length) {

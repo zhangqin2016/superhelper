@@ -492,6 +492,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._promptDispatchPending = false;
     this._turnAcceptedEmitted = false;
     this._activeTaskContract = typeof payload === "object" ? payload?.taskContract || null : null;
+    this._nonInteractiveTurn = typeof payload === "object" && payload?.nonInteractive === true;
     this._clearTransientFailureTimer();
     this._clearIdleProbeTimer();
     // First engine message id of this turn — the rewind anchor. Reverting to it
@@ -934,7 +935,6 @@ class OpencodeAgentSession extends EventEmitter {
     });
   }
 
-
   _handleEffect(effect, opts = {}) {
     switch (effect.kind) {
       case "assistant_text":
@@ -948,8 +948,7 @@ class OpencodeAgentSession extends EventEmitter {
         // auto-deny without bothering the user; only "ask" surfaces the dialog.
         const mode = this.spawnOptions?.permissionMode || "ask";
         const verdict = decidePermission(mode, effect.toolName, effect.input || {}, {
-          cwd: this.cwd,
-          taskContract: this._activeTaskContract,
+          cwd: this.cwd, taskContract: this._activeTaskContract, nonInteractive: this._nonInteractiveTurn === true,
         });
         if (verdict === "allow") {
           this._autoRespondPermission(effect.requestId, "once");

@@ -273,6 +273,15 @@ assert(incomplete.includes("timeout after 90s"), "incomplete summary preserves f
 const appended = ec.appendIncompleteTurnSummary("你说得对，之前偏向了 cst。", toolState, {});
 assert(appended.includes("你说得对") && appended.includes("本轮没有形成完整最终回答"), "partial text receives stalled summary");
 
+// Stalled while a permission card / question was still open: the summary must
+// say so plainly instead of blaming an unfinished tool (2026-07-22 field case:
+// an unattended rm -rf permission card hung until the watchdog killed the turn).
+assert(!incomplete.includes("等待你确认授权"), "no permission hint when nothing was pending");
+const pendingState = { ...toolState, pendingPermissions: new Map([["perm1", { toolName: "bash" }]]) };
+const pendingSummary = ec.buildIncompleteTurnSummary(pendingState, {});
+assert(pendingSummary.includes("等待你确认授权"), "summary names the unanswered permission card");
+assert(pendingSummary.includes("全自主"), "summary points at the autonomy mode as the way out");
+
 const skillParse = ec.classifyTurnFailure(
   { error: "Failed to parse skill /workspace/.claude/skills/bad/SKILL.md" },
   {},

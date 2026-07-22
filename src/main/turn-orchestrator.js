@@ -429,7 +429,6 @@ class TurnOrchestrator {
     void this._handleError(sessionId, message);
   }
 
-
   async sendUserMessage(sessionId, text, files = [], opts = {}) {
     const session = this.ctx.sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
@@ -1370,6 +1369,7 @@ class TurnOrchestrator {
       allowImageFileParts,
       taskContract: state.taskContract,
       turnPolicy: state.turnPolicy,
+      nonInteractive: Boolean(state.wasRescueAttempt || state.documentDeliveryRecovery), // unattended internal turn: permission "ask" auto-rejects
       trace: {
         preflightTextChanged: text !== rawUserText,
         customEngineText: preRehydrateText !== text,
