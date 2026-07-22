@@ -98,6 +98,24 @@ try {
   } finally {
     clearTimeout(keepAlive);
   }
+
+  // enrichPermissionFailureMessage: a visible PERMISSION_DENIED failure runs
+  // the main-process workspace probe and appends an actionable diagnosis;
+  // other failures and healthy workspaces pass the message through untouched.
+  const plain = failurePolicy.enrichPermissionFailureMessage({ message: "Request failed: 401 Unauthorized" });
+  assert.equal(plain, "Request failed: 401 Unauthorized", "non-permission failures stay untouched");
+  const permRaw = "EPERM: operation not permitted, open '/x'";
+  const healthy = failurePolicy.enrichPermissionFailureMessage({ message: permRaw, workspacePath: tmp });
+  assert.equal(healthy, permRaw, "writable workspace → no diagnosis appended");
+  if (process.platform !== "win32") {
+    const blocked = fs.mkdtempSync(path.join(os.tmpdir(), "lily-perm-blocked-"));
+    fs.chmodSync(blocked, 0o555);
+    const enriched = failurePolicy.enrichPermissionFailureMessage({ message: permRaw, workspacePath: blocked });
+    assert.match(enriched, /诊断：/, "blocked workspace appends the diagnosis");
+    assert.match(enriched, /不可读写/, "diagnosis names the unreadable directory");
+    fs.chmodSync(blocked, 0o755);
+    fs.rmSync(blocked, { recursive: true, force: true });
+  }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

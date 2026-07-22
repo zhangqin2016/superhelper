@@ -207,9 +207,30 @@ function isVisibleFailureRecoverable(classified, raw = "", spawnOptions = null) 
     || isLocalPermissionFailure(classified);
 }
 
+/**
+ * A permission failure can't be self-diagnosed by the agent — the engine is
+ * the thing that's blocked. Run the main-process workspace probe (real
+ * read/write/delete, no engine needed) and turn the dead-end message into an
+ * actionable diagnosis. Fail-open: any probe problem leaves the original
+ * message untouched.
+ */
+function enrichPermissionFailureMessage({ message = "", cause = null, workspacePath = "" } = {}) {
+  try {
+    const raw = transientClassificationText(message, cause);
+    const classified = require("./agent-runner").classifyAssistantError(raw);
+    if (classified?.code !== "PERMISSION_DENIED") return message;
+    const probe = require("./support-diagnostics-deep-checks").workspaceAccessCheck({ workspacePath });
+    if (probe?.status !== "error" || !probe.detail) return message;
+    return `${message}\n\n诊断：${probe.detail}`;
+  } catch {
+    return message;
+  }
+}
+
 module.exports = {
   buildAttachmentFallbackManifest,
   buildAttachmentFallbackPromptPayload,
+  enrichPermissionFailureMessage,
   errorCauseFromEffect,
   failureCauseText,
   isLocalPermissionFailure,

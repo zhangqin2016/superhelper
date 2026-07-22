@@ -59,6 +59,24 @@ carries platform-specific guidance (macOS 隐私与安全性 → 文件和文件
 `support-diagnostics.js` and `ipc-handlers.js` (`support:run-diagnostics`
 now passes the active workspace path).
 
+## 4. Failure IS the diagnosis (follow-up, same day)
+
+Remaining gap after 1–3: when a user asked the workbench "帮我找到原因解决一下",
+the turn itself died with PERMISSION_DENIED — the agent can't self-diagnose
+because the engine is the thing that's blocked. Fix:
+`enrichPermissionFailureMessage` (in `opencode-session-failure-policy.js`)
+runs the main-process `workspaceAccessCheck` (real read/write/delete, no
+engine needed) when a turn visibly fails with PERMISSION_DENIED, and appends
+`诊断：<probe detail>` (blocked directory + platform guidance) to the
+user-facing message. Healthy/fail-open: any probe ambiguity leaves the
+message untouched. Wired in `opencode-agent-session._failTurn`.
+
+Field verification note: the reporter's machine could not be reproduced
+locally — local messages.db/opencode.db contain zero PERMISSION_DENIED turns
+(all EPERM/EACCES grep hits were file *contents*, not errors). The failing
+environment is the customer's; the shipped build must include this chain.
+
 Tests: `scripts/test-support-diagnostics.mjs` (probe ok / skip on missing /
 error+guidance on chmod 0555, POSIX only) and
-`scripts/test-opencode-session-policies.mjs` (policy list membership).
+`scripts/test-opencode-session-policies.mjs` (policy list membership +
+enrich: untouched on non-permission/healthy, diagnosis appended on blocked).

@@ -34,6 +34,7 @@ const { createOpencodeTurnLiveness } = require("./opencode-turn-liveness");
 const { createOpencodeHistoryRecovery } = require("./opencode-history-recovery");
 const {
   buildAttachmentFallbackPromptPayload,
+  enrichPermissionFailureMessage,
   errorCauseFromEffect,
   isManagedGatewayAuthFailure,
   isManagedModelConfigStale,
@@ -1748,7 +1749,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._latestTodos = [];
     this._latestTodosSignature = "";
     this._todoCompletionGateAttempts = 0;
-    this._orchestrator?.notifyRunnerError(this.sessionId, message);
+    this._orchestrator?.notifyRunnerError(this.sessionId, enrichPermissionFailureMessage({ message, cause, workspacePath: this.cwd || "" }));
     return false;
   }
 
