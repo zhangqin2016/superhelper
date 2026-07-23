@@ -68,8 +68,13 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    `LILY_CJK_FONT_PATH` whenever direct PDF drawing contains CJK text.
 4. Establish a small design system before authoring: page geometry, type scale,
    CJK-safe font choices, spacing rhythm, color roles, table style, chart style,
-   headers/footers, and image treatment. Apply it consistently instead of
-   formatting elements one at a time.
+   headers/footers, and image treatment. Font choices mean the PAIR: a latin
+   typeface plus an East Asian one (`w:eastAsia` in Word, `a:ea` in PowerPoint)
+   — a latin-only setting guarantees per-machine CJK fallback drift. The shared
+   helper `resources/runtime-scripts/lily_office_style.py` (`style_docx`,
+   `style_pptx`, `LIGHT_THEME`, `contrast_ok`) applies the defaults
+   deterministically; decks default to light backgrounds. Apply the system
+   consistently instead of formatting elements one at a time.
 5. Reopen the generated file with its deterministic library and validate its
    structure. Recalculate formula workbooks, render the final artifact, inspect
    the required pages, fix observed defects, and repeat until the delivery gate

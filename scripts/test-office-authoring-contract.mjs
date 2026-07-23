@@ -31,11 +31,23 @@ assert.match(overlays, /python-pptx/);
 assert.match(overlays, /ReportLab/);
 assert.match(overlays, /stale runtimes without it must fall back/i);
 assert.match(overlays, /LILY_CJK_FONT_PATH/);
+// CJK authoring contract: font pairs (eastAsia), light-first decks, shared style helper.
+assert.match(overlays, /w:eastAsia/);
+assert.match(overlays, /East-Asian typefaces as a pair/);
+assert.match(overlays, /LIGHT slide backgrounds/);
+assert.match(overlays, /lily_office_style\.py/);
+
+const officeStyleHelper = read("resources/runtime-scripts/lily_office_style.py");
+for (const symbol of ["def style_docx", "def style_pptx", "def apply_ea_font", "LIGHT_THEME", "def contrast_ok", "--selftest"]) {
+  assert.ok(officeStyleHelper.includes(symbol), `lily_office_style.py must provide ${symbol}`);
+}
 
 const officeIntent = read("resources/skills-catalog/lily-office-intent/SKILL.md");
 assert.match(officeIntent, /## Authoring Quality Contract/);
 assert.match(officeIntent, /small design system/i);
 assert.match(officeIntent, /render the final artifact/i);
+assert.match(officeIntent, /w:eastAsia/);
+assert.match(officeIntent, /lily_office_style\.py/);
 
 const verifySkill = read("resources/skills-catalog/lily-document-verify/SKILL.md");
 assert.match(verifySkill, /every\s+page for artifacts up to 12 pages/i);
