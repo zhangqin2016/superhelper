@@ -412,9 +412,18 @@ async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
 
     const binDir = path.join(venvDir, "bin");
     ensureDir(binDir);
+    // Resolve the interpreter relative to the shim: an absolute build-machine
+    // path breaks on customer machines (same relocation rule as writeShims).
+    const exeRel = path.relative(pythonInstallDir, pythonExe).split(path.sep).join("/");
+    const shimContent = [
+      "#!/bin/sh",
+      'DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
+      `exec "$DIR/../../python/${path.basename(pythonInstallDir)}/${exeRel}" "$@"`,
+      "",
+    ].join("\n");
     for (const name of ["python", "python3"]) {
       const shim = path.join(binDir, name);
-      fs.writeFileSync(shim, `#!/bin/sh\nexec "${pythonExe}" "$@"\n`);
+      fs.writeFileSync(shim, shimContent);
       fs.chmodSync(shim, 0o755);
     }
 
@@ -462,11 +471,16 @@ async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
     "-r", REQUIREMENTS,
   ]);
 
+  // Placeholders, NOT the build machine's absolute paths: this bundle ships to
+  // customer machines where the build paths never exist, and the venv python
+  // reads pyvenv.cfg to find its base interpreter — a burned-in build path
+  // breaks every health probe there. The app's ensureVenvCfgFixed (win32)
+  // rewrites these to the real on-device paths on first run.
   const cfg = [
-    `home = ${pythonInstallDir}`,
+    "home = __LILY_BUNDLED_PYTHON_HOME__",
     "include-system-site-packages = false",
     `version = ${PYTHON_FULL_VERSION}`,
-    `executable = ${path.join(scriptsDir, "python.exe")}`,
+    "executable = __LILY_BUNDLED_VENV_PYTHON__",
   ].join("\r\n");
   fs.writeFileSync(path.join(venvDir, "pyvenv.cfg"), cfg + "\r\n");
 
@@ -479,16 +493,24 @@ function writeShims(runtimeRoot, venvPython, platform) {
 
   const isWin = isWindowsPlatform(platform);
   if (isWin) {
+    // %~dp0 keeps the shim valid wherever the bundle is installed — an absolute
+    // build-machine path here would break on every customer machine.
     for (const name of ["python.exe", "python3.exe"]) {
-      const bat = `@echo off\r\n"${venvPython}" %*\r\n`;
+      const bat = `@echo off\r\n"%~dp0..\\venv\\Scripts\\python.exe" %*\r\n`;
       fs.writeFileSync(path.join(binDir, name), bat);
     }
     return;
   }
 
-  const absExec = venvPython;
+  // Same relocation rule for posix shims: resolve relative to the shim itself
+  // instead of baking in the build machine's absolute venvPython path.
+  const content = [
+    "#!/bin/sh",
+    'DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
+    'exec "$DIR/../venv/bin/python3" "$@"',
+    "",
+  ].join("\n");
   for (const name of ["python", "python3"]) {
-    const content = `#!/bin/sh\nexec "${absExec}" "$@"\n`;
     const shimPath = path.join(binDir, name);
     fs.writeFileSync(shimPath, content);
     fs.chmodSync(shimPath, 0o755);

@@ -42,9 +42,61 @@ function readManifest(runtimeRoot) {
 function resolveBundledRuntimeRoot() {
   for (const candidate of bundledRuntimeCandidates()) {
     const manifest = readManifest(candidate);
-    if (manifest?.platform) return candidate;
+    if (manifest?.platform) {
+      ensureVenvCfgFixed(candidate);
+      return candidate;
+    }
   }
   return null;
+}
+
+const fixedVenvCfgRoots = new Set();
+
+/**
+ * Windows bundles ship a venv whose pyvenv.cfg points at the BUILD machine
+ * (home/executable are absolute build-time paths — the bundle is cross-built,
+ * so those paths never exist on the customer's machine). The venv python then
+ * cannot locate its base interpreter and every health probe fails, which the
+ * installer surfaces as RUNTIME_PACK_HEALTH_FAILED after a successful download
+ * + extract. Rewrite the cfg to the real on-device paths, once per root.
+ * Windows-only by design: the bundled mac interpreter is relocatable, and
+ * rewriting inside a signed .app would break its Gatekeeper seal.
+ */
+function ensureVenvCfgFixed(runtimeRoot, { platform = process.platform } = {}) {
+  if (platform !== "win32" || !runtimeRoot || fixedVenvCfgRoots.has(runtimeRoot)) return;
+  fixedVenvCfgRoots.add(runtimeRoot);
+  try {
+    const cfgPath = path.join(runtimeRoot, "venv", "pyvenv.cfg");
+    if (!fs.existsSync(cfgPath)) return;
+    const raw = fs.readFileSync(cfgPath, "utf8");
+    const readValue = (key) => (raw.match(new RegExp(`^${key}\\s*=\\s*(.+)$`, "mi")) || [])[1]?.trim() || "";
+    const home = readValue("home");
+    const exe = readValue("executable");
+    // Dirty = home missing/placeholder/nonexistent, or an executable line that is
+    // present but stale. A missing executable line alone is fine (informational).
+    const dirty =
+      !home || home.includes("__LILY_") || !fs.existsSync(home) ||
+      (exe && (exe.includes("__LILY_") || !fs.existsSync(exe)));
+    if (!dirty) return;
+    const pythonRoot = path.join(runtimeRoot, "python");
+    let cpythonDir = "";
+    try {
+      cpythonDir =
+        fs
+          .readdirSync(pythonRoot, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory() && /^cpython-/i.test(entry.name))
+          .map((entry) => path.join(pythonRoot, entry.name))[0] || "";
+    } catch {
+      cpythonDir = "";
+    }
+    if (!cpythonDir) return;
+    const executable = path.join(runtimeRoot, "venv", platform === "win32" ? "Scripts" : "bin", "python.exe");
+    const kept = raw.split(/\r?\n/).filter((line) => line.trim() && !/^(home|executable)\s*=/i.test(line));
+    fs.writeFileSync(cfgPath, [`home = ${cpythonDir}`, ...kept, `executable = ${executable}`].join("\r\n") + "\r\n");
+  } catch {
+    // Read-only install dir or partial bundle: best effort — a failed probe
+    // afterwards is exactly as diagnosable as before this fixup existed.
+  }
 }
 
 function venvBinDir(runtimeRoot) {
@@ -222,6 +274,7 @@ module.exports = {
   resolveVenvPython,
   resolveBundledUv,
   resolveBundledNodeDir,
+  ensureVenvCfgFixed,
   getRuntimePathEntries,
   getRuntimeEnvExtras,
   getRuntimeSummary,
