@@ -10,25 +10,80 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { projectsConfigPath } = require("./config");
 
+const WORKSPACE_ORDER_VERSION = 1;
+
 class ProjectManager {
   constructor(defaultPath) {
     this.defaultPath = defaultPath;
     this.projects = [];
     this.activeProjectId = null;
+    this.workspaceOrderVersion = WORKSPACE_ORDER_VERSION;
   }
 
   load() {
     let freshInstall = false;
+    let migrationRollback = null;
+    let raw;
     try {
-      const raw = fs.readFileSync(projectsConfigPath(), "utf8");
-      const parsed = JSON.parse(raw);
-      this.projects = Array.isArray(parsed.projects)
-        ? parsed.projects.map((p) => this._normalize(p))
-        : [];
-      this.activeProjectId = parsed.activeProjectId ?? null;
-    } catch {
+      raw = fs.readFileSync(projectsConfigPath(), "utf8");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
       this.projects = [];
+      this.activeProjectId = null;
+      this.workspaceOrderVersion = WORKSPACE_ORDER_VERSION;
       freshInstall = true;
+    }
+
+    if (!freshInstall) {
+      const parsed = JSON.parse(raw);
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed) ||
+        (Object.hasOwn(parsed, "projects") && !Array.isArray(parsed.projects))
+      ) {
+        const error = new Error("INVALID_PROJECTS_CONFIG");
+        error.code = "INVALID_PROJECTS_CONFIG";
+        throw error;
+      }
+      const rawProjects = Array.isArray(parsed.projects) ? parsed.projects : [];
+      const persistedOrderVersion = Number(parsed.workspaceOrderVersion);
+      const needsOrderMigration =
+        !Number.isFinite(persistedOrderVersion) ||
+        persistedOrderVersion < WORKSPACE_ORDER_VERSION;
+      const orderedProjects = needsOrderMigration
+        ? [
+            ...rawProjects.filter((project) => Boolean(project?.pinned)),
+            ...rawProjects.filter((project) => !project?.pinned),
+          ]
+        : rawProjects;
+
+      this.projects = orderedProjects.map((project) =>
+        this._normalize(project),
+      );
+      this.activeProjectId = parsed.activeProjectId ?? null;
+      this.workspaceOrderVersion = needsOrderMigration
+        ? WORKSPACE_ORDER_VERSION
+        : persistedOrderVersion;
+
+      if (needsOrderMigration) {
+        migrationRollback = {
+          projects: rawProjects,
+          activeProjectId: this.activeProjectId,
+          workspaceOrderVersion: parsed.workspaceOrderVersion,
+        };
+      }
+    }
+
+    if (migrationRollback) {
+      try {
+        this.save();
+      } catch (error) {
+        this.projects = migrationRollback.projects;
+        this.activeProjectId = migrationRollback.activeProjectId;
+        this.workspaceOrderVersion = migrationRollback.workspaceOrderVersion;
+        throw error;
+      }
     }
 
     this._sanitizeProjectPaths();
@@ -91,19 +146,33 @@ class ProjectManager {
   }
 
   save() {
-    const dir = path.dirname(projectsConfigPath());
+    const configPath = projectsConfigPath();
+    const dir = path.dirname(configPath);
+    const tempPath = `${configPath}.tmp`;
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      projectsConfigPath(),
-      JSON.stringify(
-        {
-          activeProjectId: this.activeProjectId,
-          projects: this.projects,
-        },
-        null,
-        2,
-      ),
-    );
+    try {
+      fs.writeFileSync(
+        tempPath,
+        JSON.stringify(
+          {
+            workspaceOrderVersion: this.workspaceOrderVersion,
+            activeProjectId: this.activeProjectId,
+            projects: this.projects,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      fs.renameSync(tempPath, configPath);
+    } catch (error) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // The temporary file may not have been created.
+      }
+      throw error;
+    }
   }
 
   getActive() {
@@ -117,9 +186,7 @@ class ProjectManager {
   getAppState() {
     return {
       activeProjectId: this.activeProjectId,
-      projects: [...this.projects]
-        .sort((a, b) => Number(b.pinned) - Number(a.pinned))
-        .map((p) => this._summary(p)),
+      projects: this.projects.map((project) => this._summary(project)),
     };
   }
 
@@ -134,7 +201,7 @@ class ProjectManager {
     let project = this.projects.find((p) => p.path === projectPath);
     if (!project) {
       project = this._create(projectPath);
-      this.projects.push(project);
+      this.projects.unshift(project);
     }
     this.activeProjectId = project.id;
     this.save();
@@ -162,12 +229,35 @@ class ProjectManager {
     return true;
   }
 
-  togglePin(projectId) {
-    const project = this.find(projectId);
-    if (!project) return false;
-    project.pinned = !project.pinned;
-    this.save();
-    return true;
+  reorder(projectIds) {
+    const projectsById = new Map(
+      this.projects.map((project) => [project.id, project]),
+    );
+    const uniqueIds = Array.isArray(projectIds)
+      ? new Set(projectIds)
+      : new Set();
+    const valid =
+      Array.isArray(projectIds) &&
+      projectIds.length === this.projects.length &&
+      uniqueIds.size === this.projects.length &&
+      projectsById.size === this.projects.length &&
+      projectIds.every((projectId) => projectsById.has(projectId));
+
+    if (!valid) {
+      const error = new Error("INVALID_PROJECT_ORDER");
+      error.code = "INVALID_PROJECT_ORDER";
+      throw error;
+    }
+
+    const previousProjects = this.projects;
+    this.projects = projectIds.map((projectId) => projectsById.get(projectId));
+    try {
+      this.save();
+    } catch (error) {
+      this.projects = previousProjects;
+      throw error;
+    }
+    return { ok: true };
   }
 
   remove(projectId) {
@@ -188,18 +278,19 @@ class ProjectManager {
       id: crypto.randomUUID(),
       name: path.basename(projectPath) || projectPath,
       path: projectPath,
-      pinned: false,
     };
   }
 
   _normalize(project) {
-    project.id = project.id || crypto.randomUUID();
-    const pathOk = this._isValidProjectPath(project.path);
-    project.path = pathOk ? project.path : this.defaultPath;
-    project.name =
-      project.name || path.basename(project.path || this.defaultPath);
-    project.pinned = Boolean(project.pinned);
-    return project;
+    const normalized = { ...project };
+    delete normalized.pinned;
+    normalized.id = normalized.id || crypto.randomUUID();
+    const pathOk = this._isValidProjectPath(normalized.path);
+    normalized.path = pathOk ? normalized.path : this.defaultPath;
+    normalized.name =
+      normalized.name ||
+      path.basename(normalized.path || this.defaultPath);
+    return normalized;
   }
 
   _summary(project) {
@@ -207,7 +298,6 @@ class ProjectManager {
       id: project.id,
       name: project.name,
       path: project.path,
-      pinned: Boolean(project.pinned),
     };
     try {
       const workspaceApp = require("./workspace-app-runtime").readWorkspaceAppRuntime(project.path);

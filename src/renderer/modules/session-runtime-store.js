@@ -91,10 +91,10 @@ export function evictRuntimeSessionCaches(limit = SESSION_RUNTIME_CACHE_LIMIT) {
   return evicted;
 }
 
-export function getCachedRuntimeSessionIds() {
-  return [...sessions.keys()];
+export const getCachedRuntimeSessionIds = () => [...sessions.keys()];
+export function peekSessionRuntimeStatus(sessionId) {
+  const runtime = sessionId ? sessions.get(sessionId) : null; return { running: Boolean(runtime && runtime.phase !== "idle"), attention: runtime?.attention || null };
 }
-
 function committedMessageKey(message) {
   if (message?.turnId && message?.role) {
     // A steered ("插话") message is a SECOND user message inside the same turn — it

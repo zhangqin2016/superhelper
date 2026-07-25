@@ -232,7 +232,7 @@ async function newSession() {
   OpencodeAgentSession.IDLE_SETTLE_MS = 10;
   try {
     const { fake, session, orch } = await newSession();
-    const now = Date.now();
+    const now = Date.now() + 1_000;
     fake.idleState = false;
     fake.historyMessages = [
       {
@@ -280,7 +280,7 @@ async function newSession() {
   OpencodeAgentSession.IDLE_SETTLE_MS = 10;
   try {
     const { fake, session, orch } = await newSession();
-    const now = Date.now();
+    const now = Date.now() + 1_000;
     fake.idleState = false;
     fake.historyMessages = [
       {

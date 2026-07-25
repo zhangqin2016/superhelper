@@ -1,7 +1,7 @@
 # Workspace Ordering and Space Center Design
 
 Date: 2026-07-25
-Status: Approved interaction design, pending written-spec review
+Status: Approved
 
 ## Summary
 

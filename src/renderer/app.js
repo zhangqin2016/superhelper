@@ -34,9 +34,12 @@ import {
 import { initDiffPanel } from "./modules/diff-panel.js";
 import { initFindBar } from "./modules/find-bar.js";
 import { initTaskCenter } from "./modules/task-center.js";
-import { showToast } from "./modules/toast.js";
+import { showActionToast, showToast } from "./modules/toast.js";
 import { initCustomSelects, syncCustomSelects } from "./modules/custom-select.js";
 import { $ } from "./modules/dom.js";
+import store from "./modules/state.js";
+import { initWorkspaceOrder } from "./modules/workspace-order.js";
+import { initWorkspaceSwitcher } from "./modules/workspace-switcher.js";
 
 function initPanelToggles() {
   const shell = $("appShell");
@@ -90,8 +93,16 @@ function initResizeHandle(handleId, varName, collapseClass, minW, maxW) {
 }
 
 function initGlobalSearch() {
-  $("globalSearch")?.addEventListener("input", (e) => {
-    const query = e.target.value.toLowerCase();
+  const search = $("globalSearch");
+  const projectTree = $("projectTree");
+  const applySearch = (value) => {
+    const query = String(value ?? "").trim().toLowerCase();
+    if (projectTree) {
+      projectTree.dataset.filterActive = query ? "true" : "false";
+      projectTree.dispatchEvent(new CustomEvent("workspace-filter-change", {
+        detail: { query },
+      }));
+    }
     const groups = document.querySelectorAll(".project-group");
     for (const group of groups) {
       const projName = group.querySelector(".project-name")?.textContent?.toLowerCase() || "";
@@ -105,7 +116,22 @@ function initGlobalSearch() {
       }
       group.style.display = !query || anySessionVisible || projName.includes(query) ? "" : "none";
     }
-  });
+  };
+
+  search?.addEventListener("input", (event) => applySearch(event.target.value));
+  applySearch(search?.value || "");
+}
+
+function setWorkspaceProjects(projects) {
+  const focusedProjectId = document.activeElement
+    ?.closest?.(".project-group")
+    ?.dataset?.projectId;
+  store.set("projects", projects);
+  renderProjectTree();
+  if (!focusedProjectId) return;
+  const headerMain = [...document.querySelectorAll(".project-header-main")]
+    .find((item) => item.dataset.projectId === focusedProjectId);
+  headerMain?.focus({ preventScroll: true });
 }
 
 async function updateAboutVersion() {
@@ -229,6 +255,17 @@ async function init() {
     showToast(state.agent.error || t("app.agentNotReady"), "error");
   }
 
+  initWorkspaceSwitcher();
+  initWorkspaceOrder({
+    getTree: () => $("projectTree"),
+    getProjects: () => store.get("projects") || [],
+    setProjects: setWorkspaceProjects,
+    persist: (projectIds) => window.assistantClient.reorderProjects(projectIds),
+    isFilterActive: () => $("projectTree")?.dataset.filterActive === "true",
+    t,
+    showToast,
+    showActionToast,
+  });
   renderProjectTree();
   updateTopbarTitles();
   await refreshSessionSkillsUi();

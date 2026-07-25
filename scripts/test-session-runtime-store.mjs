@@ -897,6 +897,27 @@ if (cachedIds.includes("cache-idle-0")) {
   throw new Error("runtime cache eviction should drop the oldest idle session first");
 }
 
+// Read-only status probes used by navigation surfaces must not create runtime
+// entries or perturb LRU order for sessions that have never been active.
+{
+  const beforePeekIds = store.getCachedRuntimeSessionIds();
+  for (let index = 0; index < 45; index += 1) {
+    const status = store.peekSessionRuntimeStatus(`peek-unknown-${index}`);
+    if (status.running || status.attention !== null) {
+      throw new Error(`unknown runtime status should be idle: ${JSON.stringify(status)}`);
+    }
+  }
+  const afterPeekIds = store.getCachedRuntimeSessionIds();
+  if (JSON.stringify(afterPeekIds) !== JSON.stringify(beforePeekIds)) {
+    throw new Error(
+      `read-only runtime status must not create or touch cache entries: ${JSON.stringify({
+        beforePeekIds,
+        afterPeekIds,
+      })}`,
+    );
+  }
+}
+
 // Regression: on idle reopen the committed-message dedup must collapse a rich
 // local assistant turn (answer in record.assistantText, empty content) and its
 // official OpenCode refresh (plain text, different key) into ONE bubble — else

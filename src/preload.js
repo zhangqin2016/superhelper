@@ -126,7 +126,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   addProject: () => ipcRenderer.invoke("project:add"),
   switchProject: (projectId) => ipcRenderer.invoke("project:switch", projectId),
   renameProject: (projectId, name) => ipcRenderer.invoke("project:rename", projectId, name),
-  pinProject: (projectId) => ipcRenderer.invoke("project:pin", projectId),
+  reorderProjects: (projectIds) => ipcRenderer.invoke("project:reorder", projectIds),
   openProject: (projectId) => ipcRenderer.invoke("project:open", projectId),
   removeProject: (projectId) => ipcRenderer.invoke("project:remove", projectId),
   exportPackPreview: (projectId) => ipcRenderer.invoke("project:export-preview", projectId),

@@ -10,7 +10,8 @@ import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { isSessionRunning, getSessionAttention } from "./session-runtime-store.js";
-
+import { reorderWorkspaceByCommand } from "./workspace-order.js";
+import { createWorkspaceProjectHeader } from "./workspace-project-header.js";
 const container = () => $("projectTree");
 
 // Which projects are collapsed
@@ -296,23 +297,22 @@ export function renderProjectTree() {
   const el = container();
   if (!el) return;
   el.textContent = "";
+  el.setAttribute("role", "list");
 
   const projects = store.get("projects") || [];
   const activeProjectId = store.get("activeProjectId");
   const activeSessionId = store.get("activeSessionId");
-  const pinned = projects.filter((p) => p.pinned);
-  const unpinned = projects.filter((p) => !p.pinned);
-  const sorted = [...pinned, ...unpinned];
 
-  if (sorted.length === 0) {
+  if (projects.length === 0) {
     const empty = document.createElement("div");
     empty.className = "project-tree-empty";
+    empty.setAttribute("role", "listitem");
     empty.textContent = t("sidebar.emptyWorkspace");
     el.appendChild(empty);
     return;
   }
 
-  for (const project of sorted) {
+  for (const [projectIndex, project] of projects.entries()) {
     const sessions = project.sessions || [];
     const isActive = project.id === activeProjectId;
     const isCollapsed = collapsed.has(project.id);
@@ -320,86 +320,61 @@ export function renderProjectTree() {
     const group = document.createElement("div");
     group.className = `project-group${isActive ? " active" : ""}`;
     group.dataset.projectId = project.id;
-
-    const header = document.createElement("div");
-    header.className = "project-header";
-    header.addEventListener("click", (e) => {
-      if (e.target.closest(".project-action-btn")) return;
-      collapsed.has(project.id)
-        ? collapsed.delete(project.id)
-        : collapsed.add(project.id);
-      renderProjectTree();
+    group.setAttribute("role", "listitem");
+    const header = createWorkspaceProjectHeader({
+      project,
+      position: projectIndex + 1,
+      total: projects.length,
+      isCollapsed,
+      onToggleCollapsed: ({ restoreFocus }) => {
+        if (collapsed.has(project.id)) collapsed.delete(project.id);
+        else collapsed.add(project.id);
+        renderProjectTree();
+        if (restoreFocus) {
+          const nextHeaderMain = [...container().querySelectorAll(".project-header-main")]
+            .find((item) => item.dataset.projectId === project.id);
+          nextHeaderMain?.focus({ preventScroll: true });
+        }
+      },
+      onRename: async () => {
+        const newName = await promptProjectName(project.name);
+        if (!newName || newName === project.name) return;
+        await window.assistantClient.renameProject(project.id, newName);
+        await refreshState();
+        renderProjectTree();
+        updateTopbarTitles();
+      },
+      onCreateSession: async () => {
+        const result = await createNamedSession(project.id);
+        if (!result?.ok) {
+          showToast(result?.detail || t("toast.createSessionFailed"), "error");
+          return;
+        }
+        const sw = await window.assistantClient.switchSession(result.session.id);
+        await refreshState();
+        afterSessionListChanged(project.id);
+        await applySessionSwitch(sw, result.session.id, project.id);
+      },
+      onShowMenu: (event) => showProjectMenu(event, project),
     });
-
-    const icon = document.createElement("span");
-    icon.className = "project-collapse-icon";
-    icon.textContent = isCollapsed ? "▶" : "▼";
-
-    const info = document.createElement("div");
-    info.className = "project-info";
-
-    const name = document.createElement("span");
-    name.className = "project-name project-name-editable";
-    name.textContent = project.name;
-    name.title = t("sidebar.renameFolderHint");
-    name.addEventListener("dblclick", async (e) => {
-      e.stopPropagation();
-      const newName = await promptProjectName(project.name);
-      if (!newName || newName === project.name) return;
-      await window.assistantClient.renameProject(project.id, newName);
-      await refreshState();
-      renderProjectTree();
-      updateTopbarTitles();
-    });
-
-    info.append(name);
-
-    const actions = document.createElement("div");
-    actions.className = "project-actions";
-
-    const newSessionBtn = document.createElement("button");
-    newSessionBtn.className = "project-action-btn";
-    newSessionBtn.title = t("sidebar.newSession");
-    newSessionBtn.textContent = "+";
-    newSessionBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const result = await createNamedSession(project.id);
-      if (!result?.ok) {
-        showToast(result?.detail || t("toast.createSessionFailed"), "error");
-        return;
-      }
-      const sw = await window.assistantClient.switchSession(result.session.id);
-      await refreshState();
-      afterSessionListChanged(project.id);
-      await applySessionSwitch(sw, result.session.id, project.id);
-    });
-
-    const moreBtn = document.createElement("button");
-    moreBtn.className = "project-action-btn";
-    moreBtn.title = t("sidebar.moreActions");
-    moreBtn.textContent = "…";
-    moreBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      showProjectMenu(e, project);
-    });
-
-    actions.append(newSessionBtn, moreBtn);
-    header.append(icon, info, actions);
     group.appendChild(header);
 
     const sessionList = document.createElement("div");
     sessionList.className = "project-sessions";
+    sessionList.setAttribute("role", "list");
     if (isCollapsed) sessionList.style.display = "none";
 
     if (sessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "project-sessions-empty";
+      empty.setAttribute("role", "listitem");
       empty.textContent = t("sidebar.noSessions");
       sessionList.appendChild(empty);
     } else {
       for (const s of sessions) {
         const item = document.createElement("div");
         item.className = `session-item${s.id === activeSessionId ? " active" : ""}`;
+        item.setAttribute("role", "listitem");
         item.dataset.sessionId = s.id;
         item.dataset.projectId = project.id;
 
@@ -536,6 +511,9 @@ function showProjectMenu(e, project) {
   const menu = document.createElement("div");
   menu.className = "ctx-menu";
   menu.style.cssText = CTX_MENU_CSS;
+  const projects = store.get("projects") || [];
+  const projectIndex = projects.findIndex((item) => item.id === project.id);
+  const filterActive = container()?.dataset.filterActive === "true";
 
   const items = [
     {
@@ -548,12 +526,22 @@ function showProjectMenu(e, project) {
       },
     },
     {
-      label: project.pinned ? t("ctx.unpin") : t("ctx.pin"),
-      action: async () => {
-        await window.assistantClient.pinProject(project.id);
-        await refreshState();
-        renderProjectTree();
-      },
+      label: t("workspaceOrder.moveTop"),
+      disabled: filterActive || projectIndex <= 0,
+      errorKey: "toast.workspaceOrderFailed",
+      action: () => reorderWorkspaceByCommand(project.id, "top"),
+    },
+    {
+      label: t("workspaceOrder.moveUp"),
+      disabled: filterActive || projectIndex <= 0,
+      errorKey: "toast.workspaceOrderFailed",
+      action: () => reorderWorkspaceByCommand(project.id, "up"),
+    },
+    {
+      label: t("workspaceOrder.moveDown"),
+      disabled: filterActive || projectIndex < 0 || projectIndex >= projects.length - 1,
+      errorKey: "toast.workspaceOrderFailed",
+      action: () => reorderWorkspaceByCommand(project.id, "down"),
     },
     {
       label: t("ctx.rename"),
@@ -593,11 +581,23 @@ function showProjectMenu(e, project) {
   for (const item of items) {
     const btn = document.createElement("button");
     btn.className = "ctx-menu-item";
+    btn.disabled = Boolean(item.disabled);
     if (item.danger) btn.style.color = "#f87171";
     btn.textContent = item.label;
     btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       menu.remove();
-      item.action();
+      if (!item.errorKey) {
+        item.action();
+        return;
+      }
+      try {
+        void Promise.resolve(item.action()).catch((error) => {
+          showToast(error?.message || t(item.errorKey), "error");
+        });
+      } catch (error) {
+        showToast(error?.message || t(item.errorKey), "error");
+      }
     });
     menu.appendChild(btn);
   }

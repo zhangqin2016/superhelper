@@ -23,6 +23,7 @@ function articleStub() {
         return classes.has(name);
       },
     },
+    dataset: {},
     nodes,
     querySelector(selector) {
       return nodes[selector] || null;
@@ -47,6 +48,7 @@ syncTurnArticleFrame(article, { final: { type: "turn.completed" } }, {
 assert.equal(article.classList.contains("is-sealed"), true);
 assert.equal(article.classList.contains("is-live"), false);
 assert.equal(article.classList.contains("is-working"), false);
+assert.equal(article.dataset.terminal, "failed");
 assert.deepEqual(calls, [
   ["layout", true, "header,process,narrative"],
   ["status", true, "turn.completed", true, true],

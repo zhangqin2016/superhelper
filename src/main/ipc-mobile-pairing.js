@@ -89,7 +89,6 @@ function registerMobilePairingIpc(ctx) {
       projects: (state.projects || []).map((p) => ({
         id: String(p.id || ""),
         name: String(p.name || p.title || p.path || "工作空间"),
-        pinned: Boolean(p.pinned),
       })).filter((p) => p.id),
     };
   }

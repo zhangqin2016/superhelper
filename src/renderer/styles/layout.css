@@ -518,7 +518,8 @@
 }
 
 .project-sessions-empty {
-  padding: 8px 10px 8px 30px;
+  padding-block: 8px;
+  padding-inline: 30px 10px;
   font-size: 12px;
   color: var(--text-dim);
   font-style: italic;
@@ -542,7 +543,8 @@
   align-items: center;
   gap: 8px;
   margin: 1px 2px;
-  padding: 5px 10px 5px 28px;
+  padding-block: 5px;
+  padding-inline: 28px 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;

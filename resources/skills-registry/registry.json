@@ -1445,7 +1445,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1482,7 +1482,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1519,7 +1519,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1741,7 +1741,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1963,7 +1963,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.48",
-      "category": "professional",
+      "category": "dev",
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -2333,7 +2333,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",

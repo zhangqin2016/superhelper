@@ -79,6 +79,16 @@ ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 runner = new FakeRunner(session.id, ctx.turnOrchestrator);
 ctx.turnOrchestrator.bindRunner(runner);
 
+async function waitForAssistantCount(expected, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (messages.filter((item) => item.role === "assistant").length < expected) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for ${expected} assistant messages`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 const fast = await ctx.turnOrchestrator.sendUserMessage(session.id, "你好", [], {
   spawnEngine: false,
   skipPreflight: true,
@@ -88,6 +98,7 @@ ctx.turnOrchestrator.ingest(session.id, [
   { type: "usage.updated", payload: { usage: { input_tokens: 12, output_tokens: 3 } } },
 ]);
 runner.finish("你好");
+await waitForAssistantCount(1);
 const fastRecord = messages.filter((item) => item.role === "assistant").at(-1).record;
 assert.equal(fastRecord.meta.contextOsScorecard.maturity.parity, "pass");
 assert.equal(fastRecord.meta.contextOsScorecard.maturity.beat, "incomplete", "fast turns must not claim beat maturity");
@@ -115,6 +126,7 @@ ctx.turnOrchestrator.ingest(session.id, [
   { type: "tool.done", payload: { id: "task_runtime", status: "done", result: { content: "handoff complete" } } },
 ]);
 runner.finish("找到的结论需要证据门槛约束。");
+await waitForAssistantCount(2);
 const coverageRecord = messages.filter((item) => item.role === "assistant").at(-1).record;
 assert.equal(coverageRecord.meta.contextOsScorecard.maturity.parity, "pass");
 assert.equal(coverageRecord.meta.contextOsScorecard.maturity.beat, "pass", JSON.stringify(coverageRecord.meta.contextOsScorecard));

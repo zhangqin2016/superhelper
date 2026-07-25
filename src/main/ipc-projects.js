@@ -119,8 +119,8 @@ function registerProjectHandlers(ctx) {
     return { ok: true, state: projectManager.getAppState() };
   });
 
-  ipcMain.handle("project:pin", (_event, projectId) => {
-    if (!projectManager.togglePin(projectId)) return { ok: false, error: "NOT_FOUND" };
+  ipcMain.handle("project:reorder", async (_event, projectIds) => {
+    projectManager.reorder(projectIds);
     return { ok: true, state: projectManager.getAppState() };
   });
 

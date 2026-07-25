@@ -16,6 +16,42 @@ const capturedRevealPaths = [];
 const capturedOpenPaths = [];
 const capturedAccountLoginPayloads = [];
 const delayedMediaStatusCalls = new Map();
+const rendererProjects = [
+  {
+    id: "project_alpha",
+    name: "Alpha Workspace",
+    path: "/tmp/Alpha Workspace",
+    sessions: [
+      {
+        id: "session_alpha_recent",
+        title: "Alpha recent discussion",
+        createdAt: "2026-07-24T08:00:00.000Z",
+        updatedAt: "2026-07-25T08:00:00.000Z",
+      },
+      {
+        id: "session_alpha_older",
+        title: "Alpha planning notes",
+        createdAt: "2026-07-22T08:00:00.000Z",
+        updatedAt: "2026-07-23T08:00:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "project_beta",
+    name: "Beta Workspace",
+    path: "/tmp/Beta Workspace",
+    sessions: [
+      {
+        id: "session_beta",
+        title: "Beta delivery review",
+        createdAt: "2026-07-21T08:00:00.000Z",
+        updatedAt: "2026-07-21T09:00:00.000Z",
+      },
+    ],
+  },
+];
+let rendererActiveProjectId = "project_alpha";
+let rendererActiveSessionId = "session_alpha_recent";
 let win;
 
 const hardTimeout = setTimeout(() => {
@@ -156,7 +192,31 @@ ipcMain.handle("scheduled-tasks:run-now", () => ({ ok: true }));
 ipcMain.handle("scheduled-tasks:set-enabled", () => ({ ok: true }));
 ipcMain.handle("scheduled-tasks:remove", () => ({ ok: true }));
 ipcMain.handle("session:switch", (_event, sessionId) => {
+  const project = rendererProjects.find((item) =>
+    item.sessions.some((session) => session.id === sessionId));
+  if (project) {
+    rendererActiveProjectId = project.id;
+    rendererActiveSessionId = sessionId;
+  }
   return { ok: true, conversation: [], session: { id: sessionId, title: "Alpha chat" } };
+});
+ipcMain.handle("project:reorder", (_event, projectIds) => {
+  const byId = new Map(rendererProjects.map((project) => [project.id, project]));
+  rendererProjects.splice(0, rendererProjects.length, ...projectIds.map((id) => byId.get(id)));
+  return { ok: true, state: { projects: rendererProjects } };
+});
+ipcMain.handle("project:switch", (_event, projectId) => {
+  const project = rendererProjects.find((item) => item.id === projectId);
+  if (!project) return { ok: false, error: "NOT_FOUND" };
+  rendererActiveProjectId = project.id;
+  rendererActiveSessionId = project.sessions[0]?.id || "";
+  return {
+    ok: true,
+    project,
+    session: project.sessions[0] || null,
+    activeProjectId: rendererActiveProjectId,
+    activeSessionId: rendererActiveSessionId,
+  };
 });
 ipcMain.handle("session:get-conversation", async (_event, payload) => {
   const sessionId = typeof payload === "string" ? payload : payload?.sessionId || "";
@@ -215,13 +275,12 @@ ipcMain.handle("updates:get-settings", () => ({ ok: true, settings: { autoCheck:
 ipcMain.handle("updates:get-state", () => ({ ok: true, state: { status: "idle" } }));
 ipcMain.handle("updates:kick-check", () => ({ ok: true, state: { status: "idle" } }));
 ipcMain.handle("state:full", () => ({
-  ok: true,
-  state: {
-    workspaces: [],
-    sessions: [],
-    activeSessionId: "",
-    settings: {},
-  },
+  projects: rendererProjects,
+  activeProjectId: rendererActiveProjectId,
+  activeSessionId: rendererActiveSessionId,
+  conversation: [],
+  runtime: { sessions: {} },
+  settings: {},
 }));
 
 ipcMain.handle("apps:catalog", () => ({
@@ -324,6 +383,402 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(skillSettingsPresetResult);
+    const workspaceSwitcherResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const button = document.getElementById("workspaceSwitcherBtn");
+        const overlay = document.getElementById("workspaceSwitcherOverlay");
+        const dialog = document.getElementById("workspaceSwitcherDialog");
+        const search = document.getElementById("workspaceSwitcherSearch");
+        const close = document.getElementById("workspaceSwitcherClose");
+        const content = document.getElementById("workspaceSwitcherContent");
+        if (!button || !overlay || !dialog || !search || !close || !content) {
+          throw new Error("workspace switcher semantic shell should exist");
+        }
+        if (button.getAttribute("aria-haspopup") !== "dialog") {
+          throw new Error("workspace switcher trigger should announce a dialog");
+        }
+        if (search.getAttribute("aria-controls") !== "workspaceSwitcherContent") {
+          throw new Error("workspace switcher search should identify its controlled content");
+        }
+        if (!search.getAttribute("aria-label")
+          || search.getAttribute("data-i18n-aria-label") !== "workspaceCenter.search") {
+          throw new Error("workspace switcher search should expose a localized accessible name");
+        }
+        if (dialog.getAttribute("tabindex") !== "-1") {
+          throw new Error("workspace switcher dialog should be programmatically focusable");
+        }
+
+        const competingModal = document.createElement("section");
+        competingModal.setAttribute("aria-modal", "true");
+        competingModal.setAttribute("role", "dialog");
+        competingModal.textContent = "Competing modal";
+        document.body.appendChild(competingModal);
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "k",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }));
+        if (!overlay.hidden) {
+          throw new Error("Ctrl+K should not open over another visible modal");
+        }
+        competingModal.remove();
+
+        const alreadyHandledShortcut = new KeyboardEvent("keydown", {
+          key: "k",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        alreadyHandledShortcut.preventDefault();
+        document.dispatchEvent(alreadyHandledShortcut);
+        if (!overlay.hidden) {
+          throw new Error("defaultPrevented Ctrl+K should not open the workspace switcher");
+        }
+
+        const accountMenuButton = document.getElementById("accountMenuBtn");
+        const accountMenuPopover = document.getElementById("accountMenuPopover");
+        accountMenuButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (accountMenuPopover.hidden) {
+          throw new Error("account menu should open as the real lower popover layer");
+        }
+        button.focus();
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "k",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (overlay.hidden || button.getAttribute("aria-expanded") !== "true") {
+          throw new Error("Ctrl+K should open the workspace switcher");
+        }
+        if (document.activeElement !== search) {
+          throw new Error("opening should focus the workspace switcher search");
+        }
+        const cards = [...dialog.querySelectorAll(".workspace-switcher-card")];
+        if (cards.length !== 2) throw new Error("default view should render every workspace");
+        if (!cards[0].textContent.includes("Alpha Workspace")) {
+          throw new Error("workspace cards should preserve manual order");
+        }
+        if (!dialog.querySelector('[data-session-id="session_alpha_recent"]')) {
+          throw new Error("default view should render the selected workspace recent sessions");
+        }
+
+        search.value = "Beta";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        if (!dialog.querySelector(".workspace-switcher-search-workspaces")) {
+          throw new Error("search should render the workspace result group");
+        }
+        search.value = "delivery review";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        if (!dialog.querySelector(".workspace-switcher-search-sessions")) {
+          throw new Error("search should render the session result group");
+        }
+        search.value = "no matching target";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        if (!dialog.querySelector(".workspace-switcher-no-results")) {
+          throw new Error("search should render a no-results state");
+        }
+
+        search.value = "";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        const cssHiddenAncestor = document.createElement("div");
+        cssHiddenAncestor.style.display = "none";
+        const cssHiddenButton = document.createElement("button");
+        cssHiddenButton.type = "button";
+        cssHiddenButton.textContent = "CSS hidden focus target";
+        cssHiddenAncestor.appendChild(cssHiddenButton);
+        dialog.appendChild(cssHiddenAncestor);
+        const focusableButtons = [...dialog.querySelectorAll("button:not([disabled])")];
+        const lastTarget = focusableButtons.filter((item) => item !== cssHiddenButton).at(-1);
+        if (!lastTarget?.classList.contains("workspace-switcher-target")) {
+          throw new Error("default view should end with a focusable switch target");
+        }
+        lastTarget.focus();
+        lastTarget.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Tab",
+          bubbles: true,
+          cancelable: true,
+        }));
+        if (document.activeElement !== search) {
+          throw new Error("Tab from the last dialog target should wrap to search");
+        }
+        search.focus();
+        search.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Tab",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }));
+        if (document.activeElement !== lastTarget) {
+          throw new Error("Shift+Tab from search should wrap to the last dialog target");
+        }
+        cssHiddenAncestor.remove();
+
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }));
+        if (!overlay.hidden || button.getAttribute("aria-expanded") !== "false") {
+          throw new Error("Escape should close the workspace switcher");
+        }
+        if (accountMenuPopover.hidden) {
+          throw new Error("first Escape should leave the lower account popover open");
+        }
+        if (document.activeElement !== button) {
+          throw new Error("closing should restore focus to the opener");
+        }
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }));
+        if (!accountMenuPopover.hidden || document.activeElement !== accountMenuButton) {
+          throw new Error("second Escape should close the lower account popover");
+        }
+
+        button.focus();
+        button.click();
+        search.value = "delivery review";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        const betaSession = dialog.querySelector('[data-target-type="session"][data-session-id="session_beta"]');
+        if (!betaSession) throw new Error("session search result should be switchable");
+        betaSession.click();
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        const store = (await import("./modules/state.js")).default;
+        if (store.get("activeProjectId") !== "project_beta"
+          || store.get("activeSessionId") !== "session_beta") {
+          throw new Error("session result should switch the exact project and session");
+        }
+        if (!overlay.hidden) throw new Error("successful session switch should close the dialog");
+
+        button.click();
+        search.value = "Alpha recent discussion";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        dialog.querySelector(
+          '[data-target-type="session"][data-session-id="session_alpha_recent"]',
+        )?.click();
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (store.get("activeProjectId") !== "project_alpha"
+          || store.get("activeSessionId") !== "session_alpha_recent") {
+          throw new Error("workspace switcher smoke should restore its initial session");
+        }
+
+        const { initWorkspaceSwitcher } = await import("./modules/workspace-switcher.js");
+        let controlledProjects = [{
+          id: "project_stale",
+          name: "Stale Workspace",
+          path: "/tmp/Stale Workspace",
+          sessions: [{
+            id: "session_stale",
+            title: "Stale discussion",
+            updatedAt: "2026-07-25T08:00:00.000Z",
+          }],
+        }];
+        const replacementProjects = [{
+          id: "project_fresh",
+          name: "Fresh Workspace",
+          path: "/tmp/Fresh Workspace",
+          sessions: [],
+        }];
+        let localeCallback = null;
+        let resolvePendingSwitch = null;
+        const translationCalls = [];
+        const toastCalls = [];
+        const pendingSwitch = new Promise((resolve) => {
+          resolvePendingSwitch = resolve;
+        });
+        const controlled = initWorkspaceSwitcher({
+          getProjects: () => controlledProjects,
+          getActiveProjectId: () => controlledProjects[0]?.id || null,
+          assistantClient: {
+            switchSession: () => pendingSwitch,
+            switchProject: async () => ({ ok: true }),
+          },
+          refreshState: async () => {
+            controlledProjects = replacementProjects;
+          },
+          renderProjectTree: async () => {},
+          updateTopbarTitles: async () => {},
+          applySessionSwitch: async () => {},
+          getLocale: () => "en",
+          t: (key, params) => {
+            translationCalls.push({ key, params });
+            return key;
+          },
+          showToast: (...args) => toastCalls.push(args),
+          getSessionStatus: () => ({ running: false, attention: null }),
+          subscribeRuntime: () => () => {},
+          onLocaleChange: (callback) => {
+            localeCallback = callback;
+            return () => {};
+          },
+          now: () => Date.parse("2026-07-25T09:00:00.000Z"),
+        });
+        controlled.open();
+        const recentHeadingCall = translationCalls.find(
+          (call) => call.key === "workspaceCenter.recentSessions",
+        );
+        if (recentHeadingCall?.params?.name !== "Stale Workspace") {
+          throw new Error("recent sessions heading should receive the selected workspace name");
+        }
+        search.value = "Stale";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        search.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }));
+        const activeBeforeLocale = document.getElementById(
+          search.getAttribute("aria-activedescendant"),
+        );
+        const activeKey = activeBeforeLocale?.dataset.targetKey;
+        if (!activeKey) throw new Error("keyboard active target should expose a stable key");
+        for (const key of ["ArrowLeft", "ArrowRight"]) {
+          const horizontalEvent = new KeyboardEvent("keydown", {
+            key,
+            bubbles: true,
+            cancelable: true,
+          });
+          search.dispatchEvent(horizontalEvent);
+          if (horizontalEvent.defaultPrevented) {
+            throw new Error(key + " should preserve native search input behavior");
+          }
+          const horizontalActive = document.getElementById(
+            search.getAttribute("aria-activedescendant"),
+          );
+          if (horizontalActive?.dataset.targetKey !== activeKey) {
+            throw new Error(key + " should not change the keyboard active target");
+          }
+        }
+        localeCallback?.("en");
+        const activeAfterLocale = document.getElementById(
+          search.getAttribute("aria-activedescendant"),
+        );
+        if (activeAfterLocale?.dataset.targetKey !== activeKey
+          || !activeAfterLocale.classList.contains("is-keyboard-active")) {
+          throw new Error("locale rerender should restore the keyboard target by stable key");
+        }
+        controlled.render({ preserveActive: true });
+        const activeAfterRender = document.getElementById(
+          search.getAttribute("aria-activedescendant"),
+        );
+        if (activeAfterRender?.dataset.targetKey !== activeKey) {
+          throw new Error("preserving render should restore the keyboard target by stable key");
+        }
+
+        search.value = "Stale discussion";
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        dialog.querySelector(
+          '[data-target-type="session"][data-session-id="session_stale"]',
+        )?.click();
+        controlled.close();
+        controlled.open();
+        if (dialog.getAttribute("aria-busy") !== "true") {
+          throw new Error("reopening a pending switch should preserve aria-busy");
+        }
+        if (![...content.querySelectorAll(".workspace-switcher-target")]
+          .every((target) => target.disabled)) {
+          throw new Error("reopening a pending switch should keep targets disabled");
+        }
+        resolvePendingSwitch({ ok: false, error: "NOT_FOUND" });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        if (dialog.textContent.includes("Stale Workspace")
+          || !dialog.textContent.includes("Fresh Workspace")) {
+          throw new Error("a reopened dialog should refresh away a stale NOT_FOUND target");
+        }
+        if (!toastCalls.some(([message]) => message === "workspaceCenter.unavailable")) {
+          throw new Error("NOT_FOUND refresh should notify the currently open dialog");
+        }
+        controlled.dispose();
+
+        let resolveControllerA = null;
+        let controllerAApplyCalls = 0;
+        let controllerAToasts = 0;
+        const controllerAProjects = [{
+          id: "project_controller_a",
+          name: "Controller A",
+          sessions: [{ id: "session_controller_a", title: "Pending A" }],
+        }];
+        const controllerAPending = new Promise((resolve) => {
+          resolveControllerA = resolve;
+        });
+        const controllerA = initWorkspaceSwitcher({
+          getProjects: () => controllerAProjects,
+          getActiveProjectId: () => "project_controller_a",
+          assistantClient: { switchSession: () => controllerAPending },
+          refreshState: async () => {},
+          renderProjectTree: async () => {},
+          updateTopbarTitles: async () => {},
+          applySessionSwitch: async () => { controllerAApplyCalls += 1; },
+          getLocale: () => "en",
+          t: (key) => key,
+          showToast: () => { controllerAToasts += 1; },
+          getSessionStatus: () => ({ running: false, attention: null }),
+          subscribeRuntime: () => () => {},
+          onLocaleChange: () => () => {},
+        });
+        controllerA.open();
+        content.querySelector('[data-session-id="session_controller_a"]')?.click();
+
+        let controllerBApplyCalls = 0;
+        const controllerBProjects = [{
+          id: "project_controller_b",
+          name: "Controller B",
+          sessions: [],
+        }];
+        const controllerB = initWorkspaceSwitcher({
+          getProjects: () => controllerBProjects,
+          getActiveProjectId: () => "project_controller_b",
+          assistantClient: { switchProject: async () => ({ ok: true }) },
+          refreshState: async () => {},
+          renderProjectTree: async () => {
+            document.getElementById("ephemeralWorkspaceOpener")?.remove();
+          },
+          updateTopbarTitles: async () => {},
+          applySessionSwitch: async () => { controllerBApplyCalls += 1; },
+          getLocale: () => "en",
+          t: (key) => key,
+          showToast: () => {},
+          getSessionStatus: () => ({ running: false, attention: null }),
+          subscribeRuntime: () => () => {},
+          onLocaleChange: () => () => {},
+        });
+        if (document.activeElement !== button) {
+          throw new Error("reinitializing an open controller should return focus to the trigger");
+        }
+        const ephemeralOpener = document.createElement("button");
+        ephemeralOpener.id = "ephemeralWorkspaceOpener";
+        ephemeralOpener.className = "project-header-main";
+        document.body.appendChild(ephemeralOpener);
+        ephemeralOpener.focus();
+        controllerB.open();
+        content.querySelector('[data-project-id="project_controller_b"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        if (!overlay.hidden || document.activeElement !== button) {
+          throw new Error("a removed opener should fall back focus to the workspace switcher trigger");
+        }
+        if (dialog.getAttribute("aria-busy") !== "false") {
+          throw new Error("completed controller B operation should clear its own busy state");
+        }
+        resolveControllerA({ ok: true });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        if (controllerAApplyCalls !== 0 || controllerAToasts !== 0) {
+          throw new Error("disposed controller A must not run renderer side effects after await");
+        }
+        if (controllerBApplyCalls !== 0 || document.activeElement !== button || !overlay.hidden) {
+          throw new Error("stale controller A must not alter controller B state or focus");
+        }
+        controllerA.dispose();
+        controllerB.dispose();
+        initWorkspaceSwitcher();
+        return "workspace-switcher-shell: ok";
+      }
+    )()`);
+    console.log(workspaceSwitcherResult);
     const appShellCoverageResult = await win.webContents.executeJavaScript(`(
       () => {
         const shell = document.getElementById("appShell");

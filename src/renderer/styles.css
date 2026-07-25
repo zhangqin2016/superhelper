@@ -13,6 +13,7 @@
 @import "./styles/overlays.css";
 @import "./styles/settings.css?v=20260716-motion";
 @import "./styles/runtime-chat.css?v=20260722-overhaul";
+@import "./styles/workspace-navigation.css";
 @import "./styles/system.css?v=20260716-motion";
 @import "../../node_modules/katex/dist/katex.min.css";
 @import "./styles/markdown-rich.css";

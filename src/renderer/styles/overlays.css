@@ -507,6 +507,29 @@
 .toast-warning { background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text-soft); }
 .toast-info { background: var(--info-bg); border: 1px solid var(--info-border); color: var(--info-text-soft); }
 .toast-success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text-soft); }
+.toast-msg { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.toast-action {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 4px 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toast-action:not(:disabled):hover { background: var(--hover-bg); }
+.toast-action:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+.toast-action:disabled { cursor: wait; opacity: 0.72; }
+.toast[data-action-state="failed"] .toast-action {
+  border-color: var(--danger-text);
+  color: var(--danger-text-soft);
+}
 
 /* Non-blocking legacy-message migration progress. Keep it away from the
    composer/sidebar corner so it never looks like a stray app decoration. */
