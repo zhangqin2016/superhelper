@@ -101,6 +101,32 @@ function installEngine() {
 }
 installEngine();
 
+const installedPlatformPackage = path.join(tmp, "node_modules", pkg);
+if (!fs.existsSync(installedPlatformPackage)) {
+  console.warn(`[install] ${pkg}@${version} was filtered from optional dependencies; fetching its package archive`);
+  const archiveOutput = execFileSync(
+    npmCommand,
+    ["pack", "--silent", `${pkg}@${version}`],
+    {
+      cwd: tmp,
+      encoding: "utf8",
+      timeout: installTimeoutMs,
+      env: targetEnv(),
+    },
+  );
+  const archiveName = archiveOutput.trim().split(/\r?\n/).filter(Boolean).at(-1);
+  const archivePath = archiveName ? path.join(tmp, path.basename(archiveName)) : "";
+  if (!archivePath || !fs.existsSync(archivePath)) {
+    throw new Error(`npm pack did not produce an archive for ${pkg}@${version}`);
+  }
+  fs.mkdirSync(installedPlatformPackage, { recursive: true });
+  execFileSync(
+    "tar",
+    ["-xzf", archivePath, "-C", installedPlatformPackage, "--strip-components=1"],
+    { stdio: "inherit", timeout: installTimeoutMs },
+  );
+}
+
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
