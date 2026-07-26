@@ -79,7 +79,7 @@ function installingRuntimePackIds() {
 
 function detectBasePythonModules(moduleByPackId) {
   const { execFileSync } = require("node:child_process");
-  const { resolveVenvPython } = require("./runtime-python");
+  const { getBundledPythonEnv, resolveVenvPython } = require("./runtime-python");
   const python = resolveVenvPython();
   if (!python || !moduleByPackId.length) return null;
   const code = [
@@ -92,6 +92,7 @@ function detectBasePythonModules(moduleByPackId) {
       encoding: "utf8",
       timeout: 10_000,
       maxBuffer: 1024 * 1024,
+      env: getBundledPythonEnv(),
     });
     return new Map(Object.entries(JSON.parse(raw)).filter(([, ok]) => ok));
   } catch {
@@ -141,7 +142,7 @@ async function warmBaseProvidedRuntimePacks() {
   const provided = new Map();
   baseProvidedLibreOffice(provided);
   const pairs = baseModulePairs();
-  const { resolveVenvPython } = require("./runtime-python");
+  const { getBundledPythonEnv, resolveVenvPython } = require("./runtime-python");
   const python = resolveVenvPython();
   if (python && pairs.length) {
     const code = [
@@ -152,7 +153,12 @@ async function warmBaseProvidedRuntimePacks() {
     try {
       const raw = await new Promise((resolve, reject) => {
         const { execFile } = require("node:child_process");
-        execFile(python, ["-c", code], { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024 },
+        execFile(python, ["-c", code], {
+          encoding: "utf8",
+          timeout: 10_000,
+          maxBuffer: 1024 * 1024,
+          env: getBundledPythonEnv(),
+        },
           (err, stdout) => (err ? reject(err) : resolve(stdout)));
       });
       for (const [id, ok] of Object.entries(JSON.parse(raw))) {

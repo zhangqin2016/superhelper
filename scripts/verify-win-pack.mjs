@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertWindowsPackSmokeHost } from "./lib/windows-runtime-release.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const unpacked = path.join(ROOT, "dist", "win-unpacked");
@@ -23,6 +24,12 @@ function fail(msg) {
 function requireFile(file, label) {
   if (!fs.existsSync(file)) {
     fail(`missing ${label}: ${path.relative(ROOT, file)}`);
+  }
+}
+
+function requireDirectory(dir, label) {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    fail(`missing ${label}: ${path.relative(ROOT, dir)}`);
   }
 }
 
@@ -55,11 +62,34 @@ if (winEngineSize < 5 * 1024 * 1024) {
 
 const runtimeDir = path.join(winBundle, "runtime");
 const runtimeManifestFile = path.join(runtimeDir, "runtime-manifest.json");
-const runtimePython = path.join(runtimeDir, "venv", "Scripts", "python.exe");
+const runtimeVenvPython = path.join(runtimeDir, "venv", "Scripts", "python.exe");
+const runtimeSitePackages = path.join(runtimeDir, "venv", "Lib", "site-packages");
 const runtimeUv = path.join(runtimeDir, "bin", "uv.exe");
 requireFile(runtimeManifestFile, "Windows base runtime manifest");
-requireFile(runtimePython, "Windows base runtime Python");
+requireFile(runtimeVenvPython, "Windows venv Python layout");
+requireDirectory(runtimeSitePackages, "Windows base runtime site-packages");
 requireFile(runtimeUv, "Windows base runtime uv");
+
+const pythonRoot = path.join(runtimeDir, "python");
+requireDirectory(pythonRoot, "relocatable Windows base Python");
+const pythonInstalls = fs
+  .readdirSync(pythonRoot, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && /^cpython-/i.test(entry.name))
+  .map((entry) => path.join(pythonRoot, entry.name));
+let runtimePython = "";
+for (const installDir of pythonInstalls) {
+  for (const candidate of [
+    path.join(installDir, "python.exe"),
+    path.join(installDir, "python", "python.exe"),
+  ]) {
+    if (fs.existsSync(candidate)) {
+      runtimePython = candidate;
+      break;
+    }
+  }
+  if (runtimePython) break;
+}
+if (!runtimePython) fail(`missing relocatable Windows base Python under ${path.relative(ROOT, pythonRoot)}`);
 
 let runtimeManifest = null;
 try {
@@ -76,6 +106,51 @@ if (!runtimeManifest.python) {
 
 forbidPath(path.join(runtimeDir, "libreoffice"), "incomplete base LibreOffice runtime");
 forbidPath(path.join(winBundle, "runtime-packs"), "bundled runtime-packs");
+forbidPath(
+  path.join(runtimeDir, "bin", "python.exe"),
+  "invalid runtime/bin Python executable shadow",
+);
+forbidPath(
+  path.join(runtimeDir, "bin", "python3.exe"),
+  "invalid runtime/bin Python executable shadow",
+);
+
+try {
+  assertWindowsPackSmokeHost(process.platform);
+} catch (error) {
+  fail(error?.message || String(error));
+}
+const smokeEnv = {
+  ...process.env,
+  PATH: [
+    path.join(runtimeDir, "bin"),
+    path.dirname(runtimePython),
+    path.dirname(runtimeVenvPython),
+    process.env.PATH || "",
+  ].filter(Boolean).join(path.delimiter),
+  PYTHONPATH: [
+    runtimeSitePackages,
+    process.env.PYTHONPATH || "",
+  ].filter(Boolean).join(path.delimiter),
+};
+try {
+  execFileSync(
+    "python.exe",
+    [
+      "-c",
+      "import docx, docxtpl, openpyxl, pandas, pdfplumber, pptx, pypdfium2, rapidocr_onnxruntime, reportlab; print('ok')",
+    ],
+    {
+      encoding: "utf8",
+      env: smokeEnv,
+      timeout: 120_000,
+      windowsHide: true,
+    },
+  );
+} catch (error) {
+  const detail = error?.stderr || error?.stdout || error?.message || String(error);
+  fail(`packaged Windows base runtime smoke test failed: ${String(detail).trim()}`);
+}
 
 const sharpNode = path.join(
   unpacked,

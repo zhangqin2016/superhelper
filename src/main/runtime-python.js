@@ -42,10 +42,7 @@ function readManifest(runtimeRoot) {
 function resolveBundledRuntimeRoot() {
   for (const candidate of bundledRuntimeCandidates()) {
     const manifest = readManifest(candidate);
-    if (manifest?.platform) {
-      ensureVenvCfgFixed(candidate);
-      return candidate;
-    }
+    if (manifest?.platform) return candidate;
   }
   return null;
 }
@@ -53,14 +50,9 @@ function resolveBundledRuntimeRoot() {
 const fixedVenvCfgRoots = new Set();
 
 /**
- * Windows bundles ship a venv whose pyvenv.cfg points at the BUILD machine
- * (home/executable are absolute build-time paths — the bundle is cross-built,
- * so those paths never exist on the customer's machine). The venv python then
- * cannot locate its base interpreter and every health probe fails, which the
- * installer surfaces as RUNTIME_PACK_HEALTH_FAILED after a successful download
- * + extract. Rewrite the cfg to the real on-device paths, once per root.
- * Windows-only by design: the bundled mac interpreter is relocatable, and
- * rewriting inside a signed .app would break its Gatekeeper seal.
+ * Legacy fallback for older Windows bundles that execute the venv launcher.
+ * Current bundles resolve the relocatable base interpreter instead, because an
+ * installed app may not have permission to rewrite files under Program Files.
  */
 function ensureVenvCfgFixed(runtimeRoot, { platform = process.platform } = {}) {
   if (platform !== "win32" || !runtimeRoot || fixedVenvCfgRoots.has(runtimeRoot)) return;
@@ -108,18 +100,65 @@ function runtimeBinDir(runtimeRoot) {
   return path.join(runtimeRoot, "bin");
 }
 
+function findBundledBasePython(runtimeRoot) {
+  const pythonRoot = path.join(runtimeRoot, "python");
+  let installs = [];
+  try {
+    installs = fs
+      .readdirSync(pythonRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^cpython-/i.test(entry.name))
+      .map((entry) => path.join(pythonRoot, entry.name));
+  } catch {
+    return null;
+  }
+  for (const installDir of installs) {
+    const direct = path.join(installDir, "python.exe");
+    if (fs.existsSync(direct)) return direct;
+    const nested = path.join(installDir, "python", "python.exe");
+    if (fs.existsSync(nested)) return nested;
+  }
+  return null;
+}
+
+function resolveRuntimePythonAtRoot(runtimeRoot, { platform = process.platform } = {}) {
+  if (!runtimeRoot) return null;
+  if (platform === "win32") {
+    const basePython = findBundledBasePython(runtimeRoot);
+    if (basePython) return basePython;
+  }
+  const exe = platform === "win32" ? "python.exe" : "python3";
+  const sub = platform === "win32" ? "Scripts" : "bin";
+  const candidate = path.join(runtimeRoot, "venv", sub, exe);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+function getBundledPythonPathsAtRoot(runtimeRoot, { platform = process.platform } = {}) {
+  if (!runtimeRoot || platform !== "win32" || !findBundledBasePython(runtimeRoot)) return [];
+  const sitePackages = path.join(runtimeRoot, "venv", "Lib", "site-packages");
+  return fs.existsSync(sitePackages) ? [sitePackages] : [];
+}
+
+function getBundledPythonEnv(baseEnv = process.env) {
+  const root = resolveBundledRuntimeRoot();
+  const pythonPaths = [
+    ...getBundledPythonPathsAtRoot(root),
+    baseEnv.PYTHONPATH,
+  ].filter(Boolean);
+  return {
+    ...baseEnv,
+    ...(pythonPaths.length ? { PYTHONPATH: pythonPaths.join(path.delimiter) } : {}),
+  };
+}
+
 /**
- * Absolute path to the bundled venv Python interpreter, or null if no runtime
- * is present. Lets the main process delegate document parsing to the
- * best-in-class Python libraries that ship in the venv.
+ * Absolute path to the bundled Python interpreter, or null if no runtime is
+ * present. Windows prefers the relocatable base interpreter and receives the
+ * venv libraries through PYTHONPATH; other platforms use the venv interpreter.
  * @returns {string|null}
  */
 function resolveVenvPython() {
   const root = resolveBundledRuntimeRoot();
-  if (!root) return null;
-  const exe = process.platform === "win32" ? "python.exe" : "python3";
-  const candidate = path.join(venvBinDir(root), exe);
-  return fs.existsSync(candidate) ? candidate : null;
+  return resolveRuntimePythonAtRoot(root);
 }
 
 /**
@@ -213,10 +252,12 @@ function getRuntimePathEntries() {
   if (root) {
     const bin = runtimeBinDir(root);
     const venvBin = venvBinDir(root);
+    const python = resolveRuntimePythonAtRoot(root);
     const sofficeDir = resolveSofficeDir(root);
     const nodeDir = resolveBundledNodeDir(root);
 
     if (fs.existsSync(bin)) entries.push(bin);
+    if (process.platform === "win32" && python) entries.push(path.dirname(python));
     if (fs.existsSync(venvBin)) entries.push(venvBin);
     if (sofficeDir) entries.push(sofficeDir);
     // node for the engine's node-based language servers (pyright/tsserver).
@@ -244,7 +285,8 @@ function getRuntimeEnvExtras() {
   if (root) extras.LILY_RUNTIME_ROOT = root;
   const runtimePacks = require("./runtime-packs");
   const packPythonPaths = runtimePacks.getRuntimePackPythonPaths();
-  if (packPythonPaths.length) extras.PYTHONPATH = packPythonPaths.join(path.delimiter);
+  const pythonPaths = [...packPythonPaths, ...getBundledPythonPathsAtRoot(root)];
+  if (pythonPaths.length) extras.PYTHONPATH = pythonPaths.join(path.delimiter);
   Object.assign(extras, runtimePacks.getRuntimePackEnvExtras());
   const packLibreOfficeDir = runtimePacks.getRuntimePackLibreOfficeDirs()[0];
   const sofficeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDir || null;
@@ -272,6 +314,9 @@ module.exports = {
   platformBundleKeys,
   resolveBundledRuntimeRoot,
   resolveVenvPython,
+  resolveRuntimePythonAtRoot,
+  getBundledPythonPathsAtRoot,
+  getBundledPythonEnv,
   resolveBundledUv,
   resolveBundledNodeDir,
   ensureVenvCfgFixed,

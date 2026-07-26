@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ensureVenvCfgFixed } from "../src/main/runtime-python.js";
+import {
+  ensureVenvCfgFixed,
+  getBundledPythonPathsAtRoot,
+  resolveRuntimePythonAtRoot,
+} from "../src/main/runtime-python.js";
 
 function makeRoot(homeLine, { withPython = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lily-fixup-test-"));
@@ -67,6 +71,35 @@ function makeRoot(homeLine, { withPython = true } = {}) {
   const before = fs.readFileSync(cfgPath, "utf8");
   ensureVenvCfgFixed(root, { platform: "win32" });
   assert.equal(fs.readFileSync(cfgPath, "utf8"), before, "missing cpython dir: leave cfg as-is");
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
+// 6) Windows runtime execution must not depend on rewriting pyvenv.cfg under
+// Program Files. Use the relocatable base interpreter and expose the bundled
+// venv's site-packages explicitly.
+{
+  const { root, cpythonDir, cfgPath } = makeRoot("home = C:\\\\build-machine\\\\python");
+  const basePython = path.join(cpythonDir, "python.exe");
+  const sitePackages = path.join(root, "venv", "Lib", "site-packages");
+  fs.writeFileSync(basePython, "base-python");
+  fs.mkdirSync(sitePackages, { recursive: true });
+  const before = fs.readFileSync(cfgPath, "utf8");
+
+  assert.equal(
+    resolveRuntimePythonAtRoot(root, { platform: "win32" }),
+    basePython,
+    "Windows must execute the relocatable bundled base interpreter",
+  );
+  assert.deepEqual(
+    getBundledPythonPathsAtRoot(root, { platform: "win32" }),
+    [sitePackages],
+    "Windows must expose bundled venv packages without relying on pyvenv.cfg",
+  );
+  assert.equal(
+    fs.readFileSync(cfgPath, "utf8"),
+    before,
+    "portable resolution must not need to mutate pyvenv.cfg",
+  );
   fs.rmSync(root, { recursive: true, force: true });
 }
 

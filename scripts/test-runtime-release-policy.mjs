@@ -114,6 +114,21 @@ assert.match(
   /bundled runtime-packs/,
   "Windows package verifier must fail if optional runtime packs are bundled",
 );
+assert.match(
+  verifyWinPack,
+  /invalid runtime\/bin Python executable shadow/,
+  "Windows package verifier must reject a runtime/bin python.exe that shadows the real venv interpreter",
+);
+assert.match(
+  verifyWinPack,
+  /import docx, docxtpl, openpyxl, pandas, pdfplumber, pptx, pypdfium2, rapidocr_onnxruntime, reportlab/,
+  "Windows package verifier must execute a smoke probe for the base document runtime",
+);
+assert.match(
+  verifyWinPack,
+  /assertWindowsPackSmokeHost\(process\.platform\)/,
+  "Windows package verifier must fail instead of skipping the executable smoke probe on another host",
+);
 
 const verifyMacPack = fs.readFileSync(path.join(ROOT, "scripts/verify-mac-pack.mjs"), "utf8");
 assert.match(

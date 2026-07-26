@@ -162,15 +162,17 @@ function pythonPackLibraryDirs(packDir) {
 }
 
 function buildPythonProbeEnv(packDir = "") {
+  const runtimePython = require("./runtime-python");
+  const baseEnv = runtimePython.getBundledPythonEnv();
   const runtimePackPaths = require("./runtime-packs").getRuntimePackPythonPaths();
   const pythonPath = uniqueExistingPaths([packDir, ...runtimePackPaths])
-    .concat(process.env.PYTHONPATH ? [process.env.PYTHONPATH] : [])
+    .concat(baseEnv.PYTHONPATH ? [baseEnv.PYTHONPATH] : [])
     .join(path.delimiter);
   const pathEntries = uniqueExistingPaths([...(packDir ? pythonPackLibraryDirs(packDir) : [])]);
   return {
-    ...process.env,
+    ...baseEnv,
     ...(pythonPath ? { PYTHONPATH: pythonPath } : {}),
-    PATH: [...pathEntries, process.env.PATH || ""].filter(Boolean).join(path.delimiter),
+    PATH: [...pathEntries, baseEnv.PATH || ""].filter(Boolean).join(path.delimiter),
   };
 }
 
@@ -301,7 +303,11 @@ async function checkPythonModules(python) {
     "print(json.dumps([{**m, 'ok': importlib.util.find_spec(m['module']) is not None} for m in mods]))",
   ].join("\n");
   try {
-    const result = await pexecFile(python, ["-c", code], { timeout: CHECK_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
+    const result = await pexecFile(python, ["-c", code], {
+      timeout: CHECK_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024,
+      env: require("./runtime-python").getBundledPythonEnv(),
+    });
     return JSON.parse(result.stdout).map((item) =>
       item.ok
         ? okCheck(item.id, { module: item.module, required: item.required !== false })

@@ -10,7 +10,7 @@ const path = require("node:path");
 const { withLiveFilePath } = require("./live-file-source");
 const { execFile } = require("node:child_process");
 const { buildEnrichedUserText } = require("./vision-translator");
-const { resolveVenvPython } = require("./runtime-python");
+const { getBundledPythonEnv, resolveVenvPython } = require("./runtime-python");
 const { PROJECT_ROOT } = require("./config");
 
 const PYTHON_EXTRACT_TIMEOUT_MS = 180_000;
@@ -67,7 +67,7 @@ function extractOfficeText(filePath) {
   const script = extractorScriptPath();
   if (!script) throw new Error("EXTRACTOR_MISSING");
 
-  const env = { ...process.env };
+  const env = getBundledPythonEnv();
   // Put any installed runtime packs (e.g. the pro-pdf Docling engine) on
   // PYTHONPATH so extract_document.py's lazy import upgrades automatically.
   const runtimePacks = require("./runtime-packs");

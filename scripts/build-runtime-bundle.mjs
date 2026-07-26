@@ -18,6 +18,7 @@ import { spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { relativizeRuntimeSymlinks } from "./fix-runtime-symlinks.mjs";
+import { writeRuntimeCommandShims } from "./lib/runtime-command-shims.mjs";
 
 const require = createRequire(import.meta.url);
 const { purgeJunkUnder } = require("../src/main/ship-ignore.js");
@@ -487,36 +488,6 @@ async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
   return { pythonExe, venvPython: path.join(scriptsDir, "python.exe") };
 }
 
-function writeShims(runtimeRoot, venvPython, platform) {
-  const binDir = path.join(runtimeRoot, "bin");
-  ensureDir(binDir);
-
-  const isWin = isWindowsPlatform(platform);
-  if (isWin) {
-    // %~dp0 keeps the shim valid wherever the bundle is installed — an absolute
-    // build-machine path here would break on every customer machine.
-    for (const name of ["python.exe", "python3.exe"]) {
-      const bat = `@echo off\r\n"%~dp0..\\venv\\Scripts\\python.exe" %*\r\n`;
-      fs.writeFileSync(path.join(binDir, name), bat);
-    }
-    return;
-  }
-
-  // Same relocation rule for posix shims: resolve relative to the shim itself
-  // instead of baking in the build machine's absolute venvPython path.
-  const content = [
-    "#!/bin/sh",
-    'DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
-    'exec "$DIR/../venv/bin/python3" "$@"',
-    "",
-  ].join("\n");
-  for (const name of ["python", "python3"]) {
-    const shimPath = path.join(binDir, name);
-    fs.writeFileSync(shimPath, content);
-    fs.chmodSync(shimPath, 0o755);
-  }
-}
-
 function writeSofficeShim(runtimeRoot, platform) {
   const binDir = path.join(runtimeRoot, "bin");
   const loRoot = path.join(runtimeRoot, "libreoffice");
@@ -683,7 +654,7 @@ async function main() {
       uvPath = uvResult;
       ({ venvPython } = await installPythonAndVenv(uvPath, platform, runtimeRoot));
     }
-    writeShims(runtimeRoot, venvPython, platform);
+    writeRuntimeCommandShims(runtimeRoot, platform);
   } else if (!fs.existsSync(venvPython)) {
     throw new Error("--libreoffice-only requires an existing venv; run full build first");
   }
