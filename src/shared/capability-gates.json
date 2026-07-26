@@ -89,6 +89,18 @@
       ]
     },
     {
+      "id": "live-file-authority",
+      "protects": "User edits to a generated or attached file cannot be overwritten from stale attachment snapshots, knowledge-index excerpts, or historical write/edit tool inputs.",
+      "baseline": "The readable live filesystem path is authoritative; unchanged history remains available and missing live files retain their recoverable historical content.",
+      "failureFallback": "Use the staged copy only when the original is unavailable, drop fingerprint-mismatched index hits, and require a successful live read before modifying an existing changed file.",
+      "tests": [
+        "scripts/test-live-file-history-guard.mjs",
+        "scripts/test-opencode-message-parts.mjs",
+        "scripts/test-document-translator.mjs",
+        "scripts/test-workspace-index-freshness.mjs"
+      ]
+    },
+    {
       "id": "truthful-completion",
       "protects": "Delivered output is not presented as verified completion without required evidence.",
       "baseline": "Legacy status remains compatible while completionStatus records verification truth.",

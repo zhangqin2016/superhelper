@@ -7,6 +7,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { withLiveFilePath } = require("./live-file-source");
 const { execFile } = require("node:child_process");
 const { buildEnrichedUserText } = require("./vision-translator");
 const { resolveVenvPython } = require("./runtime-python");
@@ -267,6 +268,7 @@ function hasDocumentInputFiles(files) {
 }
 
 function isExtractableDocumentFile(file) {
+  file = withLiveFilePath(file);
   if (!file?.path || file.isImage || !fs.existsSync(file.path)) return false;
   const ext = path.extname(file.path).toLowerCase();
   return EXTRACTABLE_EXTENSIONS.has(ext);
@@ -284,7 +286,9 @@ function isDocumentOnlyUserMessage(text, files) {
  * @returns {Promise<{ ok: true, text: string, extractedPaths: string[], keepOriginal: boolean, degraded?: boolean } | { ok: false, reason: string, detail?: string } | null>}
  */
 async function extractDocuments(files, options = {}) {
-  const docFiles = (files || []).filter((file) => isExtractableDocumentFile(file));
+  const docFiles = (files || [])
+    .map((file) => withLiveFilePath(file))
+    .filter((file) => isExtractableDocumentFile(file));
   if (docFiles.length === 0) return null;
   const onProgress = options?.onProgress;
 

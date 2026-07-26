@@ -15,6 +15,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 // Only local filesystem paths are verifiable. URLs / synthetic sources are not
 // (and must be kept — we can't prove them stale).
@@ -31,12 +32,25 @@ function resolveSource(sourcePath, workspacePath) {
   return path.join(String(workspacePath || ""), sp);
 }
 
-// true = file present, false = DEFINITIVELY gone (ENOENT), null = can't tell (keep).
-function sourceIsPresent(sourcePath, workspacePath) {
+function fileContentHash(filePath) {
+  return `sha256:${crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex")}`;
+}
+
+// true = current, false = DEFINITIVELY stale/gone, null = can't tell (keep).
+function sourceIsCurrent(sourcePath, workspacePath, expectedStamp = null) {
   if (!looksLikeLocalPath(sourcePath)) return null;
   const resolved = resolveSource(sourcePath, workspacePath);
   try {
-    fs.statSync(resolved);
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) return false;
+    if (expectedStamp && typeof expectedStamp === "object") {
+      const expectedSize = Number(expectedStamp.size || 0);
+      const expectedMtime = Number(expectedStamp.mtimeMs || 0);
+      if (expectedSize > 0 && Number(stat.size) !== expectedSize) return false;
+      if (expectedMtime > 0 && Math.floor(stat.mtimeMs) !== Math.floor(expectedMtime)) return false;
+      const expectedHash = String(expectedStamp.contentHash || "");
+      if (expectedHash && fileContentHash(resolved) !== expectedHash) return false;
+    }
     return true;
   } catch (err) {
     // Only a confirmed "not found" means the file is gone. Any OTHER error
@@ -47,15 +61,28 @@ function sourceIsPresent(sourcePath, workspacePath) {
   }
 }
 
+function sourceIsPresent(sourcePath, workspacePath) {
+  return sourceIsCurrent(sourcePath, workspacePath, null);
+}
+
 // Partition query matches into { fresh, stalePaths }. Only matches whose local
-// source file is DEFINITIVELY absent go stale; everything else stays fresh.
-function partitionMatchesByFreshness(matches = [], { workspacePath = "" } = {}) {
+// source file is definitively absent or differs from its indexed fingerprint go
+// stale; everything ambiguous stays fresh (fail open).
+function partitionMatchesByFreshness(matches = [], { workspacePath = "", sourceStamps = null } = {}) {
   const fresh = [];
   const stalePaths = new Set();
+  const currentBySource = new Map();
   for (const match of Array.isArray(matches) ? matches : []) {
-    const present = sourceIsPresent(match?.sourcePath, workspacePath);
+    const sourcePath = String(match?.sourcePath || "");
+    const expectedStamp = sourceStamps instanceof Map
+      ? sourceStamps.get(sourcePath)
+      : null;
+    if (!currentBySource.has(sourcePath)) {
+      currentBySource.set(sourcePath, sourceIsCurrent(sourcePath, workspacePath, expectedStamp));
+    }
+    const present = currentBySource.get(sourcePath);
     if (present === false) {
-      stalePaths.add(String(match.sourcePath));
+      stalePaths.add(sourcePath);
       continue;
     }
     fresh.push(match);
@@ -66,6 +93,7 @@ function partitionMatchesByFreshness(matches = [], { workspacePath = "" } = {}) 
 module.exports = {
   looksLikeLocalPath,
   resolveSource,
+  sourceIsCurrent,
   sourceIsPresent,
   partitionMatchesByFreshness,
 };

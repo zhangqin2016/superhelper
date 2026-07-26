@@ -474,7 +474,7 @@ class SessionRunnerPool {
         candidates.push(path.join(PROJECT_ROOT, rel));
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
-      return ["verify-edit.js", "compaction-memory.js", "loop-detector.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "context-window-guard.js"].map(resolve).filter(Boolean);
+      return ["verify-edit.js", "compaction-memory.js", "loop-detector.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "context-window-guard.js", "live-file-history-guard.js"].map(resolve).filter(Boolean);
     } catch {
       return [];
     }

@@ -141,6 +141,29 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
   assert.match(jsonBody.parts.at(-1).text, /```json/, "JSON inline text is fenced as json");
   assert.match(jsonBody.parts.at(-1).text, /"places"/, "JSON content survives inline — nothing is lost");
 
+  // A staged attachment is only a stable fallback. When its original path is
+  // still readable, the live original is the source of truth so edits made by
+  // the user after attaching cannot be overwritten from the stale snapshot.
+  const originalMd = path.join(dir, "original.md");
+  const stagedMd = path.join(dir, "staged.md");
+  fs.writeFileSync(originalMd, "current user-edited content\n");
+  fs.writeFileSync(stagedMd, "stale staged content that the user deleted\n");
+  const liveAttachmentBody = buildOpencodePromptBody({
+    text: "continue from my modified file",
+    files: [{
+      path: stagedMd,
+      sourcePath: originalMd,
+      staged: true,
+      name: "original.md",
+      type: "md",
+    }],
+    maxInlineFileBytes: 1024,
+  });
+  const liveAttachmentText = liveAttachmentBody.parts.at(-1).text;
+  assert.match(liveAttachmentText, /current user-edited content/, "readable original path must outrank the staged snapshot");
+  assert.doesNotMatch(liveAttachmentText, /stale staged content/, "deleted content from a staged snapshot must not reach the model");
+  assert.match(liveAttachmentText, new RegExp(originalMd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "attachment index points at the live original");
+
   // Oversized JSON exceeds the inline text limit → falls back to a source-path
   // note, still NEVER a file part (so it can't poison an image-only model).
   const bigJson = path.join(dir, "big.json");

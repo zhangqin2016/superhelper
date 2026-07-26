@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-
+const { resolveLiveFilePath } = require("../live-file-source");
 const FILE_MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -93,7 +93,7 @@ function buildAttachmentIndex(files = []) {
   const list = (Array.isArray(files) ? files : []).filter(Boolean);
   if (!list.length) return "";
   const lines = list.slice(0, 20).map((file, index) => {
-    const filePath = file.path || file.filePath || "";
+    const filePath = resolveLiveFilePath(file);
     const name = file.name || file.filename || path.basename(filePath) || `attachment-${index + 1}`;
     let stat = null;
     if (filePath) {
@@ -237,7 +237,7 @@ function skipImageAttachment(filePath, filename, opts = {}) {
 
 function fileToTextAttachment(file, opts = {}) {
   if (!file || typeof file !== "object") return null;
-  const filePath = file.path || file.filePath;
+  const filePath = resolveLiveFilePath(file);
   if (!filePath || !fs.existsSync(filePath)) return null;
   const ext = fileExtension(file, filePath);
   if (!isInlineTextExtension(ext)) return null;
@@ -310,7 +310,7 @@ function fileToPart(file, opts = {}) {
       ...(file.name ? { filename: file.name } : {}),
     };
   }
-  const filePath = file.path || file.filePath;
+  const filePath = resolveLiveFilePath(file);
   if (!filePath || !fs.existsSync(filePath)) return null;
   const ext = fileExtension(file, filePath);
   const mime = file.mime || FILE_MIME[ext] || "application/octet-stream";

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { openDatabase } = require("./store/sqlite-db");
+const { migrateContentHash, readSourceStamps, upsertSourceStamp } = require("./workspace-source-stamps");
 
 const SCHEMA_VERSION = 1;
 
@@ -230,6 +231,8 @@ class WorkspaceKnowledgeStore {
           );
         `);
       },
+      // v3: content fingerprints close the same-size/same-mtime stale-source hole.
+      (db) => migrateContentHash(db),
     ]);
   }
 
@@ -341,14 +344,7 @@ class WorkspaceKnowledgeStore {
       }
       this.db.run("DELETE FROM chunks WHERE index_id = ? AND source_path = ?", id, sp);
       for (const chunk of list) this._insertChunk(id, { ...chunk, sourcePath: sp });
-      if (stamp) {
-        this.db.run(
-          `INSERT INTO source_stamps (index_id, source_path, mtime_ms, size, indexed_at)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(index_id, source_path) DO UPDATE SET mtime_ms=excluded.mtime_ms, size=excluded.size, indexed_at=excluded.indexed_at`,
-          id, sp, Math.floor(Number(stamp.mtimeMs || 0)), Math.floor(Number(stamp.size || 0)), new Date().toISOString(),
-        );
-      }
+      if (stamp) upsertSourceStamp(this.db, id, sp, stamp);
     });
     tx();
     try {
@@ -435,6 +431,7 @@ class WorkspaceKnowledgeStore {
       };
     });
     let evicted = 0;
+    let staleSourcePaths = [];
     // Freshness guard: never cite a chunk whose local source file was deleted.
     // Stale hits are dropped from the result AND evicted from the store. OPT-IN
     // (verifyFreshness) because this general FTS store also holds non-file
@@ -443,8 +440,13 @@ class WorkspaceKnowledgeStore {
     if (verifyFreshness && process.env.LILY_WORKSPACE_INDEX_VERIFY !== "0") {
       try {
         const { partitionMatchesByFreshness } = require("./workspace-index-freshness");
-        const { fresh, stalePaths } = partitionMatchesByFreshness(matches, { workspacePath: this.workspacePath });
+        const sourceStamps = this.getSourceStamps(record.indexId);
+        const { fresh, stalePaths } = partitionMatchesByFreshness(matches, {
+          workspacePath: this.workspacePath,
+          sourceStamps,
+        });
         if (stalePaths.length) {
+          staleSourcePaths = stalePaths;
           matches = fresh;
           try { evicted = this.evictSources(stalePaths); } catch { /* eviction best-effort */ }
         }
@@ -462,6 +464,7 @@ class WorkspaceKnowledgeStore {
       workspacePath: this.workspacePath,
       sourcePath: record.sourcePath,
       ...(evicted ? { evictedStale: evicted } : {}),
+      ...(staleSourcePaths.length ? { staleSourcePaths } : {}),
       matches,
     };
   }
@@ -486,15 +489,11 @@ class WorkspaceKnowledgeStore {
   // Per-source freshness stamps for one index → Map(source_path → {mtimeMs,size}).
   // Lets the reconcile scan skip files whose mtime+size are unchanged.
   getSourceStamps(indexId) {
-    const id = String(indexId || "");
-    const out = new Map();
-    if (!id) return out;
+    if (!String(indexId || "")) return new Map();
     try {
-      for (const row of this.db.all("SELECT source_path, mtime_ms, size FROM source_stamps WHERE index_id = ?", id)) {
-        out.set(String(row.source_path), { mtimeMs: Number(row.mtime_ms || 0), size: Number(row.size || 0) });
-      }
+      return readSourceStamps(this.db, indexId);
     } catch { /* table missing / fail-open → empty */ }
-    return out;
+    return new Map();
   }
 
   close() {

@@ -90,6 +90,22 @@ const result = await extractDocuments(files);
 assert(result?.ok, `extractDocuments failed: ${JSON.stringify(result)}`);
 assert(result.text.includes("会议纪要"), "missing txt extraction");
 
+const stagedTextPath = path.join(tmpDir, "staged-notes.txt");
+const originalTextPath = path.join(tmpDir, "original-notes.txt");
+fs.writeFileSync(stagedTextPath, "用户已经删除的旧附件内容", "utf8");
+fs.writeFileSync(originalTextPath, "用户修改后的当前附件内容", "utf8");
+const liveSourceResult = await extractDocuments([{
+  path: stagedTextPath,
+  sourcePath: originalTextPath,
+  staged: true,
+  name: "original-notes.txt",
+  isImage: false,
+}]);
+assert(liveSourceResult?.ok, `live source extraction failed: ${JSON.stringify(liveSourceResult)}`);
+assert(liveSourceResult.text.includes("用户修改后的当前附件内容"), "document extraction must use the readable original path");
+assert(!liveSourceResult.text.includes("用户已经删除的旧附件内容"), "document extraction must not reuse stale staged content");
+assert(liveSourceResult.extractedPaths.includes(originalTextPath), "extraction evidence points to the live original path");
+
 const largeXlsxPath = path.join(tmpDir, "large.xlsx");
 fs.writeFileSync(largeXlsxPath, Buffer.alloc(21 * 1024 * 1024, 65));
 const largeProgress = [];

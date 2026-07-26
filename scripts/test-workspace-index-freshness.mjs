@@ -52,6 +52,29 @@ assert.ok(res.evictedStale >= 1, "stale chunk evicted from the store");
 const res2 = store.queryIndex({ indexId: "idx1", query: "alpha", verifyFreshness: true });
 assert.ok(!res2.matches.map((m) => m.sourcePath).includes("deleted.txt"), "evicted chunk stays gone");
 
+// A file that still exists can also be stale. The stored source fingerprint
+// must invalidate an old excerpt even when size and mtime still match.
+const changedPath = path.join(ws, "changed.txt");
+fs.writeFileSync(changedPath, "alpha NEW");
+const changedStat = fs.statSync(changedPath);
+const oldHash = "sha256:" + require("node:crypto").createHash("sha256").update("alpha OLD").digest("hex");
+store.upsertSourceChunks("idx_changed", "changed.txt", [{
+  chunkId: "changed-old",
+  sourcePath: "changed.txt",
+  sourceType: "text",
+  text: "alpha OLD",
+  excerpt: "alpha OLD",
+}], {
+  stamp: {
+    mtimeMs: Math.floor(changedStat.mtimeMs),
+    size: changedStat.size,
+    contentHash: oldHash,
+  },
+});
+const changed = store.queryIndex({ indexId: "idx_changed", query: "OLD", verifyFreshness: true });
+assert.equal(changed.matches.length, 0, "content-changed source must not return its stale excerpt");
+assert.deepEqual(changed.staleSourcePaths, ["changed.txt"], "changed source is diagnosed for immediate re-index");
+
 // kill switch → verification off → deleted chunk would be returned (baseline)
 store.writeIndex({
   indexId: "idx2",

@@ -14,6 +14,7 @@ const path = require("node:path");
 const https = require("node:https");
 const http = require("node:http");
 const { resolveSettingsEnvValue } = require("./agent-settings");
+const { withLiveFilePath } = require("./live-file-source");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_MODEL = "qwen-vl-max";
@@ -31,6 +32,7 @@ const MIME_MAP = {
 };
 
 function isVisionInputFile(file) {
+  file = withLiveFilePath(file);
   if (!file?.path) return false;
   const ext = path.extname(file.path).toLowerCase().replace(/^\./, "");
   return Boolean(MIME_MAP[ext]);
@@ -414,7 +416,9 @@ async function translateImage(filePath, prompt) {
  * @returns {Promise<{ ok: true, text: string, mode: string, keepOriginal: boolean, sourceCount: number, recognizedCount: number, failedCount: number } | { ok: false, reason: string, detail?: string } | null>}
  */
 async function translateImages(files, options = {}) {
-  const imageFiles = (files || []).filter((f) => isVisionInputFile(f) && fs.existsSync(f.path));
+  const imageFiles = (files || [])
+    .map((file) => withLiveFilePath(file))
+    .filter((f) => isVisionInputFile(f) && fs.existsSync(f.path));
   if (imageFiles.length === 0) return null;
 
   const config = getVisionConfig();

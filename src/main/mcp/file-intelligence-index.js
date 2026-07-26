@@ -12,6 +12,11 @@ const {
   openWorkspaceKnowledgeStore,
   workspaceKeyForPath,
 } = require("../workspace-knowledge-store");
+const {
+  candidateFiles,
+  contentHash,
+  readTextFile,
+} = require("./workspace-index-source");
 
 const DEFAULT_CHUNK_LINE_COUNT = 80;
 const DEFAULT_MAX_FILES = 200;
@@ -72,44 +77,6 @@ function tokenize(value = "") {
 
 function indexRecordPath(storeRoot, indexId) {
   return path.join(storeRoot || defaultStoreRoot(), `${safeId(indexId)}.json`);
-}
-
-function readTextFile(filePath, maxBytes) {
-  const stat = fs.statSync(filePath);
-  if (stat.size > maxBytes) return null;
-  const buffer = fs.readFileSync(filePath);
-  if (buffer.includes(0)) return null;
-  return buffer.toString("utf8");
-}
-
-function candidateFiles(rootPath, opts = {}) {
-  const maxFiles = Math.max(1, Number(opts.maxFiles || DEFAULT_MAX_FILES));
-  const out = [];
-  const queue = [rootPath];
-  while (queue.length && out.length < maxFiles) {
-    const current = queue.shift();
-    let stat;
-    try {
-      stat = fs.statSync(current);
-    } catch {
-      continue;
-    }
-    if (stat.isDirectory()) {
-      let entries = [];
-      try {
-        entries = fs.readdirSync(current).sort();
-      } catch {
-        entries = [];
-      }
-      for (const name of entries) {
-        if (name === "node_modules" || name === ".git" || name === "dist" || name === "release") continue;
-        queue.push(path.join(current, name));
-      }
-    } else if (stat.isFile()) {
-      out.push(current);
-    }
-  }
-  return out;
 }
 
 function chunksForText(filePath, text, linesPerChunk) {
@@ -435,11 +402,15 @@ function autoIndexChangedFiles(input = {}) {
         }
         const info = inspectPath({ path: abs });
         let fileChunks = [];
+        let indexedContentHash = "";
         if (info?.ok && isMetadataIndexable(info)) {
           fileChunks = chunksForMetadata(info);
         } else if (info?.ok && info.kind === "text") {
           const text = readTextFile(abs, maxFileBytes);
-          if (text != null) fileChunks = chunksForText(abs, text, linesPerChunk);
+          if (text != null) {
+            fileChunks = chunksForText(abs, text, linesPerChunk);
+            indexedContentHash = contentHash(text);
+          }
         }
         if (!fileChunks.length) { skipped += 1; continue; }
         fileChunks.forEach((chunk, i) => {
@@ -447,7 +418,14 @@ function autoIndexChangedFiles(input = {}) {
           chunk.sourcePath = rel;
         });
         let stamp = null;
-        try { const st = fs.statSync(abs); stamp = { mtimeMs: Math.floor(st.mtimeMs), size: st.size }; } catch { /* no stamp */ }
+        try {
+          const st = fs.statSync(abs);
+          stamp = {
+            mtimeMs: Math.floor(st.mtimeMs),
+            size: st.size,
+            contentHash: indexedContentHash,
+          };
+        } catch { /* no stamp */ }
         store.upsertSourceChunks(indexId, rel, fileChunks, { stamp });
         indexed += 1;
       } catch {
@@ -510,18 +488,28 @@ async function reconcileWorkspaceIndex(input = {}) {
         } else {
           const info = inspectPath({ path: abs });
           let fileChunks = [];
+          let indexedContentHash = "";
           if (info?.ok && isMetadataIndexable(info)) {
             fileChunks = chunksForMetadata(info);
           } else if (info?.ok && info.kind === "text") {
             const text = readTextFile(abs, maxFileBytes);
-            if (text != null) fileChunks = chunksForText(abs, text, linesPerChunk);
+            if (text != null) {
+              fileChunks = chunksForText(abs, text, linesPerChunk);
+              indexedContentHash = contentHash(text);
+            }
           }
           if (fileChunks.length) {
             fileChunks.forEach((chunk, i) => {
               chunk.chunkId = `${indexId}:${safeId(rel)}:${i + 1}`;
               chunk.sourcePath = rel;
             });
-            store.upsertSourceChunks(indexId, rel, fileChunks, { stamp: { mtimeMs: Math.floor(st.mtimeMs), size: Number(st.size) } });
+            store.upsertSourceChunks(indexId, rel, fileChunks, {
+              stamp: {
+                mtimeMs: Math.floor(st.mtimeMs),
+                size: Number(st.size),
+                contentHash: indexedContentHash,
+              },
+            });
             indexed += 1;
           } else {
             skipped += 1;

@@ -14,6 +14,7 @@
  */
 
 const path = require("node:path");
+const { resolveLiveFilePath } = require("./live-file-source");
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".xlsx", ".pptx", ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".rtf"]);
@@ -329,7 +330,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
   const extracted = new Set(result.extractedPaths || []);
   const outboundFiles = result.keepOriginal
     ? files
-    : (files || []).filter((file) => !extracted.has(file.path));
+    : (files || []).filter((file) => !extracted.has(resolveLiveFilePath(file)));
   const documentContext = [result.text, result.documentIndexText].filter(Boolean).join("\n\n");
   const enrichedText = buildEnrichedUserText(text, documentContext);
   const extractedCount = (result.extractedPaths || []).length;
