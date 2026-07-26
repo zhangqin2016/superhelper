@@ -154,6 +154,31 @@ class ScheduledTaskManager {
     return { ok: true, task };
   }
 
+  importPausedTemplates(templates, scope = {}) {
+    const projectId = String(scope.projectId || "").trim();
+    const sessionId = String(scope.sessionId || "").trim();
+    if (!projectId || !sessionId) return { ok: false, error: "MISSING_SCOPE" };
+    const { normalizeTaskTemplates } = require("./scheduled-task-portability");
+    const normalized = normalizeTaskTemplates(templates);
+    const now = nowIso();
+    const imported = normalized.templates.map((template) => this._normalizeTask({
+      ...template,
+      id: `sched_${crypto.randomUUID()}`,
+      workspaceId: projectId,
+      projectId,
+      sessionId,
+      enabled: false,
+      status: "paused",
+      lastRunAt: null,
+      nextRunAt: null,
+      createdAt: now,
+      updatedAt: now,
+    })).filter(Boolean);
+    this.tasks.push(...imported);
+    if (imported.length) this.save();
+    return { ok: true, tasks: imported, skipped: normalized.skipped };
+  }
+
   list(filter = {}) {
     const sessionId = filter.sessionId ? String(filter.sessionId) : "";
     const projectId = filter.projectId ? String(filter.projectId) : "";

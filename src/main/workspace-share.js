@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const JSZip = require("jszip");
 const exportPlanner = require("./workspace-export-planner");
+const packCompat = require("./workspace-pack-compat");
+const taskPortability = require("./scheduled-task-portability");
 
 /**
  * Workspace capability packs (.lilyspace.zip): export a workspace as a
@@ -25,6 +27,7 @@ const WORKSPACE_APP_MANIFEST = "lily-app.json";
 const PACK_META_PREFIX = ".lilyspace/";
 const PACK_MANIFEST_ENTRY = `${PACK_META_PREFIX}${MANIFEST_NAME}`;
 const PACK_CONVENTIONS_ENTRY = `${PACK_META_PREFIX}conventions.md`;
+const { AUTOMATIONS_ENTRY } = taskPortability;
 const PACK_SKILLS_PREFIX = `${PACK_META_PREFIX}skills/`;
 const SCHEMA_VERSION = 1;
 const SUPPORTED_KINDS = new Set(["lily-workspace-pack", "lily-workspace-app"]);
@@ -139,40 +142,6 @@ function extractDataLocationPaths(value) {
 
 function workspaceAppDataPaths(manifest) {
   return exportPlanner.workspaceAppExportConfig(manifest).dataPaths;
-}
-
-function hasLegacyMirrorConflict(files, workspaceSkillFiles, hasConventions) {
-  const rootEntries = new Set(files.map((file) => file.relPath));
-  if (rootEntries.has(MANIFEST_NAME)) return true;
-  if (hasConventions && rootEntries.has(CONVENTIONS_ENTRY)) return true;
-  for (const file of files) {
-    if (rootEntries.has(`${FILES_PREFIX}${file.relPath}`)) return true;
-  }
-  for (const file of workspaceSkillFiles) {
-    if (rootEntries.has(`${SKILLS_PREFIX}${file.skillId}/${file.relPath}`)) return true;
-  }
-  return false;
-}
-
-function isLegacyFileMirrorEntry(entryName, zip) {
-  if (!entryName.startsWith(FILES_PREFIX)) return false;
-  const rootName = entryName.slice(FILES_PREFIX.length);
-  return Boolean(rootName && zip.file(rootName));
-}
-
-function isLegacySkillMirrorEntry(entryName, zip) {
-  if (!entryName.startsWith(SKILLS_PREFIX)) return false;
-  const hiddenName = `${PACK_SKILLS_PREFIX}${entryName.slice(SKILLS_PREFIX.length)}`;
-  return Boolean(zip.file(hiddenName));
-}
-
-function legacyCompatibilityManifest(manifest) {
-  if (manifest?.kind !== "lily-workspace-app") return manifest;
-  return {
-    ...manifest,
-    kind: "lily-workspace-pack",
-    originalKind: "lily-workspace-app",
-  };
 }
 
 function workspaceAppExportInfo(rootPath) {
@@ -405,13 +374,14 @@ function previewExport(rootPath) {
  * @param {string} opts.exportedAt ISO timestamp (passed in — main owns time)
  * @returns {Promise<Buffer>} zip bytes
  */
-async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, exportedAt }) {
+async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, automationTemplates, exportedAt }) {
   if (!rootPath || !fs.existsSync(rootPath)) throw new Error("WORKSPACE_NOT_FOUND");
   const zip = new JSZip();
   const exportPlan = collectShareableFiles(rootPath);
   const workspaceApp = exportPlan.workspaceApp;
   const files = exportPlan.files;
   const conv = String(conventions || "").trim();
+  const automationCount = taskPortability.writeAutomationEntry(zip, automationTemplates);
 
   const exportedWorkspaceSkills = [];
   const exportedWorkspaceSkillFiles = [];
@@ -446,11 +416,20 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     hasConventions: Boolean(conv),
     requiredSkills: Array.isArray(requiredSkills) ? requiredSkills.filter(Boolean) : [],
     workspaceSkills: exportedWorkspaceSkills,
+    automationCount,
   };
 
   const addLegacyMirror =
     exportPlan.totalBytes <= LEGACY_MIRROR_MAX_TOTAL_BYTES &&
-    !hasLegacyMirrorConflict(files, exportedWorkspaceSkillFiles, Boolean(conv));
+    !packCompat.hasLegacyMirrorConflict({
+      files,
+      workspaceSkillFiles: exportedWorkspaceSkillFiles,
+      hasConventions: Boolean(conv),
+      manifestName: MANIFEST_NAME,
+      conventionsEntry: CONVENTIONS_ENTRY,
+      filesPrefix: FILES_PREFIX,
+      skillsPrefix: SKILLS_PREFIX,
+    });
   for (const file of files) {
     const content = fs.readFileSync(file.fullPath);
     if (addLegacyMirror) zip.file(file.relPath, content);
@@ -468,7 +447,7 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     zip.file(`${SKILLS_PREFIX}${item.skillId}/${item.file.relPath}`, content);
   }
   if (addLegacyMirror) zip.file(PACK_MANIFEST_ENTRY, JSON.stringify(manifest, null, 2));
-  zip.file(MANIFEST_NAME, JSON.stringify(legacyCompatibilityManifest(manifest), null, 2));
+  zip.file(MANIFEST_NAME, JSON.stringify(packCompat.legacyCompatibilityManifest(manifest), null, 2));
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
@@ -581,8 +560,8 @@ async function importWorkspacePack(zipBuffer, targetDir) {
       .filter((entry) => !entry.dir)
       .filter((entry) => !entry.name.startsWith(PACK_META_PREFIX))
       .filter((entry) => entry.name !== MANIFEST_NAME && entry.name !== CONVENTIONS_ENTRY)
-      .filter((entry) => !isLegacyFileMirrorEntry(entry.name, zip))
-      .filter((entry) => !isLegacySkillMirrorEntry(entry.name, zip))
+      .filter((entry) => !packCompat.isLegacyFileMirrorEntry(entry.name, zip, FILES_PREFIX))
+      .filter((entry) => !packCompat.isLegacySkillMirrorEntry(entry.name, zip, SKILLS_PREFIX, PACK_SKILLS_PREFIX))
       .map((entry) => ({ entry, rel: entry.name }));
   const declaredWorkspaceSkillIds = manifestWorkspaceSkillIds(manifest);
   if (entries.length === 0 && declaredWorkspaceSkillIds.length === 0) {
@@ -599,8 +578,8 @@ async function importWorkspacePack(zipBuffer, targetDir) {
   const convEntry = zip.file(PACK_CONVENTIONS_ENTRY) || zip.file(CONVENTIONS_ENTRY);
   if (convEntry) conventions = await convEntry.async("string");
   const workspaceSkills = await importWorkspaceSkills(zip, manifest, targetDir);
-
-  return { manifest, conventions, workspaceSkills };
+  const automations = await taskPortability.readAutomationEntry(zip.file(AUTOMATIONS_ENTRY));
+  return { manifest, conventions, workspaceSkills, ...automations };
 }
 
 module.exports = {
@@ -608,6 +587,7 @@ module.exports = {
   PACK_META_PREFIX,
   PACK_MANIFEST_ENTRY,
   PACK_CONVENTIONS_ENTRY,
+  AUTOMATIONS_ENTRY,
   PACK_SKILLS_PREFIX,
   SCHEMA_VERSION,
   SUPPORTED_KINDS,
