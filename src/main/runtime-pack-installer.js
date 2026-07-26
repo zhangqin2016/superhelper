@@ -742,6 +742,21 @@ async function installRuntimePack(packId, options = {}) {
   }
 }
 
+function startRuntimePackInstall(packId, options = {}) {
+  const id = String(packId || "").trim();
+  if (!id) return { ok: false, error: "INVALID_RUNTIME_PACK" };
+  if (!isValidPackId(id)) return { ok: false, error: "INVALID_RUNTIME_PACK" };
+  const existingJob = activeInstalls.get(id);
+  if (existingJob) return { ok: true, id, jobId: existingJob.jobId, started: false, joined: true, installing: true, progress: existingJob.latest || null };
+  const job = createInstallJob(id, options);
+  activeInstalls.set(id, job);
+  job.promise = runRuntimePackInstall(id, job).catch((error) => {
+    publishProgress(job, id, "failed", { error: error?.message || String(error) });
+    return { ok: false, id, error: error?.message || String(error) };
+  }).finally(() => activeInstalls.delete(id));
+  return { ok: true, id, jobId: job.jobId, started: true, installing: true, progress: job.latest || null };
+}
+
 async function runRuntimePackInstall(id, job) {
   const existing = readState().installed[id];
   const force = Boolean(job?.options?.force || job?.options?.repair);
@@ -755,7 +770,7 @@ async function runRuntimePackInstall(id, job) {
     return { ok: true, id, skipped: true, source: "bundled", path: bundled };
   }
   const base = baseProvidedRuntimePackMap().get(id);
-  if (base) {
+  if (base && !force) {
     publishProgress(job, id, "skipped", { source: "base", path: base.path || "" });
     return { ok: true, id, skipped: true, source: "base", path: base.path || "" };
   }
@@ -928,6 +943,7 @@ module.exports = {
   archiveExtensionForArtifact,
   checkRuntimePackAvailability,
   installRuntimePack,
+  startRuntimePackInstall,
   repairInstalledRuntimePacks,
   installingRuntimePackIds,
   installedRuntimePackIds,

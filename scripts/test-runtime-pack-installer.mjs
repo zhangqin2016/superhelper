@@ -25,6 +25,16 @@ zip.file("module/__init__.py", "OK = True\n");
 zip.file("docling/__init__.py", "OK = True\n");
 const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 const sha256 = crypto.createHash("sha256").update(zipBuffer).digest("hex");
+const libreOfficeZip = new JSZip();
+libreOfficeZip.file(
+  process.platform === "win32" ? "program/soffice.cmd" : "program/soffice",
+  process.platform === "win32"
+    ? "@echo %* > \"%LILY_TEST_SOFFICE_ARGS%\"\r\n"
+    : "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$LILY_TEST_SOFFICE_ARGS\"\necho LibreOffice health ok\n",
+  { unixPermissions: 0o100755 },
+);
+const libreOfficeZipBuffer = await libreOfficeZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", platform: "UNIX" });
+const libreOfficeSha256 = crypto.createHash("sha256").update(libreOfficeZipBuffer).digest("hex");
 
 const server = http.createServer((req, res) => {
   if (req.url === "/pack.zip") {
@@ -33,6 +43,14 @@ const server = http.createServer((req, res) => {
       "content-length": zipBuffer.length,
     });
     res.end(zipBuffer);
+    return;
+  }
+  if (req.url === "/libreoffice.zip") {
+    res.writeHead(200, {
+      "content-type": "application/zip",
+      "content-length": libreOfficeZipBuffer.length,
+    });
+    res.end(libreOfficeZipBuffer);
     return;
   }
   res.writeHead(404);
@@ -46,14 +64,24 @@ try {
   serviceClient.runtimePackArtifact = async (packId, platform) => ({
     ok: true,
     json: {
-      artifact: {
-        url: `http://127.0.0.1:${server.address().port}/pack.zip`,
-        sha256,
-        version: "1.2.3",
-        format: "zip",
-        platform,
-        packId,
-      },
+      artifact:
+        packId === "libreoffice"
+          ? {
+              url: `http://127.0.0.1:${server.address().port}/libreoffice.zip`,
+              sha256: libreOfficeSha256,
+              version: "25.8.7",
+              format: "zip",
+              platform,
+              packId,
+            }
+          : {
+              url: `http://127.0.0.1:${server.address().port}/pack.zip`,
+              sha256,
+              version: "1.2.3",
+              format: "zip",
+              platform,
+              packId,
+            },
     },
   });
 
@@ -63,8 +91,13 @@ try {
   const originalExecFileSync = childProcess.execFileSync;
   const originalResolveVenvPython = runtimePython.resolveVenvPython;
   const originalGetRuntimeEnvExtras = runtimePython.getRuntimeEnvExtras;
+  const baseLibreOfficeDir = path.join(tmp, "base-libreoffice", "program");
+  fs.mkdirSync(baseLibreOfficeDir, { recursive: true });
+  const baseSofficeExe = path.join(baseLibreOfficeDir, process.platform === "win32" ? "soffice.exe" : "soffice");
+  fs.writeFileSync(baseSofficeExe, "base soffice placeholder\n");
+  fs.chmodSync(baseSofficeExe, 0o755);
   runtimePython.resolveVenvPython = () => path.join(tmp, "fake-python.exe");
-  runtimePython.getRuntimeEnvExtras = () => ({});
+  runtimePython.getRuntimeEnvExtras = () => ({ LILY_LIBREOFFICE_PROGRAM: baseLibreOfficeDir });
   childProcess.execFileSync = () => {
     throw new Error("simulated cold base-runtime probe failure");
   };
@@ -78,6 +111,11 @@ try {
     installer.baseProvidedRuntimePackMap().has("pillow"),
     true,
     "a transient base-runtime probe failure must not permanently cache an empty base pack map",
+  );
+  assert.equal(
+    installer.baseProvidedRuntimePackMap().has("libreoffice"),
+    true,
+    "base LibreOffice should be detected from the bundled runtime env",
   );
   childProcess.execFileSync = originalExecFileSync;
   runtimePython.resolveVenvPython = originalResolveVenvPython;
@@ -138,6 +176,21 @@ try {
     assert.equal(pack?.readOnly, true, `${id} from base runtime should be read-only`);
     assert(installer.installedRuntimePackIds().has(id), `${id} from base runtime should satisfy dependency requirements`);
   }
+  const skippedBaseLibreOffice = await installer.installRuntimePack("libreoffice");
+  assert.equal(skippedBaseLibreOffice.ok, true);
+  assert.equal(skippedBaseLibreOffice.skipped, true);
+  assert.equal(skippedBaseLibreOffice.source, "base", "healthy base LibreOffice should still be skipped by normal install");
+  const baseLibreOfficeRepairArgsPath = path.join(tmp, "base-libreoffice-repair-args.txt");
+  process.env.LILY_TEST_SOFFICE_ARGS = baseLibreOfficeRepairArgsPath;
+  const repairedBaseLibreOffice = await installer.installRuntimePack("libreoffice", { force: true, repair: true });
+  assert.equal(repairedBaseLibreOffice.ok, true, `base LibreOffice repair should install artifact: ${JSON.stringify(repairedBaseLibreOffice)}`);
+  assert.equal(repairedBaseLibreOffice.skipped, undefined, "repair must not skip a base-provided pack");
+  assert.equal(repairedBaseLibreOffice.repaired, true);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(runtimePackRoot, "runtime-packs.json"), "utf8")).installed.libreoffice?.source,
+    "artifact",
+    "base LibreOffice repair should activate a user artifact install",
+  );
   const available = await installer.checkRuntimePackAvailability(["rembg", "web-automation", "not-a-pack"]);
   assert.equal(available.ok, true);
   assert.equal(available.packs.find((pack) => pack.id === "rembg")?.available, true, "available artifact should be reported before install");

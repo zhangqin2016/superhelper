@@ -48,10 +48,19 @@ assert.match(officeIntent, /small design system/i);
 assert.match(officeIntent, /render the final artifact/i);
 assert.match(officeIntent, /w:eastAsia/);
 assert.match(officeIntent, /lily_office_style\.py/);
+assert.match(officeIntent, /## Conversion Source Protection/);
+assert.match(officeIntent, /Treat the input document as immutable/i);
+assert.match(officeIntent, /ask the user before changing the source/i);
+assert.match(officeIntent, /managed runtime-pack install\/repair/i);
+assert.match(officeIntent, /do not pass `wait: true`/i);
+assert.match(officeIntent, /runtime_pack_list/i);
 
 const verifySkill = read("resources/skills-catalog/lily-document-verify/SKILL.md");
 assert.match(verifySkill, /every\s+page for artifacts up to 12 pages/i);
 assert.match(verifySkill, /at least 6 pages distributed/i);
 assert.match(verifySkill, /page images must have been read/i);
+assert.match(verifySkill, /OCR is text coverage, not visual QA/i);
+assert.match(verifySkill, /managed runtime-pack install\/repair/i);
+assert.match(verifySkill, /retry the render\/inspection route/i);
 
 console.log("office-authoring-contract: ok");

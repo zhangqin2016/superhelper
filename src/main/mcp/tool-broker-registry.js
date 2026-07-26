@@ -13,6 +13,10 @@ const path = require("node:path");
 const { z } = require("zod");
 const { buildIntentContractToolDefinition } = require("./intent-contract-tool-definition");
 const { buildSystemTools } = require("./web-system-mcp");
+const {
+  resolveInstalledRuntimePackIds,
+  runtimePackStatusForSkills,
+} = require("../runtime-pack-skill-status");
 const { registerToolDefinitions } = require("../tool-semantics");
 
 const SKILLS = {
@@ -109,6 +113,10 @@ function mcpServerNameForTool(tool) {
   return "";
 }
 
+function resolveRuntimePackInstaller(deps = {}) {
+  return deps.runtimePackInstaller || require("../runtime-pack-installer");
+}
+
 function serverNameForLearnedSystemDir(draftDir) {
   const base = path.basename(String(draftDir || "")).replace(/[^a-z0-9]+/gi, "_").toLowerCase();
   return `web_${base || "system"}`.slice(0, 64);
@@ -143,53 +151,6 @@ function describeToolAvailability(context, tool) {
     detail.runtimeStatusValue = context?.runtime?.browserAvailable === true;
   }
   return detail;
-}
-
-function runtimePackStatusForSkills(skillGraph, installedPacks) {
-  const { PACK_SPECS } = require("../runtime-pack-specs");
-  const installed = new Set(installedPacks || []);
-  const requiredByActiveSkills = [];
-  const missing = [];
-  for (const skill of Array.isArray(skillGraph) ? skillGraph : []) {
-    const required = Array.isArray(skill?.requiredRuntimePacks)
-      ? skill.requiredRuntimePacks.map(String).filter(Boolean)
-      : [];
-    if (!required.length) continue;
-    const itemMissing = required.filter((id) => !installed.has(id));
-    for (const id of itemMissing) {
-      if (!missing.includes(id)) missing.push(id);
-    }
-    requiredByActiveSkills.push({
-      skillId: skill.id,
-      required,
-      missing: itemMissing,
-    });
-  }
-  return {
-    requiredByActiveSkills,
-    missing,
-    missingDetails: missing.map((id) => {
-      const spec = PACK_SPECS[id] || {};
-      return {
-        id,
-        category: spec.category || "",
-        label: spec.label || { en: id, "zh-CN": id, ar: id },
-        description: spec.description || {},
-        sizeEstimate: spec.sizeEstimate || "",
-        installAction: {
-          tool: "runtime_pack_install",
-          args: { packId: id },
-          destructive: true,
-          requiresConfirmation: true,
-        },
-      };
-    }),
-  };
-}
-
-function resolveInstalledRuntimePackIds(deps = {}) {
-  if (typeof deps.installedRuntimePackIds === "function") return deps.installedRuntimePackIds;
-  return require("../runtime-pack-installer").installedRuntimePackIds;
 }
 
 const STATIC_TOOL_DEFINITIONS = [
@@ -228,7 +189,7 @@ const STATIC_TOOL_DEFINITIONS = [
         : listSkillCapabilityGraph();
       const installedPacks = focused ? [...resolveInstalledRuntimePackIds(deps)()].sort() : [];
       const recommendationRuntimePacks = focused
-        ? runtimePackStatusForSkills(skillGraph, installedPacks)
+        ? await runtimePackStatusForSkills(skillGraph, installedPacks, deps)
         : { requiredByActiveSkills: [], missing: [], missingDetails: [] };
       const tools = allToolDefinitions(context, deps)
         .filter((tool) => tool.name !== "lily_capability_list" && tool.name !== "lily_capability_status")
@@ -273,7 +234,7 @@ const STATIC_TOOL_DEFINITIONS = [
       const installedPacks = [...resolveInstalledRuntimePackIds(deps)()].sort();
       const active = activeSkillSet(context);
       const activeSkillGraph = listSkillCapabilityGraph().filter((skill) => active.has(skill.id));
-      const runtimePackStatus = runtimePackStatusForSkills(activeSkillGraph, installedPacks);
+      const runtimePackStatus = await runtimePackStatusForSkills(activeSkillGraph, installedPacks, deps);
       const toolDetails = allToolDefinitions(context, deps)
         .filter((tool) => tool.name !== "lily_capability_status")
         .map((tool) => describeToolAvailability(context, tool));
@@ -418,12 +379,17 @@ const STATIC_TOOL_DEFINITIONS = [
     requiredSkillIds: [],
     executionSurface: EXECUTION_SURFACES.toolBroker,
     mcpServerName: MCP_SERVER_NAMES.toolBroker,
-    description: "Install an optional Lily dependency pack from the server-resolved artifact URL.",
+    description: "Start installing or repairing an optional Lily dependency pack as an observable background job. Use runtime_pack_list to observe progress; do not block this tool call waiting for large downloads or health checks.",
     inputSchema: {
       packId: z.string().describe("dependency pack id, for example pro-pdf"),
+      repair: z.boolean().optional().describe("force reinstall/repair when the pack is recorded as installed but health checks fail"),
     },
     annotations: { destructiveHint: true, openWorldHint: true },
-    handler: async ({ packId }) => require("../runtime-pack-installer").installRuntimePack(packId),
+    handler: async ({ packId, repair }, _context, deps = {}) => {
+      const installer = resolveRuntimePackInstaller(deps);
+      const options = repair ? { repair: true, force: true } : {};
+      return installer.startRuntimePackInstall(packId, options);
+    },
   },
   {
     id: "schedule_task_create",

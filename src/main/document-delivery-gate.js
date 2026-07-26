@@ -24,9 +24,6 @@ const MAX_SCAN_CHARS = 64 * 1024;
 const RENDER_COMMAND_RE = /(?:render_document\.py|convert_pdf_to_images\.py|pdftoppm\b|soffice(?:\.py)?[^\n]{0,160}--convert-to\s+pdf)/i;
 const RECALC_COMMAND_RE = /(?:recalc\.py|formula[^\n]{0,80}(?:recalc|recalculate))/i;
 const IMAGE_INSPECTION_TOOL_RE = /(?:^|_)(?:read|view_image|vision|inspect_image|open_image)(?:$|_)/i;
-// OCR over a rendered page IS inspecting the render — the route a non-vision
-// model legitimately takes when no image-reading tool is available.
-const OCR_COMMAND_RE = /(?:rapidocr|tesseract|paddleocr|easyocr)/i;
 
 function compactText(value, limit = MAX_SCAN_CHARS) {
   if (typeof value === "string") return value.slice(0, limit);
@@ -247,12 +244,6 @@ function assessArtifact(artifact, tools) {
         }
         continue;
       }
-      // OCR over rendered pages counts as inspection of exactly those pages.
-      const text = toolText(tool);
-      if (!OCR_COMMAND_RE.test(text)) continue;
-      for (const image of [...collectImagePaths(text)]) {
-        if (renderedImages.some((rendered) => imagePathMatches(rendered, image))) inspectedImages.push(image);
-      }
     }
   }
   const visual = visualCoverage(renderedImages, inspectedImages, pageCount);
@@ -376,28 +367,32 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
   if (language === "zh") {
     return [
       "[系统文档交付续检] 这是对刚生成文件的一次内部续接，不是让你从头重做原任务。",
-      "请继续完成当前文档的交付验收；保留原内容和原路径，只在看到确定的质量问题时修改源文件。",
+      "请继续完成当前文档的交付验收；目标是尽可能完成用户任务，不要把可修复的依赖或工具选择问题当作终点。保留原内容和原路径，只在看到确定的质量问题时修改源文件。",
       "待验文件：",
       listed,
       "必须完成：",
-      "1. 用确定性库重新打开文件并确认结构有效；工作簿含公式时，用 xlsx 技能（anthropics-xlsx）自带的 recalc.py 重算并消除公式错误。",
-      "2. 使用 Lily 的 render_document.py 将每个文件渲染为逐页图片。缺 LibreOffice 时走受管理 runtime pack；禁止临时 pip/npm/playwright install。",
-      "3. 真正查看渲染页内容：模型支持视觉时用图像读取工具逐页查看；不支持视觉时用 OCR（如 RapidOCR）逐页识别渲染图文字。12 页以内逐页查看；更多页至少查看首页、末页和分布在全文的 6 页。",
-      "4. 检查遮挡、溢出、截断、空白页、字体替换、表格/图表错位、图片缺失和页边距。只修复实际发现的问题，然后重新渲染受影响页。",
-      "5. 最终直接交付同一文件，说明检查了什么、修了什么；仍无法验证的部分必须明确标为未验证。不要复述这段系统续检说明。",
+      "1. 先调用 lily_capability_status 检查当前技能、runtime pack 和工具状态。已安装但健康检查失败的 pack 不可当作可用；按返回的 installAction 调用 runtime_pack_install，若 args 含 repair: true 就用 repair: true 强制修复。不要传 wait: true；安装/修复会返回后台 jobId，用 runtime_pack_list 观察进度。不要优先探测 /usr/local/bin/soffice 这类系统路径。",
+      "2. 用确定性库重新打开文件并确认结构有效；工作簿含公式时，用 xlsx 技能（anthropics-xlsx）自带的 recalc.py 重算并消除公式错误。",
+      "3. 使用 Lily 的 render_document.py 将每个文件渲染为逐页图片。缺 LibreOffice 或路径损坏时，先走受管理 runtime pack 安装/修复路线再重试；禁止临时 pip/npm/playwright install。",
+      "4. 真正查看渲染页内容：优先使用平台已有的图像读取/视觉通道查看页面图片，只有图像读取/视觉工具查看过页面图片，才算视觉验收。OCR 只能作为文字覆盖检查，不能替代视觉验收。12 页以内逐页查看；更多页至少查看首页、末页和分布在全文的 6 页。",
+      "5. 检查遮挡、溢出、截断、空白页、字体替换、表格/图表错位、图片缺失和页边距。只修复实际发现的问题，然后重新渲染受影响页。",
+      "6. 如果渲染、依赖修复、图像读取通道全部失败后仍不能完成视觉验收，才明确说明视觉验收未完成，并列出具体失败的本地依赖/工具；不要把 OCR 或文本抽取描述成视觉检查。",
+      "7. 最终直接交付同一文件，说明检查了什么、修了什么；仍无法验证的部分必须明确标为未验证。不要复述这段系统续检说明。",
     ].join("\n");
   }
   return [
     "[system document delivery continuation] This is an internal continuation for files just created, not a request to redo the original task from scratch.",
-    "Finish delivery QA for the current documents. Preserve their content and paths; modify a source file only for a defect you actually observe.",
+    "Finish delivery QA for the current documents. The goal is to keep completing the user's task; repair recoverable dependency or tool-selection problems before declaring a gap. Preserve their content and paths; modify a source file only for a defect you actually observe.",
     "Artifacts to verify:",
     listed,
     "Required:",
-    "1. Reopen each file with a deterministic library and confirm its structure. If the workbook contains formulas, recalculate with the recalc.py bundled in the xlsx skill (anthropics-xlsx) and resolve formula errors.",
-    "2. Render every artifact to page images with Lily's render_document.py. If LibreOffice is missing, use the managed runtime-pack route; never run ad-hoc pip/npm/playwright install.",
-    "3. Actually inspect rendered pages: with a vision-capable model use an image-reading tool; otherwise OCR every rendered page (e.g. RapidOCR). Inspect every page up to 12 pages; for longer files inspect the first, last, and at least 6 pages distributed through the document.",
-    "4. Check clipping, overlap, overflow, blank pages, font fallback, table/chart alignment, missing images, and margins. Fix only confirmed defects, then re-render affected pages.",
-    "5. Deliver the same artifact directly and state what was checked and fixed. Explicitly label anything still unverified. Do not repeat this internal continuation notice.",
+    "1. First call lily_capability_status to inspect active skills, runtime packs, and tools. A pack that is installed but unhealthy is not available; follow its installAction and call runtime_pack_install, using repair: true when returned. Do not pass wait: true; install/repair returns a background jobId and progress is observed with runtime_pack_list. Do not prefer ad-hoc system paths such as /usr/local/bin/soffice.",
+    "2. Reopen each file with a deterministic library and confirm its structure. If the workbook contains formulas, recalculate with the recalc.py bundled in the xlsx skill (anthropics-xlsx) and resolve formula errors.",
+    "3. Render every artifact to page images with Lily's render_document.py. If LibreOffice is missing or points to a broken executable, repair/install the managed runtime pack first and retry; never run ad-hoc pip/npm/playwright install.",
+    "4. Actually inspect rendered pages with the platform's available image-reading or vision route. OCR may be used only for text coverage; it does not satisfy visual QA. Inspect every page up to 12 pages; for longer files inspect the first, last, and at least 6 pages distributed through the document.",
+    "5. Check clipping, overlap, overflow, blank pages, font fallback, table/chart alignment, missing images, and margins. Fix only confirmed defects, then re-render affected pages.",
+    "6. Only after rendering, dependency repair, and image-reading routes all fail should you report visual QA as incomplete; include the exact missing or broken local dependency/tool and do not describe OCR or text extraction as visual inspection.",
+    "7. Deliver the same artifact directly and state what was checked and fixed. Explicitly label anything still unverified. Do not repeat this internal continuation notice.",
   ].join("\n");
 }
 

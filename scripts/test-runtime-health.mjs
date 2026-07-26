@@ -110,7 +110,10 @@ try {
   fs.mkdirSync(path.join(rembgDir, "numpy"), { recursive: true });
   fs.writeFileSync(path.join(rembgDir, "numpy", "__init__.py"), "__version__ = '2.4.6'\n");
   fs.mkdirSync(path.join(rembgDir, "rembg"), { recursive: true });
-  fs.writeFileSync(path.join(rembgDir, "rembg", "__init__.py"), "import numpy\nOK = True\n");
+  fs.writeFileSync(
+    path.join(rembgDir, "rembg", "__init__.py"),
+    "import os, numpy\nassert os.environ.get('NUMBA_CACHE_DIR'), 'NUMBA_CACHE_DIR missing'\nOK = True\n",
+  );
 
   fs.writeFileSync(
     packs.statePath(),

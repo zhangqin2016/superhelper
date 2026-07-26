@@ -20,6 +20,13 @@ dependency pack fails, fall back to the next deterministic route or a
 path-first/source-file approach. Return partial evidence and the remaining gap
 instead of treating the whole document task as impossible.
 
+When a dependency appears missing or broken, first use Lily capability status
+and managed runtime-pack install/repair routes. Do not ask the user to install
+or fix local dependencies until Lily-managed repair, alternate bundled paths,
+and deterministic fallbacks have all failed. Agent-facing runtime-pack installs
+are background jobs: do not pass `wait: true`; observe progress with
+`runtime_pack_list` and continue safe independent work while the repair runs.
+
 ## Task Types
 
 - Word: author, edit, format, comment, compare, template output.
@@ -79,6 +86,24 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    structure. Recalculate formula workbooks, render the final artifact, inspect
    the required pages, fix observed defects, and repeat until the delivery gate
    passes or the remaining blocker is explicitly reported.
+
+## Conversion Source Protection
+
+For conversion/export-only requests (`convert`, `export as`, `save as`,
+`重新转换`, `导出为`, `另存为`) the source file is evidence, not an edit target.
+Treat the input document as immutable unless the user explicitly asks to edit
+that source file.
+
+1. Produce or replace only the requested output artifact. Do not edit,
+   normalize, repair, or overwrite the source Office/PDF file while converting.
+2. If conversion exposes a problem that appears to require source edits
+   (for example a glyph that renders poorly, a missing font, or broken document
+   XML), stop and ask the user before changing the source. Offer a separate
+   repaired copy when useful.
+3. If every deterministic conversion route fails, report the missing local
+   dependency or broken executable precisely, but only after trying Lily-managed
+   runtime-pack install/repair and alternate bundled paths. Do not silently
+   regenerate substitute content.
 
 ## Guardrails
 

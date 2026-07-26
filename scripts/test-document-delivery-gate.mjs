@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   assessDocumentDelivery,
+  buildDocumentDeliveryRecoveryPrompt,
   safeDocumentDeliveryFallback,
   visualCoverage,
 } = require("../src/main/document-delivery-gate.js");
@@ -128,7 +129,7 @@ try {
   assert.deepEqual(recoveryClassification.taskContract.evidencePolicy.requiredEvidenceKinds, ["document_output"]);
   assert.equal(recoveryClassification.turnPolicy.taskType, "document_work");
 
-  // --- OCR over rendered pages counts as visual inspection ------------------
+  // --- OCR over rendered pages is text coverage, not visual inspection -------
   const ocrTools = [
     renderTool,
     {
@@ -139,8 +140,9 @@ try {
     },
   ];
   const ocrInspected = assessDocumentDelivery({ taskContract: contract, artifacts: [artifact], tools: ocrTools });
-  assert.equal(ocrInspected.ok, true, "OCR of every rendered page satisfies visual inspection");
-  assert.equal(ocrInspected.artifacts[0].checks.visual.inspected, 2);
+  assert.equal(ocrInspected.ok, false, "OCR of every rendered page must not satisfy visual inspection");
+  assert.deepEqual(ocrInspected.missing, ["visual_inspection"]);
+  assert.equal(ocrInspected.artifacts[0].checks.visual.inspected, 0);
 
   const ocrUnrelated = assessDocumentDelivery({
     taskContract: contract,
@@ -152,6 +154,17 @@ try {
   });
   assert.equal(ocrUnrelated.ok, false, "OCR of unrelated images does not count");
   assert.deepEqual(ocrUnrelated.missing, ["visual_inspection"]);
+
+  const zhRecoveryPrompt = buildDocumentDeliveryRecoveryPrompt({ artifacts: [artifact] }, "把 Word 重新转换成 PDF，不要修改源文件");
+  assert(zhRecoveryPrompt.includes("先调用 lily_capability_status"), "recovery prompt should make capability discovery the first repair step");
+  assert(zhRecoveryPrompt.includes("runtime_pack_install"), "recovery prompt should route dependency repair through managed tools");
+  assert(zhRecoveryPrompt.includes("repair: true"), "recovery prompt should force repair unhealthy installed packs");
+  assert(zhRecoveryPrompt.includes("不要传 wait: true"), "recovery prompt should prevent MCP timeout-prone synchronous installs");
+  assert(zhRecoveryPrompt.includes("runtime_pack_list 观察进度"), "recovery prompt should observe background install progress");
+  assert(zhRecoveryPrompt.includes("优先使用平台已有的图像读取/视觉通道"), "recovery prompt should prefer available visual capability before giving up");
+  assert(zhRecoveryPrompt.includes("OCR 只能作为文字覆盖检查"), "recovery prompt must not present OCR as visual QA");
+  assert(zhRecoveryPrompt.includes("全部失败后"), "recovery prompt should fail loud only after managed repair routes fail");
+  assert(!/OCR（如 RapidOCR）逐页识别渲染图文字/.test(zhRecoveryPrompt), "old OCR-as-visual route must not return");
 
   // --- recalc requirement is artifact-driven, not prompt-keyword-driven -----
   const JSZip = require("jszip");
@@ -182,7 +195,6 @@ try {
 
   // The internal recovery prompt mentions formulas/recalc — it must NOT create
   // a recalc requirement for a formula-free workbook (the 报销 case).
-  const { buildDocumentDeliveryRecoveryPrompt } = require("../src/main/document-delivery-gate.js");
   const internalPrompt = buildDocumentDeliveryRecoveryPrompt({ artifacts: [plainArtifact] }, "重新生成excel 格式缺失");
   const plainResult = assessDocumentDelivery({
     taskContract: contract,

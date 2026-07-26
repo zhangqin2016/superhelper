@@ -169,9 +169,16 @@ function buildPythonProbeEnv(packDir = "") {
     .concat(baseEnv.PYTHONPATH ? [baseEnv.PYTHONPATH] : [])
     .join(path.delimiter);
   const pathEntries = uniqueExistingPaths([...(packDir ? pythonPackLibraryDirs(packDir) : [])]);
+  const numbaCacheDir = process.env.NUMBA_CACHE_DIR || path.join(os.tmpdir(), "lily-numba-cache");
+  try {
+    fs.mkdirSync(numbaCacheDir, { recursive: true });
+  } catch {
+    // If the cache directory cannot be created, the probe will surface the import error.
+  }
   return {
     ...baseEnv,
     ...(pythonPath ? { PYTHONPATH: pythonPath } : {}),
+    NUMBA_CACHE_DIR: numbaCacheDir,
     PATH: [...pathEntries, baseEnv.PATH || ""].filter(Boolean).join(path.delimiter),
   };
 }

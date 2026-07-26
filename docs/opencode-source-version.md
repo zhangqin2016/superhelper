@@ -4,12 +4,12 @@ The local `opencode/` directory is an ignored development reference copy, not
 tracked project source. It should match the OpenCode engine and SDK versions that
 Lily ships against.
 
-- Upstream: `sst/opencode`
-- Source tag: `v1.17.17`
+- Upstream: `anomalyco/opencode`
+- Source tag: `v1.18.5`
 - Source commit: not pinned locally; the shippable engine/SDK versions are the
   npm packages below.
-- NPM engine package: `opencode-ai@1.17.17`
-- NPM SDK package: `@opencode-ai/sdk@1.17.17`
+- NPM engine package: `opencode-ai@1.18.5`
+- NPM SDK package: `@opencode-ai/sdk@1.18.5`
 
 `opencode/` remains ignored because it is large with dependencies. The shippable
 engine is the prebuilt binary fetched by `scripts/fetch-opencode-engine.mjs`.
@@ -20,7 +20,7 @@ When changing OpenCode versions, update this file together with
 ## Local Development Copy
 
 As of this update, the shippable OpenCode engine and SDK are pinned to
-`v1.17.17`. The ignored local `opencode/` source copy is development reference
+`v1.18.5`. The ignored local `opencode/` source copy is development reference
 only; the shippable path does not depend on that copy:
 
 - `npm run engine:opencode:all` fetches the prebuilt Win/Mac engine binaries.

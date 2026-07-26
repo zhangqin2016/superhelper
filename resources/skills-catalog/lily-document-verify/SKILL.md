@@ -21,6 +21,12 @@ Text extraction tells you what a document says; it cannot prove the document loo
    page for artifacts up to 12 pages. For longer files, inspect the first page,
    last page, and at least 6 pages distributed across the document; inspect
    additional high-risk pages containing dense tables, charts, or images.
+   OCR is text coverage, not visual QA: it can confirm that expected text is
+   present, but it cannot prove spacing, clipping, overlap, table alignment,
+   image placement, margins, or font rendering. If the first image-reading route
+   is unavailable, try the platform's other available image-reading or vision
+   route before giving up. Only after those managed routes fail should you
+   report that visual QA is incomplete.
 4. Check clipped or overlapping text, overflow, broken tables/charts, unexpected
    blank/extra pages, missing images, font fallback, inconsistent margins,
    headers/footers, and content outside the page boundary.
@@ -39,3 +45,8 @@ Text extraction tells you what a document says; it cannot prove the document loo
   `job_status` and `job_logs`; render scripts should emit standard
   `[lily-progress]` events for file/page progress.
 - Never claim visual correctness without looking at rendered pages.
+- Never substitute OCR, text extraction, or PDF text reads for visual
+  inspection of rendered page images.
+- Do not stop at the first missing executable or unavailable image tool. Check
+  Lily capability status, use managed runtime-pack install/repair actions, and
+  retry the render/inspection route before reporting an unverified gap.

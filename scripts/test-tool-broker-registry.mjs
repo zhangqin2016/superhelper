@@ -63,6 +63,32 @@ try {
   const runtime = { sessionId: "s1", activeSkillIds: [] };
   assert(names(runtime).includes("runtime_pack_install"), "runtime-pack install is a platform tool, not gated by a skill");
   assert(findBrokerTool(runtime, "runtime_pack_install").annotations.destructiveHint === true, "runtime pack install is destructive");
+  assert(findBrokerTool(runtime, "runtime_pack_install").inputSchema.repair.safeParse(true).success === true, "runtime pack install supports repair mode");
+  assert(findBrokerTool(runtime, "runtime_pack_install").inputSchema.wait === undefined, "runtime pack install must not expose wait=true to agents");
+  const runtimeInstallCalls = [];
+  const backgroundInstall = await findBrokerTool(runtime, "runtime_pack_install").handler({
+    packId: "libreoffice",
+    repair: true,
+    wait: true,
+  }, runtime, {
+    runtimePackInstaller: {
+      startRuntimePackInstall: (packId, options) => {
+        runtimeInstallCalls.push({ mode: "start", packId, options });
+        return { ok: true, id: packId, jobId: "runtime_pack_job_1", started: true, installing: true };
+      },
+      installRuntimePack: () => {
+        throw new Error("agent-facing broker tool must not run synchronous installs");
+      },
+    },
+  });
+  assert(
+    backgroundInstall.ok === true &&
+    backgroundInstall.jobId === "runtime_pack_job_1" &&
+    runtimeInstallCalls[0]?.mode === "start" &&
+    runtimeInstallCalls[0]?.options?.repair === true &&
+    runtimeInstallCalls[0]?.options?.force === true,
+    "runtime_pack_install should always use observable background repair to avoid MCP timeouts",
+  );
   assert(
     findBrokerTool(runtime, "runtime_pack_install").executionSurface === "tool_broker" &&
     findBrokerTool(runtime, "runtime_pack_install").mcpServerName === "lily_tool_broker",
@@ -501,6 +527,7 @@ try {
     activeSkillIds: ["anthropics-xlsx"],
   }, {
     installedRuntimePackIds: () => new Set(["libreoffice"]),
+    runtimePackHealth: async () => ({ ok: true, status: "ok" }),
   });
   assert(
     runtimeDependencyStatus.runtimePacks.requiredByActiveSkills.some((item) => (
@@ -529,6 +556,31 @@ try {
       pack.installAction?.requiresConfirmation === true
     )),
     "capability status should include metadata and install action for missing active-skill runtime packs",
+  );
+  const unhealthyRuntimeDependencyStatus = await findBrokerTool(runtime, "lily_capability_status").handler({}, {
+    ...runtime,
+    activeSkillIds: ["anthropics-xlsx"],
+  }, {
+    installedRuntimePackIds: () => new Set(["libreoffice"]),
+    runtimePackHealth: async (id) => (
+      id === "libreoffice"
+        ? { ok: false, status: "failed", error: "EXECUTABLE_MISSING", checks: [{ id: "libreoffice:soffice", ok: false, error: "EXECUTABLE_MISSING" }] }
+        : { ok: true, status: "ok" }
+    ),
+  });
+  assert(
+    unhealthyRuntimeDependencyStatus.runtimePacks.missing.includes("libreoffice"),
+    "unhealthy installed runtime packs should be treated as missing for active skill readiness",
+  );
+  assert(
+    unhealthyRuntimeDependencyStatus.runtimePacks.missingDetails.some((pack) => (
+      pack.id === "libreoffice" &&
+      pack.installed === true &&
+      pack.health?.ok === false &&
+      pack.health?.error === "EXECUTABLE_MISSING" &&
+      pack.installAction?.args?.repair === true
+    )),
+    "capability status should expose why an installed runtime pack is unusable and provide a repair action",
   );
   const mailBridgeBlockedStatus = await findBrokerTool(runtime, "lily_capability_status").handler({}, {
     ...runtime,
