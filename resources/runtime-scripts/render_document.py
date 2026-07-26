@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 OFFICE_EXTS = {".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", ".odt", ".ods", ".odp"}
@@ -34,6 +35,10 @@ def _soffice():
     return "soffice"
 
 
+def _profile_uri(path):
+    return Path(path).resolve().as_uri()
+
+
 def _office_to_pdf(path, out_dir):
     soffice = _soffice()
     # --convert-to writes <basename>.pdf into out_dir. headless + a throwaway
@@ -47,7 +52,7 @@ def _office_to_pdf(path, out_dir):
             "pdf",
             "--outdir",
             out_dir,
-            f"-env:UserInstallation=file://{profile}",
+            f"-env:UserInstallation={_profile_uri(profile)}",
             path,
         ],
         check=True,
