@@ -9,7 +9,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from office.soffice import get_soffice_env
+from office.soffice import (
+    get_soffice_command,
+    get_soffice_env,
+    get_soffice_subprocess_kwargs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +60,7 @@ def accept_changes(
         return None, "Error: Failed to setup LibreOffice macro"
 
     cmd = [
-        "soffice",
+        get_soffice_command(),
         "--headless",
         f"-env:UserInstallation=file://{LIBREOFFICE_PROFILE}",
         "--norestore",
@@ -72,6 +76,7 @@ def accept_changes(
             timeout=30,
             check=False,
             env=get_soffice_env(),
+            **get_soffice_subprocess_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return (
@@ -98,7 +103,7 @@ def _setup_libreoffice_macro() -> bool:
     if not macro_dir.exists():
         subprocess.run(
             [
-                "soffice",
+                get_soffice_command(),
                 "--headless",
                 f"-env:UserInstallation=file://{LIBREOFFICE_PROFILE}",
                 "--terminate_after_init",
@@ -107,6 +112,7 @@ def _setup_libreoffice_macro() -> bool:
             timeout=10,
             check=False,
             env=get_soffice_env(),
+            **get_soffice_subprocess_kwargs(),
         )
         macro_dir.mkdir(parents=True, exist_ok=True)
 

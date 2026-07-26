@@ -10,7 +10,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from office.soffice import get_soffice_env
+from office.soffice import (
+    get_soffice_command,
+    get_soffice_env,
+    get_soffice_subprocess_kwargs,
+)
 
 from openpyxl import load_workbook
 
@@ -53,10 +57,11 @@ def setup_libreoffice_macro():
 
     if not os.path.exists(macro_dir):
         subprocess.run(
-            ["soffice", "--headless", "--terminate_after_init"],
+            [get_soffice_command(), "--headless", "--terminate_after_init"],
             capture_output=True,
             timeout=10,
             env=get_soffice_env(),
+            **get_soffice_subprocess_kwargs(),
         )
         os.makedirs(macro_dir, exist_ok=True)
 
@@ -77,7 +82,7 @@ def recalc(filename, timeout=30):
         return {"error": "Failed to setup LibreOffice macro"}
 
     cmd = [
-        "soffice",
+        get_soffice_command(),
         "--headless",
         "--norestore",
         "vnd.sun.star.script:Standard.Module1.RecalculateAndSave?language=Basic&location=application",
@@ -89,7 +94,13 @@ def recalc(filename, timeout=30):
     elif platform.system() == "Darwin" and has_gtimeout():
         cmd = ["gtimeout", str(timeout)] + cmd
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=get_soffice_env())
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        env=get_soffice_env(),
+        **get_soffice_subprocess_kwargs(),
+    )
 
     if result.returncode != 0 and result.returncode != 124:  
         error_msg = result.stderr or "Unknown error during recalculation"

@@ -184,7 +184,10 @@ function buildPythonProbeEnv(packDir = "") {
 }
 
 function findLibreOfficeExecutable(spec, packDir) {
-  const names = process.platform === "win32" ? ["soffice.com", "soffice"] : ["soffice"];
+  // LibreOffice documents soffice.com as the console entry point. A GUI app
+  // must prefer soffice.exe so background health checks never create a
+  // visible terminal window on Windows.
+  const names = process.platform === "win32" ? ["soffice.exe", "soffice"] : ["soffice"];
   for (const name of names) {
     const found = findPackExecutable(spec, packDir, name);
     if (found) return found;
@@ -219,6 +222,8 @@ async function checkLibreOfficePack(id, spec, packDir) {
     const check = await runExecutable(`${id}:soffice`, exe, args, {
       ...process.env,
       SAL_USE_VCLPLUGIN: process.env.SAL_USE_VCLPLUGIN || "svp",
+      SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION:
+        process.env.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION || "1",
     }, { timeoutMs: LIBREOFFICE_CHECK_TIMEOUT_MS });
     return {
       id,

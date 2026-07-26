@@ -15,6 +15,7 @@ Usage:
 """
 
 import os
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -24,6 +25,7 @@ from pathlib import Path
 def get_soffice_env() -> dict:
     env = os.environ.copy()
     env["SAL_USE_VCLPLUGIN"] = "svp"
+    env["SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION"] = "1"
 
     if _needs_shim():
         shim = _ensure_shim()
@@ -32,9 +34,30 @@ def get_soffice_env() -> dict:
     return env
 
 
+def get_soffice_command() -> str:
+    program = os.environ.get("LILY_LIBREOFFICE_PROGRAM")
+    if program:
+        names = ("soffice.exe", "soffice") if os.name == "nt" else ("soffice",)
+        for name in names:
+            candidate = Path(program) / name
+            if candidate.exists():
+                return str(candidate)
+    if os.name == "nt":
+        return shutil.which("soffice.exe") or shutil.which("soffice") or "soffice.exe"
+    return shutil.which("soffice") or "soffice"
+
+
+def get_soffice_subprocess_kwargs() -> dict:
+    if os.name != "nt":
+        return {}
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+
+
 def run_soffice(args: list[str], **kwargs) -> subprocess.CompletedProcess:
-    env = get_soffice_env()
-    return subprocess.run(["soffice"] + args, env=env, **kwargs)
+    kwargs.setdefault("env", get_soffice_env())
+    for key, value in get_soffice_subprocess_kwargs().items():
+        kwargs.setdefault(key, value)
+    return subprocess.run([get_soffice_command()] + args, **kwargs)
 
 
 
@@ -42,6 +65,8 @@ _SHIM_SO = Path(tempfile.gettempdir()) / "lo_socket_shim.so"
 
 
 def _needs_shim() -> bool:
+    if os.name == "nt" or not hasattr(socket, "AF_UNIX"):
+        return False
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.close()

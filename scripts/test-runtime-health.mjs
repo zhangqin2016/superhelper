@@ -75,6 +75,12 @@ try {
   const libreOfficeDir = packs.packDir("libreoffice");
   const sofficeExe =
     process.platform === "win32" ? path.join(libreOfficeDir, "program", "soffice.cmd") : path.join(libreOfficeDir, "program", "soffice");
+  if (process.platform === "win32") {
+    makeExecutable(
+      path.join(libreOfficeDir, "program", "soffice.com"),
+      "this console entry must never be selected by a GUI background health check\n",
+    );
+  }
   const sofficeArgsPath = path.join(tmp, "soffice-args.txt");
   process.env.LILY_TEST_SOFFICE_ARGS = sofficeArgsPath;
   makeExecutable(
@@ -134,11 +140,28 @@ try {
   assert(pandoc.ok, `pandoc health should execute the installed binary: ${JSON.stringify(pandoc)}`);
   const libreoffice = await health.checkRuntimePackHealth("libreoffice");
   assert(libreoffice.ok, `libreoffice health should run headless without opening the first-start UI: ${JSON.stringify(libreoffice)}`);
+  if (process.platform === "win32") {
+    assert(
+      /\.cmd$/i.test(libreoffice.checks?.[0]?.path || ""),
+      `Windows health must skip the console soffice.com entry: ${JSON.stringify(libreoffice)}`,
+    );
+  }
   const sofficeArgs = fs.readFileSync(sofficeArgsPath, "utf8");
   for (const arg of ["--headless", "--invisible", "--nofirststartwizard", "--terminate_after_init", "-env:UserInstallation="]) {
     assert(sofficeArgs.includes(arg), `libreoffice health must include ${arg}: ${sofficeArgs}`);
   }
   assert(!sofficeArgs.includes("--version"), `libreoffice health must not use GUI-prone --version probing: ${sofficeArgs}`);
+  if (process.platform === "win32") {
+    // Runtime environment discovery requires the real GUI entry point. Add it
+    // only after the health probe so the executable-selection trap above still
+    // proves soffice.com is never chosen.
+    makeExecutable(path.join(libreOfficeDir, "program", "soffice.exe"), "");
+  }
+  const libreOfficeEnv = runtimePython.getRuntimeEnvExtras();
+  assert(
+    libreOfficeEnv.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION === "1",
+    `managed LibreOffice must not synchronously connect to the user's default printer: ${JSON.stringify(libreOfficeEnv)}`,
+  );
 
   if (runtimePython.resolveVenvPython()) {
     const proPdf = await health.checkRuntimePackHealth("pro-pdf");

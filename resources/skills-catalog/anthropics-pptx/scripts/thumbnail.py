@@ -23,7 +23,11 @@ import zipfile
 from pathlib import Path
 
 import defusedxml.minidom
-from office.soffice import get_soffice_env
+from office.soffice import (
+    get_soffice_command,
+    get_soffice_env,
+    get_soffice_subprocess_kwargs,
+)
 from PIL import Image, ImageDraw, ImageFont
 
 THUMBNAIL_WIDTH = 300
@@ -160,7 +164,7 @@ def convert_to_images(pptx_path: Path, temp_dir: Path) -> list[Path]:
 
     result = subprocess.run(
         [
-            "soffice",
+            get_soffice_command(),
             "--headless",
             "--convert-to",
             "pdf",
@@ -171,6 +175,7 @@ def convert_to_images(pptx_path: Path, temp_dir: Path) -> list[Path]:
         capture_output=True,
         text=True,
         env=get_soffice_env(),
+        **get_soffice_subprocess_kwargs(),
     )
     if result.returncode != 0 or not pdf_path.exists():
         raise RuntimeError("PDF conversion failed")

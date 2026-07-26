@@ -293,6 +293,9 @@ function getRuntimeEnvExtras() {
   if (sofficeDir) {
     extras.LILY_LIBREOFFICE_PROGRAM = sofficeDir;
     extras.UNO_PATH = resolveUnoPath(sofficeDir);
+    extras.SAL_USE_VCLPLUGIN = process.env.SAL_USE_VCLPLUGIN || "svp";
+    extras.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION =
+      process.env.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION || "1";
   }
   const cjkFontPath = resolveCjkFontPath();
   if (cjkFontPath) extras.LILY_CJK_FONT_PATH = cjkFontPath;

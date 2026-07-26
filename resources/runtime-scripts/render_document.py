@@ -15,6 +15,7 @@ Emits a single JSON object on stdout:
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -28,11 +29,27 @@ def _soffice():
     # is set by getRuntimeEnvExtras. Fall back to PATH lookup.
     program = os.environ.get("LILY_LIBREOFFICE_PROGRAM")
     if program:
-        for name in ("soffice", "soffice.bin", "soffice.exe"):
+        names = ("soffice.exe", "soffice", "soffice.bin") if os.name == "nt" else ("soffice", "soffice.bin")
+        for name in names:
             candidate = os.path.join(program, name)
             if os.path.exists(candidate):
                 return candidate
-    return "soffice"
+    if os.name == "nt":
+        return shutil.which("soffice.exe") or shutil.which("soffice") or "soffice.exe"
+    return shutil.which("soffice") or "soffice"
+
+
+def _office_env():
+    env = os.environ.copy()
+    env.setdefault("SAL_USE_VCLPLUGIN", "svp")
+    env.setdefault("SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION", "1")
+    return env
+
+
+def _subprocess_options():
+    if os.name != "nt":
+        return {}
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
 
 
 def _profile_uri(path):
@@ -48,6 +65,12 @@ def _office_to_pdf(path, out_dir):
         [
             soffice,
             "--headless",
+            "--invisible",
+            "--nologo",
+            "--nodefault",
+            "--nofirststartwizard",
+            "--nolockcheck",
+            "--norestore",
             "--convert-to",
             "pdf",
             "--outdir",
@@ -58,6 +81,8 @@ def _office_to_pdf(path, out_dir):
         check=True,
         capture_output=True,
         timeout=180,
+        env=_office_env(),
+        **_subprocess_options(),
     )
     base = os.path.splitext(os.path.basename(path))[0]
     pdf = os.path.join(out_dir, base + ".pdf")
