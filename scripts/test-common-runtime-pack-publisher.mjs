@@ -39,6 +39,11 @@ assert.match(
   /rembg:[\s\S]*numpy>=1\.26,<2\.5/,
   "rembg runtime pack must carry a NumPy pin compatible with numba/pymatting",
 );
+assert.match(
+  specs,
+  /rembg:[\s\S]*numba>=0\.61,<0\.63/,
+  "rembg runtime pack must stay on a numba line that ships Python 3.12 Intel Mac wheels",
+);
 for (const category of ["document", "image", "browser", "media"]) {
   assert.match(specs, new RegExp(`id: "${category}"`), `dependency catalog must include ${category} group`);
 }

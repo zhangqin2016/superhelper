@@ -199,7 +199,7 @@ const PACK_SPECS = {
     installKind: "python-target",
     pythonPath: true,
     pythonPathPriority: 50,
-    requirements: ["rembg>=2,<3", "numpy>=1.26,<2.5", "numba>=0.61"],
+    requirements: ["rembg>=2,<3", "numpy>=1.26,<2.5", "numba>=0.61,<0.63"],
     probe: "import rembg",
     sizeEstimate: "≈80-250MB download / varies by platform",
     label: {

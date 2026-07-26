@@ -17,5 +17,99 @@
     "rembg",
     "web-automation"
   ],
-  "entries": []
+  "entries": [
+    {
+      "packId": "ffmpeg",
+      "platform": "darwin-x64",
+      "version": "ffmpeg-static-5.3.0_ffprobe-static-3.1.0",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/ffmpeg-darwin-x64-ffmpeg-static-5.3.0_ffprobe-static-3.1.0.tar.gz",
+      "sha256": "128d687b997c59f658368d9b458a887837def989a0a362b6643796e8afe7bdeb",
+      "sizeBytes": 46091794,
+      "healthProbe": "ffmpeg -version && ffprobe -version",
+      "enabled": true,
+      "verifiedAt": "2026-07-26T20:01:11.753Z"
+    },
+    {
+      "packId": "opencv",
+      "platform": "darwin-x64",
+      "version": "4.13.0.92",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/opencv-darwin-x64-4.13.0.92.tar.gz",
+      "sha256": "e0e095e1a8e6031ff9472031dd104dd0f96996944544a5eefa4faef58d023e36",
+      "sizeBytes": 39732459,
+      "healthProbe": "import cv2",
+      "enabled": true,
+      "verifiedAt": "2026-07-26T20:05:23.409Z"
+    },
+    {
+      "packId": "pandoc",
+      "platform": "darwin-x64",
+      "version": "3.10",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/pandoc-darwin-x64-3.10.tar.gz",
+      "sha256": "6959e8429728d6bc214ccf038756df82a20ceddd724077ee1a33c61d60bfe35b",
+      "sizeBytes": 25708590,
+      "healthProbe": "pandoc --version",
+      "enabled": true,
+      "verifiedAt": "2026-07-26T20:38:06.588Z"
+    },
+    {
+      "packId": "pillow",
+      "platform": "darwin-x64",
+      "version": "11.3.0",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/pillow-darwin-x64-11.3.0.tar.gz",
+      "sha256": "d17444394496f9f681a4faa1718f84456365a2919a2b4d723e9809646be71969",
+      "sizeBytes": 5339385,
+      "healthProbe": "from PIL import Image",
+      "enabled": true,
+      "verifiedAt": "2026-07-26T20:04:06.062Z"
+    },
+    {
+      "packId": "pro-pdf",
+      "platform": "darwin-x64",
+      "version": "2.115.0",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/pro-pdf-darwin-x64-2.115.0.tar.gz",
+      "sha256": "95a952fb1ee0fc6f767250b6c4e7ed1ea123157741553333bc40186cb8062511",
+      "sizeBytes": 312342902,
+      "healthProbe": "import docling",
+      "enabled": true,
+      "verifiedAt": "2026-07-26T20:31:33.407Z"
+    },
+    {
+      "packId": "rapidocr",
+      "platform": "darwin-x64",
+      "version": "1.4.4",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/rapidocr-darwin-x64-1.4.4.tar.gz",
+      "sha256": "f5ba4738987732490cb0f45a7f66d86da28e51f1501fc3f65c25abf2b6a2e618",
+      "sizeBytes": 91262279,
+      "healthProbe": "from rapidocr_onnxruntime import RapidOCR",
+      "enabled": true,
+      "verifiedAt": "2026-07-26T20:06:41.977Z"
+    },
+    {
+      "packId": "rembg",
+      "platform": "darwin-x64",
+      "version": "2.0.77",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/rembg-darwin-x64-2.0.77.tar.gz",
+      "sha256": "5bfb382280114ea24d18a7ea18cefff449c0a8c12accf1ceeb584f3ae83bb1ff",
+      "sizeBytes": 102424252,
+      "healthProbe": "import rembg",
+      "enabled": true,
+      "verifiedAt": "2026-07-26T20:11:35.676Z"
+    },
+    {
+      "packId": "web-automation",
+      "platform": "darwin-x64",
+      "version": "playwright-1.61.1_mcp-0.0.77",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/web-automation-darwin-x64-playwright-1.61.1_mcp-0.0.77.tar.gz",
+      "sha256": "d6b730c054e8c362bea8832e40502db093fac58b2e21efb6e0c67e82ab8bdf3b",
+      "sizeBytes": 266897249,
+      "healthProbe": "node:playwright+chromium",
+      "enabled": true,
+      "components": {
+        "playwright": "1.61.1",
+        "@playwright/mcp": "0.0.77",
+        "chromiumRevision": "1228"
+      },
+      "verifiedAt": "2026-07-26T20:40:06.885Z"
+    }
+  ]
 }
