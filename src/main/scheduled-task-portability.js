@@ -9,6 +9,7 @@ const {
 
 const AUTOMATION_SCHEMA_VERSION = 1;
 const AUTOMATIONS_ENTRY = ".lilyspace/automations.json";
+const MAX_AUTOMATIONS_BYTES = 256 * 1024;
 const PORTABLE_PERMISSION_MODES = new Set([
   DEFAULT_PERMISSION_MODE,
   "plan",
@@ -94,13 +95,33 @@ function writeAutomationEntry(zip, value) {
 
 async function readAutomationEntry(entry) {
   if (!entry) return { automationTemplates: [], skippedAutomations: [] };
+  const declaredSize = Number(entry?._data?.uncompressedSize || 0);
+  if (declaredSize > MAX_AUTOMATIONS_BYTES) {
+    return {
+      automationTemplates: [],
+      skippedAutomations: [{ index: -1, reason: "AUTOMATIONS_TOO_LARGE" }],
+    };
+  }
   let value;
   try {
-    value = JSON.parse(await entry.async("string"));
+    const text = await entry.async("string");
+    if (Buffer.byteLength(text, "utf8") > MAX_AUTOMATIONS_BYTES) {
+      return {
+        automationTemplates: [],
+        skippedAutomations: [{ index: -1, reason: "AUTOMATIONS_TOO_LARGE" }],
+      };
+    }
+    value = JSON.parse(text);
   } catch {
     return {
       automationTemplates: [],
       skippedAutomations: [{ index: -1, reason: "AUTOMATIONS_CORRUPT" }],
+    };
+  }
+  if (Number(value?.schemaVersion || 0) > AUTOMATION_SCHEMA_VERSION) {
+    return {
+      automationTemplates: [],
+      skippedAutomations: [{ index: -1, reason: "AUTOMATIONS_TOO_NEW" }],
     };
   }
   const normalized = normalizeTaskTemplates(value);
@@ -113,6 +134,7 @@ async function readAutomationEntry(entry) {
 module.exports = {
   AUTOMATIONS_ENTRY,
   AUTOMATION_SCHEMA_VERSION,
+  MAX_AUTOMATIONS_BYTES,
   exportTaskTemplates,
   importPausedTaskTemplates,
   normalizeTaskTemplates,

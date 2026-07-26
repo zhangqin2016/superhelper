@@ -120,6 +120,43 @@ try {
   assert.equal(normalized.templates.length, 1, "valid task remains importable");
   assert.equal(normalized.skipped.length, 1, "malformed task is skipped and reported");
 
+  const futureAutomationZip = new (await import("jszip")).default();
+  futureAutomationZip.file(portability.AUTOMATIONS_ENTRY, JSON.stringify({
+    schemaVersion: portability.AUTOMATION_SCHEMA_VERSION + 1,
+    tasks: [templates[0]],
+  }));
+  const futureEntry = futureAutomationZip.file(portability.AUTOMATIONS_ENTRY);
+  const futureAutomations = await portability.readAutomationEntry(futureEntry);
+  assert.deepEqual(futureAutomations.automationTemplates, []);
+  assert.deepEqual(futureAutomations.skippedAutomations, [
+    { index: -1, reason: "AUTOMATIONS_TOO_NEW" },
+  ]);
+
+  const ipcProjects = fs.readFileSync(path.join(process.cwd(), "src/main/ipc-projects.js"), "utf8");
+  const ipcExport = fs.readFileSync(path.join(process.cwd(), "src/main/ipc-workspace-export.js"), "utf8");
+  const projectTree = fs.readFileSync(path.join(process.cwd(), "src/renderer/modules/project-tree.js"), "utf8");
+  const exportDialog = fs.readFileSync(path.join(process.cwd(), "src/renderer/modules/workspace-export-dialog.js"), "utf8");
+  assert.match(
+    `${ipcProjects}\n${ipcExport}`,
+    /previewProjectTasks\(ctx\.scheduledTaskManager,\s*project\.id\)/,
+    "export preview lists only tasks from the selected workspace",
+  );
+  assert.match(
+    `${ipcProjects}\n${ipcExport}`,
+    /selectedScheduledTaskIds/,
+    "export IPC accepts explicit scheduled-task selections",
+  );
+  assert.match(
+    `${projectTree}\n${exportDialog}`,
+    /scheduledTasks/,
+    "export confirmation renders scheduled-task choices",
+  );
+  assert.match(
+    `${projectTree}\n${exportDialog}`,
+    /selectedScheduledTaskIds/,
+    "renderer sends only checked scheduled tasks",
+  );
+
   console.log("workspace-automation-sharing: ok");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

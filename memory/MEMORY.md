@@ -10,6 +10,7 @@
 - [Context OS And Memory Compaction](context-os-memory-compaction.md) — do not duplicate runtime raw history; build Lily's cross-runtime memory, compaction, budget, and evidence layer above OpenCode
 - [Context OS Gap Audit](context-os-gap-audit.md) — remaining work to reach/beat Claude Code-style context and memory management
 - [Workspace Pack Compatibility](2026-06-28-workspace-pack-compat.md) — new root-layout `.lilyspace.zip` exports must retain a legacy mirror so older clients can import shared apps
+- [Workspace Automation Portability And Drag Import](2026-07-26-workspace-automation-portability.md) — shared tasks are definition-only, opt-in, and always imported paused; package detection fails open to ordinary chat attachment
 - [OpenCode Prompt Acceptance Watchdog](2026-06-28-opencode-prompt-acceptance-watchdog.md) — `promptAsync` success does not prove a turn started; verify owned activity or recover/fail without hanging
 - [OpenCode Prompt Acceptance Watchdog](2026-06-28-opencode-prompt-acceptance-watchdog.md) — `promptAsync` success is not enough; verify the turn actually starts, and anchor history recovery to the current user prompt
 - [Clipboard Document Paste](2026-06-29-clipboard-document-paste.md) — native clipboard file formats need main-process fallback; document extraction failure must fail loud instead of answering blind

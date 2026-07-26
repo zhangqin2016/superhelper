@@ -131,7 +131,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   removeProject: (projectId) => ipcRenderer.invoke("project:remove", projectId),
   exportPackPreview: (projectId) => ipcRenderer.invoke("project:export-preview", projectId),
   exportPack: (projectId, options = {}) => ipcRenderer.invoke("project:export-pack", projectId, options),
-  importPack: () => ipcRenderer.invoke("project:import-pack"),
+  inspectWorkspacePackage: (filePath) => ipcRenderer.invoke("project:inspect-pack-path", filePath),
+  pickWorkspacePackage: () => ipcRenderer.invoke("project:pick-pack"),
+  importWorkspacePackagePath: (payload) => ipcRenderer.invoke("project:import-pack-path", payload),
 
   listSessions: () => ipcRenderer.invoke("session:list"),
   createSession: (title, projectId) => ipcRenderer.invoke("session:create", title, projectId),

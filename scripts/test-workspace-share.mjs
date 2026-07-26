@@ -287,6 +287,29 @@ try {
   await share.importWorkspacePack(rootEvilBuf, path.join(tmp, "root-evil-dest")).catch(() => {});
   if (fs.existsSync(path.join(tmp, "escaped-root.txt"))) throw new Error("root-layout zip-slip wrote outside the target!");
 
+  const compressedBomb = new JSZip();
+  compressedBomb.file(share.MANIFEST_NAME, JSON.stringify({
+    schemaVersion: share.SCHEMA_VERSION,
+    kind: "lily-workspace-pack",
+    name: "Compressed bomb",
+  }));
+  compressedBomb.file("files/large.txt", "x".repeat(2048));
+  const compressedBombBuffer = await compressedBomb.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+  });
+  let rejectedBomb = false;
+  try {
+    await share.importWorkspacePack(
+      compressedBombBuffer,
+      path.join(tmp, "compressed-bomb"),
+      { maxTotalBytes: 1024 },
+    );
+  } catch (error) {
+    rejectedBomb = error.message === "PACK_UNCOMPRESSED_TOO_LARGE";
+  }
+  if (!rejectedBomb) throw new Error("compressed package expansion must be bounded before extraction");
+
   // Reject non-packs and future schema versions.
   const emptyPack = new JSZip();
   emptyPack.file(share.MANIFEST_NAME, JSON.stringify({ kind: "lily-workspace-pack", schemaVersion: 1, requiredSkills: [] }));

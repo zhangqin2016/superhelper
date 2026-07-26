@@ -5,6 +5,7 @@ const path = require("node:path");
 const JSZip = require("jszip");
 const exportPlanner = require("./workspace-export-planner");
 const packCompat = require("./workspace-pack-compat");
+const packLimits = require("./workspace-pack-limits");
 const taskPortability = require("./scheduled-task-portability");
 
 /**
@@ -72,6 +73,7 @@ const SCANNABLE_EXT = new Set([
   ".xml", ".properties", ".java", ".go", ".rb", ".php", ".env",
 ]);
 const SECRET_SCAN_MAX_BYTES = 512 * 1024;
+const MAX_MANIFEST_BYTES = 1024 * 1024;
 const DOMAIN_RE = /\bhttps?:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?/ig;
 const CREDENTIAL_TERM_RE =
   /\b(cookie|cookies|token|refresh[_-]?token|access[_-]?token|authorization|bearer|password|passwd|account|username|login|email|tenant|customer|client|secret|session|credential)\b/ig;
@@ -414,7 +416,14 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     exportedAt: String(exportedAt || ""),
     fileCount: files.length,
     hasConventions: Boolean(conv),
-    requiredSkills: Array.isArray(requiredSkills) ? requiredSkills.filter(Boolean) : [],
+    requiredSkills: [...new Set([
+      ...(Array.isArray(requiredSkills) ? requiredSkills : []),
+      ...(workspaceApp?.requiredSkills || []),
+    ].filter(Boolean))],
+    ...(workspaceApp?.requiredRuntimePacks?.length
+      ? { requiredRuntimePacks: [...new Set(workspaceApp.requiredRuntimePacks)] }
+      : {}),
+    ...(workspaceApp?.publisher ? { publisher: workspaceApp.publisher } : {}),
     workspaceSkills: exportedWorkspaceSkills,
     automationCount,
   };
@@ -466,9 +475,16 @@ async function readPackManifest(zipBuffer) {
   const hiddenEntry = zip.file(PACK_MANIFEST_ENTRY);
   const entry = hiddenEntry || zip.file(MANIFEST_NAME);
   if (!entry) throw new Error("NOT_A_WORKSPACE_PACK");
+  if (Number(entry?._data?.uncompressedSize || 0) > MAX_MANIFEST_BYTES) {
+    throw new Error("MANIFEST_TOO_LARGE");
+  }
+  const text = await entry.async("string");
+  if (Buffer.byteLength(text, "utf8") > MAX_MANIFEST_BYTES) {
+    throw new Error("MANIFEST_TOO_LARGE");
+  }
   let manifest;
   try {
-    manifest = JSON.parse(await entry.async("string"));
+    manifest = JSON.parse(text);
   } catch {
     throw new Error("MANIFEST_CORRUPT");
   }
@@ -549,8 +565,9 @@ async function importWorkspaceSkills(zip, manifest, targetDir) {
  * workspace skills restored into a temporary import area.
  * @returns {Promise<{ manifest: object, conventions: string, workspaceSkills: object[] }>}
  */
-async function importWorkspacePack(zipBuffer, targetDir) {
+async function importWorkspacePack(zipBuffer, targetDir, options = {}) {
   const { zip, manifest, layout } = await readPackManifest(zipBuffer);
+  packLimits.assertImportArchiveLimits(zip, options);
   fs.mkdirSync(targetDir, { recursive: true });
 
   const legacyEntries = Object.values(zip.files).filter((e) => !e.dir && e.name.startsWith(FILES_PREFIX));
@@ -595,6 +612,8 @@ module.exports = {
   EXCLUDED_DIRS,
   MAX_FILE_BYTES,
   MAX_TOTAL_FILES,
+  MAX_IMPORT_FILES: packLimits.MAX_IMPORT_FILES,
+  MAX_IMPORT_TOTAL_BYTES: packLimits.MAX_IMPORT_TOTAL_BYTES,
   LEGACY_MIRROR_MAX_TOTAL_BYTES,
   normalizeRelPath,
   isExcluded,
@@ -610,6 +629,7 @@ module.exports = {
   previewExport,
   exportWorkspacePack,
   readPackManifest,
+  assertImportArchiveLimits: packLimits.assertImportArchiveLimits,
   importWorkspacePack,
   safeJoin,
 };

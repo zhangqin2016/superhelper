@@ -10,8 +10,11 @@ import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { isSessionRunning, getSessionAttention } from "./session-runtime-store.js";
+import { confirmWorkspacePackExport } from "./workspace-export-dialog.js";
+import { reviewWorkspacePackage } from "./workspace-package-review.js";
 import { reorderWorkspaceByCommand } from "./workspace-order.js";
 import { createWorkspaceProjectHeader } from "./workspace-project-header.js";
+
 const container = () => $("projectTree");
 
 // Which projects are collapsed
@@ -43,254 +46,6 @@ async function renameSessionById(sessionId, currentTitle) {
     updateTopbarTitles();
   }
   return result.ok;
-}
-
-function formatBytes(bytes) {
-  const value = Number(bytes || 0);
-  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${value} B`;
-}
-
-function workspaceSkillRiskLabel(warning) {
-  const value = warning?.value ? `: ${warning.value}` : "";
-  if (warning?.kind === "domain") return `${t("pack.skillRiskDomain")}${value}`;
-  if (warning?.kind === "credential-term") return `${t("pack.skillRiskCredential")}${value}`;
-  if (warning?.kind === "secret") return `${t("pack.skillRiskSecret")}${value}`;
-  if (warning?.kind === "workspace-identity") return `${t("pack.skillRiskIdentity")}${value}`;
-  return warning?.label || t("pack.skillRiskUnknown");
-}
-
-function exportCategoryLabel(category) {
-  const key = `pack.exportCategory.${category}`;
-  const label = t(key);
-  return label === key ? category : label;
-}
-
-function confirmWorkspacePackExport(info, sizeMb) {
-  return new Promise((resolve) => {
-    const workspaceSkills = Array.isArray(info.workspaceSkills) ? info.workspaceSkills : [];
-    const riskySkills = workspaceSkills.filter((skill) => Array.isArray(skill.riskWarnings) && skill.riskWarnings.length);
-    const overlay = document.createElement("section");
-    overlay.className = "modal-panel workspace-export-panel";
-
-    const card = document.createElement("div");
-    card.className = "modal-card workspace-export-card";
-    overlay.appendChild(card);
-
-    const header = document.createElement("header");
-    header.className = "modal-header";
-    const titleWrap = document.createElement("div");
-    const title = document.createElement("h2");
-    title.textContent = t("pack.exportConfirmTitle");
-    const lead = document.createElement("p");
-    lead.textContent = t("pack.exportConfirmBody", { count: info.preview.fileCount, size: sizeMb });
-    titleWrap.append(title, lead);
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "topbar-btn";
-    closeBtn.textContent = t("prompt.cancel");
-    header.append(titleWrap, closeBtn);
-    card.appendChild(header);
-
-    const body = document.createElement("div");
-    body.className = "workspace-export-body";
-    card.appendChild(body);
-
-    if (info.requiredSkills?.length) {
-      const required = document.createElement("p");
-      required.className = "workspace-export-note";
-      required.textContent = t("pack.requiredSkills", { count: info.requiredSkills.length });
-      body.appendChild(required);
-    }
-
-    const categorySummary = Array.isArray(info.preview?.categorySummary) ? info.preview.categorySummary : [];
-    if (categorySummary.length) {
-      const planSection = document.createElement("section");
-      planSection.className = "workspace-export-data workspace-export-plan";
-      const planTitle = document.createElement("h3");
-      planTitle.textContent = t("pack.exportPlanTitle");
-      const planIntro = document.createElement("p");
-      planIntro.textContent = t("pack.exportPlanIntro");
-      const planList = document.createElement("div");
-      planList.className = "workspace-export-data-list";
-      for (const item of categorySummary.slice(0, 8)) {
-        const chip = document.createElement("span");
-        chip.textContent = t("pack.exportPlanItem", {
-          category: exportCategoryLabel(item.category),
-          count: item.fileCount || 0,
-          size: formatBytes(item.totalBytes || 0),
-        });
-        planList.appendChild(chip);
-      }
-      planSection.append(planTitle, planIntro, planList);
-      body.appendChild(planSection);
-    }
-
-    const skippedFileCount = Number(info.preview?.skippedFileCount || 0);
-    if (skippedFileCount > 0) {
-      const skipped = document.createElement("div");
-      skipped.className = "workspace-export-warning";
-      const examples = (info.preview?.skippedFiles || [])
-        .slice(0, 5)
-        .map((file) => file.relPath)
-        .join(", ");
-      skipped.textContent = t("pack.skippedFilesWarning", {
-        count: skippedFileCount,
-        size: formatBytes(info.preview?.limits?.maxFileBytes || 0),
-        files: examples || "-",
-      });
-      body.appendChild(skipped);
-    }
-
-    if (info.preview?.truncated) {
-      const truncated = document.createElement("div");
-      truncated.className = "workspace-export-warning";
-      truncated.textContent = t("pack.truncatedWarning", {
-        count: info.preview?.limits?.maxTotalFiles || 0,
-      });
-      body.appendChild(truncated);
-    }
-
-    const appDataPaths = Array.isArray(info.preview?.appDataPaths) ? info.preview.appDataPaths : [];
-    if (appDataPaths.length) {
-      const dataSection = document.createElement("section");
-      dataSection.className = "workspace-export-data";
-      const dataTitle = document.createElement("h3");
-      dataTitle.textContent = t("pack.appDataTitle");
-      const dataIntro = document.createElement("p");
-      dataIntro.textContent = t("pack.appDataIntro");
-      const dataList = document.createElement("div");
-      dataList.className = "workspace-export-data-list";
-      for (const dataPath of appDataPaths) {
-        const item = document.createElement("span");
-        item.textContent = t("pack.appDataItem", {
-          path: dataPath.path,
-          count: dataPath.fileCount || 0,
-          size: formatBytes(dataPath.totalBytes || 0),
-        });
-        dataList.appendChild(item);
-      }
-      dataSection.append(dataTitle, dataIntro, dataList);
-      body.appendChild(dataSection);
-    }
-
-    const fileWarnings = info.preview.secretWarnings || [];
-    if (fileWarnings.length) {
-      const warn = document.createElement("div");
-      warn.className = "workspace-export-warning";
-      warn.textContent = t("pack.secretWarning", {
-        count: fileWarnings.length,
-        files: fileWarnings.slice(0, 5).map((w) => w.relPath).join(", "),
-      });
-      body.appendChild(warn);
-    }
-
-    const skillSection = document.createElement("section");
-    skillSection.className = "workspace-export-skills";
-    const skillTitle = document.createElement("h3");
-    skillTitle.textContent = t("pack.workspaceSkillsTitle");
-    const skillIntro = document.createElement("p");
-    skillIntro.textContent = workspaceSkills.length
-      ? t("pack.workspaceSkillsIntro")
-      : t("pack.noWorkspaceSkills");
-    skillSection.append(skillTitle, skillIntro);
-
-    if (workspaceSkills.length) {
-      const list = document.createElement("div");
-      list.className = "workspace-export-skill-list";
-      for (const skill of workspaceSkills) {
-        const item = document.createElement("article");
-        item.className = `workspace-export-skill${skill.riskWarnings?.length ? " has-risk" : ""}`;
-        const itemHead = document.createElement("div");
-        itemHead.className = "workspace-export-skill-head";
-        const name = document.createElement("strong");
-        name.textContent = skill.name || skill.id;
-        const meta = document.createElement("span");
-        meta.textContent = `${skill.id} · v${skill.version || "0.1.0"} · ${t("pack.skillFiles", { count: skill.fileCount || 0, size: formatBytes(skill.totalBytes) })}`;
-        itemHead.append(name, meta);
-        item.appendChild(itemHead);
-
-        if (skill.riskWarnings?.length) {
-          const riskTitle = document.createElement("div");
-          riskTitle.className = "workspace-export-risk-title";
-          riskTitle.textContent = t("pack.skillWarningTitle");
-          item.appendChild(riskTitle);
-          const risks = document.createElement("ul");
-          risks.className = "workspace-export-risk-list";
-          for (const warning of skill.riskWarnings.slice(0, 8)) {
-            const li = document.createElement("li");
-            const path = warning.relPath ? ` (${warning.relPath})` : "";
-            li.textContent = `${workspaceSkillRiskLabel(warning)}${path}`;
-            risks.appendChild(li);
-          }
-          item.appendChild(risks);
-        }
-        list.appendChild(item);
-      }
-      skillSection.appendChild(list);
-    }
-    body.appendChild(skillSection);
-
-    const includeRow = document.createElement("label");
-    includeRow.className = "workspace-export-include";
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = false;
-    checkbox.disabled = workspaceSkills.length === 0;
-    const includeText = document.createElement("span");
-    includeText.textContent = workspaceSkills.length
-      ? t("pack.workspaceSkillsInclude")
-      : t("pack.workspaceSkillsDefaultOff");
-    includeRow.append(checkbox, includeText);
-    body.appendChild(includeRow);
-
-    if (riskySkills.length) {
-      const risk = document.createElement("div");
-      risk.className = "workspace-export-danger";
-      risk.textContent = t("pack.workspaceSkillRiskSummary", { count: riskySkills.length });
-      body.appendChild(risk);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "workspace-export-actions";
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "dialog-btn";
-    cancel.textContent = t("prompt.cancel");
-    const confirm = document.createElement("button");
-    confirm.type = "button";
-    confirm.className = "dialog-btn dialog-btn--primary";
-    const updateConfirmText = () => {
-      confirm.textContent = checkbox.checked
-        ? t("pack.exportWithWorkspaceSkills")
-        : t("pack.exportWithoutWorkspaceSkills");
-    };
-    updateConfirmText();
-    actions.append(cancel, confirm);
-    card.appendChild(actions);
-
-    const finish = (value) => {
-      overlay.remove();
-      document.removeEventListener("keydown", onKeyDown);
-      resolve(value);
-    };
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") finish(null);
-    };
-
-    checkbox.addEventListener("change", updateConfirmText);
-    closeBtn.addEventListener("click", () => finish(null));
-    cancel.addEventListener("click", () => finish(null));
-    confirm.addEventListener("click", () => finish({ includeWorkspaceSkills: checkbox.checked }));
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) finish(null);
-    });
-
-    document.body.appendChild(overlay);
-    document.addEventListener("keydown", onKeyDown);
-    requestAnimationFrame(() => confirm.focus());
-  });
 }
 
 export function renderProjectTree() {
@@ -350,10 +105,10 @@ export function renderProjectTree() {
           showToast(result?.detail || t("toast.createSessionFailed"), "error");
           return;
         }
-        const sw = await window.assistantClient.switchSession(result.session.id);
+        const switched = await window.assistantClient.switchSession(result.session.id);
         await refreshState();
         afterSessionListChanged(project.id);
-        await applySessionSwitch(sw, result.session.id, project.id);
+        await applySessionSwitch(switched, result.session.id, project.id);
       },
       onShowMenu: (event) => showProjectMenu(event, project),
     });
@@ -691,32 +446,49 @@ async function shareWorkspacePack(project) {
   }
 }
 
+export async function completeWorkspaceImport(result) {
+  await refreshState();
+  if (result.projectId) {
+    const switched = await window.assistantClient.switchProject(result.projectId);
+    const sessionId = switched?.sessions?.[0]?.id;
+    if (sessionId) await applySessionSwitch(switched, sessionId, result.projectId);
+    expandProjectGroup(result.projectId);
+  }
+  renderProjectTree();
+  updateTopbarTitles();
+  if (result.missingSkills?.length) {
+    showToast(t("toast.importPackMissingSkills", { skills: result.missingSkills.join(", ") }), "warning");
+  } else {
+    showToast(t("toast.importPackDone", { name: result.projectName || "" }), "success");
+  }
+}
+
 async function importWorkspacePack() {
   try {
-    if (typeof window.assistantClient.importPack !== "function") {
+    if (typeof window.assistantClient.pickWorkspacePackage !== "function") {
       showToast(t("toast.importPackFailed"), "error");
       return;
     }
-    const result = await window.assistantClient.importPack();
+    const inspection = await window.assistantClient.pickWorkspacePackage();
+    if (!inspection?.ok) {
+      if (!inspection?.canceled) showToast(inspection?.error || t("toast.importPackFailed"), "error");
+      return;
+    }
+    if (!inspection.recognized) {
+      showToast(t("pack.importNotRecognized"), "warning");
+      return;
+    }
+    const decision = await reviewWorkspacePackage(inspection, { allowAttach: false });
+    if (decision?.action !== "import") return;
+    const result = await window.assistantClient.importWorkspacePackagePath({
+      filePath: inspection.filePath,
+      selectedAutomationIndexes: decision.selectedAutomationIndexes,
+    });
     if (!result?.ok) {
       if (!result?.canceled) showToast(result?.error || t("toast.importPackFailed"), "error");
       return;
     }
-    await refreshState();
-    // Land the user IN the imported workspace so it's obvious where it went.
-    if (result.projectId) {
-      const sw = await window.assistantClient.switchProject(result.projectId);
-      const sessionId = sw?.sessions?.[0]?.id;
-      if (sessionId) await applySessionSwitch(sw, sessionId, result.projectId);
-      expandProjectGroup(result.projectId);
-    }
-    renderProjectTree();
-    updateTopbarTitles();
-    if (result.missingSkills?.length) {
-      showToast(t("toast.importPackMissingSkills", { skills: result.missingSkills.join(", ") }), "warning");
-    } else {
-      showToast(t("toast.importPackDone", { name: result.projectName || "" }), "success");
-    }
+    await completeWorkspaceImport(result);
   } catch (err) {
     showToast(err?.message || t("toast.importPackFailed"), "error");
   }

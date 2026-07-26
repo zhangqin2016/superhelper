@@ -7,6 +7,8 @@ import { $, el, formatFileSize } from "./dom.js";
 import { showToast, fileErrorMessage } from "./toast.js";
 import { openImageViewer } from "./image-viewer.js";
 import { t } from "../i18n/index.js";
+import { routeDroppedFiles } from "./workspace-package-drop.js";
+import { reviewWorkspacePackage } from "./workspace-package-review.js";
 
 const filePreviewArea = () => $("filePreviewArea");
 const LARGE_PASTE_MIN_CHARS = 6000;
@@ -133,6 +135,25 @@ async function addBrowserFiles(files) {
   return addStagedFiles(staged);
 }
 
+async function routeBrowserDrop(files) {
+  return routeDroppedFiles(files, {
+    resolvePath: (file) => window.assistantClient.getPathForFile?.(file),
+    inspectPath: (filePath) => window.assistantClient.inspectWorkspacePackage(filePath),
+    reviewPackage: (inspection) => reviewWorkspacePackage(inspection),
+    importPackage: async (payload) => {
+      const result = await window.assistantClient.importWorkspacePackagePath(payload);
+      if (result?.ok) {
+        const { completeWorkspaceImport } = await import("./project-tree.js");
+        await completeWorkspaceImport(result);
+      } else if (!result?.canceled) {
+        showToast(result?.error || t("toast.importPackFailed"), "error");
+      }
+      return result;
+    },
+    attachFiles: addBrowserFiles,
+  });
+}
+
 async function addSystemClipboardFiles() {
   if (!window.assistantClient?.pasteClipboardFiles) return 0;
   try {
@@ -233,7 +254,7 @@ export function initFileHandler() {
     composer.classList.remove("drag-over");
     if (dropOverlay) dropOverlay.hidden = true;
     const dtFiles = e.dataTransfer?.files;
-    if (dtFiles?.length) await addBrowserFiles(dtFiles);
+    if (dtFiles?.length) await routeBrowserDrop(dtFiles);
   });
 
   // Global drag overlay
@@ -254,7 +275,7 @@ export function initFileHandler() {
     composer?.classList.remove("drag-over");
     if (dropOverlay) dropOverlay.hidden = true;
     const dtFiles = e.dataTransfer?.files;
-    if (dtFiles?.length) await addBrowserFiles(dtFiles);
+    if (dtFiles?.length) await routeBrowserDrop(dtFiles);
   });
 
   // Clipboard paste

@@ -115,6 +115,13 @@ function workspaceAppExportInfo(rootPath) {
     appId: String(manifest.appId || "").trim(),
     name: String(manifest.name || "").trim(),
     version: String(manifest.version || "").trim(),
+    publisher: String(manifest.publisher || "").trim(),
+    requiredSkills: Array.isArray(manifest.requiredSkills)
+      ? manifest.requiredSkills.map((id) => String(id || "").trim()).filter(Boolean)
+      : [],
+    requiredRuntimePacks: Array.isArray(manifest.requiredRuntimePacks)
+      ? manifest.requiredRuntimePacks.map((id) => String(id || "").trim()).filter(Boolean)
+      : [],
     dataPaths: exportConfig.dataPaths,
     excludePaths: exportConfig.excludePaths,
     confirmPaths: exportConfig.confirmPaths,

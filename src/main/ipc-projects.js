@@ -4,6 +4,8 @@ const { ipcMain, dialog, shell } = require("electron");
 const { ensureSessionRunner } = require("./ipc-utils");
 const { defaultSessionTitle } = require("./session-manager");
 const { fetchArtifactBuffer } = require("./artifact-download");
+const { registerWorkspaceExportHandlers } = require("./ipc-workspace-export");
+const { registerWorkspaceImportHandlers } = require("./ipc-workspace-import");
 
 // No client-side size cap on workspace-app downloads — the server is the
 // authority (it enforces a max at publish time) and the zip is sha256-verified
@@ -156,110 +158,8 @@ function registerProjectHandlers(ctx) {
     return { ok: true, state: projectManager.getAppState() };
   });
 
-  // --- Workspace capability packs (.lilyspace.zip) ---------------------------
-  ipcMain.handle("project:export-preview", (_event, projectId) => {
-    const project = projectManager.find(projectId);
-    if (!project) return { ok: false, error: "NOT_FOUND" };
-    const { previewExport, previewWorkspaceSkills } = require("./workspace-share");
-    const skillManager = require("./skill-manager");
-    // Bundle ONLY locally-authored workspace/learned skills — the recipient
-    // can't get those anywhere else. Registry-available skills (anthropics/*,
-    // lily-*, superpowers/*) are declared as requiredSkills and fetched from the
-    // same registry on import, so their third-party code and LICENSE files never
-    // travel inside the pack (and the pack stays small).
-    const workspaceSkills = skillManager.listWorkspaceSkillExports(project.id);
-    return {
-      ok: true,
-      name: project.name,
-      preview: previewExport(project.path),
-      requiredSkills: skillManager.getEnabledRegistrySkillIds(),
-      workspaceSkills: previewWorkspaceSkills(workspaceSkills),
-    };
-  });
-
-  ipcMain.handle("project:export-pack", async (_event, projectId, options = {}) => {
-    const project = projectManager.find(projectId);
-    if (!project) return { ok: false, error: "NOT_FOUND" };
-    const includeWorkspaceSkills = options?.includeWorkspaceSkills === true;
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: "导出工作空间能力包",
-      defaultPath: `${project.name}.lilyspace.zip`,
-      filters: [{ name: "Lily Workspace Pack", extensions: ["zip"] }],
-    });
-    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-    try {
-      const { exportWorkspacePack } = require("./workspace-share");
-      const { readLearnedConventions } = require("./learned-context");
-      const skillManager = require("./skill-manager");
-      const fs = require("node:fs");
-      const buf = await exportWorkspacePack({
-        rootPath: project.path,
-        name: project.name,
-        conventions: readLearnedConventions(project.id),
-        requiredSkills: skillManager.getEnabledRegistrySkillIds(),
-        workspaceSkills: includeWorkspaceSkills ? skillManager.listWorkspaceSkillExports(project.id) : [],
-        exportedAt: new Date().toISOString(),
-      });
-      fs.writeFileSync(result.filePath, buf);
-      shell.showItemInFolder(result.filePath);
-      return { ok: true, filePath: result.filePath };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle("project:import-pack", async () => {
-    const picked = await dialog.showOpenDialog(mainWindow, {
-      title: "导入工作空间能力包",
-      properties: ["openFile"],
-      filters: [{ name: "Lily Workspace Pack", extensions: ["zip"] }],
-    });
-    if (picked.canceled || !picked.filePaths.length) return { ok: false, canceled: true };
-
-    // Let the user choose where the new workspace lands; canceling falls back
-    // to the default workspace location.
-    const dirPick = await dialog.showOpenDialog(mainWindow, {
-      title: "选择导入到哪个文件夹",
-      properties: ["openDirectory", "createDirectory"],
-      buttonLabel: "导入到此处",
-    });
-    const chosenParent = dirPick.canceled || !dirPick.filePaths.length ? null : dirPick.filePaths[0];
-
-    try {
-      const fs = require("node:fs");
-      const path = require("node:path");
-      const { importWorkspacePack } = require("./workspace-share");
-      const { writeLearnedConventions } = require("./learned-context");
-      const skillManager = require("./skill-manager");
-
-      const zipBuffer = fs.readFileSync(picked.filePaths[0]);
-      const baseDir = chosenParent || path.dirname(projectManager.defaultPath || picked.filePaths[0]);
-      const { manifest: peek } = await require("./workspace-share").readPackManifest(zipBuffer);
-      let targetDir = path.join(baseDir, peek.name || "imported-workspace");
-      let n = 2;
-      while (fs.existsSync(targetDir)) targetDir = path.join(baseDir, `${peek.name}-${n++}`);
-
-      const { manifest, conventions, workspaceSkills } = await importWorkspacePack(zipBuffer, targetDir);
-      const project = projectManager.add(targetDir);
-      if (manifest.name) projectManager.rename(project.id, manifest.name);
-      if (conventions) writeLearnedConventions(project.id, conventions);
-      const restoredWorkspaceSkills = restoreWorkspaceSkills(skillManager, workspaceSkills, project.id);
-      sessionManager.create(project.id, defaultSessionTitle());
-
-      const installed = new Set(skillManager.getGloballyEnabledSkillIds());
-      const missingSkills = (manifest.requiredSkills || []).filter((id) => !installed.has(id));
-      return {
-        ok: true,
-        state: projectManager.getAppState(),
-        projectId: project.id,
-        projectName: manifest.name || project.name,
-        missingSkills,
-        restoredWorkspaceSkills,
-      };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
+  registerWorkspaceExportHandlers(ctx);
+  registerWorkspaceImportHandlers(ctx);
 
   ipcMain.handle("apps:install", async (_event, app) => {
     try {
