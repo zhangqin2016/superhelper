@@ -124,6 +124,10 @@
   padding: 6px 28px 6px 10px;
 }
 
+[dir="rtl"] .session-skills-popover-list .skills-tree-row {
+  padding: 8px 10px;
+}
+
 [dir="rtl"] .skills-tree-row::before {
   left: auto;
   right: 18px;

@@ -317,6 +317,95 @@
   padding: 8px 10px;
   display: block;
   background: var(--bg-input);
+  container-type: inline-size;
+  container-name: session-skills-list;
+}
+
+@supports (container-type: inline-size) {
+  .session-skills-popover-list .skills-tree-group--expanded .skills-tree-group-children {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 0;
+  }
+
+  .session-skills-popover-list .skills-tree-row {
+    min-width: 0;
+    min-height: 38px;
+    padding: 8px 10px;
+    border-inline-end: 1px solid var(--border);
+    border-block-end: 1px solid var(--border);
+  }
+
+  .session-skills-popover-list .skills-tree-row:nth-child(3n) {
+    border-inline-end: 0;
+  }
+
+  .session-skills-popover-list .skills-tree-row:nth-last-child(-n + 3) {
+    border-block-end: 0;
+  }
+
+  .session-skills-popover-list .skills-tree-row::before {
+    display: none;
+  }
+
+  .session-skills-popover-list .skills-tree-row:focus-visible {
+    z-index: 1;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .session-skills-popover-list .skills-tree-row-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .session-skills-popover-list .skills-tree-row-badge {
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @container session-skills-list (max-width: 560px) {
+    .session-skills-popover-list .skills-tree-group--expanded .skills-tree-group-children {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .session-skills-popover-list .skills-tree-row:nth-child(3n) {
+      border-inline-end: 1px solid var(--border);
+    }
+
+    .session-skills-popover-list .skills-tree-row:nth-last-child(-n + 3) {
+      border-block-end: 1px solid var(--border);
+    }
+
+    .session-skills-popover-list .skills-tree-row:nth-child(2n) {
+      border-inline-end: 0;
+    }
+
+    .session-skills-popover-list .skills-tree-row:nth-last-child(-n + 2) {
+      border-block-end: 0;
+    }
+  }
+
+  @container session-skills-list (max-width: 360px) {
+    .session-skills-popover-list .skills-tree-group--expanded .skills-tree-group-children {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .session-skills-popover-list .skills-tree-row,
+    .session-skills-popover-list .skills-tree-row:nth-child(2n),
+    .session-skills-popover-list .skills-tree-row:nth-child(3n) {
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--border);
+    }
+
+    .session-skills-popover-list .skills-tree-row:last-child {
+      border-block-end: 0;
+    }
+  }
 }
 
 /* legacy card classes kept for pulse keyframes reference */
