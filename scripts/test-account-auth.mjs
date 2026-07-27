@@ -235,6 +235,11 @@ const licenseToken = gatewayAuth.signModelGatewayToken({
 });
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(anonymousToken, "deepseek"), enforcementEnabled: true }).ok, false);
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: verifiedGatewayToken, enforcementEnabled: true }).ok, true);
+assert.equal(
+  gatewayUsage.gatewayAccountRequired({ token: verifiedGatewayToken, enforcementEnabled: true }).licenseAuthorized,
+  true,
+  "a logged-in user with a server-validated activation must keep license access instead of consuming the account wallet",
+);
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(licenseToken, "deepseek"), enforcementEnabled: true }).ok, true);
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(licenseToken, "deepseek"), enforcementEnabled: true }).licenseAuthorized, true);
 

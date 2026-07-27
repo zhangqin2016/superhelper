@@ -7,6 +7,7 @@
 // Env is set BEFORE the dynamic imports so config.js picks up the test key.
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
 
 process.env.MODEL_GATEWAY_ENABLED = "true";
 process.env.MODEL_GATEWAY_TOKEN_SECRET = "test-media-gateway-secret";
@@ -36,6 +37,16 @@ process.env.MODEL_GATEWAY_PROVIDERS = JSON.stringify({
 const { withGatewayRuntimeConfig, buildEnvManagedClientConfig } = await import("../server/src/services/client-config.js");
 const { signModelGatewayToken, verifyModelGatewayToken } = await import("../server/src/services/model-gateway/auth.js");
 const { mediaGatewayRoutes } = await import("../server/src/services/media-gateway.js");
+
+const mediaGatewaySource = fs.readFileSync(
+  new URL("../server/src/services/media-gateway.js", import.meta.url),
+  "utf8",
+);
+assert.match(
+  mediaGatewaySource,
+  /gatewayAccountRequired\(\{\s*token,\s*enforcementEnabled:/,
+  "media usage must share the model gateway's account/license precedence instead of maintaining a divergent copy",
+);
 
 const request = { headers: { host: "ignored.example.com" }, protocol: "http" };
 const input = { deviceId: "dev_media_test", licenseId: "lic_media_test" };

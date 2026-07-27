@@ -63,8 +63,12 @@ export function tokenTrialActive(token, nowMs = Date.now()) {
 }
 
 export function gatewayAccountRequired({ token, enforcementEnabled = false, nowMs = Date.now() } = {}) {
-  if (token?.userId) return { ok: true };
+  // A server-validated activation authorizes the device independently of whether
+  // the same token also carries a logged-in account. Check it first: otherwise a
+  // user who signs in after activating is incorrectly switched back to wallet
+  // billing and can hit ENTITLEMENT_INSUFFICIENT despite a valid license.
   if (token?.licenseId) return { ok: true, licenseAuthorized: true };
+  if (token?.userId) return { ok: true };
   // Downloaded-but-not-logged-in devices get the operator-configured free trial
   // (license_trial_days). Honored even when usage enforcement is on — otherwise
   // the trial is silently dead and every fresh user hits ACCOUNT_LOGIN_REQUIRED.

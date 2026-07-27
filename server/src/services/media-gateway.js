@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { config } from "../config.js";
 import { verifyModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
+import { gatewayAccountRequired } from "./model-gateway/usage.js";
 import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
 
 // Mint a short-lived HS256 JWT for Kling-style auth (iss=accessKey, exp=+1800,
@@ -90,17 +91,12 @@ async function requireMediaEntitlement(request, reply, token, providerId, rest) 
   if (request.method !== "POST") return true;
   const usage = inferMediaUsage(providerId, rest, request.body);
   if (!usage) return true;
-  if (!token.userId) {
-    if (token.licenseId) return true;
-    if (!config.accountUsageEnforcementEnabled) return true;
-    reply.code(402).send({
-      error: {
-        type: "payment_required",
-        message: "ACCOUNT_LOGIN_REQUIRED",
-      },
-    });
+  const account = gatewayAccountRequired({ token, enforcementEnabled: config.accountUsageEnforcementEnabled });
+  if (!account.ok) {
+    reply.code(402).send({ error: { type: "payment_required", message: account.code } });
     return false;
   }
+  if (account.licenseAuthorized || account.trial || account.anonymous) return true;
   const pricing = await fetchFeaturePricing({
     feature: usage.feature,
     provider: providerId,
