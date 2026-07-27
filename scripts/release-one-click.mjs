@@ -11,6 +11,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import {
+  assertRemoteReleaseNotNewer,
+  compareReleaseVersions,
+} from "./lib/release-version-guard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -183,7 +187,8 @@ function fetchBaseManifest({ domain, prefix, version }) {
   const url = `${String(domain).replace(/\/+$/g, "")}/${String(prefix).replace(/^\/+|\/+$/g, "")}/latest.json`;
   const text = fetchUrl(url);
   const manifest = JSON.parse(text);
-  if (String(manifest.version || "") !== String(version || "")) return "";
+  assertRemoteReleaseNotNewer(manifest.version, version);
+  if (compareReleaseVersions(manifest.version, version) !== 0) return "";
   const file = path.join("release", version, "latest.base.json");
   fs.mkdirSync(path.dirname(path.join(ROOT, file)), { recursive: true });
   fs.writeFileSync(path.join(ROOT, file), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
@@ -698,6 +703,11 @@ try {
     ...autoPointerUploads,
   ];
   if (options.upload || options["dry-run"]) {
+    if (options.upload && !options["dry-run"]) {
+      const latestUrl = `${domain.replace(/\/+$/g, "")}/${prefix.replace(/^\/+|\/+$/g, "")}/latest.json`;
+      const remoteManifest = JSON.parse(fetchUrl(latestUrl));
+      assertRemoteReleaseNotNewer(remoteManifest.version, nextVersion);
+    }
     uploadItems({
       label: "mutable latest pointers",
       items: pointerUploads,
