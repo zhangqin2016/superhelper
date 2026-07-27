@@ -6,6 +6,7 @@ const { getLogger } = require("./logger");
 const { compactTaskRun } = require("./task-run-state");
 const { buildEvidenceRecoveryContext } = require("./turn-recovery-context");
 const { TERMINAL_TYPES } = require("./turn-event-types");
+const { promoteTerminalNarrative } = require("./turn-terminal-narrative");
 const {
   appendTimelineNotice,
   appendTimelineText,
@@ -141,6 +142,19 @@ function createTurnTerminalFinalizer(options = {}) {
     closeStreamingBlocks(state, Date.now());
 
     let assistant = String(payload.assistant || state.assistantText || "").trim();
+    let terminalNarrativePromoted = false;
+    if (type === "turn.completed") {
+      try {
+        const promoted = promoteTerminalNarrative(state.timeline, assistant);
+        if (promoted.promoted) {
+          assistant = promoted.assistant;
+          state.timeline = promoted.timeline;
+          terminalNarrativePromoted = true;
+        }
+      } catch (err) {
+        log.warn("terminal narrative promotion failed open: %s", err?.message || err);
+      }
+    }
     // Strip an echoed compaction/handoff scaffold ("Objective / Work State / …")
     // BEFORE the evidence gate judges and before anything is emitted or
     // persisted — the user never sees internal tracking (2026-07-22 field case).
@@ -176,6 +190,9 @@ function createTurnTerminalFinalizer(options = {}) {
     let record = turnArchive?.buildRecord(state, type, { ...payload, assistant });
     if (record && statusScaffoldAction) {
       record.meta = { ...(record.meta || {}), statusScaffold: statusScaffoldAction };
+    }
+    if (record && terminalNarrativePromoted) {
+      record.meta = { ...(record.meta || {}), terminalNarrativePromoted: true };
     }
     let evidenceGateAssessment = null;
     let triggerVerifyRetry = false;
