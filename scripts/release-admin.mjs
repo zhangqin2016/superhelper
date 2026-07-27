@@ -93,6 +93,12 @@ function b64url(input) {
   return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function b64urlDecode(value) {
+  const text = String(value || "");
+  const padded = `${text}${"=".repeat((4 - (text.length % 4)) % 4)}`;
+  return Buffer.from(padded.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+}
+
 function stableStringify(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
@@ -229,6 +235,42 @@ function parseArtifacts(artifacts) {
   return result;
 }
 
+function readVerifiedBaseManifest(file, version, privateKeyPem) {
+  if (!file) return {};
+  const filePath = ensureFile(file, "base manifest");
+  const manifest = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const { signature, ...unsigned } = manifest;
+  if (String(unsigned.version || "") !== String(version || "")) {
+    fail(`base manifest version mismatch: expected ${version}, got ${unsigned.version || "<empty>"}`);
+  }
+  const verified = crypto.verify(
+    null,
+    Buffer.from(stableStringify(unsigned)),
+    crypto.createPublicKey(privateKeyPem),
+    b64urlDecode(signature),
+  );
+  if (!verified) fail("base manifest signature is invalid");
+
+  const platforms = {};
+  for (const [platform, entry] of Object.entries(unsigned.platforms || {})) {
+    if (
+      entry &&
+      typeof entry === "object" &&
+      typeof entry.url === "string" &&
+      /^[a-f0-9]{64}$/i.test(String(entry.sha256 || "")) &&
+      Number.isFinite(Number(entry.size)) &&
+      Number(entry.size) > 0
+    ) {
+      platforms[platform] = {
+        url: entry.url,
+        sha256: String(entry.sha256).toLowerCase(),
+        size: Number(entry.size),
+      };
+    }
+  }
+  return platforms;
+}
+
 function publish(options) {
   const privateKeyPath = options.key && ensureFile(options.key, "private key");
   const bucket = options.bucket;
@@ -240,7 +282,8 @@ function publish(options) {
 
   const prefix = normalizePrefix(options.prefix);
   const artifacts = parseArtifacts(options.artifact);
-  const platforms = {};
+  const privateKeyPem = fs.readFileSync(privateKeyPath, "utf8");
+  const platforms = readVerifiedBaseManifest(options["base-manifest"], version, privateKeyPem);
   const uploads = [];
 
   for (const [platform, filePath] of Object.entries(artifacts)) {
@@ -262,7 +305,7 @@ function publish(options) {
   };
   const signed = {
     ...unsigned,
-    signature: signJson(unsigned, fs.readFileSync(privateKeyPath, "utf8")),
+    signature: signJson(unsigned, privateKeyPem),
   };
 
   const releaseDir = path.join(ROOT, "release", version);

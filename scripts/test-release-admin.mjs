@@ -11,6 +11,7 @@ const ROOT = path.resolve(__dirname, "..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-release-admin-"));
 const keyDir = path.join(tmp, "keys");
 const artifact = path.join(tmp, "app.dmg");
+const winArtifact = path.join(tmp, "app.exe");
 
 function run(args) {
   const result = spawnSync(process.execPath, ["scripts/release-admin.mjs", ...args], {
@@ -91,6 +92,41 @@ const manifestOk = crypto.verify(
   b64urlDecode(signature),
 );
 if (!manifestOk) throw new Error("manifest signature should verify");
+
+fs.writeFileSync(winArtifact, "fake exe bytes", "utf8");
+run([
+  "publish",
+  "--key",
+  privateKey,
+  "--bucket",
+  "test-bucket",
+  "--domain",
+  "https://cdn.example.com",
+  "--version",
+  "9.9.9",
+  "--base-manifest",
+  manifestPath,
+  "--artifact",
+  `win32-x64=${winArtifact}`,
+  "--dry-run",
+]);
+const mergedManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+if (!mergedManifest.platforms?.["darwin-arm64"]) {
+  throw new Error("single-platform publish must preserve a verified existing platform");
+}
+if (!mergedManifest.platforms?.["win32-x64"]) {
+  throw new Error("single-platform publish must add the new platform");
+}
+const mergedSignature = mergedManifest.signature;
+delete mergedManifest.signature;
+if (!crypto.verify(
+  null,
+  Buffer.from(stableStringify(mergedManifest)),
+  crypto.createPublicKey(publicKey),
+  b64urlDecode(mergedSignature),
+)) {
+  throw new Error("merged manifest signature should verify");
+}
 
 fs.rmSync(path.join(ROOT, "release", "9.9.9"), { recursive: true, force: true });
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -179,6 +179,18 @@ function latestManifestPath(version) {
   return path.join("release", version, "latest.json");
 }
 
+function fetchBaseManifest({ domain, prefix, version }) {
+  const url = `${String(domain).replace(/\/+$/g, "")}/${String(prefix).replace(/^\/+|\/+$/g, "")}/latest.json`;
+  const text = fetchUrl(url);
+  const manifest = JSON.parse(text);
+  if (String(manifest.version || "") !== String(version || "")) return "";
+  const file = path.join("release", version, "latest.base.json");
+  fs.mkdirSync(path.dirname(path.join(ROOT, file)), { recursive: true });
+  fs.writeFileSync(path.join(ROOT, file), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  console.log(`[release-one] preserving platforms from signed base manifest: ${url}`);
+  return file;
+}
+
 function uploadItem({ scriptNode, bucket, key, file, qiniuUpHost, dryRun }) {
   const uploadArgs = [
     "scripts/release-admin.mjs",
@@ -573,6 +585,14 @@ try {
     "--up-host",
     qiniuUpHost,
   ];
+  if (options.upload && !options["dry-run"]) {
+    const baseManifest = fetchBaseManifest({
+      domain,
+      prefix,
+      version: nextVersion,
+    });
+    if (baseManifest) publishArgs.push("--base-manifest", baseManifest);
+  }
   if (notes) publishArgs.push("--notes", notes);
   for (const [platform, file] of artifacts) {
     publishArgs.push("--artifact", `${platform}=${file}`);

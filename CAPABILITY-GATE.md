@@ -186,6 +186,8 @@ the guard test must still pass; when you add a new capability, add a row.
 
 | A model writes the substantive Markdown deliverable, calls TodoWrite only to mark the task complete, then emits a short acknowledgement; sealing the turn treats that acknowledgement as the answer and collapses the real report into process history | `test-turn-terminal-narrative.mjs` - a substantial report separated from the closing text only by TodoWrite bookkeeping is promoted into one Markdown-safe terminal narrative. Evidence-changing tools never promote earlier prose; short progress and malformed timelines fail open to the current behavior. The model output, tool execution, and live stream remain untouched. |
 
+| Publishing one Windows or Mac build for an already-current universal version rewrites the signed static `latest.json` with only that platform, silently removing the other platform download/update fallback | `test-release-admin.mjs` - a single-platform publish can merge only a same-version, signature-verified base manifest; the new artifact replaces its platform while untouched platforms remain. Invalid signatures and mismatched versions fail loud before the pointer is written. `release-one-click.mjs` automatically retrieves that signed base for same-version online releases. |
+
 ## Enforcement
 
 - **AGENTS.md Rule 13** makes this gate binding for every task.
