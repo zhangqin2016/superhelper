@@ -43,6 +43,11 @@ python scripts/office/soffice.py --headless --convert-to pdf document.docx
 pdftoppm -jpeg -r 150 document.pdf page
 ```
 
+For conversion/export-only requests, do not edit, normalize, repair, or
+overwrite the source DOCX. Generate the requested derived artifact only. If a
+rendering issue appears to require source DOCX changes, ask the user first or
+create a separately named repaired copy after approval.
+
 **RULE 5 — Layout overflow is a delivery GATE, not a warning.** After generating any
 document, render it to images (above) and **look** at every page before delivering. Reject
 and fix the document if you see any of these occlusion symptoms:
