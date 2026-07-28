@@ -15,6 +15,7 @@ import {
   assertRemoteReleaseNotNewer,
   compareReleaseVersions,
 } from "./lib/release-version-guard.mjs";
+import { releaseArtifactName } from "./lib/release-artifact-naming.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -426,11 +427,11 @@ function writeAutoUpdateYaml({ platform, version, artifact, notes }) {
 function artifactCandidates(target, productName, version) {
   const items = [];
   if (target === "mac" || target === "all") {
-    const arm64Dmg = distFile(`${productName}-${version}-arm64.dmg`);
+    const arm64Dmg = distFile(releaseArtifactName("darwin-arm64", productName, version, "dmg"));
     if (fs.existsSync(path.join(ROOT, arm64Dmg))) {
       items.push(["darwin-arm64", arm64Dmg]);
     }
-    const x64Dmg = distFile(`${productName}-${version}-x64.dmg`);
+    const x64Dmg = distFile(releaseArtifactName("darwin-x64", productName, version, "dmg"));
     if (fs.existsSync(path.join(ROOT, x64Dmg))) {
       items.push(["darwin-x64", x64Dmg]);
     }
@@ -442,7 +443,7 @@ function artifactCandidates(target, productName, version) {
     }
   }
   if (target === "win" || target === "all") {
-    const winExe = distFile(`${productName}-${version}-x64.exe`);
+    const winExe = distFile(releaseArtifactName("win32-x64", productName, version, "exe"));
     if (fs.existsSync(path.join(ROOT, winExe))) {
       items.push(["win32-x64", winExe]);
     } else if (target === "win") {
@@ -462,7 +463,7 @@ function artifactCandidates(target, productName, version) {
 function autoUpdateCandidates(target, productName, version) {
   const items = [];
   if (target === "mac" || target === "all") {
-    const arm64Zip = distFile(`${productName}-${version}-arm64.zip`);
+    const arm64Zip = distFile(releaseArtifactName("darwin-arm64", productName, version, "zip"));
     if (fs.existsSync(path.join(ROOT, arm64Zip))) {
       items.push({
         platform: "darwin-arm64",
@@ -473,7 +474,7 @@ function autoUpdateCandidates(target, productName, version) {
       fail(`no mac arm64 auto-update zip found for ${version}: ${arm64Zip}`);
     }
 
-    const x64Zip = distFile(`${productName}-${version}-x64.zip`);
+    const x64Zip = distFile(releaseArtifactName("darwin-x64", productName, version, "zip"));
     if (fs.existsSync(path.join(ROOT, x64Zip))) {
       items.push({
         platform: "darwin-x64",
@@ -485,7 +486,7 @@ function autoUpdateCandidates(target, productName, version) {
     }
   }
   if (target === "win" || target === "all") {
-    const winExe = distFile(`${productName}-${version}-x64.exe`);
+    const winExe = distFile(releaseArtifactName("win32-x64", productName, version, "exe"));
     if (fs.existsSync(path.join(ROOT, winExe))) {
       const winBlockmap = ensureBlockmap(winExe);
       items.push({

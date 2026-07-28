@@ -1313,7 +1313,7 @@ Create `docs/windows-store-release-readiness.md` with:
 测试前准备最终版本化安装器，例如：
 
 ```powershell
-$installer = 'C:\Release\Lily Workbench-0.1.119-x64.exe'
+$installer = 'C:\Release\LilyWorkbench-0.1.119-x64.exe'
 ```
 
 不要在已经安装 Lily Workbench 的账号上运行；脚本会拒绝覆盖现有安装。
@@ -1348,7 +1348,7 @@ $signature = Get-AuthenticodeSignature -LiteralPath $installer
 if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate) {
   throw ('Installer signature is not valid: ' + $signature.Status)
 }
-if ([IO.Path]::GetFileName($installer) -notmatch '^Lily Workbench-(?<version>\d+\.\d+\.\d+)-x64\.exe$') {
+if ([IO.Path]::GetFileName($installer) -notmatch '^LilyWorkbench-(?<version>\d+\.\d+\.\d+)-x64\.exe$') {
   throw 'Installer filename is not versioned as expected.'
 }
 $publisher = $signature.SignerCertificate.GetNameInfo(

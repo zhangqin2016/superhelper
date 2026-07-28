@@ -34,7 +34,7 @@ function usage() {
     --version 0.2.0 \\
     --artifact darwin-arm64="dist/Lily Workbench-0.2.0-arm64.dmg" \\
     [--artifact darwin-x64="dist/Lily Workbench-0.2.0-x64.dmg"] \\
-    [--artifact win32-x64="dist/Lily Workbench-0.2.0-x64.exe"] \\
+    [--artifact win32-x64="dist/LilyWorkbench-0.2.0-x64.exe"] \\
     [--prefix app/updates] [--notes "release notes"] [--force] [--build mac|win|all] [--up-host https://upload.qiniup.com] [--upload] [--dry-run]
 
   node scripts/release-admin.mjs upload \\

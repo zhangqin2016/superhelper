@@ -200,7 +200,7 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "LilyWorkbench-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

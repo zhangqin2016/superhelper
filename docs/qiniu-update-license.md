@@ -66,7 +66,7 @@ Recommended object keys:
 app/updates/latest.json
 app/updates/darwin-arm64/0.2.0/Lily Workbench-0.2.0-arm64.dmg
 app/updates/darwin-x64/0.2.0/Lily Workbench-0.2.0-x64.dmg
-app/updates/win32-x64/0.2.0/Lily Workbench-0.2.0-x64.exe
+app/updates/win32-x64/0.2.0/LilyWorkbench-0.2.0-x64.exe
 app/auto-updates/darwin-arm64/stable/latest-mac.yml
 app/auto-updates/darwin-x64/stable/latest-mac.yml
 app/auto-updates/win32-x64/stable/latest.yml
