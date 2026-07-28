@@ -313,8 +313,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
-  scheduledTaskManagerRef?.stop();
-  scheduledTaskManagerRef?.save();
+  scheduledTaskManagerRef?.close();
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
   // Backstop: reap the shared opencode serve + its whole tool-process tree even

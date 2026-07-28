@@ -5,13 +5,18 @@ const { ipcMain } = require("electron");
 function activeScope(ctx, payload = {}) {
   const sessionId = String(payload.sessionId || ctx.sessionManager?.activeSessionId || "").trim();
   const session = sessionId ? ctx.sessionManager?.findById?.(sessionId) : null;
-  const projectId = String(payload.projectId || session?.projectId || ctx.projectManager?.activeProjectId || "").trim();
-  return { sessionId, projectId };
+  if (!session) return { sessionId, projectId: "", error: "NO_SESSION" };
+  const requestedProjectId = String(payload.projectId || "").trim();
+  if (requestedProjectId && requestedProjectId !== session.projectId) {
+    return { sessionId, projectId: session.projectId, error: "SCOPE_MISMATCH" };
+  }
+  return { sessionId, projectId: session.projectId, error: "" };
 }
 
 function registerScheduledTaskHandlers(ctx) {
   ipcMain.handle("scheduled-tasks:list", (_event, payload = {}) => {
     const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
     return ctx.scheduledTaskManager.list({
       sessionId: payload.sessionId === null ? "" : scope.sessionId,
       projectId: payload.projectId === null ? "" : scope.projectId,
@@ -20,6 +25,7 @@ function registerScheduledTaskHandlers(ctx) {
 
   ipcMain.handle("scheduled-tasks:parse-draft", async (_event, payload = {}) => {
     const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
     if (!scope.projectId) return { ok: false, error: "NO_PROJECT" };
     if (!scope.sessionId) return { ok: false, error: "NO_SESSION" };
     return ctx.scheduledTaskManager.parseDraftSmart({
@@ -31,6 +37,7 @@ function registerScheduledTaskHandlers(ctx) {
 
   ipcMain.handle("scheduled-tasks:create", (_event, payload = {}) => {
     const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
     return ctx.scheduledTaskManager.create({
       ...payload,
       sessionId: scope.sessionId,
@@ -40,6 +47,7 @@ function registerScheduledTaskHandlers(ctx) {
 
   ipcMain.handle("scheduled-tasks:create-from-draft-message", (_event, payload = {}) => {
     const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
     const messageId = String(payload.messageId || "").trim();
     if (!scope.projectId) return { ok: false, error: "NO_PROJECT" };
     if (!scope.sessionId) return { ok: false, error: "NO_SESSION" };
@@ -84,17 +92,23 @@ function registerScheduledTaskHandlers(ctx) {
     return { ok: true, task: result.task, conversation: page.conversation };
   });
 
-  ipcMain.handle("scheduled-tasks:set-enabled", (_event, payload = {}) =>
-    ctx.scheduledTaskManager.setEnabled(payload.taskId, payload.enabled),
-  );
+  ipcMain.handle("scheduled-tasks:set-enabled", (_event, payload = {}) => {
+    const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
+    return ctx.scheduledTaskManager.setEnabled(payload.taskId, payload.enabled);
+  });
 
-  ipcMain.handle("scheduled-tasks:remove", (_event, payload = {}) =>
-    ctx.scheduledTaskManager.remove(payload.taskId),
-  );
+  ipcMain.handle("scheduled-tasks:remove", (_event, payload = {}) => {
+    const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
+    return ctx.scheduledTaskManager.remove(payload.taskId);
+  });
 
-  ipcMain.handle("scheduled-tasks:run-now", (_event, payload = {}) =>
-    ctx.scheduledTaskManager.runNow(payload.taskId),
-  );
+  ipcMain.handle("scheduled-tasks:run-now", (_event, payload = {}) => {
+    const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
+    return ctx.scheduledTaskManager.runNow(payload.taskId);
+  });
 }
 
 module.exports = { registerScheduledTaskHandlers };

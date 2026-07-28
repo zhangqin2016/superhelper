@@ -344,10 +344,9 @@ try {
     prompt: "每天早上 9 点做不存在的事",
     sessionId: "missing",
     projectId: "p1",
-  }).task;
-  const skipped = queuedManager.runNow(missingScope.id);
-  assert(!skipped.ok && skipped.error === "SCOPE_MISSING", `missing scope should pause task: ${JSON.stringify(skipped)}`);
-  assert(missingScope.enabled === false && missingScope.status === "paused", "missing scope task should be paused");
+  });
+  assert(!missingScope.ok && missingScope.error === "SCOPE_MISSING",
+    `missing scope must be rejected before persistence: ${JSON.stringify(missingScope)}`);
 
   console.log("scheduled-tasks: ok");
 } finally {

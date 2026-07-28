@@ -733,7 +733,7 @@ class TurnOrchestrator {
       skipDocument: Boolean(item.options?.skipDocument),
       scheduledTaskId: item.options?.scheduledTaskId || null,
       scheduledTaskRunId: item.options?.scheduledTaskRunId || null,
-      scheduledTaskTitle: item.options?.scheduledTaskTitle || null,
+      scheduledTaskTitle: item.options?.scheduledTaskTitle || null, permissionMode: item.options?.permissionMode,
       engineText: item.options?.engineText || null,
       recovery: item.options?.recovery || null,
       ...documentDeliveryDispatchOptions(item.options),

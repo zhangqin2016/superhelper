@@ -281,7 +281,10 @@ function createTurnTerminalFinalizer(options = {}) {
     });
     if (scheduledTaskRunId) {
       try {
-        ctx.scheduledTaskManager?.completeRun?.(sessionId, completedTurnId, type, payload);
+        ctx.scheduledTaskManager?.completeRunById?.(scheduledTaskRunId, type, {
+          ...payload,
+          assistant,
+        });
       } catch (err) {
         log.warn("scheduled task completeRun failed: %s", err?.message || err);
       }

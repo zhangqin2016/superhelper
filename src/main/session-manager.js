@@ -965,6 +965,7 @@ class SessionManager {
     return session;
   }
 
+  createAutomationSession(projectId, title, taskId) { return require("./automation-session").createAutomationSession(this, projectId, title, taskId); }
   switchTo(sessionId) {
     this.activeSessionId = sessionId;
     this.saveImmediate();
@@ -1275,9 +1276,7 @@ class SessionManager {
     };
   }
 
-  findById(sessionId) {
-    return this._find(sessionId);
-  }
+  findById(sessionId) { return this._find(sessionId); }
 
   clearConversation(sessionId) {
     const session = this._find(sessionId) || this.getActive();
@@ -1306,7 +1305,7 @@ class SessionManager {
 
   _getProjectSessions(projectId) {
     if (!this.sessions[projectId]) this.sessions[projectId] = [];
-    return this.sessions[projectId].filter((s) => s.status !== "archived");
+    return this.sessions[projectId].filter((s) => s.status !== "archived" && s.hidden !== true);
   }
 }
 

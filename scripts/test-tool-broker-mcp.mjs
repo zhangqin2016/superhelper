@@ -31,7 +31,7 @@ async function clientForServer(server) {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "runtime_pack_install", "runtime_pack_list", "schedule_task_create", "schedule_task_list"],
+    ["lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "runtime_pack_install", "runtime_pack_list"],
     "tools/list always exposes platform capabilities",
   );
   assert.ok(!tools.some((tool) => tool.name.startsWith("mail_")), "mail tools hidden when bridge is unavailable");
@@ -612,7 +612,7 @@ async function clientForServer(server) {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["lily_capability_list", "lily_capability_status", "runtime_pack_install", "runtime_pack_list", "schedule_task_create", "schedule_task_list"],
+    ["lily_capability_list", "lily_capability_status", "runtime_pack_install", "runtime_pack_list"],
     "stdio broker without session context exposes only platform capabilities",
   );
   const statusResult = await client.callTool({ name: "lily_capability_status", arguments: {} });
@@ -649,7 +649,7 @@ async function clientForServer(server) {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "runtime_pack_install", "runtime_pack_list", "schedule_task_create", "schedule_task_list"],
+    ["lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "runtime_pack_install", "runtime_pack_list"],
     "stdio broker reads explicit context and exposes platform capabilities",
   );
   await client.close();

@@ -156,6 +156,7 @@ function registerAll(ctx) {
     if (accountDisabled()) return disabledAccountResult();
     const result = await require("./account-manager").loginWithSms(payload || {});
     if (!result?.ok) return result;
+    ctx.scheduledTaskManager?.handlePrincipalChange?.();
     try {
       const configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
         force: true,
@@ -184,8 +185,12 @@ function registerAll(ctx) {
     accountDisabled() ? disabledAccountResult() : require("./account-manager").refreshEntitlements());
   ipcMain.handle("account:billing-link", () =>
     accountDisabled() ? disabledAccountResult() : require("./account-manager").createBillingLink());
-  ipcMain.handle("account:logout", () =>
-    accountDisabled() ? { ok: true } : require("./account-manager").logout());
+  ipcMain.handle("account:logout", async () => {
+    if (accountDisabled()) return { ok: true };
+    const result = await require("./account-manager").logout();
+    ctx.scheduledTaskManager?.handlePrincipalChange?.();
+    return result;
+  });
 
   ipcMain.handle("service:get-settings", () =>
     require("./service-client").getServiceSettings());

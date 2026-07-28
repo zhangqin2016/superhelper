@@ -18,8 +18,6 @@ const PLATFORM_TOOLS = [
   "lily_intent_contract_commit",
   "runtime_pack_install",
   "runtime_pack_list",
-  "schedule_task_create",
-  "schedule_task_list",
 ];
 
 try {

@@ -251,6 +251,10 @@ function scheduledTasksPath() {
   return userDataPath("scheduled-tasks.json");
 }
 
+function scheduledTasksDbPath() {
+  return userDataPath("scheduled-tasks.db");
+}
+
 function legacySessionsBackupPath() {
   return userDataPath("sessions.legacy-backup.json");
 }
@@ -354,6 +358,7 @@ module.exports = {
   sessionMessagesImportedDir,
   sessionSummariesDir,
   scheduledTasksPath,
+  scheduledTasksDbPath,
   legacySessionsBackupPath,
   deletedSessionsPath,
   projectsConfigPath,
