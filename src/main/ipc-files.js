@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
-const { ipcMain, dialog, clipboard } = require("electron");
+const { ipcMain, dialog, clipboard, Menu, app } = require("electron");
 const FileStagingManager = require("./file-staging-manager");
 const { fileStagingDir } = require("./config");
 const { inspectLocalMediaPath } = require("./local-media-protocol");
@@ -89,6 +89,11 @@ function normalizeClipboardFilePath(value) {
     }
   }
   if (!path.isAbsolute(text)) return "";
+  // Clipboard buffers are decoded as both UTF-8 and UTF-16 for cross-platform
+  // compatibility. A wrong decode can collapse arbitrary bytes into "/" (or a
+  // drive root). Never turn that false positive into an attachment for an
+  // entire disk.
+  if (path.parse(text).root === text) return "";
   return text;
 }
 
@@ -134,7 +139,9 @@ function extractClipboardFilePaths(clip = clipboard) {
 
   return [...paths].filter((p) => {
     try {
-      return fs.existsSync(p) && fs.statSync(p).isFile();
+      if (!fs.existsSync(p)) return false;
+      const stat = fs.statSync(p);
+      return stat.isFile() || stat.isDirectory();
     } catch {
       return false;
     }
@@ -155,12 +162,45 @@ function stageClipboardFiles(stagingManager, clip = clipboard) {
   return { ok: true, files: staged, errors, empty: paths.length === 0 };
 }
 
+function attachmentPickerProperties(kind = "file") {
+  return kind === "directory"
+    ? ["openDirectory", "multiSelections"]
+    : ["openFile", "multiSelections"];
+}
+
+function attachmentPickerLabels() {
+  const locale = String(app?.getLocale?.() || "").toLowerCase();
+  if (locale.startsWith("zh")) return { file: "选择文件", directory: "选择文件夹" };
+  if (locale.startsWith("ar")) return { file: "اختيار ملفات", directory: "اختيار مجلد" };
+  return { file: "Choose files", directory: "Choose folder" };
+}
+
+function chooseAttachmentKind(mainWindow) {
+  if (!Menu?.buildFromTemplate) return Promise.resolve("file");
+  const labels = attachmentPickerLabels();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const menu = Menu.buildFromTemplate([
+      { label: labels.file, click: () => finish("file") },
+      { label: labels.directory, click: () => finish("directory") },
+    ]);
+    menu.popup({ window: mainWindow, callback: () => finish("") });
+  });
+}
+
 function registerFileHandlers(mainWindow, stagingManager) {
   ipcMain.handle("files:pick", async () => {
+    const kind = await chooseAttachmentKind(mainWindow);
+    if (!kind) return { ok: false, canceled: true };
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Select File",
-      properties: ["openFile", "multiSelections"],
-      filters: FileStagingManager.getFileFilters(),
+      title: kind === "directory" ? "Select Folder" : "Select File",
+      properties: attachmentPickerProperties(kind),
+      ...(kind === "file" ? { filters: FileStagingManager.getFileFilters() } : {}),
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, canceled: true };
@@ -233,6 +273,7 @@ function registerFileHandlers(mainWindow, stagingManager) {
 }
 
 module.exports = {
+  attachmentPickerProperties,
   extractClipboardFilePaths,
   readTextPreview,
   registerFileHandlers,

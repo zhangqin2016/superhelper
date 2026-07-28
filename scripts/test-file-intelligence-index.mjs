@@ -108,6 +108,34 @@ try {
   assert.equal(bad.ok, false, "unsupported single binary file does not build fake index");
   assert.equal(bad.coverage, "failed");
 
+  const fallbackIndexId = "idx_sampled_json_fallback";
+  fs.writeFileSync(path.join(storeRoot, `${fallbackIndexId}.json`), JSON.stringify({
+    schemaVersion: 1,
+    indexId: fallbackIndexId,
+    sourcePath: source,
+    coverage: "sampled",
+    chunks: [{
+      chunkId: "sampled-1",
+      sourcePath: "policy.md",
+      sourceType: "text",
+      rangeType: "lines",
+      rangeStart: 1,
+      rangeEnd: 1,
+      coverage: "indexed",
+      confidence: "exact",
+      excerpt: "refund policy",
+      text: "refund policy",
+      tokens: ["refund", "policy"],
+    }],
+  }));
+  const fallbackQuery = queryIndex({
+    indexId: fallbackIndexId,
+    query: "refund",
+    storeRoot,
+  });
+  assert.equal(fallbackQuery.ok, true, "JSON fallback query succeeds");
+  assert.equal(fallbackQuery.coverage, "sampled", "JSON fallback preserves partial index coverage");
+
   console.log("file-intelligence-index: ok");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

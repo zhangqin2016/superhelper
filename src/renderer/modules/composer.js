@@ -11,6 +11,7 @@ import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { canSend, getTurnPhase, markSessionStopping, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
 import { chooseDialog } from "./confirm-dialog.js";
+import { attachmentDisplayPayload, attachmentSendPayload } from "./attachment-payload.js";
 
 /** Unsent composer text per session, restored on switch (in-memory only). */
 const sessionDrafts = new Map();
@@ -198,17 +199,7 @@ function sendErrorMessage(result) {
 export async function sendPrompt(opts = {}) {
   const promptInput = $("promptInput");
   let text = promptInput?.value.trim() || "";
-  const files = (store.get("pendingFiles") || []).map((f) => ({
-    id: f.id,
-    name: f.name,
-    path: f.path,
-    sourcePath: f.sourcePath,
-    staged: f.staged,
-    type: f.type,
-    size: f.size,
-    isImage: f.isImage,
-    dimensions: f.dimensions,
-  }));
+  const files = (store.get("pendingFiles") || []).map(attachmentSendPayload);
 
   if (!text && files.length === 0) return;
 
@@ -291,21 +282,10 @@ export async function sendPrompt(opts = {}) {
     if (!sendMode) return;
   }
 
-  const displayFiles = files.map((f) => {
-    const pending = (store.get("pendingFiles") || []).find((pf) => pf.id === f.id);
-    return {
-      id: f.id,
-      name: f.name,
-      path: f.path,
-      sourcePath: pending?.sourcePath || f.sourcePath,
-      staged: pending?.staged || f.staged,
-      type: f.type,
-      size: f.size,
-      isImage: f.isImage,
-      dimensions: pending?.dimensions || f.dimensions,
-      thumbnail: f.isImage ? (pending?.thumbnail || null) : null,
-    };
-  });
+  const pendingFiles = store.get("pendingFiles") || [];
+  const displayFiles = files.map((file) => (
+    attachmentDisplayPayload(file, pendingFiles.find((pending) => pending.id === file.id))
+  ));
   const savedText = text;
   const savedFiles = [...(store.get("pendingFiles") || [])];
 

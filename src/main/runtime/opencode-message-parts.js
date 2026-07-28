@@ -3,6 +3,14 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { resolveLiveFilePath } = require("../live-file-source");
+const {
+  buildAttachmentIndex,
+  buildSkippedAttachmentNote,
+  formatAttachmentBytes: formatBytes,
+  localIntelligenceReason,
+} = require("./opencode-attachment-context");
+const { isArchiveFilePath } = require("../mcp/archive-intelligence");
+const { escapeLocalPathText } = require("../safe-local-path-text");
 const FILE_MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -28,7 +36,6 @@ const DEFAULT_MAX_INLINE_FILE_BYTES =
   Number(process.env.LILY_OPENCODE_MAX_INLINE_FILE_BYTES) || 8 * 1024 * 1024;
 const DEFAULT_MAX_TEXT_ATTACHMENT_CHARS =
   Number(process.env.LILY_OPENCODE_MAX_TEXT_ATTACHMENT_CHARS) || 80_000;
-
 // `.svg` is an IMAGE mime but text content, so it has always been inlined as
 // text rather than sent as an image file part.
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([".svg"]);
@@ -65,61 +72,6 @@ const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([
   ".odp",
   ".rtf",
 ]);
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes)) return "unknown size";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function buildSkippedAttachmentNote(skipped = []) {
-  if (!skipped.length) return "";
-  const lines = skipped.map((item) => {
-    const size = Number.isFinite(item.size) ? `, ${formatBytes(item.size)}` : "";
-    const name = item.filename || path.basename(item.path || "") || "attachment";
-    const source = item.path ? ` (source path: ${item.path})` : "";
-    return `- ${name}${source}${size}: ${item.reason}`;
-  });
-  return [
-    "[Attachment note]",
-    "Some local files were not inlined into the OpenCode request to keep the desktop app responsive and avoid sending raw attachment bytes to the model service.",
-    ...lines,
-    "If document extraction succeeded, use the extracted text above. Otherwise use the source path with available file tools instead of asking the user to re-upload.",
-  ].join("\n");
-}
-
-function buildAttachmentIndex(files = []) {
-  const list = (Array.isArray(files) ? files : []).filter(Boolean);
-  if (!list.length) return "";
-  const lines = list.slice(0, 20).map((file, index) => {
-    const filePath = resolveLiveFilePath(file);
-    const name = file.name || file.filename || path.basename(filePath) || `attachment-${index + 1}`;
-    let stat = null;
-    if (filePath) {
-      try {
-        stat = fs.statSync(filePath);
-      } catch {
-        stat = null;
-      }
-    }
-    return [
-      `- ${name}`,
-      filePath ? `  source path: ${filePath}` : "  source path: unavailable",
-      file.sourcePath && file.sourcePath !== filePath ? `  original path: ${file.sourcePath}` : "",
-      typeof file.isImage === "boolean" ? `  image: ${file.isImage ? "yes" : "no"}` : "",
-      stat?.isFile?.() ? `  size: ${formatBytes(stat.size)}` : "",
-      filePath ? `  readable now: ${stat?.isFile?.() ? "yes" : "no"}` : "",
-    ].filter(Boolean).join("\n");
-  });
-  const omitted = list.length > 20 ? `\n\n${list.length - 20} more attachment(s) omitted from this index.` : "";
-  return [
-    "[Attachment index]",
-    "Use these exact local source paths when a task requires inspecting or editing an attached file. Do not search the workspace by filename unless the listed source path is missing or unreadable.",
-    ...lines,
-    omitted,
-  ].filter(Boolean).join("\n");
-}
 
 function truncateAttachmentText(text, limit = DEFAULT_MAX_TEXT_ATTACHMENT_CHARS) {
   const value = String(text || "");
@@ -239,9 +191,28 @@ function fileToTextAttachment(file, opts = {}) {
   if (!file || typeof file !== "object") return null;
   const filePath = resolveLiveFilePath(file);
   if (!filePath || !fs.existsSync(filePath)) return null;
+  if (file.pathOnly === true) {
+    const kind = String(file.kind || "file");
+    skipPathOnlyAttachment(
+      filePath,
+      file.name || path.basename(filePath),
+      opts,
+      localIntelligenceReason(kind),
+    );
+    return null;
+  }
+  if (isArchiveFilePath(filePath)) {
+    skipPathOnlyAttachment(
+      filePath,
+      file.name || path.basename(filePath),
+      opts,
+      "archive handled through Lily local file intelligence; use list_archive/read_archive_entry or index_path/query_index",
+    );
+    return null;
+  }
   const ext = fileExtension(file, filePath);
   if (!isInlineTextExtension(ext)) return null;
-  const filename = file.name || path.basename(filePath);
+  const filename = escapeLocalPathText(file.name || path.basename(filePath));
   const maxInlineFileBytes =
     Number.isFinite(opts.maxInlineFileBytes) && opts.maxInlineFileBytes >= 0
       ? opts.maxInlineFileBytes
@@ -265,7 +236,7 @@ function fileToTextAttachment(file, opts = {}) {
     const body = truncateAttachmentText(source, opts.maxTextAttachmentChars);
     return [
       `[Attached ${ext.slice(1).toUpperCase()}: ${filename}]`,
-      `Source path: ${filePath}`,
+      `Source path: ${escapeLocalPathText(filePath)}`,
       "",
       `\`\`\`${fence}`,
       body,
@@ -285,6 +256,12 @@ function fileToTextAttachment(file, opts = {}) {
  */
 function fileToPart(file, opts = {}) {
   if (!file || typeof file !== "object") return null;
+  if (file.pathOnly === true) {
+    const kind = String(file.kind || "file");
+    const reason = localIntelligenceReason(kind);
+    skipPathOnlyAttachment(file.path || file.filePath || "", file.name || file.filename || "", opts, reason);
+    return null;
+  }
   if (file.uri && file.mime) {
     if (isRasterImageAttachment(file, file.path || file.filePath || "", file.mime) && opts.allowImageFileParts !== true) {
       skipImageAttachment(file.path || file.filePath || "", file.name || file.filename || "", opts);
@@ -312,6 +289,28 @@ function fileToPart(file, opts = {}) {
   }
   const filePath = resolveLiveFilePath(file);
   if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    if (fs.statSync(filePath).isDirectory()) {
+      skipPathOnlyAttachment(
+        filePath,
+        file.name || path.basename(filePath),
+        opts,
+        "directory handled through Lily local file intelligence; use inspect_file then index_path/query_index",
+      );
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  if (isArchiveFilePath(filePath)) {
+    skipPathOnlyAttachment(
+      filePath,
+      file.name || path.basename(filePath),
+      opts,
+      "archive handled through Lily local file intelligence; use list_archive/read_archive_entry or index_path/query_index",
+    );
+    return null;
+  }
   const ext = fileExtension(file, filePath);
   const mime = file.mime || FILE_MIME[ext] || "application/octet-stream";
   const filename = file.name || path.basename(filePath);
@@ -392,6 +391,7 @@ function buildOpencodePromptBody(opts = {}) {
         textAttachments.push(textAttachment);
         continue;
       }
+      if (file?.pathOnly === true) continue;
       // A DISK text-type attachment that did not inline (too big / unreadable)
       // must NOT be resent as a raw file part — its content lives at the source
       // path and it was already noted. Sending it as a file part is exactly what

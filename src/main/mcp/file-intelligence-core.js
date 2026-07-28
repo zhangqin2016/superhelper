@@ -2,6 +2,13 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  archiveKindForPath,
+  detectArchiveFormat,
+  isSemanticZipContainerPath,
+  listArchive,
+} = require("./archive-intelligence");
+const { readDirectoryEntriesBounded } = require("./workspace-index-source");
 
 const DEFAULT_LARGE_THRESHOLD_BYTES = 20 * 1024 * 1024;
 const DEFAULT_MAX_SAMPLE_LINES = 40;
@@ -38,8 +45,9 @@ function fail(error, detail = {}, filePath = "") {
 }
 
 function statPath(filePath) {
-  const resolved = path.resolve(String(filePath || ""));
-  if (!resolved) return { error: fail("PATH_REQUIRED") };
+  const rawPath = String(filePath || "");
+  if (!rawPath) return { error: fail("PATH_REQUIRED") };
+  const resolved = path.resolve(rawPath);
   try {
     return { path: resolved, stat: fs.statSync(resolved) };
   } catch (err) {
@@ -49,6 +57,10 @@ function statPath(filePath) {
 
 function extensionKind(filePath) {
   const ext = path.extname(filePath).toLowerCase();
+  if (
+    archiveKindForPath(filePath)
+    || (detectArchiveFormat(filePath) && !isSemanticZipContainerPath(filePath))
+  ) return "archive";
   if (TEXT_EXTENSIONS.has(ext)) return "text";
   if (ext === ".pdf") return "pdf";
   if ([".xlsx", ".xlsm", ".xls"].includes(ext)) return "spreadsheet";
@@ -148,6 +160,7 @@ function recommendedActionsFor(kind, large) {
     return large ? ["sample", "extract-range", "index"] : ["extract", "sample", "index"];
   }
   if (kind === "directory") return ["sample", "index"];
+  if (kind === "archive") return ["sample-metadata", "list-archive", "read-archive-entry", "index"];
   if (kind === "pdf") return ["sample-metadata", "index-document", "query-document-index"];
   if (kind === "spreadsheet") return ["sample-metadata", "index-sheets", "query-document-index"];
   if (kind === "document") return ["sample-metadata", "index-document", "query-document-index"];
@@ -194,14 +207,21 @@ function dependencyRouteFor(kind) {
       requiredPacks: ["ffmpeg"],
     };
   }
+  if (kind === "archive") {
+    return {
+      indexPolicy: "archive-manifest",
+      requiredPacks: [],
+    };
+  }
   return {};
 }
 
 function inspectDirectory(filePath, stat, options = {}) {
   const maxEntries = Number(options.maxDirectoryEntries || DEFAULT_MAX_DIRECTORY_ENTRIES);
-  const names = fs.readdirSync(filePath);
+  const scan = readDirectoryEntriesBounded(filePath, maxEntries);
   const entries = [];
-  for (const name of names.slice(0, maxEntries)) {
+  for (const dirent of scan.entries) {
+    const name = dirent.name;
     const child = path.join(filePath, name);
     try {
       const st = fs.statSync(child);
@@ -218,11 +238,12 @@ function inspectDirectory(filePath, stat, options = {}) {
     ...okBase(filePath, stat),
     kind: "directory",
     sourceType: "directory",
-    coverage: names.length > maxEntries ? "sampled" : "full",
+    coverage: scan.truncated ? "sampled" : "full",
     confidence: "exact",
-    entryCount: names.length,
+    entryCount: scan.scannedCount,
+    entryCountIsLowerBound: scan.truncated,
     entries,
-    truncated: names.length > maxEntries,
+    truncated: scan.truncated,
     recommendedActions: recommendedActionsFor("directory", false),
   };
 }
@@ -255,7 +276,31 @@ function inspectPath(input = {}, options = {}) {
   }
 
   const large = stat.size > largeThreshold;
-  const typeSpecificInfo = kind === "image" ? { image: inspectImageMetadata(filePath) } : {};
+  let typeSpecificInfo = kind === "image" ? { image: inspectImageMetadata(filePath) } : {};
+  if (kind === "archive") {
+    const archive = listArchive({
+      path: filePath,
+      maxEntries: options.maxArchiveEntries || DEFAULT_MAX_DIRECTORY_ENTRIES,
+      timeoutMs: options.archiveTimeoutMs,
+    });
+    typeSpecificInfo = archive.ok
+      ? {
+          archive: {
+            entryCount: archive.entryCount,
+            fileCount: archive.fileCount,
+            directoryCount: archive.directoryCount,
+            encryptedEntryCount: archive.encryptedEntryCount,
+            unsafeEntryCount: archive.unsafeEntryCount,
+            totalUncompressedBytes: archive.totalUncompressedBytes,
+            totalPackedBytes: archive.totalPackedBytes,
+            expansionRatio: archive.expansionRatio,
+            suspiciousExpansion: archive.suspiciousExpansion,
+            truncated: archive.truncated,
+            entries: archive.entries,
+          },
+        }
+      : { archiveListError: archive.error, archiveListMessage: archive.message || "" };
+  }
   const dependencyRoute = dependencyRouteFor(kind);
   return {
     ...okBase(filePath, stat),

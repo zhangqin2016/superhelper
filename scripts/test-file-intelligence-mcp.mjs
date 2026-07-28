@@ -31,7 +31,7 @@ try {
   const names = tools.map((tool) => tool.name).sort();
   assert.deepEqual(
     names,
-    ["extract_file_range", "index_path", "inspect_file", "query_index", "sample_file"],
+    ["extract_file_range", "index_path", "inspect_file", "list_archive", "query_index", "read_archive_entry", "sample_file"],
     "stdio server exposes file intelligence tools",
   );
 

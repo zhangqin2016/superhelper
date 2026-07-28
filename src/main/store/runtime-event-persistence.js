@@ -70,8 +70,14 @@ function compactFile(file = {}) {
   return {
     name: file.name || file.filename || "",
     path: file.path || "",
+    sourcePath: file.sourcePath || "",
     type: file.type || file.mime || file.mediaType || "",
+    kind: file.kind || "",
+    extension: file.extension || "",
     size: Number.isFinite(file.size) ? file.size : null,
+    pathOnly: Boolean(file.pathOnly),
+    readable: file.readable !== false,
+    isDirectory: Boolean(file.isDirectory),
     isImage: Boolean(file.isImage),
     thumbnail: typeof file.thumbnail === "string" && file.thumbnail
       ? `[omitted thumbnail ${file.thumbnail.length} chars]`

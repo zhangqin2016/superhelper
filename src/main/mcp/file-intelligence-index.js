@@ -17,6 +17,14 @@ const {
   contentHash,
   readTextFile,
 } = require("./workspace-index-source");
+const { createArchiveIndexInspector } = require("./archive-index-policy");
+const {
+  chunksForMetadata,
+  chunksForText,
+  excerpt,
+  isMetadataIndexable,
+  tokenize,
+} = require("./file-intelligence-chunks");
 
 const DEFAULT_CHUNK_LINE_COUNT = 80;
 const DEFAULT_MAX_FILES = 200;
@@ -38,15 +46,6 @@ function safeId(value) {
     .slice(0, 160) || "index";
 }
 
-function compactWhitespace(value = "") {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function excerpt(value = "", limit = 500) {
-  const text = compactWhitespace(value);
-  return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
-}
-
 function fail(error, detail = {}) {
   return { ok: false, error, coverage: "failed", confidence: "exact", ...detail };
 }
@@ -63,80 +62,8 @@ function reportProgress(onProgress, event = {}) {
   }
 }
 
-function tokenize(value = "") {
-  const text = String(value || "").toLowerCase();
-  const words = text.match(/[\p{L}\p{N}_-]+/gu) || [];
-  const tokens = new Set(words.filter((word) => word.length > 1));
-  for (const word of words) {
-    if (/[\u3400-\u9fff]/.test(word) && word.length > 1) {
-      for (let i = 0; i < word.length - 1; i += 1) tokens.add(word.slice(i, i + 2));
-    }
-  }
-  return [...tokens];
-}
-
 function indexRecordPath(storeRoot, indexId) {
   return path.join(storeRoot || defaultStoreRoot(), `${safeId(indexId)}.json`);
-}
-
-function chunksForText(filePath, text, linesPerChunk) {
-  const lines = String(text || "").split(/\r?\n/);
-  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-  const chunks = [];
-  for (let start = 1; start <= lines.length; start += linesPerChunk) {
-    const end = Math.min(lines.length, start + linesPerChunk - 1);
-    const raw = lines.slice(start - 1, end).join("\n").trim();
-    if (!raw) continue;
-    chunks.push({
-      chunkId: "",
-      sourcePath: filePath,
-      sourceType: "text",
-      rangeType: "lines",
-      rangeStart: start,
-      rangeEnd: end,
-      coverage: "indexed",
-      confidence: "exact",
-      excerpt: excerpt(raw),
-      text: raw,
-      tokens: tokenize(`${path.basename(filePath)} ${raw}`),
-    });
-  }
-  return chunks;
-}
-
-function isMetadataIndexable(info = {}) {
-  return ["pdf", "spreadsheet", "document", "presentation", "image", "video", "audio"].includes(info.kind);
-}
-
-function chunksForMetadata(info = {}) {
-  const requiredPacks = Array.isArray(info.requiredPacks) ? info.requiredPacks : [];
-  const recommendedActions = Array.isArray(info.recommendedActions) ? info.recommendedActions : [];
-  const image = info.image ? ` image=${JSON.stringify(info.image)}` : "";
-  const detail = [
-    `File: ${path.basename(info.sourcePath || "")}`,
-    `Type: ${info.kind || "unknown"}`,
-    `Size: ${info.byteSize || 0} bytes`,
-    info.indexPolicy ? `Index policy: ${info.indexPolicy}` : "",
-    requiredPacks.length ? `Dependency packs: ${requiredPacks.join(", ")}` : "",
-    recommendedActions.length ? `Recommended actions: ${recommendedActions.join(", ")}` : "",
-    image,
-  ].filter(Boolean).join("\n");
-  return [{
-    chunkId: "",
-    sourcePath: info.sourcePath || "",
-    sourceType: info.kind || "unknown",
-    rangeType: "metadata",
-    rangeStart: 1,
-    rangeEnd: 1,
-    coverage: "metadata-indexed",
-    confidence: "exact",
-    excerpt: excerpt(detail),
-    text: detail,
-    indexPolicy: info.indexPolicy || "",
-    requiredPacks,
-    recommendedActions,
-    tokens: tokenize(`${path.basename(info.sourcePath || "")} ${info.kind || ""} ${info.indexPolicy || ""} ${requiredPacks.join(" ")} ${recommendedActions.join(" ")}`),
-  }];
 }
 
 function writeJson(file, value) {
@@ -145,8 +72,9 @@ function writeJson(file, value) {
 }
 
 function indexPath(input = {}) {
-  const root = path.resolve(String(input.path || ""));
-  if (!root) return fail("PATH_REQUIRED");
+  const rawRoot = String(input.path || "");
+  if (!rawRoot) return fail("PATH_REQUIRED");
+  const root = path.resolve(rawRoot);
   const legacyStoreRoot = input.storeRoot || defaultStoreRoot();
   const workspaceStoreRoot = input.storeRoot || "";
   let rootIsFile = false;
@@ -161,9 +89,11 @@ function indexPath(input = {}) {
   const linesPerChunk = Math.max(1, Math.min(Number(input.chunkLineCount || DEFAULT_CHUNK_LINE_COUNT), 500));
   const maxFileBytes = Math.max(1024, Number(input.maxFileBytes || DEFAULT_MAX_FILE_BYTES));
   const files = candidateFiles(root, input);
+  let coverage = files.truncated ? "sampled" : "indexed";
   const chunks = [];
   const skipped = [];
   const onProgress = input.onProgress;
+  const inspectIndexCandidate = createArchiveIndexInspector(input, inspectPath);
   let processed = 0;
   reportProgress(onProgress, {
     phase: "started",
@@ -172,7 +102,22 @@ function indexPath(input = {}) {
     processed,
   });
   for (const file of files) {
-    const info = inspectPath({ path: file });
+    const candidate = inspectIndexCandidate(file);
+    if (candidate.skippedReason) {
+      processed += 1;
+      coverage = "sampled";
+      const item = { sourcePath: file, reason: candidate.skippedReason };
+      skipped.push(item);
+      reportProgress(onProgress, {
+        phase: "file-skipped",
+        sourcePath: file,
+        reason: item.reason,
+        total: files.length,
+        processed,
+      });
+      continue;
+    }
+    const info = candidate.info;
     if (!info.ok) {
       processed += 1;
       const item = { sourcePath: file, reason: info.error || `unsupported kind ${info.kind || "unknown"}` };
@@ -267,7 +212,7 @@ function indexPath(input = {}) {
     indexId,
     createdAt: new Date().toISOString(),
     sourcePath: root,
-    coverage: "indexed",
+    coverage,
     filesSeen: files.length,
     filesIndexed: new Set(chunks.map((chunk) => chunk.sourcePath)).size,
     filesSkipped: skipped.length,
@@ -300,7 +245,7 @@ function indexPath(input = {}) {
   });
   return {
     ok: true,
-    coverage: "indexed",
+    coverage,
     confidence: "exact",
     indexId,
     indexPath: file,
@@ -604,7 +549,7 @@ function queryIndex(input = {}) {
   scored.sort((a, b) => b.score - a.score || String(a.chunk.chunkId).localeCompare(String(b.chunk.chunkId)));
   return {
     ok: true,
-    coverage: "indexed",
+    coverage: record.coverage || "indexed",
     confidence: "exact",
     indexId: record.indexId,
     sourcePath: record.sourcePath,

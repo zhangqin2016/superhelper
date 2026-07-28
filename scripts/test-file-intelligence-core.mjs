@@ -17,6 +17,7 @@ const { createFileIntelligenceMcpServer } = require("../src/main/mcp/file-intell
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-file-intel-"));
 
 try {
+  assert.equal(inspectPath({}).error, "PATH_REQUIRED", "empty inspect paths are rejected explicitly");
   const largeText = path.join(tmp, "large.log");
   fs.writeFileSync(
     largeText,
@@ -108,12 +109,16 @@ try {
   assert(!pdfInfo.recommendedActions.includes("extract"), "PDF does not get a generic text extraction recommendation from Phase 1/2");
 
   const xlsx = path.join(tmp, "book.xlsx");
-  fs.writeFileSync(xlsx, "not a real workbook, metadata route only");
+  fs.writeFileSync(xlsx, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]));
   const xlsxInfo = inspectPath({ path: xlsx });
   assert.equal(xlsxInfo.kind, "spreadsheet", "spreadsheet kind is detected");
   assert.equal(xlsxInfo.indexPolicy, "sheet-index", "Excel should route to sheet-level indexing");
   assert(xlsxInfo.requiredPacks.includes("large-document"), "large spreadsheet handling should route to large-document pack");
   assert(!xlsxInfo.recommendedActions.includes("extract"), "Excel should not recommend generic full extraction");
+
+  const docx = path.join(tmp, "report.docx");
+  fs.writeFileSync(docx, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]));
+  assert.equal(inspectPath({ path: docx }).kind, "document", "ZIP-based Office formats outrank generic archive magic");
 
   const video = path.join(tmp, "clip.mp4");
   fs.writeFileSync(video, Buffer.from("fake mp4"));
@@ -122,6 +127,27 @@ try {
   assert.equal(videoInfo.indexPolicy, "media-probe", "video should route to media probing");
   assert(videoInfo.requiredPacks.includes("ffmpeg"), "video probing should route to FFmpeg pack");
   assert(!videoInfo.recommendedActions.includes("extract"), "video should not recommend text extraction");
+
+  const archive = path.join(tmp, "bundle.tar.gz");
+  fs.writeFileSync(archive, Buffer.from("not a real archive"));
+  const archiveInfo = inspectPath({ path: archive });
+  assert.equal(archiveInfo.kind, "archive", "compound archive extensions are detected");
+  assert.equal(archiveInfo.indexPolicy, "archive-manifest", "archives route to manifest-first local indexing");
+  assert(archiveInfo.recommendedActions.includes("list-archive"), "archives recommend bounded listing");
+  assert(!archiveInfo.requiredPacks?.length, "bundled archive support is not presented as an optional runtime pack");
+
+  const disguisedArchive = path.join(tmp, "bundle.payload");
+  fs.writeFileSync(disguisedArchive, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]));
+  const disguisedArchiveInfo = inspectPath({ path: disguisedArchive });
+  assert.equal(disguisedArchiveInfo.kind, "archive", "archive signatures are detected when extensions are missing or misleading");
+
+  const disguisedImageArchive = path.join(tmp, "bundle.png");
+  fs.writeFileSync(disguisedImageArchive, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]));
+  assert.equal(
+    inspectPath({ path: disguisedImageArchive }).kind,
+    "archive",
+    "archive signatures outrank misleading image extensions",
+  );
 
   const server = createFileIntelligenceMcpServer();
   assert.equal(typeof server.connect, "function", "MCP server constructs with tool schemas");

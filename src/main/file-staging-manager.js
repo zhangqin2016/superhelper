@@ -12,6 +12,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { fileStagingDir } = require("./config");
+const {
+  detectArchiveFormat,
+  isArchiveFilePath,
+  isSemanticZipContainerPath,
+} = require("./mcp/archive-intelligence");
 
 // ---------------------------------------------------------------------------
 // File type detection
@@ -54,6 +59,26 @@ const MIME_TYPES = {
   ".pdf": "application/pdf",
 };
 
+const ARCHIVE_SUFFIXES = [
+  ".tar.gz", ".tar.bz2", ".tar.xz",
+  ".zip", ".7z", ".rar", ".tar", ".tgz", ".tbz", ".tbz2", ".txz",
+  ".gz", ".bz2", ".xz",
+];
+
+function archiveExtension(filePath) {
+  const lower = String(filePath || "").toLowerCase();
+  return ARCHIVE_SUFFIXES.find((suffix) => lower.endsWith(suffix)) || "";
+}
+
+function pathReadable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // FileStagingManager
 // ---------------------------------------------------------------------------
@@ -77,20 +102,28 @@ class FileStagingManager {
     }
 
     const stat = fs.statSync(srcPath);
-    if (!stat.isFile()) {
-      throw new Error("NOT_A_FILE");
-    }
-
+    const isDirectory = stat.isDirectory();
+    if (!stat.isFile() && !isDirectory) throw new Error("UNSUPPORTED_PATH");
     const ext = path.extname(srcPath).toLowerCase();
-    if (!ALL_SUPPORTED.has(ext)) {
-      throw new Error("UNSUPPORTED_TYPE");
-    }
-
+    let supported = stat.isFile() && ALL_SUPPORTED.has(ext);
+    const archiveExt = archiveExtension(srcPath);
+    const detectedArchiveFormat = stat.isFile() ? detectArchiveFormat(srcPath) : "";
+    const archiveFormat = detectedArchiveFormat && !isSemanticZipContainerPath(srcPath)
+      ? detectedArchiveFormat
+      : "";
+    if (archiveFormat) supported = false;
+    const kind = isDirectory
+      ? "directory"
+      : archiveFormat
+        ? "archive"
+        : supported
+          ? (IMAGE_EXTENSIONS.has(ext) ? "image" : "file")
+          : "binary";
     const name = path.basename(srcPath);
     let storedPath = srcPath;
     let staged = false;
 
-    if (stat.size <= COPY_INTO_STAGING_MAX_BYTES) {
+    if (supported && stat.size <= COPY_INTO_STAGING_MAX_BYTES) {
       let destPath = path.join(this._stagingDir, name);
       let counter = 1;
       const base = path.basename(name, ext);
@@ -109,10 +142,15 @@ class FileStagingManager {
       name,
       path: storedPath,
       sourcePath: srcPath,
-      type: ext.slice(1),
-      size: stat.size,
+      type: isDirectory ? "directory" : archiveFormat || (archiveExt || ext).replace(/^\./, "") || "file",
+      extension: archiveExt || ext,
+      kind,
+      size: isDirectory ? 0 : stat.size,
       staged,
-      isImage: IMAGE_EXTENSIONS.has(ext),
+      pathOnly: isDirectory || !supported,
+      readable: pathReadable(srcPath),
+      isDirectory,
+      isImage: !archiveFormat && IMAGE_EXTENSIONS.has(ext),
     };
   }
 
@@ -164,6 +202,7 @@ class FileStagingManager {
    */
   getThumbnail(filePath) {
     if (!fs.existsSync(filePath)) return null;
+    if (isArchiveFilePath(filePath)) return null;
 
     const ext = path.extname(filePath).toLowerCase();
     if (!IMAGE_EXTENSIONS.has(ext)) return null;
@@ -187,6 +226,7 @@ class FileStagingManager {
    */
   getDimensions(filePath) {
     if (!fs.existsSync(filePath)) return null;
+    if (isArchiveFilePath(filePath)) return null;
 
     const ext = path.extname(filePath).toLowerCase();
     if (!IMAGE_EXTENSIONS.has(ext)) return null;

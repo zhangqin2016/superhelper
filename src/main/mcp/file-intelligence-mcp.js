@@ -11,6 +11,10 @@ const {
   indexPath,
   queryIndex,
 } = require("./file-intelligence-index");
+const {
+  listArchive,
+  readArchiveEntry,
+} = require("./archive-intelligence");
 
 function asTextJson(value) {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
@@ -70,6 +74,31 @@ function createFileIntelligenceMcpServer() {
   );
 
   server.registerTool(
+    "list_archive",
+    {
+      description: "List a bounded local archive manifest without extracting files. Reports encryption, unsafe paths, expansion risk, and sampled/full coverage. Example call: {\"path\":\"/data/customer.zip\",\"maxEntries\":200}",
+      inputSchema: {
+        path: z.string().describe("Absolute or workspace-relative local archive path"),
+        maxEntries: z.number().int().min(1).max(5000).optional().describe("Maximum archive entries returned"),
+      },
+    },
+    async (args) => asTextJson(listArchive(args || {})),
+  );
+
+  server.registerTool(
+    "read_archive_entry",
+    {
+      description: "Read one exact safe text entry from a local archive without extracting it to disk. Encrypted, unsafe, binary, or oversized entries are refused. Example call: {\"path\":\"/data/customer.zip\",\"entryPath\":\"docs/readme.txt\"}",
+      inputSchema: {
+        path: z.string().describe("Absolute or workspace-relative local archive path"),
+        entryPath: z.string().describe("Exact entry path returned by list_archive"),
+        maxEntryBytes: z.number().int().min(1).max(16 * 1024 * 1024).optional().describe("Maximum uncompressed bytes returned"),
+      },
+    },
+    async (args) => asTextJson(readArchiveEntry(args || {})),
+  );
+
+  server.registerTool(
     "index_path",
     {
       description: "Build a reusable local evidence index for a text-like file, metadata-indexable document/media file, or bounded directory. Returns an index id; it does not answer the user's question by itself. Example call: {\"path\":\"/data/contracts\"}",
@@ -78,6 +107,7 @@ function createFileIntelligenceMcpServer() {
         workspacePath: z.string().optional().describe("Current workspace root for workspace-scoped index partitioning"),
         chunkLineCount: z.number().int().min(1).max(500).optional().describe("Lines per chunk for text-like files"),
         maxFiles: z.number().int().min(1).max(1000).optional().describe("Maximum files to consider in a directory"),
+        maxArchives: z.number().int().min(1).max(100).optional().describe("Maximum archives to inspect during one directory index build"),
       },
     },
     async (args) => asTextJson(indexPath(args || {})),
