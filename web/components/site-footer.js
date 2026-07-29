@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import Link from "next/link";
 import { getI18n } from "../lib/i18n.mjs";
+import { legalFooterFor } from "../lib/legal-content.mjs";
 
 const ICP_NUMBER = "京ICP备2026001588号-2";
 const COMPANY_NAME = "北京科瑞普投艺术科技有限公司";
@@ -57,7 +58,8 @@ function shouldShowChinaFiling(headerStore) {
 export async function SiteFooter() {
   const headerStore = await headers();
   const showChinaFiling = shouldShowChinaFiling(headerStore);
-  const { t } = await getI18n();
+  const { locale, t } = await getI18n();
+  const legal = legalFooterFor(locale);
 
   return (
     <footer className="site-footer">
@@ -68,6 +70,10 @@ export async function SiteFooter() {
           <Link href="/wishes">{t.nav.wishes}</Link>
           <Link href="/pricing">{t.nav.pricing}</Link>
           <Link href="/download">{t.nav.download}</Link>
+          <Link href="/privacy">{legal.privacy}</Link>
+          <Link href="/terms">{legal.terms}</Link>
+          <Link href="/legal/data-and-third-parties">{legal.data}</Link>
+          <Link href="/account-deletion">{legal.deletion}</Link>
         </nav>
         {showChinaFiling ? (
           <div className="site-footer-filing">
