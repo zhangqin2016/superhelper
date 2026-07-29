@@ -58,6 +58,23 @@ app.whenReady().then(async () => {
 
     const afterQueuedFollow = panel.scrollTop;
     const detached = isUserScrollDetached(panel);
+
+    scrollToBottom(true, panel);
+    await frames();
+    const raceBottomTop = panel.scrollTop;
+    const raceUserTop = Math.max(0, raceBottomTop - 36);
+    panel.dispatchEvent(new WheelEvent("wheel", { deltaY: -36, bubbles: true }));
+    panel.dispatchEvent(new Event("scroll"));
+    panel.scrollTop = raceUserTop;
+    panel.dispatchEvent(new Event("scroll"));
+    if (!isUserScrollDetached(panel)) {
+      scrollToBottomAfterLayout(panel, true);
+    }
+    await frames();
+    const afterInterveningScroll = panel.scrollTop;
+    const detachedAfterInterveningScroll = isUserScrollDetached(panel);
+    const latestHiddenAfterInterveningScroll = document.getElementById("scrollToBottomBtn").hidden;
+
     scrollToBottom(true, panel);
     await frames();
     return {
@@ -65,6 +82,11 @@ app.whenReady().then(async () => {
       userTop,
       afterQueuedFollow,
       detached,
+      raceBottomTop,
+      raceUserTop,
+      afterInterveningScroll,
+      detachedAfterInterveningScroll,
+      latestHiddenAfterInterveningScroll,
       reattached: !isUserScrollDetached(panel),
       finalTop: panel.scrollTop,
     };
@@ -75,6 +97,20 @@ app.whenReady().then(async () => {
   assert(
     result.afterQueuedFollow <= result.userTop + 2,
     `queued auto-follow overrode user navigation: ${JSON.stringify(result)}`,
+  );
+  assert.equal(
+    result.detachedAfterInterveningScroll,
+    true,
+    `an intervening scroll event cleared the first upward gesture: ${JSON.stringify(result)}`,
+  );
+  assert(
+    result.afterInterveningScroll <= result.raceUserTop + 2,
+    `live auto-follow swallowed the first small upward gesture: ${JSON.stringify(result)}`,
+  );
+  assert.equal(
+    result.latestHiddenAfterInterveningScroll,
+    false,
+    "Latest must be visible whenever live auto-follow is detached",
   );
   assert.equal(result.reattached, true, "an explicit Latest action must resume auto-follow");
   assert(result.finalTop >= result.bottomTop - 2, "Latest must return to the bottom");

@@ -11,6 +11,7 @@ export const $ = (id) => document.getElementById(id);
 const SCROLL_THRESHOLD = 72;
 const USER_SCROLL_DETACHED = "userScrollDetached";
 const USER_SCROLL_INTENT_UNTIL = "userScrollIntentUntil";
+const USER_SCROLL_UP_INTENT_UNTIL = "userScrollUpIntentUntil";
 const USER_SCROLL_NAVIGATION_VERSION = "userScrollNavigationVersion";
 const PROGRAMMATIC_SCROLL = "programmaticScroll";
 const scheduledAutoFollowVersions = new WeakMap();
@@ -64,6 +65,8 @@ export function detachAutoFollowForUserNavigation(panel) {
 
 function markProgrammaticScroll(panel) {
   if (!panel?.dataset) return;
+  delete panel.dataset[USER_SCROLL_INTENT_UNTIL];
+  delete panel.dataset[USER_SCROLL_UP_INTENT_UNTIL];
   panel.dataset[PROGRAMMATIC_SCROLL] = "1";
   requestAnimationFrame(() => {
     if (panel.dataset[PROGRAMMATIC_SCROLL] === "1") delete panel.dataset[PROGRAMMATIC_SCROLL];
@@ -87,11 +90,25 @@ function hasUserScrollIntent(panel) {
   return Number(panel?.dataset?.[USER_SCROLL_INTENT_UNTIL] || 0) > Date.now();
 }
 
+function markUpwardUserScrollIntent(panel) {
+  if (!panel?.dataset) return;
+  panel.dataset[USER_SCROLL_UP_INTENT_UNTIL] = String(Date.now() + 1000);
+}
+
+function clearUpwardUserScrollIntent(panel) {
+  if (!panel?.dataset) return;
+  delete panel.dataset[USER_SCROLL_UP_INTENT_UNTIL];
+}
+
+function hasUpwardUserScrollIntent(panel) {
+  return Number(panel?.dataset?.[USER_SCROLL_UP_INTENT_UNTIL] || 0) > Date.now();
+}
+
 export function updateScrollToBottomButton(scrollEl) {
   const btn = $("scrollToBottomBtn");
   const messages = scrollEl || getActiveMessagesEl();
   if (!btn || !messages) return;
-  btn.hidden = isNearBottom(messages);
+  btn.hidden = !isUserScrollDetached(messages) && isNearBottom(messages);
 }
 
 /** Scroll after layout/markdown rendering has settled. */
@@ -152,10 +169,34 @@ export function bindPanelScroll(panel) {
   panel.addEventListener("wheel", (event) => {
     markUserScrollIntent(panel);
     if (!event.ctrlKey && Number(event.deltaY || 0) < 0) {
+      markUpwardUserScrollIntent(panel);
       setUserScrollDetached(panel, true);
+    } else {
+      clearUpwardUserScrollIntent(panel);
     }
   }, { passive: true });
-  panel.addEventListener("touchstart", markIntent, { passive: true });
+  let lastTouchY = null;
+  panel.addEventListener("touchstart", (event) => {
+    markIntent();
+    lastTouchY = Number(event.touches?.[0]?.clientY);
+  }, { passive: true });
+  panel.addEventListener("touchmove", (event) => {
+    const touchY = Number(event.touches?.[0]?.clientY);
+    if (Number.isFinite(lastTouchY) && Number.isFinite(touchY) && touchY > lastTouchY + 1) {
+      markUserScrollIntent(panel);
+      markUpwardUserScrollIntent(panel);
+      setUserScrollDetached(panel, true);
+    } else if (Number.isFinite(lastTouchY) && Number.isFinite(touchY) && touchY < lastTouchY - 1) {
+      clearUpwardUserScrollIntent(panel);
+    }
+    lastTouchY = touchY;
+  }, { passive: true });
+  panel.addEventListener("touchend", () => {
+    lastTouchY = null;
+  }, { passive: true });
+  panel.addEventListener("touchcancel", () => {
+    lastTouchY = null;
+  }, { passive: true });
   panel.addEventListener("pointerdown", markIntent, { passive: true });
   panel.addEventListener(
     "scroll",
@@ -166,16 +207,19 @@ export function bindPanelScroll(panel) {
       const userScrolledUp = currentTop < previousTop - 1;
       const nearBottom = isNearBottom(panel);
       const hasUserScrollIntentNow = hasUserScrollIntent(panel);
+      const upwardUserScrollIntent = hasUpwardUserScrollIntent(panel);
       const programmaticScroll = panel.dataset[PROGRAMMATIC_SCROLL] === "1";
       const wasDetached = isUserScrollDetached(panel);
       const nextDetached = nextAutoFollowDetachedState({
         previousDetached: wasDetached,
         hasUserScrollIntent: hasUserScrollIntentNow,
+        upwardUserScrollIntent,
         programmaticScroll,
         userScrolledUp,
         nearBottom,
       });
       setUserScrollDetached(panel, nextDetached);
+      if (upwardUserScrollIntent && userScrolledUp) clearUpwardUserScrollIntent(panel);
       if (hasUserScrollIntentNow) delete panel.dataset[USER_SCROLL_INTENT_UNTIL];
       if (!nextDetached && !nearBottom && !hasUserScrollIntentNow && !programmaticScroll) {
         scrollToBottomAfterLayout(panel, true);

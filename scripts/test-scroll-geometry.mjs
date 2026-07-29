@@ -67,6 +67,42 @@ assert.equal(
 assert.equal(
   nextAutoFollowDetachedState({
     previousDetached: true,
+    hasUserScrollIntent: true,
+    upwardUserScrollIntent: true,
+    programmaticScroll: false,
+    userScrolledUp: false,
+    nearBottom: true,
+  }),
+  true,
+  "an upward wheel that already detached must survive an intervening near-bottom scroll event",
+);
+assert.equal(
+  nextAutoFollowDetachedState({
+    previousDetached: true,
+    hasUserScrollIntent: false,
+    upwardUserScrollIntent: false,
+    programmaticScroll: false,
+    userScrolledUp: false,
+    nearBottom: true,
+  }),
+  true,
+  "a duplicate or layout scroll event near bottom must not silently reattach",
+);
+assert.equal(
+  nextAutoFollowDetachedState({
+    previousDetached: true,
+    hasUserScrollIntent: true,
+    upwardUserScrollIntent: false,
+    programmaticScroll: false,
+    userScrolledUp: false,
+    nearBottom: true,
+  }),
+  false,
+  "a deliberate downward user scroll to the bottom reattaches auto-follow",
+);
+assert.equal(
+  nextAutoFollowDetachedState({
+    previousDetached: true,
     hasUserScrollIntent: false,
     programmaticScroll: true,
     userScrolledUp: false,

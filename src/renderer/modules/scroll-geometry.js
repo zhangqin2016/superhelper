@@ -50,13 +50,14 @@ export function revealScrollIntent(input = {}) {
 export function nextAutoFollowDetachedState(input = {}) {
   const previousDetached = Boolean(input.previousDetached);
   const hasUserScrollIntent = Boolean(input.hasUserScrollIntent);
+  const upwardUserScrollIntent = Boolean(input.upwardUserScrollIntent);
   const programmaticScroll = Boolean(input.programmaticScroll);
   const userScrolledUp = Boolean(input.userScrolledUp);
   const nearBottom = Boolean(input.nearBottom);
 
+  if (upwardUserScrollIntent) return true;
   if (hasUserScrollIntent) return userScrolledUp || !nearBottom;
   if (programmaticScroll) return nearBottom ? false : previousDetached;
-  if (nearBottom) return false;
   return previousDetached;
 }
 
