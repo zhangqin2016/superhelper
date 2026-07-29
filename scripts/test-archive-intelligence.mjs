@@ -43,6 +43,13 @@ try {
   assert.equal(parsed.entries.length, 2);
   assert.equal(parsed.entries[1].unsafePath, true, "parent traversal is marked unsafe");
   assert.equal(parsed.entries[1].encrypted, true, "encrypted entries are reported");
+  const windowsPaths = parseSevenZipList([
+    "Path = docs\\readme.txt",
+    "Size = 12",
+    "Packed Size = 8",
+    "Folder = -",
+  ].join("\n"));
+  assert.equal(windowsPaths.entries[0].path, "docs/readme.txt");
   assert.equal(
     readArchiveEntry({ path: path.join(tmp, "missing.zip"), entryPath: "@entry-list.txt" }).error,
     "PATH_UNAVAILABLE",

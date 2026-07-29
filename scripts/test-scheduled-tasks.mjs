@@ -10,6 +10,11 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-scheduled-tasks-"))
 const userData = path.join(tempRoot, "userData");
 const electronPath = require.resolve("electron");
 
+delete process.env.LILY_CLIENT_REGION;
+delete process.env.CLIENT_REGION;
+delete process.env.LILY_SERVICE_API_BASE_URL;
+delete process.env.SERVICE_API_BASE_URL;
+
 require.cache[electronPath] = {
   id: electronPath,
   filename: electronPath,
@@ -64,6 +69,9 @@ async function flushMicrotasks() {
   await Promise.resolve();
   await Promise.resolve();
 }
+
+let manager;
+let queuedManager;
 
 try {
   fs.mkdirSync(userData, { recursive: true });
@@ -176,7 +184,7 @@ try {
   assertLocalTime(nextHourly, 10, 0, "hourly schedule should align to next full local hour");
 
   const sent = [];
-  const manager = new ScheduledTaskManager();
+  manager = new ScheduledTaskManager();
   manager.load();
   manager.start({
     sessionManager: {
@@ -283,7 +291,7 @@ try {
   manager.completeRun("s1", runningRun.turnId, "turn.completed", {});
   assert(runningRun.status === "succeeded", `run should complete: ${JSON.stringify(runningRun)}`);
 
-  const queuedManager = new ScheduledTaskManager();
+  queuedManager = new ScheduledTaskManager();
   const manualSent = [];
   queuedManager.load();
   queuedManager.start({
@@ -357,5 +365,7 @@ try {
 
   console.log("scheduled-tasks: ok");
 } finally {
+  queuedManager?.close();
+  manager?.close();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

@@ -100,14 +100,15 @@ function parseSevenZipList(output, options = {}) {
       fields[line.slice(0, separator).trim()] = line.slice(separator + 3).trim();
     }
     if (!fields.Path) continue;
+    const entryPath = fields.Path.replace(/\\/g, "/");
     const folder = fields.Folder === "+" || String(fields.Attributes || "").startsWith("D");
     const entry = {
-      path: fields.Path,
+      path: entryPath,
       kind: folder ? "directory" : "file",
       size: parseInteger(fields.Size),
       packedSize: parseInteger(fields["Packed Size"]),
       encrypted: fields.Encrypted === "+",
-      unsafePath: unsafeArchiveEntryPath(fields.Path),
+      unsafePath: unsafeArchiveEntryPath(entryPath),
     };
     if (fields.Modified) entry.modifiedAt = fields.Modified;
     allEntries.push(entry);
