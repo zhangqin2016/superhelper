@@ -97,10 +97,27 @@ Compatibility is reported per feature rather than as a vague success flag:
 }
 ```
 
+Lily distinguishes three compatibility levels:
+
+1. `lossless_data`: the original bytes and unknown fields can be preserved.
+2. `safe_behavior`: Lily implements the declarative behavior under Lily's
+   authority, budget, and security model.
+3. `preserved_inert`: the data survives export but does not execute.
+
+Import success never implies complete SillyTavern runtime parity. The preview
+shows the level for prompts, macros, world entries, assets, and extensions.
+This is especially important for V3 cards that are structurally importable
+before every safe declarative V3 behavior ships.
+
 An unchanged import can be exported byte-for-byte from its preserved original.
 After a Lily edit, export creates a valid target-version card, merges preserved
 unknown fields when they do not conflict, and reports every field that cannot
 round-trip. It never claims byte stability after a semantic edit.
+
+The default edited export keeps the detected specification version. New Lily
+cards export as V3. Upgrading or downgrading the target version is an explicit
+choice with a pre-export loss report; Lily never silently downgrades a card for
+another frontend.
 
 ### 4.2 Unsupported behavior
 
@@ -113,6 +130,10 @@ The following may be preserved for round-trip fidelity but remain disabled:
 - Tool or function declarations that attempt to bypass Lily's tool broker.
 - Remote asset loaders, webhooks, and external API calls.
 - Host-setting overrides, model overrides, and permission overrides.
+- Sampling presets, temperature, context size, model locks, and provider
+  profiles. A safe presentation hint such as talkativeness may influence
+  response length inside Lily's existing output budget, but it never changes
+  the selected model or generation safety settings.
 
 The import result reports unsupported inert fields without blocking use of the
 safe parts of the card.
@@ -273,6 +294,12 @@ Higher layers always win. Imported text is explicitly delimited and labeled as
 untrusted narrative data. A card statement such as "ignore all prior
 instructions," "never use tools," or "send this file" has no authority over
 layers 1 through 3.
+
+This hierarchy is a model contract, not a security sandbox. Lily never relies
+on prompt wording alone to protect files, accounts, permissions, credentials,
+network access, or side effects. Those remain host-enforced. Adversarial-model
+tests measure instruction-following quality, but failure of such a test cannot
+be used to weaken the host boundary.
 
 Host enforcement remains the real security boundary:
 
@@ -619,6 +646,12 @@ occurrence is durably accepted. They never use the character selected in the
 currently focused window. Restart recovery reuses the stored snapshot rather
 than resolving the conversation's newer binding.
 
+Desktop, mobile, imported command, and scheduled-message origins all use this
+same host acceptance path. A client may request a binding change by entity ID,
+but the main process resolves owner scope and revisions; no client can attach
+an inline role payload directly to a turn or rely on the visually focused
+conversation.
+
 ## 10. Context Compilation And Budgeting
 
 ### 10.1 Compiled contract
@@ -678,6 +711,13 @@ allocation and can be dropped completely. It cannot displace the protected
 Lily identity, capability, permission, or evidence sections. OpenCode prompt
 history adapters and renderer projections must prove that the hidden character
 envelope never appears as a user message.
+
+The serialized system message keeps Lily's protected prefix byte-stable and
+appends a separately fingerprinted dynamic character suffix. Role changes,
+world activation, and Persona changes may invalidate only the dynamic suffix.
+They must not reorder or rewrite the static Lily prefix, because doing so would
+reduce provider prompt-cache reuse and make role conversations slower and more
+expensive than necessary.
 
 If a provider/runtime cannot reliably carry the lower-authority per-request
 system context, character compilation is disabled for that turn and Lily runs
@@ -783,6 +823,27 @@ Character episodic memory is keyed by conversation ID and character revision
 ID. It is not shared across conversations unless the user explicitly exports
 and imports it. Returning to a previously used character in the same
 conversation can recover that character's bounded episodic memory.
+
+Every durable narrative memory item is provenance-bearing:
+
+```js
+{
+  id: "uuid",
+  kind: "scene_fact" | "character_belief" | "relationship" | "open_thread",
+  text: "",
+  sourceTurnIds: [],
+  characterRevisionId: "uuid",
+  confidence: "explicit" | "derived",
+  supersedesId: "uuid-or-null",
+  createdAt: "ISO-8601"
+}
+```
+
+`character_belief` may contradict reality by design. Derived items never become
+verified Lily task facts. Updates append a superseding item instead of silently
+rewriting history. Group participants receive shared scene facts plus their own
+memory; one character's private belief is not injected into another character
+unless scene policy explicitly marks it shared.
 
 Memory extraction runs only after a successful finalized turn. A failed,
 cancelled, rewound, or interrupted turn does not advance scene or character
@@ -913,6 +974,10 @@ All parsing occurs in the main process or a constrained local worker with:
 - MIME/signature inspection instead of trusting extensions.
 - No network access and no code execution.
 - Cancellation and bounded elapsed time.
+- Null-prototype normalization or equivalent protection against prototype
+  pollution keys such as `__proto__`, `prototype`, and `constructor`.
+- Parameterized SQL only; imported names and IDs never become SQL fragments,
+  paths, IPC channel names, or HTML.
 
 Oversized data is rejected as a character import with a precise reason but
 remains eligible for Lily's ordinary local-file handling.
@@ -937,6 +1002,12 @@ Default limits are centralized, versioned, and test-visible:
 Limits protect local stability, not product capability. A limit breach reports
 the exact limit and leaves the original input available to the ordinary file
 path; it never partially imports a card and presents it as complete.
+
+PNG/APNG metadata is parsed without decoding every animation frame. Avatar
+rendering decodes a bounded still frame unless the UI explicitly supports and
+budgets animation. Multiple card chunks, duplicate JSON keys, invalid Unicode,
+and conflicting legacy mirrors are surfaced in the import report instead of
+being resolved by parser accident.
 
 ### 14.2 Canonical storage
 
@@ -964,6 +1035,13 @@ orphan references incrementally and quarantines only the corrupt row/blob,
 never replaces a readable database with an empty store, and never blocks first
 paint on a full-library scan.
 
+Blob commit order is crash-safe: validate and hash into a temporary file, atomically
+rename the content-addressed blob, then commit metadata and reference rows in
+one SQLite transaction. A crash before the transaction can leave only an
+unreferenced blob for later GC; a committed revision never intentionally points
+to bytes that were not already durably placed. Export and active-turn leases
+pin referenced blobs against concurrent GC.
+
 ### 14.3 Assets and privacy
 
 - Avatars and originals stay local by default.
@@ -973,6 +1051,14 @@ paint on a full-library scan.
 - Imported creator metadata is displayed as card data, not trusted identity.
 - Telemetry contains only coarse format, success/failure code, and bounded
   counts. It never includes card text, Persona text, world content, or images.
+
+Imported HTML is never rendered directly. Card text uses escaped text or the
+same sanitized Markdown pipeline as normal Lily messages. Remote Markdown
+images, fonts, audio, CSS, and link previews do not auto-load, preventing IP
+leakage and tracking. Explicit remote retrieval goes through Lily's existing
+network permission and URL-safety path, blocks local/private network targets
+and credential-bearing URLs, validates MIME/signature/size, and stores the
+result as a local content-addressed asset.
 
 Model-provider content and safety policies still apply to generated responses.
 Importing a locally stored card does not weaken provider safety behavior or
@@ -1278,6 +1364,40 @@ Run a natural-language acceptance pack that verifies:
     and role modes while only safe conversational prose changes.
 12. Verify workspace portability and side-effect-safe response variants.
 
+### 19.7 Release gates
+
+The feature does not graduate from a phase flag until:
+
+- the full existing Lily unit suite and Capability Gate suite pass;
+- deterministic native-versus-role Agent tasks have 100% parity for required
+  tools, permissions, evidence, artifacts, and machine-readable output;
+- every licensed compatibility fixture imports and exports at its declared
+  compatibility level with zero unreported field loss;
+- parser/property fuzzing completes at least 100,000 generated hostile inputs
+  with no crash, hang, network access, path escape, or partial committed import;
+- randomized concurrent send/queue/switch/steer/schedule/restart testing
+  completes at least 10,000 operation schedules with no cross-session binding;
+- the supported-model evaluation matrix shows no statistically significant
+  task-quality regression beyond a 3 percentage-point non-inferiority margin
+  at 95% confidence, while at least 90% of narrative cases satisfy the selected
+  character's identity and style rubric;
+- adversarial cards produce zero unauthorized host actions and zero instances
+  where role data changes task classification or permission scope;
+- performance targets pass on the slowest supported ordinary-hardware profile;
+- keyboard, screen-reader, zoom, CJK, and RTL acceptance passes on every shipped
+  operating-system family.
+
+The quality corpus, rubric, native baselines, model settings, random seeds, and
+raw outcomes are versioned release artifacts. Deterministic assertions score
+tools, evidence, formats, and protected spans. Narrative quality uses blinded
+independent judging plus a human audit sample; the model under test is never the
+only judge of its own output.
+
+Rollout is phase-flagged with an immediate local/server kill switch and staged
+exposure. Promotion decisions use only privacy-safe counts and error codes.
+Card text, world content, Persona data, memory, and images never enter rollout
+telemetry.
+
 ## 20. Observability
 
 Each archived turn records bounded metadata:
@@ -1297,6 +1417,11 @@ Each archived turn records bounded metadata:
     activatedEntryCount: 4,
     omittedEntryCount: 2,
     tokenEstimate: 2400,
+    compatibility: {
+      prompts: "safe_behavior",
+      macros: "safe_behavior",
+      extensions: "preserved_inert"
+    },
     fallback: null,
     warnings: []
   }
@@ -1306,6 +1431,11 @@ Each archived turn records bounded metadata:
 Diagnostics expose activation reasons and omissions without logging private
 content. User-facing errors remain concise. Developer diagnostics can identify
 the exact session, turn, revision, compiler stage, and fallback reason.
+
+Renderer acceptance includes automated screenshots at supported desktop and
+compact/mobile projection widths with long names, CJK, RTL, zoom, empty,
+loading, corrupt-card, and switch-during-turn states. Text, avatars, markers,
+menus, and composer controls must not overlap or shift the conversation layout.
 
 ## 21. Acceptance Criteria
 
