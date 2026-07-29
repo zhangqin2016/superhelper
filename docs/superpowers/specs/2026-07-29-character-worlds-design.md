@@ -160,6 +160,28 @@ resources, application state, or execute commands are unsupported and inert.
 Regular-expression substitutions, scripts, STscript, and Quick Replies are not
 macro features and are never executed.
 
+Expansion uses a real template lexer/parser, never chained regular-expression
+replacement. Macro handlers are registered pure functions over an immutable
+turn snapshot. The evaluator maintains an expansion stack for cycle detection,
+counts nested calls and output code points, and uses the turn's deterministic
+counter-based PRNG for supported random text macros.
+
+Expansion phases are fixed:
+
+1. Parse and validate templates at revision-index build time.
+2. Resolve base identity/session macros in matching keys and explicitly enabled
+   matching sources for the admitted binding.
+3. Run world-book activation and produce insertion buckets.
+4. Resolve non-nesting outlet macros from the selected buckets.
+5. Expand safe content macros in selected character/world/memory segments.
+6. Tokenize, pack, and serialize the final envelope.
+
+Macros never generate new executable macro syntax for a later unrestricted
+pass. A handler can return text only; newly returned delimiters stay literal
+unless that specific macro contract permits one bounded recursive expansion.
+Cache keys include macro-policy version and all snapshot fields used by
+expansion.
+
 ### 4.4 Licensing strategy
 
 Implementation is clean-room and based on public data-format behavior and
@@ -172,6 +194,7 @@ Reference documentation:
 - [SillyTavern repository](https://github.com/SillyTavern/SillyTavern)
 - [Characters](https://docs.sillytavern.app/usage/characters/)
 - [World Info](https://docs.sillytavern.app/usage/core-concepts/worldinfo/)
+- [Group Chats](https://docs.sillytavern.app/usage/core-concepts/groupchats/)
 - [Character Card V3 specification](https://github.com/kwaroran/character-card-spec-v3/blob/main/SPEC_V3.md)
 - [UI extensions](https://docs.sillytavern.app/for-contributors/writing-extensions/)
 - [Server plugins](https://docs.sillytavern.app/for-contributors/server-plugins/)
@@ -342,6 +365,34 @@ requires grounding or verification and the role-influenced attempt produces no
 required evidence, the existing evidence/recovery path continues the task.
 Role activation is never accepted as a reason to downgrade rigor.
 
+### 6.2 Expression-profile algorithm
+
+`CharacterCapabilityPolicy` derives an expression profile from Lily's existing
+host-built task contract before character content is attached:
+
+```text
+immersive
+  narrative dialogue, roleplay, scene continuation, creative conversation
+
+balanced
+  ordinary advice or explanation where role voice can cover prose but facts,
+  citations, and structured blocks stay protected
+
+task_preserving
+  tools, files, code, research, evidence, transactions, exact text,
+  machine-readable output, or high-stakes work
+```
+
+The user's explicit request may ask for a role-styled artifact or fully
+in-character explanation, but the card itself cannot select a weaker profile.
+Ambiguous classification fails to `task_preserving`. The profile controls which
+card segments are eligible, how much world/memory context is packed, and which
+output spans are protected. It never changes model route, tool availability,
+permission mode, task rigor, or output reserve.
+
+The same original request must produce the same task contract and execution
+profile whether no card, a normal card, or an adversarial card is selected.
+
 ## 7. Data Model
 
 All IDs are opaque UUIDs. Revisions are immutable. Mutable library records point
@@ -447,36 +498,55 @@ Persona is narrative context only. It has no account or authorization fields.
       constant: false,
       primaryKeys: [],
       secondaryKeys: [],
+      selective: false,
       selectiveLogic: "and_any" | "and_all" | "not_any" | "not_all",
       useRegex: false,
+      vectorized: false,
       caseSensitive: false,
       matchWholeWords: false,
       probability: 100,
-      inclusionGroup: "",
+      inclusionGroups: [],
       groupWeight: 100,
-      delayTurns: 0,
-      stickyTurns: 0,
-      cooldownTurns: 0
+      prioritizeInclusion: false,
+      useGroupScoring: false,
+      characterFilter: {
+        mode: "include" | "exclude",
+        characterNames: [],
+        characterTags: []
+      },
+      generationTriggers: [],
+      matchSources: [],
+      delayMessages: 0,
+      stickyMessages: 0,
+      cooldownMessages: 0
     },
     insertion: {
       position: "before_character" | "after_character" | "before_examples" |
-        "after_examples" | "at_depth",
+        "after_examples" | "author_note_top" | "author_note_bottom" |
+        "at_depth" | "outlet",
       depth: 4,
       role: "system" | "user" | "assistant",
-      order: 100
+      outletName: "",
+      order: 100,
+      priority: null
     },
     recursion: {
       preventFurtherRecursion: false,
-      excludeFromRecursion: false
+      excludeFromRecursion: false,
+      delayUntilRecursion: false,
+      recursionLevel: 0
     },
     preservedDecorators: [],
     preservedExtensions: {}
   }],
   scanPolicy: {
-    scanDepthTurns: 8,
+    scanDepthMessages: 8,
+    includeParticipantNames: true,
     tokenBudget: 0,
     recursive: true,
-    maxRecursionSteps: 4
+    maxRecursionSteps: 4,
+    minActivations: 0,
+    maxDepthMessages: 0
   },
   contentHash: "sha256:...",
   createdAt: "ISO-8601"
@@ -500,10 +570,18 @@ never becomes equal in authority to Lily's real system policy.
 {
   schemaVersion: 1,
   bindingVersion: 7,
+  compatibilityProfileVersion: 1,
   mode: "native" | "character" | "group" | "story",
   activeCharacterRevisionId: "uuid-or-null",
   activePersonaRevisionId: "uuid-or-null",
-  worldBookRevisionIds: [],
+  activeGreetingIndex: "integer-or-null",
+  worldBookBindings: [{
+    revisionId: "uuid",
+    scope: "chat" | "persona" | "character" | "global"
+  }],
+  worldResolutionPolicy: {
+    sourceMergeStrategy: "sorted_evenly" | "character_first" | "global_first"
+  },
   groupSceneId: "uuid-or-null",
   effectiveAfterTurnId: "last-admitted-turn-id-or-null",
   updatedAt: "ISO-8601"
@@ -516,6 +594,15 @@ never becomes equal in authority to Lily's real system policy.
 does not invent the ID of a future turn. Every admitted turn records the exact
 `bindingVersion` and revision IDs it actually used, which is the authoritative
 answer to "when did this binding first apply?"
+
+The compatibility profile pins behaviorally visible parsing, matching,
+insertion, macro, and group semantics for the conversation. A Lily upgrade may
+use a newer profile for new bindings, but does not silently change an existing
+long conversation. Explicit migration creates a binding event with a previewed
+compatibility report. Security policy and resource limits are separate,
+monotonic host controls: an old compatibility profile can never restore an
+unsafe parser, executable behavior, weaker permission, or obsolete security
+limit.
 
 The canonical binding does not live in `sessions-index.json`. It lives in the
 existing MessageStore SQLite database beside durable `turn_inputs`, so binding
@@ -566,11 +653,19 @@ turn_inputs.metadata_json.characterWorlds
 Entity rows are mutable library pointers; revision rows are immutable canonical
 JSON envelopes with hashes. A binding mutation transaction:
 
-1. validates that every referenced immutable revision exists;
-2. increments the session's `binding_version`;
-3. writes the current binding;
-4. appends the change event;
-5. returns the committed version for renderer reconciliation.
+1. requires the caller's `expectedBindingVersion`;
+2. validates that the current version still matches and every referenced
+   immutable revision exists under the host owner scope;
+3. increments the session's `binding_version`;
+4. writes the current binding;
+5. appends the change event;
+6. returns the committed version for renderer reconciliation.
+
+A version mismatch returns the latest binding without modifying state. Desktop,
+mobile, and concurrent renderer windows therefore cannot silently overwrite
+one another. Entity editing similarly requires `baseRevisionId`; a stale edit
+is retained as a draft/conflict and never replaces the current revision without
+explicit resolution.
 
 Turn acceptance snapshots that committed version and all effective revision IDs
 into the durable turn input before the turn can queue or execute. This leaves
@@ -652,6 +747,13 @@ but the main process resolves owner scope and revisions; no client can attach
 an inline role payload directly to a turn or rely on the visually focused
 conversation.
 
+Every internal continuation, evidence-recovery prompt, model self-heal retry,
+and safe replay for a turn reuses that turn's admitted binding snapshot. It
+never resolves the session's newer current binding mid-turn. A steering message
+also retains the binding snapshot, but may rerun the pure world resolver against
+the expanded active-turn corpus so newly mentioned lore can activate. Timed
+effects advance once at finalization, not once per steer or retry.
+
 ## 10. Context Compilation And Budgeting
 
 ### 10.1 Compiled contract
@@ -667,7 +769,7 @@ The compiler returns structured output:
   activatedWorldEntries: [{
     worldBookRevisionId: "uuid",
     entryId: "id",
-    reason: "constant | primary_key | selective_match",
+    reason: "constant | primary_key | selective_match | semantic | recursion | sticky",
     contentHash: "sha256:..."
   }],
   tokenEstimate: 2400,
@@ -764,29 +866,217 @@ is forbidden. If essential character identity cannot fit as a coherent bounded
 segment, the compiler emits no character context and runs native Lily rather
 than sending a misleading fragment.
 
+Packing is deterministic lexicographic packing, not a generic knapsack:
+
+1. Reserve protected Lily, current request, evidence, and output space.
+2. Compute exact tokens with the active model tokenizer when available, or use
+   the existing conservative provider-aware estimator.
+3. Order components by authority category, source priority, activation reason,
+   insertion order, and stable revision/entry ID.
+4. Add indivisible entries or safe paragraph segments while they fit.
+5. Record every omitted unit and reason.
+
+The compiler never chooses several low-authority lore entries over required
+character identity merely because they produce a higher aggregate score.
+Identical inputs, binding snapshots, model metadata, and seeds produce the same
+packed envelope and fingerprint.
+
+#### 10.3.1 Envelope assembly order
+
+After selection and packing, assemble a typed envelope in this order:
+
+1. Character mode and expression-profile contract.
+2. Card main/system prompt, explicitly demoted under Lily policy.
+3. World entries positioned before character definitions.
+4. Character name, description, personality, and scenario.
+5. World entries positioned after character definitions.
+6. Persona narrative description and current structured scene state.
+7. World entries positioned before examples.
+8. Bounded example dialogue.
+9. World entries positioned after examples.
+10. Selected episodic memories and open narrative threads.
+11. Author's Note top/body/bottom compatibility buckets.
+12. Post-history instructions, still inside the lower-authority envelope.
+13. Depth and outlet compatibility buckets with explicit placement labels.
+
+Each block has a type, source revision, content hash, token count, and
+compatibility level. Empty blocks disappear. The serializer uses a canonical
+JSON envelope with escaped string fields and a fixed Lily-owned prologue, so
+card text cannot close a block or impersonate a Lily layer.
+
+OpenCode does not receive fabricated historical user/assistant messages for
+examples or depth insertion. Where the runtime cannot represent a source
+position exactly without corrupting canonical history, Lily serializes the
+position inside the dynamic system suffix and reports `safe_behavior` rather
+than `lossless_data`.
+
 ### 10.4 World-book activation
 
-Activation is deterministic and reproducible:
+World-book activation is a pure resolver over an immutable turn snapshot. Its
+only output is an insertion plan plus the next timed-effect checkpoint.
 
-- Inspect only a bounded recent conversation window plus the current user turn.
-- Apply the detected format's enabled/constant status, primary and secondary
-  keys, selective logic, safe regex mode, case and whole-word behavior,
-  probability, inclusion groups, ordering, placement, recursion controls,
-  delay, sticky, cooldown, and depth using normalized data.
-- Seed probability decisions from session, turn, and entry IDs so retries of
-  the same turn activate the same entries.
-- Persist timed-effect state in the accepted turn's scene checkpoint so restart,
-  retry, and rewind reproduce activation.
-- Interpret known V3 decorators declaratively; unknown decorators remain inert
-  and are reported.
-- Deduplicate identical content by normalized hash.
-- Stop recursion and scanning at explicit depth, entry-count, character-count,
-  regex-time, and token limits.
+#### 10.4.1 Prepare sources and scan corpus
+
+1. Resolve chat-, Persona-, character-, and optional profile-global book
+   revisions from the admitted binding.
+2. Apply source precedence: chat and Persona lore first; character and global
+   lore follow the selected merge strategy. Source precedence breaks ties but
+   never bypasses entry insertion order.
+3. Build the scan corpus from the configured number of canonical messages. If
+   names are enabled, prefix each message with a stable participant separator
+   and resolved display name so regexes cannot match across accidental message
+   boundaries.
+4. Add only explicitly enabled matching sources such as description,
+   personality, scenario, Persona description, character note, or creator
+   notes. Matching sources are not automatically inserted into the prompt.
+5. Normalize a matching copy to Unicode NFC and apply version-pinned Unicode
+   default case folding when case-insensitive; never inherit the host OS locale.
+   Preserve original content for insertion and export. Whole-word matching uses
+   Electron's bundled, version-recorded ICU segmentation behavior; CJK entries
+   can disable whole-word mode as declared by the card.
+
+Plain keys use a compiled multi-pattern index grouped by case and word
+semantics, avoiding `entries x keys x corpus` substring loops. Regex keys are
+first reduced by enabled/generation/character/timed filters, then evaluated in
+deterministic priority order through the isolated bounded regex path. If the
+regex candidate cap is exceeded, omitted entry IDs/reasons are reported rather
+than silently pretending complete evaluation.
+Macro-free indexes are immutable and cached by world-book revision hash.
+Indexes containing expanded dynamic keys additionally key by the base-macro
+expansion fingerprint and locale/segmentation mode.
+The matching-policy version includes Unicode/ICU behavior so upgrades invalidate
+indexes explicitly and cross-platform fixtures detect drift.
+
+#### 10.4.2 Produce initial candidates
+
+Candidates come from:
+
+- enabled constant entries;
+- primary-key matches that pass secondary selective logic;
+- optional local semantic matches for entries that permit vector activation;
+- active sticky effects from the previous checkpoint.
+
+For every candidate, record source scope, matching keys, key-match count,
+activation route, recursion level, and stable content hash. Apply generation
+trigger and character/tag filters before probability. Apply delay and cooldown
+against canonical message sequence numbers, not wall time or user/assistant
+pairs.
+
+Probability uses a counter-based deterministic PRNG keyed by owner scope,
+session ID, turn ID, world revision, entry ID, and activation phase. Evaluation
+order therefore cannot change random outcomes. Sticky carry-over skips repeat
+probability when its compatibility profile requires that behavior.
+
+The PRNG is a specified SHA-256 counter construction, not `Math.random` or a
+home-grown mutable generator. Probability maps fixed high bits to a documented
+uniform interval; weighted group choice uses integer cumulative weights with
+rejection sampling to avoid modulo bias. Algorithm/version are archived so an
+upgrade cannot silently change an old turn's replay.
+
+#### 10.4.3 Resolve inclusion groups
+
+An entry may belong to multiple groups. Build a conflict graph where entries
+share an edge when they share any inclusion group:
+
+1. Optionally retain only the highest key-match score in each group.
+2. With prioritized inclusion, choose highest insertion order, then stable
+   entry ID.
+3. Otherwise use deterministic weighted selection from `groupWeight`.
+4. Remove all entries conflicting with a selected winner.
+5. Repeat in stable connected-component order until no conflict remains.
+
+The trace records candidates, scores, seed identity, winners, and eliminations
+without recording private matched text.
+
+#### 10.4.4 Recursion and minimum activation
+
+Activated content can trigger other entries. Resolve this as a bounded fixed
+point:
+
+1. Add newly activated content to a separate recursion corpus.
+2. Never reactivate an already selected entry in the same turn.
+3. Exclude entries marked non-recursable and stop propagation from entries
+   marked `preventFurtherRecursion`.
+4. Admit `delayUntilRecursion` entries only at their declared recursion level.
+5. Rerun filters, probability, and inclusion conflict resolution for each new
+   frontier.
+6. Stop at no new entries, token/entry budget, or configured recursion steps.
+
+`minActivations` and `maxRecursionSteps` are mutually exclusive compatibility
+policies. In minimum-activation mode, progressively scan older canonical
+messages up to `maxDepthMessages` until the minimum is met or the budget is
+exhausted; each new chat sweep can then start its own bounded recursion
+frontier. Cycles terminate because selection is monotonic by stable entry ID.
+
+#### 10.4.5 Budget and insertion plan
+
+Apply compatibility priority before packing:
+
+1. Sticky and constant entries.
+2. Direct chat matches.
+3. Other explicit matching-source matches.
+4. Recursive matches.
+5. Optional semantic matches.
+
+Within each class, apply source merge strategy and insertion order. Budget
+selection considers explicit `priority` first and otherwise larger
+insertion-order values when compatibility semantics give them higher budget
+priority. Prompt position is separate: after selected entries fit, render each
+bucket in the required order so larger insertion-order values land closer to
+the end where specified. Place entries into before/after
+character, before/after examples, Author's Note
+top/bottom, depth-role, or named outlet buckets. Outlet expansion is
+case-sensitive, non-nesting, and uses the safe macro engine. Unsupported Lily
+positions map to a documented lower-authority envelope position and report
+`safe_behavior`; they never silently claim exact parity.
+
+#### 10.4.6 Timed-effect transition
+
+Compute sticky, cooldown, and delay state from canonical message sequence
+numbers after final selection. Consequent matches do not refresh a running
+effect unless the detected compatibility profile explicitly requires it.
+Variant selection, rewind, deletion, entry revision change, retry, and restart
+restore or invalidate checkpoints at their retained turn boundary. Persist the
+next checkpoint transactionally only after successful turn finalization. The
+single checkpoint transition applies every committed message-sequence increment
+in that turn, including accepted steering messages; retries and response
+variants contribute no additional message increment.
+
+#### 10.4.7 V3 decorator compilation
+
+At immutable revision-index build time, parse leading V3 decorator lines into a
+typed AST and remove recognized directive lines from insertable content:
+
+- validate value type and range before a decorator can affect behavior;
+- for duplicate single-value decorators, use the specification's first-value
+  rule;
+- evaluate `@@@` fallback chains top-to-bottom with a supported chain depth of
+  at least five;
+- compile activation-count, greeting-index, scan-depth, role, position, depth,
+  reverse-depth, and stateful match decorators into the normalized entry plan;
+- apply specified precedence, such as explicit position overriding depth;
+- preserve unknown or invalid decorators inertly and report them;
+- never treat decorator text as a macro, script, or Lily instruction.
+
+Decorator AST and compatibility decisions are part of the revision index hash,
+trace, and cross-version golden fixtures.
+
+Every stage is deterministic and traceable. Stop recursion and scanning at
+explicit depth, entry-count, corpus-character, regex-time, and token limits.
+Interpret known V3 decorators declaratively; unknown decorators remain inert
+and appear in the compatibility report.
 
 An optional local semantic retrieval enhancement may add candidates when an
 already available Lily index supports it. Deterministic card behavior remains
 the baseline; missing embeddings or an unavailable optional dependency never
 blocks the turn.
+
+Semantic indexes are immutable snapshots keyed by source revision hashes,
+embedding provider/model/version, dimensions, normalization policy, and index
+algorithm version. The admitted turn records the semantic index version and
+candidate IDs. Retry/restart reuses that snapshot; if it is unavailable, Lily
+uses deterministic lexical activation rather than silently querying a newer
+index.
 
 ### 10.5 Long-session compaction
 
@@ -803,6 +1093,25 @@ The summary distinguishes:
 - The current active binding.
 
 This avoids resurrecting an old role after a later switch.
+
+### 10.6 Complexity envelope
+
+Let `B` be total normalized book bytes, `C` scan-corpus bytes, `K` total plain
+key bytes, `E` bounded candidate entries, `G` inclusion memberships, and `R`
+bounded recursion steps.
+
+- Revision index build is `O(B + K)` and happens once per immutable hash.
+- Plain-key scan is `O(C + matches)` per scan frontier using the compiled
+  multi-pattern indexes.
+- Regex work is separately candidate- and time-bounded.
+- Candidate filtering and grouping target `O(E log E + G)`.
+- Recursive resolution is bounded by `R * (scan + matches + E log E + G)`.
+- Packing is `O(E log E)` with exact token work bounded by selected content.
+- Timed-state transition is linear in activated/timed entries.
+
+No normal turn performs work proportional to the user's entire character
+library or entire unbounded conversation. Limits and complexity counters are
+included in diagnostics and benchmark fixtures.
 
 ## 11. Memory Model
 
@@ -856,6 +1165,50 @@ opt-in, shows its provider/cost behavior, is cancellable, and runs only after
 finalization. Failure or disabled background work leaves recent-history memory
 available and never changes the completed answer.
 
+### 11.1 Memory update and retrieval algorithm
+
+Durable memory is an event-sourced cache over canonical conversation history,
+not a second source of truth.
+
+Update:
+
+1. Start only from a successfully finalized canonical turn and its admitted
+   character/scene snapshot.
+2. Produce schema-constrained candidate items with source turn IDs. Explicit
+   user statements are marked `explicit`; model-inferred relationships,
+   beliefs, and open threads are marked `derived`.
+3. Validate owner/session/revision scope, text and item limits, source-turn
+   existence, and prohibited task/account/file-fact categories.
+4. Compare candidates only with active non-superseded items in the same scope.
+   Exact duplicates collapse by normalized hash; explicit corrections append a
+   `supersedesId`; unresolved contradictions coexist as separate beliefs.
+5. Commit items and the scene checkpoint in one transaction. Rewind or deletion
+   invalidates descendants by source-turn lineage rather than editing rows.
+
+Retrieval:
+
+1. Filter by exact owner, session, active character revision, scene visibility,
+   non-superseded state, and retained source lineage.
+2. Always consider explicit current-scene facts and unresolved open threads.
+3. Build bounded candidates using lexical keys from the current turn and recent
+   history; optional local semantic retrieval may add candidates but never
+   remove lexical/explicit candidates.
+4. Rank lexicographically by visibility, explicitness, current-scene status,
+   direct lexical match, optional semantic relevance, recency, then stable ID.
+5. Apply diversity by memory kind and source turn so near-duplicates cannot
+   consume the budget.
+6. Pack whole memory items under the Character Worlds budget and record omitted
+   IDs/reasons.
+
+The same snapshot and query produce the same selected memory IDs. If source
+lineage cannot be verified, the item is omitted and queued for repair; Lily
+does not inject an unprovable stale memory merely because its embedding score
+is high.
+
+Memory semantic retrieval follows the same immutable index-version rule as
+world books. Changing embedding models builds a new index generation in the
+background and atomically promotes it only for future admitted turns.
+
 ## 12. Group And Story Modes
 
 A group scene contains immutable participant revision references and mutable
@@ -868,17 +1221,55 @@ scene state.
   sessionId: "uuid",
   participantCharacterRevisionIds: [],
   activeSpeakerRevisionId: "uuid-or-null",
-  speakerPolicy: "automatic" | "manual",
+  replyStrategy: "manual" | "natural" | "list_order" | "pooled" | "semantic",
+  promptMode: "swap" | "join_exclude_muted" | "join_include_muted",
+  allowMultipleSpeakers: true,
+  allowSelfResponses: false,
+  mutedCharacterRevisionIds: [],
+  lastSpeakerRevisionIds: [],
+  activeGreetingIndexByRevisionId: {},
+  scenarioOverride: "",
   sceneState: {},
   updatedAt: "ISO-8601"
 }
 ```
 
-In automatic mode, the primary Lily Agent selects the relevant speaker or
-speakers from a bounded participant summary. In manual mode, the user chooses
-the speaker. Speaker selection affects expression, not tool authority.
+Speaker selection uses a deterministic host planner plus model judgment only
+where semantic judgment is useful:
 
-One user turn remains one Lily turn:
+1. Validate participants and filter archived, missing, foreign-owner, or
+   explicitly muted revisions, except an explicit force-talk request may select
+   a muted member.
+2. `manual`: use only the validated explicitly requested speakers.
+3. `natural`: extract Unicode whole-word participant-name mentions from the
+   latest canonical message; suppress self-mention replies unless enabled;
+   evaluate unmentioned members independently by deterministic talkativeness
+   probability; if none activate, choose one unmuted participant with the
+   versioned deterministic PRNG.
+4. `list_order`: draft eligible participants in stable configured list order.
+5. `pooled`: choose deterministically from participants who have not spoken
+   since the latest canonical user message; reset the pool only after all have
+   spoken or a new user message arrives.
+6. `semantic`: first apply the same hard eligibility filters, then give the
+   bounded roster to the primary Lily Agent in the same turn. The Agent chooses
+   speaker IDs while producing the response; no extra coordinator model call is
+   required.
+7. Validate returned speaker IDs and labels. Unknown/duplicate IDs are removed.
+   Empty or malformed selection falls back to the explicitly active speaker,
+   then deterministic natural fallback, without rerunning tools.
+
+Selection inputs and tie-breakers are archived, so retry and restart choose the
+same fallback. Speaker selection affects expression, not tool authority.
+
+`promptMode: "swap"` is the default: compile only the active speaker's full
+card plus bounded shared scene/participant summaries. Join modes combine the
+declared safe fields of all included members in stable list order with
+per-character typed boundaries and per-member macro expansion. Join mode is
+reported as behaviorally risky because models may merge identities; a card
+cannot enable it. The user's scenario override supersedes member scenarios only
+inside the lower-authority scene layer.
+
+One user turn remains one Lily parent turn:
 
 - The primary Agent may render multiple clearly labeled character voices.
 - Tool work is planned and executed once through Lily's normal control plane.
@@ -887,7 +1278,9 @@ One user turn remains one Lily turn:
   depth, evidence, and permission constraints.
 
 This avoids multiplied costs, duplicate side effects, conflicting file edits,
-and loss of evidence while preserving group interaction.
+and loss of evidence while preserving group interaction. It is intentionally
+`safe_behavior`, not a claim of byte-for-byte SillyTavern sequential-generation
+parity.
 
 ### 12.1 Response variants and safe regeneration
 
@@ -1009,6 +1402,29 @@ budgets animation. Multiple card chunks, duplicate JSON keys, invalid Unicode,
 and conflicting legacy mirrors are surfaced in the import report instead of
 being resolved by parser accident.
 
+### 14.1.1 Import algorithm
+
+Import is preview-then-commit:
+
+1. Stream-hash the original and sniff the real container signature.
+2. Parse only bounded metadata/chunks; prefer a valid newer declared payload
+   over a legacy mirror according to the compatibility profile.
+3. Decode with strict UTF-8/base64 rules and a duplicate-key-aware JSON parser.
+4. Validate the declared schema before applying defaults. Preserve unknown
+   fields separately from normalized safe fields.
+5. Expand no macros and fetch no assets during import. Compile an import report,
+   canonical hash, asset manifest, and compatibility map.
+6. Return an immutable preview token bound to the original hash and parsed
+   result. Any source-byte change invalidates the preview.
+7. On explicit commit, revalidate the preview token, place blobs, and write
+   entity/revision/provenance rows transactionally.
+
+Exact original-hash duplicates reuse the existing original blob and offer the
+existing entity instead of creating an accidental copy. Canonically equivalent
+cards with different originals keep distinct provenance and require an explicit
+merge/replace choice. Import never guesses that a same-named character is an
+update.
+
 ### 14.2 Canonical storage
 
 Reuse MessageStore's ordered schema migrations, SQLite transactions, and
@@ -1035,12 +1451,12 @@ orphan references incrementally and quarantines only the corrupt row/blob,
 never replaces a readable database with an empty store, and never blocks first
 paint on a full-library scan.
 
-Blob commit order is crash-safe: validate and hash into a temporary file, atomically
-rename the content-addressed blob, then commit metadata and reference rows in
-one SQLite transaction. A crash before the transaction can leave only an
-unreferenced blob for later GC; a committed revision never intentionally points
-to bytes that were not already durably placed. Export and active-turn leases
-pin referenced blobs against concurrent GC.
+Blob commit order is crash-safe: validate and hash into a temporary file,
+atomically rename the content-addressed blob, then commit metadata and reference
+rows in one SQLite transaction. A crash before the transaction can leave only
+an unreferenced blob for later GC; a committed revision never intentionally
+points to bytes that were not already durably placed. Export and active-turn
+leases pin referenced blobs against concurrent GC.
 
 ### 14.3 Assets and privacy
 
@@ -1140,7 +1556,7 @@ world-book:create
 world-book:create-revision
 
 session-character:get-binding
-session-character:set-binding
+session-character:set-binding(expectedBindingVersion)
 session-character:get-events
 
 scene:get
@@ -1201,6 +1617,23 @@ Concurrent turns in different conversations may compile and run in parallel.
 Turns in the same conversation retain the existing admission and queue order.
 All caches are immutable-value caches or scoped by the keys above.
 
+Cache policy:
+
+- Parsed revisions key by canonical revision hash and parser-policy version.
+- Plain-key/regex indexes key by world revision hash, matching-policy version,
+  base-macro expansion fingerprint, and locale/segmentation mode.
+- Token counts key by content hash plus tokenizer/model identity.
+- Turn activation and packed envelopes key by admitted binding fingerprint,
+  canonical history fingerprint, timed-state checkpoint, generation type,
+  model budget, and policy version.
+- Caches are bounded LRU stores with owner scope in every key, single-flight
+  concurrent construction, and negative-result expiry. Exceptions never become
+  durable cache entries.
+
+An immutable revision makes invalidation structural: editing creates a new hash
+instead of mutating cached data. Memory pressure drops caches without affecting
+canonical state or turn correctness.
+
 Binding mutation, normal message acceptance, scheduled occurrence acceptance,
 steering, rewind, and deletion all participate in the session's ordered host
 admission protocol. Tests must force interleavings around every transaction
@@ -1228,7 +1661,8 @@ boundary; timing assumptions or renderer focus are not accepted as isolation.
 
 ### Phase 3: Depth
 
-- Full deterministic world-book activation semantics.
+- Complete supported safe-declarative world-book resolver with compatibility
+  traces for every implemented behavior.
 - Scene state and per-character episodic memory.
 - Group/story modes.
 - Side-effect-safe response variants.
@@ -1285,6 +1719,9 @@ or export lease references the revision.
   admitted task contract.
 - Task classification and tool intent are identical with and without the
   malicious role envelope because both derive from the original user request.
+- Expression-profile fixtures prove narrative requests select `immersive`,
+  mixed explanations select `balanced`, grounded/tool/machine-readable work
+  selects `task_preserving`, and ambiguity fails to `task_preserving`.
 - Role voice cannot alter code, commands, JSON, formulas, citations, exact
   values, file paths, or requested machine-readable output.
 - Persona cannot become an authenticated user.
@@ -1315,6 +1752,9 @@ finalization. Add this new regression vector to `CAPABILITY-GATE.md`.
 - A message queued before a switch keeps its previous binding; a message
   accepted after the switch gets the new binding.
 - A steering message retains the active turn's binding.
+- Concurrent desktop/mobile binding changes with the same expected version
+  commit exactly one winner and return the latest state to the loser; stale card
+  edits remain drafts instead of overwriting a newer revision.
 - Switching never rewrites historical messages.
 - Revision edits do not mutate bound old turns.
 - Scheduled work uses its target conversation, not the focused conversation.
@@ -1327,20 +1767,52 @@ finalization. Add this new regression vector to `CAPABILITY-GATE.md`.
 - Captured OpenCode requests prove each resumed turn receives only its admitted
   current role envelope; role switches and native compaction cannot resurrect
   a previous card's hidden instructions.
+- Compatibility-profile upgrades leave existing sessions stable until an
+  explicit binding migration, while current security limits still override an
+  unsafe historical behavior.
 - Explicit workspace export/import remaps IDs without leaking unrelated
   profile content; missing references fail to native Lily.
 - Group scenes never duplicate side-effecting tool calls.
 - Response variants never rerun side-effecting tools without rewind.
 
-### 19.5 Budget and memory tests
+### 19.5 Algorithm, budget, and memory tests
 
 - Core Lily context always outranks all character content.
+- Generated small-world fixtures compare the indexed plain-key matcher against
+  a simple Unicode-aware reference matcher.
+- Shuffling candidate iteration order cannot change deterministic probability,
+  inclusion-group winners, packed output, or fingerprints.
+- Generated overlapping inclusion groups compare the conflict resolver against
+  a slow reference implementation.
 - World entries activate deterministically on retry.
 - Regex, recursive activation, macros, timed effects, and inclusion groups are
   deterministic and terminate within limits.
+- Recursive cycles, delayed recursion levels, minimum-activation backscan, CJK
+  matching, participant separators, source merge strategies, outlets, and
+  generation filters have golden traces.
+- Unicode matching traces are byte-identical across every shipped OS/architecture
+  for the pinned Electron/ICU version.
+- A model-based state-machine test covers sticky/cooldown/delay transitions
+  across normal messages, steers, variants, rewind, deletion, restart, and card
+  revision changes.
 - Trimming occurs by whole low-priority items or safe paragraph boundaries.
+- Token packing is monotonic: increasing the available character budget cannot
+  remove a higher-priority already selected item.
 - Compaction remembers switches without promoting old role instructions.
 - Narrative memory cannot overwrite task evidence.
+- Memory source-lineage tests prove rewind/deletion removes descendants,
+  supersession remains append-only, and private character beliefs never cross
+  participants or sessions.
+- Group-speaker tests cover manual, natural, list-order, pooled, and semantic
+  strategies; explicit addressing; self-response policy; ambiguous names;
+  talkativeness probability; muted/missing participants; malformed
+  model-selected IDs; retries; swap/join prompt modes; and multi-speaker replies
+  without another tool execution.
+- Cache-key property tests vary owner, session, binding, history, timed state,
+  locale, tokenizer, and policy version one field at a time and prove no stale
+  hit crosses a changed dimension.
+- Import preview tests modify or replace source bytes before commit and prove
+  the preview token rejects the change without partial writes.
 - Rolling back to a pre-feature binary runs native conversations without
   deleting the additive tables; rolling forward restores the same bindings.
 
@@ -1407,12 +1879,18 @@ Each archived turn records bounded metadata:
   characterWorlds: {
     enabled: true,
     mode: "character",
+    expressionProfile: "task_preserving",
     bindingVersion: 7,
     detectedCardSpec: "v3",
+    compilerAlgorithmVersion: 1,
     characterRevisionId: "uuid",
     personaRevisionId: "uuid-or-null",
-    worldBookRevisionIds: [],
+    worldBookBindings: [{
+      revisionId: "uuid",
+      scope: "character"
+    }],
     sceneId: null,
+    semanticIndexVersion: "hash-or-null",
     contextFingerprint: "sha256:...",
     activatedEntryCount: 4,
     omittedEntryCount: 2,
