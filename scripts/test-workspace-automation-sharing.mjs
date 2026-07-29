@@ -70,6 +70,8 @@ try {
   assert.equal(JSON.stringify(templates).includes("project-old"), false, "project identity must not travel");
   assert.equal(JSON.stringify(templates).includes("session-old"), false, "session identity must not travel");
   assert.equal(JSON.stringify(templates).includes("nextRunAt"), false, "runtime timestamps must not travel");
+  assert.equal(templates[0].permissionMode, "inherit",
+    "legacy task permission metadata must normalize to the actual conversation-inherited behavior");
 
   const workspace = path.join(tmp, "workspace");
   fs.mkdirSync(workspace, { recursive: true });

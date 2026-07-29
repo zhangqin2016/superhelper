@@ -117,6 +117,7 @@ function renderDraft(draft) {
 function actionErrorMessage(error) {
   if (error === "ALREADY_RUNNING") return t("scheduled.alreadyRunning");
   if (error === "TASK_ACTIVE") return t("scheduled.taskActive");
+  if (error === "CAPACITY") return t("scheduled.schedulerBusy");
   return null;
 }
 

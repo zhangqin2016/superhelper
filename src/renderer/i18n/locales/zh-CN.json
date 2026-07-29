@@ -240,6 +240,7 @@
   "scheduled.runQueued": "自动任务已加入队列",
   "scheduled.alreadyRunning": "这个自动任务已经在执行或排队中。",
   "scheduled.taskActive": "任务正在执行或排队中，请等本次结束后再删除。",
+  "scheduled.schedulerBusy": "另一个自动任务正在执行，请等它完成后再运行。",
   "scheduled.empty": "当前对话还没有自动任务。",
   "scheduled.listFailed": "加载自动任务失败。",
   "settings.title": "设置",

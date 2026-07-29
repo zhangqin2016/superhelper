@@ -200,6 +200,8 @@ try {
     projectId: "p1",
   });
   assert(draft.ok && draft.draft.sessionId === "s1", `draft failed: ${JSON.stringify(draft)}`);
+  assert(draft.draft.permissionMode === "inherit",
+    `scheduled task metadata must describe the real conversation-inherited permission behavior: ${draft.draft.permissionMode}`);
   const multiDraft = manager.parseDraft({
     text: "每天 10点 13点 18点整理待办",
     sessionId: "s1",
@@ -236,6 +238,8 @@ try {
   });
   assert(smartDraft.ok && smartDraft.source === "model", `smart draft should use model JSON: ${JSON.stringify(smartDraft)}`);
   assert(smartDraft.draft.schedule.type === "weekdays_times", `smart draft should preserve model schedule type: ${JSON.stringify(smartDraft.draft.schedule)}`);
+  assert(smartDraft.draft.permissionMode === "inherit",
+    "even legacy/model draft metadata must normalize to conversation-inherited permissions");
   const minuteDraft = manager.parseDraft({
     text: "每天 10点13分整理待办",
     sessionId: "s1",
@@ -245,6 +249,7 @@ try {
   assert(minuteDraft.draft.scheduleText === "Daily at 10:13", `minute draft should preserve explicit minute: ${minuteDraft.draft.scheduleText}`);
   const created = manager.create(draft.draft);
   assert(created.ok, `create failed: ${JSON.stringify(created)}`);
+  assert(created.task.permissionMode === "inherit");
   const createdFromJson = manager.create({
     title: "整理我的待办",
     prompt: "整理我的待办",
@@ -265,10 +270,12 @@ try {
   await flushMicrotasks();
   assert(sent.length === 1, "due scheduled task should send exactly once");
   assert(sent[0].opts.scheduledTaskRunId, "scheduled run id should be passed into turn orchestrator");
-  // Unattended fire must be non-interactive — no permission prompt can hang it.
-  // "plan" never prompts (mutations are denied rather than asked).
-  assert(sent[0].opts.permissionMode === "plan",
-    `scheduled fire must force plan (non-interactive), got: ${sent[0].opts.permissionMode}`);
+  assert(sent[0].opts.permissionMode === undefined,
+    `scheduled fire must inherit the bound conversation permission mode, got: ${sent[0].opts.permissionMode}`);
+  assert(sent[0].opts.nonInteractive === true,
+    "scheduled fire must auto-deny permission questions instead of hanging unattended");
+  assert(sent[0].opts.skipDocument !== true && sent[0].opts.skipVision !== true,
+    "scheduled messages must use the same document and vision preflight as a manual conversation message");
   assert(sent[0].opts.queueOrigin === "scheduled_task", `scheduled fire must identify its queue origin: ${sent[0].opts.queueOrigin}`);
   assert(sent[0].opts.queueVisibility === "background", `scheduled fire must stay out of composer queue UI: ${sent[0].opts.queueVisibility}`);
   const runningRun = manager.runs.find((run) => run.id === sent[0].opts.scheduledTaskRunId);

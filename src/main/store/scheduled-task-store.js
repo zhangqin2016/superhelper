@@ -204,18 +204,31 @@ class ScheduledTaskStore {
     return { ok: true, imported: tasks.length, backup };
   }
 
-  recoverExpired(nowIso, leaseOwner = "") {
-    const expired = this.db.all(`
-      SELECT * FROM scheduled_task_runs
-      WHERE status IN ('queued', 'running')
-        AND (lease_expires_at <= ? OR lease_owner <> ?)
-    `, nowIso, leaseOwner).map(runFromRow);
-    for (const run of expired) {
-      run.status = "interrupted";
-      run.finishedAt = nowIso;
-      run.error = "Scheduler lease expired after application interruption.";
-      this.saveRun(run);
-    }
+  recoverExpired(nowIso, leaseOwner = "", leaseExpiresAt = nowIso) {
+    let expired = [];
+    const recoverAll = this.db.transaction(() => {
+      expired = this.db.all(`
+        SELECT * FROM scheduled_task_runs
+        WHERE status IN ('queued', 'running')
+          AND (lease_expires_at <= ? OR lease_owner <> ?)
+      `, nowIso, leaseOwner).map(runFromRow);
+      for (const run of expired) {
+        run.recoveredFromStatus = run.status;
+        if (run.status === "queued") {
+          run.leaseOwner = leaseOwner;
+          run.leaseExpiresAt = leaseExpiresAt;
+          run.finishedAt = null;
+          run.queueItemId = null;
+          run.error = null;
+        } else {
+          run.status = "interrupted";
+          run.finishedAt = nowIso;
+          run.error = "Scheduler lease expired after application interruption.";
+        }
+        this.saveRun(run);
+      }
+    });
+    recoverAll();
     return expired;
   }
 

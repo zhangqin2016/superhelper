@@ -3,6 +3,14 @@
 const crypto = require("node:crypto");
 const { scheduledTasksPath, scheduledTasksDbPath } = require("./config");
 const { ScheduledTaskStore, ACTIVE_RUN_STATUSES } = require("./store/scheduled-task-store");
+const { dispatchScheduledRun, interruptForeignScheduledRun } = require("./scheduled-task-dispatch");
+const {
+  DEFAULT_MAX_CONCURRENT_RUNS,
+  executionLoad,
+  hasActiveTaskRun,
+  nextRunAfterNow,
+  runningRunCount,
+} = require("./scheduled-task-run-policy");
 const {
   hasScheduledTaskNegation,
   buildTaskPrompt,
@@ -18,7 +26,6 @@ const {
 } = require("./schedule-parser");
 const { parseScheduledTaskDraftWithModel } = require("./scheduled-task-ai-draft");
 
-const DEFAULT_MAX_CONCURRENT_RUNS = 3;
 const DEFAULT_LEASE_MS = 30 * 60 * 1000;
 
 function defaultPrincipal() {
@@ -42,6 +49,9 @@ class ScheduledTaskManager {
     this.runs = [];
     this.ctx = null;
     this._timer = null;
+    this._startupTimer = null;
+    this._recoveredQueuedRunIds = new Set();
+    this._dispatchingRunIds = new Set();
     this._leaseOwner = `scheduler_${crypto.randomUUID()}`;
     this._resolvePrincipal = options.resolvePrincipal || defaultPrincipal;
     this.maxConcurrentRuns = Math.max(1, Number(options.maxConcurrentRuns) || DEFAULT_MAX_CONCURRENT_RUNS);
@@ -56,10 +66,18 @@ class ScheduledTaskManager {
       (task) => this._normalizeTask(task),
       this._principal(),
     );
-    const recovered = this.store.recoverExpired(nowIso(), this._leaseOwner);
+    const recovered = this.store.recoverExpired(
+      nowIso(),
+      this._leaseOwner,
+      new Date(Date.now() + this.leaseMs).toISOString(),
+    );
     const loaded = this.store.load();
     this.tasks = loaded.tasks.map((task) => this._normalizeTask(task)).filter(Boolean);
+    for (const task of this.tasks) this.store.saveTask(task);
     this.runs = loaded.runs;
+    this._recoveredQueuedRunIds = new Set(
+      recovered.filter((run) => run.recoveredFromStatus === "queued").map((run) => run.id),
+    );
     if (recovered.length) this._reconcileTaskStates(recovered);
     return migration;
   }
@@ -69,14 +87,19 @@ class ScheduledTaskManager {
     this.stop();
     this._timer = setInterval(() => void this.tick(), TICK_MS);
     this._timer.unref?.();
-    const startup = setTimeout(() => void this.tick({ startup: true }), 1200);
-    startup.unref?.();
+    this._dispatchRecoveredQueuedRuns();
+    this._startupTimer = setTimeout(() => void this.tick({ startup: true }), 1200);
+    this._startupTimer.unref?.();
   }
 
-  stop() { if (this._timer) clearInterval(this._timer); this._timer = null; }
+  stop() {
+    if (this._timer) clearInterval(this._timer);
+    if (this._startupTimer) clearTimeout(this._startupTimer);
+    this._timer = null;
+    this._startupTimer = null;
+  }
 
   close() { this.stop(); this.store?.close(); this.store = null; }
-
   save() {
     if (!this.store) return;
     for (const task of this.tasks) this.store.saveTask(task);
@@ -115,7 +138,7 @@ class ScheduledTaskManager {
       projectId,
       now: nowIso(),
     });
-    if (modelResult?.ok) return { ...modelResult, source: modelResult.source || "model" };
+    if (modelResult?.ok) return { ...modelResult, draft: { ...modelResult.draft, permissionMode: DEFAULT_PERMISSION_MODE }, source: modelResult.source || "model" };
     const fallback = this.parseDraft({ text: prompt, sessionId, projectId });
     if (fallback?.ok) {
       return { ...fallback, source: "local_fallback", modelError: modelResult?.error || null };
@@ -142,18 +165,17 @@ class ScheduledTaskManager {
     if (scopeError) return { ok: false, error: scopeError };
     const now = nowIso();
     const id = `sched_${crypto.randomUUID()}`;
-    const execution = this._createExecutionSession(payload.projectId, title, id);
     const task = this._normalizeTask({
       id,
       ownerPrincipal: this._principal(),
       projectId: payload.projectId,
       originSessionId: payload.sessionId,
-      executionSessionId: execution?.id || payload.sessionId,
+      executionSessionId: payload.sessionId,
       title,
       prompt,
       schedule: parsed.schedule,
       scheduleText: payload.scheduleText || parsed.scheduleText,
-      permissionMode: payload.permissionMode || DEFAULT_PERMISSION_MODE,
+      permissionMode: DEFAULT_PERMISSION_MODE,
       enabled: payload.enabled !== false,
       status: payload.enabled === false ? "paused" : "scheduled",
       overlapPolicy: "queue",
@@ -199,10 +221,10 @@ class ScheduledTaskManager {
     task.enabled = Boolean(enabled);
     task.updatedAt = nowIso();
     if (!task.enabled) {
-      if (!this._hasActiveRun(task.id)) task.status = "paused";
+      if (!hasActiveTaskRun(this.runs, task.id)) task.status = "paused";
       task.nextRunAt = null;
     } else {
-      task.status = this._hasActiveRun(task.id) ? task.status : "scheduled";
+      task.status = hasActiveTaskRun(this.runs, task.id) ? task.status : "scheduled";
       task.nextRunAt ||= computeNextRunAt(task.schedule);
     }
     this.store?.saveTask(task);
@@ -212,7 +234,7 @@ class ScheduledTaskManager {
   remove(taskId, scope = {}) {
     const task = this._findOwnedTask(taskId, scope);
     if (!task) return { ok: false, error: "NOT_FOUND" };
-    if (this._hasActiveRun(task.id)) return { ok: false, error: "TASK_ACTIVE" };
+    if (hasActiveTaskRun(this.runs, task.id)) return { ok: false, error: "TASK_ACTIVE" };
     this.tasks = this.tasks.filter((item) => item.id !== task.id);
     this.runs = this.runs.filter((run) => run.taskId !== task.id);
     this.store?.deleteTask(task.id);
@@ -226,13 +248,14 @@ class ScheduledTaskManager {
   }
 
   async tick() {
+    this._dispatchRecoveredQueuedRuns();
     const owner = this._principal();
-    let available = this.maxConcurrentRuns - this._activeCount(owner);
+    let available = this.maxConcurrentRuns - executionLoad(this.runs, this._dispatchingRunIds, owner);
     if (available <= 0) return;
     const now = Date.now();
     for (const task of this.tasks) {
       if (available <= 0) break;
-      if (task.ownerPrincipal !== owner || !task.enabled || this._hasActiveRun(task.id)) continue;
+      if (task.ownerPrincipal !== owner || !task.enabled || hasActiveTaskRun(this.runs, task.id)) continue;
       if (!task.nextRunAt) {
         task.nextRunAt = computeNextRunAt(task.schedule);
         this.store?.saveTask(task);
@@ -248,12 +271,7 @@ class ScheduledTaskManager {
     const current = this._principal();
     for (const run of this.runs) {
       if (!ACTIVE_RUN_STATUSES.has(run.status) || run.ownerPrincipal === current) continue;
-      try {
-        this.ctx?.turnOrchestrator?.interrupt?.(run.sessionId, { clearQueue: true });
-      } catch {
-        // Completion below is authoritative even if the runner already exited.
-      }
-      this.completeRunById(run.id, "turn.interrupted", { errorCode: "ACCOUNT_CHANGED" });
+      interruptForeignScheduledRun(this.ctx, run, (...args) => this.completeRunById(...args));
     }
     void this.tick();
   }
@@ -293,20 +311,26 @@ class ScheduledTaskManager {
     return true;
   }
 
+  canStartRun(runId) {
+    const run = this.runs.find((item) => item.id === runId && ACTIVE_RUN_STATUSES.has(item.status));
+    if (!run) return false;
+    if (run.status === "running") return true;
+    return runningRunCount(this.runs, run.ownerPrincipal) < this.maxConcurrentRuns;
+  }
+
   _runTask(task, opts = {}) {
     if (!this.ctx?.turnOrchestrator) return { ok: false, error: "NOT_READY" };
-    if (this._hasActiveRun(task.id)) return { ok: false, error: "ALREADY_RUNNING" };
-    if (this._activeCount(task.ownerPrincipal) >= this.maxConcurrentRuns) return { ok: false, error: "CAPACITY" };
-    const scopeError = this._validateScope(task.originSessionId, task.projectId);
-    const execution = this._ensureExecutionSession(task);
-    if (scopeError || !execution || execution.projectId !== task.projectId || execution.automationTaskId && execution.automationTaskId !== task.id) {
-      return { ok: false, error: scopeError || "EXECUTION_SCOPE_MISSING" };
+    if (hasActiveTaskRun(this.runs, task.id)) return { ok: false, error: "ALREADY_RUNNING" };
+    if (executionLoad(this.runs, this._dispatchingRunIds, task.ownerPrincipal) >= this.maxConcurrentRuns) {
+      return { ok: false, error: "CAPACITY" };
     }
+    const scopeError = this._validateScope(task.originSessionId, task.projectId);
+    if (scopeError) return { ok: false, error: scopeError };
     const scheduledFor = opts.manual ? `manual:${nowIso()}:${crypto.randomUUID()}` : opts.scheduledFor || task.nextRunAt;
     const run = this._newRun(task, scheduledFor, Boolean(opts.manual));
     if (!this.store?.insertRun(run)) {
       if (!opts.manual) {
-        task.nextRunAt = computeNextRunAt(task.schedule, new Date(Date.parse(scheduledFor) + 1000));
+        task.nextRunAt = nextRunAfterNow(task, scheduledFor, computeNextRunAt);
         this.store?.saveTask(task);
       }
       return { ok: false, error: "DUPLICATE_OCCURRENCE" };
@@ -314,30 +338,39 @@ class ScheduledTaskManager {
     this.runs.push(run);
     task.status = "queued";
     task.updatedAt = nowIso();
-    if (!opts.manual) task.nextRunAt = computeNextRunAt(task.schedule, new Date(Date.parse(scheduledFor) + 1000));
+    if (!opts.manual) task.nextRunAt = nextRunAfterNow(task, scheduledFor, computeNextRunAt);
     this.store.saveTask(task);
-    const resultPromise = this.ctx.turnOrchestrator.sendUserMessage(task.executionSessionId, buildTaskPrompt(task), [], {
-      recordUser: true,
-      spawnEngine: true,
-      skipVision: true,
-      skipDocument: true,
-      scheduledTaskId: task.id,
-      scheduledTaskRunId: run.id,
-      scheduledTaskTitle: task.title,
-      permissionMode: opts.manual ? undefined : "plan",
-      queueOrigin: "scheduled_task",
-      queueVisibility: "background",
-    });
-    Promise.resolve(resultPromise).then((result) => {
-      if (!result?.ok) return this._finishRun(run, "turn.failed", { error: result?.detail || result?.error });
-      if (result.queued) {
-        run.queueItemId = result.itemId || null;
-      } else {
-        this.markRunStarted(run.id, result.turnId);
-      }
-      this.store?.saveRun(run);
-    }).catch((err) => this._finishRun(run, "turn.failed", { error: err?.message }));
+    this._dispatchRun(task, run, { nonInteractive: !opts.manual });
     return { ok: true, queued: true, run };
+  }
+
+  _dispatchRun(task, run, opts = {}) {
+    this._dispatchingRunIds.add(run.id);
+    dispatchScheduledRun({
+      ctx: this.ctx, task, run, nonInteractive: opts.nonInteractive,
+      markRunStarted: (runId, turnId) => this.markRunStarted(runId, turnId),
+      finishRun: (target, type, payload) => this._finishRun(target, type, payload),
+      saveRun: (target) => this.store?.saveRun(target),
+      onSettled: () => {
+        this._dispatchingRunIds.delete(run.id);
+        queueMicrotask(() => void this.tick());
+      },
+    });
+  }
+
+  _dispatchRecoveredQueuedRuns() {
+    for (const runId of this._recoveredQueuedRunIds) {
+      const run = this.runs.find((item) => item.id === runId && item.status === "queued");
+      const task = run && this.tasks.find((item) => item.id === run.taskId);
+      if (!run || !task) {
+        this._recoveredQueuedRunIds.delete(runId);
+        continue;
+      }
+      if (run.ownerPrincipal !== this._principal()) continue;
+      if (executionLoad(this.runs, this._dispatchingRunIds, run.ownerPrincipal) >= this.maxConcurrentRuns) break;
+      this._recoveredQueuedRunIds.delete(runId);
+      this._dispatchRun(task, run, { nonInteractive: true });
+    }
   }
 
   _finishRun(run, terminalType, payload = {}) {
@@ -363,6 +396,7 @@ class ScheduledTaskManager {
         });
       }
     }
+    queueMicrotask(() => void this.tick());
   }
 
   _newRun(task, scheduledFor, manual) {
@@ -404,12 +438,12 @@ class ScheduledTaskManager {
       projectId,
       sessionId: originSessionId,
       originSessionId,
-      executionSessionId: String(task.executionSessionId || originSessionId),
+      executionSessionId: originSessionId,
       title: safeText(task.title, 80) || "Scheduled Task",
       prompt,
       schedule,
       scheduleText: safeText(task.scheduleText, 120) || describeSchedule(schedule),
-      permissionMode: task.permissionMode || DEFAULT_PERMISSION_MODE,
+      permissionMode: DEFAULT_PERMISSION_MODE,
       enabled,
       status: enabled ? (task.status || "scheduled") : "paused",
       overlapPolicy: task.overlapPolicy || "queue",
@@ -430,33 +464,9 @@ class ScheduledTaskManager {
       : "SCOPE_MISMATCH";
   }
 
-  _createExecutionSession(projectId, title, taskId) {
-    return this.ctx?.sessionManager?.createAutomationSession?.(
-      projectId,
-      `Automation: ${title}`,
-      taskId,
-    ) || null;
-  }
-
-  _ensureExecutionSession(task) {
-    const current = this.ctx?.sessionManager?.findById?.(task.executionSessionId);
-    if (current?.projectId === task.projectId &&
-        (current.hidden !== true || current.automationTaskId === task.id)) {
-      if (current.hidden === true || !this.ctx?.sessionManager?.createAutomationSession) return current;
-    }
-    const created = this._createExecutionSession(task.projectId, task.title, task.id);
-    if (created) {
-      task.executionSessionId = created.id;
-      this.store?.saveTask(task);
-      return created;
-    }
-    return current;
-  }
-
   _principal() {
     return String(this._resolvePrincipal() || "device:unavailable");
   }
-
   _findOwnedTask(taskId, scope = {}) {
     const task = this.tasks.find((item) => item.id === String(taskId || "") && item.ownerPrincipal === this._principal());
     if (!task) return null;
@@ -465,21 +475,13 @@ class ScheduledTaskManager {
     return task;
   }
 
-  _hasActiveRun(taskId) {
-    return this.runs.some((run) => run.taskId === taskId && ACTIVE_RUN_STATUSES.has(run.status));
-  }
-
-  _activeCount(owner) {
-    return this.runs.filter((run) => run.ownerPrincipal === owner && ACTIVE_RUN_STATUSES.has(run.status)).length;
-  }
-
   _reconcileTaskStates(recovered = []) {
     for (const task of this.tasks) {
       const abandoned = recovered.filter((run) => run.taskId === task.id).at(-1);
       if (abandoned && Date.parse(task.nextRunAt || "") <= Date.parse(abandoned.scheduledFor)) {
-        task.nextRunAt = computeNextRunAt(task.schedule, new Date(Date.parse(abandoned.scheduledFor) + 1000));
+        task.nextRunAt = nextRunAfterNow(task, abandoned.scheduledFor, computeNextRunAt);
       }
-      task.status = task.enabled ? (this._hasActiveRun(task.id) ? task.status : "scheduled") : "paused";
+      task.status = task.enabled ? (hasActiveTaskRun(this.runs, task.id) ? task.status : "scheduled") : "paused";
       this.store?.saveTask(task);
     }
   }

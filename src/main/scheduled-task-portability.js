@@ -10,28 +10,18 @@ const {
 const AUTOMATION_SCHEMA_VERSION = 1;
 const AUTOMATIONS_ENTRY = ".lilyspace/automations.json";
 const MAX_AUTOMATIONS_BYTES = 256 * 1024;
-const PORTABLE_PERMISSION_MODES = new Set([
-  DEFAULT_PERMISSION_MODE,
-  "plan",
-  "ask",
-  "full",
-]);
-
 function normalizeTemplate(value) {
   if (!value || typeof value !== "object") return null;
   const title = safeText(value.title, 80);
   const prompt = safeText(value.prompt, 4000);
   const schedule = normalizeScheduleSpec(value.schedule);
   if (!prompt || !schedule) return null;
-  const permissionMode = PORTABLE_PERMISSION_MODES.has(value.permissionMode)
-    ? value.permissionMode
-    : DEFAULT_PERMISSION_MODE;
   return {
     title: title || prompt.slice(0, 48) || "Scheduled Task",
     prompt,
     schedule,
     scheduleText: safeText(value.scheduleText, 120) || describeSchedule(schedule),
-    permissionMode,
+    permissionMode: DEFAULT_PERMISSION_MODE,
   };
 }
 
@@ -70,9 +60,7 @@ function previewProjectTasks(manager, projectId) {
     prompt: safeText(task.prompt, 4000),
     schedule: normalizeScheduleSpec(task.schedule),
     scheduleText: safeText(task.scheduleText, 120) || describeSchedule(task.schedule),
-    permissionMode: PORTABLE_PERMISSION_MODES.has(task.permissionMode)
-      ? task.permissionMode
-      : DEFAULT_PERMISSION_MODE,
+    permissionMode: DEFAULT_PERMISSION_MODE,
     enabled: task.enabled !== false,
   })).filter((task) => task.id && task.prompt && task.schedule);
 }

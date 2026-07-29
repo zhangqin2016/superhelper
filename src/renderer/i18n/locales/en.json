@@ -240,6 +240,7 @@
   "scheduled.runQueued": "Scheduled task queued",
   "scheduled.alreadyRunning": "This scheduled task is already running or queued.",
   "scheduled.taskActive": "This task is running or queued. Delete it after the current run finishes.",
+  "scheduled.schedulerBusy": "Another scheduled task is running. Try again after it finishes.",
   "scheduled.empty": "No scheduled tasks in this chat.",
   "scheduled.listFailed": "Could not load scheduled tasks.",
   "settings.title": "Settings",

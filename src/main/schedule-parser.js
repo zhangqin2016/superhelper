@@ -7,7 +7,7 @@ const { scheduledTasksPath } = require("./config");
 
 const TICK_MS = 60 * 1000;
 const MISSED_GRACE_MS = 5 * 1000;
-const DEFAULT_PERMISSION_MODE = "read_only";
+const DEFAULT_PERMISSION_MODE = "inherit";
 
 function nowIso() {
   return new Date().toISOString();

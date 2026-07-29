@@ -63,6 +63,7 @@ const { createContextCompactionRuntime } = require("./context-compaction-runtime
 const { createTurnTerminalFinalizer } = require("./turn-terminal-finalizer");
 const { TERMINAL_TYPES, TURN_OPTIONAL_TYPES } = require("./turn-event-types");
 const { createTurnRuntimeEventRouter } = require("./turn-runtime-event-router");
+const { cancelQueuedScheduledRun, scheduledQueueCapacityBlock, scheduledTaskTurnOptions } = require("./scheduled-task-turn-options");
 
 const log = getLogger("turn-orchestrator");
 const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
@@ -93,10 +94,7 @@ function queueDispatchOptions(opts = {}) {
     skipPreflight: Boolean(opts.skipPreflight),
     skipVision: Boolean(opts.skipVision),
     skipDocument: Boolean(opts.skipDocument),
-    scheduledTaskId: opts.scheduledTaskId || null,
-    scheduledTaskRunId: opts.scheduledTaskRunId || null,
-    scheduledTaskTitle: opts.scheduledTaskTitle || null,
-    permissionMode: opts.permissionMode || undefined,
+    ...scheduledTaskTurnOptions(opts),
     queueOrigin,
     queueVisibility: opts.queueVisibility === "background" ? "background" : "composer",
     ...documentDeliveryDispatchOptions(opts),
@@ -718,6 +716,8 @@ class TurnOrchestrator {
         turnId: item.options.localAssistant.turnId || null,
       });
     }
+    const capacityBlock = scheduledQueueCapacityBlock(this.ctx, item);
+    if (capacityBlock) return capacityBlock;
     const runner = this.ctx.runnerPool.get(sessionId);
     if (runner?.isBusy?.()) return { ok: false, retry: true, error: "RUNNER_BUSY" };
     if (item.options?.reloadSkillsBeforeStart && runner?.isAlive?.() && !runner.reloadSkills()) {
@@ -731,9 +731,7 @@ class TurnOrchestrator {
       skipPreflight: Boolean(item.options?.skipPreflight),
       skipVision: Boolean(item.options?.skipVision),
       skipDocument: Boolean(item.options?.skipDocument),
-      scheduledTaskId: item.options?.scheduledTaskId || null,
-      scheduledTaskRunId: item.options?.scheduledTaskRunId || null,
-      scheduledTaskTitle: item.options?.scheduledTaskTitle || null, permissionMode: item.options?.permissionMode,
+      ...scheduledTaskTurnOptions(item.options),
       engineText: item.options?.engineText || null,
       recovery: item.options?.recovery || null,
       ...documentDeliveryDispatchOptions(item.options),
@@ -863,6 +861,8 @@ class TurnOrchestrator {
       ? { ok: true, sessionId, queueLength: state.queue.length }
       : { ok: false, error: "NOT_FOUND" };
   }
+
+  cancelQueuedScheduledRun(sessionId, runId) { return cancelQueuedScheduledRun(this, sessionId, runId); }
 
   async _startTurn(session, text, files, opts = {}) {
     const rawUserText = String(text || "").trim();
@@ -1369,7 +1369,7 @@ class TurnOrchestrator {
       allowImageFileParts,
       taskContract: state.taskContract,
       turnPolicy: state.turnPolicy,
-      nonInteractive: Boolean(state.wasRescueAttempt || state.documentDeliveryRecovery), // unattended internal turn: permission "ask" auto-rejects
+      nonInteractive: Boolean(opts.nonInteractive || state.wasRescueAttempt || state.documentDeliveryRecovery),
       trace: {
         preflightTextChanged: text !== rawUserText,
         customEngineText: preRehydrateText !== text,

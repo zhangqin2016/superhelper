@@ -126,6 +126,7 @@ runner.spawnOptions.modelRouteAudit = { route: "gateway", provider: "deepseek", 
 const terminatedSessions = [];
 const clearedResumeSessions = [];
 const completedQueuedRuns = [];
+const startedScheduledRuns = [];
 const ctx = {
   get mainWindow() {
     return fakeWindow;
@@ -162,6 +163,11 @@ const ctx = {
     getSessionIds: () => ["s1"],
   },
   scheduledTaskManager: {
+    canStartRun: () => true,
+    markRunStarted: (runId, turnId) => {
+      startedScheduledRuns.push({ runId, turnId });
+      return true;
+    },
     completeQueuedRun: (runId, terminalType, payload) => {
       completedQueuedRuns.push({ runId, terminalType, payload });
       return true;
@@ -1411,6 +1417,13 @@ const scheduledQueue = await ctx.turnOrchestrator.sendUserMessage("s1", "schedul
 if (!scheduledQueue.queued) {
   throw new Error(`busy scheduled run should enter the queue: ${JSON.stringify(scheduledQueue)}`);
 }
+const cancelledScheduled = ctx.turnOrchestrator.cancelQueuedScheduledRun("s1", "run_queued_stop");
+if (!cancelledScheduled.ok) {
+  throw new Error(`one scheduled run should be cancellable without clearing the conversation: ${JSON.stringify(cancelledScheduled)}`);
+}
+if (!ctx.turnOrchestrator._state("s1").queue.some((item) => item.id === staleQueue.itemId)) {
+  throw new Error("cancelling a scheduled run must preserve unrelated messages in the same conversation queue");
+}
 ctx.turnOrchestrator.interrupt("s1");
 ctx.eventBus.flush();
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
@@ -1426,7 +1439,7 @@ if (messages.some((message) => message.content === "stale queued")) {
   throw new Error("stopped queued message must not be committed to transcript");
 }
 if (!completedQueuedRuns.some((item) => item.runId === "run_queued_stop" && item.terminalType === "turn.interrupted")) {
-  throw new Error(`stop must mark queued scheduled runs interrupted: ${JSON.stringify(completedQueuedRuns)}`);
+  throw new Error(`exact cancellation must mark the queued scheduled run interrupted: ${JSON.stringify(completedQueuedRuns)}`);
 }
 // An interrupt before any output must not leave an empty assistant bubble in history.
 if (messages.some((message) => message.role === "assistant" && message.turnId === interruptSource.turnId)) {
@@ -1789,6 +1802,43 @@ if (queueState.queue.length !== 1 || queueState.queue[0]?.id !== "queue_retry") 
   throw new Error("transient busy runner must not drop the queued message");
 }
 queueState.queue = [];
+
+const originalCanStartScheduledRun = ctx.scheduledTaskManager.canStartRun;
+ctx.scheduledTaskManager.canStartRun = () => false;
+const scheduledCapacityItem = {
+  id: "queue_scheduled_capacity",
+  text: "scheduled capacity",
+  files: [],
+  displayFiles: [],
+  options: {
+    skipPreflight: true,
+    spawnEngine: false,
+    scheduledTaskId: "task_capacity",
+    scheduledTaskRunId: "run_capacity",
+    nonInteractive: true,
+  },
+};
+const capacityBlocked = await ctx.turnOrchestrator._tryStartQueuedItem("s1", scheduledCapacityItem);
+if (!capacityBlocked?.retry || capacityBlocked.error !== "SCHEDULE_CAPACITY") {
+  throw new Error(`scheduled queue must wait without being removed when execution capacity is full: ${JSON.stringify(capacityBlocked)}`);
+}
+if (runner.isBusy()) {
+  throw new Error("capacity-blocked scheduled queue must not start the runner");
+}
+ctx.scheduledTaskManager.canStartRun = () => true;
+const capacityStarted = await ctx.turnOrchestrator._tryStartQueuedItem("s1", scheduledCapacityItem);
+ctx.scheduledTaskManager.canStartRun = originalCanStartScheduledRun;
+if (!capacityStarted?.ok || !runner.isBusy()) {
+  throw new Error(`scheduled queue should start when execution capacity is free: ${JSON.stringify(capacityStarted)}`);
+}
+if (runner.sentPayloads.at(-1)?.nonInteractive !== true) {
+  throw new Error("scheduled queue must preserve nonInteractive through admission into the engine payload");
+}
+if (!startedScheduledRuns.some((item) => item.runId === "run_capacity")) {
+  throw new Error(`scheduled queue must mark the exact run started: ${JSON.stringify(startedScheduledRuns)}`);
+}
+runner.finish("scheduled capacity done");
+await new Promise((resolve) => setTimeout(resolve, 5));
 
 queueState.queue = [
   { id: "queue_retry_then_start", text: "retry then start", files: [], displayFiles: [] },

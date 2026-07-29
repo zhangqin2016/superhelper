@@ -112,7 +112,7 @@ function normalizeModelDraft(raw, payload = {}) {
       schedule,
       scheduleText: describeSchedule(schedule),
       nextRunAt,
-      permissionMode: "read_only",
+      permissionMode: "inherit",
       sessionId: payload.sessionId,
       projectId: payload.projectId,
     },
