@@ -7,6 +7,7 @@ const {
 const { resolveImportLimits } = require("./import-limits");
 const { JsonPointerStack } = require("./json-pointer");
 const { ParseBudget } = require("./parse-budget");
+const { extractEmbeddedCard, isPngSignature } = require("./png-card");
 const {
   cardError,
   decodeJsonDocument,
@@ -310,7 +311,7 @@ function addMarkerReports(root, report, pointer, consumed) {
 }
 
 // Synchronous bounded primitive; Task 5 should invoke it inside a cancellable worker.
-function parseCharacterCard(buffer, options = {}) {
+function parseJsonCharacterCard(buffer, options = {}) {
   const limits = resolveImportLimits(options.limits);
   const budget = new ParseBudget(limits);
   const preserved = decodeJsonDocument(buffer, limits, budget);
@@ -365,7 +366,22 @@ function parseCharacterCard(buffer, options = {}) {
   };
 }
 
+function parseCharacterCard(buffer, options = {}) {
+  if (!isPngSignature(buffer)) return parseJsonCharacterCard(buffer, options);
+  const embedded = extractEmbeddedCard(buffer, options.limits);
+  const parsed = embedded.parsed;
+  return {
+    ...parsed,
+    container: embedded.container,
+    compatibility: {
+      ...parsed.compatibility,
+      warnings: [...parsed.compatibility.warnings, ...embedded.warnings],
+    },
+  };
+}
+
 module.exports = {
   detectFormat,
   parseCharacterCard,
+  parseJsonCharacterCard,
 };
