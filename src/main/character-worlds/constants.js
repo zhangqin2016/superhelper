@@ -5,6 +5,7 @@ const CHARACTER_BINDING_SCHEMA_VERSION = 1;
 const CHARACTER_COMPATIBILITY_PROFILE_VERSION = 1;
 const CHARACTER_COMPATIBILITY_PROFILE = "lily-character-worlds-v1";
 const CHARACTER_ASSET_LIMITS_VERSION = 1;
+const CHARACTER_CARD_PARSER_LIMITS_VERSION = 2;
 
 const MAX_CHARACTER_CANONICAL_BYTES = 8 * 1024 * 1024;
 const MAX_CHARACTER_SOURCE_BYTES = 32 * 1024 * 1024;
@@ -19,6 +20,44 @@ const MAX_CHARACTER_RECONCILE_FILES = 1000;
 const MAX_CHARACTER_RECONCILE_FILE_BYTES = 128 * 1024 * 1024;
 const DEFAULT_CHARACTER_ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
 const CHARACTER_BLOB_RECONCILE_CURSOR_KEY = "character_worlds.blob_reconcile_cursor.v1";
+const DEFAULT_IMPORT_LIMITS = Object.freeze({
+  version: CHARACTER_CARD_PARSER_LIMITS_VERSION,
+  maxContainerBytes: MAX_CHARACTER_SOURCE_BYTES,
+  maxJsonBytes: MAX_CHARACTER_CANONICAL_BYTES,
+  maxCanonicalBytes: MAX_CHARACTER_CANONICAL_BYTES,
+  maxDepth: 64,
+  maxObjects: 10_000,
+  maxMembers: 50_000,
+  maxArrays: 10_000,
+  maxArrayLength: 10_000,
+  maxStrings: 50_000,
+  maxKeys: 50_000,
+  maxStringBytes: MAX_CHARACTER_TEXT_FIELD_BYTES,
+  maxTotalStringBytes: MAX_CHARACTER_CANONICAL_BYTES,
+  maxKeyBytes: 1024,
+  maxTotalKeyBytes: 1024 * 1024,
+  maxStringChars: 1024 * 1024,
+  maxTotalStringChars: 8 * 1024 * 1024,
+  maxKeyChars: 1024,
+  maxTotalKeyChars: 1024 * 1024,
+  maxCanonicalFieldChars: MAX_CHARACTER_TEXT_FIELD_BYTES,
+  maxParseOperations: 64 * 1024 * 1024,
+  maxParseElapsedMs: 30_000,
+  maxReportEntries: 512,
+  maxReportPathBytes: 64 * 1024,
+  maxReportSupportedEntries: 96,
+  maxReportSupportedPathBytes: 8 * 1024,
+  maxReportMigratedEntries: 96,
+  maxReportMigratedPathBytes: 8 * 1024,
+  maxReportPreservedInertEntries: 224,
+  maxReportPreservedInertPathBytes: 32 * 1024,
+  maxReportIgnoredInvalidEntries: 48,
+  maxReportIgnoredInvalidPathBytes: 8 * 1024,
+  maxReportRejectedExecutableEntries: 48,
+  maxReportRejectedExecutablePathBytes: 8 * 1024,
+  maxNumberLexemes: 10_000,
+  maxNumberLexemePathBytes: 256 * 1024,
+});
 
 module.exports = {
   CHARACTER_SCHEMA_VERSION,
@@ -26,6 +65,8 @@ module.exports = {
   CHARACTER_COMPATIBILITY_PROFILE_VERSION,
   CHARACTER_COMPATIBILITY_PROFILE,
   CHARACTER_ASSET_LIMITS_VERSION,
+  CHARACTER_CARD_PARSER_LIMITS_VERSION,
+  DEFAULT_IMPORT_LIMITS,
   MAX_CHARACTER_CANONICAL_BYTES,
   MAX_CHARACTER_SOURCE_BYTES,
   MAX_CHARACTER_TEXT_FIELD_BYTES,

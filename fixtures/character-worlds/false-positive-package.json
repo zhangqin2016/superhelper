@@ -1,0 +1,11 @@
+{
+  "name": "example-package",
+  "version": "1.0.0",
+  "description": "A package manifest, not a character card.",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "example": "1.0.0"
+  }
+}
