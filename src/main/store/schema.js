@@ -139,6 +139,210 @@ const MIGRATIONS = [
       );
     `);
   },
+  // v3 - local Character Worlds entities, immutable revisions, and bindings.
+  (db) => {
+    db.exec(`
+      CREATE TABLE character_entities (
+        id                  TEXT PRIMARY KEY,
+        owner_scope         TEXT NOT NULL,
+        display_name        TEXT NOT NULL,
+        current_revision_id TEXT NOT NULL,
+        archived_at         INTEGER,
+        created_at          INTEGER NOT NULL,
+        updated_at          INTEGER NOT NULL,
+        UNIQUE (id, owner_scope),
+        FOREIGN KEY (current_revision_id, id, owner_scope)
+          REFERENCES character_revisions(id, entity_id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED
+      );
+      CREATE INDEX idx_character_entities_owner
+        ON character_entities(owner_scope, archived_at, updated_at);
+
+      CREATE TABLE character_revisions (
+        id                  TEXT PRIMARY KEY,
+        entity_id           TEXT NOT NULL,
+        owner_scope         TEXT NOT NULL,
+        parent_revision_id  TEXT,
+        revision_number     INTEGER NOT NULL,
+        display_name        TEXT NOT NULL,
+        source_kind         TEXT NOT NULL,
+        source_format       TEXT NOT NULL,
+        source_container    TEXT NOT NULL,
+        canonical_json      TEXT NOT NULL,
+        source_json         TEXT NOT NULL,
+        canonical_hash      TEXT NOT NULL,
+        revision_hash       TEXT NOT NULL,
+        created_at          INTEGER NOT NULL,
+        UNIQUE (id, owner_scope),
+        UNIQUE (id, entity_id, owner_scope),
+        UNIQUE (entity_id, revision_number),
+        FOREIGN KEY (entity_id, owner_scope)
+          REFERENCES character_entities(id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED,
+        FOREIGN KEY (parent_revision_id, entity_id, owner_scope)
+          REFERENCES character_revisions(id, entity_id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED
+      );
+      CREATE UNIQUE INDEX idx_character_revision_hash
+        ON character_revisions(owner_scope, entity_id, revision_hash);
+      CREATE INDEX idx_character_revision_content_hash
+        ON character_revisions(owner_scope, entity_id, canonical_hash);
+
+      CREATE TABLE character_revision_blobs (
+        revision_id TEXT NOT NULL,
+        owner_scope TEXT NOT NULL,
+        hash        TEXT NOT NULL,
+        bytes       INTEGER NOT NULL CHECK (bytes >= 0),
+        mime        TEXT CHECK (mime IS NULL OR length(CAST(mime AS BLOB)) <= 255),
+        purpose     TEXT NOT NULL CHECK (length(CAST(purpose AS BLOB)) <= 256),
+        PRIMARY KEY (revision_id, hash, purpose),
+        FOREIGN KEY (revision_id, owner_scope)
+          REFERENCES character_revisions(id, owner_scope),
+        FOREIGN KEY (hash) REFERENCES blobs(hash)
+      );
+
+      CREATE TABLE character_session_bindings (
+        session_id             TEXT PRIMARY KEY,
+        owner_scope            TEXT NOT NULL,
+        binding_version        INTEGER NOT NULL,
+        mode                   TEXT NOT NULL,
+        character_revision_id  TEXT,
+        compatibility_profile  TEXT,
+        binding_json           TEXT NOT NULL,
+        updated_at              INTEGER NOT NULL,
+        UNIQUE (session_id, owner_scope),
+        FOREIGN KEY (character_revision_id, owner_scope)
+          REFERENCES character_revisions(id, owner_scope)
+      );
+
+      CREATE TABLE character_binding_events (
+        id               TEXT PRIMARY KEY,
+        session_id       TEXT NOT NULL,
+        owner_scope      TEXT NOT NULL,
+        binding_version  INTEGER NOT NULL,
+        event_json       TEXT NOT NULL,
+        created_at       INTEGER NOT NULL,
+        FOREIGN KEY (session_id, owner_scope)
+          REFERENCES character_session_bindings(session_id, owner_scope)
+      );
+      CREATE UNIQUE INDEX idx_character_binding_event_version
+        ON character_binding_events(session_id, binding_version);
+
+      CREATE TABLE persona_entities (
+        id                  TEXT PRIMARY KEY,
+        owner_scope         TEXT NOT NULL,
+        display_name        TEXT NOT NULL,
+        current_revision_id TEXT NOT NULL,
+        archived_at         INTEGER,
+        created_at          INTEGER NOT NULL,
+        updated_at          INTEGER NOT NULL,
+        UNIQUE (id, owner_scope),
+        FOREIGN KEY (current_revision_id, id, owner_scope)
+          REFERENCES persona_revisions(id, entity_id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED
+      );
+      CREATE TABLE persona_revisions (
+        id                 TEXT PRIMARY KEY,
+        entity_id          TEXT NOT NULL,
+        owner_scope        TEXT NOT NULL,
+        parent_revision_id TEXT,
+        revision_number    INTEGER NOT NULL,
+        canonical_json     TEXT NOT NULL,
+        canonical_hash     TEXT NOT NULL,
+        created_at         INTEGER NOT NULL,
+        UNIQUE (id, entity_id, owner_scope),
+        UNIQUE (entity_id, revision_number),
+        FOREIGN KEY (entity_id, owner_scope)
+          REFERENCES persona_entities(id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED,
+        FOREIGN KEY (parent_revision_id, entity_id, owner_scope)
+          REFERENCES persona_revisions(id, entity_id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED
+      );
+
+      CREATE TABLE world_book_entities (
+        id                  TEXT PRIMARY KEY,
+        owner_scope         TEXT NOT NULL,
+        display_name        TEXT NOT NULL,
+        current_revision_id TEXT NOT NULL,
+        archived_at         INTEGER,
+        created_at          INTEGER NOT NULL,
+        updated_at          INTEGER NOT NULL,
+        UNIQUE (id, owner_scope),
+        FOREIGN KEY (current_revision_id, id, owner_scope)
+          REFERENCES world_book_revisions(id, entity_id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED
+      );
+      CREATE TABLE world_book_revisions (
+        id                 TEXT PRIMARY KEY,
+        entity_id          TEXT NOT NULL,
+        owner_scope        TEXT NOT NULL,
+        parent_revision_id TEXT,
+        revision_number    INTEGER NOT NULL,
+        canonical_json     TEXT NOT NULL,
+        canonical_hash     TEXT NOT NULL,
+        created_at         INTEGER NOT NULL,
+        UNIQUE (id, entity_id, owner_scope),
+        UNIQUE (entity_id, revision_number),
+        FOREIGN KEY (entity_id, owner_scope)
+          REFERENCES world_book_entities(id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED,
+        FOREIGN KEY (parent_revision_id, entity_id, owner_scope)
+          REFERENCES world_book_revisions(id, entity_id, owner_scope)
+          DEFERRABLE INITIALLY DEFERRED
+      );
+
+      CREATE TABLE character_scene_checkpoints (
+        id               TEXT PRIMARY KEY,
+        session_id       TEXT NOT NULL,
+        owner_scope      TEXT NOT NULL,
+        turn_id          TEXT,
+        checkpoint_json  TEXT NOT NULL,
+        created_at       INTEGER NOT NULL
+      );
+
+      CREATE TRIGGER character_revisions_no_update
+      BEFORE UPDATE ON character_revisions BEGIN
+        SELECT RAISE(ABORT, 'character_revisions rows are immutable');
+      END;
+      CREATE TRIGGER character_revisions_no_delete
+      BEFORE DELETE ON character_revisions BEGIN
+        SELECT RAISE(ABORT, 'character_revisions rows are immutable');
+      END;
+      CREATE TRIGGER character_revision_blobs_no_update
+      BEFORE UPDATE ON character_revision_blobs BEGIN
+        SELECT RAISE(ABORT, 'character_revision_blobs rows are immutable');
+      END;
+      CREATE TRIGGER character_revision_blobs_no_delete
+      BEFORE DELETE ON character_revision_blobs BEGIN
+        SELECT RAISE(ABORT, 'character_revision_blobs rows are immutable');
+      END;
+      CREATE TRIGGER character_binding_events_no_update
+      BEFORE UPDATE ON character_binding_events BEGIN
+        SELECT RAISE(ABORT, 'character_binding_events are append-only');
+      END;
+      CREATE TRIGGER character_binding_events_no_delete
+      BEFORE DELETE ON character_binding_events BEGIN
+        SELECT RAISE(ABORT, 'character_binding_events are append-only');
+      END;
+      CREATE TRIGGER persona_revisions_no_update
+      BEFORE UPDATE ON persona_revisions BEGIN
+        SELECT RAISE(ABORT, 'persona_revisions rows are immutable');
+      END;
+      CREATE TRIGGER persona_revisions_no_delete
+      BEFORE DELETE ON persona_revisions BEGIN
+        SELECT RAISE(ABORT, 'persona_revisions rows are immutable');
+      END;
+      CREATE TRIGGER world_book_revisions_no_update
+      BEFORE UPDATE ON world_book_revisions BEGIN
+        SELECT RAISE(ABORT, 'world_book_revisions rows are immutable');
+      END;
+      CREATE TRIGGER world_book_revisions_no_delete
+      BEFORE DELETE ON world_book_revisions BEGIN
+        SELECT RAISE(ABORT, 'world_book_revisions rows are immutable');
+      END;
+    `);
+  },
 ];
 
 module.exports = { MIGRATIONS };

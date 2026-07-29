@@ -991,21 +991,21 @@ class MessageStore {
       Math.max(1, Math.min(Number(limit) || 50, MAX_LIMIT)),
     );
   }
-
   meta(key) {
     const row = this.db.get(`SELECT value FROM schema_meta WHERE key = ?`, key);
     return row ? row.value : null;
   }
-
   setMeta(key, value) {
     this.db.run(
       `INSERT INTO schema_meta (key, value) VALUES (?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      key,
-      String(value),
+      key, String(value),
     );
   }
-
+  characterWorlds() {
+    const { CharacterWorldsRepository } = require("../character-worlds/repository");
+    return this._characterWorlds ||= new CharacterWorldsRepository(this);
+  }
   close() {
     this.db.close();
   }
