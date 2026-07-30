@@ -519,6 +519,7 @@ class OpencodeAgentSession extends EventEmitter {
           files,
           guidance,
           allowImageFileParts: typeof payload === "object" && payload?.allowImageFileParts === true,
+          characterContext: typeof payload === "object" ? payload?.characterContext || null : null,
         };
         this._promptDispatchPending = true;
         this._armPromptDispatchPendingCheck();

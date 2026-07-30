@@ -14,9 +14,22 @@ function requiredString(value, name) {
   return text;
 }
 
+// Cf format chars (ZWSP/ZWNJ/ZWJ/LRM/RLM, U+2028/U+2029, bidi controls,
+// isolates, BOM) must never ride raw inside a serialized string: U+2028/U+2029
+// are JS line terminators and the rest are invisible authority-smuggling
+// vectors. Escaped on WRITE; JSON.parse restores them verbatim on read, so
+// round-trips and rows written before this change are unaffected.
+const FORMAT_CHAR_PATTERN = /[\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
+
+function escapeFormatChars(json) {
+  return json.replace(FORMAT_CHAR_PATTERN, (ch) => (
+    `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`
+  ));
+}
+
 function stableJson(value, seen = new Set()) {
   if (value === null || typeof value === "string" || typeof value === "boolean") {
-    return JSON.stringify(value);
+    return typeof value === "string" ? escapeFormatChars(JSON.stringify(value)) : JSON.stringify(value);
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new TypeError("JSON values must be finite");
@@ -36,7 +49,7 @@ function stableJson(value, seen = new Set()) {
       throw new TypeError("JSON objects must be plain objects");
     }
     json = `{${Object.keys(value).sort().map((key) => (
-      `${JSON.stringify(key)}:${stableJson(value[key], seen)}`
+      `${escapeFormatChars(JSON.stringify(key))}:${stableJson(value[key], seen)}`
     )).join(",")}}`;
   }
   seen.delete(value);

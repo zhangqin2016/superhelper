@@ -1,0 +1,83 @@
+"use strict";
+
+/**
+ * Character Worlds injection boundary for the OpenCode prompt body (spec
+ * §10.2). The compiled lower-authority character context rides ONLY as a
+ * delimited, separately fingerprinted suffix of the per-request system field,
+ * appended AFTER the protected Lily prefix — never concatenated into user
+ * text, file parts, or persisted history. Absent, disabled, invalid, or
+ * oversized contexts preserve the existing system bytes exactly; providers
+ * that cannot reliably carry per-request system context receive the native
+ * body (Lily never moves character instructions into a fake user message).
+ */
+
+const { CHARACTER_CONTEXT_MAX_TOKENS } = require("../character-worlds/context-compiler");
+
+const MAX_CHARACTER_CONTEXT_TEXT_CHARS = 128 * 1024;
+const FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const EXPRESSION_PROFILES = new Set(["immersive", "balanced", "task_preserving"]);
+
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/** Structural validation of the compiled contract; anything else is ignored. */
+function normalizeCompiledCharacterContext(value) {
+  if (!isPlainObject(value)) return null;
+  if (value.schemaVersion !== 1 || value.status !== "compiled") return null;
+  const text = value.text;
+  if (
+    typeof text !== "string"
+    || text.length === 0
+    || text.length > MAX_CHARACTER_CONTEXT_TEXT_CHARS
+  ) return null;
+  if (!FINGERPRINT_PATTERN.test(String(value.fingerprint || ""))) return null;
+  const tokenEstimate = Number(value.tokenEstimate);
+  if (
+    !Number.isInteger(tokenEstimate)
+    || tokenEstimate <= 0
+    || tokenEstimate > CHARACTER_CONTEXT_MAX_TOKENS
+  ) return null;
+  if (!EXPRESSION_PROFILES.has(value.expressionProfile)) return null;
+  if (!Array.isArray(value.omitted) || !Array.isArray(value.warnings)) return null;
+  return value;
+}
+
+/**
+ * Conservative provider gate, injectable for tests. The system field already
+ * carries all Lily guidance, so the channel is presumed to work; any negative
+ * evidence (explicit override, capability metadata opt-out, or a lite-grade
+ * probed profile whose context pipeline is stripped) disables injection and
+ * the turn runs natively.
+ */
+function characterContextSupported({ override, capabilityGrade = "", providerCapabilities = null } = {}) {
+  if (typeof override === "boolean") return override;
+  if (isPlainObject(providerCapabilities) && providerCapabilities.safeSystemContext === false) {
+    return false;
+  }
+  if (String(capabilityGrade || "").trim().toLowerCase() === "lite") return false;
+  return true;
+}
+
+/**
+ * Compose `system` = protected Lily prefix + delimited character suffix.
+ * Returns "" when nothing should be set (no guidance and no valid context),
+ * so callers can preserve the exact "no system key" baseline behavior.
+ */
+function withCharacterContextSuffix(systemText, characterContext, supportOpts = {}) {
+  const base = typeof systemText === "string" ? systemText : "";
+  if (!characterContextSupported(supportOpts)) return base;
+  const compiled = normalizeCompiledCharacterContext(characterContext);
+  if (!compiled) return base;
+  const delimiter = `[CHARACTER WORLDS CONTEXT suffix; separately fingerprinted ${compiled.fingerprint}]`;
+  const suffix = `${delimiter}\n${compiled.text}`;
+  return base ? `${base}\n\n${suffix}` : suffix;
+}
+
+module.exports = {
+  characterContextSupported,
+  normalizeCompiledCharacterContext,
+  withCharacterContextSuffix,
+};

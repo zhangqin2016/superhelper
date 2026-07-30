@@ -208,7 +208,7 @@ class OpencodeServerManager extends EventEmitter {
     if (this._recentRouting.length > 120) this._recentRouting.splice(0, this._recentRouting.length - 120);
   }
 
-  async sendPrompt({ text, files, guidance, allowImageFileParts, allowedFilePartMimes }) {
+  async sendPrompt({ text, files, guidance, allowImageFileParts, allowedFilePartMimes, characterContext }) {
     if (!this.sessionID) throw new Error("no session");
     if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
     // Non-image file-part support is opt-in per model (default: none). Resolve
@@ -251,6 +251,8 @@ class OpencodeServerManager extends EventEmitter {
       maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
       allowImageFileParts: allowImageFileParts === true,
       allowedFilePartMimes: filePartMimes,
+      characterContext: characterContext || null,
+      capabilityGrade: this.env?.LILY_MODEL_CAPABILITY_GRADE || "",
     });
     const textPart = body.parts.find((part) => part?.type === "text");
     this.lastPromptText = typeof textPart?.text === "string" ? textPart.text : "";

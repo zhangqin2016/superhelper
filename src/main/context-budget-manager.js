@@ -67,14 +67,25 @@ function estimateTokensForText(text, opts = {}) {
   const source = String(text || "");
   if (!source) return { tokens: 0, source: "empty" };
   const compact = source.replace(/\s+/g, " ");
+  // Count by CODE POINT, not UTF-16 unit: non-BMP characters (emoji, CJK
+  // Ext-B+, anything surrogate-paired) are one point each and tokenize at the
+  // worst-case ~1 token/point on every provider, never at the latin rate.
+  const nonSpacePoints = (compact.match(/\S/gu) || []).length;
+  const nonBmpPoints = (compact.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g) || []).length;
   const cjkChars = (compact.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
-  const nonSpaceChars = compact.replace(/\s/g, "").length;
-  const latinLikeChars = Math.max(0, nonSpaceChars - cjkChars);
-  const punctuation = (compact.match(/[^\s\p{L}\p{N}]/gu) || []).length;
+  // Full-width / CJK punctuation & forms (U+3000-U+303F, U+FF00-U+FFEF) take a
+  // full token like an ideograph, not the 0.2 latin-punctuation rate.
+  const fullWidthChars = (compact.match(/[\u3000-\u303f\uff00-\uffef]/g) || []).length;
+  const latinLikeChars = Math.max(0, nonSpacePoints - nonBmpPoints - cjkChars - fullWidthChars);
+  // Punctuation at the cheap rate EXCLUDES the classes already charged above.
+  const punctuation = (compact.match(/[^\s\p{L}\p{N}\u3000-\u303f\uff00-\uffef]/gu) || [])
+    .filter((ch) => ch.length === 1)
+    .length;
   const { latinCharsPerToken, cjkCharsPerToken } = providerTokenRatio(opts);
   const tokens = Math.ceil(
     latinLikeChars / latinCharsPerToken +
-      cjkChars / cjkCharsPerToken +
+      (cjkChars + fullWidthChars) / cjkCharsPerToken +
+      nonBmpPoints +
       punctuation * 0.2,
   );
   return {

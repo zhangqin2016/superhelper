@@ -16,7 +16,7 @@
     "src/main/model-presets.js": 1364,
     "src/main/opencode-agent-session.js": 1997,
     "src/main/opencode-conversation-source.js": 585,
-    "src/main/runtime/opencode-message-parts.js": 601,
+    "src/main/runtime/opencode-message-parts.js": 605,
     "src/main/runtime/opencode-runtime-reducer.js": 843,
     "src/main/runtime/opencode-shared-server.js": 567,
     "src/main/runtime-pack-installer.js": 966,

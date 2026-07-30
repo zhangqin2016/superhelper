@@ -1287,6 +1287,26 @@ class TurnOrchestrator {
         taskContract: Boolean(state.taskContract),
       },
     };
+    const characterContext = this._compileTurnCharacterContext(session, state, runner);
+    state.enginePayload.characterContext = characterContext?.status === "compiled" ? characterContext : null;
+    if (state.characterWorldsSnapshot?.mode === "character") {
+      // Metadata only — card contents never enter the trace.
+      state.enginePayload.trace.characterContext = characterContext?.status === "compiled"
+        ? {
+            status: "compiled",
+            fingerprint: characterContext.fingerprint,
+            revisionId: state.characterWorldsSnapshot.characterRevisionId,
+            expressionProfile: characterContext.expressionProfile,
+            activatedFields: characterContext.activatedFields,
+            omitted: characterContext.omitted,
+            warnings: characterContext.warnings,
+            tokenEstimate: characterContext.tokenEstimate,
+          }
+        : {
+            status: "native",
+            revisionId: state.characterWorldsSnapshot.characterRevisionId,
+          };
+    }
     const preTurnCompaction = await this._maybeCompactBeforeTurn(session.id, runner, state.enginePayload);
     if (preTurnCompaction) state.enginePayload.trace.preTurnCompaction = preTurnCompaction;
 
@@ -1495,6 +1515,42 @@ class TurnOrchestrator {
 
   async _maybeCompactBeforeTurn(sessionId, runner, enginePayload = {}) {
     return this.contextCompactionRuntime.maybeCompactBeforeTurn(sessionId, runner, enginePayload);
+  }
+
+  /**
+   * Compile the admitted character snapshot into the bounded lower-authority
+   * context for this turn (spec §10). The immutable revision named by the
+   * admitted snapshot is resolved — never the current binding — and any
+   * failure fails open to native Lily (null). Only metadata is logged.
+   */
+  _compileTurnCharacterContext(session, state, runner) {
+    try {
+      const snapshot = state.characterWorldsSnapshot;
+      if (snapshot?.mode !== "character" || snapshot?.snapshotStatus !== "ready") return null;
+      const sessionManager = this.ctx.sessionManager;
+      const owner = typeof sessionManager?.resolveTurnOwnerScope === "function"
+        ? sessionManager.resolveTurnOwnerScope(session.id)
+        : null;
+      if (!owner?.ok || !owner.ownerScope) return null;
+      const repository = this.ctx.characterWorldsRepository
+        || sessionManager?._store?.()?.characterWorlds?.()
+        || null;
+      if (!repository || typeof repository.getRevision !== "function") return null;
+      const revision = repository.getRevision(owner.ownerScope, snapshot.characterRevisionId);
+      if (!revision) return null;
+      const { compileCharacterContext } = require("./character-worlds/context-compiler");
+      return compileCharacterContext({
+        snapshot,
+        revision,
+        userText: String(state.enginePayload?.text || state.currentPayload?.rawText || ""),
+        taskContract: state.pendingTaskContract || state.taskContract || null,
+        model: runner?.spawnOptions?.model || null,
+        onDiagnostic: (code) => log.warn("character context compile failed open: %s", code),
+      });
+    } catch (err) {
+      log.warn("character context compilation failed open: %s", err?.message || String(err));
+      return null;
+    }
   }
 
   async _handleDone(sessionId, payload) {

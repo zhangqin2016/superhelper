@@ -415,6 +415,10 @@ function buildOpencodePromptBody(opts = {}) {
   parts.push({ type: "text", text });
   const body = { agent: opts.agent || "build", parts };
   if (guidance) body.system = truncateSystemGuidance(guidance, opts.maxSystemPromptChars, { intentText: opts.text });
+  // Lower-authority character context rides only as a system-field suffix
+  // (spec §10.2); absent/invalid/unsupported leaves the bytes exactly as-is.
+  const systemWithContext = require("./opencode-character-context").withCharacterContextSuffix(body.system, opts.characterContext, { override: opts.characterContextSupport, capabilityGrade: opts.capabilityGrade, providerCapabilities: opts.providerCapabilities });
+  if (systemWithContext) body.system = systemWithContext;
   if (opts.model?.providerID && opts.model?.modelID) {
     body.model = { providerID: opts.model.providerID, modelID: opts.model.modelID };
   }
