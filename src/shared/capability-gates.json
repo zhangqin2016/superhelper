@@ -111,6 +111,15 @@
       ]
     },
     {
+      "id": "opencode-history-compatibility",
+      "protects": "A persisted empty assistant turn cannot poison every later model call and prevent tools or compaction from running.",
+      "baseline": "Healthy text history and tool-call/result protocol messages remain byte-identical and in their original order.",
+      "failureFallback": "Add one bounded neutral text marker only to truly provider-empty assistant messages; plugin errors and the kill switch retain baseline behavior.",
+      "tests": [
+        "scripts/test-empty-assistant-history-guard.mjs"
+      ]
+    },
+    {
       "id": "office-document-delivery",
       "protects": "Generated or edited Office and PDF files cannot be presented as polished verified deliverables without an actual output, deterministic structure checks, rendering, and visual inspection.",
       "baseline": "Bundled Python authoring remains available for Word, PowerPoint, Excel, and PDF, with managed LibreOffice rendering and CJK-safe font discovery.",
