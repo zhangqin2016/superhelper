@@ -3,6 +3,10 @@ const crypto = require("node:crypto");
 const C = require("./constants");
 const { CharacterAssetLifecycle } = require("./asset-lifecycle");
 const {
+  findImportDuplicates,
+  importCharacter,
+} = require("./import-repository");
+const {
   codedError,
   isoTime,
   prepareRevision,
@@ -95,12 +99,14 @@ class CharacterWorldsRepository {
       `INSERT INTO character_revisions
          (id, entity_id, owner_scope, parent_revision_id, revision_number,
           display_name, source_kind, source_format, source_container,
-          canonical_json, source_json, canonical_hash, revision_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          canonical_json, source_json, canonical_hash, original_hash,
+          revision_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, entityId, owner, parentId, number,
       prepared.displayName, prepared.sourceValue.kind, prepared.sourceValue.format,
       prepared.sourceValue.container, prepared.canonicalData.packed,
-      prepared.sourceData.packed, prepared.canonicalHash, prepared.revisionHash, createdAt,
+      prepared.sourceData.packed, prepared.canonicalHash, prepared.originalHash,
+      prepared.revisionHash, createdAt,
     );
   }
   _updateCurrent(entityId, owner, revisionId, displayName, updatedAt) {
@@ -159,6 +165,12 @@ class CharacterWorldsRepository {
       cardAssets,
       createdAt: isoTime(row.created_at),
     };
+  }
+  findImportDuplicates(ownerScope, hashes) {
+    return findImportDuplicates(this, ownerScope, hashes);
+  }
+  importCharacter(input) {
+    return importCharacter(this, input);
   }
   createCharacter({ ownerScope, canonical, source, assets = [] }) {
     const owner = requiredString(ownerScope, "ownerScope");

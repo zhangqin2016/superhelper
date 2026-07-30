@@ -95,11 +95,28 @@ function prepareRevision(canonical, source, kind, assets) {
   const sourceValue = normalizeSource(source, kind);
   const sourceData = packJson(sourceValue, C.MAX_CHARACTER_SOURCE_BYTES, "source");
   const descriptors = assets.map(({ data, ...descriptor }) => descriptor);
+  const sourceOriginal = sourceValue.original;
+  let originalHash = null;
+  if (
+    sourceOriginal
+    && typeof sourceOriginal === "object"
+    && typeof sourceOriginal.hash === "string"
+  ) {
+    const linked = descriptors.some((asset) => (
+      asset.hash === sourceOriginal.hash
+      && asset.purpose === "character-card-original"
+      && asset.bytes === sourceOriginal.bytes
+    ));
+    if (linked && /^[a-f0-9]{64}$/.test(sourceOriginal.hash)) {
+      originalHash = sourceOriginal.hash;
+    }
+  }
   return {
     displayName: displayNameOf(canonical),
     canonicalData,
     sourceValue,
     sourceData,
+    originalHash,
     canonicalHash: `sha256:${crypto.createHash("sha256").update(canonicalData.json).digest("hex")}`,
     revisionHash: `sha256:${crypto.createHash("sha256").update(stableJson({
       canonical: JSON.parse(canonicalData.json),

@@ -9,6 +9,8 @@ const { codedError, stableJson } = require("./persistence-codec");
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const SHARD_PATTERN = /^[a-f0-9]{2}$/;
 const TEMP_PATTERN = /^([a-f0-9]{64})\.tmp-([1-9][0-9]*)-(0|[1-9][0-9]*)$/;
+const BACKUP_PATTERN = /^([a-f0-9]{64})\.backup-([1-9][0-9]*)-([a-f0-9]{24})$/;
+const REPLACEMENT_CLEANUP_ATTEMPTS = 2;
 
 function invalidAsset(index, field, message) {
   return codedError("CHARACTER_ASSET_INVALID", message, {
@@ -64,6 +66,7 @@ class CharacterAssetLifecycle {
   constructor(db, blobs) {
     this.db = db;
     this.blobs = blobs;
+    this.pendingReplacementCleanups = new Set();
   }
 
   prepare(assets) {
@@ -158,7 +161,9 @@ class CharacterAssetLifecycle {
   }
 
   writeForMutation(assets, mutation) {
+    this._retryPendingReplacementCleanups();
     const createdHashes = [];
+    const replacements = [];
     const writtenHashes = new Set();
     try {
       for (const asset of assets) {
@@ -166,17 +171,85 @@ class CharacterAssetLifecycle {
         writtenHashes.add(asset.hash);
         const existed = this.blobs.exists(asset.hash);
         this.blobs.write(asset.data, asset.hash);
-        if (!existed) createdHashes.push(asset.hash);
+        if (!existed && this.blobs.exists(asset.hash)) createdHashes.push(asset.hash);
+        if (!this.blobs.verify(asset.hash, asset.bytes)) {
+          if (!this.blobs.exists(asset.hash)) {
+            throw codedError(
+              "CHARACTER_BLOB_CORRUPT",
+              "Character asset blob is unavailable",
+            );
+          }
+          try {
+            replacements.push(this.blobs.beginAtomicReplace(asset.data, asset.hash));
+          } catch {
+            throw codedError(
+              "CHARACTER_BLOB_CORRUPT",
+              "Character asset blob could not be repaired",
+            );
+          }
+        }
       }
-      return mutation();
+      const result = mutation();
+      for (const replacement of replacements) {
+        this._commitReplacementCleanup(replacement);
+      }
+      return result;
     } catch (error) {
+      let rollbackFailure = null;
+      for (const replacement of replacements.reverse()) {
+        try {
+          replacement.rollback();
+        } catch (failure) {
+          rollbackFailure ||= failure;
+        }
+      }
       for (const hash of createdHashes) {
         if (!this.db.get("SELECT 1 FROM blobs WHERE hash = ?", hash)) {
           this.blobs.remove(hash);
         }
       }
+      if (rollbackFailure) {
+        throw codedError(
+          "CHARACTER_BLOB_CORRUPT",
+          "Character asset blob rollback failed",
+        );
+      }
       throw error;
     }
+  }
+
+  _cleanupReplacement(replacement) {
+    const cleanup = typeof replacement?.commitCleanup === "function"
+      ? replacement.commitCleanup
+      : replacement?.commit;
+    if (typeof cleanup !== "function") return false;
+    try {
+      return cleanup.call(replacement) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  _commitReplacementCleanup(replacement) {
+    for (let attempt = 0; attempt < REPLACEMENT_CLEANUP_ATTEMPTS; attempt += 1) {
+      if (this._cleanupReplacement(replacement)) {
+        this.pendingReplacementCleanups.delete(replacement);
+        return true;
+      }
+    }
+    this.pendingReplacementCleanups.add(replacement);
+    return false;
+  }
+
+  _retryPendingReplacementCleanups() {
+    let completed = 0;
+    for (const replacement of [...this.pendingReplacementCleanups]) {
+      if (this._commitReplacementCleanup(replacement)) completed += 1;
+    }
+    return {
+      completed,
+      remaining: this.pendingReplacementCleanups.size,
+    };
   }
 
   _cursor() {
@@ -225,12 +298,21 @@ class CharacterAssetLifecycle {
             };
           }
           const match = TEMP_PATTERN.exec(entry.name);
-          if (!match || !match[1].startsWith(shard.name)) return null;
+          if (match && match[1].startsWith(shard.name)) {
+            return {
+              key: `${shard.name}/${entry.name}`,
+              type: "temp",
+              hash: match[1],
+              declaredBytes: match[3],
+              filePath: path.join(shardDir, entry.name),
+            };
+          }
+          const backupMatch = BACKUP_PATTERN.exec(entry.name);
+          if (!backupMatch || !backupMatch[1].startsWith(shard.name)) return null;
           return {
             key: `${shard.name}/${entry.name}`,
-            type: "temp",
-            hash: match[1],
-            declaredBytes: match[3],
+            type: "backup",
+            hash: backupMatch[1],
             filePath: path.join(shardDir, entry.name),
           };
         })
@@ -315,7 +397,32 @@ class CharacterAssetLifecycle {
     result.recoveredHashes.push(candidate.hash);
   }
 
+  _reconcileBackup(candidate, stat, now, grace, result) {
+    if (now - stat.mtimeMs < grace) {
+      result.skippedRecent += 1;
+      return;
+    }
+    const catalog = this.db.get(
+      "SELECT bytes FROM blobs WHERE hash = ?",
+      candidate.hash,
+    );
+    const expectedBytes = Number(catalog?.bytes);
+    if (
+      !catalog
+      || !Number.isSafeInteger(expectedBytes)
+      || expectedBytes < 0
+      || expectedBytes > C.MAX_CHARACTER_RECONCILE_FILE_BYTES
+      || !this.blobs.verify(candidate.hash, expectedBytes)
+    ) {
+      result.preservedBackups += 1;
+      return;
+    }
+    fs.rmSync(candidate.filePath, { force: true });
+    result.removedBackups += 1;
+  }
+
   reconcile({ maxFiles, graceMs } = {}) {
+    const replacementCleanup = this._retryPendingReplacementCleanups();
     const limit = Math.max(
       1,
       boundedNumber(maxFiles, C.MAX_CHARACTER_RECONCILE_FILES, C.MAX_CHARACTER_RECONCILE_FILES),
@@ -336,6 +443,10 @@ class CharacterAssetLifecycle {
       recoveredHashes: [],
       preservedTemps: 0,
       tempIssues: [],
+      removedBackups: 0,
+      preservedBackups: 0,
+      completedReplacementCleanups: replacementCleanup.completed,
+      pendingReplacementCleanups: replacementCleanup.remaining,
       errors: 0,
       limitReached: false,
     };
@@ -349,6 +460,8 @@ class CharacterAssetLifecycle {
         if (stat.isFile()) {
           if (candidate.type === "temp") {
             this._reconcileTemp(candidate, stat, now, grace, result);
+          } else if (candidate.type === "backup") {
+            this._reconcileBackup(candidate, stat, now, grace, result);
           } else {
             this._reconcileFinal(candidate, stat, now, grace, result);
           }
@@ -358,6 +471,8 @@ class CharacterAssetLifecycle {
           result.errors += 1;
           if (candidate.type === "temp") {
             this._preserveTemp(result, candidate.hash, "filesystem_error");
+          } else if (candidate.type === "backup") {
+            result.preservedBackups += 1;
           }
         }
       }

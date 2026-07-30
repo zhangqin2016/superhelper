@@ -343,6 +343,25 @@ const MIGRATIONS = [
       END;
     `);
   },
+  // v4 - transaction-safe owner-scoped character import deduplication.
+  (db) => {
+    db.exec(`
+      ALTER TABLE character_revisions
+        ADD COLUMN original_hash TEXT
+        CHECK (
+          original_hash IS NULL
+          OR (
+            length(original_hash) = 64
+            AND original_hash NOT GLOB '*[^a-f0-9]*'
+          )
+        );
+      CREATE UNIQUE INDEX idx_character_revision_owner_original
+        ON character_revisions(owner_scope, original_hash)
+        WHERE original_hash IS NOT NULL;
+      CREATE INDEX idx_character_revision_owner_canonical
+        ON character_revisions(owner_scope, canonical_hash, created_at, id);
+    `);
+  },
 ];
 
 module.exports = { MIGRATIONS };

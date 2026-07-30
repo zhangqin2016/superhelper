@@ -8,6 +8,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const { BlobStore } = require("../src/main/store/blob-store.js");
 const { MessageStore } = require("../src/main/store/message-store.js");
 const { openDatabase } = require("../src/main/store/sqlite-db.js");
 const { MIGRATIONS } = require("../src/main/store/schema.js");
@@ -21,6 +22,7 @@ const {
   MAX_CHARACTER_ASSET_PURPOSE_BYTES,
   MAX_CHARACTER_ASSET_TOTAL_BYTES,
   MAX_CHARACTER_BINDING_BYTES,
+  MAX_CHARACTER_SOURCE_BYTES,
   MAX_CHARACTER_TEXT_FIELD_BYTES,
 } = require("../src/main/character-worlds/constants.js");
 const {
@@ -119,8 +121,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migration v3 upgrades a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 3);
+  check("migrations v3-v4 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 4);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
   });
 
@@ -365,6 +367,7 @@ try {
       "source_format",
       "source_container",
       "canonical_hash",
+      "original_hash",
       "revision_hash",
     ]) {
       assert.ok(revisionColumns.includes(column), `missing character_revisions.${column}`);
@@ -412,9 +415,43 @@ try {
     for (const index of [
       "idx_character_entities_owner",
       "idx_character_revision_hash",
+      "idx_character_revision_owner_canonical",
+      "idx_character_revision_owner_original",
       "idx_character_binding_event_version",
     ]) {
       assert.ok(indexes.has(index), `missing ${index}`);
+    }
+  });
+
+  check("import duplicate lookups use owner-first hash indexes", () => {
+    const plans = [
+      {
+        predicate: "r.original_hash = ?",
+        hash: "a".repeat(64),
+        index: "idx_character_revision_owner_original",
+      },
+      {
+        predicate: "r.canonical_hash = ?",
+        hash: `sha256:${"b".repeat(64)}`,
+        index: "idx_character_revision_owner_canonical",
+      },
+    ];
+    for (const plan of plans) {
+      const details = freshStore.db.all(
+        `EXPLAIN QUERY PLAN
+         SELECT r.id AS revision_id, r.entity_id
+         FROM character_revisions r
+         JOIN character_entities e
+           ON e.id = r.entity_id AND e.owner_scope = r.owner_scope
+         WHERE r.owner_scope = ? AND ${plan.predicate}
+         ORDER BY (e.archived_at IS NOT NULL) ASC, r.created_at ASC, r.id ASC
+         LIMIT 1`,
+        OWNER, plan.hash,
+      ).map((row) => row.detail);
+      assert(
+        details.some((detail) => detail.includes(`USING INDEX ${plan.index}`)),
+        `query did not use ${plan.index}: ${details.join("; ")}`,
+      );
     }
   });
 
@@ -439,6 +476,353 @@ try {
     assets: [avatarAsset],
   });
 
+  const importOwner = "profile:import-dedupe";
+  const importedBytes = Buffer.from('{"spec":"chara_card_v3","data":{"name":"Import Dedupe"}}');
+  const importedHash = crypto.createHash("sha256").update(importedBytes).digest("hex");
+  const importedCanonical = {
+    schemaVersion: 1,
+    name: "Import Dedupe",
+    description: "owner-safe",
+  };
+  const importedSource = {
+    kind: "imported",
+    format: "v3_json",
+    container: "json",
+    original: {
+      hash: importedHash,
+      bytes: importedBytes.length,
+      mime: "application/json",
+      purpose: "character-card-original",
+    },
+    preserved: { schemaVersion: 1, data: { name: "Import Dedupe" } },
+  };
+  const importInput = {
+    ownerScope: importOwner,
+    canonical: importedCanonical,
+    source: importedSource,
+    assets: [{
+      purpose: "character-card-original",
+      mime: "application/json",
+      data: importedBytes,
+    }],
+  };
+  const importedFirst = repository.importCharacter(importInput);
+
+  check("import duplicate queries are owner-scoped and use exact original hashes", () => {
+    const found = repository.findImportDuplicates(importOwner, {
+      originalHash: importedHash,
+      canonicalHash: importedFirst.revision.contentHash,
+    });
+    assert.deepEqual(found.exact, {
+      entityId: importedFirst.entity.id,
+      revisionId: importedFirst.revision.id,
+    });
+    assert.deepEqual(found.canonical, found.exact);
+    assert.deepEqual(
+      repository.findImportDuplicates(OTHER_OWNER, {
+        originalHash: importedHash,
+        canonicalHash: importedFirst.revision.contentHash,
+      }),
+      { exact: null, canonical: null },
+    );
+  });
+
+  check("exact import duplicate transaction reuses the immutable entity and blob", () => {
+    const entitiesBefore = repository.listCharacters(importOwner).length;
+    const refsBefore = freshStore.db.get(
+      "SELECT refcount FROM blobs WHERE hash = ?",
+      importedHash,
+    ).refcount;
+    const duplicate = repository.importCharacter(importInput);
+    assert.equal(duplicate.entity.id, importedFirst.entity.id);
+    assert.equal(duplicate.revision.id, importedFirst.revision.id);
+    assert.deepEqual(duplicate.duplicate, {
+      kind: "exact",
+      reused: true,
+      resolution: "reuse_existing",
+    });
+    assert.equal(repository.listCharacters(importOwner).length, entitiesBefore);
+    assert.equal(
+      freshStore.db.get("SELECT refcount FROM blobs WHERE hash = ?", importedHash).refcount,
+      refsBefore,
+    );
+  });
+
+  check("blob replacement is verified, atomic, and rollback-capable", () => {
+    const replacementDir = path.join(tmp, "blob-replacement");
+    const blobStore = new BlobStore(replacementDir);
+    const expected = Buffer.from("expected-content-addressed-bytes");
+    const hash = BlobStore.hash(expected);
+    const corrupt = Buffer.alloc(expected.length, 0x78);
+    fs.mkdirSync(path.dirname(blobStore.pathFor(hash)), { recursive: true });
+    fs.writeFileSync(blobStore.pathFor(hash), corrupt);
+
+    const rolledBack = blobStore.beginAtomicReplace(expected, hash);
+    assert.equal(blobStore.verify(hash, expected.length), true);
+    rolledBack.rollback();
+    assert.deepEqual(fs.readFileSync(blobStore.pathFor(hash)), corrupt);
+
+    const committed = blobStore.beginAtomicReplace(expected, hash);
+    committed.commit();
+    assert.equal(blobStore.verify(hash, expected.length), true);
+    assert.deepEqual(fs.readFileSync(blobStore.pathFor(hash)), expected);
+    assert.deepEqual(
+      fs.readdirSync(path.dirname(blobStore.pathFor(hash))),
+      [hash],
+    );
+  });
+
+  check("blob replacement backup cleanup is retryable and exposes pending state", () => {
+    const replacementDir = path.join(tmp, "blob-replacement-cleanup-retry");
+    const blobStore = new BlobStore(replacementDir);
+    const expected = Buffer.from("expected-cleanup-retry-bytes");
+    const hash = BlobStore.hash(expected);
+    fs.mkdirSync(path.dirname(blobStore.pathFor(hash)), { recursive: true });
+    fs.writeFileSync(blobStore.pathFor(hash), Buffer.alloc(expected.length, 0x78));
+
+    const originalRemoveBackup = blobStore._removeBackup.bind(blobStore);
+    let attempts = 0;
+    blobStore._removeBackup = (backupPath) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("injected backup cleanup failure");
+      originalRemoveBackup(backupPath);
+    };
+    const replacement = blobStore.beginAtomicReplace(expected, hash);
+    assert.equal(replacement.commitCleanup(), false);
+    assert.equal(replacement.state, "cleanup_pending");
+    assert.equal(fs.existsSync(replacement.backupPath), true);
+    assert.equal(replacement.commitCleanup(), true);
+    assert.equal(replacement.state, "committed");
+    assert.equal(fs.existsSync(replacement.backupPath), false);
+    assert.deepEqual(fs.readFileSync(blobStore.pathFor(hash)), expected);
+  });
+
+  check("asset lifecycle retries backup cleanup instead of ignoring a false result", () => {
+    const blobPath = freshStore.blobs.pathFor(importedHash);
+    fs.writeFileSync(blobPath, Buffer.alloc(importedBytes.length, 0x73));
+    const originalRemoveBackup = freshStore.blobs._removeBackup.bind(freshStore.blobs);
+    let attempts = 0;
+    freshStore.blobs._removeBackup = (backupPath) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("injected first cleanup failure");
+      originalRemoveBackup(backupPath);
+    };
+    try {
+      repository.importCharacter(importInput);
+      assert.equal(attempts, 2);
+      assert.deepEqual(fs.readFileSync(blobPath), importedBytes);
+      assert.deepEqual(
+        fs.readdirSync(path.dirname(blobPath)).filter((name) => name.includes(".backup-")),
+        [],
+      );
+    } finally {
+      freshStore.blobs._removeBackup = originalRemoveBackup;
+    }
+  });
+
+  check("reconciliation removes a recoverable stale blob backup", () => {
+    const blobPath = freshStore.blobs.pathFor(importedHash);
+    const backupPath = `${blobPath}.backup-999-${"a".repeat(24)}`;
+    fs.writeFileSync(backupPath, "obsolete-corrupt-backup");
+    const staleTime = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    fs.utimesSync(backupPath, staleTime, staleTime);
+    const result = repository.reconcileOrphanBlobs({ maxFiles: 100, graceMs: 0 });
+    assert.equal(fs.existsSync(backupPath), false);
+    assert(result.removedBackups >= 1);
+  });
+
+  check("failed import rolls back a verified blob repair and repair failures fail loud", () => {
+    const blobPath = freshStore.blobs.pathFor(importedHash);
+    const corrupt = Buffer.alloc(importedBytes.length, 0x79);
+    const refcountBefore = freshStore.db.get(
+      "SELECT refcount FROM blobs WHERE hash = ?",
+      importedHash,
+    ).refcount;
+    fs.writeFileSync(blobPath, corrupt);
+    assert.throws(
+      () => repository.importCharacter({
+        ...importInput,
+        assertCanCommit() {
+          assert.deepEqual(fs.readFileSync(blobPath), importedBytes);
+          throw Object.assign(new Error("transaction aborted"), {
+            code: "IMPORT_SERVICE_CLOSED",
+          });
+        },
+      }),
+      (error) => error.code === "IMPORT_SERVICE_CLOSED",
+    );
+    assert.deepEqual(fs.readFileSync(blobPath), corrupt);
+    assert.equal(
+      freshStore.db.get("SELECT refcount FROM blobs WHERE hash = ?", importedHash).refcount,
+      refcountBefore,
+    );
+
+    const originalReplace = freshStore.blobs.beginAtomicReplace;
+    freshStore.blobs.beginAtomicReplace = () => {
+      throw new Error("injected repair failure");
+    };
+    try {
+      assert.throws(
+        () => repository.importCharacter(importInput),
+        (error) => error.code === "CHARACTER_BLOB_CORRUPT",
+      );
+    } finally {
+      freshStore.blobs.beginAtomicReplace = originalReplace;
+    }
+    repository.importCharacter(importInput);
+    assert.deepEqual(fs.readFileSync(blobPath), importedBytes);
+    assert.equal(
+      freshStore.db.get("SELECT refcount FROM blobs WHERE hash = ?", importedHash).refcount,
+      refcountBefore,
+    );
+  });
+
+  check("exact duplicate recovery uses structured SQLite constraint metadata", () => {
+    const originalGet = freshStore.db.get;
+    const originalTransaction = freshStore.db.transaction;
+    let hideExactOnce = true;
+    freshStore.db.get = (sql, ...params) => {
+      if (
+        hideExactOnce
+        && sql.includes("r.original_hash = ?")
+        && params[0] === importOwner
+        && params[1] === importedHash
+      ) {
+        hideExactOnce = false;
+        return undefined;
+      }
+      return originalGet.call(freshStore.db, sql, ...params);
+    };
+    freshStore.db.transaction = (fn) => {
+      const transaction = originalTransaction.call(freshStore.db, fn);
+      return (...args) => {
+        try {
+          return transaction(...args);
+        } catch (error) {
+          if (Number(error?.errcode) === 2067) {
+            throw Object.assign(new Error("唯一约束冲突"), {
+              code: error.code,
+              errcode: error.errcode,
+            });
+          }
+          throw error;
+        }
+      };
+    };
+    try {
+      const duplicate = repository.importCharacter({
+        ...importInput,
+        duplicateResolution: "create_copy",
+      });
+      assert.equal(duplicate.entity.id, importedFirst.entity.id);
+      assert.equal(duplicate.revision.id, importedFirst.revision.id);
+      assert.equal(duplicate.duplicate.reused, true);
+    } finally {
+      freshStore.db.get = originalGet;
+      freshStore.db.transaction = originalTransaction;
+    }
+  });
+
+  check("unconfirmed SQLite constraint errors are rethrown unchanged", () => {
+    const unrelated = Object.assign(new Error("非唯一约束"), {
+      code: "ERR_SQLITE_ERROR",
+      errcode: 787,
+    });
+    const originalTransaction = freshStore.db.transaction;
+    freshStore.db.transaction = () => () => { throw unrelated; };
+    try {
+      assert.throws(
+        () => repository.importCharacter({
+          ...importInput,
+          ownerScope: "profile:unrelated-constraint",
+        }),
+        (error) => error === unrelated,
+      );
+    } finally {
+      freshStore.db.transaction = originalTransaction;
+    }
+  });
+
+  check("canonical-only duplicate requires explicit create_copy resolution", () => {
+    const variantBytes = Buffer.concat([importedBytes, Buffer.from("\n")]);
+    const variantHash = crypto.createHash("sha256").update(variantBytes).digest("hex");
+    const variantInput = {
+      ...importInput,
+      source: {
+        ...importedSource,
+        original: {
+          ...importedSource.original,
+          hash: variantHash,
+          bytes: variantBytes.length,
+        },
+      },
+      assets: [{
+        purpose: "character-card-original",
+        mime: "application/json",
+        data: variantBytes,
+      }],
+    };
+    assert.throws(
+      () => repository.importCharacter(variantInput),
+      (error) => error.code === "IMPORT_DUPLICATE_RESOLUTION_REQUIRED"
+        && error.existingEntityId === importedFirst.entity.id,
+    );
+    const created = repository.importCharacter({
+      ...variantInput,
+      duplicateResolution: "create_copy",
+    });
+    assert.notEqual(created.entity.id, importedFirst.entity.id);
+    assert.deepEqual(created.duplicate, {
+      kind: "canonical",
+      reused: false,
+      resolution: "create_copy",
+    });
+    assert.equal(repository.listCharacters(importOwner).length, 2);
+  });
+
+  check("repository runs the lifecycle guard inside the final import transaction", () => {
+    const guardedOwner = "profile:guarded-import";
+    const guardedBytes = Buffer.from(
+      '{"spec":"chara_card_v3","data":{"name":"Guarded Import"}}',
+    );
+    const guardedHash = crypto.createHash("sha256").update(guardedBytes).digest("hex");
+    const catalogBefore = freshStore.db.get("SELECT COUNT(*) AS count FROM blobs").count;
+    assert.throws(
+      () => repository.importCharacter({
+        ownerScope: guardedOwner,
+        canonical: { schemaVersion: 1, name: "Guarded Import" },
+        source: {
+          kind: "imported",
+          format: "v3_json",
+          container: "json",
+          original: {
+            hash: guardedHash,
+            bytes: guardedBytes.length,
+            mime: "application/json",
+            purpose: "character-card-original",
+          },
+        },
+        assets: [{
+          purpose: "character-card-original",
+          mime: "application/json",
+          data: guardedBytes,
+        }],
+        assertCanCommit() {
+          throw Object.assign(new Error("service closed"), {
+            code: "IMPORT_SERVICE_CLOSED",
+          });
+        },
+      }),
+      (error) => error.code === "IMPORT_SERVICE_CLOSED",
+    );
+    assert.equal(repository.listCharacters(guardedOwner).length, 0);
+    assert.equal(
+      freshStore.db.get("SELECT COUNT(*) AS count FROM blobs").count,
+      catalogBefore,
+    );
+    assert.equal(freshStore.blobs.exists(guardedHash), false);
+  });
+
   check("character creation atomically creates an immutable first revision", () => {
     assert.equal(first.entity.currentRevisionId, first.revision.id);
     assert.equal(first.entity.displayName, "Luna");
@@ -461,6 +845,30 @@ try {
       }),
       (error) => error.code === "CHARACTER_DATA_TOO_LARGE"
         && error.limit === MAX_CHARACTER_TEXT_FIELD_BYTES,
+    );
+  });
+
+  check("source compatibility and provenance remain inside the source envelope bound", () => {
+    assert.throws(
+      () => repository.createCharacter({
+        ownerScope: OWNER,
+        canonical: { schemaVersion: 1, name: "Oversized Source Report" },
+        source: {
+          kind: "imported",
+          format: "v3_json",
+          container: "json",
+          compatibility: {
+            ignoredInvalid: ["/data/description"],
+            warnings: ["x".repeat(MAX_CHARACTER_SOURCE_BYTES)],
+          },
+          provenance: {
+            schemaVersion: 1,
+            importer: "lily_character_card_worker",
+          },
+        },
+      }),
+      (error) => error.code === "CHARACTER_DATA_TOO_LARGE"
+        && error.limit === MAX_CHARACTER_SOURCE_BYTES,
     );
   });
 
