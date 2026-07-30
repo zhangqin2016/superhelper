@@ -3,7 +3,12 @@
 const fs = require("node:fs");
 const { openDatabase } = require("./sqlite-db");
 
-const ACTIVE_RUN_STATUSES = new Set(["queued", "running"]);
+const ACTIVE_RUN_STATUSES = new Set([
+  "queued",
+  "running",
+  "dispatch_unknown",
+  "promoted",
+]);
 
 function parseJson(value, fallback = null) {
   try {
@@ -60,6 +65,9 @@ function runFromRow(row) {
     queueItemId: row.queue_item_id || null,
     error: row.error || null,
     manual: Boolean(row.manual),
+    dispatchAttemptId: row.dispatch_attempt_id || null,
+    dispatchStartedAt: row.dispatch_started_at || null,
+    engineAcceptedAt: row.engine_accepted_at || null,
   };
 }
 
@@ -112,6 +120,13 @@ class ScheduledTaskStore {
         );
         CREATE INDEX scheduled_runs_active
           ON scheduled_task_runs(owner_principal, status, lease_expires_at);
+      `),
+      (db) => db.exec(`
+        ALTER TABLE scheduled_task_runs ADD COLUMN dispatch_attempt_id TEXT;
+        ALTER TABLE scheduled_task_runs ADD COLUMN dispatch_started_at INTEGER;
+        ALTER TABLE scheduled_task_runs ADD COLUMN engine_accepted_at INTEGER;
+        CREATE INDEX scheduled_runs_turn_reconcile
+          ON scheduled_task_runs(owner_principal, execution_session_id, turn_id);
       `),
     ]);
   }
@@ -179,9 +194,12 @@ class ScheduledTaskStore {
     this.db.run(`
       UPDATE scheduled_task_runs SET status=?, lease_owner=?,
         lease_expires_at=?, started_at=?, finished_at=?, turn_id=?,
-        queue_item_id=?, error=? WHERE id=?
+        queue_item_id=?, error=?, dispatch_attempt_id=?,
+        dispatch_started_at=?, engine_accepted_at=? WHERE id=?
     `, run.status, run.leaseOwner, run.leaseExpiresAt, run.startedAt,
-    run.finishedAt, run.turnId, run.queueItemId, run.error, run.id);
+    run.finishedAt, run.turnId, run.queueItemId, run.error,
+    run.dispatchAttemptId || null, run.dispatchStartedAt || null,
+    run.engineAcceptedAt || null, run.id);
   }
 
   importLegacy(legacyPath, normalizeTask, ownerPrincipal) {
@@ -221,9 +239,10 @@ class ScheduledTaskStore {
           run.queueItemId = null;
           run.error = null;
         } else {
-          run.status = "interrupted";
-          run.finishedAt = nowIso;
-          run.error = "Scheduler lease expired after application interruption.";
+          run.status = "dispatch_unknown";
+          run.leaseExpiresAt = null;
+          run.finishedAt = null;
+          run.error = "Scheduler stopped after dispatch; the durable turn outcome is unknown.";
         }
         this.saveRun(run);
       }

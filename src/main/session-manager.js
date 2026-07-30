@@ -26,6 +26,9 @@ const {
 } = require("./session-artifact-backfill");
 const { MessageStore } = require("./store/message-store");
 const legacyImport = require("./store/legacy-import");
+const {
+  resolveCharacterOwnerScope,
+} = require("./character-worlds/owner-scope");
 
 const DEFAULT_SESSION_TITLES = {
   "zh-CN": "新对话",
@@ -116,7 +119,7 @@ class SessionManager {
   /**
    * @param {import('./project-manager')} projectManager
    */
-  constructor(projectManager) {
+  constructor(projectManager, options = {}) {
     this.pm = projectManager;
     this.sessions = {};
     this.activeSessionId = null;
@@ -127,6 +130,9 @@ class SessionManager {
     this._progressNotifier = null;
     this._timers = new Set();
     this._closed = false;
+    this._resolveCharacterOwnerScope = typeof options.resolveCharacterOwnerScope === "function"
+      ? options.resolveCharacterOwnerScope
+      : resolveCharacterOwnerScope;
   }
 
   _setTimer(fn, delay) {
@@ -1127,30 +1133,6 @@ class SessionManager {
     return updated;
   }
 
-  admitTurnInput(sessionId, input = {}) {
-    const session = this._find(sessionId);
-    if (!session) return null;
-    this._ensureImported(session);
-    return this._store().admitTurnInput(session.id, input);
-  }
-
-  markTurnInputPromoted(turnId, patch = {}) {
-    if (!turnId) return null;
-    return this._store().markTurnInputPromoted(turnId, patch);
-  }
-
-  markTurnInputTerminal(turnId, terminalType, patch = {}) {
-    if (!turnId) return null;
-    return this._store().markTurnInputTerminal(turnId, terminalType, patch);
-  }
-
-  pendingTurnInputs(sessionId) {
-    const session = this._find(sessionId);
-    if (!session) return [];
-    this._ensureImported(session);
-    return this._store().pendingTurnInputs(session.id);
-  }
-
   appendRuntimeEvents(sessionId, events) {
     const session = this._find(sessionId);
     if (!session) return [];
@@ -1309,5 +1291,13 @@ class SessionManager {
   }
 }
 
+const turnAdmissionMethods = require("./session-turn-admission");
+Object.defineProperties(
+  SessionManager.prototype,
+  Object.fromEntries(Object.entries(turnAdmissionMethods).map(([name, value]) => [
+    name,
+    { configurable: true, writable: true, value },
+  ])),
+);
 module.exports = SessionManager;
 module.exports.defaultSessionTitle = defaultSessionTitle;

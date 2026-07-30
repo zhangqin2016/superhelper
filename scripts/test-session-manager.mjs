@@ -161,6 +161,35 @@ try {
   assert(!manager3.findById(duplicateA.id).agentResumeId, "startup repair should clear older duplicate resume owner");
   assert(manager3.findById(duplicateB.id).agentResumeId === "ses_duplicate", "startup repair should keep newest duplicate resume owner");
 
+  const ownerScopedManager = new SessionManager(projectManager, {
+    resolveCharacterOwnerScope: () => "profile:session-manager-owner",
+  });
+  let externalIdentityLookup = null;
+  ownerScopedManager._messageStore = {
+    findTurnInputByExternalIdentity(ownerScope, identity) {
+      externalIdentityLookup = { ownerScope, identity };
+      return { turnId: "turn_existing_mobile", status: "completed" };
+    },
+    close() {},
+  };
+  const existingMobileTurn = ownerScopedManager.findTurnInputByExternalIdentity(
+    "deleted-target-session",
+    {
+      desktopDeviceId: "desktop-session-manager",
+      mobileDeviceId: "mobile-session-manager",
+      idempotencyKey: "key-session-manager",
+    },
+  );
+  assert(
+    existingMobileTurn?.turnId === "turn_existing_mobile",
+    "global mobile idempotency lookup must survive a missing target session",
+  );
+  assert(
+    externalIdentityLookup?.ownerScope === "profile:session-manager-owner",
+    "global mobile idempotency lookup must remain scoped to the authenticated owner",
+  );
+  ownerScopedManager.close();
+
   console.log("PASS: test-session-manager");
 } catch (err) {
   console.error("FAIL:", err.message);

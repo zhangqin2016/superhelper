@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 const { evaluateAnswerEvidenceWithJudge, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const { clearDocumentDeliveryTurnState } = require("./document-delivery-turn");
 const { getLogger } = require("./logger");
@@ -16,6 +18,29 @@ const {
 } = require("./turn-timeline");
 
 const log = getLogger("turn-terminal-finalizer");
+
+// Durable turn-input row statuses that prove a terminal winner exists. Mirrors
+// the store's terminal set; kept local so the finalizer stays a pure projection.
+const TERMINAL_RECORD_STATUSES = new Set([
+  "completed",
+  "failed",
+  "interrupted",
+  "cancelled",
+  "stalled",
+]);
+
+function terminalTypeForWinner(winner, fallback) {
+  if (TERMINAL_TYPES.has(winner?.terminalType)) return winner.terminalType;
+  switch (winner?.status) {
+    case "completed": return "turn.completed";
+    case "interrupted":
+    case "cancelled": return "turn.interrupted";
+    case "stalled": return "turn.stalled";
+    case "failed": return "turn.failed";
+    default: return fallback;
+  }
+}
+
 function collectLearnedSkills(ctx, sessionId, state) {
   try {
     const { collectLearnedSkillDrafts } = require("./learned-skills");
@@ -58,6 +83,9 @@ function clearTurnState(state) {
   state.finalizing = false;
   state.steerCount = 0;
   state.admittedSeq = null;
+  state.admittedTurnInput = null;
+  state.dispatchAttemptId = null;
+  state.characterWorldsSnapshot = null;
   state.assistantText = "";
   state.thinkingText = "";
   state.contentBlocks = [];
@@ -124,12 +152,143 @@ function createTurnTerminalFinalizer(options = {}) {
     state.finalizing = true;
     if (!TERMINAL_TYPES.has(type)) throw new Error(`Invalid terminal event ${type}`);
     const completedTurnId = state.turnId;
-    try {
-      ctx.sessionManager?.markTurnInputTerminal?.(completedTurnId, type, {
-        errorCode: payload.errorCode || payload.code || "",
-      });
-    } catch (err) {
-      log.warn("turn input terminal mark failed: %s", err?.message || err);
+    const terminalClaim = {
+      ownerScope: state.admittedTurnInput?.ownerScope || null,
+      sessionId,
+      turnId: completedTurnId,
+      dispatchAttemptId: state.dispatchAttemptId || null,
+      fromStatuses: state.dispatchAttemptId
+        ? ["dispatching", "promoted", "accepted", "outcome_unknown"]
+        : ["admitted"],
+    };
+    const markTerminal = ctx.sessionManager?.markTurnInputTerminal;
+    // A dedicated pre-send terminal CAS (see _markPreSendFailure) may already
+    // have recorded this exact terminal durably. Re-running the CAS would
+    // lose against that own mark and take the winner-projection path, which
+    // deliberately strips the user-facing payload — so skip the CAS here.
+    const terminalAlreadyRecorded = payload.terminalAlreadyRecorded === true
+      && TERMINAL_RECORD_STATUSES.has(state.admittedTurnInput?.status);
+    delete payload.terminalAlreadyRecorded;
+    if (typeof markTerminal === "function" && !terminalAlreadyRecorded) {
+      // The durable terminal CAS is the authority. Losing it (or failing to
+      // reach the store) must never silently clear the live projection: a
+      // proven durable winner is projected verbatim, and an unresolved outcome
+      // emits the registered outcome-unknown event with a recovery id instead
+      // of pretending the turn simply ended.
+      let casLost = false;
+      let casError = null;
+      let durableWinner = null;
+      let durableTurn = null;
+      const queryDurableTurn = () => {
+        if (durableTurn !== null) return durableTurn;
+        try {
+          durableTurn = ctx.sessionManager?.getTurnInputByTurnId?.(
+            sessionId,
+            completedTurnId,
+          ) || null;
+        } catch (lookupErr) {
+          log.warn(
+            "terminal winner lookup failed: session=%s turn=%s error=%s",
+            sessionId,
+            completedTurnId,
+            lookupErr?.message || lookupErr,
+          );
+          durableTurn = null;
+        }
+        return durableTurn;
+      };
+      try {
+        const terminalResult = markTerminal.call(
+          ctx.sessionManager,
+          terminalClaim,
+          type,
+          {
+            errorCode: payload.errorCode || payload.code || "",
+          },
+        );
+        if (terminalResult?.ok === false) {
+          casLost = true;
+          if (TERMINAL_RECORD_STATUSES.has(terminalResult.turn?.status)) {
+            durableWinner = terminalResult.turn;
+          }
+          log.warn(
+            "turn input terminal CAS rejected: session=%s turn=%s reason=%s",
+            sessionId,
+            completedTurnId,
+            terminalResult.reason || "UNKNOWN",
+          );
+        } else if (terminalResult?.turn?.externalCommandId) {
+          try {
+            options.reconcileExternalCommand?.(terminalResult.turn);
+          } catch (reconcileErr) {
+            log.warn(
+              "external command terminal reconcile failed open: %s",
+              reconcileErr?.message || reconcileErr,
+            );
+          }
+        }
+      } catch (err) {
+        casLost = true;
+        casError = err;
+        log.warn("turn input terminal mark failed: %s", err?.message || err);
+      }
+      if (casLost) {
+        if (!durableWinner) {
+          const durable = queryDurableTurn();
+          if (TERMINAL_RECORD_STATUSES.has(durable?.status)) {
+            durableWinner = durable;
+          }
+        }
+        if (durableWinner) {
+          // Project the immutable first winner, never the late loser: switch
+          // to the durable terminal type and drop the loser's payload so its
+          // failure cannot overwrite what actually won. The scheduled draft
+          // card survives — it describes user-visible work, not the race.
+          // Note: the durable row carries no assistant text, so the visible
+          // final still uses this process's state.assistantText — correct for
+          // the in-process races that dominate (retry/steer vs completion);
+          // a cross-process loser may project its local text under the
+          // winner's type, which is cosmetic and bounded by the single
+          // terminal event guarantee.
+          type = terminalTypeForWinner(durableWinner, type);
+          payload = payload.scheduledDraft
+            ? { scheduledDraft: payload.scheduledDraft }
+            : {};
+        } else {
+          const durableStatus = queryDurableTurn()?.status || "unknown";
+          const recoveryId = `recovery_${completedTurnId}_${
+            crypto.randomUUID().replace(/-/g, "").slice(0, 12)
+          }`;
+          log.warn(
+            "turn terminal outcome unknown: session=%s turn=%s status=%s recovery=%s",
+            sessionId,
+            completedTurnId,
+            durableStatus,
+            recoveryId,
+          );
+          emit(sessionId, "turn.dispatch_outcome_unknown", {
+            turnId: completedTurnId,
+            status: durableStatus,
+            dispatchAttemptId: terminalClaim.dispatchAttemptId,
+            reason: casError ? "TERMINAL_CAS_ERROR" : "TERMINAL_CAS_REJECTED",
+            automaticReplay: false,
+            manualRecoveryRequired: true,
+            recoveryId,
+          }, { turnId: completedTurnId });
+          // Close the live projection with one visible failure. The durable
+          // row keeps its pre-terminal status, so restart recovery can still
+          // surface this turn through the outcome-unknown path.
+          type = "turn.failed";
+          payload = {
+            failed: true,
+            assistant: "本次回复的持久化结果无法确认（可能已完成，也可能未送达）。为避免重复执行，系统不会自动重试，请核对后手动重发。",
+            errorCode: "DISPATCH_OUTCOME_UNKNOWN",
+            errorCategory: "durability",
+            retryable: false,
+            recoveryId,
+          };
+        }
+      }
     }
     const scheduledTaskRunId = state.scheduledTask?.runId || null;
     state.phase = "finalizing";

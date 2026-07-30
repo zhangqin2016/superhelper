@@ -64,6 +64,9 @@ const { createTurnTerminalFinalizer } = require("./turn-terminal-finalizer");
 const { TERMINAL_TYPES, TURN_OPTIONAL_TYPES } = require("./turn-event-types");
 const { createTurnRuntimeEventRouter } = require("./turn-runtime-event-router");
 const { cancelQueuedScheduledRun, scheduledQueueCapacityBlock, scheduledTaskTurnOptions } = require("./scheduled-task-turn-options");
+const {
+  snapshotFromMetadata,
+} = require("./character-worlds/turn-binding-snapshot");
 
 const log = getLogger("turn-orchestrator");
 const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
@@ -84,7 +87,7 @@ function queueDispatchOptions(opts = {}) {
       : null;
   const queueOrigin = opts.queueOrigin ||
     (opts.scheduledTaskId ? "scheduled_task" : localAssistant ? "local_assistant" : "user");
-  return {
+  const options = {
     engineText: typeof opts.engineText === "string" ? opts.engineText : null,
     recordUser: opts.recordUser !== false,
     recovery: opts.recovery && typeof opts.recovery === "object" ? opts.recovery : null,
@@ -104,6 +107,10 @@ function queueDispatchOptions(opts = {}) {
       ? opts.externalCommand
       : null,
   };
+  if (Object.hasOwn(opts, "sourceTurnId")) {
+    options.sourceTurnId = opts.sourceTurnId;
+  }
+  return options;
 }
 
 function redactDiagnosticString(value) {
@@ -221,6 +228,13 @@ class TurnOrchestrator {
     this.boundRunners = new WeakSet();
     this.runCoordinator = ctx.turnRunCoordinator || new TurnRunCoordinator();
     this.dispatchRetryTimers = new Map();
+    this.dispatchInFlight = new Map();
+    this.principalEpoch = 0;
+    this.dispatchLinearizationGate = {
+      active: false,
+      pending: [],
+    };
+    this.recoveredQueueSessions = new Set();
     this.subagentRuntime = createSubagentRuntimeProjection({
       getState: (sessionId) => this._state(sessionId),
       emitEngineNotice: (sessionId, notice) => this._emitEngineNotice(sessionId, notice),
@@ -244,6 +258,23 @@ class TurnOrchestrator {
       getState: (sessionId) => this._state(sessionId),
       createQueueId: newQueueId,
       buildQueueOptions: queueDispatchOptions,
+      lookupDurableExternalIdentity:
+        typeof this.ctx.sessionManager.findTurnInputByExternalIdentity === "function"
+          ? (sessionId, identity) => (
+              this.ctx.sessionManager.findTurnInputByExternalIdentity(
+                sessionId,
+                identity,
+              ) || null
+            )
+          : null,
+      admitQueueItem: (session, item) => this._admitQueuedTurn(session, item, {
+        delivery: "queue",
+        metadata: {
+          fromQueue: true,
+          externalCommand: true,
+          commandId: item.options?.externalCommand?.commandId || null,
+        },
+      }),
       emitQueue: (sessionId) => this._emitQueue(sessionId),
       dispatchNext: (sessionId) => this._dispatchNext(sessionId),
     });
@@ -268,6 +299,9 @@ class TurnOrchestrator {
       emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
       attemptVerifyRetry: (sessionId, failure) => this._maybeToolCallRescueRetry(sessionId, failure),
       scheduleBackgroundCompaction: (sessionId) => this._scheduleBackgroundCompaction(sessionId),
+      reconcileExternalCommand: (turn) => (
+        this.externalCommandRuntime.reconcileTurnInput(turn)
+      ),
     });
     this.runtimeEventRouter = createTurnRuntimeEventRouter({
       ctx: this.ctx,
@@ -278,6 +312,9 @@ class TurnOrchestrator {
       claimAgentResumeId: (sessionId, agentResumeId) => this._claimAgentResumeId(sessionId, agentResumeId),
       handleRuntimeControl: (sessionId, payload) => this._handleRuntimeControl(sessionId, payload),
     });
+    for (const session of this.ctx.sessionManager?.iterateSessions?.() || []) {
+      this.restorePendingTurns(session.id);
+    }
     // Safety net for phases no engine watchdog covers ("starting"/"finalizing").
     this.stuckPhaseGuard = require("./turn-start-guard").startStuckPhaseGuard(this);
   }
@@ -307,6 +344,7 @@ class TurnOrchestrator {
       canInterrupt: state.phase !== "idle" && state.phase !== "finalizing",
       queueLength: state.queue.length,
       queue: state.queue.map((item) => compactQueueItem(item)),
+      outcomeUnknownTurns: (state.outcomeUnknownTurns || []).slice(),
       runtime: this.eventBus.snapshot(sessionId),
       taskRun: compactTaskRun(state.taskRun),
     };
@@ -317,6 +355,8 @@ class TurnOrchestrator {
     this.boundRunners.add(runner);
     runner.bindOrchestrator?.(this);
     const sessionId = runner.sessionId;
+    this.restorePendingTurns(sessionId);
+    void this._dispatchNext(sessionId);
 
     runner.on("message-stop-grace", () => {
       const state = this._state(sessionId);
@@ -427,88 +467,6 @@ class TurnOrchestrator {
     void this._handleError(sessionId, message);
   }
 
-  async sendUserMessage(sessionId, text, files = [], opts = {}) {
-    const session = this.ctx.sessionManager.findById(sessionId);
-    if (!session) return { ok: false, error: "NO_SESSION" };
-    const displayText = String(text || "").trim();
-    if (!displayText && (!files || files.length === 0)) return { ok: false, error: "EMPTY" };
-
-    const state = this._state(sessionId);
-    if (state.phase !== "idle" && !opts.fromQueue) {
-      // Steer ("插话"): inject into the RUNNING turn rather than queuing for after.
-      // On by default; LILY_ENABLE_STEER=0 is the instant kill-switch back to queue.
-      // Fail-open — any steer failure degrades to the queue path below, so the worst
-      // case is identical to today's behavior (CAPABILITY-GATE Rule 13).
-      if (opts.mode === "steer" && process.env.LILY_ENABLE_STEER !== "0") {
-        const steered = await this._trySteer(session, displayText, files, opts);
-        if (steered?.ok) return steered;
-      }
-      const item = {
-        id: newQueueId(),
-        text: displayText,
-        files,
-        displayFiles: mergeDisplayFileMetadata(files, opts.displayFiles),
-        options: queueDispatchOptions(opts),
-      };
-      state.queue.push(item);
-      this._emitQueue(sessionId);
-      return {
-        ok: true,
-        queued: true,
-        queueLength: state.queue.length,
-        itemId: item.id,
-        ...(opts.mode === "steer" ? { steerFellBack: true } : {}),
-      };
-    }
-
-    return require("./turn-start-guard").guardTurnStart(this, session, displayText, files, opts);
-  }
-
-  // Inject a message into the in-flight turn via the engine's native steering (the
-  // running prompt loop picks up the appended user message at its next step). Commits
-  // the user message into the CURRENT turn only AFTER the engine accepts it, so a
-  // failed steer leaves no orphaned bubble before the caller falls back to the queue.
-  async _trySteer(session, text, files, opts = {}) {
-    const sessionId = session.id;
-    const runner = this.ctx.runnerPool.get(sessionId);
-    if (!runner?.isBusy?.() || typeof runner.steer !== "function") return { ok: false };
-    let accepted = false;
-    try {
-      accepted = await runner.steer({
-        text,
-        files,
-        allowImageFileParts: Boolean(require("./model-presets").activePresetSupportsVision()),
-      });
-    } catch (err) {
-      log.warn("steer dispatch failed: %s", err?.message || err);
-      return { ok: false };
-    }
-    if (!accepted) return { ok: false };
-    const state = this._state(sessionId);
-    const turnId = state.turnId;
-    const steerSeq = (state.steerCount || 0) + 1;
-    state.steerCount = steerSeq;
-    const displayFiles = mergeDisplayFileMetadata(files, opts.displayFiles);
-    try {
-      this.transcriptStore.commitUserMessage(sessionId, { text, files: displayFiles, turnId, steer: true, steerSeq });
-    } catch (err) {
-      log.warn("steer user message commit failed: %s", err?.message || err);
-    }
-    appendTimelineNotice(state, {
-      code: "turnSteered",
-      level: "info",
-      detail: String(text || "").trim(),
-    }, Date.now());
-    this._emit(
-      sessionId,
-      "user.committed",
-      { text, files: displayFiles && displayFiles.length ? displayFiles : null, steer: true, steerSeq },
-      { turnId },
-    );
-    this._emit(sessionId, "turn.steered", { text, steerSeq }, { turnId });
-    return { ok: true, steered: true, turnId, steerSeq };
-  }
-
   _handleRuntimeControl(sessionId, payload = {}) {
     if (
       payload?.action !== "steer" ||
@@ -540,26 +498,6 @@ class TurnOrchestrator {
     });
   }
 
-  // Show the user's message in the conversation IMMEDIATELY, before any slow work
-  // (e.g. the scheduled-task model parse, which takes seconds). Returns the turnId
-  // so the follow-up completeLocalAssistantTurn can reuse it with recordUser:false
-  // — same turn, no duplicate, and the user message is no longer blocked behind the
-  // parse. Because user.committed fires well before turn.completed, it is also never
-  // dropped as "terminal", so the user message reliably precedes the assistant card.
-  echoUserMessage(sessionId, text, files = [], displayFiles = null) {
-    const displayText = String(text || "").trim();
-    const fileMeta = mergeDisplayFileMetadata(files, displayFiles);
-    if (!displayText && !(fileMeta || []).length) return null;
-    const turnId = newTurnId();
-    try {
-      this.transcriptStore.commitUserMessage(sessionId, { text: displayText, files: fileMeta, turnId });
-    } catch (err) {
-      log.warn("echo user message commit failed: %s", err?.message || err);
-    }
-    this._emit(sessionId, "user.committed", { text: displayText, files: fileMeta && fileMeta.length ? fileMeta : null }, { turnId });
-    return turnId;
-  }
-
   async completeLocalAssistantTurn(sessionId, text, files = [], opts = {}) {
     const session = this.ctx.sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
@@ -582,6 +520,16 @@ class TurnOrchestrator {
           },
         }),
       };
+      const admission = this._admitQueuedTurn(session, item, {
+        metadata: {
+          fromQueue: true,
+          localAssistant: true,
+        },
+      });
+      if (!admission.ok) return admission;
+      if (admission.duplicate) {
+        return this._durableDuplicateResult(admission, state.queue.length);
+      }
       state.queue.push(item);
       this._emitQueue(sessionId);
       return { ok: true, queued: true, queueLength: state.queue.length, itemId: item.id };
@@ -658,93 +606,17 @@ class TurnOrchestrator {
     return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   }
 
-  interrupt(sessionId, opts = {}) {
-    const state = this._state(sessionId);
-    if (opts.clearQueue !== false) {
-      for (const item of state.queue) {
-        this._completeQueuedScheduledRun(item, "turn.interrupted", {
-          errorCode: "USER_STOPPED",
-        });
-      }
-      state.queue = [];
-      this._emitQueue(sessionId);
-    }
-    if (state.admittedSeq) {
-      try { this.runCoordinator.interrupt(sessionId, state.admittedSeq); } catch { /* best effort */ }
-    }
-    const runner = this.ctx.runnerPool.get(sessionId);
-    runner?.interrupt();
-    if (state.phase !== "idle" && state.turnId && !state.terminalEmitted) {
-      this._finalize(sessionId, "turn.interrupted", {
-        interrupted: true,
-        assistant: state.assistantText,
-      });
-    }
-    return { ok: true };
-  }
-
-  async interruptAndSend(sessionId, text, files = [], opts = {}) {
-    const state = this._state(sessionId);
-    const item = {
-      id: newQueueId(),
-      text: String(text || "").trim(),
-      files,
-      displayFiles: mergeDisplayFileMetadata(files, opts.displayFiles),
-      options: queueDispatchOptions(opts),
-    };
-    for (const queued of state.queue) {
-      this._completeQueuedScheduledRun(queued, "turn.interrupted", {
-        errorCode: "QUEUE_REPLACED",
-      });
-    }
-    state.queue = [item];
-    this._emitQueue(sessionId);
-    this.interrupt(sessionId, { clearQueue: false });
-    void this._dispatchNext(sessionId);
-    return { ok: true, queued: true, priority: true, queueLength: state.queue.length, itemId: item.id };
-  }
-
-  async _tryStartQueuedItem(sessionId, item) {
-    const session = this.ctx.sessionManager.findById(sessionId);
-    if (!session) return { ok: false, error: "NO_SESSION" };
-    if (item.options?.localAssistant) {
-      return await this._startLocalAssistantTurn(session, item.text, item.files, {
-        fromQueue: true,
-        displayFiles: item.displayFiles,
-        assistant: item.options.localAssistant.assistant,
-        scheduledDraft: item.options.localAssistant.scheduledDraft || null,
-        turnId: item.options.localAssistant.turnId || null,
-      });
-    }
-    const capacityBlock = scheduledQueueCapacityBlock(this.ctx, item);
-    if (capacityBlock) return capacityBlock;
-    const runner = this.ctx.runnerPool.get(sessionId);
-    if (runner?.isBusy?.()) return { ok: false, retry: true, error: "RUNNER_BUSY" };
-    if (item.options?.reloadSkillsBeforeStart && runner?.isAlive?.() && !runner.reloadSkills()) {
-      this.ctx.runnerPool.terminateSession(sessionId);
-    }
-    return await require("./turn-start-guard").guardTurnStart(this, session, item.text, item.files, {
-      fromQueue: true,
-      displayFiles: item.displayFiles,
-      recordUser: item.options?.recordUser !== false,
-      spawnEngine: item.options?.spawnEngine !== false,
-      skipPreflight: Boolean(item.options?.skipPreflight),
-      skipVision: Boolean(item.options?.skipVision),
-      skipDocument: Boolean(item.options?.skipDocument),
-      ...scheduledTaskTurnOptions(item.options),
-      engineText: item.options?.engineText || null,
-      recovery: item.options?.recovery || null,
-      ...documentDeliveryDispatchOptions(item.options),
-    });
-  }
-
   async _startLocalAssistantTurn(session, text, files, opts = {}) {
     const rawUserText = String(text || "").trim();
     const state = this._state(session.id);
+    const preadmitted = opts.admittedTurnInput?.sessionId === session.id
+      ? opts.admittedTurnInput
+      : null;
     state.phase = "starting";
+    state.turnGeneration = (state.turnGeneration || 0) + 1;
     // Reuse a pre-echoed turnId (see echoUserMessage) so the already-shown user
     // message and this turn's assistant card belong to the SAME turn.
-    state.turnId = opts.turnId || newTurnId();
+    state.turnId = preadmitted?.turnId || opts.turnId || newTurnId();
     // Sticky across finalize (deliberately NOT cleared in the idle reset):
     // the rescue hook runs after the turn state was reset, and must know the
     // turn it is inspecting was itself a rescue attempt.
@@ -752,6 +624,9 @@ class TurnOrchestrator {
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
     state.admittedSeq = null;
+    state.admittedTurnInput = null;
+    state.dispatchAttemptId = opts.dispatchAttemptId || null;
+    state.characterWorldsSnapshot = null;
     state.assistantText = "";
     state.thinkingText = "";
     state.contentBlocks = [];
@@ -787,23 +662,25 @@ class TurnOrchestrator {
       files,
       displayFiles,
     };
-    try {
-      const admitted = this.ctx.sessionManager?.admitTurnInput?.(session.id, {
-        turnId: state.turnId,
-        delivery: opts.fromQueue ? "queue" : "local",
-        status: "admitted",
-        userText: rawUserText,
-        files: displayFiles,
-        metadata: {
-          fromQueue: Boolean(opts.fromQueue),
-          localAssistant: true,
-        },
-        createdAt: state.startedAt,
-      });
-      state.admittedSeq = admitted?.admittedSeq || null;
-    } catch (err) {
-      log.warn("local turn input admission failed: %s", err?.message || err);
+    const admissionOptions = {
+      turnId: state.turnId,
+      delivery: opts.fromQueue ? "queue" : "local",
+      status: "admitted",
+      userText: rawUserText,
+      files: displayFiles,
+      metadata: {
+        fromQueue: Boolean(opts.fromQueue),
+        localAssistant: true,
+      },
+      createdAt: state.startedAt,
+    };
+    if (Object.hasOwn(opts, "sourceTurnId")) {
+      admissionOptions.sourceTurnId = opts.sourceTurnId;
     }
+    const admitted = preadmitted || this._admitTurnInput(session, admissionOptions);
+    state.admittedSeq = admitted?.admittedSeq || null;
+    state.admittedTurnInput = admitted || null;
+    state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
 
     if (opts.recordUser !== false) {
       this.transcriptStore.commitUserMessage(session.id, {
@@ -846,26 +723,13 @@ class TurnOrchestrator {
     };
   }
 
-  cancelQueuedMessage(sessionId, itemId) {
-    const state = this._state(sessionId);
-    const before = state.queue.length;
-    const removed = state.queue.filter((item) => item.id === itemId);
-    state.queue = state.queue.filter((item) => item.id !== itemId);
-    for (const item of removed) {
-      this._completeQueuedScheduledRun(item, "turn.interrupted", {
-        errorCode: "QUEUE_CANCELLED",
-      });
-    }
-    this._emitQueue(sessionId);
-    return before !== state.queue.length
-      ? { ok: true, sessionId, queueLength: state.queue.length }
-      : { ok: false, error: "NOT_FOUND" };
-  }
-
   cancelQueuedScheduledRun(sessionId, runId) { return cancelQueuedScheduledRun(this, sessionId, runId); }
 
   async _startTurn(session, text, files, opts = {}) {
     const rawUserText = String(text || "").trim();
+    const preadmitted = opts.admittedTurnInput?.sessionId === session.id
+      ? opts.admittedTurnInput
+      : null;
     const {
       diagnoseSendBlocker: defaultDiagnoseSendBlocker,
       ensureSessionRunner: defaultEnsureSessionRunner,
@@ -909,11 +773,15 @@ class TurnOrchestrator {
     const state = this._state(session.id);
     const allowImageFileParts = Boolean(require("./model-presets").activePresetSupportsVision());
     state.phase = "starting";
-    state.turnId = newTurnId();
+    state.turnGeneration = (state.turnGeneration || 0) + 1;
+    state.turnId = preadmitted?.turnId || newTurnId();
     state.wasRescueAttempt = Boolean(opts.rescueAttempt || opts.recovery);
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
     state.admittedSeq = null;
+    state.admittedTurnInput = null;
+    state.dispatchAttemptId = opts.dispatchAttemptId || null;
+    state.characterWorldsSnapshot = null;
     state.assistantText = "";
     state.thinkingText = "";
     state.contentBlocks = [];
@@ -936,6 +804,8 @@ class TurnOrchestrator {
     state.pendingQuestions.clear();
     state.pendingHooks.clear();
     state.tools.clear();
+    state.startedAt = Date.now();
+    state.updatedAt = state.startedAt;
     const displayFiles = mergeDisplayFileMetadata(displaySourceFiles, opts.displayFiles);
     let dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
     state.currentPayload = {
@@ -944,24 +814,26 @@ class TurnOrchestrator {
       files,
       displayFiles,
     };
-    try {
-      const admitted = this.ctx.sessionManager?.admitTurnInput?.(session.id, {
-        turnId: state.turnId,
-        delivery: opts.fromQueue ? "queue" : "steer",
-        status: "admitted",
-        userText: rawUserText,
-        files: displayFiles,
-        metadata: {
-          fromQueue: Boolean(opts.fromQueue),
-          scheduledTaskId: opts.scheduledTaskId || null,
-          scheduledTaskRunId: opts.scheduledTaskRunId || null,
-        },
-        createdAt: state.startedAt,
-      });
-      state.admittedSeq = admitted?.admittedSeq || null;
-    } catch (err) {
-      log.warn("turn input admission failed: %s", err?.message || err);
+    const admissionOptions = {
+      turnId: state.turnId,
+      delivery: opts.fromQueue ? "queue" : "direct",
+      status: "admitted",
+      userText: rawUserText,
+      files: displayFiles,
+      metadata: {
+        fromQueue: Boolean(opts.fromQueue),
+        scheduledTaskId: opts.scheduledTaskId || null,
+        scheduledTaskRunId: opts.scheduledTaskRunId || null,
+      },
+      createdAt: state.startedAt,
+    };
+    if (Object.hasOwn(opts, "sourceTurnId")) {
+      admissionOptions.sourceTurnId = opts.sourceTurnId;
     }
+    const admitted = preadmitted || this._admitTurnInput(session, admissionOptions);
+    state.admittedSeq = admitted?.admittedSeq || null;
+    state.admittedTurnInput = admitted || null;
+    state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
     state.scheduledTask = opts.scheduledTaskRunId
       ? {
           id: opts.scheduledTaskId || null,
@@ -969,12 +841,6 @@ class TurnOrchestrator {
           title: opts.scheduledTaskTitle || "",
         }
       : null;
-    state.startedAt = Date.now();
-    state.updatedAt = Date.now();
-    if (state.scheduledTask?.runId) {
-      this.ctx.scheduledTaskManager?.markRunStarted?.(state.scheduledTask.runId, state.turnId);
-    }
-
     if (opts.recordUser !== false) {
       this.transcriptStore.commitUserMessage(session.id, {
         text: rawUserText,
@@ -1484,22 +1350,97 @@ class TurnOrchestrator {
         : null,
     });
 
-    const sent = runner.sendUserMessage(state.enginePayload);
-    if (!sent) {
-      try {
-        this.ctx.sessionManager?.markTurnInputTerminal?.(state.turnId, "turn.failed", {
-          errorCode: "RUNNER_REJECTED",
-        });
-      } catch {
-        // best effort
+    // Linearized dispatch: revalidate the queue selection / owner against the
+    // principal epoch, run the durable dispatch CAS, and only then touch the
+    // engine — all inside one synchronous critical section. Every deterministic
+    // preflight above has already completed, so a durable "dispatching" row
+    // can only exist when the engine was actually invoked next.
+    const dispatch = this._invokePreparedEngineDispatch(session, state, runner, {
+      ...opts,
+      queueSelection: opts.queueSelection || null,
+    });
+    if (!dispatch.ok) {
+      if (dispatch.ownerPause) {
+        // The principal changed while preflight was awaiting.
+        if (!opts.queueSelection) {
+          // Direct send: no queue recovery exists for this durable
+          // admission, so close it visibly (admitted -> interrupted) instead
+          // of leaking an admitted row that nothing can re-dispatch.
+          this._finalize(session.id, "turn.interrupted", {
+            interrupted: true,
+            assistant: "",
+            code: "PRINCIPAL_CHANGED",
+            errorCode: "PRINCIPAL_CHANGED",
+          });
+          return {
+            ok: false,
+            ownerPause: true,
+            error: dispatch.error || "OWNER_SCOPE_MISMATCH",
+          };
+        }
+        // Queue turn: the durable admission stays recoverable ("admitted")
+        // so a later epoch can re-dispatch it — but the live projection must
+        // still close visibly, or the renderer keeps a running bubble for a
+        // turn that is no longer running. The signal must be NON-terminal:
+        // the bus permanently filters post-terminal events per turnId, and
+        // this exact turnId is designed to be revived by re-dispatch.
+        const pausedTurnId = state.turnId;
+        require("./turn-terminal-finalizer").clearTurnState(state);
+        if (pausedTurnId) {
+          this._emit(session.id, "turn.paused", {
+            paused: true,
+            principalChanged: true,
+            resumable: true,
+            code: "PRINCIPAL_CHANGED",
+            errorCode: "PRINCIPAL_CHANGED",
+          }, { turnId: pausedTurnId });
+        }
+        return {
+          ok: false,
+          ownerPause: true,
+          error: dispatch.error || "OWNER_SCOPE_MISMATCH",
+        };
       }
-      this._finalize(session.id, "turn.failed", {
-        failed: true,
-        assistant: "The assistant engine did not accept the message. Please retry.",
-        code: "RUNNER_REJECTED",
-      });
-      return { ok: false, error: "RUNNER_ERROR", detail: runner.lastSpawnError || "The assistant engine did not accept the message. Please retry." };
+      if (dispatch.retry) {
+        require("./turn-terminal-finalizer").clearTurnState(state);
+        return {
+          ok: false,
+          retry: true,
+          error: dispatch.error || "DISPATCH_LINEARIZATION_BUSY",
+        };
+      }
+      if (dispatch.preSendFailure) {
+        // The claim succeeded but the engine provably never received the
+        // turn: the dedicated dispatching -> failed CAS already ran inside
+        // the critical section; project it visibly exactly once. When that
+        // CAS succeeded, tell the finalizer the durable row is already
+        // terminal so it does not lose a second CAS to its own mark and
+        // strip the user-facing payload (see terminalAlreadyRecorded).
+        this._finalize(session.id, "turn.failed", {
+          failed: true,
+          assistant: "The assistant engine did not accept the message. Please retry.",
+          code: dispatch.error === "PRE_SEND_THROW"
+            ? "PRE_SEND_THROW"
+            : "RUNNER_REJECTED",
+          ...(dispatch.terminal?.ok ? { terminalAlreadyRecorded: true } : {}),
+        });
+        return {
+          ok: false,
+          error: "RUNNER_ERROR",
+          detail: dispatch.detail
+            || runner.lastSpawnError
+            || "The assistant engine did not accept the message. Please retry.",
+        };
+      }
+      return dispatch.result;
     }
+    const dispatchAttemptId = dispatch.attemptId;
+    state.phase = "running";
+    this._injectTurnDispatchFault("after_engine_accept", {
+      sessionId: session.id,
+      turnId: state.turnId,
+      dispatchAttemptId,
+    });
     try {
       if (contextMemory?.fingerprint && contextMemory.text && !contextMemory.deduped) {
         const { markContextMemoryInjected } = require("./session-memory");
@@ -1537,15 +1478,12 @@ class TurnOrchestrator {
           explanation: explainContextMemory(traceMemory),
         });
       }
-      this.ctx.sessionManager?.markTurnInputPromoted?.(state.turnId, {
-        status: "promoted",
-        metadata: {
-          engineTextChanged: engineText !== rawUserText,
-          taskContract: Boolean(state.taskContract),
-        },
+      this._markTurnDispatchAccepted(state.turnId, dispatchAttemptId, {
+        engineTextChanged: engineText !== rawUserText,
+        taskContract: Boolean(state.taskContract),
       });
-    } catch (err) {
-      log.warn("turn input promotion failed: %s", err?.message || err);
+    } catch {
+      // The dispatching row remains outcome-unknown and is never auto-replayed.
     }
     require("./usage-reporter").recordUserSend(session.id, files);
     return {
@@ -1726,97 +1664,12 @@ class TurnOrchestrator {
     this.contextCompactionRuntime.scheduleBackgroundCompaction(sessionId);
   }
 
-  async _dispatchNext(sessionId) {
-    const state = this._state(sessionId);
-    if (state.phase !== "idle" || state.queue.length === 0) return;
-    this._clearDispatchRetry(sessionId);
-    const next = state.queue[0];
-    let result;
-    try {
-      result = await this._tryStartQueuedItem(sessionId, next);
-      if (result?.retry) {
-        // RUNNER_BUSY retry: the orchestrator turn already finalized (we only
-        // reach here with phase === "idle"), so a runner that STILL reports
-        // busy is wedged — its abort never settled, or the engine never sent
-        // idle. Retrying against it forever is exactly the "shows idle but the
-        // message stays queued" bug. Give a short grace for a normal
-        // abort-settle, then recycle the runner and dispatch fresh.
-        if (result.error === "RUNNER_BUSY") {
-          state.dispatchBusyRetries = (state.dispatchBusyRetries || 0) + 1;
-          if (state.dispatchBusyRetries >= TurnOrchestrator.STALE_RUNNER_BUSY_DISPATCHES) {
-            log.warn(
-              "queued dispatch: runner wedged busy while session idle (%d retries) — recycling: session=%s",
-              state.dispatchBusyRetries,
-              sessionId,
-            );
-            state.dispatchBusyRetries = 0;
-            try {
-              this.ctx.runnerPool?.terminateSession?.(sessionId);
-            } catch (err) {
-              log.warn("wedged-runner recycle failed: %s", err?.message || err);
-            }
-            void this._dispatchNext(sessionId);
-            return;
-          }
-        }
-        this._scheduleDispatchRetry(sessionId);
-        return;
-      }
-      state.dispatchBusyRetries = 0;
-      if (!result?.ok) {
-        state.queue.shift();
-        this._completeQueuedScheduledRun(next, "turn.failed", {
-          errorCode: result?.error || "QUEUE_DISPATCH_FAILED",
-          error: result?.detail || result?.error || "Queued turn failed to start.",
-        });
-        this._emitQueue(sessionId);
-        if (state.phase === "idle" && state.queue.length > 0) {
-          void this._dispatchNext(sessionId);
-        }
-        return;
-      }
-      state.queue.shift();
-      this._emitQueue(sessionId);
-      if (state.phase === "idle" && state.queue.length > 0) {
-        void this._dispatchNext(sessionId);
-      }
-    } catch (err) {
-      log.warn("_dispatchNext error: %s", err?.message || err);
-      state.queue.shift();
-      this._completeQueuedScheduledRun(next, "turn.failed", {
-        errorCode: err?.name || "QUEUE_DISPATCH_EXCEPTION",
-        error: err?.message || String(err),
-      });
-      this._emitQueue(sessionId);
-      if (state.phase === "idle" && state.queue.length > 0) {
-        void this._dispatchNext(sessionId);
-      }
-    }
-  }
-
   _afterTurnFinalized(sessionId) {
     // Queue progression is part of the turn boundary. Usage reporting is
     // telemetry and may hit disk or network, so it must never delay the next
     // user-visible turn.
     void this._dispatchNext(sessionId);
     void this._flushUsage(sessionId);
-  }
-
-  _scheduleDispatchRetry(sessionId) {
-    if (!sessionId || this.dispatchRetryTimers.has(sessionId)) return;
-    const timer = setTimeout(() => {
-      this.dispatchRetryTimers.delete(sessionId);
-      void this._dispatchNext(sessionId);
-    }, TurnOrchestrator.QUEUE_RETRY_DELAY_MS);
-    timer.unref?.();
-    this.dispatchRetryTimers.set(sessionId, timer);
-  }
-
-  _clearDispatchRetry(sessionId) {
-    const timer = this.dispatchRetryTimers.get(sessionId);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.dispatchRetryTimers.delete(sessionId);
   }
 
   _completeQueuedScheduledRun(item, terminalType, payload = {}) {
@@ -1922,11 +1775,15 @@ class TurnOrchestrator {
 
   _state(sessionId) {
     if (!this.states.has(sessionId)) {
-      this.states.set(sessionId, {
+      const state = {
         sessionId,
         phase: "idle",
         turnId: null,
+        turnGeneration: 0,
         admittedSeq: null,
+        admittedTurnInput: null,
+        dispatchAttemptId: null,
+        characterWorldsSnapshot: null,
         assistantText: "",
         thinkingText: "",
         contentBlocks: [],
@@ -1948,6 +1805,8 @@ class TurnOrchestrator {
         totalCostUsd: null,
         blockIndexToToolId: new Map(),
         queue: [],
+        outcomeUnknownTurns: [],
+        outcomeUnknownTurnIds: new Set(),
         tools: new Map(),
         pendingPermissions: new Map(),
         pendingQuestions: new Map(),
@@ -1959,10 +1818,54 @@ class TurnOrchestrator {
         scheduledTask: null,
         startedAt: 0,
         updatedAt: 0,
-      });
+      };
+      this.states.set(sessionId, state);
+      this._restorePendingTurnsIntoState?.(sessionId, state);
     }
     return this.states.get(sessionId);
   }
 }
 
+const turnAdmissionMethods = require("./turn-admission-runtime").createTurnAdmissionMethods({
+  log,
+  mergeDisplayFileMetadata,
+  newQueueId,
+  newTurnId,
+  queueDispatchOptions,
+});
+const turnQueueRecoveryMethods = require("./turn-queue-recovery").createTurnQueueRecoveryMethods({
+  log,
+  queueDispatchOptions,
+});
+const turnQueueDispatchMethods = require("./turn-queue-dispatch").createTurnQueueDispatchMethods({
+  documentDeliveryDispatchOptions,
+  log,
+  scheduledQueueCapacityBlock,
+  scheduledTaskTurnOptions,
+});
+const turnDispatchMethods = require("./turn-dispatch-runtime").createTurnDispatchMethods({
+  log,
+});
+const turnSteerMethods = require("./turn-steer-runtime").createTurnSteerMethods({
+  appendTimelineNotice,
+  log,
+  mergeDisplayFileMetadata,
+});
+const turnQueueLifecycleMethods = require("./turn-queue-lifecycle").createTurnQueueLifecycleMethods({
+  log,
+});
+Object.defineProperties(
+  TurnOrchestrator.prototype,
+  Object.fromEntries(Object.entries({
+    ...turnAdmissionMethods,
+    ...turnDispatchMethods,
+    ...turnQueueDispatchMethods,
+    ...turnQueueRecoveryMethods,
+    ...turnSteerMethods,
+    ...turnQueueLifecycleMethods,
+  }).map(([name, value]) => [
+    name,
+    { configurable: true, writable: true, value },
+  ])),
+);
 module.exports = { TurnOrchestrator, prepareTurnCapabilityReadiness };

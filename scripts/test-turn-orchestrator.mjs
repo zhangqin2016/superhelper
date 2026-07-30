@@ -127,6 +127,40 @@ const terminatedSessions = [];
 const clearedResumeSessions = [];
 const completedQueuedRuns = [];
 const startedScheduledRuns = [];
+const durableTurns = new Map();
+const testOwnerScope = "profile:test-turn-orchestrator";
+const otherTestOwnerScope = "profile:test-turn-orchestrator-b";
+let activeTestOwnerScope = testOwnerScope;
+const dispatchClaims = [];
+const terminalClaims = [];
+function hydrateTestTurn(sessionId, input, queueRecovery = null) {
+  const external = queueRecovery?.options?.externalCommand || null;
+  return {
+    sessionId,
+    admittedSeq: durableTurns.size + 1,
+    turnId: input.turnId,
+    delivery: input.delivery || "queue",
+    status: "admitted",
+    userText: input.userText || "",
+    files: input.files || [],
+    metadata: {
+      ...(input.metadata || {}),
+      ...(queueRecovery ? { queueRecovery } : {}),
+    },
+    ownerScope: activeTestOwnerScope,
+    dispatchAttemptId: null,
+    externalCommandId: external?.commandId || null,
+    externalIdempotencyKey: external?.idempotencyKey || null,
+    externalPayloadHash: external?.payloadHash || null,
+    externalDesktopDeviceId: external?.desktopDeviceId || null,
+    externalMobileDeviceId: external?.mobileDeviceId || null,
+  };
+}
+function admitTestTurn(sessionId, input, queueRecovery = null) {
+  const turn = hydrateTestTurn(sessionId, input, queueRecovery);
+  durableTurns.set(turn.turnId, turn);
+  return turn;
+}
 const ctx = {
   get mainWindow() {
     return fakeWindow;
@@ -150,6 +184,112 @@ const ctx = {
       clearedResumeSessions.push(sessionId);
       return true;
     },
+    resolveTurnOwnerScope: () => ({
+      ok: true,
+      error: null,
+      ownerScope: activeTestOwnerScope,
+    }),
+    admitTurnInput: (sessionId, input) => admitTestTurn(sessionId, input),
+    admitTurnInputFromSource: (sessionId, input) => (
+      admitTestTurn(sessionId, input)
+    ),
+    admitQueuedTurnInput: (sessionId, input, queueRecovery) => {
+      const identity = queueRecovery?.options?.externalCommand;
+      const existing = identity
+        ? [...durableTurns.values()].find((turn) => (
+            turn.externalDesktopDeviceId === identity.desktopDeviceId
+            && turn.externalMobileDeviceId === identity.mobileDeviceId
+            && turn.externalIdempotencyKey === identity.idempotencyKey
+          ))
+        : null;
+      if (existing) {
+        if (existing.externalPayloadHash !== identity.payloadHash) {
+          return {
+            ok: false,
+            error: "IDEMPOTENCY_CONFLICT",
+            inserted: false,
+            duplicate: true,
+            turn: existing,
+          };
+        }
+        return {
+          ok: true,
+          inserted: false,
+          duplicate: true,
+          turn: existing,
+        };
+      }
+      const turn = admitTestTurn(sessionId, input, queueRecovery);
+      return { ok: true, inserted: true, duplicate: false, turn };
+    },
+    claimTurnInputDispatch: (sessionId, turnId, claim) => {
+      dispatchClaims.push({ sessionId, turnId, claim });
+      const turn = durableTurns.get(turnId);
+      if (
+        !turn
+        || turn.sessionId !== sessionId
+        || turn.ownerScope !== claim.ownerScope
+        || turn.status !== "admitted"
+      ) return { ok: false, reason: "STATUS", turn: turn || null };
+      const claimed = {
+        ...turn,
+        status: "dispatching",
+        dispatchAttemptId: claim.attemptId,
+        dispatchStartedAt: claim.startedAt || Date.now(),
+      };
+      durableTurns.set(turnId, claimed);
+      return { ok: true, attemptId: claim.attemptId, turn: claimed };
+    },
+    markTurnInputPromoted: (turnId, patch) => {
+      const turn = durableTurns.get(turnId);
+      if (!turn || turn.dispatchAttemptId !== patch.dispatchAttemptId) return null;
+      const promoted = {
+        ...turn,
+        status: patch.status === "accepted" ? "accepted" : "promoted",
+        acceptedAt: patch.acceptedAt || Date.now(),
+      };
+      durableTurns.set(turnId, promoted);
+      return promoted;
+    },
+    markTurnInputTerminal: (claim, terminalType, patch = {}) => {
+      terminalClaims.push({ claim, terminalType, patch });
+      const turn = durableTurns.get(claim.turnId);
+      if (!turn || turn.ownerScope !== claim.ownerScope) {
+        return { ok: false, reason: "NOT_FOUND", turn: null };
+      }
+      const terminal = {
+        ...turn,
+        status: terminalType === "turn.completed"
+          ? "completed"
+          : terminalType === "turn.interrupted"
+            ? "interrupted"
+            : "failed",
+        terminalType,
+        terminalAt: Date.now(),
+      };
+      durableTurns.set(turn.turnId, terminal);
+      return { ok: true, turn: terminal };
+    },
+    pendingTurnInputs: (sessionId) => (
+      [...durableTurns.values()].filter((turn) => (
+        turn.sessionId === sessionId
+        && turn.ownerScope === activeTestOwnerScope
+        && turn.status === "admitted"
+        && turn.delivery === "queue"
+        && turn.metadata?.queueRecovery
+      ))
+    ),
+    outcomeUnknownTurnInputs: () => [],
+    getTurnInputByTurnId: (_sessionId, turnId) => (
+      durableTurns.get(turnId) || null
+    ),
+    findTurnInputByExternalIdentity: (_sessionId, identity) => (
+      [...durableTurns.values()].find((turn) => (
+        turn.externalDesktopDeviceId === identity.desktopDeviceId
+        && turn.externalMobileDeviceId === identity.mobileDeviceId
+        && turn.externalIdempotencyKey === identity.idempotencyKey
+      )) || null
+    ),
   },
   projectManager: {
     find: () => ({ id: "p1", path: process.cwd() }),
@@ -164,8 +304,13 @@ const ctx = {
   },
   scheduledTaskManager: {
     canStartRun: () => true,
-    markRunStarted: (runId, turnId) => {
-      startedScheduledRuns.push({ runId, turnId });
+    markRunStarted: (runId, turnId, dispatchAttemptId, dispatchStartedAt) => {
+      startedScheduledRuns.push({
+        runId,
+        turnId,
+        dispatchAttemptId,
+        dispatchStartedAt,
+      });
       return true;
     },
     completeQueuedRun: (runId, terminalType, payload) => {
@@ -527,13 +672,14 @@ runner.sentPayloads.length = 0;
 
 const readinessOrder = [];
 const originalSendUserMessage = runner.sendUserMessage.bind(runner);
+const originalAdmitTurnInput = ctx.sessionManager.admitTurnInput;
 runner.sendUserMessage = (payload) => {
   readinessOrder.push("dispatch");
   return originalSendUserMessage(payload);
 };
-ctx.sessionManager.admitTurnInput = () => {
+ctx.sessionManager.admitTurnInput = (...args) => {
   readinessOrder.push("admit");
-  return { admittedSeq: 1 };
+  return originalAdmitTurnInput(...args);
 };
 ctx.diagnoseSendBlocker = () => null;
 ctx.ensureSessionRunner = () => {
@@ -586,7 +732,7 @@ runner.finish("browser ready");
 await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 runner.sendUserMessage = originalSendUserMessage;
-delete ctx.sessionManager.admitTurnInput;
+ctx.sessionManager.admitTurnInput = originalAdmitTurnInput;
 delete ctx.diagnoseSendBlocker;
 delete ctx.ensureSessionRunner;
 delete ctx.capabilityReadinessDeps;
@@ -1763,9 +1909,31 @@ if (!allEvents.some((event) => event.type === "memory.proposal" && event.payload
 
 sent.length = 0;
 const queueState = ctx.turnOrchestrator._state("s1");
+const syntheticFailedAdmission = admitTestTurn("s1", {
+  turnId: "turn_queue_failed",
+  delivery: "queue",
+  userText: "will fail",
+});
+const syntheticNextAdmission = admitTestTurn("s1", {
+  turnId: "turn_queue_next",
+  delivery: "queue",
+  userText: "will start",
+});
 queueState.queue = [
-  { id: "queue_failed", text: "will fail", files: [], displayFiles: [] },
-  { id: "queue_next", text: "will start", files: [], displayFiles: [] },
+  {
+    id: "queue_failed",
+    text: "will fail",
+    files: [],
+    displayFiles: [],
+    admittedTurnInput: syntheticFailedAdmission,
+  },
+  {
+    id: "queue_next",
+    text: "will start",
+    files: [],
+    displayFiles: [],
+    admittedTurnInput: syntheticNextAdmission,
+  },
 ];
 let dispatchAttempts = 0;
 const originalTryStartQueuedItem = ctx.turnOrchestrator._tryStartQueuedItem.bind(ctx.turnOrchestrator);
@@ -1818,6 +1986,11 @@ const scheduledCapacityItem = {
     nonInteractive: true,
   },
 };
+scheduledCapacityItem.admittedTurnInput = admitTestTurn("s1", {
+  turnId: "turn_scheduled_capacity",
+  delivery: "queue",
+  userText: scheduledCapacityItem.text,
+});
 const capacityBlocked = await ctx.turnOrchestrator._tryStartQueuedItem("s1", scheduledCapacityItem);
 if (!capacityBlocked?.retry || capacityBlocked.error !== "SCHEDULE_CAPACITY") {
   throw new Error(`scheduled queue must wait without being removed when execution capacity is full: ${JSON.stringify(capacityBlocked)}`);
@@ -1834,8 +2007,22 @@ if (!capacityStarted?.ok || !runner.isBusy()) {
 if (runner.sentPayloads.at(-1)?.nonInteractive !== true) {
   throw new Error("scheduled queue must preserve nonInteractive through admission into the engine payload");
 }
-if (!startedScheduledRuns.some((item) => item.runId === "run_capacity")) {
+const startedCapacityRun = startedScheduledRuns.find((item) => item.runId === "run_capacity");
+if (!startedCapacityRun) {
   throw new Error(`scheduled queue must mark the exact run started: ${JSON.stringify(startedScheduledRuns)}`);
+}
+const durableCapacityTurn = durableTurns.get("turn_scheduled_capacity");
+if (
+  !startedCapacityRun.dispatchAttemptId
+  || startedCapacityRun.dispatchAttemptId !== durableCapacityTurn?.dispatchAttemptId
+  || startedCapacityRun.dispatchStartedAt !== durableCapacityTurn?.dispatchStartedAt
+) {
+  throw new Error(
+    `scheduled run must reuse the durable dispatch claim identity and time: ${JSON.stringify({
+      startedCapacityRun,
+      durableCapacityTurn,
+    })}`,
+  );
 }
 runner.finish("scheduled capacity done");
 await new Promise((resolve) => setTimeout(resolve, 5));
@@ -1911,6 +2098,256 @@ if (queueState.queue.length !== 0) {
   queueState.dispatchBusyRetries = 0;
 }
 
+// Queue dispatch is linearized against principal changes only after all
+// deterministic preparation has completed. A delayed compaction stands in for
+// document/memory preflight: A must remain admitted while it waits, switching
+// to B must prevent A from reaching the runner, and completing A's stale
+// dispatch must never shift/drop B from the queue.
+{
+  const originalCompactBeforeTurn = ctx.turnOrchestrator._maybeCompactBeforeTurn;
+  const originalDiagnoseSendBlocker = ctx.diagnoseSendBlocker;
+  const originalEnsureSessionRunner = ctx.ensureSessionRunner;
+  const sentBefore = runner.sentPayloads.length;
+  const claimsBefore = dispatchClaims.length;
+  let releasePreflight;
+  let preflightEntered = false;
+  const preflightGate = new Promise((resolve) => {
+    releasePreflight = resolve;
+  });
+  ctx.turnOrchestrator._maybeCompactBeforeTurn = async () => {
+    preflightEntered = true;
+    await preflightGate;
+    return null;
+  };
+  ctx.diagnoseSendBlocker = () => null;
+  ctx.ensureSessionRunner = () => ({
+    runner,
+    coldStart: false,
+    usedResume: false,
+  });
+
+  activeTestOwnerScope = testOwnerScope;
+  await waitFor(() => !ctx.turnOrchestrator.dispatchInFlight.has("s1"));
+  ctx.turnOrchestrator._clearDispatchRetry("s1");
+  queueState.phase = "idle";
+  queueState.turnId = null;
+  queueState.queue = [];
+  runner.busy = false;
+  const itemA = {
+    id: "queue_owner_epoch_a",
+    text: "owner A delayed preflight",
+    files: [],
+    displayFiles: [],
+    options: {
+      skipVision: true,
+      skipDocument: true,
+      spawnEngine: false,
+      queueOrigin: "user",
+    },
+  };
+  const admissionA = ctx.turnOrchestrator._admitQueuedTurn(session, itemA);
+  if (!admissionA.ok) throw new Error(`owner A admission failed: ${JSON.stringify(admissionA)}`);
+  queueState.queue.push(itemA);
+  const dispatchA = ctx.turnOrchestrator._dispatchNext("s1");
+  if (!await waitFor(() => preflightEntered)) {
+    throw new Error("owner race test never entered deterministic preflight");
+  }
+  if (durableTurns.get(itemA.admittedTurnInput.turnId)?.status !== "admitted") {
+    throw new Error("dispatch CAS must not run before deterministic preflight completes");
+  }
+  if (dispatchClaims.length !== claimsBefore) {
+    throw new Error("delayed preflight must not create a dispatch attempt");
+  }
+
+  activeTestOwnerScope = otherTestOwnerScope;
+  ctx.turnOrchestrator.handlePrincipalChange();
+  const itemB = {
+    id: "queue_owner_epoch_b",
+    text: "owner B remains queued",
+    files: [],
+    displayFiles: [],
+    options: {
+      skipVision: true,
+      skipDocument: true,
+      spawnEngine: false,
+      queueOrigin: "user",
+    },
+  };
+  const admissionB = ctx.turnOrchestrator._admitQueuedTurn(session, itemB);
+  if (!admissionB.ok) throw new Error(`owner B admission failed: ${JSON.stringify(admissionB)}`);
+  queueState.queue.push(itemB);
+  runner.busy = true;
+  releasePreflight();
+  await dispatchA;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  if (
+    runner.sentPayloads.slice(sentBefore).some(
+      (payload) => String(payload?.rawText || payload?.text || "").includes("owner A delayed"),
+    )
+  ) {
+    throw new Error("owner A must not reach sendUserMessage after the principal epoch changes");
+  }
+  if (!queueState.queue.some((item) => item.id === itemB.id)) {
+    throw new Error("stale owner A completion must not shift or delete owner B's queue item");
+  }
+  if (durableTurns.get(itemA.admittedTurnInput.turnId)?.status !== "admitted") {
+    throw new Error("owner A durable admission must remain recoverable after an account switch");
+  }
+  if (durableTurns.get(itemB.admittedTurnInput.turnId)?.status !== "admitted") {
+    throw new Error("owner B durable admission must remain admitted while its runner is busy");
+  }
+
+  activeTestOwnerScope = testOwnerScope;
+  runner.busy = true;
+  ctx.turnOrchestrator.handlePrincipalChange();
+  if (!queueState.queue.some(
+    (item) => item.admittedTurnInput?.turnId === itemA.admittedTurnInput.turnId,
+  )) {
+    throw new Error("switching back to owner A must restore its durable admitted turn");
+  }
+  runner.busy = false;
+  ctx.turnOrchestrator._maybeCompactBeforeTurn = async () => null;
+  await ctx.turnOrchestrator._dispatchNext("s1");
+  if (
+    runner.sentPayloads.filter(
+      (payload) => String(payload?.rawText || payload?.text || "").includes("owner A delayed"),
+    ).length !== 1
+  ) {
+    throw new Error("owner A restored admission must execute exactly once after switching back");
+  }
+  runner.finish("owner A restored");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  // The paused projection must use the NON-terminal turn.paused signal: the
+  // bus permanently filters post-terminal events per turnId, and this exact
+  // turnId is revived by the re-dispatch above. Assert the revived turn's
+  // full event stream is actually delivered, not just durably recorded.
+  const deliveredForA = sent.flatMap((entry) => entry.payload?.events || []).filter(
+    (event) => event.turnId === itemA.admittedTurnInput.turnId,
+  );
+  if (!deliveredForA.some(
+    (event) => event.type === "turn.paused" && event.payload?.principalChanged,
+  )) {
+    throw new Error("owner pause must emit the non-terminal turn.paused signal for the durable turn");
+  }
+  if (deliveredForA.some((event) => event.type === "turn.interrupted")) {
+    throw new Error("a resumable paused turn must never emit terminal turn.interrupted for its durable turnId");
+  }
+  if (!deliveredForA.some((event) => event.type === "assistant.final")) {
+    throw new Error("the revived turn's assistant.final must be delivered after re-dispatch");
+  }
+  if (!deliveredForA.some((event) => event.type === "turn.completed")) {
+    throw new Error("the revived turn's turn.completed must be delivered after re-dispatch");
+  }
+  ctx.turnOrchestrator._maybeCompactBeforeTurn = originalCompactBeforeTurn;
+  if (originalDiagnoseSendBlocker === undefined) delete ctx.diagnoseSendBlocker;
+  else ctx.diagnoseSendBlocker = originalDiagnoseSendBlocker;
+  if (originalEnsureSessionRunner === undefined) delete ctx.ensureSessionRunner;
+  else ctx.ensureSessionRunner = originalEnsureSessionRunner;
+  queueState.queue = [];
+}
+
+// A deterministic preflight exception must terminalize the still-admitted
+// queue row and produce a visible failure without consuming a dispatch
+// attempt. A synchronous runner throw happens after claim but is still known
+// not to have delivered, so it uses the dedicated pre_send_throw terminal CAS.
+{
+  activeTestOwnerScope = testOwnerScope;
+  const originalCompactBeforeTurn = ctx.turnOrchestrator._maybeCompactBeforeTurn;
+  const originalDiagnoseSendBlocker = ctx.diagnoseSendBlocker;
+  const originalEnsureSessionRunner = ctx.ensureSessionRunner;
+  const originalSendUserMessage = runner.sendUserMessage;
+  const claimsBefore = dispatchClaims.length;
+  const failureEventsBefore = sent.filter(
+    (entry) => entry.payload?.events?.some((event) => event.type === "turn.failed"),
+  ).length;
+  queueState.phase = "idle";
+  queueState.turnId = null;
+  queueState.queue = [];
+  runner.busy = false;
+  ctx.diagnoseSendBlocker = () => null;
+  ctx.ensureSessionRunner = () => ({
+    runner,
+    coldStart: false,
+    usedResume: false,
+  });
+  ctx.turnOrchestrator._maybeCompactBeforeTurn = async () => {
+    throw new Error("deterministic memory preflight failed");
+  };
+  const preflightItem = {
+    id: "queue_preflight_failure",
+    text: "preflight must fail before claim",
+    files: [],
+    displayFiles: [],
+    options: {
+      skipVision: true,
+      skipDocument: true,
+      spawnEngine: false,
+      queueOrigin: "user",
+    },
+  };
+  const preflightAdmission = ctx.turnOrchestrator._admitQueuedTurn(session, preflightItem);
+  queueState.queue.push(preflightItem);
+  await ctx.turnOrchestrator._dispatchNext("s1");
+  if (dispatchClaims.length !== claimsBefore) {
+    throw new Error("deterministic preflight failure must not create a dispatch attempt");
+  }
+  if (durableTurns.get(preflightAdmission.turn.turnId)?.status !== "failed") {
+    throw new Error("deterministic preflight failure must terminalize admitted -> failed");
+  }
+  if (queueState.queue.some((item) => item.id === preflightItem.id)) {
+    throw new Error("failed deterministic preflight must remove the exact queue item");
+  }
+  const failureEventsAfter = sent.filter(
+    (entry) => entry.payload?.events?.some((event) => event.type === "turn.failed"),
+  ).length;
+  if (failureEventsAfter !== failureEventsBefore + 1) {
+    throw new Error("deterministic preflight failure must emit one visible turn.failed event");
+  }
+
+  ctx.turnOrchestrator._maybeCompactBeforeTurn = async () => null;
+  runner.sendUserMessage = () => {
+    throw new Error("synchronous pre-send throw");
+  };
+  const throwItem = {
+    id: "queue_pre_send_throw",
+    text: "runner throws synchronously",
+    files: [],
+    displayFiles: [],
+    options: {
+      skipVision: true,
+      skipDocument: true,
+      spawnEngine: false,
+      queueOrigin: "user",
+    },
+  };
+  const throwAdmission = ctx.turnOrchestrator._admitQueuedTurn(session, throwItem);
+  queueState.queue.push(throwItem);
+  await ctx.turnOrchestrator._dispatchNext("s1");
+  const preSendTerminal = terminalClaims.find(
+    (entry) => entry.claim.turnId === throwAdmission.turn.turnId,
+  );
+  if (
+    preSendTerminal?.patch?.metadata?.dispatchFailureReason !== "pre_send_throw"
+    || !preSendTerminal.claim.fromStatuses.includes("dispatching")
+  ) {
+    throw new Error(
+      `synchronous send throw must use the dedicated dispatching -> failed CAS: ${JSON.stringify(preSendTerminal)}`,
+    );
+  }
+  if (durableTurns.get(throwAdmission.turn.turnId)?.status !== "failed") {
+    throw new Error("synchronous pre-send throw must become a durable failure");
+  }
+  runner.sendUserMessage = originalSendUserMessage;
+  ctx.turnOrchestrator._maybeCompactBeforeTurn = originalCompactBeforeTurn;
+  if (originalDiagnoseSendBlocker === undefined) delete ctx.diagnoseSendBlocker;
+  else ctx.diagnoseSendBlocker = originalDiagnoseSendBlocker;
+  if (originalEnsureSessionRunner === undefined) delete ctx.ensureSessionRunner;
+  else ctx.ensureSessionRunner = originalEnsureSessionRunner;
+  queueState.queue = [];
+  runner.busy = false;
+}
+
 // admitExternalCommand: the mobile injection seam (MC-SPEC-008 §3.3). A mobile
 // command enters an idle session as exactly one FIFO item carrying durable
 // command metadata; a replay does not enqueue twice; a reused key with a new
@@ -1957,7 +2394,7 @@ if (queueState.queue.length !== 0) {
 
   // Same key, new payload → rejected (never overwrites the original command).
   const conflict = await ctx.turnOrchestrator.admitExternalCommand({ ...envelope, payloadHash: "hash_DIFFERENT" });
-  must(conflict.ok === false && conflict.code === "COMMAND_PAYLOAD_CONFLICT", "a reused key with a new payload is rejected");
+  must(conflict.ok === false && conflict.code === "IDEMPOTENCY_CONFLICT", "a reused key with a new payload is rejected");
   must(busyState.queue.length === 1, "a conflicting command does not enqueue");
 
   // Requested steer is admitted as queue with the downgrade reason surfaced.
@@ -2008,7 +2445,8 @@ if (queueState.queue.length !== 0) {
 
   const envelope = {
     commandId: "cmd_restart_1", idempotencyKey: "idem_restart_1", payloadHash: "hash_r",
-    lilySessionId: "s1", mobileDeviceId: "dmob", text: "重启前发来的任务", mode: "queue",
+    lilySessionId: "s1", desktopDeviceId: "dtop", mobileDeviceId: "dmob",
+    text: "重启前发来的任务", mode: "queue",
   };
   const admitted = await orchA.admitExternalCommand(envelope);
   must(admitted.ok === true, "pre-restart admit succeeds");

@@ -35,6 +35,7 @@ const base = {
 assert(validateEnvelope(base).ok, "a complete envelope validates");
 assert(!validateEnvelope({ ...base, commandId: "" }).ok, "missing commandId rejected");
 assert(!validateEnvelope({ ...base, payloadHash: "" }).ok, "missing payloadHash rejected");
+assert(!validateEnvelope({ ...base, desktopDeviceId: "" }).ok, "missing desktop device rejected");
 assert.equal(validateEnvelope({ ...base, text: "", attachments: [] }).code, "COMMAND_EMPTY", "no text and no files rejected");
 assert(validateEnvelope({ ...base, text: "", attachments: [{ ref: "a" }] }).ok, "attachment-only command is valid");
 
@@ -80,7 +81,7 @@ assert(validateEnvelope({ ...base, text: "", attachments: [{ ref: "a" }] }).ok, 
   const first = decideExternalCommandAdmission({ envelope: base, existingRecord: null, sessionExists: true, sessionOwned: true });
   const conflict = decideExternalCommandAdmission({ envelope: { ...base, payloadHash: "hash_DIFFERENT" }, existingRecord: first.record, sessionExists: true, sessionOwned: true });
   assert.equal(conflict.outcome, "payload_conflict");
-  assert.equal(conflict.code, "COMMAND_PAYLOAD_CONFLICT", "a reused key with a new payload never overwrites the original");
+  assert.equal(conflict.code, "IDEMPOTENCY_CONFLICT", "a reused key with a new payload never overwrites the original");
 }
 
 // --- session absent / ownership mismatch are non-admissions ------------------

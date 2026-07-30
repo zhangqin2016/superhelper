@@ -24,6 +24,11 @@ const {
   ScheduledTaskManager,
 } = require("../src/main/scheduled-tasks.js");
 const { ScheduledTaskStore } = require("../src/main/store/scheduled-task-store.js");
+const {
+  dispatchScheduledRun,
+  reconcileScheduledRunWithTurn,
+  reconcileScheduledRunsWithDurableTurns,
+} = require("../src/main/scheduled-task-dispatch.js");
 
 const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -193,8 +198,26 @@ try {
   const restartDbPath = path.join(restartRoot, "scheduled-tasks.db");
   const restartLegacyPath = path.join(restartRoot, "scheduled-tasks.json");
   const restartSent = [];
+  const restartBaseContext = context();
   const restartContext = {
-    ...context(),
+    ...restartBaseContext,
+    sessionManager: {
+      ...restartBaseContext.sessionManager,
+      findTurnInputByScheduledRun: (sessionId) => (
+        sessionId === "origin-b"
+          ? {
+              turnId: "durable-restart-running-turn",
+              status: "completed",
+              dispatchAttemptId: "durable-restart-attempt",
+              dispatchStartedAt: 4567,
+              acceptedAt: 5000,
+              terminalAt: 5678,
+              terminalType: "turn.completed",
+              errorCode: null,
+            }
+          : null
+      ),
+    },
     turnOrchestrator: {
       sendUserMessage: async (sessionId, _text, _files, opts) => {
         restartSent.push({ sessionId, opts });
@@ -252,8 +275,8 @@ try {
   );
   assert.equal(
     recoveredSnapshot.find((run) => run.id === runningBeforeRestart.id)?.status,
-    "interrupted",
-    "SQLite recovery must terminalize a possibly side-effecting run in the same transaction",
+    "dispatch_unknown",
+    "SQLite recovery must pause a possibly side-effecting run without claiming interruption",
   );
   assert.equal(atomicallyRecovered.find((run) => run.id === queuedBeforeRestart.id)?.recoveredFromStatus, "queued");
   recoveryStore.close();
@@ -286,7 +309,15 @@ try {
   );
   assert.equal(
     recovered.runs.find((run) => run.id === runningBeforeRestart.id)?.status,
-    "interrupted",
+    "succeeded",
+  );
+  assert.equal(
+    recovered.runs.find((run) => run.id === runningBeforeRestart.id)?.dispatchAttemptId,
+    "durable-restart-attempt",
+  );
+  assert.equal(
+    recovered.runs.find((run) => run.id === runningBeforeRestart.id)?.finishedAt,
+    new Date(5678).toISOString(),
   );
   recovered.close();
   fs.rmSync(restartRoot, { recursive: true, force: true });
@@ -300,6 +331,9 @@ try {
   accountManager.tasks = [
     { id: "account-queued-task", enabled: true },
     { id: "account-running-task", enabled: true },
+    { id: "account-stale-running-task", enabled: true },
+    { id: "account-promoted-task", enabled: true },
+    { id: "account-unknown-task", enabled: true },
   ];
   accountManager.runs = [
     {
@@ -309,6 +343,27 @@ try {
     {
       id: "account-running-run", taskId: "account-running-task",
       ownerPrincipal: "user:alice", sessionId: "origin-b", status: "running",
+      turnId: "account-running-turn",
+      dispatchAttemptId: "account-running-attempt",
+    },
+    {
+      id: "account-stale-running-run", taskId: "account-stale-running-task",
+      ownerPrincipal: "user:alice", sessionId: "origin-b", status: "running",
+      turnId: "account-stale-turn",
+      dispatchAttemptId: "account-stale-attempt",
+    },
+    {
+      id: "account-promoted-run", taskId: "account-promoted-task",
+      ownerPrincipal: "user:alice", sessionId: "origin-b", status: "promoted",
+      turnId: "account-old-promoted-turn",
+      dispatchAttemptId: "account-old-promoted-attempt",
+    },
+    {
+      id: "account-unknown-run", taskId: "account-unknown-task",
+      ownerPrincipal: "user:alice", sessionId: "origin-b",
+      status: "dispatch_unknown",
+      turnId: "account-old-unknown-turn",
+      dispatchAttemptId: "account-old-unknown-attempt",
     },
   ];
   accountManager.ctx = {
@@ -318,14 +373,130 @@ try {
         accountManager.completeQueuedRun(runId, "turn.interrupted", { errorCode: "ACCOUNT_CHANGED" });
         return { ok: true };
       },
-      interrupt: (sessionId) => accountInterrupted.push(sessionId),
+      interruptScheduledRun: (run) => {
+        if (
+          run.turnId !== "account-running-turn"
+          || run.dispatchAttemptId !== "account-running-attempt"
+          || run.ownerPrincipal !== "user:alice"
+        ) return { ok: false, error: "TURN_CLAIM_MISMATCH" };
+        accountInterrupted.push({
+          sessionId: run.sessionId,
+          turnId: run.turnId,
+          dispatchAttemptId: run.dispatchAttemptId,
+          ownerPrincipal: run.ownerPrincipal,
+        });
+        return { ok: true };
+      },
     },
   };
   accountManager.handlePrincipalChange();
-  assert.deepEqual(accountCancelled, [{ sessionId: "origin-a", runId: "account-queued-run" }],
-    "account changes must remove only the foreign scheduled queue item");
-  assert.deepEqual(accountInterrupted, ["origin-b"],
-    "only a foreign scheduled turn that is actually running may interrupt its conversation");
+  assert.deepEqual(
+    accountCancelled,
+    [],
+    "account changes pause foreign queued work without cancelling durable admission",
+  );
+  assert.equal(
+    accountManager.runs.find((run) => run.id === "account-queued-run").status,
+    "queued",
+    "foreign queued scheduled work remains recoverable when its owner returns",
+  );
+  assert.deepEqual(accountInterrupted, [{
+    sessionId: "origin-b",
+    turnId: "account-running-turn",
+    dispatchAttemptId: "account-running-attempt",
+    ownerPrincipal: "user:alice",
+  }],
+  "principal changes interrupt only the exact active scheduled turn claim");
+  assert.equal(
+    accountManager.runs.find((run) => run.id === "account-stale-running-run").status,
+    "running",
+    "a stale run sharing the session must not be falsely interrupted",
+  );
+  assert.equal(
+    accountManager.runs.find((run) => run.id === "account-promoted-run").status,
+    "promoted",
+    "an old promoted run must not interrupt the unrelated current turn",
+  );
+  assert.equal(
+    accountManager.runs.find((run) => run.id === "account-unknown-run").status,
+    "dispatch_unknown",
+    "dispatch-unknown work remains unknown across principal changes",
+  );
+
+  let unavailableOwnerInterrupts = 0;
+  const unavailableOwnerManager = new ScheduledTaskManager({
+    resolvePrincipal: () => {
+      throw new Error("account provider unavailable");
+    },
+  });
+  unavailableOwnerManager.ctx = context();
+  unavailableOwnerManager.ctx.turnOrchestrator = {
+    interruptScheduledRun: () => {
+      unavailableOwnerInterrupts += 1;
+      return { ok: true };
+    },
+  };
+  unavailableOwnerManager.runs = [{
+    id: "unavailable-owner-running-run",
+    taskId: "unavailable-owner-running-task",
+    ownerPrincipal: "user:alice",
+    sessionId: "origin-a",
+    status: "running",
+    turnId: "unavailable-owner-running-turn",
+    dispatchAttemptId: "unavailable-owner-running-attempt",
+  }];
+  const unavailableOwnerCreate = unavailableOwnerManager.create({
+    title: "must fail closed",
+    prompt: "不要绑定到共享的 unavailable owner",
+    scheduleText: "每天早上9点",
+    sessionId: "origin-a",
+    projectId: "project-a",
+  });
+  assert.equal(unavailableOwnerCreate.ok, false);
+  assert.equal(unavailableOwnerCreate.error, "OWNER_SCOPE_UNAVAILABLE");
+  assert.deepEqual(
+    unavailableOwnerManager.handlePrincipalChange(),
+    { ok: false, error: "OWNER_SCOPE_UNAVAILABLE" },
+  );
+  assert.equal(
+    unavailableOwnerInterrupts,
+    0,
+    "transient principal resolution failure cannot interrupt another owner",
+  );
+  const unavailableLegacyRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "lily-scheduler-owner-unavailable-"),
+  );
+  const unavailableLegacyPath = path.join(
+    unavailableLegacyRoot,
+    "scheduled-tasks.json",
+  );
+  fs.writeFileSync(unavailableLegacyPath, JSON.stringify({
+    tasks: [{
+      id: "legacy-owner-unavailable",
+      projectId: "project-a",
+      sessionId: "origin-a",
+      prompt: "认证恢复后再迁移",
+      schedule: { type: "daily", hour: 9, minute: 0 },
+    }],
+  }), "utf8");
+  const unavailableLegacyManager = new ScheduledTaskManager({
+    dbPath: path.join(unavailableLegacyRoot, "scheduled-tasks.db"),
+    legacyPath: unavailableLegacyPath,
+    resolvePrincipal: () => {
+      throw new Error("account provider unavailable");
+    },
+  });
+  const unavailableLegacyLoad = unavailableLegacyManager.load();
+  assert.equal(unavailableLegacyLoad.ok, false);
+  assert.equal(unavailableLegacyLoad.error, "OWNER_SCOPE_UNAVAILABLE");
+  assert.equal(
+    fs.existsSync(unavailableLegacyPath),
+    true,
+    "owner-unavailable migration must preserve the legacy source for retry",
+  );
+  assert.equal(unavailableLegacyManager.tasks.length, 0);
+  unavailableLegacyManager.close();
+  fs.rmSync(unavailableLegacyRoot, { recursive: true, force: true });
 
   const metadataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-scheduler-metadata-"));
   const metadataOptions = {
@@ -368,6 +539,111 @@ try {
   assert.equal(loadResult.ok, false);
   assert.equal(loadResult.error, "LEGACY_CORRUPT");
   assert.equal(fs.readFileSync(corruptLegacy, "utf8"), "{ definitely broken");
+
+  const reconciledRun = {
+    id: "scheduled-ledger-reconcile-run",
+    status: "queued",
+    turnId: null,
+    dispatchAttemptId: null,
+    dispatchStartedAt: null,
+    engineAcceptedAt: null,
+  };
+  let markedStarted = 0;
+  let savedReconciled = 0;
+  let settledReconciled = 0;
+  dispatchScheduledRun({
+    ctx: {
+      turnOrchestrator: {
+        sendUserMessage: async () => ({
+          ok: true,
+          duplicate: true,
+          outcomeUnknown: true,
+          turnId: "scheduled-ledger-turn",
+          durableStatus: "dispatching",
+          dispatchAttemptId: "scheduled-ledger-attempt",
+          dispatchStartedAt: 1234,
+          acceptedAt: null,
+        }),
+      },
+    },
+    task: { id: "scheduled-ledger-task", executionSessionId: "origin-a" },
+    run: reconciledRun,
+    nonInteractive: true,
+    markRunStarted: () => { markedStarted += 1; },
+    reconcileRun: (target, result) => reconcileScheduledRunWithTurn(target, result),
+    finishRun: () => {},
+    saveRun: () => { savedReconciled += 1; },
+    onSettled: () => { settledReconciled += 1; },
+  });
+  await flushAsync();
+  assert.equal(markedStarted, 0, "a durable duplicate must not be marked as a new execution");
+  assert.equal(reconciledRun.status, "dispatch_unknown");
+  assert.equal(reconciledRun.turnId, "scheduled-ledger-turn");
+  assert.equal(reconciledRun.dispatchAttemptId, "scheduled-ledger-attempt");
+  assert.equal(reconciledRun.dispatchStartedAt, 1234);
+  assert.equal(savedReconciled, 1);
+  assert.equal(settledReconciled, 1);
+
+  reconcileScheduledRunWithTurn(reconciledRun, {
+    duplicate: true,
+    durableStatus: "completed",
+    terminalType: "turn.completed",
+    terminalAt: 2345,
+  });
+  assert.equal(reconciledRun.status, "succeeded");
+  assert.equal(reconciledRun.finishedAt, new Date(2345).toISOString());
+
+  const ownerFilteredRuns = [
+    {
+      id: "owner-filter-run-a",
+      taskId: "owner-filter-task-a",
+      ownerPrincipal: "user:alice",
+      sessionId: "origin-a",
+      status: "dispatch_unknown",
+    },
+    {
+      id: "owner-filter-run-b",
+      taskId: "owner-filter-task-b",
+      ownerPrincipal: "user:bob",
+      sessionId: "origin-b",
+      status: "dispatch_unknown",
+    },
+  ];
+  const ownerFilteredTasks = [
+    { id: "owner-filter-task-a", enabled: true, status: "running" },
+    { id: "owner-filter-task-b", enabled: true, status: "running" },
+  ];
+  const ownerLookupCalls = [];
+  const ownerSavedRuns = [];
+  reconcileScheduledRunsWithDurableTurns(
+    {
+      sessionManager: {
+        findTurnInputByScheduledRun(sessionId, runId) {
+          ownerLookupCalls.push({ sessionId, runId });
+          return {
+            turnId: `turn-${runId}`,
+            status: "completed",
+            terminalAt: 9876,
+            terminalType: "turn.completed",
+          };
+        },
+      },
+    },
+    ownerFilteredRuns,
+    ownerFilteredTasks,
+    {
+      saveRun: (run) => ownerSavedRuns.push(run.id),
+      saveTask: () => {},
+    },
+    "user:alice",
+  );
+  assert.deepEqual(ownerLookupCalls, [{
+    sessionId: "origin-a",
+    runId: "owner-filter-run-a",
+  }]);
+  assert.equal(ownerFilteredRuns[0].status, "succeeded");
+  assert.equal(ownerFilteredRuns[1].status, "dispatch_unknown");
+  assert.deepEqual(ownerSavedRuns, ["owner-filter-run-a"]);
   corruptManager.close();
   fs.rmSync(corruptRoot, { recursive: true, force: true });
 

@@ -7,6 +7,9 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { MessageStore } = require("../src/main/store/message-store.js");
+const {
+  createQueueRecoveryEnvelope,
+} = require("../src/main/turn-queue-recovery-envelope.js");
 
 let passed = 0;
 const fail = (msg) => {
@@ -134,13 +137,411 @@ try {
     files: [{ name: "a.docx" }],
     metadata: { source: "test" },
     createdAt: 1000,
-  });
+  }, { ownerScope: "owner-terminal-a" });
   ok(admitted.admittedSeq === 1, "first turn input admitted with seq 1");
   ok(admitted.userText === "生成报告", "turn input preserves user-visible text");
-  ok(store.pendingTurnInputs("S4").length === 1, "admitted turn is pending before terminal");
-  const promoted = store.markTurnInputPromoted("turn_1", { metadata: { engineTextChanged: true } });
+  ok(store.pendingTurnInputs("S4").length === 0, "non-queue admission is never auto-recovered");
+  const dispatchClaim = store.claimTurnInputDispatch("S4", "turn_1", {
+    attemptId: "dispatch_message_store_test",
+    startedAt: 1050,
+    ownerScope: "owner-terminal-a",
+  });
+  ok(dispatchClaim.ok === true, "turn input dispatch is claimed atomically");
+  const dispatchLoser = store.claimTurnInputDispatch("S4", "turn_1", {
+    attemptId: "dispatch_message_store_loser",
+    startedAt: 1051,
+    ownerScope: "owner-terminal-a",
+  });
+  ok(
+    dispatchLoser.ok === false
+      && dispatchLoser.turn.dispatchAttemptId === dispatchClaim.attemptId,
+    "a second dispatch CAS loses without replacing the winning attempt",
+  );
+  const ownerlessDispatchInput = store.admitTurnInput("S4-ownerless-claim", {
+    turnId: "turn-ownerless-claim",
+    delivery: "direct",
+    userText: "must require owner scope",
+  }, { ownerScope: "owner-terminal-a" });
+  const ownerlessDispatch = store.claimTurnInputDispatch(
+    "S4-ownerless-claim",
+    ownerlessDispatchInput.turnId,
+    { attemptId: "dispatch-ownerless-claim" },
+  );
+  ok(
+    ownerlessDispatch.ok === false
+      && ownerlessDispatch.reason === "INVALID_CLAIM"
+      && store.getTurnInputByTurnId(
+        ownerlessDispatchInput.turnId,
+        "owner-terminal-a",
+      ).status === "admitted",
+    "dispatch CAS requires authoritative owner scope and leaves the row unchanged",
+  );
+  ok(
+    store.markTurnInputPromoted("turn_1", {
+      dispatchAttemptId: "dispatch_message_store_loser",
+    }) === null,
+    "a losing attempt cannot promote another dispatch",
+  );
+  const promoted = store.markTurnInputPromoted("turn_1", {
+    dispatchAttemptId: dispatchClaim.attemptId,
+    metadata: { engineTextChanged: true },
+  });
   ok(promoted.status === "promoted", "turn input promotion is recorded");
   ok(promoted.metadata.source === "test" && promoted.metadata.engineTextChanged === true, "promotion merges metadata");
+  ok(store.outcomeUnknownTurnInputs("S4").length === 1, "promoted turn is outcome-unknown before terminal");
+  for (let index = 0; index < 105; index += 1) {
+    const turnId = `turn_unknown_${index}`;
+    store.admitTurnInput("S4-unknown-bounded", {
+      turnId,
+      delivery: "direct",
+      userText: `unknown ${index}`,
+      metadata: {},
+      createdAt: 1100 + index,
+    });
+    store.db.run(
+      "UPDATE turn_inputs SET status = 'dispatching' WHERE turn_id = ?",
+      turnId,
+    );
+  }
+  const boundedUnknown = store.outcomeUnknownTurnInputs("S4-unknown-bounded");
+  ok(boundedUnknown.length === 100, "outcome-unknown recovery query is bounded");
+  ok(
+    boundedUnknown[0].turnId === "turn_unknown_5"
+      && boundedUnknown.at(-1).turnId === "turn_unknown_104",
+    "outcome-unknown query keeps the newest bounded window in chronological order",
+  );
+
+  const scheduledEnvelope = (queueItemId, runId) => createQueueRecoveryEnvelope({
+    item: { id: queueItemId, displayFiles: [] },
+    options: {
+      queueOrigin: "scheduled_task",
+      scheduledTaskId: "durable-dedupe-task",
+      scheduledTaskRunId: runId,
+    },
+  });
+  const scheduledContext = {
+    ownerScope: "owner-durable-a",
+    queueRecoveryEnvelope: scheduledEnvelope("scheduled-item-1", "scheduled-run-durable"),
+  };
+  const scheduledFirst = store.admitQueuedTurnInput("S4-durable-dedupe", {
+    turnId: "scheduled-turn-first",
+    delivery: "queue",
+    userText: "scheduled first",
+  }, scheduledContext);
+  ok(
+    scheduledFirst.ok === true && scheduledFirst.inserted === true,
+    "the first scheduled run is durably admitted",
+  );
+  store.markTurnInputTerminal({
+    ownerScope: "owner-durable-a",
+    sessionId: "S4-durable-dedupe",
+    turnId: scheduledFirst.turn.turnId,
+    dispatchAttemptId: null,
+    fromStatuses: ["admitted"],
+  }, "turn.completed");
+  const scheduledReplay = store.admitQueuedTurnInput("S4-durable-dedupe", {
+    turnId: "scheduled-turn-replay",
+    delivery: "queue",
+    userText: "scheduled replay",
+  }, {
+    ownerScope: "owner-durable-a",
+    queueRecoveryEnvelope: scheduledEnvelope("scheduled-item-2", "scheduled-run-durable"),
+  });
+  ok(
+    scheduledReplay.ok === true
+      && scheduledReplay.duplicate === true
+      && scheduledReplay.turn.turnId === scheduledFirst.turn.turnId
+      && scheduledReplay.turn.status === "completed",
+    "a completed scheduled run conflicts to its exact durable turn",
+  );
+  ok(
+    store.db.get(
+      "SELECT COUNT(*) AS count FROM turn_inputs WHERE session_id = ?",
+      "S4-durable-dedupe",
+    ).count === 1,
+    "scheduled replay does not add a second durable turn",
+  );
+  ok(
+    store.findTurnInputByAdmissionKey(
+      "S4-durable-dedupe",
+      "owner-durable-a",
+      "scheduled_task_run_id",
+      "scheduled-run-durable",
+    )?.turnId === scheduledFirst.turn.turnId,
+    "scheduled run lookup is backed by its owner/session key",
+  );
+  ok(
+    store.findTurnInputByAdmissionKey(
+      "S4-durable-dedupe",
+      "owner-durable-b",
+      "scheduled_task_run_id",
+      "scheduled-run-durable",
+    ) === null,
+    "scheduled run lookup does not cross owner scope",
+  );
+  const scheduledOtherOwner = store.admitQueuedTurnInput("S4-durable-dedupe", {
+    turnId: "scheduled-turn-other-owner",
+    delivery: "queue",
+    userText: "scheduled other owner",
+  }, {
+    ownerScope: "owner-durable-b",
+    queueRecoveryEnvelope: scheduledEnvelope(
+      "scheduled-item-other-owner",
+      "scheduled-run-durable",
+    ),
+  });
+  ok(
+    scheduledOtherOwner.inserted === true,
+    "another owner may independently admit the same scheduled run id",
+  );
+  const scheduledOtherSession = store.admitQueuedTurnInput("S4-durable-dedupe-other", {
+    turnId: "scheduled-turn-other-session",
+    delivery: "queue",
+    userText: "scheduled other session",
+  }, {
+    ownerScope: "owner-durable-a",
+    queueRecoveryEnvelope: scheduledEnvelope(
+      "scheduled-item-other-session",
+      "scheduled-run-durable",
+    ),
+  });
+  ok(
+    scheduledOtherSession.inserted === true,
+    "another session may independently admit the same scheduled run id",
+  );
+
+  const externalEnvelope = (
+    queueItemId,
+    payloadHash,
+    commandId = "external-command-durable",
+  ) => createQueueRecoveryEnvelope({
+    item: { id: queueItemId, displayFiles: [] },
+    options: {
+      queueOrigin: "external_command",
+      externalCommand: {
+        commandId,
+        idempotencyKey: "external-idempotency-durable",
+        payloadHash,
+        desktopDeviceId: "desktop-durable",
+        mobileDeviceId: "mobile-durable",
+      },
+    },
+  });
+  const externalFirst = store.admitQueuedTurnInput("S4-external-dedupe", {
+    turnId: "external-turn-first",
+    delivery: "queue",
+    userText: "external first",
+  }, {
+    ownerScope: "owner-durable-a",
+    queueRecoveryEnvelope: externalEnvelope("external-item-1", "payload-a"),
+  });
+  const externalReplay = store.admitQueuedTurnInput("S4-external-dedupe", {
+    turnId: "external-turn-replay",
+    delivery: "queue",
+    userText: "external replay",
+  }, {
+    ownerScope: "owner-durable-a",
+    queueRecoveryEnvelope: externalEnvelope("external-item-2", "payload-a"),
+  });
+  ok(
+    externalFirst.inserted === true
+      && externalReplay.duplicate === true
+      && externalReplay.turn.turnId === externalFirst.turn.turnId,
+    "external command replay resolves to the durable original",
+  );
+  const externalConflict = store.admitQueuedTurnInput("S4-external-dedupe", {
+    turnId: "external-turn-conflict",
+    delivery: "queue",
+    userText: "external conflict",
+  }, {
+    ownerScope: "owner-durable-a",
+    queueRecoveryEnvelope: externalEnvelope("external-item-3", "payload-b"),
+  });
+  ok(
+    externalConflict.ok === false
+      && externalConflict.error === "IDEMPOTENCY_CONFLICT",
+    "external idempotency tuple cannot be reused with a different payload hash",
+  );
+  const externalDifferentCommand = store.admitQueuedTurnInput(
+    "S4-external-dedupe-other-session",
+    {
+      turnId: "external-turn-different-command",
+      delivery: "queue",
+      userText: "same idempotency under a different command id",
+    },
+    {
+      ownerScope: "owner-durable-a",
+      queueRecoveryEnvelope: externalEnvelope(
+        "external-item-different-command",
+        "payload-a",
+        "external-command-different",
+      ),
+    },
+  );
+  ok(
+    externalDifferentCommand.ok === true
+      && externalDifferentCommand.duplicate === true
+      && externalDifferentCommand.turn.turnId === externalFirst.turn.turnId
+      && externalDifferentCommand.turn.externalCommandId
+        === "external-command-durable",
+    "same device tuple/idempotency/hash reuses the original turn across command ids and sessions",
+  );
+  const externalOtherOwner = store.admitQueuedTurnInput(
+    "S4-external-dedupe-owner-b",
+    {
+      turnId: "external-turn-other-owner",
+      delivery: "queue",
+      userText: "same device tuple from another owner",
+    },
+    {
+      ownerScope: "owner-durable-b",
+      queueRecoveryEnvelope: externalEnvelope(
+        "external-item-other-owner",
+        "payload-a",
+        "external-command-other-owner",
+      ),
+    },
+  );
+  ok(
+    externalOtherOwner.ok === false
+      && externalOtherOwner.error === "EXTERNAL_IDENTITY_OWNERSHIP_MISMATCH"
+      && externalOtherOwner.turn == null,
+    "a device tuple already owned by another principal is rejected without leaking its turn",
+  );
+  const invalidQueueAdmission = store.admitQueuedTurnInput("S4-invalid-queue", {
+    turnId: "invalid-queue-turn",
+    delivery: "queue",
+    userText: "must not become memory-only work",
+  }, { ownerScope: "owner-durable-a", queueRecoveryEnvelope: null });
+  ok(
+    invalidQueueAdmission.ok === false
+      && invalidQueueAdmission.error === "QUEUE_RECOVERY_INVALID"
+      && store.db.get(
+        "SELECT COUNT(*) AS count FROM turn_inputs WHERE session_id = ?",
+        "S4-invalid-queue",
+      ).count === 0,
+    "queued store admission rejects a missing durable recovery envelope",
+  );
+
+  const cancellable = store.admitQueuedTurnInput("S4-cancel", {
+    turnId: "turn-cancel-admitted",
+    delivery: "queue",
+    userText: "cancel before dispatch",
+  }, {
+    ownerScope: "owner-terminal-a",
+    queueRecoveryEnvelope: scheduledEnvelope(
+      "scheduled-item-cancel",
+      "scheduled-run-cancel",
+    ),
+  });
+  const cancelled = store.markTurnInputTerminal({
+    ownerScope: "owner-terminal-a",
+    sessionId: "S4-cancel",
+    turnId: cancellable.turn.turnId,
+    dispatchAttemptId: null,
+    fromStatuses: ["admitted"],
+  }, "turn.interrupted", { errorCode: "QUEUE_CANCELLED" });
+  ok(
+    cancelled.ok === true
+      && cancelled.turn.status === "interrupted"
+      && store.pendingTurnInputs("S4-cancel", "owner-terminal-a").length === 0,
+    "durable queue cancellation wins before the in-memory item may be removed",
+  );
+
+  const dispatchingCancel = store.admitQueuedTurnInput("S4-cancel-race", {
+    turnId: "turn-cancel-dispatching",
+    delivery: "queue",
+    userText: "cancel after dispatch claim",
+  }, {
+    ownerScope: "owner-terminal-a",
+    queueRecoveryEnvelope: scheduledEnvelope(
+      "scheduled-item-cancel-race",
+      "scheduled-run-cancel-race",
+    ),
+  });
+  const dispatchingClaim = store.claimTurnInputDispatch(
+    "S4-cancel-race",
+    dispatchingCancel.turn.turnId,
+    {
+      ownerScope: "owner-terminal-a",
+      attemptId: "dispatch-cancel-race",
+    },
+  );
+  const cancelAfterDispatch = store.markTurnInputTerminal({
+    ownerScope: "owner-terminal-a",
+    sessionId: "S4-cancel-race",
+    turnId: dispatchingCancel.turn.turnId,
+    dispatchAttemptId: dispatchingClaim.attemptId,
+    fromStatuses: ["admitted"],
+  }, "turn.interrupted", { errorCode: "QUEUE_CANCELLED" });
+  ok(
+    cancelAfterDispatch.ok === false
+      && cancelAfterDispatch.outcomeUnknown === true
+      && store.getTurnInputByTurnId(
+        dispatchingCancel.turn.turnId,
+        "owner-terminal-a",
+      ).status === "dispatching",
+    "dispatching queue cancellation cannot pretend the engine outcome is known",
+  );
+
+  const terminalCas = store.admitTurnInput("S4-terminal-cas", {
+    turnId: "turn-terminal-cas",
+    delivery: "direct",
+    userText: "terminal race",
+  }, { ownerScope: "owner-terminal-a" });
+  const terminalClaim = store.claimTurnInputDispatch(
+    "S4-terminal-cas",
+    terminalCas.turnId,
+    {
+      ownerScope: "owner-terminal-a",
+      attemptId: "dispatch-terminal-cas",
+    },
+  );
+  store.markTurnInputPromoted(terminalCas.turnId, {
+    dispatchAttemptId: terminalClaim.attemptId,
+  });
+  const wrongTerminalOwner = store.markTurnInputTerminal({
+    ownerScope: "owner-terminal-b",
+    sessionId: "S4-terminal-cas",
+    turnId: terminalCas.turnId,
+    dispatchAttemptId: terminalClaim.attemptId,
+    fromStatuses: ["promoted"],
+  }, "turn.failed");
+  const wrongTerminalAttempt = store.markTurnInputTerminal({
+    ownerScope: "owner-terminal-a",
+    sessionId: "S4-terminal-cas",
+    turnId: terminalCas.turnId,
+    dispatchAttemptId: "dispatch-terminal-wrong",
+    fromStatuses: ["promoted"],
+  }, "turn.failed");
+  ok(
+    wrongTerminalOwner.ok === false && wrongTerminalAttempt.ok === false,
+    "terminal CAS rejects wrong owner and dispatch attempt",
+  );
+  const completedTerminal = store.markTurnInputTerminal({
+    ownerScope: "owner-terminal-a",
+    sessionId: "S4-terminal-cas",
+    turnId: terminalCas.turnId,
+    dispatchAttemptId: terminalClaim.attemptId,
+    fromStatuses: ["promoted", "accepted"],
+  }, "turn.completed");
+  const lateFailedTerminal = store.markTurnInputTerminal({
+    ownerScope: "owner-terminal-a",
+    sessionId: "S4-terminal-cas",
+    turnId: terminalCas.turnId,
+    dispatchAttemptId: terminalClaim.attemptId,
+    fromStatuses: ["promoted", "accepted"],
+  }, "turn.failed", { errorCode: "LATE_FAILURE" });
+  ok(
+    completedTerminal.ok === true
+      && completedTerminal.turn.status === "completed"
+      && lateFailedTerminal.ok === false
+      && store.getTurnInputByTurnId(
+        terminalCas.turnId,
+        "owner-terminal-a",
+      ).status === "completed",
+    "terminal CAS is immutable and first terminal wins",
+  );
 
   store.appendRuntimeEvents("S4", [
     {
@@ -206,8 +607,17 @@ try {
   ok(projectedConversation[0].role === "user" && projectedConversation[0].content === "生成报告", "projected user message is readable");
   ok(projectedConversation[1].role === "assistant" && projectedConversation[1].content === "已生成完整报告", "projected assistant message is readable");
   ok(projectedConversation[1].record.meta.projected === true, "projected assistant is marked for diagnostics");
-  const terminalInput = store.markTurnInputTerminal("turn_1", "turn.completed");
-  ok(terminalInput.status === "completed", "turn input terminal status follows terminal event");
+  const terminalInput = store.markTurnInputTerminal({
+    ownerScope: "owner-terminal-a",
+    sessionId: "S4",
+    turnId: "turn_1",
+    dispatchAttemptId: dispatchClaim.attemptId,
+    fromStatuses: ["promoted"],
+  }, "turn.completed");
+  ok(
+    terminalInput.ok === true && terminalInput.turn.status === "completed",
+    "turn input terminal status follows terminal event",
+  );
 
   store.appendRuntimeEvents("S4_STEER", [
     {
@@ -467,12 +877,40 @@ try {
   ok(openPartialAssistant?.record?.terminal === "turn.stalled", "open projected turn is recovered as stalled after restart");
   ok(openPartialAssistant?.record?.meta?.projected === true, "open projected turn is marked as recovered projection");
 
+  const crashClaim = store.admitTurnInput("S8", {
+    turnId: "turn_dispatching_at_shutdown",
+    delivery: "direct",
+    userText: "dispatch was claimed before shutdown",
+  }, { ownerScope: "owner-restart-state" });
+  ok(
+    store.claimTurnInputDispatch("S8", crashClaim.turnId, {
+      attemptId: "dispatch_before_shutdown",
+      startedAt: 5100,
+      ownerScope: "owner-restart-state",
+    }).ok === true,
+    "pre-shutdown dispatch claim is durable",
+  );
+
   // --- persistence across reopen ---
   store.close();
   const store2 = new MessageStore(dbPath, blobDir);
   ok(store2.count("S2") === 4, "data persists across reopen");
   const reopenedPartial = store2.getProjectedConversation("S7").find((message) => message.role === "assistant");
   ok(reopenedPartial?.content === "partial answer before crash", "streamed partial answer persists across reopen");
+  ok(
+    store2.getTurnInputByTurnId(
+      "turn_dispatching_at_shutdown",
+      "owner-restart-state",
+    )?.status === "outcome_unknown",
+    "reopen durably distinguishes an interrupted dispatch from a live dispatching attempt",
+  );
+  ok(
+    store2.claimTurnInputDispatch("S8", "turn_dispatching_at_shutdown", {
+      attemptId: "dispatch_after_shutdown",
+      ownerScope: "owner-restart-state",
+    }).ok === false,
+    "an outcome-unknown dispatch is never automatically reclaimed",
+  );
   store2.close();
 
   console.log(`\nmessage-store: ${passed} checks passed`);

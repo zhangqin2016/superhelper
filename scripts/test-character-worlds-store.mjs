@@ -117,13 +117,67 @@ try {
   const v2 = openDatabase(migratedDbPath);
   v2.migrate(MIGRATIONS.slice(0, 2));
   v2.run("INSERT INTO schema_meta (key, value) VALUES (?, ?)", "v2-probe", "preserved");
+  v2.run(
+    `INSERT INTO turn_inputs
+       (session_id, admitted_seq, turn_id, delivery, status, user_text,
+        files_json, metadata_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    "legacy-admission-session",
+    1,
+    "legacy-admission-turn",
+    "queue",
+    "admitted",
+    "legacy durable queue",
+    "[]",
+    JSON.stringify({
+      queueRecovery: {
+        schemaVersion: 1,
+        kind: "durable_queue",
+        queueItemId: "legacy-admission-item",
+        displayFiles: [],
+        options: {
+          scheduledTaskRunId: "legacy-scheduled-run",
+          externalCommand: {
+            commandId: "legacy-external-command",
+            idempotencyKey: "legacy-external-key",
+            payloadHash: "legacy-external-hash",
+          },
+        },
+      },
+    }),
+    1000,
+  );
   assert.equal(v2.pragma("user_version"), 2);
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v4 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 4);
+  check("migrations v3-v7 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 7);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
+    const turnInputColumns = new Set(
+      migratedStore.db.all("PRAGMA table_info(turn_inputs)").map((row) => row.name),
+    );
+    assert.equal(turnInputColumns.has("dispatch_attempt_id"), true);
+    assert.equal(turnInputColumns.has("dispatch_started_at"), true);
+    assert.equal(turnInputColumns.has("accepted_at"), true);
+    assert.equal(turnInputColumns.has("external_desktop_device_id"), true);
+    assert.equal(turnInputColumns.has("external_mobile_device_id"), true);
+    assert.equal(turnInputColumns.has("owner_scope"), true);
+    assert.equal(turnInputColumns.has("migration_status"), true);
+    assert.equal(turnInputColumns.has("scheduled_task_run_id"), true);
+    assert.equal(turnInputColumns.has("external_command_id"), true);
+    assert.equal(turnInputColumns.has("external_idempotency_key"), true);
+    assert.equal(turnInputColumns.has("external_payload_hash"), true);
+    const backfilled = migratedStore.db.get(
+      "SELECT * FROM turn_inputs WHERE turn_id = ?",
+      "legacy-admission-turn",
+    );
+    assert.equal(backfilled.owner_scope, "legacy_ambiguous");
+    assert.equal(backfilled.migration_status, "legacy_ambiguous");
+    assert.equal(backfilled.scheduled_task_run_id, "legacy-scheduled-run");
+    assert.equal(backfilled.external_command_id, "legacy-external-command");
+    assert.equal(backfilled.external_idempotency_key, "legacy-external-key");
+    assert.equal(backfilled.external_payload_hash, "legacy-external-hash");
   });
 
   freshStore = new MessageStore(freshDbPath, freshBlobDir);

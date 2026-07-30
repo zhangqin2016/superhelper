@@ -32,6 +32,7 @@ function registerAll(ctx) {
   ctx.transcriptStore = new TranscriptStore(sessionManager);
   ctx.turnArchive = new TurnArchive(sessionManager, { eventBus: ctx.eventBus });
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);
+  void ctx.turnOrchestrator.startRecoveredTurns();
   // Surface long async media generations even if their turn was torn down before the
   // result stdout was captured (the skill drops a result record on disk).
   try { require("./media-result-tracker").startMediaResultTracker(ctx); } catch { /* optional */ }
@@ -157,6 +158,7 @@ function registerAll(ctx) {
     const result = await require("./account-manager").loginWithSms(payload || {});
     if (!result?.ok) return result;
     ctx.scheduledTaskManager?.handlePrincipalChange?.();
+    ctx.turnOrchestrator?.handlePrincipalChange?.();
     try {
       const configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
         force: true,
@@ -189,6 +191,7 @@ function registerAll(ctx) {
     if (accountDisabled()) return { ok: true };
     const result = await require("./account-manager").logout();
     ctx.scheduledTaskManager?.handlePrincipalChange?.();
+    ctx.turnOrchestrator?.handlePrincipalChange?.();
     return result;
   });
 

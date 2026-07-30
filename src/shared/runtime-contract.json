@@ -32,6 +32,9 @@
     "user.committed",
     "turn.started",
     "turn.accepted",
+    "turn.dispatch_outcome_unknown",
+    "turn.dispatch_blocked",
+    "turn.paused",
     "turn.steered",
     "turn.self_heal_retry",
     "turn.self_heal_notice",
@@ -131,6 +134,21 @@
     },
     "turn.started": {
       "properties": { "text": "string" }
+    },
+    "turn.dispatch_outcome_unknown": {
+      "required": ["status", "automaticReplay", "manualRecoveryRequired"],
+      "properties": {
+        "status": "string",
+        "automaticReplay": "boolean",
+        "manualRecoveryRequired": "boolean"
+      }
+    },
+    "turn.dispatch_blocked": {
+      "required": ["reason", "automaticReplay"],
+      "properties": {
+        "reason": "string",
+        "automaticReplay": "boolean"
+      }
     },
     "turn.completed": {
       "properties": { "assistant": "string", "toolsSummary": "object" }

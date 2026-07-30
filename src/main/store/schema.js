@@ -14,6 +14,14 @@
  * sessions table later is purely additive.
  */
 
+const {
+  LEGACY_AMBIGUOUS_OWNER_SCOPE,
+  migrateLegacyTurnAdmissions,
+} = require("./turn-admission-migration");
+const {
+  migrateLegacyExternalIdentities,
+} = require("./turn-admission-mobile-migration");
+
 const MIGRATIONS = [
   // v1 — initial message store
   (db) => {
@@ -360,6 +368,74 @@ const MIGRATIONS = [
         WHERE original_hash IS NOT NULL;
       CREATE INDEX idx_character_revision_owner_canonical
         ON character_revisions(owner_scope, canonical_hash, created_at, id);
+    `);
+  },
+  // v5 - at-most-once durable turn dispatch state.
+  (db) => {
+    db.exec(`
+      ALTER TABLE turn_inputs ADD COLUMN dispatch_attempt_id TEXT;
+      ALTER TABLE turn_inputs ADD COLUMN dispatch_started_at INTEGER;
+      ALTER TABLE turn_inputs ADD COLUMN accepted_at INTEGER;
+    `);
+  },
+  // v6 - owner/session-scoped durable turn admission idempotency keys.
+  (db) => {
+    db.exec(`
+      ALTER TABLE turn_inputs
+        ADD COLUMN owner_scope TEXT NOT NULL DEFAULT '${LEGACY_AMBIGUOUS_OWNER_SCOPE}';
+      ALTER TABLE turn_inputs
+        ADD COLUMN migration_status TEXT NOT NULL DEFAULT 'legacy_ambiguous';
+      ALTER TABLE turn_inputs
+        ADD COLUMN migration_reason TEXT NOT NULL DEFAULT 'legacy_unclassified';
+      ALTER TABLE turn_inputs
+        ADD COLUMN scheduled_session_barrier INTEGER NOT NULL DEFAULT 0
+        CHECK (scheduled_session_barrier IN (0, 1));
+      ALTER TABLE turn_inputs ADD COLUMN scheduled_task_run_id TEXT;
+      ALTER TABLE turn_inputs ADD COLUMN external_command_id TEXT;
+      ALTER TABLE turn_inputs ADD COLUMN external_idempotency_key TEXT;
+      ALTER TABLE turn_inputs ADD COLUMN external_payload_hash TEXT;
+    `);
+    migrateLegacyTurnAdmissions(db);
+    db.exec(`
+      CREATE UNIQUE INDEX idx_turn_inputs_scheduled_admission
+        ON turn_inputs(owner_scope, session_id, scheduled_task_run_id)
+        WHERE scheduled_task_run_id IS NOT NULL;
+      CREATE UNIQUE INDEX idx_turn_inputs_external_admission
+        ON turn_inputs(owner_scope, session_id, external_command_id)
+        WHERE external_command_id IS NOT NULL;
+      CREATE INDEX idx_turn_inputs_owner_session_status
+        ON turn_inputs(owner_scope, migration_status, session_id, status, admitted_seq);
+      CREATE INDEX idx_turn_inputs_quarantine_scheduled
+        ON turn_inputs(owner_scope, session_id, scheduled_task_run_id)
+        WHERE scheduled_task_run_id IS NOT NULL
+          AND migration_status <> 'owned';
+      CREATE INDEX idx_turn_inputs_quarantine_external
+        ON turn_inputs(owner_scope, session_id, external_command_id)
+        WHERE external_command_id IS NOT NULL
+          AND migration_status <> 'owned';
+      CREATE INDEX idx_turn_inputs_quarantine_scheduled_session
+        ON turn_inputs(owner_scope, session_id, scheduled_session_barrier)
+        WHERE scheduled_session_barrier = 1
+          AND migration_status <> 'owned';
+    `);
+  },
+  // v7 - canonical Mobile Command device-tuple idempotency.
+  (db) => {
+    db.exec(`
+      ALTER TABLE turn_inputs ADD COLUMN external_desktop_device_id TEXT;
+      ALTER TABLE turn_inputs ADD COLUMN external_mobile_device_id TEXT;
+    `);
+    migrateLegacyExternalIdentities(db);
+    db.exec(`
+      CREATE UNIQUE INDEX idx_turn_inputs_external_idempotency
+        ON turn_inputs(
+          external_desktop_device_id,
+          external_mobile_device_id,
+          external_idempotency_key
+        )
+        WHERE external_desktop_device_id IS NOT NULL
+          AND external_mobile_device_id IS NOT NULL
+          AND external_idempotency_key IS NOT NULL;
     `);
   },
 ];

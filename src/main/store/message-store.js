@@ -149,6 +149,11 @@ class MessageStore {
   constructor(dbPath, blobDir) {
     this.db = openDatabase(dbPath);
     this.db.migrate(MIGRATIONS);
+    this.db.run(
+      `UPDATE turn_inputs
+       SET status = 'outcome_unknown'
+       WHERE status = 'dispatching' AND migration_status = 'owned'`,
+    );
     this.blobs = new BlobStore(blobDir);
   }
 
@@ -224,132 +229,6 @@ class MessageStore {
   /** Append one message; returns the stored envelope (with assigned id). */
   append(sessionId, message) {
     return this.db.transaction(() => this._insert(sessionId, message))();
-  }
-
-  _nextTurnInputSeq(sessionId) {
-    const row = this.db.get(
-      `SELECT COALESCE(MAX(admitted_seq), 0) + 1 AS next FROM turn_inputs WHERE session_id = ?`,
-      sessionId,
-    );
-    return row.next;
-  }
-
-  /**
-   * Persist a user-visible prompt before handing it to the engine. This is the
-   * Lily equivalent of OpenCode's admitted input row: it gives crash recovery
-   * and diagnostics a durable fact even if the engine is not ready yet.
-   */
-  admitTurnInput(sessionId, input = {}) {
-    const sid = String(sessionId || "");
-    const turnId = String(input.turnId || "");
-    if (!sid || !turnId) throw new Error("admitTurnInput requires sessionId and turnId");
-    return this.db.transaction(() => {
-      const existing = this.db.get(`SELECT * FROM turn_inputs WHERE turn_id = ?`, turnId);
-      if (existing) return this._hydrateTurnInput(existing);
-      const admittedSeq = this._nextTurnInputSeq(sid);
-      this.db.run(
-        `INSERT INTO turn_inputs
-           (session_id, admitted_seq, turn_id, delivery, status, user_text,
-            files_json, metadata_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        sid,
-        admittedSeq,
-        turnId,
-        input.delivery || "queue",
-        input.status || "admitted",
-        String(input.userText || ""),
-        stringifyJson(Array.isArray(input.files) ? input.files : [], []),
-        stringifyJson(input.metadata && typeof input.metadata === "object" ? input.metadata : {}, {}),
-        Number.isFinite(input.createdAt) ? input.createdAt : Date.now(),
-      );
-      return this.getTurnInputByTurnId(turnId);
-    })();
-  }
-
-  markTurnInputPromoted(turnId, patch = {}) {
-    const tid = String(turnId || "");
-    if (!tid) return null;
-    return this.db.transaction(() => {
-      const row = this.db.get(`SELECT * FROM turn_inputs WHERE turn_id = ?`, tid);
-      if (!row) return null;
-      const metadata = {
-        ...parseJson(row.metadata_json, {}),
-        ...(patch.metadata && typeof patch.metadata === "object" ? patch.metadata : {}),
-      };
-      this.db.run(
-        `UPDATE turn_inputs
-         SET status = ?, promoted_at = COALESCE(promoted_at, ?), metadata_json = ?
-         WHERE turn_id = ?`,
-        patch.status || "promoted",
-        Number.isFinite(patch.promotedAt) ? patch.promotedAt : Date.now(),
-        stringifyJson(metadata, {}),
-        tid,
-      );
-      return this.getTurnInputByTurnId(tid);
-    })();
-  }
-
-  markTurnInputTerminal(turnId, terminalType, patch = {}) {
-    const tid = String(turnId || "");
-    if (!tid) return null;
-    return this.db.transaction(() => {
-      const row = this.db.get(`SELECT * FROM turn_inputs WHERE turn_id = ?`, tid);
-      if (!row) return null;
-      const status = terminalType === "turn.completed"
-        ? "completed"
-        : terminalType === "turn.interrupted"
-          ? "interrupted"
-          : "failed";
-      const metadata = {
-        ...parseJson(row.metadata_json, {}),
-        ...(patch.metadata && typeof patch.metadata === "object" ? patch.metadata : {}),
-      };
-      this.db.run(
-        `UPDATE turn_inputs
-         SET status = ?, terminal_at = COALESCE(terminal_at, ?),
-             terminal_type = ?, error_code = ?, metadata_json = ?
-         WHERE turn_id = ?`,
-        status,
-        Number.isFinite(patch.terminalAt) ? patch.terminalAt : Date.now(),
-        terminalType || "",
-        patch.errorCode || patch.code || null,
-        stringifyJson(metadata, {}),
-        tid,
-      );
-      return this.getTurnInputByTurnId(tid);
-    })();
-  }
-
-  getTurnInputByTurnId(turnId) {
-    const row = this.db.get(`SELECT * FROM turn_inputs WHERE turn_id = ?`, String(turnId || ""));
-    return row ? this._hydrateTurnInput(row) : null;
-  }
-
-  pendingTurnInputs(sessionId) {
-    return this.db.all(
-      `SELECT * FROM turn_inputs
-       WHERE session_id = ? AND status IN ('admitted', 'promoted')
-       ORDER BY admitted_seq ASC`,
-      String(sessionId || ""),
-    ).map((row) => this._hydrateTurnInput(row));
-  }
-
-  _hydrateTurnInput(row) {
-    return {
-      sessionId: row.session_id,
-      admittedSeq: row.admitted_seq,
-      turnId: row.turn_id,
-      delivery: row.delivery,
-      status: row.status,
-      userText: row.user_text,
-      files: parseJson(row.files_json, []),
-      metadata: parseJson(row.metadata_json, {}),
-      createdAt: row.created_at,
-      promotedAt: row.promoted_at,
-      terminalAt: row.terminal_at,
-      terminalType: row.terminal_type || null,
-      errorCode: row.error_code || null,
-    };
   }
 
   appendRuntimeEvents(sessionId, events) {
@@ -1011,4 +890,12 @@ class MessageStore {
   }
 }
 
+const turnInputMethods = require("./turn-input-store");
+Object.defineProperties(
+  MessageStore.prototype,
+  Object.fromEntries(Object.entries(turnInputMethods).map(([name, value]) => [
+    name,
+    { configurable: true, writable: true, value },
+  ])),
+);
 module.exports = { MessageStore };

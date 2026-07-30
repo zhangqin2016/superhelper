@@ -27,7 +27,14 @@ function nonEmpty(value) {
 
 /** Validate the semantic envelope shape before any session work. */
 function validateEnvelope(envelope = {}) {
-  for (const field of ["commandId", "idempotencyKey", "payloadHash", "lilySessionId", "mobileDeviceId"]) {
+  for (const field of [
+    "commandId",
+    "idempotencyKey",
+    "payloadHash",
+    "lilySessionId",
+    "desktopDeviceId",
+    "mobileDeviceId",
+  ]) {
     if (!nonEmpty(envelope[field])) return { ok: false, code: "COMMAND_ENVELOPE_INVALID", field };
   }
   const mode = envelope.mode === "steer" ? "steer" : "queue";
@@ -68,7 +75,7 @@ function decideExternalCommandAdmission({
     if (existingRecord.payloadHash !== envelope.payloadHash) {
       // Same key, different payload: a rejected admission, never a silent
       // overwrite of the original command.
-      return { outcome: "payload_conflict", code: "COMMAND_PAYLOAD_CONFLICT", record: existingRecord };
+      return { outcome: "payload_conflict", code: "IDEMPOTENCY_CONFLICT", record: existingRecord };
     }
     return { outcome: "idempotent_hit", record: existingRecord, response: admissionResponse(existingRecord) };
   }
@@ -125,6 +132,13 @@ function admissionResponse(record) {
     downgradeReason: record.downgradeReason,
     queueItemId: record.queueItemId || null,
     turnId: record.turnId || null,
+    outcomeUnknown: Boolean(record.outcomeUnknown),
+    dispatchAttemptId: record.dispatchAttemptId || null,
+    dispatchStartedAt: record.dispatchStartedAt || null,
+    engineAcceptedAt: record.engineAcceptedAt || null,
+    terminalAt: record.terminalAt || null,
+    terminalType: record.terminalType || null,
+    terminalError: record.terminalError || null,
   };
 }
 

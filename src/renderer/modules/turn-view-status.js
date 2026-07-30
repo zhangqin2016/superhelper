@@ -251,6 +251,8 @@ export function liveElapsedSeconds(liveTurn, now = Date.now()) {
 }
 
 export function resolveLiveStatusActivity(liveTurn, translate) {
+  // A paused turn (principal switch) is frozen — say so instead of "working".
+  if (liveTurn.phase === "paused") return translate("turn.status.paused");
   // A running tool → a stable verb for its TYPE (no streaming args).
   const running = runningToolStatusLabel(liveTurn, translate);
   if (running) return running;

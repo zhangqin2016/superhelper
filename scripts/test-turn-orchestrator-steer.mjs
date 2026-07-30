@@ -76,6 +76,14 @@ function putBusy() {
   const st = orch._state("s1");
   st.phase = "running";
   st.turnId = "turn_live";
+  st.turnGeneration = (st.turnGeneration || 0) + 1;
+  st.finalizing = false;
+  st.admittedTurnInput = {
+    turnId: "turn_live",
+    ownerScope: "owner-steer",
+    status: "promoted",
+  };
+  st.dispatchAttemptId = "dispatch-steer-live";
   st.queue = [];
   runner.busy = true;
   messages.length = 0;
@@ -133,7 +141,54 @@ if (runner.steerCalls.length !== 0) throw new Error("kill-switch must NOT call t
 delete process.env.LILY_ENABLE_STEER;
 console.log("steer: kill-switch fallback ok");
 
-// --- 4. runtime control: native Lily skill failure auto-steers once ----------
+// --- 4. finalizing is no longer an active steer claim; it durably queues -----
+putBusy();
+runner.steerCalls.length = 0;
+const finalizingState = orch._state("s1");
+finalizingState.phase = "finalizing";
+finalizingState.finalizing = true;
+res = await orch.sendUserMessage("s1", "finalizing follow-up", [], {
+  mode: "steer",
+});
+if (!res?.queued || !res.steerFellBack) {
+  throw new Error(`finalizing steer must fall back to queue: ${JSON.stringify(res)}`);
+}
+if (runner.steerCalls.length !== 0) {
+  throw new Error("finalizing steer must never reach runner.steer");
+}
+console.log("steer: finalizing fallback ok");
+
+// --- 5. delayed accepted old steer is orphan-safe under the real validator ---
+putBusy();
+let resolveDelayedSteer;
+runner.steerResult = new Promise((resolve) => {
+  resolveDelayedSteer = resolve;
+});
+const delayed = orch.sendUserMessage("s1", "delayed old steer", [], {
+  mode: "steer",
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+const replacementState = orch._state("s1");
+replacementState.turnId = "turn_replacement";
+replacementState.turnGeneration += 1;
+replacementState.admittedTurnInput = {
+  turnId: "turn_replacement",
+  ownerScope: "owner-steer",
+  status: "promoted",
+};
+replacementState.dispatchAttemptId = "dispatch-steer-replacement";
+resolveDelayedSteer(true);
+res = await delayed;
+if (!res?.steerOrphaned || res.turnId !== "turn_live") {
+  throw new Error(`delayed steer must remain attributed to its old claim: ${JSON.stringify(res)}`);
+}
+if (eventsFor("turn.steer_orphaned").length !== 0) {
+  throw new Error("orphan handling must not emit an unregistered runtime event");
+}
+runner.steerResult = true;
+console.log("steer: delayed orphan validator path ok");
+
+// --- 6. runtime control: native Lily skill failure auto-steers once ----------
 delete process.env.LILY_ENABLE_STEER;
 putBusy();
 runner.steerResult = true;

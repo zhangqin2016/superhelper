@@ -18,14 +18,24 @@ function scheduledQueueCapacityBlock(ctx, item) {
 
 function cancelQueuedScheduledRun(orchestrator, sessionId, runId) {
   const state = orchestrator._state(sessionId);
-  const index = state.queue.findIndex((item) => item.options?.scheduledTaskRunId === runId);
-  if (index < 0) return { ok: false, error: "NOT_FOUND" };
-  const [item] = state.queue.splice(index, 1);
-  orchestrator._completeQueuedScheduledRun(item, "turn.interrupted", {
-    errorCode: "ACCOUNT_CHANGED",
-  });
-  orchestrator._emitQueue(sessionId);
-  return { ok: true, sessionId, queueLength: state.queue.length };
+  if (!state.queue.some((item) => item.options?.scheduledTaskRunId === runId)) {
+    return { ok: false, error: "NOT_FOUND" };
+  }
+  const result = orchestrator._removeQueuedItemsDurably(
+    sessionId,
+    (item) => item.options?.scheduledTaskRunId === runId,
+    "ACCOUNT_CHANGED",
+  );
+  if (result.rejected.length) {
+    return {
+      ok: false,
+      error: result.rejected[0].result?.outcomeUnknown
+        ? "DISPATCH_OUTCOME_UNKNOWN"
+        : "QUEUE_CANCEL_FAILED",
+      queueLength: result.queueLength,
+    };
+  }
+  return { ok: true, sessionId, queueLength: result.queueLength };
 }
 
 module.exports = { cancelQueuedScheduledRun, scheduledQueueCapacityBlock, scheduledTaskTurnOptions };

@@ -194,6 +194,24 @@ const fakeWindow = {
 const messages = [];
 const session = { id: "s1", projectId: "p1", messages };
 const runner = new FakeRunner();
+const durableTurns = new Map();
+let admittedSeq = 0;
+function admitTestTurn(sessionId, input) {
+  const turn = {
+    sessionId,
+    admittedSeq: ++admittedSeq,
+    turnId: input.turnId,
+    delivery: input.delivery || "direct",
+    status: "admitted",
+    userText: input.userText || "",
+    files: input.files || [],
+    metadata: input.metadata || {},
+    ownerScope: "profile:tool-call-rescue",
+    dispatchAttemptId: null,
+  };
+  durableTurns.set(turn.turnId, turn);
+  return turn;
+}
 const ctx = {
   get mainWindow() { return fakeWindow; },
   eventBus: new RuntimeEventBus(() => fakeWindow),
@@ -207,6 +225,36 @@ const ctx = {
     setAgentResumeId: () => {},
     claimAgentResumeId: () => ({ ok: true, evictedSessionIds: [] }),
     clearAgentResumeId: () => true,
+    resolveTurnOwnerScope: () => ({
+      ok: true,
+      error: null,
+      ownerScope: "profile:tool-call-rescue",
+    }),
+    admitTurnInput: (sessionId, input) => admitTestTurn(sessionId, input),
+    admitTurnInputFromSource: (sessionId, input) => (
+      admitTestTurn(sessionId, input)
+    ),
+    markTurnInputTerminal: (claim, terminalType) => {
+      const turn = durableTurns.get(claim.turnId);
+      if (
+        !turn
+        || turn.sessionId !== claim.sessionId
+        || turn.ownerScope !== claim.ownerScope
+        || turn.dispatchAttemptId !== claim.dispatchAttemptId
+        || !claim.fromStatuses.includes(turn.status)
+      ) return { ok: false, reason: "TERMINAL_CLAIM_MISMATCH", turn };
+      const terminal = {
+        ...turn,
+        status: terminalType === "turn.completed"
+          ? "completed"
+          : terminalType === "turn.interrupted"
+            ? "interrupted"
+            : "failed",
+        terminalType,
+      };
+      durableTurns.set(terminal.turnId, terminal);
+      return { ok: true, turn: terminal };
+    },
   },
   projectManager: { find: () => ({ id: "p1", path: process.cwd() }) },
   runnerPool: {

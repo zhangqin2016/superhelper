@@ -117,13 +117,19 @@ async function guardTurnStart(orchestrator, session, text, files, opts = {}) {
   try {
     return await orchestrator._startTurn(session, text, files, opts);
   } catch (err) {
+    if (err?.code === "TURN_DISPATCH_CRASH_INJECTION") throw err;
     log.error(
       "turn start threw; recovering session: session=%s error=%s",
       session?.id,
       err?.stack || err?.message || err,
     );
     await recoverStuckTurn(orchestrator, session.id, { errorCode: "TURN_START_FAILED", err });
-    return { ok: false, error: "TURN_START_FAILED", detail: friendlyStartFailureDetail(err) };
+    const error = err?.code === "OWNER_SCOPE_UNAVAILABLE"
+      ? "OWNER_SCOPE_UNAVAILABLE"
+      : err?.code === "TURN_ADMISSION_FAILED"
+        ? "TURN_ADMISSION_FAILED"
+        : "TURN_START_FAILED";
+    return { ok: false, error, detail: friendlyStartFailureDetail(err) };
   }
 }
 

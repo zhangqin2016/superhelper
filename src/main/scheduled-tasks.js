@@ -2,8 +2,9 @@
 
 const crypto = require("node:crypto");
 const { scheduledTasksPath, scheduledTasksDbPath } = require("./config");
+const { ownerScopeFromPrincipal, resolveCurrentPrincipal } = require("./character-worlds/owner-scope");
 const { ScheduledTaskStore, ACTIVE_RUN_STATUSES } = require("./store/scheduled-task-store");
-const { dispatchScheduledRun, interruptForeignScheduledRun } = require("./scheduled-task-dispatch");
+const { dispatchScheduledRun, interruptForeignScheduledRun, reconcileScheduledRunWithTurn, reconcileScheduledRunsWithDurableTurns } = require("./scheduled-task-dispatch");
 const {
   DEFAULT_MAX_CONCURRENT_RUNS,
   executionLoad,
@@ -25,22 +26,8 @@ const {
   DEFAULT_PERMISSION_MODE,
 } = require("./schedule-parser");
 const { parseScheduledTaskDraftWithModel } = require("./scheduled-task-ai-draft");
-
 const DEFAULT_LEASE_MS = 30 * 60 * 1000;
-
-function defaultPrincipal() {
-  try {
-    const status = require("./account-manager").accountStatus();
-    if (status?.loggedIn && status.user?.id) return `user:${status.user.id}`;
-  } catch {
-    // Offline startup still has a stable device identity.
-  }
-  try {
-    return `device:${require("./service-client").getDeviceId()}`;
-  } catch {
-    return "device:unavailable";
-  }
-}
+const defaultPrincipal = () => resolveCurrentPrincipal();
 
 class ScheduledTaskManager {
   constructor(options = {}) {
@@ -58,14 +45,16 @@ class ScheduledTaskManager {
     this.leaseMs = Math.max(1000, Number(options.leaseMs) || DEFAULT_LEASE_MS);
     this.store = null;
   }
-
   load() {
     this.store ||= new ScheduledTaskStore(this.options.dbPath || scheduledTasksDbPath());
-    const migration = this.store.importLegacy(
-      this.options.legacyPath || scheduledTasksPath(),
-      (task) => this._normalizeTask(task),
-      this._principal(),
-    );
+    const principal = this._principal();
+    const migration = principal
+      ? this.store.importLegacy(
+          this.options.legacyPath || scheduledTasksPath(),
+          (task) => this._normalizeTask(task),
+          principal,
+        )
+      : { ok: false, error: "OWNER_SCOPE_UNAVAILABLE", imported: 0 };
     const recovered = this.store.recoverExpired(
       nowIso(),
       this._leaseOwner,
@@ -81,24 +70,22 @@ class ScheduledTaskManager {
     if (recovered.length) this._reconcileTaskStates(recovered);
     return migration;
   }
-
   start(ctx) {
     this.ctx = ctx;
     this.stop();
+    reconcileScheduledRunsWithDurableTurns(this.ctx, this.runs, this.tasks, this.store, this._principal());
     this._timer = setInterval(() => void this.tick(), TICK_MS);
     this._timer.unref?.();
     this._dispatchRecoveredQueuedRuns();
     this._startupTimer = setTimeout(() => void this.tick({ startup: true }), 1200);
     this._startupTimer.unref?.();
   }
-
   stop() {
     if (this._timer) clearInterval(this._timer);
     if (this._startupTimer) clearTimeout(this._startupTimer);
     this._timer = null;
     this._startupTimer = null;
   }
-
   close() { this.stop(); this.store?.close(); this.store = null; }
   save() {
     if (!this.store) return;
@@ -161,13 +148,15 @@ class ScheduledTaskManager {
     if (!prompt) return { ok: false, error: "EMPTY" };
     if (!payload.sessionId || !payload.projectId) return { ok: false, error: "MISSING_SCOPE" };
     if (!parsed.ok || !parsed.nextRunAt) return { ok: false, error: parsed.error || "INVALID_SCHEDULE" };
+    const ownerPrincipal = this._principal();
+    if (!ownerPrincipal) return { ok: false, error: "OWNER_SCOPE_UNAVAILABLE" };
     const scopeError = this._validateScope(payload.sessionId, payload.projectId);
     if (scopeError) return { ok: false, error: scopeError };
     const now = nowIso();
     const id = `sched_${crypto.randomUUID()}`;
     const task = this._normalizeTask({
       id,
-      ownerPrincipal: this._principal(),
+      ownerPrincipal,
       projectId: payload.projectId,
       originSessionId: payload.sessionId,
       executionSessionId: payload.sessionId,
@@ -269,11 +258,13 @@ class ScheduledTaskManager {
 
   handlePrincipalChange() {
     const current = this._principal();
+    if (!current) return { ok: false, error: "OWNER_SCOPE_UNAVAILABLE" };
     for (const run of this.runs) {
       if (!ACTIVE_RUN_STATUSES.has(run.status) || run.ownerPrincipal === current) continue;
-      interruptForeignScheduledRun(this.ctx, run, (...args) => this.completeRunById(...args));
+      interruptForeignScheduledRun(this.ctx, run);
     }
     void this.tick();
+    return { ok: true };
   }
 
   completeRunById(runId, terminalType, payload = {}) {
@@ -294,13 +285,16 @@ class ScheduledTaskManager {
     const run = this.runs.find((item) => item.id === runId && item.status === "queued");
     return run ? this.completeRunById(run.id, terminalType, payload) : false;
   }
-
-  markRunStarted(runId, turnId) {
+  markRunStarted(runId, turnId, dispatchAttemptId = null, dispatchStartedAt = null) {
     const run = this.runs.find((item) => item.id === runId && item.status === "queued");
     if (!run) return false;
     run.status = "running";
     run.startedAt = nowIso();
     run.turnId = turnId || null;
+    run.dispatchAttemptId = dispatchAttemptId || null;
+    run.dispatchStartedAt = dispatchAttemptId && Number.isFinite(dispatchStartedAt)
+      ? dispatchStartedAt
+      : null;
     run.leaseExpiresAt = new Date(Date.now() + this.leaseMs).toISOString();
     const task = this.tasks.find((item) => item.id === run.taskId);
     if (task) {
@@ -310,7 +304,6 @@ class ScheduledTaskManager {
     this.store?.saveRun(run);
     return true;
   }
-
   canStartRun(runId) {
     const run = this.runs.find((item) => item.id === runId && ACTIVE_RUN_STATUSES.has(item.status));
     if (!run) return false;
@@ -349,6 +342,7 @@ class ScheduledTaskManager {
     dispatchScheduledRun({
       ctx: this.ctx, task, run, nonInteractive: opts.nonInteractive,
       markRunStarted: (runId, turnId) => this.markRunStarted(runId, turnId),
+      reconcileRun: reconcileScheduledRunWithTurn,
       finishRun: (target, type, payload) => this._finishRun(target, type, payload),
       saveRun: (target) => this.store?.saveRun(target),
       onSettled: () => {
@@ -420,20 +414,23 @@ class ScheduledTaskManager {
       queueItemId: null,
       error: null,
       manual,
+      dispatchAttemptId: null, dispatchStartedAt: null, engineAcceptedAt: null,
     };
   }
 
   _normalizeTask(task) {
     if (!task || typeof task !== "object") return null;
+    const ownerPrincipal = String(task.ownerPrincipal || this._principal() || "").trim();
     const schedule = normalizeScheduleSpec(task.schedule);
     const projectId = String(task.projectId || task.workspaceId || "").trim();
     const originSessionId = String(task.originSessionId || task.sessionId || "").trim();
     const prompt = safeText(task.prompt, 4000);
-    if (!projectId || !originSessionId || !prompt || !schedule) return null;
+    if (!ownerScopeFromPrincipal(ownerPrincipal)
+      || !projectId || !originSessionId || !prompt || !schedule) return null;
     const enabled = task.enabled !== false;
     return {
       id: String(task.id || "").trim() || `sched_${crypto.randomUUID()}`,
-      ownerPrincipal: String(task.ownerPrincipal || this._principal()),
+      ownerPrincipal,
       workspaceId: projectId,
       projectId,
       sessionId: originSessionId,
@@ -465,7 +462,12 @@ class ScheduledTaskManager {
   }
 
   _principal() {
-    return String(this._resolvePrincipal() || "device:unavailable");
+    try {
+      const principal = String(this._resolvePrincipal() || "").trim();
+      return ownerScopeFromPrincipal(principal) ? principal : null;
+    } catch {
+      return null;
+    }
   }
   _findOwnedTask(taskId, scope = {}) {
     const task = this.tasks.find((item) => item.id === String(taskId || "") && item.ownerPrincipal === this._principal());

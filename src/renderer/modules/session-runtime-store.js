@@ -7,6 +7,7 @@ import {
   setActivityLabel,
 } from "./turn-activity-policy.js";
 import { appendTimelineNotice } from "./turn-notice-timeline.js";
+import { applyTurnPaused, applyTurnSteered } from "./turn-lifecycle-projection.js";
 import { applyProcessEventToTimeline } from "./turn-process-activity-timeline.js";
 import { resetTimelineFields } from "./turn-reset-timeline.js";
 import {
@@ -790,14 +791,12 @@ export function applyRuntimeEvent(event, opts = {}) {
     case "assistant.message_stop":
       closeStreamingBlocks(live, event.ts || Date.now());
       break;
-    case "turn.steered": {
-      appendTimelineNotice(live, {
-        code: "turnSteered",
-        level: "info",
-        detail: event.payload?.text ? String(event.payload.text).trim() : "",
-      }, event.ts || Date.now());
+    case "turn.steered":
+      applyTurnSteered(live, event);
       break;
-    }
+    case "turn.paused":
+      applyTurnPaused(runtime, live, event);
+      break;
     default:
       if (TERMINAL_TYPES.has(event.type)) {
         live.phase = "done";

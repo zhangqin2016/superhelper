@@ -50,9 +50,11 @@ function createTurnRecoveryRuntime(options = {}) {
     if (!lastUser) return { ok: false, error: "NO_USER_MESSAGE" };
     transcriptStore?.removeLastAssistantMessage?.(sessionId);
     if (typeof sendUserMessage !== "function") return { ok: false, error: "SEND_UNAVAILABLE" };
+    const sourceTurnId = lastUser.turnId || lastUser.record?.turnId || null;
     return sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
       recordUser: false,
       spawnEngine: true,
+      sourceTurnId,
     });
   }
 
@@ -147,6 +149,10 @@ function createTurnRecoveryRuntime(options = {}) {
       const content = documentRecovery
         ? documentRecovery.content
         : String(lastUser.content || "").trim();
+      const sourceTurnId = failure?.supersedesTurnId
+        || lastUser?.turnId
+        || lastUser?.record?.turnId
+        || null;
       const recipes = modelRecipes();
       const hint = strategy.kind === "tool_call_rescue"
         ? rescue.correctiveHintFor(recipes)
@@ -169,6 +175,7 @@ function createTurnRecoveryRuntime(options = {}) {
           skipPreflight: !strategy.preflight,
           expectedArtifactPaths: documentRecovery?.paths || [],
           documentDeliveryRecovery: Boolean(documentRecovery),
+          sourceTurnId,
           recovery: {
             kind: strategy.kind,
             guidance: hint || "",

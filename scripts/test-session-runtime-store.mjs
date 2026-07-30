@@ -1027,4 +1027,50 @@ if (!zqAssistants[0].record?.resultBlocks?.length) {
   throw new Error("the surviving single assistant must keep the richer local record");
 }
 
+// turn.paused (principal switch mid-preflight) must close the live projection
+// — phase back to idle, composer unblocked, visible paused marker — while the
+// SAME turnId stays revivable: a later re-dispatch's turn.started re-creates
+// the live turn and its stream/terminal events apply normally.
+store.applyRuntimeBatch({
+  sessionId: "s_paused",
+  batchSeq: 1,
+  events: [
+    { id: "p1", type: "turn.started", sessionId: "s_paused", turnId: "turn_paused", seq: 1, ts: 7000, source: "test", payload: {} },
+    { id: "p2", type: "turn.paused", sessionId: "s_paused", turnId: "turn_paused", seq: 2, ts: 7001, source: "test", payload: { paused: true, principalChanged: true, resumable: true, errorCode: "PRINCIPAL_CHANGED" } },
+  ],
+});
+runtime = store.getRuntimeSession("s_paused");
+if (runtime.phase !== "idle" || runtime.turnId !== null) {
+  throw new Error(`turn.paused must release the session to idle: phase=${runtime.phase} turnId=${runtime.turnId}`);
+}
+if (!store.canSend("s_paused")) {
+  throw new Error("turn.paused must unblock the composer");
+}
+if (runtime.liveTurn?.phase !== "paused") {
+  throw new Error(`turn.paused must mark the live turn paused: ${runtime.liveTurn?.phase}`);
+}
+const pausedNotice = (runtime.liveTurn?.timeline || []).find(
+  (entry) => entry.kind === "notice" && entry.code === "turnPaused",
+);
+if (!pausedNotice) {
+  throw new Error("turn.paused must leave a visible paused notice in the timeline");
+}
+store.applyRuntimeBatch({
+  sessionId: "s_paused",
+  batchSeq: 2,
+  events: [
+    { id: "p3", type: "turn.started", sessionId: "s_paused", turnId: "turn_paused", seq: 3, ts: 7002, source: "test", payload: {} },
+    { id: "p4", type: "assistant.delta", sessionId: "s_paused", turnId: "turn_paused", seq: 4, ts: 7003, source: "test", payload: { text: "resumed answer" } },
+    { id: "p5", type: "assistant.final", sessionId: "s_paused", turnId: "turn_paused", seq: 5, ts: 7004, source: "test", payload: { assistant: "resumed answer" } },
+    { id: "p6", type: "turn.completed", sessionId: "s_paused", turnId: "turn_paused", seq: 6, ts: 7005, source: "test", payload: { assistant: "resumed answer" } },
+  ],
+});
+runtime = store.getRuntimeSession("s_paused");
+if (runtime.phase !== "idle" || runtime.liveTurn?.phase !== "done") {
+  throw new Error(`the revived turn must complete normally: phase=${runtime.phase} live=${runtime.liveTurn?.phase}`);
+}
+if (!runtime.committedMessages.some((m) => m.role === "assistant" && m.content === "resumed answer")) {
+  throw new Error("the revived turn's completion must commit the assistant message");
+}
+
 console.log("session-runtime-store: ok");
