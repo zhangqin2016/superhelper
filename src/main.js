@@ -27,6 +27,7 @@ let mainWindow = null;
 let runnerPoolRef = null;
 let sessionManagerRef = null;
 let scheduledTaskManagerRef = null;
+let characterWorldsServiceRef = null;
 let shouldFocusMainWindowWhenReady = false;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
@@ -166,6 +167,45 @@ app.whenReady().then(async () => {
   const gcRemoved = sessionManager.gcOrphanEngineSessions();
   if (gcRemoved) console.info("[engine] cleaned", gcRemoved, "orphan opencode session cache(s)");
 
+  // Character Worlds (Phase 1): one service over the existing MessageStore.
+  // Import sources are limited to the user's home via the pinned source
+  // authority; exports go through save-dialog-approved broker reservations.
+  // Owner scope is always derived in this process — never taken from the
+  // renderer. Service state is immutable/cache-only (no global "current"
+  // character). Construction must NEVER block startup: a corrupt/locked
+  // messages.db leaves the feature disabled (IPC fails closed with
+  // CHARACTER_WORLDS_UNAVAILABLE, the turn orchestrator runs native Lily).
+  let characterWorldsService = null;
+  let characterWorldsRepository = null;
+  try {
+    const characterWorlds = require("./main/character-worlds/service");
+    const {
+      resolveCharacterOwnerScope,
+    } = require("./main/character-worlds/owner-scope");
+    const {
+      DialogDestinationBroker,
+    } = require("./main/character-worlds/dialog-destination-broker");
+    characterWorldsRepository = sessionManager._store().characterWorlds();
+    characterWorldsService = new characterWorlds.CharacterWorldsService({
+      messageStore: sessionManager._store(),
+      repository: characterWorldsRepository,
+      sourceAuthority: new characterWorlds.CharacterSourceAuthority({
+        roots: [require("./main/config").userHome()],
+      }),
+      destinationWriter: new characterWorlds.CharacterDestinationWriter({
+        broker: new DialogDestinationBroker(),
+        ownsBroker: true,
+      }),
+      ownsDestinationWriter: true,
+      resolveOwnerScope: async () => resolveCharacterOwnerScope(),
+    });
+    characterWorldsServiceRef = characterWorldsService;
+  } catch (err) {
+    characterWorldsService = null;
+    characterWorldsRepository = null;
+    console.warn("[character-worlds] disabled:", err?.message || err);
+  }
+
   const stagingManager = new FileStagingManager();
   const runnerPool = new SessionRunnerPool();
   runnerPoolRef = runnerPool;
@@ -241,6 +281,8 @@ app.whenReady().then(async () => {
     stagingManager,
     runnerPool,
     scheduledTaskManager,
+    characterWorldsService,
+    characterWorldsRepository,
   };
 
   ipcHandlers.registerAll(appContext);
@@ -316,6 +358,12 @@ app.on("before-quit", () => {
   scheduledTaskManagerRef?.close();
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
+  // Best-effort and intentionally NOT awaited: before-quit cannot block on the
+  // async drain of in-flight imports/exports and worker/broker helpers. An
+  // export whose commit outcome is unknown at quit is reconciled on next
+  // launch (writer/broker reconciliation), and each broker helper's own
+  // emergencyCleanup covers the helper-process side.
+  try { characterWorldsServiceRef?.close()?.catch?.(() => {}); } catch { /* best effort */ }
   // Backstop: reap the shared opencode serve + its whole tool-process tree even
   // if a session leaked its view. This is what keeps closing the app from
   // leaving node/python/engine children alive that lock the install dir (the

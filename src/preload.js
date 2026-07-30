@@ -147,6 +147,36 @@ contextBridge.exposeInMainWorld("assistantClient", {
   setSessionPermission: (sessionId, modeId) =>
     ipcRenderer.invoke("session:set-permission", { sessionId, modeId }),
 
+  // Character Worlds: narrow facade — payloads are whitelisted field-by-field
+  // so owner scope, account IDs, and filesystem paths can never ride along
+  // (design spec §15). Owner is derived in the main process on every call.
+  characterWorlds: Object.freeze({
+    listCharacters: () => ipcRenderer.invoke("character:list"),
+    getCharacter: (characterId) => ipcRenderer.invoke("character:get", { characterId }),
+    previewCharacterImport: () => ipcRenderer.invoke("character:import-preview"),
+    commitCharacterImport: (payload = {}) =>
+      ipcRenderer.invoke("character:import-commit", {
+        previewToken: payload?.previewToken,
+        duplicateResolution: payload?.duplicateResolution,
+      }),
+    exportCharacter: (revisionId) => ipcRenderer.invoke("character:export", { revisionId }),
+    getSessionCharacterBinding: (sessionId) =>
+      ipcRenderer.invoke("session-character:get-binding", { sessionId }),
+    setSessionCharacterBinding: (payload = {}) =>
+      ipcRenderer.invoke("session-character:set-binding", {
+        sessionId: payload?.sessionId,
+        expectedBindingVersion: payload?.expectedBindingVersion,
+        mode: payload?.mode,
+        characterRevisionId: payload?.characterRevisionId,
+      }),
+    getSessionCharacterEvents: (sessionId, options = {}) =>
+      ipcRenderer.invoke("session-character:get-events", {
+        sessionId,
+        afterVersion: options?.afterVersion,
+        limit: options?.limit,
+      }),
+  }),
+
   pickFiles: () => ipcRenderer.invoke("files:pick"),
   getPathForFile: (file) => {
     try {
