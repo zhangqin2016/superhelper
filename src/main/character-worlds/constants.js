@@ -6,6 +6,7 @@ const CHARACTER_COMPATIBILITY_PROFILE_VERSION = 1;
 const CHARACTER_COMPATIBILITY_PROFILE = "lily-character-worlds-v1";
 const CHARACTER_ASSET_LIMITS_VERSION = 1;
 const CHARACTER_CARD_PARSER_LIMITS_VERSION = 4;
+const CHARACTER_MACRO_LIMITS_VERSION = 1;
 
 const MAX_CHARACTER_CANONICAL_BYTES = 8 * 1024 * 1024;
 const MAX_CHARACTER_SOURCE_BYTES = 32 * 1024 * 1024;
@@ -27,6 +28,28 @@ const MAX_CHARACTER_PNG_PAYLOAD_BYTES = 8 * 1024 * 1024;
 const MAX_CHARACTER_PNG_PIXELS = 40_000_000;
 const DEFAULT_CHARACTER_ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
 const CHARACTER_BLOB_RECONCILE_CURSOR_KEY = "character_worlds.blob_reconcile_cursor.v1";
+const DEFAULT_MACRO_LIMITS = Object.freeze({
+  version: CHARACTER_MACRO_LIMITS_VERSION,
+  maxInputBytes: 256 * 1024,
+  maxOutputBytes: 512 * 1024,
+  maxTokens: 65_536,
+  maxNesting: 8,
+  maxExpansions: 1_000,
+  maxArgs: 64,
+  maxArgBytes: 64 * 1024,
+  maxTotalArgBytes: 256 * 1024,
+  maxNameBytes: 64,
+  maxContextStringBytes: 256 * 1024,
+  maxContextTotalBytes: 512 * 1024,
+  maxSeedBytes: 4 * 1024,
+  maxDiceCount: 100,
+  maxDiceSides: 1_000_000,
+  maxDiceModifierAbs: 1_000_000,
+  maxRandomDrawsPerChoice: 64,
+  maxOperations: 1_000_000,
+  maxElapsedMs: 1_000,
+  maxWarnings: 128,
+});
 const DEFAULT_IMPORT_LIMITS = Object.freeze({
   version: CHARACTER_CARD_PARSER_LIMITS_VERSION,
   maxContainerBytes: MAX_CHARACTER_SOURCE_BYTES,
@@ -80,6 +103,8 @@ module.exports = {
   CHARACTER_COMPATIBILITY_PROFILE,
   CHARACTER_ASSET_LIMITS_VERSION,
   CHARACTER_CARD_PARSER_LIMITS_VERSION,
+  CHARACTER_MACRO_LIMITS_VERSION,
+  DEFAULT_MACRO_LIMITS,
   DEFAULT_IMPORT_LIMITS,
   MAX_CHARACTER_CANONICAL_BYTES,
   MAX_CHARACTER_SOURCE_BYTES,
