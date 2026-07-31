@@ -241,7 +241,7 @@ class CharacterWorldsRepository {
   deleteWorldBookCheckpointsForSession(ownerScope, sessionId) {
     return deleteWorldBookCheckpointsForSession(this, ownerScope, sessionId);
   }
-  createCharacter({ ownerScope, canonical, source, assets = [] }) {
+  createCharacter({ ownerScope, canonical, source, assets = [], characterBookRevisionId = null }) {
     const owner = requiredString(ownerScope, "ownerScope");
     const assetRefs = this.assetLifecycle.prepare(assets);
     const prepared = prepareRevision(canonical, source, "created", assetRefs);
@@ -252,6 +252,7 @@ class CharacterWorldsRepository {
       this.db.transaction(() => {
         this._insertRevision({
           id: revisionId, entityId, owner, parentId: null, number: 1, prepared, createdAt,
+          characterBookRevisionId,
         });
         this.db.run(
           `INSERT INTO character_entities

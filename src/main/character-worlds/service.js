@@ -17,6 +17,7 @@ const {
   importError,
 } = require("./import-file-authority");
 const { CharacterImportWorkerPool } = require("./import-worker-pool");
+const { CharacterAuthoringService } = require("./authoring-service");
 const { stableJson } = require("./persistence-codec");
 
 const DEFAULT_PREVIEW_TTL_MS = 10 * 60 * 1000;
@@ -94,6 +95,13 @@ class CharacterWorldsService {
     ));
     this.previews = new Map();
     this.previewBytes = 0;
+    // One validated authoring entry point shared by IPC (P2B-4) now and the
+    // agent draft path later (§13.2). INTENTIONAL: authoring holds no
+    // previews/workers/signals, so it stays usable after close().
+    this.authoring = new CharacterAuthoringService({
+      repository: resolvedRepository,
+      resolveOwnerScope,
+    });
     this.closed = false;
     this.closeComplete = false;
     this.lifecycleEpoch = 0;

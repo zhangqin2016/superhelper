@@ -105,7 +105,7 @@ Explicitly OUT of Phase 2B:
 - Modify: `src/main/character-worlds/service.js`
 - Create: `scripts/test-character-authoring.mjs`
 
-- [ ] **Step 1: Write failing authoring tests**
+- [x] **Step 1: Write failing authoring tests**
   Create character/persona/world-book from blank canonical input (validated
   through the same models as import); edit = new revision with parent pin
   (book pin propagates); revision history list (newest-first, bounded);
@@ -113,12 +113,12 @@ Explicitly OUT of Phase 2B:
   provenance); duplicate entity; archive/unarchive semantics per the current
   model (archive only, per Phase 1); delete = archive (no hard delete while
   references exist — §18 GC rule); all owner-scoped; all failures coded.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Implement the authoring service**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Implement the authoring service**
   One validated entry point reused by IPC now and the agent later; every
   mutation transactional; revision/blob discipline reused.
-- [ ] **Step 4: Run authoring + import regressions**
-- [ ] **Step 5: Commit** — `feat: add validated character authoring apis`
+- [x] **Step 4: Run authoring + import regressions**
+- [x] **Step 5: Commit** — `feat: add validated character authoring apis`
 
 ## Task P2B-4: Authoring IPC + Library UI
 
