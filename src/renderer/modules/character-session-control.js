@@ -19,6 +19,7 @@ import {
   effectiveCharacterMode,
 } from "./character-control-model.js";
 import { monogram, renderCharacterImportPreview } from "./character-import-preview.js";
+import { openCharacterLibrary } from "./character-library.js";
 
 export {
   initialCharacterControlState,
@@ -389,6 +390,12 @@ export function initCharacterSessionControl() {
   });
 
   $("characterImportBtn")?.addEventListener("click", () => void startImportPreview());
+  // The library manager (Phase 2B) replaces the disabled Phase 2 placeholder:
+  // it opens over the whole window, so the popover closes first.
+  $("characterManageBtn")?.addEventListener("click", () => {
+    closePopover();
+    void openCharacterLibrary();
+  });
   $("characterImportPreview")?.addEventListener("click", (event) => {
     if (event.target.closest("#characterImportCommitBtn")) void commitImport();
     else if (event.target.closest("#characterImportCancelBtn")) dispatch({ type: "import.dismissed" });

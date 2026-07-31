@@ -132,24 +132,24 @@ Explicitly OUT of Phase 2B:
 - Create: `scripts/test-character-authoring-ipc.mjs`
 - Create: `scripts/test-character-library.cjs`
 
-- [ ] **Step 1: Write failing IPC tests**
+- [x] **Step 1: Write failing IPC tests**
   Guarded mutation channels (create/update-revision/restore/duplicate/
   archive) with trusted sender, owner derivation, payload bounds, stable
   codes; policy gate: authoring follows the same availability as import;
   no renderer owner scope.
-- [ ] **Step 2: Write failing Electron DOM tests**
+- [x] **Step 2: Write failing Electron DOM tests**
   Library manager (replacing the disabled Phase 2 label): search + tag
   filter, create blank card, edit with explicit revision creation, revision
   history + restore, duplicate, archive, export, import report display
   (preserved vs unsupported inert counts); accessibility per §13.4.
-- [ ] **Step 3: Run tests, verify they fail**
-- [ ] **Step 4: Implement IPC channels + preload methods**
-- [ ] **Step 5: Implement the library UI**
+- [x] **Step 3: Run tests, verify they fail**
+- [x] **Step 4: Implement IPC channels + preload methods**
+- [x] **Step 5: Implement the library UI**
   Opened from the session control popover (replacing the disabled item) and
   listing characters/personas/books read-first; editing is field-level with
   explicit revision creation; no marketing text; existing tokens/radii.
-- [ ] **Step 6: Run IPC + DOM + renderer regressions**
-- [ ] **Step 7: Commit** — `feat: add character library management`
+- [x] **Step 6: Run IPC + DOM + renderer regressions**
+- [x] **Step 7: Commit** — `feat: add character library management`
 
 ## Task P2B-5: Switching Timeline Events + Update-Available
 
@@ -159,7 +159,7 @@ Explicitly OUT of Phase 2B:
 - Modify: `src/renderer/i18n/locales/{zh-CN,en,ar}.json`
 - Create: `scripts/test-character-switch-events.mjs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   A committed binding change emits a conversation-visible timeline notice
   (switched to character X / returned to native Lily — names resolved
   main-side, never raw card data); events are binding-version ordered and

@@ -305,7 +305,7 @@
               <div id="characterList" class="character-list" role="menu" data-i18n-aria-label="character.popoverTitle" aria-label="对话角色"></div>
               <div class="character-popover-footer">
                 <button id="characterImportBtn" type="button" class="character-footer-btn" data-i18n="character.importCard">导入角色卡</button>
-                <button id="characterManageBtn" type="button" class="character-footer-btn" disabled data-i18n="character.manageLibrary">角色库管理（第二阶段）</button>
+                <button id="characterManageBtn" type="button" class="character-footer-btn" data-i18n="character.manageLibrary">角色库管理</button>
               </div>
             </div>
             <div id="characterImportPreview" class="character-import-preview" hidden></div>
@@ -315,6 +315,30 @@
       </section>
 
     </main>
+
+    <div id="characterLibraryModal" class="modal-panel" hidden>
+      <section class="character-library-card" role="dialog" aria-modal="true" aria-labelledby="characterLibraryTitle">
+        <header class="character-library-header">
+          <h2 id="characterLibraryTitle" data-i18n="character.library.title">角色库</h2>
+          <button id="characterLibraryCloseBtn" type="button" class="character-popover-close" data-i18n-aria-label="composer.close" aria-label="关闭">×</button>
+        </header>
+        <div class="character-library-toolbar">
+          <div id="characterLibraryTabs" class="character-library-tabs" role="tablist" data-i18n-aria-label="character.library.title" aria-label="角色库">
+            <button type="button" role="tab" data-library-tab="characters" aria-selected="true" data-i18n="character.library.tabCharacters">角色</button>
+            <button type="button" role="tab" data-library-tab="personas" aria-selected="false" data-i18n="character.library.tabPersonas">设定</button>
+            <button type="button" role="tab" data-library-tab="books" aria-selected="false" data-i18n="character.library.tabBooks">世界书</button>
+          </div>
+          <input id="characterLibrarySearch" type="search" data-i18n-placeholder="character.library.searchPlaceholder" placeholder="搜索名称…" data-i18n-aria-label="character.library.searchPlaceholder" aria-label="搜索名称…" />
+          <input id="characterLibraryTagFilter" type="text" data-i18n-placeholder="character.library.tagPlaceholder" placeholder="按标签筛选…" data-i18n-aria-label="character.library.tagPlaceholder" aria-label="按标签筛选…" />
+          <button id="characterLibraryImportBtn" type="button" data-i18n="character.importCard">导入角色卡</button>
+          <button id="characterLibraryCreateBtn" type="button" data-i18n="character.library.createCharacter">新建角色</button>
+        </div>
+        <div id="characterLibraryNotice" class="character-library-notice" hidden></div>
+        <div id="characterLibraryList" class="character-library-list"></div>
+        <div id="characterLibraryDetail" class="character-library-detail" hidden></div>
+        <div id="characterLibraryLive" class="character-sr-only" aria-live="polite"></div>
+      </section>
+    </div>
 
     <div id="scheduledTaskModal" class="modal-panel" hidden>
       <section class="modal-card scheduled-task-card" role="dialog" aria-modal="true" aria-labelledby="scheduledTaskTitle">

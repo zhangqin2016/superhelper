@@ -185,6 +185,46 @@ contextBridge.exposeInMainWorld("assistantClient", {
     listWorldBooks: () => ipcRenderer.invoke("world-book:list"),
     getWorldBook: (worldBookId) => ipcRenderer.invoke("world-book:get", { worldBookId }),
     getWorldBookRevision: (revisionId) => ipcRenderer.invoke("world-book:get-revision", { revisionId }),
+    // Authoring (Phase 2B): guarded mutations on the validated domain API plus
+    // revision history/canonical reads for the library editor. Payloads are
+    // whitelisted field-by-field; owner scope is derived in main on every call
+    // and the rollout policy gate is enforced main-side.
+    createCharacter: (payload = {}) =>
+      ipcRenderer.invoke("character:create", { canonical: payload?.canonical }),
+    updateCharacterRevision: (payload = {}) =>
+      ipcRenderer.invoke("character:update-revision", {
+        characterId: payload?.characterId,
+        expectedBaseRevisionId: payload?.expectedBaseRevisionId,
+        canonical: payload?.canonical,
+      }),
+    restoreCharacterRevision: (payload = {}) =>
+      ipcRenderer.invoke("character:restore-revision", {
+        characterId: payload?.characterId,
+        revisionId: payload?.revisionId,
+        expectedBaseRevisionId: payload?.expectedBaseRevisionId,
+      }),
+    duplicateCharacter: (characterId) => ipcRenderer.invoke("character:duplicate", { characterId }),
+    archiveCharacter: (characterId) => ipcRenderer.invoke("character:archive", { characterId }),
+    getCharacterRevision: (revisionId) => ipcRenderer.invoke("character:get-revision", { revisionId }),
+    getCharacterHistory: (characterId, options = {}) =>
+      ipcRenderer.invoke("character:history", { characterId, limit: options?.limit }),
+    createPersona: (payload = {}) =>
+      ipcRenderer.invoke("persona:create", { canonical: payload?.canonical }),
+    updatePersonaRevision: (payload = {}) =>
+      ipcRenderer.invoke("persona:update-revision", {
+        personaId: payload?.personaId,
+        expectedBaseRevisionId: payload?.expectedBaseRevisionId,
+        canonical: payload?.canonical,
+      }),
+    archivePersona: (personaId) => ipcRenderer.invoke("persona:archive", { personaId }),
+    getPersonaRevision: (revisionId) => ipcRenderer.invoke("persona:get-revision", { revisionId }),
+    getPersonaHistory: (personaId, options = {}) =>
+      ipcRenderer.invoke("persona:history", { personaId, limit: options?.limit }),
+    createWorldBook: (payload = {}) =>
+      ipcRenderer.invoke("world-book:create", { canonical: payload?.canonical }),
+    archiveWorldBook: (worldBookId) => ipcRenderer.invoke("world-book:archive", { worldBookId }),
+    getWorldBookHistory: (worldBookId, options = {}) =>
+      ipcRenderer.invoke("world-book:history", { worldBookId, limit: options?.limit }),
   }),
 
   pickFiles: () => ipcRenderer.invoke("files:pick"),
