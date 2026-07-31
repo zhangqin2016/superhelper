@@ -34,6 +34,12 @@ const CHANNELS = {
   getSessionCharacterBinding: "session-character:get-binding",
   setSessionCharacterBinding: "session-character:set-binding",
   getSessionCharacterEvents: "session-character:get-events",
+  // Phase 2A (WB-6): read-only world-book inspection. In-depth book behavior
+  // lives in test-character-world-book-ipc.mjs; this contract test tracks the
+  // channel/facade surface.
+  listWorldBooks: "world-book:list",
+  getWorldBook: "world-book:get",
+  getWorldBookRevision: "world-book:get-revision",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
 
@@ -178,14 +184,14 @@ try {
   // Load the real preload against the electron mock to capture the bridge.
   require("../src/preload.js");
 
-  await check("exactly the eight contract channels are registered", async () => {
+  await check("exactly the eleven contract channels are registered", async () => {
     assert.deepEqual([...handlers.keys()].sort(), Object.values(CHANNELS).sort());
     for (const channel of Object.values(CHANNELS)) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} handler registered`);
     }
   });
 
-  await check("preload exposes one frozen facade with exactly the eight methods", async () => {
+  await check("preload exposes one frozen facade with exactly the eleven methods", async () => {
     const api = exposed.assistantClient;
     assert(api, "assistantClient exposed");
     assert(api.characterWorlds, "characterWorlds facade exposed");
@@ -207,6 +213,9 @@ try {
       sessionId: "session-a", expectedBindingVersion: 0, mode: "native",
     });
     await api.getSessionCharacterEvents("session-a", { afterVersion: 2, limit: 10 });
+    await api.listWorldBooks();
+    await api.getWorldBook("book-1");
+    await api.getWorldBookRevision("book-rev-1");
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
       [
@@ -218,6 +227,9 @@ try {
         "session-character:get-binding",
         "session-character:set-binding",
         "session-character:get-events",
+        "world-book:list",
+        "world-book:get",
+        "world-book:get-revision",
       ],
     );
     const serialized = JSON.stringify(invokeCalls);
@@ -225,8 +237,11 @@ try {
     assert(!/outputPath|destinationPath|sourcePath|filePath/.test(serialized), "bridge never forwards paths");
     assert.equal(invokeCalls[0].payload, undefined, "listCharacters takes no payload");
     assert.equal(invokeCalls[2].payload, undefined, "previewCharacterImport takes no payload");
+    assert.equal(invokeCalls[8].payload, undefined, "listWorldBooks takes no payload");
     assert.deepEqual(invokeCalls[1].payload, { characterId: "char-1" });
     assert.deepEqual(invokeCalls[4].payload, { revisionId: "rev-1" });
+    assert.deepEqual(invokeCalls[9].payload, { worldBookId: "book-1" });
+    assert.deepEqual(invokeCalls[10].payload, { revisionId: "book-rev-1" });
   });
 
   await check("untrusted senders and remote frames are rejected on every channel", async () => {
@@ -628,6 +643,9 @@ try {
           sessionId: "session-a", expectedBindingVersion: 1, mode: "native",
         },
         "session-character:get-events": { sessionId: "session-a" },
+        "world-book:list": {},
+        "world-book:get": { worldBookId: "book-1" },
+        "world-book:get-revision": { revisionId: "book-rev-1" },
       };
       for (const [channel, payload] of Object.entries(payloads)) {
         const result = await handlers.get(channel)(trustedEvent(), payload);

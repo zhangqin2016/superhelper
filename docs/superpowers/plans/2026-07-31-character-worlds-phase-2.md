@@ -213,20 +213,21 @@ Explicitly OUT of Phase 2A (later phases):
 - Modify: `docs/character-worlds-phase-1-acceptance.md`
 - Create: `scripts/test-character-world-book-ipc.mjs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Read-only book inspection (list/get with entry summaries and compatibility
   reports) through the trusted bridge; no renderer mutation paths for books in
   Phase 2A; capability gate covers world-book failure modes (missing/corrupt
-  book, resolver error, over budget) → byte-equal native.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Add read-only IPC + preload methods**
-- [ ] **Step 4: Extend gate + stress + runbook**
+  book, resolver error, over budget) → byte-equal no-book compiled body (spec §16).
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Add read-only IPC + preload methods**
+- [x] **Step 4: Extend gate + stress + runbook**
   Add world-book guards to `character-worlds-isolation`; stress ops include
   book import/activation; acceptance runbook gains world-book manual checks
   (embedded book import, activation visible in trace, kill switch covers
   books).
-- [ ] **Step 5: Run the full matrix**
-- [ ] **Step 6: Commit** — `feat: expose world book inspection and gate`
+- [x] **Step 5: Run the full matrix**
+- [x] **Step 6: Commit** — `feat: expose world book inspection and gate`
+  (deferred: change delivered uncommitted at the implementer's request)
 
 ## Phase 2A Exit Criteria
 

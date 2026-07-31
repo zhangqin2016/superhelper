@@ -2,6 +2,12 @@
 
 const { dialog, ipcMain } = require("electron");
 
+const {
+  summarizeWorldBookDetail,
+  summarizeWorldBookEntity,
+  summarizeWorldBookRevision,
+} = require("./character-worlds/world-book-inspection");
+
 // Character Worlds IPC boundary (design spec §15/§16, HANDOFF.md §5/§6).
 //
 // The renderer can never supply owner/account IDs, raw source paths, or
@@ -30,10 +36,12 @@ const CARD_TOO_LARGE_CODES = new Set([
 ]);
 // Renderer-safe error whitelist: only codes from the character-worlds domain
 // vocabulary (audited in src/main/character-worlds — every coded throw lives in
-// these five families) plus the two host-level codes. Anything else (SQLite
+// these six families) plus the two host-level codes. Anything else (SQLite
 // codes, library errors, future non-domain codes) collapses to
 // CHARACTER_WORLDS_UNAVAILABLE so no internal detail crosses the bridge.
-const DOMAIN_CODE_PREFIXES = Object.freeze(["CHARACTER_", "IMPORT_", "EXPORT_", "CARD_", "PNG_"]);
+const DOMAIN_CODE_PREFIXES = Object.freeze([
+  "CHARACTER_", "IMPORT_", "EXPORT_", "CARD_", "PNG_", "WORLD_BOOK_",
+]);
 const DOMAIN_CODES_EXTRA = new Set([
   "NOT_A_CHARACTER_CARD",
   "OWNER_SCOPE_UNAVAILABLE",
@@ -353,6 +361,79 @@ function registerCharacterWorldsHandlers(ctx) {
         ok: true,
         events: repo.getBindingEvents(session.sessionId, session.ownerScope, options),
       };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  // --- read-only world-book inspection (Phase 2A, Task WB-6) -----------------
+  // Summaries are whitelisted in character-worlds/world-book-inspection.js:
+  // ids, counts, enums, and hashes only — entry content, activation keys,
+  // preserved payloads, and decorator raw lines never cross the bridge. Like
+  // character list/get these reads stay available under a disabled rollout
+  // policy (the policy gates selection/import only). Phase 2A ships NO book
+  // mutation channel.
+
+  ipcMain.handle("world-book:list", async (event, payload) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const owner = resolveOwnerScope(ctx);
+    const repo = repository();
+    if (!owner || !repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    try {
+      const entities = repo.listWorldBooks(owner);
+      const worldBooks = entities.map((entity) => {
+        let revision = null;
+        try {
+          revision = entity?.currentRevisionId
+            ? repo.getWorldBookRevision(owner, entity.currentRevisionId)
+            : null;
+        } catch {
+          revision = null; // an unreadable revision degrades the row, not the list
+        }
+        return summarizeWorldBookEntity(entity, revision);
+      });
+      return { ok: true, worldBooks };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  ipcMain.handle("world-book:get", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const owner = resolveOwnerScope(ctx);
+    const repo = repository();
+    if (!owner || !repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    if (!validId(payload?.worldBookId)) return failure("INVALID_INPUT");
+    try {
+      const entity = repo.getWorldBook(owner, payload.worldBookId);
+      if (!entity) return failure("WORLD_BOOK_NOT_FOUND");
+      let revision = null;
+      try {
+        revision = entity.currentRevisionId
+          ? repo.getWorldBookRevision(owner, entity.currentRevisionId)
+          : null;
+      } catch {
+        revision = null; // missing/corrupt revision degrades to metadata-free detail
+      }
+      return { ok: true, worldBook: summarizeWorldBookDetail(entity, revision) };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  ipcMain.handle("world-book:get-revision", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const owner = resolveOwnerScope(ctx);
+    const repo = repository();
+    if (!owner || !repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    if (!validId(payload?.revisionId)) return failure("INVALID_INPUT");
+    try {
+      const revision = repo.getWorldBookRevision(owner, payload.revisionId);
+      if (!revision) return failure("WORLD_BOOK_REVISION_NOT_FOUND");
+      return { ok: true, revision: summarizeWorldBookRevision(revision) };
     } catch (error) {
       return mapDomainError(error);
     }

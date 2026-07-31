@@ -165,7 +165,7 @@
       "id": "character-worlds-isolation",
       "protects": "Character card parsing, session binding, or context compilation changes a native turn, crosses conversations, displaces Lily guidance, exposes private card data, or lets imported executable behavior run.",
       "baseline": "Native conversations send byte-equivalent Lily/OpenCode prompt bodies with no card parsing or extra model request; character bindings are local, optional, immutable-revision pinned, conversation-scoped, owner-scoped, and snapshotted in the admission transaction; character context is a bounded lower-authority system suffix after the protected Lily prefix.",
-      "failureFallback": "Disabled, missing, corrupt, oversized, or hostile cards, bindings, revisions, macros, compilation, budgets, and providers without safe system context fail open to the byte-identical native turn with exactly one dispatch; retries, recovery, queue promotion, and steer inherit by trusted source turn id instead of rereading the binding; the LILY_CHARACTER_WORLDS=0 kill switch and signed rollout policy restore native behavior without touching stored data; imported scripts, plugins, regex scripts, and unknown macros never execute.",
+      "failureFallback": "Disabled, missing, corrupt, oversized, or hostile cards, bindings, revisions, macros, compilation, budgets, and providers without safe system context fail open to the byte-identical native turn with exactly one dispatch; a missing, corrupt, resolver-failing, or over-budget world book never breaks a bound character turn — the character compiles to the byte-identical no-book body (§16) and read-only book inspection stays available; retries, recovery, queue promotion, and steer inherit by trusted source turn id instead of rereading the binding; the LILY_CHARACTER_WORLDS=0 kill switch and signed rollout policy restore native behavior without touching stored data; imported scripts, plugins, regex scripts, and unknown macros never execute.",
       "tests": [
         "scripts/test-character-worlds-store.mjs",
         "scripts/test-character-card-parser.mjs",
@@ -173,7 +173,13 @@
         "scripts/test-character-context-injection.mjs",
         "scripts/test-character-worlds-capability-gate.mjs",
         "scripts/test-character-worlds-concurrency-stress.mjs",
-        "scripts/test-character-worlds-policy.mjs"
+        "scripts/test-character-worlds-policy.mjs",
+        "scripts/test-character-world-book-store.mjs",
+        "scripts/test-character-world-book-import.mjs",
+        "scripts/test-character-world-book-activation.mjs",
+        "scripts/test-character-world-book-compile.mjs",
+        "scripts/test-character-world-book-decorators.mjs",
+        "scripts/test-character-world-book-ipc.mjs"
       ]
     }
   ]

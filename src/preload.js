@@ -175,6 +175,11 @@ contextBridge.exposeInMainWorld("assistantClient", {
         afterVersion: options?.afterVersion,
         limit: options?.limit,
       }),
+    // Read-only world-book inspection (Phase 2A): whitelisted summaries only —
+    // no raw book content and no mutation surface crosses the bridge.
+    listWorldBooks: () => ipcRenderer.invoke("world-book:list"),
+    getWorldBook: (worldBookId) => ipcRenderer.invoke("world-book:get", { worldBookId }),
+    getWorldBookRevision: (revisionId) => ipcRenderer.invoke("world-book:get-revision", { revisionId }),
   }),
 
   pickFiles: () => ipcRenderer.invoke("files:pick"),

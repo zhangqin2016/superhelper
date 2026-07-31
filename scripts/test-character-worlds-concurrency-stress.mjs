@@ -10,6 +10,11 @@
  *   bind A / admit turn / bind B / queue scheduled turn / steer / retry /
  *   restart-reopen database / archive character / read snapshot
  *
+ * Phase 2A (WB-6) adds world-book operations to the same seeded mix:
+ *
+ *   import embedded book (dedup + archived-book reimport) / activate a pinned
+ *   book per turn / checkpoint read+write / rewind invalidation
+ *
  * Invariants (any violation fails the test):
  * - every admitted turn resolves only its exact stored session/revision/
  *   version: its pinned snapshot equals the binding state linearized at
@@ -19,7 +24,13 @@
  * - mutable queued snapshots fail (admission metadata and queue recovery are
  *   deep-frozen; mutation attempts throw);
  * - source inheritance (steer/retry) never re-reads the current binding and
- *   cross-session sources fall back to the native fallback snapshot.
+ *   cross-session sources fall back to the native fallback snapshot;
+ * - world-book checkpoints persist ONLY on the successful-finalization path
+ *   (failed turns and stale-version writes leave the durable row untouched),
+ *   durable checkpoint versions advance monotonically by exactly one per
+ *   committed turn (sticky seq monotonicity), activation replays are
+ *   byte-identical for identical inputs, and rewind purges every checkpoint
+ *   row for the rewound session.
  *
  * Determinism: the same seed drives every choice (the production counter PRNG
  * from macro-prng.js); the whole simulation runs TWICE and the normalized
@@ -40,12 +51,20 @@ const OWNER_COUNT = 4;
 const SESSIONS_PER_OWNER = 8;
 const SESSION_COUNT = OWNER_COUNT * SESSIONS_PER_OWNER;
 const CHARS_PER_OWNER = 3;
+const BOOKS_PER_OWNER = 2;
 
 const { MessageStore } = require("../src/main/store/message-store.js");
 const SessionManager = require("../src/main/session-manager.js");
 const {
   CharacterWorldsRepository,
 } = require("../src/main/character-worlds/repository.js");
+const {
+  importEmbeddedWorldBook,
+} = require("../src/main/character-worlds/world-book-repository.js");
+const {
+  compileTurnWorldCharacterContext,
+  persistTurnWorldBookCheckpoint,
+} = require("../src/main/character-worlds/turn-world-book.js");
 const {
   createCounterPrng,
   uniformInt,
@@ -130,6 +149,40 @@ function runSimulation() {
       chars.forEach((char, slot) => revisionSlot.set(char.revisionId, [ownerIdx, slot]));
     });
 
+    // books[ownerIdx][slot] = { entityId, revisionId } — the fixed books the
+    // activation/checkpoint ops pin to characters (one sticky constant entry
+    // so successful turns produce meaningful timed checkpoints).
+    const books = owners.map((owner, ownerIdx) => (
+      Array.from({ length: BOOKS_PER_OWNER }, (_, slot) => {
+        const created = repository.createWorldBook({
+          ownerScope: owner,
+          canonical: {
+            schemaVersion: 1,
+            name: `StressBook-${ownerIdx}-${slot}`,
+            entries: [
+              {
+                id: "e-sticky",
+                content: `sticky lore ${ownerIdx}/${slot}`,
+                activation: { constant: true, stickyMessages: 5 },
+                insertion: { position: "before_character" },
+              },
+              {
+                id: "e-keyed",
+                content: `keyed lore ${ownerIdx}/${slot}`,
+                activation: { primaryKeys: [`stress-key-${ownerIdx}-${slot}`] },
+              },
+            ],
+          },
+          source: sourceOf(`book-${ownerIdx}-${slot}`),
+        });
+        return { entityId: created.entity.id, revisionId: created.revision.id };
+      })
+    ));
+    const bookRevisionSlot = new Map(); // book revisionId -> [ownerIdx, slot]
+    books.forEach((ownerBooks, ownerIdx) => {
+      ownerBooks.forEach((book, slot) => bookRevisionSlot.set(book.revisionId, [ownerIdx, slot]));
+    });
+
     const projectManager = {
       projects: [{ id: "project-stress", path: tmp }],
       activeProjectId: "project-stress",
@@ -162,6 +215,10 @@ function runSimulation() {
     manager.activeSessionId = sessions[0].id;
     manager._messageStore = store;
     manager._ensureImported = () => {};
+    // Session-metadata persistence is irrelevant to this stress (all checks
+    // run against the durable store); the rewind path calls save() after
+    // deleting messages.
+    manager.save = () => {};
 
     // Model of the world the real stack must match.
     // binding[i]: null (never bound) | { mode:"native", version } |
@@ -169,6 +226,12 @@ function runSimulation() {
     const binding = sessions.map(() => null);
     // admitted[i]: [{ turnId, snap }] with snap = null | ["ready", v, slot, profile] | ["fallback"]
     const admitted = sessions.map(() => []);
+    // checkpointModel: `${sessionIdx}:${bookSlot}` -> { version } — the
+    // linearized model of the durable world_book_checkpoints rows.
+    const checkpointModel = new Map();
+    // importedBooks[ownerIdx]: [{ entityId, revisionId, signature, archived }]
+    const importedBooks = owners.map(() => []);
+    let bookImportSeq = 0;
     let restartCount = 0;
 
     function normalizeSnapshot(snapshot, hasKey) {
@@ -540,6 +603,218 @@ function runSimulation() {
       journal.push(["read", sessionIdx, current.bindingVersion, current.mode]);
     }
 
+    // --- world-book ops (Phase 2A, WB-6) -------------------------------------
+
+    function importBook(owner, signature) {
+      return repository.db.transaction(() => importEmbeddedWorldBook(repository, {
+        ownerScope: owner,
+        canonical: {
+          schemaVersion: 1,
+          name: `ImportedBook-${signature}`,
+          entries: [{
+            id: "e-1",
+            content: `imported lore ${signature}`,
+            activation: { constant: true },
+          }],
+        },
+        source: sourceOf(signature),
+      }))();
+    }
+
+    function opBookImport(ownerIdx, opIndex) {
+      const owner = owners[ownerIdx];
+      const candidates = importedBooks[ownerIdx];
+      const variant = pick(3);
+      if (variant === 0 || candidates.length === 0) {
+        bookImportSeq += 1;
+        const signature = `imported-${ownerIdx}-${bookImportSeq}`;
+        const imported = importBook(owner, signature);
+        assert.equal(imported.reused, false, `wb-import#${opIndex}: a fresh book creates a new revision`);
+        candidates.push({
+          entityId: imported.entityId,
+          revisionId: imported.revisionId,
+          signature,
+          archived: false,
+        });
+        journal.push(["wb-import", ownerIdx, "fresh", candidates.length - 1]);
+        return;
+      }
+      const target = candidates[pick(candidates.length)];
+      if (variant === 1) {
+        // Re-importing identical content dedups against the LIVE entity with
+        // the same revision hash; an archived book never acquires new pins.
+        const live = candidates.find((book) => book.signature === target.signature && !book.archived) || null;
+        const again = importBook(owner, target.signature);
+        if (live) {
+          assert.equal(again.reused, true, `wb-import#${opIndex}: identical book dedups against the live entity`);
+          assert.equal(again.revisionId, live.revisionId, `wb-import#${opIndex}: dedup reuses the exact revision`);
+          assert.equal(again.entityId, live.entityId, `wb-import#${opIndex}: dedup reuses the exact entity`);
+          journal.push(["wb-import", ownerIdx, "dedup", candidates.indexOf(live)]);
+        } else {
+          assert.equal(again.reused, false, `wb-import#${opIndex}: archived books never acquire new pins`);
+          assert.notEqual(again.entityId, target.entityId, `wb-import#${opIndex}: reimport creates a new entity`);
+          const stillArchived = repository.getWorldBook(owner, target.entityId);
+          assert.ok(stillArchived?.archivedAt, `wb-import#${opIndex}: the archived entity stays archived`);
+          candidates.push({
+            entityId: again.entityId,
+            revisionId: again.revisionId,
+            signature: target.signature,
+            archived: false,
+          });
+          journal.push(["wb-import", ownerIdx, "reimport-archived", candidates.length - 1]);
+        }
+        return;
+      }
+      const archived = repository.archiveWorldBook(owner, target.entityId);
+      assert.ok(archived?.archivedAt, `wb-import#${opIndex}: archive records the archive timestamp`);
+      target.archived = true;
+      // Archiving never deletes the immutable revision admitted turns pin to.
+      const revision = repository.getWorldBookRevision(owner, target.revisionId);
+      assert.ok(revision, `wb-import#${opIndex}: archived book revisions stay readable`);
+      journal.push(["wb-import", ownerIdx, "archive", candidates.indexOf(target)]);
+    }
+
+    function opBookActivate(sessionIdx, opIndex) {
+      const session = sessions[sessionIdx];
+      const owner = session.ownerScopeForTest;
+      const bookSlot = pick(BOOKS_PER_OWNER);
+      const book = books[session.ownerIdx][bookSlot];
+      const character = characters[session.ownerIdx][pick(CHARS_PER_OWNER)];
+      const charRevision = repository.getRevision(owner, character.revisionId);
+      const revision = { ...charRevision, characterBookRevisionId: book.revisionId };
+      const snapshot = {
+        schemaVersion: 1,
+        mode: "character",
+        bindingVersion: 1,
+        characterRevisionId: character.revisionId,
+        compatibilityProfile: `profile-wb-${session.ownerIdx}`,
+        snapshotStatus: "ready",
+      };
+      const turnId = `wb-turn-${opIndex}`;
+      const input = {
+        repository, store, ownerScope: owner, sessionId: session.id, turnId,
+        snapshot, revision,
+        baseInput: { userText: `wb ${opIndex}` },
+      };
+      const result = compileTurnWorldCharacterContext(input);
+      assert.equal(result.compiled?.status, "compiled", `wb-activate#${opIndex}: context compiles`);
+      assert.ok(result.pendingCheckpoint, `wb-activate#${opIndex}: pending checkpoint rides the turn`);
+      // The resolver is pure: an immediate replay with identical inputs is
+      // byte-identical (retry semantics, §10.4.6).
+      const replay = compileTurnWorldCharacterContext(input);
+      assert.equal(
+        replay.compiled.worldBook?.activationFingerprint,
+        result.compiled.worldBook?.activationFingerprint,
+        `wb-activate#${opIndex}: identical inputs replay a byte-identical activation`,
+      );
+      const key = `${sessionIdx}:${bookSlot}`;
+      const model = checkpointModel.get(key) || { version: 0 };
+      const readStored = () => repository.readWorldBookCheckpoint({
+        ownerScope: owner, sessionId: session.id, worldBookRevisionId: book.revisionId,
+      });
+      const outcome = pick(5);
+      if (outcome === 0) {
+        // Failed turn: the pending checkpoint is NEVER persisted (the terminal
+        // finalizer only writes on a successful turn.completed). The durable
+        // row must be byte-untouched.
+        const stored = readStored();
+        assert.equal(stored ? stored.version : 0, model.version, `wb-activate#${opIndex}: failed turn left no checkpoint`);
+        if (stored) {
+          assert.notEqual(stored.turnId, turnId, `wb-activate#${opIndex}: failed turn id never recorded`);
+        }
+        journal.push(["wb-activate", sessionIdx, bookSlot, "failed", model.version]);
+        return;
+      }
+      if (outcome === 1 && model.version > 0) {
+        // Stale optimistic version: the guarded write conflicts and fails
+        // open; the durable row stays at the model version.
+        const stale = persistTurnWorldBookCheckpoint({
+          repository,
+          pending: { ...result.pendingCheckpoint, expectedVersion: model.version + 5 },
+        });
+        assert.equal(stale, false, `wb-activate#${opIndex}: stale checkpoint write conflicts`);
+        const stored = readStored();
+        assert.equal(stored.version, model.version, `wb-activate#${opIndex}: conflict left the row untouched`);
+        journal.push(["wb-activate", sessionIdx, bookSlot, "conflict", model.version]);
+        return;
+      }
+      // Successful finalization: the pending checkpoint persists and the
+      // durable version advances by exactly one (sticky seq monotonicity).
+      assert.equal(
+        result.pendingCheckpoint.expectedVersion,
+        model.version,
+        `wb-activate#${opIndex}: the turn read the pre-turn durable checkpoint`,
+      );
+      const written = persistTurnWorldBookCheckpoint({ repository, pending: result.pendingCheckpoint });
+      assert.equal(written, true, `wb-activate#${opIndex}: successful turn persists its checkpoint`);
+      const stored = readStored();
+      assert.equal(stored.version, model.version + 1, `wb-activate#${opIndex}: checkpoint version advances monotonically`);
+      assert.equal(stored.turnId, turnId, `wb-activate#${opIndex}: the committed turn id is recorded`);
+      checkpointModel.set(key, { version: stored.version });
+      // Journal a NORMALIZED activation record: the compiled
+      // activationFingerprint covers worldBookRevisionId (a random UUID per
+      // simulation), so the journal carries only the deterministic parts —
+      // revision content hash, activated entry ids/reasons/content hashes,
+      // and the next timed checkpoint.
+      const activationRecord = [
+        result.compiled.worldBook.revisionHash,
+        (result.compiled.activatedWorldEntries || []).map((entry) => [
+          entry.entryId, entry.reason, entry.contentHash,
+        ]),
+        result.compiled.worldBook.nextCheckpoint,
+      ];
+      journal.push([
+        "wb-activate", sessionIdx, bookSlot, "committed", stored.version, activationRecord,
+      ]);
+    }
+
+    function opBookCheckpointRead(sessionIdx) {
+      const session = sessions[sessionIdx];
+      const bookSlot = pick(BOOKS_PER_OWNER);
+      const book = books[session.ownerIdx][bookSlot];
+      const model = checkpointModel.get(`${sessionIdx}:${bookSlot}`) || null;
+      const stored = repository.readWorldBookCheckpoint({
+        ownerScope: session.ownerScopeForTest,
+        sessionId: session.id,
+        worldBookRevisionId: book.revisionId,
+      });
+      if (!model) {
+        assert.equal(stored, null, "wb-read: no row before any successful turn");
+        journal.push(["wb-read", sessionIdx, bookSlot, 0]);
+        return;
+      }
+      assert.ok(stored, "wb-read: the committed checkpoint row exists");
+      assert.equal(stored.version, model.version, "wb-read: exact version");
+      journal.push(["wb-read", sessionIdx, bookSlot, stored.version]);
+    }
+
+    function opBookRewind(sessionIdx, opIndex) {
+      const session = sessions[sessionIdx];
+      const turnId = `rw-turn-${opIndex}`;
+      store.append(session.id, {
+        role: "user",
+        content: `rewind ${opIndex}`,
+        turnId,
+        timestamp: new Date(0).toISOString(),
+      });
+      // Real rewind wiring: session-manager.deleteMessagesFromTurn purges the
+      // session's world-book checkpoints after the message transaction (§10.4.6).
+      const removed = manager.deleteMessagesFromTurn(session.id, turnId);
+      assert.ok(removed > 0, `wb-rewind#${opIndex}: the rewind deleted canonical messages`);
+      let purged = 0;
+      for (let slot = 0; slot < BOOKS_PER_OWNER; slot += 1) {
+        const book = books[session.ownerIdx][slot];
+        const stored = repository.readWorldBookCheckpoint({
+          ownerScope: session.ownerScopeForTest,
+          sessionId: session.id,
+          worldBookRevisionId: book.revisionId,
+        });
+        assert.equal(stored, null, `wb-rewind#${opIndex}: rewind purged the session's checkpoints`);
+        if (checkpointModel.delete(`${sessionIdx}:${slot}`)) purged += 1;
+      }
+      journal.push(["wb-rewind", sessionIdx, purged]);
+    }
+
     const OP_WEIGHTS = [
       ["bind", 18],
       ["admit", 30],
@@ -549,6 +824,10 @@ function runSimulation() {
       ["restart", 3],
       ["archive", 5],
       ["read", 12],
+      ["book-import", 5],
+      ["book-activate", 8],
+      ["book-checkpoint-read", 4],
+      ["book-rewind", 3],
     ];
     const weightTotal = OP_WEIGHTS.reduce((sum, [, weight]) => sum + weight, 0);
 
@@ -584,6 +863,18 @@ function runSimulation() {
           break;
         case "archive":
           opArchive(sessionIdx);
+          break;
+        case "book-import":
+          opBookImport(pick(OWNER_COUNT), opIndex);
+          break;
+        case "book-activate":
+          opBookActivate(sessionIdx, opIndex);
+          break;
+        case "book-checkpoint-read":
+          opBookCheckpointRead(sessionIdx);
+          break;
+        case "book-rewind":
+          opBookRewind(sessionIdx, opIndex);
           break;
         default:
           opRead(sessionIdx);
@@ -648,6 +939,40 @@ function runSimulation() {
     }
     assert.ok(readyChecked > 0, "the stress produced ready character snapshots to verify");
     journal.push(["final", readyChecked, restartCount]);
+
+    // World-book checkpoints: every durable row matches the linearized model —
+    // written only by a successful turn, version advanced monotonically from 1,
+    // owner/session/book correctly scoped, and rewind purges complete.
+    const sessionIndexById = new Map(sessions.map((session, index) => [session.id, index]));
+    const checkpointRows = store.db.all(
+      `SELECT owner_scope, session_id, world_book_revision_id, version
+       FROM world_book_checkpoints`,
+    );
+    let checkpointsChecked = 0;
+    for (const row of checkpointRows) {
+      const sessionIdx = sessionIndexById.get(row.session_id);
+      assert.ok(sessionIdx !== undefined, `checkpoint row names a known session: ${row.session_id}`);
+      assert.equal(
+        row.owner_scope,
+        owners[sessions[sessionIdx].ownerIdx],
+        "checkpoint row owner matches the session owner",
+      );
+      const slotInfo = bookRevisionSlot.get(row.world_book_revision_id);
+      assert.ok(slotInfo, `checkpoint row names a known book revision: ${row.world_book_revision_id}`);
+      assert.equal(slotInfo[0], sessions[sessionIdx].ownerIdx, "no cross-owner checkpoint row");
+      const model = checkpointModel.get(`${sessionIdx}:${slotInfo[1]}`);
+      assert.ok(model, "checkpoint row exists in the linearized model (rewind purges are complete)");
+      assert.equal(row.version, model.version, "checkpoint version matches the model");
+      assert.ok(row.version >= 1, "checkpoint versions start at 1");
+      checkpointsChecked += 1;
+    }
+    assert.equal(
+      checkpointRows.length,
+      checkpointModel.size,
+      "durable checkpoint rows and the model correspond exactly",
+    );
+    assert.ok(checkpointsChecked > 0, "the stress produced committed world-book checkpoints to verify");
+    journal.push(["final-wb", checkpointsChecked]);
 
     store.close();
     const fingerprint = crypto.createHash("sha256").update(JSON.stringify(journal), "utf8").digest("hex");

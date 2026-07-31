@@ -28,6 +28,12 @@ node scripts/test-character-worlds-ipc.mjs
 node scripts/test-character-session-control.mjs
 npx electron scripts/test-character-session-control.cjs
 node scripts/test-character-worlds-policy.mjs
+node scripts/test-character-world-book-store.mjs
+node scripts/test-character-world-book-import.mjs
+node scripts/test-character-world-book-activation.mjs
+node scripts/test-character-world-book-compile.mjs
+node scripts/test-character-world-book-decorators.mjs
+node scripts/test-character-world-book-ipc.mjs
 node scripts/test-character-worlds-capability-gate.mjs
 node scripts/test-character-worlds-concurrency-stress.mjs
 node scripts/test-capability-gate-registry.mjs
@@ -299,6 +305,78 @@ Phase 1 may ship behind the rollout flag with these four items open; the
 flag must not be removed (feature made always-on) until each deferral above
 is closed with recorded evidence.
 
+## Phase 2A — World Book Acceptance (extends the Phase 1 checklist)
+
+Phase 2A (plan: `docs/superpowers/plans/2026-07-31-character-worlds-phase-2.md`)
+adds world-book lore activation on top of the Phase 1 surface. **Every Phase 1
+check above still applies unchanged** — Phase 2A extends the same
+`character-worlds-isolation` capability vector; it does not relax any Phase 1
+gate. The manual checks below are the Phase 2A additions: run them on every
+release platform together with the Phase 1 checks and record them in the same
+evidence template (rows 16-20).
+
+### 16. Embedded world book import
+
+1. Import a V2 and a V3 card that embed a `character_book` (lorebook) with
+   several entries; check the import preview.
+2. Import the same card twice.
+
+Expected: the preview shows the book summary (entry count, supported vs inert
+field counts); unknown entry fields and unsupported behavior (regex keys,
+vectorized entries, unknown V3 decorators) are preserved inertly and reported,
+never executed; an oversized or hostile book rejects the whole import with a
+clear message (never a partial import); the duplicate import dedups the
+identical book revision instead of piling up copies; the book is inspectable
+through the read-only surface (summary, entry counts, compatibility report) —
+and there is NO create/edit/delete UI path for books in Phase 2A.
+
+### 17. Activation visible in trace and diagnostics
+
+1. Bind a character whose embedded book has a constant entry and a keyed
+   entry; send a message that hits the key and one that does not.
+2. Capture the main-process log (same method as check 1).
+
+Expected: the keyed entry activates only on the matching turn; the turn trace
+records only metadata (revision ids, entry ids, reasons, content hashes) —
+never raw book text; activated lore appears ONLY inside the
+`CHARACTER WORLDS CONTEXT` lower-authority system suffix in §10.3.1 envelope
+order, never in user text, visible history, or file parts; Lily guidance,
+tools, permissions, and output format are unaffected.
+
+### 18. Timed effects (sticky) across turns and restart
+
+1. Use a book with a sticky entry (sticky N messages); activate it, then send
+   follow-up turns without the key.
+2. Quit and relaunch the app mid-sequence; continue the conversation.
+
+Expected: the sticky entry keeps activating for exactly its sticky window
+measured in canonical messages, then stops; a failed or interrupted turn never
+advances the window; the effect resumes exactly at the committed turn boundary
+after restart — never one turn early, never duplicated.
+
+### 19. Rewind invalidation
+
+1. Activate a sticky entry, then rewind the conversation past the activating
+   turn; send a new message.
+
+Expected: the sticky effect from the rewound turn does NOT activate (its
+checkpoint was purged with the rewind); the conversation otherwise behaves
+exactly like a fresh bind; no error surfaces.
+
+### 20. Kill switch covers books
+
+1. With a book-bound character active, set `LILY_CHARACTER_WORLDS=0` and
+   relaunch; converse. Also disable the signed rollout policy while running.
+2. Re-enable.
+
+Expected: the conversation is byte-for-byte native Lily — no world content,
+no activation work (verify via the log: no `CHARACTER WORLDS CONTEXT`); the
+stored books and checkpoints remain intact and READABLE through the
+inspection surface (the policy gates selection/import only); a missing,
+corrupt, or over-budget book never breaks a bound character turn — the
+character simply compiles without world entries; re-enabling restores
+activation exactly where it left off.
+
 ## Evidence Template
 
 Copy this block once per platform and fill it in. Attach artifacts
@@ -329,6 +407,11 @@ Environment skips:   <list, with reason; "none" if none>
 | 13| Kill switch                             |        |                      |       |
 | 14| Privacy inspection                      |        |                      |       |
 | 15| CJK/RTL/zoom/keyboard/screen-reader     |        |                      |       |
+| 16| Embedded world book import (2A)         |        |                      |       |
+| 17| Activation in trace/diagnostics (2A)    |        |                      |       |
+| 18| Timed sticky across turns/restart (2A)  |        |                      |       |
+| 19| Rewind invalidation (2A)                |        |                      |       |
+| 20| Kill switch covers books (2A)           |        |                      |       |
 
 Sign-off:            <name + date, only when every row is PASS with evidence>
 ```

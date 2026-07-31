@@ -16,6 +16,16 @@
  * layers, subagent surface, current user text, and output reserve must be
  * identical to native Lily.
  *
+ * Phase 2A (WB-6) adds the world-book failure modes
+ *   [world_book_missing, world_book_corrupt, world_book_resolver_error,
+ *    world_book_over_budget]
+ * where a character IS bound and the pinned book fails. Per §16 "character
+ * without world entries" semantics these do NOT fall back to native: the
+ * character context still compiles and the prompt body must be byte-identical
+ * to the SAME character's no-book compiled body (single dispatch, unchanged
+ * engine surface, metadata-only trace). A world-book positive control proves
+ * the loop is not vacuous: a working book DOES change the compiled body.
+ *
  * Positive controls at the end prove the test is not vacuous: a compiled
  * context on a supported provider DOES change the system suffix (only), so a
  * regression that leaks character state into any failure mode is detected.
@@ -260,6 +270,11 @@ const SESSION_IDS = {
   over_budget: "s-over-budget",
   provider_unsupported: "s-provider-unsupported",
   control: "s-control",
+  world_book_missing: "s-world-book-missing",
+  world_book_corrupt: "s-world-book-corrupt",
+  world_book_resolver_error: "s-world-book-resolver-error",
+  world_book_over_budget: "s-world-book-over-budget",
+  world_book_control: "s-world-book-control",
 };
 const sessions = Object.values(SESSION_IDS).map(makeSession);
 const manager = new SessionManager(fakeProjectManager(), {
@@ -313,6 +328,11 @@ for (const id of [
   SESSION_IDS.over_budget,
   SESSION_IDS.provider_unsupported,
   SESSION_IDS.control,
+  SESSION_IDS.world_book_missing,
+  SESSION_IDS.world_book_corrupt,
+  SESSION_IDS.world_book_resolver_error,
+  SESSION_IDS.world_book_over_budget,
+  SESSION_IDS.world_book_control,
 ]) {
   bindCharacter(id);
 }
@@ -369,6 +389,35 @@ repository.setBinding({
     compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
   },
 });
+// world_book_corrupt: the pinned world-book revision row no longer parses
+// (corrupt packed canonical JSON). World-book revisions are immutable, so the
+// corrupt row is inserted directly (as a crash/quarantine leftover would
+// appear); the compile must fail open to the same character's no-book body.
+const corruptBookRevisionId = "corrupt-book-revision-parser-error";
+store.db.exec("PRAGMA foreign_keys = OFF");
+store.db.run(
+  `INSERT INTO world_book_revisions
+     (id, entity_id, owner_scope, parent_revision_id, revision_number,
+      display_name, source_kind, source_format, source_container,
+      canonical_json, source_json, canonical_hash, original_hash,
+      revision_hash, created_at)
+   VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  corruptBookRevisionId,
+  "corrupt-book-entity-parser-error",
+  OWNER,
+  1,
+  "CorruptBook",
+  "created",
+  "lily",
+  "json",
+  Buffer.from("corrupt-not-a-gzip-payload"),
+  zlib.gzipSync(Buffer.from(JSON.stringify({ kind: "created", format: "lily", container: "json" }), "utf8")),
+  "f".repeat(64),
+  "a".repeat(64),
+  "b".repeat(64),
+  Date.now(),
+);
+store.db.exec("PRAGMA foreign_keys = ON");
 // Keep the clean revision for the wrapper repositories used by the other
 // failure modes (the real repository only serves the corrupt row above).
 const cleanRevision = aria.revision;
@@ -791,6 +840,7 @@ for (const failure of failures) {
 
 // --- positive controls: the loop is not vacuous --------------------------------
 let controlPayload;
+let controlBody;
 {
   activePolicy = enabledPolicy;
   ctx.characterWorldsRepository = cleanRepository;
@@ -801,6 +851,7 @@ let controlPayload;
   // bounded strings, and never a byte of card field text.
   assertTraceMetadataOnly(payload.trace.characterContext, "positive control", COMPILED_TRACE_KEYS);
   const body = await promptBodyFor(payload);
+  controlBody = body;
   assert.notDeepEqual(body, baselineBody, "control: a compiled context DOES change the body");
   assert.ok(
     body.system.startsWith(baselineBody.system),
@@ -811,6 +862,260 @@ let controlPayload;
     JSON.stringify(body.parts),
     JSON.stringify(baselineBody.parts),
     "control: parts stay byte-identical even when the context compiles",
+  );
+}
+
+// --- world-book failure modes (Phase 2A, WB-6; §16 "character without world ---
+// --- entries"): a character IS bound and its pinned book fails. The character ---
+// --- context still compiles; the prompt body must be byte-identical to the ------
+// --- SAME character's no-book compiled body (the positive control above). --------
+const {
+  normalizeWorldBookCanonical,
+} = require("../src/main/character-worlds/world-book-model.js");
+
+const WORLD_BOOK_SENTINEL = "WB-SENTINEL-6610";
+const WORLD_CONTENT_SENTINEL = "WB-HUGE-LORE-9930";
+
+function assertCompiledWithoutWorld(payload, body, label, { expectWorldContract = false } = {}) {
+  assert.equal(
+    payload.characterContext?.status,
+    "compiled",
+    `${label}: the character context still compiles (§16, never a native fallback)`,
+  );
+  if (!expectWorldContract) {
+    assert.equal(
+      payload.characterContext.worldBook ?? null,
+      null,
+      `${label}: no world-book contract rides the failed compile`,
+    );
+  }
+  assert.equal(
+    payload.characterContext.fingerprint,
+    controlPayload.characterContext.fingerprint,
+    `${label}: compiled text is byte-identical to the same character's no-book compile`,
+  );
+  assert.deepEqual(body, controlBody, `${label}: prompt body identical to the no-book compiled body`);
+  assert.notDeepEqual(body, baselineBody, `${label}: guard is not vacuous — the character context DID compile`);
+  assert.equal(
+    JSON.stringify(body.parts),
+    JSON.stringify(baselineBody.parts),
+    `${label}: parts stay byte-identical`,
+  );
+  for (const sentinel of [WORLD_BOOK_SENTINEL, WORLD_CONTENT_SENTINEL]) {
+    assert.equal(body.system.includes(sentinel), false, `${label}: failed book content never enters the prompt`);
+  }
+  assertTraceMetadataOnly(payload.trace.characterContext, label, COMPILED_TRACE_KEYS);
+}
+
+async function dispatchWorldBookMode({ name, sessionId, repository }) {
+  activePolicy = enabledPolicy;
+  ctx.characterWorldsRepository = repository;
+  const policyCallsBeforeTurn = characterPolicyCalls;
+  const remoteReadsBeforeTurn = remoteConfigReads;
+  const payload = await dispatchTurn(sessionId, name);
+  assert.equal(
+    characterPolicyCalls - policyCallsBeforeTurn,
+    1,
+    `${name}: policy resolved exactly once for the ready snapshot`,
+  );
+  assert.equal(
+    remoteConfigReads - remoteReadsBeforeTurn,
+    nativeRemoteReadDelta,
+    `${name}: failure turn adds zero remote-config reads beyond native`,
+  );
+  const state = ctx.turnOrchestrator._state(sessionId);
+  const admitted = store.getTurnInputByTurnId(state.turnId);
+  assert.equal(
+    admitted.metadata.characterWorlds?.mode,
+    "character",
+    `${name}: admission pinned a ready character snapshot (book failure engages downstream)`,
+  );
+  const body = await promptBodyFor(payload);
+  return { payload, body };
+}
+
+// missing: the pinned book revision does not resolve.
+{
+  let bookReads = 0;
+  const { payload, body } = await dispatchWorldBookMode({
+    name: "world_book_missing",
+    sessionId: SESSION_IDS.world_book_missing,
+    repository: {
+      getRevision: () => ({ ...cleanRevision, characterBookRevisionId: "wb-missing-revision" }),
+      getWorldBookRevision: () => {
+        bookReads += 1;
+        return null;
+      },
+    },
+  });
+  assert.equal(bookReads, 1, "world_book_missing: the pinned book was actually read (not vacuous)");
+  assertCompiledWithoutWorld(payload, body, "world_book_missing");
+}
+
+// corrupt: the pinned book revision's stored payload no longer parses — driven
+// through the REAL repository against the corrupt row inserted above. The
+// character revision is pinned to it by fixture surgery on the (otherwise
+// immutable) row: the immutability trigger is dropped and immediately
+// recreated, and the pin is reverted right after the turn.
+const PIN_TRIGGER_DDL = `CREATE TRIGGER character_revisions_no_update
+  BEFORE UPDATE ON character_revisions BEGIN
+    SELECT RAISE(ABORT, 'character_revisions rows are immutable');
+  END`;
+{
+  store.db.exec("DROP TRIGGER character_revisions_no_update");
+  try {
+    store.db.run(
+      "UPDATE character_revisions SET character_book_revision_id = ? WHERE id = ? AND owner_scope = ?",
+      corruptBookRevisionId, cleanRevision.id, OWNER,
+    );
+  } finally {
+    store.db.exec(PIN_TRIGGER_DDL);
+  }
+  try {
+    const { payload, body } = await dispatchWorldBookMode({
+      name: "world_book_corrupt",
+      sessionId: SESSION_IDS.world_book_corrupt,
+      repository: null, // real repository, corrupt stored book payload
+    });
+    assertCompiledWithoutWorld(payload, body, "world_book_corrupt");
+  } finally {
+    store.db.exec("DROP TRIGGER character_revisions_no_update");
+    try {
+      store.db.run(
+        "UPDATE character_revisions SET character_book_revision_id = NULL WHERE id = ? AND owner_scope = ?",
+        cleanRevision.id, OWNER,
+      );
+    } finally {
+      store.db.exec(PIN_TRIGGER_DDL);
+    }
+  }
+}
+
+// resolver_error: the book revision resolves, but the activation resolver
+// throws (hostile entry accessor) — world content drops with a metadata-only
+// warning and the character still compiles.
+{
+  const hostileEntry = new Proxy({}, {
+    get() {
+      throw new Error("hostile accessor must never run during activation");
+    },
+  });
+  const { payload, body } = await dispatchWorldBookMode({
+    name: "world_book_resolver_error",
+    sessionId: SESSION_IDS.world_book_resolver_error,
+    repository: {
+      getRevision: () => ({ ...cleanRevision, characterBookRevisionId: "wb-resolver-error-revision" }),
+      getWorldBookRevision: () => ({
+        id: "wb-resolver-error-revision",
+        revisionHash: null,
+        canonical: {
+          schemaVersion: 1,
+          name: "HostileBook",
+          entries: [hostileEntry],
+          scanPolicy: {},
+        },
+      }),
+    },
+  });
+  assert.ok(
+    (payload.characterContext.warnings || []).some((warning) => warning.code === "WORLD_BOOK_RESOLVER_FAILED"),
+    "world_book_resolver_error: resolver failure recorded as a metadata-only warning",
+  );
+  assertCompiledWithoutWorld(payload, body, "world_book_resolver_error");
+}
+
+// over_budget: the book resolves and activates, but its entries cannot fit the
+// character budget share — every world entry is omitted with a budget reason
+// and the compiled body equals the no-book compile.
+{
+  const hugeBook = normalizeWorldBookCanonical({
+    schemaVersion: 1,
+    name: "HugeBook",
+    entries: [{
+      id: "e-huge",
+      content: `${WORLD_CONTENT_SENTINEL} ${"x".repeat(900_000)}`,
+      activation: { constant: true },
+      insertion: { position: "before_character" },
+    }],
+  });
+  const { payload, body } = await dispatchWorldBookMode({
+    name: "world_book_over_budget",
+    sessionId: SESSION_IDS.world_book_over_budget,
+    repository: {
+      getRevision: () => ({ ...cleanRevision, characterBookRevisionId: "wb-over-budget-revision" }),
+      getWorldBookRevision: () => ({
+        id: "wb-over-budget-revision",
+        revisionHash: null,
+        canonical: hugeBook,
+      }),
+    },
+  });
+  assert.ok(
+    (payload.characterContext.omitted || []).some(
+      (entry) => entry.source === "world_entry" && entry.id === "e-huge" && entry.reason.startsWith("budget"),
+    ),
+    "world_book_over_budget: the oversized world entry is omitted with a budget reason",
+  );
+  // The resolver ran (world contract present) but every world entry was
+  // budget-omitted, so the compiled text is still the no-book compile.
+  assertCompiledWithoutWorld(payload, body, "world_book_over_budget", { expectWorldContract: true });
+}
+
+// world-book positive control: a working pinned book DOES change the compiled
+// body — the failure-mode assertions above are not vacuous.
+{
+  const workingBook = normalizeWorldBookCanonical({
+    schemaVersion: 1,
+    name: "WorkingBook",
+    entries: [{
+      id: "e-lore",
+      content: `The sapphire archivist ${WORLD_BOOK_SENTINEL} records every arrival.`,
+      activation: { constant: true },
+      insertion: { position: "before_character" },
+    }],
+  });
+  const { payload, body } = await dispatchWorldBookMode({
+    name: "world_book_control",
+    sessionId: SESSION_IDS.world_book_control,
+    repository: {
+      getRevision: () => ({ ...cleanRevision, characterBookRevisionId: "wb-working-revision" }),
+      getWorldBookRevision: () => ({
+        id: "wb-working-revision",
+        revisionHash: null,
+        canonical: workingBook,
+      }),
+    },
+  });
+  assert.equal(payload.characterContext?.status, "compiled", "world_book_control: context compiled");
+  assert.equal(
+    payload.characterContext.worldBook?.revisionId,
+    "wb-working-revision",
+    "world_book_control: the compiled contract names the book revision",
+  );
+  assert.deepEqual(
+    (payload.characterContext.activatedWorldEntries || []).map((entry) => entry.entryId),
+    ["e-lore"],
+    "world_book_control: the constant entry activated",
+  );
+  assert.notDeepEqual(body, controlBody, "world_book_control: a working book DOES change the compiled body");
+  assert.ok(
+    body.system.startsWith(baselineBody.system),
+    "world_book_control: the Lily protected prefix stays byte-stable at the head of system",
+  );
+  assert.ok(
+    body.system.includes(WORLD_BOOK_SENTINEL),
+    "world_book_control: activated world content lands inside the lower-authority suffix",
+  );
+  assert.equal(
+    JSON.stringify(body.parts),
+    JSON.stringify(baselineBody.parts),
+    "world_book_control: parts stay byte-identical even with activated world entries",
+  );
+  assertTraceMetadataOnly(payload.trace.characterContext, "world_book_control", COMPILED_TRACE_KEYS);
+  assert.equal(
+    JSON.stringify(payload.trace.characterContext).includes(WORLD_BOOK_SENTINEL),
+    false,
+    "world_book_control: world content never enters the trace",
   );
 }
 
@@ -902,4 +1207,4 @@ assert.equal(
 );
 
 store.close();
-console.log(`character-worlds-capability-gate: ok (${failures.length + 1} failure modes, byte-equal native baseline)`);
+console.log(`character-worlds-capability-gate: ok (${failures.length + 5} failure modes, byte-equal native baseline / byte-equal no-book compiled body)`);
