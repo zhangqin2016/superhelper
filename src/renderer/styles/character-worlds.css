@@ -1,0 +1,336 @@
+/* Conversation character control (Character Worlds Phase 1).
+   Existing theme tokens only; radii stay at or under 8px; no gradients,
+   decorative cards, or accent-dominant styling. */
+
+.character-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Composer toolbar button ---------------------------------------------- */
+
+/* The .composer-toolbar prefix is required: composer.css pins
+   .composer-toolbar .composer-icon-btn to 30px, and an unprefixed rule loses
+   that specificity fight (the bound swatch+label would be crushed away). */
+.composer-toolbar .composer-character-btn {
+  width: auto;
+  height: 30px;
+  padding: 0 8px;
+  gap: 5px;
+  display: flex;
+  align-items: center;
+}
+/* Author display:flex/grid above would otherwise defeat the hidden attribute
+   (load flash, no-facade fail-open, ghost swatch/icon in the wrong mode). */
+.composer-character-btn[hidden],
+.composer-character-btn-swatch[hidden],
+.composer-character-btn-icon[hidden] {
+  display: none;
+}
+.composer-character-btn.is-open,
+.composer-character-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.composer-character-btn-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+/* Fixed width + ellipsis: the toolbar never shifts when the bound name
+   changes length; the full name stays available via the title attribute. */
+.composer-character-btn-label {
+  width: 72px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-character-btn-label[hidden] {
+  display: none;
+}
+
+.composer-character-btn-swatch,
+.character-option-swatch,
+.character-preview-swatch {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-active);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+/* --- Popover ---------------------------------------------------------------- */
+
+.character-popover {
+  position: absolute;
+  z-index: 30;
+  max-height: min(420px, 52vh);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-topbar);
+  box-shadow: var(--shadow), 0 0 0 1px var(--border-subtle);
+  overflow: hidden;
+}
+.character-popover[hidden] {
+  display: none;
+}
+
+.character-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.character-popover-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+}
+.character-popover-close:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.character-popover-notice {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-surface-subtle);
+}
+.character-popover-notice[hidden] {
+  display: none;
+}
+
+.character-list {
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.character-list-heading {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.character-list-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 44px rows: compact but still a reachable touch target. */
+.character-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+.character-option:hover {
+  background: var(--bg-surface-hover);
+}
+.character-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.character-option[aria-checked="true"] {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-muted);
+}
+
+.character-option-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+}
+
+.character-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-option-check {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--accent);
+  visibility: hidden;
+}
+.character-option[aria-checked="true"] .character-option-check {
+  visibility: visible;
+}
+
+.character-popover-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.character-footer-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+.character-footer-btn:hover:not([disabled]) {
+  background: var(--bg-surface-hover);
+}
+.character-footer-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.character-footer-btn[disabled] {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* --- Import preview (flat pane inside the same popover — no nested cards) --- */
+
+.character-import-preview {
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.character-import-preview[hidden] {
+  display: none;
+}
+
+.character-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.character-preview-swatch {
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+}
+.character-preview-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-preview-meta-row {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.character-preview-warning {
+  font-size: 12px;
+  color: var(--text-primary);
+  padding: 6px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-subtle);
+}
+
+.character-preview-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.character-preview-commit,
+.character-preview-cancel {
+  min-height: 44px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+}
+.character-preview-commit {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+}
+.character-preview-commit:hover:not([disabled]) {
+  background: var(--accent-dim);
+}
+.character-preview-commit[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+.character-preview-cancel {
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.character-preview-cancel:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+.character-preview-commit:focus-visible,
+.character-preview-cancel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* RTL: rows and labels flip with dir=rtl through logical alignment above
+   (text-align: start, flex layouts); nothing here is direction-hardcoded. */

@@ -6,6 +6,7 @@ import { initI18n, onLocaleChange, t, applyDomI18n } from "./i18n/index.js";
 import { initComposer } from "./modules/composer.js";
 import { initScheduledTasks } from "./modules/scheduled-tasks.js";
 import { initSessionSkills, refreshSessionSkillsUi } from "./modules/session-skills.js";
+import { initCharacterSessionControl, refreshCharacterControlUi } from "./modules/character-session-control.js";
 import { initFileHandler } from "./modules/file-handler.js";
 import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
 import { wireMessageIpc, initMessageUi, syncComposerForActiveSession } from "./modules/message.js";
@@ -176,6 +177,7 @@ function wireLocaleRefresh() {
     await refreshSkillsList();
     await refreshWorkspaceApps();
     await refreshSessionSkillsUi();
+    refreshCharacterControlUi();
     syncComposerForActiveSession();
     syncCustomSelects();
   });
@@ -240,6 +242,7 @@ async function init() {
   initWorkspaceApps();
   initLicenseUpdateSettings();
   initSessionSkills();
+  initCharacterSessionControl();
 
   initDiffPanel();
   initFindBar();

@@ -243,6 +243,16 @@
                   </svg>
                   <span class="composer-skill-btn-label" data-i18n="composer.skills">技能</span>
                 </button>
+                <button id="sessionCharacterBtn" type="button" class="composer-icon-btn composer-character-btn" data-i18n-title="character.buttonTitle" data-i18n-aria-label="character.buttonTitle" title="对话角色" aria-label="对话角色" aria-haspopup="dialog" aria-expanded="false" aria-controls="characterPopover" hidden>
+                  <span class="composer-character-btn-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="8" r="5"/>
+                      <path d="M20 21a8 8 0 0 0-16 0"/>
+                    </svg>
+                  </span>
+                  <span class="composer-character-btn-swatch" hidden aria-hidden="true"></span>
+                  <span class="composer-character-btn-label" hidden></span>
+                </button>
                 <button id="scheduledTaskBtn" type="button" class="composer-icon-btn" data-i18n-title="scheduled.openTitle" data-i18n-aria-label="scheduled.openTitle" title="创建自动执行任务" aria-label="创建自动执行任务">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M8 2v4"/>
@@ -285,6 +295,22 @@
               <p class="session-skills-popover-hint" data-i18n="composer.sessionSkillsHint">未单独设置时，沿用设置中的全局技能。</p>
             </div>
           </div>
+          <div id="characterPopover" class="character-popover" hidden role="dialog" data-i18n-aria-label="character.popoverTitle" aria-label="对话角色" tabindex="-1">
+            <div class="character-popover-header">
+              <span data-i18n="character.popoverTitle">对话角色</span>
+              <button id="characterPopoverClose" type="button" class="character-popover-close" data-i18n-aria-label="composer.close" aria-label="关闭">×</button>
+            </div>
+            <div id="characterPopoverNotice" class="character-popover-notice" hidden></div>
+            <div id="characterPopoverMain">
+              <div id="characterList" class="character-list" role="menu" data-i18n-aria-label="character.popoverTitle" aria-label="对话角色"></div>
+              <div class="character-popover-footer">
+                <button id="characterImportBtn" type="button" class="character-footer-btn" data-i18n="character.importCard">导入角色卡</button>
+                <button id="characterManageBtn" type="button" class="character-footer-btn" disabled data-i18n="character.manageLibrary">角色库管理（第二阶段）</button>
+              </div>
+            </div>
+            <div id="characterImportPreview" class="character-import-preview" hidden></div>
+          </div>
+          <div id="characterControlLive" class="character-sr-only" aria-live="polite"></div>
         </form>
       </section>
 
