@@ -14,7 +14,7 @@ const {
   detectProtocol,
   anthropicUrl,
   openaiUrl,
-  forceProModelId,
+  normalizeModelIdForProtocol,
 } = require("../src/main/runtime/opencode-model-config.js");
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -31,10 +31,10 @@ assert(detectProtocol("https://proxy.example.com/anthropic", { LILY_OPENCODE_PRO
 assert(anthropicUrl("https://x/anthropic") === "https://x/anthropic/v1", "anthropic url gets /v1");
 assert(anthropicUrl("https://x/anthropic/v1") === "https://x/anthropic/v1", "anthropic url keeps existing /v1");
 assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)");
-assert(forceProModelId("deepseek-v4-flash") === "deepseek-v4-pro[1m]", "flash id is forced to pro");
-assert(forceProModelId("deepseek-v4-flash", "openai") === "deepseek-v4-pro", "openai flash id is forced to valid pro id");
-assert(forceProModelId("deepseek-v4-pro[1m]", "openai") === "deepseek-v4-pro", "openai strips Anthropic-only DeepSeek suffix");
-assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unchanged");
+assert(normalizeModelIdForProtocol("deepseek-v4-flash") === "deepseek-v4-flash", "official flash id is preserved for Anthropic");
+assert(normalizeModelIdForProtocol("deepseek-v4-flash", "openai") === "deepseek-v4-flash", "official flash id is preserved for OpenAI");
+assert(normalizeModelIdForProtocol("deepseek-v4-pro[1m]", "openai") === "deepseek-v4-pro", "openai strips Anthropic-only DeepSeek suffix");
+assert(normalizeModelIdForProtocol("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unchanged");
 
 // --- THE PRODUCTION CASE: DeepSeek Anthropic endpoint -----------------------
 {
@@ -213,15 +213,15 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   assert("deepseek-v4-pro" in models && !("deepseek-v4-flash" in models) && Object.keys(models).length === 1, "only effective pro model is declared");
 }
 
-// --- flash main model is upgraded to pro ------------------------------------
+// --- official flash main model stays on flash -------------------------------
 {
   const r = resolveOpencodeModelConfig({
     LILY_API_BASE_URL: "https://api.deepseek.com/anthropic", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-v4-flash",
   });
-  assert(r.model.modelID === "deepseek-v4-pro[1m]", "flash main model forced to pro runtime model");
-  assert(r.diagnostics.forcedModel === "deepseek-v4-pro[1m]", "forced model is diagnosed");
+  assert(r.model.modelID === "deepseek-v4-flash", "flash main model is preserved");
+  assert(r.diagnostics.forcedModel === "", "unchanged flash model is not diagnosed as forced");
   const cfg = JSON.parse(r.configContent);
-  assert(cfg.model === "anthropic/deepseek-v4-pro[1m]", "default model ref uses forced pro");
+  assert(cfg.model === "anthropic/deepseek-v4-flash", "default model ref uses flash");
 }
 
 // --- failures: missing model, relative path ---------------------------------

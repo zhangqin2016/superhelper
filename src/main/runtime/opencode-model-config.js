@@ -76,11 +76,10 @@ function resolveOpencodeProviderSpec(env = {}, protocol = "openai") {
   };
 }
 
-function forceProModelId(id, protocol = "anthropic") {
+function normalizeModelIdForProtocol(id, protocol = "anthropic") {
   const model = String(id || "").trim();
   const isOpenAi = String(protocol || "").toLowerCase() === "openai";
   if (isOpenAi && /^deepseek-v4-pro\[[^\]]+\]$/i.test(model)) return "deepseek-v4-pro";
-  if (/^deepseek-v4-flash$/i.test(model)) return isOpenAi ? "deepseek-v4-pro" : "deepseek-v4-pro[1m]";
   return model;
 }
 
@@ -114,7 +113,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   const token = lilyEnv.LILY_OPENCODE_API_KEY || lilyEnv.LILY_API_KEY || "";
   const requestedModelId = lilyEnv.LILY_OPENCODE_MODEL || lilyEnv.LILY_MODEL || "";
   const protocol = detectProtocol(rawBase, lilyEnv);
-  const modelId = forceProModelId(requestedModelId, protocol);
+  const modelId = normalizeModelIdForProtocol(requestedModelId, protocol);
   const modelRoute = classifyModelRoute(lilyEnv);
   const bodyOverlay = parseBodyOverlay(lilyEnv.LILY_OPENCODE_BODY_OVERLAY_JSON);
 
@@ -157,7 +156,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   const npm = providerSpec.npm;
   const baseURL = protocol === "anthropic" ? anthropicUrl(rawBase) : openaiUrl(rawBase);
 
-  // Keep every OpenCode tier on the selected Pro model. Fast/haiku/subagent
+  // Keep every OpenCode tier on the selected model. Fast/haiku/subagent
   // tiers make the app feel inconsistent because OpenCode can route Task tools,
   // titles, and summaries through them even when the user selected Pro.
   const tiers = {
@@ -231,7 +230,7 @@ module.exports = {
   detectProtocol,
   anthropicUrl,
   openaiUrl,
-  forceProModelId,
+  normalizeModelIdForProtocol,
   resolveOpencodeProviderSpec,
   parseBodyOverlay,
 };

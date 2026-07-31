@@ -14,7 +14,6 @@ export function normalizeModelForProtocol(provider = {}, model = "") {
   if (!value) return "";
   if (!isDeepSeekOpenAiProvider(provider)) return value;
   if (/^deepseek-v4-pro\[[^\]]+\]$/i.test(value)) return "deepseek-v4-pro";
-  if (/^deepseek-v4-flash$/i.test(value)) return "deepseek-v4-pro";
   return value;
 }
 

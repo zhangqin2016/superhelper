@@ -145,7 +145,7 @@ try {
     },
   );
 
-  assert.equal(captured.body.model, "deepseek-v4-pro", "native OpenAI route should normalize DeepSeek flash alias");
+  assert.equal(captured.body.model, "deepseek-v4-flash", "native OpenAI route must preserve the official DeepSeek Flash model id");
 
   await forwardOpenAiChatCompletions(
     {

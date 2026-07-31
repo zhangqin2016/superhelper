@@ -55,8 +55,11 @@ function resolveModelRequest({ baseUrl, protocol } = {}) {
 }
 
 function modelIdFromEnv(env, protocol = "anthropic") {
-  const { forceProModelId } = require("./runtime/opencode-model-config");
-  return forceProModelId(env.LILY_MODEL || env.LILY_MODEL_SONNET || env.LILY_MODEL_OPUS || env.LILY_MODEL_HAIKU || "", protocol);
+  const { normalizeModelIdForProtocol } = require("./runtime/opencode-model-config");
+  return normalizeModelIdForProtocol(
+    env.LILY_MODEL || env.LILY_MODEL_SONNET || env.LILY_MODEL_OPUS || env.LILY_MODEL_HAIKU || "",
+    protocol,
+  );
 }
 
 function extractText(responseJson) {

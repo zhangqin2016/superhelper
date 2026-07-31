@@ -535,7 +535,12 @@ assert.equal(deepseekOpenAiManaged.models.activePresetId, "lily-managed:deepseek
 assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_API_BASE_URL, "/llm/deepseek/v1");
 assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "openai");
 assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro");
-assert.equal(deepseekOpenAiManaged.models.presets.length, 1, "DeepSeek OpenAI aliases should dedupe to the valid Pro model id");
+assert.equal(deepseekOpenAiManaged.models.presets.length, 2, "DeepSeek OpenAI provider should preserve distinct Pro and Flash models");
+assert.equal(
+  deepseekOpenAiManaged.models.presets[1].env.LILY_MODEL,
+  "deepseek-v4-flash",
+  "official Flash model id should survive managed config delivery",
+);
 assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_CONTEXT_WINDOW_TOKENS, "1000000");
 
 const deepseekDirect = buildEnvManagedClientConfig(
