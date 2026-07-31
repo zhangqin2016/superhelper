@@ -64,12 +64,14 @@ function validateParsed(value) {
 
 function workerError(error) {
   const allowed = {};
-  for (const key of ["limit", "maximum", "actual"]) {
+  for (const key of ["limit", "maximum", "actual", "limitKind", "limitsVersion", "entryId"]) {
     const value = error?.[key];
-    if (typeof value === "string" || Number.isFinite(value)) allowed[key] = value;
+    // Bounded enums/numbers only — never paths or messages.
+    if (Number.isFinite(value)) allowed[key] = value;
+    else if (typeof value === "string" && value.length <= 1024) allowed[key] = value;
   }
   const candidate = typeof error?.code === "string" ? error.code : "";
-  const code = /^(?:CARD|PNG)_[A-Z0-9_]{1,70}$/.test(candidate)
+  const code = /^(?:CARD|PNG|WORLD_BOOK)_[A-Z0-9_]{1,70}$/.test(candidate)
     || candidate === "IMPORT_PARSE_FAILED"
     || candidate === "IMPORT_WORKER_RESULT_TOO_LARGE"
     ? candidate

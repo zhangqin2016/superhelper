@@ -167,13 +167,19 @@ function boolAt(object, key, fallback) {
 }
 
 function intAt(object, key, fallback, maximum) {
-  const value = Number(object[key]);
+  const raw = object[key];
+  // Explicit null falls back to the field default; Number(null) === 0 would
+  // silently turn "absent" into a real zero.
+  if (raw == null) return fallback;
+  const value = Number(raw);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(0, Math.min(Math.floor(value), maximum));
 }
 
 function probabilityAt(object, key, fallback) {
-  const value = Number(object[key]);
+  const raw = object[key];
+  if (raw == null) return fallback;
+  const value = Number(raw);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(0, Math.min(value, 100));
 }
@@ -283,7 +289,9 @@ function normalizeActivation(input) {
 
 function normalizeInsertion(input) {
   const insertion = plainObject(input) ? input : {};
-  const priority = Number(insertion.priority);
+  // null/undefined means "no explicit priority"; Number(null) === 0 would
+  // silently turn an absent priority into a real one on re-normalization.
+  const priority = insertion.priority == null ? Number.NaN : Number(insertion.priority);
   return {
     position: enumAt(insertion, "position", INSERTION_POSITIONS, "before_character"),
     depth: intAt(insertion, "depth", 4, C.MAX_WORLD_BOOK_DEPTH),

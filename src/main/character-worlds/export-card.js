@@ -1,20 +1,8 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { executableKey } = require("./executable-keys");
 const { serializePreservedJson } = require("./validation");
-
-const EXECUTABLE_KEYS = new Set([
-  "executable",
-  "script",
-  "scripts",
-  "plugin",
-  "plugins",
-  "regexscript",
-  "regexscripts",
-  "stscript",
-  "quickreply",
-  "quickreplies",
-]);
 
 const KNOWN_FIELDS = new Set([
   "name",
@@ -59,10 +47,6 @@ const ALIAS_GROUPS = [
   ]],
   ["characterVersion", ["characterVersion", "character_version"]],
 ];
-
-function executableKey(key) {
-  return EXECUTABLE_KEYS.has(key.replace(/[\s_-]+/g, "").toLowerCase());
-}
 
 function pointerToken(value) {
   return String(value).replace(/~/g, "~0").replace(/\//g, "~1");

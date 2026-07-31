@@ -6,6 +6,9 @@ const {
   prepareRevision,
   requiredString,
 } = require("./persistence-codec");
+const {
+  importEmbeddedWorldBook,
+} = require("./world-book-repository");
 
 function duplicateRow(repository, owner, kind, hash) {
   if (!hash) return null;
@@ -73,12 +76,14 @@ function insertCharacter(repository, {
   prepared,
   assetRefs,
   duplicateKind,
+  characterBook,
 }) {
   const entityId = crypto.randomUUID();
   const revisionId = crypto.randomUUID();
   const createdAt = Date.now();
   repository._insertRevision({
     id: revisionId, entityId, owner, parentId: null, number: 1, prepared, createdAt,
+    characterBookRevisionId: characterBook ? characterBook.revisionId : null,
   });
   repository.db.run(
     `INSERT INTO character_entities
@@ -91,6 +96,7 @@ function insertCharacter(repository, {
   return {
     entity: repository.getCharacter(owner, entityId),
     revision: repository.getRevision(owner, revisionId),
+    characterBook,
     duplicate: {
       kind: duplicateKind,
       reused: false,
@@ -127,6 +133,7 @@ function importCharacter(repository, {
   canonical,
   source,
   assets = [],
+  characterBook = null,
   duplicateResolution,
   assertCanCommit,
 }) {
@@ -139,6 +146,20 @@ function importCharacter(repository, {
   }
   if (assertCanCommit != null && typeof assertCanCommit !== "function") {
     throw new TypeError("assertCanCommit must be a function");
+  }
+  if (characterBook != null) {
+    if (typeof characterBook !== "object" || characterBook.canonical == null) {
+      throw codedError(
+        "IMPORT_SOURCE_INVALID",
+        "Imported embedded character book payload is invalid",
+      );
+    }
+    if (characterBook.source != null && typeof characterBook.source !== "object") {
+      throw codedError(
+        "IMPORT_SOURCE_INVALID",
+        "Imported embedded character book source is invalid",
+      );
+    }
   }
   const assetRefs = repository.assetLifecycle.prepare(assets);
   const prepared = prepareRevision(canonical, source, "created", assetRefs);
@@ -173,11 +194,28 @@ function importCharacter(repository, {
       );
     }
     assertCanCommit?.();
+    // The embedded book revision is written in the same transaction as the
+    // character revision that pins it: a rollback removes both, and an
+    // identical book (same canonical + source, i.e. same revision hash) is
+    // deduped to the existing book revision.
+    const book = characterBook
+      ? importEmbeddedWorldBook(repository, {
+          ownerScope: owner,
+          canonical: characterBook.canonical,
+          source: characterBook.source || {
+            kind: "imported",
+            format: prepared.sourceValue.format,
+            container: prepared.sourceValue.container,
+            embedding: "character_book",
+          },
+        })
+      : null;
     return insertCharacter(repository, {
       owner,
       prepared,
       assetRefs,
       duplicateKind: canonicalDuplicate ? "canonical" : "none",
+      characterBook: book,
     });
   })();
 

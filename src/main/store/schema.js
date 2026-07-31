@@ -447,6 +447,17 @@ const MIGRATIONS = [
   // untouched. The SQL lives in world-book-schema-migration.js to keep this
   // file within the architecture line budget.
   migrateWorldBookSchema,
+  // v9 - character revisions pin their imported embedded world book revision
+  // (Phase 2 WB-2). Additive nullable column; imports insert the world-book
+  // revision in the same transaction before the character revision, so the
+  // immediate FK always sees a committed-in-transaction parent row.
+  (db) => {
+    db.exec(`
+      ALTER TABLE character_revisions
+        ADD COLUMN character_book_revision_id TEXT
+        REFERENCES world_book_revisions(id);
+    `);
+  },
 ];
 
 module.exports = { MIGRATIONS };

@@ -102,19 +102,19 @@ class CharacterWorldsRepository {
         this.db.run("UPDATE blobs SET refcount = refcount + 1 WHERE hash = ?", asset.hash);
     }
   }
-  _insertRevision({ id, entityId, owner, parentId, number, prepared, createdAt }) {
+  _insertRevision({ id, entityId, owner, parentId, number, prepared, createdAt, characterBookRevisionId = null }) {
     this.db.run(
       `INSERT INTO character_revisions
          (id, entity_id, owner_scope, parent_revision_id, revision_number,
           display_name, source_kind, source_format, source_container,
           canonical_json, source_json, canonical_hash, original_hash,
-          revision_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          revision_hash, character_book_revision_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, entityId, owner, parentId, number,
       prepared.displayName, prepared.sourceValue.kind, prepared.sourceValue.format,
       prepared.sourceValue.container, prepared.canonicalData.packed,
       prepared.sourceData.packed, prepared.canonicalHash, prepared.originalHash,
-      prepared.revisionHash, createdAt,
+      prepared.revisionHash, characterBookRevisionId, createdAt,
     );
   }
   _updateCurrent(entityId, owner, revisionId, displayName, updatedAt) {
@@ -171,6 +171,7 @@ class CharacterWorldsRepository {
       source: unpackJson(row.source_json),
       canonical: unpackJson(row.canonical_json),
       cardAssets,
+      characterBookRevisionId: row.character_book_revision_id || null,
       createdAt: isoTime(row.created_at),
     };
   }
@@ -251,10 +252,18 @@ class CharacterWorldsRepository {
            FROM character_revisions WHERE entity_id = ? AND owner_scope = ?`,
           entity, owner,
         ).next;
+        // Edits keep the imported embedded book association (§7.2): the pin
+        // propagates from the parent revision to revision N+1.
+        const parentPin = this.db.get(
+          `SELECT character_book_revision_id AS pin
+           FROM character_revisions WHERE id = ? AND owner_scope = ?`,
+          base, owner,
+        )?.pin || null;
         this._insertRevision({
           id: revisionId, entityId: entity, owner,
           parentId: state.current.current_revision_id,
           number: nextNumber, prepared, createdAt,
+          characterBookRevisionId: parentPin,
         });
         this._linkRevisionAssets(revisionId, owner, assetRefs, createdAt);
         this._updateCurrent(entity, owner, revisionId, prepared.displayName, createdAt);

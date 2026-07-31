@@ -62,29 +62,29 @@ Explicitly OUT of Phase 2A (later phases):
 - Create: `src/main/character-worlds/world-book-model.js`
 - Create: `scripts/test-character-world-book-store.mjs`
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
   Mirror `test-character-worlds-store.mjs`: create world-book entity +
   immutable revision with normalized entries (activation/insertion/recursion
   blocks), revision hash includes canonical data + provenance, duplicate
   revision reuse, unknown fields preserved inert, owner scoping, archive
   semantics, immutable revision rejection on mutation attempts.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Add additive schema**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Add additive schema**
   `world_book_entities` / `world_book_revisions` /
   `world_book_revision_blobs` mirroring the character tables (no changes to
   existing character tables or rows; migration additive only).
-- [ ] **Step 4: Implement the normalized entry model**
+- [x] **Step 4: Implement the normalized entry model**
   `world-book-model.js`: bounded validation/normalization of the §7.4 entry
   shape (ids, keys, selective logic enum, probability 0-100, insertion
   position enum + order, recursion flags, timed fields, characterFilter,
   preservedDecorators/preservedExtensions inert). Reject Proxies/accessors;
   bound all strings/arrays/counts with versioned constants.
-- [ ] **Step 5: Repository methods**
+- [x] **Step 5: Repository methods**
   `createWorldBook`, `createWorldBookRevision`, `getWorldBook`,
   `getWorldBookRevision`, `listWorldBooks`, `archiveWorldBook` — same
   transaction/CAS/dedup patterns as characters.
-- [ ] **Step 6: Run store + regression tests**
-- [ ] **Step 7: Commit** — `feat: add world book persistence`
+- [x] **Step 6: Run store + regression tests**
+- [x] **Step 7: Commit** — `feat: add world book persistence`
 
 ## Task WB-2: Embedded character_book Import
 
@@ -94,22 +94,22 @@ Explicitly OUT of Phase 2A (later phases):
 - Modify: `src/main/character-worlds/service.js`
 - Create: `scripts/test-character-world-book-import.mjs`
 
-- [ ] **Step 1: Write failing import tests**
+- [x] **Step 1: Write failing import tests**
   V2/V3 cards with embedded `character_book`: imported as a world-book
   revision linked via `characterBookRevisionId`; entry count/fields bounded;
   unsupported entry fields inert + compatibility report; oversized/hostile
   books fail closed; preview shows book summary (entry count, supported/inert
   counts); duplicate book revision deduped across imports.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Parse character_book in the card pipeline**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Parse character_book in the card pipeline**
   Reuse the bounded parser; normalize through `world-book-model.js`; report
   inert fields via the existing compatibility-report path.
-- [ ] **Step 4: Persist through the import flow**
+- [x] **Step 4: Persist through the import flow**
   Commit creates the book revision in the same transaction as the character
   revision; `characterBookRevisionId` pinned on the character revision;
   rollback removes both (existing blob/refcount discipline).
-- [ ] **Step 5: Run import + hardening regressions**
-- [ ] **Step 6: Commit** — `feat: import embedded character books`
+- [x] **Step 5: Run import + hardening regressions**
+- [x] **Step 6: Commit** — `feat: import embedded character books`
 
 ## Task WB-3: Deterministic Activation Resolver
 

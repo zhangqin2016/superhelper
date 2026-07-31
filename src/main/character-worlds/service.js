@@ -269,6 +269,9 @@ class CharacterWorldsService {
         container: cachedParsed.container || "json",
         canonical: structuredClone(cachedParsed.canonical),
         compatibility: structuredClone(cachedParsed.compatibility),
+        characterBook: cachedParsed.characterBook
+          ? structuredClone(cachedParsed.characterBook.summary)
+          : null,
         duplicates: structuredClone(duplicates),
       };
     });
@@ -367,6 +370,17 @@ class CharacterWorldsService {
             mime: original.mime,
             data: snapshot.bytes,
           }],
+          characterBook: parsed.characterBook
+            ? {
+                canonical: parsed.characterBook.canonical,
+                source: {
+                  kind: "imported",
+                  format: parsed.format,
+                  container: parsed.container || "json",
+                  embedding: "character_book",
+                },
+              }
+            : null,
           duplicateResolution,
           assertCanCommit: () => this._assertOperation(operation),
         });

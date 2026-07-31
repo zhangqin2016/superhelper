@@ -538,7 +538,7 @@ try {
   scheduled.close();
 
   db.migrate(MIGRATIONS);
-  assert.equal(db.pragma("user_version"), 8);
+  assert.equal(db.pragma("user_version"), 9);
   const columns = new Set(
     db.all("PRAGMA table_info(turn_inputs)").map((row) => row.name),
   );

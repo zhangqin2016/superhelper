@@ -131,8 +131,51 @@ function useDuplicate(repository, state, entityId, owner, prepared, updatedAt) {
   return revisionFromRow(repository, state.duplicate);
 }
 
-function createWorldBook(repository, { ownerScope, canonical, source, assets = [] }) {
+/**
+ * Import-phase embedded character_book persistence (Phase 2, Task WB-2).
+ * Must be called INSIDE the surrounding character-import transaction: it opens
+ * no transaction and writes no blobs (embedded books carry no assets), so a
+ * rollback of the character import removes everything written here. An
+ * identical book (same normalized canonical + same source envelope, i.e. same
+ * revision hash) reuses the existing revision instead of creating a copy.
+ */
+function importEmbeddedWorldBook(repository, { ownerScope, canonical, source }) {
   const owner = requiredString(ownerScope, "ownerScope");
+  const normalized = normalizeWorldBookCanonical(canonical);
+  const prepared = prepareWorldBookRevision(normalized, source, "created", []);
+  // An identical book (same normalized canonical + same source envelope, i.e.
+  // same revision hash) reuses the existing revision — but never one whose
+  // entity is archived: archived books stay archived and never acquire new
+  // character pins.
+  const existing = repository.db.get(
+    `SELECT r.id, r.entity_id FROM world_book_revisions r
+     JOIN world_book_entities e
+       ON e.id = r.entity_id AND e.owner_scope = r.owner_scope
+     WHERE r.owner_scope = ? AND r.revision_hash = ? AND e.archived_at IS NULL
+     ORDER BY r.created_at ASC, r.id ASC
+     LIMIT 1`,
+    owner, prepared.revisionHash,
+  );
+  if (existing) {
+    return { entityId: existing.entity_id, revisionId: existing.id, reused: true };
+  }
+  const entityId = crypto.randomUUID();
+  const revisionId = crypto.randomUUID();
+  const createdAt = Date.now();
+  insertRevision(repository, {
+    id: revisionId, entityId, owner, parentId: null, number: 1, prepared, createdAt,
+  });
+  repository.db.run(
+    `INSERT INTO world_book_entities
+       (id, owner_scope, display_name, current_revision_id, archived_at,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?, NULL, ?, ?)`,
+    entityId, owner, prepared.displayName, revisionId, createdAt, createdAt,
+  );
+  return { entityId, revisionId, reused: false };
+}
+
+function createWorldBook(repository, { ownerScope, canonical, source, assets = [] }) {  const owner = requiredString(ownerScope, "ownerScope");
   const normalized = normalizeWorldBookCanonical(canonical);
   const assetRefs = repository.assetLifecycle.prepare(assets);
   const prepared = prepareWorldBookRevision(normalized, source, "created", assetRefs);
@@ -262,5 +305,6 @@ module.exports = {
   createWorldBookRevision,
   getWorldBook,
   getWorldBookRevision,
+  importEmbeddedWorldBook,
   listWorldBooks,
 };

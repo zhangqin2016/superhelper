@@ -230,8 +230,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v8 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 8);
+  check("migrations v3-v9 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 9);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
     const revisionColumns = tableColumns(migratedStore.db, "world_book_revisions");
     for (const column of [
@@ -276,7 +276,7 @@ try {
 
   const legacyStore = new MessageStore(legacyDbPath, legacyBlobDir);
   check("migration v8 backfills pre-existing rows before the dedup index", () => {
-    assert.equal(legacyStore.db.pragma("user_version"), 8);
+    assert.equal(legacyStore.db.pragma("user_version"), 9);
     const rows = legacyStore.db.all(
       `SELECT id, revision_hash FROM world_book_revisions
        WHERE entity_id = ? ORDER BY revision_number ASC`,
@@ -291,15 +291,15 @@ try {
   });
   legacyStore.close();
 
-  check("a v8 database opened by a v7 migration set is a designed no-op", () => {
+  check("a v9 database opened by a v7 migration set is a designed no-op", () => {
     const pinDbPath = path.join(tmp, "forward-pin.db");
     const pinSeed = openDatabase(pinDbPath);
     pinSeed.migrate(MIGRATIONS);
-    assert.equal(pinSeed.pragma("user_version"), 8);
+    assert.equal(pinSeed.pragma("user_version"), 9);
     pinSeed.close();
     const pinDb = openDatabase(pinDbPath);
-    assert.equal(pinDb.migrate(MIGRATIONS.slice(0, 7)), 8);
-    assert.equal(pinDb.pragma("user_version"), 8);
+    assert.equal(pinDb.migrate(MIGRATIONS.slice(0, 7)), 9);
+    assert.equal(pinDb.pragma("user_version"), 9);
     pinDb.close();
   });
   const repository = freshStore.characterWorlds();

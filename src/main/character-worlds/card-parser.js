@@ -1,9 +1,11 @@
 "use strict";
 
 const { CompatibilityReport } = require("./compatibility-report");
+const { mapEmbeddedCharacterBook } = require("./character-book-import");
 const {
   CHARACTER_SCHEMA_VERSION,
 } = require("./constants");
+const { executableKey } = require("./executable-keys");
 const { resolveImportLimits } = require("./import-limits");
 const { JsonPointerStack } = require("./json-pointer");
 const { ParseBudget } = require("./parse-budget");
@@ -15,19 +17,6 @@ const {
   normalizeStringArray,
   stableJson,
 } = require("./validation");
-
-const EXECUTABLE_KEYS = new Set([
-  "executable",
-  "script",
-  "scripts",
-  "plugin",
-  "plugins",
-  "regexscript",
-  "regexscripts",
-  "stscript",
-  "quickreply",
-  "quickreplies",
-]);
 
 const V1_STRONG_FIELDS = new Map([
   ["personality", "string"],
@@ -164,10 +153,6 @@ function detectFormat(root, numberLexemes = []) {
     });
   }
   return "v1_json";
-}
-
-function executableKey(key) {
-  return EXECUTABLE_KEYS.has(key.replace(/[\s_-]+/g, "").toLowerCase());
 }
 
 function chooseSource(source, definition) {
@@ -345,6 +330,22 @@ function parseJsonCharacterCard(buffer, options = {}) {
         : "",
     });
   }
+  // V2/V3 cards may embed a SillyTavern character_book; it is normalized
+  // through the bounded world-book model (WORLD_BOOK_* errors fail the import
+  // closed) and persisted as a world-book revision on commit. V1 cards keep
+  // the key as plain inert data.
+  let characterBook = null;
+  if (prefix) pointer.push(prefix);
+  try {
+    characterBook = mapEmbeddedCharacterBook(prefix ? source : null, canonical.name, {
+      report,
+      pointer,
+      budget,
+      consumeKey: (object, key) => markConsumed(consumed, object, key),
+    });
+  } finally {
+    if (prefix) pointer.pop();
+  }
   classifyPreserved(preserved.data, report, pointer, consumed, budget);
   const canonicalJson = stableJson(canonical);
   const canonicalBytes = Buffer.byteLength(canonicalJson, "utf8");
@@ -361,6 +362,7 @@ function parseJsonCharacterCard(buffer, options = {}) {
     ok: true,
     format,
     canonical,
+    characterBook,
     preserved,
     compatibility: report.finalize(),
   };
