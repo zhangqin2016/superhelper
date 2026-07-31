@@ -137,6 +137,11 @@ const DEFAULT_ACTIVATION = {
   delayMessages: 0,
   stickyMessages: 0,
   cooldownMessages: 0,
+  forceState: "none",
+  activateOnlyAfter: 0,
+  greetingIndex: null,
+  scanDepthMessages: 0,
+  statefulMatch: "none",
 };
 const DEFAULT_INSERTION = {
   position: "before_character",
@@ -145,6 +150,12 @@ const DEFAULT_INSERTION = {
   outletName: "",
   order: 100,
   priority: null,
+  reverseDepth: false,
+};
+const EMPTY_DECORATORS = {
+  directives: [],
+  inert: [],
+  applied: { activation: {}, insertion: {} },
 };
 const DEFAULT_RECURSION = {
   preventFurtherRecursion: false,
@@ -182,7 +193,7 @@ try {
   console.log("character-world-book-import:");
 
   await check("schema v9 pins the embedded book revision on character revisions", async () => {
-    assert.equal(store.db.pragma("user_version"), 9);
+    assert.equal(store.db.pragma("user_version"), 10);
     assert.ok(
       tableColumns(store.db, "character_revisions").includes("character_book_revision_id"),
       "missing character_revisions.character_book_revision_id",
@@ -222,6 +233,7 @@ try {
         priority: 7,
       },
       recursion: { ...DEFAULT_RECURSION },
+      decorators: { ...EMPTY_DECORATORS },
       preservedDecorators: [],
       preservedExtensions: {},
       comment: "port lore memo",
@@ -233,6 +245,7 @@ try {
       activation: { ...DEFAULT_ACTIVATION, constant: true, primaryKeys: ["beacon"] },
       insertion: { ...DEFAULT_INSERTION, position: "after_character" },
       recursion: { ...DEFAULT_RECURSION },
+      decorators: { ...EMPTY_DECORATORS },
       preservedDecorators: [],
       preservedExtensions: {},
       vendor_flag: { keep: true },

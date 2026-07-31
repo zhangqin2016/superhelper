@@ -73,6 +73,14 @@ const MAX_WORLD_BOOK_TOKEN_BUDGET = 1_000_000;
 const MAX_WORLD_BOOK_ORDER = 1_000_000;
 const MAX_WORLD_BOOK_GROUP_WEIGHT = 1_000_000;
 const MAX_WORLD_BOOK_PRESERVED_DECORATORS = 1024;
+// V3 decorator compilation bounds (§10.4.7): only this many leading decorator
+// lines are parsed, fallback chains evaluate at most this many items (the
+// CCV3 floor is 5), and a decorator value longer than this is invalid.
+const MAX_WORLD_BOOK_DECORATOR_LINES = 64;
+const MAX_WORLD_BOOK_DECORATOR_CHAIN_DEPTH = 8;
+const MAX_WORLD_BOOK_DECORATOR_VALUE_CHARS = 256;
+// A decorator name longer than this is never recognized (unknown + inert).
+const MAX_WORLD_BOOK_DECORATOR_NAME_CHARS = 64;
 const MAX_WORLD_BOOK_DATA_DEPTH = 32;
 const MAX_WORLD_BOOK_DATA_NODES = 100_000;
 const MAX_WORLD_BOOK_DATA_ARRAY_LENGTH = 100_000;
@@ -274,6 +282,10 @@ module.exports = {
   MAX_WORLD_BOOK_ORDER,
   MAX_WORLD_BOOK_GROUP_WEIGHT,
   MAX_WORLD_BOOK_PRESERVED_DECORATORS,
+  MAX_WORLD_BOOK_DECORATOR_LINES,
+  MAX_WORLD_BOOK_DECORATOR_CHAIN_DEPTH,
+  MAX_WORLD_BOOK_DECORATOR_VALUE_CHARS,
+  MAX_WORLD_BOOK_DECORATOR_NAME_CHARS,
   MAX_WORLD_BOOK_DATA_DEPTH,
   MAX_WORLD_BOOK_DATA_NODES,
   MAX_WORLD_BOOK_DATA_ARRAY_LENGTH,

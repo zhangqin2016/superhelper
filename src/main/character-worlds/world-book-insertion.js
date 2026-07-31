@@ -29,7 +29,10 @@ const POSITION_ORDER = [
 ];
 
 function priorityClass(selection) {
-  if (selection.route === "sticky" || selection.route === "constant") return 0;
+  if (selection.route === "sticky" || selection.route === "constant"
+      || selection.route === "stateful") {
+    return 0;
+  }
   if (selection.sourceScope === "chat") return 1;
   if (selection.sourceScope === "recursion") return 3;
   return 2;
@@ -93,6 +96,7 @@ function toInsertionPlan(chosen) {
     order: selection.entry.insertion?.order ?? 100,
     role: selection.entry.insertion?.role ?? "system",
     depth: selection.entry.insertion?.depth ?? 4,
+    reverseDepth: selection.entry.insertion?.reverseDepth === true,
     outletName: selection.entry.insertion?.outletName ?? "",
     reason: selection.route,
     sourceScope: selection.sourceScope,

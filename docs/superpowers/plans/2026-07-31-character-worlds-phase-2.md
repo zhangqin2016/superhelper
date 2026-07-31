@@ -189,7 +189,7 @@ Explicitly OUT of Phase 2A (later phases):
 - Modify: `src/main/character-worlds/world-book-model.js`
 - Create: `scripts/test-character-world-book-decorators.mjs`
 
-- [ ] **Step 1: Write failing decorator tests**
+- [x] **Step 1: Write failing decorator tests**
   §10.4.7: typed AST for recognized decorators (activation-count,
   greeting-index, scan-depth, role, position, depth, reverse-depth, stateful
   match); first-value rule for duplicate single-value decorators; `@@@`
@@ -197,11 +197,11 @@ Explicitly OUT of Phase 2A (later phases):
   invalid decorators inert + reported; decorator text never treated as
   macro/script/instruction; decorator decisions included in revision index
   hash and golden fixtures.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Implement the decorator compiler**
-- [ ] **Step 4: Wire into revision-index build**
-- [ ] **Step 5: Run decorator + import regressions**
-- [ ] **Step 6: Commit** — `feat: compile v3 world book decorators`
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Implement the decorator compiler**
+- [x] **Step 4: Wire into revision-index build**
+- [x] **Step 5: Run decorator + import regressions**
+- [x] **Step 6: Commit** — `feat: compile v3 world book decorators`
 
 ## Task WB-6: IPC Surface + Capability Gate + Acceptance
 

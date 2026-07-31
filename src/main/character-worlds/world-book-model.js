@@ -21,6 +21,9 @@ const {
   requiredString,
   stableJson,
 } = require("./persistence-codec");
+const {
+  resolveEntryDecorators,
+} = require("./world-book-decorators");
 
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
@@ -37,13 +40,15 @@ const INSERTION_POSITIONS = new Set([
 ]);
 const INSERTION_ROLES = new Set(["system", "user", "assistant"]);
 const CHARACTER_FILTER_MODES = new Set(["include", "exclude"]);
+const FORCE_STATES = new Set(["none", "activate", "suppress"]);
+const STATEFUL_MATCHES = new Set(["none", "keep", "suppress"]);
 
 const KNOWN_CANONICAL_KEYS = new Set([
   "schemaVersion", "name", "displayName", "entries", "scanPolicy",
 ]);
 const KNOWN_ENTRY_KEYS = new Set([
   "id", "enabled", "content", "activation", "insertion", "recursion",
-  "preservedDecorators", "preservedExtensions",
+  "decorators", "preservedDecorators", "preservedExtensions",
 ]);
 const KNOWN_ACTIVATION_KEYS = new Set([
   "constant", "primaryKeys", "secondaryKeys", "selective", "selectiveLogic",
@@ -51,12 +56,15 @@ const KNOWN_ACTIVATION_KEYS = new Set([
   "inclusionGroups", "groupWeight", "prioritizeInclusion", "useGroupScoring",
   "characterFilter", "generationTriggers", "matchSources",
   "delayMessages", "stickyMessages", "cooldownMessages",
+  "forceState", "activateOnlyAfter", "greetingIndex", "scanDepthMessages",
+  "statefulMatch",
 ]);
 const KNOWN_CHARACTER_FILTER_KEYS = new Set([
   "mode", "names", "tags", "characterNames", "characterTags",
 ]);
 const KNOWN_INSERTION_KEYS = new Set([
   "position", "depth", "role", "outletName", "order", "priority",
+  "reverseDepth",
 ]);
 const KNOWN_RECURSION_KEYS = new Set([
   "preventFurtherRecursion", "excludeFromRecursion", "delayUntilRecursion",
@@ -184,6 +192,16 @@ function probabilityAt(object, key, fallback) {
   return Math.max(0, Math.min(value, 100));
 }
 
+// Like intAt but "absent" stays null (no directive) instead of a numeric
+// default; Number(null) === 0 would silently turn "absent" into a real zero.
+function nullableIntAt(object, key, maximum) {
+  const raw = object[key];
+  if (raw == null) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(Math.floor(value), maximum));
+}
+
 function enumAt(object, key, allowed, fallback) {
   const value = object[key];
   return typeof value === "string" && allowed.has(value) ? value : fallback;
@@ -283,6 +301,12 @@ function normalizeActivation(input) {
     delayMessages: intAt(activation, "delayMessages", 0, C.MAX_WORLD_BOOK_MESSAGE_COUNT),
     stickyMessages: intAt(activation, "stickyMessages", 0, C.MAX_WORLD_BOOK_MESSAGE_COUNT),
     cooldownMessages: intAt(activation, "cooldownMessages", 0, C.MAX_WORLD_BOOK_MESSAGE_COUNT),
+    // V3 decorator-compiled fields (§10.4.7); defaults mean "no directive".
+    forceState: enumAt(activation, "forceState", FORCE_STATES, "none"),
+    activateOnlyAfter: intAt(activation, "activateOnlyAfter", 0, C.MAX_WORLD_BOOK_MESSAGE_COUNT),
+    greetingIndex: nullableIntAt(activation, "greetingIndex", C.MAX_WORLD_BOOK_MESSAGE_COUNT),
+    scanDepthMessages: intAt(activation, "scanDepthMessages", 0, C.MAX_WORLD_BOOK_MESSAGE_COUNT),
+    statefulMatch: enumAt(activation, "statefulMatch", STATEFUL_MATCHES, "none"),
     ...preservedUnknown(activation, KNOWN_ACTIVATION_KEYS),
   };
 }
@@ -303,6 +327,7 @@ function normalizeInsertion(input) {
     priority: Number.isFinite(priority)
       ? Math.max(0, Math.min(Math.floor(priority), C.MAX_WORLD_BOOK_ORDER))
       : null,
+    reverseDepth: boolAt(insertion, "reverseDepth", false),
     ...preservedUnknown(insertion, KNOWN_INSERTION_KEYS),
   };
 }
@@ -322,31 +347,29 @@ function normalizeEntry(input, index) {
   if (!plainObject(input)) {
     throw invalid("World book entries must be plain objects", { path: `/entries/${index}` });
   }
-  const content = typeof input.content === "string" ? input.content : "";
-  const contentChars = [...content].length;
+  const rawContent = typeof input.content === "string" ? input.content : "";
+  const contentChars = [...rawContent].length;
   if (contentChars > C.MAX_WORLD_BOOK_CONTENT_CHARS) {
     throw limit("entryContentChars", C.MAX_WORLD_BOOK_CONTENT_CHARS, contentChars);
   }
   const rawId = typeof input.id === "string" && input.id ? input.id : `entry-${index}`;
   const id = boundedString(rawId, "entryIdChars", C.MAX_WORLD_BOOK_ENTRY_ID_CHARS);
-  const decorators = Array.isArray(input.preservedDecorators)
-    ? input.preservedDecorators
-    : [];
-  if (decorators.length > C.MAX_WORLD_BOOK_PRESERVED_DECORATORS) {
-    throw limit(
-      "preservedDecorators",
-      C.MAX_WORLD_BOOK_PRESERVED_DECORATORS,
-      decorators.length,
-    );
-  }
+  // V3 decorator compilation (§10.4.7) happens here, at immutable
+  // revision-index build time; see world-book-decorators.js.
+  const decorated = resolveEntryDecorators(input, rawContent);
+  const activationRaw = plainObject(input.activation) ? input.activation : {};
+  const insertionRaw = plainObject(input.insertion) ? input.insertion : {};
   return {
     id,
     enabled: boolAt(input, "enabled", true),
-    content,
-    activation: normalizeActivation(input.activation),
-    insertion: normalizeInsertion(input.insertion),
+    content: decorated.content,
+    // Decorator field overrides are validated by the compiler and then
+    // re-validated by the field normalizers after the merge.
+    activation: normalizeActivation({ ...activationRaw, ...decorated.record.applied.activation }),
+    insertion: normalizeInsertion({ ...insertionRaw, ...decorated.record.applied.insertion }),
     recursion: normalizeRecursion(input.recursion),
-    preservedDecorators: decorators,
+    decorators: decorated.record,
+    preservedDecorators: decorated.preservedDecorators,
     preservedExtensions: plainObject(input.preservedExtensions)
       ? input.preservedExtensions
       : {},

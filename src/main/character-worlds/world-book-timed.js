@@ -29,6 +29,13 @@
  *
  * Checkpoint lists are sorted by entryId and bounded, so the persisted shape
  * is byte-deterministic for identical inputs.
+ *
+ * - stateful match (§10.4.7, V3 @@keep_activate_after_match /
+ *   @@dont_activate_after_match): the `matched` list records entry ids that
+ *   activated at least once. A `keep` entry on the list activates on later
+ *   turns without a key match (route stateful); a `suppress` entry on the
+ *   list can never activate again. The list is carried verbatim across turns
+ *   and only rewinds/checkpoint invalidation clear it.
  */
 
 function clampSeq(value) {
@@ -67,10 +74,28 @@ function sanitizeCheckpoint(raw, maximum = 4096) {
   const sticky = sanitizeEntryList(source.sticky, "untilSeq", maximum);
   const cooldown = sanitizeEntryList(source.cooldown, "untilSeq", maximum);
   const delay = sanitizeEntryList(source.delay, "matchedSeq", maximum);
+  const matched = sanitizeIdList(source.matched, maximum);
   return {
-    checkpoint: { sticky: sticky.list, cooldown: cooldown.list, delay: delay.list },
-    dropped: sticky.dropped + cooldown.dropped + delay.dropped,
+    checkpoint: {
+      sticky: sticky.list, cooldown: cooldown.list, delay: delay.list,
+      matched: matched.list,
+    },
+    dropped: sticky.dropped + cooldown.dropped + delay.dropped + matched.dropped,
   };
+}
+
+// Stateful-match ids carry no sequence numbers: dedupe + sort + bound.
+function sanitizeIdList(raw, maximum) {
+  if (!Array.isArray(raw)) return { list: [], dropped: 0 };
+  const ids = new Set();
+  for (const item of raw) {
+    if (item && typeof item === "object" && typeof item.entryId === "string" && item.entryId) {
+      ids.add(item.entryId);
+    }
+  }
+  const sorted = [...ids].sort();
+  const dropped = Math.max(0, sorted.length - maximum);
+  return { list: sorted.slice(0, maximum).map((entryId) => ({ entryId })), dropped };
 }
 
 function sortAndBound(list, maximum) {
@@ -82,7 +107,7 @@ function sortAndBound(list, maximum) {
  * @param {object} input
  * @param {object} input.previous sanitized previous checkpoint
  * @param {Array}  input.selected final selection: [{entryId, stickyMessages,
- *   cooldownMessages, carriedStickyUntilSeq (number|null)}]
+ *   cooldownMessages, carriedStickyUntilSeq (number|null), statefulMatch}]
  * @param {Array}  input.pendingDelay delays still pending: [{entryId, matchedSeq}]
  * @param {number} input.sequenceNow current canonical sequence boundary
  * @param {number} input.maxTimedEntries hard cap per list
@@ -119,6 +144,13 @@ function computeNextCheckpoint(input) {
     if (carried.untilSeq >= sequenceNow) cooldown.push(carried);
   }
 
+  const matched = new Set(input.previous.matched.map((item) => item.entryId));
+  for (const entry of input.selected) {
+    if (entry.statefulMatch === "keep" || entry.statefulMatch === "suppress") {
+      matched.add(entry.entryId);
+    }
+  }
+
   return {
     sticky: sortAndBound(sticky, maximum),
     cooldown: sortAndBound(cooldown, maximum),
@@ -126,6 +158,7 @@ function computeNextCheckpoint(input) {
       input.pendingDelay.map(({ entryId, matchedSeq }) => ({ entryId, matchedSeq })),
       maximum,
     ),
+    matched: sortAndBound([...matched].map((entryId) => ({ entryId })), maximum),
   };
 }
 

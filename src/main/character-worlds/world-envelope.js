@@ -48,6 +48,9 @@ function rankOfBlock(block) {
 // §10.1 contract reason enum. Internal resolver routes map onto it:
 // delay_due is a due primary-key match; any activation reached through the
 // recursion frontier reports "recursion" regardless of its incoming route.
+// stateful (V3 @@keep_activate_after_match) reports "sticky": it is a
+// checkpoint-carried re-activation without a fresh key match, and the §10.1
+// enum has no dedicated value for it.
 const ROUTE_TO_CONTRACT_REASON = Object.freeze({
   constant: "constant",
   primary_key: "primary_key",
@@ -55,6 +58,7 @@ const ROUTE_TO_CONTRACT_REASON = Object.freeze({
   semantic: "semantic",
   recursion: "recursion",
   sticky: "sticky",
+  stateful: "sticky",
   delay_due: "primary_key",
 });
 
@@ -93,6 +97,10 @@ function worldBlockFields(unit) {
     if (unit.type === "world_at_depth") {
       fields.role = unit.entry.role;
       fields.depth = unit.entry.depth;
+      // @@reverse_depth (CCV3): depth counted from the oldest message; the
+      // envelope cannot represent either depth direction exactly (§10.3.1),
+      // so the flag rides along for the trace.
+      if (unit.entry.reverseDepth === true) fields.reverseDepth = true;
     } else if (unit.type === "world_outlet") {
       fields.outletName = unit.entry.outletName;
     }
@@ -138,6 +146,11 @@ function prepareWorldUnits({
       checkpoint: worldBook.checkpoint ?? null,
       seedIdentity: worldBook.seedIdentity,
       compatibilityProfile: worldBook.compatibilityProfile ?? compatibilityProfile,
+      // Known limitation (Phase 2A): no greetingIndex is plumbed into the
+      // generation context, so a compiled @@is_greeting decorator is always
+      // IGNORED at resolve time (the CCV3-sanctioned behavior when the active
+      // greeting cannot be determined); the decision stays recorded in the
+      // revision's decorator AST and compatibility report.
       generationContext: { characterName, kind: "normal" },
       budget: worldBook.budget,
       revisionHash: typeof worldBook.revision?.revisionHash === "string"

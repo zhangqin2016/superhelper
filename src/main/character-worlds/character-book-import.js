@@ -47,7 +47,11 @@
  *   exclude_recursion | excludeRecursion          -> recursion.excludeFromRecursion
  *   delay_until_recursion | delayUntilRecursion   -> recursion.delayUntilRecursion
  *   id (string or number)                         -> entry id
- *   content                                       -> entry content
+ *   content                                       -> entry content (leading
+ *     V3 `@@` decorator lines compile per §10.4.7: recognized+valid
+ *     directives are stripped and applied, unknown/invalid lines stay inert
+ *     in the content and land in preservedDecorators; each line is reported
+ *     at content/<index>)
  *   enabled (or inverted `disable`)               -> entry enabled
  *
  *   book.name | book.displayName                  -> book name (fallback:
@@ -63,7 +67,24 @@
  */
 
 const { normalizeWorldBookCanonical } = require("./world-book-model");
+const { compileWorldBookDecorators } = require("./world-book-decorators");
 const { executableKey } = require("./executable-keys");
+
+// Decorator report mapping (§10.4.7): applied directives are supported;
+// unknown decorator spellings in a chain that never applied are preserved
+// inert in the content; recognized decorators that did not take effect —
+// invalid values, duplicates, shadowed directives, superseded fallback items
+// (stripped, never preserved), chain-depth overflow — are ignored-invalid.
+const DECORATOR_REPORT_CATEGORIES = {
+  applied: "supported",
+  unknown_decorator: "preservedInert",
+  invalid_value: "ignoredInvalid",
+  duplicate_name: "ignoredInvalid",
+  fallback_superseded: "ignoredInvalid",
+  shadowed_by_position: "ignoredInvalid",
+  shadowed_by_depth: "ignoredInvalid",
+  chain_depth_exceeded: "ignoredInvalid",
+};
 const {
   BOOK_FIELDS,
   CONVERTERS,
@@ -322,7 +343,31 @@ function mapStructuralEntryFields(entry, input, { report, pointer, budget }) {
       budget.consume(1);
       if (typeof entry.content === "string") {
         report.add("supported", pointer);
-        input.content = entry.content;
+        // V3 decorator compilation (§10.4.7): the mapper compiles here so
+        // each decorator line lands in the compatibility report at
+        // content/<index>; the model passes the compiled record through
+        // unchanged (import is the reporting path, model is the build path).
+        const compiled = compileWorldBookDecorators(entry.content);
+        input.content = compiled.content;
+        if (compiled.reports.length > 0) {
+          input.decorators = {
+            directives: compiled.directives,
+            inert: compiled.inert,
+            applied: compiled.applied,
+          };
+          if (compiled.inert.length > 0) {
+            input.preservedDecorators = compiled.inert.map((item) => item.line);
+          }
+          for (const item of compiled.reports) {
+            budget.consume(1);
+            pointer.push(String(item.index));
+            try {
+              report.add(DECORATOR_REPORT_CATEGORIES[item.status === "applied" ? "applied" : item.reason] ?? "ignoredInvalid", pointer);
+            } finally {
+              pointer.pop();
+            }
+          }
+        }
       } else {
         report.add("ignoredInvalid", pointer);
       }

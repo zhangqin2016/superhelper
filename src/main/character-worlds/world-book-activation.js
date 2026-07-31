@@ -23,11 +23,14 @@
  * Identical inputs produce byte-identical output across processes.
  *
  * Pipeline (§10.4.2-§10.4.6): enabled entries (useRegex inert fail-closed,
- * vectorized lexical-only fallback, both reported) → frontier evaluation
- * (world-book-frontier.js: key/constant/sticky/delay-due candidates from the
- * compiled Aho-Corasick index, selective secondary logic) → generation/
- * character filters BEFORE probability, timed gates by canonical sequence
- * numbers, deterministic probability → inclusion groups (world-book-groups.js)
+ * vectorized lexical-only fallback, @@dont_activate suppression, all
+ * reported) → frontier evaluation
+ * (world-book-frontier.js: key/constant/@@activate/sticky/stateful/delay-due
+ * candidates from the compiled Aho-Corasick index, selective secondary
+ * logic, per-entry @@scan_depth windows) → generation/character/decorator
+ * filters BEFORE probability (§10.4.7 decorator gates:
+ * @@activate_only_after / @@is_greeting / @@dont_activate_after_match),
+ * timed gates by canonical sequence numbers, deterministic probability → inclusion groups (world-book-groups.js)
  * → bounded recursion fixed point OR min-activation sweeps (mutually
  * exclusive policies; profile v1 picks min mode when minActivations > 0) →
  * budget selection (world-book-insertion.js) → next timed checkpoint
@@ -182,6 +185,11 @@ function resolveWorldBookActivation(input) {
       omit(entry.id, "regex_inert");
       continue;
     }
+    // @@dont_activate (CCV3): the entry is never a match, even constant/sticky.
+    if (entry.activation?.forceState === "suppress") {
+      omit(entry.id, "decorator_suppressed");
+      continue;
+    }
     if (entry.activation?.vectorized === true) fallbackVectorized.push(entry.id);
     matchable.push(entry);
   }
@@ -194,6 +202,8 @@ function resolveWorldBookActivation(input) {
   const stickyById = new Map(checkpoint.sticky.map((item) => [item.entryId, item]));
   const cooldownById = new Map(checkpoint.cooldown.map((item) => [item.entryId, item]));
   const delayById = new Map(checkpoint.delay.map((item) => [item.entryId, item]));
+  // V3 stateful match (§10.4.7): entries that activated on an earlier turn.
+  const statefulMatched = new Set((checkpoint.matched ?? []).map((item) => item.entryId));
   for (const entry of matchable) {
     if (entry.activation.vectorized !== true) continue;
     if (entry.activation.constant || entry.activation.primaryKeys.length > 0) continue;
@@ -243,7 +253,7 @@ function resolveWorldBookActivation(input) {
       omit(entry.id, "cooldown_active");
       return false;
     }
-    if (route === "sticky") return true;
+    if (route === "sticky" || route === "stateful") return true;
     const delayMessages = entry.activation.delayMessages ?? 0;
     if (delayMessages <= 0) return true;
     const pending = delayById.get(entry.id);
@@ -259,7 +269,9 @@ function resolveWorldBookActivation(input) {
   }
 
   function passesProbability(entry, route, level) {
-    if (route === "sticky" && profile.flags.stickySkipsProbability) return true;
+    if ((route === "sticky" || route === "stateful") && profile.flags.stickySkipsProbability) {
+      return true;
+    }
     const probability = entry.activation.probability ?? 100;
     if (probability <= 0) {
       omit(entry.id, "probability");
@@ -273,11 +285,41 @@ function resolveWorldBookActivation(input) {
     return false;
   }
 
+  // V3 decorator gates (§10.4.7), evaluated before timed/probability:
+  // - @@activate_only_after N: no match until the TOTAL canonical message
+  //   sequence (corpus.stats.sequenceNow) reaches N — a documented
+  //   deterministic proxy for CCV3's "user input received Nth time" rule
+  //   (Lily does not attempt assistant-message counting);
+  // - @@is_greeting N: no match when the binding's active greeting index is
+  //   known and differs; when the context cannot determine the greeting the
+  //   decorator is ignored (CCV3), never fail-closed;
+  // - @@dont_activate_after_match: no match once the entry activated before.
+  function passesDecorators(entry) {
+    const activation = entry.activation ?? {};
+    if ((activation.activateOnlyAfter ?? 0) > 0 && sequenceNow < activation.activateOnlyAfter) {
+      omit(entry.id, "decorator_activate_only_after");
+      return false;
+    }
+    const greetingIndex = activation.greetingIndex;
+    if (greetingIndex !== null && greetingIndex !== undefined
+        && Number.isSafeInteger(generationContext?.greetingIndex)
+        && generationContext.greetingIndex !== greetingIndex) {
+      omit(entry.id, "decorator_greeting_mismatch");
+      return false;
+    }
+    if (activation.statefulMatch === "suppress" && statefulMatched.has(entry.id)) {
+      omit(entry.id, "stateful_suppressed");
+      return false;
+    }
+    return true;
+  }
+
   function makeCandidate(entry, route, sourceScope, matchedKeyCount, level, matched = null) {
     budget();
     counters.candidatesEvaluated += 1;
     if (selected.has(entry.id)) return null;
     if (!passesFilters(entry)) return null;
+    if (!passesDecorators(entry)) return null;
     if (!passesTimed(entry, route)) return null;
     if (!passesProbability(entry, route, level)) return null;
     const sticky = stickyById.get(entry.id);
@@ -300,10 +342,22 @@ function resolveWorldBookActivation(input) {
     return candidate;
   }
 
+  // Per-entry @@scan_depth (§10.4.7) anchors at the ABSOLUTE chat head: this
+  // maps each admitted corpus message unit to the number of canonical message
+  // units NEWER than it. Min-activation sweeps scan progressively older
+  // slices of the same corpus, so anchoring per sweep window would let
+  // @@scan_depth 1 match arbitrarily old messages; the book-level scan depth
+  // keeps the sweep semantics, the per-entry override never re-anchors.
+  const absoluteNewerByUnit = new Map();
+  const corpusMessageUnits = corpus.units.filter((unit) => unit.kind === "message");
+  corpusMessageUnits.forEach((unit, index) => {
+    absoluteNewerByUnit.set(unit, corpusMessageUnits.length - 1 - index);
+  });
+
   const { evaluateFrontier } = createFrontierEvaluator({
     index, entryById, matchable, checkpoint, selected, blockedGroups,
     keepDelay, omit, makeCandidate, traceGroups, counters, budget, prngFor,
-    limits, sequenceNow,
+    limits, sequenceNow, absoluteNewerByUnit,
   });
 
   // ------------------------------------------------------------ pipeline --
@@ -387,6 +441,7 @@ function resolveWorldBookActivation(input) {
       stickyMessages: selection.entry.activation.stickyMessages ?? 0,
       cooldownMessages: selection.entry.activation.cooldownMessages ?? 0,
       carriedStickyUntilSeq: selection.carriedStickyUntilSeq,
+      statefulMatch: selection.entry.activation.statefulMatch ?? "none",
     })),
     pendingDelay: [...pendingDelay.entries()]
       .filter(([entryId]) => !chosenIds.has(entryId))
@@ -394,6 +449,18 @@ function resolveWorldBookActivation(input) {
     sequenceNow,
     maxTimedEntries: limits.maxTimedEntries,
   });
+
+  // Compiled V3 decorator decisions recorded in the admitted revision
+  // (§10.4.7), counted over EVERY entry in the revision — including disabled
+  // and @@dont_activate-suppressed entries that never engaged this turn:
+  // applied = directives that changed entry behavior, inert = decorator lines
+  // that did not (unknown, invalid, shadowed, superseded, duplicate).
+  const decoratorCounts = { applied: 0, inert: 0 };
+  for (const entry of entries) {
+    for (const node of entry.decorators?.directives ?? []) {
+      decoratorCounts[node?.applied === true ? "applied" : "inert"] += 1;
+    }
+  }
 
   const trace = {
     matchingPolicyVersion: WORLD_BOOK_MATCHING_POLICY_VERSION,
@@ -406,6 +473,7 @@ function resolveWorldBookActivation(input) {
     mode: minMode ? "min_activation" : "recursion",
     // Measured AFTER budget selection: what actually got inserted.
     minActivationsUnmet: minMode && chosen.length < minActivations,
+    decorators: decoratorCounts,
     candidates: traceCandidates,
     groups: traceGroups,
     inert: { regex: inertRegex, vectorized: fallbackVectorized },

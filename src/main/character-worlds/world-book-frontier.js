@@ -49,13 +49,13 @@ function sourceScopeFor(aggregate, unitKind) {
  * @param {object} ctx shared resolver state:
  *   { index, entryById, matchable, checkpoint, selected, blockedGroups,
  *     keepDelay, omit, makeCandidate, traceGroups, counters, budget, prngFor,
- *     limits, sequenceNow }
+ *     limits, sequenceNow, absoluteNewerByUnit }
  */
 function createFrontierEvaluator(ctx) {
   const {
     index, entryById, matchable, checkpoint, selected, blockedGroups,
     keepDelay, omit, makeCandidate, traceGroups, counters, budget, prngFor,
-    limits, sequenceNow,
+    limits, sequenceNow, absoluteNewerByUnit,
   } = ctx;
 
   function scanUnits(units, level) {
@@ -69,6 +69,16 @@ function createFrontierEvaluator(ctx) {
         budget();
         const entry = entryById.get(key.entryId);
         if (!entry || selected.has(entry.id)) return;
+        // Per-entry @@scan_depth (§10.4.7): an entry with scanDepthMessages
+        // = n only matches keys inside the newest n canonical messages of the
+        // WHOLE admitted corpus (absolute chat head), never re-anchored per
+        // sweep window; recursion and matching-source units are unaffected
+        // (CCV3: the decorator is chat-context only).
+        const entryScanDepth = entry.activation.scanDepthMessages ?? 0;
+        if (entryScanDepth > 0 && unit.kind === "message"
+            && (absoluteNewerByUnit.get(unit) ?? Number.MAX_SAFE_INTEGER) >= entryScanDepth) {
+          return;
+        }
         if (unit.kind === "source" && !(entry.activation.matchSources ?? []).includes(unit.scope)) return;
         if (level > 0 && entry.recursion?.excludeFromRecursion === true) return;
         if (!recursionGate(entry, level)) return;
@@ -123,12 +133,17 @@ function createFrontierEvaluator(ctx) {
         if (item.untilSeq < sequenceNow || selected.has(item.entryId)) continue;
         const entry = entryById.get(item.entryId);
         if (!entry || entry.enabled === false || entry.activation?.useRegex === true) continue;
+        if (entry.activation?.forceState === "suppress") continue;
         const candidate = makeCandidate(entry, "sticky", "sticky", 0, 0);
         if (candidate) candidates.push(candidate);
       }
       const carriedIds = new Set(candidates.map((candidate) => candidate.entry.id));
       for (const entry of matchable) {
-        if (entry.activation.constant !== true || carriedIds.has(entry.id)) continue;
+        // @@activate (CCV3) is a match in any case, exactly like constant.
+        if (entry.activation.constant !== true && entry.activation.forceState !== "activate") {
+          continue;
+        }
+        if (carriedIds.has(entry.id)) continue;
         if (!recursionGate(entry, 0)) continue;
         const candidate = makeCandidate(entry, "constant", "constant", 0, 0);
         if (candidate) candidates.push(candidate);
@@ -137,11 +152,22 @@ function createFrontierEvaluator(ctx) {
         if (selected.has(item.entryId) || carriedIds.has(item.entryId)) continue;
         const entry = entryById.get(item.entryId);
         if (!entry || entry.enabled === false || entry.activation?.useRegex === true) continue;
+        if (entry.activation?.forceState === "suppress") continue;
         if (sequenceNow - item.matchedSeq < (entry.activation.delayMessages ?? 0)) {
           keepDelay(entry.id, item.matchedSeq);
           continue;
         }
         const candidate = makeCandidate(entry, "delay_due", "chat", 0, 0);
+        if (candidate) candidates.push(candidate);
+      }
+      // @@keep_activate_after_match (CCV3): once matched, a match in any case.
+      for (const item of checkpoint.matched ?? []) {
+        if (selected.has(item.entryId) || carriedIds.has(item.entryId)) continue;
+        if (candidates.some((candidate) => candidate.entry.id === item.entryId)) continue;
+        const entry = entryById.get(item.entryId);
+        if (!entry || entry.enabled === false || entry.activation?.useRegex === true) continue;
+        if (entry.activation?.statefulMatch !== "keep") continue;
+        const candidate = makeCandidate(entry, "stateful", "stateful", 0, 0);
         if (candidate) candidates.push(candidate);
       }
     }
