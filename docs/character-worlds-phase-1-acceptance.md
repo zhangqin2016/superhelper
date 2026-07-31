@@ -345,3 +345,35 @@ Phase 1 is **not** complete until:
 Known gap to close before sign-off: real Windows filesystem race testing for
 the file broker (see `HANDOFF.md` §7) — check 10 and the import checks on
 Windows x64 must be performed on real Windows hardware/VM, not assumed.
+
+## Evidence Records
+
+### Record 1 — macOS arm64 (partial: automated gates + launch smoke)
+
+```text
+Platform:            macOS arm64 (macOS 26.4.1)
+Build:               0.1.145 dev, feat/opencode-engine @ cdfea08
+Tester:              automated (agent)  Date: 2026-07-31
+Automated gates:     PASS — full suite 524/524 (scripts/run-all-tests.mjs,
+                     372s, exit 0); capability gate 60/60
+                     (scripts/run-capability-gate.mjs, exit 0); all 15
+                     Character Worlds focused tests + registry green
+Environment skips:   none product-relevant (offline sandbox produced expected
+                     network noise only: SSL handshake errors to remote hosts;
+                     dock.setIcon returned false — unrelated pre-existing)
+Launch smoke:        PASS — fresh LILY_USER_DATA_DIR, `npx electron .` alive
+                     after 28s, watchdog started, engine + bundled runtime
+                     resolved, no `[character-worlds] disabled` warning
+                     (service constructed), default policy disabled
+                     (no signed remote config). Log: /tmp/lily-smoke.log
+                     (session-local artifact; reproduce with the same command)
+
+| # | Check                                   | Result | Evidence (path/link) | Notes |
+|---|-----------------------------------------|--------|----------------------|-------|
+| 1 | Native conversation unchanged           | PASS (automated) | test-character-worlds-capability-gate.mjs: 8 failure modes byte-equal native + zero policy calls + real OpencodeAgentSession path | manual UI confirmation still open |
+| 2-15 | (manual UI checks)                   | OPEN   |                      | require human execution per template |
+
+Sign-off:            NOT SIGNED — manual rows 2-15 open; macOS x64 and
+                     Windows x64 records missing.
+```
+
