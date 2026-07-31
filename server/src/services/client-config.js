@@ -8,6 +8,12 @@ import { normalizeProviderForProtocol } from "./model-gateway/model-aliases.js";
 import { getModelCatalog } from "./model-catalog.js";
 import { resolveModelRuntimeBudget } from "./model-runtime-budget.js";
 import { buildMediaProviderContracts } from "./media-provider-contracts.js";
+import {
+  CHARACTER_WORLDS_DEFAULT_POLICY,
+  resolveCharacterWorldsPolicy,
+  applyCharacterWorldsClientGate,
+  appVersionAtLeast,
+} from "./character-worlds-policy.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
   schemaVersion: 1,
@@ -27,6 +33,7 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
   runtime: {
     env: {},
   },
+  characterWorlds: CHARACTER_WORLDS_DEFAULT_POLICY,
   taskIntelligence: {
     schemaVersion: 1,
     enabled: true,
@@ -512,6 +519,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
       permissionMode: "default",
       minAppVersion: "",
     },
+    characterWorlds: resolveCharacterWorldsPolicy(serverConfig),
     ...(Object.keys(runtimeEnv).length ? { runtime: { env: runtimeEnv } } : {}),
   };
 
@@ -664,18 +672,6 @@ export function isGatewayBaseUrl(baseUrl, env = {}) {
 // search proxy for them.
 const SEARCH_PROXY_MIN_APP_VERSION = "0.1.37";
 
-function appVersionAtLeast(version, min) {
-  const parse = (v) => String(v || "").split(".").map((n) => Number.parseInt(n, 10) || 0);
-  const a = parse(version);
-  const b = parse(min);
-  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
-    const x = a[i] || 0;
-    const y = b[i] || 0;
-    if (x !== y) return x > y;
-  }
-  return true;
-}
-
 // Per-scope model menu: a config profile may carry `models.providers` (an array
 // of provider ids) + optional `models.activeProvider` instead of a fixed preset
 // list. At delivery we expand that into the real preset menu for those providers
@@ -710,6 +706,9 @@ export function expandModelProviderMenu(effectiveConfig, options = {}) {
 
 export function withGatewayRuntimeConfig(effectiveConfig, request, input, options = {}) {
   const configCopy = JSON.parse(JSON.stringify(effectiveConfig || {}));
+  // Character Worlds minimum-client-version gate (spec §18): enabled policy
+  // only reaches clients new enough to honor it; older/unreported fail closed.
+  applyCharacterWorldsClientGate(configCopy, input.appVersion);
   const configuredBaseUrl = String(options.policyBaseUrl || options.publicBaseUrl || "").trim().replace(/\/+$/, "");
   const base = configuredBaseUrl || requestBaseUrl(request);
   const account = options.account && typeof options.account === "object" ? options.account : {};

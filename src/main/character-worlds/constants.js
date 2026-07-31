@@ -29,6 +29,41 @@ const MAX_CHARACTER_PNG_PIXELS = 40_000_000;
 const MAX_CHARACTER_WORKER_RESULT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_CHARACTER_ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
 const CHARACTER_BLOB_RECONCILE_CURSOR_KEY = "character_worlds.blob_reconcile_cursor.v1";
+
+// Rollout policy (design spec §16/§18). The server-signed client config may
+// enable Character Worlds compilation/selection for a named compatibility
+// profile; everything else — hard byte/macro limits, executable-content
+// rejection — lives in the constants above and is NOT remotely tunable. The
+// policy only ever gates availability: local card data and bindings stay
+// stored and readable regardless of the resolved policy.
+const DEFAULT_COMPATIBILITY_PROFILE = "lily-character-compat-1";
+const SUPPORTED_PROFILES = new Set([DEFAULT_COMPATIBILITY_PROFILE]);
+
+/**
+ * Resolve the effective local policy from the (signature-verified, fresh)
+ * remote client config. Fail-closed ordering:
+ *   1. LILY_CHARACTER_WORLDS=0 — the emergency kill switch — always wins;
+ *   2. an absent/invalid/disabled remote policy disables the feature;
+ *   3. an enabled policy is honored with a SUPPORTED_PROFILES-validated
+ *      compatibility profile (unknown → DEFAULT_COMPATIBILITY_PROFILE).
+ * `remoteConfig` is the remote effectiveConfig object (or null/undefined when
+ * there is no fresh verified config).
+ */
+function characterWorldsPolicy(remoteConfig) {
+  if (process.env.LILY_CHARACTER_WORLDS === "0") return { enabled: false, reason: "kill_switch" };
+  // Strict boolean: a hostile/loosely-typed policy block can only ever turn
+  // the feature OFF, never on (mirrors the server-side delivery gate).
+  if (remoteConfig?.characterWorlds?.enabled !== true) {
+    return { enabled: false, reason: "remote_disabled" };
+  }
+  return {
+    enabled: true,
+    compatibilityProfile: SUPPORTED_PROFILES.has(remoteConfig.characterWorlds.compatibilityProfile)
+      ? remoteConfig.characterWorlds.compatibilityProfile
+      : DEFAULT_COMPATIBILITY_PROFILE,
+  };
+}
+
 const DEFAULT_MACRO_LIMITS = Object.freeze({
   version: CHARACTER_MACRO_LIMITS_VERSION,
   maxInputBytes: 256 * 1024,
@@ -128,4 +163,7 @@ module.exports = {
   MAX_CHARACTER_WORKER_RESULT_BYTES,
   DEFAULT_CHARACTER_ORPHAN_GRACE_MS,
   CHARACTER_BLOB_RECONCILE_CURSOR_KEY,
+  DEFAULT_COMPATIBILITY_PROFILE,
+  SUPPORTED_PROFILES,
+  characterWorldsPolicy,
 };

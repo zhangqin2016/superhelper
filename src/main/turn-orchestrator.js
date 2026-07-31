@@ -1305,6 +1305,9 @@ class TurnOrchestrator {
         : {
             status: "native",
             revisionId: state.characterWorldsSnapshot.characterRevisionId,
+            ...(state.characterWorldsPolicyReason
+              ? { policyReason: state.characterWorldsPolicyReason }
+              : {}),
           };
     }
     const preTurnCompaction = await this._maybeCompactBeforeTurn(session.id, runner, state.enginePayload);
@@ -1518,15 +1521,43 @@ class TurnOrchestrator {
   }
 
   /**
+   * Effective Character Worlds rollout policy for this turn (spec §16/§18).
+   * Resolution order: ctx override (tests) → the signed remote config via the
+   * constants resolver. Any resolution failure fails closed to disabled; the
+   * LILY_CHARACTER_WORLDS=0 kill switch is honored inside the resolver.
+   */
+  _characterWorldsPolicy() {
+    try {
+      if (typeof this.ctx?.characterWorldsPolicy === "function") {
+        return this.ctx.characterWorldsPolicy();
+      }
+      const { characterWorldsPolicy } = require("./character-worlds/constants");
+      const remoteConfig = require("./remote-config");
+      return characterWorldsPolicy(remoteConfig.getRemoteEffectiveConfigSync());
+    } catch {
+      return { enabled: false, reason: "policy_error" };
+    }
+  }
+
+  /**
    * Compile the admitted character snapshot into the bounded lower-authority
    * context for this turn (spec §10). The immutable revision named by the
    * admitted snapshot is resolved — never the current binding — and any
    * failure fails open to native Lily (null). Only metadata is logged.
    */
   _compileTurnCharacterContext(session, state, runner) {
+    state.characterWorldsPolicyReason = null;
     try {
       const snapshot = state.characterWorldsSnapshot;
       if (snapshot?.mode !== "character" || snapshot?.snapshotStatus !== "ready") return null;
+      const policy = this._characterWorldsPolicy();
+      if (!policy?.enabled) {
+        // Rollout gate (spec §16/§18): a disabled/killed/unknown policy returns
+        // the conversation to native Lily without touching data or bindings.
+        state.characterWorldsPolicyReason = policy?.reason || "remote_disabled";
+        log.warn("character context compile skipped by policy: %s", state.characterWorldsPolicyReason);
+        return null;
+      }
       const sessionManager = this.ctx.sessionManager;
       const owner = typeof sessionManager?.resolveTurnOwnerScope === "function"
         ? sessionManager.resolveTurnOwnerScope(session.id)

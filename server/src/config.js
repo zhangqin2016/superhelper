@@ -64,6 +64,13 @@ export const config = {
   // models its key supports, augmenting the configured list. Off by default —
   // when off (or on failure) the configured/built-in list is used unchanged.
   modelDiscoveryEnabled: process.env.MODEL_DISCOVERY_ENABLED === "true",
+  // Character Worlds rollout policy (design spec §16/§18). Conservative
+  // default: disabled — the signed client config gates compilation/selection
+  // until ops explicitly enables the rollout. Local character data and
+  // bindings are never touched by this flag.
+  characterWorldsEnabled: process.env.CHARACTER_WORLDS_ENABLED === "true",
+  characterWorldsCompatibilityProfile: process.env.CHARACTER_WORLDS_COMPATIBILITY_PROFILE || "lily-character-compat-1",
+  characterWorldsMinimumClientVersion: process.env.CHARACTER_WORLDS_MINIMUM_CLIENT_VERSION || "0.1.145",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "",
   anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com",
   openaiApiKey: process.env.OPENAI_API_KEY || "",

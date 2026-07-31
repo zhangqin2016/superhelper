@@ -142,6 +142,10 @@ const ctx = {
   characterWorldsService: service,
   characterWorldsRepository: repository,
   resolveCharacterOwnerScope: () => OWNER,
+  // Rollout policy (Task 10): these tests exercise the domain behavior with
+  // the feature enabled; the disabled/kill-switch paths have their own
+  // coverage in test-character-worlds-policy.mjs.
+  characterWorldsPolicy: () => ({ enabled: true, compatibilityProfile: "lily-character-compat-1" }),
   sessionManager: {
     resolveTurnOwnerScope(sessionId) {
       if (!sessions.has(sessionId)) {

@@ -135,6 +135,25 @@ function resolveSessionAuthority(ctx, sessionId) {
   return { sessionId, ownerScope: resolved.ownerScope };
 }
 
+// Rollout policy gate (design spec §16/§18): an unsigned/stale/disabled
+// remote policy — or the LILY_CHARACTER_WORLDS=0 kill switch — disables
+// selection and import only. Stored cards, bindings, events, and exports stay
+// readable regardless. Any resolution failure fails closed.
+function characterWorldsPolicyFor(ctx) {
+  try {
+    if (typeof ctx?.characterWorldsPolicy === "function") return ctx.characterWorldsPolicy();
+    const { characterWorldsPolicy } = require("./character-worlds/constants");
+    return characterWorldsPolicy(require("./remote-config").getRemoteEffectiveConfigSync());
+  } catch {
+    return { enabled: false, reason: "policy_error" };
+  }
+}
+
+function policyDeniesSelection(ctx) {
+  const policy = characterWorldsPolicyFor(ctx);
+  return policy?.enabled === true ? null : failure("CHARACTER_WORLDS_UNAVAILABLE");
+}
+
 function registerCharacterWorldsHandlers(ctx) {
   const service = () => ctx.characterWorldsService || null;
   const repository = () => (
@@ -179,6 +198,8 @@ function registerCharacterWorldsHandlers(ctx) {
   ipcMain.handle("character:import-preview", async (event, payload) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    const policyDenied = policyDeniesSelection(ctx);
+    if (policyDenied) return policyDenied;
     const svc = service();
     const owner = resolveOwnerScope(ctx);
     if (!svc || !owner) return failure("CHARACTER_WORLDS_UNAVAILABLE");
@@ -212,6 +233,8 @@ function registerCharacterWorldsHandlers(ctx) {
   ipcMain.handle("character:import-commit", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    const policyDenied = policyDeniesSelection(ctx);
+    if (policyDenied) return policyDenied;
     const svc = service();
     const owner = resolveOwnerScope(ctx);
     if (!svc || !owner) return failure("CHARACTER_WORLDS_UNAVAILABLE");
@@ -279,6 +302,12 @@ function registerCharacterWorldsHandlers(ctx) {
   ipcMain.handle("session-character:set-binding", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    // Deselecting (mode "native") is always allowed — the policy gates
+    // selection/import availability, never the return to native Lily.
+    if (payload?.mode !== "native") {
+      const policyDenied = policyDeniesSelection(ctx);
+      if (policyDenied) return policyDenied;
+    }
     const repo = repository();
     if (!repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     const session = resolveSessionAuthority(ctx, payload?.sessionId);

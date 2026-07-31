@@ -253,6 +253,23 @@ function getRemoteProviderCatalogSync() {
     }));
 }
 
+/** Character Worlds rollout policy from the signed remote config (spec
+ *  §16/§18). Returns the validated block, or null when there is no fresh
+ *  verified config — stale expiry, expired gateway tokens, and signature
+ *  failures (which never reach the cache) all resolve to ABSENT, and the
+ *  caller-side policy resolution treats absent as disabled. Only the three
+ *  whitelisted fields cross; anything else the payload carries is dropped. */
+function getRemoteCharacterWorldsPolicySync() {
+  const cfg = getRemoteEffectiveConfigSync();
+  const policy = cfg?.characterWorlds;
+  if (!policy || typeof policy !== "object" || Array.isArray(policy)) return null;
+  return {
+    enabled: policy.enabled === true,
+    compatibilityProfile: typeof policy.compatibilityProfile === "string" ? policy.compatibilityProfile : "",
+    minimumClientVersion: typeof policy.minimumClientVersion === "string" ? policy.minimumClientVersion : "",
+  };
+}
+
 // Modules that cache derived views of the remote config (e.g. model-presets)
 // subscribe here instead of being required from this file — keeps the
 // dependency one-directional: consumers depend on remote-config, never back.
@@ -320,6 +337,7 @@ module.exports = {
   getRemoteEffectiveConfigSync,
   getRemoteRuntimeEnvSync,
   getRemoteProviderCatalogSync,
+  getRemoteCharacterWorldsPolicySync,
   decodeGatewayTokenPayload,
   effectiveConfigHasExpiredGatewayToken,
   shouldRetryAfterDeviceRegister,
