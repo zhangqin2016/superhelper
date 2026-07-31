@@ -1,11 +1,61 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const util = require("node:util");
 const zlib = require("node:zlib");
 const C = require("./constants");
 
 function codedError(code, message, details = {}) {
   return Object.assign(new Error(message), { code }, details);
+}
+
+const STRUCTURE_DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+// Structural-only plain-data guard for source envelopes: rejects Proxies,
+// accessors, non-plain objects, symbol/dangerous keys, and cycles WITHOUT
+// reading any property value through the object (descriptor-only), so no trap
+// ever fires. Size is bounded separately by packJson; this only guarantees
+// that subsequent spreads/reads are trap-free.
+function assertPlainStructure(value, ancestors = new Set()) {
+  if (value === null || typeof value !== "object") return;
+  if (util.types.isProxy(value)) {
+    throw codedError("CHARACTER_DATA_INVALID", "Source data must not contain Proxy objects");
+  }
+  if (ancestors.has(value)) {
+    throw codedError("CHARACTER_DATA_INVALID", "Source data must not contain cycles");
+  }
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor?.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+          throw codedError("CHARACTER_DATA_INVALID", "Source arrays must contain plain values");
+        }
+        assertPlainStructure(descriptor.value, ancestors);
+      }
+      return;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw codedError("CHARACTER_DATA_INVALID", "Source data must contain only plain objects");
+    }
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") {
+        throw codedError("CHARACTER_DATA_INVALID", "Source data contains a symbol key");
+      }
+      if (STRUCTURE_DANGEROUS_KEYS.has(key)) {
+        throw codedError("CHARACTER_DATA_INVALID", "Source data contains a dangerous key");
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor?.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+        throw codedError("CHARACTER_DATA_INVALID", "Source properties must be enumerable data values");
+      }
+      assertPlainStructure(descriptor.value, ancestors);
+    }
+  } finally {
+    ancestors.delete(value);
+  }
 }
 
 function requiredString(value, name) {
@@ -56,11 +106,11 @@ function stableJson(value, seen = new Set()) {
   return json;
 }
 
-function packJson(value, maxBytes, label) {
+function packJson(value, maxBytes, label, code = "CHARACTER_DATA_TOO_LARGE") {
   const json = stableJson(value);
   const bytes = Buffer.byteLength(json, "utf8");
   if (bytes > maxBytes) {
-    throw codedError("CHARACTER_DATA_TOO_LARGE", `${label} exceeds ${maxBytes} bytes`, {
+    throw codedError(code, `${label} exceeds ${maxBytes} bytes`, {
       limit: maxBytes,
       actual: bytes,
     });
@@ -105,6 +155,9 @@ function normalizeSource(source, kind = "edited") {
 
 function prepareRevision(canonical, source, kind, assets) {
   const canonicalData = packJson(canonical, C.MAX_CHARACTER_CANONICAL_BYTES, "canonical");
+  // Guard the RAW source before normalizeSource: its spread reads properties
+  // directly and would fire accessors/Proxy traps.
+  if (source && typeof source === "object") assertPlainStructure(source);
   const sourceValue = normalizeSource(source, kind);
   const sourceData = packJson(sourceValue, C.MAX_CHARACTER_SOURCE_BYTES, "source");
   const descriptors = assets.map(({ data, ...descriptor }) => descriptor);
@@ -142,6 +195,8 @@ function prepareRevision(canonical, source, kind, assets) {
 module.exports = {
   codedError,
   isoTime,
+  normalizeSource,
+  packJson,
   prepareRevision,
   requiredString,
   stableJson,

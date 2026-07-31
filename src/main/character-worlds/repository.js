@@ -7,6 +7,14 @@ const {
   importCharacter,
 } = require("./import-repository");
 const {
+  archiveWorldBook,
+  createWorldBook,
+  createWorldBookRevision,
+  getWorldBook,
+  getWorldBookRevision,
+  listWorldBooks,
+} = require("./world-book-repository");
+const {
   codedError,
   isoTime,
   prepareRevision,
@@ -171,6 +179,24 @@ class CharacterWorldsRepository {
   }
   importCharacter(input) {
     return importCharacter(this, input);
+  }
+  createWorldBook(input) {
+    return createWorldBook(this, input);
+  }
+  createWorldBookRevision(input) {
+    return createWorldBookRevision(this, input);
+  }
+  listWorldBooks(ownerScope, options) {
+    return listWorldBooks(this, ownerScope, options);
+  }
+  getWorldBook(ownerScope, entityId) {
+    return getWorldBook(this, ownerScope, entityId);
+  }
+  getWorldBookRevision(ownerScope, revisionId) {
+    return getWorldBookRevision(this, ownerScope, revisionId);
+  }
+  archiveWorldBook(ownerScope, entityId) {
+    return archiveWorldBook(this, ownerScope, entityId);
   }
   createCharacter({ ownerScope, canonical, source, assets = [] }) {
     const owner = requiredString(ownerScope, "ownerScope");

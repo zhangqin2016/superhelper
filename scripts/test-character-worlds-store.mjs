@@ -151,8 +151,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v7 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 7);
+  check("migrations v3-v8 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 8);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
     const turnInputColumns = new Set(
       migratedStore.db.all("PRAGMA table_info(turn_inputs)").map((row) => row.name),
@@ -926,6 +926,37 @@ try {
     );
   });
 
+  check("character source envelopes reject accessors and Proxies trap-free", () => {
+    const entitiesBefore = repository.listCharacters(OWNER).length;
+    let getterCalls = 0;
+    const trappedSource = { kind: "imported", format: "v3_json", container: "json" };
+    Object.defineProperty(trappedSource, "originalFileName", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return "trap.json";
+      },
+    });
+    assert.throws(
+      () => repository.createCharacter({
+        ownerScope: OWNER,
+        canonical: { schemaVersion: 1, name: "Trapped Character Source" },
+        source: trappedSource,
+      }),
+      (error) => error.code === "CHARACTER_DATA_INVALID",
+    );
+    assert.equal(getterCalls, 0);
+    assert.throws(
+      () => repository.createCharacter({
+        ownerScope: OWNER,
+        canonical: { schemaVersion: 1, name: "Proxied Character Source" },
+        source: new Proxy({ kind: "imported", format: "v3_json", container: "json" }, {}),
+      }),
+      (error) => error.code === "CHARACTER_DATA_INVALID",
+    );
+    assert.equal(repository.listCharacters(OWNER).length, entitiesBefore);
+  });
+
   check("asset admission bounds reject before blob or catalog writes", () => {
     const filesBefore = blobHashesOnDisk(freshBlobDir);
     const catalogBefore = freshStore.db.get("SELECT COUNT(*) AS count FROM blobs").count;
@@ -1454,6 +1485,12 @@ try {
     for (const prefix of ["persona", "world_book"]) {
       const entityId = crypto.randomUUID();
       const revisionId = crypto.randomUUID();
+      // v8 gave world_book_revisions a revision_hash column (default ''); the
+      // raw fixtures must set distinct hashes so the intended revision-number
+      // constraint — not the duplicate-revision hash index — is exercised.
+      const hashColumn = prefix === "world_book" ? ", revision_hash" : "";
+      const fixtureHash = prefix === "world_book" ? `, 'sha256:${"1".repeat(64)}'` : "";
+      const duplicateHash = prefix === "world_book" ? `, 'sha256:${"2".repeat(64)}'` : "";
       freshStore.db.transaction(() => {
         freshStore.db.run(
           `INSERT INTO ${prefix}_entities
@@ -1465,8 +1502,8 @@ try {
         freshStore.db.run(
           `INSERT INTO ${prefix}_revisions
              (id, entity_id, owner_scope, parent_revision_id, revision_number,
-              canonical_json, canonical_hash, created_at)
-           VALUES (?, ?, ?, NULL, 1, '{}', ?, ?)`,
+              canonical_json, canonical_hash, created_at${hashColumn})
+           VALUES (?, ?, ?, NULL, 1, '{}', ?, ?${fixtureHash})`,
           revisionId, entityId, OWNER, `sha256:${"d".repeat(64)}`, Date.now(),
         );
       })();
@@ -1476,8 +1513,8 @@ try {
         () => freshStore.db.run(
           `INSERT INTO ${prefix}_revisions
              (id, entity_id, owner_scope, parent_revision_id, revision_number,
-              canonical_json, canonical_hash, created_at)
-           VALUES (?, ?, ?, NULL, 1, '{}', ?, ?)`,
+              canonical_json, canonical_hash, created_at${hashColumn})
+           VALUES (?, ?, ?, NULL, 1, '{}', ?, ?${duplicateHash})`,
           crypto.randomUUID(), entityId, OWNER, `sha256:${"e".repeat(64)}`, Date.now(),
         ),
         new RegExp(`UNIQUE constraint failed: ${prefix}_revisions.entity_id, ${prefix}_revisions.revision_number`),

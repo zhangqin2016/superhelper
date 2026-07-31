@@ -21,6 +21,9 @@ const {
 const {
   migrateLegacyExternalIdentities,
 } = require("./turn-admission-mobile-migration");
+const {
+  migrateWorldBookSchema,
+} = require("./world-book-schema-migration");
 
 const MIGRATIONS = [
   // v1 — initial message store
@@ -438,6 +441,12 @@ const MIGRATIONS = [
           AND external_idempotency_key IS NOT NULL;
     `);
   },
+  // v8 - world book revision parity with character revisions (Phase 2 WB-1).
+  // Additive only: v3 world_book placeholder tables gain the full
+  // provenance/hash/blob discipline; existing character tables and rows are
+  // untouched. The SQL lives in world-book-schema-migration.js to keep this
+  // file within the architecture line budget.
+  migrateWorldBookSchema,
 ];
 
 module.exports = { MIGRATIONS };
