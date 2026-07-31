@@ -7,6 +7,10 @@ const {
   summarizeWorldBookEntity,
   summarizeWorldBookRevision,
 } = require("./character-worlds/world-book-inspection");
+const {
+  summarizePersonaDetail,
+  summarizePersonaEntity,
+} = require("./character-worlds/persona-inspection");
 
 // Character Worlds IPC boundary (design spec §15/§16, HANDOFF.md §5/§6).
 //
@@ -41,6 +45,7 @@ const CARD_TOO_LARGE_CODES = new Set([
 // CHARACTER_WORLDS_UNAVAILABLE so no internal detail crosses the bridge.
 const DOMAIN_CODE_PREFIXES = Object.freeze([
   "CHARACTER_", "IMPORT_", "EXPORT_", "CARD_", "PNG_", "WORLD_BOOK_",
+  "PERSONA_",
 ]);
 const DOMAIN_CODES_EXTRA = new Set([
   "NOT_A_CHARACTER_CARD",
@@ -310,8 +315,10 @@ function registerCharacterWorldsHandlers(ctx) {
   ipcMain.handle("session-character:set-binding", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
-    // Deselecting (mode "native") is always allowed — the policy gates
-    // selection/import availability, never the return to native Lily.
+    // Deselecting (mode "native", including dropping the persona pin) is
+    // always allowed — the policy gates selection/import availability, never
+    // the return to native Lily. Persona selection requires mode "character",
+    // so it is gated exactly like character selection.
     if (payload?.mode !== "native") {
       const policyDenied = policyDeniesSelection(ctx);
       if (policyDenied) return policyDenied;
@@ -326,6 +333,13 @@ function registerCharacterWorldsHandlers(ctx) {
     if (payload.mode === "character") {
       if (!validId(payload.characterRevisionId)) return failure("INVALID_INPUT");
       next.characterRevisionId = payload.characterRevisionId;
+      if (payload.personaRevisionId != null) {
+        if (!validId(payload.personaRevisionId)) return failure("INVALID_INPUT");
+        next.personaRevisionId = payload.personaRevisionId;
+      }
+    } else if (payload.personaRevisionId != null) {
+      // A native binding is the Lily baseline: it carries no persona (§7.5).
+      return failure("INVALID_INPUT");
     }
     try {
       const binding = repo.setBinding({
@@ -434,6 +448,49 @@ function registerCharacterWorldsHandlers(ctx) {
       const revision = repo.getWorldBookRevision(owner, payload.revisionId);
       if (!revision) return failure("WORLD_BOOK_REVISION_NOT_FOUND");
       return { ok: true, revision: summarizeWorldBookRevision(revision) };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  // --- read-only persona inspection (Phase 2B, Task P2B-2): whitelisted
+  // summaries only (ids, names, counts, hashes) — persona narrative text and
+  // any mutation surface stay main-side. Reads ignore the rollout policy.
+  const personaRevisionOrNull = (repo, owner, revisionId) => {
+    try {
+      return revisionId ? repo.getPersonaRevision(owner, revisionId) : null;
+    } catch {
+      return null; // an unreadable revision degrades the row, not the call
+    }
+  };
+  ipcMain.handle("persona:list", async (event, payload) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const owner = resolveOwnerScope(ctx);
+    const repo = repository();
+    if (!owner || !repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    try {
+      const personas = repo.listPersonas(owner).map((entity) => (
+        summarizePersonaEntity(entity, personaRevisionOrNull(repo, owner, entity?.currentRevisionId))
+      ));
+      return { ok: true, personas };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  ipcMain.handle("persona:get", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const owner = resolveOwnerScope(ctx);
+    const repo = repository();
+    if (!owner || !repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    if (!validId(payload?.personaId)) return failure("INVALID_INPUT");
+    try {
+      const entity = repo.getPersona(owner, payload.personaId);
+      if (!entity) return failure("PERSONA_NOT_FOUND");
+      const revision = personaRevisionOrNull(repo, owner, entity.currentRevisionId);
+      return { ok: true, persona: summarizePersonaDetail(entity, revision) };
     } catch (error) {
       return mapDomainError(error);
     }

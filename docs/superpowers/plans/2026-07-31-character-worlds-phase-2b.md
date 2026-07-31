@@ -77,7 +77,7 @@ Explicitly OUT of Phase 2B:
 - Modify: `src/main/ipc-character-worlds.js`, `src/preload.js`
 - Create: `scripts/test-character-persona-context.mjs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Binding gains optional `personaRevisionId` (CAS, owner-scoped, immutable
   revision pinned); admission snapshot carries it (same transaction);
   compiler renders the persona narrative description in its §10.3.1 slot
@@ -85,18 +85,18 @@ Explicitly OUT of Phase 2B:
   3) with explicit lower-authority labeling; missing/corrupt persona revision
   → compile without persona + diagnostic; native/no-persona byte-identical;
   persona never appears in user text/parts; redaction applies.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Binding + snapshot extension**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Binding + snapshot extension**
   Additive nullable `persona_revision_id` on session bindings (schema v12);
   snapshot normalization + hashing extended; legacy rows normalize to null.
-- [ ] **Step 4: Compiler persona block**
+- [x] **Step 4: Compiler persona block**
   Typed envelope block in the §10.3.1 order; budget share below character
   identity; deterministic fingerprint.
-- [ ] **Step 5: IPC get/set persona binding**
+- [x] **Step 5: IPC get/set persona binding**
   `session-character:set-binding` accepts optional personaRevisionId
   (validated, owner-scoped); read-only persona list/get channels for the UI.
-- [ ] **Step 6: Run context + orchestrator + gate regressions**
-- [ ] **Step 7: Commit** — `feat: bind personas into compiled context`
+- [x] **Step 6: Run context + orchestrator + gate regressions**
+- [x] **Step 7: Commit** — `feat: bind personas into compiled context`
 
 ## Task P2B-3: Validated Authoring Domain APIs
 

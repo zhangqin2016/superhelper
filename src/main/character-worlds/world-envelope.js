@@ -14,26 +14,28 @@
 
 const { resolveWorldBookActivation } = require("./world-book-activation");
 
-// `rank` is the assembly slot between the Phase-1 character blocks
-// (identity 0 / task_integrity 1 … imported_post_history_instructions 12).
+// `rank` is the assembly slot between the character blocks (§10.3.1:
+// identity 0 / task_integrity 1 … persona 6 … imported_post_history_instructions 13).
 const WORLD_POSITION_BUCKETS = Object.freeze({
   before_character: Object.freeze({ type: "world_entry_before_character", rank: 2, supported: true }),
   after_character: Object.freeze({ type: "world_entry_after_character", rank: 5, supported: true }),
-  before_examples: Object.freeze({ type: "world_entry_before_examples", rank: 6, supported: true }),
-  after_examples: Object.freeze({ type: "world_entry_after_examples", rank: 8, supported: true }),
-  author_note_top: Object.freeze({ type: "world_author_note_top", rank: 10, supported: true }),
-  author_note_bottom: Object.freeze({ type: "world_author_note_bottom", rank: 11, supported: true }),
-  at_depth: Object.freeze({ type: "world_at_depth", rank: 13, supported: false }),
-  outlet: Object.freeze({ type: "world_outlet", rank: 14, supported: false }),
+  before_examples: Object.freeze({ type: "world_entry_before_examples", rank: 7, supported: true }),
+  after_examples: Object.freeze({ type: "world_entry_after_examples", rank: 9, supported: true }),
+  author_note_top: Object.freeze({ type: "world_author_note_top", rank: 11, supported: true }),
+  author_note_bottom: Object.freeze({ type: "world_author_note_bottom", rank: 12, supported: true }),
+  at_depth: Object.freeze({ type: "world_at_depth", rank: 14, supported: false }),
+  outlet: Object.freeze({ type: "world_outlet", rank: 15, supported: false }),
 });
 const WORLD_BLOCK_RANKS = Object.freeze({
   identity: 0,
   task_integrity: 1,
   character_definitions: 3,
   scenario: 4,
-  example_dialogue: 7,
-  imported_system_prompt: 9,
-  imported_post_history_instructions: 12,
+  // §10.3.1 slot 6: persona narrative description (scene state is Phase 3).
+  persona: 6,
+  example_dialogue: 8,
+  imported_system_prompt: 10,
+  imported_post_history_instructions: 13,
 });
 
 function rankOfBlock(block) {
@@ -220,6 +222,69 @@ function worldCandidates(units, revisionId) {
   ];
 }
 
+function cleanText(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+/**
+ * Persona packing candidate (§10.3 priority 3, §10.3.1 slot 6; Phase 2B
+ * P2B-2). The persona narrative description is lower-authority data exactly
+ * like character narrative fields: the same blocked-directive redaction runs
+ * (through the compiler's `redact`), the description segments at paragraph
+ * boundaries under budget pressure, and the persona name rides the block as
+ * an indivisible companion field — a persona name without its description is
+ * a misleading fragment, so when the description cannot fit at all the whole
+ * block disappears.
+ *
+ * Fail open (§16): no pin, a missing/corrupt/drifted revision, or text that
+ * redacts to empty yields NO candidate plus a metadata-only warning and
+ * diagnostic — never a fatal compile. `persona` is pre-resolved by the
+ * caller from the admitted snapshot's pinned personaRevisionId (never the
+ * current entity state); a revision whose id differs from the pin is refused.
+ */
+function preparePersonaCandidate({
+  persona,
+  snapshot,
+  redact,
+  boundField,
+  warnings,
+  diagnostic,
+}) {
+  const personaRevisionId = typeof snapshot?.personaRevisionId === "string"
+    && snapshot.personaRevisionId
+    ? snapshot.personaRevisionId
+    : "";
+  if (!personaRevisionId) return null;
+  const missing = (reason) => {
+    warnings.push({ code: "PERSONA_REVISION_MISSING", reason });
+    diagnostic("persona_revision_missing");
+    return null;
+  };
+  const revision = persona && typeof persona === "object" && !Array.isArray(persona)
+    ? persona.revision
+    : null;
+  const canonical = revision?.canonical
+    && typeof revision.canonical === "object"
+    && !Array.isArray(revision.canonical)
+    ? revision.canonical
+    : null;
+  if (!canonical || revision.id !== personaRevisionId) return missing("missing_or_unusable");
+  const name = redact("personaName", cleanText(canonical.name));
+  const bounded = typeof boundField === "function"
+    ? boundField(cleanText(canonical.description))
+    : cleanText(canonical.description);
+  const description = redact("personaDescription", bounded).trim();
+  if (!description) return missing("empty_after_redaction");
+  return {
+    type: "persona",
+    compatibility: "lily_native",
+    omittedSource: "persona_field",
+    extraFields: { authority: "lower_authority_narrative", personaName: name },
+    parts: [["personaDescription", description]],
+    revisionId: personaRevisionId,
+  };
+}
+
 /**
  * §10.3.1 assembly: budget packing ran in PRIORITY order; the envelope
  * serializes blocks in POSITIONAL order (world blocks within a bucket keep
@@ -240,6 +305,7 @@ module.exports = {
   assembleInPositionalOrder,
   contractEntries,
   contractReason,
+  preparePersonaCandidate,
   prepareWorldUnits,
   worldBlockFields,
   worldCandidates,

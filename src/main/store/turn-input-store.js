@@ -221,6 +221,7 @@ function snapshotCurrentCharacterBinding(db, sessionId, ownerScope) {
          b.binding_version,
          b.mode,
          b.character_revision_id,
+         b.persona_revision_id,
          b.compatibility_profile,
          b.binding_json,
          CASE WHEN r.id IS NULL THEN 0 ELSE 1 END AS revision_exists
@@ -258,18 +259,25 @@ function snapshotCurrentCharacterBinding(db, sessionId, ownerScope) {
     || envelope.bindingVersion !== row.binding_version
     || envelope.mode !== row.mode
     || (envelope.activeCharacterRevisionId || null) !== (row.character_revision_id || null)
+    || (envelope.activePersonaRevisionId || null) !== (row.persona_revision_id || null)
     || (envelope.compatibilityProfile || null) !== (row.compatibility_profile || null)
   ) return fallbackSnapshot();
 
   if (row.mode === "native") {
-    return row.character_revision_id == null && row.compatibility_profile == null
+    return row.character_revision_id == null
+      && row.persona_revision_id == null
+      && row.compatibility_profile == null
       ? null
       : fallbackSnapshot();
   }
   if (row.mode !== "character" || row.revision_exists !== 1) return fallbackSnapshot();
+  // The persona pin rides the snapshot unverified on purpose (§16): a missing
+  // persona revision must never cost the turn its character context — the
+  // compiler fails open per-turn without the persona block instead.
   return readySnapshot({
     bindingVersion: row.binding_version,
     characterRevisionId: row.character_revision_id,
+    personaRevisionId: row.persona_revision_id || null,
     compatibilityProfile: row.compatibility_profile,
   }) || fallbackSnapshot();
 }

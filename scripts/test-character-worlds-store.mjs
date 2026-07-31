@@ -40,6 +40,7 @@ const EXPECTED_NATIVE = (sessionId) => ({
   mode: "native",
   bindingVersion: 0,
   characterRevisionId: null,
+  personaRevisionId: null,
   compatibilityProfile: null,
 });
 
@@ -151,8 +152,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v11 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 11);
+  check("migrations v3-v12 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 12);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
     const turnInputColumns = new Set(
       migratedStore.db.all("PRAGMA table_info(turn_inputs)").map((row) => row.name),
@@ -1560,6 +1561,7 @@ try {
       mode: "character",
       bindingVersion: 1,
       characterRevisionId: second.id,
+      personaRevisionId: null,
       compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
     });
     const row = freshStore.db.get(

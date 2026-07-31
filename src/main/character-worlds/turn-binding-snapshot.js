@@ -11,9 +11,13 @@ const SNAPSHOT_KEYS = new Set([
   "mode",
   "bindingVersion",
   "characterRevisionId",
+  "personaRevisionId",
   "compatibilityProfile",
   "snapshotStatus",
 ]);
+// Snapshots persisted before the persona pin (Phase 2B P2B-2) lack the
+// personaRevisionId key; they normalize cleanly with personaRevisionId null.
+const LEGACY_SNAPSHOT_KEYS = new Set([...SNAPSHOT_KEYS].filter((key) => key !== "personaRevisionId"));
 
 function boundedString(value, maxBytes) {
   if (typeof value !== "string" || value.length === 0 || value.length > maxBytes) return null;
@@ -26,6 +30,7 @@ function fallbackSnapshot() {
     mode: "native",
     bindingVersion: 0,
     characterRevisionId: null,
+    personaRevisionId: null,
     compatibilityProfile: null,
     snapshotStatus: "fallback",
   });
@@ -34,17 +39,22 @@ function fallbackSnapshot() {
 function readySnapshot({
   bindingVersion,
   characterRevisionId,
+  personaRevisionId = null,
   compatibilityProfile,
 }) {
   if (!Number.isInteger(bindingVersion) || bindingVersion < 1) return null;
   const revisionId = boundedString(characterRevisionId, MAX_SNAPSHOT_ID_BYTES);
+  const personaId = personaRevisionId == null
+    ? null
+    : boundedString(personaRevisionId, MAX_SNAPSHOT_ID_BYTES);
   const profile = boundedString(compatibilityProfile, MAX_COMPATIBILITY_PROFILE_BYTES);
-  if (!revisionId || !profile) return null;
+  if (!revisionId || (personaRevisionId != null && !personaId) || !profile) return null;
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     mode: "character",
     bindingVersion,
     characterRevisionId: revisionId,
+    personaRevisionId: personaId,
     compatibilityProfile: profile,
     snapshotStatus: "ready",
   };
@@ -60,9 +70,14 @@ function normalizeSnapshot(value, { allowFallback = true } = {}) {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return null;
   const keys = Reflect.ownKeys(value);
+  const keySet = keys.length === SNAPSHOT_KEYS.size
+    ? SNAPSHOT_KEYS
+    : keys.length === LEGACY_SNAPSHOT_KEYS.size
+      ? LEGACY_SNAPSHOT_KEYS
+      : null;
   if (
-    keys.length !== SNAPSHOT_KEYS.size
-    || keys.some((key) => typeof key !== "string" || !SNAPSHOT_KEYS.has(key))
+    !keySet
+    || keys.some((key) => typeof key !== "string" || !keySet.has(key))
   ) return null;
   const fields = {};
   for (const key of keys) {
@@ -70,6 +85,7 @@ function normalizeSnapshot(value, { allowFallback = true } = {}) {
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value")) return null;
     fields[key] = descriptor.value;
   }
+  if (keySet === LEGACY_SNAPSHOT_KEYS) fields.personaRevisionId = null;
   if (
     fields.schemaVersion !== SNAPSHOT_SCHEMA_VERSION
     || !Number.isInteger(fields.bindingVersion)
@@ -79,6 +95,7 @@ function normalizeSnapshot(value, { allowFallback = true } = {}) {
     return fields.mode === "native"
       && fields.bindingVersion === 0
       && fields.characterRevisionId === null
+      && fields.personaRevisionId === null
       && fields.compatibilityProfile === null
       ? fallbackSnapshot()
       : null;
@@ -112,6 +129,7 @@ function snapshotFromMetadata(metadata) {
     && snapshot.mode === normalized.mode
     && snapshot.bindingVersion === normalized.bindingVersion
     && snapshot.characterRevisionId === normalized.characterRevisionId
+    && snapshot.personaRevisionId === normalized.personaRevisionId
     && snapshot.compatibilityProfile === normalized.compatibilityProfile
     && snapshot.snapshotStatus === normalized.snapshotStatus
   ) return snapshot;

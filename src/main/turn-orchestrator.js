@@ -1301,6 +1301,7 @@ class TurnOrchestrator {
             omitted: characterContext.omitted,
             warnings: characterContext.warnings,
             tokenEstimate: characterContext.tokenEstimate,
+            ...(characterContext.persona ? { persona: characterContext.persona } : {}),
           }
         : {
             status: "native",

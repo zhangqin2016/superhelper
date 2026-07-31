@@ -91,6 +91,7 @@ function expectedReady(bindingVersion, revisionId, compatibilityProfile = CHARAC
     mode: "character",
     bindingVersion,
     characterRevisionId: revisionId,
+    personaRevisionId: null,
     compatibilityProfile,
     snapshotStatus: "ready",
   };
@@ -111,6 +112,7 @@ function assertFallback(snapshot, message) {
   assert.equal(snapshot?.mode, "native", message);
   assert.equal(snapshot?.snapshotStatus, "fallback", message);
   assert.equal(snapshot?.characterRevisionId, null, message);
+  assert.equal(snapshot?.personaRevisionId, null, message);
   assert.equal(snapshot?.compatibilityProfile, null, message);
   assert.equal(snapshot?.bindingVersion, 0, message);
 }
@@ -767,6 +769,7 @@ await check("snapshot normalization rejects hostile objects without triggering t
     mode: "native",
     bindingVersion: 0,
     characterRevisionId: null,
+    personaRevisionId: null,
     compatibilityProfile: null,
     snapshotStatus: "fallback",
   });

@@ -57,29 +57,17 @@ const TASK_INTEGRITY_BOUNDARY =
   "requested output format are protected spans: they stay outside any style " +
   "transformation and must be reproduced exactly.";
 
-// Blocked imperative patterns in low-authority imported fields. A match is
-// replaced by a bounded placeholder and recorded as a metadata-only warning;
-// the pattern list is a versioned constant, not a card-controlled field.
-const BLOCKED_DIRECTIVE_PATTERNS = Object.freeze([
-  /\bdisable\s+(?:all\s+)?tools?\b/gi,
-  /\bignore\s+(?:all\s+)?(?:previous\s+|prior\s+|above\s+)?permissions?\b/gi,
-  /\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions?|rules?|guidelines?|policies)\b/gi,
-  /\bbypass\s+(?:all\s+)?(?:permissions?|safety|guardrails?)\b/gi,
-  /\boverride\s+(?:system\s+)?(?:authority|permissions?|guardrails?)\b/gi,
-  /\byou\s+are\s+now\s+the\s+system\b/gi,
-]);
-const REDACTION_PLACEHOLDER = "[redacted]";
-// Cf format chars (ZWSP, ZWNJ/ZWJ, LRM/RLM, U+2028/U+2029, bidi controls,
-// isolates, BOM) are stripped from low-authority imported text BEFORE the
-// blocked-directive match, so "ignore​ all previous instructions"
-// cannot evade redaction with invisible codepoints.
-const FORMAT_CHAR_PATTERN = /[\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
+// Blocked-directive redaction for low-authority imported text: one shared
+// versioned pattern list in redaction.js (character fields, world entries,
+// persona narrative).
+const { redactBlockedDirectives } = require("./redaction");
 
-// §10.3.1 world-entry buckets, packing candidates, and positional assembly
-// live in world-envelope.js (WB-4).
+// §10.3.1 world-entry buckets, persona candidate, and positional assembly
+// live in world-envelope.js (WB-4, P2B-2).
 const {
   assembleInPositionalOrder,
   contractEntries,
+  preparePersonaCandidate,
   prepareWorldUnits,
   worldBlockFields,
   worldCandidates,
@@ -170,24 +158,6 @@ function boundFieldText(raw, maxChars = MAX_FIELD_CANDIDATE_CHARS) {
   return sliced;
 }
 
-function redactBlockedDirectives(field, text, warnings) {
-  // Strip invisible format chars first (zero-width evasion); the stripped
-  // form is what ships.
-  let redacted = text.replace(FORMAT_CHAR_PATTERN, "");
-  let count = 0;
-  for (const pattern of BLOCKED_DIRECTIVE_PATTERNS) {
-    pattern.lastIndex = 0;
-    redacted = redacted.replace(pattern, () => {
-      count += 1;
-      return REDACTION_PLACEHOLDER;
-    });
-  }
-  if (count > 0) {
-    warnings.push({ code: "CHARACTER_CONTEXT_DIRECTIVE_REDACTED", field, count });
-  }
-  return redacted;
-}
-
 function resolveBudget(modelBudget, model, userText) {
   const budget = resolveContextBudget({ model: model && typeof model === "object" ? model : {} });
   const source = isPlainObject(modelBudget) ? modelBudget : {};
@@ -237,6 +207,12 @@ function assembleText(envelope) {
  * caller from the admitted snapshot. The activation resolver runs as a pure
  * function of that input; ANY resolver error drops world content with a
  * metadata-only warning and the character still compiles (§16).
+ *
+ * Optional `persona` input (§10.3 priority 3, §10.3.1 slot 6; P2B-2):
+ * {revision} — the immutable persona revision pre-resolved by the caller from
+ * the snapshot's pinned personaRevisionId. A missing/corrupt/drifted persona
+ * drops the persona block with a metadata-only warning; the character still
+ * compiles (§16).
  */
 function compileCharacterContext({
   snapshot,
@@ -249,6 +225,7 @@ function compileCharacterContext({
   onDiagnostic = null,
   maxFieldCandidateChars = 0,
   worldBook = null,
+  persona = null,
 } = {}) {
   const diagnostic = (code) => {
     if (typeof onDiagnostic === "function") {
@@ -393,9 +370,17 @@ function compileCharacterContext({
     }
 
     // Optional narrative blocks in §10.3 budget-priority order: essential
-    // behavior and scene, then constant world entries, then triggered world
-    // entries, then examples and creator notes. (Persona and memory buckets
-    // are out of scope and disappear.)
+    // behavior and scene, then the persona narrative identity (P2B-2), then
+    // constant world entries, then triggered world entries, then examples and
+    // creator notes. (Memory buckets are out of scope and disappear.)
+    const personaCandidate = preparePersonaCandidate({
+      persona,
+      snapshot,
+      redact: (field, text) => redactBlockedDirectives(field, text, warnings),
+      boundField: (text) => boundFieldText(text, maxFieldChars),
+      warnings,
+      diagnostic,
+    });
     const candidates = [
       {
         type: "character_definitions",
@@ -410,6 +395,7 @@ function compileCharacterContext({
         compatibility: "lily_native",
         parts: fields.scenario ? [["scenario", fields.scenario]] : [],
       },
+      ...(personaCandidate ? [personaCandidate] : []),
       ...worldCandidates(worldUnits, worldBookRevisionId),
       {
         type: "example_dialogue",
@@ -442,7 +428,9 @@ function compileCharacterContext({
         type: candidate.type,
         compatibility: candidate.compatibility,
         revisionId: candidate.revisionId || revisionId,
-        fields: worldUnit ? worldBlockFields(worldUnit) : Object.fromEntries(parts),
+        fields: worldUnit
+          ? worldBlockFields(worldUnit)
+          : { ...(candidate.extraFields || {}), ...Object.fromEntries(parts) },
       });
       // Whole block first (entries are indivisible while they fit).
       const whole = blockFor(candidate.parts);
@@ -488,13 +476,13 @@ function compileCharacterContext({
           // was never evaluated. Report it distinctly — this is a packing
           // bound, not a budget cut — and keep packing lower-priority fields.
           keptParts.push([field, kept.join("\n\n")]);
-          omitted.push({ source: "character_field", id: field, reason: "segment_cap" });
+          omitted.push({ source: candidate.omittedSource || "character_field", id: field, reason: "segment_cap" });
         } else if (kept.length > 0) {
           keptParts.push([field, kept.join("\n\n")]);
-          omitted.push({ source: "character_field", id: field, reason: "budget_partial" });
+          omitted.push({ source: candidate.omittedSource || "character_field", id: field, reason: "budget_partial" });
           truncated = true;
         } else {
-          omitted.push({ source: "character_field", id: field, reason: "budget" });
+          omitted.push({ source: candidate.omittedSource || "character_field", id: field, reason: "budget" });
           truncated = true;
         }
       }
@@ -512,7 +500,7 @@ function compileCharacterContext({
             continue;
           }
           for (const [field] of rest.parts) {
-            omitted.push({ source: "character_field", id: field, reason: "budget" });
+            omitted.push({ source: rest.omittedSource || "character_field", id: field, reason: "budget" });
           }
         }
         break;
@@ -526,6 +514,11 @@ function compileCharacterContext({
     assembleInPositionalOrder(envelope, worldBlockPlanIndex);
 
     const activatedWorldEntries = contractEntries(selectedWorldUnits);
+
+    // Metadata-only persona trace (P2B-2): revision id + block fingerprint,
+    // never persona text. Absent when no persona block shipped.
+    const personaBlock = envelope.blocks.find((block) => block.type === "persona") || null;
+    if (personaBlock) envelope.personaRevisionId = personaBlock.sourceRevision;
 
     const text = assembleText(envelope);
     const tokenEstimate = estimateTokensForText(text).tokens;
@@ -546,6 +539,9 @@ function compileCharacterContext({
       activatedWorldEntries,
       safeBehaviors,
       expressionProfile,
+      persona: personaBlock
+        ? { revisionId: personaBlock.sourceRevision, fingerprint: personaBlock.contentHash }
+        : null,
       worldBook: worldResolution
         ? {
             revisionId: worldBookRevisionId,

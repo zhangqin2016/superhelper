@@ -168,6 +168,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
         expectedBindingVersion: payload?.expectedBindingVersion,
         mode: payload?.mode,
         characterRevisionId: payload?.characterRevisionId,
+        personaRevisionId: payload?.personaRevisionId,
       }),
     getSessionCharacterEvents: (sessionId, options = {}) =>
       ipcRenderer.invoke("session-character:get-events", {
@@ -175,6 +176,10 @@ contextBridge.exposeInMainWorld("assistantClient", {
         afterVersion: options?.afterVersion,
         limit: options?.limit,
       }),
+    // Read-only persona inspection (Phase 2B): whitelisted summaries only —
+    // the persona narrative description and any mutation surface stay main-side.
+    listPersonas: () => ipcRenderer.invoke("persona:list"),
+    getPersona: (personaId) => ipcRenderer.invoke("persona:get", { personaId }),
     // Read-only world-book inspection (Phase 2A): whitelisted summaries only —
     // no raw book content and no mutation surface crosses the bridge.
     listWorldBooks: () => ipcRenderer.invoke("world-book:list"),

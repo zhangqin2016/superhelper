@@ -135,6 +135,12 @@ function prepareTurnWorldBook({
  * Returns {compiled, pendingCheckpoint, diagnostic} — pendingCheckpoint is
  * the metadata-only package the turn state carries to the terminal
  * finalizer; it is null whenever the world book did not engage.
+ *
+ * Persona (P2B-2): the IMMUTABLE persona revision named by the admitted
+ * snapshot's personaRevisionId is resolved here — never the current entity
+ * state. A missing/corrupt/throwing persona read fails open (§16): the
+ * character compiles without the persona block and the compiler records the
+ * metadata-only PERSONA_REVISION_MISSING warning.
  */
 function compileTurnWorldCharacterContext({
   repository,
@@ -166,7 +172,26 @@ function compileTurnWorldCharacterContext({
     diagnostic = "world_book_prepare_failed";
     log?.warn?.("world book input failed open: %s", err?.message || err);
   }
-  const compiled = compileCharacterContext({ ...baseInput, snapshot, revision, worldBook });
+  let persona = null;
+  const personaRevisionId = typeof snapshot?.personaRevisionId === "string"
+    && snapshot.personaRevisionId
+    ? snapshot.personaRevisionId
+    : "";
+  if (personaRevisionId) {
+    try {
+      const personaRevision = typeof repository?.getPersonaRevision === "function"
+        ? repository.getPersonaRevision(ownerScope, personaRevisionId)
+        : null;
+      if (personaRevision?.canonical) {
+        persona = { revision: personaRevision };
+      } else {
+        log?.warn?.("persona input failed open: %s", "persona_revision_missing");
+      }
+    } catch (err) {
+      log?.warn?.("persona input failed open: %s", err?.message || err);
+    }
+  }
+  const compiled = compileCharacterContext({ ...baseInput, snapshot, revision, worldBook, persona });
   const pendingCheckpoint = compiled?.status === "compiled" && compiled.worldBook
     ? {
         ownerScope,

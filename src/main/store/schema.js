@@ -474,6 +474,16 @@ const MIGRATIONS = [
   // untouched. The SQL lives in persona-schema-migration.js to keep this file
   // within the architecture line budget.
   migratePersonaSchema,
+  // v12 - session bindings pin an optional persona revision (Phase 2B P2B-2,
+  // §7.5). Additive nullable column; pre-v12 rows read back as NULL and
+  // normalize to personaRevisionId null in the binding model.
+  (db) => {
+    db.exec(`
+      ALTER TABLE character_session_bindings
+        ADD COLUMN persona_revision_id TEXT
+        REFERENCES persona_revisions(id);
+    `);
+  },
 ];
 
 module.exports = { MIGRATIONS };

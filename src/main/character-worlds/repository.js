@@ -55,6 +55,7 @@ function nativeBinding(sessionId, bindingVersion = 0) {
     mode: "native",
     bindingVersion,
     characterRevisionId: null,
+    personaRevisionId: null,
     compatibilityProfile: null,
   };
 }
@@ -66,6 +67,7 @@ function bindingFromRow(row, sessionId) {
     mode: row.mode,
     bindingVersion: row.binding_version,
     characterRevisionId: row.character_revision_id || null,
+    personaRevisionId: row.persona_revision_id || null,
     compatibilityProfile: row.compatibility_profile || null,
   };
 }
@@ -77,7 +79,7 @@ function bindingEnvelope(binding, updatedAt) {
     compatibilityProfile: binding.compatibilityProfile,
     mode: binding.mode,
     activeCharacterRevisionId: binding.characterRevisionId,
-    activePersonaRevisionId: null,
+    activePersonaRevisionId: binding.personaRevisionId || null,
     activeGreetingIndex: null,
     worldBookBindings: [],
     worldResolutionPolicy: { sourceMergeStrategy: "sorted_evenly" },
@@ -391,6 +393,7 @@ class CharacterWorldsRepository {
       if (current.bindingVersion !== expectedBindingVersion)
         throw codedError("CHARACTER_BINDING_CONFLICT", "Binding version is stale", { current });
       let characterRevisionId = null;
+      let personaRevisionId = null;
       let compatibilityProfile = null;
       if (mode === "character") {
         characterRevisionId = requiredString(
@@ -401,6 +404,18 @@ class CharacterWorldsRepository {
         );
         if (!revision)
           throw codedError("CHARACTER_REVISION_NOT_FOUND", "Character revision not found");
+        if (next.personaRevisionId != null) {
+          // Optional persona pin (§7.5): an owner-scoped immutable persona
+          // revision, validated exactly like the character revision.
+          personaRevisionId = requiredString(
+            next.personaRevisionId, "next.personaRevisionId");
+          const personaRevision = this.db.get(
+            "SELECT 1 FROM persona_revisions WHERE id = ? AND owner_scope = ?",
+            personaRevisionId, owner,
+          );
+          if (!personaRevision)
+            throw codedError("PERSONA_REVISION_NOT_FOUND", "Persona revision not found");
+        }
         compatibilityProfile = String(
           next.compatibilityProfile || C.CHARACTER_COMPATIBILITY_PROFILE);
       }
@@ -410,7 +425,7 @@ class CharacterWorldsRepository {
         schemaVersion: C.CHARACTER_BINDING_SCHEMA_VERSION,
         sessionId: session, mode,
         bindingVersion: current.bindingVersion + 1,
-        characterRevisionId, compatibilityProfile,
+        characterRevisionId, personaRevisionId, compatibilityProfile,
       };
       const envelope = bindingEnvelope(committed, updatedAt);
       const envelopeJson = stableJson(envelope);
@@ -421,17 +436,19 @@ class CharacterWorldsRepository {
       this.db.run(
         `INSERT INTO character_session_bindings
            (session_id, owner_scope, binding_version, mode,
-            character_revision_id, compatibility_profile, binding_json, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            character_revision_id, persona_revision_id, compatibility_profile,
+            binding_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            binding_version = excluded.binding_version,
            mode = excluded.mode,
            character_revision_id = excluded.character_revision_id,
+           persona_revision_id = excluded.persona_revision_id,
            compatibility_profile = excluded.compatibility_profile,
            binding_json = excluded.binding_json,
            updated_at = excluded.updated_at`,
         session, owner, committed.bindingVersion, mode, characterRevisionId,
-        compatibilityProfile, envelopeJson, createdAt,
+        personaRevisionId, compatibilityProfile, envelopeJson, createdAt,
       );
       let previousEnvelope;
       try {

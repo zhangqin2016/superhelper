@@ -263,7 +263,7 @@ try {
     for (const channel of PHASE_ONE_CHANNELS) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} still registered`);
     }
-    assert.equal(handlers.size, PHASE_ONE_CHANNELS.length + 3, "no additional channels");
+    assert.equal(handlers.size, PHASE_ONE_CHANNELS.length + 5, "no additional channels");
     for (const channel of handlers.keys()) {
       assert.equal(
         FORBIDDEN_CHANNEL_PATTERN.test(channel),
@@ -273,7 +273,7 @@ try {
     }
   });
 
-  await check("preload facade is frozen with exactly the eleven methods and no book mutation", async () => {
+  await check("preload facade is frozen with exactly the thirteen methods and no book mutation", async () => {
     const facade = exposed.assistantClient?.characterWorlds;
     assert(facade, "characterWorlds facade exposed");
     assert(Object.isFrozen(facade), "facade is frozen");
@@ -288,6 +288,8 @@ try {
         "getWorldBook",
         "getWorldBookRevision",
         "listCharacters",
+        "listPersonas",
+        "getPersona",
         "listWorldBooks",
         "previewCharacterImport",
         "setSessionCharacterBinding",

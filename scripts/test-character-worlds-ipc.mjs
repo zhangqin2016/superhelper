@@ -3,7 +3,7 @@
 //
 // Verifies the narrow bridge invariants from the design spec §15/§16 and
 // HANDOFF.md §5/§6:
-//   - exactly eight channels, exposed through one frozen preload facade
+//   - exactly thirteen channels, exposed through one frozen preload facade
 //   - owner scope is derived in main; renderer-supplied owner/account IDs are
 //     ignored
 //   - the renderer never supplies raw source paths (import source comes from a
@@ -40,6 +40,10 @@ const CHANNELS = {
   listWorldBooks: "world-book:list",
   getWorldBook: "world-book:get",
   getWorldBookRevision: "world-book:get-revision",
+  // Phase 2B (P2B-2): read-only persona inspection. In-depth persona binding
+  // and envelope behavior lives in test-character-persona-context.mjs.
+  listPersonas: "persona:list",
+  getPersona: "persona:get",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
 
@@ -184,14 +188,14 @@ try {
   // Load the real preload against the electron mock to capture the bridge.
   require("../src/preload.js");
 
-  await check("exactly the eleven contract channels are registered", async () => {
+  await check("exactly the thirteen contract channels are registered", async () => {
     assert.deepEqual([...handlers.keys()].sort(), Object.values(CHANNELS).sort());
     for (const channel of Object.values(CHANNELS)) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} handler registered`);
     }
   });
 
-  await check("preload exposes one frozen facade with exactly the eleven methods", async () => {
+  await check("preload exposes one frozen facade with exactly the thirteen methods", async () => {
     const api = exposed.assistantClient;
     assert(api, "assistantClient exposed");
     assert(api.characterWorlds, "characterWorlds facade exposed");
@@ -216,6 +220,8 @@ try {
     await api.listWorldBooks();
     await api.getWorldBook("book-1");
     await api.getWorldBookRevision("book-rev-1");
+    await api.listPersonas();
+    await api.getPersona("persona-1");
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
       [
@@ -230,6 +236,8 @@ try {
         "world-book:list",
         "world-book:get",
         "world-book:get-revision",
+        "persona:list",
+        "persona:get",
       ],
     );
     const serialized = JSON.stringify(invokeCalls);
@@ -238,10 +246,12 @@ try {
     assert.equal(invokeCalls[0].payload, undefined, "listCharacters takes no payload");
     assert.equal(invokeCalls[2].payload, undefined, "previewCharacterImport takes no payload");
     assert.equal(invokeCalls[8].payload, undefined, "listWorldBooks takes no payload");
+    assert.equal(invokeCalls[11].payload, undefined, "listPersonas takes no payload");
     assert.deepEqual(invokeCalls[1].payload, { characterId: "char-1" });
     assert.deepEqual(invokeCalls[4].payload, { revisionId: "rev-1" });
     assert.deepEqual(invokeCalls[9].payload, { worldBookId: "book-1" });
     assert.deepEqual(invokeCalls[10].payload, { revisionId: "book-rev-1" });
+    assert.deepEqual(invokeCalls[12].payload, { personaId: "persona-1" });
   });
 
   await check("untrusted senders and remote frames are rejected on every channel", async () => {

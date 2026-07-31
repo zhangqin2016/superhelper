@@ -79,6 +79,7 @@ function expectedReady(version, revisionId, profile) {
     mode: "character",
     bindingVersion: version,
     characterRevisionId: revisionId,
+    personaRevisionId: null,
     compatibilityProfile: profile,
     snapshotStatus: "ready",
   };
@@ -90,6 +91,7 @@ function expectedFallback() {
     mode: "native",
     bindingVersion: 0,
     characterRevisionId: null,
+    personaRevisionId: null,
     compatibilityProfile: null,
     snapshotStatus: "fallback",
   };
