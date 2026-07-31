@@ -24,6 +24,9 @@ const {
 const {
   migrateWorldBookSchema,
 } = require("./world-book-schema-migration");
+const {
+  migrateWorldBookCheckpointSchema,
+} = require("../character-worlds/world-book-checkpoint-store");
 
 const MIGRATIONS = [
   // v1 — initial message store
@@ -458,6 +461,10 @@ const MIGRATIONS = [
         REFERENCES world_book_revisions(id);
     `);
   },
+  // v10 - durable world-book timed-effect checkpoints (Phase 2 WB-4, §10.4.6).
+  // Additive mutable table keyed by (owner, session, book revision); written
+  // transactionally only after successful turn finalization.
+  migrateWorldBookCheckpointSchema,
 ];
 
 module.exports = { MIGRATIONS };

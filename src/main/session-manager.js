@@ -1109,6 +1109,17 @@ class SessionManager {
     this._ensureImported(session);
     const removed = this._store().deleteFromTurn(session.id, turnId);
     if (removed > 0) {
+      // §10.4.6 rewind invalidation: timed checkpoints key on canonical seqs
+      // that now point at deleted history; purge this session's rows in an
+      // immediate second transaction (documented in the checkpoint store).
+      try {
+        const owner = this.resolveTurnOwnerScope?.(session.id);
+        if (owner?.ok && owner.ownerScope) {
+          this._store().characterWorlds?.()?.deleteWorldBookCheckpointsForSession?.(owner.ownerScope, session.id);
+        }
+      } catch (err) {
+        console.warn("[sessions] world-book checkpoint rewind purge failed open:", err?.message || err);
+      }
       session.messageCount = this._store().count(session.id);
       session.updatedAt = new Date().toISOString();
       this.save();

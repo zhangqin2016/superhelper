@@ -1547,6 +1547,7 @@ class TurnOrchestrator {
    */
   _compileTurnCharacterContext(session, state, runner) {
     state.characterWorldsPolicyReason = null;
+    state.pendingWorldBookCheckpoint = null;
     try {
       const snapshot = state.characterWorldsSnapshot;
       if (snapshot?.mode !== "character" || snapshot?.snapshotStatus !== "ready") return null;
@@ -1569,15 +1570,23 @@ class TurnOrchestrator {
       if (!repository || typeof repository.getRevision !== "function") return null;
       const revision = repository.getRevision(owner.ownerScope, snapshot.characterRevisionId);
       if (!revision) return null;
-      const { compileCharacterContext } = require("./character-worlds/context-compiler");
-      return compileCharacterContext({
-        snapshot,
-        revision,
-        userText: String(state.enginePayload?.text || state.currentPayload?.rawText || ""),
-        taskContract: state.pendingTaskContract || state.taskContract || null,
-        model: runner?.spawnOptions?.model || null,
-        onDiagnostic: (code) => log.warn("character context compile failed open: %s", code),
+      // WB-4: the book revision pinned by the admitted revision compiles into
+      // the same envelope; its pending timed checkpoint rides the turn state
+      // to the terminal finalizer (§10.4.6).
+      const { compileTurnWorldCharacterContext } = require("./character-worlds/turn-world-book");
+      const result = compileTurnWorldCharacterContext({
+        repository, store: sessionManager?._store?.() || null, log,
+        ownerScope: owner.ownerScope, sessionId: session.id, turnId: state.turnId,
+        snapshot, revision,
+        baseInput: {
+          userText: String(state.enginePayload?.text || state.currentPayload?.rawText || ""),
+          taskContract: state.pendingTaskContract || state.taskContract || null,
+          model: runner?.spawnOptions?.model || null,
+          onDiagnostic: (code) => log.warn("character context compile failed open: %s", code),
+        },
       });
+      state.pendingWorldBookCheckpoint = result.pendingCheckpoint;
+      return result.compiled;
     } catch (err) {
       log.warn("character context compilation failed open: %s", err?.message || String(err));
       return null;

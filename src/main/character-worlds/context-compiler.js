@@ -75,6 +75,16 @@ const REDACTION_PLACEHOLDER = "[redacted]";
 // cannot evade redaction with invisible codepoints.
 const FORMAT_CHAR_PATTERN = /[\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
 
+// §10.3.1 world-entry buckets, packing candidates, and positional assembly
+// live in world-envelope.js (WB-4).
+const {
+  assembleInPositionalOrder,
+  contractEntries,
+  prepareWorldUnits,
+  worldBlockFields,
+  worldCandidates,
+} = require("./world-envelope");
+
 const EXPRESSION_PROFILES = new Set(["immersive", "balanced", "task_preserving"]);
 const IMMERSIVE_TASK_TYPES = new Set([
   "roleplay",
@@ -221,6 +231,12 @@ function assembleText(envelope) {
  * Compile the admitted character revision into the bounded envelope contract
  * (spec §10.1). Pure: no I/O, no clock, no globals; `now`/`seed` only enter
  * through the explicit macro context so identical inputs stay identical.
+ *
+ * Optional `worldBook` input (§10.4, WB-4): {revision, corpus, checkpoint,
+ * seedIdentity, compatibilityProfile, budget} — all pre-resolved by the
+ * caller from the admitted snapshot. The activation resolver runs as a pure
+ * function of that input; ANY resolver error drops world content with a
+ * metadata-only warning and the character still compiles (§16).
  */
 function compileCharacterContext({
   snapshot,
@@ -232,6 +248,7 @@ function compileCharacterContext({
   macroContext = null,
   onDiagnostic = null,
   maxFieldCandidateChars = 0,
+  worldBook = null,
 } = {}) {
   const diagnostic = (code) => {
     if (typeof onDiagnostic === "function") {
@@ -322,6 +339,25 @@ function compileCharacterContext({
       });
     }
 
+    // ------------------------------------------------ world-book activation --
+    // §10.4: the resolver is pure over the caller-prepared input. Any failure
+    // drops world content with a metadata-only warning; the character context
+    // still compiles (§16 "world resolver failure").
+    const omitted = [];
+    const world = prepareWorldUnits({
+      worldBook,
+      compatibilityProfile: snapshot.compatibilityProfile,
+      characterName: name,
+      redact: (field, text) => redactBlockedDirectives(field, text, warnings),
+      warnings,
+      diagnostic,
+      omitted,
+    });
+    const worldResolution = world.resolution;
+    const worldBookRevisionId = world.revisionId;
+    const safeBehaviors = world.safeBehaviors;
+    const worldUnits = world.units;
+
     const envelope = {
       schemaVersion: COMPILED_SCHEMA_VERSION,
       kind: "lily.character_worlds_context",
@@ -356,8 +392,10 @@ function compileCharacterContext({
       return nativeResult();
     }
 
-    // Optional narrative blocks in Phase-1 pack order (spec §10.3.1; world,
-    // persona, and memory buckets are out of Phase-1 scope and disappear).
+    // Optional narrative blocks in §10.3 budget-priority order: essential
+    // behavior and scene, then constant world entries, then triggered world
+    // entries, then examples and creator notes. (Persona and memory buckets
+    // are out of scope and disappear.)
     const candidates = [
       {
         type: "character_definitions",
@@ -372,6 +410,7 @@ function compileCharacterContext({
         compatibility: "lily_native",
         parts: fields.scenario ? [["scenario", fields.scenario]] : [],
       },
+      ...worldCandidates(worldUnits, worldBookRevisionId),
       {
         type: "example_dialogue",
         compatibility: "imported_lower_authority",
@@ -391,25 +430,39 @@ function compileCharacterContext({
       },
     ];
 
-    const omitted = [];
     const activatedFields = ["name"];
+    const selectedWorldUnits = [];
+    const worldBlockPlanIndex = new Map();
     const fits = () => estimateTokensForText(assembleText(envelope)).tokens <= ceiling;
 
     for (const candidate of candidates) {
       if (!candidate.parts.length) continue;
+      const worldUnit = candidate.worldUnit || null;
       const blockFor = (parts) => makeBlock({
         type: candidate.type,
         compatibility: candidate.compatibility,
-        revisionId,
-        fields: Object.fromEntries(parts),
+        revisionId: candidate.revisionId || revisionId,
+        fields: worldUnit ? worldBlockFields(worldUnit) : Object.fromEntries(parts),
       });
       // Whole block first (entries are indivisible while they fit).
-      envelope.blocks.push(blockFor(candidate.parts));
+      const whole = blockFor(candidate.parts);
+      envelope.blocks.push(whole);
       if (fits()) {
-        for (const [field] of candidate.parts) activatedFields.push(field);
+        if (worldUnit) {
+          selectedWorldUnits.push(worldUnit);
+          worldBlockPlanIndex.set(whole, worldUnit.planIndex);
+        } else {
+          for (const [field] of candidate.parts) activatedFields.push(field);
+        }
         continue;
       }
       envelope.blocks.pop();
+      if (worldUnit) {
+        // World entries are indivisible: omit this one and keep packing
+        // lower-priority units (deterministic lexicographic packing, §10.3).
+        omitted.push({ source: "world_entry", id: worldUnit.entry.entryId, reason: "budget" });
+        continue;
+      }
       // Segment each field at paragraph boundaries, greedily, deterministically.
       const keptParts = [];
       let truncated = false;
@@ -454,6 +507,10 @@ function compileCharacterContext({
         // is exhausted; identity is never traded away for narrative fields.
         const remaining = candidates.slice(candidates.indexOf(candidate) + 1);
         for (const rest of remaining) {
+          if (rest.worldUnit) {
+            omitted.push({ source: "world_entry", id: rest.worldUnit.entry.entryId, reason: "budget" });
+            continue;
+          }
           for (const [field] of rest.parts) {
             omitted.push({ source: "character_field", id: field, reason: "budget" });
           }
@@ -461,6 +518,14 @@ function compileCharacterContext({
         break;
       }
     }
+
+    // §10.3.1 assembly: budget packing ran in PRIORITY order; the envelope
+    // serializes blocks in POSITIONAL order (world blocks within a bucket
+    // keep the resolver's insertion-plan order). Token estimates are
+    // order-independent over the same block set, so the packed fit holds.
+    assembleInPositionalOrder(envelope, worldBlockPlanIndex);
+
+    const activatedWorldEntries = contractEntries(selectedWorldUnits);
 
     const text = assembleText(envelope);
     const tokenEstimate = estimateTokensForText(text).tokens;
@@ -478,7 +543,21 @@ function compileCharacterContext({
       omitted,
       warnings,
       activatedFields,
+      activatedWorldEntries,
+      safeBehaviors,
       expressionProfile,
+      worldBook: worldResolution
+        ? {
+            revisionId: worldBookRevisionId,
+            revisionHash: worldResolution.trace.revisionHash,
+            nextCheckpoint: worldResolution.nextCheckpoint,
+            activationFingerprint: sha256(stableJson({
+              revisionHash: worldResolution.trace.revisionHash,
+              activated: activatedWorldEntries,
+              checkpoint: worldResolution.nextCheckpoint,
+            })),
+          }
+        : null,
     };
   } catch {
     diagnostic("compiler_exception");

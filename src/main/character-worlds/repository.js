@@ -15,6 +15,11 @@ const {
   listWorldBooks,
 } = require("./world-book-repository");
 const {
+  readWorldBookCheckpoint,
+  writeWorldBookCheckpoint,
+  deleteWorldBookCheckpointsForSession,
+} = require("./world-book-checkpoint-store");
+const {
   codedError,
   isoTime,
   prepareRevision,
@@ -198,6 +203,15 @@ class CharacterWorldsRepository {
   }
   archiveWorldBook(ownerScope, entityId) {
     return archiveWorldBook(this, ownerScope, entityId);
+  }
+  readWorldBookCheckpoint(input) {
+    return readWorldBookCheckpoint(this, input);
+  }
+  writeWorldBookCheckpoint(input) {
+    return writeWorldBookCheckpoint(this, input);
+  }
+  deleteWorldBookCheckpointsForSession(ownerScope, sessionId) {
+    return deleteWorldBookCheckpointsForSession(this, ownerScope, sessionId);
   }
   createCharacter({ ownerScope, canonical, source, assets = [] }) {
     const owner = requiredString(ownerScope, "ownerScope");

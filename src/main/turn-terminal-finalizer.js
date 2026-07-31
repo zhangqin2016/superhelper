@@ -86,6 +86,7 @@ function clearTurnState(state) {
   state.admittedTurnInput = null;
   state.dispatchAttemptId = null;
   state.characterWorldsSnapshot = null;
+  state.pendingWorldBookCheckpoint = null;
   state.assistantText = "";
   state.thinkingText = "";
   state.contentBlocks = [];
@@ -162,6 +163,11 @@ function createTurnTerminalFinalizer(options = {}) {
         : ["admitted"],
     };
     const markTerminal = ctx.sessionManager?.markTurnInputTerminal;
+    // Whether THIS finalization proved a successful durable terminal: true
+    // when no terminal CAS is configured (legacy/test path) or the CAS below
+    // succeeds; false on CAS loss/error or a pre-recorded terminal. Gates
+    // the world-book checkpoint write (§10.4.6).
+    let terminalPersisted = typeof markTerminal !== "function";
     // A dedicated pre-send terminal CAS (see _markPreSendFailure) may already
     // have recorded this exact terminal durably. Re-running the CAS would
     // lose against that own mark and take the winner-projection path, which
@@ -289,6 +295,7 @@ function createTurnTerminalFinalizer(options = {}) {
           };
         }
       }
+      if (!casLost) terminalPersisted = true;
     }
     const scheduledTaskRunId = state.scheduledTask?.runId || null;
     state.phase = "finalizing";
@@ -449,6 +456,19 @@ function createTurnTerminalFinalizer(options = {}) {
       }
     }
     subagentRuntime?.clearAllWatches?.(sessionId);
+    // §10.4.6 durable half: a turn's pending world-book checkpoint persists
+    // ONLY on a proven successful terminal (turn.completed + winning CAS).
+    if (type === "turn.completed" && terminalPersisted && state.pendingWorldBookCheckpoint) {
+      try {
+        const repository = ctx.characterWorldsRepository
+          || ctx.sessionManager?._store?.()?.characterWorlds?.() || null;
+        require("./character-worlds/turn-world-book").persistTurnWorldBookCheckpoint({
+          repository, pending: { ...state.pendingWorldBookCheckpoint, sessionId }, log,
+        });
+      } catch (checkpointErr) {
+        log.warn("world book checkpoint persist failed open: %s", checkpointErr?.message || checkpointErr);
+      }
+    }
     clearTurnState(state);
 
     if (triggerVerifyRetry || triggerDocumentVerifyRetry) {

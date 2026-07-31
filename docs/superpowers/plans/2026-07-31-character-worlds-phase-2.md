@@ -153,7 +153,7 @@ Explicitly OUT of Phase 2A (later phases):
 - Modify: `src/main/store/turn-input-store.js` (or a new small store module)
 - Create: `scripts/test-character-world-book-compile.mjs`
 
-- [ ] **Step 1: Write failing compile tests**
+- [x] **Step 1: Write failing compile tests**
   Activated entries land in the correct envelope buckets per §10.3.1 order
   (before/after character, before/after examples, author note top/bottom;
   at_depth/outlet → documented lower-authority bucket + `safe_behavior`
@@ -161,23 +161,26 @@ Explicitly OUT of Phase 2A (later phases):
   in the compiled contract; budget share respected (world entries below
   identity/persona in §10.3 priority); deterministic fingerprint; native when
   the book is missing/corrupt.
-- [ ] **Step 2: Write failing checkpoint tests**
+- [x] **Step 2: Write failing checkpoint tests**
   Checkpoint written only after successful turn finalization; sticky effects
   activate on the NEXT turn; failed/interrupted turns write none; retry and
   restart restore/invalidate at the retained turn boundary; accepted steer
   shares the turn's single message-sequence increment.
-- [ ] **Step 3: Run tests, verify they fail**
-- [ ] **Step 4: Integrate the resolver into the compiler**
+- [x] **Step 3: Run tests, verify they fail**
+- [x] **Step 4: Integrate the resolver into the compiler**
   New envelope blocks with type/source revision/content hash/token count/
   compatibility level; `activatedWorldEntries` + `omitted` in the compiled
   output; fail open to character-only compile on any resolver error.
-- [ ] **Step 5: Persist timed checkpoints**
+- [x] **Step 5: Persist timed checkpoints**
   Durable checkpoint store keyed by (ownerScope, sessionId,
   worldBookRevisionId); transactional write in the terminal finalizer's
-  successful path only; snapshot carries the checkpoint fingerprint so retry/
-  recovery replays the same activation.
-- [ ] **Step 6: Run compile + orchestrator + binding-isolation regressions**
-- [ ] **Step 7: Commit** — `feat: compile activated world entries per turn`
+  successful path only. Replay semantics (chosen): the turn's activation is
+  RECOMPUTED DETERMINISTICALLY from the pre-turn durable checkpoint — the
+  resolver is pure, so retry/restart replays a byte-identical activation; the
+  persisted checkpoint fingerprint is audit metadata only, never a required
+  input.
+- [x] **Step 6: Run compile + orchestrator + binding-isolation regressions**
+- [x] **Step 7: Commit** — `feat: compile activated world entries per turn`
 
 ## Task WB-5: V3 Decorator Compilation
 

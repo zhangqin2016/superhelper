@@ -760,6 +760,35 @@ class MessageStore {
     return rows.map((r) => unpack(r.envelope_blob));
   }
 
+  /**
+   * Newest `limit` committed messages WITH canonical sequence numbers, in
+   * ascending seq order: [{seq, role, speakerName, text}]. This is the
+   * world-book scan-corpus projection (§10.4.1): user text comes from
+   * envelope.content, assistant text from envelope.record.assistantText, and
+   * the speaker name falls back to the role.
+   */
+  getRecentWithSeq(sessionId, limit = 100) {
+    const lim = Math.max(1, Math.min(Number(limit) || DEFAULT_LIMIT, MAX_LIMIT));
+    const rows = this.db.all(
+      `SELECT seq, envelope_blob FROM messages
+       WHERE session_id = ? ORDER BY seq DESC LIMIT ?`,
+      sessionId,
+      lim,
+    );
+    rows.reverse(); // chronological
+    return rows.map((row) => {
+      const envelope = unpack(row.envelope_blob) || {};
+      const role = typeof envelope.role === "string" && envelope.role ? envelope.role : "assistant";
+      const text = typeof envelope.content === "string" && envelope.content
+        ? envelope.content
+        : String(envelope.record?.assistantText || "");
+      const speakerName = typeof envelope.speakerName === "string" && envelope.speakerName
+        ? envelope.speakerName
+        : role;
+      return { seq: row.seq, role, speakerName, text };
+    });
+  }
+
   getById(id) {
     const row = this.db.get(`SELECT envelope_blob FROM messages WHERE id = ?`, id);
     return row ? unpack(row.envelope_blob) : null;

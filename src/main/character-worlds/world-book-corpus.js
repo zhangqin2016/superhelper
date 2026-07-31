@@ -36,8 +36,37 @@ function clampInt(value, fallback, maximum) {
   return Math.max(0, Math.min(Math.floor(Number(value)), maximum));
 }
 
+/**
+ * Messages admitted to the scan window for this policy (§10.4.1). This is
+ * also the bounded canonical-message fetch size callers should use when
+ * building the corpus — never fetch maxWindowMessages unconditionally.
+ */
+function resolveScanWindowMessages(scanPolicy, limits) {
+  const resolved = resolveActivationLimits(limits);
+  const policy = scanPolicy && typeof scanPolicy === "object" ? scanPolicy : {};
+  const scanDepth = clampInt(
+    policy.scanDepthMessages, DEFAULT_SCAN_DEPTH_MESSAGES, resolved.maxWindowMessages,
+  );
+  const minActivations = clampInt(policy.minActivations, 0, Number.MAX_SAFE_INTEGER);
+  const maxDepth = clampInt(policy.maxDepthMessages, 0, resolved.maxWindowMessages);
+  return minActivations > 0
+    ? Math.min(Math.max(scanDepth, maxDepth), resolved.maxWindowMessages)
+    : scanDepth;
+}
+
+// Participant names ride inside the matching frame ⟦role:name⟧ — strip the
+// frame characters plus separator/control/format codepoints so a hostile
+// name can never forge a message boundary, and bound its length.
+const PARTICIPANT_NAME_STRIP = /[\u27e6\u27e7\u001f\p{Cc}\p{Cf}]/gu;
+const MAX_PARTICIPANT_NAME_POINTS = 64;
+
+function sanitizeParticipantName(name) {
+  const cleaned = String(name).replace(PARTICIPANT_NAME_STRIP, "").trim();
+  return [...cleaned].slice(0, MAX_PARTICIPANT_NAME_POINTS).join("");
+}
+
 function participantPrefix(role, speakerName, includeNames) {
-  const name = includeNames && speakerName ? String(speakerName) : "";
+  const name = includeNames && speakerName ? sanitizeParticipantName(speakerName) : "";
   return name ? `⟦${role}:${name}⟧ ` : `⟦${role}⟧ `;
 }
 
@@ -66,8 +95,6 @@ function buildScanCorpus(input = {}) {
   const limits = resolveActivationLimits(input.limits);
   const policy = input.scanPolicy && typeof input.scanPolicy === "object" ? input.scanPolicy : {};
   const scanDepth = clampInt(policy.scanDepthMessages, DEFAULT_SCAN_DEPTH_MESSAGES, limits.maxWindowMessages);
-  const minActivations = clampInt(policy.minActivations, 0, Number.MAX_SAFE_INTEGER);
-  const maxDepth = clampInt(policy.maxDepthMessages, 0, limits.maxWindowMessages);
   const includeNames = policy.includeParticipantNames !== false;
 
   const rawMessages = Array.isArray(input.messages) ? input.messages : [];
@@ -87,9 +114,7 @@ function buildScanCorpus(input = {}) {
   // misordered caller cannot change the scan window.
   messages.sort((a, b) => a.seq - b.seq);
 
-  const windowSize = minActivations > 0
-    ? Math.min(Math.max(scanDepth, maxDepth), limits.maxWindowMessages)
-    : scanDepth;
+  const windowSize = resolveScanWindowMessages(policy, input.limits);
   const primaryStart = Math.max(0, messages.length - scanDepth);
   const windowStart = Math.max(0, messages.length - windowSize);
 
@@ -177,5 +202,7 @@ function buildScanCorpus(input = {}) {
 
 module.exports = {
   buildScanCorpus,
+  resolveScanWindowMessages,
+  sanitizeParticipantName,
   MATCHING_SOURCE_NAMES,
 };
