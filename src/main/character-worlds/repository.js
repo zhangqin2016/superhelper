@@ -15,6 +15,14 @@ const {
   listWorldBooks,
 } = require("./world-book-repository");
 const {
+  archivePersona,
+  createPersona,
+  createPersonaRevision,
+  getPersona,
+  getPersonaRevision,
+  listPersonas,
+} = require("./persona-repository");
+const {
   readWorldBookCheckpoint,
   writeWorldBookCheckpoint,
   deleteWorldBookCheckpointsForSession,
@@ -203,6 +211,24 @@ class CharacterWorldsRepository {
   }
   archiveWorldBook(ownerScope, entityId) {
     return archiveWorldBook(this, ownerScope, entityId);
+  }
+  createPersona(input) {
+    return createPersona(this, input);
+  }
+  createPersonaRevision(input) {
+    return createPersonaRevision(this, input);
+  }
+  listPersonas(ownerScope, options) {
+    return listPersonas(this, ownerScope, options);
+  }
+  getPersona(ownerScope, entityId) {
+    return getPersona(this, ownerScope, entityId);
+  }
+  getPersonaRevision(ownerScope, revisionId) {
+    return getPersonaRevision(this, ownerScope, revisionId);
+  }
+  archivePersona(ownerScope, entityId) {
+    return archivePersona(this, ownerScope, entityId);
   }
   readWorldBookCheckpoint(input) {
     return readWorldBookCheckpoint(this, input);

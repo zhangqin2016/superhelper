@@ -86,6 +86,21 @@ const MAX_WORLD_BOOK_DATA_NODES = 100_000;
 const MAX_WORLD_BOOK_DATA_ARRAY_LENGTH = 100_000;
 const MAX_WORLD_BOOK_STRING_CHARS = 2 * 1024 * 1024;
 
+// Persona (§7.3) normalization limits. Same versioned, monotonic discipline
+// as the world-book limits: a limit may only loosen through a deliberate
+// PERSONA_LIMITS_VERSION bump. A persona is far smaller than a world book —
+// a name plus a narrative description plus inert preserved unknowns.
+const PERSONA_SCHEMA_VERSION = 1;
+const MAX_PERSONA_LIMITS_VERSION = 1;
+const MAX_PERSONA_CANONICAL_BYTES = 1024 * 1024;
+const MAX_PERSONA_SOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_PERSONA_NAME_CHARS = 1024;
+const MAX_PERSONA_DESCRIPTION_CHARS = 256 * 1024;
+const MAX_PERSONA_DATA_DEPTH = 32;
+const MAX_PERSONA_DATA_NODES = 100_000;
+const MAX_PERSONA_DATA_ARRAY_LENGTH = 10_000;
+const MAX_PERSONA_STRING_CHARS = 512 * 1024;
+
 // Activation resolver hard limits (§10.4/§10.6). Caller-supplied budgets may
 // only tighten these, never loosen (same discipline as DEFAULT_MACRO_LIMITS).
 const DEFAULT_WORLD_BOOK_ACTIVATION_LIMITS = Object.freeze({
@@ -263,6 +278,16 @@ module.exports = {
   CHARACTER_BLOB_RECONCILE_CURSOR_KEY,
   WORLD_BOOK_SCHEMA_VERSION,
   MAX_WORLD_BOOK_LIMITS_VERSION,
+  PERSONA_SCHEMA_VERSION,
+  MAX_PERSONA_LIMITS_VERSION,
+  MAX_PERSONA_CANONICAL_BYTES,
+  MAX_PERSONA_SOURCE_BYTES,
+  MAX_PERSONA_NAME_CHARS,
+  MAX_PERSONA_DESCRIPTION_CHARS,
+  MAX_PERSONA_DATA_DEPTH,
+  MAX_PERSONA_DATA_NODES,
+  MAX_PERSONA_DATA_ARRAY_LENGTH,
+  MAX_PERSONA_STRING_CHARS,
   MAX_WORLD_BOOK_CANONICAL_BYTES,
   MAX_WORLD_BOOK_SOURCE_BYTES,
   MAX_WORLD_BOOK_NAME_CHARS,

@@ -151,8 +151,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v10 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 10);
+  check("migrations v3-v11 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 11);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
     const turnInputColumns = new Set(
       migratedStore.db.all("PRAGMA table_info(turn_inputs)").map((row) => row.name),
@@ -1485,12 +1485,13 @@ try {
     for (const prefix of ["persona", "world_book"]) {
       const entityId = crypto.randomUUID();
       const revisionId = crypto.randomUUID();
-      // v8 gave world_book_revisions a revision_hash column (default ''); the
-      // raw fixtures must set distinct hashes so the intended revision-number
-      // constraint — not the duplicate-revision hash index — is exercised.
-      const hashColumn = prefix === "world_book" ? ", revision_hash" : "";
-      const fixtureHash = prefix === "world_book" ? `, 'sha256:${"1".repeat(64)}'` : "";
-      const duplicateHash = prefix === "world_book" ? `, 'sha256:${"2".repeat(64)}'` : "";
+      // v8 gave world_book_revisions a revision_hash column (default '') and
+      // v11 did the same for persona_revisions; the raw fixtures must set
+      // distinct hashes so the intended revision-number constraint — not the
+      // duplicate-revision hash index — is exercised.
+      const hashColumn = ", revision_hash";
+      const fixtureHash = `, 'sha256:${"1".repeat(64)}'`;
+      const duplicateHash = `, 'sha256:${"2".repeat(64)}'`;
       freshStore.db.transaction(() => {
         freshStore.db.run(
           `INSERT INTO ${prefix}_entities

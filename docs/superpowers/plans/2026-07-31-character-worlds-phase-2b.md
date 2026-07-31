@@ -51,21 +51,21 @@ Explicitly OUT of Phase 2B:
 - Modify: `src/main/character-worlds/repository.js` (delegations)
 - Create: `scripts/test-character-persona-store.mjs`
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
   Mirror the world-book store suite: create persona entity + immutable
   revision (§7.3 shape: name, description, avatarAssetId), revision hash from
   canonical + provenance + assets, duplicate reuse, owner isolation, archive
   semantics, immutability triggers, Proxy/accessor/dangerous-key rejection,
   bounded fields, no authorization-shaped fields accepted (they are stripped
   inert or rejected — decide and document).
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Additive schema v11**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Additive schema v11**
   `persona_entities` / `persona_revisions` / `persona_revision_blobs`
   mirroring the established discipline.
-- [ ] **Step 4: Persona model + repository**
+- [x] **Step 4: Persona model + repository**
   Bounded normalization; create/createRevision/get/getRevision/list/archive.
-- [ ] **Step 5: Run store + regression tests**
-- [ ] **Step 6: Commit** — `feat: add persona persistence`
+- [x] **Step 5: Run store + regression tests**
+- [x] **Step 6: Commit** — `feat: add persona persistence`
 
 ## Task P2B-2: Persona Binding + Envelope
 

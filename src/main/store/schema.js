@@ -25,6 +25,9 @@ const {
   migrateWorldBookSchema,
 } = require("./world-book-schema-migration");
 const {
+  migratePersonaSchema,
+} = require("./persona-schema-migration");
+const {
   migrateWorldBookCheckpointSchema,
 } = require("../character-worlds/world-book-checkpoint-store");
 
@@ -465,6 +468,12 @@ const MIGRATIONS = [
   // Additive mutable table keyed by (owner, session, book revision); written
   // transactionally only after successful turn finalization.
   migrateWorldBookCheckpointSchema,
+  // v11 - persona revision parity with character/world-book revisions
+  // (Phase 2B P2B-1, §7.3). Additive only: v3 persona placeholder tables gain
+  // the full provenance/hash/blob discipline; existing tables and rows are
+  // untouched. The SQL lives in persona-schema-migration.js to keep this file
+  // within the architecture line budget.
+  migratePersonaSchema,
 ];
 
 module.exports = { MIGRATIONS };

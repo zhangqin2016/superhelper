@@ -134,6 +134,11 @@ const DEFAULT_ACTIVATION = {
   delayMessages: 0,
   stickyMessages: 0,
   cooldownMessages: 0,
+  forceState: "none",
+  activateOnlyAfter: 0,
+  greetingIndex: null,
+  scanDepthMessages: 0,
+  statefulMatch: "none",
 };
 const DEFAULT_INSERTION = {
   position: "before_character",
@@ -142,6 +147,12 @@ const DEFAULT_INSERTION = {
   outletName: "",
   order: 100,
   priority: null,
+  reverseDepth: false,
+};
+const EMPTY_DECORATORS = {
+  directives: [],
+  inert: [],
+  applied: { activation: {}, insertion: {} },
 };
 const DEFAULT_RECURSION = {
   preventFurtherRecursion: false,
@@ -175,7 +186,14 @@ const EXPECTED_FULL_ENTRY = {
     ...FULL_ENTRY_INPUT.activation,
     // names/tags input spellings normalize to the spec §7.4 stored shape.
     characterFilter: { mode: "exclude", characterNames: ["Luna"], characterTags: ["crew"] },
+    forceState: "none",
+    activateOnlyAfter: 0,
+    greetingIndex: null,
+    scanDepthMessages: 0,
+    statefulMatch: "none",
   },
+  insertion: { ...FULL_ENTRY_INPUT.insertion, reverseDepth: false },
+  decorators: { ...EMPTY_DECORATORS },
 };
 
 const EXPECTED_NORMALIZED_CANONICAL = {
@@ -190,6 +208,7 @@ const EXPECTED_NORMALIZED_CANONICAL = {
       activation: DEFAULT_ACTIVATION,
       insertion: DEFAULT_INSERTION,
       recursion: DEFAULT_RECURSION,
+      decorators: { ...EMPTY_DECORATORS },
       preservedDecorators: [],
       preservedExtensions: {},
     },
@@ -230,8 +249,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v10 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 10);
+  check("migrations v3-v11 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 11);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
     const revisionColumns = tableColumns(migratedStore.db, "world_book_revisions");
     for (const column of [
@@ -276,7 +295,7 @@ try {
 
   const legacyStore = new MessageStore(legacyDbPath, legacyBlobDir);
   check("migration v8 backfills pre-existing rows before the dedup index", () => {
-    assert.equal(legacyStore.db.pragma("user_version"), 10);
+    assert.equal(legacyStore.db.pragma("user_version"), 11);
     const rows = legacyStore.db.all(
       `SELECT id, revision_hash FROM world_book_revisions
        WHERE entity_id = ? ORDER BY revision_number ASC`,
@@ -291,15 +310,15 @@ try {
   });
   legacyStore.close();
 
-  check("a v10 database opened by a v7 migration set is a designed no-op", () => {
+  check("a v11 database opened by a v7 migration set is a designed no-op", () => {
     const pinDbPath = path.join(tmp, "forward-pin.db");
     const pinSeed = openDatabase(pinDbPath);
     pinSeed.migrate(MIGRATIONS);
-    assert.equal(pinSeed.pragma("user_version"), 10);
+    assert.equal(pinSeed.pragma("user_version"), 11);
     pinSeed.close();
     const pinDb = openDatabase(pinDbPath);
-    assert.equal(pinDb.migrate(MIGRATIONS.slice(0, 7)), 10);
-    assert.equal(pinDb.pragma("user_version"), 10);
+    assert.equal(pinDb.migrate(MIGRATIONS.slice(0, 7)), 11);
+    assert.equal(pinDb.pragma("user_version"), 11);
     pinDb.close();
   });
   const repository = freshStore.characterWorlds();
