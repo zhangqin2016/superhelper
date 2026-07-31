@@ -118,7 +118,7 @@ Explicitly OUT of Phase 2A (later phases):
 - Create: `src/main/character-worlds/world-book-corpus.js`
 - Create: `scripts/test-character-world-book-activation.mjs`
 
-- [ ] **Step 1: Write failing resolver tests**
+- [x] **Step 1: Write failing resolver tests**
   Golden fixtures: constant entries; primary-key match with selective logic
   (and_any/and_all/not_any/not_all); case sensitivity and whole-word (CJK
   exemption); probability 0/100 and deterministic mid-range (same seed → same
@@ -128,13 +128,13 @@ Explicitly OUT of Phase 2A (later phases):
   checkpoint; cooldown/delay against canonical message sequence numbers;
   budget truncation records omissions; adversarial 10k-entry book stays within
   complexity counters.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Build the scan corpus**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Build the scan corpus**
   `world-book-corpus.js`: canonical messages from the admitted session
   (bounded scan depth), stable participant separators + resolved display
   names, Unicode NFC + version-pinned case folding, matching-source opt-ins
   (description/personality/scenario/creator notes) that never get inserted.
-- [ ] **Step 4: Implement the pure resolver**
+- [x] **Step 4: Implement the pure resolver**
   `resolveWorldBookActivation({ bookRevision, corpus, checkpoint, seed
   identity, budget, compatibilityProfile })` → `{ activated: [...], omitted:
   [...], nextCheckpoint, trace, complexity }`. Multi-pattern plain-key index
@@ -142,8 +142,8 @@ Explicitly OUT of Phase 2A (later phases):
   keyed by owner/session/turn/revision/entry/phase), inclusion-group conflict
   graph resolution, bounded recursion fixed point, selective filters,
   generation/character filters, complexity counters.
-- [ ] **Step 5: Run resolver tests**
-- [ ] **Step 6: Commit** — `feat: resolve world book activation deterministically`
+- [x] **Step 5: Run resolver tests**
+- [x] **Step 6: Commit** — `feat: resolve world book activation deterministically`
 
 ## Task WB-4: Compiler Envelope Integration + Timed Checkpoints
 

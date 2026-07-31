@@ -7,6 +7,23 @@ const CHARACTER_COMPATIBILITY_PROFILE = "lily-character-worlds-v1";
 const CHARACTER_ASSET_LIMITS_VERSION = 1;
 const CHARACTER_CARD_PARSER_LIMITS_VERSION = 4;
 const CHARACTER_MACRO_LIMITS_VERSION = 1;
+// World-book activation (§10.4) matching policy. Version-pinned because any
+// change to normalization, case folding, segmentation, or CJK exemption must
+// invalidate cached indexes explicitly and make cross-platform fixtures fail
+// loud rather than drift. v1 semantics:
+//   - matching copy: Unicode NFC (String.prototype.normalize("NFC"));
+//   - case folding: Unicode default case mapping via locale-independent
+//     String.prototype.toLowerCase() (NOT full case folding: e.g. "ß" is not
+//     folded to "ss"); never the host OS locale;
+//   - whole-word segmentation: a built-in deterministic rule — a match is
+//     whole-word when the code points immediately before/after it are outside
+//     [\p{L}\p{M}\p{N}\p{Pc}]; keys containing Han/Hiragana/Katakana/Hangul
+//     code points are exempt (substring match) because CJK text has no word
+//     spacing;
+//   - multi-pattern index: Aho-Corasick over code points (see
+//     world-book-matching.js), one automaton per case class.
+const WORLD_BOOK_MATCHING_POLICY_VERSION = "lily-world-book-match-1";
+const WORLD_BOOK_ACTIVATION_LIMITS_VERSION = 1;
 
 const MAX_CHARACTER_CANONICAL_BYTES = 8 * 1024 * 1024;
 const MAX_CHARACTER_SOURCE_BYTES = 32 * 1024 * 1024;
@@ -60,6 +77,45 @@ const MAX_WORLD_BOOK_DATA_DEPTH = 32;
 const MAX_WORLD_BOOK_DATA_NODES = 100_000;
 const MAX_WORLD_BOOK_DATA_ARRAY_LENGTH = 100_000;
 const MAX_WORLD_BOOK_STRING_CHARS = 2 * 1024 * 1024;
+
+// Activation resolver hard limits (§10.4/§10.6). Caller-supplied budgets may
+// only tighten these, never loosen (same discipline as DEFAULT_MACRO_LIMITS).
+const DEFAULT_WORLD_BOOK_ACTIVATION_LIMITS = Object.freeze({
+  version: WORLD_BOOK_ACTIVATION_LIMITS_VERSION,
+  // Selected insertion plan size.
+  maxEntries: 256,
+  // Conservative token estimate: one token per content code point.
+  maxTokens: 32_768,
+  // Total scan-corpus code points (chat window + matching sources).
+  maxCorpusChars: 256_000,
+  // One matching-source opt-in (description/personality/scenario/creatorNotes).
+  maxSourceChars: 64_000,
+  // Canonical messages admitted to the scan window (incl. min-activation sweeps).
+  maxWindowMessages: 512,
+  // Frontier candidates evaluated per recursion level / sweep. Sized to the
+  // hard entry cap so a fully-matching book still resolves; callers may only
+  // tighten.
+  maxCandidatesPerFrontier: 16_384,
+  // Timed-effect checkpoint entries per list (also the intake cap when
+  // sanitizing a previous checkpoint).
+  maxTimedEntries: 4_096,
+  // Reported omissions (overflow is counted, not listed).
+  maxOmitted: 1_024,
+  // Trace candidate records (metadata only; overflow is counted).
+  maxTraceCandidates: 2_048,
+  // Inclusion-group resolution rounds across the whole resolve. A path-shaped
+  // conflict graph eliminates a constant number of entries per round, so this
+  // is sized to the hard entry cap; breach fails coded, never hangs.
+  maxGroupRounds: 16_384,
+  // Compiled plain-key index ceilings (§10.6: revision index build is
+  // O(B + K)). Breach fails coded BEFORE the automaton materializes.
+  maxKeyBytes: 8 * 1024 * 1024,
+  maxAutomatonStates: 4_000_000,
+  // Deterministic operation ceiling standing in for an elapsed-time budget:
+  // the resolver is pure, so wall time can never affect its output; work is
+  // bounded by counters instead (§10.6).
+  maxOperations: 8_000_000,
+});
 
 // Rollout policy (design spec §16/§18). The server-signed client config may
 // enable Character Worlds compilation/selection for a named compatibility
@@ -171,6 +227,9 @@ module.exports = {
   CHARACTER_ASSET_LIMITS_VERSION,
   CHARACTER_CARD_PARSER_LIMITS_VERSION,
   CHARACTER_MACRO_LIMITS_VERSION,
+  WORLD_BOOK_MATCHING_POLICY_VERSION,
+  WORLD_BOOK_ACTIVATION_LIMITS_VERSION,
+  DEFAULT_WORLD_BOOK_ACTIVATION_LIMITS,
   DEFAULT_MACRO_LIMITS,
   DEFAULT_IMPORT_LIMITS,
   MAX_CHARACTER_CANONICAL_BYTES,
