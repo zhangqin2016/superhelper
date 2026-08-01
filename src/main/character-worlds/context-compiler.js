@@ -27,6 +27,7 @@
 const crypto = require("node:crypto");
 const { expandSafeMacros } = require("./macros");
 const { stableJson } = require("./persistence-codec");
+const { sceneCompileCandidates } = require("./scene-compile");
 const {
   estimateTokensForText,
   resolveContextBudget,
@@ -143,11 +144,7 @@ function paragraphsOf(text) {
   return text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
 }
 
-/**
- * Bound a candidate field by code POINTS (never mid-surrogate) and drop any
- * trailing partial paragraph left by the cut. Returns a new string; the
- * stored field is never mutated.
- */
+
 function boundFieldText(raw, maxChars = MAX_FIELD_CANDIDATE_CHARS) {
   if (raw.length <= maxChars) return raw;
   const points = Array.from(raw);
@@ -227,6 +224,7 @@ function compileCharacterContext({
   worldBook = null,
   persona = null,
   sceneMemory = null,
+  scene = null,
 } = {}) {
   const diagnostic = (code) => {
     if (typeof onDiagnostic === "function") {
@@ -396,9 +394,10 @@ function compileCharacterContext({
         compatibility: "lily_native",
         parts: fields.scenario ? [["scenario", fields.scenario]] : [],
       },
-      ...(personaCandidate ? [personaCandidate] : []),
-      ...(sceneMemory?.text ? [{ type: "scene_memory", compatibility: "narrative", parts: [["memory", sceneMemory.text]] }] : []),
-      ...worldCandidates(worldUnits, worldBookRevisionId),
+  ...(personaCandidate ? [personaCandidate] : []),
+  ...(sceneMemory?.text ? [{ type: "scene_memory", compatibility: "narrative", parts: [["memory", sceneMemory.text]] }] : []),
+  ...(scene ? sceneCompileCandidates(scene) : []),
+  ...worldCandidates(worldUnits, worldBookRevisionId),
       {
         type: "example_dialogue",
         compatibility: "imported_lower_authority",
