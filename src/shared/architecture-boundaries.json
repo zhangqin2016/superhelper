@@ -1,6 +1,10 @@
 {
   "schemaVersion": 1,
-  "sourceRoots": ["src/main", "src/renderer", "server/src"],
+  "sourceRoots": [
+    "src/main",
+    "src/renderer",
+    "server/src"
+  ],
   "newFileMaxLines": 500,
   "hotspotLineBudgets": {
     "server/src/services/client-config.js": 975,
@@ -40,13 +44,23 @@
     "src/renderer/modules/project-tree.js": 812,
     "src/renderer/modules/session-runtime-store.js": 949,
     "src/renderer/modules/skill-settings.js": 616,
-    "src/renderer/modules/tool-payload-renderer.js": 837
+    "src/renderer/modules/tool-payload-renderer.js": 837,
+    "src/main/turn-terminal-finalizer.js": 507
   },
   "forbiddenImports": [
-    { "from": "src/main", "to": "src/renderer" },
-    { "from": "src/renderer", "to": "src/main" }
+    {
+      "from": "src/main",
+      "to": "src/renderer"
+    },
+    {
+      "from": "src/renderer",
+      "to": "src/main"
+    }
   ],
-  "turnPipelineOrder": ["resolveTurnIntelligence", "prepareTurnCapabilityReadiness"],
+  "turnPipelineOrder": [
+    "resolveTurnIntelligence",
+    "prepareTurnCapabilityReadiness"
+  ],
   "singleSources": {
     "bundledSkillSync": "src/main/bundled-skill-sync.js",
     "contentTaskIntent": "src/main/content-task-intent.js",

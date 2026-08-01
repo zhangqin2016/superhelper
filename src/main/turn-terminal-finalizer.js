@@ -456,6 +456,14 @@ function createTurnTerminalFinalizer(options = {}) {
       }
     }
     subagentRuntime?.clearAllWatches?.(sessionId);
+    // §11 P3-1: scene memory advances ONLY on a proven successful terminal.
+    if (type === "turn.completed" && terminalPersisted) {
+      try {
+        require("./character-worlds/scene-memory").advanceMemoryOnCompleted(ctx, sessionId, state, completedTurnId);
+      } catch (memoryErr) {
+        log.warn("scene memory advance failed open: %s", memoryErr?.message || memoryErr);
+      }
+    }
     // §10.4.6 durable half: a turn's pending world-book checkpoint persists
     // ONLY on a proven successful terminal (turn.completed + winning CAS).
     if (type === "turn.completed" && terminalPersisted && state.pendingWorldBookCheckpoint) {

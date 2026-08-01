@@ -226,6 +226,7 @@ function compileCharacterContext({
   maxFieldCandidateChars = 0,
   worldBook = null,
   persona = null,
+  sceneMemory = null,
 } = {}) {
   const diagnostic = (code) => {
     if (typeof onDiagnostic === "function") {
@@ -396,6 +397,7 @@ function compileCharacterContext({
         parts: fields.scenario ? [["scenario", fields.scenario]] : [],
       },
       ...(personaCandidate ? [personaCandidate] : []),
+      ...(sceneMemory?.text ? [{ type: "scene_memory", compatibility: "narrative", parts: [["memory", sceneMemory.text]] }] : []),
       ...worldCandidates(worldUnits, worldBookRevisionId),
       {
         type: "example_dialogue",

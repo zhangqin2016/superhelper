@@ -124,9 +124,11 @@ function sceneMemorySection(items = []) {
   for (const item of items) {
     if (budget <= 0) break;
     const line = `- [${item.kind}] ${String(item.text || "").trim()}`;
-    if (Buffer.byteLength(line, "utf8") > budget) break;
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    // +1 reserves the join separator so the FINAL text never exceeds budget.
+    if (lineBytes + 1 > budget) break;
     parts.push(line);
-    budget -= Buffer.byteLength(line, "utf8");
+    budget -= lineBytes + 1;
   }
   return {
     authority: "narrative",
@@ -134,10 +136,30 @@ function sceneMemorySection(items = []) {
   };
 }
 
+/**
+ * Finalizer hook (§11): advance scene memory ONLY on a proven successful
+ * terminal with a bound character. Fail-open — a memory error never breaks
+ * the finalized turn.
+ */
+function advanceMemoryOnCompleted(ctx, sessionId, state, completedTurnId) {
+  const snap = state?.characterWorldsSnapshot;
+  if (snap?.mode !== "character" || !snap.characterRevisionId) return;
+  const db = ctx?.characterWorldsRepository?.db
+    || ctx?.sessionManager?._store?.()?.characterWorlds?.()?.db || null;
+  if (!db) return;
+  recordTurnOutcome(db, {
+    sessionId,
+    characterRevisionId: snap.characterRevisionId,
+    outcome: "completed",
+    turnId: completedTurnId || state.turnId || "",
+  });
+}
+
 module.exports = {
   MAX_SCENE_MEMORY_BYTES,
   MAX_ITEMS_PER_SCOPE,
   activeMemory,
+  advanceMemoryOnCompleted,
   appendMemory,
   listMemory,
   recordTurnOutcome,
