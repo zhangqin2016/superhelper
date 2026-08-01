@@ -75,6 +75,15 @@ const {
   CharacterAuthoringService,
 } = require("../src/main/character-worlds/authoring-service.js");
 const {
+  buildCharacterDraftTool,
+} = require("../src/main/character-worlds/agent-draft-tools.js");
+const {
+  collectCharacterWorldsForExport,
+  importCharacterWorldsPack,
+  packCharacterWorldsSection,
+  unpackCharacterWorldsSection,
+} = require("../src/main/character-worlds/workspace-portability.js");
+const {
   importEmbeddedWorldBook,
 } = require("../src/main/character-worlds/world-book-repository.js");
 const {
@@ -1163,6 +1172,57 @@ async function runSimulation() {
       journal.push(["authoring-restore", kind, ownerIdx, slot, sourceIndex, seq, sampled]);
     }
 
+    // Phase 2C: agent draft create through the REAL broker tool handler.
+    // Drafts are inert library data with agent_draft provenance; the journal
+    // keeps only the deterministic parts (kind + owner + commit status — new
+    // ids are random and the entities are library-only, never bound).
+    async function opAgentDraft(ownerIdx, opIndex) {
+      const owner = owners[ownerIdx];
+      // The broker tool drafts characters/personas only — world books have no
+      // agent-draft path (§13.2).
+      const kind = ["character", "persona"][pick(2)];
+      const draftTool = buildCharacterDraftTool({
+        characterWorldsService: { authoring: authoringFor(owner) },
+        characterWorldsPolicy: () => ({ enabled: true, reason: "stress" }),
+        resolveOwnerScope: async () => owner,
+        log: () => {},
+      });
+      const canonical = kind === "persona"
+        ? { schemaVersion: 1, name: `Draft-Persona-${ownerIdx}-${opIndex}`, description: "stress draft" }
+        : { name: `Draft-Char-${ownerIdx}-${opIndex}`, description: "stress draft" };
+      const result = await draftTool.handler(
+        { action: "create", kind, canonical },
+        { sessionId: `stress-draft-${opIndex}`, activeSkillIds: [] },
+        {},
+      );
+      assert.equal(result.ok, true, `agent-draft#${opIndex}: draft commit ${JSON.stringify(result)}`);
+      assert.ok(result.entityId && result.revisionId, `agent-draft#${opIndex}: metadata result carries ids`);
+      assert.equal(
+        JSON.stringify(result).includes(canonical.name),
+        false,
+        `agent-draft#${opIndex}: metadata-only result never echoes canonical content`,
+      );
+      journal.push(["agent-draft", ownerIdx, kind, 1]);
+    }
+
+    // Phase 2C: pack export→import remap round-trip against the live library.
+    // The pack is imported into a FRESH owner namespace so the remap is
+    // observable without touching the source owner's data; the journal keeps
+    // only deterministic counts.
+    function opPackRoundtrip(ownerIdx) {
+      const sessionsFor = sessions
+        .filter((session) => session.ownerIdx === ownerIdx)
+        .map((session) => ({ sessionId: session.id, ownerScope: session.ownerScopeForTest }));
+      const collected = collectCharacterWorldsForExport(repository, sessionsFor);
+      const packed = packCharacterWorldsSection(collected);
+      const section = unpackCharacterWorldsSection(packed.json);
+      const importOwner = `profile:stress-import-${ownerIdx}`;
+      const result = importCharacterWorldsPack(repository, importOwner, section);
+      assert.equal(result.ok, true, `pack-roundtrip: ${JSON.stringify(result.errors || [])}`);
+      assert.equal(result.imported.length, collected.entities.length, "pack-roundtrip: every packed entity imports");
+      journal.push(["pack-roundtrip", ownerIdx, collected.entities.length, result.imported.length]);
+    }
+
     const OP_WEIGHTS = [
       ["bind", 18],
       ["admit", 30],
@@ -1179,6 +1239,8 @@ async function runSimulation() {
       ["persona-bind", 8],
       ["authoring-edit", 6],
       ["authoring-restore", 3],
+      ["agent-draft", 4],
+      ["pack-roundtrip", 2],
     ];
     const weightTotal = OP_WEIGHTS.reduce((sum, [, weight]) => sum + weight, 0);
 
@@ -1235,6 +1297,12 @@ async function runSimulation() {
           break;
         case "authoring-restore":
           await opAuthoringRestore(pick(OWNER_COUNT), opIndex);
+          break;
+        case "agent-draft":
+          await opAgentDraft(pick(OWNER_COUNT), opIndex);
+          break;
+        case "pack-roundtrip":
+          await opPackRoundtrip(pick(OWNER_COUNT), opIndex);
           break;
         default:
           opRead(sessionIdx);

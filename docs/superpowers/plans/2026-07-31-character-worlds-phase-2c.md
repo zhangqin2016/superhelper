@@ -177,21 +177,25 @@ memory maintenance (§14.5, Phase 3).
 - Modify: `scripts/test-character-worlds-concurrency-stress.mjs`
 - Modify: `docs/character-worlds-phase-1-acceptance.md`
 
-- [ ] **Step 1: Extend the gate**
+- [x] **Step 1: Extend the gate**
   Agent draft failure modes (tool disabled, hostile draft input) → no
   durable write + native turn byte-equivalence; portability failure modes
   (missing referenced revision, hostile pack) → native conversation +
   diagnostic, never a half-imported library; guards registered (JSON + MD
-  parity).
-- [ ] **Step 2: Extend the stress mix**
+  parity — `test-character-agent-draft.mjs` and
+  `test-character-workspace-portability.mjs` added to
+  `character-worlds-isolation`; `test-capability-gate-registry` green).
+- [x] **Step 2: Extend the stress mix**
   Agent draft create/revise ops and pack export/import remap round-trips
-  with deterministic fingerprints.
-- [ ] **Step 3: Extend the acceptance runbook**
+  with deterministic fingerprints (`agent-draft` + `pack-roundtrip` weights;
+  same-seed fingerprint stable at 10_000 ops × 32 sessions × 2 runs).
+- [x] **Step 3: Extend the acceptance runbook**
   Phase 2C manual checks (agent draft → human approve → active; library
   badge; export opt-in preview; import remap + binding restore; native
-  fallback on missing referenced revision; kill switch covers the tool).
-- [ ] **Step 4: Run the full matrix**
-- [ ] **Step 5: Commit** — `test: gate agent draft and portability`
+  fallback on missing referenced revision; kill switch covers the tool) —
+  checks 26–31 in `docs/character-worlds-phase-1-acceptance.md`.
+- [x] **Step 4: Run the full matrix**
+- [x] **Step 5: Commit** — `test: gate agent draft and portability`
 
 ## Phase 2C Exit Criteria
 

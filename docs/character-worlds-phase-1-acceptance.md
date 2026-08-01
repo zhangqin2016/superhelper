@@ -532,6 +532,12 @@ Environment skips:   <list, with reason; "none" if none>
 | 23| Update-available apply flow (2B)        |        |                      |       |
 | 24| Switch timeline notice (2B)             |        |                      |       |
 | 25| Kill switch covers authoring+persona (2B) |      |                      |       |
+| 26| Agent draft → human approve → active (2C)  |        |                      |       |
+| 27| Library agent_draft badge (2C)             |        |                      |       |
+| 28| Export opt-in Character Worlds preview (2C)|        |                      |       |
+| 29| Import remap + binding restore (2C)        |        |                      |       |
+| 30| Native fallback on missing referenced revision (2C) |   |              |       |
+| 31| Kill switch covers the draft tool (2C)     |        |                      |       |
 
 Sign-off:            <name + date, only when every row is PASS with evidence>
 ```
