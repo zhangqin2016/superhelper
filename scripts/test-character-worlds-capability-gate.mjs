@@ -672,6 +672,7 @@ const COMPILED_TRACE_KEYS = new Set([
   "policyReason",
   "activatedEntryCount",
   "worldBookBindings",
+  "compiledAt",
   // Phase 2B: {revisionId, fingerprint} metadata-only persona record.
   "persona",
 ]);

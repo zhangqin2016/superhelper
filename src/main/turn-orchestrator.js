@@ -617,9 +617,8 @@ class TurnOrchestrator {
     // Reuse a pre-echoed turnId (see echoUserMessage) so the already-shown user
     // message and this turn's assistant card belong to the SAME turn.
     state.turnId = preadmitted?.turnId || opts.turnId || newTurnId();
-    // Sticky across finalize (deliberately NOT cleared in the idle reset):
-    // the rescue hook runs after the turn state was reset, and must know the
-    // turn it is inspecting was itself a rescue attempt.
+    // Sticky across finalize (NOT cleared in the idle reset): the rescue hook
+    // runs after turn-state reset and must know this turn was a rescue attempt.
     state.wasRescueAttempt = Boolean(opts.rescueAttempt || opts.recovery);
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
@@ -1303,7 +1302,8 @@ class TurnOrchestrator {
             tokenEstimate: characterContext.tokenEstimate,
             activatedEntryCount: (characterContext.activatedWorldEntries || []).length,
             worldBookBindings: characterContext.worldBook ? [{ revisionId: characterContext.worldBook.revisionId, scope: "character" }] : [],
-            ...(characterContext.persona ? { persona: characterContext.persona } : {}),          }
+            compiledAt: new Date().toISOString(), ...(characterContext.persona ? { persona: characterContext.persona } : {}),
+          }
         : {
             status: "native",
             revisionId: state.characterWorldsSnapshot.characterRevisionId,
