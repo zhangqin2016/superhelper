@@ -1661,7 +1661,8 @@ class TurnOrchestrator {
           engineMessageId: payload?.engineMessageId || null,
         },
       });
-      void this._maybeSelfHealAndRetry(sessionId, failure);
+      // Rescue after finalize so its resend never races phase "finalizing".
+      Promise.resolve(finalizeDone).then(() => { void this._maybeSelfHealAndRetry(sessionId, failure); });
     } else if (blockingProcessJobs.length) {
       const notice = runningProcessJobNotice(blockingProcessJobs);
       finalizeDone = this._finalize(sessionId, "turn.stalled", {

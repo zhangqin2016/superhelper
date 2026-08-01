@@ -116,6 +116,13 @@ assert.equal(rescueStrategyFor("DOCUMENT_DELIVERY_UNVERIFIED")?.kind, "document_
   assert.equal(rescueStrategyFor("MODEL_CONNECTION_FAILED"), null, "kill switch disables connection auto-repair");
   delete process.env.LILY_MODEL_CONNECTION_RETRY;
 
+  // Turn start builds context memory; when the host has embedding keys set,
+  // that path would fire a REAL external API call and stall the rescue resend
+  // under test. Pin embedding off so the suite stays hermetic and fast.
+  process.env.LILY_MEMORY_EMBEDDING = "0";
+  process.env.LILY_EMBEDDING_API_KEY = "";
+  delete process.env.DASHSCOPE_API_KEY;
+
   // Multi-attempt budget: attempts 1..maxAttempts pass, the next is refused;
   // the budget resets after the episode window so a later failure earns a
   // fresh set of silent attempts.
@@ -578,6 +585,9 @@ resetRescueStateForTests();
   const retry = events.find((event) => event.type === "turn.self_heal_retry");
   assert(retry, "a truncated turn with only read-only tools gets a silent retry");
   assert.equal(retry.payload.kind, "truncated_turn_retry");
+  // The rescue resend is issued only AFTER the async finalize completes (so
+  // its send never races phase "finalizing"); let that settle before counting.
+  await settle();
   assert.equal(runner.sentPayloads.length, payloadsBefore + 2, "explicit send + one rescue retry");
 }
 

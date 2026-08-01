@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const DEFAULT_DIMENSIONS = 128;
+const EMBEDDING_REQUEST_TIMEOUT_MS = 15_000;
 const CONCEPT_ALIASES = [
   ["semantic", "vector", "embedding", "语义", "向量", "检索", "召回"],
   ["memory", "context", "compaction", "summary", "记忆", "上下文", "压缩", "摘要"],
@@ -231,10 +232,17 @@ function makeEmbeddingCaller({ baseUrl = "", apiKey = "", model = "" } = {}) {
   if (!url || !String(model || "").trim()) return null;
   return async (texts) => {
     const input = Array.isArray(texts) ? texts : [texts];
+    // Bounded, fail-open embedding: a stalled/never-resolving endpoint must
+    // NEVER hang a turn. The caller (buildContextMemoryAsync) catches and
+    // falls back to the lexical baseline. Node >= 18 supports signal timeout.
+    const signal = typeof AbortSignal?.timeout === "function"
+      ? AbortSignal.timeout(EMBEDDING_REQUEST_TIMEOUT_MS)
+      : undefined;
     const response = await fetch(`${url}/embeddings`, {
       method: "POST",
       headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
       body: JSON.stringify({ model, input }),
+      ...(signal ? { signal } : {}),
     });
     if (!response.ok) throw new Error(`embeddings http ${response.status}`);
     const data = await response.json();
