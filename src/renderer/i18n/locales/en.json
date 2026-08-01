@@ -178,6 +178,7 @@
   "composer.sessionSkillsSelectAll": "Select all",
   "composer.sessionSkillsDeselectAll": "Deselect all",
   "character.buttonTitle": "Conversation character",
+  "character.editCurrent": "Edit current character",
   "character.personaIndicator": "Persona bound",
   "character.popoverTitle": "Conversation character",
   "character.nativeOption": "Native Lily",

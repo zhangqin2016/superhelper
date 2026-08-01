@@ -229,6 +229,11 @@ function renderPopover() {
   if (!p || p.hidden) return;
   renderNotice();
   renderUpdateRow();
+  const editBtn = $("characterEditCurrentBtn");
+  if (editBtn) {
+    const isCharacter = effectiveCharacterMode(controlState) === "character" && controlState.characterRevisionId;
+    editBtn.hidden = !isCharacter;
+  }
   const previewEl = $("characterImportPreview");
   const main = $("characterPopoverMain");
   if (!previewEl || !main) return;
@@ -425,6 +430,11 @@ export function initCharacterSessionControl() {
   });
 
   $("characterImportBtn")?.addEventListener("click", () => void startImportPreview());
+  $("characterEditCurrentBtn")?.addEventListener("click", () => {
+    const pinned = controlState.characters.find((c) => c.currentRevisionId === controlState.characterRevisionId);
+    closePopover({ focusButton: true });
+    void openCharacterLibrary({ editCharacterId: pinned?.id || controlState.characterRevisionId });
+  });
   $("characterUpdateRow")?.addEventListener("click", (event) => {
     if (event.target.closest('[data-action="apply-update"]')) void applyBindingUpdates();
   });

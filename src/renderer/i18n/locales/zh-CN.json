@@ -178,6 +178,7 @@
   "composer.sessionSkillsSelectAll": "全选",
   "composer.sessionSkillsDeselectAll": "全不选",
   "character.buttonTitle": "对话角色",
+  "character.editCurrent": "编辑当前角色",
   "character.personaIndicator": "已绑定人设",
   "character.popoverTitle": "对话角色",
   "character.nativeOption": "Lily 原声",

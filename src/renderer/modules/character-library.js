@@ -119,7 +119,7 @@ function openCreate() {
 // Open/close + focus discipline (§13.4)
 // ---------------------------------------------------------------------------
 
-export async function openCharacterLibrary() {
+export async function openCharacterLibrary(opts = {}) {
   const m = modal();
   if (!m || !facade()) return;
   dispatch({ type: "opened" });
@@ -127,6 +127,12 @@ export async function openCharacterLibrary() {
   renderCharacterLibrary(libraryState);
   $("characterLibrarySearch")?.focus();
   await actions.loadCurrentTab();
+  // §13.1 "edit current character" command: open the library straight into
+  // the pinned character's edit form when the caller asks for it.
+  if (opts.editCharacterId) {
+    const item = libraryState.items.find((c) => c.id === opts.editCharacterId);
+    if (item) await actions.openEdit(item);
+  }
 }
 
 // The dirty-form guard, shared by every transition that would replace an

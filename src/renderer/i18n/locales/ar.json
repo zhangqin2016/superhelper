@@ -178,6 +178,7 @@
   "composer.sessionSkillsSelectAll": "تحديد الكل",
   "composer.sessionSkillsDeselectAll": "إلغاء تحديد الكل",
   "character.buttonTitle": "شخصية المحادثة",
+  "character.editCurrent": "تحرير الشخصية الحالية",
   "character.personaIndicator": "الشخصية مرتبطة",
   "character.popoverTitle": "شخصية المحادثة",
   "character.nativeOption": "صوت Lily الأصلي",
