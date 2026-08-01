@@ -34,6 +34,12 @@ node scripts/test-character-world-book-activation.mjs
 node scripts/test-character-world-book-compile.mjs
 node scripts/test-character-world-book-decorators.mjs
 node scripts/test-character-world-book-ipc.mjs
+node scripts/test-character-persona-store.mjs
+node scripts/test-character-persona-context.mjs
+node scripts/test-character-authoring.mjs
+node scripts/test-character-authoring-ipc.mjs
+node scripts/test-character-switch-events.mjs
+npx electron scripts/test-character-library.cjs
 node scripts/test-character-worlds-capability-gate.mjs
 node scripts/test-character-worlds-concurrency-stress.mjs
 node scripts/test-capability-gate-registry.mjs
@@ -377,10 +383,19 @@ corrupt, or over-budget book never breaks a bound character turn — the
 character simply compiles without world entries; re-enabling restores
 activation exactly where it left off.
 
-## Phase 2B — Switch Notices And Update-Available (implementation notes)
+## Phase 2B — Persona, Authoring, Switch Notices, Update-Available
 
-These notes frame the Phase 2B manual checks for the switch timeline notice
-and the update-available apply flow (the full checklist lands with P2B-6).
+Phase 2B (plan: `docs/superpowers/plans/2026-07-31-character-worlds-phase-2b.md`)
+adds personas, the validated authoring domain APIs + library management UI, and
+switch timeline events on top of the Phase 1/2A surface. **Every Phase 1 and
+Phase 2A check above still applies unchanged** — Phase 2B extends the same
+`character-worlds-isolation` capability vector; it does not relax any gate. The
+manual checks below are the Phase 2B additions (21-25): run them on every
+release platform together with the Phase 1/2A checks and record them in the
+same evidence template.
+
+Implementation notes for the switch timeline notice and the update-available
+apply flow:
 
 - **Renderer-side projection, no push channel.** Switch notices and the
   update-available hint are NOT pushed over the runtime event bus. The
@@ -400,6 +415,82 @@ and the update-available apply flow (the full checklist lands with P2B-6).
   (covers library edits settled while it was closed) and on binding
   load/settle; applying re-reads the binding for a fresh
   `expectedBindingVersion` and is guarded against double-clicks.
+
+### 21. Persona select / deselect
+
+1. In a bound character conversation, open the session control and select a
+   persona; send a message.
+2. Deselect the persona (keep the character); send another message.
+3. Restart the app and reopen the conversation.
+
+Expected: with the persona selected, the reply reflects the persona's
+narrative identity as lower-authority context (the character voice is
+unchanged; code, JSON, commands, citations stay exact); after deselect the
+persona influence is gone from the NEXT turn while earlier turns keep their
+pinned snapshots; selection state survives restart; a persona is never
+treated as an account or authorization entity anywhere in the UI.
+
+### 22. Library create / edit / history / restore / duplicate / archive
+
+1. Open the character library from the session control popover.
+2. Create a blank character, a blank persona, and a blank world book.
+3. Edit each one (field-level edit with explicit revision creation); open the
+   revision history; restore an older revision; duplicate the entity; archive
+   it.
+
+Expected: every mutation succeeds with a clear result; an edit creates a NEW
+revision (history grows newest-first, old revisions never change); restore
+creates a new revision on top of history with the older content (history is
+never rewritten); duplicate creates an independent copy; archived entities
+disappear from selection but their previously admitted turns keep working;
+validation failures (empty name, oversized fields) show clear errors, never a
+crash; no marketing text appears anywhere in the library.
+
+### 23. Update-available apply flow
+
+1. Bind a character (optionally with a persona) and send a message.
+2. In the library, edit that character (or persona/book) to create a new
+   revision. Return to the conversation — the session control shows
+   "update available" WITHOUT changing the pinned snapshot.
+3. Send a message BEFORE applying: it still uses the old revision.
+4. Apply the update explicitly; send another message.
+
+Expected: the pre-apply turn compiles exactly the pre-edit revision (the
+conversation never silently upgrades); applying is an explicit action that
+commits a new binding version; the post-apply turn uses the new revision;
+already-admitted history (including the running turn, if any) is untouched.
+
+### 24. Switch timeline notice
+
+1. In a conversation, switch between two characters, then back to native
+   Lily. Observe the timeline after each switch settles.
+2. Quit and relaunch; reopen the conversation.
+3. Make a switch while the window is closed (second window / scheduled
+   surface if available), then open the conversation.
+
+Expected: each committed switch surfaces a conversation-visible timeline
+notice naming the target ("switched to X" / "returned to native Lily" —
+display names only, never raw card data); notices are binding-version ordered
+and survive restart exactly once (no duplicates on reload); a switch made
+while the window was closed appears on next open; selecting a character NEVER
+injects its first greeting into history.
+
+### 25. Kill switch covers authoring AND persona
+
+1. With a character+persona bound and the library populated, set
+   `LILY_CHARACTER_WORLDS=0` and relaunch; converse. Also disable the signed
+   rollout policy while running.
+2. Attempt persona selection and library authoring (create/edit/restore/
+   duplicate/archive) while disabled.
+3. Re-enable.
+
+Expected: the conversation is byte-for-byte native Lily (no character,
+persona, or world content; verify via the log: no `CHARACTER WORLDS
+CONTEXT`); persona selection and all authoring mutations are gated exactly
+like import/selection (clear unavailable state, never an error or a partial
+write); stored characters, personas, books, bindings, and revision history
+remain intact and readable where a read-only surface exists; re-enabling
+restores the feature exactly where it left off.
 
 ## Evidence Template
 
@@ -436,6 +527,11 @@ Environment skips:   <list, with reason; "none" if none>
 | 18| Timed sticky across turns/restart (2A)  |        |                      |       |
 | 19| Rewind invalidation (2A)                |        |                      |       |
 | 20| Kill switch covers books (2A)           |        |                      |       |
+| 21| Persona select/deselect (2B)            |        |                      |       |
+| 22| Library create/edit/history/restore/duplicate/archive (2B) | |        |       |
+| 23| Update-available apply flow (2B)        |        |                      |       |
+| 24| Switch timeline notice (2B)             |        |                      |       |
+| 25| Kill switch covers authoring+persona (2B) |      |                      |       |
 
 Sign-off:            <name + date, only when every row is PASS with evidence>
 ```

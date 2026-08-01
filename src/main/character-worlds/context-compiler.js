@@ -483,7 +483,15 @@ function compileCharacterContext({
           truncated = true;
         } else {
           omitted.push({ source: candidate.omittedSource || "character_field", id: field, reason: "budget" });
-          truncated = true;
+          // A field that kept NOTHING consumed no budget: the candidate
+          // contributes zero bytes, so lower-priority content (world entries,
+          // examples) must still get its chance under §10.3 greedy packing —
+          // an oversized persona/field must not silently take the working
+          // book down with it (§16). Only a PARTIAL keep above (budget was
+          // genuinely exhausted mid-field) truncates the rest. Truncation
+          // stands only when an earlier field of this same candidate already
+          // consumed budget.
+          if (!keptParts.length) truncated = false;
         }
       }
       if (keptParts.length) {

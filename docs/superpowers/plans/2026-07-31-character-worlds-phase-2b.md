@@ -189,19 +189,19 @@ Explicitly OUT of Phase 2B:
 - Modify: `scripts/test-character-worlds-concurrency-stress.mjs`
 - Modify: `docs/character-worlds-phase-1-acceptance.md`
 
-- [ ] **Step 1: Extend the gate**
+- [x] **Step 1: Extend the gate**
   Persona failure modes (missing/corrupt persona revision, over budget) →
   byte-equal no-persona compiled body; authoring mutation cannot alter an
   admitted turn's snapshot (admission isolation proof); guards registered
   (JSON + MD parity).
-- [ ] **Step 2: Extend the stress mix**
+- [x] **Step 2: Extend the stress mix**
   Persona bind/edit/restore ops with deterministic fingerprints.
-- [ ] **Step 3: Extend the acceptance runbook**
+- [x] **Step 3: Extend the acceptance runbook**
   Phase 2B manual checks (persona select, library create/edit/history/
   restore/duplicate/archive, update-available apply flow, switch timeline
   notice, kill switch covers authoring).
-- [ ] **Step 4: Run the full matrix**
-- [ ] **Step 5: Commit** — `test: gate persona and authoring paths`
+- [x] **Step 4: Run the full matrix**
+- [x] **Step 5: Commit** — `test: gate persona and authoring paths`
 
 ## Phase 2B Exit Criteria
 

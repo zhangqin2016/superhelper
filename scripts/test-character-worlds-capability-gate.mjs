@@ -26,6 +26,19 @@
  * engine surface, metadata-only trace). A world-book positive control proves
  * the loop is not vacuous: a working book DOES change the compiled body.
  *
+ * Phase 2B (P2B-6) adds the persona failure modes
+ *   [persona_missing, persona_corrupt, persona_over_budget]
+ * where a character with a working pinned book IS bound and the pinned persona
+ * revision fails. Per §16 the character+book context still compiles and the
+ * prompt body must be byte-identical to the SAME character+book no-persona
+ * compiled body. A persona positive control proves the loop is not vacuous: a
+ * working persona DOES change the compiled body. The authoring-isolation proof
+ * closes the phase: editing a character/persona/world book through the REAL
+ * CharacterAuthoringService (new immutable revisions) never alters an
+ * already-admitted turn — the durable snapshot bytes are unchanged, a later
+ * turn on the unchanged binding recompiles the byte-identical prompt body,
+ * and the edited revision text never leaks into the pinned turn.
+ *
  * Positive controls at the end prove the test is not vacuous: a compiled
  * context on a supported provider DOES change the system suffix (only), so a
  * regression that leaks character state into any failure mode is detected.
@@ -222,7 +235,7 @@ function sourceOf(name) {
   };
 }
 
-function bindingEnvelope({ bindingVersion, characterRevisionId, compatibilityProfile }) {
+function bindingEnvelope({ bindingVersion, characterRevisionId, compatibilityProfile, personaRevisionId = null }) {
   return JSON.stringify({
     schemaVersion: 1,
     bindingVersion,
@@ -230,7 +243,7 @@ function bindingEnvelope({ bindingVersion, characterRevisionId, compatibilityPro
     compatibilityProfile,
     mode: "character",
     activeCharacterRevisionId: characterRevisionId,
-    activePersonaRevisionId: null,
+    activePersonaRevisionId: personaRevisionId,
     activeGreetingIndex: null,
     worldBookBindings: [],
     worldResolutionPolicy: { sourceMergeStrategy: "sorted_evenly" },
@@ -257,6 +270,16 @@ const aria = repository.createCharacter({
   },
   source: sourceOf("aria"),
 });
+// Phase 2B persona fixture: the working persona the persona modes pin.
+const persona = repository.createPersona({
+  ownerScope: OWNER,
+  canonical: {
+    schemaVersion: 1,
+    name: "Qin",
+    description: "A harbor cartographer PERSONA-SENTINEL-4471 who speaks in tides.",
+  },
+  source: sourceOf("qin"),
+});
 
 const SESSION_IDS = {
   native: "s-native",
@@ -275,6 +298,13 @@ const SESSION_IDS = {
   world_book_resolver_error: "s-world-book-resolver-error",
   world_book_over_budget: "s-world-book-over-budget",
   world_book_control: "s-world-book-control",
+  persona_missing: "s-persona-missing",
+  persona_corrupt: "s-persona-corrupt",
+  persona_over_budget: "s-persona-over-budget",
+  persona_control: "s-persona-control",
+  persona_book_baseline: "s-persona-book-baseline",
+  authoring_isolation: "s-authoring-isolation",
+  authoring_isolation_after: "s-authoring-isolation-after",
 };
 const sessions = Object.values(SESSION_IDS).map(makeSession);
 const manager = new SessionManager(fakeProjectManager(), {
@@ -418,6 +448,106 @@ store.db.run(
   Date.now(),
 );
 store.db.exec("PRAGMA foreign_keys = ON");
+// persona_corrupt: the pinned persona revision row no longer parses (corrupt
+// packed canonical JSON) — a REAL corrupt row read through the REAL
+// repository, mirroring the character parser_error and world_book_corrupt
+// fixtures. Persona revisions are immutable, so the corrupt row is inserted
+// directly (as a crash/quarantine leftover would appear); setBinding only
+// checks row existence, so the pin commits normally and the read must fail
+// open at compile time to the no-persona compile (§16).
+const corruptPersonaRevisionId = "corrupt-persona-revision-parser-error";
+store.db.exec("PRAGMA foreign_keys = OFF");
+store.db.run(
+  `INSERT INTO persona_entities
+     (id, owner_scope, display_name, current_revision_id, archived_at,
+      created_at, updated_at)
+   VALUES (?, ?, ?, ?, NULL, ?, ?)`,
+  "corrupt-persona-entity-parser-error",
+  OWNER,
+  "CorruptPersona",
+  corruptPersonaRevisionId,
+  Date.now(),
+  Date.now(),
+);
+store.db.run(
+  `INSERT INTO persona_revisions
+     (id, entity_id, owner_scope, parent_revision_id, revision_number,
+      display_name, source_kind, source_format, source_container,
+      canonical_json, source_json, canonical_hash, original_hash,
+      revision_hash, created_at)
+   VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  corruptPersonaRevisionId,
+  "corrupt-persona-entity-parser-error",
+  OWNER,
+  1,
+  "CorruptPersona",
+  "created",
+  "lily",
+  "json",
+  Buffer.from("corrupt-not-a-gzip-payload"),
+  zlib.gzipSync(Buffer.from(JSON.stringify({ kind: "created", format: "lily", container: "json" }), "utf8")),
+  "1".repeat(64),
+  "2".repeat(64),
+  "3".repeat(64),
+  Date.now(),
+);
+store.db.exec("PRAGMA foreign_keys = ON");
+// persona_missing: a binding row that pins a persona revision id which does
+// not exist (mirrors the missing_revision fixture above); admission pins a
+// ready snapshot carrying the dangling persona pin, and the compile must fail
+// open to the same character+book no-persona body. bindingVersion 1 matches
+// every other session's first bind — the version rides the compiled envelope,
+// so cross-session byte-equality requires it.
+store.db.exec("PRAGMA foreign_keys = OFF");
+store.db.run(
+  `INSERT INTO character_session_bindings
+     (session_id, owner_scope, binding_version, mode, character_revision_id,
+      persona_revision_id, compatibility_profile, binding_json, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  SESSION_IDS.persona_missing,
+  OWNER,
+  1,
+  "character",
+  aria.revision.id,
+  "persona-revision-gone",
+  CHARACTER_COMPATIBILITY_PROFILE,
+  bindingEnvelope({
+    bindingVersion: 1,
+    characterRevisionId: aria.revision.id,
+    compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
+    personaRevisionId: "persona-revision-gone",
+  }),
+  Date.now(),
+);
+store.db.exec("PRAGMA foreign_keys = ON");
+// Persona sessions with ordinary validated pins (P2B-2): the corrupt pin
+// commits because the (corrupt) row exists; the over-budget and control
+// sessions pin the working persona; the baseline pins character only.
+repository.setBinding({
+  sessionId: SESSION_IDS.persona_corrupt,
+  ownerScope: OWNER,
+  expectedBindingVersion: 0,
+  next: {
+    mode: "character",
+    characterRevisionId: aria.revision.id,
+    personaRevisionId: corruptPersonaRevisionId,
+    compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
+  },
+});
+for (const id of [SESSION_IDS.persona_over_budget, SESSION_IDS.persona_control]) {
+  repository.setBinding({
+    sessionId: id,
+    ownerScope: OWNER,
+    expectedBindingVersion: 0,
+    next: {
+      mode: "character",
+      characterRevisionId: aria.revision.id,
+      personaRevisionId: persona.revision.id,
+      compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
+    },
+  });
+}
+bindCharacter(SESSION_IDS.persona_book_baseline);
 // Keep the clean revision for the wrapper repositories used by the other
 // failure modes (the real repository only serves the corrupt row above).
 const cleanRevision = aria.revision;
@@ -526,6 +656,9 @@ const CARD_TEXT_SNIPPETS = [
   "Stay in character",
   "{{user}}",
   "Hello.",
+  // Phase 2B persona text: metadata-only traces never carry it either.
+  "PERSONA-SENTINEL-4471",
+  "harbor cartographer",
 ];
 const COMPILED_TRACE_KEYS = new Set([
   "status",
@@ -537,6 +670,8 @@ const COMPILED_TRACE_KEYS = new Set([
   "warnings",
   "tokenEstimate",
   "policyReason",
+  // Phase 2B: {revisionId, fingerprint} metadata-only persona record.
+  "persona",
 ]);
 const NATIVE_TRACE_KEYS = new Set(["status", "revisionId", "policyReason"]);
 
@@ -1119,6 +1254,446 @@ const PIN_TRIGGER_DDL = `CREATE TRIGGER character_revisions_no_update
   );
 }
 
+// --- persona failure modes (Phase 2B, P2B-6; §16): a character with a -------
+// --- working pinned book IS bound and the pinned persona revision fails. ----
+// --- The character+book context still compiles; the prompt body must be -----
+// --- byte-identical to the SAME character+book no-persona compiled body. ----
+const PERSONA_BOOK_SENTINEL = "WB-PERSONA-SENTINEL-2210";
+const personaWorkingBook = normalizeWorldBookCanonical({
+  schemaVersion: 1,
+  name: "PersonaAtlas",
+  entries: [{
+    id: "e-persona-lore",
+    content: `The tide charts ${PERSONA_BOOK_SENTINEL} mark every harbor.`,
+    activation: { constant: true },
+    insertion: { position: "before_character" },
+  }],
+});
+// The persona modes pin the same character revision PLUS a working book: the
+// no-persona baseline for this section is the character+book compile.
+const personaBookPinnedRevision = { ...cleanRevision, characterBookRevisionId: "wb-persona-working" };
+const personaWorkingBookRevision = {
+  id: "wb-persona-working",
+  revisionHash: null,
+  canonical: personaWorkingBook,
+};
+
+function personaSectionRepository(getPersonaRevision) {
+  return {
+    getRevision: () => personaBookPinnedRevision,
+    getWorldBookRevision: () => personaWorkingBookRevision,
+    getPersonaRevision,
+  };
+}
+
+let personaBaselinePayload;
+let personaBaselineBody;
+
+function assertCompiledWithoutPersona(payload, body, label) {
+  assert.equal(
+    payload.characterContext?.status,
+    "compiled",
+    `${label}: the character+book context still compiles (§16, never a native fallback)`,
+  );
+  assert.equal(
+    payload.characterContext.persona ?? null,
+    null,
+    `${label}: no persona record rides the failed compile`,
+  );
+  assert.equal(
+    payload.characterContext.fingerprint,
+    personaBaselinePayload.characterContext.fingerprint,
+    `${label}: compiled text is byte-identical to the same character+book no-persona compile`,
+  );
+  assert.deepEqual(body, personaBaselineBody, `${label}: prompt body identical to the no-persona compiled body`);
+  assert.notDeepEqual(body, baselineBody, `${label}: guard is not vacuous — the character context DID compile`);
+  assert.equal(
+    JSON.stringify(body.parts),
+    JSON.stringify(baselineBody.parts),
+    `${label}: parts stay byte-identical`,
+  );
+  assert.ok(
+    body.system.includes(PERSONA_BOOK_SENTINEL),
+    `${label}: the working pinned book still compiles into the envelope`,
+  );
+  assert.equal(
+    body.system.includes("PERSONA-SENTINEL-4471"),
+    false,
+    `${label}: persona text never enters the prompt`,
+  );
+  assertTraceMetadataOnly(payload.trace.characterContext, label, COMPILED_TRACE_KEYS);
+}
+
+async function dispatchPersonaMode({ name, sessionId, repository, expectedPersonaPin }) {
+  activePolicy = enabledPolicy;
+  ctx.characterWorldsRepository = repository;
+  const policyCallsBeforeTurn = characterPolicyCalls;
+  const remoteReadsBeforeTurn = remoteConfigReads;
+  const payload = await dispatchTurn(sessionId, name);
+  assert.equal(
+    characterPolicyCalls - policyCallsBeforeTurn,
+    1,
+    `${name}: policy resolved exactly once for the ready snapshot`,
+  );
+  assert.equal(
+    remoteConfigReads - remoteReadsBeforeTurn,
+    nativeRemoteReadDelta,
+    `${name}: failure turn adds zero remote-config reads beyond native`,
+  );
+  const state = ctx.turnOrchestrator._state(sessionId);
+  const admitted = store.getTurnInputByTurnId(state.turnId);
+  assert.equal(
+    admitted.metadata.characterWorlds?.mode,
+    "character",
+    `${name}: admission pinned a ready character snapshot (persona failure engages downstream)`,
+  );
+  assert.equal(
+    admitted.metadata.characterWorlds?.personaRevisionId ?? null,
+    expectedPersonaPin,
+    `${name}: the admitted snapshot carries the exact persona pin`,
+  );
+  const body = await promptBodyFor(payload);
+  return { payload, body };
+}
+
+// no-persona baseline: the same character + working pinned book, no persona
+// pin. A persona read without a pin would be a wiring bug — it must never run.
+{
+  const { payload, body } = await dispatchPersonaMode({
+    name: "persona_book_baseline",
+    sessionId: SESSION_IDS.persona_book_baseline,
+    repository: personaSectionRepository(() => {
+      throw new Error("persona must never be read without a snapshot pin");
+    }),
+    expectedPersonaPin: null,
+  });
+  assert.equal(payload.characterContext?.status, "compiled", "persona baseline: context compiled");
+  assert.equal(payload.characterContext.persona ?? null, null, "persona baseline: no persona record");
+  assert.ok(body.system.includes(PERSONA_BOOK_SENTINEL), "persona baseline: the book compiled");
+  personaBaselinePayload = payload;
+  personaBaselineBody = body;
+}
+
+// missing: the pinned persona revision does not resolve (dangling pin fixture
+// inserted above); the read was actually attempted (not vacuous).
+{
+  let personaReads = 0;
+  const { payload, body } = await dispatchPersonaMode({
+    name: "persona_missing",
+    sessionId: SESSION_IDS.persona_missing,
+    repository: personaSectionRepository(() => {
+      personaReads += 1;
+      return null;
+    }),
+    expectedPersonaPin: "persona-revision-gone",
+  });
+  assert.equal(personaReads, 1, "persona_missing: the pinned persona was actually read (not vacuous)");
+  assert.ok(
+    (payload.characterContext.warnings || []).some((warning) => warning.code === "PERSONA_REVISION_MISSING"),
+    "persona_missing: metadata-only warning recorded",
+  );
+  assertCompiledWithoutPersona(payload, body, "persona_missing");
+}
+
+// corrupt: the pinned persona revision's stored payload no longer parses —
+// driven through the REAL repository against the REAL corrupt row inserted
+// above (mirrors the world_book_corrupt discipline).
+{
+  const { payload, body } = await dispatchPersonaMode({
+    name: "persona_corrupt",
+    sessionId: SESSION_IDS.persona_corrupt,
+    repository: personaSectionRepository(
+      (owner, revisionId) => repository.getPersonaRevision(owner, revisionId),
+    ),
+    expectedPersonaPin: corruptPersonaRevisionId,
+  });
+  assert.ok(
+    (payload.characterContext.warnings || []).some((warning) => warning.code === "PERSONA_REVISION_MISSING"),
+    "persona_corrupt: metadata-only warning recorded",
+  );
+  assertCompiledWithoutPersona(payload, body, "persona_corrupt");
+}
+
+// over_budget: the persona resolves, but its description cannot fit even a
+// single paragraph — the persona block is omitted with a budget reason while
+// the character+book content keeps compiling (§10.3 greedy packing, §16).
+{
+  const { payload, body } = await dispatchPersonaMode({
+    name: "persona_over_budget",
+    sessionId: SESSION_IDS.persona_over_budget,
+    repository: personaSectionRepository(() => ({
+      ...persona.revision,
+      canonical: {
+        ...persona.revision.canonical,
+        description: "x".repeat(200_000),
+      },
+    })),
+    expectedPersonaPin: persona.revision.id,
+  });
+  assert.ok(
+    (payload.characterContext.omitted || []).some(
+      (entry) => entry.source === "persona_field" && entry.id === "personaDescription" && entry.reason === "budget",
+    ),
+    "persona_over_budget: the oversized persona is omitted with a budget reason",
+  );
+  assertCompiledWithoutPersona(payload, body, "persona_over_budget");
+}
+
+// persona positive control: a working pinned persona DOES change the compiled
+// body — the failure-mode assertions above are not vacuous.
+{
+  const { payload, body } = await dispatchPersonaMode({
+    name: "persona_control",
+    sessionId: SESSION_IDS.persona_control,
+    repository: personaSectionRepository(
+      (owner, revisionId) => repository.getPersonaRevision(owner, revisionId),
+    ),
+    expectedPersonaPin: persona.revision.id,
+  });
+  assert.equal(payload.characterContext?.status, "compiled", "persona_control: context compiled");
+  assert.equal(
+    payload.characterContext.persona?.revisionId,
+    persona.revision.id,
+    "persona_control: the compiled contract names the pinned persona revision",
+  );
+  assert.notDeepEqual(body, personaBaselineBody, "persona_control: a working persona DOES change the compiled body");
+  assert.ok(
+    body.system.startsWith(baselineBody.system),
+    "persona_control: the Lily protected prefix stays byte-stable at the head of system",
+  );
+  assert.ok(
+    body.system.includes("PERSONA-SENTINEL-4471"),
+    "persona_control: persona narrative lands inside the lower-authority suffix",
+  );
+  assert.ok(
+    body.system.includes(PERSONA_BOOK_SENTINEL),
+    "persona_control: the pinned book compiles alongside the persona",
+  );
+  assert.equal(
+    JSON.stringify(body.parts),
+    JSON.stringify(baselineBody.parts),
+    "persona_control: parts stay byte-identical even with a persona",
+  );
+  assertTraceMetadataOnly(payload.trace.characterContext, "persona_control", COMPILED_TRACE_KEYS);
+  assert.equal(
+    JSON.stringify(payload.trace.characterContext).includes("PERSONA-SENTINEL-4471"),
+    false,
+    "persona_control: persona text never enters the trace",
+  );
+}
+
+// --- authoring isolation (Phase 2B, P2B-6; §8): editing a character, a ------
+// --- persona, or a world book through the REAL CharacterAuthoringService ----
+// --- creates new immutable revisions and must never alter an already- --------
+// --- admitted turn: the durable snapshot bytes stay unchanged, the binding ---
+// --- stays pinned, a later turn recompiles the byte-identical prompt body, ---
+// --- and the edited revision text never leaks into the pinned turn. ---------
+const {
+  CharacterAuthoringService,
+} = require("../src/main/character-worlds/authoring-service.js");
+const AUTHORING_BOOK_SENTINEL = "WB-AUTHORING-SENTINEL-7741";
+const AUTHORING_REWRITE_SENTINEL = "REWRITTEN-AUTHORING-9901";
+{
+  const authoring = new CharacterAuthoringService({
+    repository,
+    resolveOwnerScope: async () => OWNER,
+  });
+  const pinnedBook = repository.createWorldBook({
+    ownerScope: OWNER,
+    canonical: {
+      schemaVersion: 1,
+      name: "PinnedAtlas",
+      entries: [{
+        id: "e-pinned",
+        content: `The pinned lore ${AUTHORING_BOOK_SENTINEL} survives every edit.`,
+        activation: { constant: true },
+        insertion: { position: "before_character" },
+      }],
+    },
+    source: sourceOf("pinned-atlas"),
+  });
+  const mira = repository.createCharacter({
+    ownerScope: OWNER,
+    canonical: {
+      schemaVersion: 1,
+      name: "Mira",
+      description: "A tide-locked navigator.",
+      personality: "calm",
+      scenario: "The flooded archive.",
+    },
+    source: sourceOf("mira"),
+    characterBookRevisionId: pinnedBook.revision.id,
+  });
+  repository.setBinding({
+    sessionId: SESSION_IDS.authoring_isolation,
+    ownerScope: OWNER,
+    expectedBindingVersion: 0,
+    next: {
+      mode: "character",
+      characterRevisionId: mira.revision.id,
+      personaRevisionId: persona.revision.id,
+      compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
+    },
+  });
+
+  // T1: admitted against the REAL repository with the character+book+persona
+  // pin; the compiled body is the pre-edit baseline for this proof.
+  activePolicy = enabledPolicy;
+  ctx.characterWorldsRepository = null; // real repository
+  const beforePayload = await dispatchTurn(SESSION_IDS.authoring_isolation, "authoring isolation (before edit)");
+  assert.equal(beforePayload.characterContext?.status, "compiled", "authoring isolation: context compiled");
+  const beforeBody = await promptBodyFor(beforePayload);
+  assert.ok(beforeBody.system.includes(AUTHORING_BOOK_SENTINEL), "authoring isolation: the pinned book compiled");
+  assert.ok(beforeBody.system.includes("PERSONA-SENTINEL-4471"), "authoring isolation: the pinned persona compiled");
+  const beforeTurnId = ctx.turnOrchestrator._state(SESSION_IDS.authoring_isolation).turnId;
+  const beforeAdmission = store.getTurnInputByTurnId(beforeTurnId);
+  const beforeSnapshotJson = JSON.stringify(beforeAdmission.metadata.characterWorlds);
+  assert.equal(
+    beforeAdmission.metadata.characterWorlds?.personaRevisionId,
+    persona.revision.id,
+    "authoring isolation: the admitted snapshot carries the persona pin",
+  );
+
+  // Edits through the validated authoring API: each creates a NEW immutable
+  // revision and moves the entity pointer; bindings and snapshots never move.
+  const characterEdit = await authoring.editCharacter({
+    ownerScope: OWNER,
+    entityId: mira.entity.id,
+    expectedBaseRevisionId: mira.revision.id,
+    canonical: { name: "Mira", description: `A ${AUTHORING_REWRITE_SENTINEL} navigator.` },
+  });
+  assert.equal(characterEdit.ok, true, "authoring isolation: character edit committed");
+  assert.notEqual(characterEdit.revision.id, mira.revision.id, "authoring isolation: edit created a new revision");
+  const personaEdit = await authoring.editPersona({
+    ownerScope: OWNER,
+    entityId: persona.entity.id,
+    expectedBaseRevisionId: persona.revision.id,
+    canonical: { schemaVersion: 1, name: "Qin", description: `A ${AUTHORING_REWRITE_SENTINEL} persona.` },
+  });
+  assert.equal(personaEdit.ok, true, "authoring isolation: persona edit committed");
+  const bookEdit = await authoring.editWorldBook({
+    ownerScope: OWNER,
+    entityId: pinnedBook.entity.id,
+    expectedBaseRevisionId: pinnedBook.revision.id,
+    canonical: {
+      schemaVersion: 1,
+      name: "PinnedAtlas",
+      entries: [{
+        id: "e-pinned",
+        content: `The ${AUTHORING_REWRITE_SENTINEL} lore must never leak into pinned turns.`,
+        activation: { constant: true },
+      }],
+    },
+  });
+  assert.equal(bookEdit.ok, true, "authoring isolation: book edit committed");
+  assert.equal(
+    repository.getCharacter(OWNER, mira.entity.id).currentRevisionId,
+    characterEdit.revision.id,
+    "authoring isolation: the character entity moved to the new revision",
+  );
+  assert.equal(
+    repository.getPersona(OWNER, persona.entity.id).currentRevisionId,
+    personaEdit.revision.id,
+    "authoring isolation: the persona entity moved to the new revision",
+  );
+  assert.equal(
+    repository.getWorldBook(OWNER, pinnedBook.entity.id).currentRevisionId,
+    bookEdit.revision.id,
+    "authoring isolation: the book entity moved to the new revision",
+  );
+
+  // The already-admitted turn is untouched: durable snapshot bytes identical,
+  // binding pins unchanged, and a duplicate admission replays the same turn.
+  const afterAdmission = store.getTurnInputByTurnId(beforeTurnId);
+  assert.equal(
+    JSON.stringify(afterAdmission.metadata.characterWorlds),
+    beforeSnapshotJson,
+    "authoring isolation: the admitted snapshot bytes are unchanged after the edits",
+  );
+  const bindingAfter = repository.getBinding(SESSION_IDS.authoring_isolation, OWNER);
+  assert.equal(bindingAfter.characterRevisionId, mira.revision.id, "authoring isolation: binding still pins V1 character");
+  assert.equal(bindingAfter.personaRevisionId, persona.revision.id, "authoring isolation: binding still pins V1 persona");
+  const duplicate = manager.admitTurnInput(SESSION_IDS.authoring_isolation, {
+    turnId: beforeTurnId,
+    userText: USER_TEXT,
+    metadata: {},
+  });
+  assert.equal(
+    JSON.stringify(duplicate.metadata.characterWorlds),
+    beforeSnapshotJson,
+    "authoring isolation: a duplicate admission replays the pinned snapshot after the edits",
+  );
+
+  // The pinned persona revision still resolves to the PRE-EDIT content
+  // (immutable revisions) and the pinned turn recompiles the byte-identical
+  // body through the same shell the orchestrator uses.
+  const pinnedPersona = repository.getPersonaRevision(OWNER, persona.revision.id);
+  assert.equal(
+    pinnedPersona.canonical.description.includes(AUTHORING_REWRITE_SENTINEL),
+    false,
+    "authoring isolation: the pinned persona revision keeps its pre-edit bytes",
+  );
+  const {
+    compileTurnWorldCharacterContext,
+  } = require("../src/main/character-worlds/turn-world-book.js");
+  const recompiled = compileTurnWorldCharacterContext({
+    repository,
+    store,
+    ownerScope: OWNER,
+    sessionId: SESSION_IDS.authoring_isolation,
+    turnId: beforeTurnId,
+    snapshot: afterAdmission.metadata.characterWorlds,
+    revision: repository.getRevision(OWNER, mira.revision.id),
+    baseInput: {
+      userText: beforePayload.text,
+      taskContract: beforePayload.taskContract || null,
+      model: freshSpawnOptions().model,
+    },
+  });
+  assert.equal(
+    recompiled.compiled?.text,
+    beforePayload.characterContext.text,
+    "authoring isolation: the admitted turn recompiles the byte-identical context after the edits",
+  );
+
+  // T2: a fresh session bound AFTER the edits to the same (still-existing,
+  // immutable) V1 pins re-admits the same snapshot shape and compiles the
+  // byte-identical prompt body; the edited revision text never leaks into the
+  // pinned conversation. (A second dispatch on the SAME session would queue
+  // behind T1's still-open turn, so the proof uses a parallel binding —
+  // setBinding pins immutable revisions, never the entity's current pointer.)
+  repository.setBinding({
+    sessionId: SESSION_IDS.authoring_isolation_after,
+    ownerScope: OWNER,
+    expectedBindingVersion: 0,
+    next: {
+      mode: "character",
+      characterRevisionId: mira.revision.id,
+      personaRevisionId: persona.revision.id,
+      compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
+    },
+  });
+  const afterPayload = await dispatchTurn(SESSION_IDS.authoring_isolation_after, "authoring isolation (after edit)");
+  assert.equal(afterPayload.characterContext?.status, "compiled", "authoring isolation: T2 compiled");
+  const afterBody = await promptBodyFor(afterPayload);
+  assert.deepEqual(
+    afterBody,
+    beforeBody,
+    "authoring isolation: prompt body byte-identical before and after the edits",
+  );
+  assert.equal(
+    afterPayload.characterContext.fingerprint,
+    beforePayload.characterContext.fingerprint,
+    "authoring isolation: compiled fingerprint unchanged by the edits",
+  );
+  assert.equal(
+    afterBody.system.includes(AUTHORING_REWRITE_SENTINEL),
+    false,
+    "authoring isolation: edited character/persona/book text never leaks into the pinned turn",
+  );
+  assertTraceMetadataOnly(afterPayload.trace.characterContext, "authoring isolation", COMPILED_TRACE_KEYS);
+}
+
 // --- OpencodeAgentSession mapping (review 3c) -----------------------------------
 // Drive the baseline, one failure mode, and the positive control through a REAL
 // OpencodeAgentSession with a fake server manager (pattern mirrors
@@ -1207,4 +1782,4 @@ assert.equal(
 );
 
 store.close();
-console.log(`character-worlds-capability-gate: ok (${failures.length + 5} failure modes, byte-equal native baseline / byte-equal no-book compiled body)`);
+console.log(`character-worlds-capability-gate: ok (${failures.length + 8} failure modes + authoring isolation, byte-equal native baseline / byte-equal no-book / no-persona compiled body)`);
