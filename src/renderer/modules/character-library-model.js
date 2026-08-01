@@ -65,6 +65,7 @@ function sanitizeItems(tab, raw) {
         name: text(entry?.name, 256),
         currentRevisionId: text(entry?.currentRevisionId, 128),
         descriptionChars: count(entry?.descriptionChars),
+        sourceKind: text(entry?.sourceKind, 64),
       });
     } else if (tab === "books") {
       items.push({
@@ -81,6 +82,7 @@ function sanitizeItems(tab, raw) {
         tags: Array.isArray(entry?.tags)
           ? entry.tags.filter((tag) => typeof tag === "string" && tag).slice(0, 32)
           : [],
+        sourceKind: text(entry?.sourceKind, 64),
       });
     }
   }

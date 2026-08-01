@@ -2,10 +2,25 @@
 
 const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
 const { asTextJson, buildBrokerTools, findBrokerTool } = require("./tool-broker-registry");
+const { createLazyDraftAuthoring } = require("../character-worlds/agent-draft-tools");
 
 function normalizeContextProvider(contextOrProvider) {
   if (typeof contextOrProvider === "function") return contextOrProvider;
   return async () => contextOrProvider || { ok: false, error: "SESSION_CONTEXT_MISSING" };
+}
+
+// Broker servers that get no explicit character-worlds wiring (the stdio
+// subprocess in production, tests that only pass a context) receive the lazy
+// per-process authoring factory so lily_character_draft can execute against
+// the config userData store. Construction is deferred to the first draft
+// call; failure fails closed inside the tool handler.
+function withDraftAuthoringFallback(registryDeps) {
+  const deps = { ...(registryDeps || {}) };
+  if (!deps.characterWorldsService && !deps.characterAuthoringService
+    && typeof deps.resolveDraftAuthoring !== "function") {
+    deps.resolveDraftAuthoring = createLazyDraftAuthoring();
+  }
+  return deps;
 }
 
 async function callToolWithVisibilityCheck(contextProvider, toolName, args, deps) {
@@ -34,9 +49,10 @@ async function callToolWithVisibilityCheck(contextProvider, toolName, args, deps
 async function createToolBrokerMcpServer({ context, contextProvider, registryDeps } = {}) {
   const provider = normalizeContextProvider(contextProvider || context);
   const initialContext = await provider();
+  const deps = withDraftAuthoringFallback(registryDeps);
   const server = new McpServer({ name: "lily-tool-broker", version: "1.0.0" });
 
-  for (const tool of buildBrokerTools(initialContext, registryDeps)) {
+  for (const tool of buildBrokerTools(initialContext, deps)) {
     server.registerTool(
       tool.name,
       {
@@ -44,7 +60,7 @@ async function createToolBrokerMcpServer({ context, contextProvider, registryDep
         inputSchema: tool.inputSchema || {},
         annotations: tool.annotations || {},
       },
-      async (args) => callToolWithVisibilityCheck(provider, tool.name, args, registryDeps),
+      async (args) => callToolWithVisibilityCheck(provider, tool.name, args, deps),
     );
   }
   if (typeof server.setToolRequestHandlers === "function") {

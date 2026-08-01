@@ -5,8 +5,13 @@
  * Stdio entry for Lily's session-scoped tool broker.
  *
  * Without an explicit session context this server exposes only platform-level
- * tools (capability diagnostics and runtime-pack install/list). Session-scoped
- * tools such as mail or learned web systems still require explicit context.
+ * tools: capability diagnostics, runtime-pack install/list, and the
+ * policy-gated lily_character_draft (drafting creates unbound owner-scoped
+ * library entities, so it needs no session authority; it executes against the
+ * config userData store through the lazy authoring factory wired in
+ * tool-broker-mcp, and disappears under a disabled policy or the kill
+ * switch). Session-scoped tools such as mail or learned web systems still
+ * require explicit context.
  */
 
 const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");

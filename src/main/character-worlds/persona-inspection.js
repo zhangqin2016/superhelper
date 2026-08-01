@@ -35,6 +35,9 @@ function summarizePersonaEntity(entity, currentRevision) {
     // null when the current revision row is missing/unreadable — the list
     // stays readable instead of failing the whole bridge call.
     descriptionChars: description ? [...description].length : null,
+    // Provenance kind of the current revision (enum metadata, never content)
+    // so the library can badge agent-drafted rows (Phase 2C, Task P2C-1).
+    sourceKind: text(currentRevision?.source?.kind, 64),
   };
 }
 

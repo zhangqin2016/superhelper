@@ -232,6 +232,8 @@
   "character.library.kind.created": "created",
   "character.library.kind.edited": "edited",
   "character.library.kind.imported": "imported",
+  "character.library.kind.agent_draft": "agent draft",
+  "character.library.agentDraftBadge": "Agent draft",
   "character.status.selected": "Character {name} selected",
   "character.status.native": "Switched back to Native Lily",
   "character.status.conflict": "Character selection was updated to the latest state",

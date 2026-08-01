@@ -13,6 +13,7 @@ const path = require("node:path");
 const { z } = require("zod");
 const { buildIntentContractToolDefinition } = require("./intent-contract-tool-definition");
 const { buildSystemTools } = require("./web-system-mcp");
+const { buildCharacterDraftTool } = require("../character-worlds/agent-draft-tools");
 const {
   resolveInstalledRuntimePackIds,
   runtimePackStatusForSkills,
@@ -82,7 +83,7 @@ function isPlatformTool(tool) {
   return (
     Array.isArray(tool?.requiredSkillIds) &&
     tool.requiredSkillIds.length === 0 &&
-    (tool.group === "capabilities" || tool.group === "runtime-packs")
+    (tool.group === "capabilities" || tool.group === "runtime-packs" || tool.group === "character-worlds")
   );
 }
 
@@ -92,6 +93,7 @@ function availabilityReason(context, tool) {
   if (typeof tool.isAvailable === "function" && !tool.isAvailable(context)) {
     if (tool.group === "mail") return "MAIL_BRIDGE_UNAVAILABLE";
     if (tool.group === "browser") return "BROWSER_RUNTIME_UNAVAILABLE";
+    if (tool.group === "character-worlds") return "CHARACTER_WORLDS_UNAVAILABLE";
     return "RUNTIME_UNAVAILABLE";
   }
   return "";
@@ -445,7 +447,14 @@ function learnedWebSystemTools(context, deps = {}) {
 }
 
 function allToolDefinitions(context, deps = {}) {
-  const definitions = [...STATIC_TOOL_DEFINITIONS, ...learnedWebSystemTools(context || {}, deps)];
+  const definitions = [
+    ...STATIC_TOOL_DEFINITIONS,
+    // Session-scoped + policy-gated (Character Worlds kill switch / remote
+    // policy, fail closed): absent from platform-only and native contexts via
+    // the shared availabilityReason discipline.
+    buildCharacterDraftTool(deps),
+    ...learnedWebSystemTools(context || {}, deps),
+  ];
   registerToolDefinitions(definitions);
   return definitions;
 }

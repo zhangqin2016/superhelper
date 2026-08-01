@@ -41,13 +41,19 @@ export function createLibraryActions(ctx) {
         // (Known N+1 — deferred per review; libraries are small and local.)
         items = await Promise.all(base.map(async (c) => {
           let tags = [];
+          let sourceKind = "";
           try {
             const rev = await api.getCharacterRevision(c.currentRevisionId);
             if (rev?.ok && Array.isArray(rev.revision?.canonical?.tags)) {
               tags = rev.revision.canonical.tags.filter((entry) => typeof entry === "string" && entry);
             }
+            // Agent-draft provenance (Phase 2C) rides the same read so the row
+            // can badge agent-authored revisions; a failed read degrades both.
+            if (rev?.ok && typeof rev.revision?.source?.kind === "string") {
+              sourceKind = rev.revision.source.kind;
+            }
           } catch { /* tag-less row */ }
-          return { id: c.id, name: c.displayName, currentRevisionId: c.currentRevisionId, tags };
+          return { id: c.id, name: c.displayName, currentRevisionId: c.currentRevisionId, tags, sourceKind };
         }));
       } else if (tab === "personas") {
         const res = await api.listPersonas();

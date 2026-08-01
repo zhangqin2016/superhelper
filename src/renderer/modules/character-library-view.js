@@ -98,6 +98,19 @@ function rowActions(state) {
   return ["edit", "history", "duplicate", "export", "archive"];
 }
 
+// Agent-drafted revisions (Phase 2C, Task P2C-1) carry the agent_draft source
+// kind; the library badges them so the human reviewer sees the provenance
+// before selecting. Detection is the shared sourceKind string — no parsing.
+const AGENT_DRAFT_SOURCE_KIND = "agent_draft";
+
+function agentDraftBadge() {
+  const label = t("character.library.agentDraftBadge");
+  return el("span", "character-library-agent-draft", {
+    textContent: label,
+    "aria-label": label,
+  });
+}
+
 function confirmBar(text) {
   const bar = el("div", "character-library-confirm");
   bar.appendChild(el("span", "character-library-confirm-text", { textContent: text }));
@@ -132,6 +145,7 @@ function renderList(state) {
     const info = el("div", "character-library-row-info");
     const name = item.name || t("character.unnamed");
     info.appendChild(el("span", "character-library-row-name", { textContent: name, title: name }));
+    if (item.sourceKind === AGENT_DRAFT_SOURCE_KIND) info.appendChild(agentDraftBadge());
     const meta = rowMeta(state, item);
     if (meta) info.appendChild(el("span", "character-library-row-meta", { textContent: meta, title: meta }));
     row.appendChild(info);
@@ -237,9 +251,14 @@ function renderHistory(state, detail) {
     }));
     const kindKey = `character.library.kind.${revision.sourceKind}`;
     const kindText = t(kindKey);
-    row.appendChild(el("span", "character-library-history-kind", {
+    const kindSpan = el("span", "character-library-history-kind", {
       textContent: kindText === kindKey ? String(revision.sourceKind || "") : kindText,
-    }));
+    });
+    if (revision.sourceKind === AGENT_DRAFT_SOURCE_KIND) {
+      kindSpan.classList.add("character-library-agent-draft");
+      kindSpan.setAttribute("aria-label", t("character.library.agentDraftBadge"));
+    }
+    row.appendChild(kindSpan);
     if (revision.createdAt) {
       row.appendChild(el("span", "character-library-history-date", {
         textContent: String(revision.createdAt).slice(0, 10),

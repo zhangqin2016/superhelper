@@ -338,5 +338,23 @@
   color: var(--text-tertiary);
 }
 
+/* Agent-draft provenance badge (Phase 2C, Task P2C-1): a small pill on
+   library rows and history rows for agent-authored revisions. */
+.character-library-agent-draft {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.character-library-row-info .character-library-agent-draft {
+  align-self: flex-start;
+}
+
 /* RTL: rows and labels flip with dir=rtl through logical alignment above
    (flex layouts, no direction-hardcoded offsets). */

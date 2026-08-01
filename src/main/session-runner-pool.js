@@ -425,7 +425,7 @@ class SessionRunnerPool {
       // and risk reusing the wrong session in another view. Keep this transport
       // explicitly platform-only. Callers with an actually isolated transport
       // can still pass real context directly to writeActiveMcpConfig.
-      const sharedBrokerContext = { platformOnly: true, activeSkillIds: [] };
+      const sharedBrokerContext = { platformOnly: true, activeSkillIds: [], characterWorlds: require("./character-worlds/agent-draft-tools").assembleCharacterWorldsBrokerBlock() };
       const written = writeActiveMcpConfig(
         bundleRuntimeDir(),
         out,

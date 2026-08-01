@@ -232,6 +232,8 @@
   "character.library.kind.created": "إنشاء",
   "character.library.kind.edited": "تحرير",
   "character.library.kind.imported": "استيراد",
+  "character.library.kind.agent_draft": "مسودة الوكيل",
+  "character.library.agentDraftBadge": "مسودة الوكيل",
   "character.status.selected": "تم اختيار الشخصية {name}",
   "character.status.native": "تم الرجوع إلى صوت Lily الأصلي",
   "character.status.conflict": "تم تحديث اختيار الشخصية إلى أحدث حالة",

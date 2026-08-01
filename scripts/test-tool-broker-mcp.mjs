@@ -11,6 +11,13 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const require = createRequire(import.meta.url);
 const { createToolBrokerMcpServer } = require("../src/main/mcp/tool-broker-mcp.js");
 
+// Deterministic character-worlds gating: the draft tool honors the env kill
+// switch before any policy resolution, so pin it here (spawned stdio brokers
+// inherit it via the env spreads below) instead of depending on the machine's
+// real remote-config cache. Draft-enabled behavior is covered end-to-end in
+// test-character-agent-draft.mjs.
+process.env.LILY_CHARACTER_WORLDS = "0";
+
 async function clientForServer(server) {
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await server.connect(st);

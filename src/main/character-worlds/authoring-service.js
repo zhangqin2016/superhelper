@@ -3,7 +3,7 @@
 /**
  * Validated authoring domain API (Phase 2B, Task P2B-3; spec §8/§13.2/§18).
  * ONE validated entry point for character/persona/world-book mutations, shared
- * by the library editor (IPC, P2B-4) now and the agent draft path later.
+ * by the library editor (IPC, P2B-4) and the P2C-1 agent draft tool.
  *
  * - Validation reuses the SAME models as import: characters normalize through
  *   validation.js (the card-parser primitives) so hostile input fails with
@@ -13,8 +13,8 @@
  *   missing/empty ids fail coded (never TypeError); all failures are coded
  *   throws (the import-repository convention).
  * - Edits create a new immutable revision (CAS on expectedBaseRevisionId);
- *   bound conversations stay pinned to their admitted snapshot (§8). This
- *   service never writes bindings or turn metadata.
+ *   bound conversations stay pinned to their admitted snapshot (§8); this
+ *   service never writes bindings/turn metadata; `source` pins provenance.
  * - Delete follows §18: while a CURRENT binding, admitted turn snapshot,
  *   character book pin, or world-book checkpoint references a revision,
  *   delete fails coded CHARACTER_ENTITY_IN_USE (character_binding_events is
@@ -281,7 +281,7 @@ class CharacterAuthoringService {
     return assets;
   }
 
-  async _create(kind, { ownerScope, canonical, assets = [] } = {}) {
+  async _create(kind, { ownerScope, canonical, assets = [], source } = {}) {
     const owner = await this._owner(ownerScope);
     const definition = KINDS[kind];
     const droppedExecutableKeys = [];
@@ -291,7 +291,7 @@ class CharacterAuthoringService {
     const result = definition.create(this.repository, {
       ownerScope: owner,
       canonical: normalized,
-      source: { kind: "created", format: "lily", container: "json" },
+      source: source || { kind: "created", format: "lily", container: "json" },
       assets,
     });
     return withDrops(
@@ -300,7 +300,7 @@ class CharacterAuthoringService {
     );
   }
 
-  async _edit(kind, { ownerScope, entityId, expectedBaseRevisionId, canonical, assets = [] } = {}) {
+  async _edit(kind, { ownerScope, entityId, expectedBaseRevisionId, canonical, assets = [], source } = {}) {
     const owner = await this._owner(ownerScope);
     const definition = KINDS[kind];
     const id = requireId(entityId, definition.notFoundCode, "entityId");
@@ -314,7 +314,7 @@ class CharacterAuthoringService {
       entityId: id,
       baseRevisionId: base,
       canonical: normalized,
-      source: { kind: "edited", format: "lily", container: "json" },
+      source: source || { kind: "edited", format: "lily", container: "json" },
       assets,
     });
     return withDrops({ ok: true, revision }, droppedExecutableKeys);

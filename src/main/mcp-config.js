@@ -144,6 +144,13 @@ function buildMailMcpEntry() {
  */
 function buildToolBrokerMcpEntry(context) {
   const env = { ELECTRON_RUN_AS_NODE: "1" };
+  // The child env is a fresh object (not a copy of process.env), so the
+  // Character Worlds emergency kill switch must be forwarded explicitly —
+  // otherwise LILY_CHARACTER_WORLDS=0 would not reach the broker subprocess
+  // and an injected enabled context could not be overridden.
+  if (process.env.LILY_CHARACTER_WORLDS === "0") {
+    env.LILY_CHARACTER_WORLDS = "0";
+  }
   let serializedContext = "";
   if (context !== undefined) {
     try {

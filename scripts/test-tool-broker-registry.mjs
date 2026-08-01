@@ -8,8 +8,15 @@ import { assert } from "./lib/test-assert.mjs";
 const require = module.createRequire(import.meta.url);
 const { buildBrokerTools, findBrokerTool } = require("../src/main/mcp/tool-broker-registry.js");
 
+// Deterministic character-worlds gating: the draft tool checks the env kill
+// switch first, so clear it here and drive policy through injected deps
+// instead of the machine's real remote-config cache.
+delete process.env.LILY_CHARACTER_WORLDS;
+const DRAFT_DISABLED = { characterWorldsPolicy: () => ({ enabled: false, reason: "test" }) };
+const DRAFT_ENABLED = { characterWorldsPolicy: () => ({ enabled: true, reason: "test" }) };
+
 function names(context, deps) {
-  return buildBrokerTools(context, deps).map((tool) => tool.name).sort();
+  return buildBrokerTools(context, { ...DRAFT_DISABLED, ...deps }).map((tool) => tool.name).sort();
 }
 
 const PLATFORM_TOOLS = [
@@ -27,6 +34,51 @@ try {
     "platform capabilities are visible even when no optional skills are enabled",
   );
   assert(names({ activeSkillIds: ["lily-mail-assistant"], connectorStatus: { mailConnected: true } }).length === 0, "missing session id fails closed");
+
+  // Character draft tool (Phase 2C): drafting creates unbound owner-scoped
+  // library entities, so it is a PLATFORM tool — listed in the platformOnly
+  // production transport subject to the policy gate, fail closed otherwise.
+  assert(
+    names({ platformOnly: true, activeSkillIds: [] }, DRAFT_ENABLED).includes("lily_character_draft"),
+    "draft tool is listed in the platformOnly transport when the policy is enabled",
+  );
+  assert(
+    !names({ platformOnly: true, activeSkillIds: [] }).includes("lily_character_draft"),
+    "disabled policy hides the draft tool from the platform transport",
+  );
+  assert(
+    names({ sessionId: "s1", activeSkillIds: [] }, DRAFT_ENABLED).includes("lily_character_draft"),
+    "session contexts list the draft tool when the policy is enabled",
+  );
+  assert(
+    !names({ activeSkillIds: [] }, DRAFT_ENABLED).includes("lily_character_draft"),
+    "a context with neither sessionId nor platformOnly fails closed",
+  );
+  {
+    const draftTool = findBrokerTool({ platformOnly: true, activeSkillIds: [] }, "lily_character_draft", DRAFT_ENABLED);
+    assert(
+      draftTool?.executionSurface === "tool_broker" && draftTool?.mcpServerName === "lily_tool_broker",
+      "draft tool declares the broker execution surface",
+    );
+    const draftStatus = await findBrokerTool({ sessionId: "s1", activeSkillIds: [] }, "lily_capability_status", DRAFT_ENABLED)
+      .handler({}, { sessionId: "s1", activeSkillIds: [] }, DRAFT_ENABLED);
+    assert(
+      draftStatus.toolDetails.some((tool) => (
+        tool.name === "lily_character_draft"
+        && tool.requiresSession === false
+        && tool.available === true
+      )),
+      "capability status reports the draft tool as a session-independent platform tool",
+    );
+    const draftDisabledStatus = await findBrokerTool({ sessionId: "s1", activeSkillIds: [] }, "lily_capability_status", DRAFT_DISABLED)
+      .handler({}, { sessionId: "s1", activeSkillIds: [] }, DRAFT_DISABLED);
+    assert(
+      draftDisabledStatus.unavailableTools.some((tool) => (
+        tool.name === "lily_character_draft" && tool.reason === "CHARACTER_WORLDS_UNAVAILABLE"
+      )),
+      "capability status explains a policy-disabled draft tool",
+    );
+  }
 
   const mail = {
     sessionId: "s1",
@@ -704,7 +756,7 @@ try {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  console.log("PASS: test-tool-broker-registry (90 tests)");
+  console.log("PASS: test-tool-broker-registry (97 tests)");
 } catch (err) {
   console.error("FAIL:", err.message);
   process.exit(1);

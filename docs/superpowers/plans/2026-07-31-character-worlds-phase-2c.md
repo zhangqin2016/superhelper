@@ -57,28 +57,69 @@ memory maintenance (§14.5, Phase 3).
 - Modify: `src/renderer/modules/character-library*.js` (provenance badge)
 - Create: `scripts/test-character-agent-draft.mjs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Broker tool `lily_character_draft` with actions `create` and `revise`:
   validated through the authoring service (identical rejection codes for
-  hostile input); provenance records `{kind:"created", format:"lily",
-  draftedBy: "agent"}` (or an `agent_draft` source kind — decide and
-  document); revise requires explicit entity id + expectedBaseRevisionId
-  (CAS); the tool CANNOT call set-binding (no binding mutation path exists
-  through it — assert structurally); unavailable → clean coded error when
+  hostile input); provenance records a dedicated `agent_draft` source kind
+  (`{kind:"agent_draft", format:"lily", container:"json"}` — chosen over a
+  `draftedBy` marker because source_kind is a real SQLite column: SQL-queryable,
+  surfaced by history metadata for free, badge detection needs no source_json
+  parsing, and normalizeSource accepts any non-empty kind); revise requires
+  explicit entity id + expectedBaseRevisionId (CAS); the tool CANNOT call
+  set-binding (no binding mutation path exists through it — asserted
+  structurally + behaviorally); unavailable → clean coded error when
   policy/kill switch disables the feature; absent from the tool list when
   disabled/native; bounded args (payload caps, id formats); results are
   metadata-only (entityId/revisionId/revisionNumber — never canonical echo).
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Implement the broker tool**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Implement the broker tool**
   `agent-draft-tools.js` builds the tool definition + handler against
   `CharacterWorldsService.authoring`; register in the broker registry behind
   the policy gate (fail closed); the tool's description tells the model to
   ask the user to review/select in the library (approval is human-only).
-- [ ] **Step 4: Surface agent provenance**
+- [x] **Step 4: Surface agent provenance**
   Library rows show a small "agent draft" badge for agent-provenance
   revisions (i18n ×3); no auto-activation anywhere (audit: no call path
   from the tool to set-binding or update-apply).
-- [ ] **Step 5: Run tool + broker + capability regressions**
+- [x] **Step 5: Run tool + broker + capability regressions**
+
+  Review follow-up (same task, uncommitted): the tool was session-gated while
+  the production broker transport is deliberately platformOnly — the feature
+  could never execute. Fixed: drafting creates UNBOUND owner-scoped library
+  entities (no session authority needed anywhere), so the tool is a PLATFORM
+  tool (registry `isPlatformTool` covers group `character-worlds`); the stdio
+  broker wires a lazy per-process authoring factory
+  (`createLazyDraftAuthoring` in agent-draft-tools, defaulted in
+  tool-broker-mcp) that builds CharacterAuthoringService directly over a
+  repository + MessageStore — NOT the full CharacterWorldsService, whose
+  constructor eagerly builds the import worker pool. Cross-process access is
+  safe by design (WAL + busy_timeout, node:sqlite built-in, writes are single
+  short transactions). The env kill switch is checked BEFORE any injected
+  policy resolver. E2E proof: real stdio subprocess over MCP with a seeded
+  userData cache — create+revise persist and are WAL-visible through a second
+  MessageStore handle; disabled policy / kill switch hide the tool.
+
+  Review follow-up #2 (same task, uncommitted): safeStorage is unavailable
+  under `ELECTRON_RUN_AS_NODE`, so the stdio broker subprocess could not
+  decrypt (a) the cached remote policy → tool dead in production on mac/win,
+  or (b) the account refreshToken → drafts fell back to device scope. Fixed
+  by main-process injection: `session-runner-pool` resolves the signed
+  remote policy AND the real owner scope (safeStorage works there) and ships
+  `{ characterWorlds: { ownerScope, enabled } }` inside
+  `LILY_TOOL_BROKER_CONTEXT` (`assembleCharacterWorldsBrokerBlock` +
+  `normalizeCharacterWorldsContext` in agent-draft-tools). The subprocess
+  treats ONLY the context-channel block as authoritative (strict shape
+  validation; absent → local Linux-dev derivation; malformed/disabled → fail
+  closed), and `LILY_CHARACTER_WORLDS=0` still wins over an injected
+  `enabled:true` (explicitly forwarded through the fresh broker child env in
+  mcp-config). The injected owner scope also drives the authoring service's
+  internal owner re-resolution (`_owner`, import-identical discipline), with
+  the previous resolver restored after each call. `MAX_DRAFT_PAYLOAD_BYTES`
+  aligned 4 MiB → 1 MiB with the IPC authoring guard so agent drafts stay
+  human-editable. Tests: 27 checks in test-character-agent-draft (injected
+  enable/disable/owner, malformed fail-closed, absent fallback, kill-switch
+  e2e, no-cache injected e2e, 1 MiB alignment); broker suites, mcp-config,
+  and architecture-boundaries still pass.
 - [ ] **Step 6: Commit** — `feat: add agent character draft tool`
 
 ## Task P2C-2: Workspace Package Portability

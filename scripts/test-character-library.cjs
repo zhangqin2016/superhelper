@@ -111,11 +111,11 @@ const characterHistoryRows = {
     { revisionId: "rev-night-1", revisionNumber: 1, sourceKind: "created", displayName: "巡夜人", createdAt: "2026-07-24T08:00:00.000Z" },
   ],
   "char-scribe": [
-    { revisionId: "rev-scribe-1", revisionNumber: 1, sourceKind: "created", displayName: "书记官", createdAt: "2026-07-24T08:00:00.000Z" },
+    { revisionId: "rev-scribe-1", revisionNumber: 1, sourceKind: "agent_draft", displayName: "书记官", createdAt: "2026-07-24T08:00:00.000Z" },
   ],
 };
 const cwPersonas = [
-  { id: "persona-a", name: "阿黎", currentRevisionId: "rev-persona-1", archivedAt: null, descriptionChars: 12 },
+  { id: "persona-a", name: "阿黎", currentRevisionId: "rev-persona-1", archivedAt: null, descriptionChars: 12, sourceKind: "agent_draft" },
 ];
 const personaCanonicals = {
   "rev-persona-1": { schemaVersion: 1, name: "阿黎", description: "海港制图师。" },
@@ -137,6 +137,11 @@ function recordCall(channel, payload) {
   calls.push({ channel, payload });
 }
 
+// Agent-draft provenance fixtures (Phase 2C, Task P2C-1): the scribe's current
+// revision and the persona row carry the agent_draft source kind so the badge
+// rendering is exercised against the real view.
+const revisionSourceKinds = { "rev-scribe-1": "agent_draft" };
+
 function makeRevision(id, entityId, number, canonical) {
   return {
     id,
@@ -145,7 +150,7 @@ function makeRevision(id, entityId, number, canonical) {
     worldBookId: entityId,
     revisionNumber: number,
     parentRevisionId: null,
-    source: { kind: "created", format: "lily", container: "json" },
+    source: { kind: revisionSourceKinds[id] || "created", format: "lily", container: "json" },
     canonical,
     createdAt: "2026-07-25T09:00:00.000Z",
   };
@@ -470,6 +475,29 @@ app.whenReady().then(async () => {
     return "rows=" + rows.length;
   })()`);
 
+  // 3b. Agent-draft provenance badge (Phase 2C, Task P2C-1): library rows and
+  // history rows badge agent_draft revisions; human-authored rows show none.
+  await run("agent-draft-badge", `(async () => {
+    const list = document.getElementById("characterLibraryList");
+    const rows = [...list.querySelectorAll("[data-entity-id]")];
+    const scribe = rows.find((r) => r.textContent.includes("书记官"));
+    const night = rows.find((r) => r.textContent.includes("巡夜人"));
+    const badge = scribe.querySelector(".character-library-agent-draft");
+    if (!badge) throw new Error("agent-drafted row must show the badge");
+    if (!badge.getAttribute("aria-label")) throw new Error("badge needs an aria-label");
+    if (night.querySelector(".character-library-agent-draft")) throw new Error("human-authored row shows no badge");
+    scribe.querySelector("[data-library-action='history']").click();
+    await new Promise((r) => setTimeout(r, 250));
+    const detail = document.getElementById("characterLibraryDetail");
+    const kindSpan = detail.querySelector("[data-history-revision-id='rev-scribe-1'] .character-library-history-kind");
+    if (!kindSpan) throw new Error("history kind span missing");
+    if (!kindSpan.classList.contains("character-library-agent-draft")) throw new Error("history row badges agent_draft");
+    if (!kindSpan.getAttribute("aria-label")) throw new Error("history badge needs an aria-label");
+    detail.querySelector("[data-library-back]").click();
+    await new Promise((r) => setTimeout(r, 200));
+    return "badge on row + history";
+  })()`);
+
   // 4. Search filters by name; tag filter narrows by tag.
   await run("search-and-tag-filter", `(async () => {
     const search = document.getElementById("characterLibrarySearch");
@@ -506,6 +534,9 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 200));
     let rows = [...document.querySelectorAll("#characterLibraryList [data-entity-id]")];
     if (rows.length !== 1 || !rows[0].textContent.includes("阿黎")) throw new Error("persona row missing");
+    if (!rows[0].querySelector(".character-library-agent-draft")) {
+      throw new Error("agent-drafted persona row must show the badge");
+    }
     let actions = [...rows[0].querySelectorAll("[data-library-action]")].map((b) => b.dataset.libraryAction);
     if (!actions.includes("edit") || !actions.includes("archive") || actions.includes("export")) {
       throw new Error("persona actions should be edit/history/archive, got " + actions.join(","));

@@ -232,6 +232,8 @@
   "character.library.kind.created": "创建",
   "character.library.kind.edited": "编辑",
   "character.library.kind.imported": "导入",
+  "character.library.kind.agent_draft": "Agent 草稿",
+  "character.library.agentDraftBadge": "Agent 草稿",
   "character.status.selected": "已选择角色 {name}",
   "character.status.native": "已切换回 Lily 原声",
   "character.status.conflict": "角色选择已同步为最新状态",
