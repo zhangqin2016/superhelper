@@ -453,3 +453,38 @@
   color: color-mix(in srgb, currentColor 78%, transparent);
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
+
+/* Scene (group) settings in the conversation character popover (§12 P3-2). */
+.character-scene-section {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  display: grid;
+  gap: 6px;
+}
+.character-scene-section[hidden] {
+  display: none;
+}
+.character-scene-heading {
+  font-size: 12px;
+  font-weight: 600;
+}
+.character-scene-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.character-scene-label {
+  flex: none;
+  color: color-mix(in srgb, currentColor 72%, transparent);
+}
+.character-scene-participants {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.character-scene-select {
+  margin-left: auto;
+  max-width: 130px;
+}

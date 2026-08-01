@@ -317,6 +317,24 @@
                 <button id="characterImportBtn" type="button" class="character-footer-btn" data-i18n="character.importCard">导入角色卡</button>
                 <button id="characterManageBtn" type="button" class="character-footer-btn" data-i18n="character.manageLibrary">角色库管理</button>
               </div>
+              <div id="characterSceneSection" class="character-scene-section" hidden>
+                <div class="character-scene-heading" data-i18n="character.sceneHeading">场景（群组）</div>
+                <div class="character-scene-row"><span class="character-scene-label" data-i18n="character.sceneParticipants">参与者</span><span id="characterSceneParticipants" class="character-scene-participants"></span></div>
+                <div class="character-scene-row"><span class="character-scene-label" data-i18n="character.sceneStrategy">发言策略</span>
+                  <select id="characterSceneStrategy" class="character-scene-select">
+                    <option value="natural">natural</option>
+                    <option value="manual">manual</option>
+                    <option value="list_order">list_order</option>
+                    <option value="pooled">pooled</option>
+                  </select>
+                </div>
+                <div class="character-scene-row"><span class="character-scene-label" data-i18n="character.sceneMode">提示模式</span>
+                  <select id="characterSceneMode" class="character-scene-select">
+                    <option value="swap">swap</option>
+                    <option value="join">join</option>
+                  </select>
+                </div>
+              </div>
             </div>
             <div id="characterImportPreview" class="character-import-preview" hidden></div>
           </div>

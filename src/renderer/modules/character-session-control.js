@@ -22,6 +22,7 @@ import {
 import { createBindingUpdateApplier, createRoleBannerRenderer, createSwitchNoticeLoader, createWorldIndicatorLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
 import { monogram, renderCharacterImportPreview } from "./character-import-preview.js";
 import { createCharacterImportOpener } from "./character-import-opener.js";
+import { createSceneSectionController } from "./character-scene-section.js";
 import { openCharacterLibrary } from "./character-library.js";
 
 export {
@@ -31,8 +32,7 @@ export {
   effectiveBindingUpdates,
 };
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------
 
 let controlState = initialCharacterControlState();
 
@@ -121,8 +121,7 @@ function openPopover() {
     p.style.bottom = `${composerRect.bottom - btnRect.top + 8}px`;
   }
   void loadCharacters();
-  // Refresh the binding (and with it the update-available hint) on every open,
-  // so a library edit that settled while the popover was closed shows up.
+  // Refresh binding + update hint on open (library edits show up).
   if (controlState.sessionId) void loadBinding(controlState.sessionId);
   renderPopover();
   focusableItems()[0]?.focus();
@@ -153,8 +152,7 @@ function optionRow({ mode, character, checked }) {
 function renderList() {
   const list = $("characterList");
   if (!list) return;
-  // Rebuilding wipes the DOM; remember the focused row's stable key so focus
-  // (and with it the keyboard trap) survives the re-render.
+  // Remember the focused row's key so focus survives the re-render.
   const active = document.activeElement;
   const focusKey = active && list.contains(active)
     ? active.dataset?.characterMode
@@ -240,6 +238,7 @@ function renderPopover() {
     previewEl.hidden = true;
     main.hidden = false;
     renderList();
+    sceneSection.load();
   }
 }
 
@@ -292,9 +291,8 @@ async function selectMode(mode, character = null) {
   const api = facade();
   if (!sessionId || !api || controlState.selecting) return;
   const expectedBindingVersion = controlState.bindingVersion;
-  // Pin session + load generation: a slow set-binding resolving after a
-  // session switch must not paint the old conversation's choice onto the new
-  // one (the reducer re-checks both before applying any outcome).
+  // Pin session + load generation: stale set-binding must not paint another
+  // conversation's choice (the reducer re-checks both).
   const seq = controlState.loadSeq;
   const isCurrent = () => sessionId === controlState.sessionId && seq === controlState.loadSeq;
   dispatch({
@@ -334,6 +332,7 @@ async function selectMode(mode, character = null) {
 }
 
 const refreshWorldIndicator = createWorldIndicatorLoader({ getState: () => controlState, dispatch, getFacade: facade });
+const sceneSection = createSceneSectionController({ getState: () => controlState, getFacade: facade, getElement: $, t });
 const renderRoleBanner = createRoleBannerRenderer({ getState: () => controlState, getElement: $, monogram, el, t });
 
 export const applyBindingUpdates = createBindingUpdateApplier({
@@ -440,6 +439,7 @@ export function initCharacterSessionControl() {
   });
   // The library manager (Phase 2B) replaces the disabled Phase 2 placeholder:
   // it opens over the whole window, so the popover closes first.
+  sceneSection.bind();
   $("characterManageBtn")?.addEventListener("click", () => {
     closePopover();
     void openCharacterLibrary();
