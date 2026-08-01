@@ -21,7 +21,7 @@ Date: 2026-08-01
 | 6 | §13.1 会话头部 persona + world 指示器 | ✅ 已补（1573f4a + 9b8220a） |
 | 7 | §13.2 导入方式（拖放/粘贴/本地路径） | ✅ 全部完成（9e69f2b + 416bb2d）：IPC sourcePath + 拖放路由闭环 |
 | 8 | §10.4.1 多书 merge strategy | ✅ 全部完成（d84632b + 6db3380）：schema v13 + repository + merge 函数 + 激活器接线（多书合并注入编译 envelope） |
-| 9 | §10.4.1 `@@is_greeting` 激活 | 延后项（非缺陷）：decorator 已实现，但 greetingIndex 未接入 binding；上下文无法确定 greeting 时按 CCV3 合规忽略（world-book-activation.js 注释已文档化） |
+| 9 | §10.4.1 `@@is_greeting` 激活 | ✅ 已补（e60f884 + d14952e）：binding greetingIndex 持久化 + 编译注入，激活器 greeting 门真正生效 |
 | 10 | §13.1 "编辑当前角色"直接命令 | ✅ 已补（045adf4）：popover 直开当前角色的库编辑表单 |
 | 11 | §13.2 Delete 直接删除（设计并列，实现用 archive 取代） | 需确认产品决策 |
 | 12 | §19.5 plain-key matcher vs Unicode reference 对照（40 语料） | ✅ 已补（17ff42d） |
@@ -49,7 +49,6 @@ Date: 2026-08-01
 - §19.6/§19.7 模型评估矩阵（3pp 非劣性 + 90% rubric）、真机验收（macOS/Windows）、P2C-1 规格评审
 - §12.1 semantic 发言策略 + §11 model-assisted 记忆提取（需模型运行时，opt-in）
 - §10.4.1 多书 keyed/global merge 策略 + profile-global book 来源（设计方案 §决策点）
-- §8 greeting 选择 UI（greetingIndex 接入 binding）
 
 ## 产品决策待确认
 
