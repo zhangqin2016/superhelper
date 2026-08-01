@@ -17,14 +17,20 @@ Date: 2026-08-01
 
 | # | 设计条款 | 状态说明 |
 |---|---|---|
-| 5 | §13.1 会话头部 persona/world 指示器 | renderer session-control 只渲染 monogram+名字；persona/world pin 不显示 |
-| 6 | §13.2 导入方式（拖放/粘贴/本地路径） | 仅 file picker；拖放/粘贴走普通附件路径，无卡片检测 |
-| 7 | §10.4.1 多书 merge strategy（chat/persona/global）+ regex/语义激活 | turn-world-book 无 merge 逻辑、无 is_greeting 处理 |
-| 8 | §10.4.1 `@@is_greeting` 条目（仅开场问候激活） | 无 |
-| 9 | §4.3 宏细节：world 条目内容不展开、persona 名宏缺失、宏阶段序 | card-macro-expander 部分覆盖 |
+| 5 | §4.3 world 条目内容宏展开（{{char}} 等） | ✅ 已补（04b362b） |
+| 6 | §13.1 会话头部 persona/world 指示器 | renderer session-control 只渲染 monogram+名字；persona/world pin 不显示 |
+| 7 | §13.2 导入方式（拖放/粘贴/本地路径） | 仅 file picker；拖放/粘贴走普通附件路径，无卡片检测 |
+| 8 | §10.4.1 多书 merge strategy（chat/persona/global） | 真实差距：binding 仅单 book pin，无 merge 概念 |
+| 9 | §10.4.1 `@@is_greeting` 激活 | 延后项（非缺陷）：decorator 已实现，但 greetingIndex 未接入 binding；上下文无法确定 greeting 时按 CCV3 合规忽略（world-book-activation.js 注释已文档化） |
 | 10 | §13.1 "编辑当前角色"直接命令 | 只能间接走库管理→编辑 |
 | 11 | §13.2 Delete 直接删除（设计并列，实现用 archive 取代） | 需确认产品决策 |
 | 12 | §19.5 参考实现对照测试 + 真实卡片语料库 | 缺失 |
+
+## 已核实为非差距（子任务过时结论修正）
+
+- §4.3 persona 名宏：已在 compiler（expandField/profile.name 宏展开）实现
+- §10.4.7 decorator 门（@@activate_only_after / @@is_greeting / @@dont_activate_after_match / stateful）：world-book-activation.js passesDecorators 已实现
+- §10.3 creatorNotes：已补（127f24d）
 
 ## 外部/人工（非代码）
 
