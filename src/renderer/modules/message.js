@@ -6,6 +6,7 @@ import store from "./state.js";
 import {
   $,
   bindPanelScroll,
+  cssEscape,
   detachAutoFollowForUserNavigation,
   initScrollToBottom,
   isNearBottom,
@@ -26,6 +27,7 @@ import {
   isCommittedRenderCurrent,
   isCurrentRetryTarget,
   liveInsertAnchorTurnId,
+  mergeSwitchNotices,
   rewindActionTarget,
   scheduledDraftPreviewModel,
   shouldShowRetryAction,
@@ -55,6 +57,7 @@ import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue, refreshSendEnabled } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
+import { appendSwitchNoticeArticle } from "./character-switch-notices.js";
 import { collectUnrenderedCommittedMessages, collectEvictedMessageKeys, removeCommittedArticlesByKeys } from "./message-render-keys.js";
 import {
   liveTurnRenderMode,
@@ -269,7 +272,7 @@ export function isConversationRenderCurrent(sessionId) {
   const v = sessionViews.get(sessionId);
   const keys = renderedMessageKeys.get(sessionId);
   const runtime = getRuntimeSession(sessionId);
-  const renderMessages = committedMessagesForRender(runtime.committedMessages, { sessionId });
+  const renderMessages = committedMessagesForRender(mergeSwitchNotices(runtime.committedMessages, runtime.switchNotices), { sessionId });
   const unrendered = keys
     ? collectUnrenderedCommittedMessages(renderMessages, new Set(keys)).length
     : renderMessages.length;
@@ -288,11 +291,6 @@ function scheduleCommittedRenderPump(fn) {
   } else {
     setTimeout(fn, 0);
   }
-}
-
-function cssEscapeId(value) {
-  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(String(value));
-  return String(value).replace(/["\\]/g, "\\$&");
 }
 
 function scrollPanelToElement(panel, el) {
@@ -315,7 +313,7 @@ function scrollPanelToElement(panel, el) {
 // than ever breaking scroll.
 async function jumpToTurnForSession(sessionId, panel, turnId) {
   if (!panel || !turnId) return;
-  const selector = `.messages [data-turn-id="${cssEscapeId(turnId)}"]`;
+  const selector = `.messages [data-turn-id="${cssEscape(turnId)}"]`;
   const find = () => panel.querySelector(selector);
   const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
   try {
@@ -340,6 +338,7 @@ async function jumpToTurnForSession(sessionId, panel, turnId) {
 function appendCommittedMessage(sessionId, runtime, message, key) {
   const anchor = committedInsertAnchor(sessionId, runtime);
   if (message.role === "user") appendUserMessage(sessionId, message, anchor, key);
+  else if (message.role === "notice") appendSwitchNoticeArticle(view(sessionId).listEl, message, anchor, key);
   else if (message.role === "assistant") {
     if (shouldSkipCommittedAssistantForLiveTurn(runtime, message)) return;
     appendFinalAssistantArticle(sessionId, message, anchor, key);
@@ -362,7 +361,7 @@ function renderCommittedMessages(sessionId, opts = {}) {
   const keys = renderedMessageKeys.get(sessionId) || new Set();
   renderedMessageKeys.set(sessionId, keys);
 
-  const renderMessages = committedMessagesForRender(runtime.committedMessages, { sessionId, windowCount: opts.windowCount });
+  const renderMessages = committedMessagesForRender(mergeSwitchNotices(runtime.committedMessages, runtime.switchNotices), { sessionId, windowCount: opts.windowCount });
   const pending = collectUnrenderedCommittedMessages(renderMessages, keys);
   if (opts.allowEvict) removeCommittedArticlesByKeys(view(sessionId).listEl, collectEvictedMessageKeys(renderMessages, keys));
   if (pending.length === 0) return 0;

@@ -8,6 +8,12 @@ import {
 
 export const $ = (id) => document.getElementById(id);
 
+/** CSS.escape with a bare-string fallback for non-DOM (test) environments. */
+export function cssEscape(value) {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(String(value));
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
 const SCROLL_THRESHOLD = 72;
 const USER_SCROLL_DETACHED = "userScrollDetached";
 const USER_SCROLL_INTENT_UNTIL = "userScrollIntentUntil";

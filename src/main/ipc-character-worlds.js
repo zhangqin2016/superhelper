@@ -11,6 +11,10 @@ const {
   summarizePersonaDetail,
   summarizePersonaEntity,
 } = require("./character-worlds/persona-inspection");
+const {
+  projectBindingSwitchNotices,
+  resolveBindingUpdates,
+} = require("./character-worlds/binding-projection");
 
 // Character Worlds IPC boundary (design spec §15/§16, HANDOFF.md §5/§6).
 //
@@ -209,7 +213,15 @@ function registerCharacterWorldsHandlers(ctx) {
     const session = resolveSessionAuthority(ctx, payload?.sessionId);
     if (session.error) return failure(session.error);
     try {
-      return { ok: true, binding: repo.getBinding(session.sessionId, session.ownerScope) };
+      const binding = repo.getBinding(session.sessionId, session.ownerScope);
+      // Update-available hint (Phase 2B, §8): a newer current revision than
+      // the binding's pin surfaces as a read-only hint; applying it stays an
+      // explicit set-binding. The hint is gated like selection — under a
+      // disabled policy the read still works but no affordance crosses.
+      const updates = policyDeniesSelection(ctx)
+        ? null
+        : resolveBindingUpdates(repo, session.ownerScope, binding);
+      return { ok: true, binding, updates };
     } catch (error) {
       return mapDomainError(error);
     }
@@ -274,10 +286,18 @@ function registerCharacterWorldsHandlers(ctx) {
       options.limit = Math.min(payload.limit, MAX_EVENTS_LIMIT);
     }
     try {
-      return {
-        ok: true,
-        events: repo.getBindingEvents(session.sessionId, session.ownerScope, options),
-      };
+      const events = repo.getBindingEvents(session.sessionId, session.ownerScope, options);
+      // Switch notices (Phase 2B, §8): display names are resolved main-side
+      // from the pinned revisions; the projection is whitelisted and never
+      // carries raw card data. Reads stay open under a disabled policy.
+      const notices = projectBindingSwitchNotices(events, (revisionId) => {
+        try {
+          return repo.getRevision(session.ownerScope, revisionId);
+        } catch {
+          return null;
+        }
+      });
+      return { ok: true, events, notices };
     } catch (error) {
       return mapDomainError(error);
     }

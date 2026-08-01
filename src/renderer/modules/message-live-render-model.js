@@ -1,6 +1,6 @@
 export function runtimeVisualSig(runtime = {}) {
   const live = runtime.liveTurn;
-  if (!live) return `idle:${runtime.phase}:${runtime.committedMessages?.length || 0}`;
+  if (!live) return `idle:${runtime.phase}:${runtime.committedMessages?.length || 0}:${runtime.switchNotices?.length || 0}`;
   const toolSig = [...(live.tools || new Map()).values()]
     .map((tool) => `${tool.id}:${tool.status || ""}`)
     .join(",");
@@ -38,6 +38,7 @@ export function runtimeVisualSig(runtime = {}) {
     live.questions?.size || 0,
     live.hooks?.size || 0,
     runtime.queue?.length || 0,
+    runtime.switchNotices?.length || 0,
   ].join("|");
 }
 

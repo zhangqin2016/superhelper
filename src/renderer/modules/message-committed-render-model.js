@@ -48,6 +48,30 @@ export function resetCommittedWindowCount(sessionId) {
   if (sessionId) committedWindowCounts.delete(sessionId);
 }
 
+/**
+ * Fold character switch notices (Character Worlds Phase 2B, §8) into the
+ * committed render list as pseudo-messages. Each carries a stable id, so the
+ * keyed incremental renderer draws it exactly once; orderCommittedMessages
+ * places it by timestamp. The input array is returned untouched (same
+ * reference) when there is nothing to merge.
+ */
+export function mergeSwitchNotices(messages = [], switchNotices = []) {
+  if (!Array.isArray(switchNotices) || !switchNotices.length) return messages;
+  const noticeMessages = switchNotices.map((notice) => ({
+    id: `character-binding-notice:${notice.bindingVersion}`,
+    role: "notice",
+    content: "",
+    timestamp: new Date(notice.ts).toISOString(),
+    meta: {
+      characterSwitch: {
+        mode: notice.mode === "character" ? "character" : "native",
+        characterName: String(notice.characterName || ""),
+      },
+    },
+  }));
+  return [...messages, ...noticeMessages];
+}
+
 export function committedMessagesForRender(messages = [], opts = {}) {
   if (!Array.isArray(messages)) return [];
   const ordered = orderCommittedMessages(messages);

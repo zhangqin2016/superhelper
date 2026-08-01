@@ -168,14 +168,18 @@ Explicitly OUT of Phase 2B:
   in the session control WITHOUT changing the pinned snapshot; applying it
   is an explicit set-binding call with the current expectedBindingVersion;
   no greeting injection on selection (§8).
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Implement main-side switch event projection**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Implement main-side switch event projection**
   Reuse durable `getBindingEvents` (Phase 1) → renderer timeline notice
   through the runtime event channel (registered event type; do not reuse
-  terminal types).
-- [ ] **Step 4: Implement update-available indicator + apply flow**
-- [ ] **Step 5: Run switch + renderer regressions**
-- [ ] **Step 6: Commit** — `feat: surface character switching events`
+  terminal types). (Implemented as renderer-side projection: the durable
+  events feed `session-character:get-events`, which now also returns
+  main-projected, name-resolved switch notices; the renderer replays them on
+  binding load/settle and dedupes by bindingVersion, so reload durability is
+  exact without a new runtime event type.)
+- [x] **Step 4: Implement update-available indicator + apply flow**
+- [x] **Step 5: Run switch + renderer regressions**
+- [x] **Step 6: Commit** — `feat: surface character switching events`
 
 ## Task P2B-6: Capability Gate + Acceptance Extension
 

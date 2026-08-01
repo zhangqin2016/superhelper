@@ -273,7 +273,7 @@ try {
     }
   });
 
-  await check("preload facade is frozen with exactly the thirteen methods and no book mutation", async () => {
+  await check("preload facade is frozen with exactly the twenty-eight methods and no book edit channel", async () => {
     const facade = exposed.assistantClient?.characterWorlds;
     assert(facade, "characterWorlds facade exposed");
     assert(Object.isFrozen(facade), "facade is frozen");
@@ -293,8 +293,30 @@ try {
         "listWorldBooks",
         "previewCharacterImport",
         "setSessionCharacterBinding",
+        // Phase 2B (P2B-4) authoring surface — see test-character-authoring-ipc.mjs.
+        "createCharacter",
+        "updateCharacterRevision",
+        "restoreCharacterRevision",
+        "duplicateCharacter",
+        "archiveCharacter",
+        "getCharacterRevision",
+        "getCharacterHistory",
+        "createPersona",
+        "updatePersonaRevision",
+        "archivePersona",
+        "getPersonaRevision",
+        "getPersonaHistory",
+        "createWorldBook",
+        "archiveWorldBook",
+        "getWorldBookHistory",
       ].sort(),
     );
+    // Phase 2B deliberately ships NO world-book edit/restore/duplicate
+    // channel: books are created blank or imported; entry-level editing is a
+    // later phase. Assert the absence so it cannot sneak in unnoticed.
+    for (const method of ["updateWorldBookRevision", "restoreWorldBookRevision", "duplicateWorldBook"]) {
+      assert.equal(typeof facade[method], "undefined", `no ${method} on the facade`);
+    }
   });
 
   await check("preload wrappers invoke the book channels with whitelisted payloads only", async () => {

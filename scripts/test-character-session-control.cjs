@@ -93,6 +93,9 @@ let cwSetBehavior = "ok";
 let cwPreviewBehavior = "card";
 let cwCommitBehavior = "ok";
 let cwGetBindingBehavior = "ok";
+// Phase 2B update-available hint returned by the mock get-binding; a
+// successful set-binding commit applies it, so the hint clears.
+let cwGetBindingUpdates = null;
 const cwSetCalls = [];
 const cwCommitCalls = [];
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -112,7 +115,7 @@ ipcMain.handle("character:list", () => ({ ok: true, characters: cwCharacters }))
 ipcMain.handle("session-character:get-binding", (_event, payload) => {
   if (cwGetBindingBehavior !== "ok") return { ok: false, error: cwGetBindingBehavior };
   const sessionId = payload?.sessionId || "";
-  return { ok: true, binding: cwBindings.get(sessionId) || nativeBinding(sessionId) };
+  return { ok: true, binding: cwBindings.get(sessionId) || nativeBinding(sessionId), updates: cwGetBindingUpdates };
 });
 ipcMain.handle("session-character:set-binding", async (_event, payload) => {
   cwSetCalls.push(payload);
@@ -136,9 +139,10 @@ ipcMain.handle("session-character:set-binding", async (_event, payload) => {
     compatibilityProfile: payload?.mode === "character" ? "lily-character-compat-1" : null,
   };
   cwBindings.set(sessionId, next);
+  cwGetBindingUpdates = null; // a committed write applies any hinted update
   return { ok: true, binding: next };
 });
-ipcMain.handle("session-character:get-events", () => ({ ok: true, events: [] }));
+ipcMain.handle("session-character:get-events", () => ({ ok: true, events: [], notices: [] }));
 ipcMain.handle("character:import-preview", () => {
   if (cwPreviewBehavior === "notacard") {
     return { ok: false, error: "NOT_A_CHARACTER_CARD", fallback: "ordinary_attachment" };
@@ -442,6 +446,60 @@ app.whenReady().then(async () => {
     if (display !== "none") throw new Error("[hidden] must beat author display styles, got " + display);
     return "guards hold";
   })()`);
+
+  // 6c. Update-available (Phase 2B): the hint shows in the popover WITHOUT
+  // changing the pinned snapshot; apply re-reads the binding and issues
+  // set-binding with the current expectedBindingVersion; the hint clears.
+  {
+    cwBindings.set("session_alpha_recent", {
+      schemaVersion: 1,
+      sessionId: "session_alpha_recent",
+      mode: "character",
+      bindingVersion: 4,
+      characterRevisionId: "rev-night-1",
+      compatibilityProfile: "lily-character-compat-1",
+    });
+    cwGetBindingUpdates = { character: { currentRevisionId: "rev-night-2" } };
+    const callsBefore = cwSetCalls.length;
+    await run("update-available", `(async () => {
+      const mod = await import("./modules/character-session-control.js");
+      const popover = document.getElementById("characterPopover");
+      if (!popover.hidden) document.getElementById("sessionCharacterBtn").click();
+      await new Promise((r) => setTimeout(r, 60));
+      document.getElementById("sessionCharacterBtn").click();
+      await new Promise((r) => setTimeout(r, 200));
+      if (popover.hidden) throw new Error("popover should be open");
+      const row = document.getElementById("characterUpdateRow");
+      if (!row || row.hidden) throw new Error("update-available row should show");
+      if (!row.textContent.includes("新版本")) throw new Error("row must be localized, got " + row.textContent);
+      const applyBtn = row.querySelector('[data-action="apply-update"]');
+      if (!applyBtn) throw new Error("explicit apply action missing");
+      // The hint must not change the pinned snapshot.
+      const state = mod.getCharacterControlState();
+      if (state.characterRevisionId !== "rev-night-1" || state.bindingVersion !== 4) {
+        throw new Error("hint changed the pinned snapshot: " + JSON.stringify(state));
+      }
+      applyBtn.click();
+      await new Promise((r) => setTimeout(r, 350));
+      if (!row.hidden) throw new Error("indicator must clear after apply");
+      const settled = mod.getCharacterControlState();
+      if (settled.characterRevisionId !== "rev-night-2" || settled.bindingVersion !== 5) {
+        throw new Error("apply should pin the current revision: " + JSON.stringify(settled));
+      }
+      document.getElementById("characterPopoverClose").click(); // restore the closed state
+      return "applied rev-night-2";
+    })()`);
+    const applyCall = cwSetCalls.at(-1);
+    if (cwSetCalls.length !== callsBefore + 1 || !applyCall
+      || applyCall.expectedBindingVersion !== 4
+      || applyCall.characterRevisionId !== "rev-night-2"
+      || applyCall.mode !== "character") {
+      console.error("update-apply-cas: FAIL " + JSON.stringify(applyCall));
+      app.exitCode = 1;
+    } else {
+      console.log("update-apply-cas: ok");
+    }
+  }
 
   // 7. Conflict reconciliation: stale CAS -> reconcile from currentBinding.
   {

@@ -43,6 +43,7 @@ function emptySession(sessionId) {
     queue: [],
     promptSuggestions: [],
     committedMessages: [],
+    switchNotices: [], // character switch notices (Phase 2B §8), deduped by bindingVersion
     // Session-list "needs attention" flag set when a BACKGROUND turn finishes:
     // null | "done" (completed) | "failed". Cleared when the user views it.
     attention: null,
@@ -416,7 +417,7 @@ function scheduleNotifyFlush(fn) {
   else setTimeout(fn, 0);
 }
 
-function notify() {
+export function notify() {
   if (notifyQueued) return;
   notifyQueued = true;
   scheduleNotifyFlush(() => {

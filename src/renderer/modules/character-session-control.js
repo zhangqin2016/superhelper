@@ -17,7 +17,9 @@ import {
   initialCharacterControlState,
   reduceCharacterControl,
   effectiveCharacterMode,
+  effectiveBindingUpdates,
 } from "./character-control-model.js";
+import { createBindingUpdateApplier, createSwitchNoticeLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
 import { monogram, renderCharacterImportPreview } from "./character-import-preview.js";
 import { openCharacterLibrary } from "./character-library.js";
 
@@ -25,6 +27,7 @@ export {
   initialCharacterControlState,
   reduceCharacterControl,
   effectiveCharacterMode,
+  effectiveBindingUpdates,
 };
 
 // ---------------------------------------------------------------------------
@@ -37,6 +40,9 @@ let controlState = initialCharacterControlState();
 export function getCharacterControlState() {
   return controlState;
 }
+
+/** Test hook: drive the controller's reducer directly (node tests). */
+export const dispatchCharacterControl = (action) => dispatch(action);
 
 const USER_ROUND_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>';
 const MAX_LISTED_CHARACTERS = 8;
@@ -115,6 +121,9 @@ function openPopover() {
     p.style.bottom = `${composerRect.bottom - btnRect.top + 8}px`;
   }
   void loadCharacters();
+  // Refresh the binding (and with it the update-available hint) on every open,
+  // so a library edit that settled while the popover was closed shows up.
+  if (controlState.sessionId) void loadBinding(controlState.sessionId);
   renderPopover();
   focusableItems()[0]?.focus();
 }
@@ -185,6 +194,12 @@ function renderNotice() {
   noticeEl.textContent = text;
 }
 
+// Subtle "update available" row (Phase 2B, §8) — a hint only, never a change
+// to the pinned snapshot; applying stays an explicit action.
+function renderUpdateRow() {
+  renderBindingUpdateRow($("characterUpdateRow"), controlState);
+}
+
 function renderButton() {
   const b = btn();
   if (!b) return;
@@ -210,6 +225,7 @@ function renderPopover() {
   const p = popover();
   if (!p || p.hidden) return;
   renderNotice();
+  renderUpdateRow();
   const previewEl = $("characterImportPreview");
   const main = $("characterPopoverMain");
   if (!previewEl || !main) return;
@@ -245,7 +261,8 @@ async function loadBinding(sessionId) {
     if (res?.ok) {
       // A successful load proves availability recovered after a kill switch.
       if (!controlState.available) dispatch({ type: "availability.set", available: true });
-      dispatch({ type: "binding.loaded", sessionId, seq, binding: res.binding });
+      dispatch({ type: "binding.loaded", sessionId, seq, binding: res.binding, updates: res.updates });
+      void loadSwitchNotices(sessionId);
     } else {
       dispatch({ type: "binding.loadFailed", sessionId, seq, error: res?.error });
     }
@@ -265,6 +282,9 @@ async function loadCharacters() {
     /* keep the prior/empty list — fail open */
   }
 }
+
+// Replay durable binding events into conversation-visible switch notices (§8).
+const loadSwitchNotices = createSwitchNoticeLoader({ getState: () => controlState, getFacade: facade });
 
 async function selectMode(mode, character = null) {
   const sessionId = controlState.sessionId;
@@ -296,6 +316,8 @@ async function selectMode(mode, character = null) {
         ? t("character.status.selected", { name: controlState.characterName || t("character.unnamed") })
         : t("character.status.native"));
       closePopover();
+      // Refresh the update hint + switch notices from the committed state.
+      void loadBinding(sessionId);
     } else if (res?.error === "CHARACTER_BINDING_CONFLICT") {
       // Reconcile from the server's currentBinding; the popover stays open.
       dispatch({ type: "binding.conflict", sessionId, seq, currentBinding: res.currentBinding });
@@ -309,6 +331,16 @@ async function selectMode(mode, character = null) {
     void loadBinding(sessionId);
   }
 }
+
+// Explicit apply of the update-available hint (§8): fresh CAS version read,
+// pins the current revisions — see character-binding-updates.js.
+export const applyBindingUpdates = createBindingUpdateApplier({
+  getState: () => controlState,
+  dispatch,
+  getFacade: facade,
+  announce,
+  refresh: loadBinding,
+});
 
 async function startImportPreview() {
   const api = facade();
@@ -390,6 +422,9 @@ export function initCharacterSessionControl() {
   });
 
   $("characterImportBtn")?.addEventListener("click", () => void startImportPreview());
+  $("characterUpdateRow")?.addEventListener("click", (event) => {
+    if (event.target.closest('[data-action="apply-update"]')) void applyBindingUpdates();
+  });
   // The library manager (Phase 2B) replaces the disabled Phase 2 placeholder:
   // it opens over the whole window, so the popover closes first.
   $("characterManageBtn")?.addEventListener("click", () => {

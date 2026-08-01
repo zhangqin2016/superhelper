@@ -46,6 +46,26 @@ const CHANNELS = {
   getPersona: "persona:get",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
+// Phase 2B (P2B-4): authoring mutations + revision reads, covered in depth by
+// test-character-authoring-ipc.mjs; this contract test tracks the facade surface.
+const AUTHORING_BRIDGE_METHODS = [
+  "createCharacter",
+  "updateCharacterRevision",
+  "restoreCharacterRevision",
+  "duplicateCharacter",
+  "archiveCharacter",
+  "getCharacterRevision",
+  "getCharacterHistory",
+  "createPersona",
+  "updatePersonaRevision",
+  "archivePersona",
+  "getPersonaRevision",
+  "getPersonaHistory",
+  "createWorldBook",
+  "archiveWorldBook",
+  "getWorldBookHistory",
+];
+const ALL_BRIDGE_METHODS = [...BRIDGE_METHODS, ...AUTHORING_BRIDGE_METHODS].sort();
 
 // --- electron mock -----------------------------------------------------------
 
@@ -195,12 +215,12 @@ try {
     }
   });
 
-  await check("preload exposes one frozen facade with exactly the thirteen methods", async () => {
+  await check("preload exposes one frozen facade with exactly the twenty-eight methods", async () => {
     const api = exposed.assistantClient;
     assert(api, "assistantClient exposed");
     assert(api.characterWorlds, "characterWorlds facade exposed");
     assert(Object.isFrozen(api.characterWorlds), "facade is frozen");
-    assert.deepEqual(Object.keys(api.characterWorlds).sort(), BRIDGE_METHODS);
+    assert.deepEqual(Object.keys(api.characterWorlds).sort(), ALL_BRIDGE_METHODS);
     assert.equal(typeof api.invoke, "undefined", "no generic invoke leaks");
   });
 
@@ -574,12 +594,20 @@ try {
     assert.equal(all.ok, true);
     assert.equal(all.events.length, 1);
     assert.equal(all.events[0].bindingVersion, 1);
+    // Switch notices (Phase 2B, §8): the committed native → character change
+    // projects one whitelisted notice with the display name resolved main-side
+    // from the pinned revision — never raw card data.
+    assert.equal(all.notices.length, 1);
+    assert.deepEqual(
+      { ...all.notices[0], createdAt: "" },
+      { bindingVersion: 1, mode: "character", characterName: "Luna V2", createdAt: "" },
+    );
 
     const after = await handlers.get("session-character:get-events")(trustedEvent(), {
       sessionId: "session-a",
       afterVersion: 1,
     });
-    assert.deepEqual(after, { ok: true, events: [] });
+    assert.deepEqual(after, { ok: true, events: [], notices: [] });
 
     const badLimit = await handlers.get("session-character:get-events")(trustedEvent(), {
       sessionId: "session-a",

@@ -377,6 +377,30 @@ corrupt, or over-budget book never breaks a bound character turn — the
 character simply compiles without world entries; re-enabling restores
 activation exactly where it left off.
 
+## Phase 2B — Switch Notices And Update-Available (implementation notes)
+
+These notes frame the Phase 2B manual checks for the switch timeline notice
+and the update-available apply flow (the full checklist lands with P2B-6).
+
+- **Renderer-side projection, no push channel.** Switch notices and the
+  update-available hint are NOT pushed over the runtime event bus. The
+  renderer replays the durable binding events from `session-character:get-events`
+  (which also returns main-projected, name-resolved notices) and the binding
+  read from `session-character:get-binding` (which returns the `updates`
+  hint). Refresh happens on: session load, popover open, and after every
+  set-binding settle (selection, deselection, update apply). A switch made
+  while the window is closed therefore appears on next open; a switch made in
+  the open window appears right after the settle.
+- **Notices window is capped.** Per session, at most 200 newest switch
+  notices (by bindingVersion) are kept; older ones are evicted from the
+  timeline view. Fetches are cursored by the max seen binding-event version
+  (`afterVersion`), so sessions with more than 200 binding events page
+  forward correctly and evicted history is never re-fetched.
+- **Update-available is pull-based too.** The hint refreshes on popover open
+  (covers library edits settled while it was closed) and on binding
+  load/settle; applying re-reads the binding for a fresh
+  `expectedBindingVersion` and is guarded against double-clicks.
+
 ## Evidence Template
 
 Copy this block once per platform and fill it in. Attach artifacts

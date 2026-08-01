@@ -25,6 +25,10 @@ export function initialCharacterControlState(overrides = {}) {
     notice: null,
     importPreview: null,
     importCommitting: false,
+    // Update-available hint (Phase 2B, §8): main-resolved newer current
+    // revisions than the binding's pin. Never changes the pinned snapshot —
+    // applying is an explicit set-binding.
+    updates: null,
     ...overrides,
   };
 }
@@ -32,6 +36,28 @@ export function initialCharacterControlState(overrides = {}) {
 /** Effective conversation mode: an unavailable feature always reads native. */
 export function effectiveCharacterMode(state) {
   return state?.available === false ? "native" : state?.mode || "native";
+}
+
+/**
+ * The update-available affordance: hidden/inert whenever the feature is
+ * unavailable (kill switch / disabled rollout policy) even though the
+ * underlying reads keep working (spec §16).
+ */
+export function effectiveBindingUpdates(state) {
+  if (!state || state.available === false) return null;
+  return state.updates || null;
+}
+
+function normalizeUpdates(updates) {
+  if (!updates || typeof updates !== "object") return null;
+  const out = {};
+  if (typeof updates.character?.currentRevisionId === "string" && updates.character.currentRevisionId) {
+    out.character = { currentRevisionId: updates.character.currentRevisionId };
+  }
+  if (typeof updates.persona?.currentRevisionId === "string" && updates.persona.currentRevisionId) {
+    out.persona = { currentRevisionId: updates.persona.currentRevisionId };
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function normalizeBinding(binding) {
@@ -144,6 +170,7 @@ export function reduceCharacterControl(state, action) {
           : "",
         selecting: false,
         notice: null,
+        updates: normalizeUpdates(action.updates),
       };
       if (b.recovered && action.binding?.mode === "character") next.notice = "binding_fallback";
       return next;
@@ -172,6 +199,8 @@ export function reduceCharacterControl(state, action) {
           : "",
         selecting: false,
         notice: "conflict",
+        // The reconcile carries no update hint; a fresh load repopulates it.
+        updates: null,
       };
     }
     case "characters.loaded": {
@@ -203,11 +232,26 @@ export function reduceCharacterControl(state, action) {
         characterRevisionId: b.characterRevisionId,
         compatibilityProfile: b.compatibilityProfile,
         selecting: false,
+        // A settle (including an update-available apply) commits the current
+        // revisions, so any prior hint is stale; a fresh load repopulates it.
+        updates: null,
       };
     }
     case "selection.failed":
       if (isStale(state, action)) return state;
       return { ...state, selecting: false, notice: "unavailable" };
+    case "updateapply.started":
+      // In-flight guard for the update-available apply (Phase 2B, §8): holds
+      // `selecting` so a second apply click is a no-op and selectMode is
+      // blocked for the reverse race. Never repins the binding optimistically.
+      if (isStale(state, action)) return state;
+      return state.selecting ? state : { ...state, selecting: true };
+    case "updateapply.finished":
+      // Silent release for apply paths with no user-facing outcome (e.g. the
+      // binding stopped being a character binding mid-apply); settle/failed/
+      // conflict clear the guard through their own actions.
+      if (isStale(state, action)) return state;
+      return state.selecting ? { ...state, selecting: false } : state;
     case "availability.set":
       return action.available
         ? { ...state, available: true }
