@@ -18,7 +18,7 @@ Date: 2026-08-01
 | # | 设计条款 | 状态说明 |
 |---|---|---|
 | 5 | §4.3 world 条目内容宏展开（{{char}} 等） | ✅ 已补（04b362b） |
-| 6 | §13.1 会话头部 persona/world 指示器 | renderer session-control 只渲染 monogram+名字；persona/world pin 不显示 |
+| 6 | §13.1 会话头部 persona 指示器 | ✅ 已补（1573f4a）；world 指示器仍需依赖查询（待补） |
 | 7 | §13.2 导入方式（拖放/粘贴/本地路径） | 仅 file picker；拖放/粘贴走普通附件路径，无卡片检测 |
 | 8 | §10.4.1 多书 merge strategy（chat/persona/global） | 真实差距：binding 仅单 book pin，无 merge 概念 |
 | 9 | §10.4.1 `@@is_greeting` 激活 | 延后项（非缺陷）：decorator 已实现，但 greetingIndex 未接入 binding；上下文无法确定 greeting 时按 CCV3 合规忽略（world-book-activation.js 注释已文档化） |
