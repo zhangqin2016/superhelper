@@ -145,5 +145,21 @@ module.exports = {
   createScene,
   getResponseVariants,
   getScene,
+  pickSemanticSpeaker,
   pickSpeaker,
 };
+
+
+/**
+ * §12.1 opt-in semantic speaker selection (model runtime): the caller MAY
+ * inject a `ranker(eligible, context) -> ranked revision ids`. Without a
+ * ranker this returns null and the host falls back to `semantic_host_default`
+ * — never an extra model call on the normal turn path.
+ */
+async function pickSemanticSpeaker(eligible, { ranker, context } = {}) {
+  if (typeof ranker !== "function" || !eligible.length) return null;
+  const ranked = await ranker(eligible, context || {});
+  if (!Array.isArray(ranked) || !ranked.length) return null;
+  const wanted = ranked.find((id) => eligible.includes(id));
+  return wanted || null;
+}

@@ -161,7 +161,22 @@ module.exports = {
   activeMemory,
   advanceMemoryOnCompleted,
   appendMemory,
+  extractSceneFacts,
   listMemory,
   recordTurnOutcome,
   sceneMemorySection,
 };
+
+
+/**
+ * §11 opt-in model-assisted fact extraction (Phase 3): the caller MAY inject
+ * an `extractor(turnText, context) -> [{ kind, text, confidence }]`. Without
+ * one this returns [] and the default bounded-recent behavior stands — no
+ * extra model request on the normal turn path.
+ */
+async function extractSceneFacts(turnText, { extractor, context } = {}) {
+  if (typeof extractor !== "function" || !turnText) return [];
+  const items = await extractor(turnText, context || {});
+  if (!Array.isArray(items)) return [];
+  return items.filter((item) => item && typeof item.kind === "string" && typeof item.text === "string");
+}
