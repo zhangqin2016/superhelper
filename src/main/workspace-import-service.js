@@ -13,6 +13,7 @@ const {
 const { DEFAULT_MAX_PACKAGE_BYTES } = require("./workspace-package-inspector");
 const {
   importCharacterWorldsPack,
+  restoreBindingPreview,
   unpackCharacterWorldsSection,
 } = require("./character-worlds/workspace-portability");
 const { resolveCharacterOwnerScope } = require("./character-worlds/owner-scope");
@@ -254,6 +255,11 @@ async function importWorkspacePackagePath(ctx, payload = {}) {
         } else {
           const section = unpackCharacterWorldsSection(imported.characterWorlds);
           characterWorlds = importCharacterWorldsPack(repo, ownerScope, section);
+          // §14.4.7: expose which session bindings can be restored after the
+          // id remap (restored vs native+diagnostic) for the UI/session layer.
+          if (characterWorlds?.ok && characterWorlds.idMap) {
+            characterWorlds.bindingPreviews = restoreBindingPreview(characterWorlds.idMap, section.bindings);
+          }
         }
       } catch (error) {
         characterWorlds = {
