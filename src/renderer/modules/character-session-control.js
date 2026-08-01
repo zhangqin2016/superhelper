@@ -19,7 +19,7 @@ import {
   effectiveCharacterMode,
   effectiveBindingUpdates,
 } from "./character-control-model.js";
-import { createBindingUpdateApplier, createSwitchNoticeLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
+import { createBindingUpdateApplier, createSwitchNoticeLoader, createWorldIndicatorLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
 import { monogram, renderCharacterImportPreview } from "./character-import-preview.js";
 import { openCharacterLibrary } from "./character-library.js";
 
@@ -217,9 +217,10 @@ function renderButton() {
     swatch.hidden = !isCharacter;
     swatch.textContent = isCharacter ? monogram(name) : "";
   }
-  const persona = b.querySelector(".composer-character-btn-persona");
-  const hasPersona = isCharacter && Boolean(controlState.personaRevisionId);
-  if (persona) persona.hidden = !hasPersona;
+  for (const [sel, flag] of [[".composer-character-btn-persona", controlState.personaRevisionId], [".composer-character-btn-world", controlState.worldBookRevisionId]]) {
+    const badge = b.querySelector(sel);
+    if (badge) badge.hidden = !(isCharacter && flag);
+  }
   if (icon) icon.hidden = Boolean(isCharacter);
   b.classList.toggle("is-character", Boolean(isCharacter));
 }
@@ -230,19 +231,14 @@ function renderPopover() {
   renderNotice();
   renderUpdateRow();
   const editBtn = $("characterEditCurrentBtn");
-  if (editBtn) {
-    const isCharacter = effectiveCharacterMode(controlState) === "character" && controlState.characterRevisionId;
-    editBtn.hidden = !isCharacter;
-  }
+  if (editBtn) editBtn.hidden = !(effectiveCharacterMode(controlState) === "character" && controlState.characterRevisionId);
   const previewEl = $("characterImportPreview");
   const main = $("characterPopoverMain");
   if (!previewEl || !main) return;
   if (controlState.importPreview) {
     main.hidden = true;
     previewEl.hidden = false;
-    renderCharacterImportPreview(previewEl, controlState.importPreview, {
-      committing: controlState.importCommitting,
-    });
+    renderCharacterImportPreview(previewEl, controlState.importPreview, { committing: controlState.importCommitting });
   } else {
     previewEl.hidden = true;
     main.hidden = false;
@@ -255,6 +251,7 @@ function render() {
   renderPopover();
 }
 
+/** §13.1 world indicator: the pinned revision may carry a character book. */
 async function loadBinding(sessionId) {
   const seq = controlState.loadSeq;
   const api = facade();
@@ -271,6 +268,7 @@ async function loadBinding(sessionId) {
       if (!controlState.available) dispatch({ type: "availability.set", available: true });
       dispatch({ type: "binding.loaded", sessionId, seq, binding: res.binding, updates: res.updates });
       void loadSwitchNotices(sessionId);
+      void refreshWorldIndicator(sessionId, seq, res.binding);
     } else {
       dispatch({ type: "binding.loadFailed", sessionId, seq, error: res?.error });
     }
@@ -342,6 +340,8 @@ async function selectMode(mode, character = null) {
 
 // Explicit apply of the update-available hint (§8): fresh CAS version read,
 // pins the current revisions — see character-binding-updates.js.
+const refreshWorldIndicator = createWorldIndicatorLoader({ getState: () => controlState, dispatch, getFacade: facade });
+
 export const applyBindingUpdates = createBindingUpdateApplier({
   getState: () => controlState,
   dispatch,

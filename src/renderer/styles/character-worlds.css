@@ -32,13 +32,15 @@
 .composer-character-btn[hidden],
 .composer-character-btn-swatch[hidden],
 .composer-character-btn-icon[hidden],
-.composer-character-btn-persona[hidden] {
+.composer-character-btn-persona[hidden],
+.composer-character-btn-world[hidden] {
   display: none;
 }
 /* §13.1 persona indicator: a tiny pinned badge next to the name; never shown
    when no persona is pinned, and muted so it cannot be confused with the
    character identity swatch. */
-.composer-character-btn-persona {
+.composer-character-btn-persona,
+.composer-character-btn-world {
   flex: none;
   font-size: 9px;
   font-weight: 600;

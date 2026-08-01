@@ -19,6 +19,7 @@ export function initialCharacterControlState(overrides = {}) {
     characterRevisionId: null,
     compatibilityProfile: null,
     personaRevisionId: null,
+    worldBookRevisionId: null,
     characterName: "",
     characters: [],
     loadSeq: 0,
@@ -179,6 +180,10 @@ export function reduceCharacterControl(state, action) {
       };
       if (b.recovered && action.binding?.mode === "character") next.notice = "binding_fallback";
       return next;
+    }
+    case "world.indicator": {
+      if (isStale(state, action)) return state;
+      return { ...state, worldBookRevisionId: action.worldBookRevisionId || null };
     }
     case "binding.loadFailed": {
       if (isStale(state, action)) return state;

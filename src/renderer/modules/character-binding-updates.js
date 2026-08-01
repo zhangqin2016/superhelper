@@ -117,3 +117,28 @@ export function createBindingUpdateApplier({ getState, dispatch, getFacade, anno
     }
   };
 }
+
+
+/**
+ * §13.1 world indicator: the pinned revision may carry a character book.
+ * A hint only — a failed lookup never changes the binding.
+ */
+export function createWorldIndicatorLoader({ getState, dispatch, getFacade }) {
+  return async function refreshWorldIndicator(sessionId, seq, binding) {
+    const api = getFacade();
+    if (!api || !binding?.characterRevisionId) return;
+    try {
+      const res = await api.getCharacterRevision(binding.characterRevisionId);
+      const state = getState();
+      if (sessionId !== state.sessionId || seq !== state.loadSeq) return;
+      const worldBookRevisionId = res?.ok && res.revision?.characterBookRevisionId
+        ? res.revision.characterBookRevisionId
+        : null;
+      if (worldBookRevisionId !== state.worldBookRevisionId) {
+        dispatch({ type: "world.indicator", sessionId, seq, worldBookRevisionId });
+      }
+    } catch {
+      /* world indicator is a hint only; failure never changes the binding */
+    }
+  };
+}
