@@ -13,6 +13,8 @@
  */
 
 const { resolveWorldBookActivation } = require("./world-book-activation");
+const { mergeWorldBooks } = require("./world-book-merge");
+const { normalizeWorldBookCanonical } = require("./world-book-model");
 
 // `rank` is the assembly slot between the character blocks (§10.3.1:
 // identity 0 / task_integrity 1 … persona 6 … imported_post_history_instructions 13).
@@ -128,6 +130,25 @@ function prepareWorldUnits({
 }) {
   const empty = { resolution: null, revisionId: null, units: [], safeBehaviors: [] };
   if (!worldBook) return empty;
+  // §10.4.1 multi-book input merges chat/persona/character/global lore first
+  // (source precedence, insertion order preserved); the merged entries become
+  // constant lore. Single-book input is unchanged.
+  const merged = mergeWorldBooks(worldBook.books);
+  const effectiveRevision = merged.length
+    ? {
+        ...(worldBook.revision || {}),
+        id: worldBook.revision?.id || "merged-lore",
+        canonical: normalizeWorldBookCanonical({
+          schemaVersion: 1,
+          name: "merged-lore",
+          entries: merged.map((unit) => ({
+            id: unit.entryId,
+            content: unit.content,
+            activation: { constant: true },
+          })),
+        }),
+      }
+    : worldBook.revision;
   // The contract requires activatedWorldEntries[].worldBookRevisionId and
   // every world block's sourceRevision to name the BOOK revision: a worldBook
   // input without a revision id fails open to character-only (§16) rather
@@ -143,7 +164,7 @@ function prepareWorldUnits({
   let resolution = null;
   try {
     resolution = resolveWorldBookActivation({
-      bookRevision: worldBook.revision,
+      bookRevision: effectiveRevision,
       corpus: worldBook.corpus,
       checkpoint: worldBook.checkpoint ?? null,
       seedIdentity: worldBook.seedIdentity,
