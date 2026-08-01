@@ -670,6 +670,8 @@ const COMPILED_TRACE_KEYS = new Set([
   "warnings",
   "tokenEstimate",
   "policyReason",
+  "activatedEntryCount",
+  "worldBookBindings",
   // Phase 2B: {revisionId, fingerprint} metadata-only persona record.
   "persona",
 ]);
@@ -998,6 +1000,21 @@ let controlBody;
     JSON.stringify(baselineBody.parts),
     "control: parts stay byte-identical even when the context compiles",
   );
+  // §20 observability: the compiled trace carries bounded activation counts
+  // and world-book pin references (never card text).
+  assert.equal(
+    typeof payload.trace.characterContext.activatedEntryCount,
+    "number",
+    "control: activatedEntryCount is a bounded number",
+  );
+  assert.ok(
+    Array.isArray(payload.trace.characterContext.worldBookBindings),
+    "control: worldBookBindings is an array",
+  );
+  for (const pin of payload.trace.characterContext.worldBookBindings) {
+    assert.equal(typeof pin.revisionId, "string", "control: book pin revision id");
+    assert.equal(pin.scope, "character", "control: book pin scope");
+  }
 }
 
 // --- world-book failure modes (Phase 2A, WB-6; §16 "character without world ---

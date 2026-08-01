@@ -1301,6 +1301,13 @@ class TurnOrchestrator {
             omitted: characterContext.omitted,
             warnings: characterContext.warnings,
             tokenEstimate: characterContext.tokenEstimate,
+            // §20 observability: bounded counts + world-book pin references.
+            activatedEntryCount: Array.isArray(characterContext.activatedWorldEntries)
+              ? characterContext.activatedWorldEntries.length
+              : 0,
+            worldBookBindings: characterContext.worldBook
+              ? [{ revisionId: characterContext.worldBook.revisionId, scope: "character" }]
+              : [],
             ...(characterContext.persona ? { persona: characterContext.persona } : {}),
           }
         : {
