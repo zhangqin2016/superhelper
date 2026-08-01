@@ -375,8 +375,52 @@ class CharacterWorldsRepository {
     );
     return bindingFromRow(row, session);
   }
-  setBinding({ sessionId, ownerScope, expectedBindingVersion, next = {} }) {
+  /** §10.4.1 multi-book bindings: pinned world books per (session, scope). */
+  getBookBindings(sessionId, ownerScope) {
     const session = requiredString(sessionId, "sessionId");
+    const owner = requiredString(ownerScope, "ownerScope");
+    return this.db.all(
+      `SELECT scope, world_book_revision_id, merge_strategy, created_at
+       FROM character_session_book_bindings
+       WHERE session_id = ? AND owner_scope = ?
+       ORDER BY rowid ASC`,
+      session, owner,
+    ).map((row) => ({
+      scope: row.scope,
+      worldBookRevisionId: row.world_book_revision_id,
+      mergeStrategy: row.merge_strategy || "constant",
+    }));
+  }
+  setBookBindings({ sessionId, ownerScope, books = [] }) {
+    const session = requiredString(sessionId, "sessionId");
+    const owner = requiredString(ownerScope, "ownerScope");
+    const scopes = new Set();
+    for (const book of books) {
+      const scope = requiredString(book.scope, "book.scope");
+      const revisionId = requiredString(book.worldBookRevisionId, "book.worldBookRevisionId");
+      if (!["chat", "persona", "character", "global"].includes(scope)) {
+        throw codedError("WORLD_BOOK_BINDING_INVALID", `Unsupported book scope ${scope}`);
+      }
+      if (scopes.has(scope)) throw codedError("WORLD_BOOK_BINDING_INVALID", `Duplicate book scope ${scope}`);
+      scopes.add(scope);
+    }
+    return this.db.transaction(() => {
+      this.db.run(
+        "DELETE FROM character_session_book_bindings WHERE session_id = ? AND owner_scope = ?",
+        session, owner,
+      );
+      for (const book of books) {
+        this.db.run(
+          `INSERT INTO character_session_book_bindings
+             (session_id, owner_scope, scope, world_book_revision_id, merge_strategy, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          session, owner, book.scope, book.worldBookRevisionId,
+          book.mergeStrategy || "constant", new Date().toISOString(),
+        );
+      }
+    });
+  }
+  setBinding({ sessionId, ownerScope, expectedBindingVersion, next = {} }) {    const session = requiredString(sessionId, "sessionId");
     const owner = requiredString(ownerScope, "ownerScope");
     if (!Number.isInteger(expectedBindingVersion) || expectedBindingVersion < 0)
       throw new TypeError("expectedBindingVersion must be a non-negative integer");

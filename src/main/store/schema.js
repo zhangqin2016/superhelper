@@ -23,6 +23,7 @@ const {
 } = require("./turn-admission-mobile-migration");
 const {
   migrateWorldBookSchema,
+  migrateMultiBookBindings,
 } = require("./world-book-schema-migration");
 const {
   migratePersonaSchema,
@@ -484,6 +485,9 @@ const MIGRATIONS = [
         REFERENCES persona_revisions(id);
     `);
   },
+  // v13 - multi-book bindings (§10.4.1); SQL lives in
+  // world-book-schema-migration.js to keep this file in budget.
+  migrateMultiBookBindings,
 ];
 
 module.exports = { MIGRATIONS };

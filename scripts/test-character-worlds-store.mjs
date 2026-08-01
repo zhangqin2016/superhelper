@@ -152,8 +152,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v12 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 12);
+  check("migrations v3-v13 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 13);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
     const turnInputColumns = new Set(
       migratedStore.db.all("PRAGMA table_info(turn_inputs)").map((row) => row.name),

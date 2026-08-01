@@ -97,3 +97,22 @@ function migrateWorldBookSchema(db) {
 }
 
 module.exports = { migrateWorldBookSchema };
+
+
+/** §10.4.1 v13 multi-book bindings: chat/persona/character/global book pins
+ * per session with an explicit merge strategy. Additive only. */
+function migrateMultiBookBindings(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS character_session_book_bindings (
+      session_id TEXT NOT NULL,
+      owner_scope TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      world_book_revision_id TEXT NOT NULL,
+      merge_strategy TEXT NOT NULL DEFAULT 'constant',
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, owner_scope, scope)
+    );
+  `);
+}
+
+module.exports = { migrateWorldBookSchema, migrateMultiBookBindings };
