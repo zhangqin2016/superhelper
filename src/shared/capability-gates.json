@@ -187,6 +187,10 @@
         "scripts/test-character-switch-events.mjs",
         "scripts/test-character-agent-draft.mjs",
         "scripts/test-character-workspace-portability.mjs",
+        "scripts/test-character-compaction-isolation.mjs",
+        "scripts/test-character-card-fuzz.mjs",
+        "scripts/test-character-worlds-performance.mjs",
+        "scripts/test-character-agent-task-parity.mjs",
         "scripts/test-character-library.cjs"
       ]
     }
