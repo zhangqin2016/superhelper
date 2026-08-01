@@ -6,6 +6,7 @@
 export async function routeDroppedFiles(files, deps) {
   const attachments = [];
   const imports = [];
+  const cardImports = [];
   let canceledCount = 0;
 
   for (const file of [...(files || [])].filter(Boolean)) {
@@ -16,6 +17,20 @@ export async function routeDroppedFiles(files, deps) {
       if (filePath) inspection = await deps.inspectPath(filePath);
     } catch {
       inspection = { ok: true, recognized: false, reason: "INSPECTION_FAILED" };
+    }
+    // §13.2: a card candidate (JSON/PNG/APNG) is previewed through the
+    // character import bridge first; if it opens the preview we are done with
+    // this file, otherwise it falls through to the existing behavior.
+    if (filePath && deps.previewCharacterSource && /\.(json|png|apng)$/i.test(filePath)) {
+      try {
+        const opened = await deps.previewCharacterSource(filePath);
+        if (opened) {
+          cardImports.push(filePath);
+          continue;
+        }
+      } catch {
+        /* fall through to ordinary handling */
+      }
     }
     if (!inspection?.recognized) {
       attachments.push(file);
@@ -41,5 +56,5 @@ export async function routeDroppedFiles(files, deps) {
   const attachedCount = attachments.length
     ? await deps.attachFiles(attachments)
     : 0;
-  return { imports, attachedCount: Number(attachedCount || 0), canceledCount };
+  return { imports, cardImports, attachedCount: Number(attachedCount || 0), canceledCount };
 }

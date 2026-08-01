@@ -21,6 +21,7 @@ import {
 } from "./character-control-model.js";
 import { createBindingUpdateApplier, createSwitchNoticeLoader, createWorldIndicatorLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
 import { monogram, renderCharacterImportPreview } from "./character-import-preview.js";
+import { createCharacterImportOpener } from "./character-import-opener.js";
 import { openCharacterLibrary } from "./character-library.js";
 
 export {
@@ -238,8 +239,7 @@ function renderPopover() {
   if (controlState.importPreview) {
     main.hidden = true;
     previewEl.hidden = false;
-    renderCharacterImportPreview(previewEl, controlState.importPreview, { committing: controlState.importCommitting });
-  } else {
+    renderCharacterImportPreview(previewEl, controlState.importPreview, { committing: controlState.importCommitting }); } else {
     previewEl.hidden = true;
     main.hidden = false;
     renderList();
@@ -289,7 +289,6 @@ async function loadCharacters() {
   }
 }
 
-// Replay durable binding events into conversation-visible switch notices (§8).
 const loadSwitchNotices = createSwitchNoticeLoader({ getState: () => controlState, getFacade: facade });
 
 async function selectMode(mode, character = null) {
@@ -338,8 +337,6 @@ async function selectMode(mode, character = null) {
   }
 }
 
-// Explicit apply of the update-available hint (§8): fresh CAS version read,
-// pins the current revisions — see character-binding-updates.js.
 const refreshWorldIndicator = createWorldIndicatorLoader({ getState: () => controlState, dispatch, getFacade: facade });
 
 export const applyBindingUpdates = createBindingUpdateApplier({
@@ -398,6 +395,8 @@ async function commitImport() {
 export function refreshCharacterControlUi() {
   render();
 }
+
+export const openCharacterImportPreview = createCharacterImportOpener({ getFacade: facade, dispatch, openPopover });
 
 export function initCharacterSessionControl() {
   const b = btn();

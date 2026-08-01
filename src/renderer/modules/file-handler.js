@@ -151,6 +151,10 @@ async function routeBrowserDrop(files) {
       return result;
     },
     attachFiles: addBrowserFiles,
+    previewCharacterSource: async (filePath) => {
+      const { openCharacterImportPreview } = await import("./character-session-control.js");
+      return openCharacterImportPreview(filePath);
+    },
   });
 }
 
