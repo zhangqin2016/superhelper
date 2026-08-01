@@ -266,6 +266,43 @@ try {
     assert.equal(dupHeroes.length, 1, "the identical character is deduped, not doubled");
   });
 
+  await check("group scenes and scene memory travel with the pack and remap on import (P3-3)", async () => {
+    const memory = require("../src/main/character-worlds/scene-memory.js");
+    const group = require("../src/main/character-worlds/group-modes.js");
+    const hero = createCharacter({ name: "Scene Hero", description: "scene participant" });
+    bindCharacter("s-scene", hero.revision.id);
+    memory.appendMemory(repo.db, {
+      sessionId: "s-scene",
+      characterRevisionId: hero.revision.id,
+      kind: "character_belief",
+      text: "Aria believes the lighthouse is haunted.",
+      sourceTurnIds: ["t1"],
+      confidence: "explicit",
+    });
+    group.createScene(repo, {
+      ownerScope: OWNER,
+      sessionId: "s-scene",
+      name: "Harbor Scene",
+      participantCharacterRevisionIds: [hero.revision.id],
+      replyStrategy: "natural",
+    });
+    const collected = collectCharacterWorldsForExport(repo, [
+      { sessionId: "s-scene", ownerScope: OWNER },
+    ]);
+    const packed = packCharacterWorldsSection(collected);
+    const section = unpackCharacterWorldsSection(packed.json);
+    assert.equal(section.memory.length, 1, "memory section packed");
+    assert.equal(section.scenes.length, 1, "scene section packed");
+
+    const dstTmp = fs.mkdtempSync(path.join(os.tmpdir(), "character-portability-p3-"));
+    const dstStore = new MessageStore(path.join(dstTmp, "messages.db"), path.join(dstTmp, "blobs"));
+    const dstRepo = new CharacterWorldsRepository(dstStore);
+    const result = await importCharacterWorldsPack(dstRepo, OWNER, section);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.memoryImported.length, 1, "memory imported with remapped revision");
+    assert.equal(result.scenesImported.length, 1, "scene imported with remapped participants");
+  });
+
   console.log(`PASS: test-character-workspace-portability (${checks} checks)`);
 } catch (error) {
   console.error("FAIL:", error);

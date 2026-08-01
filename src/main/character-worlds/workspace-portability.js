@@ -214,7 +214,52 @@ function collectCharacterWorldsForExport(repo, sessions) {
     }
   }
 
-  return { entities, bindings };
+  // §11/§12 P3-3: group scenes + scene memory travel with the pack (owner
+  // scoped; session ids excluded to avoid leaking session identity).
+  const ownerScopes = [...new Set((Array.isArray(sessions) ? sessions : []).map((s) => s?.ownerScope).filter(Boolean))];
+  let scenes = [];
+  let memory = [];
+  try {
+    const rows = ownerScopes.length
+      ? (repo.db?.all(`SELECT id, participant_character_revision_ids, active_speaker_revision_id,
+         reply_strategy, prompt_mode, muted_character_revision_ids, scene_state, updated_at
+         FROM group_scenes WHERE owner_scope IN (${ownerScopes.map(() => "?").join(",")})`, ...ownerScopes) || [])
+      : [];
+    scenes = rows.map((row) => ({
+      id: row.id,
+      participantCharacterRevisionIds: safeJsonArray(row.participant_character_revision_ids),
+      activeSpeakerRevisionId: row.active_speaker_revision_id || null,
+      replyStrategy: row.reply_strategy || "manual",
+      promptMode: row.prompt_mode || "swap",
+      mutedCharacterRevisionIds: safeJsonArray(row.muted_character_revision_ids),
+      sceneState: row.scene_state || "",
+      updatedAt: row.updated_at,
+    }));
+  } catch { scenes = []; }
+  try {
+    const revIds = entities.map((e) => e.sourceRevisionId).filter(Boolean);
+    const rows = revIds.length
+      ? (repo.db?.all(`SELECT id, character_revision_id, kind, text, source_turn_ids,
+         confidence, supersedes_id, created_at FROM character_memory
+         WHERE character_revision_id IN (${revIds.map(() => "?").join(",")})`, ...revIds) || [])
+      : [];
+    memory = rows.map((row) => ({
+      id: row.id,
+      characterRevisionId: row.character_revision_id,
+      kind: row.kind,
+      text: row.text,
+      sourceTurnIds: safeJsonArray(row.source_turn_ids),
+      confidence: row.confidence,
+      supersedesId: row.supersedes_id || null,
+      createdAt: row.created_at,
+    })).slice(0, 256);
+  } catch { memory = []; }
+
+  return { entities, bindings, scenes, memory };
+}
+
+function safeJsonArray(value) {
+  try { const v = JSON.parse(value); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 
 /**
@@ -238,7 +283,13 @@ function packCharacterWorldsSection(collected) {
   if (entities.length > MAX_PACK_ENTITIES) {
     throw new Error("CHARACTER_WORLDS_PACK_TOO_MANY_ENTITIES");
   }
-  const json = JSON.stringify({ schemaVersion: PACK_SCHEMA_VERSION, entities, bindings });
+  const json = JSON.stringify({
+    schemaVersion: PACK_SCHEMA_VERSION,
+    entities,
+    bindings,
+    ...(collected?.scenes?.length ? { scenes: collected.scenes } : {}),
+    ...(collected?.memory?.length ? { memory: collected.memory } : {}),
+  });
   const bytes = Buffer.byteLength(json, "utf8");
   if (bytes > MAX_PACK_JSON_BYTES) {
     throw new Error("CHARACTER_WORLDS_PACK_TOO_LARGE");
@@ -270,7 +321,12 @@ function unpackCharacterWorldsSection(json) {
   if (parsed.entities.length > MAX_PACK_ENTITIES) {
     throw new Error("CHARACTER_WORLDS_PACK_TOO_MANY_ENTITIES");
   }
-  return parsed;
+  return {
+    ...parsed,
+    bindings: Array.isArray(parsed.bindings) ? parsed.bindings : [],
+    scenes: Array.isArray(parsed.scenes) ? parsed.scenes : [],
+    memory: Array.isArray(parsed.memory) ? parsed.memory : [],
+  };
 }
 
 /**
@@ -367,7 +423,47 @@ function importCharacterWorldsPack(repo, ownerScope, section) {
       });
     }
   }
-  return { ok: errors.length === 0, imported, idMap, errors };
+  // §11/§12 P3-3: scene memory imports with the revision id remapped; scenes
+  // import their participant pins through the same map. Both fail-open.
+  const memoryImported = [];
+  const scenesImported = [];
+  try {
+    for (const item of Array.isArray(section?.memory) ? section.memory : []) {
+      const newRevId = idMap[item.characterRevisionId];
+      if (!newRevId || typeof item.text !== "string" || !item.text) continue;
+      const sceneMemory = require("./scene-memory");
+      const created = sceneMemory.appendMemory(repo.db, {
+        sessionId: "imported",
+        characterRevisionId: newRevId,
+        kind: ["scene_fact", "character_belief", "relationship", "open_thread"].includes(item.kind) ? item.kind : "scene_fact",
+        text: String(item.text).slice(0, 4096),
+        sourceTurnIds: [],
+        confidence: item.confidence === "derived" ? "derived" : "explicit",
+      });
+      if (created) memoryImported.push(created.id);
+    }
+  } catch { /* memory import fail-open */ }
+  try {
+    for (const scene of Array.isArray(section?.scenes) ? section.scenes : []) {
+      if (!Array.isArray(scene.participantCharacterRevisionIds)) continue;
+      const remapped = scene.participantCharacterRevisionIds
+        .map((rid) => idMap[rid] || null)
+        .filter(Boolean);
+      if (!remapped.length) continue;
+      const group = require("./group-modes");
+      const created = group.createScene(repo, {
+        ownerScope,
+        sessionId: `scene-${scene.id || "imported"}`,
+        name: "Imported Scene",
+        participantCharacterRevisionIds: remapped,
+        replyStrategy: ["manual", "natural", "list_order", "pooled", "semantic"].includes(scene.replyStrategy) ? scene.replyStrategy : "manual",
+        promptMode: scene.promptMode === "join" ? "join" : "swap",
+      });
+      if (created?.id) scenesImported.push(created.id);
+    }
+  } catch { /* scene import fail-open */ }
+
+  return { ok: errors.length === 0, imported, idMap, errors, memoryImported, scenesImported };
 }
 
 /**
