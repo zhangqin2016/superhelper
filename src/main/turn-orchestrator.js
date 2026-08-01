@@ -1301,15 +1301,9 @@ class TurnOrchestrator {
             omitted: characterContext.omitted,
             warnings: characterContext.warnings,
             tokenEstimate: characterContext.tokenEstimate,
-            // §20 observability: bounded counts + world-book pin references.
-            activatedEntryCount: Array.isArray(characterContext.activatedWorldEntries)
-              ? characterContext.activatedWorldEntries.length
-              : 0,
-            worldBookBindings: characterContext.worldBook
-              ? [{ revisionId: characterContext.worldBook.revisionId, scope: "character" }]
-              : [],
-            ...(characterContext.persona ? { persona: characterContext.persona } : {}),
-          }
+            activatedEntryCount: (characterContext.activatedWorldEntries || []).length,
+            worldBookBindings: characterContext.worldBook ? [{ revisionId: characterContext.worldBook.revisionId, scope: "character" }] : [],
+            ...(characterContext.persona ? { persona: characterContext.persona } : {}),          }
         : {
             status: "native",
             revisionId: state.characterWorldsSnapshot.characterRevisionId,
@@ -1318,9 +1312,8 @@ class TurnOrchestrator {
               : {}),
           };
     }
-    const preTurnCompaction = await this._maybeCompactBeforeTurn(session.id, runner, state.enginePayload);
+    const preTurnCompaction = await this._maybeCompactBeforeTurn(session.id, runner, state.enginePayload, state.characterWorldsSnapshot);
     if (preTurnCompaction) state.enginePayload.trace.preTurnCompaction = preTurnCompaction;
-
     this._emit(session.id, "turn.started", {
       text: rawUserText,
       queueLength: state.queue.length,
@@ -1524,8 +1517,8 @@ class TurnOrchestrator {
     };
   }
 
-  async _maybeCompactBeforeTurn(sessionId, runner, enginePayload = {}) {
-    return this.contextCompactionRuntime.maybeCompactBeforeTurn(sessionId, runner, enginePayload);
+  async _maybeCompactBeforeTurn(sessionId, runner, enginePayload = {}, characterWorldsSnapshot = null) {
+    return this.contextCompactionRuntime.maybeCompactBeforeTurn(sessionId, runner, enginePayload, characterWorldsSnapshot);
   }
 
   /**
@@ -1561,8 +1554,7 @@ class TurnOrchestrator {
       if (snapshot?.mode !== "character" || snapshot?.snapshotStatus !== "ready") return null;
       const policy = this._characterWorldsPolicy();
       if (!policy?.enabled) {
-        // Rollout gate (spec §16/§18): a disabled/killed/unknown policy returns
-        // the conversation to native Lily without touching data or bindings.
+        // Rollout gate (§16/§18): a disabled/killed/unknown policy returns native.
         state.characterWorldsPolicyReason = policy?.reason || "remote_disabled";
         log.warn("character context compile skipped by policy: %s", state.characterWorldsPolicyReason);
         return null;

@@ -151,6 +151,16 @@ function formatSessionSummary(summary) {
       parts.push(`  - ${trimText(gap.reason, 180)}${gap.userIntent ? ` for: ${trimText(gap.userIntent, 220)}` : ""}`);
     }
   }
+  // §10.5: the character section is metadata-only (guarded) and renders as a
+  // bounded line so compaction summaries distinguish the CURRENT active
+  // binding without ever carrying card instructions that could resurrect an
+  // old role after a switch.
+  if (summary.characterWorlds && typeof summary.characterWorlds === "object") {
+    const cw = require("./character-worlds/compaction");
+    if (cw.isMetadataOnlyCharacterSection(summary.characterWorlds)) {
+      parts.push(cw.formatCharacterWorldsSummary(summary.characterWorlds));
+    }
+  }
   return parts.join("\n");
 }
 
@@ -402,4 +412,5 @@ module.exports = {
   markSessionCompacted,
   readSessionSummary,
   updateSessionSummaryFromRecord,
+  writeSessionSummary,
 };

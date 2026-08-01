@@ -7,7 +7,7 @@ const {
 } = require("./context-budget-manager");
 const { getLogger } = require("./logger");
 const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime/runtime-capabilities");
-const { markSessionCompactionFailed, readSessionSummary } = require("./session-memory");
+const { markSessionCompactionFailed, readSessionSummary, writeSessionSummary } = require("./session-memory");
 
 const log = getLogger("context-compaction-runtime");
 
@@ -54,10 +54,28 @@ function createContextCompactionRuntime(options = {}) {
   const emit = options.emit || (() => null);
   const scheduleTimer = options.setTimeout || setTimeout;
 
-  async function maybeCompactBeforeTurn(sessionId, runner, enginePayload = {}) {
+  async function maybeCompactBeforeTurn(sessionId, runner, enginePayload = {}, characterWorldsSnapshot = null) {
     try {
       if (!runner?.compactContext) return { action: "skip", reason: "adapter_missing_compaction" };
       const sessionSummary = readSessionSummary(sessionId) || {};
+      // §10.5: record the CURRENT active binding (metadata-only) so the
+      // compaction summary distinguishes it from historical roles — the
+      // section is whitelist-guarded and never carries card instructions.
+      if (characterWorldsSnapshot && typeof characterWorldsSnapshot === "object") {
+        const cw = require("./character-worlds/compaction");
+        const section = cw.characterWorldsSummarySection(characterWorldsSnapshot);
+        if (section) {
+          const prior = sessionSummary.characterWorlds;
+          if (
+            !prior ||
+            prior.characterRevisionId !== section.characterRevisionId ||
+            prior.bindingVersion !== section.bindingVersion ||
+            prior.personaRevisionId !== section.personaRevisionId
+          ) {
+            writeSessionSummary(sessionId, { ...sessionSummary, characterWorlds: section });
+          }
+        }
+      }
       const model = runner.spawnOptions?.model || null;
       const promptEstimate = estimateTokensForText(String(enginePayload?.text || ""), {
         provider: model?.providerID || enginePayload?.provider || enginePayload?.trace?.provider || "",
