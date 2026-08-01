@@ -418,6 +418,60 @@ function registerCharacterWorldsHandlers(ctx) {
       return mapDomainError(error);
     }
   });
+
+  // §15 P3-2: scene:get / scene:update — group-scene reads and mutations from
+  // the renderer. scene:update is a validated mutation (session authority +
+  // participant/strategy/prompt-mode whitelists); a card can never enable join.
+  ipcMain.handle("scene:get", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const repo = repository();
+    if (!repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    const session = resolveSessionAuthority(ctx, payload?.sessionId);
+    if (session.error) return failure(session.error);
+    try {
+      const group = require("./character-worlds/group-modes");
+      const scene = group.getScene(repo, session.ownerScope, session.sessionId);
+      if (!scene) return { ok: true, scene: null };
+      const participants = (scene.participantCharacterRevisionIds || [])
+        .map((rid) => { try { const r = repo.getRevision(session.ownerScope, rid); return r ? { revisionId: rid, name: r.displayName } : null; } catch { return null; } })
+        .filter(Boolean);
+      return { ok: true, scene: { ...scene, participants } };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  ipcMain.handle("scene:update", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const repo = repository();
+    if (!repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    const session = resolveSessionAuthority(ctx, payload?.sessionId);
+    if (session.error) return failure(session.error);
+    const participantIds = Array.isArray(payload?.participantCharacterRevisionIds) ? payload.participantCharacterRevisionIds : null;
+    if (participantIds && !participantIds.every((id) => validId(id))) return failure("INVALID_INPUT");
+    const replyStrategy = ["manual", "natural", "list_order", "pooled", "semantic"].includes(payload?.replyStrategy)
+      ? payload.replyStrategy
+      : "manual";
+    // Join is behaviorally risky; only an explicit user scene control may
+    // select it (a card can never enable join — §12).
+    const promptMode = payload?.promptMode === "join" ? "join" : "swap";
+    try {
+      const group = require("./character-worlds/group-modes");
+      const scene = group.upsertScene(repo, {
+        ownerScope: session.ownerScope,
+        sessionId: session.sessionId,
+        participantCharacterRevisionIds: participantIds,
+        replyStrategy,
+        promptMode,
+        activeSpeakerRevisionId: validId(payload?.activeSpeakerRevisionId) ? payload.activeSpeakerRevisionId : null,
+      });
+      return { ok: true, scene: { ...scene, participants: [] } };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
 }
 
 module.exports = { registerCharacterWorldsHandlers };

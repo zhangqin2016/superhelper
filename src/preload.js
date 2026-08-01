@@ -225,6 +225,15 @@ contextBridge.exposeInMainWorld("assistantClient", {
     archiveWorldBook: (worldBookId) => ipcRenderer.invoke("world-book:archive", { worldBookId }),
     getWorldBookHistory: (worldBookId, options = {}) =>
       ipcRenderer.invoke("world-book:history", { worldBookId, limit: options?.limit }),
+    getScene: (sessionId) => ipcRenderer.invoke("scene:get", { sessionId }),
+    updateScene: (payload = {}) =>
+      ipcRenderer.invoke("scene:update", {
+        sessionId: payload?.sessionId,
+        participantCharacterRevisionIds: payload?.participantCharacterRevisionIds,
+        replyStrategy: payload?.replyStrategy,
+        promptMode: payload?.promptMode,
+        activeSpeakerRevisionId: payload?.activeSpeakerRevisionId,
+      }),
   }),
 
   pickFiles: () => ipcRenderer.invoke("files:pick"),

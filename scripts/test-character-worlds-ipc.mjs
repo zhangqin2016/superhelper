@@ -44,6 +44,9 @@ const CHANNELS = {
   // and envelope behavior lives in test-character-persona-context.mjs.
   listPersonas: "persona:list",
   getPersona: "persona:get",
+  // Phase 3 (P3-2): group-scene reads + validated mutations.
+  getScene: "scene:get",
+  updateScene: "scene:update",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
 // Phase 2B (P2B-4): authoring mutations + revision reads, covered in depth by
@@ -242,6 +245,8 @@ try {
     await api.getWorldBookRevision("book-rev-1");
     await api.listPersonas();
     await api.getPersona("persona-1");
+    await api.getScene("session-a");
+    await api.updateScene({ sessionId: "session-a", participantCharacterRevisionIds: ["rev-1"], replyStrategy: "natural", promptMode: "swap" });
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
       [
@@ -258,6 +263,8 @@ try {
         "world-book:get-revision",
         "persona:list",
         "persona:get",
+        "scene:get",
+        "scene:update",
       ],
     );
     const serialized = JSON.stringify(invokeCalls);
