@@ -46,7 +46,8 @@
     "src/renderer/modules/skill-settings.js": 616,
     "src/renderer/modules/tool-payload-renderer.js": 837,
     "src/main/turn-terminal-finalizer.js": 507,
-    "src/main/character-worlds/workspace-portability.js": 514
+    "src/main/character-worlds/workspace-portability.js": 514,
+    "src/renderer/modules/character-session-control.js": 509
   },
   "forbiddenImports": [
     {
