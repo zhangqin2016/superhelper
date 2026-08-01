@@ -185,6 +185,7 @@
   "character.sceneStrategy": "استراتيجية المتحدث",
   "character.sceneMode": "وضع المطالبة",
   "character.sceneMemory": "ذاكرة المشهد",
+  "character.sceneGreeting": "التحية الافتتاحية",
   "character.sceneNoMemory": "(لا ذاكرة بعد)",
   "character.personaIndicator": "الشخصية مرتبطة",
   "character.worldIndicator": "كتاب العالم مرتبط",

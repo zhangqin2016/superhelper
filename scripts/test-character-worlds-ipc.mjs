@@ -46,6 +46,7 @@ const CHANNELS = {
   getPersona: "persona:get",
   // Phase 3 (P3-2): group-scene reads + validated mutations.
   getScene: "scene:get",
+  getGreetings: "character:greetings",
   updateScene: "scene:update",
   getSceneMemory: "scene:memory",
 };

@@ -185,6 +185,7 @@
   "character.sceneStrategy": "发言策略",
   "character.sceneMode": "提示模式",
   "character.sceneMemory": "角色记忆",
+  "character.sceneGreeting": "开场问候",
   "character.sceneNoMemory": "（暂无记忆）",
   "character.personaIndicator": "已绑定人设",
   "character.worldIndicator": "已绑定世界书",

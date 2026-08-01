@@ -185,6 +185,7 @@
   "character.sceneStrategy": "Speaker strategy",
   "character.sceneMode": "Prompt mode",
   "character.sceneMemory": "Scene memory",
+  "character.sceneGreeting": "Opening greeting",
   "character.sceneNoMemory": "(no memory yet)",
   "character.personaIndicator": "Persona bound",
   "character.worldIndicator": "World book bound",

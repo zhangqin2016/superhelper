@@ -263,6 +263,11 @@ function registerCharacterWorldsHandlers(ctx) {
         if (!validId(payload.personaRevisionId)) return failure("INVALID_INPUT");
         next.personaRevisionId = payload.personaRevisionId;
       }
+      if (payload.greetingIndex != null) {
+        if (!Number.isSafeInteger(payload.greetingIndex) || payload.greetingIndex < 0)
+          return failure("INVALID_INPUT");
+        next.greetingIndex = payload.greetingIndex;
+      }
     } else if (payload.personaRevisionId != null) {
       // A native binding is the Lily baseline: it carries no persona (§7.5).
       return failure("INVALID_INPUT");
@@ -504,6 +509,37 @@ function registerCharacterWorldsHandlers(ctx) {
         activeSpeakerRevisionId: validId(payload?.activeSpeakerRevisionId) ? payload.activeSpeakerRevisionId : null,
       });
       return { ok: true, scene: { ...scene, participants: [] } };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  // §8 greeting choices: list the pinned revision's world-book greeting
+  // entries (bounded preview text) so a new conversation can pick one.
+  ipcMain.handle("character:greetings", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const repo = repository();
+    if (!repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    const owner = resolveOwnerScope(ctx);
+    if (!owner) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    const revisionId = typeof payload?.revisionId === "string" && payload.revisionId
+      ? payload.revisionId
+      : "";
+    if (!validId(revisionId)) return { ok: true, greetings: [] };
+    try {
+      const revision = repo.getRevision(owner, revisionId);
+      if (!revision || !revision.characterBookRevisionId) return { ok: true, greetings: [] };
+      const book = repo.getWorldBookRevision(owner, revision.characterBookRevisionId);
+      const entries = book?.canonical?.entries || [];
+      const greetings = entries
+        .filter((entry) => Number.isSafeInteger(entry.activation?.greetingIndex))
+        .map((entry) => ({
+          index: entry.activation.greetingIndex,
+          text: String(entry.content || "").slice(0, 80),
+        }))
+        .sort((a, b) => a.index - b.index);
+      return { ok: true, greetings };
     } catch (error) {
       return mapDomainError(error);
     }
