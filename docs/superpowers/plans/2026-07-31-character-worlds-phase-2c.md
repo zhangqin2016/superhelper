@@ -130,7 +130,7 @@ memory maintenance (§14.5, Phase 3).
 - Create: `src/main/character-worlds/workspace-portability.js`
 - Create: `scripts/test-character-workspace-portability.mjs`
 
-- [ ] **Step 1: Write failing portability tests**
+- [x] **Step 1: Write failing portability tests**
   Export with `includeCharacterWorlds: true`: the preview lists every
   included entity + asset (characters/personas/books referenced by the
   exported sessions' bindings + admitted turn snapshots); ONLY referenced
@@ -140,20 +140,34 @@ memory maintenance (§14.5, Phase 3).
   session bindings restored only when their referenced revisions imported
   (otherwise native + diagnostic); executable/unknown fields survive inert
   through the same pipeline; exact-duplicate re-import dedups naturally.
-- [ ] **Step 2: Run tests, verify they fail**
-- [ ] **Step 3: Implement export-side packing**
+- [x] **Step 2: Run tests, verify they fail**
+- [x] **Step 3: Implement export-side packing**
   `workspace-portability.js`: collect referenced revision ids from the
   exported sessions (current bindings + durable turn snapshots), emit a
   bounded `character-worlds.json` pack section with canonical revisions +
   asset blob references; extend the export preview manifest.
-- [ ] **Step 4: Implement import-side remap**
+- [x] **Step 4: Implement import-side remap**
   Transactional import: new entity ids per imported entity, revision ids
   regenerated with provenance `{kind:"imported", format:"workspace_package",
   container:"zip"}`, internal references remapped (character book pins,
   persona/character binding pins), through the existing validation models;
   binding restoration per rule 6.
-- [ ] **Step 5: Run portability + workspace flow regressions**
-- [ ] **Step 6: Commit** — `feat: add character worlds workspace portability`
+
+  Note on provenance + dedup: workspace portability packs LIBRARY entities
+  whose source is the editor envelope (not an original card), so the card
+  import path's source.original requirement does not apply — entities import
+  through the validated create writers with canonical-hash dedup (identical
+  re-imports reuse the existing entity+revision), and embedded world books
+  are remapped through the same dedup. Session bindings travel as an
+  anonymous, owner-stripped list (never session ids in the pack) and restore
+  ONLY when the referenced revision imported; otherwise the conversation
+  stays native with a `missing_revision` diagnostic (`restoreBindingPreview`).
+- [x] **Step 5: Run portability + workspace flow regressions**
+  `test-character-workspace-portability` (7 checks) + workspace-share /
+  package-drop / package-inspector / export-planner + architecture-boundaries
+  + capability-gate (no new failure modes; workspace-share ratchet held at
+  635).
+- [x] **Step 6: Commit** — `feat: add character worlds workspace portability`
 
 ## Task P2C-3: Capability Gate + Acceptance Extension
 

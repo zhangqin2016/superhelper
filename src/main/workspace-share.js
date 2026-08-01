@@ -7,6 +7,7 @@ const exportPlanner = require("./workspace-export-planner");
 const packCompat = require("./workspace-pack-compat");
 const packLimits = require("./workspace-pack-limits");
 const taskPortability = require("./scheduled-task-portability");
+const portability = require("./character-worlds/workspace-portability");
 
 /**
  * Workspace capability packs (.lilyspace.zip): export a workspace as a
@@ -367,16 +368,14 @@ function previewExport(rootPath) {
 
 /**
  * @param {object} opts
- * @param {string} opts.rootPath workspace dir
- * @param {string} opts.name display name
- * @param {string} [opts.description]
- * @param {string} [opts.conventions] learned-conventions text
+ * @param {string} opts.rootPath workspace dir; opts.name display name
+ * @param {string} [opts.description]; [opts.conventions] learned-conventions text
  * @param {string[]} [opts.requiredSkills] skill ids the workspace relies on
  * @param {{ id: string, dir: string, manifest?: object, enabled?: boolean }[]} [opts.workspaceSkills]
- * @param {string} opts.exportedAt ISO timestamp (passed in — main owns time)
+ * @param {string} opts.exportedAt ISO timestamp; [opts.characterWorlds] packed character-worlds.json section
  * @returns {Promise<Buffer>} zip bytes
  */
-async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, automationTemplates, exportedAt }) {
+async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, automationTemplates, exportedAt, characterWorlds }) {
   if (!rootPath || !fs.existsSync(rootPath)) throw new Error("WORKSPACE_NOT_FOUND");
   const zip = new JSZip();
   const exportPlan = collectShareableFiles(rootPath);
@@ -444,6 +443,7 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     if (addLegacyMirror) zip.file(file.relPath, content);
     zip.file(`${FILES_PREFIX}${file.relPath}`, content);
   }
+  portability.writePackEntry(zip, characterWorlds);
   if (conv) {
     if (addLegacyMirror) zip.file(PACK_CONVENTIONS_ENTRY, conv);
     zip.file(CONVENTIONS_ENTRY, conv);
@@ -596,7 +596,7 @@ async function importWorkspacePack(zipBuffer, targetDir, options = {}) {
   if (convEntry) conventions = await convEntry.async("string");
   const workspaceSkills = await importWorkspaceSkills(zip, manifest, targetDir);
   const automations = await taskPortability.readAutomationEntry(zip.file(AUTOMATIONS_ENTRY));
-  return { manifest, conventions, workspaceSkills, ...automations };
+  return { manifest, conventions, workspaceSkills, ...automations, characterWorlds: await portability.readPackEntry(zip) };
 }
 
 module.exports = {

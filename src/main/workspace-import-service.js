@@ -11,6 +11,11 @@ const {
   readPackManifest,
 } = require("./workspace-share");
 const { DEFAULT_MAX_PACKAGE_BYTES } = require("./workspace-package-inspector");
+const {
+  importCharacterWorldsPack,
+  unpackCharacterWorldsSection,
+} = require("./character-worlds/workspace-portability");
+const { resolveCharacterOwnerScope } = require("./character-worlds/owner-scope");
 
 function safeFolderName(value) {
   return String(value || "imported-workspace")
@@ -233,12 +238,38 @@ async function importWorkspacePackagePath(ctx, payload = {}) {
     const installed = new Set(skillManager.getGloballyEnabledSkillIds?.() || []);
     const missingSkills = (imported.manifest.requiredSkills || [])
       .filter((id) => !installed.has(id));
+
+    // Character Worlds section: import into the local library when present.
+    // A failure here degrades the PACK, not the workspace: the project still
+    // imports, and the section result (with diagnostics) is returned so the
+    // UI can surface what did / didn't restore. The same hostile pipeline
+    // applies — every entity is validated and gets NEW local ids.
+    let characterWorlds = null;
+    if (imported.characterWorlds) {
+      const repo = ctx.characterWorldsRepository;
+      const ownerScope = resolveCharacterOwnerScope();
+      try {
+        if (!repo || typeof ownerScope !== "string" || !ownerScope) {
+          characterWorlds = { ok: false, error: "OWNER_SCOPE_UNAVAILABLE" };
+        } else {
+          const section = unpackCharacterWorldsSection(imported.characterWorlds);
+          characterWorlds = importCharacterWorldsPack(repo, ownerScope, section);
+        }
+      } catch (error) {
+        characterWorlds = {
+          ok: false,
+          error: error?.code || error?.message || "IMPORT_FAILED",
+        };
+      }
+    }
+
     return {
       ok: true,
       state: ctx.projectManager.getAppState(),
       projectId: project.id,
       projectName: imported.manifest.name || project.name,
       sessionId: session.id,
+      characterWorlds,
       workspacePath: targetDir,
       missingSkills,
       restoredWorkspaceSkills,
