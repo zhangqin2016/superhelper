@@ -48,7 +48,8 @@
     "src/main/turn-terminal-finalizer.js": 507,
     "src/main/character-worlds/workspace-portability.js": 514,
     "src/renderer/modules/character-session-control.js": 509,
-    "src/main/character-worlds/repository.js": 542
+    "src/main/character-worlds/repository.js": 542,
+    "src/main/ipc-character-worlds.js": 513
   },
   "forbiddenImports": [
     {

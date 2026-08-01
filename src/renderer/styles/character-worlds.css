@@ -488,3 +488,10 @@
   margin-left: auto;
   max-width: 130px;
 }
+.character-scene-memory {
+  color: color-mix(in srgb, currentColor 78%, transparent);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -5,6 +5,7 @@
  */
 export function createSceneSectionController({ getState, getFacade, getElement, t: translate }) {
   let scene = null;
+  let memory = [];
   let loadSeq = 0;
 
   async function load() {
@@ -17,6 +18,12 @@ export function createSceneSectionController({ getState, getFacade, getElement, 
       const res = await api.getScene(state.sessionId);
       if (seq !== loadSeq) return;
       scene = res?.ok ? (res.scene || null) : null;
+      memory = [];
+      if (scene && state.characterRevisionId && api.getSceneMemory) {
+        const m = await api.getSceneMemory(state.sessionId, state.characterRevisionId);
+        if (seq !== loadSeq) return;
+        memory = m?.ok ? (m.memory || []) : [];
+      }
       render();
     } catch {
       scene = null;
@@ -31,6 +38,12 @@ export function createSceneSectionController({ getState, getFacade, getElement, 
     getElement("characterSceneParticipants").textContent = (scene.participants || []).map((p) => p.name).join("、") || translate("character.unnamed");
     getElement("characterSceneStrategy").value = scene.replyStrategy || "natural";
     getElement("characterSceneMode").value = scene.promptMode || "swap";
+    const memEl = getElement("characterSceneMemory");
+    if (memEl) {
+      memEl.textContent = memory.length
+        ? memory.map((m) => m.text).join(" | ").slice(0, 220)
+        : translate("character.sceneNoMemory");
+    }
   }
 
   async function updateField(field, value) {

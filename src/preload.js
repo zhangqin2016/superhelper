@@ -228,6 +228,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     getWorldBookHistory: (worldBookId, options = {}) =>
       ipcRenderer.invoke("world-book:history", { worldBookId, limit: options?.limit }),
     getScene: (sessionId) => ipcRenderer.invoke("scene:get", { sessionId }),
+    getSceneMemory: (sessionId, characterRevisionId) => ipcRenderer.invoke("scene:memory", { sessionId, characterRevisionId }),
     updateScene: (payload = {}) =>
       ipcRenderer.invoke("scene:update", {
         sessionId: payload?.sessionId,

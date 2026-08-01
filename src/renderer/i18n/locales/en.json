@@ -184,6 +184,8 @@
   "character.sceneParticipants": "Participants",
   "character.sceneStrategy": "Speaker strategy",
   "character.sceneMode": "Prompt mode",
+  "character.sceneMemory": "Scene memory",
+  "character.sceneNoMemory": "(no memory yet)",
   "character.personaIndicator": "Persona bound",
   "character.worldIndicator": "World book bound",
   "character.popoverTitle": "Conversation character",

@@ -453,6 +453,31 @@ function registerCharacterWorldsHandlers(ctx) {
     }
   });
 
+  // §11 scene memory peek: bounded latest items for the current character
+  // revision so the popover can show what the character remembers.
+  ipcMain.handle("scene:memory", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    const repo = repository();
+    if (!repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    const session = resolveSessionAuthority(ctx, payload?.sessionId);
+    if (session.error) return failure(session.error);
+    const revisionId = typeof payload?.characterRevisionId === "string" && payload.characterRevisionId
+      ? payload.characterRevisionId
+      : "";
+    if (!revisionId) return { ok: true, memory: [] };
+    try {
+      const memory = require("./character-worlds/scene-memory").activeMemory(
+        repo.db, session.sessionId, revisionId,
+      );
+      const limit = 5;
+      const items = memory.slice(-limit).map((item) => ({ kind: item.kind, text: String(item.text || "").slice(0, 120) }));
+      return { ok: true, memory: items };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
   ipcMain.handle("scene:update", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;

@@ -184,6 +184,8 @@
   "character.sceneParticipants": "المشاركون",
   "character.sceneStrategy": "استراتيجية المتحدث",
   "character.sceneMode": "وضع المطالبة",
+  "character.sceneMemory": "ذاكرة المشهد",
+  "character.sceneNoMemory": "(لا ذاكرة بعد)",
   "character.personaIndicator": "الشخصية مرتبطة",
   "character.worldIndicator": "كتاب العالم مرتبط",
   "character.popoverTitle": "شخصية المحادثة",

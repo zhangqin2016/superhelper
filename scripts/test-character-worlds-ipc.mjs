@@ -47,6 +47,7 @@ const CHANNELS = {
   // Phase 3 (P3-2): group-scene reads + validated mutations.
   getScene: "scene:get",
   updateScene: "scene:update",
+  getSceneMemory: "scene:memory",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
 // Phase 2B (P2B-4): authoring mutations + revision reads, covered in depth by
@@ -247,6 +248,7 @@ try {
     await api.listPersonas();
     await api.getPersona("persona-1");
     await api.getScene("session-a");
+    await api.getSceneMemory("session-a", "rev-1");
     await api.updateScene({ sessionId: "session-a", participantCharacterRevisionIds: ["rev-1"], replyStrategy: "natural", promptMode: "swap" });
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
@@ -266,6 +268,7 @@ try {
         "persona:list",
         "persona:get",
         "scene:get",
+        "scene:memory",
         "scene:update",
       ],
     );
