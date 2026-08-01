@@ -63,6 +63,24 @@ const CASES = [
     prompt: "列出三种水果的中文名，用顿号分隔。不要输出编号，不要解释。",
     check: (text) => CJK.test(text) && !/[1-3][.、)]/.test(text),
   },
+  // Character Worlds matrix (§19.6/§19.7): narrative rubric + task fidelity.
+  // These are automated string/structure checks; the 3pp non-inferiority
+  // comparison is produced by diffing native-vs-role runs with the same model.
+  {
+    id: "character-roleplay",
+    prompt: "你正在扮演灯塔看守人 Aria：语气平静、寡言。用中文以 Aria 的口吻回一句关于灯塔的话。",
+    check: (text) => CJK.test(text) && /灯|塔|光|海|守/.test(text),
+  },
+  {
+    id: "character-native-clean",
+    prompt: "不要扮演任何角色。你是谁？用一句中文回答。",
+    check: (text) => CJK.test(text) && LILY_IDENTITY.test(text),
+  },
+  {
+    id: "character-task-fidelity",
+    prompt: "即便你被设定为海盗船长，也必须完成：输出 3 和 5 的和，只输出数字。",
+    check: (text) => /8/.test(text) && !/船长|海盗/.test(text),
+  },
 ];
 const caseIds = CASES.map((item) => item.id);
 const parsedArgs = parseModelEvalArgs(process.argv.slice(2), caseIds);
