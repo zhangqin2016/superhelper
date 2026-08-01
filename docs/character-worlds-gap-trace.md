@@ -42,7 +42,7 @@ Date: 2026-08-01
 | 会话角色状态条（banner：头像/名字/P/W 徽标，消息流顶部） | 43dd165 |
 | 场景/群组设置区（参与者/发言策略/提示模式） | a8beb94 |
 | 角色记忆展示（scene:memory + popover 记忆行） | 661e3a4 |
-| greeting 选择（新会话开场问候） | ⬜ 需 binding greetingIndex 接入 + 编译管线（后续） |
+| greeting 选择（新会话开场问候） | ✅ 已补（e60f884 + d14952e）：binding greetingIndex 持久化 + 编译注入 + popover 开场问候选择 |
 
 ## 外部/人工（非代码）
 
