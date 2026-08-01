@@ -171,10 +171,13 @@ function prepareWorldUnits({
       compatibilityProfile: worldBook.compatibilityProfile ?? compatibilityProfile,
       // Known limitation (Phase 2A): no greetingIndex is plumbed into the
       // generation context, so a compiled @@is_greeting decorator is always
-      // IGNORED at resolve time (the CCV3-sanctioned behavior when the active
-      // greeting cannot be determined); the decision stays recorded in the
-      // revision's decorator AST and compatibility report.
-      generationContext: { characterName, kind: "normal" },
+      // The active greeting index comes from the admitted binding (§8); when
+      // it is unknown the @@is_greeting decorator is IGNORED (CCV3).
+      generationContext: {
+        characterName,
+        kind: "normal",
+        greetingIndex: Number.isSafeInteger(worldBook.greetingIndex) ? worldBook.greetingIndex : undefined,
+      },
       budget: worldBook.budget,
       revisionHash: typeof worldBook.revision?.revisionHash === "string"
         && worldBook.revision.revisionHash

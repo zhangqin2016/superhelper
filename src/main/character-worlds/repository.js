@@ -57,10 +57,19 @@ function nativeBinding(sessionId, bindingVersion = 0) {
     characterRevisionId: null,
     personaRevisionId: null,
     compatibilityProfile: null,
+    greetingIndex: null,
   };
 }
 function bindingFromRow(row, sessionId) {
   if (!row) return nativeBinding(sessionId);
+  let greetingIndex = null;
+  try {
+    const envelope = typeof row.binding_json === "string" ? JSON.parse(row.binding_json) : null;
+    const idx = envelope?.activeGreetingIndex;
+    if (Number.isSafeInteger(idx) && idx >= 0) greetingIndex = idx;
+  } catch {
+    greetingIndex = null;
+  }
   return {
     schemaVersion: C.CHARACTER_BINDING_SCHEMA_VERSION,
     sessionId,
@@ -69,6 +78,7 @@ function bindingFromRow(row, sessionId) {
     characterRevisionId: row.character_revision_id || null,
     personaRevisionId: row.persona_revision_id || null,
     compatibilityProfile: row.compatibility_profile || null,
+    greetingIndex,
   };
 }
 function bindingEnvelope(binding, updatedAt) {
@@ -80,7 +90,9 @@ function bindingEnvelope(binding, updatedAt) {
     mode: binding.mode,
     activeCharacterRevisionId: binding.characterRevisionId,
     activePersonaRevisionId: binding.personaRevisionId || null,
-    activeGreetingIndex: null,
+    activeGreetingIndex: Number.isSafeInteger(binding.greetingIndex) && binding.greetingIndex >= 0
+      ? binding.greetingIndex
+      : null,
     worldBookBindings: [],
     worldResolutionPolicy: { sourceMergeStrategy: "sorted_evenly" },
     groupSceneId: null,
@@ -471,6 +483,9 @@ class CharacterWorldsRepository {
         sessionId: session, mode,
         bindingVersion: current.bindingVersion + 1,
         characterRevisionId, personaRevisionId, compatibilityProfile,
+        greetingIndex: Number.isSafeInteger(next.greetingIndex) && next.greetingIndex >= 0
+          ? next.greetingIndex
+          : null,
       };
       const envelope = bindingEnvelope(committed, updatedAt);
       const envelopeJson = stableJson(envelope);

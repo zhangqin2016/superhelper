@@ -42,6 +42,7 @@ const EXPECTED_NATIVE = (sessionId) => ({
   characterRevisionId: null,
   personaRevisionId: null,
   compatibilityProfile: null,
+  greetingIndex: null,
 });
 
 let checks = 0;
@@ -1563,6 +1564,7 @@ try {
       characterRevisionId: second.id,
       personaRevisionId: null,
       compatibilityProfile: CHARACTER_COMPATIBILITY_PROFILE,
+      greetingIndex: null,
     });
     const row = freshStore.db.get(
       "SELECT binding_json FROM character_session_bindings WHERE session_id = ?",
