@@ -17,10 +17,19 @@ const tests = [
 const failures = [];
 for (const testFile of tests) {
   process.stdout.write(`\n[capability-gate] ${testFile}\n`);
-  const runtime = testFile.endsWith(".cjs") ? require("electron") : process.execPath;
+  const isElectronTest = testFile.endsWith(".cjs");
+  const runtime = isElectronTest ? require("electron") : process.execPath;
+  // The dev runtime runs Node itself as electron-as-node (ELECTRON_RUN_AS_NODE
+  // is set in this process's env). Node tests (execPath) MUST keep that flag —
+  // clearing it would boot Electron as a GUI app and hang. Electron DOM tests
+  // are the opposite: with the flag set they boot in node mode and
+  // require("electron") is not the built-in API. Clear it only for them.
+  const childEnv = isElectronTest
+    ? { ...process.env, ELECTRON_RUN_AS_NODE: undefined }
+    : process.env;
   const result = spawnSync(runtime, [testFile], {
     cwd: ROOT,
-    env: process.env,
+    env: childEnv,
     stdio: "inherit",
   });
   if (result.status !== 0) failures.push(testFile);
