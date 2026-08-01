@@ -179,6 +179,7 @@
   "composer.sessionSkillsDeselectAll": "إلغاء تحديد الكل",
   "character.buttonTitle": "شخصية المحادثة",
   "character.editCurrent": "تحرير الشخصية الحالية",
+  "character.roleBannerTitle": "شخصية المحادثة النشطة — اضغط للتبديل",
   "character.personaIndicator": "الشخصية مرتبطة",
   "character.worldIndicator": "كتاب العالم مرتبط",
   "character.popoverTitle": "شخصية المحادثة",

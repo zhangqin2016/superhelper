@@ -400,3 +400,56 @@
 
 /* RTL: rows and labels flip with dir=rtl through logical alignment above
    (text-align: start, flex layouts); nothing here is direction-hardcoded. */
+
+/* Session role banner (§13.1 visible-state): makes the active character
+   obvious above the message stream; hidden in native mode. */
+.session-role-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px 0;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  cursor: pointer;
+  user-select: none;
+}
+.session-role-banner[hidden] {
+  display: none;
+}
+.session-role-banner:hover,
+.session-role-banner:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+.session-role-banner-avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+}
+.session-role-banner-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-role-banner-badges {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 600;
+}
+.session-role-banner-badges span {
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: color-mix(in srgb, currentColor 78%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}

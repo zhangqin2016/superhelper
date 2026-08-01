@@ -179,6 +179,7 @@
   "composer.sessionSkillsDeselectAll": "Deselect all",
   "character.buttonTitle": "Conversation character",
   "character.editCurrent": "Edit current character",
+  "character.roleBannerTitle": "Active conversation character — click to switch",
   "character.personaIndicator": "Persona bound",
   "character.worldIndicator": "World book bound",
   "character.popoverTitle": "Conversation character",

@@ -142,3 +142,28 @@ export function createWorldIndicatorLoader({ getState, dispatch, getFacade }) {
     }
   };
 }
+
+
+/**
+ * §13.1 visible-state role banner above the message stream (extracted for
+ * the session-control ratchet). Shows monogram + name + persona/world badges;
+ * hidden in native mode.
+ */
+export function createRoleBannerRenderer({ getState, getElement, monogram, el: createEl, t: translate }) {
+  return function renderRoleBanner() {
+    const banner = getElement("sessionRoleBanner");
+    if (!banner) return;
+    const state = getState();
+    const isCharacter = (state?.available === false ? "native" : state?.mode || "native") === "character"
+      && state.characterRevisionId;
+    banner.hidden = !isCharacter;
+    if (!isCharacter) return;
+    const name = state.characterName || translate("character.unnamed");
+    banner.querySelector(".session-role-banner-avatar").textContent = monogram(name);
+    banner.querySelector(".session-role-banner-name").textContent = name;
+    const badges = banner.querySelector(".session-role-banner-badges");
+    badges.textContent = "";
+    if (state.personaRevisionId) badges.appendChild(createEl("span", null, { textContent: "P" }));
+    if (state.worldBookRevisionId) badges.appendChild(createEl("span", null, { textContent: "W" }));
+  };
+}

@@ -19,7 +19,7 @@ import {
   effectiveCharacterMode,
   effectiveBindingUpdates,
 } from "./character-control-model.js";
-import { createBindingUpdateApplier, createSwitchNoticeLoader, createWorldIndicatorLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
+import { createBindingUpdateApplier, createRoleBannerRenderer, createSwitchNoticeLoader, createWorldIndicatorLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
 import { monogram, renderCharacterImportPreview } from "./character-import-preview.js";
 import { createCharacterImportOpener } from "./character-import-opener.js";
 import { openCharacterLibrary } from "./character-library.js";
@@ -32,7 +32,6 @@ export {
 };
 
 // ---------------------------------------------------------------------------
-// Controller (DOM + facade wiring)
 // ---------------------------------------------------------------------------
 
 let controlState = initialCharacterControlState();
@@ -195,8 +194,6 @@ function renderNotice() {
   noticeEl.textContent = text;
 }
 
-// Subtle "update available" row (Phase 2B, §8) — a hint only, never a change
-// to the pinned snapshot; applying stays an explicit action.
 function renderUpdateRow() {
   renderBindingUpdateRow($("characterUpdateRow"), controlState);
 }
@@ -249,9 +246,9 @@ function renderPopover() {
 function render() {
   renderButton();
   renderPopover();
+  renderRoleBanner();
 }
 
-/** §13.1 world indicator: the pinned revision may carry a character book. */
 async function loadBinding(sessionId) {
   const seq = controlState.loadSeq;
   const api = facade();
@@ -264,8 +261,7 @@ async function loadBinding(sessionId) {
     const res = await api.getSessionCharacterBinding(sessionId);
     if (!isCurrent()) return;
     if (res?.ok) {
-      // A successful load proves availability recovered after a kill switch.
-      if (!controlState.available) dispatch({ type: "availability.set", available: true });
+            if (!controlState.available) dispatch({ type: "availability.set", available: true });
       dispatch({ type: "binding.loaded", sessionId, seq, binding: res.binding, updates: res.updates });
       void loadSwitchNotices(sessionId);
       void refreshWorldIndicator(sessionId, seq, res.binding);
@@ -338,6 +334,7 @@ async function selectMode(mode, character = null) {
 }
 
 const refreshWorldIndicator = createWorldIndicatorLoader({ getState: () => controlState, dispatch, getFacade: facade });
+const renderRoleBanner = createRoleBannerRenderer({ getState: () => controlState, getElement: $, monogram, el, t });
 
 export const applyBindingUpdates = createBindingUpdateApplier({
   getState: () => controlState,
@@ -415,6 +412,10 @@ export function initCharacterSessionControl() {
     else closePopover();
   });
   $("characterPopoverClose")?.addEventListener("click", () => closePopover({ focusButton: true }));
+
+  const roleBanner = $("sessionRoleBanner");
+  roleBanner?.addEventListener("click", () => openPopover());
+  roleBanner?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPopover(); } });
 
   $("characterList")?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-character-mode], [data-character-revision-id]");

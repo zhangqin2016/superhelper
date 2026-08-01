@@ -179,6 +179,7 @@
   "composer.sessionSkillsDeselectAll": "全不选",
   "character.buttonTitle": "对话角色",
   "character.editCurrent": "编辑当前角色",
+  "character.roleBannerTitle": "当前对话角色，点击切换",
   "character.personaIndicator": "已绑定人设",
   "character.worldIndicator": "已绑定世界书",
   "character.popoverTitle": "对话角色",
