@@ -217,6 +217,9 @@ function renderButton() {
     swatch.hidden = !isCharacter;
     swatch.textContent = isCharacter ? monogram(name) : "";
   }
+  const persona = b.querySelector(".composer-character-btn-persona");
+  const hasPersona = isCharacter && Boolean(controlState.personaRevisionId);
+  if (persona) persona.hidden = !hasPersona;
   if (icon) icon.hidden = Boolean(isCharacter);
   b.classList.toggle("is-character", Boolean(isCharacter));
 }

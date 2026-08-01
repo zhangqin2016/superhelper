@@ -18,6 +18,7 @@ export function initialCharacterControlState(overrides = {}) {
     bindingVersion: 0,
     characterRevisionId: null,
     compatibilityProfile: null,
+    personaRevisionId: null,
     characterName: "",
     characters: [],
     loadSeq: 0,
@@ -68,8 +69,11 @@ function normalizeBinding(binding) {
     ? binding.characterRevisionId
     : null;
   const profile = typeof binding?.compatibilityProfile === "string" ? binding.compatibilityProfile : null;
+  const personaRevisionId = typeof binding?.personaRevisionId === "string" && binding.personaRevisionId
+    ? binding.personaRevisionId
+    : null;
   if (binding?.mode === "character" && revisionId) {
-    return { mode: "character", bindingVersion: version, characterRevisionId: revisionId, compatibilityProfile: profile, recovered: false };
+    return { mode: "character", bindingVersion: version, characterRevisionId: revisionId, compatibilityProfile: profile, personaRevisionId, recovered: false };
   }
   // Native, or a corrupt character binding failing open to native (the binding
   // version is preserved so a later recovery can resume from it).
@@ -164,6 +168,7 @@ export function reduceCharacterControl(state, action) {
         bindingVersion: b.bindingVersion,
         characterRevisionId: b.characterRevisionId,
         compatibilityProfile: b.compatibilityProfile,
+        personaRevisionId: b.personaRevisionId || null,
         characterName: b.characterRevisionId
           ? (state.characterRevisionId === b.characterRevisionId && state.characterName)
             || nameForRevision(state.characters, b.characterRevisionId)

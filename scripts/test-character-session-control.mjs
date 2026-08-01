@@ -27,9 +27,10 @@ const characterBinding = {
   const state = reduceCharacterControl(initialCharacterControlState(), {
     type: "binding.loaded",
     sessionId: "session-a",
-    binding: { mode: "character", bindingVersion: 2, characterRevisionId: "rev-a" },
+    binding: { mode: "character", bindingVersion: 2, characterRevisionId: "rev-a", personaRevisionId: "persona-a" },
   });
   assert.equal(state.mode, "character");
+  assert.equal(state.personaRevisionId, "persona-a", "persona pin surfaces for the §13.1 indicator");
 
   const conflicted = reduceCharacterControl(state, {
     type: "binding.conflict",

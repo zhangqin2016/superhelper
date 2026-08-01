@@ -31,8 +31,22 @@
    (load flash, no-facade fail-open, ghost swatch/icon in the wrong mode). */
 .composer-character-btn[hidden],
 .composer-character-btn-swatch[hidden],
-.composer-character-btn-icon[hidden] {
+.composer-character-btn-icon[hidden],
+.composer-character-btn-persona[hidden] {
   display: none;
+}
+/* §13.1 persona indicator: a tiny pinned badge next to the name; never shown
+   when no persona is pinned, and muted so it cannot be confused with the
+   character identity swatch. */
+.composer-character-btn-persona {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 3px;
+  color: color-mix(in srgb, currentColor 78%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 .composer-character-btn.is-open,
 .composer-character-btn:focus-visible {
