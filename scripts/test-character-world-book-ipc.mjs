@@ -263,7 +263,7 @@ try {
     for (const channel of PHASE_ONE_CHANNELS) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} still registered`);
     }
-    assert.equal(handlers.size, PHASE_ONE_CHANNELS.length + 5, "no additional channels");
+    assert.equal(handlers.size, PHASE_ONE_CHANNELS.length + 7, "no additional channels");
     for (const channel of handlers.keys()) {
       assert.equal(
         FORBIDDEN_CHANNEL_PATTERN.test(channel),
@@ -309,6 +309,8 @@ try {
         "createWorldBook",
         "archiveWorldBook",
         "getWorldBookHistory",
+        "getScene",
+        "updateScene",
       ].sort(),
     );
     // Phase 2B deliberately ships NO world-book edit/restore/duplicate
