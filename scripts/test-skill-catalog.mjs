@@ -11,9 +11,19 @@ const ROOT = path.resolve(__dirname, "..");
 const require = module.createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-skill-catalog-"));
 
+// process.resourcesPath is read-only in recent Node (writable:false) but
+// configurable, so re-define it instead of assigning.
+function setResourcesPath(value) {
+  Object.defineProperty(process, "resourcesPath", { value, configurable: true, writable: true });
+}
+
+// Isolate the host environment: a real LILY_USER_DATA_DIR would bypass the
+// electron userData mock below and write guides into the real user profile.
+delete process.env.LILY_USER_DATA_DIR;
+delete process.env.LILY_HOME;
 delete process.env.LILY_SERVICE_API_BASE_URL;
 delete process.env.SERVICE_API_BASE_URL;
-process.resourcesPath = ROOT;
+setResourcesPath(ROOT);
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = {
   id: electronPath,
@@ -190,6 +200,7 @@ for (const skillId of expectedMandatory) {
     throw new Error(`${skillId} should merge into empty session selection`);
   }
 }
+console.error("DEBUG-CONFIG-DIR:", fs.existsSync(path.join(tmp, "lily-config")), fs.readdirSync(path.join(tmp, "lily-config"), { withFileTypes: true }).map((e) => e.name).slice(0, 10));
 const globalGuide = fs.readFileSync(path.join(tmp, "lily-config", "AGENT.md"), "utf8");
 if (fs.existsSync(path.join(tmp, "lily-config", "CLAUDE.md"))) {
   throw new Error("AGENT guide generation must not create legacy CLAUDE.md mirrors");
@@ -614,7 +625,7 @@ fs.writeFileSync(
   path.join(tmpService, "skills-state.json"),
   JSON.stringify({ schemaVersion: 1, skills: {} }),
 );
-process.resourcesPath = ROOT;
+setResourcesPath(ROOT);
 require.cache[electronPath].exports.app.getPath = (name) => {
   if (name === "userData") return tmpService;
   if (name === "home") return os.homedir();
