@@ -35,6 +35,15 @@ Date: 2026-08-01
 - §10.4.7 decorator 门（@@activate_only_after / @@is_greeting / @@dont_activate_after_match / stateful）：world-book-activation.js passesDecorators 已实现
 - §10.3 creatorNotes：已补（127f24d）
 
+## 可见性 UI 补强（本轮新增，回应「角色功能看不到」）
+
+| UI | 提交 |
+|---|---|
+| 会话角色状态条（banner：头像/名字/P/W 徽标，消息流顶部） | 43dd165 |
+| 场景/群组设置区（参与者/发言策略/提示模式） | a8beb94 |
+| 角色记忆展示（scene:memory + popover 记忆行） | 661e3a4 |
+| greeting 选择（新会话开场问候） | ⬜ 需 binding greetingIndex 接入 + 编译管线（后续） |
+
 ## 外部/人工（非代码）
 
 - §19.6/§19.7 模型评估矩阵（3pp 非劣性 + 90% rubric）、真机验收（macOS/Windows）、P2C-1 规格评审
