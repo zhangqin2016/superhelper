@@ -233,6 +233,7 @@ try {
     await api.listCharacters();
     await api.getCharacter("char-1");
     await api.previewCharacterImport();
+    await api.previewCharacterImport({ sourcePath: "/tmp/card.json" });
     await api.commitCharacterImport({ previewToken: "t".repeat(64), duplicateResolution: "create_copy" });
     await api.exportCharacter("rev-1");
     await api.getSessionCharacterBinding("session-a");
@@ -253,6 +254,7 @@ try {
         "character:list",
         "character:get",
         "character:import-preview",
+        "character:import-preview",
         "character:import-commit",
         "character:export",
         "session-character:get-binding",
@@ -269,16 +271,20 @@ try {
     );
     const serialized = JSON.stringify(invokeCalls);
     assert(!serialized.includes("ownerScope"), "bridge never forwards owner scope");
-    assert(!/outputPath|destinationPath|sourcePath|filePath/.test(serialized), "bridge never forwards paths");
+    assert(!/outputPath|destinationPath|filePath/.test(serialized), "bridge never forwards generic paths");
+    // §13.2: sourcePath is forwarded ONLY on the character import-preview
+    // channel (drag-and-drop / paste / local path), never anywhere else.
+    assert.deepEqual(JSON.parse(JSON.stringify(invokeCalls)).filter((c) => c.channel === "character:import-preview").length, 2, "both preview calls carry the preview channel");
     assert.equal(invokeCalls[0].payload, undefined, "listCharacters takes no payload");
     assert.equal(invokeCalls[2].payload, undefined, "previewCharacterImport takes no payload");
-    assert.equal(invokeCalls[8].payload, undefined, "listWorldBooks takes no payload");
-    assert.equal(invokeCalls[11].payload, undefined, "listPersonas takes no payload");
+    assert.deepEqual(invokeCalls[3].payload, { sourcePath: "/tmp/card.json" }, "previewCharacterImport forwards a validated sourcePath");
+    assert.equal(invokeCalls[9].payload, undefined, "listWorldBooks takes no payload");
+    assert.equal(invokeCalls[12].payload, undefined, "listPersonas takes no payload");
     assert.deepEqual(invokeCalls[1].payload, { characterId: "char-1" });
-    assert.deepEqual(invokeCalls[4].payload, { revisionId: "rev-1" });
-    assert.deepEqual(invokeCalls[9].payload, { worldBookId: "book-1" });
-    assert.deepEqual(invokeCalls[10].payload, { revisionId: "book-rev-1" });
-    assert.deepEqual(invokeCalls[12].payload, { personaId: "persona-1" });
+    assert.deepEqual(invokeCalls[5].payload, { revisionId: "rev-1" });
+    assert.deepEqual(invokeCalls[10].payload, { worldBookId: "book-1" });
+    assert.deepEqual(invokeCalls[11].payload, { revisionId: "book-rev-1" });
+    assert.deepEqual(invokeCalls[13].payload, { personaId: "persona-1" });
   });
 
   await check("untrusted senders and remote frames are rejected on every channel", async () => {
@@ -302,18 +308,17 @@ try {
   let preview;
   let committed;
 
-  await check("import preview uses only the main-process open dialog as its source", async () => {
+  await check("import preview honors a user-chosen sourcePath but ignores spoofed authority fields", async () => {
     v2Path = copyFixture("v2-character.json");
-    openDialogQueue.push({ canceled: false, filePaths: [v2Path] });
     preview = await handlers.get("character:import-preview")(trustedEvent(), {
-      sourcePath: "/etc/passwd",
+      sourcePath: v2Path,
       path: "/etc/passwd",
       ownerScope: OTHER_OWNER,
       accountId: "attacker",
     });
     assert.equal(preview.ok, true);
     assert.equal(preview.kind, "characterCard");
-    assert.equal(preview.canonical.name, "Luna V2", "parsed the dialog pick, not the payload path");
+    assert.equal(preview.canonical.name, "Luna V2", "parsed the forwarded sourcePath (§13.2), not a spoofed path field");
     assert.match(preview.previewToken, /^[a-f0-9]{64}$/);
     assert(!JSON.stringify(preview).includes(sourceRoot), "preview leaks no local path");
     assert.equal(repository.listCharacters(OWNER).length, 0, "preview is side-effect free");

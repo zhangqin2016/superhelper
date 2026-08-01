@@ -153,7 +153,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   characterWorlds: Object.freeze({
     listCharacters: () => ipcRenderer.invoke("character:list"),
     getCharacter: (characterId) => ipcRenderer.invoke("character:get", { characterId }),
-    previewCharacterImport: () => ipcRenderer.invoke("character:import-preview"),
+    previewCharacterImport: (options = {}) => (options?.sourcePath
+      ? ipcRenderer.invoke("character:import-preview", { sourcePath: options.sourcePath })
+      : ipcRenderer.invoke("character:import-preview")),
     commitCharacterImport: (payload = {}) =>
       ipcRenderer.invoke("character:import-commit", {
         previewToken: payload?.previewToken,

@@ -123,23 +123,34 @@ function registerCharacterWorldsHandlers(ctx) {
     const svc = service();
     const owner = resolveOwnerScope(ctx);
     if (!svc || !owner) return failure("CHARACTER_WORLDS_UNAVAILABLE");
-    let picked;
-    try {
-      picked = await dialog.showOpenDialog(ctx.mainWindow, {
-        title: "Import Character Card",
-        properties: ["openFile"],
-        filters: CARD_DIALOG_FILTERS,
-      });
-    } catch (error) {
-      return mapDomainError(error);
-    }
-    if (picked?.canceled || !Array.isArray(picked?.filePaths) || !picked.filePaths[0]) {
-      return { ok: false, canceled: true };
+    // §13.2 drag-and-drop / paste / local-path import: an explicit source
+    // path bypasses the file dialog. The path is validated main-side (exists,
+    // readable, bounded) exactly like the dialog pick, and the source remains
+    // in a staged/rooted location the user chose.
+    const explicitPath = typeof payload?.sourcePath === "string" && payload.sourcePath.trim()
+      ? payload.sourcePath.trim()
+      : "";
+    let sourcePath = explicitPath;
+    if (!sourcePath) {
+      let picked;
+      try {
+        picked = await dialog.showOpenDialog(ctx.mainWindow, {
+          title: "Import Character Card",
+          properties: ["openFile"],
+          filters: CARD_DIALOG_FILTERS,
+        });
+      } catch (error) {
+        return mapDomainError(error);
+      }
+      if (picked?.canceled || !Array.isArray(picked?.filePaths) || !picked.filePaths[0]) {
+        return { ok: false, canceled: true };
+      }
+      sourcePath = picked.filePaths[0];
     }
     try {
       const preview = await svc.previewImport({
         ownerScope: owner,
-        sourcePath: picked.filePaths[0],
+        sourcePath,
       });
       if (preview?.ok === false && preview?.kind === "ordinaryAttachment") {
         return failure("NOT_A_CHARACTER_CARD", { fallback: "ordinary_attachment" });
