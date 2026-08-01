@@ -193,6 +193,8 @@
         "scripts/test-character-agent-task-parity.mjs",
         "scripts/test-character-scene-memory.mjs",
         "scripts/test-character-group-modes.mjs",
+        "scripts/test-character-group-compile.mjs",
+        "scripts/test-memory-index-generations.mjs",
         "scripts/test-character-library.cjs"
       ]
     }
