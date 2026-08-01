@@ -51,6 +51,22 @@ try {
     assert.deepEqual(merged.map((e) => e.entryId), ["p1", "g1", "g2"], "persona precedes global; entry order preserved within a scope");
   });
 
+  await check("keyed strategy keeps one winner per activation key (earlier scope wins)", async () => {
+    const merged = mergeWorldBooks([
+      book("character", [{ id: "a", content: "A", activation: { primaryKeys: ["k1"] } }]),
+      book("chat", [{ id: "b", content: "B", activation: { primaryKeys: ["k1"] } }]),
+    ], "keyed");
+    assert.deepEqual(merged.map((e) => e.entryId), ["b"], "chat wins the k1 conflict; character entry dropped");
+  });
+
+  await check("keyed strategy keeps constant-style entries without keys", async () => {
+    const merged = mergeWorldBooks([
+      book("character", [{ id: "a", content: "A", activation: { primaryKeys: ["k1"] } }]),
+      book("global", [{ id: "c", content: "C" }]),
+    ], "keyed");
+    assert.deepEqual(merged.map((e) => e.entryId), ["a", "c"], "no-key entries still merge");
+  });
+
   console.log(`PASS: test-character-world-book-merge (${checks} checks)`);
 } catch (error) {
   console.error("FAIL:", error?.message || error);

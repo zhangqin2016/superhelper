@@ -34,15 +34,21 @@ function mergeWorldBooks(books = [], strategy = "constant") {
   if (scoped.length === 1) {
     return entriesOf(scoped[0]);
   }
-  if (strategy !== "constant") {
-    // Reserved strategies fall back to constant merging (fail-open).
-  }
   const seen = new Set();
+  const keySeen = new Set();
   const merged = [];
   for (const book of scoped) {
     for (const entry of entriesOf(book)) {
       if (seen.has(entry.entryId)) continue;
       seen.add(entry.entryId);
+      if (strategy === "keyed") {
+        // keyed: one winner per activation key (earlier scope wins); an
+        // entry without keys still merges like constant.
+        const keys = entry.activationKeys || [];
+        const conflict = keys.some((k) => keySeen.has(k));
+        if (conflict) continue;
+        keys.forEach((k) => keySeen.add(k));
+      }
       merged.push(entry);
     }
   }
@@ -61,6 +67,7 @@ function entriesOf(book) {
       entryId: entry.id || `e${order}`,
       content: entry.content || "",
       order,
+      activationKeys: Array.isArray(entry.activation?.primaryKeys) ? entry.activation.primaryKeys : [],
     });
     order += 1;
   }
