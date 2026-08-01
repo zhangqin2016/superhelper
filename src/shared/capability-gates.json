@@ -191,6 +191,8 @@
         "scripts/test-character-card-fuzz.mjs",
         "scripts/test-character-worlds-performance.mjs",
         "scripts/test-character-agent-task-parity.mjs",
+        "scripts/test-character-scene-memory.mjs",
+        "scripts/test-character-group-modes.mjs",
         "scripts/test-character-library.cjs"
       ]
     }
