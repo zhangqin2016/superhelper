@@ -24,7 +24,9 @@ Date: 2026-08-01
 | 9 | §10.4.1 `@@is_greeting` 激活 | 延后项（非缺陷）：decorator 已实现，但 greetingIndex 未接入 binding；上下文无法确定 greeting 时按 CCV3 合规忽略（world-book-activation.js 注释已文档化） |
 | 10 | §13.1 "编辑当前角色"直接命令 | 只能间接走库管理→编辑 |
 | 11 | §13.2 Delete 直接删除（设计并列，实现用 archive 取代） | 需确认产品决策 |
-| 12 | §19.5 参考实现对照测试 + 真实卡片语料库 | 缺失 |
+| 12 | §19.5 plain-key matcher vs Unicode reference 对照（40 语料） | ✅ 已补（17ff42d） |
+| 13 | §19.5 inclusion-group 冲突 resolver vs 贪心参考（4 checks） | ✅ 已补（3d5e6b5） |
+| 14 | §19.5 真实卡片语料库 / state-machine 测试 | 仍缺 |
 
 ## 已核实为非差距（子任务过时结论修正）
 
