@@ -19,14 +19,15 @@ Date: 2026-08-01
 |---|---|---|
 | 5 | §4.3 world 条目内容宏展开（{{char}} 等） | ✅ 已补（04b362b） |
 | 6 | §13.1 会话头部 persona + world 指示器 | ✅ 已补（1573f4a + 9b8220a） |
-| 7 | §13.2 导入方式（拖放/粘贴/本地路径） | ✅ 基础设施已补（9e69f2b）：IPC/preload 支持 sourcePath；拖放路由 UI 闭环（routeDroppedFiles 卡片检测 + preview 弹窗）待接 |
+| 7 | §13.2 导入方式（拖放/粘贴/本地路径） | ✅ 全部完成（9e69f2b + 416bb2d）：IPC sourcePath + 拖放路由闭环 |
 | 8 | §10.4.1 多书 merge strategy | ✅ 全部完成（d84632b + 6db3380）：schema v13 + repository + merge 函数 + 激活器接线（多书合并注入编译 envelope） |
 | 9 | §10.4.1 `@@is_greeting` 激活 | 延后项（非缺陷）：decorator 已实现，但 greetingIndex 未接入 binding；上下文无法确定 greeting 时按 CCV3 合规忽略（world-book-activation.js 注释已文档化） |
 | 10 | §13.1 "编辑当前角色"直接命令 | ✅ 已补（045adf4）：popover 直开当前角色的库编辑表单 |
 | 11 | §13.2 Delete 直接删除（设计并列，实现用 archive 取代） | 需确认产品决策 |
 | 12 | §19.5 plain-key matcher vs Unicode reference 对照（40 语料） | ✅ 已补（17ff42d） |
 | 13 | §19.5 inclusion-group 冲突 resolver vs 贪心参考（4 checks） | ✅ 已补（3d5e6b5） |
-| 14 | §19.5 真实卡片语料库 / state-machine 测试 | 仍缺 |
+| 14 | §19.5 真实卡片语料库矩阵 | ✅ 已补（eb3a03a，12 checks） |
+| 15 | §19.5 state-machine 测试（sticky/cooldown/delay 跨变体/回退/重写） | ⬜ 部分：sticky carry-over 已覆盖（activation 测试）；cooldown/delay 跨变体/回退/重写的完整状态机测试未补 |
 
 ## 已核实为非差距（子任务过时结论修正）
 
@@ -36,5 +37,11 @@ Date: 2026-08-01
 
 ## 外部/人工（非代码）
 
-- §19.6/§19.7 模型评估矩阵、真机验收（macOS/Windows）、P2C-1 规格评审
+- §19.6/§19.7 模型评估矩阵（3pp 非劣性 + 90% rubric）、真机验收（macOS/Windows）、P2C-1 规格评审
 - §12.1 semantic 发言策略 + §11 model-assisted 记忆提取（需模型运行时，opt-in）
+- §10.4.1 多书 keyed/global merge 策略 + profile-global book 来源（设计方案 §决策点）
+- §8 greeting 选择 UI（greetingIndex 接入 binding）
+
+## 产品决策待确认
+
+- §13.2 Delete 直接删除 vs archive 取代
