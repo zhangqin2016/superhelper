@@ -304,6 +304,7 @@ function compileCharacterContext({
       exampleDialogue: expandField("exampleDialogue"),
       systemPrompt: expandField("systemPrompt"),
       postHistoryInstructions: expandField("postHistoryInstructions"),
+      creatorNotes: expandField("creatorNotes"),
     };
     if (macroWarningCodes.length) {
       // Macro engine warnings (unknown/blocked/failing macros kept literal),
@@ -403,6 +404,7 @@ function compileCharacterContext({
         compatibility: "imported_lower_authority",
         parts: fields.exampleDialogue ? [["exampleDialogue", fields.exampleDialogue]] : [],
       },
+      ...(fields.creatorNotes ? [{ type: "creator_notes", compatibility: "imported_lower_authority", parts: [["creatorNotes", fields.creatorNotes]] }] : []),
       {
         type: "imported_system_prompt",
         compatibility: "imported_lower_authority",
