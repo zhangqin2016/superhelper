@@ -27,7 +27,7 @@ Date: 2026-08-01
 | 12 | §19.5 plain-key matcher vs Unicode reference 对照（40 语料） | ✅ 已补（17ff42d） |
 | 13 | §19.5 inclusion-group 冲突 resolver vs 贪心参考（4 checks） | ✅ 已补（3d5e6b5） |
 | 14 | §19.5 真实卡片语料库矩阵 | ✅ 已补（eb3a03a，12 checks） |
-| 15 | §19.5 state-machine 测试（sticky/cooldown/delay 跨变体/回退/重写） | ⬜ 部分：sticky carry-over 已覆盖（activation 测试）；cooldown/delay 跨变体/回退/重写的完整状态机测试未补 |
+| 15 | §19.5 state-machine 组合测试 | ✅ 已补（71a3e34）：跨 normal/steer/variant/rewind/restart/revision-change 确定性 + 状态清理 |
 
 ## 已核实为非差距（子任务过时结论修正）
 
@@ -47,8 +47,9 @@ Date: 2026-08-01
 ## 外部/人工（非代码）
 
 - §19.6/§19.7 模型评估矩阵（3pp 非劣性 + 90% rubric）、真机验收（macOS/Windows）、P2C-1 规格评审
-- §12.1 semantic 发言策略 + §11 model-assisted 记忆提取（需模型运行时，opt-in）
-- §10.4.1 多书 keyed/global merge 策略 + profile-global book 来源（设计方案 §决策点）
+- §12.1 semantic 发言策略 + §11 model-assisted 记忆提取：opt-in 钩子已补（08d910a，缺模型 fail-open）；真实模型注入需运行时
+- §10.4.1 多书 keyed merge 策略已补（5033cde）；global 策略 + profile-global book 来源待配置决策
+- §19.6 评估矩阵 case 已补（c9b37c2，供真机/模型环境跑）
 
 ## 产品决策待确认
 
