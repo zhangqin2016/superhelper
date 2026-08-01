@@ -208,14 +208,17 @@ function prepareWorldUnits({
  * World packing candidates in §10.3 budget priority: constant entries before
  * triggered entries, each preserving the resolver's insertion-plan order.
  */
-function worldCandidates(units, revisionId) {
-  const make = (unit) => ({
-    type: unit.type,
-    compatibility: unit.supported ? "lossless_data" : "safe_behavior",
-    parts: [["content", unit.content]],
-    worldUnit: unit,
-    revisionId,
-  });
+function worldCandidates(units, revisionId, expand = (content) => content) {
+  const make = (unit) => {
+    const expanded = { ...unit, content: expand(unit.content) };
+    return {
+      type: unit.type,
+      compatibility: unit.supported ? "lossless_data" : "safe_behavior",
+      parts: [["content", expanded.content]],
+      worldUnit: expanded,
+      revisionId,
+    };
+  };
   return [
     ...units.filter((unit) => unit.entry.reason === "constant").map(make),
     ...units.filter((unit) => unit.entry.reason !== "constant").map(make),

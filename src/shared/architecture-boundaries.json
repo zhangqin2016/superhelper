@@ -11,7 +11,7 @@
     "server/src/services/media-gateway.js": 651,
     "src/main/answer-evidence-finalizer.js": 578,
     "src/main/capability-broker.js": 502,
-    "src/main/character-worlds/context-compiler.js": 580,
+    "src/main/character-worlds/context-compiler.js": 585,
     "src/main/data-migration.js": 1156,
     "src/main/ipc-projects.js": 503,
     "src/main/mcp/file-intelligence-index.js": 646,

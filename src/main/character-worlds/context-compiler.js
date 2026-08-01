@@ -398,7 +398,12 @@ function compileCharacterContext({
   ...(personaCandidate ? [personaCandidate] : []),
   ...(sceneMemory?.text ? [{ type: "scene_memory", compatibility: "narrative", parts: [["memory", sceneMemory.text]] }] : []),
   ...(scene ? sceneCompileCandidates(scene) : []),
-  ...worldCandidates(worldUnits, worldBookRevisionId),
+  ...worldCandidates(worldUnits, worldBookRevisionId, (content) => {
+    if (!String(content).includes("{{")) return content;
+    const result = expandSafeMacros(String(content), narrativeContext);
+    collectMacroWarnings(result);
+    return result.text;
+  }),
       {
         type: "example_dialogue",
         compatibility: "imported_lower_authority",
