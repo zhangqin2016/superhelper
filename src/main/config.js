@@ -213,6 +213,14 @@ function messageDbPath() {
   return userDataPath("messages.db");
 }
 
+function longTaskDbPath() {
+  return userDataPath("long-tasks.db");
+}
+
+function longTaskSecretPath() {
+  return userDataPath("long-task-scope.key");
+}
+
 /** Content-addressed blob store (images / attachments / large payloads). */
 function blobStoreDir() {
   return userDataPath("blobs");
@@ -350,6 +358,8 @@ module.exports = {
   sessionsIndexPath,
   sessionMessagesDir,
   messageDbPath,
+  longTaskDbPath,
+  longTaskSecretPath,
   blobStoreDir,
   opencodeSessionsDir,
   opencodeSessionDir,

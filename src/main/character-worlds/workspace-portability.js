@@ -216,14 +216,20 @@ function collectCharacterWorldsForExport(repo, sessions) {
 
   // §11/§12 P3-3: group scenes + scene memory travel with the pack (owner
   // scoped; session ids excluded to avoid leaking session identity).
-  const ownerScopes = [...new Set((Array.isArray(sessions) ? sessions : []).map((s) => s?.ownerScope).filter(Boolean))];
+  const sessionKeys = new Set((Array.isArray(sessions) ? sessions : [])
+    .filter((s) => s?.ownerScope && s?.sessionId)
+    .map((s) => `${s.ownerScope}\u0000${s.sessionId}`));
+  const ownerScopes = [...new Set((Array.isArray(sessions) ? sessions : [])
+    .map((s) => s?.ownerScope).filter(Boolean))];
   let scenes = [];
   let memory = [];
   try {
     const rows = ownerScopes.length
-      ? (repo.db?.all(`SELECT id, participant_character_revision_ids, active_speaker_revision_id,
+      ? (repo.db?.all(`SELECT id, owner_scope, session_id, participant_character_revision_ids, active_speaker_revision_id,
          reply_strategy, prompt_mode, muted_character_revision_ids, scene_state, updated_at
-         FROM group_scenes WHERE owner_scope IN (${ownerScopes.map(() => "?").join(",")})`, ...ownerScopes) || [])
+         FROM group_scenes WHERE owner_scope IN (${[...new Set((Array.isArray(sessions) ? sessions : []).map((s) => s?.ownerScope).filter(Boolean))].map(() => "?").join(",")})`,
+        ...[...new Set((Array.isArray(sessions) ? sessions : []).map((s) => s?.ownerScope).filter(Boolean))]) || [])
+      .filter((row) => sessionKeys.has(`${row.owner_scope}\u0000${row.session_id}`))
       : [];
     scenes = rows.map((row) => ({
       id: row.id,
@@ -231,6 +237,8 @@ function collectCharacterWorldsForExport(repo, sessions) {
       activeSpeakerRevisionId: row.active_speaker_revision_id || null,
       replyStrategy: row.reply_strategy || "manual",
       promptMode: row.prompt_mode || "swap",
+      allowMultipleSpeakers: Boolean(row.allow_multiple_speakers),
+      allowSelfResponses: Boolean(row.allow_self_responses),
       mutedCharacterRevisionIds: safeJsonArray(row.muted_character_revision_ids),
       sceneState: row.scene_state || "",
       updatedAt: row.updated_at,
@@ -239,9 +247,12 @@ function collectCharacterWorldsForExport(repo, sessions) {
   try {
     const revIds = entities.map((e) => e.sourceRevisionId).filter(Boolean);
     const rows = revIds.length
-      ? (repo.db?.all(`SELECT id, character_revision_id, kind, text, source_turn_ids,
-         confidence, supersedes_id, created_at FROM character_memory
-         WHERE character_revision_id IN (${revIds.map(() => "?").join(",")})`, ...revIds) || [])
+      ? (repo.db?.all(`SELECT id, owner_scope, session_id, character_revision_id, kind, text, source_turn_ids,
+         confidence, supersedes_id, created_at FROM character_scene_memory
+         WHERE owner_scope IN (${[...new Set((Array.isArray(sessions) ? sessions : []).map((s) => s?.ownerScope).filter(Boolean))].map(() => "?").join(",")})
+           AND character_revision_id IN (${revIds.map(() => "?").join(",")})`,
+        ...[...new Set((Array.isArray(sessions) ? sessions : []).map((s) => s?.ownerScope).filter(Boolean))], ...revIds) || [])
+        .filter((row) => sessionKeys.has(`${row.owner_scope}\u0000${row.session_id}`))
       : [];
     memory = rows.map((row) => ({
       id: row.id,
@@ -431,16 +442,22 @@ function importCharacterWorldsPack(repo, ownerScope, section) {
     for (const item of Array.isArray(section?.memory) ? section.memory : []) {
       const newRevId = idMap[item.characterRevisionId];
       if (!newRevId || typeof item.text !== "string" || !item.text) continue;
-      const sceneMemory = require("./scene-memory");
-      const created = sceneMemory.appendMemory(repo.db, {
-        sessionId: "imported",
-        characterRevisionId: newRevId,
-        kind: ["scene_fact", "character_belief", "relationship", "open_thread"].includes(item.kind) ? item.kind : "scene_fact",
-        text: String(item.text).slice(0, 4096),
-        sourceTurnIds: [],
-        confidence: item.confidence === "derived" ? "derived" : "explicit",
-      });
-      if (created) memoryImported.push(created.id);
+      const { CharacterSceneMemoryService } = require("./scene-memory-service");
+      const turnId = item.sourceTurnIds?.[0] || `import-${item.id || "memory"}`;
+      const created = new CharacterSceneMemoryService({ db: repo.db, ownerScope })
+        .appendTurnMemory({
+          sessionId: "imported",
+          characterRevisionId: newRevId,
+          turnId,
+          finalized: true,
+          items: [{
+            kind: ["scene_fact", "character_belief", "relationship", "open_thread"].includes(item.kind) ? item.kind : "scene_fact",
+            text: String(item.text).slice(0, 4096),
+            sourceTurnIds: [turnId],
+            confidence: item.confidence === "derived" ? "derived" : "explicit",
+          }],
+        });
+      if (created.items?.[0]) memoryImported.push(created.items[0].id);
     }
   } catch { /* memory import fail-open */ }
   try {
@@ -458,6 +475,8 @@ function importCharacterWorldsPack(repo, ownerScope, section) {
         participantCharacterRevisionIds: remapped,
         replyStrategy: ["manual", "natural", "list_order", "pooled", "semantic"].includes(scene.replyStrategy) ? scene.replyStrategy : "manual",
         promptMode: scene.promptMode === "join" ? "join" : "swap",
+        allowMultipleSpeakers: scene.allowMultipleSpeakers !== false,
+        allowSelfResponses: scene.allowSelfResponses === true,
       });
       if (created?.id) scenesImported.push(created.id);
     }

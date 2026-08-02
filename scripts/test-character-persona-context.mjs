@@ -138,7 +138,7 @@ const otherOwnerPersona = repository.createPersona({
 // === schema v12 ===============================================================
 
 await check("schema v12 adds nullable persona_revision_id to session bindings", () => {
-  assert.equal(store.db.pragma("user_version"), 12);
+  assert.equal(store.db.pragma("user_version"), 15);
   assert.ok(
     tableColumns(store.db, "character_session_bindings").includes("persona_revision_id"),
     "character_session_bindings.persona_revision_id exists",
@@ -171,7 +171,7 @@ await check("a pre-v12 database migrates additively and legacy bindings read per
   legacy.close();
 
   const migrated = new MessageStore(legacyPath, path.join(tmp, "legacy-blobs"));
-  assert.equal(migrated.db.pragma("user_version"), 12);
+  assert.equal(migrated.db.pragma("user_version"), 15);
   const legacyBinding = migrated.characterWorlds().getBinding("legacy-session", OWNER);
   assert.equal(legacyBinding.mode, "native");
   assert.equal(legacyBinding.personaRevisionId, null, "legacy row normalizes personaRevisionId null");
@@ -452,7 +452,9 @@ await check("a legacy 6-key persisted snapshot inherits cleanly (personaRevision
     metadata: {},
   });
   store.db.run(
-    "UPDATE turn_inputs SET metadata_json = ? WHERE turn_id = ?",
+    `UPDATE turn_inputs
+     SET metadata_json = ?, character_worlds_snapshot_json = NULL
+     WHERE turn_id = ?`,
     JSON.stringify({
       characterWorlds: {
         schemaVersion: 1,

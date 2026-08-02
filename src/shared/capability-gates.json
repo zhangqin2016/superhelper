@@ -197,6 +197,20 @@
         "scripts/test-memory-index-generations.mjs",
         "scripts/test-character-library.cjs"
       ]
+    },
+    {
+      "id": "character-authoring-persistence",
+      "protects": "AI character, persona, and world-book creation cannot report ordinary files as persisted library entities or trust editable official tags.",
+      "baseline": "Non-authoring requests retain native Lily behavior; authoring succeeds only after validated immutable library persistence.",
+      "failureFallback": "Retry failed persistence twice, then explicitly report not saved; preserve the requirement through durable queues and never bind automatically.",
+      "tests": [
+        "scripts/test-character-authoring-intent.mjs",
+        "scripts/test-required-tool-completion.mjs",
+        "scripts/test-character-agent-draft.mjs",
+        "scripts/test-official-character-catalog.mjs",
+        "scripts/test-official-character-picker.mjs",
+        "scripts/test-character-worlds-ipc.mjs"
+      ]
     }
   ]
 }

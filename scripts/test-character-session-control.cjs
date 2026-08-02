@@ -334,6 +334,8 @@ app.whenReady().then(async () => {
     const manageBtn = document.getElementById("characterManageBtn");
     if (!manageBtn || manageBtn.disabled) throw new Error("manage library must be enabled in Phase 2B");
     if (/Phase 2|第二/.test(manageBtn.textContent)) throw new Error("Phase 2 placeholder label must be gone");
+    const createBtn = document.getElementById("characterCreateBtn");
+    if (!createBtn || !createBtn.textContent.trim()) throw new Error("direct create entry missing");
     if (popover.style.insetInlineStart !== "8px") throw new Error("popover must anchor to inline-start for RTL, got " + popover.style.insetInlineStart);
     const notice = document.getElementById("characterPopoverNotice");
     if (notice && notice.getAttribute("role")) throw new Error("notices must use the single live region, not a second role=status");

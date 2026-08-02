@@ -3,7 +3,8 @@
 //
 // Verifies the narrow bridge invariants from the design spec §15/§16 and
 // HANDOFF.md §5/§6:
-//   - exactly thirteen channels, exposed through one frozen preload facade
+//   - the complete character-worlds channel contract is exposed through one
+//     frozen preload facade
 //   - owner scope is derived in main; renderer-supplied owner/account IDs are
 //     ignored
 //   - the renderer never supplies raw source paths (import source comes from a
@@ -27,6 +28,8 @@ const require = createRequire(import.meta.url);
 
 const CHANNELS = {
   listCharacters: "character:list",
+  listOfficialCharacters: "character:list-official",
+  installOfficialCharacter: "character:install-official",
   getCharacter: "character:get",
   previewCharacterImport: "character:import-preview",
   commitCharacterImport: "character:import-commit",
@@ -49,8 +52,16 @@ const CHANNELS = {
   getGreetings: "character:greetings",
   updateScene: "scene:update",
   getSceneMemory: "scene:memory",
+  getReceiptActions: "character-worlds:receipt-actions",
+  getPreview: "character-worlds:preview-get",
+  startPreview: "character-worlds:preview-start",
+  exitPreview: "character-worlds:preview-exit",
+  activatePreview: "character-worlds:preview-activate",
+  adjustTarget: "character-worlds:adjust-target",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
+// Official catalog installation is intentionally separate from user authoring:
+// it creates a trusted local copy of a reviewed first-party revision.
 // Phase 2B (P2B-4): authoring mutations + revision reads, covered in depth by
 // test-character-authoring-ipc.mjs; this contract test tracks the facade surface.
 const AUTHORING_BRIDGE_METHODS = [
@@ -213,14 +224,14 @@ try {
   // Load the real preload against the electron mock to capture the bridge.
   require("../src/preload.js");
 
-  await check("exactly the thirteen contract channels are registered", async () => {
+  await check("exactly the contract channels are registered", async () => {
     assert.deepEqual([...handlers.keys()].sort(), Object.values(CHANNELS).sort());
     for (const channel of Object.values(CHANNELS)) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} handler registered`);
     }
   });
 
-  await check("preload exposes one frozen facade with exactly the twenty-eight methods", async () => {
+  await check("preload exposes one frozen facade with the complete method set", async () => {
     const api = exposed.assistantClient;
     assert(api, "assistantClient exposed");
     assert(api.characterWorlds, "characterWorlds facade exposed");
@@ -233,6 +244,8 @@ try {
     const api = exposed.assistantClient.characterWorlds;
     invokeCalls.length = 0;
     await api.listCharacters();
+    await api.listOfficialCharacters();
+    await api.installOfficialCharacter("lily-companion");
     await api.getCharacter("char-1");
     await api.previewCharacterImport();
     await api.previewCharacterImport({ sourcePath: "/tmp/card.json" });
@@ -251,10 +264,18 @@ try {
     await api.getScene("session-a");
     await api.getSceneMemory("session-a", "rev-1");
     await api.updateScene({ sessionId: "session-a", participantCharacterRevisionIds: ["rev-1"], replyStrategy: "natural", promptMode: "swap" });
+    await api.getReceiptActions("session-a", "receipt-1");
+    await api.getPreview("session-a");
+    await api.startPreview({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token", expectedPreviewVersion: 0 });
+    await api.exitPreview("session-a", 1);
+    await api.activatePreview({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token", expectedPreviewVersion: 1, expectedBindingVersion: 0 });
+    await api.adjustTarget({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token" });
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
       [
         "character:list",
+        "character:list-official",
+        "character:install-official",
         "character:get",
         "character:import-preview",
         "character:import-preview",
@@ -271,6 +292,12 @@ try {
         "scene:get",
         "scene:memory",
         "scene:update",
+        "character-worlds:receipt-actions",
+        "character-worlds:preview-get",
+        "character-worlds:preview-start",
+        "character-worlds:preview-exit",
+        "character-worlds:preview-activate",
+        "character-worlds:adjust-target",
       ],
     );
     const serialized = JSON.stringify(invokeCalls);
@@ -280,15 +307,18 @@ try {
     // channel (drag-and-drop / paste / local path), never anywhere else.
     assert.deepEqual(JSON.parse(JSON.stringify(invokeCalls)).filter((c) => c.channel === "character:import-preview").length, 2, "both preview calls carry the preview channel");
     assert.equal(invokeCalls[0].payload, undefined, "listCharacters takes no payload");
-    assert.equal(invokeCalls[2].payload, undefined, "previewCharacterImport takes no payload");
-    assert.deepEqual(invokeCalls[3].payload, { sourcePath: "/tmp/card.json" }, "previewCharacterImport forwards a validated sourcePath");
-    assert.equal(invokeCalls[9].payload, undefined, "listWorldBooks takes no payload");
-    assert.equal(invokeCalls[12].payload, undefined, "listPersonas takes no payload");
-    assert.deepEqual(invokeCalls[1].payload, { characterId: "char-1" });
-    assert.deepEqual(invokeCalls[5].payload, { revisionId: "rev-1" });
-    assert.deepEqual(invokeCalls[10].payload, { worldBookId: "book-1" });
-    assert.deepEqual(invokeCalls[11].payload, { revisionId: "book-rev-1" });
-    assert.deepEqual(invokeCalls[13].payload, { personaId: "persona-1" });
+    assert.deepEqual(invokeCalls[1].payload, undefined, "listOfficialCharacters takes no payload");
+    assert.deepEqual(invokeCalls[2].payload, { officialId: "lily-companion" }, "installOfficialCharacter forwards an official ID");
+    assert.deepEqual(invokeCalls[3].payload, { characterId: "char-1" });
+    assert.equal(invokeCalls[4].payload, undefined, "previewCharacterImport takes no payload");
+    assert.deepEqual(invokeCalls[5].payload, { sourcePath: "/tmp/card.json" }, "previewCharacterImport forwards a validated sourcePath");
+    assert.equal(invokeCalls[11].payload, undefined, "listWorldBooks takes no payload");
+    assert.equal(invokeCalls[14].payload, undefined, "listPersonas takes no payload");
+    assert.deepEqual(invokeCalls[6].payload, { previewToken: "t".repeat(64), duplicateResolution: "create_copy" });
+    assert.deepEqual(invokeCalls[7].payload, { revisionId: "rev-1" });
+    assert.deepEqual(invokeCalls[12].payload, { worldBookId: "book-1" });
+    assert.deepEqual(invokeCalls[13].payload, { revisionId: "book-rev-1" });
+    assert.deepEqual(invokeCalls[15].payload, { personaId: "persona-1" });
   });
 
   await check("untrusted senders and remote frames are rejected on every channel", async () => {
@@ -648,6 +678,40 @@ try {
     } finally {
       ctx.characterWorldsService = service;
     }
+  });
+
+  await check("official install uses trusted provenance, ignores spoofed tags, and is idempotent", async () => {
+    const spoof = repository.createCharacter({
+      ownerScope: OWNER,
+      canonical: {
+        name: "Not Official",
+        description: "user content",
+        tags: ["official:lily-companion"],
+      },
+      source: { kind: "created", format: "lily", container: "json" },
+    });
+    const first = await handlers.get("character:install-official")(trustedEvent(), {
+      officialId: "lily-companion",
+    });
+    assert.equal(first.ok, true);
+    assert.notEqual(first.characterId, spoof.entity.id, "editable canonical tags cannot claim official identity");
+    const revision = repository.getRevision(OWNER, first.revisionId);
+    assert.equal(revision.source.kind, "official");
+    assert.equal(revision.source.officialId, "lily-companion");
+    assert.equal(revision.source.officialVersion, 1);
+    assert.equal(revision.source.officialLocale, "en");
+
+    const again = await handlers.get("character:install-official")(trustedEvent(), {
+      officialId: "lily-companion",
+    });
+    assert.equal(again.characterId, first.characterId);
+    assert.equal(again.revisionId, first.revisionId, "same catalog version does not duplicate revisions");
+
+    const listed = await handlers.get("character:list-official")(trustedEvent(), {});
+    const companion = listed.characters.find((item) => item.id === "lily-companion");
+    assert.equal(companion.installedCharacterId, first.characterId);
+    assert.equal(companion.currentRevisionId, first.revisionId);
+    assert.equal(companion.updateAvailable, false);
   });
 
   await check("non-whitelisted error codes collapse; whitelisted domain codes pass through", async () => {

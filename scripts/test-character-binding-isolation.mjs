@@ -435,7 +435,9 @@ await check("only an internal source turn id can inherit a persisted snapshot", 
     metadata: {},
   });
   store.db.run(
-    "UPDATE turn_inputs SET metadata_json = ? WHERE turn_id = ?",
+    `UPDATE turn_inputs
+     SET metadata_json = ?, character_worlds_snapshot_json = NULL
+     WHERE turn_id = ?`,
     JSON.stringify({
       characterWorlds: expectedReady(
         1,
@@ -691,7 +693,9 @@ await check("persisted metadata is bounded before parse, structurally revalidate
     metadata: {},
   });
   store.db.run(
-    "UPDATE turn_inputs SET metadata_json = ? WHERE turn_id = ?",
+    `UPDATE turn_inputs
+     SET metadata_json = ?, character_worlds_snapshot_json = NULL
+     WHERE turn_id = ?`,
     oversizedJson,
     corruptSource.turnId,
   );

@@ -202,6 +202,33 @@ const characterBinding = {
   assert.equal(state.bindingVersion, 3);
 }
 
+// --- First-use official install keeps its visible name after binding --------
+{
+  let state = initialCharacterControlState({
+    sessionId: "s-official",
+    characters: [{
+      id: "official:lily-companion",
+      officialId: "lily-companion",
+      official: true,
+      displayName: "Lily · 深度陪伴者",
+    }],
+  });
+  state = reduceCharacterControl(state, {
+    type: "selection.started",
+    mode: "character",
+    characterRevisionId: null,
+    characterName: "Lily · 深度陪伴者",
+  });
+  state = reduceCharacterControl(state, {
+    type: "selection.settled",
+    sessionId: "s-official",
+    seq: 0,
+    characterName: "Lily · 深度陪伴者",
+    binding: { mode: "character", bindingVersion: 1, characterRevisionId: "rev-official" },
+  });
+  assert.equal(state.characterName, "Lily · 深度陪伴者");
+}
+
 // --- Stale selection outcomes are dropped ------------------------------------
 {
   // A selection started in session A must never land on session B.

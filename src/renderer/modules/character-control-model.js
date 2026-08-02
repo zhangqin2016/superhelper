@@ -27,6 +27,7 @@ export function initialCharacterControlState(overrides = {}) {
     notice: null,
     importPreview: null,
     importCommitting: false,
+    preview: { previewVersion: 0, bindingVersion: 0, character: false, persona: false, worldBookCount: 0, activation: null, loading: false, conflict: null },
     // Update-available hint (Phase 2B, §8): main-resolved newer current
     // revisions than the binding's pin. Never changes the pinned snapshot —
     // applying is an explicit set-binding.
@@ -88,8 +89,13 @@ function sanitizeCharacters(characters) {
       id: typeof c?.id === "string" ? c.id : "",
       displayName: typeof c?.displayName === "string" ? c.displayName : "",
       currentRevisionId: typeof c?.currentRevisionId === "string" ? c.currentRevisionId : "",
+      officialId: typeof c?.officialId === "string" ? c.officialId : "",
+      official: c?.official === true,
+      tagline: typeof c?.tagline === "string" ? c.tagline : "",
+      category: typeof c?.category === "string" ? c.category : "",
+      tags: Array.isArray(c?.tags) ? c.tags.filter((tag) => typeof tag === "string") : [],
     }))
-    .filter((c) => c.id && c.currentRevisionId);
+    .filter((c) => c.id && (c.currentRevisionId || c.officialId));
 }
 
 function nameForRevision(characters, revisionId) {
@@ -143,6 +149,15 @@ function isStale(state, action) {
 
 export function reduceCharacterControl(state, action) {
   switch (action?.type) {
+    case "preview.loading":
+      if (isStale(state, action)) return state;
+      return { ...state, preview: { ...state.preview, loading: true, conflict: null } };
+    case "preview.loaded":
+      if (isStale(state, action)) return state;
+      return { ...state, preview: { ...state.preview, ...(action.preview || {}), loading: false, conflict: null } };
+    case "preview.conflict":
+      if (isStale(state, action)) return state;
+      return { ...state, preview: { ...state.preview, loading: false, conflict: action.error || "conflict" } };
     case "session.changed": {
       if (action.sessionId === state.sessionId) {
         // Same-session re-entry bumps the seq to invalidate in-flight loads.
@@ -240,6 +255,9 @@ export function reduceCharacterControl(state, action) {
         mode: b.mode,
         bindingVersion: b.bindingVersion,
         characterRevisionId: b.characterRevisionId,
+        characterName: b.characterRevisionId
+          ? String(action.characterName || nameForRevision(state.characters, b.characterRevisionId) || state.characterName || "")
+          : "",
         compatibilityProfile: b.compatibilityProfile,
         selecting: false,
         // A settle (including an update-available apply) commits the current
@@ -307,4 +325,3 @@ export function reduceCharacterControl(state, action) {
       return state;
   }
 }
-

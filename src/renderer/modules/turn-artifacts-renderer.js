@@ -9,6 +9,7 @@ export function renderTurnArtifacts(article, artifacts = {}, {
   renderResults(
     article.querySelector('[data-role="artifacts"]'),
     artifacts.visibleResultBlocks || [],
+    { sessionId },
   );
   appendHoisted(article, artifacts.hoistedMediaGroups || [], { sessionId });
 }

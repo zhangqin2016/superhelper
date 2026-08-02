@@ -72,4 +72,29 @@ function stopPid(pid, signal = "SIGTERM") {
   }
 }
 
-module.exports = { killProcessTree, killPidTreeBestEffort, stopPid };
+// Process jobs are spawned detached, which gives POSIX jobs their own process
+// group. Target that group so shell grandchildren and worker children cannot be
+// orphaned. Windows keeps using taskkill /T for the equivalent tree semantics.
+function stopPidTree(pid, signal = "SIGTERM", deps = {}) {
+  const platform = deps.platform || process.platform;
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) return new TypeError("invalid pid");
+  if (platform === "win32") {
+    killPidTreeBestEffort(numericPid, { ...deps, platform });
+    return null;
+  }
+  const killFn = deps.kill || ((target, nextSignal) => process.kill(target, nextSignal));
+  try {
+    killFn(-numericPid, signal);
+    return null;
+  } catch (groupError) {
+    try {
+      killFn(numericPid, signal);
+      return null;
+    } catch {
+      return groupError;
+    }
+  }
+}
+
+module.exports = { killProcessTree, killPidTreeBestEffort, stopPid, stopPidTree };

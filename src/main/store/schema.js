@@ -31,6 +31,8 @@ const {
 const {
   migrateWorldBookCheckpointSchema,
 } = require("../character-worlds/world-book-checkpoint-store");
+const { migrateCharacterWorldsRuntimeSchema } = require("./character-worlds-schema-migration");
+const { migrateCharacterWorldsExperienceSchema } = require("./character-worlds-experience-schema-migration");
 
 const MIGRATIONS = [
   // v1 — initial message store
@@ -488,6 +490,10 @@ const MIGRATIONS = [
   // v13 - multi-book bindings (§10.4.1); SQL lives in
   // world-book-schema-migration.js to keep this file in budget.
   migrateMultiBookBindings,
+  // v14 - owner-scoped Character Worlds scene memory and retained checkpoints.
+  migrateCharacterWorldsRuntimeSchema,
+  // v15 - AI-draft receipts, session previews, and admitted effective snapshots.
+  migrateCharacterWorldsExperienceSchema,
 ];
 
 module.exports = { MIGRATIONS };

@@ -15,6 +15,7 @@ const require = createRequire(import.meta.url);
 const { MessageStore } = require("../src/main/store/message-store.js");
 const { CharacterWorldsRepository } = require("../src/main/character-worlds/repository.js");
 const group = require("../src/main/character-worlds/group-modes.js");
+const { planSceneSpeaker } = require("../src/main/character-worlds/speaker-planner.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "group-modes-"));
 const store = new MessageStore(path.join(tmp, "messages.db"), path.join(tmp, "blobs"));
@@ -29,8 +30,14 @@ async function check(name, fn) {
 
 try {
   const owner = "profile:group";
-  const revA = group.createScene(repo, { ownerScope: owner, sessionId: "s-g", name: "A" }).characterRevisionId;
-  const revB = group.createScene(repo, { ownerScope: owner, sessionId: "s-g", name: "B" }).characterRevisionId;
+  const revA = repo.createCharacter({
+    ownerScope: owner, canonical: { name: "A", description: "Alpha" },
+    source: { format: "lily", container: "json", original: null },
+  }).revision.id;
+  const revB = repo.createCharacter({
+    ownerScope: owner, canonical: { name: "B", description: "Beta" },
+    source: { format: "lily", container: "json", original: null },
+  }).revision.id;
   const scene = group.createScene(repo, { ownerScope: owner, sessionId: "s-g", name: "Scene", participantCharacterRevisionIds: [revA, revB], replyStrategy: "manual" });
 
   await check("a scene is immutable on participants and carries mutable state", async () => {
@@ -38,6 +45,11 @@ try {
     assert.equal(scene.participantCharacterRevisionIds.length, 2);
     const loaded = group.getScene(repo, owner, "s-g");
     assert.ok(loaded, "scene durable");
+    const updated = group.upsertScene(repo, { ownerScope: owner, sessionId: "s-g", replyStrategy: "pooled" });
+    assert.equal(updated.replyStrategy, "pooled");
+    assert.throws(() => group.upsertScene(repo, {
+      ownerScope: owner, sessionId: "s-g", participantCharacterRevisionIds: [revB],
+    }), /scene_participants_immutable/);
   });
 
   await check("manual strategy uses only explicitly requested speakers", async () => {
@@ -58,7 +70,10 @@ try {
   });
 
   await check("natural extracts whole-word participant-name mentions", async () => {
-    const picked = group.pickSpeaker({ scene, strategy: "natural", latestCanonicalText: "I think A should answer this." });
+    const picked = group.pickSpeaker({
+      scene, strategy: "natural", latestCanonicalText: "I think A should answer this.",
+      roster: [{ id: revA, name: "A" }, { id: revB, name: "B" }],
+    });
     assert.equal(picked.characterRevisionId, revA, "mentioned participant drafted");
   });
 
@@ -67,10 +82,39 @@ try {
   });
 
   await check("response variants are keyed by session+turn and side-effect-safe", async () => {
-    const variant = group.createResponseVariant(repo, { sessionId: "s-g", turnId: "t-1", variantId: "v1", text: "variant text" });
+    const variant = group.createResponseVariant(repo, {
+      ownerScope: owner, sessionId: "s-g", turnId: "t-1", variantId: "v1", text: "variant text",
+      bindingSnapshot: { mode: "character", characterRevisionId: revA, bindingVersion: 1 },
+      sideEffecting: false,
+    });
     assert.ok(variant.id, "variant durable");
-    const found = group.getResponseVariants(repo, "s-g", "t-1");
+    const found = group.getResponseVariants(repo, owner, "s-g", "t-1");
     assert.equal(found.length, 1);
+    assert.deepEqual(found[0].bindingSnapshot, { mode: "character", characterRevisionId: revA, bindingVersion: 1 });
+    assert.deepEqual(group.getResponseVariants(repo, "profile:other", "s-g", "t-1"), []);
+  });
+
+  await check("semantic selection validates ranked IDs and has deterministic fallback", async () => {
+    const picked = await group.pickSemanticSpeaker([revA, revB], {
+      ranker: async () => ["foreign", revB, revB],
+      context: { latestText: "" },
+    });
+    assert.equal(picked, revB);
+    assert.equal(await group.pickSemanticSpeaker([revA, revB], { ranker: async () => ["foreign"] }), null);
+  });
+
+  await check("runtime planner is retry-deterministic and archives only bounded roster metadata", async () => {
+    const snapshot = { ownerScope: owner, sessionId: "s-g", turnId: "t-2" };
+    const first = planSceneSpeaker({ scene: { ...scene, participants: [
+      { id: revA, canonical: { name: "A" } },
+      { id: revB, canonical: { name: "B" } },
+    ] }, snapshot, canonicalMessage: "hello" });
+    const second = planSceneSpeaker({ scene: { ...scene, participants: [
+      { id: revA, canonical: { name: "A" } },
+      { id: revB, canonical: { name: "B" } },
+    ] }, snapshot, canonicalMessage: "hello" });
+    assert.deepEqual(first, second);
+    assert.ok(first.roster.every((entry) => Object.keys(entry).sort().join(",") === "id,name"));
   });
 
   console.log(`PASS: test-character-group-modes (${checks} checks)`);

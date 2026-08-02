@@ -187,6 +187,7 @@
               <span class="session-role-banner-name"></span>
               <span class="session-role-banner-badges" aria-hidden="true"></span>
             </div>
+            <div id="characterPreviewBanner" hidden></div>
           </div>
           <button id="scrollToBottomBtn" class="scroll-to-bottom-btn" type="button" hidden data-i18n-title="topbar.scrollLatest" title="回到最新">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -315,6 +316,7 @@
               <div class="character-popover-footer">
                 <button id="characterEditCurrentBtn" type="button" class="character-footer-btn" data-i18n="character.editCurrent" hidden>编辑当前角色</button>
                 <button id="characterImportBtn" type="button" class="character-footer-btn" data-i18n="character.importCard">导入角色卡</button>
+                <button id="characterCreateBtn" type="button" class="character-footer-btn" data-i18n="character.library.aiCreate">让 Lily 创建</button>
                 <button id="characterManageBtn" type="button" class="character-footer-btn" data-i18n="character.manageLibrary">角色库管理</button>
               </div>
               <div id="characterSceneSection" class="character-scene-section" hidden>
@@ -363,7 +365,7 @@
           <input id="characterLibrarySearch" type="search" data-i18n-placeholder="character.library.searchPlaceholder" placeholder="搜索名称…" data-i18n-aria-label="character.library.searchPlaceholder" aria-label="搜索名称…" />
           <input id="characterLibraryTagFilter" type="text" data-i18n-placeholder="character.library.tagPlaceholder" placeholder="按标签筛选…" data-i18n-aria-label="character.library.tagPlaceholder" aria-label="按标签筛选…" />
           <button id="characterLibraryImportBtn" type="button" data-i18n="character.importCard">导入角色卡</button>
-          <button id="characterLibraryCreateBtn" type="button" data-i18n="character.library.createCharacter">新建角色</button>
+          <button id="characterLibraryCreateBtn" type="button" data-i18n="character.library.aiCreate">让 Lily 创建</button>
         </div>
         <div id="characterLibraryNotice" class="character-library-notice" hidden></div>
         <div id="characterLibraryList" class="character-library-list"></div>

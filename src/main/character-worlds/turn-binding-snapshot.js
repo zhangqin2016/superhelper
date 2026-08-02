@@ -2,6 +2,10 @@
 
 const { types: utilTypes } = require("node:util");
 const C = require("./constants");
+const {
+  normalizeCompositionSnapshot,
+  readyCompositionSnapshot,
+} = require("./composition-snapshot");
 
 const SNAPSHOT_SCHEMA_VERSION = 1;
 const MAX_SNAPSHOT_ID_BYTES = 512;
@@ -67,6 +71,9 @@ function normalizeSnapshot(value, { allowFallback = true } = {}) {
     || Array.isArray(value)
     || utilTypes.isProxy(value)
   ) return null;
+  const schemaDescriptor = Object.getOwnPropertyDescriptor(value, "schemaVersion");
+  if (!schemaDescriptor?.enumerable || !Object.hasOwn(schemaDescriptor, "value")) return null;
+  if (schemaDescriptor.value === 2) return normalizeCompositionSnapshot(value);
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return null;
   const keys = Reflect.ownKeys(value);
@@ -106,7 +113,7 @@ function normalizeSnapshot(value, { allowFallback = true } = {}) {
 
 function freezeSnapshot(value) {
   const normalized = normalizeSnapshot(value);
-  return normalized ? Object.freeze(normalized) : null;
+  return normalized || null;
 }
 
 function snapshotFromMetadata(metadata) {
@@ -123,17 +130,8 @@ function snapshotFromMetadata(metadata) {
   const snapshot = descriptor.value;
   const normalized = normalizeSnapshot(snapshot);
   if (!normalized) return null;
-  if (
-    Object.isFrozen(snapshot)
-    && snapshot.schemaVersion === normalized.schemaVersion
-    && snapshot.mode === normalized.mode
-    && snapshot.bindingVersion === normalized.bindingVersion
-    && snapshot.characterRevisionId === normalized.characterRevisionId
-    && snapshot.personaRevisionId === normalized.personaRevisionId
-    && snapshot.compatibilityProfile === normalized.compatibilityProfile
-    && snapshot.snapshotStatus === normalized.snapshotStatus
-  ) return snapshot;
-  return Object.freeze(normalized);
+  if (Object.isFrozen(snapshot) && JSON.stringify(snapshot) === JSON.stringify(normalized)) return snapshot;
+  return normalized;
 }
 
 function snapshotJsonBytes(snapshot) {
@@ -150,6 +148,7 @@ module.exports = {
   fallbackSnapshot,
   freezeSnapshot,
   normalizeSnapshot,
+  readyCompositionSnapshot,
   readySnapshot,
   snapshotFromMetadata,
 };

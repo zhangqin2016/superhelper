@@ -35,6 +35,8 @@ const BOOK_CHANNELS = {
 };
 const PHASE_ONE_CHANNELS = [
   "character:list",
+  "character:list-official",
+  "character:install-official",
   "character:get",
   "character:import-preview",
   "character:import-commit",
@@ -42,6 +44,14 @@ const PHASE_ONE_CHANNELS = [
   "session-character:get-binding",
   "session-character:set-binding",
   "session-character:get-events",
+];
+const EXPERIENCE_CHANNELS = [
+  "character-worlds:receipt-actions",
+  "character-worlds:preview-get",
+  "character-worlds:preview-start",
+  "character-worlds:preview-exit",
+  "character-worlds:preview-activate",
+  "character-worlds:adjust-target",
 ];
 // Phase 2A ships no book mutation surface; any of these would be a finding.
 const FORBIDDEN_CHANNEL_PATTERN = /^world-book:(create|update|delete|archive|import|set|mutate)/;
@@ -263,7 +273,10 @@ try {
     for (const channel of PHASE_ONE_CHANNELS) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} still registered`);
     }
-    assert.equal(handlers.size, PHASE_ONE_CHANNELS.length + 7, "no additional channels");
+    for (const channel of EXPERIENCE_CHANNELS) {
+      assert.equal(typeof handlers.get(channel), "function", `${channel} experience handler registered`);
+    }
+    assert.equal(handlers.size, 25, "only reviewed channels are registered");
     for (const channel of handlers.keys()) {
       assert.equal(
         FORBIDDEN_CHANNEL_PATTERN.test(channel),
@@ -273,7 +286,7 @@ try {
     }
   });
 
-  await check("preload facade is frozen with exactly the twenty-eight methods and no book edit channel", async () => {
+  await check("preload facade is frozen with the current read and authoring methods and no book edit channel", async () => {
     const facade = exposed.assistantClient?.characterWorlds;
     assert(facade, "characterWorlds facade exposed");
     assert(Object.isFrozen(facade), "facade is frozen");
@@ -288,6 +301,8 @@ try {
         "getWorldBook",
         "getWorldBookRevision",
         "listCharacters",
+        "listOfficialCharacters",
+        "installOfficialCharacter",
         "listPersonas",
         "getPersona",
         "listWorldBooks",
@@ -301,6 +316,8 @@ try {
         "archiveCharacter",
         "getCharacterRevision",
         "getCharacterHistory",
+        "getGreetings",
+        "getSceneMemory",
         "createPersona",
         "updatePersonaRevision",
         "archivePersona",
@@ -311,6 +328,12 @@ try {
         "getWorldBookHistory",
         "getScene",
         "updateScene",
+        "getReceiptActions",
+        "getPreview",
+        "startPreview",
+        "exitPreview",
+        "activatePreview",
+        "adjustTarget",
       ].sort(),
     );
     // Phase 2B deliberately ships NO world-book edit/restore/duplicate

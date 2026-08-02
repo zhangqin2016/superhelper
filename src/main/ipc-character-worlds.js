@@ -1,7 +1,5 @@
 "use strict";
-
 const { dialog, ipcMain } = require("electron");
-
 const {
   summarizeWorldBookDetail,
   summarizeWorldBookEntity,
@@ -86,6 +84,9 @@ function registerCharacterWorldsHandlers(ctx) {
     return null;
   }
 
+  require("./official-character-ipc").registerOfficialCharacterHandlers({ ipcMain, ctx, guard, failure, mapDomainError, policyDeniesSelection, resolveOwnerScope, repository });
+  require("./character-worlds/experience-ipc").registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failure, mapDomainError, resolveSessionAuthority, repository });
+
   ipcMain.handle("character:list", async (event, payload) => {
     const denied = guard(event, payload);
     if (denied) return denied;
@@ -98,6 +99,7 @@ function registerCharacterWorldsHandlers(ctx) {
       return mapDomainError(error);
     }
   });
+
 
   ipcMain.handle("character:get", async (event, payload = {}) => {
     const denied = guard(event, payload);
@@ -472,9 +474,9 @@ function registerCharacterWorldsHandlers(ctx) {
       : "";
     if (!revisionId) return { ok: true, memory: [] };
     try {
-      const memory = require("./character-worlds/scene-memory").activeMemory(
-        repo.db, session.sessionId, revisionId,
-      );
+      const { CharacterSceneMemoryService } = require("./character-worlds/scene-memory-service");
+      const memory = new CharacterSceneMemoryService({ db: repo.db, ownerScope: session.ownerScope })
+        .listMemory({ sessionId: session.sessionId, characterRevisionId: revisionId, limit: 5 });
       const limit = 5;
       const items = memory.slice(-limit).map((item) => ({ kind: item.kind, text: String(item.text || "").slice(0, 120) }));
       return { ok: true, memory: items };

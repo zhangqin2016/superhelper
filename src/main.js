@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, powerMonitor } = require("electron");
 const path = require("node:path");
 
 const { defaultWorkspacePath } = require("./main/config");
@@ -28,6 +28,7 @@ let runnerPoolRef = null;
 let sessionManagerRef = null;
 let scheduledTaskManagerRef = null;
 let characterWorldsServiceRef = null;
+let longTaskSupervisorRef = null;
 let shouldFocusMainWindowWhenReady = false;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
@@ -286,6 +287,27 @@ app.whenReady().then(async () => {
   };
 
   ipcHandlers.registerAll(appContext);
+  try {
+    const { longTaskDbPath } = require("./main/config");
+    const { LongTaskSupervisor } = require("./main/long-task/supervisor");
+    const { createLongTaskWakeHandler } = require("./main/long-task/session-wakeup");
+    const jobsDir = path.join(path.dirname(longTaskDbPath()), "process-jobs");
+    const migration = require("./main/long-task/legacy-migration").migrateLegacyProcessJobs({
+      legacyPath: path.join(jobsDir, "jobs.json"),
+      dbPath: longTaskDbPath(),
+    });
+    if (!migration.ok) console.warn("[long-task] legacy registry migration:", migration.error);
+    const supervisor = new LongTaskSupervisor({
+      dbPath: longTaskDbPath(),
+      jobsDir,
+      onWake: createLongTaskWakeHandler(appContext),
+    });
+    supervisor.start();
+    longTaskSupervisorRef = supervisor;
+    powerMonitor.on("resume", () => void supervisor.handleResume());
+  } catch (err) {
+    console.warn("[long-task] supervisor disabled:", err?.message || err);
+  }
   require("./main/voice-dictation-service").registerVoiceDictationIpc();
   try {
     require("./main/ipc-mobile-pairing").registerMobilePairingIpc(appContext);
@@ -355,6 +377,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  longTaskSupervisorRef?.close();
   scheduledTaskManagerRef?.close();
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();

@@ -130,6 +130,86 @@ function prepareTurnWorldBook({
   };
 }
 
+function prepareTurnWorldBooks({
+  repository,
+  store = null,
+  ownerScope,
+  sessionId,
+  turnId,
+  revision = null,
+  bindings = [],
+  compatibilityProfile = null,
+  greetingIndex = null,
+} = {}) {
+  if (!Array.isArray(bindings) || bindings.length === 0) return null;
+  if (!repository || typeof repository.getWorldBookRevision !== "function") {
+    return { diagnostic: "world_book_repository_unavailable" };
+  }
+  const resolved = [];
+  for (const binding of bindings) {
+    const revisionId = typeof binding?.worldBookRevisionId === "string"
+      ? binding.worldBookRevisionId
+      : "";
+    if (!revisionId) continue;
+    const bookRevision = repository.getWorldBookRevision(ownerScope, revisionId);
+    if (!bookRevision?.canonical || !Array.isArray(bookRevision.canonical.entries)) continue;
+    resolved.push({
+      scope: binding.scope,
+      mergeStrategy: binding.mergeStrategy || "constant",
+      revision: bookRevision,
+    });
+  }
+  if (resolved.length === 0) return { diagnostic: "world_book_revision_missing" };
+
+  const primary = resolved[0].revision;
+  let messages = [];
+  try {
+    if (store && typeof store.getRecentWithSeq === "function") {
+      const scanWindow = Math.max(...resolved.map((item) => (
+        resolveScanWindowMessages(item.revision.canonical.scanPolicy, null)
+      )));
+      messages = store.getRecentWithSeq(sessionId, scanWindow);
+    }
+  } catch {
+    messages = [];
+  }
+  const profile = profileOf(revision) || {};
+  const corpus = buildScanCorpus({
+    messages,
+    matchingSources: {
+      description: cleanField(profile.description),
+      personality: cleanField(profile.personality),
+      scenario: cleanField(profile.scenario),
+      creatorNotes: cleanField(profile.creatorNotes),
+    },
+    scanPolicy: primary.canonical.scanPolicy,
+  });
+  let checkpoint = null;
+  let baseVersion = 0;
+  if (resolved.length === 1 && typeof repository.readWorldBookCheckpoint === "function") {
+    const stored = repository.readWorldBookCheckpoint({
+      ownerScope, sessionId, worldBookRevisionId: primary.id,
+    });
+    if (stored) {
+      checkpoint = stored.checkpoint;
+      baseVersion = stored.version;
+    }
+  }
+  return {
+    input: {
+      revision: primary,
+      books: resolved,
+      mergeStrategy: resolved[0].mergeStrategy,
+      corpus,
+      checkpoint,
+      seedIdentity: { ownerScope, sessionId, turnId },
+      compatibilityProfile,
+      greetingIndex,
+    },
+    baseVersion,
+  };
+}
+
 /**
  * Compile the turn's character context with its pinned world book (if any).
  * Returns {compiled, pendingCheckpoint, diagnostic} — pendingCheckpoint is
@@ -150,6 +230,7 @@ function compileTurnWorldCharacterContext({
   turnId,
   snapshot,
   revision,
+  scene = null,
   baseInput = {},
   log = null,
 } = {}) {
@@ -157,10 +238,18 @@ function compileTurnWorldCharacterContext({
   let baseVersion = 0;
   let diagnostic = null;
   try {
-    const prepared = prepareTurnWorldBook({
-      repository, store, ownerScope, sessionId, turnId, revision,
-      compatibilityProfile: snapshot?.compatibilityProfile,
-    });
+    const prepared = Array.isArray(snapshot?.worldBookBindings)
+      && snapshot.worldBookBindings.length > 0
+      ? prepareTurnWorldBooks({
+          repository, store, ownerScope, sessionId, turnId, revision,
+          bindings: snapshot.worldBookBindings,
+          compatibilityProfile: snapshot?.compatibilityProfile,
+          greetingIndex: snapshot?.greetingIndex,
+        })
+      : prepareTurnWorldBook({
+          repository, store, ownerScope, sessionId, turnId, revision,
+          compatibilityProfile: snapshot?.compatibilityProfile,
+        });
     if (prepared?.diagnostic) {
       diagnostic = prepared.diagnostic;
       log?.warn?.("world book input failed open: %s", diagnostic);
@@ -191,7 +280,7 @@ function compileTurnWorldCharacterContext({
       log?.warn?.("persona input failed open: %s", err?.message || err);
     }
   }
-  const compiled = compileCharacterContext({ ...baseInput, snapshot, revision, worldBook, persona });
+  const compiled = compileCharacterContext({ ...baseInput, snapshot, revision, worldBook, persona, scene });
   const pendingCheckpoint = compiled?.status === "compiled" && compiled.worldBook
     ? {
         ownerScope,
@@ -239,4 +328,5 @@ module.exports = {
   compileTurnWorldCharacterContext,
   persistTurnWorldBookCheckpoint,
   prepareTurnWorldBook,
+  prepareTurnWorldBooks,
 };

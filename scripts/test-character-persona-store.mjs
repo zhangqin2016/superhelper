@@ -107,8 +107,8 @@ try {
   v2.close();
 
   migratedStore = new MessageStore(migratedDbPath, migratedBlobDir);
-  check("migrations v3-v12 upgrade a v2 database additively", () => {
-    assert.equal(migratedStore.db.pragma("user_version"), 12);
+  check("migrations v3-v15 upgrade a v2 database additively", () => {
+    assert.equal(migratedStore.db.pragma("user_version"), 15);
     assert.equal(migratedStore.meta("v2-probe"), "preserved");
     const revisionColumns = tableColumns(migratedStore.db, "persona_revisions");
     for (const column of [
@@ -153,7 +153,7 @@ try {
 
   const legacyStore = new MessageStore(legacyDbPath, legacyBlobDir);
   check("migration v11 backfills pre-existing rows before the dedup index", () => {
-    assert.equal(legacyStore.db.pragma("user_version"), 12);
+    assert.equal(legacyStore.db.pragma("user_version"), 15);
     const rows = legacyStore.db.all(
       `SELECT id, revision_hash FROM persona_revisions
        WHERE entity_id = ? ORDER BY revision_number ASC`,
@@ -172,11 +172,11 @@ try {
     const pinDbPath = path.join(tmp, "forward-pin.db");
     const pinSeed = openDatabase(pinDbPath);
     pinSeed.migrate(MIGRATIONS);
-    assert.equal(pinSeed.pragma("user_version"), 12);
+    assert.equal(pinSeed.pragma("user_version"), 15);
     pinSeed.close();
     const pinDb = openDatabase(pinDbPath);
-    assert.equal(pinDb.migrate(MIGRATIONS.slice(0, 7)), 12);
-    assert.equal(pinDb.pragma("user_version"), 12);
+    assert.equal(pinDb.migrate(MIGRATIONS.slice(0, 7)), 15);
+    assert.equal(pinDb.pragma("user_version"), 15);
     pinDb.close();
   });
 

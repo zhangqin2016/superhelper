@@ -21,6 +21,9 @@ const healthcheckSchema = z.string().optional().describe(
   'Health probe as a JSON string, e.g. {"type":"http","url":"http://127.0.0.1:3000/health","timeoutMs":2000}. '
   + "type: none|process|tcp|http|log; other keys: host, port (tcp), url, minStatus, maxStatus (http), contains, tailBytes (log), timeoutMs.",
 );
+const scopeTokenSchema = z.string().optional().describe(
+  "Opaque per-turn capability from Lily's protected Process Job Scope guidance. Required by the durable runtime; never print it.",
+);
 
 /** Parse the JSON-string healthcheck back into an object; a legacy object
  *  argument (older callers) still passes through. */
@@ -49,6 +52,7 @@ function createProcessJobsMcpServer(options = {}) {
     {
       description: "Start a long-running local process as a Lily-managed background job. Returns job id, pid, log paths, and optional health status; use for servers/watchers instead of ad-hoc shell detaching. Example call: {\"command\":\"npm run dev\",\"cwd\":\"/work/app\",\"waitForHealthMs\":15000,\"healthcheck\":\"{\\\"type\\\":\\\"http\\\",\\\"url\\\":\\\"http://127.0.0.1:3000\\\"}\"} (healthcheck is a JSON string)",
       inputSchema: {
+        scopeToken: scopeTokenSchema,
         command: z.string().describe("Command line to run."),
         args: z.array(z.string()).optional().describe("Arguments when command is an executable path. When provided and shell is omitted, the process starts without a shell."),
         cwd: z.string().optional().describe("Working directory. Defaults to the MCP process cwd."),
@@ -59,6 +63,9 @@ function createProcessJobsMcpServer(options = {}) {
         shell: z.union([z.boolean(), z.string()]).optional().describe("Shell option for child_process.spawn. Defaults to true."),
         healthcheck: healthcheckSchema,
         waitForHealthMs: z.number().int().min(0).max(120_000).optional().describe("Wait up to this many ms for health before returning."),
+        idempotencyKey: z.string().optional().describe("Stable key for this logical job. Repeated starts with the same key return the original job."),
+        replayPolicy: z.enum(["never", "idempotent", "inspect"]).optional().describe("Crash recovery policy. Use idempotent only when rerunning cannot duplicate side effects."),
+        outputFiles: z.array(z.string()).max(50).optional().describe("Expected result paths for verification and automatic continuation."),
       },
       annotations: { destructiveHint: true, openWorldHint: true },
     },
@@ -70,6 +77,7 @@ function createProcessJobsMcpServer(options = {}) {
     {
       description: "Check a Lily-managed background job by id, including process liveness, log sizes, and health.",
       inputSchema: {
+        scopeToken: scopeTokenSchema,
         jobId: z.string().describe("Job id returned by job_start."),
         healthcheck: healthcheckSchema,
       },
@@ -83,6 +91,7 @@ function createProcessJobsMcpServer(options = {}) {
     {
       description: "Read stdout/stderr logs for a Lily-managed background job. Supports tail reads or explicit offsets.",
       inputSchema: {
+        scopeToken: scopeTokenSchema,
         jobId: z.string().describe("Job id returned by job_start."),
         tailBytes: z.number().int().min(1).max(1_000_000).optional().describe("Bytes to tail when offsets are omitted."),
         stdoutOffset: z.number().int().min(0).optional().describe("Read stdout from this byte offset."),
@@ -98,6 +107,7 @@ function createProcessJobsMcpServer(options = {}) {
     {
       description: "Stop a Lily-managed background job by pid, using SIGTERM then SIGKILL unless force is false.",
       inputSchema: {
+        scopeToken: scopeTokenSchema,
         jobId: z.string().describe("Job id returned by job_start."),
         signal: z.string().optional().describe("Signal to send first, default SIGTERM."),
         timeoutMs: z.number().int().min(100).max(60_000).optional().describe("Wait before force kill."),
@@ -113,6 +123,7 @@ function createProcessJobsMcpServer(options = {}) {
     {
       description: "List recent Lily-managed background jobs.",
       inputSchema: {
+        scopeToken: scopeTokenSchema,
         limit: z.number().int().min(1).max(200).optional(),
       },
       annotations: { readOnlyHint: true },

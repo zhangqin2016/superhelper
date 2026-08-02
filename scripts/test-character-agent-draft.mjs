@@ -1,5 +1,5 @@
 // Character Worlds agent draft broker tool (Phase 2C, Task P2C-1; spec
-// §13.2/§8/§14.5). The agent drafts characters/personas through ONE narrow
+// §13.2/§8/§14.5). The agent drafts characters/personas/world books through ONE narrow
 // broker tool that validates through the exact P2B-3 authoring service —
 // identical codes, identical limits, executable keys screened. Drafts are
 // inert data with `agent_draft` provenance: the tool has NO call path to
@@ -94,7 +94,7 @@ try {
     assert.equal(tool.inputSchema.action.safeParse("delete").success, false);
     assert.equal(tool.inputSchema.kind.safeParse("character").success, true);
     assert.equal(tool.inputSchema.kind.safeParse("persona").success, true);
-    assert.equal(tool.inputSchema.kind.safeParse("worldBook").success, false);
+    assert.equal(tool.inputSchema.kind.safeParse("worldBook").success, true);
     assert.equal(tool.inputSchema.entityId.safeParse("x".repeat(256)).success, false);
     // The description is the model contract: drafts never self-activate and
     // the human reviews/selects in the library (approval is human-only).
@@ -142,6 +142,20 @@ try {
         resolveOwnerScope: () => "profile:account:x",
       }),
       { enabled: true, ownerScope: "profile:account:x" },
+    );
+    assert.deepEqual(
+      assembleCharacterWorldsBrokerBlock({
+        // Production's getRemoteCharacterWorldsPolicySync returns the policy
+        // block itself, not the full effective-config envelope.
+        getRemotePolicy: () => ({
+          enabled: true,
+          compatibilityProfile: "lily-character-compat-1",
+          minimumClientVersion: "0.0.0",
+        }),
+        resolveOwnerScope: () => "profile:account:x",
+      }),
+      { enabled: true, ownerScope: "profile:account:x" },
+      "the main-process production policy shape must enable the injected broker block",
     );
     assert.deepEqual(
       assembleCharacterWorldsBrokerBlock({
@@ -349,6 +363,22 @@ try {
       "the result never echoes canonical content back to the model",
     );
     return result;
+  });
+
+  await check("create drafts a world book into the library instead of a Markdown file", async () => {
+    const result = await call({
+      action: "create",
+      kind: "worldBook",
+      canonical: {
+        name: "霓虹城",
+        entries: [{ id: "district", keys: ["旧城区"], content: "雨夜中的旧城区。" }],
+      },
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const revision = repository.getWorldBookRevision(OWNER, result.revisionId);
+    assert.equal(revision.worldBookId, result.entityId);
+    assert.equal(revision.source.kind, "agent_draft");
+    assert.equal(revision.canonical.name, "霓虹城");
   });
 
   await check("hostile create input fails with the identical authoring codes", async () => {

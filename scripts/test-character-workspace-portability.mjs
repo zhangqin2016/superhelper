@@ -267,17 +267,21 @@ try {
   });
 
   await check("group scenes and scene memory travel with the pack and remap on import (P3-3)", async () => {
-    const memory = require("../src/main/character-worlds/scene-memory.js");
+    const { CharacterSceneMemoryService } = require("../src/main/character-worlds/scene-memory-service.js");
     const group = require("../src/main/character-worlds/group-modes.js");
     const hero = createCharacter({ name: "Scene Hero", description: "scene participant" });
     bindCharacter("s-scene", hero.revision.id);
-    memory.appendMemory(repo.db, {
+    new CharacterSceneMemoryService({ db: repo.db, ownerScope: OWNER }).appendTurnMemory({
       sessionId: "s-scene",
       characterRevisionId: hero.revision.id,
+      turnId: "t1",
+      finalized: true,
+      items: [{
       kind: "character_belief",
       text: "Aria believes the lighthouse is haunted.",
       sourceTurnIds: ["t1"],
       confidence: "explicit",
+      }],
     });
     group.createScene(repo, {
       ownerScope: OWNER,

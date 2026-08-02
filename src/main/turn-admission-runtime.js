@@ -43,6 +43,8 @@ function queueRecoveryEnvelope(item) {
       ? options.externalCommand
       : null,
     sourceTurnId: typeof options.sourceTurnId === "string" ? options.sourceTurnId : null,
+    turnId: typeof options.turnId === "string" ? options.turnId : null,
+    durableQueueKey: typeof options.durableQueueKey === "string" ? options.durableQueueKey : null,
   };
   return createQueueRecoveryEnvelope({
     item: {
@@ -195,6 +197,7 @@ function createTurnAdmissionMethods(deps = {}) {
       if (!session || !item) return admissionFailure("MISSING_QUEUE_ITEM");
       const admissionOptions = {
         turnId: item.admittedTurnInput?.turnId
+          || item.options?.turnId
           || item.options?.localAssistant?.turnId
           || newTurnId(),
         delivery: options.delivery || "queue",
@@ -262,7 +265,8 @@ function createTurnAdmissionMethods(deps = {}) {
       }
       const state = this._state(sessionId);
       const scheduledRunId = String(opts.scheduledTaskRunId || "");
-      if (scheduledRunId && !opts.fromQueue) {
+      const durableQueueKey = String(opts.durableQueueKey || "");
+      if ((scheduledRunId || durableQueueKey) && !opts.fromQueue) {
         const item = {
           id: newQueueId(),
           text: displayText,

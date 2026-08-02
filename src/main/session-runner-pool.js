@@ -7,7 +7,6 @@ const { getActivePermissionMode } = require("./permission-settings");
 const { getLogger } = require("./logger");
 
 const log = getLogger("runner-pool");
-
 class SessionRunnerPool {
   constructor() {
     /** @type {Map<string, OpencodeAgentSession>} */
@@ -126,12 +125,13 @@ class SessionRunnerPool {
     // migrated OpenCode sessions cannot drift away from current platform rules.
     // Probed model recipes (e.g. "this model only volunteers tool calls when
     // shown an example") append their calibrated hints here.
-    const guidance = this._appendModelRecipeHints(
+    let guidance = this._appendModelRecipeHints(
       this._opencodeGuideContent(extra.configDir, sessionId),
       capabilityGrade === String(lilyEnv.LILY_MODEL_CAPABILITY_GRADE || "")
         ? lilyEnv
         : { ...lilyEnv, LILY_MODEL_CAPABILITY_GRADE: capabilityGrade },
     );
+    if (extra.processJobGuidance) guidance += `\n\n${extra.processJobGuidance}`;
     // Reuse Lily's full engine env so skill SCRIPTS run identically under OpenCode
     // (DASHSCOPE_*/VISION_*/ALIYUN_BAILIAN_* for media skills, the curated PATH
     // with bundled node/python, connector-bridge for mail). OpenCode ignores the

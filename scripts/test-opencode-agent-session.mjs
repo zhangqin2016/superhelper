@@ -1374,7 +1374,8 @@ async function newSession() {
   OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
   try {
     const { fake, session, orch } = await newSession();
-    const now = Date.now();
+    session.sendUserMessage({ text: "accepted and completed without SSE" });
+    const now = session._turnStartedAt;
     fake.historyMessages = [
       {
         info: {
@@ -1395,7 +1396,6 @@ async function newSession() {
         parts: [{ type: "text", text: "official answer despite missing SSE" }],
       },
     ];
-    session.sendUserMessage({ text: "accepted and completed without SSE" });
     await tick();
     await sleep(50);
     assert(fake.prompts.length === 1, "official final recovery does not replay a completed prompt");
@@ -2281,6 +2281,52 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   assert(fake.prompts.length === 1, "no corrective prompt when the deliverable is valid");
   session.terminate();
   fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// Character authoring is complete only after the persistent draft tool succeeds.
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({
+    text: "create a character",
+    requiredSuccessfulTools: ["lily_character_draft"],
+  });
+  await tick();
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "Created character.md" } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  await tick();
+  assert(orch.calls.done.length === 0, "missing persistent draft tool keeps authoring turn open");
+  assert(
+    fake.prompts.length === 2 && /lily_character_draft/.test(fake.prompts[1].text),
+    "required-tool gate posts a corrective native-tool prompt",
+  );
+  fake.emitEvent({
+    type: "message.part.updated",
+    properties: {
+      part: {
+        type: "tool",
+        tool: "lily_character_draft",
+        callID: "draft-1",
+        state: { status: "running", input: { action: "create", kind: "character" } },
+      },
+    },
+  });
+  fake.emitEvent({
+    type: "message.part.updated",
+    properties: {
+      part: {
+        type: "tool",
+        tool: "lily_character_draft",
+        callID: "draft-1",
+        state: { status: "completed", output: JSON.stringify({ ok: true, entityId: "character-1" }) },
+      },
+    },
+  });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  await tick();
+  assert(orch.calls.done.length === 1, "successful persistent draft tool permits completion");
+  session.terminate();
 }
 
 // --- stall watchdog resets on activity (a long-but-active turn must not stall) ---

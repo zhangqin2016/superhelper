@@ -64,6 +64,9 @@ const OPTION_KEYS = new Set([
   "documentDeliveryRecovery",
   "externalCommand",
   "sourceTurnId",
+  "requiredSuccessfulTools",
+  "turnId",
+  "durableQueueKey",
 ]);
 const DANGEROUS_KEYS = new Set([
   "__proto__",

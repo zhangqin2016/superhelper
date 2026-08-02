@@ -11,12 +11,24 @@ contextBridge.exposeInMainWorld("assistantClient", {
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
   sendRendererHeartbeat: (payload) => ipcRenderer.send("app:renderer-heartbeat", payload || {}),
   getWatchdogSnapshot: () => ipcRenderer.invoke("app:watchdog-snapshot"),
-  sendMessage: (text, files, sessionId, displayFiles) =>
-    ipcRenderer.invoke("assistant:input", { text, files, sessionId, displayFiles }),
-  interruptAndSend: (text, files, sessionId, displayFiles) =>
-    ipcRenderer.invoke("assistant:interrupt-and-send", { text, files, sessionId, displayFiles }),
-  steerMessage: (text, files, sessionId, displayFiles) =>
-    ipcRenderer.invoke("assistant:steer", { text, files, sessionId, displayFiles }),
+  sendMessage: (text, files, sessionId, displayFiles, options = null) =>
+    ipcRenderer.invoke("assistant:input", {
+      text, files, sessionId, displayFiles,
+      characterAuthoringKind: options?.characterAuthoringKind,
+      characterWorldsAdjustmentHandle: options?.characterWorldsAdjustmentHandle,
+    }),
+  interruptAndSend: (text, files, sessionId, displayFiles, options = null) =>
+    ipcRenderer.invoke("assistant:interrupt-and-send", {
+      text, files, sessionId, displayFiles,
+      characterAuthoringKind: options?.characterAuthoringKind,
+      characterWorldsAdjustmentHandle: options?.characterWorldsAdjustmentHandle,
+    }),
+  steerMessage: (text, files, sessionId, displayFiles, options = null) =>
+    ipcRenderer.invoke("assistant:steer", {
+      text, files, sessionId, displayFiles,
+      characterAuthoringKind: options?.characterAuthoringKind,
+      characterWorldsAdjustmentHandle: options?.characterWorldsAdjustmentHandle,
+    }),
   getFeatureFlags: () => ipcRenderer.invoke("assistant:feature-flags"),
   retryLastMessage: (sessionId) =>
     ipcRenderer.invoke("assistant:retry", { sessionId }),
@@ -151,7 +163,24 @@ contextBridge.exposeInMainWorld("assistantClient", {
   // so owner scope, account IDs, and filesystem paths can never ride along
   // (design spec §15). Owner is derived in the main process on every call.
   characterWorlds: Object.freeze({
+    getReceiptActions: (sessionId, receiptId) => ipcRenderer.invoke("character-worlds:receipt-actions", { sessionId, receiptId }),
+    getPreview: (sessionId) => ipcRenderer.invoke("character-worlds:preview-get", { sessionId }),
+    startPreview: (payload) => ipcRenderer.invoke("character-worlds:preview-start", {
+      sessionId: payload?.sessionId, receiptId: payload?.receiptId,
+      actionToken: payload?.actionToken, expectedPreviewVersion: payload?.expectedPreviewVersion,
+    }),
+    exitPreview: (sessionId, expectedPreviewVersion) => ipcRenderer.invoke("character-worlds:preview-exit", { sessionId, expectedPreviewVersion }),
+    activatePreview: (payload) => ipcRenderer.invoke("character-worlds:preview-activate", {
+      sessionId: payload?.sessionId, receiptId: payload?.receiptId,
+      actionToken: payload?.actionToken, expectedPreviewVersion: payload?.expectedPreviewVersion,
+      expectedBindingVersion: payload?.expectedBindingVersion,
+    }),
+    adjustTarget: (payload) => ipcRenderer.invoke("character-worlds:adjust-target", {
+      sessionId: payload?.sessionId, receiptId: payload?.receiptId, actionToken: payload?.actionToken,
+    }),
     listCharacters: () => ipcRenderer.invoke("character:list"),
+    listOfficialCharacters: () => ipcRenderer.invoke("character:list-official"),
+    installOfficialCharacter: (officialId) => ipcRenderer.invoke("character:install-official", { officialId }),
     getCharacter: (characterId) => ipcRenderer.invoke("character:get", { characterId }),
     previewCharacterImport: (options = {}) => (options?.sourcePath
       ? ipcRenderer.invoke("character:import-preview", { sourcePath: options.sourcePath })

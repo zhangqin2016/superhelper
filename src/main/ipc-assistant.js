@@ -1,5 +1,4 @@
 "use strict";
-
 const fs = require("node:fs");
 const { ipcMain } = require("electron");
 const { requireValidLicenseFresh } = require("./license-manager");
@@ -9,13 +8,39 @@ const {
   ensureWebSystemLearningSkillForSession,
   looksLikeWebSystemLearningIntent,
 } = require("./web-system-learning-intent");
-
+const {
+  buildCharacterAuthoringEngineText,
+  inferCharacterAuthoringIntent,
+} = require("./character-worlds/authoring-intent");
+const { resolveCharacterWorldsAdjustment } = require("./character-worlds/adjustment-context");
+function resolveEngineRouting(text, files, explicitKind, adjustment = null) {
+  const allowedKind = ["character", "persona", "worldBook"].includes(explicitKind)
+    ? explicitKind
+    : null;
+  const characterAuthoring = adjustment?.active
+    ? adjustment
+    : allowedKind
+    ? { active: true, kind: allowedKind }
+    : inferCharacterAuthoringIntent(text);
+  if (characterAuthoring.active) {
+    return {
+      engineText: buildCharacterAuthoringEngineText(text, characterAuthoring),
+      requiredSuccessfulTools: ["lily_character_draft"],
+      webLearningIntent: false,
+    };
+  }
+  const webLearningIntent = looksLikeWebSystemLearningIntent(text, files);
+  return {
+    engineText: webLearningIntent ? buildWebSystemLearningPrompt(text) : null,
+    requiredSuccessfulTools: [],
+    webLearningIntent,
+  };
+}
 function resolveTargetSession(sessionManager, requestedId) {
   return requestedId
     ? sessionManager.findById(requestedId)
     : sessionManager.getActive();
 }
-
 function attachRouting(result, session) {
   if (!result || typeof result !== "object") return result;
   return {
@@ -24,7 +49,6 @@ function attachRouting(result, session) {
     projectId: result.projectId || session.projectId || null,
   };
 }
-
 function refreshSessionGuide(projectManager, session) {
   const skillManager = require("./skill-manager");
   const project = projectManager?.find?.(session.projectId);
@@ -88,8 +112,10 @@ function registerAssistantHandlers(ctx) {
       // re-committing it (recordUser:false below).
     }
 
-    const webLearningIntent = looksLikeWebSystemLearningIntent(text, files);
-    const engineText = webLearningIntent ? buildWebSystemLearningPrompt(text) : null;
+    const { engineText, requiredSuccessfulTools, webLearningIntent } = resolveEngineRouting(
+      text, files, payload?.characterAuthoringKind,
+      resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle),
+    );
     let reloadSkillsBeforeStart = false;
     if (webLearningIntent) {
       const ensured = await ensureWebSystemLearningSkillForSession(ctx, session.id);
@@ -108,6 +134,7 @@ function registerAssistantHandlers(ctx) {
       spawnEngine: true,
       displayFiles,
       engineText,
+      requiredSuccessfulTools,
       reloadSkillsBeforeStart,
     });
     return attachRouting(result, session);
@@ -130,8 +157,10 @@ function registerAssistantHandlers(ctx) {
         ? payload.displayFiles
         : [];
 
-    const webLearningIntent = looksLikeWebSystemLearningIntent(text, files);
-    const engineText = webLearningIntent ? buildWebSystemLearningPrompt(text) : null;
+    const { engineText, requiredSuccessfulTools, webLearningIntent } = resolveEngineRouting(
+      text, files, payload?.characterAuthoringKind,
+      resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle),
+    );
     let reloadSkillsBeforeStart = false;
     if (webLearningIntent) {
       const ensured = await ensureWebSystemLearningSkillForSession(ctx, session.id);
@@ -148,6 +177,7 @@ function registerAssistantHandlers(ctx) {
     const result = await turnOrchestrator.interruptAndSend(session.id, text, files, {
       displayFiles,
       engineText,
+      requiredSuccessfulTools,
       reloadSkillsBeforeStart,
     });
     return attachRouting(result, session);
@@ -172,6 +202,17 @@ function registerAssistantHandlers(ctx) {
       typeof payload === "object" && Array.isArray(payload.displayFiles)
         ? payload.displayFiles
         : [];
+
+    const routing = resolveEngineRouting(text, files, payload?.characterAuthoringKind,
+      resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle));
+    if (routing.requiredSuccessfulTools.length) {
+      const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
+        displayFiles,
+        engineText: routing.engineText,
+        requiredSuccessfulTools: routing.requiredSuccessfulTools,
+      });
+      return attachRouting(result, session);
+    }
 
     const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
       mode: "steer",
@@ -455,4 +496,4 @@ function registerAssistantHandlers(ctx) {
   });
 }
 
-module.exports = { registerAssistantHandlers };
+module.exports = { registerAssistantHandlers, resolveEngineRouting };

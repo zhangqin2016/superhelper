@@ -1,7 +1,6 @@
 "use strict";
 
 const crypto = require("node:crypto");
-
 const { evaluateAnswerEvidenceWithJudge, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const { clearDocumentDeliveryTurnState } = require("./document-delivery-turn");
 const { getLogger } = require("./logger");
@@ -9,6 +8,7 @@ const { compactTaskRun } = require("./task-run-state");
 const { buildEvidenceRecoveryContext } = require("./turn-recovery-context");
 const { TERMINAL_TYPES } = require("./turn-event-types");
 const { promoteTerminalNarrative } = require("./turn-terminal-narrative");
+const { attachDraftReceipts } = require("./character-worlds/receipt-finalizer");
 const {
   appendTimelineNotice,
   appendTimelineText,
@@ -18,7 +18,6 @@ const {
 } = require("./turn-timeline");
 
 const log = getLogger("turn-terminal-finalizer");
-
 // Durable turn-input row statuses that prove a terminal winner exists. Mirrors
 // the store's terminal set; kept local so the finalizer stays a pure projection.
 const TERMINAL_RECORD_STATUSES = new Set([
@@ -28,7 +27,6 @@ const TERMINAL_RECORD_STATUSES = new Set([
   "cancelled",
   "stalled",
 ]);
-
 function terminalTypeForWinner(winner, fallback) {
   if (TERMINAL_TYPES.has(winner?.terminalType)) return winner.terminalType;
   switch (winner?.status) {
@@ -86,7 +84,9 @@ function clearTurnState(state) {
   state.admittedTurnInput = null;
   state.dispatchAttemptId = null;
   state.characterWorldsSnapshot = null;
+  state.characterWorldsRuntimeSnapshot = null;
   state.pendingWorldBookCheckpoint = null;
+  state.requiredToolResults = [];
   state.assistantText = "";
   state.thinkingText = "";
   state.contentBlocks = [];
@@ -354,6 +354,7 @@ function createTurnTerminalFinalizer(options = {}) {
     const verificationPlan = state.taskContract?.externalFactPolicy?.verificationPlan || null;
     let effectiveEvidenceSummary = evidenceSummary;
     let record = turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    if (type === "turn.completed") record = attachDraftReceipts({ record, ctx, sessionId, turnId: completedTurnId, evidence: state.requiredToolResults, log });
     if (record && statusScaffoldAction) {
       record.meta = { ...(record.meta || {}), statusScaffold: statusScaffoldAction };
     }

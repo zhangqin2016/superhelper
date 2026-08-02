@@ -16,6 +16,7 @@
  */
 
 import { $ } from "./dom.js";
+import { t } from "../i18n/index.js";
 import {
   initialCharacterLibraryState,
   reduceCharacterLibrary,
@@ -35,6 +36,43 @@ export function getCharacterLibraryState() {
 
 const facade = () => window.assistantClient?.characterWorlds || null;
 const modal = () => $("characterLibraryModal");
+
+const AI_AUTHORING_PROMPTS = Object.freeze({
+  characters: "character.library.aiCreateCharacterPrompt",
+  personas: "character.library.aiCreatePersonaPrompt",
+  books: "character.library.aiCreateBookPrompt",
+});
+
+/**
+ * Creation is an agent task, not a renderer-side CRUD operation. The prompt
+ * stays in the current conversation so the OpenCode CLI agent can use its
+ * context, skills, validation, and lily_character_draft tool.
+ */
+export function startAiAuthoring(kind = "characters") {
+  const input = $("promptInput");
+  if (!input) return false;
+  const m = modal();
+  if (m && !m.hidden && dirtyFormGuard()) return false;
+  const starter = t(AI_AUTHORING_PROMPTS[kind] || AI_AUTHORING_PROMPTS.characters);
+  const current = input.value.trim();
+  input.value = current ? `${starter}\n${current}` : starter;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dataset.characterAuthoringKind = kind === "personas"
+    ? "persona"
+    : kind === "books" ? "worldBook" : "character";
+  input.dataset.characterAuthoringStarter = starter;
+  if (m && !m.hidden) {
+    m.hidden = true;
+    dispatch({ type: "closed" });
+  }
+  const popover = $("characterPopover");
+  if (popover && !popover.hidden) {
+    popover.hidden = true;
+    $("sessionCharacterBtn")?.setAttribute("aria-expanded", "false");
+  }
+  input.focus();
+  return true;
+}
 
 function announce(text) {
   const live = $("characterLibraryLive");
@@ -100,7 +138,10 @@ export function refreshCharacterLibraryUi() {
   renderCharacterLibrary(libraryState);
 }
 
-function openCreate() {
+// Kept for renderer regression coverage of the edit/create form mechanics.
+// It is deliberately not wired to any user-facing creation button: product
+// creation always starts an OpenCode CLI agent task via startAiAuthoring().
+export function openCreateForTests() {
   const initialValues = initialFormValues("create", null);
   dispatch({
     type: "form.opened",
@@ -200,6 +241,7 @@ export function initCharacterLibrary() {
   const m = modal();
   if (!m) return;
 
+  $("characterCreateBtn")?.addEventListener("click", () => startAiAuthoring("characters"));
   $("characterLibraryCloseBtn")?.addEventListener("click", () => closeCharacterLibrary());
   m.addEventListener("click", (event) => {
     if (event.target === m) closeCharacterLibrary();
@@ -220,7 +262,7 @@ export function initCharacterLibrary() {
   });
   $("characterLibraryCreateBtn")?.addEventListener("click", () => {
     if (dirtyFormGuard()) return;
-    openCreate();
+    startAiAuthoring(libraryState.tab);
   });
   $("characterLibraryImportBtn")?.addEventListener("click", () => void actions.startImport());
 

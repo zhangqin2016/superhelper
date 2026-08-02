@@ -28,6 +28,7 @@ const crypto = require("node:crypto");
 const { expandSafeMacros } = require("./macros");
 const { stableJson } = require("./persistence-codec");
 const { sceneCompileCandidates } = require("./scene-compile");
+const { isReadyCompositionSnapshot } = require("./compiler-snapshot");
 const {
   estimateTokensForText,
   resolveContextBudget,
@@ -113,15 +114,6 @@ function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
-}
-
-function isReadyCharacterSnapshot(snapshot) {
-  return isPlainObject(snapshot)
-    && snapshot.mode === "character"
-    && snapshot.snapshotStatus === "ready"
-    && typeof snapshot.characterRevisionId === "string"
-    && snapshot.characterRevisionId.length > 0
-    && snapshot.characterRevisionId.length <= 512;
 }
 
 function profileOf(revision) {
@@ -236,18 +228,19 @@ function compileCharacterContext({
     }
   };
   try {
-    if (!isReadyCharacterSnapshot(snapshot)) {
+    if (!isReadyCompositionSnapshot(snapshot)) {
       diagnostic("snapshot_not_ready");
       return nativeResult();
     }
-    const profile = profileOf(revision);
-    if (!profile) {
+    const characterMode = snapshot.mode === "character";
+    const profile = characterMode ? profileOf(revision) : {};
+    if (characterMode && !profile) {
       diagnostic("revision_missing");
       return nativeResult();
     }
-    const revisionId = typeof revision.id === "string" && revision.id
+    const revisionId = characterMode && typeof revision.id === "string" && revision.id
       ? revision.id
-      : snapshot.characterRevisionId;
+      : characterMode ? snapshot.characterRevisionId : "lily-native";
 
     const expressionProfile = deriveExpressionProfile(taskContract);
     const { ceiling } = resolveBudget(modelBudget, model, userText);
@@ -258,7 +251,7 @@ function compileCharacterContext({
 
     // Phase 1 of safe-macro expansion: identity. Deterministic seed derived
     // from the admitted snapshot so identical inputs stay identical.
-    const seed = `${snapshot.characterRevisionId}:${snapshot.bindingVersion}`;
+    const seed = `${snapshot.characterRevisionId || "native"}:${snapshot.bindingVersion}`;
     const baseContext = isPlainObject(macroContext) ? { ...macroContext } : {};
     delete baseContext.char;
     const warnings = [];
@@ -268,12 +261,15 @@ function compileCharacterContext({
         if (typeof warning?.code === "string" && warning.code) macroWarningCodes.push(warning.code);
       }
     };
-    const nameResult = expandSafeMacros(cleanField(profile.name), { ...baseContext, seed });
+    const nameResult = expandSafeMacros(
+      characterMode ? cleanField(profile.name) : "Lily",
+      { ...baseContext, seed },
+    );
     collectMacroWarnings(nameResult);
     // Identity is low-authority imported text too: redact blocked directives
     // from the name exactly like every narrative field.
     const name = redactBlockedDirectives("name", nameResult.text.trim(), warnings);
-    if (!name) {
+    if (characterMode && !name) {
       diagnostic("identity_missing");
       return nativeResult();
     }
@@ -339,10 +335,10 @@ function compileCharacterContext({
       schemaVersion: COMPILED_SCHEMA_VERSION,
       kind: "lily.character_worlds_context",
       authority: "lower_authority_narrative",
-      mode: "character",
+      mode: characterMode ? "character" : "native",
       expressionProfile,
       bindingVersion: snapshot.bindingVersion,
-      characterRevisionId: snapshot.characterRevisionId,
+      characterRevisionId: characterMode ? snapshot.characterRevisionId : null,
       blocks: [],
     };
 
@@ -362,7 +358,7 @@ function compileCharacterContext({
     // Identity + the task-integrity boundary are indivisible: if they cannot
     // fit as a coherent bounded segment, run native rather than sending a
     // misleading fragment.
-    envelope.blocks = [identityBlock, integrityBlock];
+    envelope.blocks = characterMode ? [identityBlock, integrityBlock] : [integrityBlock];
     const coreText = assembleText(envelope);
     if (estimateTokensForText(coreText).tokens > ceiling) {
       diagnostic("identity_over_budget");
@@ -382,19 +378,18 @@ function compileCharacterContext({
       diagnostic,
     });
     const candidates = [
-      {
+      ...(characterMode ? [{
         type: "character_definitions",
         compatibility: "lily_native",
         parts: [
           ["description", fields.description],
           ["personality", fields.personality],
         ].filter(([, value]) => value),
-      },
-      {
+      }, {
         type: "scenario",
         compatibility: "lily_native",
         parts: fields.scenario ? [["scenario", fields.scenario]] : [],
-      },
+      }] : []),
   ...(personaCandidate ? [personaCandidate] : []),
   ...(sceneMemory?.text ? [{ type: "scene_memory", compatibility: "narrative", parts: [["memory", sceneMemory.text]] }] : []),
   ...(scene ? sceneCompileCandidates(scene) : []),
@@ -404,27 +399,26 @@ function compileCharacterContext({
     collectMacroWarnings(result);
     return result.text;
   }),
-      {
+      ...(characterMode ? [{
         type: "example_dialogue",
         compatibility: "imported_lower_authority",
         parts: fields.exampleDialogue ? [["exampleDialogue", fields.exampleDialogue]] : [],
-      },
+      }] : []),
       ...(fields.creatorNotes ? [{ type: "creator_notes", compatibility: "imported_lower_authority", parts: [["creatorNotes", fields.creatorNotes]] }] : []),
-      {
+      ...(characterMode ? [{
         type: "imported_system_prompt",
         compatibility: "imported_lower_authority",
         parts: fields.systemPrompt ? [["systemPrompt", fields.systemPrompt]] : [],
-      },
-      {
+      }, {
         type: "imported_post_history_instructions",
         compatibility: "imported_lower_authority",
         parts: fields.postHistoryInstructions
           ? [["postHistoryInstructions", fields.postHistoryInstructions]]
           : [],
-      },
+      }] : []),
     ];
 
-    const activatedFields = ["name"];
+    const activatedFields = characterMode ? ["name"] : [];
     const selectedWorldUnits = [];
     const worldBlockPlanIndex = new Map();
     const fits = () => estimateTokensForText(assembleText(envelope)).tokens <= ceiling;
@@ -535,6 +529,11 @@ function compileCharacterContext({
     // never persona text. Absent when no persona block shipped.
     const personaBlock = envelope.blocks.find((block) => block.type === "persona") || null;
     if (personaBlock) envelope.personaRevisionId = personaBlock.sourceRevision;
+
+    if (!characterMode && envelope.blocks.length === 1) {
+      diagnostic("all_facets_omitted");
+      return nativeResult();
+    }
 
     const text = assembleText(envelope);
     const tokenEstimate = estimateTokensForText(text).tokens;

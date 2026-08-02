@@ -57,6 +57,7 @@
 
 const { z } = require("zod");
 const { characterWorldsPolicy } = require("./constants");
+const { resolveCharacterOwnerScope } = require("./owner-scope");
 const { boundedPayload, validId } = require("../ipc-character-guards");
 
 const AGENT_DRAFT_SOURCE_KIND = "agent_draft";
@@ -79,8 +80,22 @@ const INVALID_INPUT = "INVALID_INPUT";
 const CODED_ERROR_SHAPE = /^[A-Z][A-Z0-9_]{1,71}$/;
 
 const DESCRIPTION = [
-  "Draft a new character or persona (action=create) or revise an existing one",
+  "Draft a new character, persona, or world book (action=create) or revise an existing one",
   "(action=revise with entityId + expectedBaseRevisionId from the library).",
+  "For creation requests, infer and design the complete canonical from the user's",
+  "natural-language intent; never ask the user to fill canonical fields or claim",
+  "that a blank/manual form is a completed character.",
+  "Include a coherent identity, goals, personality, values, background, voice,",
+  "boundaries, opening message, example behavior, and uncertainty handling when",
+  "the canonical format supports those fields.",
+  "After saving, explain the result in ordinary language, show the user what was",
+  "designed, invite a short trial conversation, and ask for confirmation before",
+  "binding or activating it in a session. Never expose internal ids, canonical",
+  "field names, or CLI/tool terminology unless the user explicitly asks.",
+  "Do not claim that anything was created, saved, or activated unless this tool",
+  "returns ok:true. If validation rejects the draft, repair the design and retry;",
+  "if a required user decision is missing, ask one focused question instead of",
+  "silently inventing a critical constraint.",
   "The draft is validated and stored as an inert library revision with",
   "agent_draft provenance: it never activates, selects, or binds anything by",
   "itself. After drafting, tell the user to review the card and select it in",
@@ -124,13 +139,15 @@ function normalizeCharacterWorldsContext(value) {
  */
 function assembleCharacterWorldsBrokerBlock(deps = {}) {
   try {
-    const policy = (typeof deps.characterWorldsPolicy === "function"
-      ? deps.characterWorldsPolicy
-      : (cfg) => characterWorldsPolicy(cfg))(
-      typeof deps.getRemotePolicy === "function"
-        ? deps.getRemotePolicy()
-        : require("../remote-config").getRemoteCharacterWorldsPolicySync(),
-    );
+    const policy = typeof deps.characterWorldsPolicy === "function"
+      ? deps.characterWorldsPolicy()
+      : characterWorldsPolicy(
+        {
+          characterWorlds: typeof deps.getRemotePolicy === "function"
+            ? deps.getRemotePolicy()
+            : require("../remote-config").getRemoteCharacterWorldsPolicySync(),
+        },
+      );
     if (policy?.enabled !== true) return { enabled: false };
     const ownerScope = typeof deps.resolveOwnerScope === "function"
       ? deps.resolveOwnerScope()
@@ -165,17 +182,19 @@ function normalizeArgs(args) {
   const action = payload.action;
   const kind = payload.kind;
   if (action !== "create" && action !== "revise") return null;
-  if (kind !== "character" && kind !== "persona") return null;
+  if (kind !== "character" && kind !== "persona" && kind !== "worldBook") return null;
   const canonical = payload.canonical;
   if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) return null;
   if (action === "revise") {
-    if (!validId(payload.entityId) || !validId(payload.expectedBaseRevisionId)) return null;
+    const targetReceiptId = validId(payload.targetReceiptId) ? payload.targetReceiptId : null;
+    if (!targetReceiptId && (!validId(payload.entityId) || !validId(payload.expectedBaseRevisionId))) return null;
     return {
       action,
       kind,
       canonical,
       entityId: payload.entityId,
       expectedBaseRevisionId: payload.expectedBaseRevisionId,
+      targetReceiptId,
     };
   }
   return { action, kind, canonical };
@@ -269,11 +288,25 @@ function buildCharacterDraftTool(deps = {}) {
     const input = normalizeArgs(args);
     if (!input) return { ok: false, error: INVALID_INPUT };
     try {
+      if (input.action === "revise" && input.targetReceiptId) {
+        const receipt = authoring.repository?.db?.get?.(
+          `SELECT kind, entity_id, revision_id FROM character_worlds_receipts
+           WHERE id = ? AND owner_scope = ?`,
+          input.targetReceiptId, owner,
+        );
+        if (!receipt || receipt.kind !== input.kind) return { ok: false, error: INVALID_INPUT };
+        input.entityId = receipt.entity_id;
+        input.expectedBaseRevisionId = receipt.revision_id;
+      }
       if (input.action === "create") {
         const created = input.kind === "persona"
           ? await authoring.createPersona({
             ownerScope: owner, canonical: input.canonical, source: AGENT_DRAFT_SOURCE,
           })
+          : input.kind === "worldBook"
+            ? await authoring.createWorldBook({
+              ownerScope: owner, canonical: input.canonical, source: AGENT_DRAFT_SOURCE,
+            })
           : await authoring.createCharacter({
             ownerScope: owner, canonical: input.canonical, source: AGENT_DRAFT_SOURCE,
           });
@@ -287,6 +320,14 @@ function buildCharacterDraftTool(deps = {}) {
           canonical: input.canonical,
           source: AGENT_DRAFT_SOURCE,
         })
+        : input.kind === "worldBook"
+          ? await authoring.editWorldBook({
+            ownerScope: owner,
+            entityId: input.entityId,
+            expectedBaseRevisionId: input.expectedBaseRevisionId,
+            canonical: input.canonical,
+            source: AGENT_DRAFT_SOURCE,
+          })
         : await authoring.editCharacter({
           ownerScope: owner,
           entityId: input.entityId,
@@ -296,7 +337,9 @@ function buildCharacterDraftTool(deps = {}) {
         });
       const entityId = input.kind === "persona"
         ? revised.revision.personaId
-        : revised.revision.characterId;
+        : input.kind === "worldBook"
+          ? revised.revision.worldBookId
+          : revised.revision.characterId;
       return metadata(entityId, revised.revision, revised.droppedExecutableKeys);
     } catch (error) {
       const code = typeof error?.code === "string" ? error.code : "";
@@ -327,7 +370,7 @@ function buildCharacterDraftTool(deps = {}) {
     description: DESCRIPTION,
     inputSchema: {
       action: z.enum(["create", "revise"]).describe("create a new draft, or revise an existing entity"),
-      kind: z.enum(["character", "persona"]).describe("the library entity kind to draft"),
+      kind: z.enum(["character", "persona", "worldBook"]).describe("the library entity kind to draft"),
       canonical: z.record(z.unknown()).describe(
         "the full canonical card/persona fields (name required); unknown inert fields are preserved, executable keys are dropped",
       ),
@@ -335,6 +378,8 @@ function buildCharacterDraftTool(deps = {}) {
         .describe("required for revise: the library entity id"),
       expectedBaseRevisionId: z.string().min(1).max(128).optional()
         .describe("required for revise: the revision id the draft is based on (CAS)"),
+      targetReceiptId: z.string().min(1).max(128).optional()
+        .describe("opaque trusted receipt target for a receipt-originated revise request"),
     },
     annotations: {},
     isAvailable: (context) => policyEnabled(context),

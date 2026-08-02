@@ -15,6 +15,7 @@ const require = createRequire(import.meta.url);
 const { MessageStore } = require("../src/main/store/message-store.js");
 const { CharacterWorldsRepository } = require("../src/main/character-worlds/repository.js");
 const sceneMemory = require("../src/main/character-worlds/scene-memory.js");
+const { CharacterSceneMemoryService } = require("../src/main/character-worlds/scene-memory-service.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scene-memory-"));
 const store = new MessageStore(path.join(tmp, "messages.db"), path.join(tmp, "blobs"));
@@ -91,6 +92,41 @@ try {
     }
     const section = sceneMemory.sceneMemorySection(sceneMemory.listMemory(store.db, sessionId, revA));
     assert.ok(section.text.length <= sceneMemory.MAX_SCENE_MEMORY_BYTES, "injected memory is bounded");
+  });
+
+  await check("service isolates owners and deduplicates exact source events", async () => {
+    const service = new CharacterSceneMemoryService({ store, ownerScope: "profile:owner-a" });
+    const first = service.appendTurnMemory({
+      sessionId: "s-service", characterRevisionId: "rev-service", turnId: "t-service",
+      finalized: true,
+      items: [{ kind: "scene_fact", text: "The lighthouse is open.", sourceTurnIds: ["t-service"], confidence: "explicit" }],
+    });
+    const duplicate = service.appendTurnMemory({
+      sessionId: "s-service", characterRevisionId: "rev-service", turnId: "t-service",
+      finalized: true,
+      items: [{ kind: "scene_fact", text: "The lighthouse is open.", sourceTurnIds: ["t-service"], confidence: "explicit" }],
+    });
+    assert.equal(first.items.length, 1);
+    assert.equal(duplicate.items.length, 0);
+    assert.equal(service.listMemory({ sessionId: "s-service", characterRevisionId: "rev-service" }).length, 1);
+    const otherOwner = new CharacterSceneMemoryService({ store, ownerScope: "profile:owner-b" });
+    assert.equal(otherOwner.listMemory({ sessionId: "s-service", characterRevisionId: "rev-service" }).length, 0);
+  });
+
+  await check("service checkpoints and rewind invalidate descendant memory", async () => {
+    const service = new CharacterSceneMemoryService({ store, ownerScope: "profile:owner-a" });
+    service.appendTurnMemory({
+      sessionId: "s-rewind", characterRevisionId: "rev-service", turnId: "t-1", finalized: true,
+      items: [{ kind: "scene_fact", text: "before rewind", sourceTurnIds: ["t-1"], confidence: "explicit" }],
+    });
+    service.checkpointFor({ sessionId: "s-rewind", characterRevisionId: "rev-service", turnId: "t-1" });
+    service.appendTurnMemory({
+      sessionId: "s-rewind", characterRevisionId: "rev-service", turnId: "t-2", finalized: true,
+      items: [{ kind: "scene_fact", text: "after rewind", sourceTurnIds: ["t-2"], confidence: "derived" }],
+    });
+    const result = service.rewindTo({ sessionId: "s-rewind", characterRevisionId: "rev-service", retainedTurnId: "t-1" });
+    assert.equal(result.invalidated, 1);
+    assert.deepEqual(service.listMemory({ sessionId: "s-rewind", characterRevisionId: "rev-service" }).map((item) => item.text), ["before rewind"]);
   });
 
   console.log(`PASS: test-character-scene-memory (${checks} checks)`);

@@ -14,15 +14,12 @@ const { latestWorkProgress } = require("../work-progress-protocol");
 const DEFAULT_LOG_TAIL_BYTES = 64 * 1024;
 const DEFAULT_STOP_TIMEOUT_MS = 5_000;
 const DEFAULT_HEALTH_TIMEOUT_MS = 2_000;
-
 function nowIso() {
   return new Date().toISOString();
 }
-
 function safeId(value = "") {
   return String(value || "").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120);
 }
-
 function jobsDir(options = {}) {
   if (options.registryDir) return path.resolve(options.registryDir);
   if (process.env.LILY_PROCESS_JOBS_DIR) return path.resolve(process.env.LILY_PROCESS_JOBS_DIR);
@@ -32,11 +29,9 @@ function jobsDir(options = {}) {
     return path.join(os.tmpdir(), "lily-process-jobs");
   }
 }
-
 function registryPath(options = {}) {
   return path.join(jobsDir(options), "jobs.json");
 }
-
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
@@ -346,7 +341,7 @@ async function waitForHealth(record, healthcheck, timeoutMs) {
   return last;
 }
 
-async function startJob(input = {}, options = {}) {
+async function startLegacyJob(input = {}, options = {}) {
   const command = String(input.command || "").trim();
   if (!command) return fail("COMMAND_REQUIRED");
   const args = Array.isArray(input.args) ? input.args.map((arg) => String(arg)) : [];
@@ -447,7 +442,7 @@ async function startJob(input = {}, options = {}) {
   return { ok: true, ...withProgressObservability(compactJob({ ...record, health }), progress), health };
 }
 
-async function statusJob(input = {}, options = {}) {
+async function statusLegacyJob(input = {}, options = {}) {
   const found = findJob(input.jobId, options);
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const health = await evaluateHealth(found.record, input.healthcheck || found.record.healthcheck);
@@ -464,7 +459,7 @@ async function statusJob(input = {}, options = {}) {
   };
 }
 
-function logsJob(input = {}, options = {}) {
+function logsLegacyJob(input = {}, options = {}) {
   const found = findJob(input.jobId, options);
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const tailBytes = Number(input.tailBytes || DEFAULT_LOG_TAIL_BYTES);
@@ -483,7 +478,7 @@ function logsJob(input = {}, options = {}) {
   };
 }
 
-async function stopJob(input = {}, options = {}) {
+async function stopLegacyJob(input = {}, options = {}) {
   const found = findJob(input.jobId, options);
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const pid = Number(found.record.pid);
@@ -514,7 +509,7 @@ async function stopJob(input = {}, options = {}) {
   return { ok: stopped, stopped, ...compactJob(found.registry.jobs[found.id]) };
 }
 
-function listJobs(input = {}, options = {}) {
+function listLegacyJobs(input = {}, options = {}) {
   const registry = readRegistry(options);
   const jobs = Object.values(registry.jobs)
     .map(updateObservedStatus)
@@ -526,6 +521,12 @@ function listJobs(input = {}, options = {}) {
   writeRegistry(registry, options);
   return { ok: true, jobs };
 }
+
+const dispatched = require("../long-task/process-jobs-dispatch").createProcessJobDispatch({
+  evaluateHealth,
+  legacy: { start: startLegacyJob, status: statusLegacyJob, logs: logsLegacyJob, stop: stopLegacyJob, list: listLegacyJobs },
+});
+const { startJob, statusJob, logsJob, stopJob, listJobs } = dispatched;
 
 module.exports = {
   evaluateHealth,

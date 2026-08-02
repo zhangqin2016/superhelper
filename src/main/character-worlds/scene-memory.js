@@ -142,16 +142,31 @@ function sceneMemorySection(items = []) {
  * the finalized turn.
  */
 function advanceMemoryOnCompleted(ctx, sessionId, state, completedTurnId) {
-  const snap = state?.characterWorldsSnapshot;
-  if (snap?.mode !== "character" || !snap.characterRevisionId) return;
-  const db = ctx?.characterWorldsRepository?.db
-    || ctx?.sessionManager?._store?.()?.characterWorlds?.()?.db || null;
-  if (!db) return;
-  recordTurnOutcome(db, {
+  const snap = state?.characterWorldsRuntimeSnapshot;
+  if (snap?.mode !== "character" || !snap.characterRevisionId || !snap.ownerScope) return;
+  if (ctx?.characterWorldsRuntime?.finalizeTurn) {
+    ctx.characterWorldsRuntime.finalizeTurn(snap, {
+      store: ctx.sessionManager?._store?.() || null,
+      sessionId,
+      completedTurnId,
+      assistantText: state.assistantText,
+    });
+    return;
+  }
+  const store = ctx?.sessionManager?._store?.() || null;
+  if (!store?.db) return;
+  const { CharacterSceneMemoryService } = require("./scene-memory-service");
+  const service = new CharacterSceneMemoryService({ store, ownerScope: snap.ownerScope });
+  const turnId = completedTurnId || state.turnId || "";
+  const text = typeof state?.assistantText === "string" ? state.assistantText.trim() : "";
+  service.appendTurnMemory({
     sessionId,
     characterRevisionId: snap.characterRevisionId,
-    outcome: "completed",
-    turnId: completedTurnId || state.turnId || "",
+    turnId,
+    finalized: true,
+    items: text
+      ? [{ kind: "scene_fact", text: text.slice(0, 512), sourceTurnIds: [turnId], confidence: "derived" }]
+      : [],
   });
 }
 

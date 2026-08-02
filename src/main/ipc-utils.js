@@ -277,6 +277,24 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     permissionMode: opts.permissionMode
       || require("./permission-settings").resolveSessionPermissionMode(session),
   };
+  if (opts.turnId) {
+    try {
+      const owner = sessionManager.resolveTurnOwnerScope?.(sessionId);
+      if (owner?.ok && owner.ownerScope) {
+        extra.processJobGuidance = require("./long-task/turn-scope").buildProcessJobTurnGuidance({
+          secret: require("./long-task/secret").ensureLongTaskSecret(),
+          scope: {
+            ownerScope: owner.ownerScope,
+            sessionId,
+            projectId: session.projectId,
+            turnId: opts.turnId,
+          },
+        });
+      }
+    } catch (err) {
+      console.warn("[runner] process-job scope unavailable:", err?.message || err);
+    }
+  }
 
   try {
     const lazy = opts.spawn !== true;

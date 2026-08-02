@@ -457,6 +457,15 @@ app.whenReady().then(async () => {
     if (!dialog || dialog.getAttribute("aria-modal") !== "true") throw new Error("library needs an aria-modal dialog");
     if (!dialog.getAttribute("aria-labelledby")) throw new Error("dialog must be labelled");
     if (!modal.contains(document.activeElement)) throw new Error("focus must move into the library");
+    const libraryModule = await import("./modules/character-library.js");
+    const prompt = document.getElementById("promptInput");
+    prompt.value = "一个沉稳的侦探";
+    libraryModule.startAiAuthoring("characters");
+    if (!modal.hidden || !prompt.value.includes("一个沉稳的侦探")) {
+      throw new Error("AI authoring should return to the CLI agent prompt");
+    }
+    await libraryModule.openCharacterLibrary();
+    await new Promise((r) => setTimeout(r, 100));
     return "library open";
   })()`);
 
@@ -559,7 +568,7 @@ app.whenReady().then(async () => {
 
   // 6. Create a blank character: minimal form, save creates revision 1.
   await run("create-blank", `(async () => {
-    document.getElementById("characterLibraryCreateBtn").click();
+    (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
     const detail = document.getElementById("characterLibraryDetail");
     if (detail.hidden) throw new Error("create form should open");
@@ -736,7 +745,7 @@ app.whenReady().then(async () => {
     createBehavior = "CHARACTER_WORLDS_UNAVAILABLE";
     await run("mutation-fail-open", `(async () => {
       const before = [...document.querySelectorAll("#characterLibraryList [data-entity-id]")].length;
-      document.getElementById("characterLibraryCreateBtn").click();
+      (await import("./modules/character-library.js")).openCreateForTests();
       await new Promise((r) => setTimeout(r, 120));
       const detail = document.getElementById("characterLibraryDetail");
       const nameInput = detail.querySelector("[data-field='name']");
@@ -791,7 +800,7 @@ app.whenReady().then(async () => {
     const mod = await import("./modules/character-library.js");
     await mod.openCharacterLibrary();
     await new Promise((r) => setTimeout(r, 250));
-    document.getElementById("characterLibraryCreateBtn").click();
+    (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
     const detail = document.getElementById("characterLibraryDetail");
     const desc = detail.querySelector("[data-field='description']");
@@ -834,7 +843,7 @@ app.whenReady().then(async () => {
   }
 
   await run("locale-change-keeps-edits", `(async () => {
-    document.getElementById("characterLibraryCreateBtn").click();
+    (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
     const detail = document.getElementById("characterLibraryDetail");
     const name = detail.querySelector("[data-field='name']");
@@ -957,7 +966,7 @@ app.whenReady().then(async () => {
 
   // 18. Dirty form cannot be closed silently (review fix 5).
   await run("unsaved-close-guard", `(async () => {
-    document.getElementById("characterLibraryCreateBtn").click();
+    (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
     const detail = document.getElementById("characterLibraryDetail");
     const name = detail.querySelector("[data-field='name']");
@@ -991,7 +1000,7 @@ app.whenReady().then(async () => {
     const mod = await import("./modules/character-library.js");
     await mod.openCharacterLibrary();
     await new Promise((r) => setTimeout(r, 250));
-    document.getElementById("characterLibraryCreateBtn").click();
+    (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
     const detail = document.getElementById("characterLibraryDetail");
     const name = detail.querySelector("[data-field='name']");
@@ -1020,7 +1029,7 @@ app.whenReady().then(async () => {
     // Cancel, then a CLEAN form blocks nothing.
     detail.querySelector("[data-library-back]").click();
     await new Promise((r) => setTimeout(r, 100));
-    document.getElementById("characterLibraryCreateBtn").click();
+    (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
     document.querySelector("[data-library-tab='personas']").click();
     await new Promise((r) => setTimeout(r, 250));

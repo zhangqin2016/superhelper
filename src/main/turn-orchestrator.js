@@ -67,15 +67,15 @@ const { cancelQueuedScheduledRun, scheduledQueueCapacityBlock, scheduledTaskTurn
 const {
   snapshotFromMetadata,
 } = require("./character-worlds/turn-binding-snapshot");
-
+const { createCharacterWorldsRuntime } = require("./character-worlds/turn-runtime-adapter");
+const { compileTurnContext } = require("./character-worlds/compile-turn-context");
+const { normalizeRequiredTools } = require("./required-tool-completion");
 const log = getLogger("turn-orchestrator");
 const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
 const RUNTIME_DIAGNOSTIC_TEXT_LIMIT = 4000;
-
 function newTurnId() {
   return `turn_${crypto.randomUUID()}`;
 }
-
 function newQueueId() {
   return `queue_${crypto.randomUUID()}`;
 }
@@ -106,6 +106,9 @@ function queueDispatchOptions(opts = {}) {
     externalCommand: opts.externalCommand && typeof opts.externalCommand === "object"
       ? opts.externalCommand
       : null,
+    requiredSuccessfulTools: normalizeRequiredTools(opts.requiredSuccessfulTools),
+    turnId: typeof opts.turnId === "string" ? opts.turnId : null,
+    durableQueueKey: typeof opts.durableQueueKey === "string" ? opts.durableQueueKey : null,
   };
   if (Object.hasOwn(opts, "sourceTurnId")) {
     options.sourceTurnId = opts.sourceTurnId;
@@ -234,6 +237,7 @@ class TurnOrchestrator {
       active: false,
       pending: [],
     };
+    this.characterWorldsRuntime = createCharacterWorldsRuntime(this, log);
     this.recoveredQueueSessions = new Set();
     this.subagentRuntime = createSubagentRuntimeProjection({
       getState: (sessionId) => this._state(sessionId),
@@ -291,7 +295,7 @@ class TurnOrchestrator {
       emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
     });
     this.terminalFinalizer = createTurnTerminalFinalizer({
-      ctx: this.ctx,
+      ctx: { ...this.ctx, characterWorldsRuntime: this.characterWorldsRuntime },
       turnArchive: this.turnArchive,
       taskRunRuntime: this.taskRunRuntime,
       subagentRuntime: this.subagentRuntime,
@@ -680,12 +684,13 @@ class TurnOrchestrator {
     state.admittedSeq = admitted?.admittedSeq || null;
     state.admittedTurnInput = admitted || null;
     state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
+    state.characterWorldsRuntimeSnapshot = null;
 
     if (opts.recordUser !== false) {
       this.transcriptStore.commitUserMessage(session.id, {
         text: rawUserText,
         files: displayFiles,
-        turnId: state.turnId,
+        turnId: state.turnId || snapshot.turnId || "turn:legacy-runtime",
       });
       this._emit(session.id, "user.committed", {
         text: rawUserText,
@@ -833,6 +838,7 @@ class TurnOrchestrator {
     state.admittedSeq = admitted?.admittedSeq || null;
     state.admittedTurnInput = admitted || null;
     state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
+    state.characterWorldsRuntimeSnapshot = null;
     state.scheduledTask = opts.scheduledTaskRunId
       ? {
           id: opts.scheduledTaskId || null,
@@ -844,7 +850,7 @@ class TurnOrchestrator {
       this.transcriptStore.commitUserMessage(session.id, {
         text: rawUserText,
         files: displayFiles,
-        turnId: state.turnId,
+        turnId: state.turnId || snapshot.turnId || "turn:legacy-runtime",
       });
       this._emit(session.id, "user.committed", {
         text: rawUserText,
@@ -903,6 +909,7 @@ class TurnOrchestrator {
       : ensureSessionRunner(this.ctx, session.id, {
           spawn: opts.spawnEngine !== false,
           permissionMode: opts.permissionMode,
+          turnId: state.turnId,
         });
     runner = ensured.runner;
     if (!runner) {
@@ -947,6 +954,7 @@ class TurnOrchestrator {
           ensured = ensureSessionRunner(this.ctx, session.id, {
             spawn: opts.spawnEngine !== false,
             permissionMode: opts.permissionMode,
+            turnId: state.turnId,
           });
           runner = ensured.runner;
           if (!runner) {
@@ -1235,6 +1243,7 @@ class TurnOrchestrator {
       taskContract: state.taskContract,
       turnPolicy: state.turnPolicy,
       nonInteractive: Boolean(opts.nonInteractive || state.wasRescueAttempt || state.documentDeliveryRecovery),
+      requiredSuccessfulTools: normalizeRequiredTools(opts.requiredSuccessfulTools),
       trace: {
         preflightTextChanged: text !== rawUserText,
         customEngineText: preRehydrateText !== text,
@@ -1288,7 +1297,7 @@ class TurnOrchestrator {
     };
     const characterContext = this._compileTurnCharacterContext(session, state, runner);
     state.enginePayload.characterContext = characterContext?.status === "compiled" ? characterContext : null;
-    if (state.characterWorldsSnapshot?.mode === "character") {
+    if (state.characterWorldsSnapshot?.snapshotStatus === "ready") {
       // Metadata only — card contents never enter the trace.
       state.enginePayload.trace.characterContext = characterContext?.status === "compiled"
         ? {
@@ -1301,7 +1310,14 @@ class TurnOrchestrator {
             warnings: characterContext.warnings,
             tokenEstimate: characterContext.tokenEstimate,
             activatedEntryCount: (characterContext.activatedWorldEntries || []).length,
-            worldBookBindings: characterContext.worldBook ? [{ revisionId: characterContext.worldBook.revisionId, scope: "character" }] : [],
+            worldBookBindings: Array.isArray(state.characterWorldsSnapshot.worldBookBindings)
+              ? state.characterWorldsSnapshot.worldBookBindings.map((binding) => ({
+                  revisionId: binding.worldBookRevisionId,
+                  scope: binding.scope,
+                }))
+              : characterContext.worldBook
+                ? [{ revisionId: characterContext.worldBook.revisionId, scope: "character" }]
+                : [],
             compiledAt: new Date().toISOString(), ...(characterContext.persona ? { persona: characterContext.persona } : {}),
           }
         : {
@@ -1547,54 +1563,12 @@ class TurnOrchestrator {
    * failure fails open to native Lily (null). Only metadata is logged.
    */
   _compileTurnCharacterContext(session, state, runner) {
-    state.characterWorldsPolicyReason = null;
-    state.pendingWorldBookCheckpoint = null;
-    try {
-      const snapshot = state.characterWorldsSnapshot;
-      if (snapshot?.mode !== "character" || snapshot?.snapshotStatus !== "ready") return null;
-      const policy = this._characterWorldsPolicy();
-      if (!policy?.enabled) {
-        // Rollout gate (§16/§18): a disabled/killed/unknown policy returns native.
-        state.characterWorldsPolicyReason = policy?.reason || "remote_disabled";
-        log.warn("character context compile skipped by policy: %s", state.characterWorldsPolicyReason);
-        return null;
-      }
-      const sessionManager = this.ctx.sessionManager;
-      const owner = typeof sessionManager?.resolveTurnOwnerScope === "function"
-        ? sessionManager.resolveTurnOwnerScope(session.id)
-        : null;
-      if (!owner?.ok || !owner.ownerScope) return null;
-      const repository = this.ctx.characterWorldsRepository
-        || sessionManager?._store?.()?.characterWorlds?.()
-        || null;
-      if (!repository || typeof repository.getRevision !== "function") return null;
-      const revision = repository.getRevision(owner.ownerScope, snapshot.characterRevisionId);
-      if (!revision) return null;
-      // WB-4: the book revision pinned by the admitted revision compiles into
-      // the same envelope; its pending timed checkpoint rides the turn state
-      // to the terminal finalizer (§10.4.6).
-      const { compileTurnWorldCharacterContext } = require("./character-worlds/turn-world-book");
-      const result = compileTurnWorldCharacterContext({
-        repository, store: sessionManager?._store?.() || null, log,
-        ownerScope: owner.ownerScope, sessionId: session.id, turnId: state.turnId,
-        snapshot, revision,
-        baseInput: {
-          userText: String(state.enginePayload?.text || state.currentPayload?.rawText || ""),
-          taskContract: state.pendingTaskContract || state.taskContract || null,
-          model: runner?.spawnOptions?.model || null,
-          onDiagnostic: (code) => log.warn("character context compile failed open: %s", code),
-        },
-      });
-      state.pendingWorldBookCheckpoint = result.pendingCheckpoint;
-      return result.compiled;
-    } catch (err) {
-      log.warn("character context compilation failed open: %s", err?.message || String(err));
-      return null;
-    }
+    return compileTurnContext({ orchestrator: this, session, state, runner, log });
   }
 
   async _handleDone(sessionId, payload) {
     const state = this._state(sessionId);
+    state.requiredToolResults = Array.isArray(payload?.requiredToolResults) ? payload.requiredToolResults : [];
     if (!state.turnId || state.terminalEmitted) {
       void this._dispatchNext(sessionId);
       return;
@@ -1881,6 +1855,8 @@ class TurnOrchestrator {
         admittedTurnInput: null,
         dispatchAttemptId: null,
         characterWorldsSnapshot: null,
+        characterWorldsRuntimeSnapshot: null,
+        requiredToolResults: [],
         assistantText: "",
         thinkingText: "",
         contentBlocks: [],

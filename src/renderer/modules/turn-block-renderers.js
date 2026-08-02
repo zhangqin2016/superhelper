@@ -18,6 +18,7 @@ import {
   artifactSourceUrl,
   bytesText,
 } from "./turn-renderer-block-model.js";
+import { renderCharacterResultCard } from "./character-result-card.js";
 
 export {
   artifactBlocksFromArtifacts,
@@ -305,14 +306,19 @@ function fallbackBlock(block) {
   return el(html`<pre class="assistant-renderer-block assistant-renderer-unknown">${text}</pre>`);
 }
 
-function renderBlockNode(block) {
+function renderBlockNode(block, options = {}) {
+  if (block?.type === "character_worlds_receipt") {
+    const node = renderCharacterResultCard(block, options);
+    node.dataset.blockKey = turnResultBlockKey(block);
+    return node;
+  }
   const renderer = rendererForBlock(block);
   const node = renderer ? renderer(block) : fallbackBlock(block);
   node.dataset.blockKey = turnResultBlockKey(block);
   return node;
 }
 
-export function renderResultBlocks(root, blocks = []) {
+export function renderResultBlocks(root, blocks = [], options = {}) {
   if (!root) return;
   const normalized = Array.isArray(blocks)
     ? blocks.filter((block) => block?.type && (
@@ -342,7 +348,7 @@ export function renderResultBlocks(root, blocks = []) {
       prev.delete(k);
       next.push(reused);
     } else {
-      next.push(renderBlockNode(normalized[i]));
+      next.push(renderBlockNode(normalized[i], options));
     }
   }
 

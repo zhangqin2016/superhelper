@@ -54,10 +54,8 @@ const {
   normalizeTodoStatus,
   todoTitle,
 } = require("./opencode-todo-completion-policy");
-
+const requiredToolCompletion = require("./required-tool-completion-gate");
 const log = getLogger("opencode-agent-session");
-
-
 function rawToolFromEvent(ev = {}) {
   const p = ev.properties || {};
   if (ev.type === "message.part.updated") {
@@ -142,6 +140,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._latestTodos = [];
     this._latestTodosSignature = "";
     this._todoCompletionGateAttempts = 0;
+    requiredToolCompletion.reset(this);
     /** @type {Map<string, { rawRequestId: string, sessionID: string }>} pending permission request ids awaiting a host reply. */
     this._pendingPermissions = new Map();
     /** @type {Map<string, { questions: Array, rawRequestId: string, sessionID: string }>} pending question id -> its questions (for answer mapping). */
@@ -463,7 +462,6 @@ class OpencodeAgentSession extends EventEmitter {
 
   // --- outbound ------------------------------------------------------------
 
-  /** @param {{ text?: string, files?: Array<object> } | string} payload */
   sendUserMessage(payload) {
     if (this.isBusy()) return false;
     const text = typeof payload === "string" ? payload : payload?.text;
@@ -483,6 +481,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._latestTodos = [];
     this._latestTodosSignature = "";
     this._todoCompletionGateAttempts = 0;
+    requiredToolCompletion.reset(this, typeof payload === "object" ? payload?.requiredSuccessfulTools : []);
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
     this._engineSessionWasResumed = Boolean(this._server?.wasResumed || this._engineSessionWasResumed);
@@ -882,6 +881,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   _noteToolActivity(draft = {}) {
     this._sawToolActivity = true;
+    requiredToolCompletion.note(this, draft);
     const payload = draft.payload || {};
     const id = String(payload.id || "");
     if (draft.type === "tool.started") {
@@ -1550,6 +1550,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   _completeTurn(payload) {
     if (this._turnSettled) return;
+    if (requiredToolCompletion.continueBeforeCompletion(this, payload)) return;
     if (this._continueUnfinishedTodosBeforeCompletion(payload)) return;
     // Pillar 3-B completion gate: on a clean turn end, if the assistant claimed a
     // file deliverable that is actually missing/empty, inject ONE corrective
@@ -1666,6 +1667,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._latestTodos = [];
     this._latestTodosSignature = "";
     this._todoCompletionGateAttempts = 0;
+    requiredToolCompletion.finish(this, payload);
     // Carry the turn's rewind anchor (engine message id) so the orchestrator can
     // record it on the turn — that's what session:rewind reverts to later.
     if (payload && typeof payload === "object" && this._turnEngineMessageId && !payload.engineMessageId) {
@@ -1869,8 +1871,6 @@ class OpencodeAgentSession extends EventEmitter {
   _armHealthProbe() { this._turnLiveness.armHealthProbe(); }
 
   _clearHealthProbe() { this._turnLiveness.clearHealthProbe(); }
-
-
   _sanitize(message) {
     return require("./agent-runner").sanitizeError(message);
   }
@@ -1906,17 +1906,14 @@ OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS =
 // users can see the engine is still alive while OpenCode is quiet.
 OpencodeAgentSession.PROGRESS_NOTICE_MS =
   Number(process.env.LILY_OPENCODE_PROGRESS_NOTICE_MS) || 45_000;
-// HARD wall-clock turn cap (distinct from the no-progress window above). Unlike
-// that window, this does NOT reset on activity — it bounds total turn time so an
-// actively-runaway turn (deep/wide subagent work that keeps emitting events) can't
-// run unbounded. Deliberately GENEROUS so it does not clip a legitimately long but
-// progressing turn (big build, hour-scale conversion); the step budget + depth cap
-// are the primary runaway bounds, this is the final time backstop. _forceEndTurn
-// recovers any official output. Override / disable (0) with LILY_OPENCODE_TURN_MAX_MS.
+// Optional administrative wall-clock cap. Production defaults to disabled:
+// legitimate progress may continue for tens of hours, while the no-progress
+// window, active-tool lease, health probe, step budget, depth cap and loop guard
+// still bound stuck/runaway work. Deployments may opt into an absolute deadline.
 OpencodeAgentSession.TURN_WATCHDOG_MS =
   process.env.LILY_OPENCODE_TURN_MAX_MS !== undefined
     ? Number(process.env.LILY_OPENCODE_TURN_MAX_MS) || 0
-    : 60 * 60_000;
+    : 0;
 // Bounded official-history sync before declaring a no-progress turn stalled.
 // This mirrors the official app's source-of-truth model without letting the
 // watchdog itself hang on an unhealthy server.

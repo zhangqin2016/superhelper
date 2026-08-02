@@ -193,7 +193,7 @@ try {
   console.log("character-world-book-import:");
 
   await check("schema v9 pins the embedded book revision on character revisions", async () => {
-    assert.equal(store.db.pragma("user_version"), 12);
+    assert.equal(store.db.pragma("user_version"), 15);
     assert.ok(
       tableColumns(store.db, "character_revisions").includes("character_book_revision_id"),
       "missing character_revisions.character_book_revision_id",

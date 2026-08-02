@@ -235,6 +235,29 @@ function engineCheck({ includeEngine }) {
   return check("ok", "engine.available", "AI 引擎", "内置 AI 引擎存在。");
 }
 
+function longTaskDiagnosticCheck(options = {}) {
+  const dbPath = options.dbPath || safeCall(() => require("./config").longTaskDbPath(), "");
+  if (!dbPath || !fs.existsSync(dbPath)) {
+    return check("ok", "long_task.store", "长任务恢复", "尚无持久化长任务记录。");
+  }
+  try {
+    const { LongTaskStore } = require("./long-task/store");
+    const store = new LongTaskStore({ filePath: dbPath });
+    try {
+      const active = store.listActiveJobs({ limit: 5_000 }).length;
+      const pendingWakes = store.listPendingWakes({ limit: 5_000 }).length;
+      return check(
+        pendingWakes > 0 ? "warning" : "ok",
+        "long_task.store",
+        "长任务恢复",
+        `活动任务 ${active} 个，待续跑事件 ${pendingWakes} 个。`,
+      );
+    } finally { store.close(); }
+  } catch (error) {
+    return check("warning", "long_task.store", "长任务恢复", `持久化状态暂不可读：${String(error?.message || error).slice(0, 180)}`);
+  }
+}
+
 async function runSupportDiagnosticsPublic(options = {}) {
   const refreshService = options.refreshService !== false;
   let refreshResult = null;
@@ -278,6 +301,7 @@ async function runSupportDiagnosticsPublic(options = {}) {
   checks.push(deepChecks.sessionStoreCheck(options));
   checks.push(deepChecks.workspaceAccessCheck(options));
   checks.push(await deepChecks.environmentProcessesCheck(options));
+  checks.push(longTaskDiagnosticCheck(options));
   if (license) {
     checks.push(check(
       license.valid || license.activated ? "ok" : "warning",
@@ -366,6 +390,7 @@ async function submitDiagnosticsFeedbackPublic(input = {}) {
 }
 
 module.exports = {
+  longTaskDiagnosticCheck,
   runSupportDiagnosticsPublic,
   submitDiagnosticsFeedbackPublic,
   redact,

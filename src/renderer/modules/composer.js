@@ -1,7 +1,6 @@
 /**
  * Composer — sends user messages to the active Claude session (stream-json).
  */
-
 import store from "./state.js";
 import { $ } from "./dom.js";
 import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
@@ -10,6 +9,12 @@ import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { canSend, getTurnPhase, markSessionStopping, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
+import {
+  clearCharacterAuthoringMarker,
+  readCharacterAuthoringMarker,
+  restoreCharacterAuthoringMarker,
+  characterAuthoringOptions,
+} from "./character-authoring-marker.js";
 import { chooseDialog } from "./confirm-dialog.js";
 import { attachmentDisplayPayload, attachmentSendPayload } from "./attachment-payload.js";
 
@@ -199,6 +204,8 @@ function sendErrorMessage(result) {
 export async function sendPrompt(opts = {}) {
   const promptInput = $("promptInput");
   let text = promptInput?.value.trim() || "";
+  const characterAuthoringMarker = readCharacterAuthoringMarker(promptInput, text);
+  const characterAuthoringKind = characterAuthoringMarker?.kind || null;
   const files = (store.get("pendingFiles") || []).map(attachmentSendPayload);
 
   if (!text && files.length === 0) return;
@@ -272,7 +279,9 @@ export async function sendPrompt(opts = {}) {
   if (!canSend(sessionId)) {
     const options = [{ value: "queue", label: t("composer.busyChoiceQueue") }];
     // Steer = inject into the running turn (no interrupt, no wait for the whole turn).
-    if (steerEnabled) options.push({ value: "steer", label: t("composer.busyChoiceSteer") });
+    if (steerEnabled && !characterAuthoringKind) {
+      options.push({ value: "steer", label: t("composer.busyChoiceSteer") });
+    }
     options.push({ value: "interrupt", label: t("composer.busyChoiceInterrupt"), danger: true });
     sendMode = await chooseDialog({
       title: t("composer.busyChoiceTitle"),
@@ -289,14 +298,23 @@ export async function sendPrompt(opts = {}) {
   const savedText = text;
   const savedFiles = [...(store.get("pendingFiles") || [])];
 
-  if (promptInput) promptInput.value = "";
+  if (promptInput) {
+    promptInput.value = "";
+    clearCharacterAuthoringMarker(promptInput);
+  }
   sessionDrafts.delete(sessionId);
   syncComposerInputHeight();
   clearPendingFiles();
 
   let result;
   try {
-    const dispatchArgs = [text, files, sessionId, displayFiles.length ? displayFiles : null];
+    const dispatchArgs = [
+      text,
+      files,
+      sessionId,
+      displayFiles.length ? displayFiles : null,
+      characterAuthoringOptions(characterAuthoringMarker),
+    ];
     result = sendMode === "interrupt"
       ? await window.assistantClient.interruptAndSend(...dispatchArgs)
       : sendMode === "steer"
@@ -304,6 +322,7 @@ export async function sendPrompt(opts = {}) {
         : await window.assistantClient.sendMessage(...dispatchArgs);
   } catch (err) {
     if (promptInput && savedText) promptInput.value = savedText;
+    restoreCharacterAuthoringMarker(promptInput, characterAuthoringMarker);
     if (savedText) sessionDrafts.set(sessionId, savedText);
     if (savedFiles.length) {
       store.set("pendingFiles", savedFiles);
@@ -315,6 +334,7 @@ export async function sendPrompt(opts = {}) {
 
   if (!result?.ok) {
     if (promptInput && savedText) promptInput.value = savedText;
+    restoreCharacterAuthoringMarker(promptInput, characterAuthoringMarker);
     if (savedText) sessionDrafts.set(sessionId, savedText);
     if (savedFiles.length) {
       store.set("pendingFiles", savedFiles);

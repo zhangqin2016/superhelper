@@ -35,6 +35,10 @@ const {
   stableJson,
   unpackJson,
 } = require("./persistence-codec");
+const {
+  getConversationConfig,
+  setConversationConfig,
+} = require("./conversation-config-repository");
 function entityFromRow(row) {
   if (!row) return null;
   return {
@@ -403,6 +407,12 @@ class CharacterWorldsRepository {
       mergeStrategy: row.merge_strategy || "constant",
     }));
   }
+  getConversationConfig(sessionId, ownerScope) {
+    return getConversationConfig(this, sessionId, ownerScope);
+  }
+  setConversationConfig(input) {
+    return setConversationConfig(this, input);
+  }
   setBookBindings({ sessionId, ownerScope, books = [] }) {
     const session = requiredString(sessionId, "sessionId");
     const owner = requiredString(ownerScope, "ownerScope");
@@ -432,108 +442,31 @@ class CharacterWorldsRepository {
       }
     });
   }
-  setBinding({ sessionId, ownerScope, expectedBindingVersion, next = {} }) {    const session = requiredString(sessionId, "sessionId");
+  setBinding({ sessionId, ownerScope, expectedBindingVersion, next = {} }) {
+    const session = requiredString(sessionId, "sessionId");
     const owner = requiredString(ownerScope, "ownerScope");
-    if (!Number.isInteger(expectedBindingVersion) || expectedBindingVersion < 0)
-      throw new TypeError("expectedBindingVersion must be a non-negative integer");
     const mode = next.mode || "native";
-    if (mode !== "native" && mode !== "character")
+    if (mode !== "native" && mode !== "character") {
       throw codedError("CHARACTER_BINDING_INVALID", "Unsupported Phase 1 binding mode");
-    return this.db.transaction(() => {
-      const row = this.db.get(
-        "SELECT * FROM character_session_bindings WHERE session_id = ?", session,
-      );
-      if (row && row.owner_scope !== owner)
-        throw codedError("CHARACTER_BINDING_OWNER_MISMATCH",
-          "Session binding belongs to another owner scope");
-      const current = bindingFromRow(row, session);
-      if (current.bindingVersion !== expectedBindingVersion)
-        throw codedError("CHARACTER_BINDING_CONFLICT", "Binding version is stale", { current });
-      let characterRevisionId = null;
-      let personaRevisionId = null;
-      let compatibilityProfile = null;
-      if (mode === "character") {
-        characterRevisionId = requiredString(
-          next.characterRevisionId, "next.characterRevisionId");
-        const revision = this.db.get(
-          "SELECT 1 FROM character_revisions WHERE id = ? AND owner_scope = ?",
-          characterRevisionId, owner,
-        );
-        if (!revision)
-          throw codedError("CHARACTER_REVISION_NOT_FOUND", "Character revision not found");
-        if (next.personaRevisionId != null) {
-          // Optional persona pin (§7.5): an owner-scoped immutable persona
-          // revision, validated exactly like the character revision.
-          personaRevisionId = requiredString(
-            next.personaRevisionId, "next.personaRevisionId");
-          const personaRevision = this.db.get(
-            "SELECT 1 FROM persona_revisions WHERE id = ? AND owner_scope = ?",
-            personaRevisionId, owner,
-          );
-          if (!personaRevision)
-            throw codedError("PERSONA_REVISION_NOT_FOUND", "Persona revision not found");
-        }
-        compatibilityProfile = String(
-          next.compatibilityProfile || C.CHARACTER_COMPATIBILITY_PROFILE);
-      }
-      const createdAt = Date.now();
-      const updatedAt = isoTime(createdAt);
-      const committed = {
-        schemaVersion: C.CHARACTER_BINDING_SCHEMA_VERSION,
-        sessionId: session, mode,
-        bindingVersion: current.bindingVersion + 1,
-        characterRevisionId, personaRevisionId, compatibilityProfile,
-        greetingIndex: Number.isSafeInteger(next.greetingIndex) && next.greetingIndex >= 0
-          ? next.greetingIndex
+    }
+    const committed = setConversationConfig(this, {
+      sessionId: session,
+      ownerScope: owner,
+      expectedBindingVersion,
+      compatibilityProfile: next.compatibilityProfile,
+      next: {
+        characterRevisionId: mode === "character"
+          ? requiredString(next.characterRevisionId, "next.characterRevisionId")
           : null,
-      };
-      const envelope = bindingEnvelope(committed, updatedAt);
-      const envelopeJson = stableJson(envelope);
-      if (Buffer.byteLength(envelopeJson, "utf8") > C.MAX_CHARACTER_BINDING_BYTES) {
-        throw codedError("CHARACTER_BINDING_TOO_LARGE",
-          `Binding exceeds ${C.MAX_CHARACTER_BINDING_BYTES} bytes`);
-      }
-      this.db.run(
-        `INSERT INTO character_session_bindings
-           (session_id, owner_scope, binding_version, mode,
-            character_revision_id, persona_revision_id, compatibility_profile,
-            binding_json, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(session_id) DO UPDATE SET
-           binding_version = excluded.binding_version,
-           mode = excluded.mode,
-           character_revision_id = excluded.character_revision_id,
-           persona_revision_id = excluded.persona_revision_id,
-           compatibility_profile = excluded.compatibility_profile,
-           binding_json = excluded.binding_json,
-           updated_at = excluded.updated_at`,
-        session, owner, committed.bindingVersion, mode, characterRevisionId,
-        personaRevisionId, compatibilityProfile, envelopeJson, createdAt,
-      );
-      let previousEnvelope;
-      try {
-        previousEnvelope = row ? JSON.parse(row.binding_json) : bindingEnvelope(current, null);
-      } catch {
-        previousEnvelope = bindingEnvelope(current, row ? isoTime(row.updated_at) : null);
-      }
-      const eventId = crypto.randomUUID();
-      const event = {
-        schemaVersion: C.CHARACTER_BINDING_SCHEMA_VERSION,
-        id: eventId, sessionId: session,
-        type: "character_binding.changed",
-        previousBinding: previousEnvelope, nextBinding: envelope,
-        effectiveAfterTurnId: null,
-        createdAt: updatedAt,
-      };
-      this.db.run(
-        `INSERT INTO character_binding_events
-           (id, session_id, owner_scope, binding_version, event_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        eventId, session, owner, committed.bindingVersion,
-        stableJson(event), createdAt,
-      );
-      return committed;
-    })();
+        personaRevisionId: mode === "character" && next.personaRevisionId != null
+          ? requiredString(next.personaRevisionId, "next.personaRevisionId")
+          : null,
+        books: this.getBookBindings(session, owner),
+        greetingIndex: mode === "character" ? next.greetingIndex : null,
+      },
+    });
+    const { books, sceneId, groupId, ...legacyBinding } = committed;
+    return legacyBinding;
   }
   getBindingEvents(sessionId, ownerScope, { afterVersion = 0, limit = 200 } = {}) {
     const session = requiredString(sessionId, "sessionId");

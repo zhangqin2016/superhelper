@@ -191,6 +191,25 @@ try {
   });
   assert.equal(calls.interrupted.length, 1, "interruptAndSend called once");
   assert.equal(calls.interrupted[0].sessionId, "target-session");
+
+  await handlers.get("assistant:input")(null, {
+    sessionId: "target-session",
+    text: "أريد دورا ممتازا",
+    characterAuthoringKind: "character",
+  });
+  const authored = calls.sent.at(-1);
+  assert.deepEqual(authored.options.requiredSuccessfulTools, ["lily_character_draft"]);
+  assert.match(authored.options.engineText, /kind=character/);
+  assert.match(authored.options.engineText, /Do not create a Markdown/);
+
+  await handlers.get("assistant:steer")(null, {
+    sessionId: "target-session",
+    text: "Create a world setting",
+    characterAuthoringKind: "worldBook",
+  });
+  const queuedAuthoring = calls.sent.at(-1);
+  assert.equal(queuedAuthoring.options.mode, undefined, "authoring is an independent queued turn, not steer");
+  assert.deepEqual(queuedAuthoring.options.requiredSuccessfulTools, ["lily_character_draft"]);
   assert.equal(calls.sessionSwitch, 0, "targeted send must not switch active session");
   assert.equal(calls.projectSwitch, 0, "targeted send must not switch active project");
 

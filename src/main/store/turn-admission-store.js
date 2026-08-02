@@ -256,8 +256,9 @@ function createTurnAdmissionStoreMethods({
             migration_status, migration_reason, scheduled_session_barrier,
             scheduled_task_run_id, external_command_id,
             external_idempotency_key, external_payload_hash,
-            external_desktop_device_id, external_mobile_device_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            external_desktop_device_id, external_mobile_device_id,
+            character_worlds_snapshot_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT DO NOTHING`,
         sid,
         admittedSeq,
@@ -282,6 +283,7 @@ function createTurnAdmissionStoreMethods({
         keys.externalPayloadHash,
         keys.externalDesktopDeviceId,
         keys.externalMobileDeviceId,
+        characterWorldsSnapshot ? JSON.stringify(characterWorldsSnapshot) : null,
       );
       let row = inserted.changes === 1
         ? this.db.get(

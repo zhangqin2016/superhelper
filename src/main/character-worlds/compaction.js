@@ -20,8 +20,10 @@ const CHARACTER_WORLDS_SUMMARY_KEYS = new Set([
   "schemaVersion",
   "mode",
   "bindingVersion",
+  "previewVersion",
   "characterRevisionId",
   "personaRevisionId",
+  "worldBookRevisionIds",
   "compatibilityProfile",
 ]);
 
@@ -36,23 +38,38 @@ const MAX_SUMMARY_SECTION_BYTES = 1024;
  */
 function characterWorldsSummarySection(snapshot) {
   if (!snapshot || typeof snapshot !== "object") return null;
-  if (snapshot.mode !== "character") return null;
+  const characterRevisionId = typeof snapshot.characterRevisionId === "string"
+    ? snapshot.characterRevisionId
+    : null;
+  const personaRevisionId = typeof snapshot.personaRevisionId === "string"
+    ? snapshot.personaRevisionId
+    : null;
+  const worldBookRevisionIds = Array.isArray(snapshot.worldBookBindings)
+    ? snapshot.worldBookBindings
+      .map((binding) => typeof binding?.worldBookRevisionId === "string"
+        ? binding.worldBookRevisionId
+        : null)
+      .filter(Boolean)
+      .slice(0, 32)
+    : [];
+  if (!characterRevisionId && !personaRevisionId && worldBookRevisionIds.length === 0) return null;
   const section = {
-    schemaVersion: 1,
-    mode: snapshot.mode,
+    schemaVersion: snapshot.schemaVersion === 2 ? 2 : 1,
+    mode: characterRevisionId ? "character" : "native",
     bindingVersion: Number.isInteger(snapshot.bindingVersion)
       ? snapshot.bindingVersion
       : 0,
-    characterRevisionId: typeof snapshot.characterRevisionId === "string"
-      ? snapshot.characterRevisionId
-      : "",
-    personaRevisionId: typeof snapshot.personaRevisionId === "string"
-      ? snapshot.personaRevisionId
-      : null,
+    characterRevisionId: characterRevisionId || "",
+    personaRevisionId,
     compatibilityProfile: typeof snapshot.compatibilityProfile === "string"
       ? snapshot.compatibilityProfile
       : null,
   };
+  if (section.schemaVersion === 2) {
+    section.previewVersion = Number.isInteger(snapshot.previewVersion) ? snapshot.previewVersion : 0;
+    section.worldBookRevisionIds = Object.freeze(worldBookRevisionIds);
+    if (!characterRevisionId) section.characterRevisionId = null;
+  }
   if (Buffer.byteLength(JSON.stringify(section), "utf8") > MAX_SUMMARY_SECTION_BYTES) {
     return null;
   }
@@ -73,9 +90,14 @@ function isMetadataOnlyCharacterSection(value) {
     if (!CHARACTER_WORLDS_SUMMARY_KEYS.has(key)) return false;
   }
   return (
-    value.mode === "character" &&
-    typeof value.characterRevisionId === "string" &&
-    value.characterRevisionId.length > 0 &&
+    (value.mode === "character" || value.mode === "native") &&
+    (value.characterRevisionId === null || typeof value.characterRevisionId === "string") &&
+    (value.personaRevisionId === null || typeof value.personaRevisionId === "string") &&
+    (value.worldBookRevisionIds === undefined || (
+      Array.isArray(value.worldBookRevisionIds)
+      && value.worldBookRevisionIds.every((id) => typeof id === "string" && id.length > 0)
+    )) &&
+    Boolean(value.characterRevisionId || value.personaRevisionId || value.worldBookRevisionIds?.length) &&
     typeof value.bindingVersion === "number" &&
     Number.isInteger(value.bindingVersion)
   );
@@ -92,8 +114,14 @@ function isMetadataOnlyCharacterSection(value) {
 function formatCharacterWorldsSummary(section) {
   if (!isMetadataOnlyCharacterSection(section)) return "";
   const persona = section.personaRevisionId ? `, persona ${section.personaRevisionId.slice(0, 8)}` : "";
+  const character = section.characterRevisionId
+    ? `character ${section.characterRevisionId.slice(0, 8)}`
+    : "native Lily";
+  const books = section.worldBookRevisionIds?.length
+    ? `, books ${section.worldBookRevisionIds.map((id) => id.slice(0, 8)).join("/")}`
+    : "";
   return `Character Worlds: active binding v${section.bindingVersion} ` +
-    `(character ${section.characterRevisionId.slice(0, 8)}${persona})`;
+    `(${character}${persona}${books})`;
 }
 
 module.exports = {

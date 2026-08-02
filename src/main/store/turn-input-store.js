@@ -16,6 +16,9 @@ const {
 const {
   TURN_INPUT_MIGRATION_OWNED,
 } = require("./turn-admission-migration");
+const {
+  currentConversationSnapshot,
+} = require("./character-worlds-admission-snapshot");
 
 const MAX_TURN_METADATA_BYTES = MAX_CHARACTER_BINDING_BYTES;
 const MAX_TURN_METADATA_DEPTH = 12;
@@ -213,73 +216,11 @@ function fallbackOrNativeSnapshot(db, sessionId, ownerScope) {
 }
 
 function snapshotCurrentCharacterBinding(db, sessionId, ownerScope) {
-  if (typeof ownerScope !== "string" || !ownerScope) return null;
-  let row;
   try {
-    row = db.get(
-      `SELECT
-         b.binding_version,
-         b.mode,
-         b.character_revision_id,
-         b.persona_revision_id,
-         b.compatibility_profile,
-         b.binding_json,
-         CASE WHEN r.id IS NULL THEN 0 ELSE 1 END AS revision_exists
-       FROM character_session_bindings b
-       LEFT JOIN character_revisions r
-         ON r.id = b.character_revision_id
-        AND r.owner_scope = b.owner_scope
-       WHERE b.session_id = ? AND b.owner_scope = ?`,
-      sessionId,
-      ownerScope,
-    );
+    return currentConversationSnapshot(db, sessionId, ownerScope);
   } catch {
     return fallbackSnapshot();
   }
-  if (!row) return fallbackOrNativeSnapshot(db, sessionId, ownerScope);
-  if (
-    typeof row.binding_json !== "string"
-    || row.binding_json.length > MAX_CHARACTER_BINDING_BYTES
-    || Buffer.byteLength(row.binding_json, "utf8") > MAX_CHARACTER_BINDING_BYTES
-    || !Number.isInteger(row.binding_version)
-    || row.binding_version < 1
-  ) return fallbackSnapshot();
-
-  let envelope;
-  try {
-    envelope = JSON.parse(row.binding_json);
-  } catch {
-    return fallbackSnapshot();
-  }
-  if (
-    !envelope
-    || typeof envelope !== "object"
-    || Array.isArray(envelope)
-    || envelope.schemaVersion !== 1
-    || envelope.bindingVersion !== row.binding_version
-    || envelope.mode !== row.mode
-    || (envelope.activeCharacterRevisionId || null) !== (row.character_revision_id || null)
-    || (envelope.activePersonaRevisionId || null) !== (row.persona_revision_id || null)
-    || (envelope.compatibilityProfile || null) !== (row.compatibility_profile || null)
-  ) return fallbackSnapshot();
-
-  if (row.mode === "native") {
-    return row.character_revision_id == null
-      && row.persona_revision_id == null
-      && row.compatibility_profile == null
-      ? null
-      : fallbackSnapshot();
-  }
-  if (row.mode !== "character" || row.revision_exists !== 1) return fallbackSnapshot();
-  // The persona pin rides the snapshot unverified on purpose (§16): a missing
-  // persona revision must never cost the turn its character context — the
-  // compiler fails open per-turn without the persona block instead.
-  return readySnapshot({
-    bindingVersion: row.binding_version,
-    characterRevisionId: row.character_revision_id,
-    personaRevisionId: row.persona_revision_id || null,
-    compatibilityProfile: row.compatibility_profile,
-  }) || fallbackSnapshot();
 }
 
 function snapshotInheritedCharacterBinding(db, sessionId, sourceTurnId, ownerScope) {
@@ -291,7 +232,7 @@ function snapshotInheritedCharacterBinding(db, sessionId, sourceTurnId, ownerSco
   ) return fallbackSnapshot();
   try {
     const source = db.get(
-      `SELECT status, metadata_json FROM turn_inputs
+      `SELECT status, metadata_json, character_worlds_snapshot_json FROM turn_inputs
        WHERE turn_id = ? AND session_id = ? AND owner_scope = ?
          AND migration_status = ?`,
       sourceTurnId,
@@ -300,13 +241,20 @@ function snapshotInheritedCharacterBinding(db, sessionId, sourceTurnId, ownerSco
       TURN_INPUT_MIGRATION_OWNED,
     );
     if (!source || !INHERITABLE_TURN_STATUSES.has(source.status)) return fallbackSnapshot();
-    const parsed = parseBoundedTurnMetadata(source.metadata_json);
-    if (!parsed.ok) return fallbackSnapshot();
-    const metadata = parsed.value;
-    if (!Object.hasOwn(metadata, "characterWorlds")) return null;
-    const normalized = normalizeSnapshot(metadata.characterWorlds);
+    let normalized = null;
+    if (typeof source.character_worlds_snapshot_json === "string") {
+      normalized = normalizeSnapshot(parseJson(source.character_worlds_snapshot_json, null));
+      if (!normalized) return fallbackSnapshot();
+    } else {
+      const parsed = parseBoundedTurnMetadata(source.metadata_json);
+      if (!parsed.ok) return fallbackSnapshot();
+      const metadata = parsed.value;
+      if (!Object.hasOwn(metadata, "characterWorlds")) return null;
+      normalized = normalizeSnapshot(metadata.characterWorlds);
+    }
     if (!normalized) return fallbackSnapshot();
     if (normalized.snapshotStatus === "fallback") return fallbackSnapshot();
+    if (!normalized.characterRevisionId) return normalized;
     const revision = db.get(
       `SELECT 1 AS present FROM character_revisions
        WHERE id = ? AND owner_scope = ?`,
@@ -320,6 +268,12 @@ function snapshotInheritedCharacterBinding(db, sessionId, sourceTurnId, ownerSco
 }
 
 function hydrateTurnInput(row) {
+  let metadata = hydrateTurnMetadata(row.metadata_json);
+  if (typeof row.character_worlds_snapshot_json === "string") {
+    const snapshot = normalizeSnapshot(parseJson(row.character_worlds_snapshot_json, null))
+      || fallbackSnapshot();
+    metadata = deepFreezeJson({ ...metadata, characterWorlds: snapshot });
+  }
   return Object.freeze({
     sessionId: row.session_id,
     admittedSeq: row.admitted_seq,
@@ -328,7 +282,7 @@ function hydrateTurnInput(row) {
     status: row.status,
     userText: row.user_text,
     files: parseJson(row.files_json, []),
-    metadata: hydrateTurnMetadata(row.metadata_json),
+    metadata,
     createdAt: row.created_at,
     dispatchAttemptId: row.dispatch_attempt_id || null,
     dispatchStartedAt: row.dispatch_started_at || null,

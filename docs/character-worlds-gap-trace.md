@@ -54,3 +54,11 @@ Date: 2026-08-01
 ## 产品决策待确认
 
 - §13.2 Delete 直接删除 vs archive 取代
+
+## 2026-08-01 Runtime Refactor Update
+
+本轮已落地并通过 focused/capability 相关自动测试：统一运行时 admission
+快照、owner/session 隔离、场景记忆 finalized gate + rewind、群聊发言规划、
+response variant side-effect gate、IPC/portability 接线，以及 v14 additive
+schema migration。真实权限下全量 `test:unit` 已达到 `555/555`。真实设备、
+模型评估和人工视觉验收仍需在目标运行环境完成。

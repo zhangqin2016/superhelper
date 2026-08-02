@@ -133,7 +133,7 @@ function prepareWorldUnits({
   // §10.4.1 multi-book input merges chat/persona/character/global lore first
   // (source precedence, insertion order preserved); the merged entries become
   // constant lore. Single-book input is unchanged.
-  const merged = mergeWorldBooks(worldBook.books);
+  const merged = mergeWorldBooks(worldBook.books, worldBook.mergeStrategy || "constant");
   const effectiveRevision = merged.length
     ? {
         ...(worldBook.revision || {}),

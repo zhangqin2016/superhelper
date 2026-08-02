@@ -69,11 +69,7 @@ function renderToolbar(state) {
   if (importBtn) importBtn.hidden = !onCharacters;
   const createBtn = $("characterLibraryCreateBtn");
   if (createBtn) {
-    const key = state.tab === "personas"
-      ? "character.library.createPersona"
-      : state.tab === "books"
-        ? "character.library.createBook"
-        : "character.library.createCharacter";
+    const key = "character.library.aiCreate";
     createBtn.textContent = t(key);
   }
 }
@@ -187,6 +183,11 @@ function formFieldValues(form) {
 function renderForm(state, detail) {
   const form = state.form;
   const wrap = el("div", "character-library-form");
+  if (form.mode === "create" && form.kind === "character") {
+    wrap.appendChild(el("p", "character-library-form-hint", {
+      textContent: t("character.library.createHint"),
+    }));
+  }
   if (form.mode === "edit" && Number.isInteger(form.revisionNumber)) {
     wrap.appendChild(el("div", "character-library-revision", {
       textContent: t("character.library.revisionLabel", { number: form.revisionNumber }),

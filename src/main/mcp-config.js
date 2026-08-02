@@ -189,11 +189,22 @@ function buildFileIntelligenceMcpEntry() {
 
 /** Built-in process job MCP: gives the agent a structured path for long-running
  * local servers/watchers without changing OpenCode's foreground Bash behavior. */
-function buildProcessJobsMcpEntry() {
+function buildProcessJobsMcpEntry(options = {}) {
+  let durableEnv = {};
+  try {
+    const config = require("./config");
+    durableEnv = {
+      LILY_LONG_TASK_DB: options.longTaskDbPath || config.longTaskDbPath(),
+      LILY_PROCESS_JOBS_SCOPE_SECRET: options.scopeSecret
+        || require("./long-task/secret").ensureLongTaskSecret(),
+    };
+  } catch {
+    durableEnv = {};
+  }
   return {
     command: process.execPath,
     args: [path.join(__dirname, "mcp", "process-jobs-mcp-stdio.js")],
-    env: { ELECTRON_RUN_AS_NODE: "1" },
+    env: { ELECTRON_RUN_AS_NODE: "1", ...durableEnv },
   };
 }
 
@@ -276,7 +287,7 @@ function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, conte
   }
   mcpServers.lily_tool_broker = buildToolBrokerMcpEntry(brokerContext);
   mcpServers.lily_file_intelligence = buildFileIntelligenceMcpEntry();
-  mcpServers.lily_process_jobs = buildProcessJobsMcpEntry();
+  mcpServers.lily_process_jobs = buildProcessJobsMcpEntry(options.processJobs || {});
   const mail = buildMailMcpEntry();
   if (mail) mcpServers.mail = mail;
   // Each learned web system becomes its own MCP server (typed tools), but only

@@ -9,7 +9,6 @@
  * currentBinding, and fails open: any IPC failure leaves the session in
  * native Lily with a quiet notice (design spec §16, HANDOFF.md §5).
  */
-
 import { $, el } from "./dom.js";
 import store from "./state.js";
 import { t } from "../i18n/index.js";
@@ -24,26 +23,22 @@ import { monogram, renderCharacterImportPreview } from "./character-import-previ
 import { createCharacterImportOpener } from "./character-import-opener.js";
 import { createSceneSectionController } from "./character-scene-section.js";
 import { openCharacterLibrary } from "./character-library.js";
-
+import { appendCharacterOptionCopy, createOfficialCharacterLoader, installOfficialCharacter } from "./official-character-picker.js";
+import { createCharacterPreviewController } from "./character-preview-controller.js";
 export {
   initialCharacterControlState,
   reduceCharacterControl,
   effectiveCharacterMode,
   effectiveBindingUpdates,
 };
-
 // -------------------------------------------------------------
-
 let controlState = initialCharacterControlState();
-
 /** Test/inspection hook: the current session-scoped control state. */
 export function getCharacterControlState() {
   return controlState;
 }
-
 /** Test hook: drive the controller's reducer directly (node tests). */
 export const dispatchCharacterControl = (action) => dispatch(action);
-
 const USER_ROUND_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>';
 const MAX_LISTED_CHARACTERS = 8;
 
@@ -138,12 +133,16 @@ function optionRow({ mode, character, checked }) {
     row.appendChild(el("span", "character-option-icon", { innerHTML: USER_ROUND_SVG }));
     row.appendChild(el("span", "character-option-name", { textContent: t("character.nativeOption") }));
   } else {
-    row.dataset.characterRevisionId = character.currentRevisionId;
+    if (character.officialId) row.dataset.characterOfficialId = character.officialId;
+    if (character.currentRevisionId) row.dataset.characterRevisionId = character.currentRevisionId;
     const swatch = el("span", "character-option-swatch", { textContent: monogram(character.displayName) });
     swatch.setAttribute("aria-hidden", "true");
     row.appendChild(swatch);
     const name = character.displayName || t("character.unnamed");
-    row.appendChild(el("span", "character-option-name", { textContent: name, title: name }));
+    appendCharacterOptionCopy(row, character, name, el);
+    if (character.official) {
+      row.appendChild(el("span", "character-option-official", { textContent: t("character.officialBadge") }));
+    }
   }
   row.appendChild(el("span", "character-option-check", { textContent: "✓" }));
   return row;
@@ -159,14 +158,26 @@ function renderList() {
       ? `mode:${active.dataset.characterMode}`
       : active.dataset?.characterRevisionId
         ? `rev:${active.dataset.characterRevisionId}`
+        : active.dataset?.characterOfficialId
+          ? `official:${active.dataset.characterOfficialId}`
         : null
     : null;
   list.textContent = "";
   const isCharacter = effectiveCharacterMode(controlState) === "character" && controlState.characterRevisionId;
   list.appendChild(optionRow({ mode: "native", checked: !isCharacter }));
-  const characters = controlState.characters.slice(0, MAX_LISTED_CHARACTERS);
+  const official = controlState.characters.filter((character) => character.official);
+  const characters = controlState.characters.filter((character) => !character.official).slice(0, MAX_LISTED_CHARACTERS);
+  if (official.length) {
+    list.appendChild(el("div", "character-list-heading", { textContent: t("character.officialHeading") }));
+    for (const character of official) {
+      list.appendChild(optionRow({
+        character,
+        checked: controlState.characterRevisionId === character.currentRevisionId,
+      }));
+    }
+  }
   if (!characters.length) {
-    list.appendChild(el("div", "character-list-empty", { textContent: t("character.emptyLibrary") }));
+    if (!official.length) list.appendChild(el("div", "character-list-empty", { textContent: t("character.emptyLibrary") }));
   } else {
     list.appendChild(el("div", "character-list-heading", { textContent: t("character.recentHeading") }));
     for (const character of characters) {
@@ -179,7 +190,9 @@ function renderList() {
   if (focusKey && !list.contains(document.activeElement)) {
     const selector = focusKey.startsWith("mode:")
       ? `[data-character-mode="${focusKey.slice(5)}"]`
-      : `[data-character-revision-id="${CSS.escape(focusKey.slice(4))}"]`;
+      : focusKey.startsWith("official:")
+        ? `[data-character-official-id="${CSS.escape(focusKey.slice(9))}"]`
+        : `[data-character-revision-id="${CSS.escape(focusKey.slice(4))}"]`;
     list.querySelector(selector)?.focus();
   }
 }
@@ -246,6 +259,7 @@ function render() {
   renderButton();
   renderPopover();
   renderRoleBanner();
+  previewController.render();
 }
 
 async function loadBinding(sessionId) {
@@ -273,16 +287,7 @@ async function loadBinding(sessionId) {
   }
 }
 
-async function loadCharacters() {
-  const api = facade();
-  if (!api) return;
-  try {
-    const res = await api.listCharacters();
-    if (res?.ok) dispatch({ type: "characters.loaded", characters: res.characters });
-  } catch {
-    /* keep the prior/empty list — fail open */
-  }
-}
+const loadCharacters = createOfficialCharacterLoader({ getFacade: facade, dispatch });
 
 const loadSwitchNotices = createSwitchNoticeLoader({ getState: () => controlState, getFacade: facade });
 
@@ -302,15 +307,23 @@ async function selectMode(mode, character = null) {
     characterName: character?.displayName || "",
   });
   try {
+    const resolvedCharacter = mode === "character"
+      ? await installOfficialCharacter(api, character)
+      : character;
+    if (mode === "character" && !resolvedCharacter) {
+      dispatch({ type: "selection.failed", sessionId, seq });
+      return;
+    }
     const res = await api.setSessionCharacterBinding({
       sessionId,
       expectedBindingVersion,
       mode: mode === "character" ? "character" : "native",
-      characterRevisionId: mode === "character" ? character?.currentRevisionId : undefined,
+      characterRevisionId: mode === "character" ? resolvedCharacter?.currentRevisionId : undefined,
     });
     if (!isCurrent()) return;
     if (res?.ok) {
-      dispatch({ type: "selection.settled", sessionId, seq, binding: res.binding });
+      dispatch({ type: "selection.settled", sessionId, seq, binding: res.binding,
+        characterName: mode === "character" ? resolvedCharacter?.displayName || "" : "" });
       announce(mode === "character"
         ? t("character.status.selected", { name: controlState.characterName || t("character.unnamed") })
         : t("character.status.native"));
@@ -334,6 +347,7 @@ async function selectMode(mode, character = null) {
 const refreshWorldIndicator = createWorldIndicatorLoader({ getState: () => controlState, dispatch, getFacade: facade });
 const sceneSection = createSceneSectionController({ getState: () => controlState, getFacade: facade, getElement: $, t });
 const renderRoleBanner = createRoleBannerRenderer({ getState: () => controlState, getElement: $, monogram, el, t });
+const previewController = createCharacterPreviewController({ getState: () => controlState, dispatch, getFacade: facade, getElement: $, refreshBinding: loadBinding });
 
 export const applyBindingUpdates = createBindingUpdateApplier({
   getState: () => controlState,
@@ -417,14 +431,15 @@ export function initCharacterSessionControl() {
   roleBanner?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPopover(); } });
 
   $("characterList")?.addEventListener("click", (event) => {
-    const row = event.target.closest("[data-character-mode], [data-character-revision-id]");
+    const row = event.target.closest("[data-character-mode], [data-character-revision-id], [data-character-official-id]");
     if (!row) return;
     if (row.dataset.characterMode === "native") {
       void selectMode("native");
       return;
     }
     const character = controlState.characters
-      .find((c) => c.currentRevisionId === row.dataset.characterRevisionId);
+      .find((c) => c.currentRevisionId === row.dataset.characterRevisionId
+        || c.officialId === row.dataset.characterOfficialId);
     if (character) void selectMode("character", character);
   });
 
@@ -487,12 +502,14 @@ export function initCharacterSessionControl() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !p.hidden) closePopover({ focusButton: true });
   });
+  previewController.bind();
 
   store.on("activeSessionId", (sid) => {
     if (sid === controlState.sessionId) return;
     if (sid) {
       dispatch({ type: "session.changed", sessionId: sid });
       void loadBinding(sid);
+      void previewController.load(sid);
     } else {
       // Active session went away (deleted/none): reset the control so no
       // stale character keeps showing.
@@ -504,6 +521,7 @@ export function initCharacterSessionControl() {
   if (initial) {
     dispatch({ type: "session.changed", sessionId: initial });
     void loadBinding(initial);
+    void previewController.load(initial);
   }
   render();
 }
