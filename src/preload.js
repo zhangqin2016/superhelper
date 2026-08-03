@@ -191,6 +191,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     }),
     listCharacters: () => ipcRenderer.invoke("character:list"),
     listOfficialCharacters: () => ipcRenderer.invoke("character:list-official"),
+    getOfficialCharacter: (officialId) => ipcRenderer.invoke("character:get-official", { officialId }),
     installOfficialCharacter: (officialId) => ipcRenderer.invoke("character:install-official", { officialId }),
     getCharacter: (characterId) => ipcRenderer.invoke("character:get", { characterId }),
     previewCharacterImport: (options = {}) => (options?.sourcePath

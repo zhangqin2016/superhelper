@@ -212,6 +212,14 @@ function publicOfficialCharacter(item) {
     editorialOrder: item.editorialOrder,
     featured: item.featured,
     visualKey: item.visualKey,
+    tags: [...item.tags],
+    official: true,
+  };
+}
+
+function officialCharacterDetail(item) {
+  return {
+    ...publicOfficialCharacter(item),
     summary: item.summary,
     suitableFor: [...item.suitableFor],
     requiredInputs: [...item.requiredInputs],
@@ -219,8 +227,6 @@ function publicOfficialCharacter(item) {
     deliverables: [...item.deliverables],
     qualityChecks: [...item.qualityChecks],
     boundaries: [...item.boundaries],
-    tags: [...item.tags],
-    official: true,
   };
 }
 
@@ -233,6 +239,11 @@ function listOfficialCharacters(locale = "zh-CN") {
   return OFFICIAL_CHARACTERS.map((item) => publicOfficialCharacter(localized(item, locale)));
 }
 
+function getOfficialCharacterDetail(id, locale = "zh-CN") {
+  const item = getOfficialCharacter(id, locale);
+  return item ? officialCharacterDetail(item) : null;
+}
+
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
   for (const child of Object.values(value)) deepFreeze(child);
@@ -241,4 +252,9 @@ function deepFreeze(value) {
 
 deepFreeze(OFFICIAL_CHARACTERS);
 
-module.exports = { OFFICIAL_CHARACTERS, getOfficialCharacter, listOfficialCharacters };
+module.exports = {
+  OFFICIAL_CHARACTERS,
+  getOfficialCharacter,
+  getOfficialCharacterDetail,
+  listOfficialCharacters,
+};

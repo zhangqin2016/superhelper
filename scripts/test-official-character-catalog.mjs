@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const {
   OFFICIAL_CHARACTERS,
   getOfficialCharacter,
+  getOfficialCharacterDetail,
   listOfficialCharacters,
 } = require("../src/main/character-worlds/official-character-catalog.js");
 
@@ -31,13 +32,17 @@ for (const summary of summaries) {
   assert.ok(summary.tagline);
   assert.ok(summary.category);
   assert.ok(summary.categoryId);
-  assert.ok(summary.summary);
-  assert.ok(summary.suitableFor.length);
-  assert.ok(summary.requiredInputs.length);
-  assert.ok(summary.workflow.length);
-  assert.ok(summary.deliverables.length);
-  assert.ok(summary.qualityChecks.length);
-  assert.ok(summary.boundaries.length);
+  assert.ok(summary.tags.length);
+  assert.equal("canonical" in summary, false);
+  assert.equal("workflow" in summary, false);
+  const detail = getOfficialCharacterDetail(summary.id);
+  assert.ok(detail.summary);
+  assert.ok(detail.suitableFor.length);
+  assert.ok(detail.requiredInputs.length);
+  assert.ok(detail.workflow.length);
+  assert.ok(detail.deliverables.length);
+  assert.ok(detail.qualityChecks.length);
+  assert.ok(detail.boundaries.length);
   assert.ok(full.canonical.description);
   assert.ok(full.canonical.personality);
   assert.ok(full.canonical.scenario);

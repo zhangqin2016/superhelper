@@ -2,6 +2,7 @@
 
 const {
   getOfficialCharacter,
+  getOfficialCharacterDetail,
   listOfficialCharacters,
 } = require("./character-worlds/official-character-catalog");
 const { getLocale } = require("./locale-settings");
@@ -60,6 +61,23 @@ function registerOfficialCharacterHandlers({ ipcMain, ctx, guard, failure, mapDo
         };
       });
       return { ok: true, characters };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  ipcMain.handle("character:get-official", async (event, payload = {}) => {
+    const denied = guard(event, payload);
+    if (denied) return denied;
+    if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
+    const owner = resolveOwnerScope(ctx);
+    const repo = repository();
+    if (!owner || !repo || typeof payload?.officialId !== "string" || !payload.officialId.trim()) {
+      return failure("INVALID_INPUT");
+    }
+    try {
+      const character = getOfficialCharacterDetail(payload.officialId.trim(), safeLocale());
+      return character ? { ok: true, character } : failure("CHARACTER_NOT_FOUND");
     } catch (error) {
       return mapDomainError(error);
     }

@@ -29,6 +29,7 @@ const require = createRequire(import.meta.url);
 const CHANNELS = {
   listCharacters: "character:list",
   listOfficialCharacters: "character:list-official",
+  getOfficialCharacter: "character:get-official",
   installOfficialCharacter: "character:install-official",
   getCharacter: "character:get",
   previewCharacterImport: "character:import-preview",
@@ -245,6 +246,7 @@ try {
     invokeCalls.length = 0;
     await api.listCharacters();
     await api.listOfficialCharacters();
+    await api.getOfficialCharacter("lily-companion");
     await api.installOfficialCharacter("lily-companion");
     await api.getCharacter("char-1");
     await api.previewCharacterImport();
@@ -275,6 +277,7 @@ try {
       [
         "character:list",
         "character:list-official",
+        "character:get-official",
         "character:install-official",
         "character:get",
         "character:import-preview",
@@ -308,17 +311,18 @@ try {
     assert.deepEqual(JSON.parse(JSON.stringify(invokeCalls)).filter((c) => c.channel === "character:import-preview").length, 2, "both preview calls carry the preview channel");
     assert.equal(invokeCalls[0].payload, undefined, "listCharacters takes no payload");
     assert.deepEqual(invokeCalls[1].payload, undefined, "listOfficialCharacters takes no payload");
-    assert.deepEqual(invokeCalls[2].payload, { officialId: "lily-companion" }, "installOfficialCharacter forwards an official ID");
-    assert.deepEqual(invokeCalls[3].payload, { characterId: "char-1" });
-    assert.equal(invokeCalls[4].payload, undefined, "previewCharacterImport takes no payload");
-    assert.deepEqual(invokeCalls[5].payload, { sourcePath: "/tmp/card.json" }, "previewCharacterImport forwards a validated sourcePath");
-    assert.equal(invokeCalls[11].payload, undefined, "listWorldBooks takes no payload");
-    assert.equal(invokeCalls[14].payload, undefined, "listPersonas takes no payload");
-    assert.deepEqual(invokeCalls[6].payload, { previewToken: "t".repeat(64), duplicateResolution: "create_copy" });
-    assert.deepEqual(invokeCalls[7].payload, { revisionId: "rev-1" });
-    assert.deepEqual(invokeCalls[12].payload, { worldBookId: "book-1" });
-    assert.deepEqual(invokeCalls[13].payload, { revisionId: "book-rev-1" });
-    assert.deepEqual(invokeCalls[15].payload, { personaId: "persona-1" });
+    assert.deepEqual(invokeCalls[2].payload, { officialId: "lily-companion" }, "getOfficialCharacter forwards an official ID");
+    assert.deepEqual(invokeCalls[3].payload, { officialId: "lily-companion" }, "installOfficialCharacter forwards an official ID");
+    assert.deepEqual(invokeCalls[4].payload, { characterId: "char-1" });
+    assert.equal(invokeCalls[5].payload, undefined, "previewCharacterImport takes no payload");
+    assert.deepEqual(invokeCalls[6].payload, { sourcePath: "/tmp/card.json" }, "previewCharacterImport forwards a validated sourcePath");
+    assert.equal(invokeCalls[12].payload, undefined, "listWorldBooks takes no payload");
+    assert.equal(invokeCalls[15].payload, undefined, "listPersonas takes no payload");
+    assert.deepEqual(invokeCalls[7].payload, { previewToken: "t".repeat(64), duplicateResolution: "create_copy" });
+    assert.deepEqual(invokeCalls[8].payload, { revisionId: "rev-1" });
+    assert.deepEqual(invokeCalls[13].payload, { worldBookId: "book-1" });
+    assert.deepEqual(invokeCalls[14].payload, { revisionId: "book-rev-1" });
+    assert.deepEqual(invokeCalls[16].payload, { personaId: "persona-1" });
   });
 
   await check("untrusted senders and remote frames are rejected on every channel", async () => {
