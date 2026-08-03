@@ -90,8 +90,11 @@ const DESCRIPTION = [
   "emotional behavior; expertise or worldview; goals, values, and decision",
   "principles; voice and vocabulary; response patterns; boundaries and prohibited",
   "behavior; positive and negative dialogue examples; an opening message; and",
-  "long-term consistency rules. Express these facets through the canonical format's",
-  "supported narrative fields, self-check contradictions, and repair a thin or",
+  "long-term consistency rules. Express these facets through the canonical format's supported",
+  "narrative fields. For romance, sexuality, or intimate requests, do not infer age or invent an",
+  "adult boundary; if adulthood is not explicit, use an explicitly adult,",
+  "non-explicit framing or ask one focused clarification, and do not generate",
+  "sexual detail. Self-check contradictions and repair a thin or",
   "inconsistent draft before calling this tool. Preserve exact facts, code, paths,",
   "numbers, citations, tool inputs, and user-requested formats outside role style.",
   "After saving, explain the result in ordinary language, show the user what was",
@@ -109,6 +112,40 @@ const DESCRIPTION = [
   "error, re-read the current revision before retrying. Results are ids and",
   "revision numbers only; do not claim the character is active.",
 ].join(" ");
+
+// Keep the model-facing shape explicit. The domain layer still owns the full
+// canonical validation and preserves inert extension fields, but a completely
+// open record makes the model invent nested card formats before it reaches the
+// useful CARD_* error. A flat, typed envelope gives it a valid starting point.
+const CANONICAL_INPUT_SCHEMA = z.object({
+  schemaVersion: z.number().int().optional(),
+  name: z.string().min(1).max(512),
+  description: z.string().max(100_000).optional(),
+  personality: z.string().max(100_000).optional(),
+  scenario: z.string().max(100_000).optional(),
+  firstMessage: z.string().max(100_000).optional(),
+  alternateGreetings: z.array(z.string().max(100_000)).max(32).optional(),
+  exampleDialogue: z.string().max(100_000).optional(),
+  creatorNotes: z.string().max(100_000).optional(),
+  systemPrompt: z.string().max(100_000).optional(),
+  postHistoryInstructions: z.string().max(100_000).optional(),
+  tags: z.array(z.string().max(256)).max(64).optional(),
+  creator: z.string().max(512).optional(),
+  characterVersion: z.string().max(128).optional(),
+}).passthrough();
+
+function repairHintFor(code) {
+  if (code === "CARD_ROOT_INVALID") {
+    return "Use a flat canonical object with a non-empty string name; do not nest the fields under profile, character, or settings.";
+  }
+  if (code === "CARD_JSON_INVALID") {
+    return "Use the standard flat canonical fields with strings for narrative fields and arrays only for tags or alternateGreetings.";
+  }
+  if (code === "INVALID_INPUT") {
+    return "Call the tool with action, kind, and a flat canonical object; do not create a Markdown or workspace file as a substitute.";
+  }
+  return "Repair only the reported field and retry the native persistence tool.";
+}
 
 /**
  * Strictly validate the broker-context `characterWorlds` block that the main
@@ -350,7 +387,13 @@ function buildCharacterDraftTool(deps = {}) {
     } catch (error) {
       const code = typeof error?.code === "string" ? error.code : "";
       if (CODED_ERROR_SHAPE.test(code)) {
-        const failure = { ok: false, error: code };
+        const message = typeof error.message === "string" ? error.message.slice(0, 512) : "";
+        const failure = {
+          ok: false,
+          error: code,
+          ...(message ? { message } : {}),
+          repairHint: repairHintFor(code),
+        };
         // CAS conflicts carry the current tip so the model can re-base.
         if (typeof error.currentRevisionId === "string" && error.currentRevisionId) {
           failure.currentRevisionId = error.currentRevisionId;
@@ -377,8 +420,8 @@ function buildCharacterDraftTool(deps = {}) {
     inputSchema: {
       action: z.enum(["create", "revise"]).describe("create a new draft, or revise an existing entity"),
       kind: z.enum(["character", "persona", "worldBook"]).describe("the library entity kind to draft"),
-      canonical: z.record(z.unknown()).describe(
-        "the full canonical card/persona fields (name required); unknown inert fields are preserved, executable keys are dropped",
+      canonical: CANONICAL_INPUT_SCHEMA.describe(
+        "a flat canonical object; name is required; use standard narrative fields such as description, personality, scenario, firstMessage, exampleDialogue, systemPrompt, postHistoryInstructions, tags, and alternateGreetings",
       ),
       entityId: z.string().min(1).max(128).optional()
         .describe("required for revise: the library entity id"),

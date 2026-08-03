@@ -2339,7 +2339,7 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     properties: {
       part: {
         type: "tool",
-        tool: "lily_character_draft",
+        tool: "lily_tb_lily_character_draft",
         callID: "draft-1",
         state: { status: "running", input: { action: "create", kind: "character" } },
       },
@@ -2350,9 +2350,12 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     properties: {
       part: {
         type: "tool",
-        tool: "lily_character_draft",
+        tool: "lily_tb_lily_character_draft",
         callID: "draft-1",
-        state: { status: "completed", output: JSON.stringify({ ok: true, entityId: "character-1" }) },
+        state: {
+          status: "completed",
+          output: JSON.stringify({ ok: true, entityId: "character-1", revisionId: "revision-1", revisionNumber: 1 }),
+        },
       },
     },
   });
@@ -2360,6 +2363,30 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   await waitIdleSettle();
   await tick();
   assert(orch.calls.done.length === 1, "successful persistent draft tool permits completion");
+  session.terminate();
+}
+
+// A failed authoring workflow must not preserve a contradictory success claim
+// in the terminal answer after bounded correction attempts are exhausted.
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({
+    text: "create a character",
+    requiredSuccessfulTools: ["lily_character_draft"],
+  });
+  await tick();
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "角色已创建成功，已经保存到角色库。" } });
+  for (let idle = 0; idle < 3; idle += 1) {
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    await tick();
+  }
+  assert(orch.calls.done.length === 1, "failed authoring eventually settles once");
+  assert(orch.calls.done[0].failureCode === "CHARACTER_DRAFT_PERSISTENCE_FAILED", "terminal failure has a stable workflow code");
+  assert(orch.calls.done[0].stalled !== true, "persistence failure is not misclassified as a watchdog stall");
+  const failedOutput = String(orch.calls.done[0].output || "");
+  assert(!/已创建成功|已经保存到角色库/.test(failedOutput), "terminal failure must not retain an unverified success claim");
+  assert(/没有保存到角色库/.test(failedOutput), "terminal failure explains that persistence did not succeed");
   session.terminate();
 }
 

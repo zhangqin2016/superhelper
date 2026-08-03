@@ -10,6 +10,14 @@ function projectedTaskId(tool = {}) {
   return id ? `worker_${id}` : "";
 }
 
+function subagentHandoffText(value) {
+  if (value == null) return "";
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  const text = String(raw || "").trim();
+  const result = text.match(/<task_result>([\s\S]*?)<\/task_result>/i);
+  return (result ? result[1] : text).trim().slice(0, 16_000);
+}
+
 function syncAgentTaskFromTool({ store, state, sessionId, tool, now = Date.now(), emit = () => {} } = {}) {
   if (!store || !state?.taskRun?.agentGraphId || !isSubagentTool(tool)) return null;
   const graphId = state.taskRun.agentGraphId;
@@ -69,7 +77,13 @@ function syncAgentTaskFromTool({ store, state, sessionId, tool, now = Date.now()
       emit("agent.completed", { graphId, taskId, agentId: workerId, status: "failed", error: failed.error });
       return failed;
     }
-    const completed = store.complete({ ...input, handoff: String(tool.result || "").slice(0, 16_000) });
+    const handoff = subagentHandoffText(tool.result);
+    if (!handoff) {
+      const failed = store.fail({ ...input, error: "SUBAGENT_HANDOFF_EMPTY" });
+      emit("agent.completed", { graphId, taskId, agentId: workerId, status: "failed", error: failed.error });
+      return failed;
+    }
+    const completed = store.complete({ ...input, handoff });
     emit("agent.completed", { graphId, taskId, agentId: workerId, status: "completed", handoff: completed.handoff });
     return completed;
   } catch (err) {
@@ -78,4 +92,4 @@ function syncAgentTaskFromTool({ store, state, sessionId, tool, now = Date.now()
   }
 }
 
-module.exports = { projectedTaskId, syncAgentTaskFromTool };
+module.exports = { projectedTaskId, subagentHandoffText, syncAgentTaskFromTool };

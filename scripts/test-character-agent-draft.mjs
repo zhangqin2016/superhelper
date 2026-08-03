@@ -95,6 +95,16 @@ try {
     assert.equal(tool.inputSchema.kind.safeParse("character").success, true);
     assert.equal(tool.inputSchema.kind.safeParse("persona").success, true);
     assert.equal(tool.inputSchema.kind.safeParse("worldBook").success, true);
+    assert.equal(
+      tool.inputSchema.canonical.safeParse({ name: "A", personality: "warm" }).success,
+      true,
+      "canonical input should expose the flat character-card shape",
+    );
+    assert.equal(
+      tool.inputSchema.canonical.safeParse({ name: "A", personality: 42 }).success,
+      false,
+      "known canonical fields should be typed at the model boundary",
+    );
     assert.equal(tool.inputSchema.entityId.safeParse("x".repeat(256)).success, false);
     // The description is the model contract: drafts never self-activate and
     // the human reviews/selects in the library (approval is human-only).
@@ -102,6 +112,8 @@ try {
     assert.match(description, /review/i);
     assert.match(description, /library/i);
     assert.match(description, /never (activat|select|bind)/i);
+    assert.match(description, /adult[^.]{0,160}non-explicit|non-explicit[^.]{0,160}adult/i);
+    assert.match(description, /do not infer age|不得猜年龄|不要猜年龄/i);
     for (const [facet, pattern] of [
       ["identity and relationship", /identity[^.]{0,80}relationship/i],
       ["background and scenario", /background[^.]{0,80}scenario/i],
@@ -433,6 +445,19 @@ try {
     assert.equal(personaAuthz.ok, false);
     assert.equal(personaAuthz.error, "PERSONA_DATA_INVALID");
     assert.equal(repository.listCharacters(OWNER).length, 1, "rejections write nothing");
+  });
+
+  await check("validation failures expose a bounded repair path", async () => {
+    const result = await call({
+      action: "create",
+      kind: "character",
+      canonical: { personality: "missing name" },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "CARD_ROOT_INVALID");
+    assert.equal(Object.hasOwn(result, "path"), false, "repair details must not expose private JSON pointers");
+    assert.match(result.message, /name/i);
+    assert.match(result.repairHint, /flat|name/i);
   });
 
   await check("executable keys are screened with authoring parity and reported", async () => {

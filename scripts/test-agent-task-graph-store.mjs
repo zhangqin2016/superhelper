@@ -91,8 +91,32 @@ try {
   assert.equal(store.get(taskRun.agentGraphId, "session-runtime").tasks["worker_task-tool-1"].status, "running");
   syncAgentTaskFromTool({ store, state, sessionId: "session-runtime", tool: { ...workerTool, status: "done", result: "inspected" }, now: 62 });
   assert.equal(store.get(taskRun.agentGraphId, "session-runtime").tasks["worker_task-tool-1"].handoff, "inspected");
+  const emptyWorkerTool = {
+    id: "task-tool-2",
+    name: "task",
+    input: { description: "Empty child" },
+    metadata: { sessionId: "child-session-2" },
+    status: "running",
+  };
+  syncAgentTaskFromTool({ store, state, sessionId: "session-runtime", tool: emptyWorkerTool, now: 63 });
+  syncAgentTaskFromTool({
+    store,
+    state,
+    sessionId: "session-runtime",
+    tool: { ...emptyWorkerTool, status: "done", result: '<task_result>\n\n</task_result>' },
+    now: 64,
+  });
+  assert.equal(
+    store.get(taskRun.agentGraphId, "session-runtime").tasks["worker_task-tool-2"].status,
+    "failed",
+    "empty child handoff must not project as completed",
+  );
   runtime.complete("session-runtime", "turn.completed");
-  assert.equal(store.get(taskRun.agentGraphId, "session-runtime").status, "completed");
+  assert.equal(
+    store.get(taskRun.agentGraphId, "session-runtime").status,
+    "failed",
+    "a failed child handoff must keep the parent graph from claiming complete coverage",
+  );
   const restoredGraph = store.restoreSnapshot(taskRun.agentGraphId, "session-runtime", projected, { now: 70 });
   assert.equal(Object.values(restoredGraph.tasks)[0].status, "cancelled", "restored live leases are cancelled instead of replayed");
 } finally {

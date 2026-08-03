@@ -34,7 +34,44 @@ noteRequiredToolDraft(state, {
   type: "tool.done",
   payload: { id: "call-2", isError: false, content: JSON.stringify({ ok: true, entityId: "character-1" }) },
 });
+assert.deepEqual(
+  missingRequiredTools(state),
+  ["lily_character_draft"],
+  "ok:true without revision evidence must not satisfy persistence",
+);
+
+noteRequiredToolDraft(state, {
+  type: "tool.started",
+  payload: { id: "call-4", name: "lily_character_draft" },
+});
+noteRequiredToolDraft(state, {
+  type: "tool.done",
+  payload: {
+    id: "call-4",
+    isError: false,
+    content: JSON.stringify({ ok: true, entityId: "character-1", revisionId: "revision-1", revisionNumber: 1 }),
+  },
+});
 assert.deepEqual(missingRequiredTools(state), []);
+
+const prefixedState = createRequiredToolCompletionState(["lily_character_draft"]);
+noteRequiredToolDraft(prefixedState, {
+  type: "tool.started",
+  payload: { id: "call-prefixed", name: "lily_tb_lily_character_draft" },
+});
+noteRequiredToolDraft(prefixedState, {
+  type: "tool.done",
+  payload: {
+    id: "call-prefixed",
+    isError: false,
+    content: JSON.stringify({ ok: true, entityId: "character-2", revisionId: "revision-2", revisionNumber: 1 }),
+  },
+});
+assert.deepEqual(
+  missingRequiredTools(prefixedState),
+  [],
+  "OpenCode MCP server prefixes must still satisfy the canonical Lily persistence requirement",
+);
 
 const errorState = createRequiredToolCompletionState(["lily_character_draft"]);
 noteRequiredToolDraft(errorState, {

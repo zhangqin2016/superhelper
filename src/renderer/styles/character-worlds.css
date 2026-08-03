@@ -499,6 +499,176 @@
   transform: rotate(180deg);
 }
 
+/* --- Production quick switcher -------------------------------------------
+   The quick switcher is a command surface, not a plain list. Keep the
+   catalogue scannable, keep actions compact, and give the scroll region a
+   clear boundary so the footer never stretches with the catalogue. */
+
+.character-popover {
+  width: calc(100vw - 24px);
+  max-width: 620px;
+  max-height: calc(100vh - 24px);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-floating), 0 0 0 1px var(--border-subtle);
+}
+
+.character-popover-header {
+  min-height: 48px;
+  padding: 8px 12px 8px 14px;
+  background: var(--bg-surface-raised);
+}
+.character-popover-header > span:first-child {
+  font-size: 14px;
+  font-weight: 650;
+}
+.character-popover-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+
+.character-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-surface-subtle);
+  scrollbar-gutter: stable;
+}
+
+.character-list-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px 2px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.character-list-heading::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.character-option {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  box-shadow: var(--top-highlight);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.character-option:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-hover);
+  transform: translateY(-1px);
+}
+.character-option[aria-checked="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
+}
+.character-option[data-character-mode="native"] {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  padding: 8px 10px;
+  align-items: center;
+  background: var(--bg-surface-muted);
+}
+.character-option-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-active);
+  font-size: 12px;
+}
+.character-option-copy {
+  gap: 3px;
+  overflow: hidden;
+}
+.character-option-name {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.character-option-tagline {
+  font-size: 11px;
+  line-height: 1.45;
+}
+.character-option-official {
+  align-self: flex-start;
+  margin-inline-start: auto;
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--text-secondary);
+}
+.character-option-check {
+  width: 18px;
+  margin-inline-start: 0;
+  font-size: 13px;
+}
+
+.character-popover-footer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg-surface-raised);
+}
+.character-footer-btn {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface);
+  font-size: 12px;
+  font-weight: 550;
+}
+.character-footer-btn:hover:not([disabled]) {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-hover);
+}
+#characterCreateBtn {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+#characterManageBtn {
+  grid-column: 1 / -1;
+  background: transparent;
+}
+
+@media (max-width: 520px) {
+  .character-popover {
+    width: calc(100vw - 16px);
+    max-width: 420px;
+  }
+  .character-list {
+    grid-template-columns: 1fr;
+  }
+  .character-option[data-character-mode="native"],
+  .character-list-heading {
+    grid-column: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .character-option {
+    transition: none;
+  }
+}
+
 /* Scene (group) settings in the conversation character popover (§12 P3-2). */
 .character-scene-section {
   margin-top: 8px;

@@ -33,9 +33,18 @@ function continueBeforeCompletion(session, payload) {
 
   if (state.attempts >= 2) {
     const message = "\n\n角色没有保存到角色库：持久化工具未成功执行，因此 Lily 没有把 Markdown 或普通文件当作角色。请重试创建；若问题持续，请检查 Character Worlds 与工具服务。";
-    session.collectedOutput = `${String(session.collectedOutput || "").trim()}${message}`.trim();
+    // Replace unverified assistant prose instead of appending a contradictory
+    // failure notice after a claim that the entity was already saved.
+    session.collectedOutput = message.trim();
     session._ingest([{ type: "assistant.delta", payload: { text: message } }]);
-    session._settleTurn({ ...payload, stalled: true, output: session.collectedOutput });
+    session._settleTurn({
+      ...payload,
+      code: 1,
+      error: message.trim(),
+      failureCode: "CHARACTER_DRAFT_PERSISTENCE_FAILED",
+      stalled: false,
+      output: session.collectedOutput,
+    });
     return true;
   }
 

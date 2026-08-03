@@ -415,6 +415,8 @@ async function run(label, source) {
 app.whenReady().then(async () => {
   win = new BrowserWindow({
     show: false,
+    width: 1440,
+    height: 900,
     webPreferences: {
       preload: path.join(root, "src/preload.js"),
       contextIsolation: true,
@@ -449,6 +451,19 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 120));
     const popover = document.getElementById("characterPopover");
     if (popover.hidden) throw new Error("popover should open first");
+    const popoverList = document.getElementById("characterList");
+    const popoverFooter = popover.querySelector(".character-popover-footer");
+    const popoverListStyle = getComputedStyle(popoverList);
+    const popoverFooterStyle = getComputedStyle(popoverFooter);
+    if (popoverListStyle.display !== "grid") throw new Error("quick selector must use a grid layout");
+    if (popoverFooterStyle.display !== "grid") throw new Error("quick selector actions must use a compact grid");
+    const columnCount = popoverListStyle.gridTemplateColumns.split(" ").filter(Boolean).length;
+    if (popover.querySelectorAll(".character-option").length > 1 && columnCount < 2) {
+      throw new Error("quick selector must expose stable columns");
+    }
+    if (popover.getBoundingClientRect().width > window.innerWidth) {
+      throw new Error("quick selector must stay within the viewport");
+    }
     manageBtn.click();
     await new Promise((r) => setTimeout(r, 300));
     if (!popover.hidden) throw new Error("opening the library closes the popover");
@@ -458,6 +473,10 @@ app.whenReady().then(async () => {
     if (!dialog || dialog.getAttribute("aria-modal") !== "true") throw new Error("library needs an aria-modal dialog");
     if (!dialog.getAttribute("aria-labelledby")) throw new Error("dialog must be labelled");
     if (!modal.contains(document.activeElement)) throw new Error("focus must move into the library");
+    const libraryCard = modal.querySelector(".character-library-card");
+    if (!libraryCard || libraryCard.getBoundingClientRect().width > Math.min(1240, window.innerWidth - 40)) {
+      throw new Error("library card must stay within the viewport");
+    }
     for (const id of ["characterLibraryGroups", "characterLibraryList", "characterLibraryGrid", "characterLibraryDetail", "characterLibrarySearch", "characterLibrarySourceFilter"]) {
       if (!document.getElementById(id)) throw new Error("production library host missing: " + id);
     }

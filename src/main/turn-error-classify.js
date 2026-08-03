@@ -249,6 +249,15 @@ function appendIncompleteTurnSummary(assistantText, state = {}, payload = {}) {
  * turn did not fail.
  */
 function classifyTurnFailure(payload, normalized, state) {
+  if (payload?.failureCode === "CHARACTER_DRAFT_PERSISTENCE_FAILED") {
+    return {
+      code: payload.failureCode,
+      message: String(payload.errorMessage || payload.error || normalized?.text || "角色没有保存到角色库，请重试创建。"),
+      retryable: true,
+      category: "workflow",
+      suppressIncompleteSummary: true,
+    };
+  }
   const rawError = [
     payload?.error,
     payload?.errorText,
