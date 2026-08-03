@@ -5,8 +5,8 @@
 // Verifies the READ-ONLY book inspection surface on the trusted bridge:
 //   - exactly three book channels (world-book:list/get/get-revision), exposed
 //     through the same frozen preload facade as the eight Phase 1 channels
-//   - NO renderer mutation path for books in Phase 2A: no create/update/
-//     delete/archive/import channel exists and the facade has no such method
+//   - no entry-level renderer mutation path for books: library activation only
+//     pins a validated revision and never exposes raw book content
 //   - owner scope is derived in main; renderer-supplied owner/account IDs are
 //     ignored; books of another owner are invisible
 //   - payloads/IDs are bounded, errors are stable renderer-safe codes, and NO
@@ -36,6 +36,7 @@ const BOOK_CHANNELS = {
 const PHASE_ONE_CHANNELS = [
   "character:list",
   "character:list-official",
+  "character:get-official",
   "character:install-official",
   "character:get",
   "character:import-preview",
@@ -51,6 +52,7 @@ const EXPERIENCE_CHANNELS = [
   "character-worlds:preview-start",
   "character-worlds:preview-exit",
   "character-worlds:preview-activate",
+  "character-worlds:library-activate",
   "character-worlds:adjust-target",
 ];
 // Phase 2A ships no book mutation surface; any of these would be a finding.
@@ -276,7 +278,7 @@ try {
     for (const channel of EXPERIENCE_CHANNELS) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} experience handler registered`);
     }
-    assert.equal(handlers.size, 25, "only reviewed channels are registered");
+    assert.equal(handlers.size, 27, "only reviewed channels are registered");
     for (const channel of handlers.keys()) {
       assert.equal(
         FORBIDDEN_CHANNEL_PATTERN.test(channel),
@@ -296,6 +298,7 @@ try {
         "commitCharacterImport",
         "exportCharacter",
         "getCharacter",
+        "getOfficialCharacter",
         "getSessionCharacterBinding",
         "getSessionCharacterEvents",
         "getWorldBook",
@@ -333,6 +336,7 @@ try {
         "startPreview",
         "exitPreview",
         "activatePreview",
+        "activateLibraryItem",
         "adjustTarget",
       ].sort(),
     );
