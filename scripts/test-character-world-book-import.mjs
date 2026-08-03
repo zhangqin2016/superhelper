@@ -12,6 +12,7 @@ import { createTestDestinationBroker } from "./character-destination-test-broker
 
 const require = createRequire(import.meta.url);
 const { MessageStore } = require("../src/main/store/message-store.js");
+const { MIGRATIONS } = require("../src/main/store/schema.js");
 const {
   CharacterWorldsService,
   CharacterSourceAuthority,
@@ -193,7 +194,7 @@ try {
   console.log("character-world-book-import:");
 
   await check("schema v9 pins the embedded book revision on character revisions", async () => {
-    assert.equal(store.db.pragma("user_version"), 15);
+    assert.equal(store.db.pragma("user_version"), MIGRATIONS.length);
     assert.ok(
       tableColumns(store.db, "character_revisions").includes("character_book_revision_id"),
       "missing character_revisions.character_book_revision_id",

@@ -249,6 +249,8 @@ class TurnOrchestrator {
     this.taskRunRuntime = createTaskRunRuntime({
       getState: (sessionId) => this._state(sessionId),
       emitEvent: (sessionId, event) => this.eventBus.emit(sessionId, event),
+      agentTaskGraphStore: ctx.agentTaskGraphStore || null,
+      publicHookRuntime: ctx.publicHookRuntime || null,
     });
     // External-command dedup ledgers, keyed by lilySessionId → Map(commandId →
     // record). Backed by a durable store so exactly-once ADMISSION survives a
@@ -573,8 +575,8 @@ class TurnOrchestrator {
     return selfHealProbeText(sessionId);
   }
 
-  async retryLastMessage(sessionId) {
-    return this.turnRecoveryRuntime.retryLastMessage(sessionId);
+  async retryLastMessage(sessionId, retryOptions = {}) {
+    return this.turnRecoveryRuntime.retryLastMessage(sessionId, retryOptions);
   }
 
   respondPermission(sessionId, requestId, decision) {
@@ -683,6 +685,7 @@ class TurnOrchestrator {
     const admitted = preadmitted || this._admitTurnInput(session, admissionOptions);
     state.admittedSeq = admitted?.admittedSeq || null;
     state.admittedTurnInput = admitted || null;
+    require("./public-hooks").observePublicHook(this.ctx.publicHookRuntime, "turn.admitted", { sessionId: session.id, turnId: state.turnId, principalId: admitted?.ownerScope || "", delivery: admitted?.delivery || "local" });
     state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
     state.characterWorldsRuntimeSnapshot = null;
 
@@ -837,6 +840,7 @@ class TurnOrchestrator {
     const admitted = preadmitted || this._admitTurnInput(session, admissionOptions);
     state.admittedSeq = admitted?.admittedSeq || null;
     state.admittedTurnInput = admitted || null;
+    require("./public-hooks").observePublicHook(this.ctx.publicHookRuntime, "turn.admitted", { sessionId: session.id, turnId: state.turnId, principalId: admitted?.ownerScope || "", delivery: admitted?.delivery || "direct" });
     state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
     state.characterWorldsRuntimeSnapshot = null;
     state.scheduledTask = opts.scheduledTaskRunId
@@ -909,6 +913,7 @@ class TurnOrchestrator {
       : ensureSessionRunner(this.ctx, session.id, {
           spawn: opts.spawnEngine !== false,
           permissionMode: opts.permissionMode,
+          disallowedTools: opts.disallowedTools,
           turnId: state.turnId,
         });
     runner = ensured.runner;
@@ -954,6 +959,7 @@ class TurnOrchestrator {
           ensured = ensureSessionRunner(this.ctx, session.id, {
             spawn: opts.spawnEngine !== false,
             permissionMode: opts.permissionMode,
+            disallowedTools: opts.disallowedTools,
             turnId: state.turnId,
           });
           runner = ensured.runner;
@@ -1237,6 +1243,8 @@ class TurnOrchestrator {
     state.enginePayload = {
       rawText: rawUserText,
       text: engineText,
+      turnId: state.turnId,
+      taskRunId: state.taskRun?.id || "",
       files,
       displayFiles,
       allowImageFileParts,
@@ -1389,6 +1397,29 @@ class TurnOrchestrator {
           }
         : null,
     });
+
+    if (this.ctx.publicHookRuntime && process.env.LILY_PUBLIC_HOOKS_V1 !== "0") {
+      const hookDecision = await this.ctx.publicHookRuntime.run("turn.before_dispatch", {
+        sessionId: session.id,
+        turnId: state.turnId,
+        taskRunId: state.taskRun?.id || "",
+        principalId: state.admittedTurnInput?.ownerScope || "",
+        text: state.enginePayload.text,
+        files: state.enginePayload.displayFiles || [],
+      });
+      if (!hookDecision.allow) {
+        this._finalize(session.id, "turn.failed", {
+          assistant: "",
+          code: "PUBLIC_HOOK_DENIED",
+          errorCode: "PUBLIC_HOOK_DENIED",
+          error: hookDecision.reason || "A configured security hook denied this turn.",
+        });
+        return { ok: false, error: "PUBLIC_HOOK_DENIED", hookDecision };
+      }
+      if (hookDecision.contextAppend) {
+        state.enginePayload.text = `${state.enginePayload.text}\n\n${hookDecision.contextAppend}`;
+      }
+    }
 
     // Linearized dispatch: revalidate the queue selection / owner against the
     // principal epoch, run the durable dispatch CAS, and only then touch the

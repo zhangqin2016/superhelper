@@ -5,6 +5,7 @@ import { registerPublicBillingRoutes } from "./public/billing.js";
 import { registerPublicWorkspaceAppRoutes } from "./public/apps.js";
 import { registerPublicClientConfigRoutes } from "./public/client-config.js";
 import { registerPublicDeviceRoutes } from "./public/devices.js";
+import { registerPublicEnterpriseRoutes } from "./public/enterprise.js";
 import { registerPublicLicenseRoutes } from "./public/licenses.js";
 import { registerPublicMobileRoutes } from "./public/mobile.js";
 import { registerPublicSkillRoutes } from "./public/skills.js";
@@ -31,6 +32,7 @@ export async function publicRoutes(app) {
   registerPublicWorkspaceAppRoutes(app);
   registerPublicClientConfigRoutes(app);
   registerPublicDeviceRoutes(app);
+  registerPublicEnterpriseRoutes(app);
   registerPublicLicenseRoutes(app);
   registerPublicMobileRoutes(app);
   registerPublicSkillRoutes(app);

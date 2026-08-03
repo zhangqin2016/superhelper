@@ -33,6 +33,7 @@ const OPERATION_SIGNALS = Object.freeze({
 const SOURCE_ANCHOR_RE = /(?:这|这个|这张|这份|该|当前|刚上传|上传的|附件|文件里|图里|文档里|其中|里面).{0,16}(?:图片|图像|照片|截图|pdf|文档|文件|表格|幻灯片|视频|音频|内容)|(?:attached|uploaded|this|current)\s+(?:image|picture|photo|screenshot|pdf|document|file|spreadsheet|presentation|video|audio)/i;
 const CONTENT_TARGET_RE = /内容|文字|文本|数据|表格|条款|字段|信息|画面|对象|页面|页码|text|content|data|table|clause|field|page/i;
 const ENGINEERING_CONTEXT_RE = /模块|代码|接口|功能|系统|流程|算法|模型|能力|实现|开发|接入|重构|测试|module|code|api|feature|system|pipeline|algorithm|model|capability|implement|develop|refactor|test/i;
+const DIAGNOSTIC_CONTEXT_RE = /诊断|排查|报错|故障|失败|重试|崩溃|卡住|异常|\bbug\b|\berror\b|\bfailed\b|\bretry\b|\bcrash(?:ed)?\b|\bstuck\b/i;
 const COMMAND_RE = /帮我|请(?:你)?|给我|需要|直接|马上|现在|生成一|创建一|制作一|修改这|编辑这|把这|please|can you|i need|generate (?:a|an)|create (?:a|an)|edit this|convert this/i;
 const INSTRUCTIONAL_RE = /怎么|如何|教程|方法|原理|能不能|是否可以|how to|guide|tutorial|what is the best way/i;
 
@@ -128,13 +129,17 @@ function inferContentTaskIntent({ text = "", files = [] } = {}) {
   const targetKinds = inferTargetKinds(source, operation);
   const explicitAnchor = SOURCE_ANCHOR_RE.test(source) || CONTENT_TARGET_RE.test(source);
   const sourceAnchored = attached.length > 0 || explicitAnchor;
-  const engineeringOnly = ENGINEERING_CONTEXT_RE.test(source) && !attached.length && !explicitAnchor;
+  // A screenshot or transcript can be evidence for a product failure. Merely
+  // attaching it must not turn a diagnostic request into an artifact edit.
+  const diagnosticEvidence = DIAGNOSTIC_CONTEXT_RE.test(source) && !explicitAnchor;
+  const engineeringOnly = (ENGINEERING_CONTEXT_RE.test(source) && !attached.length && !explicitAnchor)
+    || diagnosticEvidence;
   const commandIntent = COMMAND_RE.test(source);
   const instructional = INSTRUCTIONAL_RE.test(source);
   const routeTaskType = engineeringOnly
     ? ""
     : routeForIntent({ operation, sourceKinds, targetKinds, sourceAnchored, commandIntent, instructional });
-  const outputMode = ["create", "modify", "convert"].includes(operation) && (routeTaskType || commandIntent)
+  const outputMode = !engineeringOnly && ["create", "modify", "convert"].includes(operation) && (routeTaskType || commandIntent)
     ? "artifact"
     : "answer";
   const reasonCodes = unique([

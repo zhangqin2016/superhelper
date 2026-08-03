@@ -23,7 +23,7 @@ function indexes(table) {
 }
 
 try {
-  assert.equal(MIGRATIONS.length, 15, "experience schema is migration v15");
+  assert.ok(MIGRATIONS.length >= 15, "experience schema remains migration v15");
   db.migrate(MIGRATIONS.slice(0, 14));
   assert.equal(db.pragma("user_version"), 14);
 
@@ -36,7 +36,7 @@ try {
   );
 
   db.migrate(MIGRATIONS);
-  assert.equal(db.pragma("user_version"), 15);
+  assert.equal(db.pragma("user_version"), MIGRATIONS.length);
   assert.equal(
     db.get("SELECT turn_id FROM turn_inputs WHERE session_id = ?", "legacy-session").turn_id,
     "legacy-turn",

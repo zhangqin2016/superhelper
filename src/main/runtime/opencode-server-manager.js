@@ -302,6 +302,13 @@ class OpencodeServerManager extends EventEmitter {
     return this._sdkSession.unrevert(this.sessionID);
   }
 
+  async fork(messageID) {
+    if (!this.sessionID) throw new Error("no session");
+    if (!messageID) throw new Error("fork needs a messageID");
+    if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
+    return this._sdkSession.fork(this.sessionID, messageID);
+  }
+
   /** Liveness probe — GET /global/health with a short timeout. True = the server
    *  answered healthy; false = dead, wedged, or unreachable. Used to distinguish a
    *  genuinely stuck server from a model that's just thinking quietly. */

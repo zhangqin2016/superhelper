@@ -1,9 +1,16 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.145",
+  "version": "0.1.147",
   "private": true,
   "description": "Lily Workbench desktop client",
   "main": "src/main.js",
+  "bin": {
+    "lily": "scripts/lily-headless.mjs"
+  },
+  "exports": {
+    ".": "./src/main.js",
+    "./sdk": "./src/sdk/index.js"
+  },
   "scripts": {
     "start": "electron .",
     "start:dev": "DEV_USE_SYSTEM_AGENT=1 electron .",

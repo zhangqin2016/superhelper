@@ -493,12 +493,12 @@ function hasPendingPrompts(live = {}) {
     live.hooks?.size,
   );
 }
-
 function compactTaskRunForStore(taskRun = null) {
   if (!taskRun || typeof taskRun !== "object") return null;
   return {
     schemaVersion: Number(taskRun.schemaVersion || 1),
     id: taskRun.id || "",
+    agentGraphId: taskRun.agentGraphId || "",
     sessionId: taskRun.sessionId || "",
     turnId: taskRun.turnId || "",
     objective: taskRun.objective || "",

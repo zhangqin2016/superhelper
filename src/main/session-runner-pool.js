@@ -1,10 +1,11 @@
 "use strict";
 
-const crypto = require("node:crypto");
 const { OpencodeAgentSession } = require("./opencode-agent-session");
 const { resolveOpencodeCommand } = require("./agent-command");
 const { getActivePermissionMode } = require("./permission-settings");
 const { getLogger } = require("./logger");
+const { buildOpencodeRuntimeIdentityConfig } = require("./opencode-runtime-identity");
+const { configFingerprints, modelConfigDiagnostics: getModelConfigDiagnostics } = require("./opencode-config-freshness");
 
 const log = getLogger("runner-pool");
 class SessionRunnerPool {
@@ -50,6 +51,10 @@ class SessionRunnerPool {
     const { buildSharedBaseConfig } = require("./runtime/opencode-config-builder");
     const permissionMode = extra.permissionMode || getActivePermissionMode();
     const lilyEnv = resolveLilyEnv();
+    const runtimeIdentity = buildOpencodeRuntimeIdentityConfig(sessionId, cwd, {
+      ...extra,
+      permissionMode,
+    });
     // Capability grading (能力分档): only a probed "lite" grade changes anything —
     // standard/full/absent run today's exact config (capability-gate Rule 13).
     // Kill switch: LILY_ENABLE_CAPABILITY_GRADING=0 pins every model to standard.
@@ -70,6 +75,7 @@ class SessionRunnerPool {
       mcpServers: this._opencodeMcpServers(extra.activeSkillIds || [], {
         toolCompat: lilyEnv.LILY_OPENCODE_TOOL_COMPAT === "1",
         capabilityGrade,
+        runtimeIdentity,
       }),
       pluginPaths: this._opencodePlugins(),
       skillPaths: this._opencodeSkillPaths(extra.activeSkillIds || [], sessionId),
@@ -100,10 +106,11 @@ class SessionRunnerPool {
 
     if (!runner) {
       runner = new OpencodeAgentSession(sessionId);
+      runner.publicHookRuntime = this.publicHookRuntime || null;
       this._sessions.set(sessionId, runner);
     }
-    const modelConfigFingerprint = this._modelConfigFingerprint(cfg.configContent);
-    const modelConfigDiagnostics = this._modelConfigDiagnostics(cfg.configContent);
+    const { modelConfigFingerprint, toolConfigFingerprint } = configFingerprints(cfg.configContent);
+    const modelConfigDiagnostics = getModelConfigDiagnostics(cfg.configContent);
     const modelRouteAudit = cfg.diagnostics?.modelRoute || null;
     if (modelRouteAudit) {
       log.info(
@@ -141,6 +148,10 @@ class SessionRunnerPool {
       env = buildAgentSpawnEnv({ configDir: extra.configDir, lilyEnv });
     } catch {
       env = {};
+    }
+    if (runtimeIdentity) {
+      env.LILY_RUNTIME_IDENTITY_V1 = "1";
+      env.LILY_RUNTIME_IDENTITY_REGISTRY = runtimeIdentity.registryPath;
     }
 
     // lite grade: tighter system-guide budget through the EXISTING truncation
@@ -210,10 +221,12 @@ class SessionRunnerPool {
       model: cfg.model,
       modelRouteAudit,
       modelConfigFingerprint,
+      toolConfigFingerprint,
       env,
       opencodeConfig: cfg.configContent,
       guidance,
       configDir: extra.configDir,
+      runtimeIdentity,
       refreshManagedModelConfig: async () => {
         const refreshed = await require("./ipc-utils").refreshRemoteConfigForSend({
           force: true,
@@ -259,51 +272,6 @@ class SessionRunnerPool {
       runner.ensureProcess(cwd, runner.spawnOptions, { lazy: false });
     }
     return runner;
-  }
-
-  _modelConfigFingerprint(configContent = "") {
-    const subset = this._modelConfigSubset(configContent);
-    if (!subset) return "";
-    return crypto.createHash("sha256").update(JSON.stringify(subset)).digest("hex").slice(0, 16);
-  }
-
-  _modelConfigSubset(configContent = "") {
-    try {
-      const parsed = JSON.parse(String(configContent || "{}"));
-      const agentModels = {};
-      for (const [name, agent] of Object.entries(parsed.agent || {})) {
-        if (agent && typeof agent === "object" && agent.model) agentModels[name] = agent.model;
-      }
-      return {
-        model: parsed.model || "",
-        small_model: parsed.small_model || "",
-        provider: parsed.provider || {},
-        agentModels,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  _modelConfigDiagnostics(configContent = "") {
-    const subset = this._modelConfigSubset(configContent);
-    if (!subset) return null;
-    const modelRef = String(subset.model || "");
-    const slash = modelRef.indexOf("/");
-    const provider = slash >= 0 ? modelRef.slice(0, slash) : "";
-    const model = slash >= 0 ? modelRef.slice(slash + 1) : modelRef;
-    const providerCfg = provider ? subset.provider?.[provider] || null : null;
-    const modelCfg = providerCfg?.models?.[model] || null;
-    const providerOptions = Object.keys(providerCfg?.options || {})
-      .filter((key) => !/key|token|authorization/i.test(key))
-      .sort();
-    const modelOptions = Object.keys(modelCfg?.options || {}).sort();
-    return {
-      model: subset.model || "",
-      provider,
-      providerOptions: providerOptions.length ? providerOptions.join(",") : "-",
-      modelOptions: modelOptions.length ? modelOptions.join(",") : "-",
-    };
   }
 
   /** The small, static Lily identity header used as the OpenCode primary-agent
@@ -412,7 +380,7 @@ class SessionRunnerPool {
 
   /** Lily's active MCP servers (mail/playwright/web) as a {name:{command,args,env}}
    *  map, for translation into OpenCode's mcp config. Empty on any failure. */
-  _opencodeMcpServers(activeSkillIds = null, { toolCompat = false, capabilityGrade = "" } = {}) {
+  _opencodeMcpServers(activeSkillIds = null, { toolCompat = false, capabilityGrade = "", runtimeIdentity = null } = {}) {
     try {
       const fs = require("node:fs");
       const { bundleRuntimeDir } = require("./bundle-locator");
@@ -431,7 +399,10 @@ class SessionRunnerPool {
         out,
         activeSkillIds,
         sharedBrokerContext,
-        { webAutomationPackDir: getEffectiveRuntimePackDir("web-automation") },
+        {
+          webAutomationPackDir: getEffectiveRuntimePackDir("web-automation"),
+          runtimeIdentity,
+        },
       );
       if (!written) return {};
       let servers = JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
@@ -474,7 +445,7 @@ class SessionRunnerPool {
         candidates.push(path.join(PROJECT_ROOT, rel));
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
-      return ["verify-edit.js", "compaction-memory.js", "loop-detector.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "empty-assistant-history-guard.js", "context-window-guard.js", "live-file-history-guard.js"].map(resolve).filter(Boolean);
+      return ["runtime-identity.js", "public-hooks-bridge.js", "verify-edit.js", "compaction-memory.js", "loop-detector.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "empty-assistant-history-guard.js", "context-window-guard.js", "live-file-history-guard.js"].map(resolve).filter(Boolean);
     } catch {
       return [];
     }

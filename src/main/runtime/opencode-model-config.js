@@ -183,6 +183,17 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   if (token) {
     options.apiKey = token;
     options.headers = { Authorization: `Bearer ${token}` };
+    // Optional org context: when the user selected a current organization,
+    // carry it on every model request so the server can fall back to the org
+    // pool (docs/enterprise-organizations-design.md §6.5). Missing account
+    // state or no selection -> header absent -> personal path unchanged.
+    try {
+      const accountManager = require("../account-manager");
+      const orgId = accountManager.getCurrentOrganizationId();
+      if (orgId) options.headers["x-lily-organization-id"] = orgId;
+    } catch {
+      // account-manager unavailable (tests/CLI) — leave header absent
+    }
   }
 
   const config = {

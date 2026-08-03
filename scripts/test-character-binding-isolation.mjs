@@ -1163,9 +1163,14 @@ await check("retry, model self-heal, and evidence recovery inherit the original 
       return { ok: true };
     },
   });
-  const result = await recovery.retryLastMessage(SESSION_A);
+  const result = await recovery.retryLastMessage(SESSION_A, {
+    engineText: "persistent character authoring workflow",
+    requiredSuccessfulTools: ["lily_character_draft"],
+  });
   assert.equal(result.ok, true);
   assert.equal(sends[0][3].sourceTurnId, firstAdmission.turnId);
+  assert.equal(sends[0][3].engineText, "persistent character authoring workflow");
+  assert.deepEqual(sends[0][3].requiredSuccessfulTools, ["lily_character_draft"]);
   assert.equal(Object.hasOwn(sends[0][3], "characterWorldsSnapshot"), false);
 });
 

@@ -14,69 +14,8 @@
   border: 0;
 }
 
-/* --- Composer toolbar button ---------------------------------------------- */
+/* --- Character identity swatches ----------------------------------------- */
 
-/* The .composer-toolbar prefix is required: composer.css pins
-   .composer-toolbar .composer-icon-btn to 30px, and an unprefixed rule loses
-   that specificity fight (the bound swatch+label would be crushed away). */
-.composer-toolbar .composer-character-btn {
-  width: auto;
-  height: 30px;
-  padding: 0 8px;
-  gap: 5px;
-  display: flex;
-  align-items: center;
-}
-/* Author display:flex/grid above would otherwise defeat the hidden attribute
-   (load flash, no-facade fail-open, ghost swatch/icon in the wrong mode). */
-.composer-character-btn[hidden],
-.composer-character-btn-swatch[hidden],
-.composer-character-btn-icon[hidden],
-.composer-character-btn-persona[hidden],
-.composer-character-btn-world[hidden] {
-  display: none;
-}
-/* §13.1 persona indicator: a tiny pinned badge next to the name; never shown
-   when no persona is pinned, and muted so it cannot be confused with the
-   character identity swatch. */
-.composer-character-btn-persona,
-.composer-character-btn-world {
-  flex: none;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 2px 3px;
-  border-radius: 3px;
-  color: color-mix(in srgb, currentColor 78%, transparent);
-  background: color-mix(in srgb, currentColor 12%, transparent);
-}
-.composer-character-btn.is-open,
-.composer-character-btn:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-.composer-character-btn-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-/* Fixed width + ellipsis: the toolbar never shifts when the bound name
-   changes length; the full name stays available via the title attribute. */
-.composer-character-btn-label {
-  width: 72px;
-  font-size: 12px;
-  font-weight: 500;
-  text-align: start;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.composer-character-btn-label[hidden] {
-  display: none;
-}
-
-.composer-character-btn-swatch,
 .character-option-swatch,
 .character-preview-swatch {
   display: grid;
@@ -427,57 +366,100 @@
 /* RTL: rows and labels flip with dir=rtl through logical alignment above
    (text-align: start, flex layouts); nothing here is direction-hardcoded. */
 
-/* Session role banner (§13.1 visible-state): makes the active character
-   obvious above the message stream; hidden in native mode. */
+/* Conversation context is a compact composer command, alongside permission,
+   skills and scheduling. It must not become a detached full-width footer. */
 .session-role-banner {
-  display: flex;
+  display: grid;
+  grid-template-columns: 20px minmax(0, auto) auto 14px;
   align-items: center;
-  gap: 8px;
-  margin: 8px 16px 0;
-  padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  gap: 5px;
+  width: 150px;
+  max-width: 150px;
+  height: 30px;
+  margin: 0;
+  padding: 0 8px 0 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: start;
   cursor: pointer;
   user-select: none;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 .session-role-banner[hidden] {
   display: none;
 }
 .session-role-banner:hover,
 .session-role-banner:focus-visible {
-  border-color: var(--accent);
+  border-color: var(--border-light);
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
   outline: none;
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+.session-role-banner[aria-expanded="true"] {
+  border-color: var(--accent-border);
+  background: var(--bg-surface-hover);
 }
 .session-role-banner-avatar {
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 20px;
+  height: 20px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 6px;
   font-weight: 700;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-surface-active);
+}
+.session-role-banner.is-character .session-role-banner-avatar {
   color: #fff;
   background: var(--accent);
 }
 .session-role-banner-name {
+  min-width: 0;
   font-weight: 600;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .session-role-banner-badges {
-  margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 4px;
-  font-size: 9px;
+  min-width: 0;
+  margin-inline-start: auto;
+  font-size: 10px;
   font-weight: 600;
+  white-space: nowrap;
 }
 .session-role-banner-badges span {
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 3px;
   color: color-mix(in srgb, currentColor 78%, transparent);
   background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.session-role-banner-chevron {
+  flex: none;
+  color: var(--text-faint, var(--text-secondary));
+  transition: transform var(--dur) var(--ease);
+}
+
+@media (max-width: 860px) {
+  .session-role-banner-badges {
+    display: none;
+  }
+}
+.session-role-banner[aria-expanded="true"] .session-role-banner-chevron {
+  transform: rotate(180deg);
 }
 
 /* Scene (group) settings in the conversation character popover (§12 P3-2). */
@@ -530,3 +512,4 @@
 .character-result-action, .character-preview-actions button { min-height: 28px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: inherit; }
 .character-result-card.has-error { border-color: var(--danger-border); }
 .character-preview-banner { justify-content: space-between; width: 100%; min-height: 36px; padding: 6px 10px; border-block: 1px solid var(--border); background: var(--surface-subtle); font-size: 12px; }
+.character-preview-banner[hidden] { display: none; }

@@ -713,8 +713,11 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  width: fit-content;
+  max-width: 100%;
   gap: 4px;
   margin-top: 2px;
+  margin-inline-start: auto;
   min-height: 24px;
 }
 

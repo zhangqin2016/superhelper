@@ -43,3 +43,31 @@ npm run test:unit
 - macOS / Windows：无需原生 PTY 模块
 - 需本机或内置 `opencode` engine
 - 主进程协议改动后需**完全重启**应用（`npm start`）
+## Headless CLI and Node SDK
+
+Lily can run without Electron for CI and automation while using the same bundled
+OpenCode engine configuration:
+
+```bash
+lily run --workspace . --stream-json --max-turns 40 \
+  --allowed-tools read,grep,edit "Review this repository and fix the failing tests"
+```
+
+Use `--session <id>` or `--resume <id>` to continue an engine session and add
+`--fork` to branch it. `--json` preserves the legacy raw OpenCode JSON output;
+`--stream-json` emits versioned newline-delimited Lily runtime events. When the
+desktop is running, stream mode uses Lily's durable local control plane, so a
+client disconnect does not cancel the task and `--after-cursor` resumes without
+replaying older events. Other
+automation controls include `--denied-tools`, `--timeout`, `--model`, and
+`--command`.
+
+The Node API is exported as `lily-workbench/sdk`:
+
+```js
+const { createLilyClient } = require("lily-workbench/sdk");
+const lily = createLilyClient();
+for await (const event of lily.run({ prompt: "Run the release checks", workspace: process.cwd() })) {
+  process.stdout.write(`${event.cursor} ${event.type}\n`);
+}
+```

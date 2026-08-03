@@ -68,6 +68,22 @@ export async function userApiPost(path, body) {
   return json;
 }
 
+export async function userApiPatch(path, body) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    cache: "no-store",
+    headers: await userHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body || {}),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || json?.ok === false) {
+    const code = json?.code || "";
+    const message = json?.message || json?.error || code || `API ${path} failed: ${response.status}`;
+    throw new Error(code && message !== code ? `${code}: ${message}` : message);
+  }
+  return json;
+}
+
 export async function userApiDelete(path) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "DELETE",

@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { verifyModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { gatewayAccountRequired } from "./model-gateway/usage.js";
+import { resolveOrgContextForRequest } from "./organization-context.js";
 import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
 
 // Mint a short-lived HS256 JWT for Kling-style auth (iss=accessKey, exp=+1800,
@@ -97,6 +98,8 @@ async function requireMediaEntitlement(request, reply, token, providerId, rest) 
     return false;
   }
   if (account.licenseAuthorized || account.trial || account.anonymous) return true;
+  const orgId = await resolveOrgContextForRequest(request, reply, token);
+  if (orgId === null) return false;
   const pricing = await fetchFeaturePricing({
     feature: usage.feature,
     provider: providerId,
@@ -114,6 +117,7 @@ async function requireMediaEntitlement(request, reply, token, providerId, rest) 
     unitCost: pricing.unitCost,
     idempotencyKey: usageIdempotencyKey(request),
     metadata: { path: rest },
+    organizationId: orgId,
   });
   if (!consumed.ok) {
     reply.code(402).send({

@@ -962,15 +962,14 @@ class SessionManager {
       messages: [],
       messageCount: 0,
     };
-    if (!this.sessions[projectId]) {
-      this.sessions[projectId] = [];
-    }
+    if (!this.sessions[projectId]) this.sessions[projectId] = [];
     this.sessions[projectId].push(session);
     this.activeSessionId = session.id;
     this.saveImmediate();
     return session;
   }
 
+  forkAtTurn(sourceSessionId, title, turnId) { return require("./session-fork").forkSessionAtTurn(this, sourceSessionId, title, turnId); }
   createAutomationSession(projectId, title, taskId) { return require("./automation-session").createAutomationSession(this, projectId, title, taskId); }
   switchTo(sessionId) {
     this.activeSessionId = sessionId;

@@ -579,6 +579,11 @@ try {
     assert.equal(bound.binding.characterRevisionId, committed.revision.id);
     assert.notEqual(bound.binding.compatibilityProfile, "attacker-controlled");
 
+    const restored = await handlers.get("session-character:get-binding")(trustedEvent(), {
+      sessionId: "session-a",
+    });
+    assert.equal(restored.characterName, "Luna V2", "binding projection restores the trusted display name");
+
     const conflict = await handlers.get("session-character:set-binding")(trustedEvent(), {
       sessionId: "session-a",
       expectedBindingVersion: 0,

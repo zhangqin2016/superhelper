@@ -15,6 +15,7 @@ const {
 } = require("./task-run-state");
 
 const log = getLogger("task-run-runtime");
+const { syncAgentTaskFromTool } = require("./agent-task-projection");
 
 function progressValueFromNotice(notice = {}) {
   const progress = notice?.progress;
@@ -49,22 +50,50 @@ function createTaskRunRuntime(options = {}) {
   const getState = options.getState;
   const emitEvent = options.emitEvent || (() => []);
   const now = options.now || (() => Date.now());
+  const agentTaskGraphStore = options.agentTaskGraphStore || null;
+  const publicHookRuntime = options.publicHookRuntime || null;
 
   function stateFor(sessionId) {
     if (typeof getState !== "function") throw new Error("getState adapter is required");
     return getState(sessionId);
   }
 
+  function renewLeadLease(sessionId, state) {
+    const graphId = state.taskRun?.agentGraphId;
+    const attemptId = state.taskRun?.resumeState?.leadAttemptId;
+    if (!agentTaskGraphStore || !graphId || !attemptId) return;
+    try {
+      agentTaskGraphStore.renew({
+        graphId,
+        sessionId,
+        taskId: `lead_${state.taskRun.id}`,
+        workerId: "lead",
+        attemptId,
+        now: now(),
+        leaseMs: 24 * 60 * 60 * 1_000,
+      });
+    } catch (error) {
+      if (!/AGENT_TASK_(NOT_RUNNING|LEASE_EXPIRED)/.test(String(error?.code || error?.message || ""))) {
+        log.warn("Lead agent lease renewal failed open: %s", error?.message || error);
+      }
+    }
+  }
+
   function emitTaskEvent(sessionId, type, payload = {}) {
     try {
       const state = stateFor(sessionId);
       if (!state.turnId) return null;
-      return emitEvent(sessionId, {
+      renewLeadLease(sessionId, state);
+      const emitted = emitEvent(sessionId, {
         type,
         turnId: state.turnId,
         source: "task-run",
         payload,
       })?.[0] || null;
+      if (["agent.spawned", "agent.started", "agent.waiting", "agent.completed"].includes(type)) {
+        require("./public-hooks").observePublicHook(publicHookRuntime, type, { sessionId, turnId: state.turnId, ...payload });
+      }
+      return emitted;
     } catch (err) {
       log.warn("TaskRun event dropped (%s): %s", type, err?.message || err);
       return null;
@@ -92,6 +121,41 @@ function createTaskRunRuntime(options = {}) {
       }
       if (opts.localAssistant) {
         markTaskPhase(state.taskRun, "local_assistant", "Preparing local assistant response");
+      }
+      if (agentTaskGraphStore && process.env.LILY_AGENT_TASK_GRAPH !== "0") {
+        try {
+          const { addAgentTask, createAgentTaskGraph } = require("./agent-task-graph");
+          const graph = createAgentTaskGraph({
+            taskRunId: state.taskRun.id,
+            sessionId,
+            principalId: state.admittedTurnInput?.ownerScope || opts.principalId || `session:${sessionId}`,
+            now: state.startedAt || now(),
+          });
+          addAgentTask(graph, {
+            id: `lead_${state.taskRun.id}`,
+            agentId: "lead",
+            depth: 0,
+            objective: state.taskRun.objective || objective || "Execute task",
+            replaySafe: false,
+            maxAttempts: 1,
+            now: state.startedAt || now(),
+          });
+          const leadClaim = require("./agent-task-graph").claimAgentTask(graph, `lead_${state.taskRun.id}`, {
+            workerId: "lead",
+            leaseMs: 24 * 60 * 60 * 1_000,
+            now: state.startedAt || now(),
+          });
+          agentTaskGraphStore.create(graph);
+          state.taskRun.agentGraphId = graph.id;
+          state.taskRun.resumeState = { ...(state.taskRun.resumeState || {}), leadAttemptId: leadClaim?.attemptId || "" };
+          emitTaskEvent(sessionId, "agent.graph.created", {
+            taskRunId: state.taskRun.id,
+            graphId: graph.id,
+            leadTaskId: `lead_${state.taskRun.id}`,
+          });
+        } catch (err) {
+          log.warn("Agent task graph projection failed open: %s", err?.message || err);
+        }
       }
       emitTaskEvent(sessionId, "task.created", {
         taskRun: compactTaskRun(state.taskRun),
@@ -137,6 +201,7 @@ function createTaskRunRuntime(options = {}) {
       if (!state.taskRun) ensure(sessionId, "tool_or_progress");
       if (!state.taskRun) return null;
       if (opts.tool) noteTaskToolUse(state.taskRun, opts.tool);
+      if (opts.tool) syncAgentTaskFromTool({ store: agentTaskGraphStore, state, sessionId, tool: opts.tool, now: now(), emit: (type, payload) => emitTaskEvent(sessionId, type, payload) });
       markTaskPhase(state.taskRun, phase, label, {
         resumeState: opts.resumeState || null,
       });
@@ -184,6 +249,7 @@ function createTaskRunRuntime(options = {}) {
       if (!state.taskRun && opts.tool) ensure(sessionId, "tool_evidence");
       if (!state.taskRun) return null;
       const item = addTaskEvidence(state.taskRun, evidence);
+      if (opts.tool) syncAgentTaskFromTool({ store: agentTaskGraphStore, state, sessionId, tool: opts.tool, now: now(), emit: (type, payload) => emitTaskEvent(sessionId, type, payload) });
       emitTaskEvent(sessionId, "task.evidence.added", {
         taskRunId: state.taskRun.id,
         evidence: item,
@@ -329,6 +395,15 @@ function createTaskRunRuntime(options = {}) {
           })
         : { status: "not_verified", reason: "" };
       completeTaskRun(state.taskRun, terminalType, verification);
+      if (agentTaskGraphStore && state.taskRun.agentGraphId) {
+        const graph = agentTaskGraphStore.get(state.taskRun.agentGraphId, sessionId);
+        const lead = graph.tasks[`lead_${state.taskRun.id}`];
+        if (lead?.status === "running") {
+          const input = { graphId: graph.id, sessionId, taskId: lead.id, workerId: lead.workerId, attemptId: lead.activeAttemptId, now: now() };
+          if (terminalType === "turn.completed") agentTaskGraphStore.complete({ ...input, handoff: state.taskRun.completionStatus || "completed" });
+          else agentTaskGraphStore.fail({ ...input, error: terminalType });
+        }
+      }
       const eventType = terminalType === "turn.failed"
         ? "task.failed"
         : terminalType === "turn.interrupted"

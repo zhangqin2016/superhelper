@@ -145,25 +145,41 @@ export function createWorldIndicatorLoader({ getState, dispatch, getFacade }) {
 
 
 /**
- * §13.1 visible-state role banner above the message stream (extracted for
- * the session-control ratchet). Shows monogram + name + persona/world badges;
- * hidden in native mode.
+ * Composer-owned conversation context selector. Shows native Lily or the
+ * pinned character plus readable persona/world labels. It is hidden only when
+ * the feature or active session is unavailable.
  */
 export function createRoleBannerRenderer({ getState, getElement, monogram, el: createEl, t: translate }) {
   return function renderRoleBanner() {
     const banner = getElement("sessionRoleBanner");
     if (!banner) return;
     const state = getState();
-    const isCharacter = (state?.available === false ? "native" : state?.mode || "native") === "character"
+    const isCharacter = state?.available !== false && (state?.mode || "native") === "character"
       && state.characterRevisionId;
-    banner.hidden = !isCharacter;
-    if (!isCharacter) return;
-    const name = state.characterName || translate("character.unnamed");
+    const visible = state?.available !== false && Boolean(state?.sessionId);
+    banner.hidden = !visible;
+    if (!visible) return;
+    const name = isCharacter
+      ? state.characterName || translate("character.unnamed")
+      : translate("character.nativeOption");
     banner.querySelector(".session-role-banner-avatar").textContent = monogram(name);
     banner.querySelector(".session-role-banner-name").textContent = name;
+    banner.classList.toggle("is-character", Boolean(isCharacter));
     const badges = banner.querySelector(".session-role-banner-badges");
     badges.textContent = "";
-    if (state.personaRevisionId) badges.appendChild(createEl("span", null, { textContent: "P" }));
-    if (state.worldBookRevisionId) badges.appendChild(createEl("span", null, { textContent: "W" }));
+    const contextLabels = [];
+    if (isCharacter && state.personaRevisionId) {
+      const label = translate("character.contextPersona");
+      contextLabels.push(label);
+      badges.appendChild(createEl("span", null, { textContent: label }));
+    }
+    if (isCharacter && state.worldBookRevisionId) {
+      const label = translate("character.contextWorld");
+      contextLabels.push(label);
+      badges.appendChild(createEl("span", null, { textContent: label }));
+    }
+    const contextSummary = contextLabels.length ? ` · ${contextLabels.join(" · ")}` : "";
+    banner.title = `${name}${contextSummary} · ${translate("character.roleBannerTitle")}`;
+    banner.setAttribute("aria-label", banner.title);
   };
 }

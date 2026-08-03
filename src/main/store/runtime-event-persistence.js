@@ -180,6 +180,7 @@ function compactTaskRun(taskRun = {}) {
   return {
     schemaVersion: TASK_RUN_SCHEMA_VERSION,
     id: taskRun.id || "",
+    agentGraphId: taskRun.agentGraphId || "",
     sessionId: taskRun.sessionId || "",
     turnId: taskRun.turnId || "",
     objective: truncateString(taskRun.objective || "", 1_000),

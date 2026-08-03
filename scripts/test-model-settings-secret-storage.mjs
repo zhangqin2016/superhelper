@@ -9,6 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = module.createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-model-secrets-"));
 
+// config.js intentionally gives explicit host paths precedence over Electron.
+// Force every path boundary here so a test launched by the app cannot inherit
+// its real user-data directory and overwrite the user's model settings.
+process.env.LILY_USER_DATA_DIR = tmp;
+process.env.LILY_HOME = tmp;
+process.env.LILY_DOCUMENTS_DIR = tmp;
+
 function fakeGatewayToken() {
   const payload = Buffer.from(JSON.stringify({
     expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),

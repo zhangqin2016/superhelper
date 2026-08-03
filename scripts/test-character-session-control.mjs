@@ -8,12 +8,14 @@
  * dropped so rapid session switching can never cross-bind a conversation.
  */
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const {
   initialCharacterControlState,
   reduceCharacterControl,
   effectiveCharacterMode,
 } = await import("../src/renderer/modules/character-session-control.js");
+const { createRoleBannerRenderer } = await import("../src/renderer/modules/character-binding-updates.js");
 
 const characterBinding = {
   mode: "character",
@@ -536,6 +538,107 @@ const characterBinding = {
   assert.equal(state.notice, "unavailable");
   state = reduceCharacterControl(state, { type: "notice.dismissed" });
   assert.equal(state.notice, null);
+}
+
+// --- Static UI contract: one composer-owned trigger, no historical duplicate --
+{
+  const [html, librarySource, css] = await Promise.all([
+    readFile(new URL("../src/renderer/index.html", import.meta.url), "utf8"),
+    readFile(new URL("../src/renderer/modules/character-library.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/renderer/styles/character-worlds.css", import.meta.url), "utf8"),
+  ]);
+  assert.equal((html.match(/id="sessionRoleBanner"/g) || []).length, 1, "there must be exactly one role selector");
+  assert.match(html, /<button id="sessionRoleBanner"[^>]*aria-controls="characterPopover"/, "the selector must be a native button wired to its popover");
+  assert.equal(html.includes('id="sessionCharacterBtn"'), false, "the old toolbar trigger must stay removed");
+  assert.ok(
+    /class="composer-toolbar">[\s\S]*id="sessionRoleBanner"[\s\S]*id="sessionSkillsBtn"/.test(html),
+    "the conversation context selector belongs inside the composer toolbar",
+  );
+  assert.equal(librarySource.includes("sessionCharacterBtn"), false, "library focus must never target the removed trigger");
+  assert.ok(
+    (librarySource.match(/sessionRoleBanner/g) || []).length >= 2,
+    "AI authoring and library close must restore the new selector state/focus",
+  );
+  assert.equal(css.includes(".composer-character-btn"), false, "obsolete toolbar styles must not return");
+}
+
+// --- Binding projection restores the trusted display name after reload -------
+{
+  const state = reduceCharacterControl(
+    initialCharacterControlState({ sessionId: "session-a" }),
+    {
+      type: "binding.loaded",
+      sessionId: "session-a",
+      seq: 0,
+      binding: characterBinding,
+      characterName: "糖糖",
+    },
+  );
+  assert.equal(state.characterName, "糖糖", "binding reads restore the main-resolved character name");
+}
+
+// --- Context renderer: native/character state and accessible context labels ---
+{
+  const avatar = { textContent: "" };
+  const name = { textContent: "" };
+  const badges = {
+    children: [],
+    appendChild(child) { this.children.push(child); },
+  };
+  Object.defineProperty(badges, "textContent", {
+    get() { return this.children.map((child) => child.textContent).join(""); },
+    set() { this.children = []; },
+  });
+  const classes = new Set();
+  const attributes = new Map();
+  const banner = {
+    hidden: true,
+    title: "",
+    classList: { toggle(key, on) { if (on) classes.add(key); else classes.delete(key); } },
+    querySelector(selector) {
+      return new Map([
+        [".session-role-banner-avatar", avatar],
+        [".session-role-banner-name", name],
+        [".session-role-banner-badges", badges],
+      ]).get(selector);
+    },
+    setAttribute(key, value) { attributes.set(key, value); },
+  };
+  let state = {
+    available: true,
+    sessionId: "session-a",
+    mode: "character",
+    characterRevisionId: "revision-a",
+    characterName: "糖糖",
+    personaRevisionId: "persona-a",
+    worldBookRevisionId: "world-a",
+  };
+  const labels = {
+    "character.unnamed": "未命名角色",
+    "character.nativeOption": "Lily 原声",
+    "character.contextPersona": "设定",
+    "character.contextWorld": "世界书",
+    "character.roleBannerTitle": "当前对话角色，点击切换",
+  };
+  const render = createRoleBannerRenderer({
+    getState: () => state,
+    getElement: () => banner,
+    monogram: (value) => value.slice(0, 1),
+    el: (_tag, _className, props) => ({ ...props }),
+    t: (key) => labels[key],
+  });
+  render();
+  assert.equal(banner.hidden, false);
+  assert.equal(name.textContent, "糖糖");
+  assert.deepEqual(badges.children.map((child) => child.textContent), ["设定", "世界书"]);
+  assert.match(attributes.get("aria-label"), /糖糖 · 设定 · 世界书/);
+  assert.equal(classes.has("is-character"), true);
+
+  state = { available: true, sessionId: "session-a", mode: "native" };
+  render();
+  assert.equal(name.textContent, "Lily 原声");
+  assert.equal(badges.children.length, 0, "native mode must clear character context badges");
+  assert.equal(classes.has("is-character"), false);
 }
 
 console.log("character session control reducer: ok");

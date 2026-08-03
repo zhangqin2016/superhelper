@@ -47,6 +47,7 @@ function createTaskRun(input = {}) {
   return {
     schemaVersion: TASK_RUN_SCHEMA_VERSION,
     id: input.id || `task_${crypto.randomUUID()}`,
+    agentGraphId: safeText(input.agentGraphId, 120),
     sessionId: safeText(input.sessionId, 120),
     turnId,
     objective: safeText(input.objective, 1_000),
@@ -95,6 +96,7 @@ function compactTaskRun(taskRun = {}) {
   return {
     schemaVersion: TASK_RUN_SCHEMA_VERSION,
     id: taskRun.id || "",
+    agentGraphId: safeText(taskRun.agentGraphId, 120),
     sessionId: taskRun.sessionId || "",
     turnId: taskRun.turnId || "",
     objective: safeText(taskRun.objective, 1_000),

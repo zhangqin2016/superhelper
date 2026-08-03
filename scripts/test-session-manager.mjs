@@ -108,6 +108,20 @@ try {
   assert(!manager.findById(session.id).agentResumeId, "previous owner must be detached from shared resume id");
   assert(manager.findAgentResumeOwner("ses_shared")?.id === session2.id, "resume owner lookup should find the unique owner");
 
+  // Checkpoint forks copy visible history through the checkpoint turn, but
+  // never share message ids or the source engine resume binding.
+  manager.pushMessageTo(session.id, "user", "checkpoint question", null, { turnId: "turn_checkpoint" });
+  manager.pushMessageTo(session.id, "assistant", "checkpoint answer", null, { turnId: "turn_checkpoint" });
+  manager.pushMessageTo(session.id, "user", "later question", null, { turnId: "turn_later" });
+  manager.setAgentResumeId(session.id, "ses_source_engine");
+  const forkedSession = manager.forkAtTurn(session.id, "Forked Session", "turn_checkpoint");
+  const forkedConversation = manager.getConversation(forkedSession.id);
+  assert(forkedConversation.some((message) => message.content === "checkpoint answer"), "fork should include checkpoint turn");
+  assert(!forkedConversation.some((message) => message.content === "later question"), "fork should exclude later turns");
+  assert(!forkedSession.agentResumeId, "fork should not reuse the source engine session");
+  const sourceIds = new Set(manager.getConversation(session.id).map((message) => message.id));
+  assert(forkedConversation.every((message) => !sourceIds.has(message.id)), "forked messages need independent ids");
+
   // Test 11: switchTo
   manager.switchTo(session2.id);
   assert(manager.getActive().id === session2.id, "should switch active session");

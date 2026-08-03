@@ -142,7 +142,7 @@ function buildMailMcpEntry() {
  * @param {object | undefined} context Explicit session context. Undefined keeps
  * the legacy process-environment fallback for external callers.
  */
-function buildToolBrokerMcpEntry(context) {
+function buildToolBrokerMcpEntry(context, options = {}) {
   const env = { ELECTRON_RUN_AS_NODE: "1" };
   // The child env is a fresh object (not a copy of process.env), so the
   // Character Worlds emergency kill switch must be forwarded explicitly —
@@ -167,6 +167,16 @@ function buildToolBrokerMcpEntry(context) {
   }
   if (serializedContext) {
     env.LILY_TOOL_BROKER_CONTEXT = serializedContext;
+  }
+  const runtimeIdentity = options.runtimeIdentity;
+  if (
+    process.env.LILY_RUNTIME_IDENTITY_V1 !== "0" &&
+    runtimeIdentity?.secret &&
+    runtimeIdentity?.registryPath
+  ) {
+    env.LILY_RUNTIME_IDENTITY_V1 = "1";
+    env.LILY_RUNTIME_IDENTITY_SECRET = String(runtimeIdentity.secret);
+    env.LILY_RUNTIME_IDENTITY_REGISTRY = String(runtimeIdentity.registryPath);
   }
   return {
     command: process.execPath,
@@ -285,7 +295,7 @@ function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, conte
       browserAvailable: Boolean(playwright?.mcpServers?.playwright),
     };
   }
-  mcpServers.lily_tool_broker = buildToolBrokerMcpEntry(brokerContext);
+  mcpServers.lily_tool_broker = buildToolBrokerMcpEntry(brokerContext, options);
   mcpServers.lily_file_intelligence = buildFileIntelligenceMcpEntry();
   mcpServers.lily_process_jobs = buildProcessJobsMcpEntry(options.processJobs || {});
   const mail = buildMailMcpEntry();

@@ -1,6 +1,7 @@
 import { publicId } from "./ids.js";
 import { config } from "../config.js";
 import { choosePricingRule, pricingUnitCost } from "./billing.js";
+import { orgConsumptionDecision } from "./enterprise.js";
 
 async function defaultDb() {
   const mod = await import("../db.js");
@@ -201,8 +202,67 @@ export async function fetchUserGrants(userId, trx = null) {
     .selectFrom("wallet_grants")
     .selectAll()
     .where("user_id", "=", userId)
+    // Only personal grants feed the personal consumption path. Org-pool
+    // grants (organization_id NOT NULL) are consumed only via the org path
+    // (consumeEntitlement with an explicit organizationId), so they can never
+    // be mistaken for personal balance.
+    .where("organization_id", "is", null)
     .orderBy("expires_at", "asc")
     .execute();
+}
+
+/**
+ * Fetch org-pool grants for an organization. Includes only active rows that
+ * are currently within their validity window (runtime filtering, same as the
+ * personal path); membership + org status are checked by the caller
+ * (consumeEntitlement / resolveOrgForConsumption).
+ */
+export async function fetchOrgGrants(organizationId, trx = null) {
+  trx ||= await defaultDb();
+  return trx
+    .selectFrom("wallet_grants")
+    .selectAll()
+    .where("organization_id", "=", organizationId)
+    .orderBy("expires_at", "asc")
+    .execute();
+}
+
+/**
+ * Resolve whether a user may consume from an organization's pool.
+ * Enforces, in order:
+ * 1. the organization exists and is active;
+ * 2. the user is an ACTIVE member of that organization;
+ * 3. the per-member quota (organization_members.quota) allows the request.
+ * Pure decision on top of the orgConsumptionDecision helper; returns
+ * { ok: true, cap } or { ok: false, code }.
+ */
+export async function resolveOrgForConsumption({ userId, organizationId, units = 1 }, trx = null) {
+  trx ||= await defaultDb();
+  if (!organizationId) return { ok: false, code: "ORG_NOT_FOUND" };
+
+  const org = await trx
+    .selectFrom("organizations")
+    .select(["id", "status"])
+    .where("id", "=", organizationId)
+    .executeTakeFirst();
+  if (!org) return { ok: false, code: "ORG_NOT_FOUND" };
+  if (org.status !== "active") return { ok: false, code: "ORG_DISABLED" };
+
+  const member = await trx
+    .selectFrom("organization_members")
+    .select(["user_id", "status", "quota"])
+    .where("organization_id", "=", organizationId)
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  if (!member) return { ok: false, code: "ORG_MEMBER_REQUIRED" };
+  if (member.status !== "active") return { ok: false, code: "ORG_MEMBER_DISABLED" };
+
+  return orgConsumptionDecision({
+    memberStatus: member.status,
+    orgStatus: org.status,
+    quota: member.quota,
+    requestedUnits: units,
+  });
 }
 
 export async function fetchEntitlementSummary(userId, trx = null) {
@@ -244,6 +304,7 @@ export async function consumeEntitlement({
   unitCost = 1,
   idempotencyKey = "",
   metadata = {},
+  organizationId = "",
 } = {}) {
   const db = await defaultDb();
   const billableUnits = Math.max(1, Math.trunc(Number(units || 1))) * Math.max(0, Math.trunc(Number(unitCost ?? 1)));
@@ -261,10 +322,30 @@ export async function consumeEntitlement({
     }
 
     const grants = await fetchUserGrants(userId, trx);
-    const selected = selectGrantsForConsumption(grants, {
+    let selected = selectGrantsForConsumption(grants, {
       resourceType,
       units: billableUnits,
     });
+    let usedOrganization = false;
+
+    // Personal pool insufficient + caller supplied an organization: fall back to
+    // the org pool for the WHOLE request (no mixed debits — the pure selector
+    // doesn't return partial debits on failure). Membership/org status and the
+    // per-member quota are enforced here.
+    if (!selected.ok && organizationId) {
+      const orgDecision = await resolveOrgForConsumption({ userId, organizationId, units: billableUnits }, trx);
+      if (orgDecision.ok) {
+        const orgGrants = await fetchOrgGrants(organizationId, trx);
+        const orgSelected = selectGrantsForConsumption(orgGrants, {
+          resourceType,
+          units: billableUnits,
+        });
+        if (orgSelected.ok) {
+          selected = orgSelected;
+          usedOrganization = true;
+        }
+      }
+    }
     if (!selected.ok) return selected;
 
     const usageEventId = publicId("usage");
@@ -285,6 +366,7 @@ export async function consumeEntitlement({
         status: "completed",
         idempotency_key: idempotencyKey || null,
         metadata,
+        organization_id: usedOrganization ? organizationId : null,
       })
       .execute();
 

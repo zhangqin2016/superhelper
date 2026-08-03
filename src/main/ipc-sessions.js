@@ -97,6 +97,11 @@ function registerSessionHandlers(ctx) {
     const pid = projectId || projectManager.getActive()?.id;
     if (!pid) return { ok: false, error: "NO_PROJECT" };
     const session = sessionManager.create(pid, title);
+    require("./public-hooks").observePublicHook(ctx.publicHookRuntime, "session.start", {
+      sessionId: session.id,
+      projectId: pid,
+      source: "desktop",
+    });
     return { ok: true, session: { id: session.id, title: session.title, projectId: pid } };
   });
 
@@ -112,15 +117,27 @@ function registerSessionHandlers(ctx) {
   });
 
   ipcMain.handle("session:delete", (_event, sessionId) => {
+    const session = sessionManager.findById(sessionId);
     runnerPool.terminateSession(sessionId);
     const result = sessionManager.delete(sessionId);
     if (result !== "OK") return { ok: false, error: result };
+    require("./public-hooks").observePublicHook(ctx.publicHookRuntime, "session.end", {
+      sessionId,
+      projectId: session?.projectId || "",
+      reason: "deleted",
+    });
     return { ok: true };
   });
 
   ipcMain.handle("session:archive", (_event, sessionId) => {
+    const session = sessionManager.findById(sessionId);
     runnerPool.terminateSession(sessionId);
     sessionManager.archive(sessionId);
+    require("./public-hooks").observePublicHook(ctx.publicHookRuntime, "session.end", {
+      sessionId,
+      projectId: session?.projectId || "",
+      reason: "archived",
+    });
     return { ok: true };
   });
 

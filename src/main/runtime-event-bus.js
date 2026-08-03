@@ -20,6 +20,7 @@ class RuntimeEventBus {
   constructor(mainWindowProvider, options = {}) {
     this._mainWindowProvider = mainWindowProvider;
     this._persistEvents = typeof options.persistEvents === "function" ? options.persistEvents : null;
+    this._loadLastSeq = typeof options.loadLastSeq === "function" ? options.loadLastSeq : null;
     this._sessionSeq = new Map();
     this._batchSeq = new Map();
     this._pending = new Map();
@@ -84,6 +85,11 @@ class RuntimeEventBus {
     const turnKey = eventLike?.turnId ? `${sessionId}:${eventLike.turnId}` : "";
     if (turnKey && this._terminalTurns.has(turnKey) && !POST_TERMINAL_ALLOWED.has(eventLike.type)) {
       return null;
+    }
+    if (!this._sessionSeq.has(sessionId)) {
+      let persisted = 0;
+      try { persisted = Math.max(0, Number(this._loadLastSeq?.(sessionId) || 0)); } catch { /* start at zero */ }
+      this._sessionSeq.set(sessionId, persisted);
     }
     const nextSeq = (this._sessionSeq.get(sessionId) || 0) + 1;
     this._sessionSeq.set(sessionId, nextSeq);

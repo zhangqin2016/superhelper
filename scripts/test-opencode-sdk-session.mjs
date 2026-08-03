@@ -53,6 +53,10 @@ const client = {
       calls.push(["session.unrevert", params]);
       return { data: true };
     },
+    fork: async (params) => {
+      calls.push(["session.fork", params]);
+      return { data: { id: "ses_fork" } };
+    },
   },
   permission: {
     reply: async (params) => {
@@ -98,6 +102,7 @@ assert.equal(messagesPage.response.headers.get("x-next-cursor"), "cursor_2");
 await sdkSession.abort("ses_1");
 await sdkSession.revert("ses_1", "msg_1");
 await sdkSession.unrevert("ses_1");
+assert.deepEqual(await sdkSession.fork("ses_1", "msg_1"), { id: "ses_fork" });
 await sdkSession.respondPermission("ses_1", "perm_1", { reply: "once", message: "ok" });
 await sdkSession.respondQuestion("q_1", [["A"]]);
 assert.deepEqual(await sdkSession.health(), { healthy: true });
@@ -132,6 +137,7 @@ assert.deepEqual(calls, [
   ["session.abort", { directory: "/workspace/app", sessionID: "ses_1" }],
   ["session.revert", { directory: "/workspace/app", sessionID: "ses_1", messageID: "msg_1" }],
   ["session.unrevert", { directory: "/workspace/app", sessionID: "ses_1" }],
+  ["session.fork", { directory: "/workspace/app", sessionID: "ses_1", messageID: "msg_1" }],
   ["permission.reply", {
     directory: "/workspace/app",
     requestID: "perm_1",
@@ -177,6 +183,7 @@ assert.throws(
     session: {
       get: hang, create: hang, promptAsync: hang, summarize: hang,
       status: hang, messages: hang, abort: hang, revert: hang, unrevert: hang,
+      fork: hang,
     },
     permission: { reply: hang },
     question: { reply: hang },

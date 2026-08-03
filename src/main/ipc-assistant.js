@@ -3,39 +3,9 @@ const fs = require("node:fs");
 const { ipcMain } = require("electron");
 const { requireValidLicenseFresh } = require("./license-manager");
 const { looksLikeScheduledTaskIntent } = require("./scheduled-task-intent");
-const {
-  buildWebSystemLearningPrompt,
-  ensureWebSystemLearningSkillForSession,
-  looksLikeWebSystemLearningIntent,
-} = require("./web-system-learning-intent");
-const {
-  buildCharacterAuthoringEngineText,
-  inferCharacterAuthoringIntent,
-} = require("./character-worlds/authoring-intent");
+const { ensureWebSystemLearningSkillForSession } = require("./web-system-learning-intent");
+const { ensureRoutingAvailable, resolveEngineRouting } = require("./character-worlds/assistant-routing");
 const { resolveCharacterWorldsAdjustment } = require("./character-worlds/adjustment-context");
-function resolveEngineRouting(text, files, explicitKind, adjustment = null) {
-  const allowedKind = ["character", "persona", "worldBook"].includes(explicitKind)
-    ? explicitKind
-    : null;
-  const characterAuthoring = adjustment?.active
-    ? adjustment
-    : allowedKind
-    ? { active: true, kind: allowedKind }
-    : inferCharacterAuthoringIntent(text);
-  if (characterAuthoring.active) {
-    return {
-      engineText: buildCharacterAuthoringEngineText(text, characterAuthoring),
-      requiredSuccessfulTools: ["lily_character_draft"],
-      webLearningIntent: false,
-    };
-  }
-  const webLearningIntent = looksLikeWebSystemLearningIntent(text, files);
-  return {
-    engineText: webLearningIntent ? buildWebSystemLearningPrompt(text) : null,
-    requiredSuccessfulTools: [],
-    webLearningIntent,
-  };
-}
 function resolveTargetSession(sessionManager, requestedId) {
   return requestedId
     ? sessionManager.findById(requestedId)
@@ -116,6 +86,8 @@ function registerAssistantHandlers(ctx) {
       text, files, payload?.characterAuthoringKind,
       resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle),
     );
+    const routingAvailability = await ensureRoutingAvailable(ctx, { requiredSuccessfulTools });
+    if (!routingAvailability.ok) return attachRouting(routingAvailability, session);
     let reloadSkillsBeforeStart = false;
     if (webLearningIntent) {
       const ensured = await ensureWebSystemLearningSkillForSession(ctx, session.id);
@@ -161,6 +133,8 @@ function registerAssistantHandlers(ctx) {
       text, files, payload?.characterAuthoringKind,
       resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle),
     );
+    const routingAvailability = await ensureRoutingAvailable(ctx, { requiredSuccessfulTools });
+    if (!routingAvailability.ok) return attachRouting(routingAvailability, session);
     let reloadSkillsBeforeStart = false;
     if (webLearningIntent) {
       const ensured = await ensureWebSystemLearningSkillForSession(ctx, session.id);
@@ -206,6 +180,8 @@ function registerAssistantHandlers(ctx) {
     const routing = resolveEngineRouting(text, files, payload?.characterAuthoringKind,
       resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle));
     if (routing.requiredSuccessfulTools.length) {
+      const routingAvailability = await ensureRoutingAvailable(ctx, routing);
+      if (!routingAvailability.ok) return attachRouting(routingAvailability, session);
       const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
         displayFiles,
         engineText: routing.engineText,
@@ -263,7 +239,14 @@ function registerAssistantHandlers(ctx) {
       };
     }
 
-    return await turnOrchestrator.retryLastMessage(session.id);
+    const routing = resolveEngineRouting(lastUser.content, files, payload?.characterAuthoringKind,
+      resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle));
+    const routingAvailability = await ensureRoutingAvailable(ctx, routing);
+    if (!routingAvailability.ok) return attachRouting(routingAvailability, session);
+    return await turnOrchestrator.retryLastMessage(session.id, {
+      engineText: routing.engineText,
+      requiredSuccessfulTools: routing.requiredSuccessfulTools,
+    });
   });
 
   // L1 learned conventions: "记住：…" saves a per-project rule app-side and
@@ -496,4 +479,4 @@ function registerAssistantHandlers(ctx) {
   });
 }
 
-module.exports = { registerAssistantHandlers, resolveEngineRouting };
+module.exports = { ensureRoutingAvailable, registerAssistantHandlers, resolveEngineRouting };

@@ -14,7 +14,6 @@
  * opencode-runtime-reducer; there is no Claude-style stream-json/action adapter
  * in this path.
  */
-
 const { EventEmitter } = require("node:events");
 const os = require("node:os");
 const path = require("node:path");
@@ -32,6 +31,7 @@ const { isReplaySafeTool } = require("./tool-semantics");
 const { createOpencodeSubagentRuntime } = require("./opencode-subagent-runtime");
 const { createOpencodeTurnLiveness } = require("./opencode-turn-liveness");
 const { createOpencodeHistoryRecovery } = require("./opencode-history-recovery");
+const { grantOpencodeRuntimeIdentity, revokeOpencodeRuntimeIdentity } = require("./opencode-runtime-identity");
 const {
   buildAttachmentFallbackPromptPayload,
   enrichPermissionFailureMessage,
@@ -47,12 +47,9 @@ const {
   transientClassificationText,
 } = require("./opencode-session-failure-policy");
 const {
-  TODO_COMPLETION_GATE_MAX_ATTEMPTS,
-  buildTodoContinuationPrompt,
-  detectIncompleteDeliverable,
-  nativeTodoSnapshot,
-  normalizeTodoStatus,
-  todoTitle,
+  TODO_COMPLETION_GATE_MAX_ATTEMPTS, buildTodoContinuationPrompt,
+  detectIncompleteDeliverable, nativeTodoSnapshot,
+  normalizeTodoStatus, todoTitle,
 } = require("./opencode-todo-completion-policy");
 const requiredToolCompletion = require("./required-tool-completion-gate");
 const log = getLogger("opencode-agent-session");
@@ -216,7 +213,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
     this._engineSessionWasResumed = false;
-    this._activeModelConfigFingerprint = "";
+    this._activeModelConfigFingerprint = this._activeToolConfigFingerprint = "";
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._transientFailureTimer = null;
     this._pendingTransientFailure = null;
@@ -265,6 +262,8 @@ class OpencodeAgentSession extends EventEmitter {
       !activeFingerprint
     ) {
       this._restartIdleEngineForModelConfigChange(previousFingerprint, nextFingerprint);
+    } else if (require("./opencode-config-freshness").toolConfigChanged(this, options, previousOptions)) {
+      this.recycleIdleEngine("tool_config_changed");
     }
     if (callOpts.lazy) return;
     void this._ensureStarted();
@@ -363,6 +362,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._server = server;
       this._engineSessionWasResumed = Boolean(server.wasResumed);
       this._activeModelConfigFingerprint = String(spawnOptions.modelConfigFingerprint || "");
+      this._activeToolConfigFingerprint = String(spawnOptions.toolConfigFingerprint || "");
       // Guidance is delivered with each prompt, not only with fresh sessions:
       // OpenCode resume history may predate the current Lily rules/skill set, and
       // session-level skill toggles can change between turns.
@@ -416,6 +416,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (this.isBusy()) return false;
     const server = this._server;
     const resumeId = this.agentResumeId || server?.sessionID || null;
+    revokeOpencodeRuntimeIdentity(this, resumeId, "runner_recycled");
     if (server) {
       try {
         server.terminate();
@@ -425,7 +426,7 @@ class OpencodeAgentSession extends EventEmitter {
       if (this._server === server) this._server = null;
     }
     this._starting = null;
-    this._activeModelConfigFingerprint = "";
+    this._activeModelConfigFingerprint = this._activeToolConfigFingerprint = "";
     if (resumeId) this.agentResumeId = resumeId;
     log.info("idle engine recycled (%s): next send gets fresh gateway connections", reason || "-");
     return true;
@@ -505,6 +506,7 @@ class OpencodeAgentSession extends EventEmitter {
     (async () => {
       try {
         const server = await this._ensureStarted();
+        grantOpencodeRuntimeIdentity(this, server, typeof payload === "object" ? payload : {});
         // Refresh the cross-session memory the compaction plugin injects, keyed by
         // the engine session id (now that the server is started). Snapshotting at
         // turn start means a mid-turn compaction sees the latest durable facts.
@@ -737,6 +739,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearHealthProbe();
     this._clearTurnWatchdog();
     this._clearPendingPermissions();
+    revokeOpencodeRuntimeIdentity(this, this._server?.sessionID || this.agentResumeId, "runner_terminated");
     if (this._server) {
       this._server.terminate();
       this._server = null;
@@ -1016,17 +1019,7 @@ class OpencodeAgentSession extends EventEmitter {
         break;
 
       case "context_compacted":
-        try {
-          require("./session-memory").markSessionCompacted(this.sessionId, {
-            runtime: "opencode",
-            mode: "native",
-            reason: effect.reason || "runtime_event",
-            engineSessionId: effect.sessionID || "",
-            summaryMessageId: effect.messageID || "",
-          });
-        } catch (err) {
-          log.warn("session compaction memory update failed: %s", err?.message || String(err));
-        }
+        require("./opencode-compaction-effects").handleOpencodeCompacted(this, effect);
         break;
 
       case "error": {
@@ -1692,6 +1685,12 @@ class OpencodeAgentSession extends EventEmitter {
     const server = await this._ensureStarted();
     await server.unrevert();
     return true;
+  }
+
+  async fork(engineMessageId) {
+    if (!engineMessageId || this.busy) return null;
+    const server = await this._ensureStarted();
+    return server.fork(engineMessageId);
   }
 
   async getConversationPage(opts = {}) {

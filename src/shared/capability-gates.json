@@ -211,6 +211,65 @@
         "scripts/test-official-character-picker.mjs",
         "scripts/test-character-worlds-ipc.mjs"
       ]
+    },
+    {
+      "id": "request-scoped-runtime-identity",
+      "protects": "A shared engine or broker cannot borrow another conversation's identity, capabilities, workspace, or authority.",
+      "baseline": "Each broker call is authorized from a signed, expiring, request-scoped host identity.",
+      "failureFallback": "Reject missing or invalid grants without weakening the native non-broker turn path.",
+      "tests": [
+        "scripts/test-runtime-identity.mjs",
+        "scripts/test-runtime-identity-plugin.mjs",
+        "scripts/test-tool-broker-runtime-identity.mjs",
+        "scripts/test-opencode-runtime-identity-wiring.mjs",
+        "scripts/test-agent-runtime-isolation-stress.mjs"
+      ]
+    },
+    {
+      "id": "durable-agent-task-graph",
+      "protects": "Concurrent agents cannot double-claim work, unlock dependencies early, or cross session mailbox boundaries.",
+      "baseline": "Task graphs use durable revisioned claims, leases, dependency state, and replay-safe retry policy.",
+      "failureFallback": "Disable task-graph projection and preserve the existing single-agent TaskRun path.",
+      "tests": [
+        "scripts/test-agent-task-graph.mjs",
+        "scripts/test-agent-task-graph-store.mjs",
+        "scripts/test-agent-runtime-isolation-stress.mjs"
+      ]
+    },
+    {
+      "id": "unified-runtime-checkpoint",
+      "protects": "Partial or corrupt checkpoints cannot be restored and irreversible effects cannot be silently replayed.",
+      "baseline": "Committed checkpoint manifests are integrity-checked, idempotent, scoped, and preserve fork lineage.",
+      "failureFallback": "Keep the existing OpenCode revert and in-memory diff behavior when unified checkpoints are disabled.",
+      "tests": [
+        "scripts/test-runtime-checkpoint.mjs",
+        "scripts/test-runtime-checkpoint-store.mjs",
+        "scripts/test-runtime-checkpoint-service.mjs",
+        "scripts/test-agent-runtime-recovery.mjs"
+      ]
+    },
+    {
+      "id": "headless-agent-protocol",
+      "protects": "Headless clients cannot depend on renderer internals or an unstable event stream.",
+      "baseline": "Legacy JSON remains compatible while versioned NDJSON and SDK contracts are additive.",
+      "failureFallback": "Use the legacy headless JSON path with stable non-zero exit codes.",
+      "tests": [
+        "scripts/test-headless-runner.mjs",
+        "scripts/test-lily-sdk.mjs",
+        "scripts/test-agent-runtime-control-server.mjs"
+      ]
+    },
+    {
+      "id": "public-agent-hooks",
+      "protects": "Public hooks cannot recurse, leak secrets, hang turns, or mutate protected identity and authority.",
+      "baseline": "Hooks are schema, timeout, recursion, audit, and mutation bounded.",
+      "failureFallback": "Observation failures fail open, security denials fail closed, and the hook kill switch bypasses hooks.",
+      "tests": [
+        "scripts/test-public-hooks.mjs",
+        "scripts/test-public-hook-persistence.mjs",
+        "scripts/test-public-hook-bridge.mjs",
+        "scripts/test-turn-orchestrator.mjs"
+      ]
     }
   ]
 }

@@ -168,6 +168,16 @@ function createOpencodeSdkSession(client, directory, options = {}) {
       );
     },
 
+    async fork(sessionID, messageID) {
+      if (typeof client.session.fork !== "function") {
+        throw new Error("Lily runtime client has no session.fork resource");
+      }
+      return unwrapSdkResult(
+        await call("fork", client.session.fork(withDirectory(directory, { sessionID, messageID }))),
+        "session.fork",
+      );
+    },
+
     async respondPermission(sessionID, permissionID, decision = {}) {
       const permission = client.permission;
       if (!permission) throw new Error("Lily runtime client has no permission resource");

@@ -186,7 +186,8 @@ export function reduceCharacterControl(state, action) {
         compatibilityProfile: b.compatibilityProfile,
         personaRevisionId: b.personaRevisionId || null,
         characterName: b.characterRevisionId
-          ? (state.characterRevisionId === b.characterRevisionId && state.characterName)
+          ? (typeof action.characterName === "string" && action.characterName)
+            || (state.characterRevisionId === b.characterRevisionId && state.characterName)
             || nameForRevision(state.characters, b.characterRevisionId)
           : "",
         selecting: false,

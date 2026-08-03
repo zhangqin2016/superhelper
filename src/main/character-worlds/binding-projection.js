@@ -104,7 +104,17 @@ function resolveBindingUpdates(repo, ownerScope, binding) {
   }
 }
 
+function resolveBindingCharacterName(repo, ownerScope, binding) {
+  if (binding?.mode !== "character" || !binding.characterRevisionId) return "";
+  try {
+    return String(repo.getRevision(ownerScope, binding.characterRevisionId)?.displayName || "");
+  } catch {
+    return "";
+  }
+}
+
 module.exports = {
   projectBindingSwitchNotices,
+  resolveBindingCharacterName,
   resolveBindingUpdates,
 };

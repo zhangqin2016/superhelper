@@ -5,6 +5,7 @@ const nav = [
   ["购买", "/account/billing"],
   ["权益", "/account/entitlements"],
   ["订单", "/account/orders"],
+  ["企业", "/account/enterprise"],
   ["账号", "/account/settings"],
 ];
 

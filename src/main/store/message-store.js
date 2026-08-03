@@ -296,6 +296,13 @@ class MessageStore {
     }));
   }
 
+  getLastRuntimeEventSeq(sessionId) {
+    return Number(this.db.get(
+      "SELECT MAX(seq) AS seq FROM runtime_events WHERE session_id=?",
+      String(sessionId || ""),
+    )?.seq || 0);
+  }
+
   compactRuntimeEventPayloads({ limit = 200, minBytes = 20_000 } = {}) {
     const lim = Math.max(1, Math.min(Number(limit) || 200, 1000));
     const threshold = Math.max(1_000, Number(minBytes) || 20_000);

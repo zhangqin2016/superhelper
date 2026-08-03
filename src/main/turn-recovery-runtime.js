@@ -43,7 +43,7 @@ function createTurnRecoveryRuntime(options = {}) {
     return getState(sessionId);
   }
 
-  async function retryLastMessage(sessionId) {
+  async function retryLastMessage(sessionId, retryOptions = {}) {
     const session = ctx.sessionManager?.findById?.(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
     const lastUser = ctx.sessionManager?.getLastUserMessage?.(sessionId);
@@ -55,6 +55,7 @@ function createTurnRecoveryRuntime(options = {}) {
       recordUser: false,
       spawnEngine: true,
       sourceTurnId,
+      ...retryOptions,
     });
   }
 

@@ -19,6 +19,7 @@ import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { discoveredModelMetadataSync } from "./model-gateway/model-discovery.js";
 import { chatTokenUsage, gatewayAccountRequired, scanRealTokenUsage, billableRealTokens } from "./model-gateway/usage.js";
 import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
+import { resolveOrgContextForRequest } from "./organization-context.js";
 
 export { signModelGatewayToken, verifyModelGatewayToken } from "./model-gateway/auth.js";
 export { listModelGatewayProviders } from "./model-gateway/providers.js";
@@ -148,6 +149,8 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
     specKey: usage.specKey,
   });
   const idempotencyKey = String(request.headers["x-lily-idempotency-key"] || "").trim().slice(0, 200);
+  const organizationId = await resolveOrgContextForRequest(request, reply, token);
+  if (organizationId === null) return { ok: false };
   const consumed = await consumeEntitlement({
     userId: token.userId,
     deviceId: token.deviceId || "",
@@ -161,6 +164,7 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
     unitCost: pricing.unitCost,
     idempotencyKey,
     metadata: { phase: "input_estimate" },
+    organizationId,
   });
   if (!consumed.ok) {
     reply.code(402).send({
@@ -188,6 +192,7 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
       unitCost: pricing.unitCost,
       estimateUnits: usage.units,
       idempotencyKey,
+      organizationId,
     },
   };
 }
@@ -214,6 +219,7 @@ async function reconcileChatUsage(billing, usage) {
       unitCost: billing.unitCost,
       idempotencyKey: billing.idempotencyKey ? `${billing.idempotencyKey}:final` : "",
       metadata: { phase: "usage_reconcile", inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
+      organizationId: billing.organizationId || "",
     });
   } catch {
     // The input estimate was already charged; a failed reconcile must not break

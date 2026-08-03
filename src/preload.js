@@ -155,6 +155,17 @@ contextBridge.exposeInMainWorld("assistantClient", {
   renameSession: (sessionId, title) => ipcRenderer.invoke("session:rename", sessionId, title),
   deleteSession: (sessionId) => ipcRenderer.invoke("session:delete", sessionId),
   archiveSession: (sessionId) => ipcRenderer.invoke("session:archive", sessionId),
+  agentRuntime: Object.freeze({
+    getGraph: (sessionId, graphId) => ipcRenderer.invoke("agent-runtime:graph-get", { sessionId, graphId }),
+    cancelTask: (payload) => ipcRenderer.invoke("agent-runtime:task-cancel", payload),
+    listCheckpoints: (sessionId, limit = 50) => ipcRenderer.invoke("agent-runtime:checkpoint-list", { sessionId, limit }),
+    createCheckpoint: (payload) => ipcRenderer.invoke("agent-runtime:checkpoint-create", payload),
+    restoreCheckpoint: (payload) => ipcRenderer.invoke("agent-runtime:checkpoint-restore", payload),
+    forkCheckpoint: (payload) => ipcRenderer.invoke("agent-runtime:checkpoint-fork", payload),
+    listHooks: (sessionId = "", limit = 100) => ipcRenderer.invoke("agent-runtime:hook-list", { sessionId, limit }),
+    upsertHook: (hook) => ipcRenderer.invoke("agent-runtime:hook-upsert", { hook }),
+    removeHook: (id) => ipcRenderer.invoke("agent-runtime:hook-remove", { id }),
+  }),
   getSessionPermission: (sessionId) => ipcRenderer.invoke("session:get-permission", sessionId),
   setSessionPermission: (sessionId, modeId) =>
     ipcRenderer.invoke("session:set-permission", { sessionId, modeId }),
@@ -303,6 +314,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   refreshAccountEntitlements: () => ipcRenderer.invoke("account:entitlements"),
   createAccountBillingLink: () => ipcRenderer.invoke("account:billing-link"),
   logoutAccount: () => ipcRenderer.invoke("account:logout"),
+  fetchAccountOrganizations: () => ipcRenderer.invoke("account:organizations"),
+  getCurrentOrganizationId: () => ipcRenderer.invoke("account:current-organization"),
+  setCurrentOrganizationId: (organizationId) => ipcRenderer.invoke("account:set-current-organization", organizationId),
 
   getServiceSettings: () => ipcRenderer.invoke("service:get-settings"),
   testServiceConnection: () => ipcRenderer.invoke("service:test-connection"),

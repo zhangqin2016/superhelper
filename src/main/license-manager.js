@@ -2,25 +2,15 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { userDataPath, PROJECT_ROOT } = require("./config");
+const { PROJECT_ROOT } = require("./config");
+const { protectText, readState, unprotectText, writeState } = require("./license-state-store");
 const serviceClient = require("./service-client");
-
-// safeStorage is electron-only; lazy-require it so this module loads in plain
-// node (tests). Absent → graceful plaintext fallback via the `?.` guards.
-function electronSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
 const {
   base64urlDecode,
   base64urlEncode,
 } = require("./crypto-signing");
 const crypto = require("node:crypto");
 
-const LICENSE_FILE = "license-state.json";
 const DEFAULT_PUBLIC_KEY_PATHS = [
   path.join(process.resourcesPath || "", "resources", "license-public-key.pem"),
   path.join(PROJECT_ROOT, "resources", "license-public-key.pem"),
@@ -129,54 +119,6 @@ function verifyLicenseToken(token, publicKeyPem = loadPublicKey(), opts = {}) {
   };
 }
 
-function statePath() {
-  return userDataPath(LICENSE_FILE);
-}
-
-function protectText(text) {
-  const buf = Buffer.from(text, "utf8");
-  const safeStorage = electronSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return {
-      encrypted: true,
-      data: safeStorage.encryptString(text).toString("base64"),
-    };
-  }
-  return { encrypted: false, data: buf.toString("base64") };
-}
-
-function unprotectText(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(record.data, "base64");
-  if (record.encrypted) {
-    const safeStorage = electronSafeStorage();
-    if (!safeStorage?.isEncryptionAvailable?.()) return "";
-    try {
-      return safeStorage.decryptString(buf);
-    } catch (err) {
-      console.warn("[license] stored license could not be decrypted:", err?.message || err);
-      return "";
-    }
-  }
-  return buf.toString("utf8");
-}
-
-function readState() {
-  try {
-    const p = statePath();
-    if (!fs.existsSync(p)) return {};
-    return JSON.parse(fs.readFileSync(p, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function writeState(state) {
-  const p = statePath();
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(state, null, 2), "utf8");
-}
-
 function getLicenseStatus() {
   const state = readState();
   const token = unprotectText(state.license);
@@ -188,13 +130,13 @@ function getLicenseStatus() {
         checkedAt: nowIso(),
       },
     };
-    delete invalidState.license;
     writeState(invalidState);
     return {
       ok: true,
-      activated: false,
+      activated: true,
       valid: false,
       error: "DECRYPT_FAILED",
+      source: "offline",
     };
   }
   if (!token && !state.serverLicense) {
@@ -272,7 +214,9 @@ function getLicenseStatus() {
       lastSeenTime: state.lastSeenTime,
     };
   }
-  writeState({ ...state, lastSeenTime: now });
+  const nextState = { ...state, lastSeenTime: now };
+  delete nextState.licenseInvalid;
+  writeState(nextState);
   return {
     ok: true,
     activated: true,

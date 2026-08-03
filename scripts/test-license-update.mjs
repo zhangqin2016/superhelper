@@ -167,21 +167,37 @@ if (!allowed.ok) {
   throw new Error(`valid license should pass gate: ${JSON.stringify(allowed)}`);
 }
 
+// A crash during a state rewrite must not make a previously verified offline
+// license disappear. The last complete snapshot is the recovery source.
+fs.writeFileSync(path.join(tmp, "license-state.json"), '{"license":');
+const recoveredFromBackup = getLicenseStatus();
+if (!recoveredFromBackup.activated || !recoveredFromBackup.valid || recoveredFromBackup.license?.licenseId !== "LIC-TEST-1") {
+  throw new Error(`truncated primary state should recover from backup: ${JSON.stringify(recoveredFromBackup)}`);
+}
+
 clearLicense();
 globalThis.__safeStorageAvailable = true;
 globalThis.__safeStorageThrow = true;
 fs.writeFileSync(path.join(tmp, "license-state.json"), JSON.stringify({
   license: {
     encrypted: true,
-    data: Buffer.from("bad ciphertext").toString("base64"),
+    data: Buffer.from(token).toString("base64"),
   },
 }, null, 2));
 const corruptStatus = getLicenseStatus();
-if (corruptStatus.activated || corruptStatus.error !== "DECRYPT_FAILED") {
-  throw new Error(`corrupt encrypted license should not crash: ${JSON.stringify(corruptStatus)}`);
+if (!corruptStatus.activated || corruptStatus.valid || corruptStatus.error !== "DECRYPT_FAILED") {
+  throw new Error(`temporarily unreadable encrypted license should stay activated: ${JSON.stringify(corruptStatus)}`);
+}
+const preservedEncryptedState = JSON.parse(fs.readFileSync(path.join(tmp, "license-state.json"), "utf8"));
+if (!preservedEncryptedState.license?.data) {
+  throw new Error("decrypt failure must preserve the encrypted license for recovery");
+}
+globalThis.__safeStorageThrow = false;
+const recoveredAfterDecrypt = getLicenseStatus();
+if (!recoveredAfterDecrypt.activated || !recoveredAfterDecrypt.valid || recoveredAfterDecrypt.license?.licenseId !== "LIC-TEST-1") {
+  throw new Error(`license should recover when safeStorage recovers: ${JSON.stringify(recoveredAfterDecrypt)}`);
 }
 globalThis.__safeStorageAvailable = false;
-globalThis.__safeStorageThrow = false;
 
 fs.writeFileSync(path.join(tmp, "license-state.json"), JSON.stringify({}, null, 2));
 const trialRefresh = await refreshServerLicense();

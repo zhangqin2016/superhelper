@@ -30,11 +30,77 @@ function registerAll(ctx) {
   } = ctx;
   ctx.eventBus = new RuntimeEventBus(() => ctx.mainWindow, {
     persistEvents: (sessionId, events) => sessionManager.appendRuntimeEvents?.(sessionId, events),
+    loadLastSeq: (sessionId) => sessionManager._store().getLastRuntimeEventSeq(sessionId),
   });
   ctx.transcriptStore = new TranscriptStore(sessionManager);
+  if (!ctx.publicHookRuntime) {
+    const { createPublicHookRuntime } = require("./public-hooks");
+    const { PublicHookAuditStore } = require("./store/public-hook-store");
+    const { PublicHookConfigStore, createPublicHookExecutors } = require("./public-hook-config");
+    ctx.publicHookAuditStore = new PublicHookAuditStore(ctx.messageStore?.db || sessionManager._store().db);
+    ctx.publicHookConfigStore = new PublicHookConfigStore(require("./config").userDataPath("public-hooks.json"));
+    ctx.publicHookRuntime = createPublicHookRuntime({
+      executors: createPublicHookExecutors(ctx.publicHookExecutors || {}),
+      emitAudit: (payload) => {
+        try { ctx.publicHookAuditStore.record(payload); } catch { /* event audit remains available */ }
+        const sessionId = payload?.sessionId || payload?.payload?.sessionId;
+        if (!sessionId) return;
+        ctx.eventBus.emit(sessionId, {
+          type: "public_hook.audit",
+          turnId: payload?.turnId || payload?.payload?.turnId || null,
+          source: "public-hooks",
+          payload,
+        });
+      },
+    });
+    for (const hook of ctx.publicHookConfigStore.load()) {
+      try { ctx.publicHookRuntime.register(hook); } catch { /* invalid local declarations stay disabled */ }
+    }
+    try {
+      const { createPublicHookBridge } = require("./public-hook-bridge");
+      const { runtimeIdentityProcessSecret } = require("./runtime-identity");
+      const registryPath = require("./config").userDataPath("runtime-identity-registry.json");
+      ctx.publicHookBridge = createPublicHookBridge({
+        runtime: ctx.publicHookRuntime,
+        registryPath,
+        secret: runtimeIdentityProcessSecret(),
+      });
+      ctx.publicHookBridgeReady = ctx.publicHookBridge.start()
+        .then(({ url }) => {
+          process.env.LILY_PUBLIC_HOOK_BRIDGE_URL = url;
+          return url;
+        })
+        .catch(() => "");
+    } catch {
+      ctx.publicHookBridge = null;
+      ctx.publicHookBridgeReady = Promise.resolve("");
+    }
+  }
+  try {
+    const { AgentTaskGraphStore } = require("./store/agent-task-graph-store");
+    ctx.agentTaskGraphStore = new AgentTaskGraphStore(ctx.messageStore?.db || sessionManager._store().db);
+  } catch {
+    ctx.agentTaskGraphStore = null;
+  }
+  try {
+    const { RuntimeCheckpointStore } = require("./store/runtime-checkpoint-store");
+    ctx.runtimeCheckpointStore = new RuntimeCheckpointStore(ctx.messageStore?.db || sessionManager._store().db);
+  } catch {
+    ctx.runtimeCheckpointStore = null;
+  }
   ctx.turnArchive = new TurnArchive(sessionManager, { eventBus: ctx.eventBus });
+  runnerPool.publicHookRuntime = ctx.publicHookRuntime;
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);
-  void ctx.turnOrchestrator.startRecoveredTurns();
+  require("./ipc-agent-runtime").registerAgentRuntimeHandlers(ctx);
+  try {
+    const { createAgentRuntimeControlServer } = require("./agent-runtime-control-server");
+    ctx.agentRuntimeControlServer = createAgentRuntimeControlServer(ctx);
+    ctx.agentRuntimeControlReady = ctx.agentRuntimeControlServer.start().catch(() => null);
+  } catch {
+    ctx.agentRuntimeControlServer = null;
+    ctx.agentRuntimeControlReady = Promise.resolve(null);
+  }
+  void Promise.resolve(ctx.publicHookBridgeReady).finally(() => ctx.turnOrchestrator.startRecoveredTurns());
   // Surface long async media generations even if their turn was torn down before the
   // result stdout was captured (the skill drops a result record on disk).
   try { require("./media-result-tracker").startMediaResultTracker(ctx); } catch { /* optional */ }
@@ -187,6 +253,18 @@ function registerAll(ctx) {
   });
   ipcMain.handle("account:entitlements", () =>
     accountDisabled() ? disabledAccountResult() : require("./account-manager").refreshEntitlements());
+  ipcMain.handle("account:organizations", async () => {
+    if (accountDisabled()) return disabledAccountResult();
+    return require("./account-manager").fetchOrganizations();
+  });
+  ipcMain.handle("account:current-organization", () => {
+    if (accountDisabled()) return { ok: true, organizationId: "" };
+    return { ok: true, organizationId: require("./account-manager").getCurrentOrganizationId() };
+  });
+  ipcMain.handle("account:set-current-organization", (_event, organizationId) => {
+    if (accountDisabled()) return { ok: true, organizationId: "" };
+    return { ok: true, organizationId: require("./account-manager").setCurrentOrganizationId(organizationId) };
+  });
   ipcMain.handle("account:billing-link", () =>
     accountDisabled() ? disabledAccountResult() : require("./account-manager").createBillingLink());
   ipcMain.handle("account:logout", async () => {

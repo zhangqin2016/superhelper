@@ -29,6 +29,9 @@ let sessionManagerRef = null;
 let scheduledTaskManagerRef = null;
 let characterWorldsServiceRef = null;
 let longTaskSupervisorRef = null;
+let agentRuntimeControlServerRef = null;
+let publicHookBridgeRef = null;
+let runtimePackAutoRepairRef = null;
 let shouldFocusMainWindowWhenReady = false;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
@@ -287,6 +290,8 @@ app.whenReady().then(async () => {
   };
 
   ipcHandlers.registerAll(appContext);
+  agentRuntimeControlServerRef = appContext.agentRuntimeControlServer || null;
+  publicHookBridgeRef = appContext.publicHookBridge || null;
   try {
     const { longTaskDbPath } = require("./main/config");
     const { LongTaskSupervisor } = require("./main/long-task/supervisor");
@@ -321,14 +326,25 @@ app.whenReady().then(async () => {
     sessionManager,
   });
 
-  setTimeout(() => {
-    const packs = require("./main/runtime-pack-installer");
-    // Warm the base-provided probe ASYNC first: the cold path spawns a Python
-    // interpreter, and doing that via execFileSync inside repair blocked the
-    // main event loop for ~3s (the watchdog "lag 2827ms" at +15s).
-    packs.warmBaseProvidedRuntimePacks()
-      .catch(() => {})
-      .then(() => packs.repairInstalledRuntimePacks())
+  const runtimePackRepair = require("./main/runtime-pack-auto-repair");
+  runtimePackAutoRepairRef = runtimePackRepair.scheduleRuntimePackAutoRepair({
+    // Health probes can cold-import several gigabytes of optional runtimes.
+    // Run outside Electron at background priority and only after the user and
+    // every agent are idle, so self-healing never competes with foreground work.
+    isIdle: () => {
+      const runnerBusy = runnerPool.getSessionIds().some((sessionId) => runnerPool.get(sessionId)?.isBusy?.());
+      return !runnerBusy && powerMonitor.getSystemIdleTime() >= 60;
+    },
+    startRepair: () => runtimePackRepair.startRuntimePackAutoRepair({
+        basePaths: {
+          userData: app.getPath("userData"),
+          home: app.getPath("home"),
+          documents: app.getPath("documents"),
+        },
+        isPackaged: app.isPackaged,
+      }),
+  });
+  runtimePackAutoRepairRef.promise
       .then((result) => {
         const repaired = (result?.results || []).filter((item) => item.ok && item.repaired);
         if (repaired.length) {
@@ -341,7 +357,6 @@ app.whenReady().then(async () => {
         }
       })
       .catch((err) => console.warn("[runtime-packs] auto-repair failed", err?.message || err));
-  }, 15_000);
 
   if (process.platform === "win32") {
     // Legacy-install healing (改名遗留): old-appId installs pass their local
@@ -378,9 +393,12 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   longTaskSupervisorRef?.close();
+  runtimePackAutoRepairRef?.cancel?.();
   scheduledTaskManagerRef?.close();
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
+  try { agentRuntimeControlServerRef?.stop?.().catch?.(() => {}); } catch { /* best effort */ }
+  try { publicHookBridgeRef?.stop?.().catch?.(() => {}); } catch { /* best effort */ }
   // Best-effort and intentionally NOT awaited: before-quit cannot block on the
   // async drain of in-flight imports/exports and worker/broker helpers. An
   // export whose commit outcome is unknown at quit is reconciled on next

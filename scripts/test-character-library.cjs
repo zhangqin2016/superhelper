@@ -444,7 +444,7 @@ app.whenReady().then(async () => {
     if (!manageBtn) throw new Error("manage button missing");
     if (manageBtn.disabled) throw new Error("manage library must be enabled in Phase 2B");
     if (/Phase 2|第二/.test(manageBtn.textContent)) throw new Error("Phase 2 placeholder label must be gone: " + manageBtn.textContent);
-    document.getElementById("sessionCharacterBtn").click();
+    document.getElementById("sessionRoleBanner").click();
     await new Promise((r) => setTimeout(r, 120));
     const popover = document.getElementById("characterPopover");
     if (popover.hidden) throw new Error("popover should open first");
@@ -790,7 +790,7 @@ app.whenReady().then(async () => {
     press("Escape");
     await new Promise((r) => setTimeout(r, 100));
     if (!modal.hidden) throw new Error("Escape closes the library");
-    const btn = document.getElementById("sessionCharacterBtn");
+    const btn = document.getElementById("sessionRoleBanner");
     if (document.activeElement !== btn) throw new Error("focus returns to the character control button");
     return "trap + escape verified";
   })()`);

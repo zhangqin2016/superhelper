@@ -262,8 +262,9 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
   }
 
   const resumeSessionId = session.agentResumeId || null;
+  const runtimeIdentityOwner = sessionManager.resolveTurnOwnerScope?.(sessionId);
   const extra = {
-    disallowedTools: skillManager.getDisallowedTools(),
+    disallowedTools: [...new Set([...skillManager.getDisallowedTools(), ...(opts.disallowedTools || [])])],
     // Skills active for THIS session — scopes which learned web-system MCP
     // servers get loaded, so a disabled/unselected workspace skill no longer
     // exposes its tools (and the assistant no longer "sees" a system the user
@@ -276,6 +277,13 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     // nobody will answer — callers can force a non-interactive mode.
     permissionMode: opts.permissionMode
       || require("./permission-settings").resolveSessionPermissionMode(session),
+    runtimeIdentityClaims: {
+      principalId: runtimeIdentityOwner?.ok && runtimeIdentityOwner.ownerScope
+        ? runtimeIdentityOwner.ownerScope
+        : `session:${sessionId}`,
+      workspaceId: session.projectId || "workspace:local",
+      projectId: session.projectId || "project:local",
+    },
   };
   if (opts.turnId) {
     try {

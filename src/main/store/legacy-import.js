@@ -69,6 +69,11 @@ function isExplicitlyDiscarded(flag) {
   return value === "deleted" || value === "cleared";
 }
 
+function isCompletedEmptyImport(flag) {
+  const value = String(flag || "");
+  return value === "none" || value === "done:0";
+}
+
 function readMessagesFromLegacySessionsBackup(sessionId) {
   const filePath = legacySessionsBackupPath();
   if (!fs.existsSync(filePath)) return null;
@@ -122,6 +127,9 @@ function importSession(store, sessionId, opts = {}) {
   const existingFlag = store.meta(importedFlagKey(sessionId));
   const liveFileExists = fs.existsSync(filePath);
   if (isExplicitlyDiscarded(existingFlag)) return { imported: false, count: 0 };
+  if (isCompletedEmptyImport(existingFlag) && !liveFileExists) {
+    return { imported: false, count: 0 };
+  }
   if (existingFlag && !liveFileExists && storeCount(store, sessionId) > 0) {
     return { imported: false, count: 0 };
   }

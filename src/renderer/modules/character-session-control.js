@@ -43,7 +43,7 @@ const USER_ROUND_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="no
 const MAX_LISTED_CHARACTERS = 8;
 
 const facade = () => window.assistantClient?.characterWorlds || null;
-const btn = () => $("sessionCharacterBtn");
+const btn = () => $("sessionRoleBanner");
 const popover = () => $("characterPopover");
 
 function announce(text) {
@@ -209,31 +209,6 @@ function renderUpdateRow() {
   renderBindingUpdateRow($("characterUpdateRow"), controlState);
 }
 
-function renderButton() {
-  const b = btn();
-  if (!b) return;
-  const label = b.querySelector(".composer-character-btn-label");
-  const swatch = b.querySelector(".composer-character-btn-swatch");
-  const icon = b.querySelector(".composer-character-btn-icon");
-  const isCharacter = effectiveCharacterMode(controlState) === "character" && controlState.characterRevisionId;
-  const name = isCharacter ? (controlState.characterName || t("character.unnamed")) : "";
-  if (label) {
-    label.textContent = name;
-    label.title = name;
-    label.hidden = !name;
-  }
-  if (swatch) {
-    swatch.hidden = !isCharacter;
-    swatch.textContent = isCharacter ? monogram(name) : "";
-  }
-  for (const [sel, flag] of [[".composer-character-btn-persona", controlState.personaRevisionId], [".composer-character-btn-world", controlState.worldBookRevisionId]]) {
-    const badge = b.querySelector(sel);
-    if (badge) badge.hidden = !(isCharacter && flag);
-  }
-  if (icon) icon.hidden = Boolean(isCharacter);
-  b.classList.toggle("is-character", Boolean(isCharacter));
-}
-
 function renderPopover() {
   const p = popover();
   if (!p || p.hidden) return;
@@ -256,7 +231,6 @@ function renderPopover() {
 }
 
 function render() {
-  renderButton();
   renderPopover();
   renderRoleBanner();
   previewController.render();
@@ -275,7 +249,14 @@ async function loadBinding(sessionId) {
     if (!isCurrent()) return;
     if (res?.ok) {
             if (!controlState.available) dispatch({ type: "availability.set", available: true });
-      dispatch({ type: "binding.loaded", sessionId, seq, binding: res.binding, updates: res.updates });
+      dispatch({
+        type: "binding.loaded",
+        sessionId,
+        seq,
+        binding: res.binding,
+        characterName: res.characterName,
+        updates: res.updates,
+      });
       void loadSwitchNotices(sessionId);
       void refreshWorldIndicator(sessionId, seq, res.binding);
     } else {
@@ -417,18 +398,12 @@ export function initCharacterSessionControl() {
     b.hidden = true;
     return;
   }
-  b.hidden = false;
-
   b.addEventListener("click", (event) => {
     event.stopPropagation();
     if (p.hidden) openPopover();
     else closePopover();
   });
   $("characterPopoverClose")?.addEventListener("click", () => closePopover({ focusButton: true }));
-
-  const roleBanner = $("sessionRoleBanner");
-  roleBanner?.addEventListener("click", () => openPopover());
-  roleBanner?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPopover(); } });
 
   $("characterList")?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-character-mode], [data-character-revision-id], [data-character-official-id]");

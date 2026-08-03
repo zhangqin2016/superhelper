@@ -28,22 +28,15 @@ deploy_mode="$(grep '^DEPLOY_MODE=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:sp
 compose_build_arg="--build"
 
 if [ "$deploy_mode" = "images" ]; then
-  compose_file="docker-compose.images-app-only.yml"
   compose_build_arg=""
   if [ "$db_mode" != "external" ]; then
     echo "DEPLOY_MODE=images currently expects DB_MODE=external. Set DB_MODE=external and DATABASE_URL in .env."
     exit 1
   fi
 elif [ "$gateway_mode" = "external" ]; then
-  compose_file="docker-compose.app-only.yml"
   if [ "$db_mode" != "external" ]; then
     echo "GATEWAY_MODE=external currently expects DB_MODE=external. Set DB_MODE=external and DATABASE_URL in .env."
     exit 1
-  fi
-else
-  compose_file="docker-compose.yml"
-  if [ "$db_mode" = "external" ]; then
-    compose_file="docker-compose.external-postgres.yml"
   fi
 fi
 
@@ -54,20 +47,14 @@ if [ "$db_mode" = "external" ]; then
   fi
 fi
 
-compose_args="-f $compose_file"
 if [ "${litellm_enabled:-false}" = "true" ]; then
   if [ -z "$(grep '^LITELLM_MASTER_KEY=' .env 2>/dev/null | cut -d= -f2-)" ]; then
     echo "LITELLM_ENABLED=true, but LITELLM_MASTER_KEY is missing."
     exit 1
   fi
-  compose_args="$compose_args -f docker-compose.litellm.yml"
 fi
 
-if docker compose version >/dev/null 2>&1; then
-  docker compose --env-file .env $compose_args up -d $compose_build_arg
-else
-  docker-compose --env-file .env $compose_args up -d $compose_build_arg
-fi
+./compose.sh up -d $compose_build_arg
 
 if ! command -v curl >/dev/null 2>&1; then
   echo "curl is required for post-deploy health check."

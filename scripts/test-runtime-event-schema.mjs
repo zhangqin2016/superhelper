@@ -138,6 +138,9 @@ if (persisted.length !== 1 || persisted[0].sessionId !== "s_persist") {
 if (persisted[0].events[0]?.seq !== 1 || persisted[0].events[0]?.payload?.text !== "persist me") {
   throw new Error(`persisted event must be normalized: ${JSON.stringify(persisted)}`);
 }
+const restartedBus = new RuntimeEventBus(() => fakeWindow, { loadLastSeq: (sessionId) => sessionId === "s_restart" ? 41 : 0 });
+const resumedEvent = restartedBus.emit("s_restart", { type: "turn.started", turnId: "t_restart", payload: { text: "resume" } })[0];
+if (resumedEvent.seq !== 42) throw new Error(`runtime sequence must continue after restart, got ${resumedEvent.seq}`);
 
 const terminalEvents = bus.emitBatch("s2", [
   { type: "turn.completed", turnId: "t2", payload: { assistant: "done", toolsSummary: { count: 0 } } },

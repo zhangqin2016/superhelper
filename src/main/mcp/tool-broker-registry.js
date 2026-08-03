@@ -478,6 +478,7 @@ function findBrokerTool(context, toolName, deps = {}) {
 module.exports = {
   SKILLS,
   STATIC_TOOL_DEFINITIONS,
+  allToolDefinitions,
   asTextJson,
   buildBrokerTools,
   findBrokerTool,

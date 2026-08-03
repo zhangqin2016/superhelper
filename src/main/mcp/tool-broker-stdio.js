@@ -31,7 +31,18 @@ function parseContextEnv() {
 
 async function main() {
   const context = parseContextEnv();
-  const server = await createToolBrokerMcpServer({ context });
+  let runtimeIdentity = null;
+  const secret = String(process.env.LILY_RUNTIME_IDENTITY_SECRET || "").trim();
+  const registryPath = String(process.env.LILY_RUNTIME_IDENTITY_REGISTRY || "").trim();
+  if (process.env.LILY_RUNTIME_IDENTITY_V1 !== "0" && secret && registryPath) {
+    const registry = require("../runtime-identity-registry").createRuntimeIdentityRegistry({ filePath: registryPath });
+    runtimeIdentity = {
+      secret,
+      audience: "tool-broker",
+      isRevoked: (identity) => registry.isRevoked(identity?.nonce),
+    };
+  }
+  const server = await createToolBrokerMcpServer({ context, runtimeIdentity });
   await server.connect(new StdioServerTransport());
 }
 

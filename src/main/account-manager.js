@@ -163,6 +163,33 @@ async function loginWithSms({ phone, code } = {}) {
   };
 }
 
+async function fetchOrganizations() {
+  const token = await ensureAccessToken();
+  if (!token.ok) return token;
+  const result = await serviceClient.serviceFetch("/api/enterprise/organizations", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${String(token.accessToken || "").trim()}` },
+  });
+  if (!result.ok) return result;
+  const rows = Array.isArray(result.json?.organizations) ? result.json.organizations : [];
+  const state = readState();
+  writeState({ ...state, organizations: rows, organizationsRefreshedAt: new Date().toISOString() });
+  return { ok: true, organizations: rows };
+}
+
+/** Current org selection for the model request header; "" = personal path. */
+function getCurrentOrganizationId() {
+  const state = readState();
+  return String(state.currentOrganizationId || "").trim();
+}
+
+/** Persist the user's current org selection; "" clears back to personal. */
+function setCurrentOrganizationId(organizationId) {
+  const state = readState();
+  writeState({ ...state, currentOrganizationId: String(organizationId || "").trim() });
+  return getCurrentOrganizationId();
+}
+
 async function refreshEntitlements() {
   const token = await ensureAccessToken();
   if (!token.ok) return token;
@@ -206,7 +233,6 @@ function clearAccount() {
   accessExpiresAt = 0;
   writeState({});
 }
-
 module.exports = {
   accountStatus,
   accountAccessStatus,
@@ -214,6 +240,9 @@ module.exports = {
   sendSmsCode,
   loginWithSms,
   refreshEntitlements,
+  fetchOrganizations,
+  getCurrentOrganizationId,
+  setCurrentOrganizationId,
   createBillingLink,
   accessTokenForService,
   logout,

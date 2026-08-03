@@ -68,7 +68,7 @@ export function startAiAuthoring(kind = "characters") {
   const popover = $("characterPopover");
   if (popover && !popover.hidden) {
     popover.hidden = true;
-    $("sessionCharacterBtn")?.setAttribute("aria-expanded", "false");
+    $("sessionRoleBanner")?.setAttribute("aria-expanded", "false");
   }
   input.focus();
   return true;
@@ -196,7 +196,7 @@ function closeCharacterLibrary() {
   if (dirtyFormGuard()) return;
   m.hidden = true;
   dispatch({ type: "closed" });
-  $("sessionCharacterBtn")?.focus();
+  $("sessionRoleBanner")?.focus();
 }
 
 function focusableControls() {

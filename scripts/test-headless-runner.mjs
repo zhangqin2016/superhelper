@@ -9,6 +9,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import fs from "node:fs";
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -32,5 +33,16 @@ if (bin) {
 const empty = spawnSync(process.execPath, [script], { encoding: "utf8" });
 assert.equal(empty.status, 2, `empty invocation exits 2 (usage), got ${empty.status}`);
 assert.match(empty.stderr || "", /usage:/i, "empty invocation prints usage");
+
+const source = fs.readFileSync(script, "utf8");
+for (const flag of ["stream-json", "session", "resume", "after-cursor", "fork", "timeout", "allowed-tools", "denied-tools", "max-turns", "workspace"]) {
+  assert.match(source, new RegExp(`\\b${flag.replace("-", "[-]")}\\b`), `headless CLI supports --${flag}`);
+}
+assert.match(source, /positionals\[0\] === "run"/, "headless CLI accepts the documented lily run subcommand");
+assert.match(source, /protocolVersion/, "stream-json emits Lily's versioned event protocol");
+
+const pkg = require("../package.json");
+assert.equal(pkg.bin?.lily, "scripts/lily-headless.mjs", "package exposes the lily executable");
+assert.equal(pkg.exports?.["./sdk"], "./src/sdk/index.js", "package exports the Node SDK");
 
 console.log("headless-runner: ok");

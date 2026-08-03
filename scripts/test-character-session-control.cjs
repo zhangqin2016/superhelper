@@ -5,15 +5,16 @@
  * Electron DOM tests for the conversation-level character control
  * (Character Worlds Phase 1, plan Task 9 step 2).
  *
- * Covers: toolbar icon button with tooltip/accessible name, popover focus
+ * Covers: composer context button with tooltip/accessible name, popover focus
  * trapping + keyboard selection, import preview confirmation flow, conflict
- * reconciliation, no nested cards, and stable toolbar dimensions when labels
+ * reconciliation, no nested cards, and stable context-row dimensions when labels
  * change length. The character-worlds IPC channels are mocked in main; the
  * control runs against the real index.html DOM and preload bridge.
  */
 
 const electron = require("electron");
 const { app, BrowserWindow, ipcMain } = electron;
+const fs = require("node:fs");
 const path = require("node:path");
 
 if (!app?.whenReady || !BrowserWindow || !ipcMain?.handle) {
@@ -112,6 +113,13 @@ function nativeBinding(sessionId, bindingVersion = 0) {
 }
 
 ipcMain.handle("character:list", () => ({ ok: true, characters: cwCharacters }));
+ipcMain.handle("character:get-revision", (_event, payload) => ({
+  ok: true,
+  revision: {
+    id: payload?.revisionId || "",
+    characterBookRevisionId: "world-revision-1",
+  },
+}));
 ipcMain.handle("session-character:get-binding", (_event, payload) => {
   if (cwGetBindingBehavior !== "ok") return { ok: false, error: cwGetBindingBehavior };
   const sessionId = payload?.sessionId || "";
@@ -303,21 +311,26 @@ app.whenReady().then(async () => {
     return "exports present";
   })()`);
 
-  // 2. Toolbar icon button: tooltip, accessible name, Lucide icon, popover wiring.
-  await run("toolbar-button", `(() => {
-    const btn = document.getElementById("sessionCharacterBtn");
-    if (!btn) throw new Error("character toolbar button missing");
-    if (btn.hidden) throw new Error("character button should be visible when the facade exists");
+  // 2. One composer-owned context button: no duplicate message/toolbar chrome.
+  await run("composer-context-button", `(() => {
+    const btn = document.getElementById("sessionRoleBanner");
+    if (!btn) throw new Error("character context button missing");
+    if (btn.tagName !== "BUTTON") throw new Error("character context must use native button semantics");
+    if (!btn.closest("#composer")) throw new Error("character context must belong to the composer");
+    if (btn.closest("#sessionMessagesStack")) throw new Error("character context must not live in message history");
+    if (document.getElementById("sessionCharacterBtn")) throw new Error("duplicate toolbar character trigger must be removed");
+    if (document.querySelectorAll('[aria-controls="characterPopover"]').length !== 1) throw new Error("exactly one character selector is allowed");
+    if (btn.hidden) throw new Error("native Lily context should be visible when the facade exists");
     if (!btn.title || !btn.getAttribute("aria-label")) throw new Error("button needs tooltip + accessible name");
-    if (btn.getAttribute("data-i18n-title") !== "character.buttonTitle") throw new Error("button tooltip must be localized");
     if (btn.getAttribute("aria-haspopup") !== "dialog") throw new Error("button must announce its popover");
-    if (!btn.querySelector("svg")) throw new Error("button must render the UserRound icon");
+    if (!btn.querySelector(".session-role-banner-avatar")) throw new Error("button must render an identity avatar");
+    if (!btn.querySelector(".session-role-banner-name")?.textContent.includes("Lily")) throw new Error("native mode must identify Lily");
     return btn.title;
   })()`);
 
   // 3. Popover opens, focus moves inside, options render.
   await run("popover-open", `(async () => {
-    const btn = document.getElementById("sessionCharacterBtn");
+    const btn = document.getElementById("sessionRoleBanner");
     const popover = document.getElementById("characterPopover");
     if (!popover || !popover.hidden) throw new Error("popover should start hidden");
     btn.click();
@@ -368,19 +381,19 @@ app.whenReady().then(async () => {
     return "trap verified over " + items.length + " rows";
   })()`);
 
-  // 5. Select a character: optimistic swatch + name, CAS call, aria-live status.
+  // 5. Select a character: optimistic avatar + name, CAS call, aria-live status.
   await run("select-character", `(async () => {
     const popover = document.getElementById("characterPopover");
-    const btn = document.getElementById("sessionCharacterBtn");
+    const btn = document.getElementById("sessionRoleBanner");
     const row = popover.querySelector('[data-character-revision-id="rev-night-1"]');
     if (!row) throw new Error("character row missing");
     row.click();
     await new Promise((r) => setTimeout(r, 150));
-    const label = btn.querySelector(".composer-character-btn-label");
+    const label = btn.querySelector(".session-role-banner-name");
     if (!label || !label.textContent.includes("巡夜人")) throw new Error("button should show the bound name");
-    if (label.title !== "巡夜人") throw new Error("full name must be available via title");
-    const swatch = btn.querySelector(".composer-character-btn-swatch");
-    if (!swatch || swatch.hidden) throw new Error("bound state shows the avatar swatch");
+    if (!btn.title.includes("巡夜人")) throw new Error("full name must be available via title");
+    const swatch = btn.querySelector(".session-role-banner-avatar");
+    if (!swatch || !swatch.textContent.trim()) throw new Error("bound state shows the avatar monogram");
     const live = document.getElementById("characterControlLive");
     if (!live || !live.textContent.includes("巡夜人")) throw new Error("selection must be announced via aria-live");
     return "bound 巡夜人";
@@ -400,12 +413,12 @@ app.whenReady().then(async () => {
     }
   }
 
-  // 6. Layout stability: switch to a very long name, toolbar dimensions hold.
+  // 6. Layout stability: switch to a very long name, context dimensions hold.
   await run("layout-stable", `(async () => {
-    const btn = document.getElementById("sessionCharacterBtn");
-    const label = btn.querySelector(".composer-character-btn-label");
+    const btn = document.getElementById("sessionRoleBanner");
+    const label = btn.querySelector(".session-role-banner-name");
     const before = { w: btn.offsetWidth, h: btn.offsetHeight, text: label.textContent };
-    document.getElementById("sessionCharacterBtn").click();
+    document.getElementById("sessionRoleBanner").click();
     await new Promise((r) => setTimeout(r, 120));
     const popover = document.getElementById("characterPopover");
     const row = popover.querySelector('[data-character-revision-id="rev-long-1"]');
@@ -414,33 +427,24 @@ app.whenReady().then(async () => {
     const after = { w: btn.offsetWidth, h: btn.offsetHeight, text: label.textContent };
     if (before.text === after.text) throw new Error("name should have changed");
     if (before.w !== after.w || before.h !== after.h) {
-      throw new Error("toolbar button shifted: " + JSON.stringify({ before, after }));
+      throw new Error("context row shifted: " + JSON.stringify({ before, after }));
     }
     const btnWidth = parseFloat(getComputedStyle(btn).width);
-    if (!(btnWidth > 30)) {
-      throw new Error("bound button must grow beyond the 30px icon-button pin, got " + btnWidth);
-    }
+    if (btn.closest(".composer-toolbar") == null) throw new Error("context selector must stay inside the composer toolbar");
+    if (!(btnWidth >= 140 && btnWidth <= 180)) throw new Error("context selector must remain compact, got " + btnWidth);
     const style = getComputedStyle(label);
     if (style.textOverflow !== "ellipsis" || style.overflow !== "hidden" || style.whiteSpace !== "nowrap") {
       throw new Error("long names must ellipsize: " + style.textOverflow + "/" + style.overflow + "/" + style.whiteSpace);
     }
-    if (!/px$/.test(style.maxWidth) && !/px$/.test(style.width)) throw new Error("label needs a fixed width constraint: " + style.width + "/" + style.maxWidth);
-    if (!label.title || label.title.length < 20) throw new Error("full long name must remain available via title");
+    if (!btn.title || btn.title.length < 20) throw new Error("full long name must remain available via title");
     return "stable at " + after.w + "x" + after.h;
   })()`);
 
   // 6b. The hidden attribute must win over author display:flex/grid styles.
   await run("hidden-guards", `(async () => {
-    const btn = document.getElementById("sessionCharacterBtn");
-    const icon = btn.querySelector(".composer-character-btn-icon");
-    const swatch = btn.querySelector(".composer-character-btn-swatch");
-    // Bound state (long name selected above): icon hidden, swatch shown.
-    if (!icon.hidden || getComputedStyle(icon).display !== "none") {
-      throw new Error("bound state must hide the unselected icon");
-    }
-    if (swatch.hidden || getComputedStyle(swatch).display === "none") {
-      throw new Error("bound state must show the avatar swatch");
-    }
+    const btn = document.getElementById("sessionRoleBanner");
+    const swatch = btn.querySelector(".session-role-banner-avatar");
+    if (!swatch.textContent.trim() || getComputedStyle(swatch).display === "none") throw new Error("bound state must show the avatar");
     // The no-facade fail-open hide must actually remove the button.
     btn.hidden = true;
     const display = getComputedStyle(btn).display;
@@ -449,7 +453,37 @@ app.whenReady().then(async () => {
     return "guards hold";
   })()`);
 
-  // 6c. Update-available (Phase 2B): the hint shows in the popover WITHOUT
+  // 6c. Persona/world state stays readable instead of unexplained P/W glyphs.
+  {
+    const current = cwBindings.get("session_alpha_recent");
+    cwBindings.set("session_alpha_recent", { ...current, personaRevisionId: "persona-revision-1" });
+    await run("context-labels", `(async () => {
+      const store = (await import("./modules/state.js")).default;
+      store.set("activeSessionId", "session_other");
+      await new Promise((r) => setTimeout(r, 120));
+      store.set("activeSessionId", "session_alpha_recent");
+      await new Promise((r) => setTimeout(r, 260));
+      const badges = document.querySelector("#sessionRoleBanner .session-role-banner-badges");
+      if (!badges.textContent.includes("设定")) throw new Error("persona state needs a localized text label: " + badges.textContent);
+      if (!badges.textContent.includes("世界书")) throw new Error("world state needs a localized text label: " + badges.textContent);
+      const accessibleName = document.getElementById("sessionRoleBanner").getAttribute("aria-label") || "";
+      if (!accessibleName.includes("设定") || !accessibleName.includes("世界书")) throw new Error("context labels must be announced: " + accessibleName);
+      return badges.textContent;
+    })()`);
+  }
+
+  if (process.env.CHARACTER_CONTEXT_SCREENSHOT_DIR) {
+    const outputDir = path.resolve(process.env.CHARACTER_CONTEXT_SCREENSHOT_DIR);
+    fs.mkdirSync(outputDir, { recursive: true });
+    for (const [name, width, height] of [["desktop", 1280, 800], ["narrow", 720, 800]]) {
+      win.setSize(width, height);
+      await new Promise((r) => setTimeout(r, 160));
+      const image = await win.webContents.capturePage();
+      fs.writeFileSync(path.join(outputDir, `character-context-${name}.png`), image.toPNG());
+    }
+  }
+
+  // 6d. Update-available (Phase 2B): the hint shows in the popover WITHOUT
   // changing the pinned snapshot; apply re-reads the binding and issues
   // set-binding with the current expectedBindingVersion; the hint clears.
   {
@@ -466,9 +500,9 @@ app.whenReady().then(async () => {
     await run("update-available", `(async () => {
       const mod = await import("./modules/character-session-control.js");
       const popover = document.getElementById("characterPopover");
-      if (!popover.hidden) document.getElementById("sessionCharacterBtn").click();
+      if (!popover.hidden) document.getElementById("sessionRoleBanner").click();
       await new Promise((r) => setTimeout(r, 60));
-      document.getElementById("sessionCharacterBtn").click();
+      document.getElementById("sessionRoleBanner").click();
       await new Promise((r) => setTimeout(r, 200));
       if (popover.hidden) throw new Error("popover should be open");
       const row = document.getElementById("characterUpdateRow");
@@ -507,7 +541,7 @@ app.whenReady().then(async () => {
   {
     cwSetBehavior = "conflict";
     await run("conflict-reconcile", `(async () => {
-      document.getElementById("sessionCharacterBtn").click();
+      document.getElementById("sessionRoleBanner").click();
       await new Promise((r) => setTimeout(r, 120));
       const popover = document.getElementById("characterPopover");
       popover.querySelector('[data-character-mode="native"]').click();
@@ -524,10 +558,8 @@ app.whenReady().then(async () => {
       if (state.mode !== "native" || state.bindingVersion !== 3) {
         throw new Error("state must reconcile to currentBinding, got " + JSON.stringify({ mode: state.mode, v: state.bindingVersion }));
       }
-      const btn = document.getElementById("sessionCharacterBtn");
-      if (btn.querySelector(".composer-character-btn-label").textContent.includes("夜游神")) {
-        throw new Error("button must drop the stale optimistic name");
-      }
+      const btn = document.getElementById("sessionRoleBanner");
+      if (!btn.querySelector(".session-role-banner-name").textContent.includes("Lily")) throw new Error("native reconciliation must render Lily");
       return "reconciled to native@3";
     })()`);
     cwSetBehavior = "ok";
@@ -554,7 +586,7 @@ app.whenReady().then(async () => {
   await run("import-preview", `(async () => {
     const popover = document.getElementById("characterPopover");
     if (popover.hidden) {
-      document.getElementById("sessionCharacterBtn").click();
+      document.getElementById("sessionRoleBanner").click();
       await new Promise((r) => setTimeout(r, 120));
     }
     document.getElementById("characterImportBtn").click();
@@ -608,7 +640,7 @@ app.whenReady().then(async () => {
     await run("not-a-card", `(async () => {
       const popover = document.getElementById("characterPopover");
       if (popover.hidden) {
-        document.getElementById("sessionCharacterBtn").click();
+        document.getElementById("sessionRoleBanner").click();
         await new Promise((r) => setTimeout(r, 120));
       }
       document.getElementById("characterImportBtn").click();
@@ -643,14 +675,8 @@ app.whenReady().then(async () => {
       if (state.sessionId !== "session_other") throw new Error("session change not tracked");
       if (state.mode !== "native") throw new Error("IPC failure must leave the session in native mode");
       if (state.notice !== "unavailable") throw new Error("a quiet notice is expected, got " + state.notice);
-      const btn = document.getElementById("sessionCharacterBtn");
-      if (!btn.querySelector("svg") || btn.querySelector(".composer-character-btn-label").textContent.trim()) {
-        throw new Error("native mode shows the unselected icon and no name");
-      }
-      const swatch = btn.querySelector(".composer-character-btn-swatch");
-      if (!swatch.hidden || getComputedStyle(swatch).display !== "none") {
-        throw new Error("native mode must not show a ghost swatch");
-      }
+      const btn = document.getElementById("sessionRoleBanner");
+      if (!btn.hidden || getComputedStyle(btn).display !== "none") throw new Error("unavailable mode must hide the dead selector");
       store.set("activeSessionId", "session_alpha_recent");
       return "native fallback";
     })()`);
@@ -659,7 +685,7 @@ app.whenReady().then(async () => {
 
   // 11. Escape closes the popover and returns focus to the trigger.
   await run("escape-close", `(async () => {
-    const btn = document.getElementById("sessionCharacterBtn");
+    const btn = document.getElementById("sessionRoleBanner");
     const popover = document.getElementById("characterPopover");
     if (!popover.hidden) {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
@@ -682,8 +708,7 @@ app.whenReady().then(async () => {
     await run("kill-switch-view", `(async () => {
       const store = (await import("./modules/state.js")).default;
       const mod = await import("./modules/character-session-control.js");
-      const btn = document.getElementById("sessionCharacterBtn");
-      const swatch = btn.querySelector(".composer-character-btn-swatch");
+      const btn = document.getElementById("sessionRoleBanner");
       // Recover availability first (fail-open left it off): a successful load
       // proves the feature is back.
       store.set("activeSessionId", "session_other");
@@ -693,14 +718,14 @@ app.whenReady().then(async () => {
       let state = mod.getCharacterControlState();
       if (state.available !== true) throw new Error("a successful load should restore availability");
       if (state.mode !== "character") throw new Error("alpha should still be bound, got " + state.mode);
-      if (swatch.hidden) throw new Error("bound state shows the swatch");
+      if (btn.hidden || !btn.querySelector(".session-role-banner-avatar").textContent.trim()) throw new Error("bound state shows the context selector");
       return "available again";
     })()`);
     cwGetBindingBehavior = "CHARACTER_WORLDS_UNAVAILABLE";
     await run("kill-switch-native-view", `(async () => {
       const store = (await import("./modules/state.js")).default;
       const mod = await import("./modules/character-session-control.js");
-      const btn = document.getElementById("sessionCharacterBtn");
+      const btn = document.getElementById("sessionRoleBanner");
       store.set("activeSessionId", "session_other");
       await new Promise((r) => setTimeout(r, 150));
       store.set("activeSessionId", "session_alpha_recent");
@@ -709,16 +734,14 @@ app.whenReady().then(async () => {
       if (state.available !== false) throw new Error("unavailable load must flip availability off");
       if (mod.effectiveCharacterMode(state) !== "native") throw new Error("the view must read native Lily");
       if (state.notice !== "unavailable") throw new Error("a quiet notice is expected");
-      const swatch = btn.querySelector(".composer-character-btn-swatch");
-      const icon = btn.querySelector(".composer-character-btn-icon");
-      if (!swatch.hidden || icon.hidden) throw new Error("native view shows the unselected icon");
+      if (!btn.hidden || getComputedStyle(btn).display !== "none") throw new Error("kill switch must hide the selector");
       return "native view under kill switch";
     })()`);
     cwGetBindingBehavior = "ok";
     await run("kill-switch-recovery", `(async () => {
       const store = (await import("./modules/state.js")).default;
       const mod = await import("./modules/character-session-control.js");
-      const btn = document.getElementById("sessionCharacterBtn");
+      const btn = document.getElementById("sessionRoleBanner");
       store.set("activeSessionId", "session_other");
       await new Promise((r) => setTimeout(r, 150));
       store.set("activeSessionId", "session_alpha_recent");
@@ -728,9 +751,7 @@ app.whenReady().then(async () => {
       if (state.mode !== "character" || !state.characterRevisionId) {
         throw new Error("the binding must survive the kill switch, got " + state.mode);
       }
-      if (btn.querySelector(".composer-character-btn-swatch").hidden) {
-        throw new Error("the swatch returns without any re-selection");
-      }
+      if (btn.hidden || !btn.querySelector(".session-role-banner-name").textContent.trim()) throw new Error("the context selector returns without re-selection");
       return "binding preserved";
     })()`);
   }
@@ -740,7 +761,7 @@ app.whenReady().then(async () => {
   {
     cwPreviewBehavior = "card-duplicate";
     await run("import-duplicate-copy", `(async () => {
-      const btn = document.getElementById("sessionCharacterBtn");
+      const btn = document.getElementById("sessionRoleBanner");
       const popover = document.getElementById("characterPopover");
       if (popover.hidden) {
         btn.click();
@@ -779,7 +800,7 @@ app.whenReady().then(async () => {
       const store = (await import("./modules/state.js")).default;
       const popover = document.getElementById("characterPopover");
       if (popover.hidden) {
-        document.getElementById("sessionCharacterBtn").click();
+        document.getElementById("sessionRoleBanner").click();
         await new Promise((r) => setTimeout(r, 120));
       }
       document.getElementById("characterImportBtn").click();
@@ -819,7 +840,7 @@ app.whenReady().then(async () => {
       const store = (await import("./modules/state.js")).default;
       const popover = document.getElementById("characterPopover");
       if (popover.hidden) {
-        document.getElementById("sessionCharacterBtn").click();
+        document.getElementById("sessionRoleBanner").click();
         await new Promise((r) => setTimeout(r, 120));
       }
       popover.querySelector('[data-character-revision-id="rev-night-1"]').click();
@@ -854,10 +875,8 @@ app.whenReady().then(async () => {
     if (state.mode !== "native" || state.characterRevisionId !== null) {
       throw new Error("deleting the active session must reset the control");
     }
-    const btn = document.getElementById("sessionCharacterBtn");
-    if (btn.querySelector(".composer-character-btn-label").textContent.trim()) {
-      throw new Error("no name may show without an active session");
-    }
+    const btn = document.getElementById("sessionRoleBanner");
+    if (!btn.hidden) throw new Error("no character selector may show without an active session");
     store.set("activeSessionId", "session_alpha_recent");
     await new Promise((r) => setTimeout(r, 250));
     return "reset on null session";

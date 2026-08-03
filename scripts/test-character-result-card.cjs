@@ -38,6 +38,8 @@ if (!app?.whenReady || !BrowserWindow) process.exit(2);
       await new Promise((resolve) => setTimeout(resolve, 20));
       const malformed = renderCharacterResultCard({ type: "character_worlds_receipt", secret: "DO_NOT_RENDER" }, { api });
       const banner = renderCharacterPreviewBanner({ character: true, previewVersion: 1 }, {});
+      const inactiveBanner = renderCharacterPreviewBanner({}, {});
+      document.body.append(inactiveBanner);
       return {
         previewLabel: card.querySelector("[data-action='preview']").textContent,
         leakedReceipt: card.textContent.includes(receiptId),
@@ -46,12 +48,14 @@ if (!app?.whenReady || !BrowserWindow) process.exit(2);
         malformedText: malformed.textContent,
         bannerHidden: banner.hidden,
         bannerActions: banner.querySelectorAll("button").length,
+        inactiveBannerDisplay: getComputedStyle(inactiveBanner).display,
       };
     })()`);
     if (!result.previewLabel || result.leakedReceipt || result.calls !== 1
       || result.adjusted?.handle !== "opaque-handle"
       || result.malformedText.includes("DO_NOT_RENDER")
-      || result.bannerHidden || result.bannerActions !== 2) {
+      || result.bannerHidden || result.bannerActions !== 2
+      || result.inactiveBannerDisplay !== "none") {
       throw new Error(`renderer assertions failed: ${JSON.stringify(result)}`);
     }
     console.log("PASS: test-character-result-card");

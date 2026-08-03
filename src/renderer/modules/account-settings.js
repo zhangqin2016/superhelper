@@ -146,6 +146,8 @@ export async function refreshAccountSettings() {
     statusEl.textContent = t("settings.accountLoggedOut");
     renderEntitlements(null);
     setLoggedInUi(false);
+    const orgCard = $("accountOrgSelectCard");
+    if (orgCard) orgCard.hidden = true;
     return;
   }
   currentAccountPhone = status.user?.phoneE164 || status.user?.phone_e164 || "";
@@ -154,6 +156,7 @@ export async function refreshAccountSettings() {
   });
   renderEntitlements(status.entitlements);
   setLoggedInUi(true);
+  void loadOrganizations();
 }
 
 async function sendSmsCode() {
@@ -231,6 +234,48 @@ async function refreshEntitlements() {
   } finally {
     entitlementsRefreshing = false;
     setLoggedInUi(accountLoggedIn);
+  }
+}
+
+async function loadOrganizations() {
+  const card = $("accountOrgSelectCard");
+  const select = $("accountOrgSelect");
+  if (!card || !select || !window.assistantClient?.fetchAccountOrganizations) return;
+  let result = null;
+  try {
+    result = await window.assistantClient.fetchAccountOrganizations();
+  } catch {
+    result = null;
+  }
+  const rows = Array.isArray(result?.organizations) ? result.organizations : [];
+  const current = await window.assistantClient.getCurrentOrganizationId?.().catch(() => ({}));
+  const currentId = String(current?.organizationId || "").trim();
+  select.innerHTML = "";
+  const personal = document.createElement("option");
+  personal.value = "";
+  personal.textContent = t("settings.accountOrgPersonal");
+  select.appendChild(personal);
+  for (const row of rows) {
+    const opt = document.createElement("option");
+    opt.value = String(row.id || "");
+    opt.textContent = row.name || row.id || "";
+    select.appendChild(opt);
+  }
+  select.value = currentId;
+  card.hidden = rows.length === 0;
+  if (rows.length > 0) {
+    select.onchange = async () => {
+      const nextId = select.value || "";
+      try {
+        await window.assistantClient.setCurrentOrganizationId(nextId);
+      } catch {
+        // selection persists next time the panel opens
+      }
+      showToast(
+        nextId ? t("settings.accountOrgSet") : t("settings.accountOrgCleared"),
+        "success",
+      );
+    };
   }
 }
 

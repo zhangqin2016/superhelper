@@ -40,6 +40,18 @@ assert.equal(pdfConvert.routeTaskType, "document_work");
 const engineering = inferContentTaskIntent({ text: "实现 PDF OCR 识别模块", files: [] });
 assert.equal(engineering.routeTaskType, "", "engineering requests must stay with code routing");
 assert(engineering.reasonCodes.includes("engineering_context_preserved"));
+
+const failureTranscript = inferContentTaskIntent({
+  text: "任务总是失败，重试还是这样，请诊断修复",
+  files: [{ name: "failure-log.txt", path: "/tmp/failure-log.txt" }],
+});
+assert.equal(
+  failureTranscript.routeTaskType,
+  "",
+  "a diagnostic transcript is evidence for fixing the system, not a document artifact to modify",
+);
+assert.equal(failureTranscript.outputMode, "answer");
+assert(failureTranscript.reasonCodes.includes("engineering_context_preserved"));
 assert.doesNotThrow(() => inferContentTaskIntent({ text: "识别附件", files: [null, "bad-metadata"] }));
 
 assert.deepEqual(extractExplicitNegativePhrases("识别这个 PDF 里的内容"), []);

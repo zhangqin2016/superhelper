@@ -7,11 +7,11 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const deployDir = path.join(repoRoot, "deploy", "baota");
 
 const modes = [
-  ["docker-compose.yml"],
+  ["--profile", "bundled", "docker-compose.yml"],
   ["docker-compose.external-postgres.yml"],
   ["docker-compose.app-only.yml"],
   ["docker-compose.images-app-only.yml"],
-  ["docker-compose.yml", "docker-compose.litellm.yml"],
+  ["--profile", "bundled", "docker-compose.yml", "docker-compose.litellm.yml"],
   ["docker-compose.external-postgres.yml", "docker-compose.litellm.yml"],
   ["docker-compose.app-only.yml", "docker-compose.litellm.yml"],
   ["docker-compose.images-app-only.yml", "docker-compose.litellm.yml"],
@@ -51,11 +51,14 @@ if (!command) {
 
 const temp = buildEnvFile();
 try {
-  for (const files of modes) {
+  for (const mode of modes) {
+    const files = mode.filter((item) => item.endsWith(".yml"));
+    const profileIndex = mode.indexOf("--profile");
     const args = [
       ...command.slice(1),
       "--env-file",
       temp.file,
+      ...(profileIndex >= 0 ? ["--profile", mode[profileIndex + 1]] : []),
       ...files.flatMap((file) => ["-f", file]),
       "config",
       "--quiet",

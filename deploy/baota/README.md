@@ -25,6 +25,7 @@
 ```bash
 cd /www/wwwroot/lily-workbench/deploy/baota
 chmod +x deploy.sh
+chmod +x compose.sh
 ./deploy.sh
 ```
 
@@ -328,15 +329,19 @@ PUBLIC_API_BASE_URL=https://你的域名
 
 ## 常用命令
 
+所有运维命令必须通过 `compose.sh`。它会根据 `.env` 中的 `DEPLOY_MODE`、
+`GATEWAY_MODE` 和 `DB_MODE` 选择正确拓扑；不要直接运行裸 `docker compose`，
+否则可能把 image/host-network 生产服务重建成默认 bundled 拓扑。
+
 ```bash
 cd deploy/baota
-docker compose ps
-docker compose logs -f api
-docker compose logs -f web
-docker compose logs -f gateway
-docker compose logs -f litellm
-docker compose restart
-docker compose down
+./compose.sh ps
+./compose.sh logs -f api
+./compose.sh logs -f web
+./compose.sh logs -f gateway
+./compose.sh logs -f litellm
+./compose.sh restart
+./compose.sh down
 ```
 
 不要随便删除 volume：

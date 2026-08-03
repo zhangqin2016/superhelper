@@ -1,5 +1,6 @@
 services:
   db:
+    profiles: ["bundled"]
     image: postgres:16-alpine
     container_name: lily-db
     restart: unless-stopped
@@ -16,6 +17,7 @@ services:
       retries: 10
 
   api:
+    profiles: ["bundled"]
     build:
       context: ../..
       dockerfile: server/Dockerfile
@@ -41,6 +43,7 @@ services:
       retries: 10
 
   web:
+    profiles: ["bundled"]
     build:
       context: ../..
       dockerfile: web/Dockerfile
@@ -62,6 +65,7 @@ services:
       NEXT_PUBLIC_RELEASE_CDN_PREFIX: ${RELEASE_CDN_PREFIX:-app/updates}
 
   gateway:
+    profiles: ["bundled"]
     image: nginx:1.27-alpine
     container_name: lily-gateway
     restart: unless-stopped

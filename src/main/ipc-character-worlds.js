@@ -9,10 +9,7 @@ const {
   summarizePersonaDetail,
   summarizePersonaEntity,
 } = require("./character-worlds/persona-inspection");
-const {
-  projectBindingSwitchNotices,
-  resolveBindingUpdates,
-} = require("./character-worlds/binding-projection");
+const { projectBindingSwitchNotices, resolveBindingCharacterName, resolveBindingUpdates } = require("./character-worlds/binding-projection");
 
 // Character Worlds IPC boundary (design spec §15/§16, HANDOFF.md §5/§6).
 //
@@ -234,7 +231,7 @@ function registerCharacterWorldsHandlers(ctx) {
       const updates = policyDeniesSelection(ctx)
         ? null
         : resolveBindingUpdates(repo, session.ownerScope, binding);
-      return { ok: true, binding, updates };
+      return { ok: true, binding, characterName: resolveBindingCharacterName(repo, session.ownerScope, binding), updates };
     } catch (error) {
       return mapDomainError(error);
     }

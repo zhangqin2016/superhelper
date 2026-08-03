@@ -2577,6 +2577,53 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   session.terminate();
 }
 
+// --- tool config freshness: MCP policy changes rebuild but preserve history --
+{
+  let serverCount = 0;
+  const made = [];
+  const session = new OpencodeAgentSession("tool_config_refresh", {
+    createServer: (opts) => {
+      serverCount += 1;
+      const s = new FakeServer();
+      s.opts = opts;
+      made.push(s);
+      return s;
+    },
+  });
+  const orch = makeOrchestrator();
+  session.bindOrchestrator(orch);
+
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    opencodeConfig: "CONFIG_CHARACTER_DISABLED",
+    modelConfigFingerprint: "same-model-fp",
+    toolConfigFingerprint: "character-disabled",
+    resumeSessionId: "ses_character_history",
+  }, { lazy: true });
+  session.sendUserMessage({ text: "turn one" });
+  await tick();
+  made[0].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "done" } });
+  made[0].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    opencodeConfig: "CONFIG_CHARACTER_ENABLED",
+    modelConfigFingerprint: "same-model-fp",
+    toolConfigFingerprint: "character-enabled",
+  }, { lazy: true });
+  assert(made[0].process === null, "stale MCP tool config is retired while idle");
+  session.sendUserMessage({ text: "turn two" });
+  await tick();
+  assert(serverCount === 2, "changed MCP policy starts a fresh serve view");
+  assert(made[1].opts.configContent === "CONFIG_CHARACTER_ENABLED", "fresh serve receives enabled tool config");
+  assert(
+    made[1].opts.resumeSessionID === "ses_test",
+    "tool-only refresh resumes the same engine session instead of discarding history",
+  );
+  session.terminate();
+}
+
 // --- rewind: capture the turn's engine message id; pass revert/unrevert through
 {
   const { fake, session, orch } = await newSession();

@@ -16,7 +16,6 @@ const {
   resetTimelineState,
   upsertTimelineTool,
 } = require("./turn-timeline");
-
 const log = getLogger("turn-terminal-finalizer");
 // Durable turn-input row statuses that prove a terminal winner exists. Mirrors
 // the store's terminal set; kept local so the finalizer stays a pure projection.
@@ -446,6 +445,7 @@ function createTurnTerminalFinalizer(options = {}) {
       messageId: committedMessageId,
       toolsSummary: { count: state.tools.size },
     });
+    require("./public-hooks").observePublicTerminalHook(ctx, type, sessionId, completedTurnId, state, assistant);
     if (scheduledTaskRunId) {
       try {
         ctx.scheduledTaskManager?.completeRunById?.(scheduledTaskRunId, type, {

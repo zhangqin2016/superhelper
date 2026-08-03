@@ -53,6 +53,9 @@ Module._load = function patchedLoad(request, parent, isMain) {
       looksLikeWebSystemLearningIntent: () => false,
     };
   }
+  if (request.endsWith("/authoring-availability") || request === "./authoring-availability") {
+    return { ensureCharacterAuthoringAvailable: async () => ({ ok: true, refreshed: false }) };
+  }
   if (request.endsWith("./auto-memory-proposals") || request === "./auto-memory-proposals") {
     return {
       approveMemoryProposal: (_projectId, key, details) => {

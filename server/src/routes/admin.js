@@ -10,6 +10,7 @@ import { registerAdminConfigProfileRoutes } from "./admin/config-profiles.js";
 import { registerAdminContactRoutes } from "./admin/contacts.js";
 import { registerAdminDeviceRoutes } from "./admin/devices.js";
 import { registerAdminDiagnosticsRoutes } from "./admin/diagnostics.js";
+import { registerAdminEnterpriseRoutes } from "./admin/enterprise.js";
 import { registerAdminRuntimePackRoutes } from "./admin/runtime-packs.js";
 import { registerAdminLicenseRoutes } from "./admin/licenses.js";
 import { registerAdminModelProviderRoutes } from "./admin/model-providers.js";
@@ -114,4 +115,5 @@ export async function adminRoutes(app) {
   registerAdminConfigProfileRoutes(app, { audit });
   registerAdminAuditRoutes(app);
   registerAdminBillingRoutes(app, { audit });
+  registerAdminEnterpriseRoutes(app, { audit });
 }

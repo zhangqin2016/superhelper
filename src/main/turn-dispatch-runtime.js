@@ -330,6 +330,7 @@ function createTurnDispatchMethods({ log }) {
           );
         }
         try {
+          state.enginePayload.attemptId = dispatch.attemptId;
           const sent = runner.sendUserMessage(state.enginePayload);
           if (!sent) {
             const terminal = this._markPreSendFailure(

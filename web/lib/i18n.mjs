@@ -188,7 +188,7 @@ export const dictionaries = {
       brand: "Lily 管理后台",
       subtitle: "控制台",
       signOut: "退出登录",
-      nav: { dashboard: "仪表盘", users: "用户", licenses: "授权", devices: "设备", usage: "用量", contacts: "联系咨询", wishes: "许愿池", releases: "版本", runtimePacks: "运行时扩展包", skillPackages: "技能包", apps: "应用商店", plugins: "插件", config: "配置中心", health: "健康检查", diagnostics: "诊断", settings: "设置", audit: "审计" },
+      nav: { dashboard: "仪表盘", users: "用户", licenses: "授权", devices: "设备", usage: "用量", enterprise: "企业", contacts: "联系咨询", wishes: "许愿池", releases: "版本", runtimePacks: "运行时扩展包", skillPackages: "技能包", apps: "应用商店", plugins: "插件", config: "配置中心", health: "健康检查", diagnostics: "诊断", settings: "设置", audit: "审计" },
       navGroups: { operations: "运营", distribution: "发布与分发", configuration: "配置", monitoring: "监控与安全" },
       configCenter: { title: "配置中心", subtitle: "一处管理：基础设置、模型供应商、下发规则与设备分组。" },
       configTabs: { basics: "基础设置", storage: "对象存储", sms: "短信登录", payment: "支付配置", overview: "概览", providers: "模型供应商", profiles: "下发规则", groups: "设备分组" },
@@ -402,7 +402,7 @@ export const dictionaries = {
     },
     contactForm: { name: "Name", email: "Email", company: "Company / team", phone: "Phone / chat", subject: "Subject", message: "What should we help with?", submit: "Submit contact request", sending: "Submitting...", required: "Please leave your name, email, and a message of at least 8 characters.", failed: "Could not submit. Please try again later.", success: "Received. We will review it in the admin console." },
     admin: {
-      brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", contacts: "Contacts", wishes: "Wish pool", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
+      brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", enterprise: "Enterprise", contacts: "Contacts", wishes: "Wish pool", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
       navGroups: { operations: "Operations", distribution: "Distribution", configuration: "Configuration", monitoring: "Monitoring" },
       configCenter: { title: "Config center", subtitle: "One place: basics, model providers, delivery rules, and device groups." },
       configTabs: { basics: "Basics", storage: "Storage", sms: "SMS login", payment: "Payments", overview: "Overview", providers: "Model providers", profiles: "Delivery rules", groups: "Device groups" },
