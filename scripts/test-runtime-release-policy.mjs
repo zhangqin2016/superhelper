@@ -103,6 +103,12 @@ for (const [target, plat] of [
 }
 
 const verifyWinPack = fs.readFileSync(path.join(ROOT, "scripts/verify-win-pack.mjs"), "utf8");
+const buildRuntimeBundle = fs.readFileSync(path.join(ROOT, "scripts/build-runtime-bundle.mjs"), "utf8");
+assert.match(
+  buildRuntimeBundle,
+  /else if \(!skipLibreOffice && cross && isWin\)/,
+  "Windows cross-build must honor --skip-libreoffice instead of requiring a generated LibreOffice tree",
+);
 assert.match(verifyWinPack, /base Python runtime present/, "Windows package verifier must require the base Python runtime");
 assert.match(
   verifyWinPack,

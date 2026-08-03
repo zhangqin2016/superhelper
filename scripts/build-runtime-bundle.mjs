@@ -668,7 +668,7 @@ async function main() {
       if (!allowMissingLibreOffice) throw err;
       console.warn(`[runtime-build] LibreOffice install failed (continuing): ${err.message}`);
     }
-  } else if (cross && isWin) {
+  } else if (!skipLibreOffice && cross && isWin) {
     if (!allowMissingLibreOffice) {
       throw new Error(
         "Windows LibreOffice must be built on Windows. Run this command on Windows, or pass --allow-missing-libreoffice only for a non-release dev bundle.",
