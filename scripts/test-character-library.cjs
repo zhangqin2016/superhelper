@@ -457,6 +457,9 @@ app.whenReady().then(async () => {
     if (!dialog || dialog.getAttribute("aria-modal") !== "true") throw new Error("library needs an aria-modal dialog");
     if (!dialog.getAttribute("aria-labelledby")) throw new Error("dialog must be labelled");
     if (!modal.contains(document.activeElement)) throw new Error("focus must move into the library");
+    for (const id of ["characterLibraryGroups", "characterLibraryList", "characterLibraryGrid", "characterLibraryDetail", "characterLibrarySearch", "characterLibrarySourceFilter"]) {
+      if (!document.getElementById(id)) throw new Error("production library host missing: " + id);
+    }
     const libraryModule = await import("./modules/character-library.js");
     const prompt = document.getElementById("promptInput");
     prompt.value = "一个沉稳的侦探";
@@ -469,9 +472,12 @@ app.whenReady().then(async () => {
     return "library open";
   })()`);
 
-  // 3. Characters tab lists rows with edit/history/duplicate/export/archive actions.
+  // 3. Characters tab renders selectable catalog cards and preserves mutation
+  // hooks for compatibility; visible mutation actions live in the detail pane.
   await run("character-rows", `(async () => {
     const list = document.getElementById("characterLibraryList");
+    const grid = document.getElementById("characterLibraryGrid");
+    if (grid.getAttribute("role") !== "list") throw new Error("catalog grid needs list semantics");
     const rows = [...list.querySelectorAll("[data-entity-id]")];
     if (rows.length !== 2) throw new Error("expected 2 character rows, got " + rows.length);
     if (!rows.some((r) => r.textContent.includes("巡夜人"))) throw new Error("巡夜人 row missing");
@@ -481,6 +487,19 @@ app.whenReady().then(async () => {
     }
     const night = rows.find((r) => r.textContent.includes("巡夜人"));
     if (!night.textContent.includes("夜晚")) throw new Error("tag chips should render in the row meta");
+    const select = night.querySelector("[data-library-select]");
+    if (!select || select.getAttribute("aria-selected") !== "false") throw new Error("card starts unselected");
+    select.click();
+    await new Promise((r) => setTimeout(r, 250));
+    const selected = document.querySelector("[data-entity-id='char-night'] [data-library-select]");
+    if (selected?.getAttribute("aria-selected") !== "true") throw new Error("card selection must be explicit");
+    const detail = document.getElementById("characterLibraryDetail");
+    if (!detail.textContent.includes("巡夜人") || !detail.querySelector("[data-library-detail-close]")) {
+      throw new Error("selection must open the detail pane");
+    }
+    detail.querySelector("[data-library-detail-close]").click();
+    await new Promise((r) => setTimeout(r, 80));
+    if (document.activeElement !== document.querySelector("[data-entity-id='char-night'] [data-library-select]")) throw new Error("closing detail returns focus to the card");
     return "rows=" + rows.length;
   })()`);
 

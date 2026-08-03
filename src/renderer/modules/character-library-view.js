@@ -74,6 +74,11 @@ function renderToolbar(state) {
   const onCharacters = state.tab === "characters";
   const tagFilter = $("characterLibraryTagFilter");
   if (tagFilter) tagFilter.hidden = !onCharacters;
+  const sourceFilter = $("characterLibrarySourceFilter");
+  if (sourceFilter) {
+    sourceFilter.value = state.source || "";
+    sourceFilter.hidden = false;
+  }
   const importBtn = $("characterLibraryImportBtn");
   if (importBtn) importBtn.hidden = !onCharacters;
   const createBtn = $("characterLibraryCreateBtn");
@@ -133,55 +138,89 @@ function confirmBar(text) {
 function renderList(state) {
   const list = $("characterLibraryList");
   if (!list) return;
-  list.textContent = "";
+  const grid = $("characterLibraryGrid") || list;
+  grid.textContent = "";
   const items = sortLibraryItems(filterLibraryItems(state.items[state.tab], {
     query: state.query,
     tag: state.tag,
     groupId: state.groupId,
+    source: state.source,
   }));
   if (!items.length) {
-    list.appendChild(el("div", "character-library-empty", {
+    grid.appendChild(el("div", "character-library-empty", {
       textContent: t("character.library.emptyList"),
     }));
     return;
   }
   for (const item of items) {
-    const row = el("article", "character-library-row");
+    const row = el("article", "character-library-row", { role: "listitem" });
     row.dataset.entityId = item.id;
     const select = el("button", "character-library-card-select", {
       type: "button",
       "data-library-select": "true",
+      "aria-selected": item.id === state.selectedItemId ? "true" : "false",
       "aria-pressed": item.id === state.selectedItemId ? "true" : "false",
+    });
+    const marker = el("span", "character-library-card-marker", {
+      textContent: (item.visualKey || item.name || "L").slice(0, 1).toUpperCase(),
+      "aria-hidden": "true",
     });
     const info = el("span", "character-library-row-info");
     const name = item.name || t("character.unnamed");
-    info.appendChild(el("span", "character-library-row-name", { textContent: name, title: name }));
-    if (item.sourceKind === AGENT_DRAFT_SOURCE_KIND) info.appendChild(agentDraftBadge());
-    if (item.official) info.appendChild(el("span", "character-library-official-badge", {
+    const heading = el("span", "character-library-card-heading");
+    heading.appendChild(el("span", "character-library-row-name", { textContent: name, title: name }));
+    if (item.official) heading.appendChild(el("span", "character-library-official-badge", {
       textContent: t("character.library.officialBadge"),
     }));
+    info.appendChild(heading);
+    const badges = el("span", "character-library-card-badges");
+    if (!item.official) badges.appendChild(el("span", "character-library-source-badge", {
+      textContent: t("character.library.sourceLocal"),
+    }));
+    if (item.active) badges.appendChild(el("span", "character-library-status-badge is-active", {
+      textContent: t("character.library.statusActive"),
+    }));
+    if (item.updateAvailable) badges.appendChild(el("span", "character-library-status-badge", {
+      textContent: t("character.library.statusUpdate"),
+    }));
+    if (item.sourceKind === AGENT_DRAFT_SOURCE_KIND) badges.appendChild(agentDraftBadge());
+    if (badges.childElementCount) info.appendChild(badges);
     if (item.tagline) info.appendChild(el("span", "character-library-row-tagline", {
       textContent: item.tagline,
       title: item.tagline,
     }));
+    if (item.summary && item.summary !== item.tagline) info.appendChild(el("span", "character-library-row-summary", {
+      textContent: item.summary,
+      title: item.summary,
+    }));
+    if (item.tags?.length) {
+      const tags = el("span", "character-library-card-tags");
+      for (const tag of item.tags.slice(0, 3)) tags.appendChild(el("span", "character-library-tag", { textContent: tag }));
+      info.appendChild(tags);
+    }
     const meta = rowMeta(state, item);
     if (meta) info.appendChild(el("span", "character-library-row-meta", { textContent: meta, title: meta }));
+    select.appendChild(marker);
     select.appendChild(info);
     row.appendChild(select);
     if (!item.official && state.confirm?.action === "archive" && state.confirm.entityId === item.id) {
       row.appendChild(confirmBar(t("character.library.confirmArchive", { name })));
-    } else if (!item.official) {
-      const actions = el("div", "character-library-row-actions");
+    }
+    // Compatibility hooks remain in the DOM for existing integrations/tests;
+    // visible mutation actions are rendered in the details pane below.
+    if (!item.official) {
+      const compatibilityActions = el("div", "character-library-compat-actions");
       for (const action of rowActions(state)) {
-        actions.appendChild(el("button", "character-library-action", {
+        compatibilityActions.appendChild(el("button", "character-library-action", {
           type: "button",
+          tabindex: "-1",
           textContent: t(ACTION_LABEL_KEYS[action]),
           "data-library-action": action,
         }));
       }
-      row.appendChild(actions);
+      row.appendChild(compatibilityActions);
     }
-    list.appendChild(row);
+    grid.appendChild(row);
   }
 }
 
@@ -226,7 +265,20 @@ function renderDetail(state) {
     return;
   }
   const data = state.detail || item;
+  const close = el("button", "character-library-detail-close", {
+    type: "button",
+    textContent: "×",
+    "data-library-detail-close": "true",
+    "data-i18n-aria-label": "common.close",
+    "aria-label": t("common.close"),
+    title: t("common.close"),
+  });
+  detail.appendChild(close);
   const header = el("div", "character-library-detail-header");
+  header.appendChild(el("span", "character-library-card-marker is-large", {
+    textContent: (item.visualKey || item.name || "L").slice(0, 1).toUpperCase(),
+    "aria-hidden": "true",
+  }));
   const title = el("div", "character-library-detail-title");
   title.appendChild(el("span", "character-library-detail-name", {
     textContent: data.displayName || data.name || t("character.unnamed"),
@@ -237,18 +289,33 @@ function renderDetail(state) {
     textContent: t("character.library.officialBadge"),
   }));
   detail.appendChild(header);
+  const status = el("div", "character-library-detail-status");
+  status.appendChild(el("span", "character-library-source-badge", {
+    textContent: item.official ? t("character.library.sourceOfficial") : t("character.library.sourceLocal"),
+  }));
+  if (item.active) status.appendChild(el("span", "character-library-status-badge is-active", {
+    textContent: t("character.library.statusActive"),
+  }));
+  if (item.updateAvailable) status.appendChild(el("span", "character-library-status-badge", {
+    textContent: t("character.library.statusUpdate"),
+  }));
+  detail.appendChild(status);
   if (data.category) detail.appendChild(el("div", "character-library-detail-category", { textContent: data.category }));
   const summary = data.summary || data.description;
   if (summary) detail.appendChild(el("p", "character-library-detail-summary", { textContent: summary }));
 
-  const sections = [
-    ["suitableFor", "character.library.detailSuitableFor"],
-    ["requiredInputs", "character.library.detailInputs"],
-    ["workflow", "character.library.detailWorkflow"],
-    ["deliverables", "character.library.detailDeliverables"],
-    ["qualityChecks", "character.library.detailChecks"],
-    ["boundaries", "character.library.detailBoundaries"],
-  ];
+  const sections = item.kind === "character"
+    ? item.official
+      ? [
+        ["suitableFor", "character.library.detailSuitableFor"],
+        ["requiredInputs", "character.library.detailInputs"],
+        ["workflow", "character.library.detailWorkflow"],
+        ["deliverables", "character.library.detailDeliverables"],
+        ["qualityChecks", "character.library.detailChecks"],
+        ["boundaries", "character.library.detailBoundaries"],
+      ]
+      : []
+    : [];
   for (const [field, labelKey] of sections) {
     const values = Array.isArray(data[field]) ? data[field].filter(Boolean) : [];
     if (!values.length) continue;
@@ -259,13 +326,38 @@ function renderDetail(state) {
     section.appendChild(list);
     detail.appendChild(section);
   }
-  if (data.personality || data.scenario) {
+  if (item.kind === "character" && item.official && (data.personality || data.scenario)) {
     const section = el("section", "character-library-detail-section");
     section.appendChild(el("h3", "character-library-detail-section-title", { textContent: t("character.library.detailSetup") }));
     if (data.personality) section.appendChild(el("p", "character-library-detail-copy", { textContent: data.personality }));
     if (data.scenario) section.appendChild(el("p", "character-library-detail-copy", { textContent: data.scenario }));
     detail.appendChild(section);
   }
+  if (item.kind === "character" && !item.official) {
+    const section = el("section", "character-library-detail-section");
+    section.appendChild(el("h3", "character-library-detail-section-title", { textContent: t("character.library.detailSetup") }));
+    for (const [label, value] of [[t("character.library.fieldPersonality"), data.personality], [t("character.library.fieldScenario"), data.scenario]]) {
+      if (!value) continue;
+      section.appendChild(el("p", "character-library-detail-copy", { textContent: `${label}: ${value}` }));
+    }
+    detail.appendChild(section);
+  }
+  if (item.kind === "persona") renderPersonaDetail(detail, data);
+  if (item.kind === "worldBook") renderWorldBookDetail(detail, data);
+  const mutationActions = el("div", "character-library-detail-actions character-library-mutation-actions");
+  if (!item.official) {
+    if (state.confirm?.action === "archive" && state.confirm.entityId === item.id) {
+      mutationActions.appendChild(confirmBar(t("character.library.confirmArchive", { name: item.name })));
+    }
+    for (const action of rowActions(state)) {
+      mutationActions.appendChild(el("button", "character-library-action", {
+        type: "button",
+        textContent: t(ACTION_LABEL_KEYS[action]),
+        "data-library-action": action,
+      }));
+    }
+  }
+  detail.appendChild(mutationActions);
   const actions = el("div", "character-library-detail-actions");
   const activate = el("button", "character-library-activate", {
     type: "button",
@@ -276,9 +368,56 @@ function renderDetail(state) {
         : t("character.library.useInConversation"),
     "data-library-activate": "true",
   });
-  activate.disabled = state.activation.status === "running";
+  activate.disabled = state.activation.status === "running"
+    || (item.kind === "persona" && data.completion === "incomplete");
   actions.appendChild(activate);
   detail.appendChild(actions);
+}
+
+function renderPersonaDetail(detail, data) {
+  const section = el("section", "character-library-detail-section");
+  section.appendChild(el("h3", "character-library-detail-section-title", { textContent: t("character.library.detailPersona") }));
+  const completion = data.completion === "ready" ? t("character.library.statusReady") : t("character.library.statusIncomplete");
+  section.appendChild(el("p", "character-library-detail-copy", {
+    textContent: `${t("character.library.detailCompletion")}: ${completion}`,
+  }));
+  if (Number.isSafeInteger(data.descriptionChars)) {
+    section.appendChild(el("p", "character-library-detail-copy", {
+      textContent: t("character.library.personaMeta", { count: data.descriptionChars }),
+    }));
+  }
+  section.appendChild(el("p", "character-library-detail-copy", {
+    textContent: t("character.library.detailPersonaSafe"),
+  }));
+  detail.appendChild(section);
+}
+
+function renderWorldBookDetail(detail, data) {
+  const section = el("section", "character-library-detail-section");
+  section.appendChild(el("h3", "character-library-detail-section-title", { textContent: t("character.library.detailWorldBook") }));
+  const report = data.report || {};
+  const healthKey = `character.library.health.${data.health}`;
+  const health = t(healthKey) === healthKey ? (data.health || t("character.library.unavailable")) : t(healthKey);
+  const conflictKey = `character.library.conflictStatus.${data.conflictStatus}`;
+  const conflicts = t(conflictKey) === conflictKey
+    ? (data.conflictStatus || t("character.library.unavailable"))
+    : t(conflictKey);
+  const rows = [
+    [t("character.library.detailEntries"), data.entryCount ?? report.entryCount],
+    [t("character.library.detailEnabledEntries"), report.enabledCount],
+    [t("character.library.detailConstantEntries"), report.constantCount],
+    [t("character.library.detailScope"), data.scope ?? t("character.library.unavailable")],
+    [t("character.library.detailHealth"), health],
+    [t("character.library.detailConflicts"), conflicts],
+    [t("character.library.detailBudget"), Number.isSafeInteger(data.estimatedContextTokens)
+      ? `${data.estimatedContextTokens} tokens`
+      : t("character.library.unavailable")],
+    [t("character.library.detailMergeStrategy"), data.mergeStrategy ?? t("character.library.unavailable")],
+  ];
+  for (const [label, value] of rows) {
+    section.appendChild(el("p", "character-library-detail-copy", { textContent: `${label}: ${value ?? t("character.library.unavailable")}` }));
+  }
+  detail.appendChild(section);
 }
 
 function formFieldValues(form) {

@@ -48,7 +48,8 @@ assert.equal(archived.archived, true);
 
 const groups = deriveLibraryGroups("characters", [official, local, archived]);
 assert.deepEqual(groups.map((group) => group.id), [
-  "all", "official", "work-delivery", "uncategorized", "my", "recent", "archived",
+  "all", "official", "work-delivery", "research-analysis", "content-creation",
+  "technology-creation", "learning-growth", "life-support", "uncategorized", "my", "recent", "archived",
 ]);
 assert.equal(groups.find((group) => group.id === "all").count, 2);
 assert.equal(groups.find((group) => group.id === "official").count, 1);
@@ -71,6 +72,10 @@ assert.deepEqual(
   filterLibraryItems([official, local, archived], { groupId: "official" }).map((item) => item.id),
   [official.id],
 );
+assert.deepEqual(
+  filterLibraryItems([official, local], { source: "local" }).map((item) => item.id),
+  [local.id],
+);
 
 const ordered = sortLibraryItems([local, official, archived], { now: Date.parse("2026-08-04T00:00:00.000Z") });
 assert.deepEqual(ordered.map((item) => item.id), [official.id, local.id, archived.id]);
@@ -82,6 +87,9 @@ let state = initialCharacterLibraryState({
 });
 state = reduceCharacterLibrary(state, { type: "group.changed", groupId: "official" });
 assert.equal(state.groupId, "official");
+state = reduceCharacterLibrary(state, { type: "source.changed", source: "local" });
+assert.equal(state.source, "local");
+assert.equal(state.selectedItemId, null);
 state = reduceCharacterLibrary(state, { type: "detail.selected", itemId: official.id });
 assert.equal(state.selectedItemId, official.id);
 assert.equal(state.activation.status, "idle");

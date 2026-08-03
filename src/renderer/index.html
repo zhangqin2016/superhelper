@@ -355,13 +355,20 @@
           </div>
           <input id="characterLibrarySearch" type="search" data-i18n-placeholder="character.library.searchPlaceholder" placeholder="搜索名称…" data-i18n-aria-label="character.library.searchPlaceholder" aria-label="搜索名称…" />
           <input id="characterLibraryTagFilter" type="text" data-i18n-placeholder="character.library.tagPlaceholder" placeholder="按标签筛选…" data-i18n-aria-label="character.library.tagPlaceholder" aria-label="按标签筛选…" />
+          <select id="characterLibrarySourceFilter" data-i18n-aria-label="character.library.sourceFilter" aria-label="来源筛选">
+            <option value="" data-i18n="character.library.sourceAll">全部来源</option>
+            <option value="official" data-i18n="character.library.sourceOfficial">官方</option>
+            <option value="local" data-i18n="character.library.sourceLocal">我的</option>
+          </select>
           <button id="characterLibraryImportBtn" type="button" data-i18n="character.importCard">导入角色卡</button>
           <button id="characterLibraryCreateBtn" type="button" data-i18n="character.library.aiCreate">让 Lily 创建</button>
         </div>
         <div id="characterLibraryNotice" class="character-library-notice" hidden></div>
         <div class="character-library-body">
           <nav id="characterLibraryGroups" class="character-library-groups" data-i18n-aria-label="character.library.groups" aria-label="角色分组"></nav>
-          <div id="characterLibraryList" class="character-library-list"></div>
+          <div id="characterLibraryList" class="character-library-list">
+            <div id="characterLibraryGrid" class="character-library-grid" role="list"></div>
+          </div>
           <aside id="characterLibraryDetail" class="character-library-detail" hidden></aside>
         </div>
         <div id="characterLibraryLive" class="character-sr-only" aria-live="polite"></div>

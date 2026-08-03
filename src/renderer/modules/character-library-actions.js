@@ -54,31 +54,34 @@ export function createLibraryActions(ctx) {
           installed: Boolean(c.installedCharacterId),
           currentRevisionId: c.currentRevisionId || "",
         }));
-        const base = (res?.characters || []).filter((c) => !c?.archivedAt && !installedIds.has(c.id));
+        const base = (res?.characters || []).filter((c) => !installedIds.has(c.id));
         // Tags ride on the revision canonical; fetch per row so tag filtering
         // works. A failed read degrades that row's tags, never the list.
         // (Known N+1 — deferred per review; libraries are small and local.)
         items = await Promise.all(base.map(async (c) => {
           let tags = [];
           let sourceKind = "";
+          let revision = null;
           try {
-            const rev = await api.getCharacterRevision(c.currentRevisionId);
-            if (rev?.ok && Array.isArray(rev.revision?.canonical?.tags)) {
-              tags = rev.revision.canonical.tags.filter((entry) => typeof entry === "string" && entry);
+            const res = await api.getCharacterRevision(c.currentRevisionId);
+            revision = res?.ok ? res.revision : null;
+            if (revision && Array.isArray(revision.canonical?.tags)) {
+              tags = revision.canonical.tags.filter((entry) => typeof entry === "string" && entry);
             }
             // Agent-draft provenance (Phase 2C) rides the same read so the row
             // can badge agent-authored revisions; a failed read degrades both.
-            if (rev?.ok && typeof rev.revision?.source?.kind === "string") {
-              sourceKind = rev.revision.source.kind;
+            if (revision && typeof revision.source?.kind === "string") {
+              sourceKind = revision.source.kind;
             }
           } catch { /* tag-less row */ }
-          const canonical = rev?.ok ? rev.revision?.canonical || {} : {};
-          const source = rev?.ok ? rev.revision?.source || {} : {};
+          const canonical = revision?.canonical || {};
+          const source = revision?.source || {};
           return {
             id: c.id,
             name: c.displayName,
             summary: typeof canonical.description === "string" ? canonical.description : "",
             currentRevisionId: c.currentRevisionId,
+            recentlyUsedAt: c.updatedAt || "",
             tags,
             sourceKind,
             source: source.kind === "official" ? "official" : "local",
@@ -89,11 +92,11 @@ export function createLibraryActions(ctx) {
       } else if (tab === "personas") {
         const res = await api.listPersonas();
         if (!res?.ok) throw new Error("list failed");
-        items = (res.personas || []).filter((p) => !p?.archivedAt);
+        items = res.personas || [];
       } else {
         const res = await api.listWorldBooks();
         if (!res?.ok) throw new Error("list failed");
-        items = (res.worldBooks || []).filter((b) => !b?.archivedAt);
+        items = res.worldBooks || [];
       }
       if (current()) dispatch({ type: "items.loaded", tab, items });
     } catch {
@@ -128,6 +131,21 @@ export function createLibraryActions(ctx) {
       } else {
         const res = await api.getWorldBook(item.id);
         detail = res?.ok ? res.worldBook : null;
+        const sessionId = getActiveSessionId?.();
+        if (detail && sessionId && typeof api.getSessionCharacterBinding === "function") {
+          const binding = await api.getSessionCharacterBinding(sessionId);
+          const activeIds = Array.isArray(binding?.binding?.worldBookRevisionIds)
+            ? binding.binding.worldBookRevisionIds
+            : Array.isArray(binding?.binding?.worldBookBindings)
+              ? binding.binding.worldBookBindings.map((entry) => entry?.revisionId).filter(Boolean)
+              : [];
+          detail = {
+            ...detail,
+            active: activeIds.includes(item.currentRevisionId),
+            activeBookRevisionIds: activeIds,
+            mergeStrategy: binding?.binding?.worldBookMergeStrategy || "constant",
+          };
+        }
       }
       if (getState().selectedItemId === item.id) {
         if (detail) dispatch({ type: "detail.loaded", itemId: item.id, detail });
@@ -142,6 +160,10 @@ export function createLibraryActions(ctx) {
     const api = facade();
     const sessionId = getActiveSessionId?.();
     if (!api || !sessionId || !item || getState().activation.status === "running") return;
+    if (item.kind === "persona" && item.completion === "incomplete") {
+      setNotice("action_failed");
+      return;
+    }
     dispatch({ type: "activation.started", itemId: item.id });
     try {
       let target = item;
@@ -170,7 +192,7 @@ export function createLibraryActions(ctx) {
       if (res?.ok) {
         dispatch({ type: "activation.settled", itemId: item.id });
         setNotice("activated", { name: target.displayName || target.name || item.name });
-        if (item.kind === "character") await loadCurrentTab();
+        await loadCurrentTab();
       } else {
         dispatch({ type: "activation.failed", itemId: item.id, error: res?.error || "ACTIVATION_FAILED" });
         setNotice(res?.error === "CHARACTER_BINDING_CONFLICT" ? "conflict" : "action_failed");

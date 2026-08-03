@@ -433,6 +433,10 @@ try {
     assert.equal(detail.name, "Atlas of Alderan");
     assert.equal(detail.entryCount, 7);
     assert.equal(detail.currentRevisionId, bookA.revision.id);
+    assert.equal(detail.scope, "conversation");
+    assert.equal(detail.health, "needs_review");
+    assert.equal(detail.conflictStatus, "not_evaluated");
+    assert.ok(Number.isSafeInteger(detail.estimatedContextTokens));
     const revision = detail.revision;
     assert(revision, "current revision metadata present");
     assert.deepEqual(

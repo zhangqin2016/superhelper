@@ -127,10 +127,25 @@ function summarizeCompatibilityReport(revision) {
 
 /** world-book:get detail: entity summary + revision metadata + report. */
 function summarizeWorldBookDetail(entity, currentRevision) {
+  const report = currentRevision ? summarizeCompatibilityReport(currentRevision) : null;
+  const entries = entriesOf(currentRevision);
+  const contentChars = entries.reduce((total, entry) => {
+    const content = typeof entry?.content === "string" ? entry.content : "";
+    return Math.min(4_000_000, total + content.length);
+  }, 0);
+  const health = !currentRevision
+    ? "unavailable"
+    : report.inertDecoratorCount || report.safeBehaviorPositionCount
+      ? "needs_review"
+      : "healthy";
   return {
     ...summarizeWorldBookEntity(entity, currentRevision),
     revision: currentRevision ? summarizeRevisionMetadata(currentRevision) : null,
-    report: currentRevision ? summarizeCompatibilityReport(currentRevision) : null,
+    report,
+    scope: "conversation",
+    health,
+    conflictStatus: "not_evaluated",
+    estimatedContextTokens: Math.ceil(contentChars / 4),
   };
 }
 

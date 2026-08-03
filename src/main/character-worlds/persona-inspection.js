@@ -27,14 +27,17 @@ function descriptionOf(revision) {
 /** Entity summary shared by persona:list and persona:get. */
 function summarizePersonaEntity(entity, currentRevision) {
   const description = currentRevision ? descriptionOf(currentRevision) : null;
+  const name = text(entity?.displayName, 256);
+  const complete = Boolean(name.trim() && description?.trim());
   return {
     id: text(entity?.id),
-    name: text(entity?.displayName, 256),
+    name,
     currentRevisionId: text(entity?.currentRevisionId),
     archivedAt: typeof entity?.archivedAt === "string" ? entity.archivedAt : null,
     // null when the current revision row is missing/unreadable — the list
     // stays readable instead of failing the whole bridge call.
     descriptionChars: description ? [...description].length : null,
+    completion: complete ? "ready" : "incomplete",
     // Provenance kind of the current revision (enum metadata, never content)
     // so the library can badge agent-drafted rows (Phase 2C, Task P2C-1).
     sourceKind: text(currentRevision?.source?.kind, 64),

@@ -19,14 +19,20 @@ const MAX_TAGS = 32;
 const MAX_TAG_CHARS = 96;
 const MAX_TERMS = 24;
 const MAX_TERM_CHARS = 128;
-const CATEGORY_ORDER = [
-  "work-delivery",
-  "research-analysis",
-  "content-creation",
-  "technology-creation",
-  "learning-life",
-  "uncategorized",
-];
+const CATEGORY_ORDER_BY_TAB = Object.freeze({
+  characters: [
+    "work-delivery", "research-analysis", "content-creation", "technology-creation",
+    "learning-growth", "life-support", "uncategorized",
+  ],
+  personas: [
+    "work-identities", "creative-identities", "research-learning", "communication-profiles",
+    "uncategorized",
+  ],
+  books: [
+    "project-knowledge", "brand-language", "product-terminology", "operations-support",
+    "story-worlds", "uncategorized",
+  ],
+});
 
 export const LIBRARY_GROUPS = Object.freeze({
   all: { id: "all", kind: "all" },
@@ -47,6 +53,7 @@ export function initialCharacterLibraryState(overrides = {}) {
     tab: "characters",
     query: "",
     tag: "",
+    source: "",
     groupId: "all",
     items: { characters: [], personas: [], books: [] },
     selectedItemId: null,
@@ -169,13 +176,14 @@ export function deriveLibraryGroups(tab, items) {
     { ...LIBRARY_GROUPS.all, labelKey: "all" },
     { ...LIBRARY_GROUPS.official, labelKey: "official" },
   ];
-  const categoryIds = [];
+  const categoryIds = [...(CATEGORY_ORDER_BY_TAB[tab] || ["uncategorized"])];
   for (const item of values) {
     if (!categoryIds.includes(item.categoryId)) categoryIds.push(item.categoryId);
   }
   categoryIds.sort((a, b) => {
-    const indexA = CATEGORY_ORDER.indexOf(a);
-    const indexB = CATEGORY_ORDER.indexOf(b);
+    const order = CATEGORY_ORDER_BY_TAB[tab] || [];
+    const indexA = order.indexOf(a);
+    const indexB = order.indexOf(b);
     if (indexA >= 0 && indexB >= 0) return indexA - indexB;
     if (indexA >= 0) return -1;
     if (indexB >= 0) return 1;
@@ -272,6 +280,7 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
         tab,
         query: "",
         tag: "",
+        source: "",
         groupId: "all",
         selectedItemId: null,
         detail: null,
@@ -288,6 +297,13 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
       return { ...state, query: text(action.query, 256) };
     case "tag.changed":
       return { ...state, tag: text(action.tag, 128) };
+    case "source.changed":
+      return {
+        ...state,
+        source: action.source === "official" || action.source === "local" ? action.source : "",
+        selectedItemId: null,
+        detail: null,
+      };
     case "group.changed":
       return {
         ...state,

@@ -173,7 +173,7 @@ export async function openCharacterLibrary(opts = {}) {
   // §13.1 "edit current character" command: open the library straight into
   // the pinned character's edit form when the caller asks for it.
   if (opts.editCharacterId) {
-    const item = libraryState.items.find((c) => c.id === opts.editCharacterId);
+    const item = (libraryState.items[libraryState.tab] || []).find((c) => c.id === opts.editCharacterId);
     if (item) await actions.openEdit(item);
   }
 }
@@ -268,6 +268,10 @@ export function initCharacterLibrary() {
   $("characterLibraryTagFilter")?.addEventListener("input", (event) => {
     dispatch({ type: "tag.changed", tag: event.target.value });
   });
+  $("characterLibrarySourceFilter")?.addEventListener("change", (event) => {
+    if (dirtyFormGuard()) return;
+    dispatch({ type: "source.changed", source: event.target.value });
+  });
   $("characterLibraryCreateBtn")?.addEventListener("click", () => {
     if (dirtyFormGuard()) return;
     startAiAuthoring(libraryState.tab);
@@ -337,6 +341,33 @@ export function initCharacterLibrary() {
     }
     if (event.target.closest("[data-library-save]")) {
       void actions.saveForm();
+      return;
+    }
+    const detailAction = event.target.closest("[data-library-action]");
+    if (detailAction) {
+      const item = (libraryState.items[libraryState.tab] || [])
+        .find((entry) => entry.id === libraryState.selectedItemId);
+      if (!item) return;
+      const action = detailAction.dataset.libraryAction;
+      if (action === "edit") void actions.openEdit(item);
+      else if (action === "history") void actions.openHistory(item);
+      else if (action === "duplicate") void actions.duplicateItem(item);
+      else if (action === "export") void actions.exportItem(item);
+      else if (action === "archive") {
+        dispatch({
+          type: "confirm.requested",
+          confirm: { action: "archive", kind: kindForTab(libraryState.tab), entityId: item.id, name: item.name },
+        });
+      }
+      return;
+    }
+    if (event.target.closest("[data-library-detail-close]")) {
+      const selectedId = libraryState.selectedItemId;
+      dispatch({ type: "detail.closed" });
+      if (selectedId) {
+        $("characterLibraryGrid")?.querySelector(`[data-entity-id="${CSS.escape(selectedId)}"] [data-library-select]`)
+          ?.focus();
+      }
       return;
     }
     const activateBtn = event.target.closest("[data-library-activate]");
