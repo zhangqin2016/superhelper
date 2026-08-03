@@ -11,7 +11,7 @@ function validLibraryActivationId(value) {
   return typeof value === "string" && value.trim().length > 0 && value.length <= 128;
 }
 
-function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failure, mapDomainError, resolveSessionAuthority, repository }) {
+function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failure, mapDomainError, policyDeniesSelection, resolveSessionAuthority, repository }) {
   const actions = new ReceiptActionBroker();
   ctx.characterWorldsActionBroker = actions;
 
@@ -174,6 +174,7 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
     if (!Number.isInteger(payload?.expectedBindingVersion) || payload.expectedBindingVersion < 0) {
       return failure("INVALID_INPUT");
     }
+    if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     try {
       if (payload.kind === "character" && !resolved.repo.getRevision(
         resolved.session.ownerScope, payload.revisionId,

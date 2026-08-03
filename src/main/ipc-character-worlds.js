@@ -82,7 +82,7 @@ function registerCharacterWorldsHandlers(ctx) {
   }
 
   require("./official-character-ipc").registerOfficialCharacterHandlers({ ipcMain, ctx, guard, failure, mapDomainError, policyDeniesSelection, resolveOwnerScope, repository });
-  require("./character-worlds/experience-ipc").registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failure, mapDomainError, resolveSessionAuthority, repository });
+  require("./character-worlds/experience-ipc").registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failure, mapDomainError, policyDeniesSelection, resolveSessionAuthority, repository });
 
   ipcMain.handle("character:list", async (event, payload) => {
     const denied = guard(event, payload);

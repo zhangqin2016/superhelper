@@ -750,6 +750,24 @@ try {
     assert.equal(stale.error, "CHARACTER_BINDING_CONFLICT");
   });
 
+  await check("library activation respects the selection rollout policy", async () => {
+    const current = repository.getBinding("session-a", OWNER);
+    const revisionId = repository.listCharacters(OWNER)[0].currentRevisionId;
+    const previous = ctx.characterWorldsPolicy;
+    ctx.characterWorldsPolicy = () => ({ enabled: false, compatibilityProfile: "lily-character-compat-1" });
+    try {
+      const result = await handlers.get("character-worlds:library-activate")(trustedEvent(), {
+        sessionId: "session-a",
+        kind: "character",
+        revisionId,
+        expectedBindingVersion: current.bindingVersion,
+      });
+      assert.deepEqual(result, { ok: false, error: "CHARACTER_WORLDS_UNAVAILABLE" });
+    } finally {
+      ctx.characterWorldsPolicy = previous;
+    }
+  });
+
   await check("non-whitelisted error codes collapse; whitelisted domain codes pass through", async () => {
     const sqliteBusy = {
       destinationWriter: null,
