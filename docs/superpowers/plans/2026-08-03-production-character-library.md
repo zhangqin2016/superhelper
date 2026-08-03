@@ -8,6 +8,18 @@
 
 **Tech Stack:** Electron renderer modules, vanilla DOM helpers, existing character-worlds IPC/repositories, JSON locale files, Node/MJS and Electron regression tests, CSS media queries.
 
+## Delivery Status (2026-08-03)
+
+Tasks 1-6 and the feature-owned portions of Task 7 are implemented: the
+presentation model, official catalog, safe IPC summaries, atomic activation,
+grouped responsive grid, detail workflow, persona/world-book safety metadata,
+three-locale coverage, scale fixtures, accessibility assertions, and Electron
+regression are all in the current branch. The full repository suite still has
+environmental failures outside this feature (sandboxed loopback listeners,
+LibreOffice, and Electron startup without the escalated test command); those
+are recorded in the release verification rather than being marked as feature
+successes.
+
 ---
 
 ## File Map

@@ -157,6 +157,7 @@ function makeRevision(id, entityId, number, canonical) {
 }
 
 ipcMain.handle("character:list", () => ({ ok: true, characters: cwCharacters.filter((c) => !c.archivedAt) }));
+ipcMain.handle("character:list-official", () => ({ ok: true, characters: [] }));
 ipcMain.handle("character:get", (_e, payload) => ({
   ok: true,
   character: cwCharacters.find((c) => c.id === payload?.characterId) || null,
@@ -789,11 +790,14 @@ app.whenReady().then(async () => {
     // Step 12 left a dirty form open; cancel it explicitly (the close guard
     // keeps Escape from discarding it, which is tested separately below).
     const detail = document.getElementById("characterLibraryDetail");
-    if (!detail.hidden) {
+    if (document.querySelector("#characterLibraryDetail [data-field]")) {
       detail.querySelector("[data-library-back]")?.click();
       await new Promise((r) => setTimeout(r, 100));
     }
-    if (!detail.hidden) throw new Error("cancel returns to the list view");
+    const body = document.querySelector(".character-library-body");
+    if (body?.dataset.libraryView !== "list" || document.getElementById("characterLibraryList").hidden) {
+      throw new Error("cancel returns to the list view");
+    }
     const focusables = () => [...modal.querySelectorAll("button:not([disabled]), input, textarea")]
       .filter((el) => !el.closest("[hidden]") && el.offsetParent !== null || !el.closest("[hidden]"));
     const items = focusables();
