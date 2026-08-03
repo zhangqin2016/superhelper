@@ -94,6 +94,30 @@ const protocolUnknown = createRuntimeEvent({
 });
 assertRuntimeEvent(protocolUnknown);
 
+const characterApplication = createRuntimeEvent({
+  type: "character.application",
+  sessionId: "s1",
+  turnId: "t1",
+  seq: 7,
+  payload: {
+    status: "applied",
+    revisionId: "rev-1",
+    expressionProfile: "balanced",
+    activationFingerprint: `sha256:${"a".repeat(64)}`,
+    narrativeFingerprint: `sha256:${"b".repeat(64)}`,
+  },
+});
+assertRuntimeEvent(characterApplication);
+assert.throws(
+  () => createRuntimeEvent({
+    type: "character.application",
+    sessionId: "s1",
+    turnId: "t1",
+    payload: { status: "selected", characterText: "private card text" },
+  }),
+  /character application/i,
+);
+
 if (processEvent.payload.rawType !== "stream_event") {
   throw new Error("process.event should preserve CLI process metadata");
 }

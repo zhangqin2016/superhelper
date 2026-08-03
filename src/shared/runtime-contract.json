@@ -32,6 +32,7 @@
     "user.committed",
     "turn.started",
     "turn.accepted",
+    "character.application",
     "turn.dispatch_outcome_unknown",
     "turn.dispatch_blocked",
     "turn.paused",
@@ -106,6 +107,17 @@
     "turn.stalled"
   ],
   "payloadContracts": {
+    "character.application": {
+      "required": ["status"],
+      "properties": {
+        "status": "string",
+        "reason": "string",
+        "revisionId": "string",
+        "expressionProfile": "string",
+        "activationFingerprint": "string",
+        "narrativeFingerprint": "string"
+      }
+    },
     "assistant.delta": {
       "required": ["text"],
       "properties": { "text": "string" }

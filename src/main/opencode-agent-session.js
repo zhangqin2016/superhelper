@@ -521,6 +521,9 @@ class OpencodeAgentSession extends EventEmitter {
           guidance,
           allowImageFileParts: typeof payload === "object" && payload?.allowImageFileParts === true,
           characterContext: typeof payload === "object" ? payload?.characterContext || null : null,
+          onCharacterApplication: (application) => {
+            this._ingest([{ type: "character.application", payload: application }]);
+          },
         };
         this._promptDispatchPending = true;
         this._armPromptDispatchPendingCheck();

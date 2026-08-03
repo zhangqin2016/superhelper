@@ -34,6 +34,33 @@ function assertRuntimePayload(type, payload) {
       throw new Error(`RuntimeEvent ${type} payload.${key} must be ${expectedType}`);
     }
   }
+  if (type === "character.application") {
+    const allowedKeys = new Set(Object.keys(contract.properties || {}));
+    const statuses = new Set(["native", "applied", "bypassed"]);
+    const reasons = new Set([
+      "provider_unsupported",
+      "activation_invalid",
+      "prompt_budget_exhausted",
+      "request_build_failed",
+    ]);
+    const profiles = new Set(["immersive", "balanced", "task_preserving"]);
+    const fingerprint = /^sha256:[0-9a-f]{64}$/;
+    if (!statuses.has(payload.status)) throw new Error("Invalid character application status");
+    if (Object.keys(payload).some((key) => !allowedKeys.has(key))) {
+      throw new Error("Invalid character application metadata");
+    }
+    if (payload.reason !== undefined && !reasons.has(payload.reason)) {
+      throw new Error("Invalid character application reason");
+    }
+    if (payload.expressionProfile !== undefined && !profiles.has(payload.expressionProfile)) {
+      throw new Error("Invalid character application profile");
+    }
+    for (const key of ["activationFingerprint", "narrativeFingerprint"]) {
+      if (payload[key] !== undefined && !fingerprint.test(payload[key])) {
+        throw new Error("Invalid character application fingerprint");
+      }
+    }
+  }
   return true;
 }
 

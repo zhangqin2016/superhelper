@@ -90,6 +90,9 @@ function createTurnRuntimeEventRouter(options = {}) {
           state.phase = "streaming";
           emit(sessionId, "turn.accepted", { status: payload.status || "thinking" });
           break;
+        case "character.application":
+          emit(sessionId, "character.application", payload);
+          break;
         case "assistant.delta": {
           state.phase = "streaming";
           const piece = String(payload.text || "");
