@@ -114,6 +114,7 @@ export function normalizeLibraryItem(tab, entry = {}) {
     id,
     kind,
     name,
+    tagline: text(entry?.tagline, MAX_SUMMARY_CHARS),
     summary: text(entry?.summary || entry?.description, MAX_SUMMARY_CHARS),
     categoryId,
     source,

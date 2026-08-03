@@ -7,7 +7,7 @@
 
 import { $, el } from "./dom.js";
 import { t } from "../i18n/index.js";
-import { filterLibraryItems } from "./character-library-model.js";
+import { deriveLibraryGroups, filterLibraryItems, sortLibraryItems } from "./character-library-model.js";
 
 const NOTICE_KEYS = {
   load_failed: "character.library.loadFailed",
@@ -24,6 +24,7 @@ const NOTICE_KEYS = {
   ordinary_attachment: "character.status.ordinaryAttachment",
   conflict: "character.library.conflict",
   unsaved_changes: "character.library.unsavedChanges",
+  activated: "character.library.activated",
 };
 
 export function libraryNoticeText(notice) {
@@ -38,6 +39,14 @@ const ACTION_LABEL_KEYS = {
   duplicate: "character.library.duplicate",
   export: "character.library.export",
   archive: "character.library.archive",
+};
+
+const GROUP_LABEL_KEYS = {
+  all: "character.library.groupAll",
+  official: "character.library.groupOfficial",
+  my: "character.library.groupMy",
+  recent: "character.library.groupRecent",
+  archived: "character.library.groupArchived",
 };
 
 const FORM_FIELDS = {
@@ -125,10 +134,11 @@ function renderList(state) {
   const list = $("characterLibraryList");
   if (!list) return;
   list.textContent = "";
-  const items = filterLibraryItems(state.items[state.tab], {
+  const items = sortLibraryItems(filterLibraryItems(state.items[state.tab], {
     query: state.query,
     tag: state.tag,
-  });
+    groupId: state.groupId,
+  }));
   if (!items.length) {
     list.appendChild(el("div", "character-library-empty", {
       textContent: t("character.library.emptyList"),
@@ -136,18 +146,31 @@ function renderList(state) {
     return;
   }
   for (const item of items) {
-    const row = el("div", "character-library-row");
+    const row = el("article", "character-library-row");
     row.dataset.entityId = item.id;
-    const info = el("div", "character-library-row-info");
+    const select = el("button", "character-library-card-select", {
+      type: "button",
+      "data-library-select": "true",
+      "aria-pressed": item.id === state.selectedItemId ? "true" : "false",
+    });
+    const info = el("span", "character-library-row-info");
     const name = item.name || t("character.unnamed");
     info.appendChild(el("span", "character-library-row-name", { textContent: name, title: name }));
     if (item.sourceKind === AGENT_DRAFT_SOURCE_KIND) info.appendChild(agentDraftBadge());
+    if (item.official) info.appendChild(el("span", "character-library-official-badge", {
+      textContent: t("character.library.officialBadge"),
+    }));
+    if (item.tagline) info.appendChild(el("span", "character-library-row-tagline", {
+      textContent: item.tagline,
+      title: item.tagline,
+    }));
     const meta = rowMeta(state, item);
     if (meta) info.appendChild(el("span", "character-library-row-meta", { textContent: meta, title: meta }));
-    row.appendChild(info);
-    if (state.confirm?.action === "archive" && state.confirm.entityId === item.id) {
+    select.appendChild(info);
+    row.appendChild(select);
+    if (!item.official && state.confirm?.action === "archive" && state.confirm.entityId === item.id) {
       row.appendChild(confirmBar(t("character.library.confirmArchive", { name })));
-    } else {
+    } else if (!item.official) {
       const actions = el("div", "character-library-row-actions");
       for (const action of rowActions(state)) {
         actions.appendChild(el("button", "character-library-action", {
@@ -160,6 +183,102 @@ function renderList(state) {
     }
     list.appendChild(row);
   }
+}
+
+function groupLabel(group) {
+  const key = GROUP_LABEL_KEYS[group.id] || `character.library.category.${group.id}`;
+  const translated = t(key);
+  return translated === key ? group.id : translated;
+}
+
+function renderGroups(state) {
+  const rail = $("characterLibraryGroups");
+  if (!rail) return;
+  rail.hidden = state.view !== "list";
+  rail.textContent = "";
+  for (const group of deriveLibraryGroups(state.tab, state.items[state.tab])) {
+    const button = el("button", "character-library-group", {
+      type: "button",
+      "data-library-group": group.id,
+      "aria-pressed": group.id === state.groupId ? "true" : "false",
+    });
+    button.classList.toggle("is-active", group.id === state.groupId);
+    button.appendChild(el("span", "character-library-group-label", { textContent: groupLabel(group) }));
+    button.appendChild(el("span", "character-library-group-count", { textContent: String(group.count) }));
+    rail.appendChild(button);
+  }
+}
+
+function renderDetail(state) {
+  const detail = $("characterLibraryDetail");
+  if (!detail) return;
+  const item = (state.items[state.tab] || []).find((entry) => entry.id === state.selectedItemId);
+  if (!item) {
+    detail.appendChild(el("div", "character-library-detail-empty", {
+      textContent: t("character.library.selectHint"),
+    }));
+    return;
+  }
+  if (state.detailLoading) {
+    detail.appendChild(el("div", "character-library-detail-empty", {
+      textContent: t("character.library.loadingDetail"),
+    }));
+    return;
+  }
+  const data = state.detail || item;
+  const header = el("div", "character-library-detail-header");
+  const title = el("div", "character-library-detail-title");
+  title.appendChild(el("span", "character-library-detail-name", {
+    textContent: data.displayName || data.name || t("character.unnamed"),
+  }));
+  if (data.tagline) title.appendChild(el("span", "character-library-detail-tagline", { textContent: data.tagline }));
+  header.appendChild(title);
+  if (data.official || item.official) header.appendChild(el("span", "character-library-official-badge", {
+    textContent: t("character.library.officialBadge"),
+  }));
+  detail.appendChild(header);
+  if (data.category) detail.appendChild(el("div", "character-library-detail-category", { textContent: data.category }));
+  const summary = data.summary || data.description;
+  if (summary) detail.appendChild(el("p", "character-library-detail-summary", { textContent: summary }));
+
+  const sections = [
+    ["suitableFor", "character.library.detailSuitableFor"],
+    ["requiredInputs", "character.library.detailInputs"],
+    ["workflow", "character.library.detailWorkflow"],
+    ["deliverables", "character.library.detailDeliverables"],
+    ["qualityChecks", "character.library.detailChecks"],
+    ["boundaries", "character.library.detailBoundaries"],
+  ];
+  for (const [field, labelKey] of sections) {
+    const values = Array.isArray(data[field]) ? data[field].filter(Boolean) : [];
+    if (!values.length) continue;
+    const section = el("section", "character-library-detail-section");
+    section.appendChild(el("h3", "character-library-detail-section-title", { textContent: t(labelKey) }));
+    const list = el("ul", "character-library-detail-list");
+    for (const value of values.slice(0, 8)) list.appendChild(el("li", "character-library-detail-list-item", { textContent: value }));
+    section.appendChild(list);
+    detail.appendChild(section);
+  }
+  if (data.personality || data.scenario) {
+    const section = el("section", "character-library-detail-section");
+    section.appendChild(el("h3", "character-library-detail-section-title", { textContent: t("character.library.detailSetup") }));
+    if (data.personality) section.appendChild(el("p", "character-library-detail-copy", { textContent: data.personality }));
+    if (data.scenario) section.appendChild(el("p", "character-library-detail-copy", { textContent: data.scenario }));
+    detail.appendChild(section);
+  }
+  const actions = el("div", "character-library-detail-actions");
+  const activate = el("button", "character-library-activate", {
+    type: "button",
+    textContent: state.activation.status === "running"
+      ? t("character.library.activating")
+      : item.official && !item.currentRevisionId
+        ? t("character.library.installAndUse")
+        : t("character.library.useInConversation"),
+    "data-library-activate": "true",
+  });
+  activate.disabled = state.activation.status === "running";
+  actions.appendChild(activate);
+  detail.appendChild(actions);
 }
 
 function formFieldValues(form) {
@@ -298,15 +417,19 @@ export function renderCharacterLibrary(state) {
   const modal = $("characterLibraryModal");
   if (!modal || modal.hidden) return;
   renderToolbar(state);
+  renderGroups(state);
   renderNotice(state);
   const list = $("characterLibraryList");
   const detail = $("characterLibraryDetail");
   if (!list || !detail) return;
+  const body = list.parentElement;
+  if (body) body.dataset.libraryView = state.view;
   detail.textContent = "";
   if (state.view === "list") {
-    detail.hidden = true;
     list.hidden = false;
+    detail.hidden = false;
     renderList(state);
+    renderDetail(state);
   } else {
     list.hidden = true;
     detail.hidden = false;

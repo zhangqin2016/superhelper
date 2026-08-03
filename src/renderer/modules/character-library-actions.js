@@ -8,6 +8,7 @@
  */
 
 import { kindForTab, initialFormValues } from "./character-library-model.js";
+import { installOfficialCharacter } from "./official-character-picker.js";
 
 function isRevisionConflict(error) {
   return typeof error === "string" && error.endsWith("REVISION_CONFLICT");
@@ -23,6 +24,7 @@ export function createLibraryActions(ctx) {
     syncFormValues,
     readFormValues,
     focusNameField,
+    getActiveSessionId,
   } = ctx;
 
   async function loadCurrentTab() {
@@ -33,9 +35,26 @@ export function createLibraryActions(ctx) {
     try {
       let items = [];
       if (tab === "characters") {
-        const res = await api.listCharacters();
-        if (!res?.ok) throw new Error("list failed");
-        const base = (res.characters || []).filter((c) => !c?.archivedAt);
+        const [res, officialRes] = await Promise.all([
+          api.listCharacters(),
+          typeof api.listOfficialCharacters === "function"
+            ? api.listOfficialCharacters().catch(() => ({ ok: false }))
+            : Promise.resolve({ ok: false }),
+        ]);
+        if (!res?.ok && !officialRes?.ok) throw new Error("list failed");
+        const installedIds = new Set(
+          (officialRes?.characters || []).map((c) => c.installedCharacterId).filter(Boolean),
+        );
+        const officialRows = (officialRes?.characters || []).map((c) => ({
+          ...c,
+          id: `official:${c.id}`,
+          officialId: c.id,
+          name: c.displayName,
+          source: "official",
+          installed: Boolean(c.installedCharacterId),
+          currentRevisionId: c.currentRevisionId || "",
+        }));
+        const base = (res?.characters || []).filter((c) => !c?.archivedAt && !installedIds.has(c.id));
         // Tags ride on the revision canonical; fetch per row so tag filtering
         // works. A failed read degrades that row's tags, never the list.
         // (Known N+1 — deferred per review; libraries are small and local.)
@@ -53,8 +72,20 @@ export function createLibraryActions(ctx) {
               sourceKind = rev.revision.source.kind;
             }
           } catch { /* tag-less row */ }
-          return { id: c.id, name: c.displayName, currentRevisionId: c.currentRevisionId, tags, sourceKind };
+          const canonical = rev?.ok ? rev.revision?.canonical || {} : {};
+          const source = rev?.ok ? rev.revision?.source || {} : {};
+          return {
+            id: c.id,
+            name: c.displayName,
+            summary: typeof canonical.description === "string" ? canonical.description : "",
+            currentRevisionId: c.currentRevisionId,
+            tags,
+            sourceKind,
+            source: source.kind === "official" ? "official" : "local",
+            officialId: typeof source.officialId === "string" ? source.officialId : "",
+          };
         }));
+        items = [...officialRows, ...items];
       } else if (tab === "personas") {
         const res = await api.listPersonas();
         if (!res?.ok) throw new Error("list failed");
@@ -67,6 +98,86 @@ export function createLibraryActions(ctx) {
       if (current()) dispatch({ type: "items.loaded", tab, items });
     } catch {
       if (current()) setNotice("load_failed");
+    }
+  }
+
+  async function openDetail(item) {
+    const api = facade();
+    if (!api || !item?.id) return;
+    dispatch({ type: "detail.selected", itemId: item.id });
+    try {
+      let detail;
+      if (item.official && item.officialId && typeof api.getOfficialCharacter === "function") {
+        const res = await api.getOfficialCharacter(item.officialId);
+        detail = res?.ok ? res.character : null;
+      } else if (getState().tab === "characters") {
+        const res = await api.getCharacterRevision(item.currentRevisionId);
+        const canonical = res?.ok ? res.revision?.canonical || {} : null;
+        detail = canonical ? {
+          ...item,
+          summary: canonical.description || item.summary || "",
+          description: canonical.description || "",
+          personality: canonical.personality || "",
+          scenario: canonical.scenario || "",
+          tags: Array.isArray(canonical.tags) ? canonical.tags : item.tags,
+          sourceKind: res.revision?.source?.kind || item.sourceKind,
+        } : null;
+      } else if (getState().tab === "personas") {
+        const res = await api.getPersona(item.id);
+        detail = res?.ok ? res.persona : null;
+      } else {
+        const res = await api.getWorldBook(item.id);
+        detail = res?.ok ? res.worldBook : null;
+      }
+      if (getState().selectedItemId === item.id) {
+        if (detail) dispatch({ type: "detail.loaded", itemId: item.id, detail });
+        else dispatch({ type: "detail.failed", itemId: item.id });
+      }
+    } catch {
+      if (getState().selectedItemId === item.id) dispatch({ type: "detail.failed", itemId: item.id });
+    }
+  }
+
+  async function activateItem(item) {
+    const api = facade();
+    const sessionId = getActiveSessionId?.();
+    if (!api || !sessionId || !item || getState().activation.status === "running") return;
+    dispatch({ type: "activation.started", itemId: item.id });
+    try {
+      let target = item;
+      if (item.kind === "character" && item.official) {
+        target = await installOfficialCharacter(api, item);
+      }
+      if (!target?.currentRevisionId) {
+        dispatch({ type: "activation.failed", itemId: item.id, error: "NOT_INSTALLED" });
+        setNotice("action_failed");
+        return;
+      }
+      const current = await api.getSessionCharacterBinding(sessionId);
+      if (!current?.ok || !Number.isInteger(current.binding?.bindingVersion)) {
+        dispatch({ type: "activation.failed", itemId: item.id, error: "BINDING_UNAVAILABLE" });
+        setNotice("action_failed");
+        return;
+      }
+      const res = await api.activateLibraryItem({
+        sessionId,
+        kind: item.kind,
+        revisionId: target.currentRevisionId,
+        scope: item.kind === "worldBook" ? "chat" : undefined,
+        mergeStrategy: item.kind === "worldBook" ? "constant" : undefined,
+        expectedBindingVersion: current.binding.bindingVersion,
+      });
+      if (res?.ok) {
+        dispatch({ type: "activation.settled", itemId: item.id });
+        setNotice("activated", { name: target.displayName || target.name || item.name });
+        if (item.kind === "character") await loadCurrentTab();
+      } else {
+        dispatch({ type: "activation.failed", itemId: item.id, error: res?.error || "ACTIVATION_FAILED" });
+        setNotice(res?.error === "CHARACTER_BINDING_CONFLICT" ? "conflict" : "action_failed");
+      }
+    } catch {
+      dispatch({ type: "activation.failed", itemId: item.id, error: "ACTIVATION_FAILED" });
+      setNotice("action_failed");
     }
   }
 
@@ -316,5 +427,7 @@ export function createLibraryActions(ctx) {
     exportItem,
     confirmAction,
     startImport,
+    openDetail,
+    activateItem,
   };
 }

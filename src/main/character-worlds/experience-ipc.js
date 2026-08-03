@@ -3,6 +3,13 @@
 const { CharacterPreviewStore } = require("./preview-store");
 const { CharacterWorldsReceiptStore } = require("./receipt-store");
 const { ReceiptActionBroker } = require("./receipt-actions");
+const { buildLibraryActivationConfig } = require("./library-activation");
+
+const LIBRARY_ACTIVATION_KINDS = new Set(["character", "persona", "worldBook"]);
+
+function validLibraryActivationId(value) {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 128;
+}
 
 function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failure, mapDomainError, resolveSessionAuthority, repository }) {
   const actions = new ReceiptActionBroker();
@@ -150,6 +157,51 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
         previewVersion: activated.preview.previewVersion,
         bindingVersion: activated.binding.bindingVersion,
       };
+    } catch (error) {
+      return mapDomainError(error);
+    }
+  });
+
+  // Library activation is a direct, explicit user action. It still resolves
+  // session ownership in main, verifies the revision belongs to that owner,
+  // and commits through the same binding-version CAS as preview activation.
+  ipcMain.handle("character-worlds:library-activate", async (event, payload = {}) => {
+    const resolved = scope(event, payload);
+    if (resolved.denied) return resolved.denied;
+    if (!LIBRARY_ACTIVATION_KINDS.has(payload?.kind) || !validLibraryActivationId(payload?.revisionId)) {
+      return failure("INVALID_INPUT");
+    }
+    if (!Number.isInteger(payload?.expectedBindingVersion) || payload.expectedBindingVersion < 0) {
+      return failure("INVALID_INPUT");
+    }
+    try {
+      if (payload.kind === "character" && !resolved.repo.getRevision(
+        resolved.session.ownerScope, payload.revisionId,
+      )) return failure("CHARACTER_REVISION_NOT_FOUND");
+      if (payload.kind === "persona" && !resolved.repo.getPersonaRevision(
+        resolved.session.ownerScope, payload.revisionId,
+      )) return failure("PERSONA_REVISION_NOT_FOUND");
+      if (payload.kind === "worldBook" && !resolved.repo.getWorldBookRevision(
+        resolved.session.ownerScope, payload.revisionId,
+      )) return failure("WORLD_BOOK_REVISION_NOT_FOUND");
+
+      const current = resolved.repo.getConversationConfig(
+        resolved.session.sessionId, resolved.session.ownerScope,
+      );
+      const next = buildLibraryActivationConfig(current, {
+        kind: payload.kind,
+        revisionId: payload.revisionId,
+        scope: payload.scope,
+        mergeStrategy: payload.mergeStrategy,
+      });
+      const binding = resolved.repo.setConversationConfig({
+        sessionId: resolved.session.sessionId,
+        ownerScope: resolved.session.ownerScope,
+        expectedBindingVersion: payload.expectedBindingVersion,
+        next,
+      });
+      const { books, sceneId, groupId, ...legacyBinding } = binding;
+      return { ok: true, binding: legacyBinding };
     } catch (error) {
       return mapDomainError(error);
     }

@@ -16,6 +16,7 @@
  */
 
 import { $ } from "./dom.js";
+import store from "./state.js";
 import { t } from "../i18n/index.js";
 import {
   initialCharacterLibraryState,
@@ -130,6 +131,7 @@ const actions = createLibraryActions({
   syncFormValues,
   readFormValues,
   focusNameField: () => $("characterLibraryDetail")?.querySelector("[data-field='name']")?.focus(),
+  getActiveSessionId: () => store.get("activeSessionId"),
 });
 
 /** Re-render localized chrome after a locale change (lossless for edits). */
@@ -254,6 +256,12 @@ export function initCharacterLibrary() {
     dispatch({ type: "tab.changed", tab: tabBtn.dataset.libraryTab });
     void actions.loadCurrentTab();
   });
+  $("characterLibraryGroups")?.addEventListener("click", (event) => {
+    const group = event.target.closest("[data-library-group]");
+    if (!group) return;
+    if (dirtyFormGuard()) return;
+    dispatch({ type: "group.changed", groupId: group.dataset.libraryGroup });
+  });
   $("characterLibrarySearch")?.addEventListener("input", (event) => {
     dispatch({ type: "query.changed", query: event.target.value });
   });
@@ -279,11 +287,17 @@ export function initCharacterLibrary() {
       return;
     }
     const actionBtn = event.target.closest("[data-library-action]");
-    if (!actionBtn) return;
-    const row = actionBtn.closest("[data-entity-id]");
+    const selectBtn = event.target.closest("[data-library-select]");
+    const source = actionBtn || selectBtn;
+    if (!source) return;
+    const row = source.closest("[data-entity-id]");
     const item = (libraryState.items[libraryState.tab] || [])
       .find((entry) => entry.id === row?.dataset.entityId);
     if (!item) return;
+    if (selectBtn && !actionBtn) {
+      void actions.openDetail(item);
+      return;
+    }
     const action = actionBtn.dataset.libraryAction;
     if (action === "edit") void actions.openEdit(item);
     else if (action === "history") void actions.openHistory(item);
@@ -323,6 +337,13 @@ export function initCharacterLibrary() {
     }
     if (event.target.closest("[data-library-save]")) {
       void actions.saveForm();
+      return;
+    }
+    const activateBtn = event.target.closest("[data-library-activate]");
+    if (activateBtn) {
+      const item = (libraryState.items[libraryState.tab] || [])
+        .find((entry) => entry.id === libraryState.selectedItemId);
+      if (item) void actions.activateItem(item);
       return;
     }
     if (event.target.closest("[data-library-back]")) {

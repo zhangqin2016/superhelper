@@ -58,6 +58,7 @@ const CHANNELS = {
   startPreview: "character-worlds:preview-start",
   exitPreview: "character-worlds:preview-exit",
   activatePreview: "character-worlds:preview-activate",
+  activateLibraryItem: "character-worlds:library-activate",
   adjustTarget: "character-worlds:adjust-target",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
@@ -271,6 +272,7 @@ try {
     await api.startPreview({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token", expectedPreviewVersion: 0 });
     await api.exitPreview("session-a", 1);
     await api.activatePreview({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token", expectedPreviewVersion: 1, expectedBindingVersion: 0 });
+    await api.activateLibraryItem({ sessionId: "session-a", kind: "character", revisionId: "rev-1", expectedBindingVersion: 0 });
     await api.adjustTarget({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token" });
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
@@ -300,6 +302,7 @@ try {
         "character-worlds:preview-start",
         "character-worlds:preview-exit",
         "character-worlds:preview-activate",
+        "character-worlds:library-activate",
         "character-worlds:adjust-target",
       ],
     );
@@ -721,6 +724,30 @@ try {
     assert.equal(companion.installedCharacterId, first.characterId);
     assert.equal(companion.currentRevisionId, first.revisionId);
     assert.equal(companion.updateAvailable, false);
+  });
+
+  await check("library activation validates the owner revision and uses binding CAS", async () => {
+    const current = repository.getBinding("session-a", OWNER);
+    const official = repository.listCharacters(OWNER)
+      .map((entity) => entity.currentRevisionId)
+      .find(Boolean);
+    assert.ok(official);
+    const activated = await handlers.get("character-worlds:library-activate")(trustedEvent(), {
+      sessionId: "session-a",
+      kind: "character",
+      revisionId: official,
+      expectedBindingVersion: current.bindingVersion,
+    });
+    assert.equal(activated.ok, true, JSON.stringify(activated));
+    assert.equal(activated.binding.characterRevisionId, official);
+    const stale = await handlers.get("character-worlds:library-activate")(trustedEvent(), {
+      sessionId: "session-a",
+      kind: "character",
+      revisionId: official,
+      expectedBindingVersion: current.bindingVersion,
+    });
+    assert.equal(stale.ok, false);
+    assert.equal(stale.error, "CHARACTER_BINDING_CONFLICT");
   });
 
   await check("non-whitelisted error codes collapse; whitelisted domain codes pass through", async () => {

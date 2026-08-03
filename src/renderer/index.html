@@ -359,8 +359,11 @@
           <button id="characterLibraryCreateBtn" type="button" data-i18n="character.library.aiCreate">让 Lily 创建</button>
         </div>
         <div id="characterLibraryNotice" class="character-library-notice" hidden></div>
-        <div id="characterLibraryList" class="character-library-list"></div>
-        <div id="characterLibraryDetail" class="character-library-detail" hidden></div>
+        <div class="character-library-body">
+          <nav id="characterLibraryGroups" class="character-library-groups" data-i18n-aria-label="character.library.groups" aria-label="角色分组"></nav>
+          <div id="characterLibraryList" class="character-library-list"></div>
+          <aside id="characterLibraryDetail" class="character-library-detail" hidden></aside>
+        </div>
         <div id="characterLibraryLive" class="character-sr-only" aria-live="polite"></div>
       </section>
     </div>

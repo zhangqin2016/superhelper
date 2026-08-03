@@ -186,6 +186,14 @@ contextBridge.exposeInMainWorld("assistantClient", {
       actionToken: payload?.actionToken, expectedPreviewVersion: payload?.expectedPreviewVersion,
       expectedBindingVersion: payload?.expectedBindingVersion,
     }),
+    activateLibraryItem: (payload = {}) => ipcRenderer.invoke("character-worlds:library-activate", {
+      sessionId: payload?.sessionId,
+      kind: payload?.kind,
+      revisionId: payload?.revisionId,
+      scope: payload?.scope,
+      mergeStrategy: payload?.mergeStrategy,
+      expectedBindingVersion: payload?.expectedBindingVersion,
+    }),
     adjustTarget: (payload) => ipcRenderer.invoke("character-worlds:adjust-target", {
       sessionId: payload?.sessionId, receiptId: payload?.receiptId, actionToken: payload?.actionToken,
     }),
