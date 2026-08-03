@@ -12,6 +12,7 @@
  */
 
 const { CHARACTER_CONTEXT_MAX_TOKENS } = require("../character-worlds/context-compiler");
+const { normalizeRoleActivationContract } = require("../character-worlds/role-activation-contract");
 
 const MAX_CHARACTER_CONTEXT_TEXT_CHARS = 128 * 1024;
 const FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -42,6 +43,10 @@ function normalizeCompiledCharacterContext(value) {
   ) return null;
   if (!EXPRESSION_PROFILES.has(value.expressionProfile)) return null;
   if (!Array.isArray(value.omitted) || !Array.isArray(value.warnings)) return null;
+  const activationContract = normalizeRoleActivationContract(value.activationContract);
+  if (!activationContract) return null;
+  if (activationContract.narrativeFingerprint !== value.fingerprint) return null;
+  if (activationContract.expressionProfile !== value.expressionProfile) return null;
   return value;
 }
 
@@ -67,17 +72,46 @@ function characterContextSupported({ override, capabilityGrade = "", providerCap
  * so callers can preserve the exact "no system key" baseline behavior.
  */
 function withCharacterContextSuffix(systemText, characterContext, supportOpts = {}) {
+  return composeCharacterSystemLayers(systemText, characterContext, supportOpts).system;
+}
+
+function composeCharacterSystemLayers(systemText, characterContext, supportOpts = {}) {
   const base = typeof systemText === "string" ? systemText : "";
-  if (!characterContextSupported(supportOpts)) return base;
+  if (!characterContext || characterContext.status === "native") {
+    return { system: base, application: { status: "native" } };
+  }
   const compiled = normalizeCompiledCharacterContext(characterContext);
-  if (!compiled) return base;
-  const delimiter = `[CHARACTER WORLDS CONTEXT suffix; separately fingerprinted ${compiled.fingerprint}]`;
-  const suffix = `${delimiter}\n${compiled.text}`;
-  return base ? `${base}\n\n${suffix}` : suffix;
+  if (!compiled) {
+    return { system: base, application: { status: "bypassed", reason: "activation_invalid" } };
+  }
+  const activation = compiled.activationContract;
+  const identity = {
+    revisionId: activation.conversationRole.revisionId,
+    expressionProfile: activation.expressionProfile,
+  };
+  if (!characterContextSupported(supportOpts)) {
+    return {
+      system: base,
+      application: { status: "bypassed", reason: "provider_unsupported", ...identity },
+    };
+  }
+  const activationDelimiter = `[LILY ROLE ACTIVATION; host-owned ${activation.activationFingerprint}]`;
+  const narrativeDelimiter = `[CHARACTER WORLDS CONTEXT; lower-authority narrative ${compiled.fingerprint}]`;
+  const suffix = `${activationDelimiter}\n${activation.text}\n\n${narrativeDelimiter}\n${compiled.text}`;
+  return {
+    system: base ? `${base}\n\n${suffix}` : suffix,
+    application: {
+      status: "applied",
+      ...identity,
+      activationFingerprint: activation.activationFingerprint,
+      narrativeFingerprint: compiled.fingerprint,
+    },
+  };
 }
 
 module.exports = {
   characterContextSupported,
+  composeCharacterSystemLayers,
   normalizeCompiledCharacterContext,
   withCharacterContextSuffix,
 };

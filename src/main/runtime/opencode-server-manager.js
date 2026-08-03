@@ -20,7 +20,7 @@
 const { EventEmitter } = require("node:events");
 const { getLogger } = require("../logger");
 const { getSharedServer } = require("./opencode-shared-server");
-const { buildOpencodePromptBody } = require("./opencode-message-parts");
+const { buildOpencodePromptBody, characterApplicationOf } = require("./opencode-message-parts");
 const { createOpencodeSdkSession } = require("./opencode-sdk-session");
 const { classifyOpencodeEventOwnership } = require("./opencode-event-ownership");
 
@@ -208,7 +208,7 @@ class OpencodeServerManager extends EventEmitter {
     if (this._recentRouting.length > 120) this._recentRouting.splice(0, this._recentRouting.length - 120);
   }
 
-  async sendPrompt({ text, files, guidance, allowImageFileParts, allowedFilePartMimes, characterContext }) {
+  async sendPrompt({ text, files, guidance, allowImageFileParts, allowedFilePartMimes, characterContext, onCharacterApplication }) {
     if (!this.sessionID) throw new Error("no session");
     if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
     // Non-image file-part support is opt-in per model (default: none). Resolve
@@ -254,6 +254,13 @@ class OpencodeServerManager extends EventEmitter {
       characterContext: characterContext || null,
       capabilityGrade: this.env?.LILY_MODEL_CAPABILITY_GRADE || "",
     });
+    if (typeof onCharacterApplication === "function") {
+      try {
+        onCharacterApplication(characterApplicationOf(body));
+      } catch {
+        // Application telemetry is observational and cannot block dispatch.
+      }
+    }
     const textPart = body.parts.find((part) => part?.type === "text");
     this.lastPromptText = typeof textPart?.text === "string" ? textPart.text : "";
     return this._sdkSession.promptAsync(this.sessionID, body);

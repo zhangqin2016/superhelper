@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { buildOpencodePromptBody } = require("../src/main/runtime/opencode-message-parts.js");
+const { buildOpencodePromptBody, characterApplicationOf } = require("../src/main/runtime/opencode-message-parts.js");
 const { OpencodeServerManager } = require("../src/main/runtime/opencode-server-manager.js");
 const { compileCharacterContext } = require("../src/main/character-worlds/context-compiler.js");
 
@@ -116,11 +116,24 @@ assertNativeEqual(
 // --- compiled context: delimited suffix after the protected prefix -------------
 {
   const roleBody = buildOpencodePromptBody({ ...baseInput, characterContext: compiled });
+  const application = characterApplicationOf(roleBody);
+  assert.equal(application.status, "applied");
+  assert.equal(application.revisionId, "rev-9");
+  assert.equal(application.expressionProfile, "immersive");
+  assert.equal(application.activationFingerprint, compiled.activationContract.activationFingerprint);
+  assert.equal(application.narrativeFingerprint, compiled.fingerprint);
+  assert.equal(Object.keys(roleBody).includes("characterApplication"), false);
   assert.ok(
     roleBody.system.startsWith(baselineBody.system),
     "Lily protected prefix stays byte-stable at the head of system",
   );
   assert.match(roleBody.system, /CHARACTER WORLDS CONTEXT/);
+  assert.match(roleBody.system, /LILY HOST ROLE ACTIVATION CONTRACT/);
+  assert.ok(
+    roleBody.system.indexOf("LILY HOST ROLE ACTIVATION CONTRACT")
+      < roleBody.system.indexOf("CHARACTER WORLDS CONTEXT"),
+    "trusted activation precedes lower-authority narrative data",
+  );
   assert.match(roleBody.system, /lower-authority narrative context/i);
   assert.ok(
     roleBody.system.indexOf("CHARACTER WORLDS CONTEXT") > baselineBody.system.length,
@@ -138,6 +151,21 @@ assertNativeEqual(
   assert.doesNotMatch(JSON.stringify(roleBody.parts), /Aria/);
 }
 
+{
+  const disabled = buildOpencodePromptBody({
+    ...baseInput,
+    characterContext: compiled,
+    characterContextSupport: false,
+  });
+  assert.deepEqual(characterApplicationOf(disabled), {
+    status: "bypassed",
+    reason: "provider_unsupported",
+    revisionId: "rev-9",
+    expressionProfile: "immersive",
+  });
+  assert.equal(disabled.system, baselineBody.system);
+}
+
 // --- compiled context with no Lily guidance still lands in system only --------
 {
   const bareBaseline = buildOpencodePromptBody({ text: "hello there", agent: "build" });
@@ -153,8 +181,8 @@ assertNativeEqual(
     "an empty Lily prefix never leaves stray leading blank lines",
   );
   assert.ok(
-    roleBody.system.startsWith("[CHARACTER WORLDS CONTEXT suffix;"),
-    "the suffix starts with its own delimiter when there is no Lily prefix",
+    roleBody.system.startsWith("[LILY ROLE ACTIVATION; host-owned"),
+    "the host-owned activation starts the role layers when there is no Lily prefix",
   );
   assert.doesNotMatch(JSON.stringify(roleBody.parts), /CHARACTER WORLDS CONTEXT/);
   const disabled = buildOpencodePromptBody({
@@ -176,12 +204,23 @@ async function captureBody(env = {}) {
   });
   manager.sessionID = "ses_character_context";
   let sentBody = null;
+  const applications = [];
   manager._sdkSession = {
     promptAsync: async (_sid, body) => {
       sentBody = body;
     },
   };
-  return { manager, send: async (payload) => { await manager.sendPrompt(payload); return sentBody; } };
+  return {
+    manager,
+    applications,
+    send: async (payload) => {
+      await manager.sendPrompt({
+        ...payload,
+        onCharacterApplication: (application) => applications.push(application),
+      });
+      return sentBody;
+    },
+  };
 }
 
 {
@@ -191,7 +230,7 @@ async function captureBody(env = {}) {
   assert.doesNotMatch(JSON.stringify(native.parts), /CHARACTER WORLDS CONTEXT/);
 }
 {
-  const { send } = await captureBody();
+  const { send, applications } = await captureBody();
   const roleBody = await send({
     text: "hello there",
     guidance: "LILY PROTECTED GUIDANCE",
@@ -200,6 +239,9 @@ async function captureBody(env = {}) {
   assert.ok(roleBody.system.startsWith("LILY PROTECTED GUIDANCE"), "prefix byte-stable via server-manager");
   assert.match(roleBody.system, /CHARACTER WORLDS CONTEXT/);
   assert.doesNotMatch(JSON.stringify(roleBody.parts), /CHARACTER WORLDS CONTEXT/);
+  assert.equal(applications.length, 1);
+  assert.equal(applications[0].status, "applied");
+  assert.equal(applications[0].revisionId, "rev-9");
 }
 {
   const { send } = await captureBody({ LILY_MODEL_CAPABILITY_GRADE: "lite" });

@@ -73,6 +73,12 @@ const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([
   ".rtf",
 ]);
 
+const CHARACTER_APPLICATION = Symbol("lily.characterApplication");
+
+function characterApplicationOf(body) {
+  return body?.[CHARACTER_APPLICATION] || { status: "native" };
+}
+
 function truncateAttachmentText(text, limit = DEFAULT_MAX_TEXT_ATTACHMENT_CHARS) {
   const value = String(text || "");
   if (value.length <= limit) return value;
@@ -417,8 +423,14 @@ function buildOpencodePromptBody(opts = {}) {
   if (guidance) body.system = truncateSystemGuidance(guidance, opts.maxSystemPromptChars, { intentText: opts.text });
   // Lower-authority character context rides only as a system-field suffix
   // (spec §10.2); absent/invalid/unsupported leaves the bytes exactly as-is.
-  const systemWithContext = require("./opencode-character-context").withCharacterContextSuffix(body.system, opts.characterContext, { override: opts.characterContextSupport, capabilityGrade: opts.capabilityGrade, providerCapabilities: opts.providerCapabilities });
-  if (systemWithContext) body.system = systemWithContext;
+  const composedCharacter = require("./opencode-character-context").composeCharacterSystemLayers(body.system, opts.characterContext, { override: opts.characterContextSupport, capabilityGrade: opts.capabilityGrade, providerCapabilities: opts.providerCapabilities });
+  if (composedCharacter.system) body.system = composedCharacter.system;
+  Object.defineProperty(body, CHARACTER_APPLICATION, {
+    value: composedCharacter.application,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
   if (opts.model?.providerID && opts.model?.modelID) {
     body.model = { providerID: opts.model.providerID, modelID: opts.model.modelID };
   }
@@ -592,6 +604,7 @@ function truncateSystemGuidance(guidance, maxChars, { intentText = "" } = {}) {
 }
 
 module.exports = {
+  characterApplicationOf,
   DEFAULT_MAX_INLINE_FILE_BYTES,
   DEFAULT_MAX_TEXT_ATTACHMENT_CHARS,
   buildSkippedAttachmentNote,
