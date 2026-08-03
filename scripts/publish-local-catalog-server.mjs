@@ -241,6 +241,14 @@ function workspaceAppObjectKey({ appId, version, filePath }) {
   return `workspace-apps/${safeAppId}/${safeVersion}/${safeFile}`;
 }
 
+function skillArtifactObjectKey({ skillId, version, sha256, filePath }) {
+  const safeSkillId = normalizeObjectSegment(skillId, "skill");
+  const safeVersion = normalizeObjectSegment(version, "0.0.0");
+  const safeFile = normalizeObjectSegment(path.basename(filePath), "skill.skillpack.zip");
+  const digest = String(sha256 || "").trim().toLowerCase().slice(0, 16) || "unverified";
+  return `skill-packages/${safeSkillId}/${safeVersion}/${digest}-${safeFile}`;
+}
+
 function qshellAvailable() {
   const result = spawnSync("qshell", ["--version"], {
     cwd: ROOT,
@@ -694,13 +702,42 @@ async function publishSkills(options, auth) {
       results.push({ kind: "skill", id: pack.skillId, version: pack.version, action: "built" });
       continue;
     }
-    const uploaded = await uploadMultipart(
-      api,
-      auth,
-      "/api/admin/skill-packages/upload",
-      fields,
-      pack.artifactPath,
-    );
+    const artifactSize = fs.statSync(pack.artifactPath).size;
+    let uploaded;
+    if (qshellAvailable()) {
+      const objectKey = skillArtifactObjectKey({
+        skillId: pack.skillId,
+        version: pack.version,
+        sha256: pack.sha256,
+        filePath: pack.artifactPath,
+      });
+      uploadQiniuWithQshell({
+        bucket: options.bucket,
+        objectKey,
+        filePath: pack.artifactPath,
+        upHost: options.qiniuUpHost,
+      });
+      const artifactUrl = joinPublicUrl(options.domain, objectKey);
+      const verifiedArtifactUrl = await waitForRemoteArtifactSha({
+        artifactUrl,
+        expectedSha256: pack.sha256,
+      });
+      uploaded = await postJson(api, auth, "/api/admin/skill-packages", {
+        ...fields,
+        artifactUrl: verifiedArtifactUrl,
+        sha256: pack.sha256,
+        sizeBytes: artifactSize,
+        enabled: true,
+      });
+    } else {
+      uploaded = await uploadMultipart(
+        api,
+        auth,
+        "/api/admin/skill-packages/upload",
+        fields,
+        pack.artifactPath,
+      );
+    }
     console.log(`[publish-local-catalog] skill uploaded: ${uploaded.skillId}@${pack.version}`);
     results.push({ kind: "skill", id: pack.skillId, version: pack.version, action: "uploaded" });
   }
@@ -806,6 +843,7 @@ export {
   localSkillDirs,
   registryMetadataUploadFields,
   resolveWorkspaceAppVersion,
+  skillArtifactObjectKey,
   skillUploadFields,
   skillManifestVersion,
   waitForRemoteArtifactSha,

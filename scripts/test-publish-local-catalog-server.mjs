@@ -9,6 +9,7 @@ import {
   localSkillDirs,
   registryMetadataUploadFields,
   resolveWorkspaceAppVersion,
+  skillArtifactObjectKey,
   skillUploadFields,
   skillManifestVersion,
   withCacheBuster,
@@ -59,6 +60,16 @@ assertEqual(
   "skill publisher should send localized category labels to the server",
 );
 assertEqual(mailFields.displayInCatalog, "true", "regular skills should stay visible in the catalog");
+assertEqual(
+  skillArtifactObjectKey({
+    skillId: "anthropics-pptx",
+    version: "1.0.1",
+    sha256: "a".repeat(64),
+    filePath: "/tmp/anthropics-pptx-1.0.1.skillpack.zip",
+  }),
+  "skill-packages/anthropics-pptx/1.0.1/aaaaaaaaaaaaaaaa-anthropics-pptx-1.0.1.skillpack.zip",
+  "direct skill uploads should use immutable content-addressed object keys",
+);
 
 const engineeringFields = skillUploadFields({
   pack: {
@@ -160,4 +171,4 @@ assertEqual(JSON.parse(metadataFields.nameI18n).en, "Spreadsheets", "metadata sy
 assertEqual(JSON.parse(metadataFields.categoryLabelI18n).en, "Office Documents", "metadata sync should include localized category label");
 assertEqual(metadataFields.displayInCatalog, "true", "metadata sync should keep registry entries catalog-visible by default");
 
-finish("publish-local-catalog-server", 29);
+finish("publish-local-catalog-server", 30);
