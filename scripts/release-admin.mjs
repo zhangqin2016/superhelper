@@ -134,7 +134,20 @@ function uploadQiniu({ bucket, key, file, dryRun, upHost }) {
     : path.relative(ROOT, localFile);
 
   const resolvedUpHost = upHost || process.env.QINIU_UP_HOST || "https://upload.qiniup.com";
-  const command = ["qshell", "rput", bucket, key, uploadFile, "--overwrite", "--up-host", resolvedUpHost];
+  // Qiniu's v2 resumable endpoint is unreliable for large desktop artifacts on some
+  // networks. Use the legacy resumable protocol for releases; it still resumes
+  // from the local qshell checkpoint and avoids restarting a multi-hundred-MB upload.
+  const command = [
+    "qshell",
+    "rput",
+    bucket,
+    key,
+    uploadFile,
+    "--overwrite",
+    "--up-host",
+    resolvedUpHost,
+    "--resumable-api-v2=false",
+  ];
   console.log(`[release-admin] upload: ${command.map(shellQuote).join(" ")}`);
   if (dryRun) return;
 
