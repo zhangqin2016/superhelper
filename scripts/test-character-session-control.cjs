@@ -347,6 +347,11 @@ app.whenReady().then(async () => {
     const manageBtn = document.getElementById("characterManageBtn");
     if (!manageBtn || manageBtn.disabled) throw new Error("manage library must be enabled in Phase 2B");
     if (/Phase 2|第二/.test(manageBtn.textContent)) throw new Error("Phase 2 placeholder label must be gone");
+    const popoverMain = document.getElementById("characterPopoverMain");
+    const characterList = document.getElementById("characterList");
+    if (getComputedStyle(popoverMain).display !== "flex" || getComputedStyle(characterList).flexGrow !== "1") {
+      throw new Error("long character lists must scroll without hiding the library footer");
+    }
     const createBtn = document.getElementById("characterCreateBtn");
     if (!createBtn || !createBtn.textContent.trim()) throw new Error("direct create entry missing");
     if (popover.style.insetInlineStart !== "8px") throw new Error("popover must anchor to inline-start for RTL, got " + popover.style.insetInlineStart);

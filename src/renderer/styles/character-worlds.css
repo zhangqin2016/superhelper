@@ -87,6 +87,15 @@
   display: none;
 }
 
+/* Keep the management footer reachable when the official catalog is long.
+   The list owns scrolling; the import/create/manage commands remain visible. */
+#characterPopoverMain {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
 /* Update-available row (Phase 2B): a quiet hint with an explicit apply
    action; it never changes the pinned snapshot by itself. */
 .character-update-row {
@@ -138,6 +147,8 @@
 }
 
 .character-list {
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
