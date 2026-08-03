@@ -1073,4 +1073,37 @@ if (!runtime.committedMessages.some((m) => m.role === "assistant" && m.content =
   throw new Error("the revived turn's completion must commit the assistant message");
 }
 
+store.applyRuntimeBatch({
+  sessionId: "s_character_application",
+  batchSeq: 1,
+  events: [
+    { id: "ca1", type: "turn.started", sessionId: "s_character_application", turnId: "tca", seq: 1, ts: 8000, source: "test", payload: {} },
+    {
+      id: "ca2",
+      type: "character.application",
+      sessionId: "s_character_application",
+      turnId: "tca",
+      seq: 2,
+      ts: 8001,
+      source: "test",
+      payload: { status: "applied", revisionId: "rev-a", expressionProfile: "balanced" },
+    },
+  ],
+});
+runtime = store.getRuntimeSession("s_character_application");
+if (runtime.characterApplication?.status !== "applied" || runtime.characterApplication?.revisionId !== "rev-a") {
+  throw new Error(`character application evidence was not projected: ${JSON.stringify(runtime.characterApplication)}`);
+}
+store.applyRuntimeBatch({
+  sessionId: "s_character_application",
+  batchSeq: 2,
+  events: [
+    { id: "ca3", type: "turn.started", sessionId: "s_character_application", turnId: "tca-next", seq: 3, ts: 8002, source: "test", payload: {} },
+  ],
+});
+runtime = store.getRuntimeSession("s_character_application");
+if (runtime.characterApplication !== null) {
+  throw new Error("a new turn must clear the prior turn's application evidence");
+}
+
 console.log("session-runtime-store: ok");

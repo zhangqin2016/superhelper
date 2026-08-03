@@ -29,18 +29,27 @@ function compileTurnContext({ orchestrator, session, state, runner, log }) {
   state.pendingWorldBookCheckpoint = null;
   try {
     const snapshot = state.characterWorldsSnapshot;
-    if (snapshot?.snapshotStatus !== "ready") return null;
+    if (snapshot?.snapshotStatus !== "ready") {
+      state.characterWorldsPolicyReason = "snapshot_not_ready";
+      return null;
+    }
     const hasCharacter = snapshot.mode === "character" && Boolean(snapshot.characterRevisionId);
     const hasPersona = Boolean(snapshot.personaRevisionId);
     const hasBooks = Array.isArray(snapshot.worldBookBindings) && snapshot.worldBookBindings.length > 0;
     if (!hasCharacter && !hasPersona && !hasBooks) return null;
     const sessionManager = orchestrator.ctx.sessionManager;
     const owner = sessionManager?.resolveTurnOwnerScope?.(session.id);
-    if (!owner?.ok || !owner.ownerScope) return null;
+    if (!owner?.ok || !owner.ownerScope) {
+      state.characterWorldsPolicyReason = "identity_missing";
+      return null;
+    }
     const repository = orchestrator.ctx.characterWorldsRepository
       || sessionManager?._store?.()?.characterWorlds?.()
       || null;
-    if (!repository) return null;
+    if (!repository) {
+      state.characterWorldsPolicyReason = "activation_invalid";
+      return null;
+    }
     const store = sessionManager?._store?.() || null;
 
     if (!hasCharacter) {
@@ -60,7 +69,10 @@ function compileTurnContext({ orchestrator, session, state, runner, log }) {
       state.pendingWorldBookCheckpoint = result.pendingCheckpoint;
       return result.compiled?.status === "compiled" ? result.compiled : null;
     }
-    if (typeof repository.getRevision !== "function") return null;
+    if (typeof repository.getRevision !== "function") {
+      state.characterWorldsPolicyReason = "revision_missing";
+      return null;
+    }
     let scene = loadScene(repository, owner.ownerScope, session.id, snapshot.characterRevisionId);
     const runtime = orchestrator.characterWorldsRuntime
       || (orchestrator.characterWorldsRuntime = createCharacterWorldsRuntime(orchestrator, log));
@@ -83,7 +95,10 @@ function compileTurnContext({ orchestrator, session, state, runner, log }) {
       return null;
     }
     const revision = repository.getRevision(owner.ownerScope, snapshot.characterRevisionId);
-    if (!revision) return null;
+    if (!revision) {
+      state.characterWorldsPolicyReason = "revision_missing";
+      return null;
+    }
     const speakerDecision = runtime.planSpeakersSync(admitted, baseInput(state, runner).userText);
     state.characterWorldsSpeakerDecision = speakerDecision;
     state.characterWorldsRuntimeSnapshot = runtime.withSpeakerDecision(admitted, speakerDecision);
@@ -102,13 +117,15 @@ function compileTurnContext({ orchestrator, session, state, runner, log }) {
       sceneMemory: sceneMemory(
         sessionManager, owner.ownerScope, session.id, snapshot.characterRevisionId,
       ),
-      baseInput: baseInput(state, runner, (code) => (
-        log.warn("character context compile failed open: %s", code)
-      )),
+      baseInput: baseInput(state, runner, (code) => {
+        state.characterWorldsPolicyReason = String(code || "activation_invalid");
+        log.warn("character context compile failed open: %s", code);
+      }),
     });
     state.pendingWorldBookCheckpoint = result.pendingCheckpoint;
     return result.compiled || (result.status === "compiled" ? result : null);
   } catch (err) {
+    state.characterWorldsPolicyReason = "activation_invalid";
     log.warn("character context compilation failed open: %s", err?.message || String(err));
     return null;
   }

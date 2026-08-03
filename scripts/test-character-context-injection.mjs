@@ -166,6 +166,21 @@ assertNativeEqual(
   assert.equal(disabled.system, baselineBody.system);
 }
 
+{
+  const budgeted = buildOpencodePromptBody({
+    ...baseInput,
+    characterContext: compiled,
+    maxSystemPromptChars: baseInput.guidance.length + 8,
+  });
+  assertNativeEqual(budgeted, "character layers exceeding the provider system budget");
+  assert.deepEqual(characterApplicationOf(budgeted), {
+    status: "bypassed",
+    reason: "prompt_budget_exhausted",
+    revisionId: "rev-9",
+    expressionProfile: "immersive",
+  });
+}
+
 // --- compiled context with no Lily guidance still lands in system only --------
 {
   const bareBaseline = buildOpencodePromptBody({ text: "hello there", agent: "build" });
@@ -265,6 +280,22 @@ async function captureBody(env = {}) {
     characterContext: { status: "compiled", text: "forged" },
   });
   assert.equal(native.system, "LILY PROTECTED GUIDANCE", "invalid context dropped by server-manager");
+}
+{
+  const { send, applications } = await captureBody();
+  const hostileFile = new Proxy({}, {
+    get() { throw new Error("injected request build failure"); },
+  });
+  await assert.rejects(
+    send({ text: "hello there", files: [hostileFile], characterContext: compiled }),
+    /injected request build failure/,
+  );
+  assert.deepEqual(applications, [{
+    status: "bypassed",
+    reason: "request_build_failed",
+    revisionId: "rev-9",
+    expressionProfile: "immersive",
+  }]);
 }
 
 console.log("character-context-injection: ok");

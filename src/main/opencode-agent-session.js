@@ -52,6 +52,7 @@ const {
   normalizeTodoStatus, todoTitle,
 } = require("./opencode-todo-completion-policy");
 const requiredToolCompletion = require("./required-tool-completion-gate");
+const { characterApplicationForTrace } = require("./character-worlds/application-receipt");
 const log = getLogger("opencode-agent-session");
 function rawToolFromEvent(ev = {}) {
   const p = ev.properties || {};
@@ -521,9 +522,7 @@ class OpencodeAgentSession extends EventEmitter {
           guidance,
           allowImageFileParts: typeof payload === "object" && payload?.allowImageFileParts === true,
           characterContext: typeof payload === "object" ? payload?.characterContext || null : null,
-          onCharacterApplication: (application) => {
-            this._ingest([{ type: "character.application", payload: application }]);
-          },
+          onCharacterApplication: (application) => this._ingest([{ type: "character.application", payload: characterApplicationForTrace(application, payload?.trace?.characterContext) }]),
         };
         this._promptDispatchPending = true;
         this._armPromptDispatchPendingCheck();

@@ -311,6 +311,39 @@ const characterBinding = {
   assert.equal(killed.notice, "unavailable");
 }
 
+// --- Final-boundary application evidence is scoped to session + revision -----
+{
+  let state = reduceCharacterControl(initialCharacterControlState(), {
+    type: "binding.loaded",
+    sessionId: "s1",
+    binding: characterBinding,
+  });
+  state = reduceCharacterControl(state, {
+    type: "application.updated",
+    sessionId: "s1",
+    application: { status: "applied", revisionId: characterBinding.characterRevisionId, expressionProfile: "balanced" },
+  });
+  assert.equal(state.application.status, "applied");
+  const staleSession = reduceCharacterControl(state, {
+    type: "application.updated",
+    sessionId: "s2",
+    application: { status: "bypassed", revisionId: characterBinding.characterRevisionId },
+  });
+  assert.equal(staleSession, state);
+  const staleRevision = reduceCharacterControl(state, {
+    type: "application.updated",
+    sessionId: "s1",
+    application: { status: "bypassed", revisionId: "rev-other" },
+  });
+  assert.equal(staleRevision, state);
+  state = reduceCharacterControl(state, {
+    type: "application.updated",
+    sessionId: "s1",
+    application: null,
+  });
+  assert.equal(state.application, null, "a new turn clears the previous turn's applied receipt");
+}
+
 // --- Active session going away resets the control -----------------------------
 {
   let state = reduceCharacterControl(initialCharacterControlState(), {
@@ -618,6 +651,9 @@ const characterBinding = {
     "character.nativeOption": "Lily 原声",
     "character.contextPersona": "设定",
     "character.contextWorld": "世界书",
+    "character.application.selected": "已选择",
+    "character.application.applied": "已生效",
+    "character.application.bypassed": "本轮未应用",
     "character.roleBannerTitle": "当前对话角色，点击切换",
   };
   const render = createRoleBannerRenderer({
@@ -630,8 +666,11 @@ const characterBinding = {
   render();
   assert.equal(banner.hidden, false);
   assert.equal(name.textContent, "糖糖");
-  assert.deepEqual(badges.children.map((child) => child.textContent), ["设定", "世界书"]);
-  assert.match(attributes.get("aria-label"), /糖糖 · 设定 · 世界书/);
+  assert.deepEqual(badges.children.map((child) => child.textContent), ["已选择", "设定", "世界书"]);
+  assert.match(attributes.get("aria-label"), /糖糖 · 已选择 · 设定 · 世界书/);
+  state = { ...state, application: { status: "applied", revisionId: "revision-a" } };
+  render();
+  assert.deepEqual(badges.children.map((child) => child.textContent), ["已生效", "设定", "世界书"]);
   assert.equal(classes.has("is-character"), true);
 
   state = { available: true, sessionId: "session-a", mode: "native" };

@@ -17,7 +17,41 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { OpencodeAgentSession, runWithTimeout, compactionTimeoutMs } = require("../src/main/opencode-agent-session.js");
+const {
+  OpencodeAgentSession,
+  runWithTimeout,
+  compactionTimeoutMs,
+} = require("../src/main/opencode-agent-session.js");
+const { characterApplicationForTrace } = require("../src/main/character-worlds/application-receipt.js");
+
+assert(
+  JSON.stringify(characterApplicationForTrace(
+    { status: "native" },
+    { status: "native", revisionId: "rev-selected", policyReason: "remote_disabled" },
+  )) === JSON.stringify({ status: "bypassed", reason: "policy_disabled", revisionId: "rev-selected" }),
+  "a selected role that failed admission must not be reported as native",
+);
+assert(
+  characterApplicationForTrace(
+    { status: "native" },
+    { status: "native", revisionId: "rev-selected", policyReason: "kill_switch" },
+  ).reason === "policy_disabled",
+  "internal policy reasons must collapse to the stable public bypass reason",
+);
+assert(
+  characterApplicationForTrace(
+    { status: "native" },
+    { status: "native", revisionId: "rev-selected", policyReason: "identity_over_budget" },
+  ).reason === "prompt_budget_exhausted",
+  "compiler budget diagnostics must collapse to the final request budget reason",
+);
+assert(
+  JSON.stringify(characterApplicationForTrace(
+    { status: "applied", revisionId: "rev-applied", expressionProfile: "balanced" },
+    { status: "compiled", revisionId: "rev-applied" },
+  )) === JSON.stringify({ status: "applied", revisionId: "rev-applied", expressionProfile: "balanced" }),
+  "a final-boundary applied receipt remains authoritative",
+);
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);

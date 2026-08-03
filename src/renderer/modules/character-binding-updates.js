@@ -168,6 +168,16 @@ export function createRoleBannerRenderer({ getState, getElement, monogram, el: c
     const badges = banner.querySelector(".session-role-banner-badges");
     badges.textContent = "";
     const contextLabels = [];
+    if (isCharacter) {
+      const applicationKey = state.application?.status === "applied"
+        ? "character.application.applied"
+        : state.application?.status === "bypassed"
+          ? "character.application.bypassed"
+          : "character.application.selected";
+      const label = translate(applicationKey);
+      contextLabels.push(label);
+      badges.appendChild(createEl("span", "character-application-status", { textContent: label }));
+    }
     if (isCharacter && state.personaRevisionId) {
       const label = translate("character.contextPersona");
       contextLabels.push(label);

@@ -102,6 +102,21 @@ try {
     assert.match(description, /review/i);
     assert.match(description, /library/i);
     assert.match(description, /never (activat|select|bind)/i);
+    for (const [facet, pattern] of [
+      ["identity and relationship", /identity[^.]{0,80}relationship/i],
+      ["background and scenario", /background[^.]{0,80}scenario/i],
+      ["personality and emotional behavior", /personality[^.]{0,80}emotional behavior/i],
+      ["expertise or worldview", /expertise[^.]{0,80}worldview/i],
+      ["goals, values, and decision principles", /goals[^.]{0,80}values[^.]{0,80}decision principles/i],
+      ["voice and vocabulary", /voice[^.]{0,80}vocabulary/i],
+      ["response patterns", /response patterns/i],
+      ["boundaries and prohibited behavior", /boundaries[^.]{0,80}prohibited behavior/i],
+      ["positive and negative examples", /positive[^.]{0,80}negative dialogue examples/i],
+      ["opening", /opening/i],
+      ["long-term consistency", /long-term consistency/i],
+    ]) {
+      assert.match(description, pattern, `drafting contract must require ${facet}`);
+    }
   });
 
   await check("draft payload cap is aligned with the IPC authoring guard (1 MiB)", async () => {

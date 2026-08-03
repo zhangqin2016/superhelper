@@ -3,6 +3,13 @@ import { closeStreamingBlocks } from "./turn-streaming-blocks.js";
 
 // Small non-terminal turn-lifecycle projections for the runtime store.
 
+export function applyTurnStarted(runtime, live) {
+  runtime.phase = "starting";
+  runtime.attention = null;
+  runtime.characterApplication = null;
+  live.phase = "starting";
+}
+
 // turn.paused (principal switch mid-preflight): the main process kept the
 // durable admission resumable — the SAME turnId is revived by a later
 // re-dispatch whose turn.started reuses this live turn. Close the live

@@ -199,6 +199,22 @@
       ]
     },
     {
+      "id": "character-role-activation",
+      "protects": "A selected character must reach the final model request as an active conversational identity without changing Lily's tools, permissions, safety, evidence, task rigor, exact technical content, or requested output format.",
+      "baseline": "Native conversations remain byte-identical; selected roles use a host-owned fingerprint-bound activation layer after the protected Lily kernel and a separately delimited lower-authority narrative envelope.",
+      "failureFallback": "Invalid, unsupported, compile-failed, or over-budget role layers run native Lily and emit metadata-only bypass evidence; only a final-boundary applied receipt scoped to the current session, turn, and immutable revision may render as active.",
+      "tests": [
+        "scripts/test-character-role-activation-contract.mjs",
+        "scripts/test-character-context-compiler.mjs",
+        "scripts/test-character-context-injection.mjs",
+        "scripts/test-character-agent-task-parity.mjs",
+        "scripts/test-opencode-agent-session.mjs",
+        "scripts/test-runtime-event-schema.mjs",
+        "scripts/test-session-runtime-store.mjs",
+        "scripts/test-character-session-control.mjs"
+      ]
+    },
+    {
       "id": "character-authoring-persistence",
       "protects": "AI character, persona, and world-book creation cannot report ordinary files as persisted library entities or trust editable official tags.",
       "baseline": "Non-authoring requests retain native Lily behavior; authoring succeeds only after validated immutable library persistence.",

@@ -837,7 +837,7 @@ const failures = [
     sessionId: SESSION_IDS.parser_error,
     policy: enabledPolicy,
     repository: null, // real repository, corrupt stored payload
-    expectedTrace: { status: "native", revisionId: corruptRevisionId },
+    expectedTrace: { status: "native", revisionId: corruptRevisionId, policyReason: "activation_invalid" },
     expectedPolicyCalls: 1,
   },
   {
@@ -852,7 +852,7 @@ const failures = [
         canonical: { ...cleanRevision.canonical, name: "\uD800{{char}}" },
       }),
     },
-    expectedTrace: { status: "native", revisionId: aria.revision.id },
+    expectedTrace: { status: "native", revisionId: aria.revision.id, policyReason: "identity_missing" },
     expectedPolicyCalls: 1,
   },
   {
@@ -864,7 +864,7 @@ const failures = [
         throw new Error("injected repository read failure");
       },
     },
-    expectedTrace: { status: "native", revisionId: aria.revision.id },
+    expectedTrace: { status: "native", revisionId: aria.revision.id, policyReason: "activation_invalid" },
     expectedPolicyCalls: 1,
   },
   {
@@ -877,7 +877,7 @@ const failures = [
         canonical: { ...cleanRevision.canonical, name: "x".repeat(200_000) },
       }),
     },
-    expectedTrace: { status: "native", revisionId: aria.revision.id },
+    expectedTrace: { status: "native", revisionId: aria.revision.id, policyReason: "identity_over_budget" },
     expectedPolicyCalls: 1,
   },
 ];

@@ -26,7 +26,7 @@
 
 const crypto = require("node:crypto");
 const { expandSafeMacros } = require("./macros");
-const { compileRoleActivationContract } = require("./role-activation-contract");
+const { buildCompiledContextResult } = require("./compiled-context-result");
 const { stableJson } = require("./persistence-codec");
 const { sceneCompileCandidates } = require("./scene-compile");
 const { isReadyCompositionSnapshot } = require("./compiler-snapshot");
@@ -543,47 +543,17 @@ function compileCharacterContext({
       diagnostic("envelope_over_budget");
       return nativeResult();
     }
-    const fingerprint = sha256(text);
-    const activationContract = characterMode
-      ? compileRoleActivationContract({
-          role: { revisionId, name },
-          expressionProfile,
-          narrativeFingerprint: fingerprint,
-        })
-      : null;
-    if (characterMode && !activationContract) {
+    const compiled = buildCompiledContextResult({
+      schemaVersion: COMPILED_SCHEMA_VERSION, characterMode, revisionId, name,
+      text, tokenEstimate, omitted, warnings, activatedFields,
+      activatedWorldEntries, safeBehaviors, expressionProfile, personaBlock,
+      worldResolution, worldBookRevisionId,
+    });
+    if (!compiled) {
       diagnostic("activation_invalid");
       return nativeResult();
     }
-    return {
-      schemaVersion: COMPILED_SCHEMA_VERSION,
-      status: "compiled",
-      text,
-      fingerprint,
-      ...(activationContract ? { activationContract } : {}),
-      tokenEstimate,
-      omitted,
-      warnings,
-      activatedFields,
-      activatedWorldEntries,
-      safeBehaviors,
-      expressionProfile,
-      persona: personaBlock
-        ? { revisionId: personaBlock.sourceRevision, fingerprint: personaBlock.contentHash }
-        : null,
-      worldBook: worldResolution
-        ? {
-            revisionId: worldBookRevisionId,
-            revisionHash: worldResolution.trace.revisionHash,
-            nextCheckpoint: worldResolution.nextCheckpoint,
-            activationFingerprint: sha256(stableJson({
-              revisionHash: worldResolution.trace.revisionHash,
-              activated: activatedWorldEntries,
-              checkpoint: worldResolution.nextCheckpoint,
-            })),
-          }
-        : null,
-    };
+    return compiled;
   } catch {
     diagnostic("compiler_exception");
     return nativeResult();

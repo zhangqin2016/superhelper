@@ -17,6 +17,24 @@ const { normalizeRoleActivationContract } = require("../character-worlds/role-ac
 const MAX_CHARACTER_CONTEXT_TEXT_CHARS = 128 * 1024;
 const FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const EXPRESSION_PROFILES = new Set(["immersive", "balanced", "task_preserving"]);
+const CHARACTER_APPLICATION = Symbol("lily.characterApplication");
+
+function characterApplicationOf(body) {
+  return body?.[CHARACTER_APPLICATION] || { status: "native" };
+}
+
+function characterBuildFailureApplication(characterContext) {
+  const compiled = normalizeCompiledCharacterContext(characterContext);
+  const activation = compiled?.activationContract;
+  return {
+    status: "bypassed",
+    reason: "request_build_failed",
+    ...(activation ? {
+      revisionId: activation.conversationRole.revisionId,
+      expressionProfile: activation.expressionProfile,
+    } : {}),
+  };
+}
 
 function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -98,8 +116,16 @@ function composeCharacterSystemLayers(systemText, characterContext, supportOpts 
   const activationDelimiter = `[LILY ROLE ACTIVATION; host-owned ${activation.activationFingerprint}]`;
   const narrativeDelimiter = `[CHARACTER WORLDS CONTEXT; lower-authority narrative ${compiled.fingerprint}]`;
   const suffix = `${activationDelimiter}\n${activation.text}\n\n${narrativeDelimiter}\n${compiled.text}`;
+  const system = base ? `${base}\n\n${suffix}` : suffix;
+  const maxSystemPromptChars = Number(supportOpts.maxSystemPromptChars);
+  if (Number.isFinite(maxSystemPromptChars) && maxSystemPromptChars > 0 && system.length > maxSystemPromptChars) {
+    return {
+      system: base,
+      application: { status: "bypassed", reason: "prompt_budget_exhausted", ...identity },
+    };
+  }
   return {
-    system: base ? `${base}\n\n${suffix}` : suffix,
+    system,
     application: {
       status: "applied",
       ...identity,
@@ -109,7 +135,27 @@ function composeCharacterSystemLayers(systemText, characterContext, supportOpts 
   };
 }
 
+function applyCharacterContextToBody(body, opts = {}) {
+  const composed = composeCharacterSystemLayers(body.system, opts.characterContext, {
+    override: opts.characterContextSupport,
+    capabilityGrade: opts.capabilityGrade,
+    providerCapabilities: opts.providerCapabilities,
+    maxSystemPromptChars: opts.maxSystemPromptChars,
+  });
+  if (composed.system) body.system = composed.system;
+  Object.defineProperty(body, CHARACTER_APPLICATION, {
+    value: composed.application,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  return body;
+}
+
 module.exports = {
+  applyCharacterContextToBody,
+  characterBuildFailureApplication,
+  characterApplicationOf,
   characterContextSupported,
   composeCharacterSystemLayers,
   normalizeCompiledCharacterContext,

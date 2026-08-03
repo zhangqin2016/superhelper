@@ -108,6 +108,24 @@ const characterApplication = createRuntimeEvent({
   },
 });
 assertRuntimeEvent(characterApplication);
+for (const reason of [
+  "policy_disabled",
+  "snapshot_not_ready",
+  "revision_missing",
+  "identity_missing",
+  "budget_zero",
+  "provider_unsupported",
+  "activation_invalid",
+  "prompt_budget_exhausted",
+  "request_build_failed",
+]) {
+  assertRuntimeEvent(createRuntimeEvent({
+    type: "character.application",
+    sessionId: "s1",
+    turnId: "t1",
+    payload: { status: "bypassed", reason, revisionId: "rev-1" },
+  }));
+}
 assert.throws(
   () => createRuntimeEvent({
     type: "character.application",

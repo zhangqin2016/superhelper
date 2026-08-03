@@ -1,5 +1,4 @@
 "use strict";
-
 const fs = require("node:fs");
 const path = require("node:path");
 const { resolveLiveFilePath } = require("../live-file-source");
@@ -11,6 +10,7 @@ const {
 } = require("./opencode-attachment-context");
 const { isArchiveFilePath } = require("../mcp/archive-intelligence");
 const { escapeLocalPathText } = require("../safe-local-path-text");
+const { applyCharacterContextToBody, characterApplicationOf, characterBuildFailureApplication } = require("./opencode-character-context");
 const FILE_MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -72,12 +72,6 @@ const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([
   ".odp",
   ".rtf",
 ]);
-
-const CHARACTER_APPLICATION = Symbol("lily.characterApplication");
-
-function characterApplicationOf(body) {
-  return body?.[CHARACTER_APPLICATION] || { status: "native" };
-}
 
 function truncateAttachmentText(text, limit = DEFAULT_MAX_TEXT_ATTACHMENT_CHARS) {
   const value = String(text || "");
@@ -423,14 +417,7 @@ function buildOpencodePromptBody(opts = {}) {
   if (guidance) body.system = truncateSystemGuidance(guidance, opts.maxSystemPromptChars, { intentText: opts.text });
   // Lower-authority character context rides only as a system-field suffix
   // (spec §10.2); absent/invalid/unsupported leaves the bytes exactly as-is.
-  const composedCharacter = require("./opencode-character-context").composeCharacterSystemLayers(body.system, opts.characterContext, { override: opts.characterContextSupport, capabilityGrade: opts.capabilityGrade, providerCapabilities: opts.providerCapabilities });
-  if (composedCharacter.system) body.system = composedCharacter.system;
-  Object.defineProperty(body, CHARACTER_APPLICATION, {
-    value: composedCharacter.application,
-    enumerable: false,
-    configurable: false,
-    writable: false,
-  });
+  applyCharacterContextToBody(body, opts);
   if (opts.model?.providerID && opts.model?.modelID) {
     body.model = { providerID: opts.model.providerID, modelID: opts.model.modelID };
   }
@@ -604,7 +591,7 @@ function truncateSystemGuidance(guidance, maxChars, { intentText = "" } = {}) {
 }
 
 module.exports = {
-  characterApplicationOf,
+  characterApplicationOf, characterBuildFailureApplication,
   DEFAULT_MAX_INLINE_FILE_BYTES,
   DEFAULT_MAX_TEXT_ATTACHMENT_CHARS,
   buildSkippedAttachmentNote,

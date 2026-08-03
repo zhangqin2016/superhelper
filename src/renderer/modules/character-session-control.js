@@ -25,6 +25,7 @@ import { createSceneSectionController } from "./character-scene-section.js";
 import { openCharacterLibrary } from "./character-library.js";
 import { appendCharacterOptionCopy, createOfficialCharacterLoader, installOfficialCharacter } from "./official-character-picker.js";
 import { createCharacterPreviewController } from "./character-preview-controller.js";
+import { getRuntimeSession, subscribeRuntime } from "./session-runtime-store.js";
 export {
   initialCharacterControlState,
   reduceCharacterControl,
@@ -398,6 +399,11 @@ export function initCharacterSessionControl() {
     b.hidden = true;
     return;
   }
+  subscribeRuntime(() => {
+    if (!controlState.sessionId) return;
+    const application = getRuntimeSession(controlState.sessionId).characterApplication;
+    dispatch({ type: "application.updated", sessionId: controlState.sessionId, application });
+  });
   b.addEventListener("click", (event) => {
     event.stopPropagation();
     if (p.hidden) openPopover();

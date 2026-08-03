@@ -21,6 +21,7 @@ export function initialCharacterControlState(overrides = {}) {
     personaRevisionId: null,
     worldBookRevisionId: null,
     characterName: "",
+    application: null,
     characters: [],
     loadSeq: 0,
     selecting: false,
@@ -193,6 +194,7 @@ export function reduceCharacterControl(state, action) {
         selecting: false,
         notice: null,
         updates: normalizeUpdates(action.updates),
+        application: state.characterRevisionId === b.characterRevisionId ? state.application : null,
       };
       if (b.recovered && action.binding?.mode === "character") next.notice = "binding_fallback";
       return next;
@@ -227,6 +229,7 @@ export function reduceCharacterControl(state, action) {
         notice: "conflict",
         // The reconcile carries no update hint; a fresh load repopulates it.
         updates: null,
+        application: null,
       };
     }
     case "characters.loaded": {
@@ -246,6 +249,7 @@ export function reduceCharacterControl(state, action) {
         characterName: mode === "character" ? String(action.characterName || "") : "",
         selecting: true,
         notice: null,
+        application: null,
       };
     }
     case "selection.settled": {
@@ -264,7 +268,23 @@ export function reduceCharacterControl(state, action) {
         // A settle (including an update-available apply) commits the current
         // revisions, so any prior hint is stale; a fresh load repopulates it.
         updates: null,
+        application: null,
       };
+    }
+    case "application.updated": {
+      if (action.sessionId !== state.sessionId) return state;
+      const application = action.application;
+      if (application === null) return state.application === null ? state : { ...state, application: null };
+      if (!application || !["applied", "bypassed", "native"].includes(application.status)) return state;
+      if (application.revisionId && application.revisionId !== state.characterRevisionId) return state;
+      const next = {
+        status: application.status,
+        ...(typeof application.reason === "string" ? { reason: application.reason } : {}),
+        ...(typeof application.revisionId === "string" ? { revisionId: application.revisionId } : {}),
+        ...(typeof application.expressionProfile === "string" ? { expressionProfile: application.expressionProfile } : {}),
+      };
+      if (JSON.stringify(next) === JSON.stringify(state.application)) return state;
+      return { ...state, application: next };
     }
     case "selection.failed":
       if (isStale(state, action)) return state;

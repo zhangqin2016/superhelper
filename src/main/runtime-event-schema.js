@@ -38,6 +38,11 @@ function assertRuntimePayload(type, payload) {
     const allowedKeys = new Set(Object.keys(contract.properties || {}));
     const statuses = new Set(["native", "applied", "bypassed"]);
     const reasons = new Set([
+      "policy_disabled",
+      "snapshot_not_ready",
+      "revision_missing",
+      "identity_missing",
+      "budget_zero",
       "provider_unsupported",
       "activation_invalid",
       "prompt_budget_exhausted",

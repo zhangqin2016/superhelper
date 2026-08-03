@@ -7,7 +7,7 @@ import {
   setActivityLabel,
 } from "./turn-activity-policy.js";
 import { appendTimelineNotice } from "./turn-notice-timeline.js";
-import { applyTurnPaused, applyTurnSteered } from "./turn-lifecycle-projection.js";
+import { applyTurnPaused, applyTurnStarted, applyTurnSteered } from "./turn-lifecycle-projection.js";
 import { applyProcessEventToTimeline } from "./turn-process-activity-timeline.js";
 import { resetTimelineFields } from "./turn-reset-timeline.js";
 import {
@@ -603,12 +603,11 @@ export function applyRuntimeEvent(event, opts = {}) {
     return;
   }
   if (event.type === "turn.started") {
-    runtime.phase = "starting";
-    runtime.attention = null; // new activity supersedes any stale "finished" flag
     const live = ensureLiveTurn(runtime, event);
-    live.phase = "starting";
+    applyTurnStarted(runtime, live);
     return;
   }
+  if (event.type === "character.application") return void (runtime.characterApplication = { ...event.payload, turnId: event.turnId });
   if (!event.turnId && event.type.startsWith("engine.")) {
     if (runtime.liveTurn) addNotice(runtime.liveTurn, event);
     return;

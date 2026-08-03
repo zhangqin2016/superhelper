@@ -20,7 +20,7 @@
 const { EventEmitter } = require("node:events");
 const { getLogger } = require("../logger");
 const { getSharedServer } = require("./opencode-shared-server");
-const { buildOpencodePromptBody, characterApplicationOf } = require("./opencode-message-parts");
+const { buildOpencodePromptBody, characterApplicationOf, characterBuildFailureApplication } = require("./opencode-message-parts");
 const { createOpencodeSdkSession } = require("./opencode-sdk-session");
 const { classifyOpencodeEventOwnership } = require("./opencode-event-ownership");
 
@@ -242,18 +242,22 @@ class OpencodeServerManager extends EventEmitter {
     // whole turn — fine for a per-session serve, but on the SHARED serve that
     // serialized turns (a long turn in one session blocked every other session's
     // prompt). Async returns at once, so sessions run truly concurrently.
-    const body = buildOpencodePromptBody({
-      text: promptText,
-      files,
-      guidance,
-      agent: this.agent,
-      model: this.model,
-      maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
-      allowImageFileParts: allowImageFileParts === true,
-      allowedFilePartMimes: filePartMimes,
-      characterContext: characterContext || null,
-      capabilityGrade: this.env?.LILY_MODEL_CAPABILITY_GRADE || "",
-    });
+    let body;
+    try {
+      body = buildOpencodePromptBody({
+        text: promptText, files, guidance, agent: this.agent, model: this.model,
+        maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
+        allowImageFileParts: allowImageFileParts === true,
+        allowedFilePartMimes: filePartMimes,
+        characterContext: characterContext || null,
+        capabilityGrade: this.env?.LILY_MODEL_CAPABILITY_GRADE || "",
+      });
+    } catch (err) {
+      if (characterContext) {
+        try { onCharacterApplication?.(characterBuildFailureApplication(characterContext)); } catch { /* observational */ }
+      }
+      throw err;
+    }
     if (typeof onCharacterApplication === "function") {
       try {
         onCharacterApplication(characterApplicationOf(body));
