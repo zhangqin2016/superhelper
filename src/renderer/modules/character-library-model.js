@@ -12,6 +12,30 @@
 
 export const LIBRARY_TABS = ["characters", "personas", "books"];
 
+const MAX_ID_CHARS = 128;
+const MAX_NAME_CHARS = 256;
+const MAX_SUMMARY_CHARS = 1024;
+const MAX_TAGS = 32;
+const MAX_TAG_CHARS = 96;
+const MAX_TERMS = 24;
+const MAX_TERM_CHARS = 128;
+const CATEGORY_ORDER = [
+  "work-delivery",
+  "research-analysis",
+  "content-creation",
+  "technology-creation",
+  "learning-life",
+  "uncategorized",
+];
+
+export const LIBRARY_GROUPS = Object.freeze({
+  all: { id: "all", kind: "all" },
+  official: { id: "official", kind: "source", source: "official" },
+  my: { id: "my", kind: "source", source: "local" },
+  recent: { id: "recent", kind: "recent" },
+  archived: { id: "archived", kind: "archived" },
+});
+
 /** Domain kind served by the authoring bridge for a library tab. */
 export function kindForTab(tab) {
   return tab === "personas" ? "persona" : tab === "books" ? "worldBook" : "character";
@@ -23,7 +47,12 @@ export function initialCharacterLibraryState(overrides = {}) {
     tab: "characters",
     query: "",
     tag: "",
+    groupId: "all",
     items: { characters: [], personas: [], books: [] },
+    selectedItemId: null,
+    detail: null,
+    detailLoading: false,
+    activation: { status: "idle", itemId: null, error: "" },
     view: "list", // "list" | "form" | "history"
     // form: { mode: "create"|"edit", kind, entityId, baseRevisionId,
     //         revisionNumber, canonical, initialValues, values } — values is
@@ -53,40 +82,116 @@ function count(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+function boundedStrings(value, maxItems, maxChars) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry) => typeof entry === "string" && entry)
+    .slice(0, maxItems)
+    .map((entry) => entry.slice(0, maxChars));
+}
+
+function sourceOf(entry) {
+  return entry?.official === true || entry?.source === "official" || entry?.officialId
+    ? "official"
+    : "local";
+}
+
+/** Convert a main-side summary into a bounded renderer-only card model. */
+export function normalizeLibraryItem(tab, entry = {}) {
+  const kind = kindForTab(tab);
+  const id = text(entry?.id, MAX_ID_CHARS);
+  const name = text(entry?.name || entry?.displayName, MAX_NAME_CHARS);
+  const tags = boundedStrings(entry?.tags, MAX_TAGS, MAX_TAG_CHARS);
+  const capabilities = boundedStrings(
+    entry?.capabilities || entry?.suitableFor || entry?.capabilityTerms,
+    MAX_TERMS,
+    MAX_TERM_CHARS,
+  );
+  const workflow = boundedStrings(entry?.workflow, MAX_TERMS, MAX_TERM_CHARS);
+  const categoryId = text(entry?.categoryId, 96) || "uncategorized";
+  const source = sourceOf(entry);
+  return {
+    id,
+    kind,
+    name,
+    summary: text(entry?.summary || entry?.description, MAX_SUMMARY_CHARS),
+    categoryId,
+    source,
+    sourceKind: text(entry?.sourceKind, 64),
+    officialId: text(entry?.officialId, MAX_ID_CHARS),
+    official: source === "official",
+    currentRevisionId: text(entry?.currentRevisionId || entry?.revisionId, MAX_ID_CHARS),
+    tags,
+    capabilities,
+    workflow,
+    visualKey: text(entry?.visualKey, 64),
+    editorialOrder: Number.isSafeInteger(entry?.editorialOrder) ? entry.editorialOrder : Number.MAX_SAFE_INTEGER,
+    recentlyUsedAt: text(entry?.recentlyUsedAt, 64),
+    archived: Boolean(entry?.archived || entry?.archivedAt),
+    active: Boolean(entry?.active),
+    installed: Boolean(entry?.installed || entry?.installedCharacterId || entry?.currentRevisionId),
+    updateAvailable: Boolean(entry?.updateAvailable),
+    descriptionChars: count(entry?.descriptionChars),
+    entryCount: count(entry?.entryCount),
+    health: text(entry?.health, 64),
+    completion: text(entry?.completion, 32),
+    searchText: [name, entry?.summary, entry?.description, ...tags, ...capabilities, ...workflow]
+      .filter((value) => typeof value === "string" && value)
+      .join(" ")
+      .slice(0, MAX_SUMMARY_CHARS * 2)
+      .toLowerCase(),
+  };
+}
+
 function sanitizeItems(tab, raw) {
   if (!Array.isArray(raw)) return [];
-  const items = [];
-  for (const entry of raw) {
-    const id = text(entry?.id, 128);
-    if (!id) continue;
-    if (tab === "personas") {
-      items.push({
-        id,
-        name: text(entry?.name, 256),
-        currentRevisionId: text(entry?.currentRevisionId, 128),
-        descriptionChars: count(entry?.descriptionChars),
-        sourceKind: text(entry?.sourceKind, 64),
-      });
-    } else if (tab === "books") {
-      items.push({
-        id,
-        name: text(entry?.name, 256),
-        currentRevisionId: text(entry?.currentRevisionId, 128),
-        entryCount: count(entry?.entryCount),
-      });
-    } else {
-      items.push({
-        id,
-        name: text(entry?.name, 256),
-        currentRevisionId: text(entry?.currentRevisionId, 128),
-        tags: Array.isArray(entry?.tags)
-          ? entry.tags.filter((tag) => typeof tag === "string" && tag).slice(0, 32)
-          : [],
-        sourceKind: text(entry?.sourceKind, 64),
-      });
-    }
+  return raw.map((entry) => normalizeLibraryItem(tab, entry)).filter((item) => item.id);
+}
+
+function isRecent(item) {
+  return Boolean(item?.recentlyUsedAt && !Number.isNaN(Date.parse(item.recentlyUsedAt)));
+}
+
+function groupMatches(item, groupId) {
+  if (groupId === "all") return !item.archived;
+  if (groupId === "official") return item.source === "official" && !item.archived;
+  if (groupId === "my") return item.source === "local" && !item.archived;
+  if (groupId === "recent") return isRecent(item) && !item.archived;
+  if (groupId === "archived") return item.archived;
+  return item.categoryId === groupId && !item.archived;
+}
+
+/** Derive visible groups from data while keeping global groups stable. */
+export function deriveLibraryGroups(tab, items) {
+  const values = Array.isArray(items) ? items : [];
+  const groups = [
+    { ...LIBRARY_GROUPS.all, labelKey: "all" },
+    { ...LIBRARY_GROUPS.official, labelKey: "official" },
+  ];
+  const categoryIds = [];
+  for (const item of values) {
+    if (!categoryIds.includes(item.categoryId)) categoryIds.push(item.categoryId);
   }
-  return items;
+  categoryIds.sort((a, b) => {
+    const indexA = CATEGORY_ORDER.indexOf(a);
+    const indexB = CATEGORY_ORDER.indexOf(b);
+    if (indexA >= 0 && indexB >= 0) return indexA - indexB;
+    if (indexA >= 0) return -1;
+    if (indexB >= 0) return 1;
+    return a.localeCompare(b);
+  });
+  for (const categoryId of categoryIds) {
+    groups.push({ id: categoryId, kind: "category", labelKey: categoryId });
+  }
+  groups.push(
+    { ...LIBRARY_GROUPS.my, labelKey: "my" },
+    { ...LIBRARY_GROUPS.recent, labelKey: "recent" },
+    { ...LIBRARY_GROUPS.archived, labelKey: "archived" },
+  );
+  return groups.map((group) => ({
+    ...group,
+    count: values.filter((item) => groupMatches(item, group.id)).length,
+  }));
 }
 
 /**
@@ -94,16 +199,30 @@ function sanitizeItems(tab, raw) {
  * tag filter matches any character tag (it only applies to the characters
  * tab — the controller hides it elsewhere).
  */
-export function filterLibraryItems(items, { query = "", tag = "" } = {}) {
+export function filterLibraryItems(items, { query = "", tag = "", groupId = "all", source = "" } = {}) {
   const q = String(query || "").trim().toLowerCase();
   const tagQuery = String(tag || "").trim().toLowerCase();
   return (Array.isArray(items) ? items : []).filter((item) => {
-    if (q && !String(item?.name || "").toLowerCase().includes(q)) return false;
+    if (!groupMatches(item, groupId)) return false;
+    if (source && item?.source !== source) return false;
+    if (q && !String(item?.searchText || item?.name || "").toLowerCase().includes(q)) return false;
     if (tagQuery) {
       const tags = Array.isArray(item?.tags) ? item.tags : [];
       if (!tags.some((entry) => entry.toLowerCase().includes(tagQuery))) return false;
     }
     return true;
+  });
+}
+
+/** Stable, non-mutating order for cards and test fixtures. */
+export function sortLibraryItems(items, { now = Date.now() } = {}) {
+  const current = Number(now) || Date.now();
+  return [...(Array.isArray(items) ? items : [])].sort((a, b) => {
+    const recentA = isRecent(a) ? Math.max(0, current - Date.parse(a.recentlyUsedAt)) : Number.POSITIVE_INFINITY;
+    const recentB = isRecent(b) ? Math.max(0, current - Date.parse(b.recentlyUsedAt)) : Number.POSITIVE_INFINITY;
+    if (recentA !== recentB) return recentA - recentB;
+    if (a.editorialOrder !== b.editorialOrder) return a.editorialOrder - b.editorialOrder;
+    return String(a.name || "").localeCompare(String(b.name || ""));
   });
 }
 
@@ -152,6 +271,11 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
         tab,
         query: "",
         tag: "",
+        groupId: "all",
+        selectedItemId: null,
+        detail: null,
+        detailLoading: false,
+        activation: { status: "idle", itemId: null, error: "" },
         view: "list",
         form: null,
         history: null,
@@ -163,6 +287,13 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
       return { ...state, query: text(action.query, 256) };
     case "tag.changed":
       return { ...state, tag: text(action.tag, 128) };
+    case "group.changed":
+      return {
+        ...state,
+        groupId: typeof action.groupId === "string" && action.groupId ? action.groupId : "all",
+        selectedItemId: null,
+        detail: null,
+      };
     case "items.loaded": {
       if (!LIBRARY_TABS.includes(action.tab)) return state;
       return {
@@ -170,6 +301,39 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
         items: { ...state.items, [action.tab]: sanitizeItems(action.tab, action.items) },
       };
     }
+    case "detail.selected":
+      return {
+        ...state,
+        selectedItemId: text(action.itemId, MAX_ID_CHARS) || null,
+        detail: null,
+        detailLoading: Boolean(action.itemId),
+        activation: { status: "idle", itemId: text(action.itemId, MAX_ID_CHARS), error: "" },
+      };
+    case "detail.loaded":
+      return action.itemId === state.selectedItemId
+        ? { ...state, detail: action.detail || null, detailLoading: false }
+        : state;
+    case "detail.failed":
+      return action.itemId === state.selectedItemId
+        ? { ...state, detail: null, detailLoading: false, notice: { key: "action_failed", params: {} } }
+        : state;
+    case "detail.closed":
+      return { ...state, selectedItemId: null, detail: null, detailLoading: false };
+    case "activation.started":
+      return {
+        ...state,
+        activation: { status: "running", itemId: text(action.itemId, MAX_ID_CHARS), error: "" },
+      };
+    case "activation.failed":
+      return {
+        ...state,
+        activation: { status: "error", itemId: text(action.itemId, MAX_ID_CHARS), error: text(action.error, 256) },
+      };
+    case "activation.settled":
+      return {
+        ...state,
+        activation: { status: "settled", itemId: text(action.itemId, MAX_ID_CHARS), error: "" },
+      };
     case "notice.set":
       return {
         ...state,
@@ -217,6 +381,9 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
         history: null,
         confirm: null,
         busy: false,
+        selectedItemId: null,
+        detail: null,
+        detailLoading: false,
         notice: typeof action.notice === "string" && action.notice
           ? { key: action.notice, params: action.params || {} }
           : null,
