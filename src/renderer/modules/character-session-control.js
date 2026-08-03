@@ -113,7 +113,7 @@ function openPopover() {
     const composerRect = composer.getBoundingClientRect();
     // Inline-start anchoring keeps the popover mirrored correctly in RTL.
     p.style.insetInlineStart = "8px";
-    p.style.width = `${Math.min(360, Math.max(0, composerRect.width - 16))}px`;
+    p.style.width = `${Math.min(620, Math.max(0, composerRect.width - 16))}px`;
     p.style.bottom = `${composerRect.bottom - btnRect.top + 8}px`;
   }
   void loadCharacters();
@@ -169,12 +169,22 @@ function renderList() {
   const official = controlState.characters.filter((character) => character.official);
   const characters = controlState.characters.filter((character) => !character.official).slice(0, MAX_LISTED_CHARACTERS);
   if (official.length) {
-    list.appendChild(el("div", "character-list-heading", { textContent: t("character.officialHeading") }));
+    const groups = new Map();
     for (const character of official) {
-      list.appendChild(optionRow({
-        character,
-        checked: controlState.characterRevisionId === character.currentRevisionId,
-      }));
+      const groupId = character.categoryId || "uncategorized";
+      if (!groups.has(groupId)) groups.set(groupId, []);
+      groups.get(groupId).push(character);
+    }
+    for (const [groupId, groupCharacters] of groups) {
+      const categoryKey = `character.library.category.${groupId}`;
+      const categoryLabel = t(categoryKey) === categoryKey ? t("character.officialHeading") : t(categoryKey);
+      list.appendChild(el("div", "character-list-heading", { textContent: categoryLabel }));
+      for (const character of groupCharacters) {
+        list.appendChild(optionRow({
+          character,
+          checked: controlState.characterRevisionId === character.currentRevisionId,
+        }));
+      }
     }
   }
   if (!characters.length) {
