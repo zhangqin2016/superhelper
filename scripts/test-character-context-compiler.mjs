@@ -112,6 +112,13 @@ function envelopeOf(compiled) {
   assert.equal(compiled.schemaVersion, 1);
   assert.equal(compiled.status, "compiled");
   assert.match(compiled.fingerprint, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(compiled.activationContract.status, "compiled");
+  assert.equal(compiled.activationContract.conversationRole.revisionId, "rev-1");
+  assert.equal(compiled.activationContract.conversationRole.name, "Aria");
+  assert.equal(compiled.activationContract.expressionProfile, "task_preserving");
+  assert.equal(compiled.activationContract.narrativeFingerprint, compiled.fingerprint);
+  assert.match(compiled.activationContract.text, /active conversational identity/i);
+  assert.doesNotMatch(compiled.activationContract.text, /disable tools|ignore permission|stay in character/i);
   assert.ok(compiled.tokenEstimate > 0, "token estimate recorded");
   assert.ok(
     compiled.tokenEstimate <= 8192,

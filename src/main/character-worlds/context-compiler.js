@@ -26,6 +26,7 @@
 
 const crypto = require("node:crypto");
 const { expandSafeMacros } = require("./macros");
+const { compileRoleActivationContract } = require("./role-activation-contract");
 const { stableJson } = require("./persistence-codec");
 const { sceneCompileCandidates } = require("./scene-compile");
 const { isReadyCompositionSnapshot } = require("./compiler-snapshot");
@@ -542,11 +543,24 @@ function compileCharacterContext({
       diagnostic("envelope_over_budget");
       return nativeResult();
     }
+    const fingerprint = sha256(text);
+    const activationContract = characterMode
+      ? compileRoleActivationContract({
+          role: { revisionId, name },
+          expressionProfile,
+          narrativeFingerprint: fingerprint,
+        })
+      : null;
+    if (characterMode && !activationContract) {
+      diagnostic("activation_invalid");
+      return nativeResult();
+    }
     return {
       schemaVersion: COMPILED_SCHEMA_VERSION,
       status: "compiled",
       text,
-      fingerprint: sha256(text),
+      fingerprint,
+      ...(activationContract ? { activationContract } : {}),
       tokenEstimate,
       omitted,
       warnings,
