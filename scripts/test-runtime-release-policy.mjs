@@ -170,6 +170,12 @@ for (const workflow of [
     `${workflow} must build and verify the default Windows installer`,
   );
 }
+const windowsSlimWorkflow = fs.readFileSync(path.join(ROOT, ".github/workflows/dist-windows-slim.yml"), "utf8");
+assert.match(
+  windowsSlimWorkflow,
+  /npm run dist:win/,
+  "Windows release CI must use the same runtime build, package, and smoke-verification entry point as local releases",
+);
 assert(
   !fs.existsSync(path.join(ROOT, ".github/workflows/dist-windows-full.yml")),
   "default Windows workflow must not keep a stale full-installer entry point",

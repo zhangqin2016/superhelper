@@ -31,23 +31,8 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
-      - name: Ship dirs must not contain macOS junk
-        run: node scripts/purge-macos-junk.mjs --check
-
-      - name: Fetch OpenCode engine binary (win32-x64)
-        run: node scripts/fetch-opencode-engine.mjs --platform win32-x64
-
-      - name: Purge macOS junk before pack
-        run: node scripts/purge-macos-junk.mjs
-
-      - name: Build Windows installer (NSIS + ZIP)
-        run: npx electron-builder --win --x64
-        env:
-          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
-
-      - name: Verify installer contents
-        run: node scripts/verify-win-pack.mjs
+      - name: Build and verify Windows installer
+        run: npm run dist:win
 
       - name: Report artifact sizes
         shell: pwsh
