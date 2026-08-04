@@ -537,14 +537,10 @@ export async function ensureEnvManagedConfigProfile() {
     .select("id")
     .where("id", "=", ENV_MANAGED_PROFILE_ID)
     .executeTakeFirst();
-  const anyProfile = existing
-    ? existing
-    : await db.selectFrom("config_profiles").select("id").limit(1).executeTakeFirst();
   const deleted = Boolean(await getAppSetting(ENV_MANAGED_PROFILE_DELETED_KEY, false));
   const decision = decideEnvManagedConfigProfileWrite({
     hasEffectiveConfig: true,
     profileExists: Boolean(existing),
-    anyProfileExists: Boolean(anyProfile),
     deleted,
   });
   if (decision.action === "skip") return { ok: true, skipped: true, reason: decision.reason };
@@ -576,7 +572,6 @@ export function decideEnvManagedConfigProfileWrite(input = {}) {
   if (!input.hasEffectiveConfig) return { action: "skip", reason: "no_effective_config" };
   if (input.profileExists) return { action: "update" };
   if (input.deleted) return { action: "skip", reason: "deleted_by_admin" };
-  if (input.anyProfileExists) return { action: "skip", reason: "existing_profiles_without_seed" };
   return { action: "create" };
 }
 

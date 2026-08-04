@@ -111,8 +111,8 @@ assert.deepEqual(
     anyProfileExists: true,
     deleted: false,
   }),
-  { action: "skip", reason: "existing_profiles_without_seed" },
-  "missing env-managed profile in a configured DB should not be recreated",
+  { action: "create" },
+  "missing env-managed profile must be created even when scoped profiles already exist",
 );
 assert.deepEqual(
   decideEnvManagedConfigProfileWrite({
