@@ -132,6 +132,25 @@ assert(!r.files.some((f) => f.isImage), "image pruned from outbound files on suc
 assert(notices.includes("visionReady"), "emits ready on success");
 assert(r.visionEvidence?.status === "complete" && r.visionEvidence?.observedCount === 1, "vision bridge success should record complete source evidence");
 
+// Partial bridge success must disclose the failed image and preserve the
+// original attachments. Otherwise the engine receives only a placeholder and
+// has no chance to retry through native vision or local file intelligence.
+const failedImg = { path: "/a/failed.png", name: "failed.png", isImage: true };
+visionMock._next = {
+  ok: true,
+  text: "a cat",
+  keepOriginal: true,
+  sourceCount: 2,
+  recognizedCount: 1,
+  failedCount: 1,
+  failedFiles: [failedImg],
+};
+r = await runVisionPreflight("compare", [img, failedImg, txtFile], { emitNotice: () => {} });
+assert(r.ok && r.visionDegraded !== true, "partial recognition should still complete the turn");
+assert(r.files.includes(img) && r.files.includes(failedImg), "partial recognition must preserve original image attachments");
+assert(r.text.includes("failed.png") && r.text.includes("Image recognition fallback"), "partial recognition must name the failed image and guard against blind claims");
+assert(r.visionEvidence?.status === "partial" && r.visionEvidence?.failedCount === 1, "partial recognition should expose failed source coverage");
+
 // Document success → enriched + extracted file pruned.
 documentMock._next = {
   ok: true,

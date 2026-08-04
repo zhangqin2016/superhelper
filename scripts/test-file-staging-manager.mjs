@@ -75,6 +75,15 @@ if (manager.getThumbnail(largeImage.path) !== null) {
   throw new Error("large image thumbnails should not read the whole file into memory");
 }
 
+// Browser blobs and clipboard exports can have no extension. Use the browser
+// display name or image signature so the vision bridge does not miss them.
+const extensionlessImagePath = path.join(sourceDir, "blob");
+fs.writeFileSync(extensionlessImagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+const extensionlessImage = manager.stageFromPath(extensionlessImagePath, "clipboard-image");
+if (!extensionlessImage.isImage || extensionlessImage.pathOnly || !extensionlessImage.path.endsWith(".png")) {
+  throw new Error(`extensionless image should become a raster attachment: ${JSON.stringify(extensionlessImage)}`);
+}
+
 const unknownPath = path.join(sourceDir, "customer-data.custom-binary");
 fs.writeFileSync(unknownPath, Buffer.from([0, 1, 2, 3]));
 const unknown = manager.stageFromPath(unknownPath);
@@ -123,6 +132,11 @@ if (path.dirname(pasted.path) !== stagingDir) {
 }
 if (fs.readFileSync(pasted.path, "utf8") !== "hello") {
   throw new Error("pasted buffer content should be preserved");
+}
+
+const pastedBlob = manager.stageFromBuffer(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "blob");
+if (!pastedBlob.isImage || !pastedBlob.path.endsWith(".jpg")) {
+  throw new Error(`extensionless pasted image should retain image semantics: ${JSON.stringify(pastedBlob)}`);
 }
 
 let largeBufferRejected = false;

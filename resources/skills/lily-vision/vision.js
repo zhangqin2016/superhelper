@@ -57,6 +57,28 @@ function resolveImageUrl(source, isUrl) {
   return `data:image/${mimeMap[ext] || "jpeg"};base64,${data.toString("base64")}`;
 }
 
+function normalizeVisionContent(content) {
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part.trim();
+        if (!part || typeof part !== "object") return "";
+        if (typeof part.text === "string") return part.text.trim();
+        if (part.content !== undefined) return normalizeVisionContent(part.content);
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (content && typeof content === "object") {
+    if (content.text !== undefined) return normalizeVisionContent(content.text);
+    if (content.content !== undefined) return normalizeVisionContent(content.content);
+  }
+  return "";
+}
+
 function request(payload) {
   const url = new URL(`${BASE_URL.replace(/\/?$/, "/")}chat/completions`);
   const body = JSON.stringify(payload);
@@ -74,17 +96,24 @@ function request(payload) {
       let data = "";
       res.on("data", (chunk) => { data += chunk; });
       res.on("end", () => {
-        if (res.statusCode >= 400) {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
           return reject(new Error(`API ${res.statusCode}: ${data.slice(0, 300)}`));
         }
         try {
-          resolve(JSON.parse(data)?.choices?.[0]?.message?.content || data);
-        } catch {
-          resolve(data);
+          const content = normalizeVisionContent(JSON.parse(data)?.choices?.[0]?.message?.content);
+          if (!content) return reject(new Error("API 返回了空的图片识别内容"));
+          resolve(content);
+        } catch (err) {
+          if (err?.message === "API 返回了空的图片识别内容") return reject(err);
+          reject(new Error("API 返回了无法解析的识别响应"));
         }
       });
     });
     req.on("error", reject);
+    req.setTimeout(60000, () => {
+      req.destroy();
+      reject(new Error("API 请求超时"));
+    });
     req.write(body);
     req.end();
   });

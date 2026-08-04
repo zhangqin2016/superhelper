@@ -64,8 +64,24 @@ const {
   imageToDataUrl,
   inferVisionMode,
   isVisionInputFile,
+  normalizeVisionContent,
   translateImages,
 } = require("../src/main/vision-translator.js");
+
+const normalizedParts = normalizeVisionContent([
+  { type: "text", text: "第一段" },
+  { type: "image_url", image_url: { url: "data:image/png;base64,..." } },
+  { type: "text", text: "第二段" },
+]);
+if (normalizedParts !== "第一段\n第二段") {
+  throw new Error(`vision content parts should normalize to text, got ${JSON.stringify(normalizedParts)}`);
+}
+if (normalizeVisionContent({ text: "  有内容  " }) !== "有内容") {
+  throw new Error("object-shaped vision content should normalize to trimmed text");
+}
+if (normalizeVisionContent([{ type: "image_url" }]) !== "") {
+  throw new Error("image-only response parts must not be treated as readable recognition text");
+}
 
 const config = getVisionConfig();
 if (config.apiKey !== "user-dash-key") {

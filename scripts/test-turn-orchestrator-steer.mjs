@@ -16,6 +16,22 @@ const tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-steer-"));
 process.env.LILY_USER_DATA_DIR = tempUserData;
 process.on("exit", () => fs.rmSync(tempUserData, { recursive: true, force: true }));
 
+const visionPath = require.resolve("../src/main/vision-translator.js");
+const originalVision = require(visionPath);
+const visionCalls = [];
+require.cache[visionPath] = {
+  id: visionPath,
+  filename: visionPath,
+  loaded: true,
+  exports: {
+    ...originalVision,
+    async translateImages(files, options = {}) {
+      visionCalls.push({ files, options });
+      return { ok: true, text: "[steer image evidence]", keepOriginal: false };
+    },
+  },
+};
+
 const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");
 const { TurnArchive } = require("../src/main/turn-archive.js");
@@ -118,6 +134,27 @@ if (!archived.timeline.some((entry) => entry.kind === "notice" && entry.code ===
   throw new Error(`steer must be preserved in the final turn timeline: ${JSON.stringify(archived.timeline)}`);
 }
 console.log("steer: success path ok");
+
+// A steer with an image must use the same vision preflight as a normal send.
+// Otherwise non-native models receive a skipped image part with no evidence.
+putBusy();
+runner.steerResult = true;
+runner.steerCalls.length = 0;
+visionCalls.length = 0;
+res = await orch.sendUserMessage("s1", "也看一下这张截图", [{
+  path: "/tmp/steer-screenshot.png",
+  name: "steer-screenshot.png",
+  isImage: true,
+}], { mode: "steer" });
+if (!res?.ok || !res.steered) throw new Error(`image steer should succeed: ${JSON.stringify(res)}`);
+if (visionCalls.length !== 1) throw new Error("image steer must run vision preflight exactly once");
+if (!runner.steerCalls[0]?.text?.includes("[steer image evidence]")) {
+  throw new Error("image steer must send vision-enriched text to the engine");
+}
+if (runner.steerCalls[0]?.files?.length !== 0) {
+  throw new Error("successful image steer must prune the original raster file for non-native models");
+}
+console.log("steer: image preflight path ok");
 
 // --- 2. FAILURE MODE: engine rejects -> degrade to queue (baseline) -----------
 putBusy();

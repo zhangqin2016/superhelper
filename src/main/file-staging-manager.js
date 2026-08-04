@@ -79,6 +79,37 @@ function pathReadable(filePath) {
   }
 }
 
+function imageExtensionFromBuffer(buffer) {
+  if (!buffer || buffer.length < 2) return "";
+  if (buffer.length >= 8 && Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).equals(buffer.subarray(0, 8))) return ".png";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) return ".jpg";
+  if (buffer.length >= 6 && (buffer.subarray(0, 6).toString("ascii") === "GIF87a" || buffer.subarray(0, 6).toString("ascii") === "GIF89a")) return ".gif";
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return ".webp";
+  if (buffer[0] === 0x42 && buffer[1] === 0x4d) return ".bmp";
+  return "";
+}
+
+function imageExtensionFromFile(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const header = Buffer.alloc(16);
+    const bytes = fs.readSync(fd, header, 0, header.length, 0);
+    return imageExtensionFromBuffer(header.subarray(0, bytes));
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* best effort */ }
+    }
+  }
+}
+
+function safeAttachmentName(value) {
+  const name = path.basename(String(value || "").replace(/\\/g, "/"));
+  return name && name !== "." && name !== ".." ? name : "";
+}
+
 // ---------------------------------------------------------------------------
 // FileStagingManager
 // ---------------------------------------------------------------------------
@@ -96,7 +127,7 @@ class FileStagingManager {
    * @param {string} srcPath  Absolute path to the source file.
    * @returns {Object} File metadata: { id, name, path, type, size, isImage }
    */
-  stageFromPath(srcPath) {
+  stageFromPath(srcPath, displayName = "") {
     if (!fs.existsSync(srcPath)) {
       throw new Error("FILE_NOT_FOUND");
     }
@@ -104,7 +135,13 @@ class FileStagingManager {
     const stat = fs.statSync(srcPath);
     const isDirectory = stat.isDirectory();
     if (!stat.isFile() && !isDirectory) throw new Error("UNSUPPORTED_PATH");
-    const ext = path.extname(srcPath).toLowerCase();
+    const sourceExt = path.extname(srcPath).toLowerCase();
+    const requestedName = safeAttachmentName(displayName);
+    const requestedExt = path.extname(requestedName).toLowerCase();
+    const detectedImageExt = stat.isFile() && !sourceExt && !requestedExt
+      ? imageExtensionFromFile(srcPath)
+      : "";
+    const ext = sourceExt || requestedExt || detectedImageExt;
     let supported = stat.isFile() && ALL_SUPPORTED.has(ext);
     const archiveExt = archiveExtension(srcPath);
     const detectedArchiveFormat = stat.isFile() ? detectArchiveFormat(srcPath) : "";
@@ -119,7 +156,10 @@ class FileStagingManager {
         : supported
           ? (IMAGE_EXTENSIONS.has(ext) ? "image" : "file")
           : "binary";
-    const name = path.basename(srcPath);
+    const requestedBase = requestedName || path.basename(srcPath);
+    const name = path.extname(requestedBase) || !ext
+      ? requestedBase
+      : `${requestedBase}${ext}`;
     let storedPath = srcPath;
     let staged = false;
 
@@ -162,13 +202,16 @@ class FileStagingManager {
    * @returns {Object} File metadata.
    */
   stageFromBuffer(buffer, name) {
-    const safeName = name || "pasted-image.png";
-    const ext = path.extname(safeName).toLowerCase() || ".png";
+    const bufferData = Buffer.from(buffer);
+    const requestedName = safeAttachmentName(name);
+    const detectedImageExt = imageExtensionFromBuffer(bufferData);
+    const ext = path.extname(requestedName).toLowerCase() || detectedImageExt || ".png";
+    const baseName = requestedName || "pasted-image";
+    const safeName = path.extname(baseName) || !ext ? baseName : `${baseName}${ext}`;
     if (!ALL_SUPPORTED.has(ext)) {
       throw new Error("UNSUPPORTED_TYPE");
     }
 
-    const bufferData = Buffer.from(buffer);
     if (bufferData.length > MAX_PATHLESS_BUFFER_BYTES) {
       throw new Error("FILE_TOO_LARGE");
     }

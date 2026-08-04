@@ -187,8 +187,20 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
     done: true,
   });
 
-  const enrichedText = buildEnrichedUserText(text, result.text);
-  const outboundFiles = result.keepOriginal ? files : withoutVisionFiles(files);
+  const failedFiles = Array.isArray(result.failedFiles) ? result.failedFiles : [];
+  const partialFailureContext = failedFiles.length
+    ? buildVisionFailureContext(
+        failedFiles,
+        `${failedFiles.length} attached image(s) could not be recognized by the vision bridge.`,
+      )
+    : "";
+  const enrichedText = buildEnrichedUserText(
+    text,
+    [result.text, partialFailureContext].filter(Boolean).join("\n\n"),
+  );
+  const outboundFiles = result.keepOriginal || failedFiles.length
+    ? files
+    : withoutVisionFiles(files);
   const sourceCount = Number(result.sourceCount || visionFiles.length);
   const observedCount = Number(result.recognizedCount ?? Math.max(0, sourceCount - Number(result.failedCount || 0)));
   const status = observedCount >= sourceCount && sourceCount > 0 ? "complete" : observedCount > 0 ? "partial" : "unavailable";

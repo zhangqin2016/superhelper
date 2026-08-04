@@ -218,9 +218,9 @@ function registerFileHandlers(mainWindow, stagingManager) {
     return { ok: true, files: staged, errors };
   });
 
-  ipcMain.handle("files:stage", (_event, filePath) => {
+  ipcMain.handle("files:stage", (_event, filePath, fileName) => {
     try {
-      const meta = stagingManager.stageFromPath(filePath);
+      const meta = stagingManager.stageFromPath(filePath, fileName);
       return { ok: true, file: meta };
     } catch (err) {
       return { ok: false, error: err.message };

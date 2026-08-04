@@ -1,6 +1,7 @@
 "use strict";
 
 const { isActiveTurnPhase } = require("./turn-active-phase");
+const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
 
 function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMetadata }) {
   return {
@@ -21,6 +22,30 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
         || !runner?.isBusy?.()
         || typeof runner.steer !== "function"
       ) return { ok: false };
+      const allowImageFileParts = Boolean(
+        require("./model-presets").activePresetSupportsVision(),
+      );
+      let engineText = text;
+      let engineFiles = files;
+      if (files?.length) {
+        const vision = await runVisionPreflight(text, files, {
+          emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
+          nativeVision: allowImageFileParts,
+        });
+        if (vision.visionEvidence) state.evidenceLedger?.recordVisionObservation?.(vision.visionEvidence);
+        if (vision.ok) {
+          engineText = vision.text;
+          engineFiles = vision.files;
+        }
+        const document = await runDocumentPreflight(engineText, engineFiles, {
+          emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
+        });
+        if (document.documentEvidence) state.evidenceLedger?.recordDocumentExtraction?.(document.documentEvidence);
+        if (document.ok) {
+          engineText = document.text;
+          engineFiles = document.files;
+        }
+      }
       const claim = Object.freeze({
         turnId: state.turnId,
         turnGeneration: state.turnGeneration || 0,
@@ -32,11 +57,9 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
       let accepted = false;
       try {
         accepted = await runner.steer({
-          text,
-          files,
-          allowImageFileParts: Boolean(
-            require("./model-presets").activePresetSupportsVision(),
-          ),
+          text: engineText,
+          files: engineFiles,
+          allowImageFileParts,
         });
       } catch (err) {
         log.warn("steer dispatch failed: %s", err?.message || err);

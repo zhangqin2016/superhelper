@@ -343,6 +343,32 @@ function buildVisionPrompt({ userText = "", mode = "general" } = {}) {
   return base.concat(sectionsByMode[mode] || sectionsByMode.general).join("\n");
 }
 
+// OpenAI-compatible vision providers are inconsistent here: some return a
+// string, while others return an array of content parts. Only text parts are
+// useful to the downstream model; an image-only or malformed response must be
+// treated as a failed recognition instead of a successful empty result.
+function normalizeVisionContent(content) {
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part.trim();
+        if (!part || typeof part !== "object") return "";
+        if (typeof part.text === "string") return part.text.trim();
+        if (part.content !== undefined) return normalizeVisionContent(part.content);
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (content && typeof content === "object") {
+    if (content.text !== undefined) return normalizeVisionContent(content.text);
+    if (content.content !== undefined) return normalizeVisionContent(content.content);
+  }
+  return "";
+}
+
 function callVisionApi(config, payload) {
   const url = new URL(`${config.baseUrl.replace(/\/?$/, "/")}chat/completions`);
   const body = JSON.stringify(payload);
@@ -360,13 +386,21 @@ function callVisionApi(config, payload) {
       let data = "";
       res.on("data", (chunk) => { data += chunk; });
       res.on("end", () => {
-        if (res.statusCode >= 400) {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
           return reject(new Error(`Vision API ${res.statusCode}: ${data.slice(0, 300)}`));
         }
         try {
-          resolve(JSON.parse(data)?.choices?.[0]?.message?.content || data);
-        } catch {
-          resolve(data);
+          const parsed = JSON.parse(data);
+          const content = normalizeVisionContent(parsed?.choices?.[0]?.message?.content);
+          if (!content) {
+            return reject(new Error("Vision API returned no readable image content"));
+          }
+          resolve(content);
+        } catch (err) {
+          if (err?.message === "Vision API returned no readable image content") {
+            return reject(err);
+          }
+          reject(new Error("Vision API returned an invalid response"));
         }
       });
     });
@@ -416,9 +450,18 @@ async function translateImage(filePath, prompt) {
  * @returns {Promise<{ ok: true, text: string, mode: string, keepOriginal: boolean, sourceCount: number, recognizedCount: number, failedCount: number } | { ok: false, reason: string, detail?: string } | null>}
  */
 async function translateImages(files, options = {}) {
-  const imageFiles = (files || [])
+  const candidates = (files || [])
     .map((file) => withLiveFilePath(file))
-    .filter((f) => isVisionInputFile(f) && fs.existsSync(f.path));
+    .filter((f) => isVisionInputFile(f));
+  if (candidates.length === 0) return null;
+
+  const imageFiles = candidates.filter((file) => {
+    try {
+      return fs.statSync(file.path).isFile();
+    } catch {
+      return false;
+    }
+  });
   if (imageFiles.length === 0) return null;
 
   const config = getVisionConfig();
@@ -427,26 +470,43 @@ async function translateImages(files, options = {}) {
   }
 
   const results = [];
-  let failed = 0;
+  const failedFiles = candidates.filter((file) => !imageFiles.includes(file));
+  const failureDetails = [];
+  let failed = failedFiles.length;
+  let recognized = 0;
+  for (const f of failedFiles) {
+    results.push(`[Image: ${f.name || path.basename(f.path)}]`);
+  }
   const mode = options.mode || inferVisionMode(options.userText, imageFiles);
   const prompt = buildVisionPrompt({ userText: options.userText, mode });
   for (const f of imageFiles) {
     try {
       const desc = await translateImage(f.path, prompt);
+      if (!normalizeVisionContent(desc)) {
+        throw new Error("Vision API returned no readable image content");
+      }
       const label = f.name || path.basename(f.path);
       results.push(`[Image recognition result: "${label}"]\n${desc}`);
+      recognized += 1;
     } catch (err) {
       failed += 1;
+      failedFiles.push(f);
+      failureDetails.push(String(err?.message || "VISION_FAILED").slice(0, 240));
       console.warn(`Vision translation failed for ${f.name || f.path}:`, err.message);
       results.push(`[Image: ${f.name || path.basename(f.path)}]`);
     }
   }
 
-  if (failed === imageFiles.length) {
+  if (recognized === 0) {
     return {
       ok: false,
       reason: "API_FAILED",
-      detail: "Image recognition service is temporarily unavailable. Please try again later.",
+      detail: [
+        "Image recognition service is temporarily unavailable.",
+        failureDetails[0] ? `Cause: ${failureDetails[0]}.` : "",
+        "Please try again later.",
+      ].filter(Boolean).join(" "),
+      failedFiles,
     };
   }
 
@@ -454,10 +514,13 @@ async function translateImages(files, options = {}) {
     ok: true,
     text: results.join("\n\n"),
     mode,
-    keepOriginal: false,
-    sourceCount: imageFiles.length,
-    recognizedCount: imageFiles.length - failed,
+    // Never discard an image that the bridge failed to read. This keeps a
+    // native-vision retry or local file-intelligence fallback possible.
+    keepOriginal: failed > 0,
+    sourceCount: candidates.length,
+    recognizedCount: recognized,
     failedCount: failed,
+    failedFiles,
   };
 }
 
@@ -489,6 +552,7 @@ module.exports = {
   imageToDataUrl,
   isImageOnlyUserMessage,
   isVisionInputFile,
+  normalizeVisionContent,
   normalizeVisionModel,
   translateImage,
   translateImages,
