@@ -1,6 +1,6 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.148",
+  "version": "0.1.149",
   "private": true,
   "description": "Lily Workbench desktop client",
   "main": "src/main.js",
