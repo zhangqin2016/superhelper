@@ -1,10 +1,17 @@
 # Character Worlds Unified Experience Design
 
-**Status:** Approved product direction; implementation pending
+**Status:** Approved product direction; core implementation delivered (2026-08-03); release verification pending
 
 **Date:** 2026-08-02
 
 **Scope:** Character cards, user personas, and world books in Lily Workbench
+
+Core implementation is present in the current branch, including the production
+library, natural-language authoring flow, explicit activation, immutable
+runtime admission, and composer-level context visibility. Remaining release
+work is recorded in `docs/character-worlds-gap-trace.md`, including the
+delete/archive product decision, model evaluation, and real-device/manual
+acceptance.
 
 ## 1. Objective
 

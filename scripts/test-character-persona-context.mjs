@@ -634,6 +634,28 @@ await check("persona renders as a typed lower-authority block in the §10.3.1 sl
   assert.ok(compiled.text.includes("harbor cartographer"));
 });
 
+await check("structured persona fields compile into the bounded narrative block", () => {
+  const compiled = compile({
+    snapshot: COMPILER_SNAPSHOT,
+    persona: makePersonaInput({
+      identity: "创业公司的产品负责人",
+      background: "熟悉业务，不懂代码",
+      expertise: ["需求分析", "产品规划"],
+      communicationStyle: "先给结论，再给执行步骤",
+      goals: ["快速验证需求"],
+      preferences: ["用中文回答", "少讲空话"],
+      constraints: ["不替我做未经确认的决策"],
+    }),
+  });
+  const block = personaBlockOf(compiled);
+  assert(block, "structured persona must remain a single persona block");
+  assert.equal(block.fields.personaIdentity, "创业公司的产品负责人");
+  assert.deepEqual(block.fields.personaExpertise, ["需求分析", "产品规划"]);
+  assert.equal(block.fields.personaCommunicationStyle, "先给结论，再给执行步骤");
+  assert.deepEqual(block.fields.personaPreferences, ["用中文回答", "少讲空话"]);
+  assert.equal(block.fields.authority, "lower_authority_narrative");
+});
+
 await check("blocked-directive redaction applies to persona text", () => {
   const compiled = compile({
     snapshot: COMPILER_SNAPSHOT,

@@ -44,6 +44,24 @@ assert.deepEqual(withBook.books, [
   { scope: "chat", worldBookRevisionId: "book-rev-3", mergeStrategy: "keyed" },
 ]);
 
+const withoutBook = buildLibraryActivationConfig(current, {
+  kind: "worldBook",
+  revisionId: "book-rev-1",
+  action: "remove",
+  scope: "chat",
+});
+assert.deepEqual(withoutBook.books, [
+  { scope: "persona", worldBookRevisionId: "book-rev-2", mergeStrategy: "keyed" },
+]);
+
+const withoutMissingBook = buildLibraryActivationConfig(current, {
+  kind: "worldBook",
+  revisionId: "not-active",
+  action: "remove",
+  scope: "chat",
+});
+assert.deepEqual(withoutMissingBook.books, current.books);
+
 assert.throws(
   () => buildLibraryActivationConfig(current, { kind: "unknown", revisionId: "x" }),
   /Unsupported library activation kind/,

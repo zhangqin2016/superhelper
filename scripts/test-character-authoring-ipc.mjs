@@ -3,10 +3,10 @@
 //
 // Verifies the guarded authoring mutation channels from the design spec
 // §13.2/§15/§16 on top of the validated domain API (P2B-3):
-//   - fifteen channels: ten mutations (character create/update-revision/
+//   - seventeen channels: eleven mutations (character create/update-revision/
 //     restore-revision/duplicate/archive, persona create/update-revision/
-//     archive, world-book create/archive) plus five read channels
-//     (character/persona/world-book history, character/persona get-revision)
+//     archive, world-book create/update-revision/archive) plus six read
+//     channels (character/persona/world-book history, character/persona/world-book get-revision)
 //   - trusted-sender guard on every channel; owner scope derived in main
 //     (renderer ownerScope/accountId payload fields are ignored)
 //   - payloads and ids bounded; failures are stable coded results
@@ -37,6 +37,7 @@ const MUTATION_CHANNELS = [
   "persona:update-revision",
   "persona:archive",
   "world-book:create",
+  "world-book:update-revision",
   "world-book:archive",
 ];
 const READ_CHANNELS = [
@@ -45,6 +46,7 @@ const READ_CHANNELS = [
   "world-book:history",
   "character:get-revision",
   "persona:get-revision",
+  "world-book:get-authoring-revision",
 ];
 const CHANNELS = [...MUTATION_CHANNELS, ...READ_CHANNELS];
 
@@ -62,8 +64,10 @@ const FACADE_METHODS = {
   getPersonaRevision: "persona:get-revision",
   getPersonaHistory: "persona:history",
   createWorldBook: "world-book:create",
+  updateWorldBookRevision: "world-book:update-revision",
   archiveWorldBook: "world-book:archive",
   getWorldBookHistory: "world-book:history",
+  getWorldBookAuthoringRevision: "world-book:get-authoring-revision",
 };
 
 // --- electron mock -----------------------------------------------------------
@@ -194,8 +198,11 @@ function samplePayload(channel, ids = {}) {
     case "persona:history": return { personaId };
     case "persona:get-revision": return { revisionId };
     case "world-book:create": return { canonical: { name: "B", entries: [] } };
+    case "world-book:update-revision":
+      return { worldBookId, expectedBaseRevisionId: revisionId, canonical: { name: "B", entries: [] } };
     case "world-book:archive": return { worldBookId };
     case "world-book:history": return { worldBookId };
+    case "world-book:get-authoring-revision": return { revisionId };
     default: throw new Error(`unknown channel ${channel}`);
   }
 }
@@ -206,11 +213,11 @@ try {
   registerCharacterAuthoringHandlers(ctx);
   require("../src/preload.js");
 
-  await check("exactly the fifteen authoring channels are registered", async () => {
+  await check("exactly the seventeen authoring channels are registered", async () => {
     assert.deepEqual([...handlers.keys()].sort(), [...CHANNELS].sort());
   });
 
-  await check("preload facade exposes the fifteen authoring methods, frozen", async () => {
+  await check("preload facade exposes the seventeen authoring methods, frozen", async () => {
     const api = exposed.assistantClient;
     assert(api?.characterWorlds, "characterWorlds facade exposed");
     assert(Object.isFrozen(api.characterWorlds), "facade is frozen");
@@ -240,8 +247,12 @@ try {
     await api.getPersonaRevision("r1");
     await api.getPersonaHistory("p1");
     await api.createWorldBook({ canonical: { name: "B", entries: [] } });
+    await api.updateWorldBookRevision({
+      worldBookId: "b1", expectedBaseRevisionId: "r1", canonical: { name: "B", entries: [] },
+    });
     await api.archiveWorldBook("b1");
     await api.getWorldBookHistory("b1");
+    await api.getWorldBookAuthoringRevision("r1");
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
       Object.values(FACADE_METHODS),
@@ -259,7 +270,10 @@ try {
     });
     assert.deepEqual(invokeCalls[3].payload, { characterId: "c1" });
     assert.deepEqual(invokeCalls[6].payload, { characterId: "c1", limit: 10 });
-    assert.deepEqual(invokeCalls[14].payload, { worldBookId: "b1", limit: undefined });
+    assert.deepEqual(invokeCalls[13].payload, {
+      worldBookId: "b1", expectedBaseRevisionId: "r1", canonical: { name: "B", entries: [] },
+    });
+    assert.deepEqual(invokeCalls[15].payload, { worldBookId: "b1", limit: undefined });
   });
 
   await check("untrusted senders and remote frames are rejected on every channel", async () => {

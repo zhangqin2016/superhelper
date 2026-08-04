@@ -1106,4 +1106,179 @@ if (runtime.characterApplication !== null) {
   throw new Error("a new turn must clear the prior turn's application evidence");
 }
 
+// Dispatch outcome uncertainty is a closed recovery projection, not a live
+// spinner and not a confirmed turn.failed. It must release the composer and
+// leave one explicit, non-retryable assistant card.
+store.applyRuntimeBatch({
+  sessionId: "s_outcome_unknown",
+  batchSeq: 1,
+  events: [
+    {
+      id: "unknown-only",
+      type: "turn.dispatch_outcome_unknown",
+      sessionId: "s_outcome_unknown",
+      turnId: "turn_unknown_only",
+      seq: 1,
+      ts: 9000,
+      source: "test",
+      payload: {
+        status: "outcome_unknown",
+        automaticReplay: false,
+        manualRecoveryRequired: true,
+        recoveryId: "recovery_turn_unknown_only",
+        errorCode: "DISPATCH_OUTCOME_UNKNOWN",
+      },
+    },
+  ],
+});
+runtime = store.getRuntimeSession("s_outcome_unknown");
+if (runtime.phase !== "idle" || runtime.turnId !== null || !store.canSend("s_outcome_unknown")) {
+  throw new Error(`outcome-unknown projection must release composer: ${runtime.phase}/${runtime.turnId}`);
+}
+const unknownAssistant = runtime.committedMessages.find((message) => message.role === "assistant");
+if (!unknownAssistant?.meta?.outcomeUnknown || unknownAssistant.failed !== true) {
+  throw new Error(`outcome-unknown projection must be visible and marked: ${JSON.stringify(unknownAssistant)}`);
+}
+
+store.applyRuntimeBatch({
+  sessionId: "s_dispatch_blocked",
+  batchSeq: 1,
+  events: [
+    {
+      id: "blocked-only",
+      type: "turn.dispatch_blocked",
+      sessionId: "s_dispatch_blocked",
+      turnId: "turn_blocked_only",
+      seq: 1,
+      ts: 9050,
+      source: "test",
+      payload: {
+        status: "admitted",
+        automaticReplay: false,
+        manualRecoveryRequired: true,
+        retryable: true,
+        assistant: "消息未能送达助手引擎，本次没有执行。可以安全重试。",
+      },
+    },
+  ],
+});
+runtime = store.getRuntimeSession("s_dispatch_blocked");
+const blockedAssistant = runtime.committedMessages.find((message) => message.role === "assistant");
+if (runtime.phase !== "idle" || !blockedAssistant?.meta?.dispatchBlocked || blockedAssistant.failed !== true) {
+  throw new Error(`dispatch-blocked projection must close visibly: ${JSON.stringify(runtime)}`);
+}
+store.applyRuntimeBatch({
+  sessionId: "s_dispatch_blocked_late_terminal",
+  batchSeq: 1,
+  events: [{
+    id: "blocked-late-only",
+    type: "turn.dispatch_blocked",
+    sessionId: "s_dispatch_blocked_late_terminal",
+    turnId: "turn_blocked_late_terminal",
+    seq: 1,
+    ts: 9060,
+    source: "test",
+    payload: { reason: "DISPATCH_CAS_FAILED", automaticReplay: false, manualRecoveryRequired: true, retryable: true },
+  }],
+});
+store.applyRuntimeBatch({
+  sessionId: "s_dispatch_blocked_late_terminal",
+  batchSeq: 2,
+  events: [{
+    id: "blocked-late-confirmed",
+    type: "turn.failed",
+    sessionId: "s_dispatch_blocked_late_terminal",
+    turnId: "turn_blocked_late_terminal",
+    seq: 2,
+    ts: 9061,
+    source: "test",
+    payload: { assistant: "confirmed failure" },
+  }],
+});
+const blockedLateTerminal = store.getRuntimeSession("s_dispatch_blocked_late_terminal").committedMessages
+  .find((message) => message.role === "assistant");
+if (!blockedLateTerminal || blockedLateTerminal.content !== "confirmed failure" || blockedLateTerminal.meta?.dispatchBlocked) {
+  throw new Error(`late terminal must replace blocked recovery projection: ${JSON.stringify(blockedLateTerminal)}`);
+}
+
+// When the normal terminal event follows in the same batch, it remains the
+// authoritative projection and must not be duplicated by the recovery state.
+store.applyRuntimeBatch({
+  sessionId: "s_unknown_then_terminal",
+  batchSeq: 1,
+  events: [
+    {
+      id: "unknown-before-terminal",
+      type: "turn.dispatch_outcome_unknown",
+      sessionId: "s_unknown_then_terminal",
+      turnId: "turn_unknown_then_terminal",
+      seq: 1,
+      ts: 9100,
+      source: "test",
+      payload: {
+        status: "outcome_unknown",
+        automaticReplay: false,
+        manualRecoveryRequired: true,
+        recoveryId: "recovery_turn_unknown_then_terminal",
+        errorCode: "DISPATCH_OUTCOME_UNKNOWN",
+      },
+    },
+    {
+      id: "terminal-after-unknown",
+      type: "turn.failed",
+      sessionId: "s_unknown_then_terminal",
+      turnId: "turn_unknown_then_terminal",
+      seq: 2,
+      ts: 9101,
+      source: "test",
+      payload: { assistant: "confirmed failure", errorCode: "ENGINE_ERROR" },
+    },
+  ],
+});
+const terminalAssistants = store.getRuntimeSession("s_unknown_then_terminal").committedMessages
+  .filter((message) => message.role === "assistant");
+if (terminalAssistants.length !== 1 || terminalAssistants[0].meta?.outcomeUnknown) {
+  throw new Error(`confirmed terminal must supersede pending recovery projection: ${JSON.stringify(terminalAssistants)}`);
+}
+
+// A confirmed terminal may arrive in a later batch after the recovery card was
+// already projected. It must upgrade the same message rather than be dropped.
+store.applyRuntimeBatch({
+  sessionId: "s_unknown_then_late_terminal",
+  batchSeq: 1,
+  events: [
+    {
+      id: "late-unknown",
+      type: "turn.dispatch_outcome_unknown",
+      sessionId: "s_unknown_then_late_terminal",
+      turnId: "turn_unknown_then_late_terminal",
+      seq: 1,
+      ts: 9200,
+      source: "test",
+      payload: { automaticReplay: false, manualRecoveryRequired: true, recoveryId: "late-recovery" },
+    },
+  ],
+});
+store.applyRuntimeBatch({
+  sessionId: "s_unknown_then_late_terminal",
+  batchSeq: 2,
+  events: [
+    {
+      id: "late-terminal",
+      type: "turn.completed",
+      sessionId: "s_unknown_then_late_terminal",
+      turnId: "turn_unknown_then_late_terminal",
+      seq: 2,
+      ts: 9201,
+      source: "test",
+      payload: { assistant: "confirmed completion" },
+    },
+  ],
+});
+const lateTerminalAssistant = store.getRuntimeSession("s_unknown_then_late_terminal").committedMessages
+  .find((message) => message.role === "assistant");
+if (!lateTerminalAssistant || lateTerminalAssistant.content !== "confirmed completion" || lateTerminalAssistant.meta?.outcomeUnknown) {
+  throw new Error(`late confirmed terminal must replace recovery projection: ${JSON.stringify(lateTerminalAssistant)}`);
+}
+
 console.log("session-runtime-store: ok");

@@ -179,10 +179,33 @@ ipcMain.handle("session-character:set-binding", (_e, payload) => ({
 }));
 ipcMain.handle("session-character:get-events", () => ({ ok: true, events: [] }));
 ipcMain.handle("persona:list", () => ({ ok: true, personas: cwPersonas.filter((p) => !p.archivedAt) }));
+ipcMain.handle("persona:list-official", () => ({ ok: true, personas: [] }));
 ipcMain.handle("persona:get", () => ({ ok: false, error: "PERSONA_NOT_FOUND" }));
 ipcMain.handle("world-book:list", () => ({ ok: true, worldBooks: cwBooks.filter((b) => !b.archivedAt) }));
-ipcMain.handle("world-book:get", () => ({ ok: false, error: "WORLD_BOOK_NOT_FOUND" }));
-ipcMain.handle("world-book:get-revision", () => ({ ok: false, error: "WORLD_BOOK_REVISION_NOT_FOUND" }));
+ipcMain.handle("world-book:list-official", () => ({ ok: true, worldBooks: [] }));
+ipcMain.handle("world-book:get", (_e, payload) => payload?.worldBookId === "book-a"
+  ? {
+    ok: true,
+    worldBook: {
+      id: "book-a", name: "港口志", entryCount: 7, currentRevisionId: "rev-book-1",
+      report: { entryCount: 7, enabledCount: 6, constantCount: 2 },
+      scope: "conversation", health: "healthy", conflictStatus: "not_evaluated",
+      estimatedContextTokens: 120,
+    },
+  }
+  : { ok: false, error: "WORLD_BOOK_NOT_FOUND" });
+ipcMain.handle("world-book:get-revision", (_e, payload) => payload?.revisionId === "rev-book-1"
+  ? {
+    ok: true,
+    revision: {
+      id: "rev-book-1", worldBookId: "book-a", entryCount: 7, truncated: false,
+      entries: [
+        { id: "entry-port", title: "潮汐港规则", enabled: true, constant: true },
+        { id: "entry-ship", title: "船只术语", enabled: true, constant: false },
+      ],
+    },
+  }
+  : { ok: false, error: "WORLD_BOOK_REVISION_NOT_FOUND" });
 
 let exportCalls = 0;
 ipcMain.handle("character:export", (_e, payload) => {
@@ -595,8 +618,14 @@ app.whenReady().then(async () => {
     if (rows.length !== 1 || !rows[0].textContent.includes("港口志")) throw new Error("world book row missing");
     if (!/7/.test(rows[0].textContent)) throw new Error("book row shows the entry count");
     actions = [...rows[0].querySelectorAll("[data-library-action]")].map((b) => b.dataset.libraryAction);
-    if (actions.includes("edit") || !actions.includes("archive") || !actions.includes("history")) {
-      throw new Error("book actions should be history/archive only, got " + actions.join(","));
+    if (!actions.includes("edit") || !actions.includes("archive") || !actions.includes("history")) {
+      throw new Error("book actions should be edit/history/archive, got " + actions.join(","));
+    }
+    rows[0].querySelector("[data-library-select]").click();
+    await new Promise((r) => setTimeout(r, 200));
+    const bookDetail = document.getElementById("characterLibraryDetail");
+    if (!bookDetail.textContent.includes("潮汐港规则") || !bookDetail.textContent.includes("船只术语")) {
+      throw new Error("world book detail should show safe entry titles");
     }
     const tagFilter = document.getElementById("characterLibraryTagFilter");
     if (!tagFilter.closest("[hidden]") && !tagFilter.hidden) throw new Error("tag filter hides off the characters tab");

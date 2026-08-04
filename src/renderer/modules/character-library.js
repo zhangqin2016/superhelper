@@ -65,6 +65,7 @@ export function startAiAuthoring(kind = "characters") {
   if (m && !m.hidden) {
     m.hidden = true;
     dispatch({ type: "closed" });
+    $("sessionRoleBanner")?.setAttribute("aria-expanded", "false");
   }
   const popover = $("characterPopover");
   if (popover && !popover.hidden) {
@@ -85,16 +86,74 @@ function dispatch(action) {
   renderCharacterLibrary(libraryState);
 }
 
-const FORM_VALUE_FIELDS = ["name", "description", "personality", "scenario", "tags"];
+const FORM_VALUE_FIELDS = [
+  "name", "description", "personality", "scenario", "tags",
+  "identity", "background", "expertise", "communicationStyle",
+  "goals", "preferences", "constraints", "scanDepthMessages",
+  "tokenBudget", "recursive", "worldBookEntries",
+];
 
-function fieldValue(name) {
-  return $("characterLibraryDetail")?.querySelector(`[data-field='${name}']`)?.value ?? "";
+function fieldValue(name, fallback = "") {
+  return $("characterLibraryDetail")?.querySelector(`[data-field='${name}']`)?.value ?? fallback;
+}
+
+function parseWorldBookEntries(value) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function listValue(value) {
+  return String(value || "").split(/[,，]/).map((entry) => entry.trim()).filter(Boolean);
+}
+
+function readWorldBookFormValues(values) {
+  const detail = $("characterLibraryDetail");
+  const previousEntries = parseWorldBookEntries(libraryState.form?.values?.worldBookEntries);
+  const entries = [...(detail?.querySelectorAll("[data-world-book-entry]") || [])].map((row, index) => {
+    const existing = previousEntries[index] && typeof previousEntries[index] === "object"
+      ? previousEntries[index]
+      : { id: `entry-${index + 1}` };
+    const valueOf = (field) => row.querySelector(`[data-world-entry-field='${field}']`)?.value ?? "";
+    const checked = (field, fallback = false) => {
+      const input = row.querySelector(`[data-world-entry-field='${field}']`);
+      return input ? Boolean(input.checked) : fallback;
+    };
+    return {
+      ...existing,
+      id: row.dataset.worldBookEntry || existing.id || `entry-${index + 1}`,
+      title: valueOf("title").trim(),
+      enabled: checked("enabled", existing.enabled !== false),
+      content: valueOf("content"),
+      activation: {
+        ...(existing.activation || {}),
+        constant: checked("constant", existing.activation?.constant === true),
+        primaryKeys: listValue(valueOf("primaryKeys")),
+        secondaryKeys: listValue(valueOf("secondaryKeys")),
+      },
+      insertion: {
+        ...(existing.insertion || {}),
+        position: valueOf("position") || existing.insertion?.position || "before_character",
+      },
+    };
+  });
+  return {
+    ...values,
+    scanDepthMessages: fieldValue("scanDepthMessages") || "8",
+    tokenBudget: fieldValue("tokenBudget") || "0",
+    recursive: detail?.querySelector("[data-field='recursive']")?.checked ? "true" : "false",
+    worldBookEntries: JSON.stringify(entries),
+  };
 }
 
 function readFormValues() {
   const values = {};
-  for (const field of FORM_VALUE_FIELDS) values[field] = fieldValue(field);
-  return values;
+  const previous = libraryState.form?.values || {};
+  for (const field of FORM_VALUE_FIELDS) values[field] = fieldValue(field, previous[field] ?? "");
+  return libraryState.form?.kind === "worldBook" ? readWorldBookFormValues(values) : values;
 }
 
 // Snapshot the typed fields into state WITHOUT rendering (the DOM already
@@ -107,6 +166,26 @@ function syncFormValues() {
   libraryState = reduceCharacterLibrary(libraryState, {
     type: "form.valuesSync",
     values: readFormValues(),
+  });
+}
+
+function parseWorldBookFormEntries() {
+  try {
+    const parsed = JSON.parse(libraryState.form?.values?.worldBookEntries || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function updateWorldBookEntries(mutator) {
+  if (libraryState.form?.kind !== "worldBook") return;
+  syncFormValues();
+  const entries = parseWorldBookFormEntries();
+  mutator(entries);
+  dispatch({
+    type: "form.valuesSync",
+    values: { ...libraryState.form.values, worldBookEntries: JSON.stringify(entries) },
   });
 }
 
@@ -132,6 +211,7 @@ const actions = createLibraryActions({
   readFormValues,
   focusNameField: () => $("characterLibraryDetail")?.querySelector("[data-field='name']")?.focus(),
   getActiveSessionId: () => store.get("activeSessionId"),
+  onActivated: () => closeCharacterLibrary(),
 });
 
 /** Re-render localized chrome after a locale change (lossless for edits). */
@@ -167,9 +247,29 @@ export async function openCharacterLibrary(opts = {}) {
   if (!m || !facade()) return;
   dispatch({ type: "opened" });
   m.hidden = false;
+  $("sessionRoleBanner")?.setAttribute("aria-expanded", "true");
   renderCharacterLibrary(libraryState);
   $("characterLibrarySearch")?.focus();
   await actions.loadCurrentTab();
+  // The composer role control opens the full manager as the primary path.
+  // Resolve against all stable identifiers because official rows, local
+  // entities, and session bindings do not share the same ID shape.
+  const requestedCharacterId = opts.characterId;
+  if (requestedCharacterId && libraryState.tab === "characters") {
+    const item = (libraryState.items.characters || []).find((entry) => (
+      entry.id === requestedCharacterId
+      || entry.currentRevisionId === requestedCharacterId
+      || entry.officialId === requestedCharacterId
+    ));
+    if (item) {
+      await actions.openDetail(item);
+      requestAnimationFrame(() => {
+        const selector = `[data-entity-id="${CSS.escape(item.id)}"] [data-library-select]`;
+        $("characterLibraryGrid")?.querySelector(selector)?.focus();
+      });
+      return;
+    }
+  }
   // §13.1 "edit current character" command: open the library straight into
   // the pinned character's edit form when the caller asks for it.
   if (opts.editCharacterId) {
@@ -198,6 +298,7 @@ function closeCharacterLibrary() {
   if (dirtyFormGuard()) return;
   m.hidden = true;
   dispatch({ type: "closed" });
+  $("sessionRoleBanner")?.setAttribute("aria-expanded", "false");
   $("sessionRoleBanner")?.focus();
 }
 
@@ -324,7 +425,7 @@ export function initCharacterLibrary() {
   // Typing syncs the form snapshot continuously, so even an unexpected
   // re-render (locale change, stray dispatch) is lossless.
   $("characterLibraryDetail")?.addEventListener("input", (event) => {
-    if (event.target.closest("[data-field]")) syncFormValues();
+    if (event.target.closest("[data-field], [data-world-entry-field]")) syncFormValues();
   });
 
   $("characterLibraryDetail")?.addEventListener("click", (event) => {
@@ -337,6 +438,29 @@ export function initCharacterLibrary() {
         dispatch({ type: "confirm.dismissed" });
         if (dismissed?.action === "restore") focusHistoryRestore(dismissed.revisionId);
       }
+      return;
+    }
+    if (event.target.closest("[data-world-book-add]")) {
+      updateWorldBookEntries((entries) => {
+        entries.push({
+          id: `entry-${Date.now()}-${entries.length + 1}`,
+          title: "",
+          enabled: true,
+          content: "",
+          activation: { constant: false, primaryKeys: [], secondaryKeys: [] },
+          insertion: { position: "before_character", order: 100 },
+        });
+      });
+      return;
+    }
+    const removeWorldBookEntry = event.target.closest("[data-world-book-remove]");
+    if (removeWorldBookEntry) {
+      const card = removeWorldBookEntry.closest("[data-world-book-entry]");
+      const entryId = card?.dataset.worldBookEntry;
+      updateWorldBookEntries((entries) => {
+        const index = entries.findIndex((entry) => entry?.id === entryId);
+        if (index >= 0) entries.splice(index, 1);
+      });
       return;
     }
     if (event.target.closest("[data-library-save]")) {
@@ -359,6 +483,12 @@ export function initCharacterLibrary() {
           confirm: { action: "archive", kind: kindForTab(libraryState.tab), entityId: item.id, name: item.name },
         });
       }
+      return;
+    }
+    if (event.target.closest("[data-library-remove-book]")) {
+      const item = (libraryState.items[libraryState.tab] || [])
+        .find((entry) => entry.id === libraryState.selectedItemId);
+      if (item) void actions.removeWorldBook(item);
       return;
     }
     if (event.target.closest("[data-library-detail-close]")) {

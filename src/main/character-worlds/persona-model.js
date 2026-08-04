@@ -46,7 +46,10 @@ const AUTH_SHAPED_KEYS = new Set([
   "credentials", "password", "apikey", "secret", "sessionid", "sessiontoken",
 ]);
 
-const KNOWN_CANONICAL_KEYS = new Set(["schemaVersion", "name", "description"]);
+const KNOWN_CANONICAL_KEYS = new Set([
+  "schemaVersion", "name", "description", "identity", "background",
+  "expertise", "communicationStyle", "goals", "preferences", "constraints",
+]);
 
 function invalid(message, details = {}) {
   return codedError("PERSONA_DATA_INVALID", message, details);
@@ -148,6 +151,26 @@ function boundedString(value, limitKind, maximum) {
   return value;
 }
 
+function optionalText(input, key) {
+  const value = input[key];
+  if (value == null) return undefined;
+  if (typeof value !== "string") throw invalid(`Persona ${key} must be a string`, { key });
+  return boundedString(value, `${key}Chars`, C.MAX_PERSONA_FIELD_CHARS);
+}
+
+function optionalTextList(input, key) {
+  const value = input[key];
+  if (value == null) return undefined;
+  if (!Array.isArray(value)) throw invalid(`Persona ${key} must be an array`, { key });
+  if (value.length > C.MAX_PERSONA_LIST_ITEMS) {
+    throw limit(`${key}Items`, C.MAX_PERSONA_LIST_ITEMS, value.length);
+  }
+  return value.map((item, index) => {
+    if (typeof item !== "string") throw invalid(`Persona ${key} must contain strings`, { key, index });
+    return boundedString(item, `${key}ItemChars`, C.MAX_PERSONA_LIST_ITEM_CHARS);
+  });
+}
+
 function preservedUnknown(input, knownKeys) {
   const preserved = {};
   for (const key of Object.keys(input)) {
@@ -175,12 +198,20 @@ function normalizePersonaCanonical(input) {
   boundedString(name, "nameChars", C.MAX_PERSONA_NAME_CHARS);
   const description = typeof input.description === "string" ? input.description : "";
   boundedString(description, "descriptionChars", C.MAX_PERSONA_DESCRIPTION_CHARS);
-  return {
+  const normalized = {
     schemaVersion: C.PERSONA_SCHEMA_VERSION,
     name,
     description,
-    ...preservedUnknown(input, KNOWN_CANONICAL_KEYS),
   };
+  for (const key of ["identity", "background", "communicationStyle"]) {
+    const value = optionalText(input, key);
+    if (value !== undefined) normalized[key] = value;
+  }
+  for (const key of ["expertise", "goals", "preferences", "constraints"]) {
+    const value = optionalTextList(input, key);
+    if (value !== undefined) normalized[key] = value;
+  }
+  return { ...normalized, ...preservedUnknown(input, KNOWN_CANONICAL_KEYS) };
 }
 
 // Mirrors the world-book codec: the revision hash covers the normalized

@@ -45,6 +45,7 @@ async function prepareTurnCapabilityReadiness({
   taskContract = null,
   turnPolicy = null,
   deps = {},
+  onProgress = null,
 }) {
   try {
     const readiness = require("./capability-readiness");
@@ -76,7 +77,11 @@ async function prepareTurnCapabilityReadiness({
       const coordinator = ctx?.runtimePackCoordinator || require("./runtime-pack-coordinator").runtimePackCoordinator;
       return coordinator.prepare(payload);
     });
-    const prepared = await prepare({ turnId, requiredPackIds: unresolvedPackIds });
+    const prepared = await prepare({
+      turnId,
+      requiredPackIds: unresolvedPackIds,
+      onProgress,
+    });
     if (prepared.refreshRequired) {
       const refresh = deps.refresh || ctx?.refreshPreparedRuntimeForTurn
         || require("./runner-live-config").refreshPreparedRuntimeForTurn;

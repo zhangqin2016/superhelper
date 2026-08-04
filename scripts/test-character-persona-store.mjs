@@ -267,6 +267,37 @@ try {
     assert.equal(stored.schemaVersion, PERSONA_SCHEMA_VERSION);
   });
 
+  check("structured persona fields survive normalization and persistence", () => {
+    const structured = repository.createPersona({
+      ownerScope: OWNER,
+      canonical: {
+        schemaVersion: 1,
+        name: "Atlas 产品负责人",
+        identity: "创业公司的产品负责人",
+        background: "熟悉业务，不懂代码",
+        expertise: ["需求分析", "产品规划"],
+        communicationStyle: "先给结论，再给执行步骤",
+        goals: ["快速验证需求"],
+        preferences: ["用中文回答", "少讲空话"],
+        constraints: ["不替我做未经确认的决策"],
+        description: "负责 Atlas 产品方向。",
+      },
+      source: personaSource,
+    });
+    assert.deepEqual(structured.revision.canonical, {
+      schemaVersion: PERSONA_SCHEMA_VERSION,
+      name: "Atlas 产品负责人",
+      identity: "创业公司的产品负责人",
+      background: "熟悉业务，不懂代码",
+      expertise: ["需求分析", "产品规划"],
+      communicationStyle: "先给结论，再给执行步骤",
+      goals: ["快速验证需求"],
+      preferences: ["用中文回答", "少讲空话"],
+      constraints: ["不替我做未经确认的决策"],
+      description: "负责 Atlas 产品方向。",
+    });
+  });
+
   check("avatar bytes are cataloged and linked to the persona revision", () => {
     assert.deepEqual(first.revision.personaAssets, [{
       hash: avatarHash,

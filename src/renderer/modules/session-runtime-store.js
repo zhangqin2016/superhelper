@@ -19,11 +19,17 @@ import {
   hasRunningTool,
   upsertTimelineTool,
 } from "./turn-tool-timeline.js";
+import {
+  closeRecoveryProjection,
+  isRecoveryProjectionEvent,
+} from "./turn-recovery-projection.js";
+import { createCommittedMessageProjection } from "./committed-message-projection.js";
 const sessions = new Map();
 const sessionAccessOrder = new Set();
 const batchSeqBySession = new Map();
 const eventSeqBySession = new Map();
 const terminalTurns = new Set();
+const recoveryTurns = new Set();
 const listeners = new Set();
 let notifyQueued = false;
 export const SESSION_RUNTIME_CACHE_LIMIT = 40;
@@ -78,6 +84,9 @@ function dropRuntimeSessionCache(sessionId) {
   sessionAccessOrder.delete(sessionId);
   for (const key of [...terminalTurns]) {
     if (key.startsWith(`${sessionId}:`)) terminalTurns.delete(key);
+  }
+  for (const key of [...recoveryTurns]) {
+    if (key.startsWith(`${sessionId}:`)) recoveryTurns.delete(key);
   }
 }
 
@@ -245,44 +254,6 @@ function sameAssistantTurnWithinWindow(a = {}, b = {}, windowMs = 30 * 60 * 1000
   return Math.abs(at - bt) <= windowMs;
 }
 
-function messageQuality(message = {}) {
-  let score = 0;
-  if (message.id) score += 1;
-  if (message.turnId) score += 2;
-  if (message.record) score += 4;
-  if (message.meta) score += 2;
-  if (message.files?.length) score += 1;
-  return score;
-}
-
-function countArray(value) {
-  return Array.isArray(value) ? value.length : 0;
-}
-
-function recordRichness(record = null) {
-  if (!record || typeof record !== "object") return 0;
-  let score = 1;
-  score += countArray(record.resultBlocks) * 5;
-  score += countArray(record.artifacts) * 4;
-  score += countArray(record.contentBlocks) * 4;
-  score += countArray(record.timeline) * 2;
-  score += countArray(record.processEvents) * 2;
-  score += countArray(record.notices);
-  score += countArray(record.tools);
-  if (record.assistantText) score += 1;
-  if (record.engineMessageId) score += 1;
-  if (record.persistenceCompact) score -= 4;
-  return score;
-}
-
-function mergeCommittedRecord(existingRecord = null, incomingRecord = null) {
-  if (!existingRecord) return incomingRecord || null;
-  if (!incomingRecord) return existingRecord;
-  return recordRichness(incomingRecord) >= recordRichness(existingRecord)
-    ? incomingRecord
-    : existingRecord;
-}
-
 function equivalentCommittedMessageIndex(messages, message) {
   const key = committedMessageKey(message);
   const draftKey = scheduledDraftFingerprint(message);
@@ -297,55 +268,11 @@ function equivalentCommittedMessageIndex(messages, message) {
   return -1;
 }
 
-function mergeCommittedMessage(existing = {}, incoming = {}) {
-  const preferIncoming = messageQuality(incoming) >= messageQuality(existing);
-  const base = preferIncoming ? { ...existing, ...incoming } : { ...incoming, ...existing };
-  const record = mergeCommittedRecord(existing.record, incoming.record);
-  return {
-    ...base,
-    id: incoming.id || existing.id,
-    content: incoming.content || existing.content || "",
-    files: incoming.files || existing.files,
-    turnId: incoming.turnId || existing.turnId,
-    record,
-    failed: Boolean(incoming.failed || existing.failed),
-    meta: {
-      ...(existing.meta || {}),
-      ...(incoming.meta || {}),
-    },
-  };
-}
-
-function dedupeCommittedMessages(messages = []) {
-  const out = [];
-  for (const message of messages || []) {
-    if (!message?.role) continue;
-    const index = equivalentCommittedMessageIndex(out, message);
-    if (index < 0) {
-      out.push(message);
-      continue;
-    }
-    out[index] = mergeCommittedMessage(out[index], message);
-  }
-  return out;
-}
-
-function mergeIncomingCommittedMessages(existingMessages = [], incomingMessages = []) {
-  return (incomingMessages || []).map((message) => {
-    if (!message?.role) return message;
-    const index = equivalentCommittedMessageIndex(existingMessages, message);
-    return index >= 0 ? mergeCommittedMessage(existingMessages[index], message) : message;
-  });
-}
-
-function upsertCommittedMessage(runtime, message) {
-  const index = equivalentCommittedMessageIndex(runtime.committedMessages, message);
-  if (index < 0) {
-    runtime.committedMessages.push(message);
-    return;
-  }
-  runtime.committedMessages[index] = mergeCommittedMessage(runtime.committedMessages[index], message);
-}
+const {
+  dedupeCommittedMessages,
+  mergeIncomingCommittedMessages,
+  upsertCommittedMessage,
+} = createCommittedMessageProjection(equivalentCommittedMessageIndex);
 
 function belongsToActiveTurn(runtime, message) {
   const turnId = message?.turnId || "";
@@ -452,6 +379,7 @@ function ensureLiveTurn(runtime, event) {
       fileChanges: [],
       usage: null,
       taskRun: null,
+      recoveryEvent: null,
     };
   }
   runtime.turnId = event.turnId;
@@ -566,8 +494,25 @@ export function applyRuntimeBatch(batch, opts = {}) {
   if (!opts.allowReplay && batch.batchSeq && batch.batchSeq <= lastBatch) return;
   if (batch.batchSeq) batchSeqBySession.set(batch.sessionId, batch.batchSeq);
 
+  const recoveryEvents = new Map();
   for (const event of batch.events) {
     applyRuntimeEvent(event, opts);
+    if (isRecoveryProjectionEvent(event)) {
+      recoveryEvents.set(`${event.sessionId}:${event.turnId}`, event);
+    }
+  }
+  for (const [turnKey, event] of recoveryEvents) {
+    const runtime = getRuntimeSession(event.sessionId);
+    const live = runtime.liveTurn;
+    if (!live || live.turnId !== event.turnId || live.final || live.recoveryEvent !== event) continue;
+    closeRecoveryProjection({
+      runtime,
+      live,
+      event,
+      turnKey,
+      recoveryTurns,
+      upsertCommittedMessage,
+    });
   }
   if (opts.notifyAfter !== false) notify();
 }
@@ -614,11 +559,18 @@ export function applyRuntimeEvent(event, opts = {}) {
   }
   if (!event.turnId) return;
   const turnKey = `${event.sessionId}:${event.turnId}`;
-  if (terminalTurns.has(turnKey) && TERMINAL_TYPES.has(event.type)) return;
-  if (terminalTurns.has(turnKey) && !TERMINAL_TYPES.has(event.type)) return;
+  if (terminalTurns.has(turnKey)) return;
+  if (recoveryTurns.has(turnKey) && !TERMINAL_TYPES.has(event.type)) return;
 
   const live = ensureLiveTurn(runtime, event);
   live.updatedAt = event.ts || Date.now();
+
+  if (isRecoveryProjectionEvent(event)) {
+    runtime.phase = "recovery_required";
+    live.phase = "recovery_required";
+    live.recoveryEvent = event;
+    return;
+  }
 
   switch (event.type) {
     case "turn.accepted":
@@ -801,6 +753,7 @@ export function applyRuntimeEvent(event, opts = {}) {
       if (TERMINAL_TYPES.has(event.type)) {
         live.phase = "done";
         live.final = event;
+        live.recoveryEvent = null;
         closeStreamingBlocks(live, event.ts || Date.now());
         if (Number.isFinite(event.payload?.durationMs)) {
           live.durationMs = event.payload.durationMs;
@@ -842,6 +795,7 @@ export function applyRuntimeEvent(event, opts = {}) {
         }
         runtime.phase = "idle";
         runtime.turnId = null;
+        recoveryTurns.delete(turnKey);
         terminalTurns.add(turnKey);
         // Flag the session list when a BACKGROUND session finishes (not the one
         // being viewed) on a LIVE event — so the user knows to come look. Skips
@@ -873,8 +827,10 @@ export function applyRuntimeEvent(event, opts = {}) {
           failed: event.type === "turn.failed",
           turnId: event.turnId,
           timestamp: new Date(event.ts).toISOString(),
-          meta: event.payload.record?.meta || {
+          meta: {
+            ...(event.payload.record?.meta || {}),
             terminal: event.type,
+            outcomeUnknown: false,
             tools: event.payload.toolsSummary,
           },
         });

@@ -469,7 +469,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       return withProcessEvent(ev, {
         drafts: [],
         effects: [{ kind: "status", text: "Assistant is working" }],
-        progress: true,
+        progress: false,
         terminal: false,
       });
 

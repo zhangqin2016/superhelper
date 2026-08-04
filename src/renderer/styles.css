@@ -8,13 +8,13 @@
 @import "./styles/pdf-viewer.css";
 @import "./styles/diff-panel.css";
 @import "./styles/skills-tree.css";
-@import "./styles/composer.css?v=20260722-overhaul";
+@import "./styles/composer.css?v=20260804-composer-polish";
 @import "./styles/right-panel.css";
 @import "./styles/overlays.css";
 @import "./styles/settings.css?v=20260716-motion";
 @import "./styles/runtime-chat.css?v=20260722-overhaul";
 @import "./styles/workspace-navigation.css";
-@import "./styles/character-worlds.css";
+@import "./styles/character-worlds.css?v=20260804-character-polish";
 @import "./styles/character-library.css";
 @import "./styles/system.css?v=20260716-motion";
 @import "../../node_modules/katex/dist/katex.min.css";

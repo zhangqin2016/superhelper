@@ -43,7 +43,7 @@ function createTurnQueueDispatchMethods({
 
     async _dispatchNextUnlocked(sessionId) {
       const state = this._state(sessionId);
-      if (state.phase !== "idle" || state.queue.length === 0) return;
+      if (state.phase !== "idle" || state.startInFlight || state.queue.length === 0) return;
       this._clearDispatchRetry(sessionId);
       const next = state.queue[0];
       // Pin this dispatch attempt to the exact queue item, its durable turn
@@ -139,7 +139,11 @@ function createTurnQueueDispatchMethods({
         }
       } catch (err) {
         log.warn("_dispatchNext error: %s", err?.message || err);
-        if (next.dispatchAttemptId || err?.code === "TURN_DISPATCH_CRASH_INJECTION") {
+        const activeDispatchAttemptId = state.dispatchAttemptId
+          || state.admittedTurnInput?.dispatchAttemptId
+          || next.dispatchAttemptId
+          || null;
+        if (activeDispatchAttemptId || err?.code === "TURN_DISPATCH_CRASH_INJECTION") {
           const admitted = next.admittedTurnInput?.turnId
             ? this.ctx.sessionManager?.getTurnInputByTurnId?.(
                 sessionId,
@@ -152,6 +156,13 @@ function createTurnQueueDispatchMethods({
               admitted,
               "fault_injection",
             );
+          }
+          if (state.turnId && state.turnId === next.admittedTurnInput?.turnId) {
+            // The durable row is intentionally left outcome-unknown, but the
+            // in-memory turn must close as well. Otherwise the renderer may
+            // show recovery while the main session remains stuck in `starting`
+            // until the multi-minute sweeper runs.
+            require("./turn-terminal-finalizer").clearTurnState(state);
           }
           this._pauseQueuedItemInMemory(
             sessionId,
@@ -270,7 +281,7 @@ function createTurnQueueDispatchMethods({
           turnId: item.admittedTurnInput?.turnId || null,
           dispatchAttemptId: item.dispatchAttemptId,
         });
-        return await this._startLocalAssistantTurn(session, item.text, item.files, {
+        return await require("./turn-start-guard").guardLocalAssistantTurn(this, session, item.text, item.files, {
           fromQueue: true,
           displayFiles: item.displayFiles,
           assistant: item.options.localAssistant.assistant,

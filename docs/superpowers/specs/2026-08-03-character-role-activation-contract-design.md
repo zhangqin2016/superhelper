@@ -2,9 +2,14 @@
 
 **Date:** 2026-08-03
 
-**Status:** Approved for implementation planning
+**Status:** Implemented; release verification pending
 
 **Scope:** Character Worlds role activation during conversation turns
+
+The host-owned activation contract, final-provider-boundary application
+evidence, native fail-open behavior, and renderer status projection are
+implemented. Keep the implementation plan and focused runtime tests as the
+execution record; this document remains the behavioral contract.
 
 ## 1. Problem
 

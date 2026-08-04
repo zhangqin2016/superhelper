@@ -25,6 +25,7 @@ import { createSceneSectionController } from "./character-scene-section.js";
 import { openCharacterLibrary } from "./character-library.js";
 import { appendCharacterOptionCopy, createOfficialCharacterLoader, installOfficialCharacter } from "./official-character-picker.js";
 import { createCharacterPreviewController } from "./character-preview-controller.js";
+import { positionCharacterPopover } from "./character-popover-position.js";
 import { getRuntimeSession, subscribeRuntime } from "./session-runtime-store.js";
 export {
   initialCharacterControlState,
@@ -107,15 +108,7 @@ function openPopover() {
   p.hidden = false;
   b.setAttribute("aria-expanded", "true");
   b.classList.add("is-open");
-  const composer = $("composer");
-  if (composer) {
-    const btnRect = b.getBoundingClientRect();
-    const composerRect = composer.getBoundingClientRect();
-    // Inline-start anchoring keeps the popover mirrored correctly in RTL.
-    p.style.insetInlineStart = "8px";
-    p.style.width = `${Math.min(620, Math.max(0, composerRect.width - 16))}px`;
-    p.style.bottom = `${composerRect.bottom - btnRect.top + 8}px`;
-  }
+  positionCharacterPopover({ panel: p, trigger: b });
   void loadCharacters();
   // Refresh binding + update hint on open (library edits show up).
   if (controlState.sessionId) void loadBinding(controlState.sessionId);
@@ -239,6 +232,7 @@ function renderPopover() {
     renderList();
     sceneSection.load();
   }
+  requestAnimationFrame(() => positionCharacterPopover({ panel: p, trigger: b }));
 }
 
 function render() {

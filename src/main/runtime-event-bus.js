@@ -1,6 +1,6 @@
 "use strict";
 
-const { createRuntimeEvent, isTerminalEvent } = require("./runtime-event-schema");
+const { createRuntimeEvent, isTerminalEvent, TERMINAL_EVENT_TYPES } = require("./runtime-event-schema");
 
 const POST_TERMINAL_ALLOWED = new Set([
   "queue.updated",
@@ -28,6 +28,7 @@ class RuntimeEventBus {
     this._flushTimer = null;
     this._recent = new Map();
     this._terminalTurns = new Set();
+    this._closedRecoveryTurns = new Set();
     // Passive observers (e.g. the mobile bridge projecting turn output to a
     // paired phone). Called on every committed batch; never affect renderer
     // delivery and are fully isolated — an observer throwing can't disrupt a turn.
@@ -57,9 +58,11 @@ class RuntimeEventBus {
   emitBatch(sessionId, eventLikes) {
     const sid = String(sessionId || "");
     if (!sid || !Array.isArray(eventLikes) || eventLikes.length === 0) return [];
-    const events = eventLikes
-      .map((eventLike) => this._normalize(sid, eventLike))
-      .filter(Boolean);
+    const events = [];
+    for (const eventLike of eventLikes) {
+      const event = this._normalize(sid, eventLike, events);
+      if (event) events.push(event);
+    }
     if (!events.length) return [];
     const existing = this._pending.get(sid) || [];
     existing.push(...events);
@@ -81,9 +84,24 @@ class RuntimeEventBus {
     };
   }
 
-  _normalize(sessionId, eventLike) {
+  _normalize(sessionId, eventLike, pendingEvents = []) {
     const turnKey = eventLike?.turnId ? `${sessionId}:${eventLike.turnId}` : "";
     if (turnKey && this._terminalTurns.has(turnKey) && !POST_TERMINAL_ALLOWED.has(eventLike.type)) {
+      return null;
+    }
+    if (
+      turnKey &&
+      this._closedRecoveryTurns.has(turnKey) &&
+      !TERMINAL_EVENT_TYPES.has(eventLike.type) &&
+      !(
+        eventLike.type === "assistant.final" &&
+        [...(this._pending.get(sessionId) || []), ...pendingEvents]
+          .some((event) => (
+            (event.type === "turn.dispatch_outcome_unknown" || event.type === "turn.dispatch_blocked") &&
+            event.turnId === eventLike.turnId
+          ))
+      )
+    ) {
       return null;
     }
     if (!this._sessionSeq.has(sessionId)) {
@@ -98,7 +116,13 @@ class RuntimeEventBus {
       sessionId,
       seq: nextSeq,
     });
-    if (isTerminalEvent(event)) this._terminalTurns.add(`${sessionId}:${event.turnId}`);
+    if (event.type === "turn.dispatch_outcome_unknown" || event.type === "turn.dispatch_blocked") {
+      this._closedRecoveryTurns.add(`${sessionId}:${event.turnId}`);
+    }
+    if (isTerminalEvent(event)) {
+      this._closedRecoveryTurns.delete(`${sessionId}:${event.turnId}`);
+      this._terminalTurns.add(`${sessionId}:${event.turnId}`);
+    }
     return event;
   }
 

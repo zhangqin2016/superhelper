@@ -126,7 +126,32 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
 
   notify({ code: "visionPreparing", level: "progress", panel: true, replace: true });
 
-  const result = await translateImages(files, { userText: text });
+  const result = await translateImages(files, {
+    userText: text,
+    onProgress: (event = {}) => {
+      const total = Number(event.total || 0);
+      const processed = Number(event.processed || 0);
+      const label = String(event.label || "").trim();
+      const error = String(event.error || "").trim();
+      const suffix = total > 0 ? `${processed}/${total}` : "";
+      notify({
+        code: "workProgress",
+        level: "progress",
+        panel: true,
+        replace: true,
+        replacesCode: "visionPreparing",
+        detail: [label, suffix, error ? `· ${error}` : ""].filter(Boolean).join(" "),
+        progress: {
+          domain: "image",
+          phase: event.phase || "",
+          processed,
+          total,
+          label,
+          error,
+        },
+      });
+    },
+  });
   if (result === null) {
     notify({
       code: "visionSkipped",

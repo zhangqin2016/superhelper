@@ -51,9 +51,13 @@ Date: 2026-08-01
 - §10.4.1 多书 keyed merge 策略已补（5033cde）；global 策略 + profile-global book 来源待配置决策
 - §19.6 评估矩阵 case 已补（c9b37c2，供真机/模型环境跑）
 
-## 产品决策待确认
+## 发布前仍需完成
 
-- §13.2 Delete 直接删除 vs archive 取代
+- 产品决策：§13.2 Delete 直接删除 vs archive 取代
+- 外部验收：§19.6/§19.7 模型评估矩阵、macOS/Windows 真机验收、人工视觉验收
+- 规格确认：P2C-1 评审，以及 global 策略与 profile-global book 来源
+
+代码实现已不再是本主题的主要阻塞项；完成以上决策和外部验收后，才可将角色卡功能标记为发布就绪。
 
 ## 2026-08-01 Runtime Refactor Update
 

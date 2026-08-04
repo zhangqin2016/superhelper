@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { DISPATCH_BLOCKED_ASSISTANT } = require("./turn-recovery-projection");
 
 const OUTCOME_UNKNOWN_STATUSES = new Set([
   "dispatching",
@@ -200,7 +201,10 @@ function createTurnDispatchMethods({ log }) {
           this._emit(session.id, "turn.dispatch_blocked", {
             status: claim.turn?.status || "unknown",
             reason: claim.reason || "DISPATCH_CAS_FAILED",
+            assistant: DISPATCH_BLOCKED_ASSISTANT,
             automaticReplay: false,
+            manualRecoveryRequired: true,
+            retryable: true,
           }, { turnId });
         }
         return {

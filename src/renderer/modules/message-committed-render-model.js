@@ -143,6 +143,7 @@ export function liveInsertAnchorTurnId(runtime = {}) {
 }
 
 export function shouldShowRetryAction(message = {}) {
+  if (message?.meta?.outcomeUnknown || message?.record?.meta?.outcomeUnknown) return false;
   return Boolean(message?.failed || message?.record?.terminal === "turn.stalled");
 }
 

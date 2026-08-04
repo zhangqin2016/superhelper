@@ -877,6 +877,49 @@ try {
   ok(openPartialAssistant?.record?.terminal === "turn.stalled", "open projected turn is recovered as stalled after restart");
   ok(openPartialAssistant?.record?.meta?.projected === true, "open projected turn is marked as recovered projection");
 
+  store.appendRuntimeEvents("S9", [
+    {
+      id: "evt_s9_unknown",
+      type: "turn.dispatch_outcome_unknown",
+      sessionId: "S9",
+      turnId: "turn_unknown_projection",
+      seq: 1,
+      ts: 4300,
+      source: "orchestrator",
+      payload: {
+        status: "outcome_unknown",
+        automaticReplay: false,
+        manualRecoveryRequired: true,
+        recoveryId: "recovery_turn_unknown_projection",
+        errorCode: "DISPATCH_OUTCOME_UNKNOWN",
+      },
+    },
+  ]);
+  const unknownProjection = store.getProjectedConversation("S9").find((message) => message.role === "assistant");
+  ok(unknownProjection?.failed === true, "outcome-unknown projection must be visible as a failed recovery card");
+  ok(unknownProjection?.meta?.outcomeUnknown === true, "outcome-unknown projection must remain distinguishable from confirmed failure");
+  ok(unknownProjection?.record?.meta?.manualRecoveryRequired === true, "recovery action metadata must survive projection");
+
+  store.appendRuntimeEvents("S10", [{
+    id: "evt_s10_blocked",
+    type: "turn.dispatch_blocked",
+    sessionId: "S10",
+    turnId: "turn_blocked_projection",
+    seq: 1,
+    ts: 4400,
+    source: "orchestrator",
+    payload: {
+      status: "admitted",
+      assistant: "消息未能送达助手引擎，本次没有执行。可以安全重试。",
+      automaticReplay: false,
+      manualRecoveryRequired: true,
+      retryable: true,
+    },
+  }]);
+  const blockedProjection = store.getProjectedConversation("S10").find((message) => message.role === "assistant");
+  ok(blockedProjection?.failed === true, "dispatch-blocked projection must remain visible after reload");
+  ok(blockedProjection?.meta?.dispatchBlocked === true, "dispatch-blocked projection must remain retryable and distinguishable");
+
   const crashClaim = store.admitTurnInput("S8", {
     turnId: "turn_dispatching_at_shutdown",
     delivery: "direct",

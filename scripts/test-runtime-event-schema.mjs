@@ -193,4 +193,40 @@ if (terminalEvents.length !== 1 || terminalEvents[0].type !== "turn.completed") 
   throw new Error("runtime bus must reject duplicate terminal and post-terminal events");
 }
 
+const unknownBus = new RuntimeEventBus(() => fakeWindow);
+const unknownEvent = unknownBus.emit("s_unknown_bus", {
+  type: "turn.dispatch_outcome_unknown",
+  turnId: "t_unknown_bus",
+  payload: { status: "dispatching", automaticReplay: false, manualRecoveryRequired: true },
+})[0];
+if (!unknownEvent) throw new Error("runtime bus must deliver outcome-unknown projection");
+if (unknownBus.emit("s_unknown_bus", {
+  type: "assistant.delta",
+  turnId: "t_unknown_bus",
+  payload: { text: "late pollution" },
+}).length !== 0) {
+  throw new Error("runtime bus must reject ordinary events after an unknown dispatch outcome");
+}
+const confirmedAfterUnknown = unknownBus.emit("s_unknown_bus", {
+  type: "turn.failed",
+  turnId: "t_unknown_bus",
+  payload: { assistant: "confirmed failure" },
+})[0];
+if (confirmedAfterUnknown?.type !== "turn.failed") {
+  throw new Error("runtime bus must allow a later confirmed terminal after outcome uncertainty");
+}
+const blockedBus = new RuntimeEventBus(() => fakeWindow);
+blockedBus.emit("s_blocked_bus", {
+  type: "turn.dispatch_blocked",
+  turnId: "t_blocked_bus",
+  payload: { reason: "DISPATCH_CAS_FAILED", automaticReplay: false },
+});
+if (blockedBus.emit("s_blocked_bus", {
+  type: "assistant.delta",
+  turnId: "t_blocked_bus",
+  payload: { text: "late blocked delta" },
+}).length !== 0) {
+  throw new Error("runtime bus must close a blocked dispatch projection");
+}
+
 console.log("runtime-event-schema: ok");

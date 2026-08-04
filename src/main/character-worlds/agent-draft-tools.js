@@ -111,6 +111,8 @@ const DESCRIPTION = [
   "the character library — approval is human-only. On a REVISION_CONFLICT",
   "error, re-read the current revision before retrying. Results are ids and",
   "revision numbers only; do not claim the character is active.",
+  "For personas, use identity, background, expertise, communicationStyle, goals, preferences, and constraints when the user provides them.",
+  "For world books, create named entries with title, content, and explicit activation keys or constant behavior; a name-only empty book is not a useful result.",
 ].join(" ");
 
 // Keep the model-facing shape explicit. The domain layer still owns the full
@@ -121,6 +123,19 @@ const CANONICAL_INPUT_SCHEMA = z.object({
   schemaVersion: z.number().int().optional(),
   name: z.string().min(1).max(512),
   description: z.string().max(100_000).optional(),
+  identity: z.string().max(100_000).optional(),
+  background: z.string().max(100_000).optional(),
+  expertise: z.array(z.string().max(1_024)).max(32).optional(),
+  communicationStyle: z.string().max(100_000).optional(),
+  goals: z.array(z.string().max(1_024)).max(32).optional(),
+  preferences: z.array(z.string().max(1_024)).max(32).optional(),
+  constraints: z.array(z.string().max(1_024)).max(32).optional(),
+  entries: z.array(z.object({
+    id: z.string().min(1).max(128).optional(),
+    title: z.string().max(1_024).optional(),
+    content: z.string().max(100_000).optional(),
+    enabled: z.boolean().optional(),
+  }).passthrough()).max(1_000).optional(),
   personality: z.string().max(100_000).optional(),
   scenario: z.string().max(100_000).optional(),
   firstMessage: z.string().max(100_000).optional(),

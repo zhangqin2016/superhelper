@@ -118,6 +118,7 @@ function registerCharacterAuthoringHandlers(ctx) {
   mutation("character:archive", idInput("characterId"), (svc, input) => svc.archiveCharacter(input));
   mutation("persona:create", createCanonical, (svc, input) => svc.createPersona(input));
   mutation("persona:update-revision", editInput("personaId"), (svc, input) => svc.editPersona(input));
+  mutation("world-book:update-revision", editInput("worldBookId"), (svc, input) => svc.editWorldBook(input));
   mutation("persona:archive", idInput("personaId"), (svc, input) => svc.archivePersona(input));
   mutation("world-book:create", createCanonical, (svc, input) => svc.createWorldBook(input));
   mutation("world-book:archive", idInput("worldBookId"), (svc, input) => svc.archiveWorldBook(input));
@@ -173,6 +174,8 @@ function registerCharacterAuthoringHandlers(ctx) {
     (repo, owner, id) => repo.getRevision(owner, id));
   revisionRead("persona:get-revision", "PERSONA_REVISION_NOT_FOUND",
     (repo, owner, id) => repo.getPersonaRevision(owner, id));
+  revisionRead("world-book:get-authoring-revision", "WORLD_BOOK_REVISION_NOT_FOUND",
+    (repo, owner, id) => repo.getWorldBookRevision(owner, id));
 }
 
 module.exports = { registerCharacterAuthoringHandlers };

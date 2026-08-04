@@ -1,14 +1,8 @@
-/**
- * Facade-calling operations for the character library manager (Character
- * Worlds Phase 2B, Task P2B-4). Extracted from ./character-library.js to keep
- * every renderer module inside the architecture line budget. All dependencies
- * (state access, dispatch, notices, DOM field reads) are injected by the
- * controller — this module holds no renderer state of its own, and every
- * operation fails open with a quiet localized notice.
- */
+/** Facade operations for the character library; dependencies are injected. */
 
 import { kindForTab, initialFormValues } from "./character-library-model.js";
 import { installOfficialCharacter } from "./official-character-picker.js";
+import { removeWorldBookFromConversation } from "./character-library-book-actions.js";
 
 function isRevisionConflict(error) {
   return typeof error === "string" && error.endsWith("REVISION_CONFLICT");
@@ -25,6 +19,7 @@ export function createLibraryActions(ctx) {
     readFormValues,
     focusNameField,
     getActiveSessionId,
+    onActivated,
   } = ctx;
 
   async function loadCurrentTab() {
@@ -55,9 +50,6 @@ export function createLibraryActions(ctx) {
           currentRevisionId: c.currentRevisionId || "",
         }));
         const base = (res?.characters || []).filter((c) => !installedIds.has(c.id));
-        // Tags ride on the revision canonical; fetch per row so tag filtering
-        // works. A failed read degrades that row's tags, never the list.
-        // (Known N+1 — deferred per review; libraries are small and local.)
         items = await Promise.all(base.map(async (c) => {
           let tags = [];
           let sourceKind = "";
@@ -68,8 +60,6 @@ export function createLibraryActions(ctx) {
             if (revision && Array.isArray(revision.canonical?.tags)) {
               tags = revision.canonical.tags.filter((entry) => typeof entry === "string" && entry);
             }
-            // Agent-draft provenance (Phase 2C) rides the same read so the row
-            // can badge agent-authored revisions; a failed read degrades both.
             if (revision && typeof revision.source?.kind === "string") {
               sourceKind = revision.source.kind;
             }
@@ -90,13 +80,51 @@ export function createLibraryActions(ctx) {
         }));
         items = [...officialRows, ...items];
       } else if (tab === "personas") {
-        const res = await api.listPersonas();
-        if (!res?.ok) throw new Error("list failed");
-        items = res.personas || [];
+        const [res, officialRes] = await Promise.all([
+          api.listPersonas(),
+          typeof api.listOfficialPersonas === "function"
+            ? api.listOfficialPersonas().catch(() => ({ ok: false }))
+            : Promise.resolve({ ok: false }),
+        ]);
+        if (!res?.ok && !officialRes?.ok) throw new Error("list failed");
+        const installedIds = new Set(
+          (officialRes?.personas || []).map((persona) => persona.installedPersonaId).filter(Boolean),
+        );
+        const officialRows = (officialRes?.personas || []).map((persona) => ({
+          ...persona,
+          id: `official:${persona.id}`,
+          officialId: persona.id,
+          name: persona.displayName || persona.name,
+          source: "official",
+          installed: Boolean(persona.installedPersonaId),
+          currentRevisionId: persona.currentRevisionId || "",
+          updateAvailable: Boolean(persona.updateAvailable),
+        }));
+        const base = (res?.personas || []).filter((persona) => !installedIds.has(persona.id));
+        items = [...officialRows, ...base];
       } else {
-        const res = await api.listWorldBooks();
-        if (!res?.ok) throw new Error("list failed");
-        items = res.worldBooks || [];
+        const [res, officialRes] = await Promise.all([
+          api.listWorldBooks(),
+          typeof api.listOfficialWorldBooks === "function"
+            ? api.listOfficialWorldBooks().catch(() => ({ ok: false }))
+            : Promise.resolve({ ok: false }),
+        ]);
+        if (!res?.ok && !officialRes?.ok) throw new Error("list failed");
+        const installedIds = new Set(
+          (officialRes?.worldBooks || []).map((book) => book.installedWorldBookId).filter(Boolean),
+        );
+        const officialRows = (officialRes?.worldBooks || []).map((book) => ({
+          ...book,
+          id: book.installedWorldBookId || `official:${book.id}`,
+          officialId: book.id,
+          name: book.displayName || book.name,
+          source: "official",
+          installed: Boolean(book.installedWorldBookId),
+          currentRevisionId: book.currentRevisionId || "",
+          updateAvailable: Boolean(book.updateAvailable),
+        }));
+        const base = (res?.worldBooks || []).filter((book) => !installedIds.has(book.id));
+        items = [...officialRows, ...base];
       }
       if (current()) dispatch({ type: "items.loaded", tab, items });
     } catch {
@@ -110,7 +138,33 @@ export function createLibraryActions(ctx) {
     dispatch({ type: "detail.selected", itemId: item.id });
     try {
       let detail;
-      if (item.official && item.officialId && typeof api.getOfficialCharacter === "function") {
+      if (item.official && item.officialId && getState().tab === "personas"
+        && typeof api.getOfficialPersona === "function") {
+        const res = await api.getOfficialPersona(item.officialId);
+        detail = res?.ok ? res.persona : null;
+      } else if (item.official && item.officialId && getState().tab === "books"
+        && typeof api.getOfficialWorldBook === "function") {
+        const res = await api.getOfficialWorldBook(item.officialId);
+        if (res?.ok && res.worldBook) {
+          const canonical = res.worldBook.canonical || {};
+          const entries = Array.isArray(canonical.entries) ? canonical.entries : [];
+          detail = {
+            ...res.worldBook,
+            ...canonical,
+            entryCount: entries.length,
+            entries,
+            health: "healthy",
+            scope: "conversation",
+            conflictStatus: "not_evaluated",
+            report: {
+              entryCount: entries.length,
+              enabledCount: entries.filter((entry) => entry?.enabled !== false).length,
+              constantCount: entries.filter((entry) => entry?.activation?.constant === true).length,
+            },
+          };
+        } else detail = null;
+      } else if (item.official && item.officialId && getState().tab === "characters"
+        && typeof api.getOfficialCharacter === "function") {
         const res = await api.getOfficialCharacter(item.officialId);
         detail = res?.ok ? res.character : null;
       } else if (getState().tab === "characters") {
@@ -131,6 +185,16 @@ export function createLibraryActions(ctx) {
       } else {
         const res = await api.getWorldBook(item.id);
         detail = res?.ok ? res.worldBook : null;
+        if (detail && item.currentRevisionId && typeof api.getWorldBookRevision === "function") {
+          const revision = await api.getWorldBookRevision(item.currentRevisionId);
+          if (revision?.ok) {
+            detail = {
+              ...detail,
+              entries: revision.revision?.entries || [],
+              entriesTruncated: Boolean(revision.revision?.truncated),
+            };
+          }
+        }
         const sessionId = getActiveSessionId?.();
         if (detail && sessionId && typeof api.getSessionCharacterBinding === "function") {
           const binding = await api.getSessionCharacterBinding(sessionId);
@@ -138,6 +202,8 @@ export function createLibraryActions(ctx) {
             ? binding.binding.worldBookRevisionIds
             : Array.isArray(binding?.binding?.worldBookBindings)
               ? binding.binding.worldBookBindings.map((entry) => entry?.revisionId).filter(Boolean)
+              : Array.isArray(binding?.binding?.books)
+                ? binding.binding.books.map((entry) => entry?.worldBookRevisionId).filter(Boolean)
               : [];
           detail = {
             ...detail,
@@ -169,6 +235,18 @@ export function createLibraryActions(ctx) {
       let target = item;
       if (item.kind === "character" && item.official) {
         target = await installOfficialCharacter(api, item);
+      } else if (item.kind === "persona" && item.official) {
+        const installed = item.currentRevisionId && !item.updateAvailable
+          ? { ok: true, personaId: item.id, revisionId: item.currentRevisionId, displayName: item.name }
+          : await api.installOfficialPersona?.(item.officialId);
+        target = installed?.ok
+          ? { ...item, id: installed.personaId || item.id, currentRevisionId: installed.revisionId, name: installed.displayName || item.name, displayName: installed.displayName || item.name }
+          : null;
+      } else if (item.kind === "worldBook" && item.official) {
+        const installed = await api.installOfficialWorldBook?.(item.officialId);
+        target = installed?.ok
+          ? { ...item, id: installed.worldBookId || item.id, currentRevisionId: installed.revisionId, name: installed.displayName || item.name, displayName: installed.displayName || item.name }
+          : null;
       }
       if (!target?.currentRevisionId) {
         dispatch({ type: "activation.failed", itemId: item.id, error: "NOT_INSTALLED" });
@@ -193,6 +271,7 @@ export function createLibraryActions(ctx) {
         dispatch({ type: "activation.settled", itemId: item.id });
         setNotice("activated", { name: target.displayName || target.name || item.name });
         await loadCurrentTab();
+        onActivated?.();
       } else {
         dispatch({ type: "activation.failed", itemId: item.id, error: res?.error || "ACTIVATION_FAILED" });
         setNotice(res?.error === "CHARACTER_BINDING_CONFLICT" ? "conflict" : "action_failed");
@@ -217,6 +296,8 @@ export function createLibraryActions(ctx) {
       return;
     }
     const tags = (values.tags || "").split(/[,，]/)
+      .map((entry) => entry.trim()).filter(Boolean);
+    const listField = (key) => (values[key] || "").split(/[,，]/)
       .map((entry) => entry.trim()).filter(Boolean);
     // Sync state before the busy-toggle re-render so the rebuild shows the
     // same values the user just typed (and a failed save loses nothing).
@@ -244,6 +325,13 @@ export function createLibraryActions(ctx) {
           ...(form.mode === "edit" ? form.canonical || {} : {}),
           name,
           description: values.description,
+          identity: values.identity,
+          background: values.background,
+          expertise: listField("expertise"),
+          communicationStyle: values.communicationStyle,
+          goals: listField("goals"),
+          preferences: listField("preferences"),
+          constraints: listField("constraints"),
         };
         result = form.mode === "create"
           ? await api.createPersona({ canonical })
@@ -253,7 +341,30 @@ export function createLibraryActions(ctx) {
             canonical,
           });
       } else {
-        result = await api.createWorldBook({ canonical: { name, entries: [] } });
+        let entries = [];
+        try {
+          entries = JSON.parse(values.worldBookEntries || "[]");
+        } catch {
+          entries = [];
+        }
+        const canonical = {
+          ...(form.mode === "edit" ? form.canonical || {} : {}),
+          name,
+          entries: Array.isArray(entries) ? entries : [],
+          scanPolicy: {
+            ...(form.mode === "edit" && form.canonical?.scanPolicy ? form.canonical.scanPolicy : {}),
+            scanDepthMessages: Math.max(0, Number.parseInt(values.scanDepthMessages, 10) || 8),
+            tokenBudget: Math.max(0, Number.parseInt(values.tokenBudget, 10) || 0),
+            recursive: values.recursive !== "false",
+          },
+        };
+        result = form.mode === "create"
+          ? await api.createWorldBook({ canonical })
+          : await api.updateWorldBookRevision({
+            worldBookId: form.entityId,
+            expectedBaseRevisionId: form.baseRevisionId,
+            canonical,
+          });
       }
       if (result?.ok) {
         settle("mutation.settled", form.mode === "create" ? "created" : "saved_revision",
@@ -276,7 +387,9 @@ export function createLibraryActions(ctx) {
     try {
       const res = kind === "character"
         ? await api.getCharacterRevision(item.currentRevisionId)
-        : await api.getPersonaRevision(item.currentRevisionId);
+        : kind === "persona"
+          ? await api.getPersonaRevision(item.currentRevisionId)
+          : await api.getWorldBookAuthoringRevision?.(item.currentRevisionId);
       if (!res?.ok || !res.revision?.canonical) {
         setNotice("action_failed");
         return;
@@ -451,5 +564,8 @@ export function createLibraryActions(ctx) {
     startImport,
     openDetail,
     activateItem,
+    removeWorldBook: (item) => removeWorldBookFromConversation({
+      facade, getState, getActiveSessionId, dispatch, setNotice, openDetail,
+    }, item),
   };
 }

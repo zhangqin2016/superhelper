@@ -1,8 +1,13 @@
 # Production Character Library Design
 
 Date: 2026-08-03
-Status: Approved for implementation planning
+Status: Implemented in the current branch; release verification pending
 Scope: Character, persona, and world-book library experience; official production-role catalog
+
+The grouped library, official catalog, safe summary IPC, guarded activation,
+responsive detail workflow, localization, and focused regression coverage are
+implemented. Remaining release verification is recorded in
+`docs/character-worlds-gap-trace.md` and the companion implementation plan.
 
 ## 1. Problem
 

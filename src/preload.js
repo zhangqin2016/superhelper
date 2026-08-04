@@ -190,6 +190,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
       sessionId: payload?.sessionId,
       kind: payload?.kind,
       revisionId: payload?.revisionId,
+      action: payload?.action,
       scope: payload?.scope,
       mergeStrategy: payload?.mergeStrategy,
       expectedBindingVersion: payload?.expectedBindingVersion,
@@ -230,12 +231,18 @@ contextBridge.exposeInMainWorld("assistantClient", {
     // Read-only persona inspection (Phase 2B): whitelisted summaries only —
     // the persona narrative description and any mutation surface stay main-side.
     listPersonas: () => ipcRenderer.invoke("persona:list"),
+    listOfficialPersonas: () => ipcRenderer.invoke("persona:list-official"),
     getPersona: (personaId) => ipcRenderer.invoke("persona:get", { personaId }),
+    getOfficialPersona: (officialId) => ipcRenderer.invoke("persona:get-official", { officialId }),
+    installOfficialPersona: (officialId) => ipcRenderer.invoke("persona:install-official", { officialId }),
     // Read-only world-book inspection (Phase 2A): whitelisted summaries only —
     // no raw book content and no mutation surface crosses the bridge.
     listWorldBooks: () => ipcRenderer.invoke("world-book:list"),
     getWorldBook: (worldBookId) => ipcRenderer.invoke("world-book:get", { worldBookId }),
     getWorldBookRevision: (revisionId) => ipcRenderer.invoke("world-book:get-revision", { revisionId }),
+    listOfficialWorldBooks: () => ipcRenderer.invoke("world-book:list-official"),
+    getOfficialWorldBook: (officialId) => ipcRenderer.invoke("world-book:get-official", { officialId }),
+    installOfficialWorldBook: (officialId) => ipcRenderer.invoke("world-book:install-official", { officialId }),
     // Authoring (Phase 2B): guarded mutations on the validated domain API plus
     // revision history/canonical reads for the library editor. Payloads are
     // whitelisted field-by-field; owner scope is derived in main on every call
@@ -273,9 +280,17 @@ contextBridge.exposeInMainWorld("assistantClient", {
       ipcRenderer.invoke("persona:history", { personaId, limit: options?.limit }),
     createWorldBook: (payload = {}) =>
       ipcRenderer.invoke("world-book:create", { canonical: payload?.canonical }),
+    updateWorldBookRevision: (payload = {}) =>
+      ipcRenderer.invoke("world-book:update-revision", {
+        worldBookId: payload?.worldBookId,
+        expectedBaseRevisionId: payload?.expectedBaseRevisionId,
+        canonical: payload?.canonical,
+      }),
     archiveWorldBook: (worldBookId) => ipcRenderer.invoke("world-book:archive", { worldBookId }),
     getWorldBookHistory: (worldBookId, options = {}) =>
       ipcRenderer.invoke("world-book:history", { worldBookId, limit: options?.limit }),
+    getWorldBookAuthoringRevision: (revisionId) =>
+      ipcRenderer.invoke("world-book:get-authoring-revision", { revisionId }),
     getScene: (sessionId) => ipcRenderer.invoke("scene:get", { sessionId }),
     getSceneMemory: (sessionId, characterRevisionId) => ipcRenderer.invoke("scene:memory", { sessionId, characterRevisionId }),
     getGreetings: (revisionId) => ipcRenderer.invoke("character:greetings", { revisionId }),

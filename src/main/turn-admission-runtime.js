@@ -290,7 +290,7 @@ function createTurnAdmissionMethods(deps = {}) {
           turnId: admission.turn?.turnId || null,
         };
       }
-      if (state.phase !== "idle" && !opts.fromQueue) {
+      if ((state.phase !== "idle" || state.startInFlight) && !opts.fromQueue) {
         if (opts.mode === "steer" && process.env.LILY_ENABLE_STEER !== "0") {
           const steered = await this._trySteer(session, displayText, files, opts);
           if (steered?.ok) return steered;
@@ -417,6 +417,7 @@ function createTurnAdmissionMethods(deps = {}) {
         }
         state.queue.push(item);
         this._emitQueue(sessionId);
+        require("./turn-start-guard").cancelTurnStart(this, sessionId);
         this.interrupt(sessionId, { clearQueue: false });
         void this._dispatchNext(sessionId);
         return {
@@ -433,6 +434,7 @@ function createTurnAdmissionMethods(deps = {}) {
       }
       state.queue.push(item);
       this._emitQueue(sessionId);
+      require("./turn-start-guard").cancelTurnStart(this, sessionId);
       this.interrupt(sessionId, { clearQueue: false });
       void this._dispatchNext(sessionId);
       return {

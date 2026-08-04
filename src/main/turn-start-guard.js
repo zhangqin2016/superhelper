@@ -46,7 +46,44 @@ function friendlyStartFailureDetail(err) {
   return "发送过程遇到内部错误，已自动恢复。请重试；若反复出现请重启应用。";
 }
 
+/**
+ * An async preflight may resume after the watchdog has already finalized the
+ * turn. Only the phase, turn id, and generation that started the preflight may
+ * continue to engine dispatch; a cleared or newer turn must stop immediately.
+ */
+function isCurrentTurnStart(state, turnId, turnGeneration) {
+  return Boolean(
+    state &&
+    state.startInFlight?.cancelled !== true &&
+    state.phase === "starting" &&
+    state.terminalEmitted !== true &&
+    state.turnId === turnId &&
+    state.turnGeneration === turnGeneration,
+  );
+}
+
+function isTurnStartCancelled(state) {
+  return state?.startInFlight?.cancelled === true;
+}
+
+function startCancellationResult(orchestrator, sessionId) {
+  if (!isTurnStartCancelled(orchestrator._state(sessionId))) return null;
+  return { ok: false, error: "TURN_START_ABORTED", cancelled: true };
+}
+
+/** Cancel a preflight that has not yet assigned a visible turn id. */
+function cancelTurnStart(orchestrator, sessionId) {
+  const reservation = orchestrator._state(sessionId).startInFlight;
+  if (!reservation || typeof reservation !== "object") return false;
+  reservation.cancelled = true;
+  return true;
+}
+
 function resetPhaseHard(orchestrator, sessionId, state, payload) {
+  // clearTurnState deliberately removes the active turn id. Capture it first
+  // so the last-resort terminal event is still attributable to the failed
+  // turn; production _emit drops required orphan events without this.
+  const turnId = state.turnId || null;
   try {
     require("./turn-terminal-finalizer").clearTurnState(state);
   } catch (err) {
@@ -63,10 +100,16 @@ function resetPhaseHard(orchestrator, sessionId, state, payload) {
       errorCode: payload.errorCode,
       errorCategory: "environment",
       retryable: true,
-    });
+    }, { turnId });
   } catch (err) {
     log.warn("stuck-phase terminal emit failed: %s", err?.message || err);
   }
+}
+
+function ownsRecoveryTarget(state, expectedTurnId, expectedTurnGeneration) {
+  if (expectedTurnId !== undefined && state.turnId !== expectedTurnId) return false;
+  if (expectedTurnGeneration !== undefined && state.turnGeneration !== expectedTurnGeneration) return false;
+  return true;
 }
 
 /**
@@ -74,8 +117,14 @@ function resetPhaseHard(orchestrator, sessionId, state, payload) {
  * stuck phase, emitting exactly one terminal event so the renderer exits its
  * loading state, then progress the queue.
  */
-async function recoverStuckTurn(orchestrator, sessionId, { errorCode, err }) {
+async function recoverStuckTurnOwned(orchestrator, sessionId, {
+  errorCode,
+  err,
+  expectedTurnId,
+  expectedTurnGeneration,
+} = {}) {
   const state = orchestrator._state(sessionId);
+  if (!ownsRecoveryTarget(state, expectedTurnId, expectedTurnGeneration)) return;
   if (state.phase === "idle" && !state.turnId) return;
   const assistant = friendlyStartFailureDetail(err);
   const hadTurn = Boolean(state.turnId) && !state.terminalEmitted;
@@ -95,6 +144,14 @@ async function recoverStuckTurn(orchestrator, sessionId, { errorCode, err }) {
   }
   // Hard guarantee: finalize swallows its own errors, so verify the phase
   // actually returned to idle — if it didn't (exception mid-finalize), reset.
+  if (state.phase !== "idle" && !ownsRecoveryTarget(state, expectedTurnId, expectedTurnGeneration)) {
+    log.warn(
+      "stuck-turn recovery abandoned stale target: session=%s turn=%s",
+      sessionId,
+      expectedTurnId || "",
+    );
+    return;
+  }
   if (state.phase !== "idle") {
     resetPhaseHard(orchestrator, sessionId, state, { assistant, errorCode });
   } else if (!hadTurn) {
@@ -112,10 +169,36 @@ async function recoverStuckTurn(orchestrator, sessionId, { errorCode, err }) {
   }
 }
 
-/** Wrap _startTurn so NO exception can strand the session phase. */
-async function guardTurnStart(orchestrator, session, text, files, opts = {}) {
+/**
+ * Serialize recovery per session. The watchdog and a failing send can both
+ * observe the same stuck state; allowing both to finalize would race the
+ * durable terminal CAS and, worse, let the second path reset state while the
+ * first is still awaiting storage I/O.
+ */
+function recoverStuckTurn(orchestrator, sessionId, options = {}) {
+  const state = orchestrator._state(sessionId);
+  if (state.recoveryInFlight) return state.recoveryInFlight;
+  let recoveryPromise;
+  recoveryPromise = Promise.resolve()
+    .then(() => recoverStuckTurnOwned(orchestrator, sessionId, options))
+    .finally(() => {
+      if (state.recoveryInFlight === recoveryPromise) state.recoveryInFlight = null;
+    });
+  state.recoveryInFlight = recoveryPromise;
+  return recoveryPromise;
+}
+
+/** Wrap any pre-engine start path so NO exception can strand the session phase. */
+async function guardStartMethod(orchestrator, startMethod, session, text, files, opts = {}) {
+  const initialState = orchestrator._state(session.id);
+  if (initialState.startInFlight) {
+    return { ok: false, error: "TURN_START_BUSY", retry: true };
+  }
+  const startReservation = { cancelled: false };
+  initialState.startInFlight = startReservation;
+  const initialGeneration = Number(initialState.turnGeneration || 0);
   try {
-    return await orchestrator._startTurn(session, text, files, opts);
+    return await startMethod(session, text, files, opts);
   } catch (err) {
     if (err?.code === "TURN_DISPATCH_CRASH_INJECTION") throw err;
     log.error(
@@ -123,14 +206,62 @@ async function guardTurnStart(orchestrator, session, text, files, opts = {}) {
       session?.id,
       err?.stack || err?.message || err,
     );
-    await recoverStuckTurn(orchestrator, session.id, { errorCode: "TURN_START_FAILED", err });
+    const currentState = orchestrator._state(session.id);
+    const expectedTurnGeneration = Number.isFinite(currentState.turnGeneration)
+      ? initialGeneration + 1
+      : undefined;
+    const expectedTurnId = expectedTurnGeneration !== undefined
+      && currentState.turnGeneration === expectedTurnGeneration
+      ? currentState.turnId
+      : undefined;
+    await recoverStuckTurn(orchestrator, session.id, {
+      errorCode: "TURN_START_FAILED",
+      err,
+      expectedTurnId,
+      expectedTurnGeneration,
+    });
     const error = err?.code === "OWNER_SCOPE_UNAVAILABLE"
       ? "OWNER_SCOPE_UNAVAILABLE"
       : err?.code === "TURN_ADMISSION_FAILED"
         ? "TURN_ADMISSION_FAILED"
         : "TURN_START_FAILED";
     return { ok: false, error, detail: friendlyStartFailureDetail(err) };
+  } finally {
+    if (initialState.startInFlight === startReservation) {
+      initialState.startInFlight = null;
+      if (initialState.phase === "idle" && initialState.queue?.length) {
+        queueMicrotask(() => void orchestrator._dispatchNext(session.id));
+      }
+    }
   }
+}
+
+/** Wrap _startTurn so NO exception can strand the session phase. */
+function guardTurnStart(orchestrator, session, text, files, opts = {}) {
+  return guardStartMethod(
+    orchestrator,
+    (startSession, startText, startFiles, startOpts) => (
+      orchestrator._startTurn(startSession, startText, startFiles, startOpts)
+    ),
+    session,
+    text,
+    files,
+    opts,
+  );
+}
+
+/** Local assistant turns have the same durable start boundary as engine turns. */
+function guardLocalAssistantTurn(orchestrator, session, text, files, opts = {}) {
+  return guardStartMethod(
+    orchestrator,
+    (startSession, startText, startFiles, startOpts) => (
+      orchestrator._startLocalAssistantTurn(startSession, startText, startFiles, startOpts)
+    ),
+    session,
+    text,
+    files,
+    opts,
+  );
 }
 
 /**
@@ -153,12 +284,16 @@ function startStuckPhaseGuard(orchestrator, options = {}) {
         void recoverStuckTurn(orchestrator, sessionId, {
           errorCode: "TURN_STUCK_RESET",
           err: new Error(`phase stuck at "starting" for ${Math.round(age / 1000)}s`),
+          expectedTurnId: state.turnId,
+          expectedTurnGeneration: state.turnGeneration,
         });
       } else if (state.phase === "finalizing" && age > stuckFinalizingMs) {
         log.error("stuck phase detected (finalizing, %ds) — auto-recovering: session=%s", Math.round(age / 1000), sessionId);
         void recoverStuckTurn(orchestrator, sessionId, {
           errorCode: "TURN_STUCK_RESET",
           err: new Error(`phase stuck at "finalizing" for ${Math.round(age / 1000)}s`),
+          expectedTurnId: state.turnId,
+          expectedTurnGeneration: state.turnGeneration,
         });
       }
     }
@@ -169,7 +304,12 @@ function startStuckPhaseGuard(orchestrator, options = {}) {
 
 module.exports = {
   friendlyStartFailureDetail,
+  cancelTurnStart,
+  guardLocalAssistantTurn,
   guardTurnStart,
+  isCurrentTurnStart,
+  isTurnStartCancelled,
+  startCancellationResult,
   recoverStuckTurn,
   startStuckPhaseGuard,
 };

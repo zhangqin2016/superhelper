@@ -44,10 +44,16 @@ const CHANNELS = {
   listWorldBooks: "world-book:list",
   getWorldBook: "world-book:get",
   getWorldBookRevision: "world-book:get-revision",
+  listOfficialWorldBooks: "world-book:list-official",
+  getOfficialWorldBook: "world-book:get-official",
+  installOfficialWorldBook: "world-book:install-official",
   // Phase 2B (P2B-2): read-only persona inspection. In-depth persona binding
   // and envelope behavior lives in test-character-persona-context.mjs.
   listPersonas: "persona:list",
+  listOfficialPersonas: "persona:list-official",
   getPersona: "persona:get",
+  getOfficialPersona: "persona:get-official",
+  installOfficialPersona: "persona:install-official",
   // Phase 3 (P3-2): group-scene reads + validated mutations.
   getScene: "scene:get",
   getGreetings: "character:greetings",
@@ -80,8 +86,10 @@ const AUTHORING_BRIDGE_METHODS = [
   "getPersonaRevision",
   "getPersonaHistory",
   "createWorldBook",
+  "updateWorldBookRevision",
   "archiveWorldBook",
   "getWorldBookHistory",
+  "getWorldBookAuthoringRevision",
 ];
 const ALL_BRIDGE_METHODS = [...BRIDGE_METHODS, ...AUTHORING_BRIDGE_METHODS].sort();
 
@@ -262,8 +270,14 @@ try {
     await api.listWorldBooks();
     await api.getWorldBook("book-1");
     await api.getWorldBookRevision("book-rev-1");
+    await api.listOfficialWorldBooks();
+    await api.getOfficialWorldBook("world-book-project-knowledge");
+    await api.installOfficialWorldBook("world-book-project-knowledge");
     await api.listPersonas();
+    await api.listOfficialPersonas();
     await api.getPersona("persona-1");
+    await api.getOfficialPersona("persona-project-lead");
+    await api.installOfficialPersona("persona-project-lead");
     await api.getScene("session-a");
     await api.getSceneMemory("session-a", "rev-1");
     await api.updateScene({ sessionId: "session-a", participantCharacterRevisionIds: ["rev-1"], replyStrategy: "natural", promptMode: "swap" });
@@ -292,8 +306,14 @@ try {
         "world-book:list",
         "world-book:get",
         "world-book:get-revision",
+        "world-book:list-official",
+        "world-book:get-official",
+        "world-book:install-official",
         "persona:list",
+        "persona:list-official",
         "persona:get",
+        "persona:get-official",
+        "persona:install-official",
         "scene:get",
         "scene:memory",
         "scene:update",
@@ -320,12 +340,18 @@ try {
     assert.equal(invokeCalls[5].payload, undefined, "previewCharacterImport takes no payload");
     assert.deepEqual(invokeCalls[6].payload, { sourcePath: "/tmp/card.json" }, "previewCharacterImport forwards a validated sourcePath");
     assert.equal(invokeCalls[12].payload, undefined, "listWorldBooks takes no payload");
-    assert.equal(invokeCalls[15].payload, undefined, "listPersonas takes no payload");
+    assert.equal(invokeCalls[18].payload, undefined, "listPersonas takes no payload");
     assert.deepEqual(invokeCalls[7].payload, { previewToken: "t".repeat(64), duplicateResolution: "create_copy" });
     assert.deepEqual(invokeCalls[8].payload, { revisionId: "rev-1" });
     assert.deepEqual(invokeCalls[13].payload, { worldBookId: "book-1" });
     assert.deepEqual(invokeCalls[14].payload, { revisionId: "book-rev-1" });
-    assert.deepEqual(invokeCalls[16].payload, { personaId: "persona-1" });
+    assert.equal(invokeCalls[15].payload, undefined, "listOfficialWorldBooks takes no payload");
+    assert.deepEqual(invokeCalls[16].payload, { officialId: "world-book-project-knowledge" });
+    assert.deepEqual(invokeCalls[17].payload, { officialId: "world-book-project-knowledge" });
+    assert.equal(invokeCalls[19].payload, undefined, "listOfficialPersonas takes no payload");
+    assert.deepEqual(invokeCalls[20].payload, { personaId: "persona-1" });
+    assert.deepEqual(invokeCalls[21].payload, { officialId: "persona-project-lead" });
+    assert.deepEqual(invokeCalls[22].payload, { officialId: "persona-project-lead" });
   });
 
   await check("untrusted senders and remote frames are rejected on every channel", async () => {

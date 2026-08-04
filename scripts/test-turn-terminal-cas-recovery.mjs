@@ -9,7 +9,7 @@ const {
   createTurnTerminalFinalizer,
 } = require("../src/main/turn-terminal-finalizer.js");
 
-function activeState(turnId) {
+function activeState(turnId, assistantText = "durable first-winner answer") {
   return {
     sessionId: "session_terminal_cas",
     phase: "running",
@@ -26,7 +26,7 @@ function activeState(turnId) {
     },
     dispatchAttemptId: `dispatch_${turnId}`,
     characterWorldsSnapshot: null,
-    assistantText: "durable first-winner answer",
+    assistantText,
     thinkingText: "",
     contentBlocks: [],
     protocolUnknown: [],
@@ -58,9 +58,10 @@ function activeState(turnId) {
   };
 }
 
-function archive() {
+function archive(commits = [], { buildRecordThrows = false } = {}) {
   return {
     buildRecord(_state, type, payload) {
+      if (buildRecordThrows) throw new Error("archive builder exploded");
       return {
         type,
         assistantText: payload.assistant || "",
@@ -71,14 +72,16 @@ function archive() {
       };
     },
     commit() {
+      commits.push(true);
       return { id: "message_terminal_cas" };
     },
   };
 }
 
-async function runScenario({ turnId, markTerminal, durableLookup }) {
-  const state = activeState(turnId);
+async function runScenario({ turnId, markTerminal, durableLookup, assistant = "late loser answer", buildRecordThrows = false }) {
+  const state = activeState(turnId, assistant);
   const observed = [];
+  const commits = [];
   const bus = new RuntimeEventBus(() => null);
   bus.addObserver((_sessionId, events) => observed.push(...events));
   const ctx = {
@@ -91,7 +94,7 @@ async function runScenario({ turnId, markTerminal, durableLookup }) {
   };
   const finalizer = createTurnTerminalFinalizer({
     ctx,
-    turnArchive: archive(),
+    turnArchive: archive(commits, { buildRecordThrows }),
     taskRunRuntime: { complete() {} },
     subagentRuntime: { clearAllWatches() {} },
     getState: () => state,
@@ -105,10 +108,10 @@ async function runScenario({ turnId, markTerminal, durableLookup }) {
   });
   await finalizer.finalize("session_terminal_cas", "turn.failed", {
     failed: true,
-    assistant: "late loser answer",
+    assistant,
     errorCode: "LATE_FAILURE",
   });
-  return { state, observed };
+  return { state, observed, commits };
 }
 
 const terminalWinner = await runScenario({
@@ -181,5 +184,45 @@ assert.equal(
   "outcome uncertainty closes the live projection with one visible failure",
 );
 assert.equal(unknown.state.phase, "idle");
+
+// An empty failure is still a durable conversation event. Without this, a
+// failed task with no assistant text/tools disappears after reload because the
+// terminal finalizer drops the empty archive record.
+const emptyFailure = await runScenario({
+  turnId: "turn_empty_failure",
+  assistant: "",
+  markTerminal: () => ({
+    ok: true,
+    turn: { status: "failed", terminalType: "turn.failed" },
+  }),
+  durableLookup: () => null,
+});
+assert.equal(
+  emptyFailure.commits.length,
+  1,
+  "empty turn.failed must be archived so the failure survives reload",
+);
+
+// A post-CAS archive failure must not leave the renderer in a permanent
+// finalizing state. The live terminal projection is the fail-open fallback.
+const archiveFailure = await runScenario({
+  turnId: "turn_archive_failure",
+  assistant: "",
+  buildRecordThrows: true,
+  markTerminal: () => ({
+    ok: true,
+    turn: { status: "failed", terminalType: "turn.failed" },
+  }),
+  durableLookup: () => null,
+});
+assert.equal(archiveFailure.state.phase, "idle", "archive failure must immediately release finalizing");
+const archiveFailureEvent = archiveFailure.observed.find((event) => event.type === "turn.failed");
+assert.ok(archiveFailureEvent, "archive failure must still produce a terminal event");
+assert.equal(archiveFailureEvent.turnId, "turn_archive_failure");
+assert.match(
+  archiveFailureEvent.payload.assistant,
+  /收尾时遇到内部错误/,
+  "archive failure must leave an explicit visible recovery message",
+);
 
 console.log("turn-terminal-cas-recovery: ok");

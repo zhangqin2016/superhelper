@@ -575,24 +575,29 @@ const characterBinding = {
 
 // --- Static UI contract: one composer-owned trigger, no historical duplicate --
 {
-  const [html, librarySource, css] = await Promise.all([
+  const [html, controlSource, librarySource, css] = await Promise.all([
     readFile(new URL("../src/renderer/index.html", import.meta.url), "utf8"),
+    readFile(new URL("../src/renderer/modules/character-session-control.js", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer/modules/character-library.js", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer/styles/character-worlds.css", import.meta.url), "utf8"),
   ]);
   assert.equal((html.match(/id="sessionRoleBanner"/g) || []).length, 1, "there must be exactly one role selector");
-  assert.match(html, /<button id="sessionRoleBanner"[^>]*aria-controls="characterPopover"/, "the selector must be a native button wired to its popover");
+  assert.match(html, /<button id="sessionRoleBanner"[^>]*aria-controls="characterPopover"/, "the selector must be a native button wired to the quick selector");
   assert.equal(html.includes('id="sessionCharacterBtn"'), false, "the old toolbar trigger must stay removed");
   assert.ok(
     /class="composer-toolbar">[\s\S]*id="sessionRoleBanner"[\s\S]*id="sessionSkillsBtn"/.test(html),
     "the conversation context selector belongs inside the composer toolbar",
   );
   assert.equal(librarySource.includes("sessionCharacterBtn"), false, "library focus must never target the removed trigger");
+  assert.match(controlSource, /if \(p\.hidden\) openPopover\(\)/, "the composer role selector must open the quick selector");
+  assert.match(controlSource, /characterManageBtn[\s\S]*openCharacterLibrary\(\)/, "the legacy manager command must remain compatible");
   assert.ok(
     (librarySource.match(/sessionRoleBanner/g) || []).length >= 2,
     "AI authoring and library close must restore the new selector state/focus",
   );
   assert.equal(css.includes(".composer-character-btn"), false, "obsolete toolbar styles must not return");
+  assert.match(css, /\.character-popover\s*\{[\s\S]*position:\s*fixed/, "character popover must be viewport-positioned");
+  assert.match(css, /\.character-list\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0, 1fr\)\)/, "character options must use a compact two-column grid");
 }
 
 // --- Binding projection restores the trusted display name after reload -------
@@ -678,6 +683,20 @@ const characterBinding = {
   assert.equal(name.textContent, "Lily 原声");
   assert.equal(badges.children.length, 0, "native mode must clear character context badges");
   assert.equal(classes.has("is-character"), false);
+
+  state = {
+    available: true,
+    sessionId: "session-a",
+    mode: "native",
+    personaRevisionId: "persona-a",
+    worldBookRevisionId: "world-a",
+  };
+  render();
+  assert.deepEqual(
+    badges.children.map((child) => child.textContent),
+    ["设定", "世界书"],
+    "native Lily must expose independently active persona and world-book context",
+  );
 }
 
 console.log("character session control reducer: ok");

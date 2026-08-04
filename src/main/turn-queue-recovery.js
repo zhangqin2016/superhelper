@@ -3,6 +3,7 @@
 const {
   normalizeQueueRecoveryEnvelope,
 } = require("./turn-queue-recovery-envelope");
+const { DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("./turn-recovery-projection");
 
 function recoveredQueueOptions(admitted, queueDispatchOptions) {
   const metadata = admitted?.metadata || {};
@@ -55,6 +56,8 @@ function createTurnQueueRecoveryMethods({ log, queueDispatchOptions }) {
         scheduledTaskRunId: recovery?.options?.scheduledTaskRunId || null,
         commandId: recovery?.options?.externalCommand?.commandId || null,
         reason,
+        assistant: DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
+        errorCode: "DISPATCH_OUTCOME_UNKNOWN",
         automaticReplay: false,
         manualRecoveryRequired: true,
       });

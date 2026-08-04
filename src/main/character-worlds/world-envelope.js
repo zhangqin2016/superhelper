@@ -301,15 +301,65 @@ function preparePersonaCandidate({
     ? boundField(cleanText(canonical.description))
     : cleanText(canonical.description);
   const description = redact("personaDescription", bounded).trim();
-  if (!description) return missing("empty_after_redaction");
+  const textField = (key) => {
+    const value = cleanText(canonical[key]);
+    if (!value) return "";
+    const boundedValue = typeof boundField === "function" ? boundField(value) : value;
+    return redact(`persona${key[0].toUpperCase()}${key.slice(1)}`, boundedValue).trim();
+  };
+  const listField = (key) => {
+    if (!Array.isArray(canonical[key])) return [];
+    return canonical[key]
+      .map((value) => textFieldValue(key, value, redact, boundField))
+      .filter(Boolean);
+  };
+  const identity = textField("identity");
+  const background = textField("background");
+  const communicationStyle = textField("communicationStyle");
+  const expertise = listField("expertise");
+  const goals = listField("goals");
+  const preferences = listField("preferences");
+  const constraints = listField("constraints");
+  const profileParts = [
+    identity && `identity: ${identity}`,
+    background && `background: ${background}`,
+    expertise.length && `expertise: ${expertise.join("; ")}`,
+    communicationStyle && `communicationStyle: ${communicationStyle}`,
+    goals.length && `goals: ${goals.join("; ")}`,
+    preferences.length && `preferences: ${preferences.join("; ")}`,
+    constraints.length && `constraints: ${constraints.join("; ")}`,
+  ].filter(Boolean).join("\n");
+  if (!description && !profileParts) return missing("empty_after_redaction");
+  const fields = {
+    authority: "lower_authority_narrative",
+    personaName: name,
+    personaIdentity: identity,
+    personaBackground: background,
+    personaExpertise: expertise,
+    personaCommunicationStyle: communicationStyle,
+    personaGoals: goals,
+    personaPreferences: preferences,
+    personaConstraints: constraints,
+  };
   return {
     type: "persona",
     compatibility: "lily_native",
     omittedSource: "persona_field",
-    extraFields: { authority: "lower_authority_narrative", personaName: name },
-    parts: [["personaDescription", description]],
+    extraFields: fields,
+    parts: [
+      ["personaDescription", description],
+      ["personaProfile", profileParts],
+    ].filter(([, value]) => value),
     revisionId: personaRevisionId,
   };
+}
+
+function textFieldValue(key, value, redact, boundField) {
+  const clean = cleanText(value);
+  if (!clean) return "";
+  const bounded = typeof boundField === "function" ? boundField(clean) : clean;
+  const label = `persona${key[0].toUpperCase()}${key.slice(1)}`;
+  return redact(label, bounded).trim();
 }
 
 /**

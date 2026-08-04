@@ -3,10 +3,11 @@
 // §15/§16, HANDOFF.md §5/§6).
 //
 // Verifies the READ-ONLY book inspection surface on the trusted bridge:
-//   - exactly three book channels (world-book:list/get/get-revision), exposed
-//     through the same frozen preload facade as the eight Phase 1 channels
-//   - no entry-level renderer mutation path for books: library activation only
-//     pins a validated revision and never exposes raw book content
+//   - exactly three read-only inspection channels (world-book:list/get/get-revision),
+//     exposed through the same frozen preload facade as the official catalog
+//     and separately validated authoring methods
+//   - inspection never exposes raw book content; editing remains behind the
+//     validated authoring IPC contract and library activation pins a revision
 //   - owner scope is derived in main; renderer-supplied owner/account IDs are
 //     ignored; books of another owner are invisible
 //   - payloads/IDs are bounded, errors are stable renderer-safe codes, and NO
@@ -171,6 +172,7 @@ const bookA = repository.createWorldBook({
       },
       {
         id: "e-keyed",
+        title: "月 vault 规则",
         content: "SECRET-LORE-DO-NOT-LEAK-4492",
         activation: {
           primaryKeys: ["moon-vault"],
@@ -278,7 +280,11 @@ try {
     for (const channel of EXPERIENCE_CHANNELS) {
       assert.equal(typeof handlers.get(channel), "function", `${channel} experience handler registered`);
     }
-    assert.equal(handlers.size, 27, "only reviewed channels are registered");
+    // The current registration includes the three book reads, official
+    // context catalog/install reads, scene memory, and the authoring surface.
+    // Keep this count synchronized with the explicit channel assertions above
+    // and below rather than treating official context as an unreviewed extra.
+    assert.equal(handlers.size, 33, "only reviewed channels are registered");
     for (const channel of handlers.keys()) {
       assert.equal(
         FORBIDDEN_CHANNEL_PATTERN.test(channel),
@@ -288,7 +294,7 @@ try {
     }
   });
 
-  await check("preload facade is frozen with the current read and authoring methods and no book edit channel", async () => {
+  await check("preload facade is frozen with the current read and authoring methods", async () => {
     const facade = exposed.assistantClient?.characterWorlds;
     assert(facade, "characterWorlds facade exposed");
     assert(Object.isFrozen(facade), "facade is frozen");
@@ -303,11 +309,18 @@ try {
         "getSessionCharacterEvents",
         "getWorldBook",
         "getWorldBookRevision",
+        "getWorldBookAuthoringRevision",
+        "getOfficialWorldBook",
         "listCharacters",
         "listOfficialCharacters",
+        "listOfficialWorldBooks",
         "installOfficialCharacter",
+        "installOfficialWorldBook",
         "listPersonas",
+        "listOfficialPersonas",
         "getPersona",
+        "getOfficialPersona",
+        "installOfficialPersona",
         "listWorldBooks",
         "previewCharacterImport",
         "setSessionCharacterBinding",
@@ -327,6 +340,7 @@ try {
         "getPersonaRevision",
         "getPersonaHistory",
         "createWorldBook",
+        "updateWorldBookRevision",
         "archiveWorldBook",
         "getWorldBookHistory",
         "getScene",
@@ -340,10 +354,9 @@ try {
         "adjustTarget",
       ].sort(),
     );
-    // Phase 2B deliberately ships NO world-book edit/restore/duplicate
-    // channel: books are created blank or imported; entry-level editing is a
-    // later phase. Assert the absence so it cannot sneak in unnoticed.
-    for (const method of ["updateWorldBookRevision", "restoreWorldBookRevision", "duplicateWorldBook"]) {
+    // World-book editing is available through the validated authoring surface;
+    // restore/duplicate remain intentionally out of the renderer facade.
+    for (const method of ["restoreWorldBookRevision", "duplicateWorldBook"]) {
       assert.equal(typeof facade[method], "undefined", `no ${method} on the facade`);
     }
   });
@@ -516,6 +529,7 @@ try {
           "enabled",
           "hasPreservedExtensions",
           "id",
+          "title",
           "inertDecoratorCount",
           "order",
           "position",
@@ -528,6 +542,7 @@ try {
       );
     }
     const keyed = revision.entries.find((entry) => entry.id === "e-keyed");
+    assert.equal(keyed.title, "月 vault 规则");
     assert.equal(keyed.primaryKeyCount, 1);
     assert.equal(keyed.secondaryKeyCount, 1);
     assert.equal(keyed.selective, true);

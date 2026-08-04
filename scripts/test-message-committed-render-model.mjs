@@ -258,6 +258,16 @@ assert.equal(liveInsertAnchorTurnId({ liveTurn: { turnId: "live-1" } }), "");
 
 assert.equal(shouldShowRetryAction({ failed: true }), true);
 assert.equal(shouldShowRetryAction({ record: { terminal: "turn.stalled" } }), true);
+assert.equal(
+  shouldShowRetryAction({ failed: true, meta: { outcomeUnknown: true } }),
+  false,
+  "unknown dispatch outcomes must require explicit user confirmation instead of offering automatic retry",
+);
+assert.equal(
+  shouldShowRetryAction({ failed: true, record: { terminal: "turn.dispatch_blocked" } }),
+  true,
+  "a dispatch blocked before engine delivery may be safely retried",
+);
 assert.equal(shouldShowRetryAction({ record: { terminal: "turn.completed" } }), false);
 assert.equal(shouldShowRetryAction(null), false);
 

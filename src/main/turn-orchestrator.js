@@ -61,6 +61,8 @@ const { createExternalCommandRuntime } = require("./external-command-runtime");
 const { createTurnRecoveryRuntime, modelRecipes, selfHealProbeText } = require("./turn-recovery-runtime");
 const { createContextCompactionRuntime } = require("./context-compaction-runtime");
 const { createTurnTerminalFinalizer } = require("./turn-terminal-finalizer");
+const { emitRuntimePackProgress } = require("./turn-progress-notices");
+const { isCurrentTurnStart, startCancellationResult } = require("./turn-start-guard");
 const { TERMINAL_TYPES, TURN_OPTIONAL_TYPES } = require("./turn-event-types");
 const { createTurnRuntimeEventRouter } = require("./turn-runtime-event-router");
 const { cancelQueuedScheduledRun, scheduledQueueCapacityBlock, scheduledTaskTurnOptions } = require("./scheduled-task-turn-options");
@@ -511,7 +513,7 @@ class TurnOrchestrator {
     if (!displayText && (!files || files.length === 0)) return { ok: false, error: "EMPTY" };
 
     const state = this._state(sessionId);
-    if (state.phase !== "idle" && !opts.fromQueue) {
+    if ((state.phase !== "idle" || state.startInFlight) && !opts.fromQueue) {
       const item = {
         id: newQueueId(),
         text: displayText,
@@ -541,7 +543,13 @@ class TurnOrchestrator {
       return { ok: true, queued: true, queueLength: state.queue.length, itemId: item.id };
     }
 
-    return this._startLocalAssistantTurn(session, displayText, files, opts);
+    return require("./turn-start-guard").guardLocalAssistantTurn(
+      this,
+      session,
+      displayText,
+      files,
+      opts,
+    );
   }
 
   /** Runtime self-heal: a healable failure triggers a forced re-probe of the
@@ -693,7 +701,7 @@ class TurnOrchestrator {
       this.transcriptStore.commitUserMessage(session.id, {
         text: rawUserText,
         files: displayFiles,
-        turnId: state.turnId || snapshot.turnId || "turn:legacy-runtime",
+        turnId: state.turnId || "turn:legacy-runtime",
       });
       this._emit(session.id, "user.committed", {
         text: rawUserText,
@@ -752,6 +760,8 @@ class TurnOrchestrator {
           timeoutMs: MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS,
           repairManagedService: true,
         });
+        const cancellation = startCancellationResult(this, session.id);
+        if (cancellation) return cancellation;
         if (configRefresh?.ok) {
           this.ctx.runnerPool?.terminateSession?.(session.id);
         }
@@ -759,7 +769,6 @@ class TurnOrchestrator {
       }
       if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };
     }
-
     let ensured = null;
     let runner = null;
     const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
@@ -778,6 +787,8 @@ class TurnOrchestrator {
     }
 
     const state = this._state(session.id);
+    const cancellation = startCancellationResult(this, session.id);
+    if (cancellation) return cancellation;
     const allowImageFileParts = Boolean(require("./model-presets").activePresetSupportsVision());
     state.phase = "starting";
     state.turnGeneration = (state.turnGeneration || 0) + 1;
@@ -813,6 +824,19 @@ class TurnOrchestrator {
     state.tools.clear();
     state.startedAt = Date.now();
     state.updatedAt = state.startedAt;
+    const turnStartId = state.turnId;
+    const turnStartGeneration = state.turnGeneration;
+    const isCurrentStart = () => isCurrentTurnStart(
+      state,
+      turnStartId,
+      turnStartGeneration,
+    );
+    const staleStartResult = () => ({
+      ok: false,
+      error: "TURN_START_ABORTED",
+      staleStart: true,
+      turnId: turnStartId,
+    });
     const displayFiles = mergeDisplayFileMetadata(displaySourceFiles, opts.displayFiles);
     let dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
     state.currentPayload = {
@@ -854,7 +878,7 @@ class TurnOrchestrator {
       this.transcriptStore.commitUserMessage(session.id, {
         text: rawUserText,
         files: displayFiles,
-        turnId: state.turnId || snapshot.turnId || "turn:legacy-runtime",
+        turnId: state.turnId || "turn:legacy-runtime",
       });
       this._emit(session.id, "user.committed", {
         text: rawUserText,
@@ -903,7 +927,9 @@ class TurnOrchestrator {
           taskContract,
           turnPolicy,
           deps: this.ctx.capabilityReadinessDeps,
+          onProgress: (progress) => emitRuntimePackProgress(this, session.id, progress),
         });
+    if (!isCurrentStart()) return staleStartResult();
     if (capabilityReadinessTrace?.status === "ready") {
       dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
     }
@@ -945,6 +971,7 @@ class TurnOrchestrator {
           sessionManager: this.ctx.sessionManager,
           sessionId: session.id,
         });
+        if (!isCurrentStart()) return staleStartResult();
         if (!continuity.ok) {
           log.warn(
             "opencode resume continuity mismatch; resetting engine session: session=%s resume=%s reason=%s local=%s official=%s",
@@ -986,6 +1013,7 @@ class TurnOrchestrator {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
         nativeVision: allowImageFileParts,
       });
+      if (!isCurrentStart()) return staleStartResult();
       if (vision.visionEvidence) state.evidenceLedger?.recordVisionObservation?.(vision.visionEvidence);
       if (!vision.ok) {
         log.warn(
@@ -1012,6 +1040,7 @@ class TurnOrchestrator {
       const document = await runDocumentPreflight(text, files, {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
       });
+      if (!isCurrentStart()) return staleStartResult();
       if (!document.ok) {
         log.warn(
           "document preflight returned non-ok; degrading instead of failing turn: session=%s turn=%s error=%s detail=%s",
@@ -1134,6 +1163,7 @@ class TurnOrchestrator {
         coldStart: Boolean(ensured.coldStart),
         shortFollowup: shortFollowupContext,
       });
+      if (!isCurrentStart()) return staleStartResult();
       contextMemory.contextEpoch = Number(summary?.contextEpoch || 0);
       contextMemory.deduped = Boolean(
         contextMemory.fingerprint &&
@@ -1337,6 +1367,7 @@ class TurnOrchestrator {
           };
     }
     const preTurnCompaction = await this._maybeCompactBeforeTurn(session.id, runner, state.enginePayload, state.characterWorldsSnapshot);
+    if (!isCurrentStart()) return staleStartResult();
     if (preTurnCompaction) state.enginePayload.trace.preTurnCompaction = preTurnCompaction;
     this._emit(session.id, "turn.started", {
       text: rawUserText,
@@ -1407,6 +1438,7 @@ class TurnOrchestrator {
         text: state.enginePayload.text,
         files: state.enginePayload.displayFiles || [],
       });
+      if (!isCurrentStart()) return staleStartResult();
       if (!hookDecision.allow) {
         this._finalize(session.id, "turn.failed", {
           assistant: "",
@@ -1426,6 +1458,7 @@ class TurnOrchestrator {
     // engine — all inside one synchronous critical section. Every deterministic
     // preflight above has already completed, so a durable "dispatching" row
     // can only exist when the engine was actually invoked next.
+    if (!isCurrentStart()) return staleStartResult();
     const dispatch = this._invokePreparedEngineDispatch(session, state, runner, {
       ...opts,
       queueSelection: opts.queueSelection || null,
@@ -1861,6 +1894,12 @@ class TurnOrchestrator {
 
   _emit(sessionId, type, payload = {}, opts = {}) {
     const state = this._state(sessionId);
+    if (
+      state.phase === "starting" &&
+      (type === "engine.notice" || type === "engine.warning")
+    ) {
+      state.updatedAt = Date.now();
+    }
     if (state.terminalEmitted && state.turnId && !TERMINAL_TYPES.has(type)) return null;
     const turnId = opts.turnId === undefined ? state.turnId : opts.turnId;
     if (!turnId && !TURN_OPTIONAL_TYPES.has(type)) {

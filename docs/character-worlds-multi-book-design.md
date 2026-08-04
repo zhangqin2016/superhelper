@@ -1,8 +1,15 @@
 # Multi-book merge strategy — 设计方案（§10.4.1）
 
 Date: 2026-08-01
-Status: Design proposal (not yet implemented)
+Status: Implemented (2026-08-01); release verification and product decisions pending
 Source: design spec §10.4.1 step 1–2
+
+Implementation status: schema v13, repository support, keyed merge, activation
+wiring, and compiler-envelope injection are implemented. The remaining
+configuration decision and external acceptance items are tracked in
+`docs/character-worlds-gap-trace.md`. This document preserves the original
+proposal; the “现状” and “差距” sections below describe the pre-implementation
+state.
 
 ## 需求（设计 §10.4.1）
 
@@ -12,7 +19,7 @@ Persona lore first; character and global lore follow the selected merge
 strategy. Source precedence breaks ties but never bypasses entry insertion
 order.
 
-## 现状
+## 提出时现状
 
 - `character_session_bindings` 只有单 `character_revision_id` pin；
   world book 是 character revision 的**单数** `characterBookRevisionId` 引用。
@@ -20,7 +27,7 @@ order.
   无 chat/persona/global 概念。
 - 回复变体（P3-2）与场景（group-modes）不涉 book 引用。
 
-## 差距
+## 提出时差距
 
 1. **数据模型**：无 chat-book / persona-book / profile-global-book 概念；
    binding 不能引用多本 book。
@@ -68,4 +75,3 @@ CREATE TABLE IF NOT EXISTS character_session_book_bindings (
 ## 决策点
 - mergeStrategy 默认值：设计未指定 → 建议 `constant`（多书常量合并，无优先级覆盖）
 - profile-global book 来源：用户配置（非绑定）——Phase 3 语义索引后可接入
-

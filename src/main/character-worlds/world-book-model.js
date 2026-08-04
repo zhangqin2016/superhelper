@@ -47,7 +47,7 @@ const KNOWN_CANONICAL_KEYS = new Set([
   "schemaVersion", "name", "displayName", "entries", "scanPolicy",
 ]);
 const KNOWN_ENTRY_KEYS = new Set([
-  "id", "enabled", "content", "activation", "insertion", "recursion",
+  "id", "title", "enabled", "content", "activation", "insertion", "recursion",
   "decorators", "preservedDecorators", "preservedExtensions",
 ]);
 const KNOWN_ACTIVATION_KEYS = new Set([
@@ -354,6 +354,10 @@ function normalizeEntry(input, index) {
   }
   const rawId = typeof input.id === "string" && input.id ? input.id : `entry-${index}`;
   const id = boundedString(rawId, "entryIdChars", C.MAX_WORLD_BOOK_ENTRY_ID_CHARS);
+  const hasTitle = typeof input.title === "string" && input.title.trim();
+  const title = hasTitle
+    ? boundedString(input.title.trim(), "entryTitleChars", C.MAX_WORLD_BOOK_SHORT_STRING_CHARS)
+    : null;
   // V3 decorator compilation (§10.4.7) happens here, at immutable
   // revision-index build time; see world-book-decorators.js.
   const decorated = resolveEntryDecorators(input, rawContent);
@@ -361,6 +365,7 @@ function normalizeEntry(input, index) {
   const insertionRaw = plainObject(input.insertion) ? input.insertion : {};
   return {
     id,
+    ...(title ? { title } : {}),
     enabled: boolAt(input, "enabled", true),
     content: decorated.content,
     // Decorator field overrides are validated by the compiler and then

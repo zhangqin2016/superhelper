@@ -470,6 +470,7 @@ async function translateImages(files, options = {}) {
   }
 
   const results = [];
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
   const failedFiles = candidates.filter((file) => !imageFiles.includes(file));
   const failureDetails = [];
   let failed = failedFiles.length;
@@ -479,7 +480,15 @@ async function translateImages(files, options = {}) {
   }
   const mode = options.mode || inferVisionMode(options.userText, imageFiles);
   const prompt = buildVisionPrompt({ userText: options.userText, mode });
-  for (const f of imageFiles) {
+  for (const [index, f] of imageFiles.entries()) {
+    try {
+      onProgress?.({
+        phase: "image-started",
+        label: f.name || path.basename(f.path),
+        total: imageFiles.length,
+        processed: index,
+      });
+    } catch { /* progress is observability only */ }
     try {
       const desc = await translateImage(f.path, prompt);
       if (!normalizeVisionContent(desc)) {
@@ -488,12 +497,29 @@ async function translateImages(files, options = {}) {
       const label = f.name || path.basename(f.path);
       results.push(`[Image recognition result: "${label}"]\n${desc}`);
       recognized += 1;
+      try {
+        onProgress?.({
+          phase: "image-recognized",
+          label,
+          total: imageFiles.length,
+          processed: index + 1,
+        });
+      } catch { /* progress is observability only */ }
     } catch (err) {
       failed += 1;
       failedFiles.push(f);
       failureDetails.push(String(err?.message || "VISION_FAILED").slice(0, 240));
       console.warn(`Vision translation failed for ${f.name || f.path}:`, err.message);
       results.push(`[Image: ${f.name || path.basename(f.path)}]`);
+      try {
+        onProgress?.({
+          phase: "image-failed",
+          label: f.name || path.basename(f.path),
+          total: imageFiles.length,
+          processed: index + 1,
+          error: String(err?.message || "VISION_FAILED").slice(0, 240),
+        });
+      } catch { /* progress is observability only */ }
     }
   }
 

@@ -105,6 +105,37 @@ try {
       false,
       "known canonical fields should be typed at the model boundary",
     );
+    assert.equal(
+      tool.inputSchema.canonical.safeParse({
+        name: "Atlas Persona",
+        identity: "产品负责人",
+        expertise: ["需求分析"],
+        communicationStyle: "先结论后步骤",
+      }).success,
+      true,
+      "persona fields should be typed at the model boundary",
+    );
+    assert.equal(
+      tool.inputSchema.canonical.safeParse({
+        name: "Atlas Glossary",
+        entries: [{ id: "atlas", title: "Atlas", content: "项目术语" }],
+      }).success,
+      true,
+      "world-book entries should be typed at the model boundary",
+    );
+    assert.equal(
+      tool.inputSchema.canonical.safeParse({ name: "Bad Persona", identity: 42 }).success,
+      false,
+      "persona structured fields should reject wrong types",
+    );
+    assert.equal(
+      tool.inputSchema.canonical.safeParse({
+        name: "Bad Book",
+        entries: [{ id: "atlas", title: 42, content: "x" }],
+      }).success,
+      false,
+      "world-book entry fields should reject wrong types",
+    );
     assert.equal(tool.inputSchema.entityId.safeParse("x".repeat(256)).success, false);
     // The description is the model contract: drafts never self-activate and
     // the human reviews/selects in the library (approval is human-only).

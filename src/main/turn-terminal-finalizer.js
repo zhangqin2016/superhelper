@@ -7,6 +7,7 @@ const { getLogger } = require("./logger");
 const { compactTaskRun } = require("./task-run-state");
 const { buildEvidenceRecoveryContext } = require("./turn-recovery-context");
 const { TERMINAL_TYPES } = require("./turn-event-types");
+const { recoverFinalizationFailure, DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("./turn-finalize-fallback");
 const { promoteTerminalNarrative } = require("./turn-terminal-narrative");
 const { attachDraftReceipts } = require("./character-worlds/receipt-finalizer");
 const {
@@ -133,10 +134,8 @@ function createTurnTerminalFinalizer(options = {}) {
   function finalize(sessionId, type, payload = {}) {
     return finalizeAsync(sessionId, type, payload).catch((err) => {
       log.warn("turn finalize failed open: %s", err?.message || err);
-      // Release the re-entrancy latch so a later terminal (e.g. the stall
-      // watchdog) can still finalize this turn instead of leaving it stuck.
       try {
-        stateFor(sessionId).finalizing = false;
+        recoverFinalizationFailure({ sessionId, type, payload, state: stateFor(sessionId), clearState: clearTurnState, emit, terminalTypes: TERMINAL_TYPES, log });
       } catch {
         /* state already gone */
       }
@@ -274,6 +273,7 @@ function createTurnTerminalFinalizer(options = {}) {
           emit(sessionId, "turn.dispatch_outcome_unknown", {
             turnId: completedTurnId,
             status: durableStatus,
+            assistant: DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
             dispatchAttemptId: terminalClaim.dispatchAttemptId,
             reason: casError ? "TERMINAL_CAS_ERROR" : "TERMINAL_CAS_REJECTED",
             automaticReplay: false,
@@ -286,7 +286,7 @@ function createTurnTerminalFinalizer(options = {}) {
           type = "turn.failed";
           payload = {
             failed: true,
-            assistant: "本次回复的持久化结果无法确认（可能已完成，也可能未送达）。为避免重复执行，系统不会自动重试，请核对后手动重发。",
+            assistant: DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
             errorCode: "DISPATCH_OUTCOME_UNKNOWN",
             errorCategory: "durability",
             retryable: false,
@@ -297,7 +297,7 @@ function createTurnTerminalFinalizer(options = {}) {
       if (!casLost) terminalPersisted = true;
     }
     const scheduledTaskRunId = state.scheduledTask?.runId || null;
-    state.phase = "finalizing";
+    state.phase = "finalizing"; state.updatedAt = Date.now();
     for (const tool of state.tools.values()) {
       if (tool?.status !== "running") continue;
       tool.status = type === "turn.completed" ? "done" : "failed";
@@ -419,7 +419,7 @@ function createTurnTerminalFinalizer(options = {}) {
       record?.fileChanges?.length ||
       record?.resultBlocks?.length,
     );
-    if (!meaningful) record = null;
+    if (!meaningful && type !== "turn.failed" && type !== "turn.stalled") record = null;
 
     let committedMessageId = "";
     if (record) {

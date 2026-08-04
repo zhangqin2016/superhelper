@@ -9,6 +9,7 @@ const {
 function buildLibraryActivationConfig(current, {
   kind,
   revisionId,
+  action = "activate",
   scope = "chat",
   mergeStrategy = "constant",
 } = {}) {
@@ -17,6 +18,9 @@ function buildLibraryActivationConfig(current, {
   }
   if (typeof revisionId !== "string" || !revisionId.trim()) {
     throw new TypeError("Library activation revisionId is required");
+  }
+  if (action !== "activate" && action !== "remove") {
+    throw new TypeError("Unsupported library activation action");
   }
   const normalized = normalizeConversationConfig({
     characterRevisionId: current?.characterRevisionId,
@@ -39,6 +43,12 @@ function buildLibraryActivationConfig(current, {
     return normalizeConversationConfig({
       ...normalized,
       personaRevisionId: revisionId,
+    });
+  }
+  if (action === "remove") {
+    return normalizeConversationConfig({
+      ...normalized,
+      books: normalized.books.filter((book) => book.worldBookRevisionId !== revisionId),
     });
   }
   return normalizeConversationConfig({

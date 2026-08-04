@@ -122,6 +122,8 @@ The renderer currently handles these stable event families:
 - `resume.invalid`
 - `recovery.scheduled`
 - `recovery.started`
+- `turn.dispatch_outcome_unknown` (closed recovery projection; no automatic replay)
+- `turn.dispatch_blocked` (closed recovery projection; safe to retry)
 - terminal events: `turn.completed`, `turn.failed`, `turn.interrupted`,
   `turn.stalled`
 
@@ -150,6 +152,18 @@ or mutate transcript state.
    renderer.
 10. `SessionRuntimeStore` reduces the batch and `message.js` renders committed
     messages plus the live turn article.
+
+If dispatch reaches a point where the durable outcome cannot be confirmed, the
+orchestrator emits `turn.dispatch_outcome_unknown`. This is deliberately not a
+confirmed `turn.failed`: the request may have reached the engine. The renderer
+closes the live turn, releases the composer, and projects one explicit recovery
+assistant card marked `outcomeUnknown` / `manualRecoveryRequired`. It never
+automatically replays that request. If a confirmed terminal event is present in
+the same ordered batch, that terminal event wins and no recovery card is added.
+If dispatch is rejected before the engine can receive the request, the
+orchestrator emits `turn.dispatch_blocked` instead. This is a confirmed
+non-execution state, so the card remains retryable and may be explicitly sent
+again by the user.
 
 ### Completion
 
@@ -221,6 +235,9 @@ messages and logs a warning. It must not treat load failure as an empty history.
 7. Do not clear existing runtime messages when history loading fails.
 8. Do not append transcript bubbles from terminal compatibility events; terminal
    Runtime Events are the only final turn boundary.
+9. Treat `turn.dispatch_outcome_unknown` as a closed recovery projection, not as
+   a running turn and not as a confirmed failure. It must release the composer,
+   remain visible after reload, and suppress automatic retry.
 
 ## Queue Rules
 

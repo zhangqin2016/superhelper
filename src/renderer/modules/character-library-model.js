@@ -22,15 +22,24 @@ const MAX_TERM_CHARS = 128;
 const CATEGORY_ORDER_BY_TAB = Object.freeze({
   characters: [
     "work-delivery", "research-analysis", "content-creation", "technology-creation",
-    "learning-growth", "life-support", "uncategorized",
+    "business-operations", "technology-engineering", "data-ai", "design-engineering",
+    "education-research", "healthcare", "legal-finance", "property-construction",
+    "manufacturing-supply", "commerce-customer", "media-localization", "hospitality-events",
+    "public-nonprofit", "agriculture-food", "freelance", "learning-growth", "life-support",
+    "uncategorized",
   ],
   personas: [
     "work-identities", "creative-identities", "research-learning", "communication-profiles",
+    "career-development", "life-support",
     "uncategorized",
   ],
   books: [
     "project-knowledge", "brand-language", "product-terminology", "operations-support",
-    "story-worlds", "uncategorized",
+    "work-operations", "writing-communication", "career-development", "life-management",
+    "human-resources", "technology-engineering", "technology-security", "data-ai",
+    "design-engineering", "education-training", "healthcare", "legal-compliance",
+    "finance-accounting", "property-construction", "manufacturing-supply", "commerce-customer",
+    "hospitality-events", "public-nonprofit-agriculture", "story-worlds", "uncategorized",
   ],
 });
 
@@ -235,20 +244,43 @@ export function sortLibraryItems(items, { now = Date.now() } = {}) {
   });
 }
 
-const FORM_VALUE_KEYS = ["name", "description", "personality", "scenario", "tags"];
+const FORM_VALUE_KEYS = [
+  "name", "description", "personality", "scenario", "tags",
+  "identity", "background", "expertise", "communicationStyle",
+  "goals", "preferences", "constraints", "scanDepthMessages",
+  "tokenBudget", "recursive", "worldBookEntries",
+];
 
 /** The values a freshly opened form shows (the dirty baseline). */
 export function initialFormValues(mode, canonical) {
   const data = canonical && typeof canonical === "object" ? canonical : {};
   if (mode !== "edit") {
-    return { name: "", description: "", personality: "", scenario: "", tags: "" };
+    return {
+      ...Object.fromEntries(FORM_VALUE_KEYS.map((key) => [key, ""])),
+      scanDepthMessages: "8",
+      tokenBudget: "0",
+      recursive: "true",
+      worldBookEntries: "[]",
+    };
   }
+  const scanPolicy = data.scanPolicy && typeof data.scanPolicy === "object" ? data.scanPolicy : {};
   return {
     name: typeof data.name === "string" ? data.name : "",
     description: typeof data.description === "string" ? data.description : "",
     personality: typeof data.personality === "string" ? data.personality : "",
     scenario: typeof data.scenario === "string" ? data.scenario : "",
     tags: Array.isArray(data.tags) ? data.tags.join(", ") : "",
+    identity: typeof data.identity === "string" ? data.identity : "",
+    background: typeof data.background === "string" ? data.background : "",
+    expertise: Array.isArray(data.expertise) ? data.expertise.join(", ") : "",
+    communicationStyle: typeof data.communicationStyle === "string" ? data.communicationStyle : "",
+    goals: Array.isArray(data.goals) ? data.goals.join(", ") : "",
+    preferences: Array.isArray(data.preferences) ? data.preferences.join(", ") : "",
+    constraints: Array.isArray(data.constraints) ? data.constraints.join(", ") : "",
+    scanDepthMessages: String(Number.isFinite(scanPolicy.scanDepthMessages) ? scanPolicy.scanDepthMessages : 8),
+    tokenBudget: String(Number.isFinite(scanPolicy.tokenBudget) ? scanPolicy.tokenBudget : 0),
+    recursive: scanPolicy.recursive === false ? "false" : "true",
+    worldBookEntries: JSON.stringify(Array.isArray(data.entries) ? data.entries : []),
   };
 }
 

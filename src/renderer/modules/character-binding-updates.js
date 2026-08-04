@@ -156,6 +156,8 @@ export function createRoleBannerRenderer({ getState, getElement, monogram, el: c
     const state = getState();
     const isCharacter = state?.available !== false && (state?.mode || "native") === "character"
       && state.characterRevisionId;
+    const hasPersona = state?.available !== false && Boolean(state?.personaRevisionId);
+    const hasWorldBook = state?.available !== false && Boolean(state?.worldBookRevisionId);
     const visible = state?.available !== false && Boolean(state?.sessionId);
     banner.hidden = !visible;
     if (!visible) return;
@@ -178,12 +180,12 @@ export function createRoleBannerRenderer({ getState, getElement, monogram, el: c
       contextLabels.push(label);
       badges.appendChild(createEl("span", "character-application-status", { textContent: label }));
     }
-    if (isCharacter && state.personaRevisionId) {
+    if (hasPersona) {
       const label = translate("character.contextPersona");
       contextLabels.push(label);
       badges.appendChild(createEl("span", null, { textContent: label }));
     }
-    if (isCharacter && state.worldBookRevisionId) {
+    if (hasWorldBook) {
       const label = translate("character.contextWorld");
       contextLabels.push(label);
       badges.appendChild(createEl("span", null, { textContent: label }));

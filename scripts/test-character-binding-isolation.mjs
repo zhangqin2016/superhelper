@@ -186,6 +186,11 @@ function makeOrchestrator(sessionManager, sessions, overrides = {}) {
     projectManager: fakeProjectManager(),
     runnerPool: {
       get: (sessionId) => runners.get(sessionId) || null,
+      ensure: (sessionId) => runners.get(sessionId) || null,
+      terminateSession: (sessionId) => {
+        const runner = runners.get(sessionId);
+        runner?.interrupt?.();
+      },
     },
     transcriptStore: {
       commitUserMessage(sessionId, message) {
@@ -1614,6 +1619,8 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
   beforeSendState.turnId = null;
   beforeSendRuntime.runners.get(beforeSendSession.id).busy = false;
   await beforeSendRuntime.orchestrator._dispatchNext(beforeSendSession.id);
+  assert.equal(beforeSendState.phase, "idle");
+  assert.equal(beforeSendState.turnId, null);
   const beforeSendTurn = store.getTurnInputByTurnId(
     beforeSendItem.admittedTurnInput.turnId,
   );
@@ -1702,6 +1709,8 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
   acceptedState.turnId = null;
   acceptedRuntime.runners.get(acceptedSession.id).busy = false;
   await acceptedRuntime.orchestrator._dispatchNext(acceptedSession.id);
+  assert.equal(acceptedState.phase, "idle");
+  assert.equal(acceptedState.turnId, null);
   const acceptedTurn = store.getTurnInputByTurnId(
     acceptedItem.admittedTurnInput.turnId,
   );

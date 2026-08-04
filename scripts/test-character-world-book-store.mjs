@@ -71,6 +71,7 @@ function assertWorldBookLimit(fn, limitKind, limit) {
 
 const FULL_ENTRY_INPUT = {
   id: "entry-aurelia",
+  title: "Aurelia 港口",
   enabled: false,
   content: "Aurelia's tide-locked port city.",
   activation: {

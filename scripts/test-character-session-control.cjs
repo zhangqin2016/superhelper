@@ -113,6 +113,7 @@ function nativeBinding(sessionId, bindingVersion = 0) {
 }
 
 ipcMain.handle("character:list", () => ({ ok: true, characters: cwCharacters }));
+ipcMain.handle("character:list-official", () => ({ ok: true, characters: [] }));
 ipcMain.handle("character:get-revision", (_event, payload) => ({
   ok: true,
   revision: {
@@ -151,6 +152,8 @@ ipcMain.handle("session-character:set-binding", async (_event, payload) => {
   return { ok: true, binding: next };
 });
 ipcMain.handle("session-character:get-events", () => ({ ok: true, events: [], notices: [] }));
+ipcMain.handle("persona:list-official", () => ({ ok: true, personas: [] }));
+ipcMain.handle("world-book:list-official", () => ({ ok: true, worldBooks: [] }));
 ipcMain.handle("character:import-preview", () => {
   if (cwPreviewBehavior === "notacard") {
     return { ok: false, error: "NOT_A_CHARACTER_CARD", fallback: "ordinary_attachment" };

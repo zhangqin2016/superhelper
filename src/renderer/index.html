@@ -344,24 +344,34 @@
     <div id="characterLibraryModal" class="modal-panel" hidden>
       <section class="character-library-card" role="dialog" aria-modal="true" aria-labelledby="characterLibraryTitle">
         <header class="character-library-header">
-          <h2 id="characterLibraryTitle" data-i18n="character.library.title">角色库</h2>
+          <div class="character-library-header-copy">
+            <h2 id="characterLibraryTitle" data-i18n="character.library.title">角色库</h2>
+            <p id="characterLibraryFacetHint" class="character-library-facet-hint"></p>
+          </div>
           <button id="characterLibraryCloseBtn" type="button" class="character-popover-close" data-i18n-aria-label="composer.close" aria-label="关闭">×</button>
         </header>
         <div class="character-library-toolbar">
           <div id="characterLibraryTabs" class="character-library-tabs" role="tablist" data-i18n-aria-label="character.library.title" aria-label="角色库">
             <button type="button" role="tab" data-library-tab="characters" aria-selected="true" data-i18n="character.library.tabCharacters">角色</button>
-            <button type="button" role="tab" data-library-tab="personas" aria-selected="false" data-i18n="character.library.tabPersonas">设定</button>
+            <button type="button" role="tab" data-library-tab="personas" aria-selected="false" data-i18n="character.library.tabPersonas">我的设定</button>
             <button type="button" role="tab" data-library-tab="books" aria-selected="false" data-i18n="character.library.tabBooks">世界书</button>
           </div>
-          <input id="characterLibrarySearch" type="search" data-i18n-placeholder="character.library.searchPlaceholder" placeholder="搜索名称…" data-i18n-aria-label="character.library.searchPlaceholder" aria-label="搜索名称…" />
-          <input id="characterLibraryTagFilter" type="text" data-i18n-placeholder="character.library.tagPlaceholder" placeholder="按标签筛选…" data-i18n-aria-label="character.library.tagPlaceholder" aria-label="按标签筛选…" />
-          <select id="characterLibrarySourceFilter" data-i18n-aria-label="character.library.sourceFilter" aria-label="来源筛选">
-            <option value="" data-i18n="character.library.sourceAll">全部来源</option>
-            <option value="official" data-i18n="character.library.sourceOfficial">官方</option>
-            <option value="local" data-i18n="character.library.sourceLocal">我的</option>
-          </select>
-          <button id="characterLibraryImportBtn" type="button" data-i18n="character.importCard">导入角色卡</button>
-          <button id="characterLibraryCreateBtn" type="button" data-i18n="character.library.aiCreate">让 Lily 创建</button>
+          <label class="character-library-search-field">
+            <span class="character-sr-only" data-i18n="character.library.searchPlaceholder">搜索名称</span>
+            <input id="characterLibrarySearch" type="search" data-i18n-placeholder="character.library.searchPlaceholder" placeholder="搜索名称…" data-i18n-aria-label="character.library.searchPlaceholder" aria-label="搜索名称…" />
+          </label>
+          <div class="character-library-filters">
+            <input id="characterLibraryTagFilter" type="text" data-i18n-placeholder="character.library.tagPlaceholder" placeholder="按标签筛选…" data-i18n-aria-label="character.library.tagPlaceholder" aria-label="按标签筛选…" />
+            <select id="characterLibrarySourceFilter" data-i18n-aria-label="character.library.sourceFilter" aria-label="来源筛选">
+              <option value="" data-i18n="character.library.sourceAll">全部来源</option>
+              <option value="official" data-i18n="character.library.sourceOfficial">官方</option>
+              <option value="local" data-i18n="character.library.sourceLocal">我的</option>
+            </select>
+          </div>
+          <div class="character-library-toolbar-actions">
+            <button id="characterLibraryImportBtn" type="button" data-i18n="character.importCard">导入角色卡</button>
+            <button id="characterLibraryCreateBtn" type="button" data-i18n="character.library.aiCreate">让 Lily 创建</button>
+          </div>
         </div>
         <div id="characterLibraryNotice" class="character-library-notice" hidden></div>
         <div class="character-library-body">

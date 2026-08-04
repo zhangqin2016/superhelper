@@ -155,6 +155,7 @@ function summarizeEntry(entry) {
   const insertion = entry?.insertion && typeof entry.insertion === "object" ? entry.insertion : {};
   return {
     id: text(entry?.id),
+    title: text(entry?.title || entry?.id),
     enabled: entry?.enabled !== false,
     constant: activation.constant === true,
     primaryKeyCount: Array.isArray(activation.primaryKeys) ? activation.primaryKeys.length : 0,

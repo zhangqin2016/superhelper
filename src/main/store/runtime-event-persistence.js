@@ -331,6 +331,7 @@ function compactRuntimeEventForPersistence(event = {}) {
     case "turn.failed":
     case "turn.interrupted":
     case "turn.stalled":
+    case "turn.dispatch_blocked":
       compactPayload = compactTerminalPayload(payload);
       break;
     default:

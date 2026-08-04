@@ -325,6 +325,23 @@ ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 ctx.turnOrchestrator.bindRunner(runner);
 ctx.turnOrchestrator.bindRunner(otherRunner);
 
+// Local assistant completion must use the active turn id directly. A previous
+// refactor accidentally referenced an out-of-scope `snapshot` variable here,
+// which failed after durable admission and stranded the turn in `starting`.
+const localAssistantResult = await ctx.turnOrchestrator.completeLocalAssistantTurn(
+  "s1",
+  "local assistant input",
+  [],
+  { assistant: "local assistant result" },
+);
+if (!localAssistantResult.ok || !localAssistantResult.turnId) {
+  throw new Error(`local assistant turn must complete: ${JSON.stringify(localAssistantResult)}`);
+}
+await new Promise((resolve) => setTimeout(resolve, 0));
+if (ctx.turnOrchestrator._state("s1").phase !== "idle") {
+  throw new Error("local assistant completion must leave the session idle");
+}
+
 runner.emit("agent-resume-id", "ses_shared");
 if (!terminatedSessions.includes("s2")) {
   throw new Error(`claiming an engine session must terminate evicted runner owners: ${JSON.stringify(terminatedSessions)}`);
@@ -1885,6 +1902,57 @@ if (!messages.some((message) => message.role === "user" && message.content === "
 }
 if (!messages.some((message) => message.role === "assistant" && message.content === "urgent answer")) {
   throw new Error("priority replacement turn must commit its assistant response");
+}
+
+// A priority send must also cancel a normal send that is still waiting on the
+// managed-model preflight. At this point the original request has no turn id
+// yet, so interrupt() alone cannot see or close it.
+{
+  const ipcUtils = require("../src/main/ipc-utils.js");
+  const originalRefreshRemoteConfigForSend = ipcUtils.refreshRemoteConfigForSend;
+  const originalDiagnoseSendBlocker = ctx.diagnoseSendBlocker;
+  let releaseRefresh;
+  let refreshStarted;
+  const refreshReady = new Promise((resolve) => { releaseRefresh = resolve; });
+  const refreshObserved = new Promise((resolve) => { refreshStarted = resolve; });
+  ipcUtils.refreshRemoteConfigForSend = async () => {
+    refreshStarted();
+    await refreshReady;
+    return { ok: false };
+  };
+  ctx.diagnoseSendBlocker = () => ({ error: "SERVICE_MODEL_CONFIG_UNAVAILABLE" });
+  try {
+    sent.length = 0;
+    const preflight = ctx.turnOrchestrator.sendUserMessage("s1", "slow preflight", [], {
+      spawnEngine: false,
+    });
+    await refreshObserved;
+    const urgent = await ctx.turnOrchestrator.interruptAndSend("s1", "preflight priority", [], {
+      spawnEngine: false,
+      skipPreflight: true,
+    });
+    if (!urgent.ok || !urgent.priority) {
+      throw new Error(`preflight priority send should be queued: ${JSON.stringify(urgent)}`);
+    }
+    releaseRefresh();
+    const cancelled = await preflight;
+    if (cancelled.error !== "TURN_START_ABORTED") {
+      throw new Error(`preflight send should be cancelled before turn creation: ${JSON.stringify(cancelled)}`);
+    }
+    const started = await waitFor(() => {
+      ctx.eventBus.flush();
+      return sent.some((entry) => entry.payload?.events?.some((event) => (
+        event.type === "turn.started" && event.payload?.text === "preflight priority"
+      )));
+    });
+    if (!started) throw new Error("priority send must run after cancelling preflight");
+    runner.finish("preflight priority answer");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  } finally {
+    ipcUtils.refreshRemoteConfigForSend = originalRefreshRemoteConfigForSend;
+    if (originalDiagnoseSendBlocker === undefined) delete ctx.diagnoseSendBlocker;
+    else ctx.diagnoseSendBlocker = originalDiagnoseSendBlocker;
+  }
 }
 
 sent.length = 0;

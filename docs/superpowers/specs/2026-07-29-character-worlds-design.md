@@ -1,7 +1,8 @@
 # Lily Character Worlds Native Compatibility Design
 
 Date: 2026-07-29
-Status: Revised after architecture review; proposed for user review
+Status: Approved baseline; implementation and release verification tracked in
+`docs/character-worlds-gap-trace.md`
 
 ## 1. Purpose
 

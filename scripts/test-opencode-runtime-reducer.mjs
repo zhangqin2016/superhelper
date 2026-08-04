@@ -607,11 +607,15 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     const result = reduce(t, {});
     assert(result.drafts.length === 0 && result.effects.length === 0, `${t} silent`);
   }
-  for (const t of ["busy", "step-start", "session.next.prompt.admitted"]) {
+  for (const t of ["step-start", "session.next.prompt.admitted"]) {
     const result = reduce(t, {});
     assert(result.drafts.length === 0 && result.progress === true, `${t} resets progress without answer text`);
     assert(result.effects[0]?.kind === "status", `${t} emits status effect`);
   }
+  const busy = reduce("busy", {});
+  assert(busy.drafts.length === 0 && busy.progress === false,
+    "busy heartbeat must not reset the no-progress watchdog");
+  assert(busy.effects[0]?.kind === "status", "busy heartbeat still emits a status effect");
   const u = reduce("some.future.event", { future: { nested: true } });
   assert(u.drafts.length === 0 && u.effects[0].kind === "unknown",
     "unknown event does not become a noisy protocol warning");

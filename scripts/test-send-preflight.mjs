@@ -19,8 +19,9 @@ const visionMock = {
   buildEnrichedUserText: (text, extracted) => require(path.join(ROOT, "src/main/engine-message-layers.js")).appendExtractedContext(text, `[img:${extracted}]`, "Image recognition result"),
   hasVisionInputFiles: (files) => (files || []).some((f) => RASTER_IMAGE_RE.test(f?.path || f?.name || "")),
   isImageOnlyUserMessage: (text, files) => !text && (files || []).some((f) => RASTER_IMAGE_RE.test(f?.path || f?.name || "")),
-  translateImages: async () => {
+  translateImages: async (_files, options = {}) => {
     visionMock._calls += 1;
+    options.onProgress?.({ phase: "image-started", label: "pic.png", total: 1, processed: 0 });
     return visionMock._next;
   },
   _next: null,
@@ -130,6 +131,7 @@ assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includ
 assert(r.text.includes('title="user_original_request"') && r.text.includes("look"), "vision success preserves original request layer");
 assert(!r.files.some((f) => f.isImage), "image pruned from outbound files on success");
 assert(notices.includes("visionReady"), "emits ready on success");
+assert(notices.includes("workProgress"), "vision preflight emits progress while recognizing images");
 assert(r.visionEvidence?.status === "complete" && r.visionEvidence?.observedCount === 1, "vision bridge success should record complete source evidence");
 
 // Partial bridge success must disclose the failed image and preserve the

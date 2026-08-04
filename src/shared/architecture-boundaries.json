@@ -47,6 +47,11 @@
     "src/renderer/modules/tool-payload-renderer.js": 837,
     "src/main/turn-terminal-finalizer.js": 508,
     "src/main/character-worlds/workspace-portability.js": 533,
+    "src/main/character-worlds/official-context-catalog.js": 1122,
+    "src/main/vision-translator.js": 585,
+    "src/renderer/modules/character-library-actions.js": 571,
+    "src/renderer/modules/character-library-view.js": 592,
+    "src/renderer/modules/character-library.js": 550,
     "src/renderer/modules/character-session-control.js": 527,
     "src/main/character-worlds/repository.js": 557,
     "src/main/ipc-character-worlds.js": 551

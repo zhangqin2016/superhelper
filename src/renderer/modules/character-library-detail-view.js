@@ -10,7 +10,7 @@ const ACTION_LABEL_KEYS = {
 };
 
 function rowActions(state) {
-  if (state.tab === "books") return ["history", "archive"];
+  if (state.tab === "books") return ["edit", "history", "archive"];
   if (state.tab === "personas") return ["edit", "history", "archive"];
   return ["edit", "history", "duplicate", "export", "archive"];
 }
@@ -48,6 +48,21 @@ function renderPersonaDetail(detail, data) {
   section.appendChild(el("p", "character-library-detail-copy", {
     textContent: t("character.library.detailPersonaSafe"),
   }));
+  const fields = [
+    ["character.library.fieldIdentity", data.identity],
+    ["character.library.fieldBackground", data.background],
+    ["character.library.fieldExpertise", Array.isArray(data.expertise) ? data.expertise.join("、") : ""],
+    ["character.library.fieldCommunicationStyle", data.communicationStyle],
+    ["character.library.fieldGoals", Array.isArray(data.goals) ? data.goals.join("、") : ""],
+    ["character.library.fieldPreferences", Array.isArray(data.preferences) ? data.preferences.join("、") : ""],
+    ["character.library.fieldConstraints", Array.isArray(data.constraints) ? data.constraints.join("、") : ""],
+  ];
+  for (const [labelKey, value] of fields) {
+    if (!value) continue;
+    section.appendChild(el("p", "character-library-detail-copy", {
+      textContent: `${t(labelKey)}: ${value}`,
+    }));
+  }
   detail.appendChild(section);
 }
 
@@ -82,6 +97,31 @@ function renderWorldBookDetail(detail, data) {
       textContent: `${label}: ${value ?? t("character.library.unavailable")}`,
     }));
   }
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  if (entries.length) {
+    const entrySection = el("section", "character-library-detail-section");
+    entrySection.appendChild(el("h3", "character-library-detail-section-title", {
+      textContent: t("character.library.detailEntryList"),
+    }));
+    const list = el("ul", "character-library-detail-list");
+    for (const entry of entries.slice(0, 40)) {
+      const title = entry.title || entry.id || t("character.library.untitledEntry");
+      const flags = [
+        entry.constant ? t("character.library.entryConstant") : t("character.library.entryTriggered"),
+        entry.enabled === false ? t("character.library.entryDisabled") : t("character.library.entryEnabled"),
+      ];
+      list.appendChild(el("li", "character-library-detail-list-item", {
+        textContent: `${title} · ${flags.join(" · ")}`,
+      }));
+    }
+    if (data.entriesTruncated) {
+      entrySection.appendChild(el("p", "character-library-detail-copy", {
+        textContent: t("character.library.entryListTruncated"),
+      }));
+    }
+    entrySection.appendChild(list);
+    detail.appendChild(entrySection);
+  }
   detail.appendChild(section);
 }
 
@@ -89,6 +129,9 @@ export function renderLibraryDetail(state) {
   const detail = $("characterLibraryDetail");
   if (!detail) return;
   const item = (state.items[state.tab] || []).find((entry) => entry.id === state.selectedItemId);
+  detail.dataset.libraryDetailKind = item?.kind || "empty";
+  detail.dataset.libraryDetailSource = item?.source || "";
+  detail.dataset.libraryDetailActive = item?.active ? "true" : "false";
   if (!item) {
     detail.appendChild(el("div", "character-library-detail-empty", {
       textContent: t("character.library.selectHint"),
@@ -108,11 +151,14 @@ export function renderLibraryDetail(state) {
     title: t("common.close"),
   });
   detail.appendChild(close);
+  const hero = el("div", "character-library-detail-hero");
   const header = el("div", "character-library-detail-header");
-  header.appendChild(el("span", "character-library-card-marker is-large", {
+  const marker = el("span", "character-library-card-marker is-large", {
     textContent: (item.visualKey || item.name || "L").slice(0, 1).toUpperCase(),
     "aria-hidden": "true",
-  }));
+  });
+  marker.dataset.visualKey = item.visualKey || item.name || "L";
+  header.appendChild(marker);
   const title = el("div", "character-library-detail-title");
   title.appendChild(el("span", "character-library-detail-name", {
     textContent: data.displayName || data.name || t("character.unnamed"),
@@ -122,7 +168,7 @@ export function renderLibraryDetail(state) {
   if (data.official || item.official) header.appendChild(el("span", "character-library-official-badge", {
     textContent: t("character.library.officialBadge"),
   }));
-  detail.appendChild(header);
+  hero.appendChild(header);
   const status = el("div", "character-library-detail-status");
   status.appendChild(el("span", "character-library-source-badge", {
     textContent: item.official ? t("character.library.sourceOfficial") : t("character.library.sourceLocal"),
@@ -133,10 +179,11 @@ export function renderLibraryDetail(state) {
   if (item.updateAvailable) status.appendChild(el("span", "character-library-status-badge", {
     textContent: t("character.library.statusUpdate"),
   }));
-  detail.appendChild(status);
-  if (data.category) detail.appendChild(el("div", "character-library-detail-category", { textContent: data.category }));
+  hero.appendChild(status);
+  if (data.category) hero.appendChild(el("div", "character-library-detail-category", { textContent: data.category }));
   const summary = data.summary || data.description;
-  if (summary) detail.appendChild(el("p", "character-library-detail-summary", { textContent: summary }));
+  if (summary) hero.appendChild(el("p", "character-library-detail-summary", { textContent: summary }));
+  detail.appendChild(hero);
 
   const sections = item.kind === "character" && item.official
     ? [
@@ -177,7 +224,8 @@ export function renderLibraryDetail(state) {
   if (item.kind === "worldBook") renderWorldBookDetail(detail, data);
 
   const mutationActions = el("div", "character-library-detail-actions character-library-mutation-actions");
-  if (!item.official) {
+  const canMutateWorldBook = item.kind === "worldBook" && Boolean(item.currentRevisionId);
+  if (!item.official || canMutateWorldBook) {
     if (state.confirm?.action === "archive" && state.confirm.entityId === item.id) {
       mutationActions.appendChild(confirmBar(t("character.library.confirmArchive", { name: item.name })));
     }
@@ -186,6 +234,13 @@ export function renderLibraryDetail(state) {
         type: "button", textContent: t(ACTION_LABEL_KEYS[action]), "data-library-action": action,
       }));
     }
+  }
+  if (item.kind === "worldBook" && data.active) {
+    mutationActions.appendChild(el("button", "character-library-action", {
+      type: "button",
+      textContent: t("character.library.removeFromConversation"),
+      "data-library-remove-book": "true",
+    }));
   }
   detail.appendChild(mutationActions);
   const actions = el("div", "character-library-detail-actions");

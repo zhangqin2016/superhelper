@@ -171,18 +171,19 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
     if (!LIBRARY_ACTIVATION_KINDS.has(payload?.kind) || !validLibraryActivationId(payload?.revisionId)) {
       return failure("INVALID_INPUT");
     }
+    const action = payload?.action === "remove" ? "remove" : "activate";
     if (!Number.isInteger(payload?.expectedBindingVersion) || payload.expectedBindingVersion < 0) {
       return failure("INVALID_INPUT");
     }
     if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     try {
-      if (payload.kind === "character" && !resolved.repo.getRevision(
+      if (action === "activate" && payload.kind === "character" && !resolved.repo.getRevision(
         resolved.session.ownerScope, payload.revisionId,
       )) return failure("CHARACTER_REVISION_NOT_FOUND");
-      if (payload.kind === "persona" && !resolved.repo.getPersonaRevision(
+      if (action === "activate" && payload.kind === "persona" && !resolved.repo.getPersonaRevision(
         resolved.session.ownerScope, payload.revisionId,
       )) return failure("PERSONA_REVISION_NOT_FOUND");
-      if (payload.kind === "worldBook" && !resolved.repo.getWorldBookRevision(
+      if (action === "activate" && payload.kind === "worldBook" && !resolved.repo.getWorldBookRevision(
         resolved.session.ownerScope, payload.revisionId,
       )) return failure("WORLD_BOOK_REVISION_NOT_FOUND");
 
@@ -192,6 +193,7 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
       const next = buildLibraryActivationConfig(current, {
         kind: payload.kind,
         revisionId: payload.revisionId,
+        action,
         scope: payload.scope,
         mergeStrategy: payload.mergeStrategy,
       });

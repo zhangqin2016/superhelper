@@ -49,7 +49,11 @@ assert.equal(archived.archived, true);
 const groups = deriveLibraryGroups("characters", [official, local, archived]);
 assert.deepEqual(groups.map((group) => group.id), [
   "all", "official", "work-delivery", "research-analysis", "content-creation",
-  "technology-creation", "learning-growth", "life-support", "uncategorized", "my", "recent", "archived",
+  "technology-creation", "business-operations", "technology-engineering", "data-ai",
+  "design-engineering", "education-research", "healthcare", "legal-finance",
+  "property-construction", "manufacturing-supply", "commerce-customer", "media-localization",
+  "hospitality-events", "public-nonprofit", "agriculture-food", "freelance",
+  "learning-growth", "life-support", "uncategorized", "my", "recent", "archived",
 ]);
 assert.equal(groups.find((group) => group.id === "all").count, 2);
 assert.equal(groups.find((group) => group.id === "official").count, 1);

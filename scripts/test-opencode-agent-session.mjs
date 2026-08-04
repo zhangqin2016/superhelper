@@ -2782,6 +2782,7 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     session.sendUserMessage({ text: "stuck but noisy" });
     await tick();
     for (let i = 0; i < 6; i++) {
+      fake.emitEvent({ type: "busy", properties: {} });
       fake.emitEvent({ type: "session.status", properties: { status: { type: "busy" } } });
       await new Promise((r) => setTimeout(r, 20));
     }

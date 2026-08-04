@@ -24,6 +24,10 @@ const { BlobStore } = require("./blob-store");
 const { MIGRATIONS } = require("./schema");
 const { externalize, collectRefs } = require("./record-blobs");
 const { compactRuntimeEventForPersistence } = require("./runtime-event-persistence");
+const {
+  DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
+  DISPATCH_BLOCKED_ASSISTANT,
+} = require("../turn-recovery-projection");
 
 const PREVIEW_MAX = 500;
 const DEFAULT_LIMIT = 50;
@@ -401,7 +405,7 @@ class MessageStore {
        LEFT JOIN runtime_events e
          ON e.session_id = p.session_id
         AND e.turn_id = p.turn_id
-        AND e.type IN ('turn.completed', 'turn.failed', 'turn.interrupted', 'turn.stalled')
+        AND e.type IN ('turn.completed', 'turn.failed', 'turn.interrupted', 'turn.stalled', 'turn.dispatch_outcome_unknown', 'turn.dispatch_blocked')
        WHERE p.session_id = ?
          AND (? OR p.terminal_type IS NOT NULL)
        ORDER BY COALESCE(p.started_at, p.updated_at) ASC
@@ -442,15 +446,19 @@ class MessageStore {
           },
         });
       }
+      const outcomeUnknown = projection.status === "outcome_unknown";
+      const dispatchBlocked = projection.status === "dispatch_blocked";
       const assistantText = String(
         terminalPayload?.assistant ||
         terminalPayload?.record?.assistantText ||
         projection.assistantText ||
+        projection.payload?.assistant ||
+        (outcomeUnknown ? DISPATCH_OUTCOME_UNKNOWN_ASSISTANT : "") ||
         "",
       ).trim();
-      if (!assistantText && !projection.terminalType && projection.status === "running") continue;
-      const terminal = projection.terminalType || "turn.stalled";
-      const failed = terminal === "turn.failed";
+      if (!assistantText && !projection.terminalType && !outcomeUnknown && !dispatchBlocked && projection.status === "running") continue;
+      const terminal = projection.terminalType || (outcomeUnknown ? "turn.dispatch_outcome_unknown" : dispatchBlocked ? "turn.dispatch_blocked" : "turn.stalled");
+      const failed = terminal === "turn.failed" || outcomeUnknown || dispatchBlocked;
       const record = terminalPayload?.record && typeof terminalPayload.record === "object"
         ? terminalPayload.record
         : {
@@ -481,6 +489,11 @@ class MessageStore {
             meta: {
               terminal,
               failed,
+              outcomeUnknown,
+              dispatchBlocked,
+              manualRecoveryRequired: outcomeUnknown && projection.payload?.manualRecoveryRequired !== false,
+              recoveryId: outcomeUnknown ? projection.payload?.recoveryId || "" : "",
+              retryable: dispatchBlocked,
               stalled: terminal === "turn.stalled",
               interrupted: terminal === "turn.interrupted",
               resultFromCli: false,
@@ -509,6 +522,16 @@ class MessageStore {
         meta: {
           ...(record.meta || {}),
           terminal,
+          ...(outcomeUnknown ? {
+            outcomeUnknown: true,
+            manualRecoveryRequired: projection.payload?.manualRecoveryRequired !== false,
+            recoveryId: projection.payload?.recoveryId || "",
+          } : {}),
+          ...(dispatchBlocked ? {
+            dispatchBlocked: true,
+            manualRecoveryRequired: projection.payload?.manualRecoveryRequired !== false,
+            retryable: true,
+          } : {}),
           canonicalSource: "lily-projection",
           projected: true,
           ...(scheduledDraft && !record.meta?.scheduledDraft ? { scheduledDraft } : {}),
@@ -609,6 +632,16 @@ class MessageStore {
       projection.activityLabel = payload.name ? String(payload.name) : projection.activityLabel;
     } else if (event.type === "engine.notice" || event.type === "engine.warning" || event.type === "engine.stderr") {
       projection.noticeCount += 1;
+    } else if (event.type === "turn.dispatch_outcome_unknown") {
+      projection.status = "outcome_unknown";
+      projection.terminalType = event.type;
+      projection.terminalAt = now;
+      projection.assistantText = String(payload.assistant || DISPATCH_OUTCOME_UNKNOWN_ASSISTANT);
+    } else if (event.type === "turn.dispatch_blocked") {
+      projection.status = "dispatch_blocked";
+      projection.terminalType = event.type;
+      projection.terminalAt = now;
+      projection.assistantText = String(payload.assistant || DISPATCH_BLOCKED_ASSISTANT);
     } else if (event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.interrupted" || event.type === "turn.stalled") {
       projection.status = event.type.replace("turn.", "");
       projection.terminalType = event.type;
@@ -620,7 +653,23 @@ class MessageStore {
       lastEventType: event.type,
       lastEventId: event.id,
       ...(scheduledDraft ? { scheduledDraft } : {}),
+      ...(event.type === "turn.dispatch_outcome_unknown" || event.type === "turn.dispatch_blocked" ? {
+        assistant: String(payload.assistant || (event.type === "turn.dispatch_blocked" ? DISPATCH_BLOCKED_ASSISTANT : DISPATCH_OUTCOME_UNKNOWN_ASSISTANT)),
+        recoveryId: payload.recoveryId || "",
+        manualRecoveryRequired: payload.manualRecoveryRequired !== false,
+        automaticReplay: payload.automaticReplay === true,
+        retryable: payload.retryable !== false && event.type === "turn.dispatch_blocked",
+        errorCode: payload.errorCode || (event.type === "turn.dispatch_blocked" ? "DISPATCH_BLOCKED" : "DISPATCH_OUTCOME_UNKNOWN"),
+      } : {}),
     };
+    if (event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.interrupted" || event.type === "turn.stalled") {
+      delete projection.payload.recoveryId;
+      delete projection.payload.manualRecoveryRequired;
+      delete projection.payload.automaticReplay;
+      delete projection.payload.errorCode;
+      delete projection.payload.assistant;
+      delete projection.payload.retryable;
+    }
 
     this.db.run(
       `INSERT INTO turn_projection
