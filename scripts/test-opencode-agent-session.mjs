@@ -2058,6 +2058,23 @@ async function newSession() {
   session.terminate();
 }
 
+// An idle snapshot while a question card is open must not close the parent
+// turn. The answer may arrive much later than the normal no-progress window.
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "ask me before continuing" });
+  await tick();
+  fake.emitEvent({
+    type: "question.asked",
+    properties: { id: "que_wait", questions: [{ question: "Continue?", header: "Continue", options: [{ label: "Yes" }] }], tool: { callID: "c_wait" } },
+  });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(orch.calls.done.length === 0, "pending question keeps an idle parent turn open");
+  assert(session.isBusy() === true, "session remains busy while the question is unanswered");
+  session.terminate();
+}
+
 // --- subagent permission/question round trip -------------------------------
 {
   const { fake, session, orch } = await newSession();

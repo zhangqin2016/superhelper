@@ -50,6 +50,16 @@ function createOpencodeTurnLiveness(options = {}) {
     return Boolean(state.busy && !state.turnSettled);
   }
 
+  function hasPendingUserInput() {
+    const state = getState() || {};
+    return Boolean(
+      state.pendingUserInput
+      || state.pendingPermissions
+      || state.pendingQuestions
+      || state.pendingHooks,
+    );
+  }
+
   function clearResponseTimer() {
     if (responseTimer) cancelTimer(responseTimer);
     responseTimer = null;
@@ -161,6 +171,16 @@ function createOpencodeTurnLiveness(options = {}) {
 
   function forceEndTurn(reason) {
     if (!isRunning()) return;
+    // A permission/question is intentional backpressure. The user may leave the
+    // card open for hours; treating that silence as a dead engine loses the
+    // parent turn and produces the misleading "question" incomplete summary.
+    if (hasPendingUserInput()) {
+      log.info("opencode turn is waiting for user input; watchdog paused", { sessionId, reason });
+      clearResponseTimer();
+      clearProgressNoticeTimer();
+      clearTurnWatchdog();
+      return;
+    }
     log.warn("opencode turn force-ended: %s", reason, { sessionId });
     void (async () => {
       const recovered = await recoverStalledFinal().catch((err) => {

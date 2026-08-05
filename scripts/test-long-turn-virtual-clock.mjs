@@ -42,7 +42,7 @@ function fakeClock() {
 }
 
 const clock = fakeClock();
-const state = { busy: true, turnSettled: false, collectedOutput: "" };
+const state = { busy: true, turnSettled: false, collectedOutput: "", pendingUserInput: false };
 const completions = [];
 const liveness = createOpencodeTurnLiveness({
   sessionId: "session-48h",
@@ -73,5 +73,32 @@ await clock.advance(10 * 60_000 + 1);
 await Promise.resolve();
 assert.equal(completions.length, 1, "true no-progress still settles after the configured window");
 assert.equal(completions[0].stalled, true);
+
+// A question/permission is intentional waiting, not a stalled engine. The
+// watchdog must leave the turn open until the user answers it.
+const waitingClock = fakeClock();
+const waitingState = { busy: true, turnSettled: false, collectedOutput: "", pendingUserInput: true };
+const waitingCompletions = [];
+const waitingLiveness = createOpencodeTurnLiveness({
+  sessionId: "session-awaiting-user",
+  getState: () => waitingState,
+  getConfig: () => ({
+    responseTimeoutMs: 1_000,
+    activeToolLeaseMs: 0,
+    progressNoticeMs: 250,
+    turnWatchdogMs: 2_000,
+    healthProbeMs: 30_000,
+    healthMaxFails: 3,
+  }),
+  now: waitingClock.now,
+  setTimeout: waitingClock.setTimeout,
+  clearTimeout: waitingClock.clearTimeout,
+  recoverStalledFinal: async () => null,
+  completeTurn: (payload) => waitingCompletions.push(payload),
+});
+waitingLiveness.armResponseTimer();
+waitingLiveness.armTurnWatchdog();
+await waitingClock.advance(10_000);
+assert.equal(waitingCompletions.length, 0, "pending user input is never force-ended by liveness watchdogs");
 
 console.log("long-turn-virtual-clock: ok");

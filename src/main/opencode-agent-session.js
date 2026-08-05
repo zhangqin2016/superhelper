@@ -30,6 +30,7 @@ const { getLogger } = require("./logger");
 const { isReplaySafeTool } = require("./tool-semantics");
 const { createOpencodeSubagentRuntime } = require("./opencode-subagent-runtime");
 const { createOpencodeTurnLiveness } = require("./opencode-turn-liveness");
+const { pauseForPendingUserInput, resumeAfterUserInput } = require("./opencode-user-input-guard");
 const { createOpencodeHistoryRecovery } = require("./opencode-history-recovery");
 const { grantOpencodeRuntimeIdentity, revokeOpencodeRuntimeIdentity } = require("./opencode-runtime-identity");
 const {
@@ -167,6 +168,7 @@ class OpencodeAgentSession extends EventEmitter {
         busy: this.busy,
         turnSettled: this._turnSettled,
         collectedOutput: this.collectedOutput,
+        pendingUserInput: Boolean(this._pendingPermissions.size || this._pendingQuestions.size),
       }),
       getConfig: () => ({
         responseTimeoutMs: OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS,
@@ -598,7 +600,7 @@ class OpencodeAgentSession extends EventEmitter {
     void this._server
       ?.respondPermission(pending.rawRequestId || requestId, { reply, message: decision.message }, { sessionID: pending.sessionID })
       .catch((err) => log.warn("permission reply failed: %s", err?.message || String(err)));
-    this._ingest([{ type: "permission.resolved", payload: { requestId, cancelled: false } }]);
+    this._ingest([{ type: "permission.resolved", payload: { requestId, cancelled: false } }]); resumeAfterUserInput(this);
     return true;
   }
 
@@ -617,7 +619,7 @@ class OpencodeAgentSession extends EventEmitter {
     void this._server
       ?.respondQuestion(pending.rawRequestId || requestId, answers, { sessionID: pending.sessionID })
       .catch((err) => log.warn("question reply failed: %s", err?.message || String(err)));
-    this._ingest([{ type: "user_question.resolved", payload: { requestId } }]);
+    this._ingest([{ type: "user_question.resolved", payload: { requestId } }]); resumeAfterUserInput(this);
     return true;
   }
 
@@ -1544,7 +1546,7 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   _completeTurn(payload) {
-    if (this._turnSettled) return;
+    if (this._turnSettled || pauseForPendingUserInput(this, payload)) return;
     if (requiredToolCompletion.continueBeforeCompletion(this, payload)) return;
     if (this._continueUnfinishedTodosBeforeCompletion(payload)) return;
     // Pillar 3-B completion gate: on a clean turn end, if the assistant claimed a
