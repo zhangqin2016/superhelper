@@ -29,8 +29,8 @@ const expectedIds = new Set([
 assert.deepEqual(new Set(OFFICIAL_CHARACTERS.map((item) => item.id)), baseIds);
 assert.equal(ADDITIONAL_OFFICIAL_CHARACTERS.length, 4);
 assert.deepEqual(new Set(ALL_OFFICIAL_CHARACTERS.map((item) => item.id)), expectedIds);
-assert.equal(INDUSTRY_OFFICIAL_CHARACTERS.length, 45);
-assert.equal(ALL_OFFICIAL_CHARACTERS.length, 67);
+assert.equal(INDUSTRY_OFFICIAL_CHARACTERS.length, 46);
+assert.equal(ALL_OFFICIAL_CHARACTERS.length, 68);
 assert.ok(new Set(ALL_OFFICIAL_CHARACTERS.map((item) => item.categoryId)).size >= 14);
 const summaries = listOfficialCharacters();
 assert.equal(summaries.length, ALL_OFFICIAL_CHARACTERS.length);
@@ -68,6 +68,12 @@ const legal = getOfficialCharacter("lily-cn-legal-counsel", "zh-CN");
 assert.match(legal.canonical.creatorNotes, /中国大陆|司法辖区|持证律师|人类律师/);
 assert.ok(legal.locales?.["zh-CN"]?.boundaries?.length || legal.boundaries.length);
 assert.ok(legal.canonical.creatorNotes.includes("材料时点"));
+const fullStack = getOfficialCharacter("lily-full-stack-engineer", "zh-CN");
+assert.equal(fullStack.categoryId, "technology-engineering");
+assert.match(fullStack.name, /全栈工程师/);
+assert.match(fullStack.summary, /前端、后端、数据库/);
+assert.ok(fullStack.workflow.some((step) => /测试|部署|运行/.test(step)));
+assert.ok(fullStack.boundaries.some((boundary) => /数据库|生产环境|回滚/.test(boundary)));
 for (const id of ["lily-healthcare-navigator", "lily-compliance-officer", "lily-financial-planning-analyst", "lily-cybersecurity-analyst"]) {
   const regulated = getOfficialCharacter(id, "zh-CN");
   assert.ok(regulated.boundaries.some((boundary) => /不|不要|必须|专业|医生|律师|投资|安全/.test(boundary)));
