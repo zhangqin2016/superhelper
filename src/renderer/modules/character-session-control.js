@@ -215,6 +215,7 @@ function renderUpdateRow() {
 
 function renderPopover() {
   const p = popover();
+  const b = btn();
   if (!p || p.hidden) return;
   renderNotice();
   renderUpdateRow();
@@ -271,6 +272,15 @@ async function loadBinding(sessionId) {
     if (!isCurrent()) return;
     dispatch({ type: "binding.loadFailed", sessionId, seq });
   }
+}
+
+function handleCharacterLibraryActivation(event) {
+  const sessionId = event?.detail?.sessionId;
+  if (!sessionId || sessionId !== controlState.sessionId) return;
+  // Library activation commits through the same main-side binding CAS as the
+  // quick selector. Refresh the session projection immediately so the
+  // composer banner and its application badges cannot show the old role.
+  void loadBinding(sessionId);
 }
 
 const loadCharacters = createOfficialCharacterLoader({ getFacade: facade, dispatch });
@@ -488,6 +498,7 @@ export function initCharacterSessionControl() {
     if (event.key === "Escape" && !p.hidden) closePopover({ focusButton: true });
   });
   previewController.bind();
+  window.addEventListener("lily:character-library-activated", handleCharacterLibraryActivation);
 
   store.on("activeSessionId", (sid) => {
     if (sid === controlState.sessionId) return;

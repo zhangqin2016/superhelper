@@ -2487,6 +2487,38 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   }
 }
 
+// --- continuous model thinking must not postpone the liveness heartbeat -------
+// Reasoning deltas are useful activity, but they are not a replacement for a
+// user-visible progress signal. The heartbeat must be scheduled from the turn
+// clock, not debounced forever by each hidden thinking delta.
+{
+  const savedNotice = OpencodeAgentSession.PROGRESS_NOTICE_MS;
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  OpencodeAgentSession.PROGRESS_NOTICE_MS = 40;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 500;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "keep thinking while I wait" });
+    await tick();
+    for (let i = 0; i < 5; i += 1) {
+      fake.emitEvent({
+        type: "message.part.delta",
+        properties: { field: "reasoning", delta: `thought-${i} ` },
+      });
+      await sleep(20);
+    }
+    const notice = orch.calls.ingest.find((d) => (
+      d.type === "engine.notice" && d.payload?.notice?.code === "longWait"
+    ));
+    assert(notice, "continuous hidden reasoning still emits a visible liveness heartbeat");
+    assert(orch.calls.done.length === 0, "liveness heartbeat does not settle an active model turn");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.PROGRESS_NOTICE_MS = savedNotice;
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+  }
+}
+
 // --- platform tool progress: long-running tools stay visible generically -----
 {
   const savedNotice = OpencodeAgentSession.PROGRESS_NOTICE_MS;

@@ -358,6 +358,15 @@ app.whenReady().then(async () => {
     const createBtn = document.getElementById("characterCreateBtn");
     if (!createBtn || !createBtn.textContent.trim()) throw new Error("direct create entry missing");
     if (popover.style.insetInlineStart !== "8px") throw new Error("popover must anchor to inline-start for RTL, got " + popover.style.insetInlineStart);
+    const rect = popover.getBoundingClientRect();
+    const viewportMargin = 12;
+    if (rect.top < viewportMargin || rect.bottom > window.innerHeight - viewportMargin) {
+      throw new Error("popover must remain inside the viewport after async list render: " + JSON.stringify({
+        top: rect.top,
+        bottom: rect.bottom,
+        viewportHeight: window.innerHeight,
+      }));
+    }
     const notice = document.getElementById("characterPopoverNotice");
     if (notice && notice.getAttribute("role")) throw new Error("notices must use the single live region, not a second role=status");
     return "items=" + items.length;

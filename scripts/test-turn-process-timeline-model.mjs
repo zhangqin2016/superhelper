@@ -191,6 +191,19 @@ assert.doesNotMatch(layoutSource, /function partitionTimeline\s*\(/);
     "longWait shows while it is the newest thing that happened",
   );
 
+  const thinkingAfterWaitTurn = {
+    tools: new Map(),
+    timeline: [
+      { kind: "notice", id: "lw2", code: "longWait", level: "progress", detail: "仍在等待模型响应" },
+      { kind: "thinking", id: "think_live", status: "streaming", text: "继续思考", ts: 2 },
+    ],
+  };
+  assert.deepEqual(
+    timelineForProcessView(thinkingAfterWaitTurn, false).map((entry) => entry.id),
+    ["lw2", "think_live"],
+    "longWait remains visible when only hidden thinking follows it",
+  );
+
   const movedOnTurn = {
     tools: new Map(),
     timeline: [

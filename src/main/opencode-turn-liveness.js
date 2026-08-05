@@ -141,8 +141,14 @@ function createOpencodeTurnLiveness(options = {}) {
     progressNoticeTimer = null;
   }
 
-  function armProgressNoticeTimer() {
-    clearProgressNoticeTimer();
+  function armProgressNoticeTimer(options = {}) {
+    const reset = options === true || options?.reset === true;
+    // This is a heartbeat, not a debounce timer. Resetting it on every hidden
+    // reasoning delta made a model that kept thinking indefinitely look frozen:
+    // the 45s notice was always pushed into the future. Keep one timer alive
+    // for the turn and only reset it after the heartbeat itself fires.
+    if (progressNoticeTimer && !reset) return;
+    if (reset) clearProgressNoticeTimer();
     if (!isRunning()) return;
     progressNoticeTimer = scheduleTimer(emitLongWaitNotice, getConfig().progressNoticeMs);
     progressNoticeTimer?.unref?.();
@@ -150,9 +156,13 @@ function createOpencodeTurnLiveness(options = {}) {
 
   function emitLongWaitNotice() {
     progressNoticeTimer = null;
-    if (!isRunning() || hasKnownSubagents()) return;
+    if (!isRunning()) return;
+    if (hasKnownSubagents()) {
+      armProgressNoticeTimer({ reset: true });
+      return;
+    }
     if (emitGenericToolProgressNotice()) {
-      armProgressNoticeTimer();
+      armProgressNoticeTimer({ reset: true });
       return;
     }
     ingest([{
@@ -167,6 +177,7 @@ function createOpencodeTurnLiveness(options = {}) {
         },
       },
     }]);
+    armProgressNoticeTimer({ reset: true });
   }
 
   function forceEndTurn(reason) {

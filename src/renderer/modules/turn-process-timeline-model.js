@@ -55,10 +55,20 @@ function hasRunningToolEntry(liveTurn = {}) {
   return values.some((tool) => tool?.status === "running");
 }
 
-function livenessNoticeVisible(entry, { liveTurn, sealed, isLast }) {
+function livenessNoticeVisible(entry, { liveTurn, sealed, hasNewerMeaningfulEntry }) {
   if (sealed) return false;
   if (entry.code === "toolProgress") return hasRunningToolEntry(liveTurn);
-  return isLast;
+  return !hasNewerMeaningfulEntry;
+}
+
+function isMeaningfulAfterLiveness(entry = {}) {
+  // Thinking is model activity, not a user-visible work transition. A stream
+  // of hidden reasoning must not cover the only indication that the turn is
+  // still alive. Tool/text/normal notices do represent a newer visible step.
+  if (entry.kind === "thinking") return false;
+  if (entry.kind === "notice" && LIVENESS_NOTICE_CODES.has(entry.code)) return false;
+  if (entry.kind === "text") return Boolean(String(entry.text || "").trim());
+  return true;
 }
 
 function isLegacyDiscardSinkProgress(entry = {}) {
@@ -73,11 +83,18 @@ export function timelineForProcessView(liveTurn, sealed) {
   const timeline = sealed
     ? normalizeSealedProcessTimeline(getRenderableTimeline(liveTurn))
     : getRenderableTimeline(liveTurn);
-  const lastIndex = timeline.length - 1;
+  const newestMeaningfulIndex = timeline.reduce(
+    (latest, entry, index) => isMeaningfulAfterLiveness(entry) ? index : latest,
+    -1,
+  );
   return collapseRepeatedReadTools(timeline.filter((entry, index) => {
     if (sealed && isLegacyDiscardSinkProgress(entry)) return false;
     if (entry.kind === "notice" && LIVENESS_NOTICE_CODES.has(entry.code)) {
-      return livenessNoticeVisible(entry, { liveTurn, sealed: Boolean(sealed), isLast: index === lastIndex });
+      return livenessNoticeVisible(entry, {
+        liveTurn,
+        sealed: Boolean(sealed),
+        hasNewerMeaningfulEntry: newestMeaningfulIndex > index,
+      });
     }
     return sealed || entry.kind !== "notice" || entry.level === "progress";
   }));

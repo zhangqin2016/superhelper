@@ -591,6 +591,8 @@ const characterBinding = {
   assert.equal(librarySource.includes("sessionCharacterBtn"), false, "library focus must never target the removed trigger");
   assert.match(controlSource, /if \(p\.hidden\) openPopover\(\)/, "the composer role selector must open the quick selector");
   assert.match(controlSource, /characterManageBtn[\s\S]*openCharacterLibrary\(\)/, "the legacy manager command must remain compatible");
+  assert.match(controlSource, /lily:character-library-activated/, "library activation must refresh the conversation binding projection");
+  assert.match(librarySource, /onActivated:\s*\(activation\)[\s\S]*notifyCharacterLibraryActivated/, "library activation must notify the composer after commit");
   assert.ok(
     (librarySource.match(/sessionRoleBanner/g) || []).length >= 2,
     "AI authoring and library close must restore the new selector state/focus",

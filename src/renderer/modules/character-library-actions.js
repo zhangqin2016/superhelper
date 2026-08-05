@@ -271,7 +271,13 @@ export function createLibraryActions(ctx) {
         dispatch({ type: "activation.settled", itemId: item.id });
         setNotice("activated", { name: target.displayName || target.name || item.name });
         await loadCurrentTab();
-        onActivated?.();
+        onActivated?.({
+          sessionId,
+          kind: item.kind,
+          itemId: item.id,
+          revisionId: target.currentRevisionId,
+          binding: res.binding || null,
+        });
       } else {
         dispatch({ type: "activation.failed", itemId: item.id, error: res?.error || "ACTIVATION_FAILED" });
         setNotice(res?.error === "CHARACTER_BINDING_CONFLICT" ? "conflict" : "action_failed");
