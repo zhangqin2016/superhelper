@@ -575,10 +575,11 @@ const characterBinding = {
 
 // --- Static UI contract: one composer-owned trigger, no historical duplicate --
 {
-  const [html, controlSource, librarySource, css] = await Promise.all([
+  const [html, controlSource, librarySource, activationSource, css] = await Promise.all([
     readFile(new URL("../src/renderer/index.html", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer/modules/character-session-control.js", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer/modules/character-library.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/renderer/modules/character-library-activation.js", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer/styles/character-worlds.css", import.meta.url), "utf8"),
   ]);
   assert.equal((html.match(/id="sessionRoleBanner"/g) || []).length, 1, "there must be exactly one role selector");
@@ -592,7 +593,8 @@ const characterBinding = {
   assert.match(controlSource, /if \(p\.hidden\) openPopover\(\)/, "the composer role selector must open the quick selector");
   assert.match(controlSource, /characterManageBtn[\s\S]*openCharacterLibrary\(\)/, "the legacy manager command must remain compatible");
   assert.match(controlSource, /lily:character-library-activated/, "library activation must refresh the conversation binding projection");
-  assert.match(librarySource, /onActivated:\s*\(activation\)[\s\S]*notifyCharacterLibraryActivated/, "library activation must notify the composer after commit");
+  assert.match(librarySource, /onActivated:\s*createCharacterLibraryActivationHandler\(closeCharacterLibrary\)/, "library activation must close through the focused event bridge");
+  assert.match(activationSource, /dispatchEvent\(new CustomEvent\(ACTIVATED_EVENT, \{ detail \}\)\)/, "the activation bridge must forward session-scoped detail unchanged");
   assert.ok(
     (librarySource.match(/sessionRoleBanner/g) || []).length >= 2,
     "AI authoring and library close must restore the new selector state/focus",

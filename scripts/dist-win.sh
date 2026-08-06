@@ -15,6 +15,16 @@ builder_args=()
 # Windows-only releases never depend on creating unrelated Darwin symlinks.
 builder_args+=("-c.toolsets.winCodeSign=1.1.0")
 
+# On a native Windows host, app-builder's resource-edit command can still pull
+# the legacy cross-platform winCodeSign archive even with the split toolset.
+# That archive contains Darwin symlinks which ordinary Windows users cannot
+# extract. Use the cached native rcedit from afterPack instead. Cross-builds
+# keep electron-builder's host-native resource editor unchanged.
+if [[ "$(node -p 'process.platform')" == "win32" ]]; then
+  export LILY_NATIVE_WINDOWS_RESOURCE_EDIT=1
+  builder_args+=("-c.win.signAndEditExecutable=false")
+fi
+
 if [[ "${LILY_REQUIRE_WIN_SIGNING:-0}" == "1" ]]; then
   has_pfx=0
   if { [[ -n "${WIN_CSC_LINK:-}" ]] || [[ -n "${CSC_LINK:-}" ]]; } && \

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginPath = path.join(__dirname, "../resources/opencode-plugins/empty-assistant-history-guard.js");
@@ -12,7 +12,7 @@ assert.ok(
   "an engine transform must repair persisted empty assistant messages before provider requests",
 );
 
-const mod = await import(pluginPath);
+const mod = await import(pathToFileURL(pluginPath).href);
 const { EmptyAssistantHistoryGuardPlugin } = mod;
 
 {

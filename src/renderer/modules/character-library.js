@@ -28,6 +28,7 @@ import {
 import { renderCharacterLibrary, libraryNoticeText } from "./character-library-view.js";
 import { createLibraryActions } from "./character-library-actions.js";
 import { bindCharacterReceiptView, findCharacterLibraryItem } from "./character-library-receipt-view.js";
+import { createCharacterLibraryActivationHandler } from "./character-library-activation.js";
 
 let libraryState = initialCharacterLibraryState();
 
@@ -38,11 +39,6 @@ export function getCharacterLibraryState() {
 
 const facade = () => window.assistantClient?.characterWorlds || null;
 const modal = () => $("characterLibraryModal");
-
-function notifyCharacterLibraryActivated(detail) {
-  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return;
-  window.dispatchEvent(new CustomEvent("lily:character-library-activated", { detail }));
-}
 
 const AI_AUTHORING_PROMPTS = Object.freeze({
   characters: "character.library.aiCreateCharacterPrompt",
@@ -217,10 +213,7 @@ const actions = createLibraryActions({
   readFormValues,
   focusNameField: () => $("characterLibraryDetail")?.querySelector("[data-field='name']")?.focus(),
   getActiveSessionId: () => store.get("activeSessionId"),
-  onActivated: (activation) => {
-    closeCharacterLibrary();
-    notifyCharacterLibraryActivated(activation);
-  },
+  onActivated: createCharacterLibraryActivationHandler(closeCharacterLibrary),
 });
 
 /** Re-render localized chrome after a locale change (lossless for edits). */

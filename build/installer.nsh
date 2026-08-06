@@ -56,6 +56,21 @@
   ${endif}
 !macroend
 
+; Reap bundled helpers that can keep files below $INSTDIR locked. The updater
+; itself and its ancestor chain are protected so an in-app setup never kills
+; its own launcher while cleaning up an interrupted/crashed app session.
+!macro _lilyReapInstallProcesses
+  Push $R8
+  Push $R9
+  System::Call 'kernel32::GetCurrentProcessId() i .s'
+  Pop $R9
+  nsExec::Exec `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "$$prot=@{}; $$p=[int]$R9; while($$p -and -not $$prot.ContainsKey($$p)){ $$prot[$$p]=$$true; $$pr=Get-CimInstance Win32_Process -Filter ('ProcessId='+$$p) -ErrorAction SilentlyContinue; if($$pr){$$p=[int]$$pr.ParentProcessId}else{break} }; Get-CimInstance Win32_Process | Where-Object { ($$_.ExecutablePath -and $$_.ExecutablePath -like '$INSTDIR\*') -and (-not $$prot.ContainsKey([int]$$_.ProcessId)) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+  Pop $R8
+  Sleep 1200
+  Pop $R9
+  Pop $R8
+!macroend
+
 ; Force-terminate Lily WITHOUT killing this installer. Two self-kill traps the
 ; earlier /T version fell into: (1) in-app updates launch setup as a DESCENDANT
 ; of "Lily Workbench.exe", so `taskkill /T` (kill children) took setup down too;
@@ -67,21 +82,12 @@
 ;    and its whole ancestor chain. Win11-safe (CIM Win32_Process, no wmic).
 !macro _lilyForceKill
   Push $R8
-  Push $R9
   DetailPrint "Closing Lily Workbench before installing..."
   nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "Lily Workbench.exe" /F`
   Pop $R8
   nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /IM "LilyWorkbench.exe" /F`
   Pop $R8
-  ; $$ escapes an NSIS '$' so PowerShell receives a literal $var; $INSTDIR is the
-  ; NSIS var (real path). Build the protected set = self + all ancestors, then
-  ; Stop-Process everything named Lily / living under $INSTDIR that isn't in it.
-  System::Call 'kernel32::GetCurrentProcessId() i .s'
-  Pop $R9
-  nsExec::Exec `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "$$prot=@{}; $$p=[int]$R9; while($$p -and -not $$prot.ContainsKey($$p)){ $$prot[$$p]=$$true; $$pr=Get-CimInstance Win32_Process -Filter ('ProcessId='+$$p) -ErrorAction SilentlyContinue; if($$pr){$$p=[int]$$pr.ParentProcessId}else{break} }; Get-CimInstance Win32_Process | Where-Object { ($$_.Name -eq 'Lily Workbench.exe' -or $$_.Name -eq 'LilyWorkbench.exe' -or ($$_.ExecutablePath -and $$_.ExecutablePath -like '$INSTDIR\*')) -and (-not $$prot.ContainsKey([int]$$_.ProcessId)) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
-  Pop $R8
-  Sleep 1200
-  Pop $R9
+  !insertmacro _lilyReapInstallProcesses
   Pop $R8
 !macroend
 
@@ -90,6 +96,26 @@
   Push $1
   Push $2
   Push $3
+
+  ; electron-updater launches setup before app.quit() runs. In update mode,
+  ; first let the normal before-quit path save sessions and terminate the
+  ; OpenCode/runtime process tree. The old eager force-kill skipped that path,
+  ; leaving locked files and making the app disappear without an installed
+  ; replacement. After ten seconds the existing force-close fallback remains.
+  ${if} ${isUpdated}
+    StrCpy $3 0
+    lilyGracefulQuitLoop:
+      !insertmacro _lilyDetectRunning
+      ${if} $0 == 0
+        !insertmacro _lilyReapInstallProcesses
+        Goto lilyKilled
+      ${endif}
+      IntOp $3 $3 + 1
+      ${if} $3 < 20
+        Sleep 500
+        Goto lilyGracefulQuitLoop
+      ${endif}
+  ${endif}
 
   !insertmacro _lilyDetectRunning
   ${if} $0 == 1

@@ -35,12 +35,28 @@ assert.match(installerInclude, /ParentProcessId/, "Force-kill must walk the inst
 assert.match(installerInclude, /ContainsKey/, "Force-kill must exclude the protected (self + ancestors) set before Stop-Process.");
 assert.match(installerInclude, /MB_OKCANCEL/, "Installer guard must ask before closing the app.");
 assert.match(installerInclude, /MB_RETRYCANCEL/, "Installer guard must let users retry after manual close.");
+const gracefulUpdateStart = installerInclude.indexOf("${if} ${isUpdated}");
+const forceKillStart = installerInclude.indexOf("!insertmacro _lilyForceKill", gracefulUpdateStart);
+assert.ok(gracefulUpdateStart >= 0, "In-app updates must have a graceful shutdown path.");
+assert.ok(forceKillStart > gracefulUpdateStart, "In-app updates must wait for graceful app shutdown before force-killing Lily.");
+assert.match(
+  installerInclude.slice(gracefulUpdateStart, forceKillStart),
+  /Sleep 500[\s\S]*lilyGracefulQuitLoop/,
+  "In-app updates must give before-quit cleanup time to finish before replacing files.",
+);
+assert.match(
+  installerInclude.slice(gracefulUpdateStart, forceKillStart),
+  /_lilyReapInstallProcesses/,
+  "In-app updates must reap install-directory helpers after the app exits normally.",
+);
 assert.equal(packageJson?.build?.nsis?.installerIcon, "icon.ico", "Windows installer icon must use the Lily icon asset.");
 assert.equal(packageJson?.build?.nsis?.uninstallerIcon, "icon.ico", "Windows uninstaller icon must use the Lily icon asset.");
 assert.equal(packageJson?.build?.nsis?.installerHeaderIcon, "icon.ico", "Windows installer header icon must use the Lily icon asset.");
 assert.equal(packageJson?.build?.win?.signAndEditExecutable, true, "Windows packaging must use electron-builder's host-native resource editor so cross-builds retain icon and version metadata.");
 assert.ok(packageJson?.build?.win?.signExts?.includes("!opencode.exe"), "Windows packaging must not code-sign the bundled OpenCode engine.");
-assert.doesNotMatch(afterPackHook, /rcedit/i, "Windows afterPack must not invoke a target-host-only rcedit binary during cross-builds.");
+assert.match(afterPackHook, /process\.platform !== "win32"/, "Native rcedit must never run during a non-Windows cross-build.");
+assert.match(afterPackHook, /LILY_NATIVE_WINDOWS_RESOURCE_EDIT/, "Native Windows resource editing must require an explicit build marker.");
+assert.match(afterPackHook, /--set-icon/, "Native Windows resource editing must retain the Lily executable icon.");
 assert.match(
   distWinScript,
   /toolsets\.winCodeSign=1\.1\.0/,
@@ -48,6 +64,8 @@ assert.match(
 );
 assert.match(distWinScript, /SIGNTOOL_PATH/, "Windows packaging must reuse cached signtool when available.");
 assert.match(distWinScript, /ELECTRON_BUILDER_RCEDIT_PATH/, "Windows packaging must reuse cached rcedit when available.");
+assert.match(distWinScript, /LILY_NATIVE_WINDOWS_RESOURCE_EDIT=1/, "Native Windows packaging must opt into cached resource editing.");
+assert.match(distWinScript, /win\.signAndEditExecutable=false/, "Native Windows packaging must bypass app-builder's legacy cross-platform rcedit download.");
 assert.match(distWinScript, /resolve_win_codesign_cache_env/, "Windows packaging must resolve cached signing tools without depending on a specific bash flavor.");
 assert.match(distWinScript, /process\.env\.LOCALAPPDATA/, "Windows packaging must resolve the electron-builder cache from the native Windows LOCALAPPDATA path.");
 assert.match(packageJson?.scripts?.["dist:win"], /run-bash-script\.mjs/, "Windows packaging must use the Git Bash wrapper instead of whichever bash appears first on PATH.");

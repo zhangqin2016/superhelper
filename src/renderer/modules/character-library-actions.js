@@ -3,7 +3,6 @@
 import { kindForTab, initialFormValues } from "./character-library-model.js";
 import { installOfficialCharacter } from "./official-character-picker.js";
 import { removeWorldBookFromConversation } from "./character-library-book-actions.js";
-
 function isRevisionConflict(error) {
   return typeof error === "string" && error.endsWith("REVISION_CONFLICT");
 }
@@ -271,13 +270,7 @@ export function createLibraryActions(ctx) {
         dispatch({ type: "activation.settled", itemId: item.id });
         setNotice("activated", { name: target.displayName || target.name || item.name });
         await loadCurrentTab();
-        onActivated?.({
-          sessionId,
-          kind: item.kind,
-          itemId: item.id,
-          revisionId: target.currentRevisionId,
-          binding: res.binding || null,
-        });
+        onActivated?.({ sessionId });
       } else {
         dispatch({ type: "activation.failed", itemId: item.id, error: res?.error || "ACTIVATION_FAILED" });
         setNotice(res?.error === "CHARACTER_BINDING_CONFLICT" ? "conflict" : "action_failed");

@@ -25,7 +25,7 @@ import { createSceneSectionController } from "./character-scene-section.js";
 import { openCharacterLibrary } from "./character-library.js";
 import { appendCharacterOptionCopy, createOfficialCharacterLoader, installOfficialCharacter } from "./official-character-picker.js";
 import { createCharacterPreviewController } from "./character-preview-controller.js";
-import { positionCharacterPopover } from "./character-popover-position.js";
+import { bindCharacterPopoverPosition, positionCharacterPopover } from "./character-popover-position.js";
 import { getRuntimeSession, subscribeRuntime } from "./session-runtime-store.js";
 export {
   initialCharacterControlState,
@@ -413,6 +413,7 @@ export function initCharacterSessionControl() {
     b.hidden = true;
     return;
   }
+  bindCharacterPopoverPosition({ panel: p, trigger: b });
   subscribeRuntime(() => {
     if (!controlState.sessionId) return;
     const application = getRuntimeSession(controlState.sessionId).characterApplication;

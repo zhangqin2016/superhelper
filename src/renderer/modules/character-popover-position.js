@@ -28,3 +28,21 @@ export function positionCharacterPopover({ panel, trigger }) {
     panel.style.right = "auto";
   }
 }
+
+/** Keep the popover inside the viewport as asynchronous content changes its size. */
+export function bindCharacterPopoverPosition({ panel, trigger }) {
+  if (!panel || !trigger) return () => {};
+  let frame = 0;
+  const reposition = () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => positionCharacterPopover({ panel, trigger }));
+  };
+  const observer = typeof ResizeObserver === "function" ? new ResizeObserver(reposition) : null;
+  observer?.observe(panel);
+  window.addEventListener("resize", reposition);
+  return () => {
+    cancelAnimationFrame(frame);
+    observer?.disconnect();
+    window.removeEventListener("resize", reposition);
+  };
+}
