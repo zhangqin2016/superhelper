@@ -65,7 +65,40 @@ if (!app?.whenReady || !BrowserWindow) process.exit(2);
       sealedArticle.querySelector("[data-action='preview']").click();
       await new Promise((resolve) => setTimeout(resolve, 20));
       const malformed = renderCharacterResultCard({ type: "character_worlds_receipt", secret: "DO_NOT_RENDER" }, { api });
+      const failingCard = renderCharacterResultCard({
+        type: "character_worlds_receipt", schemaVersion: 1, receiptId: "failed-receipt",
+        kind: "character", displayName: "Failed action", revisionNumber: 1,
+        state: "draft", provenance: "agent_draft",
+      }, {
+        sessionId: "session-failed",
+        api: { getReceiptActions: async () => ({ ok: false, error: "unavailable" }) },
+      });
+      document.body.append(failingCard);
+      failingCard.querySelector("[data-action='view']").click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const missingApiCard = renderCharacterResultCard({
+        type: "character_worlds_receipt", schemaVersion: 1, receiptId: "missing-api-receipt",
+        kind: "character", displayName: "Missing API", revisionNumber: 1,
+        state: "draft", provenance: "agent_draft",
+      }, { sessionId: "session-missing", api: null });
+      document.body.append(missingApiCard);
+      missingApiCard.querySelector("[data-action='preview']").click();
       const banner = renderCharacterPreviewBanner({ character: true, previewVersion: 1 }, {});
+      let bannerExitCalls = 0;
+      const interactiveBanner = renderCharacterPreviewBanner({ character: true, previewVersion: 1 }, {
+        onExit: () => { bannerExitCalls += 1; },
+      });
+      const bannerHost = document.getElementById("characterPreviewBanner");
+      bannerHost.replaceChildren(...interactiveBanner.childNodes);
+      bannerHost.className = interactiveBanner.className;
+      bannerHost.hidden = false;
+      const coveringSession = document.createElement("div");
+      coveringSession.className = "session-messages is-active";
+      document.getElementById("sessionMessagesStack").append(coveringSession);
+      const exitButton = bannerHost.querySelector("[data-action='exit']");
+      const exitRect = exitButton.getBoundingClientRect();
+      const hitTarget = document.elementFromPoint(exitRect.left + exitRect.width / 2, exitRect.top + exitRect.height / 2);
+      hitTarget?.click();
       const inactiveBanner = renderCharacterPreviewBanner({}, {});
       document.body.append(inactiveBanner);
       return {
@@ -76,8 +109,14 @@ if (!app?.whenReady || !BrowserWindow) process.exit(2);
         viewed,
         actionSessions,
         malformedText: malformed.textContent,
+        failingCardStatus: failingCard.querySelector(".character-result-status").textContent,
+        failingCardRetryEnabled: !failingCard.querySelector("[data-action='view']").disabled,
+        missingApiStatus: missingApiCard.querySelector(".character-result-status").textContent,
         bannerHidden: banner.hidden,
         bannerActions: banner.querySelectorAll("button").length,
+        bannerHitAction: hitTarget?.dataset?.action || "",
+        bannerExitCalls,
+        coveredSessionPaddingTop: getComputedStyle(coveringSession).paddingTop,
         inactiveBannerDisplay: getComputedStyle(inactiveBanner).display,
       };
     })()`);
@@ -87,7 +126,11 @@ if (!app?.whenReady || !BrowserWindow) process.exit(2);
       || result.actionSessions.filter((sessionId) => sessionId === "session-a").length !== 3
       || !result.actionSessions.includes("session-sealed")
       || result.malformedText.includes("DO_NOT_RENDER")
+      || !result.failingCardStatus || !result.failingCardRetryEnabled
+      || !result.missingApiStatus
       || result.bannerHidden || result.bannerActions !== 2
+      || result.bannerHitAction !== "exit" || result.bannerExitCalls !== 1
+      || parseFloat(result.coveredSessionPaddingTop) < 46
       || result.inactiveBannerDisplay !== "none") {
       throw new Error(`renderer assertions failed: ${JSON.stringify(result)}`);
     }

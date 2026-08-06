@@ -63,25 +63,44 @@ export function renderCharacterResultCard(block, {
   const adjust = button("adjust", label("character.receipt.adjust", "Adjust"));
   const view = button("view", label("character.receipt.view", "View"));
   actions.append(preview, adjust, view);
-  root.append(heading, actions);
+  const status = document.createElement("p");
+  status.className = "character-result-status";
+  status.setAttribute("role", "status");
+  status.hidden = true;
+  root.append(heading, actions, status);
+
+  function showFailure() {
+    root.classList.add("has-error");
+    status.textContent = label("common.actionFailed", "Action failed");
+    status.hidden = false;
+  }
 
   async function run(action, fn) {
-    if (!api || root.dataset.busy) return;
+    if (root.dataset.busy) return;
+    if (!api) {
+      showFailure();
+      return;
+    }
     root.dataset.busy = action;
+    root.setAttribute("aria-busy", "true");
+    root.classList.remove("has-error");
+    status.hidden = true;
     for (const item of actions.querySelectorAll("button")) item.disabled = true;
     try {
       const offered = await api.getReceiptActions(sessionId, block.receiptId);
       if (!offered?.ok || !offered.actions?.[action]) throw new Error("actions unavailable");
       await fn(offered.actions[action]);
     } catch {
-      root.classList.add("has-error");
+      showFailure();
     } finally {
       delete root.dataset.busy;
+      root.setAttribute("aria-busy", "false");
       for (const item of actions.querySelectorAll("button")) item.disabled = false;
     }
   }
   preview.addEventListener("click", () => run("preview", async (token) => {
     const current = await api.getPreview(sessionId);
+    if (!current?.ok) throw new Error(current?.error || "preview unavailable");
     const result = await api.startPreview({
       sessionId, receiptId: block.receiptId, actionToken: token,
       expectedPreviewVersion: current?.preview?.previewVersion || 0,

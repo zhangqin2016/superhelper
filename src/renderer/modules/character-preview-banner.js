@@ -12,7 +12,15 @@ export function renderCharacterPreviewBanner(state, { onActivate, onExit } = {})
   root.hidden = !active;
   if (!active) return root;
   const text = document.createElement("span");
+  text.className = "character-preview-copy";
   text.textContent = tr("character.preview.active", "Preview active for future messages");
+  if (state?.conflict) {
+    const status = document.createElement("span");
+    status.className = "character-preview-status";
+    status.setAttribute("role", "status");
+    status.textContent = tr("character.preview.actionFailed", "Action failed. State refreshed; try again.");
+    text.append(status);
+  }
   const actions = document.createElement("div");
   actions.className = "character-preview-actions";
   const activate = document.createElement("button");
@@ -23,6 +31,9 @@ export function renderCharacterPreviewBanner(state, { onActivate, onExit } = {})
   exit.type = "button";
   exit.dataset.action = "exit";
   exit.textContent = tr("character.preview.exit", "Exit preview");
+  activate.disabled = Boolean(state?.loading || !state?.activation);
+  exit.disabled = Boolean(state?.loading);
+  root.setAttribute("aria-busy", state?.loading ? "true" : "false");
   activate.addEventListener("click", () => onActivate?.(state));
   exit.addEventListener("click", () => onExit?.(state));
   actions.append(activate, exit);

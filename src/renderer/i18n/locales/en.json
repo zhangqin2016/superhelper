@@ -1692,5 +1692,6 @@
   "character.receipt.view": "View",
   "character.preview.active": "Preview is active for future messages",
   "character.preview.activate": "Use",
-  "character.preview.exit": "Exit preview"
+  "character.preview.exit": "Exit preview",
+  "character.preview.actionFailed": "Action failed. State refreshed; try again."
 }

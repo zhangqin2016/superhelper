@@ -19,22 +19,43 @@ export function createCharacterPreviewController({ getState, dispatch, getFacade
   async function activate() {
     const { sessionId, preview } = getState();
     if (!sessionId || !preview?.activation) return;
-    const result = await getFacade()?.activatePreview({
-      sessionId, receiptId: preview.activation.receiptId,
-      actionToken: preview.activation.actionToken,
-      expectedPreviewVersion: preview.previewVersion,
-      expectedBindingVersion: preview.bindingVersion,
-    });
-    if (result?.ok) await Promise.all([refreshBinding(sessionId), load(sessionId)]);
-    else dispatch({ type: "preview.conflict", sessionId, seq: getState().loadSeq, error: result?.error });
+    dispatch({ type: "preview.loading", sessionId, seq: getState().loadSeq });
+    try {
+      const result = await getFacade()?.activatePreview({
+        sessionId, receiptId: preview.activation.receiptId,
+        actionToken: preview.activation.actionToken,
+        expectedPreviewVersion: preview.previewVersion,
+        expectedBindingVersion: preview.bindingVersion,
+      });
+      if (!result?.ok) throw new Error(result?.error || "unavailable");
+      await Promise.all([refreshBinding(sessionId), load(sessionId)]);
+    } catch (error) {
+      await recover(sessionId, error);
+    }
   }
 
   async function exit() {
     const { sessionId, preview } = getState();
     if (!sessionId) return;
-    const result = await getFacade()?.exitPreview(sessionId, preview.previewVersion);
-    if (result?.ok) await load(sessionId);
-    else dispatch({ type: "preview.conflict", sessionId, seq: getState().loadSeq, error: result?.error });
+    dispatch({ type: "preview.loading", sessionId, seq: getState().loadSeq });
+    try {
+      const result = await getFacade()?.exitPreview(sessionId, preview.previewVersion);
+      if (!result?.ok) throw new Error(result?.error || "unavailable");
+      await load(sessionId);
+    } catch (error) {
+      await recover(sessionId, error);
+    }
+  }
+
+  async function recover(sessionId, error) {
+    await load(sessionId);
+    if (getState().sessionId !== sessionId) return;
+    dispatch({
+      type: "preview.conflict",
+      sessionId,
+      seq: getState().loadSeq,
+      error: error?.message || "unavailable",
+    });
   }
 
   function render() {

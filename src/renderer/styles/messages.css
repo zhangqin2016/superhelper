@@ -83,6 +83,10 @@
   z-index: 1;
 }
 
+.session-messages-stack:has(> .character-preview-banner:not([hidden])) .session-messages {
+  padding-top: 68px;
+}
+
 /* Empty chat — task-oriented workbench landing */
 
 .workbench-empty {

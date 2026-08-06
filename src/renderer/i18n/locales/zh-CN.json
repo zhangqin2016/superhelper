@@ -1692,5 +1692,6 @@
   "character.receipt.view": "查看",
   "character.preview.active": "预览已启用，只影响之后的消息",
   "character.preview.activate": "正式启用",
-  "character.preview.exit": "退出预览"
+  "character.preview.exit": "退出预览",
+  "character.preview.actionFailed": "操作失败，状态已刷新，请重试"
 }
