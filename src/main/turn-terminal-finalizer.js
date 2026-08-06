@@ -3,13 +3,13 @@
 const crypto = require("node:crypto");
 const { evaluateAnswerEvidenceWithJudge, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const { clearDocumentDeliveryTurnState } = require("./document-delivery-turn");
-const { getLogger } = require("./logger");
+const { getLogger } = require("./logger"); const { markTerminalTaskResultDelivered, persistTerminalTaskResult } = require("./task-result-runtime");
 const { compactTaskRun } = require("./task-run-state");
 const { buildEvidenceRecoveryContext } = require("./turn-recovery-context");
 const { TERMINAL_TYPES } = require("./turn-event-types");
 const { recoverFinalizationFailure, DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("./turn-finalize-fallback");
 const { promoteTerminalNarrative } = require("./turn-terminal-narrative");
-const { attachDraftReceipts } = require("./character-worlds/receipt-finalizer");
+const { attachDraftReceipts } = require("./character-worlds/receipt-finalizer"); const { completeShortTurnLifecycle } = require("./task-lifecycle-runtime");
 const {
   appendTimelineNotice,
   appendTimelineText,
@@ -38,7 +38,6 @@ function terminalTypeForWinner(winner, fallback) {
     default: return fallback;
   }
 }
-
 function collectLearnedSkills(ctx, sessionId, state) {
   try {
     const { collectLearnedSkillDrafts } = require("./learned-skills");
@@ -74,14 +73,13 @@ function collectLearnedSkills(ctx, sessionId, state) {
     log.warn("learned skill collection failed: %s", err?.message || err);
   }
 }
-
 function clearTurnState(state) {
   state.phase = "idle";
   state.turnId = null;
   state.finalizing = false;
   state.steerCount = 0;
   state.admittedSeq = null;
-  state.admittedTurnInput = null;
+  state.admittedTurnInput = null; state.taskAdmission = null;
   state.dispatchAttemptId = null;
   state.characterWorldsSnapshot = null;
   state.characterWorldsRuntimeSnapshot = null;
@@ -102,7 +100,7 @@ function clearTurnState(state) {
   state.turnPolicy = null;
   state.evidenceLedger = null;
   state.inheritedEvidenceTools = [];
-  state.taskRun = null;
+  state.taskRun = null; state.lifecycleTaskId = null; state.contextSnapshot = null; state.contextRegistryId = null; state.taskCore = null;
   state.enginePayload = null;
   clearDocumentDeliveryTurnState(state);
   resetTimelineState(state);
@@ -113,7 +111,6 @@ function clearTurnState(state) {
   state.pendingQuestions.clear();
   state.pendingHooks.clear();
 }
-
 function createTurnTerminalFinalizer(options = {}) {
   const ctx = options.ctx || {};
   const turnArchive = options.turnArchive;
@@ -352,7 +349,7 @@ function createTurnTerminalFinalizer(options = {}) {
     const evidenceSummary = state.evidenceLedger?.summary?.() || null;
     const verificationPlan = state.taskContract?.externalFactPolicy?.verificationPlan || null;
     let effectiveEvidenceSummary = evidenceSummary;
-    let record = turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    let record = turnArchive?.buildRecord?.(state, type, { ...payload, assistant }) || null;
     if (type === "turn.completed") record = attachDraftReceipts({ record, ctx, sessionId, turnId: completedTurnId, evidence: state.requiredToolResults, log });
     if (record && statusScaffoldAction) {
       record.meta = { ...(record.meta || {}), statusScaffold: statusScaffoldAction };
@@ -401,11 +398,13 @@ function createTurnTerminalFinalizer(options = {}) {
       appendTimelineText(state, assistant, Date.now());
       if (record) record.timeline = (state.timeline || []).slice(-100);
     }
+    completeShortTurnLifecycle(ctx, sessionId, state, type, payload);
     taskRunRuntime?.complete?.(sessionId, type, {
       evidenceGateAssessment,
       evidenceSummary: effectiveEvidenceSummary,
       fileChangeCount: record?.fileChanges?.length || 0,
       artifactCount: record?.artifacts?.length || 0,
+      outcomeUnknown: payload.errorCode === "DISPATCH_OUTCOME_UNKNOWN",
     });
     if (record && state.taskRun) {
       record.meta = {
@@ -413,6 +412,7 @@ function createTurnTerminalFinalizer(options = {}) {
         taskRun: compactTaskRun(state.taskRun),
       };
     }
+    const taskResultPersisted = persistTerminalTaskResult({ ctx, sessionId, turnId: completedTurnId, type, state });
     const meaningful = Boolean(
       assistant ||
       state.tools?.size ||
@@ -431,13 +431,13 @@ function createTurnTerminalFinalizer(options = {}) {
         });
       }
       try {
-        const committed = turnArchive.commit(sessionId, record);
+        const committed = turnArchive?.commit?.(sessionId, record);
         committedMessageId = committed?.id || "";
       } catch (err) {
         log.warn("turn archive commit failed: %s", err?.message || err);
       }
     }
-    state.terminalEmitted = true;
+    state.terminalEmitted = true; markTerminalTaskResultDelivered({ ctx, sessionId, turnId: completedTurnId, type, messageId: committedMessageId, persisted: taskResultPersisted, state });
     emit(sessionId, type, {
       ...payload,
       assistant,

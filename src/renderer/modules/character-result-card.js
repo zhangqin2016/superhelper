@@ -32,7 +32,7 @@ export function renderCharacterResultCard(block, {
   api = window.assistantClient?.characterWorlds,
   onPreviewChanged = (detail) => window.dispatchEvent(new CustomEvent("character-worlds:preview-changed", { detail })),
   onAdjust = (detail) => window.dispatchEvent(new CustomEvent("character-worlds:adjust", { detail })),
-  onView = null,
+  onView = (detail) => window.dispatchEvent(new CustomEvent("character-worlds:view", { detail })),
 } = {}) {
   const root = document.createElement("section");
   root.className = "assistant-renderer-block character-result-card";
@@ -97,7 +97,10 @@ export function renderCharacterResultCard(block, {
     onAdjust?.({ kind: "characterWorldsAdjustment", handle: result.authoringContextHandle });
   }));
   view.addEventListener("click", () => run("view", async (token) => {
-    onView?.({ receiptId: block.receiptId, actionToken: token });
+    if (typeof api.getReceiptView !== "function") throw new Error("view unavailable");
+    const result = await api.getReceiptView(sessionId, block.receiptId, token);
+    if (!result?.ok) throw new Error(result?.error || "view failed");
+    onView?.(result);
   }));
   return root;
 }

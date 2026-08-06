@@ -33,6 +33,9 @@ class RuntimeEventBus {
     // paired phone). Called on every committed batch; never affect renderer
     // delivery and are fully isolated — an observer throwing can't disrupt a turn.
     this._observers = new Set();
+    this._getEventContext = typeof options.getEventContext === "function"
+      ? options.getEventContext
+      : null;
   }
 
   /** Register a passive (sessionId, events) observer. Returns an unsubscribe fn. */
@@ -111,8 +114,15 @@ class RuntimeEventBus {
     }
     const nextSeq = (this._sessionSeq.get(sessionId) || 0) + 1;
     this._sessionSeq.set(sessionId, nextSeq);
+    let context = {};
+    try {
+      context = this._getEventContext?.(sessionId, eventLike) || {};
+    } catch {
+      context = {};
+    }
     const event = createRuntimeEvent({
       ...eventLike,
+      ...context,
       sessionId,
       seq: nextSeq,
     });

@@ -66,12 +66,15 @@ const { isCurrentTurnStart, startCancellationResult } = require("./turn-start-gu
 const { TERMINAL_TYPES, TURN_OPTIONAL_TYPES } = require("./turn-event-types");
 const { createTurnRuntimeEventRouter } = require("./turn-runtime-event-router");
 const { cancelQueuedScheduledRun, scheduledQueueCapacityBlock, scheduledTaskTurnOptions } = require("./scheduled-task-turn-options");
-const {
-  snapshotFromMetadata,
-} = require("./character-worlds/turn-binding-snapshot");
 const { createCharacterWorldsRuntime } = require("./character-worlds/turn-runtime-adapter");
 const { compileTurnContext } = require("./character-worlds/compile-turn-context");
 const { normalizeRequiredTools } = require("./required-tool-completion");
+const {
+  emitLocalAssistantStarted,
+  taskContractEventPayload,
+} = require("./task-core-contracts");
+const { bindTurnAdmission, captureAndPersistTaskCore, trustedSourceTaskCore } = require("./task-core-runtime");
+const { captureParentClosureSource } = require("./turn-parent-closure-runtime");
 const log = getLogger("turn-orchestrator");
 const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
 const RUNTIME_DIAGNOSTIC_TEXT_LIMIT = 4000;
@@ -115,16 +118,17 @@ function queueDispatchOptions(opts = {}) {
   if (Object.hasOwn(opts, "sourceTurnId")) {
     options.sourceTurnId = opts.sourceTurnId;
   }
+  if (opts.sourceTaskCore && typeof opts.sourceTaskCore === "object") {
+    options.sourceTaskCore = opts.sourceTaskCore;
+  }
   return options;
 }
-
 function redactDiagnosticString(value) {
   return String(value || "")
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
     .replace(/\bsk-[A-Za-z0-9][A-Za-z0-9._-]{8,}\b/g, "sk-[redacted]")
     .replace(/\b(api[_-]?key|token|secret|password)\b\s*[:=]\s*["']?[^"',\s}]+/gi, "$1=[redacted]");
 }
-
 function compactDiagnosticValue(value, depth = 0) {
   if (value == null) return value;
   if (typeof value === "string") return redactDiagnosticString(value).slice(0, RUNTIME_DIAGNOSTIC_TEXT_LIMIT);
@@ -249,7 +253,7 @@ class TurnOrchestrator {
       ),
     });
     this.taskRunRuntime = createTaskRunRuntime({
-      getState: (sessionId) => this._state(sessionId),
+      ctx, getState: (sessionId) => this._state(sessionId),
       emitEvent: (sessionId, event) => this.eventBus.emit(sessionId, event),
       agentTaskGraphStore: ctx.agentTaskGraphStore || null,
       publicHookRuntime: ctx.publicHookRuntime || null,
@@ -291,6 +295,7 @@ class TurnOrchestrator {
       transcriptStore: this.transcriptStore,
       getState: (sessionId) => this._state(sessionId),
       emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
+      emitNotice: (sessionId, notice) => this._emitEngineNotice(sessionId, notice),
       sendUserMessage: (sessionId, text, files, opts) => this.sendUserMessage(sessionId, text, files, opts),
       attemptRescue: (sessionId, failure) => this._maybeToolCallRescueRetry(sessionId, failure),
     });
@@ -323,6 +328,7 @@ class TurnOrchestrator {
     for (const session of this.ctx.sessionManager?.iterateSessions?.() || []) {
       this.restorePendingTurns(session.id);
     }
+    queueMicrotask(() => void this.turnRecoveryRuntime.resumePendingParentClosuresForSessions(this.ctx.sessionManager?.iterateSessions?.() || []));
     // Safety net for phases no engine watchdog covers ("starting"/"finalizing").
     this.stuckPhaseGuard = require("./turn-start-guard").startStuckPhaseGuard(this);
   }
@@ -343,6 +349,7 @@ class TurnOrchestrator {
 
   snapshot(sessionId) {
     const state = this._state(sessionId);
+    const taskLifecycles = this.ctx.sessionManager.listTaskLifecycles?.(sessionId, { limit: 20 }) || [];
     return {
       ok: true,
       sessionId,
@@ -355,6 +362,7 @@ class TurnOrchestrator {
       outcomeUnknownTurns: (state.outcomeUnknownTurns || []).slice(),
       runtime: this.eventBus.snapshot(sessionId),
       taskRun: compactTaskRun(state.taskRun),
+      taskLifecycles,
     };
   }
 
@@ -633,7 +641,7 @@ class TurnOrchestrator {
     state.turnId = preadmitted?.turnId || opts.turnId || newTurnId();
     // Sticky across finalize (NOT cleared in the idle reset): the rescue hook
     // runs after turn-state reset and must know this turn was a rescue attempt.
-    state.wasRescueAttempt = Boolean(opts.rescueAttempt || opts.recovery);
+    state.wasRescueAttempt = Boolean(opts.rescueAttempt || (opts.recovery && opts.recovery.kind !== "parent_task_closure"));
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
     state.admittedSeq = null;
@@ -652,7 +660,7 @@ class TurnOrchestrator {
     state.taskContract = null;
     state.turnPolicy = null;
     initializeTurnEvidenceState(state);
-    state.taskRun = null;
+    state.taskRun = null; state.lifecycleTaskId = null; state.contextSnapshot = null; state.contextRegistryId = null; state.taskCore = null;
     state.enginePayload = null;
     state.legacyContextHydrated = false;
     resetTimelineState(state);
@@ -691,11 +699,13 @@ class TurnOrchestrator {
       admissionOptions.sourceTurnId = opts.sourceTurnId;
     }
     const admitted = preadmitted || this._admitTurnInput(session, admissionOptions);
-    state.admittedSeq = admitted?.admittedSeq || null;
-    state.admittedTurnInput = admitted || null;
-    require("./public-hooks").observePublicHook(this.ctx.publicHookRuntime, "turn.admitted", { sessionId: session.id, turnId: state.turnId, principalId: admitted?.ownerScope || "", delivery: admitted?.delivery || "local" });
-    state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
-    state.characterWorldsRuntimeSnapshot = null;
+    bindTurnAdmission(this, session, state, admitted, "local");
+    const taskCorePersistence = captureAndPersistTaskCore(this, session, state, {
+      projectId: session.projectId,
+      files,
+      capturedAt: state.startedAt,
+    });
+    if (!taskCorePersistence.ok) return taskCorePersistence.result;
 
     if (opts.recordUser !== false) {
       this.transcriptStore.commitUserMessage(session.id, {
@@ -709,15 +719,7 @@ class TurnOrchestrator {
       }, { turnId: state.turnId });
     }
 
-    this._emit(session.id, "turn.started", {
-      text: rawUserText,
-      queueLength: state.queue.length,
-      engine: {
-        localAssistant: true,
-      },
-      taskContract: null,
-      turnPolicy: null,
-    });
+    emitLocalAssistantStarted({ emit: this._emit.bind(this), sessionId: session.id, text: rawUserText, queueLength: state.queue.length });
 
     const assistant = String(opts.assistant || "").trim();
     state.assistantText = assistant;
@@ -793,7 +795,7 @@ class TurnOrchestrator {
     state.phase = "starting";
     state.turnGeneration = (state.turnGeneration || 0) + 1;
     state.turnId = preadmitted?.turnId || newTurnId();
-    state.wasRescueAttempt = Boolean(opts.rescueAttempt || opts.recovery);
+    state.wasRescueAttempt = Boolean(opts.rescueAttempt || (opts.recovery && opts.recovery.kind !== "parent_task_closure"));
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
     state.admittedSeq = null;
@@ -812,7 +814,7 @@ class TurnOrchestrator {
     state.taskContract = null;
     state.turnPolicy = null;
     initializeTurnEvidenceState(state, opts.recovery);
-    state.taskRun = null;
+    state.taskRun = null; state.lifecycleTaskId = null; state.contextSnapshot = null; state.contextRegistryId = null; state.taskCore = null;
     state.enginePayload = null;
     state.legacyContextHydrated = false;
     resetTimelineState(state);
@@ -844,6 +846,7 @@ class TurnOrchestrator {
       text: rawUserText,
       files,
       displayFiles,
+      parentClosureRecovery: opts.recovery?.kind === "parent_task_closure",
     };
     const admissionOptions = {
       turnId: state.turnId,
@@ -862,11 +865,8 @@ class TurnOrchestrator {
       admissionOptions.sourceTurnId = opts.sourceTurnId;
     }
     const admitted = preadmitted || this._admitTurnInput(session, admissionOptions);
-    state.admittedSeq = admitted?.admittedSeq || null;
-    state.admittedTurnInput = admitted || null;
-    require("./public-hooks").observePublicHook(this.ctx.publicHookRuntime, "turn.admitted", { sessionId: session.id, turnId: state.turnId, principalId: admitted?.ownerScope || "", delivery: admitted?.delivery || "direct" });
-    state.characterWorldsSnapshot = snapshotFromMetadata(admitted?.metadata);
-    state.characterWorldsRuntimeSnapshot = null;
+    bindTurnAdmission(this, session, state, admitted, "direct");
+    const sourceTaskCore = trustedSourceTaskCore(session.id, state.admittedTurnInput?.ownerScope, opts.sourceTaskCore);
     state.scheduledTask = opts.scheduledTaskRunId
       ? {
           id: opts.scheduledTaskId || null,
@@ -893,6 +893,7 @@ class TurnOrchestrator {
       text: rawUserText,
       files,
       turnId: state.turnId,
+      previousIntentContract: sourceTaskCore?.contract?.intentContract || null,
     });
     const { taskContract, turnPolicy } = documentDeliveryTurnIntelligence(turnIntelligence, state.documentDeliveryRecovery);
     const committedMessages = turnIntelligence.committedMessages || [];
@@ -1366,6 +1367,18 @@ class TurnOrchestrator {
               : {}),
           };
     }
+    const taskCorePersistence = captureAndPersistTaskCore(this, session, state, {
+      taskContract: state.taskContract,
+      contextMemory,
+      files,
+      projectId: session.projectId,
+      documentEvidence: state.evidenceLedger?.summary?.(),
+      characterContext,
+      capabilityReadiness: capabilityReadinessTrace,
+      sourceTaskCore,
+      capturedAt: state.startedAt,
+    });
+    if (!taskCorePersistence.ok) return taskCorePersistence.result;
     const preTurnCompaction = await this._maybeCompactBeforeTurn(session.id, runner, state.enginePayload, state.characterWorldsSnapshot);
     if (!isCurrentStart()) return staleStartResult();
     if (preTurnCompaction) state.enginePayload.trace.preTurnCompaction = preTurnCompaction;
@@ -1410,15 +1423,7 @@ class TurnOrchestrator {
         taskContract: Boolean(state.taskContract),
         preTurnCompaction,
       },
-      taskContract: state.taskContract
-        ? {
-            kind: state.taskContract.kind,
-            taskType: state.taskContract.taskType,
-            categories: state.taskContract.categories,
-            workspaceProfile: state.taskContract.workspaceProfile,
-            workspaceSignals: state.taskContract.workspaceSignals || [],
-          }
-        : null,
+      taskContract: taskContractEventPayload(state),
       turnPolicy: state.turnPolicy
         ? {
             taskType: state.turnPolicy.taskType,
@@ -1644,13 +1649,12 @@ class TurnOrchestrator {
     const failure = interrupted || stalled
       ? null
       : classifyTurnFailure(payload, normalized, state);
-    const failed = Boolean(failure);
-    const blockingProcessJobs = interrupted || stalled || failed
+    const failed = Boolean(failure); const blockingProcessJobs = interrupted || stalled || failed
       ? []
       : findBlockingRunningProcessJobs([...state.tools.values()]);
+    const parentClosureSource = captureParentClosureSource(state, { ...payload, failed, stalled: stalled || Boolean(blockingProcessJobs.length), errorCode: failure?.code || "" }); this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource);
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
-
     let finalizeDone = null;
     const terminalMeta = {
       durationMs: state.durationMs ?? null,
@@ -1699,8 +1703,6 @@ class TurnOrchestrator {
           engineMessageId: payload?.engineMessageId || null,
         },
       });
-      // Rescue after finalize so its resend never races phase "finalizing".
-      Promise.resolve(finalizeDone).then(() => { void this._maybeSelfHealAndRetry(sessionId, failure); });
     } else if (blockingProcessJobs.length) {
       const notice = runningProcessJobNotice(blockingProcessJobs);
       finalizeDone = this._finalize(sessionId, "turn.stalled", {
@@ -1736,9 +1738,8 @@ class TurnOrchestrator {
         runner?.agentResumeId || null,
       );
     }
-    Promise.resolve(finalizeDone).then(() => this._afterTurnFinalized(sessionId));
+    Promise.resolve(finalizeDone).then(() => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed, failure, selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
-
   /** Post-completion procedure-card distillation. Fail-open and async — the
    *  finished turn's UX can never be affected. The active model's capability
    *  grade gates AUTHORING (lite paths are not worth teaching from). */
@@ -1773,6 +1774,7 @@ class TurnOrchestrator {
     const raw = String(message || "");
     const classified = classifyAssistantError(raw);
     const text = classified?.message || sanitizeError(raw);
+    const parentClosureSource = captureParentClosureSource(state, { failed: true, errorCode: classified?.code || "ENGINE_ERROR", error: raw }); this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource);
     void reportModelFailureDiagnostic(this.ctx, sessionId, {
       source: "runner_error",
       turnId: state.turnId,
@@ -1787,10 +1789,8 @@ class TurnOrchestrator {
       retryable: classified?.retryable !== false,
       error: raw,
     });
-    void this._maybeSelfHealAndRetry(sessionId, classified);
-    Promise.resolve(finalizeDone).then(() => this._afterTurnFinalized(sessionId));
+    Promise.resolve(finalizeDone).then(() => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed: true, failure: classified, selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
-
   _finalize(sessionId, type, payload = {}) {
     return this.terminalFinalizer.finalize(sessionId, type, payload);
   }

@@ -72,6 +72,19 @@ try {
   assert.equal(offered.ok, true);
   for (const token of Object.values(offered.actions)) assert.match(token, /^[A-Za-z0-9_-]{43}$/);
 
+  const viewed = await invoke("character-worlds:receipt-view", {
+    sessionId: "session-a", receiptId: block.receiptId,
+    actionToken: offered.actions.view,
+  });
+  assert.deepEqual(viewed, {
+    ok: true, kind: "character", entityId: created.entity.id, revisionId: created.revision.id,
+  });
+  const viewedAgain = await invoke("character-worlds:receipt-view", {
+    sessionId: "session-a", receiptId: block.receiptId,
+    actionToken: offered.actions.view,
+  });
+  assert.deepEqual(viewedAgain, viewed, "view tokens remain reusable for reopening the same receipt");
+
   const forbidden = await invoke("character-worlds:preview-start", {
     sessionId: "session-b", receiptId: block.receiptId,
     actionToken: offered.actions.preview, expectedPreviewVersion: 0,

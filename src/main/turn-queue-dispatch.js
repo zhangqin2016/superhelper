@@ -308,6 +308,7 @@ function createTurnQueueDispatchMethods({
           ...scheduledTaskTurnOptions(item.options),
           engineText: item.options?.engineText || null,
           recovery: item.options?.recovery || null,
+          sourceTaskCore: item.options?.sourceTaskCore || null,
           admittedTurnInput: item.admittedTurnInput || null,
           queueSelection,
           ...documentDeliveryDispatchOptions(item.options),

@@ -206,6 +206,21 @@ class TurnArchive {
                 : null,
             }
           : null,
+        taskCore: state.taskCore || (state.contextSnapshot
+          ? {
+              schemaVersion: state.contextSnapshot.schemaVersion,
+              fingerprint: state.contextSnapshot.fingerprint,
+              taskId: state.contextSnapshot.taskId,
+              turnId: state.contextSnapshot.turnId,
+              admission: state.taskAdmission || null,
+              contextSnapshot: state.contextSnapshot,
+            }
+          : state.taskAdmission
+            ? {
+                schemaVersion: state.taskAdmission.schemaVersion,
+                admission: state.taskAdmission,
+              }
+            : null),
         turnPolicy: state.turnPolicy
           ? {
               schemaVersion: state.turnPolicy.schemaVersion || 1,

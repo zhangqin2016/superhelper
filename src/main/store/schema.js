@@ -33,7 +33,7 @@ const {
 } = require("../character-worlds/world-book-checkpoint-store");
 const { migrateCharacterWorldsRuntimeSchema } = require("./character-worlds-schema-migration");
 const { migrateCharacterWorldsExperienceSchema } = require("./character-worlds-experience-schema-migration");
-const { migrateAgentTaskGraphSchema, migrateMessageRecoveryIndex, migratePublicHookSchema, migrateRuntimeCheckpointSchema, migrateRuntimeEventCompactionIndex } = require("./extended-schema-migrations");
+const { migrateTaskCoreSchema } = require("./task-core-schema-migration"); const { migrateAgentTaskGraphSchema, migrateMessageRecoveryIndex, migrateParentClosureSchema, migratePublicHookSchema, migrateRuntimeCheckpointSchema, migrateRuntimeEventCompactionIndex, migrateTaskLifecycleSchema, migrateTaskContextRegistrySchema } = require("./extended-schema-migrations");
 const MIGRATIONS = [
   // v1 — initial message store
   (db) => {
@@ -493,8 +493,8 @@ const MIGRATIONS = [
   migrateAgentTaskGraphSchema,
   migrateRuntimeCheckpointSchema,
   migratePublicHookSchema,
-  migrateMessageRecoveryIndex,
-  migrateRuntimeEventCompactionIndex,
+  migrateMessageRecoveryIndex, migrateRuntimeEventCompactionIndex,
+  migrateTaskCoreSchema, migrateTaskLifecycleSchema, migrateTaskContextRegistrySchema, migrateParentClosureSchema,
 ];
 
 module.exports = { MIGRATIONS };

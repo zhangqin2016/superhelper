@@ -110,6 +110,15 @@ function safeAttachmentName(value) {
   return name && name !== "." && name !== ".." ? name : "";
 }
 
+function contentHashForPath(filePath, size) {
+  if (!Number.isFinite(size) || size < 0 || size > COPY_INTO_STAGING_MAX_BYTES) return null;
+  try {
+    return `sha256:${crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex")}`;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // FileStagingManager
 // ---------------------------------------------------------------------------
@@ -186,6 +195,8 @@ class FileStagingManager {
       extension: archiveExt || ext,
       kind,
       size: isDirectory ? 0 : stat.size,
+      mtimeMs: stat.mtimeMs,
+      contentHash: staged ? contentHashForPath(storedPath, stat.size) : null,
       staged,
       pathOnly: isDirectory || !supported,
       readable: pathReadable(srcPath),
@@ -233,6 +244,8 @@ class FileStagingManager {
       path: destPath,
       type: ext.slice(1),
       size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      contentHash: `sha256:${crypto.createHash("sha256").update(bufferData).digest("hex")}`,
       isImage: IMAGE_EXTENSIONS.has(ext),
     };
   }

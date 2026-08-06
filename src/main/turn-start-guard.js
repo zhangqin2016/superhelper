@@ -229,7 +229,11 @@ async function guardStartMethod(orchestrator, startMethod, session, text, files,
   } finally {
     if (initialState.startInFlight === startReservation) {
       initialState.startInFlight = null;
-      if (initialState.phase === "idle" && initialState.queue?.length) {
+      if (
+        initialState.phase === "idle"
+        && initialState.queue?.length
+        && !orchestrator.dispatchRetryTimers?.has?.(session.id)
+      ) {
         queueMicrotask(() => void orchestrator._dispatchNext(session.id));
       }
     }

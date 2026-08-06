@@ -43,6 +43,9 @@ function queueRecoveryEnvelope(item) {
       ? options.externalCommand
       : null,
     sourceTurnId: typeof options.sourceTurnId === "string" ? options.sourceTurnId : null,
+    requiredSuccessfulTools: Array.isArray(options.requiredSuccessfulTools)
+      ? options.requiredSuccessfulTools
+      : [],
     turnId: typeof options.turnId === "string" ? options.turnId : null,
     durableQueueKey: typeof options.durableQueueKey === "string" ? options.durableQueueKey : null,
   };
@@ -448,4 +451,4 @@ function createTurnAdmissionMethods(deps = {}) {
   };
 }
 
-module.exports = { createTurnAdmissionMethods };
+module.exports = { createTurnAdmissionMethods, queueRecoveryEnvelope };

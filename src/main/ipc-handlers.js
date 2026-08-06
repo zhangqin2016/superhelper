@@ -31,6 +31,23 @@ function registerAll(ctx) {
   ctx.eventBus = new RuntimeEventBus(() => ctx.mainWindow, {
     persistEvents: (sessionId, events) => sessionManager.appendRuntimeEvents?.(sessionId, events),
     loadLastSeq: (sessionId) => sessionManager._store().getLastRuntimeEventSeq(sessionId),
+    getEventContext: (sessionId) => {
+      const session = sessionManager.findById?.(sessionId);
+      const state = ctx.turnOrchestrator?._state?.(sessionId) || null;
+      const ownerScope = state?.admittedTurnInput?.ownerScope
+        || sessionManager.resolveTurnOwnerScope?.(sessionId)?.ownerScope
+        || "";
+      const taskId = state?.taskRun?.id || state?.contextSnapshot?.taskId || "";
+      const attemptId = state?.dispatchAttemptId
+        || state?.taskRun?.resumeState?.leadAttemptId
+        || "";
+      return {
+        ...(ownerScope ? { ownerScope } : {}),
+        ...(session?.projectId ? { projectId: session.projectId } : {}),
+        ...(taskId ? { taskId } : {}),
+        ...(attemptId ? { attemptId } : {}),
+      };
+    },
   });
   ctx.transcriptStore = new TranscriptStore(sessionManager);
   if (!ctx.publicHookRuntime) {

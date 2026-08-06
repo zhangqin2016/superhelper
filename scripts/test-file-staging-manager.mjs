@@ -41,6 +41,12 @@ if (!fs.existsSync(staged.path)) {
 if (staged.name !== "INC-2026-001681.pdf") {
   throw new Error(`staged file should keep original name, got ${staged.name}`);
 }
+if (staged.mtimeMs !== fs.statSync(sourcePath).mtimeMs) {
+  throw new Error("staged file should retain the source modification stamp");
+}
+if (!/^sha256:[0-9a-f]{64}$/.test(staged.contentHash || "")) {
+  throw new Error("small staged file should retain a content hash");
+}
 
 const duplicate = manager.stageFromPath(sourcePath);
 if (duplicate.path === staged.path) {
@@ -62,6 +68,9 @@ if (largeStaged.path !== largeSourcePath) {
 }
 if (largeStaged.size !== 25 * 1024 * 1024) {
   throw new Error(`large staged file should keep source size, got ${largeStaged.size}`);
+}
+if (largeStaged.contentHash) {
+  throw new Error("large path-backed files should not block staging for a content hash");
 }
 
 const largeImagePath = path.join(sourceDir, "large-image.png");
@@ -92,6 +101,9 @@ if (unknown.path !== unknownPath || unknown.sourcePath !== unknownPath) {
 }
 if (!unknown.pathOnly || unknown.staged || unknown.kind !== "binary") {
   throw new Error(`unknown files should be path-only binary attachments: ${JSON.stringify(unknown)}`);
+}
+if (unknown.contentHash) {
+  throw new Error("path-only unknown files should not be synchronously hashed");
 }
 
 const disguisedArchivePath = path.join(sourceDir, "customer.payload");
@@ -132,6 +144,9 @@ if (path.dirname(pasted.path) !== stagingDir) {
 }
 if (fs.readFileSync(pasted.path, "utf8") !== "hello") {
   throw new Error("pasted buffer content should be preserved");
+}
+if (!Number.isFinite(pasted.mtimeMs)) {
+  throw new Error("pasted buffer should expose a modification stamp");
 }
 
 const pastedBlob = manager.stageFromBuffer(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "blob");

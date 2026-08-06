@@ -67,6 +67,14 @@ router.applyDraft("session_1", {
 assert.equal(taskCalls.some((entry) => entry[0] === "liveness"), true);
 assert.equal(state.notices.length, 1);
 
+router.applyDraft("session_1", {
+  type: "process.event",
+  payload: { jobId: "process-job-1", event: { message: "building" } },
+});
+const processProgress = taskCalls.at(-1);
+assert.equal(processProgress[0], "progress");
+assert.deepEqual(processProgress[4], { resumeState: { processJobId: "process-job-1" } });
+
 router.applyDraft("session_1", { type: "unknown.future.event", payload: {} });
 assert.equal(emitted.at(-1).type, "engine.warning");
 assert.equal(emitted.at(-1).payload.notice.code, "unknownRuntimeDraft");

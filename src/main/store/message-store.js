@@ -983,4 +983,29 @@ Object.defineProperties(
     { configurable: true, writable: true, value },
   ])),
 );
+const taskResultMethods = require("./task-result-store").createTaskResultStoreMethods();
+Object.defineProperties(
+  MessageStore.prototype,
+  Object.fromEntries(Object.entries(taskResultMethods).map(([name, value]) => [
+    name,
+    { configurable: true, writable: true, value },
+  ])),
+);
+const taskLifecycleMethods = require("./task-lifecycle-store").createTaskLifecycleStoreMethods();
+Object.defineProperties(
+  MessageStore.prototype,
+  Object.fromEntries(Object.entries(taskLifecycleMethods).map(([name, value]) => [
+    name,
+    { configurable: true, writable: true, value },
+  ])),
+);
+const taskContextRegistryMethods = require("./task-context-registry-store").createTaskContextRegistryStoreMethods();
+Object.defineProperties(
+  MessageStore.prototype,
+  Object.fromEntries(Object.entries(taskContextRegistryMethods).map(([name, value]) => [
+    name,
+    { configurable: true, writable: true, value },
+  ])),
+);
+require("./parent-closure-recovery-attach")(MessageStore);
 module.exports = { MessageStore };

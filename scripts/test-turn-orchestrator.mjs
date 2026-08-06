@@ -524,6 +524,12 @@ if (result.userCommitted?.text !== "hello") {
   throw new Error(`userCommitted must preserve raw user text: ${JSON.stringify(result.userCommitted)}`);
 }
 const firstEnginePayload = runner.sentPayloads.at(-1);
+if (!firstEnginePayload?.trace?.contextSnapshot?.fingerprint || firstEnginePayload.trace.contextSnapshot.turnId !== result.turnId) {
+  throw new Error(`engine payload must carry the immutable task context snapshot: ${JSON.stringify(firstEnginePayload?.trace?.contextSnapshot)}`);
+}
+if (JSON.stringify(firstEnginePayload.trace.contextSnapshot).includes("hello")) {
+  throw new Error("task context snapshot must not contain raw user text");
+}
 // The clock context rides every turn inside the platform_context layer, so the
 // effective engine text wraps the override in the layered envelope.
 if (!String(firstEnginePayload?.text || "").includes("[contract]\nhello")) {
@@ -634,6 +640,9 @@ if (assistantMsg.record.user?.text !== "hello") {
 }
 if (assistantMsg.record.meta?.engine?.textChanged !== true) {
   throw new Error(`archived record must retain engine augmentation trace: ${JSON.stringify(assistantMsg.record.meta?.engine)}`);
+}
+if (assistantMsg.record.meta?.taskCore?.contextSnapshot?.fingerprint !== firstEnginePayload.trace.contextSnapshot.fingerprint) {
+  throw new Error(`archived record must retain the same task context snapshot: ${JSON.stringify(assistantMsg.record.meta?.taskCore)}`);
 }
 if (
   assistantMsg.record.meta?.engine?.promptChars !== firstEnginePayload.text.length ||

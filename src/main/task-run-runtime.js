@@ -16,6 +16,10 @@ const {
 
 const log = getLogger("task-run-runtime");
 const { syncAgentTaskFromTool } = require("./agent-task-projection");
+const {
+  transitionTaskLifecycle,
+  verificationLifecycleStatus,
+} = require("./task-lifecycle-runtime");
 
 function progressValueFromNotice(notice = {}) {
   const progress = notice?.progress;
@@ -47,6 +51,7 @@ function compactTool(tool = null) {
 }
 
 function createTaskRunRuntime(options = {}) {
+  const ctx = options.ctx || null;
   const getState = options.getState;
   const emitEvent = options.emitEvent || (() => []);
   const now = options.now || (() => Date.now());
@@ -205,6 +210,11 @@ function createTaskRunRuntime(options = {}) {
       markTaskPhase(state.taskRun, phase, label, {
         resumeState: opts.resumeState || null,
       });
+      if (opts.resumeState?.processJobId) {
+        transitionTaskLifecycle(ctx, sessionId, state, "running", {
+          processJobId: opts.resumeState.processJobId,
+        });
+      }
       emitTaskEvent(sessionId, "task.step.progress", {
         taskRunId: state.taskRun.id,
         phase: state.taskRun.phase,
@@ -226,6 +236,7 @@ function createTaskRunRuntime(options = {}) {
       if (!state.taskRun) ensure(sessionId, "awaiting_user");
       if (!state.taskRun) return null;
       markTaskPhase(state.taskRun, "awaiting_user", message, { status: "awaiting_user" });
+      transitionTaskLifecycle(ctx, sessionId, state, "waiting_user");
       const risk = addTaskRisk(state.taskRun, {
         code,
         level: "info",
@@ -382,6 +393,9 @@ function createTaskRunRuntime(options = {}) {
     try {
       const state = stateFor(sessionId);
       if (!state.taskRun) return null;
+      if (terminalType === "turn.completed") {
+        transitionTaskLifecycle(ctx, sessionId, state, "verifying");
+      }
       const verification = terminalType === "turn.completed"
         ? assessTaskVerification({
             taskType: state.turnPolicy?.taskType || state.taskContract?.taskType || "",
@@ -395,6 +409,25 @@ function createTaskRunRuntime(options = {}) {
           })
         : { status: "not_verified", reason: "" };
       completeTaskRun(state.taskRun, terminalType, verification);
+      if (terminalType === "turn.completed") {
+        transitionTaskLifecycle(ctx, sessionId, state, verificationLifecycleStatus(verification), {
+          verification,
+          graphId: state.taskRun.agentGraphId || "",
+          attemptId: state.taskRun.resumeState?.leadAttemptId || "",
+        });
+      } else if (opts.outcomeUnknown === true || terminalType === "turn.stalled") {
+        transitionTaskLifecycle(ctx, sessionId, state, "outcome_unknown", {
+          metadata: { terminalType, reason: opts.outcomeUnknown ? "dispatch_outcome_unknown" : "stalled" },
+        });
+      } else if (terminalType === "turn.interrupted") {
+        transitionTaskLifecycle(ctx, sessionId, state, "cancelled", {
+          metadata: { terminalType },
+        });
+      } else {
+        transitionTaskLifecycle(ctx, sessionId, state, "failed", {
+          metadata: { terminalType },
+        });
+      }
       if (agentTaskGraphStore && state.taskRun.agentGraphId) {
         const graph = agentTaskGraphStore.get(state.taskRun.agentGraphId, sessionId);
         const lead = graph.tasks[`lead_${state.taskRun.id}`];

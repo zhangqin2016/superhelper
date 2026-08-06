@@ -49,6 +49,7 @@ const PHASE_ONE_CHANNELS = [
 ];
 const EXPERIENCE_CHANNELS = [
   "character-worlds:receipt-actions",
+  "character-worlds:receipt-view",
   "character-worlds:preview-get",
   "character-worlds:preview-start",
   "character-worlds:preview-exit",
@@ -284,7 +285,7 @@ try {
     // context catalog/install reads, scene memory, and the authoring surface.
     // Keep this count synchronized with the explicit channel assertions above
     // and below rather than treating official context as an unreviewed extra.
-    assert.equal(handlers.size, 33, "only reviewed channels are registered");
+    assert.equal(handlers.size, 34, "only reviewed channels are registered");
     for (const channel of handlers.keys()) {
       assert.equal(
         FORBIDDEN_CHANNEL_PATTERN.test(channel),
@@ -346,6 +347,7 @@ try {
         "getScene",
         "updateScene",
         "getReceiptActions",
+        "getReceiptView",
         "getPreview",
         "startPreview",
         "exitPreview",

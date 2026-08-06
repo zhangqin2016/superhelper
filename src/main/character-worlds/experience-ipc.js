@@ -53,6 +53,25 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
     } };
   });
 
+  ipcMain.handle("character-worlds:receipt-view", async (event, payload = {}) => {
+    const resolved = scope(event, payload);
+    if (resolved.denied) return resolved.denied;
+    const receipt = receiptOf(resolved, payload.receiptId);
+    if (!receipt || !actions.consume({
+      token: payload.actionToken,
+      ownerScope: resolved.session.ownerScope,
+      sessionId: resolved.session.sessionId,
+      receiptId: payload.receiptId,
+      action: "view",
+    })) return failure("CHARACTER_ACTION_FORBIDDEN");
+    return {
+      ok: true,
+      kind: receipt.kind,
+      entityId: receipt.entityId,
+      revisionId: receipt.revisionId,
+    };
+  });
+
   ipcMain.handle("character-worlds:preview-get", async (event, payload = {}) => {
     const resolved = scope(event, payload);
     if (resolved.denied) return resolved.denied;

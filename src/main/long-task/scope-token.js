@@ -45,6 +45,12 @@ function signature(bytes, body) {
   return crypto.createHmac("sha256", bytes).update(body).digest();
 }
 
+function decodeCanonical(value) {
+  const bytes = Buffer.from(String(value || ""), "base64url");
+  if (!value || bytes.toString("base64url") !== value) throw new Error("non-canonical base64url");
+  return bytes;
+}
+
 function issueScopeToken({ secret, scope, operations, ttlMs = 30 * 60_000, now = Date.now } = {}) {
   const bytes = secretBytes(secret);
   const issuedAt = Number(now());
@@ -76,7 +82,8 @@ function verifyScopeToken(token, { secret, operation, now = Date.now } = {}) {
   if (parts.length !== 2 || !parts[0] || !parts[1]) return failure("INVALID_SCOPE_TOKEN");
   let provided;
   try {
-    provided = Buffer.from(parts[1], "base64url");
+    decodeCanonical(parts[0]);
+    provided = decodeCanonical(parts[1]);
   } catch {
     return failure("INVALID_SCOPE_TOKEN");
   }
@@ -86,7 +93,7 @@ function verifyScopeToken(token, { secret, operation, now = Date.now } = {}) {
   }
   let payload;
   try {
-    payload = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    payload = JSON.parse(decodeCanonical(parts[0]).toString("utf8"));
   } catch {
     return failure("INVALID_SCOPE_TOKEN");
   }

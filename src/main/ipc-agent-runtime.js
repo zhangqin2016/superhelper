@@ -4,6 +4,7 @@ const { ipcMain } = require("electron");
 const { ensureSessionRunner, isSessionBusy } = require("./ipc-utils");
 const { RuntimeCheckpointService } = require("./runtime-checkpoint-service");
 const { checkpointHash } = require("./runtime-checkpoint");
+const { emitLifecycle } = require("./task-lifecycle-runtime");
 
 function sessionContext(ctx, sessionId) {
   const session = ctx.sessionManager.findById(sessionId);
@@ -51,7 +52,7 @@ async function createRuntimeCheckpointForSession(ctx, sessionId, payload = {}) {
     const graph = ctx.agentTaskGraphStore.get(state.taskRun.agentGraphId, sessionId);
     extraComponents.push({ type: "agent_task_graph", refId: graph.id, version: 1, hash: checkpointHash(graph), reversible: true, payload: graph });
   }
-  return ctx.runtimeCheckpointService.create({
+  const checkpoint = await ctx.runtimeCheckpointService.create({
     sessionId,
     turnId,
     taskRunId: state.taskRun?.id || "",
@@ -63,6 +64,21 @@ async function createRuntimeCheckpointForSession(ctx, sessionId, payload = {}) {
     extraComponents,
     effects,
   });
+  const lifecycle = ctx.sessionManager.getTaskLifecycle?.(sessionId, turnId);
+  if (lifecycle && typeof ctx.sessionManager.transitionTaskLifecycle === "function") {
+    const lifecycleResult = ctx.sessionManager.transitionTaskLifecycle(sessionId, {
+      taskId: lifecycle.taskId,
+      turnId,
+      fromStatuses: [lifecycle.status],
+      status: lifecycle.status,
+      graphId: state.taskRun?.agentGraphId || lifecycle.graphId,
+      attemptId: state.taskRun?.resumeState?.leadAttemptId || lifecycle.attemptId,
+      checkpointId: checkpoint.id,
+      processJobId: lifecycle.processJobId,
+    });
+    if (lifecycleResult?.ok) emitLifecycle(ctx, sessionId, lifecycleResult.lifecycle);
+  }
+  return checkpoint;
 }
 
 function registerAgentRuntimeHandlers(ctx) {

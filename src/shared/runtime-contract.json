@@ -53,6 +53,7 @@
     "task.completed",
     "task.failed",
     "task.interrupted",
+    "task.lifecycle.updated",
     "agent.graph.created",
     "agent.task.ready",
     "agent.task.claimed",
@@ -157,6 +158,21 @@
         "status": "string",
         "completionStatus": "string",
         "taskRun": "object"
+      }
+    },
+    "task.lifecycle.updated": {
+      "required": ["taskId", "status", "version", "deliveryStatus"],
+      "properties": {
+        "taskId": "string",
+        "status": "string",
+        "version": "integer",
+        "deliveryStatus": "string",
+        "graphId": "string",
+        "attemptId": "string",
+        "checkpointId": "string",
+        "processJobId": "string",
+        "verification": "object",
+        "delivery": "object"
       }
     },
     "turn.started": {

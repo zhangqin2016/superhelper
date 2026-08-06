@@ -91,6 +91,9 @@ function createRuntimeEvent(input) {
     source: input.source || "runtime",
     payload: input.payload && typeof input.payload === "object" ? input.payload : {},
   };
+  for (const key of ["ownerScope", "projectId", "taskId", "attemptId"]) {
+    if (typeof input[key] === "string" && input[key]) event[key] = input[key];
+  }
   assertRuntimeEvent(event);
   return event;
 }
@@ -104,6 +107,11 @@ function assertRuntimeEvent(event) {
   if (!Number.isInteger(event.seq)) throw new Error("RuntimeEvent seq must be an integer");
   if (!Number.isFinite(event.ts)) throw new Error("RuntimeEvent ts must be a timestamp");
   if (!event.payload || typeof event.payload !== "object") throw new Error("RuntimeEvent payload must be an object");
+  for (const key of ["ownerScope", "projectId", "taskId", "attemptId"]) {
+    if (event[key] !== undefined && (typeof event[key] !== "string" || !event[key])) {
+      throw new Error(`RuntimeEvent ${key} must be a non-empty string when present`);
+    }
+  }
   const schemaVersion = Number(event.schemaVersion || RUNTIME_EVENT_SCHEMA_VERSION);
   if (schemaVersion !== RUNTIME_EVENT_SCHEMA_VERSION) {
     throw new Error(`Unsupported RuntimeEvent schemaVersion: ${schemaVersion}`);

@@ -66,6 +66,7 @@ const CHANNELS = {
   activatePreview: "character-worlds:preview-activate",
   activateLibraryItem: "character-worlds:library-activate",
   adjustTarget: "character-worlds:adjust-target",
+  getReceiptView: "character-worlds:receipt-view",
 };
 const BRIDGE_METHODS = Object.keys(CHANNELS).sort();
 // Official catalog installation is intentionally separate from user authoring:
@@ -288,6 +289,7 @@ try {
     await api.activatePreview({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token", expectedPreviewVersion: 1, expectedBindingVersion: 0 });
     await api.activateLibraryItem({ sessionId: "session-a", kind: "character", revisionId: "rev-1", expectedBindingVersion: 0 });
     await api.adjustTarget({ sessionId: "session-a", receiptId: "receipt-1", actionToken: "token" });
+    await api.getReceiptView("session-a", "receipt-1", "token");
     assert.deepEqual(
       invokeCalls.map((call) => call.channel),
       [
@@ -324,6 +326,7 @@ try {
         "character-worlds:preview-activate",
         "character-worlds:library-activate",
         "character-worlds:adjust-target",
+        "character-worlds:receipt-view",
       ],
     );
     const serialized = JSON.stringify(invokeCalls);

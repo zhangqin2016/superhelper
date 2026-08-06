@@ -449,7 +449,7 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
   const liveTurn = message.record
     ? liveTurnFromRecord(message.record)
     : legacyLiveTurnFromMessage(message);
-  const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed));
+  const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed), sessionId);
   if (key) article.dataset.messageKey = key; // lets window eviction locate this article
   appendArticleActions(article, sessionId, message);
   if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);

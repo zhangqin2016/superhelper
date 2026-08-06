@@ -175,6 +175,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   // (design spec §15). Owner is derived in the main process on every call.
   characterWorlds: Object.freeze({
     getReceiptActions: (sessionId, receiptId) => ipcRenderer.invoke("character-worlds:receipt-actions", { sessionId, receiptId }),
+    getReceiptView: (sessionId, receiptId, actionToken) => ipcRenderer.invoke("character-worlds:receipt-view", {
+      sessionId, receiptId, actionToken,
+    }),
     getPreview: (sessionId) => ipcRenderer.invoke("character-worlds:preview-get", { sessionId }),
     startPreview: (payload) => ipcRenderer.invoke("character-worlds:preview-start", {
       sessionId: payload?.sessionId, receiptId: payload?.receiptId,

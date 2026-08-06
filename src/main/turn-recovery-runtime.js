@@ -7,6 +7,7 @@ const { appendLargeInputProtocolGuidance } = require("./large-input-protocol");
 const { getLogger } = require("./logger");
 const { appendProcessJobProtocolGuidance } = require("./process-job-protocol");
 const { prepareDocumentDeliveryRecovery } = require("./document-delivery-turn");
+const { createParentClosureRecoveryRuntime } = require("./parent-closure-recovery-runtime");
 
 const log = getLogger("turn-recovery-runtime");
 
@@ -34,9 +35,17 @@ function createTurnRecoveryRuntime(options = {}) {
   const transcriptStore = options.transcriptStore;
   const getState = options.getState;
   const emit = options.emit || (() => null);
+  const emitNotice = options.emitNotice || null;
   const sendUserMessage = options.sendUserMessage;
   const attemptRescue = options.attemptRescue;
   const sleep = options.sleep || ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
+  const parentClosureRuntime = createParentClosureRecoveryRuntime({
+    ctx,
+    emit,
+    emitNotice,
+    sendUserMessage,
+    parentClosureLedger: options.parentClosureLedger,
+  });
 
   function stateFor(sessionId) {
     if (typeof getState !== "function") throw new Error("getState adapter is required");
@@ -51,10 +60,14 @@ function createTurnRecoveryRuntime(options = {}) {
     transcriptStore?.removeLastAssistantMessage?.(sessionId);
     if (typeof sendUserMessage !== "function") return { ok: false, error: "SEND_UNAVAILABLE" };
     const sourceTurnId = lastUser.turnId || lastUser.record?.turnId || null;
+    const sourceTurn = sourceTurnId
+      ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, sourceTurnId)
+      : null;
     return sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
       recordUser: false,
       spawnEngine: true,
       sourceTurnId,
+      sourceTaskCore: sourceTurn?.taskCore || null,
       ...retryOptions,
     });
   }
@@ -154,6 +167,9 @@ function createTurnRecoveryRuntime(options = {}) {
         || lastUser?.turnId
         || lastUser?.record?.turnId
         || null;
+      const sourceTurn = sourceTurnId
+        ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, sourceTurnId)
+        : null;
       const recipes = modelRecipes();
       const hint = strategy.kind === "tool_call_rescue"
         ? rescue.correctiveHintFor(recipes)
@@ -177,6 +193,7 @@ function createTurnRecoveryRuntime(options = {}) {
           expectedArtifactPaths: documentRecovery?.paths || [],
           documentDeliveryRecovery: Boolean(documentRecovery),
           sourceTurnId,
+          sourceTaskCore: sourceTurn?.taskCore || null,
           recovery: {
             kind: strategy.kind,
             guidance: hint || "",
@@ -212,6 +229,14 @@ function createTurnRecoveryRuntime(options = {}) {
     }
   }
 
+  async function afterParentClosureTerminal(sessionId, source, { failed = false, failure = null, selfHeal, afterFinalize } = {}) {
+    let parentClosure = { attempted: false };
+    if (source) parentClosure = await parentClosureRuntime.maybeParentClosureRecovery(sessionId, source);
+    if (!parentClosure.attempted && failed && typeof selfHeal === "function") await selfHeal(sessionId, failure);
+    if (typeof afterFinalize === "function") afterFinalize(sessionId);
+    return parentClosure;
+  }
+
   /** Blame-free "we already retried N times" suffix for the terminal copy. */
   function rescueRetryNotice(sessionId, wasRescueAttempt) {
     if (!wasRescueAttempt) return "";
@@ -221,6 +246,11 @@ function createTurnRecoveryRuntime(options = {}) {
 
   return {
     maybeSelfHealAndRetry,
+    maybeParentClosureRecovery: parentClosureRuntime.maybeParentClosureRecovery,
+    prepareParentClosureRecovery: parentClosureRuntime.prepareParentClosureRecovery,
+    resumePendingParentClosures: parentClosureRuntime.resumePendingParentClosures,
+    resumePendingParentClosuresForSessions: parentClosureRuntime.resumePendingParentClosuresForSessions,
+    afterParentClosureTerminal,
     maybeToolCallRescueRetry,
     rescueRetryNotice,
     retryLastMessage,

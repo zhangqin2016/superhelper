@@ -1281,4 +1281,28 @@ if (!lateTerminalAssistant || lateTerminalAssistant.content !== "confirmed compl
   throw new Error(`late confirmed terminal must replace recovery projection: ${JSON.stringify(lateTerminalAssistant)}`);
 }
 
+store.hydrateRuntimeFromState({
+  projects: [{ id: "project-recovery", sessions: [{ id: "s_restart_recovery" }] }],
+  runtime: {
+    sessions: {
+      s_restart_recovery: {
+        phase: "idle",
+        turnId: null,
+        queue: [],
+        taskLifecycles: [{
+          taskId: "turn_restart_recovery",
+          turnId: "turn_restart_recovery",
+          status: "outcome_unknown",
+          deliveryStatus: "delivered",
+          version: 4,
+        }],
+      },
+    },
+  },
+});
+const restarted = store.getRuntimeSession("s_restart_recovery");
+if (restarted.taskLifecycle?.status !== "outcome_unknown" || restarted.attention !== "failed") {
+  throw new Error(`durable lifecycle must survive renderer hydration: ${JSON.stringify(restarted.taskLifecycle)}`);
+}
+
 console.log("session-runtime-store: ok");

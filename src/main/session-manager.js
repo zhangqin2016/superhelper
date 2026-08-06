@@ -1302,9 +1302,10 @@ class SessionManager {
 }
 
 const turnAdmissionMethods = require("./session-turn-admission");
+const taskResultMethods = require("./session-task-results"), taskLifecycleMethods = require("./session-task-lifecycle"), taskContextRegistryMethods = require("./session-task-context-registry"), parentClosureRecoveryMethods = require("./session-parent-closure-recovery");
 Object.defineProperties(
   SessionManager.prototype,
-  Object.fromEntries(Object.entries(turnAdmissionMethods).map(([name, value]) => [
+  Object.fromEntries(Object.entries({ ...turnAdmissionMethods, ...taskResultMethods, ...taskLifecycleMethods, ...taskContextRegistryMethods, ...parentClosureRecoveryMethods }).map(([name, value]) => [
     name,
     { configurable: true, writable: true, value },
   ])),

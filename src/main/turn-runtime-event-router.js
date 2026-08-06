@@ -323,7 +323,9 @@ function createTurnRuntimeEventRouter(options = {}) {
           const notice = payload.notice || payload;
           const activity = activityFromEngineNotice(notice);
           if (activity) setActivityLabel(state, activity);
-          if (activity) taskRunRuntime?.markProgress?.(sessionId, "runtime_progress", activity);
+          if (activity) taskRunRuntime?.markProgress?.(sessionId, "runtime_progress", activity, {
+            resumeState: payload.jobId ? { processJobId: String(payload.jobId) } : null,
+          });
           taskRunRuntime?.updateLivenessFromNotice?.(sessionId, notice, type);
           if (notice) appendTimelineNotice(state, notice, now());
           if (state.turnId) {
@@ -368,7 +370,9 @@ function createTurnRuntimeEventRouter(options = {}) {
         case "process.event": {
           const activity = activityFromProcessPayload(payload);
           if (activity) setActivityLabel(state, activity);
-          if (activity) taskRunRuntime?.markProgress?.(sessionId, "runtime_progress", activity);
+          if (activity) taskRunRuntime?.markProgress?.(sessionId, "runtime_progress", activity, {
+            resumeState: payload.jobId ? { processJobId: String(payload.jobId) } : null,
+          });
           state.processEvents.push(payload);
           if (state.processEvents.length > 200) state.processEvents.splice(0, state.processEvents.length - 200);
           emit(sessionId, "process.event", payload);

@@ -160,7 +160,10 @@ function createTurnQueueLifecycleMethods({ log }) {
         return {
           ok: false,
           reason: "TERMINAL_CAS_ERROR",
-          outcomeUnknown: false,
+          // The store may have committed the CAS before reporting an error.
+          // Never retry automatically when terminal truth is unknown: pause
+          // this in-memory item and let durable recovery reconcile it later.
+          outcomeUnknown: true,
           turn: admitted,
         };
       }

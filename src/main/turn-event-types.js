@@ -16,6 +16,7 @@ const TURN_OPTIONAL_TYPES = new Set([
   "turn.steered",
   "turn.self_heal_retry",
   "turn.self_heal_notice",
+  "turn.parent_closure_recovery",
   "engine.notice",
   "engine.warning",
   "engine.stderr",

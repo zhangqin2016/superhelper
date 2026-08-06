@@ -46,6 +46,8 @@ function emptySession(sessionId) {
     phase: "idle",
     turnId: null,
     liveTurn: null,
+    taskLifecycle: null,
+    taskLifecycles: [],
     queue: [],
     promptSuggestions: [],
     committedMessages: [],
@@ -323,6 +325,11 @@ export function hydrateRuntimeFromState(state) {
     runtime.phase = snap.phase || "idle";
     runtime.turnId = snap.turnId || null;
     runtime.queue = snap.queue || [];
+    runtime.taskLifecycles = Array.isArray(snap.taskLifecycles) ? snap.taskLifecycles : [];
+    runtime.taskLifecycle = runtime.taskLifecycles.find((item) => item.turnId === runtime.turnId)
+      || runtime.taskLifecycles[0]
+      || null;
+    if (runtime.taskLifecycle?.status === "outcome_unknown") runtime.attention = "failed";
     if (snap.runtime?.recent?.length) {
       applyRuntimeBatch({
         sessionId,
@@ -379,6 +386,7 @@ function ensureLiveTurn(runtime, event) {
       fileChanges: [],
       usage: null,
       taskRun: null,
+      taskLifecycle: null,
       recoveryEvent: null,
     };
   }
@@ -661,6 +669,19 @@ export function applyRuntimeEvent(event, opts = {}) {
     case "task.interrupted":
     case "task.stalled":
       applyTaskRunEvent(live, event);
+      break;
+    case "task.lifecycle.updated":
+      live.taskLifecycle = { ...(event.payload || {}), turnId: event.turnId };
+      if (event.payload?.status === "waiting_user") {
+        runtime.phase = "awaiting_user";
+        live.phase = "awaiting_user";
+      } else if (event.payload?.status === "verifying") {
+        runtime.phase = "verifying";
+        live.phase = "verifying";
+      } else if (event.payload?.status === "outcome_unknown") {
+        runtime.phase = "recovery_required";
+        live.phase = "recovery_required";
+      }
       break;
     case "subagent.event": {
       const item = event.payload?.subagent || null;

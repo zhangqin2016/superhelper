@@ -29,10 +29,10 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   renderTurnArticleSlots(article, liveTurn, viewModel, { sessionId, sealed });
 }
 
-export function renderSealedTurnArticle(liveTurn, failed = false) {
+export function renderSealedTurnArticle(liveTurn, failed = false, sessionId = "") {
   const article = createLiveTurnArticleShell(liveTurn);
   article.className = "assistant-turn-article is-sealed";
   if (failed) article.dataset.failed = "true";
-  renderLiveTurnArticle(article, liveTurn, { failed, sealed: true });
+  renderLiveTurnArticle(article, liveTurn, { failed, sealed: true, sessionId });
   return article;
 }

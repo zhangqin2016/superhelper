@@ -27,6 +27,7 @@ import {
 } from "./character-library-model.js";
 import { renderCharacterLibrary, libraryNoticeText } from "./character-library-view.js";
 import { createLibraryActions } from "./character-library-actions.js";
+import { bindCharacterReceiptView, findCharacterLibraryItem } from "./character-library-receipt-view.js";
 
 let libraryState = initialCharacterLibraryState();
 
@@ -253,22 +254,20 @@ export function openCreateForTests() {
 export async function openCharacterLibrary(opts = {}) {
   const m = modal();
   if (!m || !facade()) return;
+  if (!m.hidden && dirtyFormGuard()) return;
+  const requestedTab = opts.tab === "personas" || opts.tab === "books" ? opts.tab : "characters";
   dispatch({ type: "opened" });
   m.hidden = false;
   $("sessionRoleBanner")?.setAttribute("aria-expanded", "true");
+  if (libraryState.tab !== requestedTab) {
+    dispatch({ type: "tab.changed", tab: requestedTab });
+  }
   renderCharacterLibrary(libraryState);
   $("characterLibrarySearch")?.focus();
   await actions.loadCurrentTab();
-  // The composer role control opens the full manager as the primary path.
-  // Resolve against all stable identifiers because official rows, local
-  // entities, and session bindings do not share the same ID shape.
-  const requestedCharacterId = opts.characterId;
-  if (requestedCharacterId && libraryState.tab === "characters") {
-    const item = (libraryState.items.characters || []).find((entry) => (
-      entry.id === requestedCharacterId
-      || entry.currentRevisionId === requestedCharacterId
-      || entry.officialId === requestedCharacterId
-    ));
+  const requestedEntityId = opts.entityId || opts.revisionId || opts.characterId;
+  if (requestedEntityId) {
+    const item = findCharacterLibraryItem(libraryState.items, requestedEntityId);
     if (item) {
       await actions.openDetail(item);
       requestAnimationFrame(() => {
@@ -352,6 +351,7 @@ export function initCharacterLibrary() {
   const m = modal();
   if (!m) return;
 
+  bindCharacterReceiptView(openCharacterLibrary);
   $("characterCreateBtn")?.addEventListener("click", () => startAiAuthoring("characters"));
   $("characterLibraryCloseBtn")?.addEventListener("click", () => closeCharacterLibrary());
   m.addEventListener("click", (event) => {

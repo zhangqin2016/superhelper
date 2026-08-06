@@ -52,6 +52,8 @@ function countArtifacts(runtime) {
 
 function statusForRuntime(runtime) {
   if (!runtime) return null;
+  if (runtime.taskLifecycle?.status === "outcome_unknown") return "failed";
+  if (runtime.taskLifecycle?.status === "waiting_user") return "waiting";
   if (runtime.phase !== "idle") {
     if (runtimeHasAwaitingInput(runtime)) return "waiting";
     if (runtime.phase === "stopping") return "stopping";

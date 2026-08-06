@@ -5,7 +5,7 @@ const {
 } = require("./turn-queue-recovery-envelope");
 const { DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("./turn-recovery-projection");
 
-function recoveredQueueOptions(admitted, queueDispatchOptions) {
+function recoveredQueueOptions(admitted, queueDispatchOptions, sourceTaskCore = null) {
   const metadata = admitted?.metadata || {};
   const recovery = normalizeQueueRecoveryEnvelope(metadata.queueRecovery);
   const persisted = (
@@ -26,7 +26,10 @@ function recoveredQueueOptions(admitted, queueDispatchOptions) {
     displayFiles: Array.isArray(recovery?.fileRefs)
       ? recovery.fileRefs
       : admitted.files,
-    options: queueDispatchOptions(persisted),
+    options: queueDispatchOptions({
+      ...persisted,
+      ...(sourceTaskCore && typeof sourceTaskCore === "object" ? { sourceTaskCore } : {}),
+    }),
   };
 }
 
@@ -68,7 +71,10 @@ function createTurnQueueRecoveryMethods({ log, queueDispatchOptions }) {
         state.outcomeUnknownTurnIds.delete(removed?.turnId);
       }
       if (recovery?.options?.externalCommand) {
-        const recovered = recoveredQueueOptions(admitted, queueDispatchOptions);
+        const sourceTurn = recovery.options.sourceTurnId
+          ? this.ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, recovery.options.sourceTurnId)
+          : null;
+        const recovered = recoveredQueueOptions(admitted, queueDispatchOptions, sourceTurn?.taskCore || null);
         this.externalCommandRuntime?.restoreRecovered?.(sessionId, {
           id: recovered.id,
           options: recovered.options,
@@ -136,7 +142,10 @@ function createTurnQueueRecoveryMethods({ log, queueDispatchOptions }) {
           || admitted.status !== "admitted"
           || !normalizeQueueRecoveryEnvelope(admitted.metadata?.queueRecovery)
         ) continue;
-        const recovered = recoveredQueueOptions(admitted, queueDispatchOptions);
+        const sourceTurn = admitted.metadata?.queueRecovery?.options?.sourceTurnId
+          ? manager.getTurnInputByTurnId?.(sessionId, admitted.metadata.queueRecovery.options.sourceTurnId)
+          : null;
+        const recovered = recoveredQueueOptions(admitted, queueDispatchOptions, sourceTurn?.taskCore || null);
         const runId = recovered.options.scheduledTaskRunId || null;
         const commandId = recovered.options.externalCommand?.commandId || null;
         if ((runId && runIds.has(runId)) || (commandId && commandIds.has(commandId))) continue;
@@ -180,4 +189,4 @@ function createTurnQueueRecoveryMethods({ log, queueDispatchOptions }) {
   };
 }
 
-module.exports = { createTurnQueueRecoveryMethods };
+module.exports = { createTurnQueueRecoveryMethods, recoveredQueueOptions };

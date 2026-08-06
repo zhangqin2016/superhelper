@@ -646,6 +646,11 @@ function stripCharacterTrace(trace) {
   return rest;
 }
 
+function stripTaskCoreTrace(trace) {
+  const { contextSnapshot, ...rest } = stripCharacterTrace(trace);
+  return rest;
+}
+
 // Trace-shape guards (review 3b): trace.characterContext is metadata-only.
 const CARD_TEXT_SNIPPETS = [
   "Aria",
@@ -744,9 +749,9 @@ function assertNativeEquivalent(payload, body, label) {
   assert.deepEqual(payload.taskContract, baselinePayload.taskContract, `${label}: task contract identical`);
   assert.deepEqual(payload.turnPolicy, baselinePayload.turnPolicy, `${label}: turn policy identical`);
   assert.deepEqual(
-    stripCharacterTrace(payload.trace),
-    stripCharacterTrace(baselinePayload.trace),
-    `${label}: dispatch trace (minus metadata-only character record) identical`,
+    stripTaskCoreTrace(payload.trace),
+    stripTaskCoreTrace(baselinePayload.trace),
+    `${label}: dispatch trace (minus metadata-only task records) identical`,
   );
 }
 

@@ -114,6 +114,24 @@ function markTurnInputTerminal(claim = {}, terminalType, patch = {}) {
   return this._store().markTurnInputTerminal(claim, terminalType, patch);
 }
 
+function persistTurnTaskCore(sessionId, turnId, taskCore) {
+  const session = this._find(sessionId);
+  if (!session || !turnId) {
+    return Object.freeze({ ok: false, reason: "NO_SESSION", turn: null });
+  }
+  this._ensureImported(session);
+  const ownerScope = resolvedOwnerScope(this, session);
+  if (!ownerScope) {
+    return Object.freeze({ ok: false, reason: "OWNER_SCOPE_UNAVAILABLE", turn: null });
+  }
+  return this._store().persistTurnTaskCore({
+    sessionId: session.id,
+    turnId: String(turnId),
+    ownerScope,
+    taskCore,
+  });
+}
+
 function pendingTurnInputs(sessionId) {
   const session = this._find(sessionId);
   if (!session) return [];
@@ -204,6 +222,7 @@ module.exports = {
   getTurnInputByTurnId,
   markTurnInputPromoted,
   markTurnInputTerminal,
+  persistTurnTaskCore,
   outcomeUnknownTurnInputs,
   pendingTurnInputs,
   resolveTurnOwnerScope,

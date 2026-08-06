@@ -6,7 +6,7 @@ const { getLogger } = require("./logger");
 
 const log = getLogger("turn-intelligence");
 
-function resolveTurnIntelligence({ ctx, session, project = null, text = "", files = [], turnId = "" } = {}) {
+function resolveTurnIntelligence({ ctx, session, project = null, text = "", files = [], turnId = "", previousIntentContract = null } = {}) {
   let committedMessages = Array.isArray(session?.messages) ? session.messages : [];
   let sessionSummary = null;
   try {
@@ -28,7 +28,7 @@ function resolveTurnIntelligence({ ctx, session, project = null, text = "", file
       session,
       project,
       messages: committedMessages.filter((message) => message.turnId !== turnId),
-      previousIntentContract: sessionSummary?.lastIntentContract || null,
+      previousIntentContract: previousIntentContract || sessionSummary?.lastIntentContract || null,
     });
     return {
       taskContract,

@@ -151,8 +151,10 @@ async function refreshRemoteConfigForSend(options = {}) {
 }
 
 function wireRunner(ctx, runner) {
-  runner.bindOrchestrator?.(ctx.turnOrchestrator);
+  runner?.bindOrchestrator?.(ctx.turnOrchestrator);
+  if (!runner) return false;
   ctx.turnOrchestrator?.bindRunner(runner);
+  return true;
 }
 
 function ensureSessionRunner(ctx, sessionId, opts = {}) {
@@ -307,6 +309,13 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
   try {
     const lazy = opts.spawn !== true;
     const runner = runnerPool.ensure(sessionId, project.path, extra, { lazy });
+    if (!runner) {
+      return {
+        runner: null,
+        error: "RUNNER_UNAVAILABLE",
+        detail: "The assistant process could not be allocated for this conversation.",
+      };
+    }
     wireRunner(ctx, runner);
 
     if (opts.spawn === true && !runner.isAlive()) {
@@ -318,6 +327,13 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
       const firstSpawnError = runner.lastSpawnError || "";
       runnerPool.terminateSession(sessionId);
       const fresh = runnerPool.ensure(sessionId, project.path, extra, { lazy: false });
+      if (!fresh) {
+        return {
+          runner: null,
+          error: "RUNNER_UNAVAILABLE",
+          detail: firstSpawnError || "The assistant process could not be rebuilt for this conversation.",
+        };
+      }
       wireRunner(ctx, fresh);
       if (fresh.isAlive()) {
         console.warn("[runner]", sessionId, "engine was dead at preflight; rebuilt a fresh runner");

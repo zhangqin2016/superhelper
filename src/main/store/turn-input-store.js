@@ -156,6 +156,22 @@ function parseBoundedTurnMetadata(text) {
   return cloneTurnMetadataResult(parsed);
 }
 
+function parseBoundedTaskCore(text) {
+  if (
+    typeof text !== "string"
+    || text.length > 128 * 1024
+    || Buffer.byteLength(text, "utf8") > 128 * 1024
+  ) return null;
+  try {
+    const parsed = JSON.parse(text || "");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? deepFreezeJson(parsed)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function serializeTurnMetadata(
   input,
   characterWorldsSnapshot = null,
@@ -274,6 +290,7 @@ function hydrateTurnInput(row) {
       || fallbackSnapshot();
     metadata = deepFreezeJson({ ...metadata, characterWorlds: snapshot });
   }
+  const taskCore = parseBoundedTaskCore(row.task_core_json);
   return Object.freeze({
     sessionId: row.session_id,
     admittedSeq: row.admitted_seq,
@@ -298,6 +315,8 @@ function hydrateTurnInput(row) {
     externalPayloadHash: row.external_payload_hash || null,
     externalDesktopDeviceId: row.external_desktop_device_id || null,
     externalMobileDeviceId: row.external_mobile_device_id || null,
+    taskCore,
+    taskCoreFingerprint: row.task_core_fingerprint || null,
   });
 }
 
@@ -332,10 +351,14 @@ const terminalMethods = require("./turn-terminal-store").createTurnTerminalStore
   hydrateTurnInput,
   mergeTurnMetadata,
 });
+const taskCoreMethods = require("./turn-task-core-store").createTurnTaskCoreStoreMethods({
+  hydrateTurnInput,
+});
 
 module.exports = {
   ...admissionMethods,
   ...dispatchMethods,
   ...terminalMethods,
+  ...taskCoreMethods,
   getTurnInputByTurnId,
 };
