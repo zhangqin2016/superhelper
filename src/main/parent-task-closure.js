@@ -26,6 +26,16 @@ const EXECUTION_TASK_TYPES = new Set([
   "ui_change",
 ]);
 
+// Research turns can accumulate dozens of successful reads/searches and then
+// lose only the final synthesis to a provider/step-boundary failure. Continuing
+// once from the existing evidence is safer and cheaper than asking the user to
+// replay the whole investigation. The recovery prompt explicitly reuses prior
+// results and the durable ledger still permits only one closure attempt.
+const CLOSURE_TASK_TYPES = new Set([
+  ...EXECUTION_TASK_TYPES,
+  "external_fact",
+]);
+
 const MUTATING_OPERATIONS = /^(?:create|change|modify|write|build|package|deploy|release|fix|repair|implement|install|migrate|convert|edit|update|publish|refactor|execute|remove|delete)$/i;
 
 function normalizedStatus(tool) {
@@ -65,10 +75,9 @@ function toolEvidenceSnapshot(state = {}) {
 
 function hasExecutionIntent(taskContract = {}) {
   if (!taskContract?.active) return false;
-  if (String(taskContract.taskType || "") === "external_fact") return false;
+  if (CLOSURE_TASK_TYPES.has(String(taskContract.taskType || ""))) return true;
   const categories = Array.isArray(taskContract.categories) ? taskContract.categories : [];
   if (categories.some((category) => EXECUTION_CATEGORIES.has(String(category)))) return true;
-  if (EXECUTION_TASK_TYPES.has(String(taskContract.taskType || ""))) return true;
   const operation = String(taskContract.semanticIntent?.operation || "");
   if (!MUTATING_OPERATIONS.test(operation)) return false;
   return categories.some((category) => ["architecture_audit", "agent_quality", "release"].includes(String(category)))
@@ -95,7 +104,10 @@ function shouldRecoverParentClosure({
   if (!sessionId || !sourceTurnId) return fail("MISSING_TURN_IDENTITY");
   if (!hasExecutionIntent(taskContract)) return fail("NON_EXECUTION_TASK");
   if (payload.interruptedByUser || payload.userInterrupted || payload.engineInterrupted) return fail("INTERRUPTED");
-  if (String(payload.errorCode || payload.failureCode || "") === "TRUNCATED_TURN_END") return fail("SPECIALIZED_RESCUE");
+  if (
+    String(payload.errorCode || payload.failureCode || "") === "TRUNCATED_TURN_END"
+    && !state.wasRescueAttempt
+  ) return fail("SPECIALIZED_RESCUE");
   if (!payload.stalled && !payload.failed && !payload.error && !payload.errorCode && !payload.code) return fail("NOT_INCOMPLETE");
   if (hasPendingUserInput(state)) return fail("WAITING_FOR_USER");
   if (!evidence.count) return fail("NO_EXECUTION_EVIDENCE");
@@ -113,6 +125,7 @@ function buildParentClosurePrompt({ objective = "", evidence = {} } = {}) {
     `原始任务：${boundedObjective || "继续当前用户要求"}`,
     counts,
     "不要只返回计划，也不要重复已经完成的检查。先确认当前文件和状态，再完成剩余的修改、构建、打包、部署或验证步骤。",
+    "如果原任务是检索、研究或分析，优先基于已有搜索和读取结果完成综合结论；只补充确实缺失的证据，不要重新抓取已经完成的来源。",
     "结束前必须给出实际完成内容、验证证据和仍然存在的硬阻塞；没有完成就明确说明，不能把计划当成结果。",
   ].join("\n");
 }

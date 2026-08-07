@@ -16,6 +16,14 @@ const executionContract = {
   intentContract: { objective: "把安装流程补完整" },
 };
 
+const researchContract = {
+  active: true,
+  taskType: "external_fact",
+  categories: ["external_fact"],
+  semanticIntent: { operation: "research" },
+  intentContract: { objective: "检索并汇总企业破产法律依据" },
+};
+
 const state = {
   turnId: "turn_parent_1",
   assistantText: "先检查了构建脚本，但还没有完成修改。",
@@ -45,6 +53,42 @@ const eligible = shouldRecoverParentClosure({
 assert.equal(eligible.ok, true, "an incomplete execution task with tool results is recoverable");
 assert.equal(eligible.recoveryKey, "parent-closure:session_1:turn_parent_1");
 
+const researchEligible = shouldRecoverParentClosure({
+  sessionId: "session_research",
+  taskContract: researchContract,
+  state: {
+    ...state,
+    turnId: "turn_research_1",
+    enginePayload: { rawText: "检索并汇总企业破产法律依据" },
+    tools: new Map([
+      ["search", { id: "search", name: "websearch", status: "done", input: { query: "企业破产法" } }],
+      ["read", { id: "read", name: "webfetch", status: "done", input: { url: "https://example.test/law" } }],
+    ]),
+  },
+  payload: { failed: true, errorCode: "ASSISTANT_ERROR" },
+});
+assert.equal(researchEligible.ok, true, "read-heavy external research gets one parent-closure continuation");
+assert.equal(
+  shouldRecoverParentClosure({
+    sessionId: "session_research",
+    taskContract: researchContract,
+    state: { ...state, turnId: "turn_truncated_first" },
+    payload: { failed: true, errorCode: "TRUNCATED_TURN_END" },
+  }).reason,
+  "SPECIALIZED_RESCUE",
+  "the first truncated research turn keeps the stronger dedicated retry",
+);
+assert.equal(
+  shouldRecoverParentClosure({
+    sessionId: "session_research",
+    taskContract: researchContract,
+    state: { ...state, turnId: "turn_truncated_retry", wasRescueAttempt: true },
+    payload: { failed: true, errorCode: "TRUNCATED_TURN_END" },
+  }).ok,
+  true,
+  "a failed dedicated retry falls through to evidence-preserving parent closure",
+);
+
 const prompt = buildParentClosurePrompt({
   objective: state.enginePayload.rawText,
   evidence,
@@ -53,6 +97,7 @@ assert.match(prompt, /OpenConnect/);
 assert.match(prompt, /继续完成/);
 assert.match(prompt, /不要只返回计划/);
 assert.match(prompt, /验证/);
+assert.match(prompt, /不要重新抓取已经完成的来源/);
 
 assert.equal(
   shouldRecoverParentClosure({

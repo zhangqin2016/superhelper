@@ -62,6 +62,7 @@
         "scripts/test-answer-evidence-finalizer.mjs",
         "scripts/test-evidence-risk-tiers.mjs",
         "scripts/test-evidence-entailment-judge.mjs",
+        "scripts/test-parent-task-closure-recovery.mjs",
         "scripts/test-external-evidence-recovery.mjs",
         "scripts/test-external-fact-grounding.mjs",
         "scripts/test-general-claim-verification.mjs",
@@ -212,6 +213,16 @@
         "scripts/test-runtime-event-schema.mjs",
         "scripts/test-session-runtime-store.mjs",
         "scripts/test-character-session-control.mjs"
+      ]
+    },
+    {
+      "id": "character-preview-controls",
+      "protects": "Character preview actions remain clickable and recover visibly when activation or exit fails.",
+      "baseline": "The preview banner stays above the active conversation hit-testing layer and reserves message space.",
+      "failureFallback": "Keep the current preview active, clear busy state, refresh preview state, and show a retryable error instead of leaving a dead control.",
+      "tests": [
+        "scripts/test-character-result-card.cjs",
+        "scripts/test-character-preview-controller.cjs"
       ]
     },
     {
