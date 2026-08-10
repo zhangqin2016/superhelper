@@ -8,7 +8,15 @@ const FileStagingManager = require("./file-staging-manager");
 const { fileStagingDir } = require("./config");
 const { inspectLocalMediaPath } = require("./local-media-protocol");
 
-const TEXT_PREVIEW_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".csv", ".json"]);
+// Keep this aligned with attachment-preview-model.js. Preview is deliberately
+// bounded by bytes below, so common source/config files stay useful without
+// treating arbitrary binary formats as text.
+const TEXT_PREVIEW_EXTENSIONS = new Set([
+  ".md", ".markdown", ".txt", ".csv", ".json", ".yaml", ".yml", ".toml", ".xml",
+  ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".rs", ".c", ".cpp", ".h", ".hpp",
+  ".html", ".htm", ".css", ".scss", ".less", ".sql", ".sh", ".bash", ".swift", ".kt", ".scala",
+  ".lua", ".r", ".m", ".rb", ".php", ".vue", ".svelte",
+]);
 const DEFAULT_TEXT_PREVIEW_BYTES = 1024 * 1024;
 const MAX_TEXT_PREVIEW_BYTES = 4 * 1024 * 1024;
 

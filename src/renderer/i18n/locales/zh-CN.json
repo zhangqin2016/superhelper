@@ -1623,6 +1623,8 @@
   "engine.learnedSkillDraft": "工作区技能已生成，后续新对话会自动加载",
   "file.reveal": "在目录中显示",
   "file.preview": "预览",
+  "file.textPreviewLoading": "正在加载文本预览…",
+  "file.textPreviewFailed": "文本预览不可用，请打开文件查看。",
   "renderer.markdownPreviewLoading": "正在加载 Markdown 预览…",
   "renderer.markdownPreviewFailed": "Markdown 预览不可用，请打开文件查看。",
   "renderer.markdownPreviewTruncated": "预览已截断，请打开文件查看完整内容。",

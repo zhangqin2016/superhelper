@@ -1624,6 +1624,8 @@
   "engine.learnedSkillDraft": "تم إنشاء مهارة لمساحة العمل — ستحملها المحادثات الجديدة تلقائياً",
   "file.reveal": "إظهار في المجلد",
   "file.preview": "معاينة",
+  "file.textPreviewLoading": "جارٍ تحميل معاينة النص…",
+  "file.textPreviewFailed": "معاينة النص غير متاحة. افتح الملف لعرضه.",
   "renderer.markdownPreviewLoading": "جارٍ تحميل معاينة Markdown…",
   "renderer.markdownPreviewFailed": "معاينة Markdown غير متاحة. افتح الملف لعرضه.",
   "renderer.markdownPreviewTruncated": "تم اقتطاع المعاينة. افتح الملف لعرض المحتوى كاملاً.",

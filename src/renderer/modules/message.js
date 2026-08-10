@@ -69,6 +69,7 @@ import {
 import { confirmDialog } from "./confirm-dialog.js";
 import { renderLiveTaskStrip } from "./live-task-strip.js";
 import { showToast } from "./toast.js";
+import { renderAttachmentPreviews } from "./attachment-preview-card.js";
 import {
   createScheduledDraftFromMessage,
   rejectScheduledDraftFromMessage,
@@ -419,7 +420,7 @@ function appendUserMessage(sessionId, message, beforeNode = null, key = "") {
   const body = document.createElement("div");
   body.className = "runtime-user-body";
   body.textContent = message.content || "";
-  renderFiles(body, message.files || []);
+  renderAttachmentPreviews(body, message.files || [], { sessionId });
 
   // Re-edit: copies the text back into the composer (no conversation rewind —
   // the edited text is sent as a new message).
@@ -645,19 +646,6 @@ function appendScheduledDraftRow(container, label, value) {
   val.textContent = value;
   row.append(key, val);
   container.appendChild(row);
-}
-
-function renderFiles(container, files) {
-  if (!files?.length) return;
-  const wrap = document.createElement("div");
-  wrap.className = "runtime-message-files";
-  for (const file of files) {
-    const chip = document.createElement("span");
-    chip.className = "runtime-message-file";
-    chip.textContent = file.name || file.path || "file";
-    wrap.appendChild(chip);
-  }
-  container.appendChild(wrap);
 }
 
 function ensureLiveArticle(sessionId, liveTurn) {

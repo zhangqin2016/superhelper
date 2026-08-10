@@ -166,21 +166,86 @@
   word-break: break-word;
 }
 
-.runtime-message-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.runtime-attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
   margin-top: 10px;
 }
 
-.runtime-message-file {
-  font-size: 12px;
-  color: var(--text-muted);
+.runtime-attachment-card {
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--border-light);
-  border-radius: 999px;
-  padding: 3px 9px;
-  background: color-mix(in srgb, var(--bg-surface-subtle) 70%, var(--bg-surface) 30%);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
   box-shadow: var(--top-highlight);
+}
+
+.runtime-attachment-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.runtime-attachment-header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.runtime-attachment-header span {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.runtime-attachment-image {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  cursor: zoom-in;
+  background: var(--bg-surface-subtle);
+}
+
+.runtime-attachment-text {
+  max-height: 180px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-block: 1px solid var(--border-light);
+  background: var(--bg-surface-subtle);
+  color: var(--text-secondary);
+  font: 12px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.runtime-attachment-actions {
+  display: flex;
+  gap: 6px;
+  padding: 7px 10px;
+}
+
+.runtime-attachment-action {
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.runtime-attachment-action:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
 }
 
 .assistant-turn-article {

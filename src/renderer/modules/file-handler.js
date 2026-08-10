@@ -6,6 +6,7 @@ import store from "./state.js";
 import { $, el, formatFileSize } from "./dom.js";
 import { showToast, fileErrorMessage } from "./toast.js";
 import { openImageViewer } from "./image-viewer.js";
+import { openAttachmentPreview } from "./attachment-preview-card.js";
 import { t } from "../i18n/index.js";
 import { routeDroppedFiles } from "./workspace-package-drop.js";
 import { reviewWorkspacePackage } from "./workspace-package-review.js";
@@ -209,6 +210,14 @@ function renderFilePreview() {
     name.className = "file-chip-name";
     name.textContent = file.name;
     chip.appendChild(name);
+
+    const preview = document.createElement("button");
+    preview.type = "button";
+    preview.className = "file-chip-preview";
+    preview.textContent = t("file.preview");
+    preview.title = t("file.preview");
+    preview.addEventListener("click", () => openAttachmentPreview(file));
+    chip.appendChild(preview);
 
     const rm = document.createElement("button");
     rm.className = "file-chip-remove";

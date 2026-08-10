@@ -1623,6 +1623,8 @@
   "engine.learnedSkillDraft": "Workspace skill created — future chats will load it automatically",
   "file.reveal": "Show in folder",
   "file.preview": "Preview",
+  "file.textPreviewLoading": "Loading text preview…",
+  "file.textPreviewFailed": "Text preview is unavailable. Open the file to view it.",
   "renderer.markdownPreviewLoading": "Loading Markdown preview…",
   "renderer.markdownPreviewFailed": "Markdown preview is unavailable. Open the file to view it.",
   "renderer.markdownPreviewTruncated": "Preview truncated. Open the file to view the full content.",
