@@ -129,6 +129,8 @@ export function scheduledDraftPreviewModel(message = {}) {
   return {
     messageId: message?.id || "",
     created: scheduled.status === "created",
+    ...(scheduled.status === "rejected" ? { rejected: true } : {}),
+    ...(scheduled.status === "rejecting" ? { rejecting: true } : {}),
     title: draft.title || "",
     scheduleText: draft.scheduleText || "",
     nextRunAt: draft.nextRunAt || scheduled.task?.nextRunAt || "",

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import Module from "node:module";
 
 const originalLoad = Module._load;
@@ -65,5 +66,12 @@ assert.equal(snapshot.ok, true);
 assert.equal(snapshot.activeSessionId, "s1");
 assert(snapshot.recent.some((item) => item.kind === "renderer_heartbeat_stale"), "snapshot keeps renderer stale records");
 assert(snapshot.recent.some((item) => item.kind === "renderer_event_loop_lag"), "snapshot keeps renderer lag records");
+
+const mainSource = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+assert.match(
+  mainSource,
+  /webPreferences:\s*\{[\s\S]*?backgroundThrottling:\s*false/,
+  "main window must not throttle renderer heartbeats or task-progress projection while hidden",
+);
 
 console.log("app-watchdog: ok");

@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   createScheduledTask: (payload) => ipcRenderer.invoke("scheduled-tasks:create", payload || {}),
   createScheduledTaskFromDraftMessage: (payload) =>
     ipcRenderer.invoke("scheduled-tasks:create-from-draft-message", payload || {}),
+  rejectScheduledTaskDraftMessage: (payload) =>
+    ipcRenderer.invoke("scheduled-tasks:reject-draft-message", payload || {}),
   setScheduledTaskEnabled: (taskId, enabled) =>
     ipcRenderer.invoke("scheduled-tasks:set-enabled", { taskId, enabled }),
   removeScheduledTask: (taskId) => ipcRenderer.invoke("scheduled-tasks:remove", { taskId }),

@@ -69,6 +69,10 @@ import {
 import { confirmDialog } from "./confirm-dialog.js";
 import { renderLiveTaskStrip } from "./live-task-strip.js";
 import { showToast } from "./toast.js";
+import {
+  createScheduledDraftFromMessage,
+  rejectScheduledDraftFromMessage,
+} from "./scheduled-draft-actions.js";
 
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
@@ -582,7 +586,11 @@ function appendScheduledDraftArticle(sessionId, message, beforeNode = null, key 
 
   const title = document.createElement("div");
   title.className = "scheduled-draft-title";
-  title.textContent = preview.created ? t("scheduled.cardCreatedTitle") : t("scheduled.cardTitle");
+  title.textContent = preview.created
+    ? t("scheduled.cardCreatedTitle")
+    : preview.rejected
+      ? t("scheduled.cardRejectedTitle")
+      : t("scheduled.cardTitle");
   shell.appendChild(title);
 
   const rows = document.createElement("div");
@@ -596,18 +604,29 @@ function appendScheduledDraftArticle(sessionId, message, beforeNode = null, key 
   const actions = document.createElement("div");
   actions.className = "scheduled-draft-actions";
 
-  if (preview.created) {
+  if (preview.created || preview.rejected) {
     const pill = document.createElement("span");
     pill.className = "scheduled-draft-pill";
-    pill.textContent = t("scheduled.created");
+    pill.textContent = preview.created ? t("scheduled.created") : t("scheduled.cardRejected");
     actions.appendChild(pill);
   } else {
     const create = document.createElement("button");
     create.type = "button";
     create.className = "button-primary";
     create.textContent = t("scheduled.cardCreate");
-    create.addEventListener("click", () => void createScheduledDraftFromMessage(sessionId, message.id, create));
+    create.addEventListener("click", () => void createScheduledDraftFromMessage({
+      sessionId, messageId: message.id, button: create, syncCommittedMessages, renderConversation,
+    }));
     actions.appendChild(create);
+    const reject = document.createElement("button");
+    reject.type = "button";
+    reject.className = "button-secondary";
+    reject.disabled = preview.rejecting;
+    reject.textContent = preview.rejecting ? t("scheduled.cardRejecting") : t("scheduled.cardReject");
+    reject.addEventListener("click", () => void rejectScheduledDraftFromMessage({
+      sessionId, messageId: message.id, button: reject, syncCommittedMessages, renderConversation,
+    }));
+    actions.appendChild(reject);
   }
   shell.appendChild(actions);
 
@@ -626,37 +645,6 @@ function appendScheduledDraftRow(container, label, value) {
   val.textContent = value;
   row.append(key, val);
   container.appendChild(row);
-}
-
-async function createScheduledDraftFromMessage(sessionId, messageId, button) {
-  if (!sessionId || !messageId || !window.assistantClient?.createScheduledTaskFromDraftMessage) return;
-  const originalText = button?.textContent || "";
-  if (button) {
-    button.disabled = true;
-    button.textContent = t("scheduled.creating");
-  }
-  try {
-    const result = await window.assistantClient.createScheduledTaskFromDraftMessage({
-      sessionId,
-      messageId,
-    });
-    if (!result?.ok) {
-      showToast(t("scheduled.createFailed"), "error");
-      return;
-    }
-    if (Array.isArray(result.conversation)) {
-      syncCommittedMessages(sessionId, result.conversation);
-      renderConversation(sessionId, { force: true, forceScrollBottom: true });
-    }
-    showToast(t("scheduled.created"), "success");
-  } catch (error) {
-    showToast(error?.message || t("scheduled.createFailed"), "error");
-  } finally {
-    if (button?.isConnected) {
-      button.disabled = false;
-      button.textContent = originalText;
-    }
-  }
 }
 
 function renderFiles(container, files) {

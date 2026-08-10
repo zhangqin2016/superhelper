@@ -222,6 +222,21 @@ assert.deepEqual(scheduledDraftPreviewModel(null), {
   scheduleText: "",
   nextRunAt: "",
 });
+assert.deepEqual(
+  scheduledDraftPreviewModel({
+    id: "rejected-draft",
+    meta: { scheduledDraft: { status: "rejected", draft: { title: "Normal request" } } },
+  }),
+  {
+    messageId: "rejected-draft",
+    created: false,
+    rejected: true,
+    title: "Normal request",
+    scheduleText: "",
+    nextRunAt: "",
+  },
+  "rejected schedule drafts must render a terminal normal-conversation receipt",
+);
 
 assert.equal(
   shouldSkipCommittedAssistantForLiveTurn(

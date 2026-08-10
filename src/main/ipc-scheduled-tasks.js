@@ -65,6 +65,7 @@ function registerScheduledTaskHandlers(ctx) {
         conversation: page.conversation,
       };
     }
+    if (scheduledDraft.status !== "pending") return { ok: false, error: "DRAFT_NOT_PENDING" };
 
     const result = ctx.scheduledTaskManager.create({
       ...scheduledDraft.draft,
@@ -90,6 +91,63 @@ function registerScheduledTaskHandlers(ctx) {
     }));
     const page = ctx.sessionManager.getConversationPage(scope.sessionId, { limit: 80 });
     return { ok: true, task: result.task, conversation: page.conversation };
+  });
+
+  ipcMain.handle("scheduled-tasks:reject-draft-message", async (_event, payload = {}) => {
+    const scope = activeScope(ctx, payload);
+    if (scope.error) return { ok: false, error: scope.error };
+    const messageId = String(payload.messageId || "").trim();
+    if (!scope.projectId) return { ok: false, error: "NO_PROJECT" };
+    if (!scope.sessionId) return { ok: false, error: "NO_SESSION" };
+    if (!messageId) return { ok: false, error: "MISSING_MESSAGE" };
+
+    const message = ctx.sessionManager.findMessage(scope.sessionId, messageId);
+    const scheduledDraft = message?.meta?.scheduledDraft;
+    const originalText = String(scheduledDraft?.originalText || "").trim();
+    if (!scheduledDraft?.draft || !originalText) return { ok: false, error: "DRAFT_NOT_FOUND" };
+    if (scheduledDraft.status !== "pending") return { ok: false, error: "DRAFT_NOT_PENDING" };
+
+    // Mark before awaiting the normal dispatch: duplicate renderer clicks must
+    // never create two normal turns for one rejected schedule interpretation.
+    ctx.sessionManager.updateMessageMeta(scope.sessionId, messageId, (meta) => ({
+      ...meta,
+      scheduledDraft: {
+        ...(meta.scheduledDraft || scheduledDraft),
+        status: "rejecting",
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+
+    const result = await ctx.turnOrchestrator.sendUserMessage(scope.sessionId, originalText, [], {
+      recordUser: false,
+      scheduleDraftRejected: true,
+      sourceTurnId: message.turnId || message.record?.turnId || null,
+    });
+    if (!result?.ok) {
+      // No scheduled task was created. Restore the decision card so the user
+      // can retry the normal turn instead of silently losing the original ask.
+      ctx.sessionManager.updateMessageMeta(scope.sessionId, messageId, (meta) => ({
+        ...meta,
+        scheduledDraft: {
+          ...(meta.scheduledDraft || scheduledDraft),
+          status: "pending",
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+      return result;
+    }
+
+    ctx.sessionManager.updateMessageMeta(scope.sessionId, messageId, (meta) => ({
+      ...meta,
+      scheduledDraft: {
+        ...(meta.scheduledDraft || scheduledDraft),
+        status: "rejected",
+        rejectedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+    const page = ctx.sessionManager.getConversationPage(scope.sessionId, { limit: 80 });
+    return { ...result, conversation: page.conversation };
   });
 
   ipcMain.handle("scheduled-tasks:set-enabled", (_event, payload = {}) => {
