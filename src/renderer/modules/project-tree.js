@@ -14,6 +14,7 @@ import { confirmWorkspacePackExport } from "./workspace-export-dialog.js";
 import { reviewWorkspacePackage } from "./workspace-package-review.js";
 import { reorderWorkspaceByCommand } from "./workspace-order.js";
 import { createWorkspaceProjectHeader } from "./workspace-project-header.js";
+import { sortSessionsByRecency } from "./workspace-switcher-model.js";
 
 const container = () => $("projectTree");
 
@@ -68,7 +69,7 @@ export function renderProjectTree() {
   }
 
   for (const [projectIndex, project] of projects.entries()) {
-    const sessions = project.sessions || [];
+    const sessions = sortSessionsByRecency(project.sessions);
     const isActive = project.id === activeProjectId;
     const isCollapsed = collapsed.has(project.id);
 
@@ -240,6 +241,31 @@ export function updateProjectTreeChrome() {
   updateProjectTreeSelection();
   updateSessionRunningIndicators();
   updateSessionMetaCounts();
+}
+
+/** Update the local sidebar projection immediately after a real conversation
+ * activity. The main process remains authoritative and persists its own
+ * updatedAt; this only prevents the UI from waiting for a later full refresh. */
+export function touchSessionUsage(sessionId, timestamp = Date.now()) {
+  if (!sessionId) return false;
+  const when = new Date(timestamp).getTime();
+  const updatedAt = new Date(Number.isFinite(when) ? when : Date.now()).toISOString();
+  const projects = store.get("projects") || [];
+  let changed = false;
+  for (const project of projects) {
+    for (const session of project.sessions || []) {
+      if (session.id !== sessionId) continue;
+      if (session.updatedAt === updatedAt) return false;
+      session.updatedAt = updatedAt;
+      changed = true;
+      break;
+    }
+    if (changed) break;
+  }
+  if (!changed) return false;
+  store.set("projects", projects);
+  renderProjectTree();
+  return true;
 }
 
 const CTX_MENU_CSS = "position:fixed;z-index:10000;min-width:160px;padding:6px;background:var(--bg-floating);border:1px solid var(--border-light);border-radius:8px;box-shadow:var(--shadow-floating);";

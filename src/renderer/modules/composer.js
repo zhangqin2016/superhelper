@@ -371,6 +371,8 @@ export async function sendPrompt(opts = {}) {
   }
 
   if (sessionId) {
+    const { touchSessionUsage } = await import("./project-tree.js");
+    touchSessionUsage(sessionId);
     renderPromptSuggestions(sessionId, []);
   }
   const { syncComposerForActiveSession } = await import("./message.js");

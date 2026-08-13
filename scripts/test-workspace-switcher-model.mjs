@@ -8,6 +8,7 @@ import {
   relativeTimeValue,
   recentSessions,
   searchWorkspaceTargets,
+  sortSessionsByRecency,
 } from "../src/renderer/modules/workspace-switcher.js";
 
 if (process.argv.includes("--tz-probe")) {
@@ -101,6 +102,24 @@ assert.deepEqual(
 );
 assert.deepEqual(recentSessions({}, 3), []);
 assert.deepEqual(projects, projectsSnapshot);
+
+const sidebarSource = [
+  { id: "created", createdAt: "2026-07-20T10:00:00.000Z" },
+  { id: "old", updatedAt: "2026-07-21T10:00:00.000Z" },
+  { id: "recent", updatedAt: "2026-07-25T10:00:00.000Z" },
+  { id: "invalid-a", updatedAt: "invalid" },
+  { id: "invalid-b" },
+];
+assert.deepEqual(
+  sortSessionsByRecency(sidebarSource).map((session) => session.id),
+  ["recent", "old", "created", "invalid-a", "invalid-b"],
+  "the conversation sidebar must show most recently used sessions first",
+);
+assert.deepEqual(
+  sidebarSource.map((session) => session.id),
+  ["created", "old", "recent", "invalid-a", "invalid-b"],
+  "sidebar sorting must not mutate persisted project session order",
+);
 
 const now = Date.parse("2026-07-25T10:00:00.000Z");
 assert.deepEqual(relativeTimeValue("2026-07-25T09:59:31.000Z", now), {

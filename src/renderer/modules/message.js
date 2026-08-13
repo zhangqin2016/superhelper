@@ -52,7 +52,7 @@ import {
 import { createLiveTurnArticleShell } from "./turn-article-shell.js";
 import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { patchLiveToolClocks } from "./turn-live-clock-patch.js";
-import { updateSessionRunningIndicators } from "./project-tree.js";
+import { touchSessionUsage, updateSessionRunningIndicators } from "./project-tree.js";
 import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue, refreshSendEnabled } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
@@ -840,6 +840,12 @@ export function wireMessageIpc() {
     void handleMemoryProposalEvents(batch);
     handleSelfHealRetryEvents(batch);
     applyRuntimeBatch(batch);
+    const activity = (batch?.events || []).find((event) => [
+      "message.user",
+      "turn.accepted",
+      "turn.started",
+    ].includes(event?.type));
+    if (activity?.sessionId) touchSessionUsage(activity.sessionId, activity.ts);
   });
   window.assistantClient.onFocusSession?.((data) => {
     void focusSessionFromNotification(data?.sessionId || "");

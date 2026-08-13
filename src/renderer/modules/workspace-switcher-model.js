@@ -81,17 +81,27 @@ function compareSessionEntries(a, b) {
   return b.timestamp - a.timestamp || a.index - b.index;
 }
 
-export function recentSessions(project, limit = DEFAULT_RECENT_LIMIT) {
-  const sessions = Array.isArray(project?.sessions) ? project.sessions : [];
-  return sessions
+/**
+ * Return a new session list with the most recently used session first.
+ * Invalid timestamps keep their original relative order at the end so a
+ * malformed legacy record can never make the sidebar unstable.
+ */
+export function sortSessionsByRecency(sessions) {
+  const source = Array.isArray(sessions) ? sessions : [];
+  return source
     .map((session, index) => ({
       session,
       index,
       timestamp: sessionTimestamp(session),
     }))
     .sort(compareSessionEntries)
-    .slice(0, normalizedLimit(limit))
     .map(({ session }) => session);
+}
+
+export function recentSessions(project, limit = DEFAULT_RECENT_LIMIT) {
+  const sessions = Array.isArray(project?.sessions) ? project.sessions : [];
+  return sortSessionsByRecency(sessions)
+    .slice(0, normalizedLimit(limit))
 }
 
 export function latestSession(project) {
