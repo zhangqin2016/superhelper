@@ -7,9 +7,8 @@ const { ensureWebSystemLearningSkillForSession } = require("./web-system-learnin
 const { ensureRoutingAvailable, resolveEngineRouting } = require("./character-worlds/assistant-routing");
 const { resolveCharacterWorldsAdjustment } = require("./character-worlds/adjustment-context");
 function resolveTargetSession(sessionManager, requestedId) {
-  return requestedId
-    ? sessionManager.findById(requestedId)
-    : sessionManager.getActive();
+  if (!requestedId) return null;
+  return sessionManager.findById(requestedId);
 }
 function attachRouting(result, session) {
   if (!result || typeof result !== "object") return result;
@@ -37,6 +36,7 @@ function registerAssistantHandlers(ctx) {
     const requestedId =
       typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
 
+    if (!requestedId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = resolveTargetSession(sessionManager, requestedId);
     if (!session) return { ok: false, error: "NO_SESSION" };
 
@@ -121,6 +121,7 @@ function registerAssistantHandlers(ctx) {
     const requestedId =
       typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
 
+    if (!requestedId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = resolveTargetSession(sessionManager, requestedId);
     if (!session) return { ok: false, error: "NO_SESSION" };
 
@@ -169,6 +170,7 @@ function registerAssistantHandlers(ctx) {
     const requestedId =
       typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
 
+    if (!requestedId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = resolveTargetSession(sessionManager, requestedId);
     if (!session) return { ok: false, error: "NO_SESSION" };
 
@@ -207,7 +209,8 @@ function registerAssistantHandlers(ctx) {
     const licensed = await requireValidLicenseFresh();
     if (!licensed.ok) return licensed;
 
-    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const sessionId = payload?.sessionId || null;
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = sessionId ? sessionManager.findById(sessionId) : null;
     if (!session) return { ok: false, error: "NO_SESSION" };
 
@@ -252,9 +255,10 @@ function registerAssistantHandlers(ctx) {
   // L1 learned conventions: "记住：…" saves a per-project rule app-side and
   // refreshes the session guide so the running engine picks it up.
   ipcMain.handle("assistant:remember-convention", (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const sessionId = payload?.sessionId || null;
     const text = String(payload?.text || "").trim();
-    if (!sessionId || !text) return { ok: false, error: "INVALID_PAYLOAD" };
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
+    if (!text) return { ok: false, error: "INVALID_PAYLOAD" };
     const session = sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NOT_FOUND" };
     if (!session.projectId) return { ok: false, error: "NO_PROJECT" };
@@ -398,9 +402,10 @@ function registerAssistantHandlers(ctx) {
   });
 
   ipcMain.handle("assistant:permission-response", (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const sessionId = payload?.sessionId || null;
     const requestId = payload?.requestId;
-    if (!sessionId || !requestId) {
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
+    if (!requestId) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 
@@ -412,9 +417,10 @@ function registerAssistantHandlers(ctx) {
   });
 
   ipcMain.handle("assistant:question-response", (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const sessionId = payload?.sessionId || null;
     const requestId = payload?.requestId;
-    if (!sessionId || !requestId) {
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
+    if (!requestId) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 
@@ -425,9 +431,10 @@ function registerAssistantHandlers(ctx) {
   });
 
   ipcMain.handle("assistant:hook-response", (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const sessionId = payload?.sessionId || null;
     const requestId = payload?.requestId;
-    if (!sessionId || !requestId) {
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
+    if (!requestId) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 
@@ -439,8 +446,8 @@ function registerAssistantHandlers(ctx) {
   });
 
   ipcMain.handle("assistant:runtime-snapshot", (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
-    if (!sessionId) return { ok: false, error: "NO_SESSION" };
+    const sessionId = payload?.sessionId || null;
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     return turnOrchestrator.snapshot(sessionId);
   });
 
@@ -457,18 +464,18 @@ function registerAssistantHandlers(ctx) {
 
   ipcMain.handle("assistant:interrupt", async (_event, payload) => {
     const requestedId = payload?.sessionId || null;
-    const session = requestedId
-      ? sessionManager.findById(requestedId)
-      : sessionManager.getActive();
+    if (!requestedId) return { ok: false, error: "SESSION_ID_REQUIRED" };
+    const session = sessionManager.findById(requestedId);
     if (!session) return { ok: false, error: "NO_SESSION" };
 
     return turnOrchestrator.interrupt(session.id);
   });
 
   ipcMain.handle("assistant:cancel-queued-message", (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const sessionId = payload?.sessionId || null;
     const itemId = String(payload?.itemId || payload?.id || "");
-    if (!sessionId || !itemId) {
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
+    if (!itemId) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 

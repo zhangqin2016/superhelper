@@ -25,6 +25,7 @@ const {
   buildProcedureCardContext,
   readCards,
   MAX_CARDS_PER_PROJECT,
+  shouldInjectProcedureCard,
 } = require("../src/main/procedure-cards.js");
 
 const doneTool = (name, input = {}) => ({ name, status: "done", input });
@@ -60,6 +61,17 @@ const doneTool = (name, input = {}) => ({ name, status: "done", input });
   assert(context.length <= 800, "the advisory block stays bounded");
   assert.equal(readCards("p1")[0].uses, 1, "usage is recorded so useful cards survive the LRU cap");
 }
+
+assert.equal(
+  shouldInjectProcedureCard({ text: "做个复杂的前端展示系统", relation: "new" }),
+  false,
+  "a distinct new task must not inherit old local procedure paths",
+);
+assert.equal(
+  shouldInjectProcedureCard({ text: "继续按上次流程做", relation: "continue" }),
+  true,
+  "an explicit continuation may reuse the previous procedure",
+);
 
 // --- authoring gates ------------------------------------------------------------
 
@@ -215,17 +227,36 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
   assert.match(stored[0].title, /用户反馈日志汇总/, "the card carries the user intent as its title");
 }
 
-// Turn 2: a similar request → the card rides platform context to the engine.
+// Turn 2: a distinct request must not inherit a prior task's procedure card.
+// Procedure cards contain concrete local tool paths, so automatic cross-task
+// reuse can silently send a new task into an old task's output directory.
 {
-  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "再帮我把这周的用户反馈日志汇总成周报文档", [], {
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "做个复杂的前端展示系统", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  const enginePayload = JSON.stringify(runner.sentPayloads.at(-1));
+  assert.doesNotMatch(enginePayload, /previously successful procedure/,
+    "a new task must not receive an old task's procedure card");
+  assert.doesNotMatch(enginePayload, /Last user intent: 把用户反馈日志汇总成一份周报文档/,
+    "a new task must not receive the previous task's session summary");
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "前端展示系统已完成。" });
+  await settle();
+}
+
+// Turn 3: an explicit continuation may reuse the proven path.
+{
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "继续按上次流程，把这周的用户反馈日志汇总成周报文档", [], {
     spawnEngine: false,
     skipPreflight: true,
   });
   assert.equal(send.ok, true);
   const enginePayload = JSON.stringify(runner.sentPayloads.at(-1));
   assert.match(enginePayload, /previously successful procedure/,
-    "the matched card is injected into the engine text as advisory context");
-  assert.match(enginePayload, /summarize\.py/, "the injected card carries the proven steps");
+    "an explicit continuation may use the matched card as advisory context");
+  assert.match(enginePayload, /summarize\.py/, "the injected continuation card carries the proven steps");
 }
 
 console.log("procedure-cards: ok");

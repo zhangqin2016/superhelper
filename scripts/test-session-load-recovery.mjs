@@ -11,6 +11,7 @@ import path from "node:path";
 import module from "node:module";
 
 const require = module.createRequire(import.meta.url);
+const { MessageStore } = require("../src/main/store/message-store.js");
 
 function freshEnv() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-load-rec-"));
@@ -84,6 +85,63 @@ const countDisk = (p) => { const o = JSON.parse(fs.readFileSync(p, "utf8")); let
   m.load();
   assert(m.listForProject("p1").length === 3, `empty projects must not prune sessions, got ${m.listForProject("p1").length}`);
   console.log("load-recovery: empty-projects no-prune ok");
+}
+
+// --- 5. indexed history survives an old index overwrite ----------------------------
+{
+  const { userData, SessionManager } = freshEnv();
+  const idx = path.join(userData, "sessions-index.json");
+  fs.writeFileSync(idx, goodIndex("p1", 1));
+  const store = new MessageStore(path.join(userData, "messages.db"), path.join(userData, "blobs"));
+  store.append("lost-session", {
+    id: "lost-message",
+    role: "user",
+    content: "A 会话仍在 SQLite 历史中",
+    timestamp: "2026-08-13T00:00:00.000Z",
+  });
+  store.close();
+
+  const m = new SessionManager(pm([{ id: "p1", name: "P", path: userData }], "p1-s0"));
+  m.load();
+  const restored = m.listForProject("p1").find((session) => session.id === "lost-session");
+  assert(restored, "an indexed session missing from the JSON index must be restored");
+  assert(restored.messageCount === 1, "restored indexed session must retain its message count");
+  console.log("load-recovery: SQLite orphan session restored ok");
+}
+
+// --- 6. a deleted conversation is never resurrected from SQLite --------------------
+{
+  const { userData, SessionManager } = freshEnv();
+  fs.writeFileSync(path.join(userData, "sessions-index.json"), goodIndex("p1", 1));
+  fs.writeFileSync(path.join(userData, "deleted-sessions.json"), JSON.stringify({
+    sessions: { "deleted-session": { id: "deleted-session", deletedAt: "2026-08-13T00:00:00.000Z" } },
+  }));
+  const store = new MessageStore(path.join(userData, "messages.db"), path.join(userData, "blobs"));
+  store.append("deleted-session", { id: "deleted-message", role: "user", content: "不要恢复", timestamp: "2026-08-13T00:00:00.000Z" });
+  store.close();
+
+  const m = new SessionManager(pm([{ id: "p1", name: "P", path: userData }], "p1-s0"));
+  m.load();
+  assert(!m.listForProject("p1").some((session) => session.id === "deleted-session"), "a deletion tombstone must prevent SQLite recovery");
+  console.log("load-recovery: SQLite tombstone respected ok");
+}
+
+// --- 7. a bulk loss writes a manifest instead of flooding the sidebar ---------------
+{
+  const { userData, SessionManager } = freshEnv();
+  fs.writeFileSync(path.join(userData, "sessions-index.json"), goodIndex("p1", 1));
+  const store = new MessageStore(path.join(userData, "messages.db"), path.join(userData, "blobs"));
+  for (let i = 0; i < 4; i += 1) {
+    store.append(`lost-${i}`, { id: `lost-message-${i}`, role: "user", content: `历史 ${i}`, timestamp: "2026-08-13T00:00:00.000Z" });
+  }
+  store.close();
+
+  const m = new SessionManager(pm([{ id: "p1", name: "P", path: userData }], "p1-s0"));
+  m.load();
+  assert(m.listForProject("p1").length === 1, "bulk SQLite recovery must not add sidebar rows automatically");
+  const manifest = JSON.parse(fs.readFileSync(path.join(userData, "sqlite-message-recovery.json"), "utf8"));
+  assert(manifest.skippedBulkIndexedRecovery?.count === 4, "bulk SQLite recovery must leave a support manifest");
+  console.log("load-recovery: SQLite bulk recovery manifest ok");
 }
 
 console.log("test-session-load-recovery: ALL_OK");

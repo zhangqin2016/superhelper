@@ -70,10 +70,12 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("scheduled-tasks:create-from-draft-message", payload || {}),
   rejectScheduledTaskDraftMessage: (payload) =>
     ipcRenderer.invoke("scheduled-tasks:reject-draft-message", payload || {}),
-  setScheduledTaskEnabled: (taskId, enabled) =>
-    ipcRenderer.invoke("scheduled-tasks:set-enabled", { taskId, enabled }),
-  removeScheduledTask: (taskId) => ipcRenderer.invoke("scheduled-tasks:remove", { taskId }),
-  runScheduledTaskNow: (taskId) => ipcRenderer.invoke("scheduled-tasks:run-now", { taskId }),
+  setScheduledTaskEnabled: (taskId, enabled, scope = {}) =>
+    ipcRenderer.invoke("scheduled-tasks:set-enabled", { taskId, enabled, sessionId: scope?.sessionId, projectId: scope?.projectId }),
+  removeScheduledTask: (taskId, scope = {}) =>
+    ipcRenderer.invoke("scheduled-tasks:remove", { taskId, sessionId: scope?.sessionId, projectId: scope?.projectId }),
+  runScheduledTaskNow: (taskId, scope = {}) =>
+    ipcRenderer.invoke("scheduled-tasks:run-now", { taskId, sessionId: scope?.sessionId, projectId: scope?.projectId }),
 
   getFullState: () => ipcRenderer.invoke("state:full"),
 

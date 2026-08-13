@@ -1072,6 +1072,17 @@ function buildTaskContract({
 function withTaskContractPrefix(text, contract) {
   if (!contract?.active) return String(text || "");
   const { addLayersToEngineText } = require("./engine-message-layers");
+  const intentRelation = contract.intentContract?.relation || "new";
+  const newTaskIsolation = intentRelation === "new"
+    ? [
+        "",
+        "New-task isolation boundary:",
+        "This is a separate task, not a continuation of a completed or in-progress earlier task.",
+        "Prior conversation is background only. Do not reuse or modify prior task-specific artifacts, output directories, generated datasets, plans, TODOs, tool runs, or conclusions unless the current user instruction explicitly names or attaches them.",
+        "You may inspect the workspace to identify the real target, but never select an earlier task's directory merely because it already contains useful-looking files. Before the first side effect, establish the target and output scope from the current request.",
+        "When the current request does not identify a target and the workspace contains multiple unrelated workstreams, keep the new work independently named and avoid overwriting an existing deliverable; ask only if a safe independent scope cannot be chosen.",
+      ]
+    : [];
   const contractText = [
     "<lily_task_contract>",
     "This internal contract improves execution quality. Do not quote it back unless the user asks about process.",
@@ -1140,6 +1151,7 @@ function withTaskContractPrefix(text, contract) {
     "Host-resolved intent contract:",
     "This is the platform's durable baseline for the task. The current user instruction outranks inherited fields. Treat assumptions as provisional, not as facts.",
     JSON.stringify(compactIntentContract(contract.intentContract)),
+    ...newTaskIsolation,
     "Ask a clarification only when criticalUnknowns is non-empty or when acting would be irreversible and materially ambiguous. For reversible research or analysis, choose a reasonable scope, disclose the assumption, verify it, and proceed; a question-only response does not complete the task.",
     "Do not claim the task complete until every deliverable and machine-verifiable success criterion has supporting evidence.",
     "If the session exposes lily_intent_contract_commit and your semantic interpretation materially improves the objective, deliverables, success criteria, assumptions, critical unknowns, or an unfamiliar external claim's verification plan, call it once before the first side effect. It is optional: if unavailable or rejected, continue immediately with this host baseline.",

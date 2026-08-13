@@ -82,7 +82,8 @@ function registerSessionHandlers(ctx) {
   ipcMain.handle("session:get-conversation", async (_event, payload) => {
     const sessionId = typeof payload === "string"
       ? payload
-      : payload?.sessionId || sessionManager.activeSessionId;
+      : payload?.sessionId;
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED", conversation: [] };
     return getConversationPageFromSource(ctx, sessionId, {
       before: Number.isInteger(payload?.before) ? payload.before : undefined,
       limit: Number.isInteger(payload?.limit) ? payload.limit : undefined,
@@ -142,7 +143,8 @@ function registerSessionHandlers(ctx) {
   });
 
   ipcMain.handle("session:get-skills", (_event, sessionId) => {
-    const sid = sessionId || sessionManager.activeSessionId;
+    const sid = sessionId || null;
+    if (!sid) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = sid ? sessionManager.findById(sid) : null;
     if (!session) return { ok: false, error: "NOT_FOUND" };
     return {
@@ -156,7 +158,8 @@ function registerSessionHandlers(ctx) {
     const licensed = requireValidLicense();
     if (!licensed.ok) return licensed;
 
-    const sessionId = payload?.sessionId || sessionManager.activeSessionId;
+    const sessionId = payload?.sessionId || null;
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = sessionId ? sessionManager.findById(sessionId) : null;
     if (!session) return { ok: false, error: "NOT_FOUND" };
     if (isSessionBusy(runnerPool, sessionId)) {
@@ -183,7 +186,8 @@ function registerSessionHandlers(ctx) {
   });
 
   ipcMain.handle("session:get-permission", (_event, sessionId) => {
-    const sid = sessionId || sessionManager.activeSessionId;
+    const sid = sessionId || null;
+    if (!sid) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = sid ? sessionManager.findById(sid) : null;
     if (!session) return { ok: false, error: "NOT_FOUND" };
     return {
@@ -195,7 +199,8 @@ function registerSessionHandlers(ctx) {
 
   // Slash commands available for a session's workspace (for the composer "/" menu).
   ipcMain.handle("commands:list", (_event, sessionId) => {
-    const sid = sessionId || sessionManager.activeSessionId;
+    const sid = sessionId || null;
+    if (!sid) return { ok: false, error: "SESSION_ID_REQUIRED", commands: [] };
     const session = sid ? sessionManager.findById(sid) : null;
     const project = session?.projectId ? projectManager.find(session.projectId) : null;
     const list = slashCommands.loadCommands(project?.path || "");
@@ -204,7 +209,8 @@ function registerSessionHandlers(ctx) {
 
   // Expand a "/name args" composer input into its template (null if not a command).
   ipcMain.handle("commands:expand", (_event, payload) => {
-    const sid = payload?.sessionId || sessionManager.activeSessionId;
+    const sid = payload?.sessionId || null;
+    if (!sid) return { ok: false, error: "SESSION_ID_REQUIRED", expanded: null };
     const session = sid ? sessionManager.findById(sid) : null;
     const project = session?.projectId ? projectManager.find(session.projectId) : null;
     const list = slashCommands.loadCommands(project?.path || "");
@@ -214,8 +220,9 @@ function registerSessionHandlers(ctx) {
   // Rewind the conversation to a turn: revert the engine session (files + dropped
   // context) AND truncate Lily's transcript to the same point, in lock-step.
   ipcMain.handle("session:rewind", async (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.activeSessionId;
+    const sessionId = payload?.sessionId || null;
     const turnId = payload?.turnId;
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const engineMessageId = payload?.engineMessageId || null;
     const session = sessionId ? sessionManager.findById(sessionId) : null;
     if (!session || !turnId) return { ok: false, error: "NOT_FOUND" };
@@ -240,7 +247,8 @@ function registerSessionHandlers(ctx) {
   });
 
   ipcMain.handle("session:set-permission", (_event, payload) => {
-    const sessionId = payload?.sessionId || sessionManager.activeSessionId;
+    const sessionId = payload?.sessionId || null;
+    if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED" };
     const session = sessionId ? sessionManager.findById(sessionId) : null;
     if (!session) return { ok: false, error: "NOT_FOUND" };
     if (isSessionBusy(runnerPool, sessionId)) {

@@ -313,6 +313,26 @@ assert(negatedPrefixed.includes("Blocked intents: scheduled_task_creation"));
 const plain = withTaskContractPrefix("你好", buildTaskContract({ text: "你好" }));
 assert.equal(plain, "你好");
 
+const isolatedNewTask = buildTaskContract({
+  text: "做个复杂的前端展示系统",
+  messages: [
+    { role: "user", text: "设计一个充电桩运营能力测试任务" },
+    { role: "assistant", text: "已在 output/ev-charging-test 生成数据与仪表盘。" },
+  ],
+});
+assert.equal(isolatedNewTask.intentContract.relation, "new");
+const isolatedNewTaskPrompt = withTaskContractPrefix("做个复杂的前端展示系统", isolatedNewTask);
+assert.match(
+  isolatedNewTaskPrompt,
+  /New-task isolation boundary:/,
+  "a new task must be explicitly isolated from completed work in the engine prompt",
+);
+assert.match(
+  isolatedNewTaskPrompt,
+  /Do not reuse or modify prior task-specific artifacts/,
+  "a new task must not silently repurpose an earlier task's files or output directory",
+);
+
 const releaseContract = buildTaskContract({
   text: "发布新版本并检查线上是否生效",
   project: { path: tmp },

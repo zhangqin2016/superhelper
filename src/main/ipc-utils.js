@@ -85,8 +85,7 @@ function diagnoseSendBlocker(ctx, sessionId) {
   const modelConnection = require("./model-presets").getActiveModelConnectionStatus(lilyEnv);
   if (!modelConnection.ok) return { error: modelConnection.error, detail: modelConnection.detail };
 
-  const session =
-    ctx.sessionManager.findById(sessionId) || ctx.sessionManager.getActive();
+  const session = ctx.sessionManager.findById(sessionId);
   if (!session) return { error: "NO_SESSION", detail: "Please create or select a conversation first." };
 
   const project = resolveProjectForSession(ctx.projectManager, session);

@@ -169,6 +169,7 @@ async function createTask() {
     const result = await window.assistantClient.createScheduledTask({
       ...draft,
       prompt: input?.value.trim() || draft.prompt,
+      ...activeScope(),
     });
     if (!result?.ok) {
       setStatus(actionErrorMessage(result.error) || t("scheduled.createFailed"), "error");
@@ -288,18 +289,22 @@ async function handleTaskAction(event) {
   }
   const taskId = item?.dataset.taskId;
   if (!taskId) return;
+  const scope = {
+    sessionId: item.dataset.sessionId || "",
+    projectId: item.dataset.projectId || "",
+  };
   button.disabled = true;
   try {
     const action = button.dataset.action;
     let result = null;
     if (action === "run") {
-      result = await window.assistantClient.runScheduledTaskNow(taskId);
+      result = await window.assistantClient.runScheduledTaskNow(taskId, scope);
       if (result?.ok) showToast(t("scheduled.runQueued"), "info");
     } else if (action === "toggle") {
       const enabled = button.dataset.enabled !== "1";
-      result = await window.assistantClient.setScheduledTaskEnabled(taskId, enabled);
+      result = await window.assistantClient.setScheduledTaskEnabled(taskId, enabled, scope);
     } else if (action === "remove") {
-      result = await window.assistantClient.removeScheduledTask(taskId);
+      result = await window.assistantClient.removeScheduledTask(taskId, scope);
     }
     if (!result?.ok) showToast(actionErrorMessage(result?.error) || t("common.actionFailed"), "error");
     await refreshScheduledTaskList();

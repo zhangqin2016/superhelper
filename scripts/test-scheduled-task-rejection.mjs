@@ -41,6 +41,7 @@ try {
     },
   ]]);
   const sent = [];
+  const taskActions = [];
   const ctx = {
     sessionManager: {
       activeSessionId: "session-1",
@@ -57,6 +58,10 @@ try {
       create: () => {
         throw new Error("rejecting a draft must never create a scheduled task");
       },
+      runNow: (taskId, scope) => {
+        taskActions.push({ taskId, scope });
+        return { ok: true };
+      },
     },
     turnOrchestrator: {
       sendUserMessage: async (sessionId, text, files, options) => {
@@ -69,8 +74,32 @@ try {
   registerScheduledTaskHandlers(ctx);
   const reject = handlers.get("scheduled-tasks:reject-draft-message");
   const create = handlers.get("scheduled-tasks:create-from-draft-message");
+  const runNow = handlers.get("scheduled-tasks:run-now");
   assert.equal(typeof reject, "function", "reject-draft IPC handler must be registered");
   assert.equal(typeof create, "function", "create-draft IPC handler must be registered");
+  assert.equal(typeof runNow, "function", "run-now IPC handler must be registered");
+
+  const missingScope = await reject(null, { messageId: "draft-message" });
+  assert.deepEqual(
+    missingScope,
+    { ok: false, error: "SESSION_ID_REQUIRED" },
+    "a delayed scheduled-task action must never fall back to whichever conversation is active",
+  );
+  assert.equal(sent.length, 0, "missing scope must not dispatch the draft into the active conversation");
+
+  const unscopedRun = await runNow(null, { taskId: "task-1" });
+  assert.deepEqual(unscopedRun, { ok: false, error: "SESSION_ID_REQUIRED" });
+  assert.equal(taskActions.length, 0, "an unscoped task action must not operate on the active conversation");
+  const scopedRun = await runNow(null, {
+    taskId: "task-1",
+    sessionId: "session-1",
+    projectId: "project-1",
+  });
+  assert.deepEqual(scopedRun, { ok: true });
+  assert.deepEqual(taskActions, [{
+    taskId: "task-1",
+    scope: { sessionId: "session-1", projectId: "project-1", error: "" },
+  }], "task mutations must carry their immutable conversation scope into the manager");
 
   messages.get("draft-message").meta.scheduledDraft.status = "rejecting";
   const createDuringReject = await create(null, { sessionId: "session-1", messageId: "draft-message" });

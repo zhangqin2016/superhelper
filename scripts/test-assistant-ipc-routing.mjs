@@ -182,6 +182,16 @@ try {
   assert.equal(calls.sent[0].text, "send in background");
   assert.equal(calls.sent[0].options.displayFiles[0].name, "a.txt");
 
+  const missingSessionSend = await handlers.get("assistant:input")(null, {
+    text: "this must never be routed to the currently active conversation",
+  });
+  assert.deepEqual(
+    missingSessionSend,
+    { ok: false, error: "SESSION_ID_REQUIRED" },
+    "a delayed renderer request without an explicit session must fail closed instead of using the active conversation",
+  );
+  assert.equal(calls.sent.length, 1, "a missing session id must not create a turn in the active conversation");
+
   const interruptResult = await handlers.get("assistant:interrupt-and-send")(null, {
     sessionId: "target-session",
     text: "priority background",

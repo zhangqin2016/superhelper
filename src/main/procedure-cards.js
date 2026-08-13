@@ -6,11 +6,12 @@
  *
  * When a capable model completes a real multi-tool task, the SUCCESSFUL tool
  * path is distilled DETERMINISTICALLY (no model call, no tokens) from the
- * turn's tool timeline into a compact card. When a later request matches a
- * stored card by intent overlap, the card is injected as advisory platform
- * context — a weak model no longer has to plan the task from scratch; it
- * replays a proven path. Strong models may also benefit (a head start), but
- * the card is explicitly advisory so it never constrains a better plan.
+ * turn's tool timeline into a compact card. When the user explicitly carries
+ * work forward and a card matches by intent overlap, the card is injected as
+ * advisory platform context — a weak model no longer has to plan the task from
+ * scratch; it replays a proven path. Strong models may also benefit (a head
+ * start), but the card is explicitly advisory so it never constrains a better
+ * plan or selects the target of an unrelated new task.
  *
  * Capability-gate guard rails (Rule 13):
  * - kill switch: LILY_PROCEDURE_CARDS=0 (authoring AND injection)
@@ -34,8 +35,19 @@ const MAX_STEPS_PER_CARD = 10;
 const MIN_MATCH_SCORE = 3;
 const MAX_CONTEXT_CHARS = 800;
 
+// Procedure cards may retain concrete local paths and tool commands. They are
+// useful only when the user is actually carrying work forward; injecting one
+// into an unrelated new task lets an old task choose the new task's target.
+const EXPLICIT_PRIOR_TASK_REFERENCE_RE = /(?:继续|接着|按(?:照)?(?:上次|上一(?:次)?|之前|刚才)|沿用|复用|基于(?:上次|上一(?:次)?|之前|刚才)|用(?:上次|上一(?:次)?|之前|刚才)(?:的)?(?:流程|方案|产物|文件|数据)|same\s+(?:process|workflow|approach)|reuse\s+(?:the\s+)?(?:previous|prior)|previous\s+task)/i;
+
 function cardsEnabled() {
   return process.env.LILY_PROCEDURE_CARDS !== "0";
+}
+
+function shouldInjectProcedureCard({ text = "", relation = "new" } = {}) {
+  if (!cardsEnabled()) return false;
+  if (["continue", "refine", "correct"].includes(String(relation || ""))) return true;
+  return EXPLICIT_PRIOR_TASK_REFERENCE_RE.test(String(text || ""));
 }
 
 function cardsPath(projectId) {
@@ -136,7 +148,8 @@ function matchProcedureCard({ projectId, text } = {}) {
 }
 
 /** Advisory platform-context block for a matched card; "" when no match. */
-function buildProcedureCardContext({ projectId, text } = {}) {
+function buildProcedureCardContext({ projectId, text, relation, requireExplicitReuse = false } = {}) {
+  if (requireExplicitReuse && !shouldInjectProcedureCard({ text, relation })) return "";
   const match = matchProcedureCard({ projectId, text });
   if (!match) return "";
   try {
@@ -165,6 +178,7 @@ module.exports = {
   recordProcedureCardFromTurn,
   matchProcedureCard,
   buildProcedureCardContext,
+  shouldInjectProcedureCard,
   // exported for focused testing
   readCards,
   MAX_CARDS_PER_PROJECT,

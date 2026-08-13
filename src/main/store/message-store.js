@@ -766,6 +766,23 @@ class MessageStore {
     return row ? row.c : 0;
   }
 
+  /** Lightweight inventory used only to recover metadata lost by legacy clients. */
+  listSessionSummaries() {
+    return this.db.all(
+      `SELECT session_id, COUNT(*) AS message_count,
+              MIN(created_at) AS created_at, MAX(created_at) AS updated_at
+       FROM messages
+       GROUP BY session_id
+       HAVING COUNT(*) > 0
+       ORDER BY updated_at DESC`,
+    ).map((row) => ({
+      sessionId: String(row.session_id || ""),
+      messageCount: Number(row.message_count) || 0,
+      createdAt: Number(row.created_at) || 0,
+      updatedAt: Number(row.updated_at) || 0,
+    })).filter((row) => row.sessionId);
+  }
+
   /**
    * Keyset pagination. `before` is an exclusive seq cursor (omit for the newest
    * page); the returned `nextBefore` feeds the next (older) call. Conversation

@@ -2,8 +2,9 @@
 
 const { ipcMain } = require("electron");
 
-function activeScope(ctx, payload = {}) {
-  const sessionId = String(payload.sessionId || ctx.sessionManager?.activeSessionId || "").trim();
+function activeScope(ctx, payload = {}, { allowActiveFallback = false } = {}) {
+  const sessionId = String(payload.sessionId || (allowActiveFallback ? ctx.sessionManager?.activeSessionId : "") || "").trim();
+  if (!sessionId) return { sessionId: "", projectId: "", error: "SESSION_ID_REQUIRED" };
   const session = sessionId ? ctx.sessionManager?.findById?.(sessionId) : null;
   if (!session) return { sessionId, projectId: "", error: "NO_SESSION" };
   const requestedProjectId = String(payload.projectId || "").trim();
@@ -15,7 +16,7 @@ function activeScope(ctx, payload = {}) {
 
 function registerScheduledTaskHandlers(ctx) {
   ipcMain.handle("scheduled-tasks:list", (_event, payload = {}) => {
-    const scope = activeScope(ctx, payload);
+    const scope = activeScope(ctx, payload, { allowActiveFallback: true });
     if (scope.error) return { ok: false, error: scope.error };
     return ctx.scheduledTaskManager.list({
       sessionId: payload.sessionId === null ? "" : scope.sessionId,
@@ -153,19 +154,19 @@ function registerScheduledTaskHandlers(ctx) {
   ipcMain.handle("scheduled-tasks:set-enabled", (_event, payload = {}) => {
     const scope = activeScope(ctx, payload);
     if (scope.error) return { ok: false, error: scope.error };
-    return ctx.scheduledTaskManager.setEnabled(payload.taskId, payload.enabled);
+    return ctx.scheduledTaskManager.setEnabled(payload.taskId, payload.enabled, scope);
   });
 
   ipcMain.handle("scheduled-tasks:remove", (_event, payload = {}) => {
     const scope = activeScope(ctx, payload);
     if (scope.error) return { ok: false, error: scope.error };
-    return ctx.scheduledTaskManager.remove(payload.taskId);
+    return ctx.scheduledTaskManager.remove(payload.taskId, scope);
   });
 
   ipcMain.handle("scheduled-tasks:run-now", (_event, payload = {}) => {
     const scope = activeScope(ctx, payload);
     if (scope.error) return { ok: false, error: scope.error };
-    return ctx.scheduledTaskManager.runNow(payload.taskId);
+    return ctx.scheduledTaskManager.runNow(payload.taskId, scope);
   });
 }
 

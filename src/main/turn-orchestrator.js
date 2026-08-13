@@ -1151,16 +1151,27 @@ class TurnOrchestrator {
           Boolean(ensured.coldStart) ||
           rehydrated ||
           shortFollowupContext);
+      const memoryPreferences = readMemoryPreferences(session.projectId);
+      const memoryDisabledKinds = new Set(memoryPreferences.disabledKinds);
+      const isIndependentTask = Boolean(taskContract.active) && (taskContract.intentContract?.relation || "new") === "new";
+      if (isIndependentTask) {
+        // A new task still needs project identity and workspace structure, but
+        // prior task summaries can contain concrete output paths and plans.
+        // Do not let those turn an independent request into a hidden resume.
+        memoryDisabledKinds.add("session_summary");
+        memoryDisabledKinds.add("evidence_gap");
+        memoryDisabledKinds.add("compaction_state");
+      }
       contextMemory = await buildContextMemoryAsync({
         userText: rawUserText,
         sessionSummary: summary,
         project,
-        disabledKinds: readMemoryPreferences(session.projectId).disabledKinds,
+        disabledKinds: [...memoryDisabledKinds],
         projectMemory: shouldLoadProjectMemory ? readProjectMemoryIndex(project.path, { maxChars: 1_500 }) : null,
         workspaceDigest: shouldLoadProjectMemory ? buildWorkspaceDigest(project.path) : "",
         learnedConventions: shouldLoadProjectMemory ? readLearnedConventions(session.projectId) : "",
         turnPolicy,
-        includeSessionSummary: !rehydrated && !shortFollowupContext,
+        includeSessionSummary: !isIndependentTask && !rehydrated && !shortFollowupContext,
         coldStart: Boolean(ensured.coldStart),
         shortFollowup: shortFollowupContext,
       });
@@ -1237,6 +1248,8 @@ class TurnOrchestrator {
         const procedureContext = require("./procedure-cards").buildProcedureCardContext({
           projectId: session.projectId,
           text: rawUserText,
+          relation: taskContract.intentContract?.relation || "new",
+          requireExplicitReuse: true,
         });
         if (procedureContext) platformContextParts.push(procedureContext);
       } catch (err) {
