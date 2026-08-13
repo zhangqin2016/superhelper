@@ -232,7 +232,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opencode-ai/sdk": "1.18.11",
+    "@opencode-ai/sdk": "1.18.18",
     "7zip-bin": "^5.2.0",
     "diff": "^7.0.0",
     "dompurify": "^3.4.5",

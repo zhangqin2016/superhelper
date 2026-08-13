@@ -8,6 +8,7 @@ import { normalizeProviderForProtocol } from "./model-gateway/model-aliases.js";
 import { getModelCatalog } from "./model-catalog.js";
 import { resolveModelRuntimeBudget } from "./model-runtime-budget.js";
 import { buildMediaProviderContracts } from "./media-provider-contracts.js";
+import { stripDisabledLilyMediaEnv } from "./lily-media-env.js";
 import {
   CHARACTER_WORLDS_DEFAULT_POLICY,
   resolveCharacterWorldsPolicy,
@@ -119,15 +120,6 @@ export function resolveMediaSelection(configCopy, availability) {
     if (resolved.speech?.default) env.LILY_SPEECH_PROVIDER = resolved.speech.default;
   }
   return configCopy;
-}
-
-function hasLilyMedia(configCopy, kind) {
-  const env = configCopy?.runtime?.env && typeof configCopy.runtime.env === "object" ? configCopy.runtime.env : {};
-  if (env.LILY_MEDIA_BASE_URL || env.LILY_GPU_BASE_URL) return true;
-  if (kind === "image") return Boolean(env.LILY_MEDIA_IMAGE_ENDPOINT || env.LILY_MEDIA_IMAGE_BASE_URL || env.LILY_GPU_IMAGE_ENDPOINT || env.LILY_GPU_IMAGE_BASE_URL);
-  if (kind === "video") return Boolean(env.LILY_MEDIA_VIDEO_ENDPOINT || env.LILY_MEDIA_VIDEO_BASE_URL || env.LILY_GPU_VIDEO_ENDPOINT || env.LILY_GPU_VIDEO_BASE_URL);
-  if (kind === "speech") return Boolean(env.LILY_MEDIA_SPEECH_ENDPOINT || env.LILY_MEDIA_SPEECH_BASE_URL || env.LILY_MEDIA_TTS_ENDPOINT || env.LILY_MEDIA_TTS_BASE_URL || env.LILY_GPU_SPEECH_ENDPOINT || env.LILY_GPU_SPEECH_BASE_URL || env.LILY_GPU_TTS_ENDPOINT || env.LILY_GPU_TTS_BASE_URL);
-  return false;
 }
 
 function configuredLilyMediaKinds(serverConfig = config) {
@@ -852,6 +844,7 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   }
 
   const lilyKinds = configuredLilyMediaKinds(config);
+  stripDisabledLilyMediaEnv(configCopy, { ...lilyKinds, shared: Boolean(config.lilyMediaBaseUrl) });
   if (lilyKinds.image || lilyKinds.video || lilyKinds.speech) {
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
@@ -885,10 +878,10 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   ];
   const availableImageProviders = [...availableImageVideoProviders];
   const availableVideoProviders = [...availableImageVideoProviders];
-  if (hasLilyMedia(configCopy, "image")) availableImageProviders.push("lily");
-  if (hasLilyMedia(configCopy, "video")) availableVideoProviders.push("lily");
+  if (lilyKinds.image) availableImageProviders.push("lily");
+  if (lilyKinds.video) availableVideoProviders.push("lily");
   const availableSpeechProviders = visionKey ? ["dashscope"] : [];
-  if (hasLilyMedia(configCopy, "speech")) availableSpeechProviders.push("lily");
+  if (lilyKinds.speech) availableSpeechProviders.push("lily");
   const availableMediaProviders = {
     image: availableImageProviders,
     video: availableVideoProviders,

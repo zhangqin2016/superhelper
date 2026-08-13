@@ -174,7 +174,18 @@ function registerSearchHandlers(ctx) {
 
 function registerMediaProviderHandlers(ctx) {
   const settings = () => require("./media-provider-settings");
-  ipcMain.handle("media-providers:list", () => ({ ok: true, ...settings().listMediaProvidersPublic() }));
+  ipcMain.handle("media-providers:list", async () => {
+    try {
+      await require("./ipc-utils").refreshRemoteConfigForSend({
+        force: true,
+        timeoutMs: 1500,
+        reason: "media_provider_settings",
+      });
+    } catch {
+      // Settings remain usable offline with the last verified signed config.
+    }
+    return { ok: true, ...settings().listMediaProvidersPublic() };
+  });
 
   ipcMain.handle("media-providers:set-choice", (_event, payload) => {
     return withRunnerChange(ctx, () => {

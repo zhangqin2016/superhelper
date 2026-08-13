@@ -342,6 +342,20 @@ if (ctx.turnOrchestrator._state("s1").phase !== "idle") {
   throw new Error("local assistant completion must leave the session idle");
 }
 
+const runnerMessagesBeforeIdentityQuestion = runner.sentPayloads.length;
+const identityQuestion = await ctx.turnOrchestrator.sendUserMessage("s1", "你是 Kimi K3 吗？");
+if (!identityQuestion.ok || !identityQuestion.localAssistant) {
+  throw new Error(`identity question must complete as a local Lily answer: ${JSON.stringify(identityQuestion)}`);
+}
+await new Promise((resolve) => setTimeout(resolve, 0));
+if (runner.sentPayloads.length !== runnerMessagesBeforeIdentityQuestion) {
+  throw new Error("identity question must not be sent to the model runner");
+}
+const identityAnswer = messages.find((message) => message.turnId === identityQuestion.turnId && message.role === "assistant");
+if (!identityAnswer?.content?.includes("Lily Workbench")) {
+  throw new Error(`identity question must use the Lily response: ${JSON.stringify(identityAnswer)}`);
+}
+
 runner.emit("agent-resume-id", "ses_shared");
 if (!terminatedSessions.includes("s2")) {
   throw new Error(`claiming an engine session must terminate evicted runner owners: ${JSON.stringify(terminatedSessions)}`);

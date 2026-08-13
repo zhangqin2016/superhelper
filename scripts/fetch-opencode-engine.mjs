@@ -24,7 +24,7 @@ const platIdx = args.indexOf("--platform");
 const platArg = platIdx >= 0 ? args[platIdx + 1] : null;
 // The positional version arg — but never the value that follows --platform
 // (otherwise `--platform darwin-arm64` is misread as version "darwin-arm64").
-const version = args.find((a, i) => !a.startsWith("--") && i !== platIdx + 1) || "1.18.11";
+const version = args.find((a, i) => !a.startsWith("--") && i !== platIdx + 1) || "1.18.18";
 
 // Map our bundle platform key -> the opencode-ai optional-dep package name.
 const KEY_TO_PKG = {
@@ -57,7 +57,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "oc-fetch-"));
 console.log(`[fetching opencode-ai@${version} (${key}) ...]`);
 fs.writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ name: "ocfetch", private: true }));
 
-// Prefer bun (handles cross-platform optional deps cleanly); fall back to npm.
+// npm honors npm_config_os/npm_config_cpu for the target optional dependency.
+// Prefer it because some Bun releases may report success after resolution without
+// materializing the cross-platform optional package.
 function targetEnv() {
   const [targetOs, targetArch] = key === "win32-x64" ? ["win32", "x64"] : key.split("-");
   return {
@@ -93,10 +95,10 @@ function installEngine() {
     console.warn(`[install] unknown OPENCODE_FETCH_INSTALLER=${installer}; using auto`);
   }
   try {
-    install(bunCommand, ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
-  } catch (err) {
-    console.warn(`[install] bun failed or timed out; falling back to npm: ${err?.message || err}`);
     install(npmCommand, ["install", "--include=optional", `opencode-ai@${version}`]);
+  } catch (err) {
+    console.warn(`[install] npm failed or timed out; falling back to bun: ${err?.message || err}`);
+    install(bunCommand, ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
   }
 }
 installEngine();
@@ -136,6 +138,10 @@ fs.mkdirSync(destDir, { recursive: true });
 const dest = path.join(destDir, exe);
 copyBinaryWithRetry(src, dest);
 fs.chmodSync(dest, 0o755);
+fs.writeFileSync(
+  path.join(path.dirname(destDir), "bundle-manifest.json"),
+  `${JSON.stringify({ package: "opencode-ai", platform: key, version }, null, 2)}\n`,
+);
 fs.rmSync(tmp, { recursive: true, force: true });
 
 // macOS: the opencode binary is bun "linker-signed" ad-hoc but WITHOUT entitlements.

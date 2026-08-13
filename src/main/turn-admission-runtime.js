@@ -266,6 +266,20 @@ function createTurnAdmissionMethods(deps = {}) {
       if (!displayText && (!files || files.length === 0)) {
         return { ok: false, error: "EMPTY" };
       }
+      const localIdentityAnswer =
+        (!files || files.length === 0) &&
+        !opts.engineText &&
+        !opts.recovery &&
+        !opts.scheduledTaskRunId &&
+        !opts.localAssistant
+          ? require("./identity-response").localIdentityAssistantResponse(displayText)
+          : "";
+      if (localIdentityAnswer) {
+        return this.completeLocalAssistantTurn(sessionId, displayText, files, {
+          ...opts,
+          assistant: localIdentityAnswer,
+        });
+      }
       const state = this._state(sessionId);
       const scheduledRunId = String(opts.scheduledTaskRunId || "");
       const durableQueueKey = String(opts.durableQueueKey || "");

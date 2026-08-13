@@ -29,57 +29,57 @@
   --accent-strong-bg: rgba(99, 102, 241, 0.22);
   --accent-ring: rgba(99, 102, 241, 0.40);
 
-  /* Surface ladder: warm charcoal, layered by lightness (not borders) */
-  --bg-body: #131210;
-  --bg-left: #181713;
-  --bg-center: #1b1a16;
-  --bg-right: #181713;
-  --bg-topbar: #1e1d18;
-  --bg-input: #22211c;
+  /* Surface ladder: neutral graphite, layered by lightness (not borders). */
+  --bg-body: #121418;
+  --bg-left: #171a1f;
+  --bg-center: #1b1f25;
+  --bg-right: #171a1f;
+  --bg-topbar: #1f232a;
+  --bg-input: #232831;
   --bg-primary: var(--bg-center);
   --bg-secondary: var(--bg-surface-muted);
   --bg-elevated: var(--bg-surface-raised);
-  --bg-surface: #24231e;
-  --bg-surface-raised: #2a2923;
-  --bg-surface-hover: #32312a;
-  --bg-surface-active: #3a3931;
-  --bg-surface-muted: rgba(255, 250, 240, 0.045);
-  --bg-surface-subtle: rgba(255, 250, 240, 0.025);
+  --bg-surface: #252a32;
+  --bg-surface-raised: #2b313a;
+  --bg-surface-hover: #343b46;
+  --bg-surface-active: #3c4552;
+  --bg-surface-muted: rgba(220, 227, 236, 0.05);
+  --bg-surface-subtle: rgba(220, 227, 236, 0.028);
   --surface-subtle: var(--bg-surface-subtle);
   --hover-bg: var(--bg-surface-hover);
   --bg-status: var(--bg-topbar);
-  --bg-floating: rgba(32, 31, 26, 0.96);
+  --bg-floating: rgba(31, 36, 44, 0.97);
   --bg-backdrop: rgba(0, 0, 0, 0.5);
-  --bg-drop-overlay: rgba(10, 10, 8, 0.82);
-  --bg-drop-card: rgba(30, 29, 24, 0.94);
+  --bg-drop-overlay: rgba(12, 15, 19, 0.84);
+  --bg-drop-card: rgba(29, 34, 41, 0.96);
   --bg-tool-detail: rgba(0, 0, 0, 0.18);
   --bg-tool-detail-strong: rgba(0, 0, 0, 0.22);
-  --bg-media: rgba(16, 15, 12, 0.72);
+  --bg-media: rgba(16, 20, 25, 0.76);
   --bg-choice-backdrop: rgba(0, 0, 0, 0.28);
   --bg-pdf-active: rgba(99, 102, 241, 0.10);
-  --bg-pdf-viewport-sheen: rgba(255, 250, 240, 0.035);
+  --bg-pdf-viewport-sheen: rgba(220, 227, 236, 0.04);
   --bg-user-chip: rgba(255, 255, 255, 0.15);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.1);
 
-  --text-primary: #efeeea;
+  --text-primary: #edf1f5;
   --text: var(--text-primary);
-  --text-secondary: #a8a7a0;
-  --text-tertiary: #86857e;
-  --text-faint: #63625c;
-  --text-dim: #73726b;
-  --text-muted: #7e7d76;
+  --text-secondary: #a8b0bb;
+  --text-tertiary: #858f9d;
+  --text-faint: #606b78;
+  --text-dim: #748090;
+  --text-muted: #7d8896;
   --muted: var(--text-muted);
   --text-inverse: #ffffff;
-  --text-strong: #faf9f6;
-  --text-code: #f0a060;
+  --text-strong: #f7f9fb;
+  --text-code: #f2b06e;
   --link: #9a9df7;
 
-  /* Hairlines, not hard borders — warm tint to match the charcoal ladder */
-  --border: rgba(255, 250, 240, 0.08);
-  --border-light: rgba(255, 250, 240, 0.11);
-  --border-subtle: rgba(255, 250, 240, 0.055);
+  /* Hairlines stay neutral so the dark shell never reads brown. */
+  --border: rgba(220, 227, 236, 0.09);
+  --border-light: rgba(220, 227, 236, 0.13);
+  --border-subtle: rgba(220, 227, 236, 0.06);
   --border-soft: var(--border-subtle);
-  --border-strong: rgba(255, 250, 240, 0.15);
+  --border-strong: rgba(220, 227, 236, 0.17);
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.46), 0 16px 42px rgba(0, 0, 0, 0.28);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px rgba(0, 0, 0, 0.18);
@@ -128,15 +128,15 @@
 
   --code-bg: var(--bg-surface-hover);
   --code-text: var(--text-code);
-  --pre-bg: #191814;
-  --pre-text: #e3dfd5;
-  --copy-bg: rgba(24, 23, 19, 0.85);
-  --copy-bg-hover: rgba(40, 38, 32, 0.95);
+  --pre-bg: #191d23;
+  --pre-text: #dfe6ee;
+  --copy-bg: rgba(25, 30, 37, 0.88);
+  --copy-bg-hover: rgba(39, 46, 56, 0.96);
   --image-backdrop: rgba(0, 0, 0, 0.85);
   --document-page-bg: #ffffff;
   --image-control-bg: rgba(255, 255, 255, 0.12);
   --image-control-hover: rgba(255, 255, 255, 0.25);
-  --scrollbar-thumb: #383731;
+  --scrollbar-thumb: #424b57;
 
   --radius-xs: 4px;
   --radius: 10px;
@@ -146,8 +146,8 @@
   --radius-pill: 999px;
 
   /* "Lit from above" hairline + soft elevation, used in place of hard borders */
-  --hairline: rgba(255, 250, 240, 0.06);
-  --top-highlight: inset 0 1px 0 rgba(255, 250, 240, 0.07);
+  --hairline: rgba(220, 227, 236, 0.065);
+  --top-highlight: inset 0 1px 0 rgba(220, 227, 236, 0.075);
 
   /* Motion system. One easing curve; a small duration scale (fast/base/slow) so
      timing reads like one hand set it. All motion is neutralized under the OS
@@ -211,11 +211,11 @@
   --accent-strong-bg: rgba(99, 102, 241, 0.14);
   --accent-ring: rgba(99, 102, 241, 0.18);
 
-  /* Warm-neutral daylight ladder (Notion-style #f7f7f5 family) */
-  --bg-body: #f7f7f5;
-  --bg-left: #fbfbfa;
-  --bg-center: #f7f7f5;
-  --bg-right: #fbfbfa;
+  /* Neutral daylight ladder: clean workbench surfaces, never warm paper. */
+  --bg-body: #f8f9fb;
+  --bg-left: #fbfcfd;
+  --bg-center: #f8f9fb;
+  --bg-right: #fbfcfd;
   --bg-topbar: #ffffff;
   --bg-input: #ffffff;
   --bg-primary: var(--bg-center);
@@ -223,52 +223,52 @@
   --bg-elevated: var(--bg-surface-raised);
   --bg-surface: #ffffff;
   --bg-surface-raised: #ffffff;
-  --bg-surface-hover: #f0efec;
-  --bg-surface-active: #e8e6e1;
-  --bg-surface-muted: rgba(60, 56, 48, 0.05);
-  --bg-surface-subtle: rgba(60, 56, 48, 0.03);
+  --bg-surface-hover: #f0f2f5;
+  --bg-surface-active: #e7ebf0;
+  --bg-surface-muted: rgba(28, 39, 54, 0.05);
+  --bg-surface-subtle: rgba(28, 39, 54, 0.03);
   --bg-floating: rgba(255, 255, 255, 0.97);
-  --bg-backdrop: rgba(31, 27, 20, 0.16);
-  --bg-drop-overlay: rgba(31, 27, 20, 0.18);
+  --bg-backdrop: rgba(18, 28, 42, 0.16);
+  --bg-drop-overlay: rgba(18, 28, 42, 0.18);
   --bg-drop-card: rgba(255, 255, 255, 0.96);
-  --bg-tool-detail: rgba(60, 56, 48, 0.04);
-  --bg-tool-detail-strong: rgba(60, 56, 48, 0.06);
-  --bg-media: rgba(250, 250, 248, 0.96);
-  --bg-choice-backdrop: rgba(31, 27, 20, 0.28);
+  --bg-tool-detail: rgba(28, 39, 54, 0.04);
+  --bg-tool-detail-strong: rgba(28, 39, 54, 0.06);
+  --bg-media: rgba(249, 250, 252, 0.97);
+  --bg-choice-backdrop: rgba(18, 28, 42, 0.28);
   --bg-pdf-active: rgba(99, 102, 241, 0.08);
-  --bg-pdf-viewport-sheen: rgba(60, 56, 48, 0.035);
+  --bg-pdf-viewport-sheen: rgba(28, 39, 54, 0.035);
   --bg-user-chip: rgba(255, 255, 255, 0.22);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
 
-  /* Warm ink ladder */
-  --text-primary: #1f2328;
+  /* Graphite ink ladder */
+  --text-primary: #1c2736;
   --text: var(--text-primary);
-  --text-secondary: #5b5b56;
-  --text-tertiary: #83837d;
-  --text-faint: #b0aea6;
-  --text-dim: #6b6b66;
-  --text-muted: #8b8b85;
+  --text-secondary: #5d6877;
+  --text-tertiary: #7d8896;
+  --text-faint: #aab3bf;
+  --text-dim: #687585;
+  --text-muted: #8893a1;
   --muted: var(--text-muted);
   --text-inverse: #ffffff;
-  --text-strong: #17181c;
+  --text-strong: #131d2a;
   --text-code: #9a4a0e;
   --link: #4f46e5;
 
-  /* Warm hairlines */
-  --border: rgba(31, 27, 20, 0.09);
-  --border-light: rgba(31, 27, 20, 0.12);
-  --border-subtle: rgba(31, 27, 20, 0.06);
-  --border-strong: rgba(31, 27, 20, 0.17);
+  /* Neutral graphite hairlines */
+  --border: rgba(28, 39, 54, 0.10);
+  --border-light: rgba(28, 39, 54, 0.14);
+  --border-subtle: rgba(28, 39, 54, 0.065);
+  --border-strong: rgba(28, 39, 54, 0.18);
 
-  /* Soft warm-neutral shadows, three rungs */
-  --shadow: 0 1px 2px rgba(31, 27, 20, 0.05), 0 12px 32px rgba(31, 27, 20, 0.06);
-  --shadow-sm: 0 1px 2px rgba(31, 27, 20, 0.05), 0 4px 14px rgba(31, 27, 20, 0.04);
-  --shadow-floating: 0 16px 40px rgba(31, 27, 20, 0.10);
-  --shadow-panel: -14px 0 42px rgba(31, 27, 20, 0.08);
-  --shadow-image: 0 8px 36px rgba(31, 27, 20, 0.16);
-  --shadow-modal: 0 22px 64px rgba(31, 27, 20, 0.13);
-  --shadow-pdf-page: 0 16px 40px rgba(31, 27, 20, 0.12);
-  --shadow-pdf-thumb: 0 1px 4px rgba(31, 27, 20, 0.08);
+  /* Cool graphite shadows give structure without a beige cast. */
+  --shadow: 0 1px 2px rgba(18, 28, 42, 0.05), 0 12px 32px rgba(18, 28, 42, 0.07);
+  --shadow-sm: 0 1px 2px rgba(18, 28, 42, 0.05), 0 4px 14px rgba(18, 28, 42, 0.045);
+  --shadow-floating: 0 16px 40px rgba(18, 28, 42, 0.11);
+  --shadow-panel: -14px 0 42px rgba(18, 28, 42, 0.09);
+  --shadow-image: 0 8px 36px rgba(18, 28, 42, 0.16);
+  --shadow-modal: 0 22px 64px rgba(18, 28, 42, 0.14);
+  --shadow-pdf-page: 0 16px 40px rgba(18, 28, 42, 0.12);
+  --shadow-pdf-thumb: 0 1px 4px rgba(18, 28, 42, 0.08);
 
   --success-bg: #e9f8ef;
   --success-bg-hover: #d8f1e2;
@@ -306,20 +306,20 @@
   --diff-meta-bg: rgba(100, 116, 139, 0.1);
   --diff-meta-text: #64748b;
 
-  --code-bg: #f5f4f1;
+  --code-bg: #f3f5f7;
   --code-text: var(--text-code);
-  --pre-bg: #faf9f7;
+  --pre-bg: #fafbfc;
   --pre-text: #2a2d34;
   --copy-bg: rgba(255, 255, 255, 0.88);
-  --copy-bg-hover: rgba(245, 244, 241, 0.96);
+  --copy-bg-hover: rgba(243, 245, 247, 0.97);
   --image-backdrop: var(--copy-bg);
   --document-page-bg: #ffffff;
-  --image-control-bg: rgba(31, 27, 20, 0.56);
-  --image-control-hover: rgba(31, 27, 20, 0.72);
-  --scrollbar-thumb: #d6d3cb;
+  --image-control-bg: rgba(18, 28, 42, 0.56);
+  --image-control-hover: rgba(18, 28, 42, 0.72);
+  --scrollbar-thumb: #cbd3dd;
 
-  /* Daylight "lit from above": hairline goes warm, highlight comes from the white surface */
-  --hairline: rgba(31, 27, 20, 0.06);
+  /* Daylight "lit from above": neutral hairline, white surface highlight. */
+  --hairline: rgba(28, 39, 54, 0.06);
   --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 

@@ -47,9 +47,12 @@ assert.ok(base.includes(':root[data-text-size="large"]'), "base.css must define 
 const selfReferences = [...base.matchAll(/^\s*(--[a-z0-9-]+):\s*var\(\1\)/gim)].map((m) => m[1]);
 assert.equal(selfReferences.length, 0, `base.css contains token self references: ${selfReferences.join(", ")}`);
 
-// 3) Current design intent: daylight-minimal light theme with brand violet.
-//    (Replaces the previous cool-porcelain assertions removed by the 2026-07-22 overhaul.)
-assert.ok(lightBlock.includes("--bg-body: #f7f7f5;"), "light theme body should be warm daylight #f7f7f5");
+// 3) Current design intent: neutral daylight workbench, never a warm paper skin.
+assert.ok(lightBlock.includes("--bg-body: #f8f9fb;"), "light theme body should be neutral daylight #f8f9fb");
+assert.ok(lightBlock.includes("--bg-surface-hover: #f0f2f5;"), "light theme hover surface should remain neutral");
+assert.ok(lightBlock.includes("--border: rgba(28, 39, 54, 0.10);"), "light theme borders should use neutral graphite, not warm brown");
+assert.ok(!lightBlock.includes("#f7f7f5"), "light theme must not restore the warm-paper body tone");
+assert.ok(!lightBlock.includes("rgba(31, 27, 20"), "light theme must not use warm-brown overlays or shadows");
 assert.ok(lightBlock.includes("--accent: #6366f1;"), "light theme accent should be brand violet #6366f1");
 
 // 4) Component CSS must consume tokens, not raw colors

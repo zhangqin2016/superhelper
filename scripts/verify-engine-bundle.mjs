@@ -13,6 +13,7 @@
  *   node scripts/verify-engine-bundle.mjs --platform darwin-arm64
  */
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,7 +35,12 @@ function fail(msg) {
 const key = platformKey();
 const exe = key.startsWith("win32") ? "opencode.exe" : "opencode";
 const binary = path.join(ROOT, "bundles", key, "opencode", "bin", exe);
+const manifest = path.join(ROOT, "bundles", key, "opencode", "bundle-manifest.json");
 const rel = path.relative(ROOT, binary);
+const expectedVersion = (() => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  return packageJson.dependencies?.["@opencode-ai/sdk"];
+})();
 
 // A real engine binary is tens of MB; this catches an empty/placeholder/truncated
 // download long before electron-builder happily packages a dud.
@@ -54,4 +60,31 @@ if (!key.startsWith("win32") && !(stat.mode & 0o111)) {
   fail(`OpenCode 引擎缺少可执行权限（chmod +x）: ${rel}`);
 }
 
-console.log(`[verify-engine-bundle] ok: ${rel} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
+let metadata;
+try {
+  metadata = JSON.parse(fs.readFileSync(manifest, "utf8"));
+} catch {
+  fail(`缺少或无法读取引擎版本清单: ${path.relative(ROOT, manifest)}`);
+}
+if (metadata?.package !== "opencode-ai" || metadata?.platform !== key || metadata?.version !== expectedVersion) {
+  fail(`引擎版本清单与 SDK 不一致（bundle=${metadata?.version || "unknown"}, sdk=${expectedVersion || "unknown"}）`);
+}
+
+const nativeKey = process.platform === "darwin"
+  ? (process.arch === "arm64" ? "darwin-arm64" : "darwin-x64")
+  : process.platform === "win32"
+    ? "win32-x64"
+    : "linux-x64";
+if (key === nativeKey) {
+  let actualVersion;
+  try {
+    actualVersion = execFileSync(binary, ["--version"], { encoding: "utf8", timeout: 15_000 }).trim();
+  } catch (error) {
+    fail(`引擎无法执行 --version: ${error?.message || error}`);
+  }
+  if (actualVersion !== expectedVersion) {
+    fail(`引擎版本与 SDK 不一致（binary=${actualVersion}, sdk=${expectedVersion}）`);
+  }
+}
+
+console.log(`[verify-engine-bundle] ok: ${rel} (${(stat.size / 1024 / 1024).toFixed(1)} MB, ${expectedVersion})`);
