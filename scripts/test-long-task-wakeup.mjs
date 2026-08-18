@@ -14,8 +14,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-long-task-wakeup-"));
 const dbPath = path.join(dir, "long-tasks.db");
 const scope = { ownerScope: "owner-a", sessionId: "session-a", projectId: "project-a", turnId: "turn-a" };
 
-function succeededJob(store, id) {
-  store.createJob({ id, scope, command: process.execPath, cwd: dir, idempotencyKey: id });
+function succeededJob(store, id, replayPolicy = "inspect") {
+  store.createJob({ id, scope, command: process.execPath, cwd: dir, replayPolicy, idempotencyKey: id });
   const lease = store.claimLease(scope, id, { holder: "test", ttlMs: 10_000 });
   return store.markTerminal(scope, id, {
     holder: "test", fencingEpoch: lease.job.fencingEpoch, status: "succeeded", exitCode: 0,
@@ -23,10 +23,19 @@ function succeededJob(store, id) {
 }
 
 function failedJob(store, id) {
-  store.createJob({ id, scope, command: process.execPath, cwd: dir, idempotencyKey: id });
+  store.createJob({ id, scope, command: process.execPath, cwd: dir, replayPolicy: "inspect", idempotencyKey: id });
   const lease = store.claimLease(scope, id, { holder: "test", ttlMs: 10_000 });
   return store.markTerminal(scope, id, {
     holder: "test", fencingEpoch: lease.job.fencingEpoch, status: "failed", exitCode: 1,
+  }).job;
+}
+
+function unknownJob(store, id) {
+  store.createJob({ id, scope, command: process.execPath, cwd: dir, replayPolicy: "never", idempotencyKey: id });
+  const lease = store.claimLease(scope, id, { holder: "test", ttlMs: 10_000 });
+  return store.markTerminal(scope, id, {
+    holder: "test", fencingEpoch: lease.job.fencingEpoch, status: "outcome_unknown",
+    error: "PROCESS_EXITED_WITHOUT_TERMINAL_MARKER",
   }).job;
 }
 
@@ -63,6 +72,24 @@ try {
   const failure = failedJob(store, "job-failed");
   assert.equal(store.enqueueWakeForJob(failure.id).ok, true, "failure wakes the originating agent for recovery");
   assert.equal((await supervisor.deliverWakesOnce()).delivered, 1);
+
+  const noWake = succeededJob(store, "job-no-auto-wake", "never");
+  const noWakeSupervisor = new LongTaskSupervisor({
+    dbPath, jobsDir: path.join(dir, "jobs"), holder: "no-wake",
+    now: () => now,
+    onWake: async () => { throw new Error("default process jobs must not auto-wake"); },
+  });
+  await noWakeSupervisor.reconcileOnce();
+  assert.equal(store.listPendingWakes().some((wake) => wake.jobId === noWake.id), false,
+    "replayPolicy=never must not create a hidden follow-up turn");
+  const unknownNoWake = unknownJob(store, "job-unknown-no-auto-wake");
+  await noWakeSupervisor.reconcileOnce();
+  assert.equal(store.listPendingWakes().some((wake) => wake.jobId === unknownNoWake.id), false,
+    "an unknown temporary process must not trigger an automatic diagnosis turn");
+  const legacyWake = store.enqueueWakeForJob(noWake.id).wake;
+  assert.equal((await noWakeSupervisor.deliverWakesOnce()).abandoned, 1,
+    "a stale wake created before the policy gate must be retired without dispatch");
+  assert.equal(store.getWake(legacyWake.id).status, "abandoned");
 
   const abandonedJob = succeededJob(store, "job-abandoned");
   const abandonedWake = store.enqueueWakeForJob(abandonedJob.id).wake;

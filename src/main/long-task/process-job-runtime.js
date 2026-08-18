@@ -106,9 +106,9 @@ class DurableProcessJobRuntime {
     return store.getJob(authorized.scope, safeId(jobId));
   }
 
-  _claim(store, scope, job) {
+  _claim(store, scope, job, options = {}) {
     if (TERMINAL.has(job.status)) return { ok: true, job };
-    return store.claimLease(scope, job.id, { holder: HOLDER, ttlMs: LEASE_MS });
+    return store.claimLease(scope, job.id, { holder: HOLDER, ttlMs: LEASE_MS, ...options });
   }
 
   _reconcile(store, scope, job) {
@@ -271,7 +271,10 @@ class DurableProcessJobRuntime {
       if (!job) return fail("JOB_NOT_FOUND");
       job = this._reconcile(store, auth.scope, job);
       if (TERMINAL.has(job.status)) return { ok: true, stopped: true, alreadyExited: true, ...this._compact(job) };
-      const claim = this._claim(store, auth.scope, job);
+      // Stop is a control-plane operation. A recent status/logs call may hold
+      // the short observation lease, but that must not make a user-issued stop
+      // fail and force the agent into an unsafe manual kill fallback.
+      const claim = this._claim(store, auth.scope, job, { forceTakeover: true });
       if (!claim.ok) return fail(claim.error);
       job = claim.job;
       const signal = input.signal || "SIGTERM";
@@ -279,7 +282,14 @@ class DurableProcessJobRuntime {
       if (error) return fail("STOP_FAILED", { message: error.message });
       const deadline = Date.now() + Math.max(100, Math.min(Number(input.timeoutMs) || 5_000, 60_000));
       while (this._alive(job) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
-      if (this._alive(job) && input.force !== false) stopPidTree(job.pid, "SIGKILL");
+      if (this._alive(job) && input.force !== false) {
+        stopPidTree(job.pid, "SIGKILL");
+        const killDeadline = Date.now() + 2_000;
+        while (this._alive(job) && Date.now() < killDeadline) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (this._alive(job)) {
+        return fail("STOP_TIMEOUT", { jobId: job.id, pid: job.pid, ...this._compact(job), alive: true });
+      }
       const terminal = store.markTerminal(auth.scope, job.id, {
         holder: HOLDER, fencingEpoch: job.fencingEpoch, status: "cancelled", signal,
       });

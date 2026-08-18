@@ -48,6 +48,23 @@ try {
   assert.equal(lease1.job.fencingEpoch, 1);
   assert.equal(b.claimLease(scopeA, "job-a", { holder: "supervisor-b", ttlMs: 5_000 }).error, "LEASE_HELD");
 
+  const stopControlJob = a.createJob({
+    id: "job-stop-control",
+    scope: scopeA,
+    command: process.execPath,
+    cwd: dir,
+    idempotencyKey: "turn-a:job-stop-control",
+  });
+  const observerLease = a.claimLease(scopeA, stopControlJob.id, { holder: "observer", ttlMs: 5_000 });
+  assert.equal(observerLease.ok, true);
+  const stopLease = b.claimLease(scopeA, stopControlJob.id, {
+    holder: "stop-command",
+    ttlMs: 5_000,
+    forceTakeover: true,
+  });
+  assert.equal(stopLease.ok, true, "stop control can fence a short-lived observer lease");
+  assert.equal(stopLease.job.fencingEpoch, 2, "forced control claim advances the fencing epoch");
+
   now += 5_001;
   const lease2 = b.claimLease(scopeA, "job-a", { holder: "supervisor-b", ttlMs: 5_000 });
   assert.equal(lease2.ok, true);

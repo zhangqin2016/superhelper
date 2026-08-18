@@ -379,19 +379,19 @@ class LongTaskStore {
     return { prunedJobs };
   }
 
-  claimLease(scope, id, { holder, ttlMs = 30_000, allowRenew = true } = {}) {
+  claimLease(scope, id, { holder, ttlMs = 30_000, allowRenew = true, forceTakeover = false } = {}) {
     const job = this.getJob(scope, id);
     if (!job) return { ok: false, error: "JOB_NOT_FOUND" };
     if (TERMINAL.has(job.status)) return { ok: false, error: "TERMINAL_IMMUTABLE" };
     const ts = Number(this.now());
     const owner = text(holder, "lease holder", 160);
-    if (!allowRenew && job.leaseHolder === owner && job.leaseExpiresAt > ts) {
+    if (!forceTakeover && !allowRenew && job.leaseHolder === owner && job.leaseExpiresAt > ts) {
       return { ok: false, error: "LEASE_HELD", job };
     }
-    if (job.leaseHolder && job.leaseHolder !== owner && job.leaseExpiresAt > ts) {
+    if (!forceTakeover && job.leaseHolder && job.leaseHolder !== owner && job.leaseExpiresAt > ts) {
       return { ok: false, error: "LEASE_HELD", job };
     }
-    const epoch = job.leaseHolder === owner && job.leaseExpiresAt > ts
+    const epoch = !forceTakeover && job.leaseHolder === owner && job.leaseExpiresAt > ts
       ? job.fencingEpoch
       : job.fencingEpoch + 1;
     const updated = this.db.run(

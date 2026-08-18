@@ -10,6 +10,10 @@ function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
 
+function allowsAutomaticWake(job) {
+  return ["inspect", "idempotent"].includes(String(job?.replayPolicy || ""));
+}
+
 class LongTaskSupervisor {
   constructor(options = {}) {
     this.dbPath = options.dbPath;
@@ -74,13 +78,15 @@ class LongTaskSupervisor {
           exitCode: marker?.exitCode, signal: marker?.signal, error,
         });
         if (!terminal.ok && terminal.error !== "TERMINAL_IMMUTABLE") continue;
-        store.enqueueWakeForJob(job.id);
+        if (allowsAutomaticWake(job)) store.enqueueWakeForJob(job.id);
         if (status === "succeeded") counts.succeeded += 1;
         else if (status === "failed") counts.failed += 1;
         else counts.outcomeUnknown += 1;
       }
       for (const status of ["succeeded", "failed", "outcome_unknown"]) {
-        for (const job of store.listJobsByStatus(status)) store.enqueueWakeForJob(job.id);
+        for (const job of store.listJobsByStatus(status)) {
+          if (allowsAutomaticWake(job)) store.enqueueWakeForJob(job.id);
+        }
       }
       return counts;
     } finally { store.close(); }
@@ -94,6 +100,14 @@ class LongTaskSupervisor {
       result.claimed = wakes.length;
       for (const wake of wakes) {
         const job = store.getJobTrusted(wake.jobId);
+        if (job && !allowsAutomaticWake(job)) {
+          if (store.abandonWake(wake.id, {
+            holder: this.holder,
+            fencingEpoch: wake.fencingEpoch,
+            error: "AUTO_WAKE_DISABLED",
+          }).ok) result.abandoned += 1;
+          continue;
+        }
         let delivered;
         try { delivered = job ? await this.onWake(wake, job) : { ok: false, error: "JOB_NOT_FOUND" }; }
         catch (error) { delivered = { ok: false, error: error?.message || String(error) }; }
