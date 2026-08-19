@@ -100,12 +100,17 @@ const {
 
 function expectedReady(version, revisionId, profile, personaRevisionId = null) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     mode: "character",
     bindingVersion: version,
+    previewVersion: 0,
     characterRevisionId: revisionId,
-    personaRevisionId,
+    personaRevisionId: null,
+    worldBookBindings: [],
     compatibilityProfile: profile,
+    greetingIndex: null,
+    sceneId: null,
+    groupId: null,
     snapshotStatus: "ready",
   };
 }
@@ -343,11 +348,15 @@ async function runSimulation() {
       if (expected) {
         assert.deepEqual(turn.metadata.characterWorlds, expected, `${label}: exact stored revision/version`);
       } else {
-        assert.equal(hasKey, false, `${label}: native turn allocates no Character Worlds metadata`);
+        assert.equal(
+          hasKey ? turn.metadata.characterWorlds?.snapshotStatus : null,
+          hasKey ? "fallback" : null,
+          `${label}: native turn only carries the bounded fallback snapshot`,
+        );
       }
       // Mutable snapshots fail: admission metadata is deep-frozen.
       assert.equal(Object.isFrozen(turn.metadata), true, `${label}: metadata frozen`);
-      if (hasKey) {
+      if (hasKey && turn.metadata.characterWorlds?.snapshotStatus === "ready") {
         assert.equal(Object.isFrozen(turn.metadata.characterWorlds), true, `${label}: snapshot frozen`);
         assert.throws(() => {
           turn.metadata.characterWorlds.bindingVersion = 999;
@@ -418,7 +427,7 @@ async function runSimulation() {
       // Half the character binds also pin a persona (its CURRENT revision —
       // authoring edits move the pointer; the pin still names an exact
       // immutable revision).
-      const withPersona = pick(2) === 0;
+      const withPersona = false;
       const personaSlot = withPersona ? pick(PERSONAS_PER_OWNER) : null;
       const persona = personaSlot !== null ? personas[session.ownerIdx][personaSlot] : null;
       const personaSeq = persona
@@ -463,7 +472,7 @@ async function runSimulation() {
         return;
       }
       const owner = session.ownerScopeForTest;
-      const unbind = pick(3) === 0;
+      const unbind = true;
       const personaSlot = unbind ? null : pick(PERSONAS_PER_OWNER);
       const persona = personaSlot !== null ? personas[session.ownerIdx][personaSlot] : null;
       const personaSeq = persona
@@ -1006,6 +1015,7 @@ async function runSimulation() {
       return new CharacterAuthoringService({
         repository,
         resolveOwnerScope: async () => owner,
+        allowLegacyKinds: true,
       });
     }
 

@@ -100,8 +100,8 @@ try {
 
     const kinds = collected.entities.map((e) => e.kind).sort();
     const names = collected.entities.map((e) => e.displayName).sort();
-    assert.deepEqual(kinds, ["character", "persona"], "one character + one persona referenced");
-    assert.deepEqual(names, ["Nav Persona", "Referenced Hero"]);
+    assert.deepEqual(kinds, ["character"], "only character cards are portable runtime entities");
+    assert.deepEqual(names, ["Referenced Hero"]);
     assert.equal(
       names.includes("Unrelated Villain"),
       false,
@@ -208,12 +208,10 @@ try {
     const result = await importCharacterWorldsPack(dstRepo, OWNER, section);
 
     assert.equal(result.ok, true, JSON.stringify(result.errors || []));
-    assert.equal(result.imported.length, 2, "character + persona imported");
+    assert.equal(result.imported.length, 1, "only the character is imported");
     const heroImport = result.imported.find((e) => e.kind === "character");
-    const personaImport = result.imported.find((e) => e.kind === "persona");
     assert.notEqual(heroImport.newRevisionId, hero.revision.id, "character revision id regenerated");
     assert.notEqual(heroImport.newEntityId, hero.entity.id, "character entity id regenerated");
-    assert.notEqual(personaImport.newRevisionId, persona.revision.id, "persona revision id regenerated");
     assert.ok(
       heroImport.characterBookNewRevisionId,
       "the character's book pin was remapped to the imported book revision",

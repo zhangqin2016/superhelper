@@ -49,6 +49,7 @@ class CharacterWorldsService {
     previewTtlMs = DEFAULT_PREVIEW_TTL_MS,
     maxPreviews = DEFAULT_MAX_PREVIEWS,
     maxPreviewBytes = MAX_PREVIEW_CACHE_BYTES,
+    allowLegacyKinds = false,
   } = {}) {
     if (!messageStore?.blobs) {
       throw new TypeError("CharacterWorldsService requires MessageStore");
@@ -101,6 +102,7 @@ class CharacterWorldsService {
     this.authoring = new CharacterAuthoringService({
       repository: resolvedRepository,
       resolveOwnerScope,
+      allowLegacyKinds,
     });
     this.closed = false;
     this.closeComplete = false;

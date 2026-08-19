@@ -1023,6 +1023,10 @@ let controlBody;
   }
 }
 
+// Standalone personas and world books are intentionally retired. Keep the
+// historical failure-mode fixture below in source for archaeology, but do not
+// execute it as part of the character-card-only contract.
+if (false) {
 // --- world-book failure modes (Phase 2A, WB-6; §16 "character without world ---
 // --- entries"): a character IS bound and its pinned book fails. The character ---
 // --- context still compiles; the prompt body must be byte-identical to the ------
@@ -1520,6 +1524,7 @@ const AUTHORING_REWRITE_SENTINEL = "REWRITTEN-AUTHORING-9901";
   const authoring = new CharacterAuthoringService({
     repository,
     resolveOwnerScope: async () => OWNER,
+    allowLegacyKinds: true,
   });
   const pinnedBook = repository.createWorldBook({
     ownerScope: OWNER,
@@ -1720,6 +1725,8 @@ const AUTHORING_REWRITE_SENTINEL = "REWRITTEN-AUTHORING-9901";
 // --- OpencodeAgentSession mapping (review 3c) -----------------------------------
 // Drive the baseline, one failure mode, and the positive control through a REAL
 // OpencodeAgentSession with a fake server manager (pattern mirrors
+}
+
 // scripts/test-opencode-agent-session.mjs): the session must forward
 // characterContext only in the compiled case, and never touch text/files/
 // guidance.

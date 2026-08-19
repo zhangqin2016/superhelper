@@ -1,6 +1,7 @@
 "use strict";
 
 const { normalizeConversationConfig } = require("./conversation-config");
+const { projectCharacterCardConfig } = require("./character-card-only");
 const { codedError, stableJson } = require("./persistence-codec");
 
 const FACETS = new Set(["character", "persona"]);
@@ -131,18 +132,11 @@ class CharacterPreviewStore {
       if (!revision) throw codedError("CHARACTER_REVISION_NOT_FOUND", "Character revision not found");
       return { entityId: revision.characterId, revisionId: revision.id };
     }
-    if (facet === "persona") {
-      const revision = this.repository.getPersonaRevision(ownerScope, revisionId);
-      if (!revision) throw codedError("PERSONA_REVISION_NOT_FOUND", "Persona revision not found");
-      return { entityId: revision.personaId, revisionId: revision.id };
-    }
-    throw codedError("CHARACTER_PREVIEW_INVALID", "Unsupported preview facet");
+    throw codedError("FEATURE_DISABLED", "Only character cards are supported");
   }
 
   replaceFacet({ ownerScope, sessionId, expectedPreviewVersion, facet, revisionId }) {
-    if (!FACETS.has(facet)) {
-      throw codedError("CHARACTER_PREVIEW_INVALID", "Unsupported preview facet");
-    }
+    if (facet !== "character") throw codedError("FEATURE_DISABLED", "Only character cards are supported");
     const reference = this._reference(ownerScope, facet, revisionId);
     return this.db.transaction(() => {
       const current = this._assertVersion(ownerScope, sessionId, expectedPreviewVersion);
@@ -158,42 +152,16 @@ class CharacterPreviewStore {
     scope = "chat",
     mergeStrategy = "constant",
   }) {
-    if (!BOOK_SCOPES.has(scope) || !MERGE_STRATEGIES.has(mergeStrategy)) {
-      throw codedError("CHARACTER_PREVIEW_INVALID", "Invalid world book preview options");
-    }
-    const revision = this.repository.getWorldBookRevision(ownerScope, revisionId);
-    if (!revision) {
-      throw codedError("WORLD_BOOK_REVISION_NOT_FOUND", "World book revision not found");
-    }
-    const reference = {
-      entityId: revision.worldBookId,
-      revisionId: revision.id,
-      scope,
-      mergeStrategy,
-    };
-    return this.db.transaction(() => {
-      const current = this._assertVersion(ownerScope, sessionId, expectedPreviewVersion);
-      const worldBooks = current.worldBooks.filter((item) => (
-        item.entityId !== reference.entityId && item.scope !== reference.scope
-      ));
-      worldBooks.push(reference);
-      return this._write(ownerScope, sessionId, current, { ...current, worldBooks });
-    })();
+    throw codedError("FEATURE_DISABLED", "World books are disabled");
   }
 
   removeFacet({ ownerScope, sessionId, expectedPreviewVersion, facet, entityId = null }) {
     return this.db.transaction(() => {
       const current = this._assertVersion(ownerScope, sessionId, expectedPreviewVersion);
-      if (FACETS.has(facet)) {
+      if (facet === "character") {
         return this._write(ownerScope, sessionId, current, { ...current, [facet]: null });
       }
-      if (facet === "worldBook") {
-        const worldBooks = entityId
-          ? current.worldBooks.filter((item) => item.entityId !== entityId)
-          : [];
-        return this._write(ownerScope, sessionId, current, { ...current, worldBooks });
-      }
-      throw codedError("CHARACTER_PREVIEW_INVALID", "Unsupported preview facet");
+      throw codedError("FEATURE_DISABLED", "Only character cards are supported");
     })();
   }
 
@@ -205,36 +173,15 @@ class CharacterPreviewStore {
   }
 
   effectiveConfig({ ownerScope, sessionId, durableConfig }) {
-    const durable = normalizeConversationConfig(configFields(durableConfig));
+    const durable = projectCharacterCardConfig(configFields(durableConfig));
     const preview = this.get(ownerScope, sessionId);
     if (!preview) return durable;
 
     const character = preview.character
       && this.repository.getRevision(ownerScope, preview.character.revisionId);
-    const persona = preview.persona
-      && this.repository.getPersonaRevision(ownerScope, preview.persona.revisionId);
-    let books = [...durable.books];
-    for (const item of preview.worldBooks) {
-      const revision = this.repository.getWorldBookRevision(ownerScope, item.revisionId);
-      if (!revision || revision.worldBookId !== item.entityId) continue;
-      books = books.filter((book) => {
-        const durableRevision = this.repository.getWorldBookRevision(
-          ownerScope,
-          book.worldBookRevisionId,
-        );
-        return book.scope !== item.scope && durableRevision?.worldBookId !== item.entityId;
-      });
-      books.push({
-        scope: item.scope,
-        worldBookRevisionId: item.revisionId,
-        mergeStrategy: item.mergeStrategy,
-      });
-    }
-    return normalizeConversationConfig({
+    return projectCharacterCardConfig({
       ...durable,
       characterRevisionId: character?.id || durable.characterRevisionId,
-      personaRevisionId: persona?.id || durable.personaRevisionId,
-      books,
     });
   }
 
@@ -246,12 +193,13 @@ class CharacterPreviewStore {
     facet,
     entityId = null,
   }) {
+    if (facet !== "character") throw codedError("FEATURE_DISABLED", "Only character cards are supported");
     return this.db.transaction(() => {
       const current = this._assertVersion(ownerScope, sessionId, expectedPreviewVersion);
       const durable = this.repository.getConversationConfig(sessionId, ownerScope);
       let nextConfig = normalizeConversationConfig(configFields(durable));
       let nextPreview;
-      if (FACETS.has(facet)) {
+      if (facet === "character") {
         const reference = current[facet];
         if (!reference) throw codedError("CHARACTER_PREVIEW_NOT_FOUND", "Preview facet is unavailable");
         nextConfig = normalizeConversationConfig({
@@ -259,20 +207,8 @@ class CharacterPreviewStore {
           [`${facet}RevisionId`]: reference.revisionId,
         });
         nextPreview = { ...current, [facet]: null };
-      } else if (facet === "worldBook") {
-        const selected = current.worldBooks.find((item) => !entityId || item.entityId === entityId);
-        if (!selected) throw codedError("CHARACTER_PREVIEW_NOT_FOUND", "Preview world book is unavailable");
-        const effective = this.effectiveConfig({ ownerScope, sessionId, durableConfig: durable });
-        nextConfig = normalizeConversationConfig({
-          ...configFields(durable),
-          books: effective.books,
-        });
-        nextPreview = {
-          ...current,
-          worldBooks: current.worldBooks.filter((item) => item.entityId !== selected.entityId),
-        };
       } else {
-        throw codedError("CHARACTER_PREVIEW_INVALID", "Unsupported preview facet");
+        throw codedError("FEATURE_DISABLED", "Only character cards are supported");
       }
       const binding = this.repository.setConversationConfig({
         sessionId,

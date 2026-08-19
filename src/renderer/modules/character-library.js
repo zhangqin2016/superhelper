@@ -2,7 +2,7 @@
  * Character library manager (Character Worlds Phase 2B, Task P2B-4; design
  * spec §13.2/§13.4). Replaces the disabled "manage library (Phase 2)" popover
  * item with a dialog that lists characters/personas/world books read-first
- * and drives the validated authoring bridge for mutations.
+ * and drives the validated character-card authoring bridge for mutations.
  *
  * Split: ./character-library-model.js owns the pure state,
  * ./character-library-view.js owns rendering,
@@ -42,8 +42,6 @@ const modal = () => $("characterLibraryModal");
 
 const AI_AUTHORING_PROMPTS = Object.freeze({
   characters: "character.library.aiCreateCharacterPrompt",
-  personas: "character.library.aiCreatePersonaPrompt",
-  books: "character.library.aiCreateBookPrompt",
 });
 
 /**
@@ -52,6 +50,7 @@ const AI_AUTHORING_PROMPTS = Object.freeze({
  * context, skills, validation, and lily_character_draft tool.
  */
 export function startAiAuthoring(kind = "characters") {
+  if (kind !== "characters") return false;
   const input = $("promptInput");
   if (!input) return false;
   const m = modal();
@@ -60,9 +59,7 @@ export function startAiAuthoring(kind = "characters") {
   const current = input.value.trim();
   input.value = current ? `${starter}\n${current}` : starter;
   input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dataset.characterAuthoringKind = kind === "personas"
-    ? "persona"
-    : kind === "books" ? "worldBook" : "character";
+  input.dataset.characterAuthoringKind = "character";
   input.dataset.characterAuthoringStarter = starter;
   if (m && !m.hidden) {
     m.hidden = true;
@@ -90,72 +87,17 @@ function dispatch(action) {
 
 const FORM_VALUE_FIELDS = [
   "name", "description", "personality", "scenario", "tags",
-  "identity", "background", "expertise", "communicationStyle",
-  "goals", "preferences", "constraints", "scanDepthMessages",
-  "tokenBudget", "recursive", "worldBookEntries",
 ];
 
 function fieldValue(name, fallback = "") {
   return $("characterLibraryDetail")?.querySelector(`[data-field='${name}']`)?.value ?? fallback;
 }
 
-function parseWorldBookEntries(value) {
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function listValue(value) {
-  return String(value || "").split(/[,，]/).map((entry) => entry.trim()).filter(Boolean);
-}
-
-function readWorldBookFormValues(values) {
-  const detail = $("characterLibraryDetail");
-  const previousEntries = parseWorldBookEntries(libraryState.form?.values?.worldBookEntries);
-  const entries = [...(detail?.querySelectorAll("[data-world-book-entry]") || [])].map((row, index) => {
-    const existing = previousEntries[index] && typeof previousEntries[index] === "object"
-      ? previousEntries[index]
-      : { id: `entry-${index + 1}` };
-    const valueOf = (field) => row.querySelector(`[data-world-entry-field='${field}']`)?.value ?? "";
-    const checked = (field, fallback = false) => {
-      const input = row.querySelector(`[data-world-entry-field='${field}']`);
-      return input ? Boolean(input.checked) : fallback;
-    };
-    return {
-      ...existing,
-      id: row.dataset.worldBookEntry || existing.id || `entry-${index + 1}`,
-      title: valueOf("title").trim(),
-      enabled: checked("enabled", existing.enabled !== false),
-      content: valueOf("content"),
-      activation: {
-        ...(existing.activation || {}),
-        constant: checked("constant", existing.activation?.constant === true),
-        primaryKeys: listValue(valueOf("primaryKeys")),
-        secondaryKeys: listValue(valueOf("secondaryKeys")),
-      },
-      insertion: {
-        ...(existing.insertion || {}),
-        position: valueOf("position") || existing.insertion?.position || "before_character",
-      },
-    };
-  });
-  return {
-    ...values,
-    scanDepthMessages: fieldValue("scanDepthMessages") || "8",
-    tokenBudget: fieldValue("tokenBudget") || "0",
-    recursive: detail?.querySelector("[data-field='recursive']")?.checked ? "true" : "false",
-    worldBookEntries: JSON.stringify(entries),
-  };
-}
-
 function readFormValues() {
   const values = {};
   const previous = libraryState.form?.values || {};
   for (const field of FORM_VALUE_FIELDS) values[field] = fieldValue(field, previous[field] ?? "");
-  return libraryState.form?.kind === "worldBook" ? readWorldBookFormValues(values) : values;
+  return values;
 }
 
 // Snapshot the typed fields into state WITHOUT rendering (the DOM already
@@ -168,26 +110,6 @@ function syncFormValues() {
   libraryState = reduceCharacterLibrary(libraryState, {
     type: "form.valuesSync",
     values: readFormValues(),
-  });
-}
-
-function parseWorldBookFormEntries() {
-  try {
-    const parsed = JSON.parse(libraryState.form?.values?.worldBookEntries || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function updateWorldBookEntries(mutator) {
-  if (libraryState.form?.kind !== "worldBook") return;
-  syncFormValues();
-  const entries = parseWorldBookFormEntries();
-  mutator(entries);
-  dispatch({
-    type: "form.valuesSync",
-    values: { ...libraryState.form.values, worldBookEntries: JSON.stringify(entries) },
   });
 }
 
@@ -248,7 +170,7 @@ export async function openCharacterLibrary(opts = {}) {
   const m = modal();
   if (!m || !facade()) return;
   if (!m.hidden && dirtyFormGuard()) return;
-  const requestedTab = opts.tab === "personas" || opts.tab === "books" ? opts.tab : "characters";
+  const requestedTab = "characters";
   dispatch({ type: "opened" });
   m.hidden = false;
   $("sessionRoleBanner")?.setAttribute("aria-expanded", "true");
@@ -262,6 +184,12 @@ export async function openCharacterLibrary(opts = {}) {
   if (requestedEntityId) {
     const item = findCharacterLibraryItem(libraryState.items, requestedEntityId);
     if (item) {
+      // Keep the current role visible even when it is outside the curated
+      // first screen. This preserves the locate-current-role flow without
+      // making the default library noisy.
+      if (!item.featured && (item.official || !item.recentlyUsedAt)) {
+        dispatch({ type: "group.changed", groupId: item.official ? "industry" : "my" });
+      }
       await actions.openDetail(item);
       requestAnimationFrame(() => {
         const selector = `[data-entity-id="${CSS.escape(item.id)}"] [data-library-select]`;
@@ -441,29 +369,6 @@ export function initCharacterLibrary() {
       }
       return;
     }
-    if (event.target.closest("[data-world-book-add]")) {
-      updateWorldBookEntries((entries) => {
-        entries.push({
-          id: `entry-${Date.now()}-${entries.length + 1}`,
-          title: "",
-          enabled: true,
-          content: "",
-          activation: { constant: false, primaryKeys: [], secondaryKeys: [] },
-          insertion: { position: "before_character", order: 100 },
-        });
-      });
-      return;
-    }
-    const removeWorldBookEntry = event.target.closest("[data-world-book-remove]");
-    if (removeWorldBookEntry) {
-      const card = removeWorldBookEntry.closest("[data-world-book-entry]");
-      const entryId = card?.dataset.worldBookEntry;
-      updateWorldBookEntries((entries) => {
-        const index = entries.findIndex((entry) => entry?.id === entryId);
-        if (index >= 0) entries.splice(index, 1);
-      });
-      return;
-    }
     if (event.target.closest("[data-library-save]")) {
       void actions.saveForm();
       return;
@@ -484,12 +389,6 @@ export function initCharacterLibrary() {
           confirm: { action: "archive", kind: kindForTab(libraryState.tab), entityId: item.id, name: item.name },
         });
       }
-      return;
-    }
-    if (event.target.closest("[data-library-remove-book]")) {
-      const item = (libraryState.items[libraryState.tab] || [])
-        .find((entry) => entry.id === libraryState.selectedItemId);
-      if (item) void actions.removeWorldBook(item);
       return;
     }
     if (event.target.closest("[data-library-detail-close]")) {

@@ -8,7 +8,7 @@ function tr(key, fallback) {
 export function renderCharacterPreviewBanner(state, { onActivate, onExit } = {}) {
   const root = document.createElement("div");
   root.className = "character-preview-banner";
-  const active = Boolean(state?.character || state?.persona || state?.worldBookCount);
+  const active = Boolean(state?.character);
   root.hidden = !active;
   if (!active) return root;
   const text = document.createElement("span");

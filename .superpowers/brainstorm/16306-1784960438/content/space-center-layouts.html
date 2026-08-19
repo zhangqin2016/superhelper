@@ -1,0 +1,289 @@
+<style>
+  .space-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+  .space-option {
+    cursor: pointer;
+    min-width: 0;
+  }
+  .space-option .card-image {
+    height: 430px;
+    padding: 12px;
+    background: #f4f5f7;
+  }
+  .shell {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 82px 1fr;
+    overflow: hidden;
+    border: 1px solid #d8dce3;
+    border-radius: 7px;
+    background: white;
+    color: #262b33;
+    font: 10px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .rail {
+    padding: 11px 7px;
+    background: #f0f1f3;
+    border-right: 1px solid #d8dce3;
+  }
+  .rail-title {
+    margin-bottom: 13px;
+    font-weight: 700;
+    font-size: 10px;
+  }
+  .rail-search {
+    height: 18px;
+    margin-bottom: 9px;
+    border-radius: 4px;
+    background: white;
+    border: 1px solid #d8dce3;
+  }
+  .rail-line {
+    height: 7px;
+    margin: 7px 2px;
+    border-radius: 2px;
+    background: #c9ced7;
+  }
+  .main {
+    position: relative;
+    padding: 12px;
+    background: #fafafa;
+  }
+  .overlay {
+    position: absolute;
+    inset: 26px 10px 18px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #ccd1da;
+    border-radius: 8px;
+    background: white;
+    box-shadow: 0 12px 28px rgba(34, 40, 49, .16);
+  }
+  .overlay-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 11px 8px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .overlay-head strong {
+    font-size: 11px;
+  }
+  .key {
+    color: #7c8491;
+    font-size: 8px;
+  }
+  .grid9 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    padding: 10px;
+  }
+  .tile {
+    min-height: 65px;
+    padding: 7px;
+    overflow: hidden;
+    border: 1px solid #dfe3e8;
+    border-radius: 6px;
+    background: #f8f9fa;
+  }
+  .tile.active {
+    border-color: #5080d8;
+    background: #eef4ff;
+  }
+  .tile b, .row b {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .tile span, .row span {
+    display: block;
+    margin-top: 3px;
+    overflow: hidden;
+    color: #7a828d;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .kind {
+    margin-bottom: 3px;
+    color: #4e76bc !important;
+    font-size: 7px;
+    text-transform: uppercase;
+  }
+  .session-pane {
+    margin: auto 10px 10px;
+    padding-top: 8px;
+    border-top: 1px solid #e5e7eb;
+  }
+  .session-pane-label {
+    margin-bottom: 6px;
+    color: #727985;
+    font-weight: 600;
+  }
+  .session-chips {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .session-chip {
+    padding: 6px;
+    overflow: hidden;
+    border-radius: 5px;
+    background: #f0f2f5;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .two-pane {
+    display: grid;
+    grid-template-columns: 42% 58%;
+    min-height: 0;
+    flex: 1;
+  }
+  .workspace-list {
+    padding: 7px;
+    border-right: 1px solid #e5e7eb;
+  }
+  .session-list {
+    padding: 7px;
+  }
+  .row {
+    padding: 7px;
+    margin-bottom: 5px;
+    border-radius: 5px;
+    background: #f5f6f8;
+  }
+  .row.active {
+    background: #eaf1ff;
+    box-shadow: inset 2px 0 #5080d8;
+  }
+  .option-note {
+    min-height: 46px;
+  }
+  @media (max-width: 1000px) {
+    .space-options {
+      grid-template-columns: 1fr;
+    }
+    .space-option .card-image {
+      height: 380px;
+    }
+  }
+</style>
+
+<h2>“空间中心”应该怎样组织空间和会话？</h2>
+<p class="subtitle">点击一版进行选择。重点看：第一次打开能否立刻找到目标，以及空间与会话会不会混淆。</p>
+
+<div class="cards space-options">
+  <div class="card space-option" data-choice="a-mixed-grid" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="shell">
+        <div class="rail">
+          <div class="rail-title">智能工作台</div>
+          <div class="rail-search"></div>
+          <div class="rail-line"></div><div class="rail-line"></div><div class="rail-line"></div>
+        </div>
+        <div class="main">
+          <div class="overlay">
+            <div class="overlay-head"><strong>最近使用</strong><span class="key">⌘ K</span></div>
+            <div class="grid9">
+              <div class="tile"><span class="kind">空间</span><b>品牌升级</b><span>12 个会话</span></div>
+              <div class="tile active"><span class="kind">会话</span><b>首页文案调整</b><span>品牌升级</span></div>
+              <div class="tile"><span class="kind">空间</span><b>财务资料</b><span>8 个会话</span></div>
+              <div class="tile"><span class="kind">会话</span><b>整理六月报表</b><span>财务资料</span></div>
+              <div class="tile"><span class="kind">会话</span><b>合同风险检查</b><span>法务协作</span></div>
+              <div class="tile"><span class="kind">空间</span><b>客户交付</b><span>6 个会话</span></div>
+              <div class="tile"><span class="kind">会话</span><b>产品路线图</b><span>产品规划</span></div>
+              <div class="tile"><span class="kind">空间</span><b>招聘计划</b><span>4 个会话</span></div>
+              <div class="tile"><span class="kind">会话</span><b>周会纪要</b><span>团队运营</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body option-note">
+      <h3>A. 空间与会话混合九宫格</h3>
+      <p>一步直达最近目标，但两种对象混在同一层，需要先辨认“这是空间还是会话”。</p>
+    </div>
+  </div>
+
+  <div class="card space-option" data-choice="b-workspace-first" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="shell">
+        <div class="rail">
+          <div class="rail-title">智能工作台</div>
+          <div class="rail-search"></div>
+          <div class="rail-line"></div><div class="rail-line"></div><div class="rail-line"></div>
+        </div>
+        <div class="main">
+          <div class="overlay">
+            <div class="overlay-head"><strong>空间中心</strong><span class="key">输入即可搜索</span></div>
+            <div class="grid9">
+              <div class="tile active"><b>品牌升级</b><span>首页文案调整</span><span>刚刚</span></div>
+              <div class="tile"><b>财务资料</b><span>整理六月报表</span><span>18 分钟前</span></div>
+              <div class="tile"><b>客户交付</b><span>交付清单检查</span><span>昨天</span></div>
+              <div class="tile"><b>产品规划</b><span>产品路线图</span><span>昨天</span></div>
+              <div class="tile"><b>法务协作</b><span>合同风险检查</span><span>周一</span></div>
+              <div class="tile"><b>招聘计划</b><span>面试反馈汇总</span><span>周一</span></div>
+              <div class="tile"><b>团队运营</b><span>周会纪要</span><span>上周</span></div>
+              <div class="tile"><b>市场研究</b><span>竞品调研</span><span>上周</span></div>
+              <div class="tile"><b>归档资料</b><span>2025 年总结</span><span>6 月</span></div>
+            </div>
+            <div class="session-pane">
+              <div class="session-pane-label">品牌升级 · 最近会话</div>
+              <div class="session-chips">
+                <div class="session-chip">首页文案调整</div>
+                <div class="session-chip">品牌视觉方向</div>
+                <div class="session-chip">发布计划</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body option-note">
+      <h3>B. 先空间，后会话（推荐）</h3>
+      <p>九宫格保持纯粹；选中空间后，下方立即露出该空间最近会话，认知最稳定。</p>
+    </div>
+  </div>
+
+  <div class="card space-option" data-choice="c-two-pane" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="shell">
+        <div class="rail">
+          <div class="rail-title">智能工作台</div>
+          <div class="rail-search"></div>
+          <div class="rail-line"></div><div class="rail-line"></div><div class="rail-line"></div>
+        </div>
+        <div class="main">
+          <div class="overlay">
+            <div class="overlay-head"><strong>快速切换</strong><span class="key">⌘ K</span></div>
+            <div class="two-pane">
+              <div class="workspace-list">
+                <div class="row active"><b>品牌升级</b><span>12 个会话</span></div>
+                <div class="row"><b>财务资料</b><span>8 个会话</span></div>
+                <div class="row"><b>客户交付</b><span>6 个会话</span></div>
+                <div class="row"><b>产品规划</b><span>9 个会话</span></div>
+                <div class="row"><b>法务协作</b><span>5 个会话</span></div>
+              </div>
+              <div class="session-list">
+                <div class="row active"><b>首页文案调整</b><span>刚刚 · 运行中</span></div>
+                <div class="row"><b>品牌视觉方向</b><span>昨天 · 24 条消息</span></div>
+                <div class="row"><b>发布计划</b><span>周一 · 16 条消息</span></div>
+                <div class="row"><b>竞品参考整理</b><span>上周 · 31 条消息</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body option-note">
+      <h3>C. 空间与会话双栏</h3>
+      <p>信息密度最高、键盘效率好，但不再是九宫格，视觉上更像管理器。</p>
+    </div>
+  </div>
+</div>

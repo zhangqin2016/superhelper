@@ -1,0 +1,71 @@
+<style>
+  .layout-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:20px; }
+  .layout-card { border:1px solid #d9dce5; border-radius:8px; overflow:hidden; background:#fff; cursor:pointer; }
+  .layout-card:hover { border-color:#7c83f7; box-shadow:0 6px 18px rgba(45,50,110,.08); }
+  .layout-card.selected { border-color:#626af2; box-shadow:0 0 0 2px rgba(98,106,242,.16); }
+  .layout-preview { height:300px; padding:16px; background:#f7f8fb; display:flex; flex-direction:column; gap:9px; }
+  .chat-line { height:9px; border-radius:4px; background:#dfe2ea; }
+  .chat-line.short { width:58%; } .chat-line.mid { width:78%; }
+  .chat-space { flex:1; }
+  .composer-shell { border:1px solid #d7dae4; border-radius:8px; background:#fff; box-shadow:0 2px 7px rgba(30,35,65,.06); overflow:hidden; }
+  .context-row { display:flex; align-items:center; gap:7px; min-height:34px; padding:6px 9px; color:#363a49; font-size:12px; }
+  .context-row.inside { border-bottom:1px solid #eceef3; background:#fafbfc; }
+  .context-row.outside { width:max-content; max-width:100%; border:1px solid #dfe2e9; border-radius:6px; background:#fff; }
+  .avatar { width:21px; height:21px; border-radius:5px; display:grid; place-items:center; color:#fff; background:#626af2; font-weight:700; font-size:11px; }
+  .context-name { font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .badge { padding:2px 4px; border-radius:3px; background:#eceef4; color:#696d7c; font-size:9px; font-weight:700; }
+  .chev { margin-inline-start:auto; color:#9296a3; }
+  .input-area { height:70px; padding:12px; color:#a4a7b1; font-size:12px; }
+  .toolbar { height:38px; padding:0 9px; display:flex; align-items:center; gap:7px; color:#7a7e8b; border-top:1px solid #f4f4f6; font-size:12px; }
+  .tool { width:24px; height:24px; border:1px solid #e2e4e9; border-radius:50%; display:grid; place-items:center; }
+  .send { margin-inline-start:auto; width:26px; height:26px; border-radius:50%; display:grid; place-items:center; background:#626af2; color:#fff; }
+  .layout-copy { padding:14px; border-top:1px solid #eceef3; }
+  .layout-copy h3 { margin:0 0 6px; font-size:15px; }
+  .layout-copy p { margin:0; color:#707483; font-size:12px; line-height:1.55; }
+  .recommended { display:inline-block; margin-bottom:8px; padding:2px 6px; border-radius:4px; background:#eef0ff; color:#555ddc; font-size:10px; font-weight:700; }
+  @media (max-width:900px) { .layout-grid { grid-template-columns:1fr; } .layout-preview { height:250px; } }
+</style>
+
+<h2>角色状态应该放在哪里？</h2>
+<p class="subtitle">角色是“下一条消息的上下文”，不应该占据历史消息流。点击选择你更喜欢的方案。</p>
+
+<div class="layout-grid">
+  <div class="layout-card option" data-choice="inside-top" onclick="toggleSelect(this)">
+    <div class="layout-preview">
+      <div class="chat-line mid"></div><div class="chat-line"></div><div class="chat-line short"></div>
+      <div class="chat-space"></div>
+      <div class="composer-shell">
+        <div class="context-row inside"><span class="avatar">L</span><span class="context-name">Lily · 首席架构师</span><span class="badge">设定</span><span class="badge">世界</span><span class="chev">⌄</span></div>
+        <div class="input-area">描述要完成的工作…</div>
+        <div class="toolbar"><span class="tool">＋</span><span>技能</span><span>自动执行</span><span class="send">↑</span></div>
+      </div>
+    </div>
+    <div class="layout-copy"><span class="recommended">推荐</span><h3>A. 输入框内部顶部</h3><p>角色与本次输入属于同一个上下文，清楚但不抢消息阅读空间；点击整行即可切换角色、设定和世界书。</p></div>
+  </div>
+
+  <div class="layout-card option" data-choice="above" onclick="toggleSelect(this)">
+    <div class="layout-preview">
+      <div class="chat-line mid"></div><div class="chat-line"></div><div class="chat-line short"></div>
+      <div class="chat-space"></div>
+      <div class="context-row outside"><span class="avatar">L</span><span class="context-name">Lily · 首席架构师</span><span class="badge">设定</span><span class="badge">世界</span><span class="chev">⌄</span></div>
+      <div class="composer-shell">
+        <div class="input-area">描述要完成的工作…</div>
+        <div class="toolbar"><span class="tool">＋</span><span>技能</span><span>自动执行</span><span class="send">↑</span></div>
+      </div>
+    </div>
+    <div class="layout-copy"><h3>B. 输入框正上方</h3><p>角色状态独立、识别最快，但会多占一行高度；长任务条、提示建议出现时需要处理上下顺序。</p></div>
+  </div>
+
+  <div class="layout-card option" data-choice="below" onclick="toggleSelect(this)">
+    <div class="layout-preview">
+      <div class="chat-line mid"></div><div class="chat-line"></div><div class="chat-line short"></div>
+      <div class="chat-space"></div>
+      <div class="composer-shell">
+        <div class="input-area">描述要完成的工作…</div>
+        <div class="toolbar"><span class="tool">＋</span><span>技能</span><span>自动执行</span><span class="send">↑</span></div>
+      </div>
+      <div class="context-row outside"><span class="avatar">L</span><span class="context-name">Lily · 首席架构师</span><span class="badge">设定</span><span class="badge">世界</span><span class="chev">⌄</span></div>
+    </div>
+    <div class="layout-copy"><h3>C. 输入框正下方</h3><p>不干扰输入区，但离消息和输入都更远，容易被误解为状态栏，在小窗口里也最先被挤压。</p></div>
+  </div>
+</div>

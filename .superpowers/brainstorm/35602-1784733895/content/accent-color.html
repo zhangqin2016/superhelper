@@ -1,0 +1,120 @@
+<h2>日光极简的"点缀色"用哪个?</h2>
+<p class="subtitle">同样的界面,只换那一抹彩色。点击你最喜欢的(可再多挑一个备选)</p>
+
+<style>
+  .acc { font-size: 9.5px; line-height: 1.5; border-radius: 8px; overflow: hidden; height: 230px; display: flex; flex-direction: column; font-family: -apple-system, "PingFang SC", sans-serif; background: #f7f7f5; color: #1f2328; }
+  .acc .top { padding: 5px 10px; background: #fff; border-bottom: 1px solid #e8e8e4; display: flex; align-items: center; gap: 5px; }
+  .acc .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .acc .body { flex: 1; display: flex; min-height: 0; }
+  .acc .side { width: 27%; padding: 6px; background: #fbfbfa; border-right: 1px solid #ececea; display: flex; flex-direction: column; gap: 4px; }
+  .acc .center { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+  .acc .item { border-radius: 4px; padding: 3px 6px; white-space: nowrap; overflow: hidden; }
+  .acc .msg { border-radius: 8px; padding: 5px 8px; max-width: 88%; background: #fff; border: 1px solid #e8e8e4; color: #37352f; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .acc .tool { border-radius: 6px; padding: 4px 7px; display: flex; align-items: center; gap: 5px; }
+  .acc .composer { margin: 6px 8px; border-radius: 8px; padding: 5px 8px; background: #fff; display: flex; justify-content: space-between; align-items: center; color: #a3a39d; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+  .acc .send { width: 14px; height: 14px; border-radius: 5px; }
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="ink" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="acc">
+        <div class="top"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span style="margin-left:6px;color:#9a9a94;">Lily 工作台</span></div>
+        <div class="body">
+          <div class="side">
+            <div class="item" style="background:#fff;border:1px solid #e4e4e0;box-shadow:0 1px 2px rgba(0,0,0,0.05);">📄 季度报告.docx</div>
+            <div class="item" style="color:#8b8b85;">📊 销售数据分析</div>
+            <div class="item" style="color:#8b8b85;">✉️ 客户邮件翻译</div>
+          </div>
+          <div class="center">
+            <div class="msg">帮我把这份报告转成 PDF</div>
+            <div class="tool" style="background:#f4f4f2;border:1px solid #e6e6e2;color:#6b6b66;"><span style="color:#1f2328;">✓</span> render_document · 12 页</div>
+            <div class="msg">已完成 ✅ 预览图已生成…</div>
+          </div>
+        </div>
+        <div class="composer" style="border:1px solid #d6d6d2;">给 Lily 发送消息… <span class="send" style="background:#1f2328;"></span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>① 墨黑 · 零彩色</h3>
+      <p>纯黑白灰,选中态、按钮全用墨色。最克制最"贵",但个性最弱,成功/进行中状态要靠灰度区分。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="violet" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="acc">
+        <div class="top"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span style="margin-left:6px;color:#9a9a94;">Lily 工作台</span></div>
+        <div class="body">
+          <div class="side">
+            <div class="item" style="background:#f3f1ff;border:1px solid #e0dcf7;color:#5b54c4;">📄 季度报告.docx</div>
+            <div class="item" style="color:#8b8b85;">📊 销售数据分析</div>
+            <div class="item" style="color:#8b8b85;">✉️ 客户邮件翻译</div>
+          </div>
+          <div class="center">
+            <div class="msg">帮我把这份报告转成 PDF</div>
+            <div class="tool" style="background:#f6f5fe;border:1px solid #e4e0f8;color:#6d64c9;"><span style="color:#6366f1;">✓</span> render_document · 12 页</div>
+            <div class="msg">已完成 ✅ 预览图已生成…</div>
+          </div>
+        </div>
+        <div class="composer" style="border:1px solid #c9c4ec;">给 Lily 发送消息… <span class="send" style="background:#6366f1;"></span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>② 紫罗兰 · 延续品牌</h3>
+      <p>保留现在的品牌紫,但变浅变柔和。改动感知最小,老用户无割裂感;缺点是"焕新"的视觉冲击弱一些。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="amber" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="acc">
+        <div class="top"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span style="margin-left:6px;color:#9a9a94;">Lily 工作台</span></div>
+        <div class="body">
+          <div class="side">
+            <div class="item" style="background:#fdf3e3;border:1px solid #f0e2c4;color:#a1640a;">📄 季度报告.docx</div>
+            <div class="item" style="color:#8b8b85;">📊 销售数据分析</div>
+            <div class="item" style="color:#8b8b85;">✉️ 客户邮件翻译</div>
+          </div>
+          <div class="center">
+            <div class="msg">帮我把这份报告转成 PDF</div>
+            <div class="tool" style="background:#fdf6e9;border:1px solid #f0e2c4;color:#a1640a;"><span style="color:#d97706;">✓</span> render_document · 12 页</div>
+            <div class="msg">已完成 ✅ 预览图已生成…</div>
+          </div>
+        </div>
+        <div class="composer" style="border:1px solid #e8d3a8;">给 Lily 发送消息… <span class="send" style="background:#d97706;"></span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>③ 琥珀橙 · 温暖亲和</h3>
+      <p>暖色点缀让极简不显冷,对非开发者最友好,和"暖纸"感呼应。辨识度最高,但琥珀色用多了容易显"通知感"。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="green" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="acc">
+        <div class="top"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span style="margin-left:6px;color:#9a9a94;">Lily 工作台</span></div>
+        <div class="body">
+          <div class="side">
+            <div class="item" style="background:#ecf6ef;border:1px solid #d5e8dc;color:#2c6e4b;">📄 季度报告.docx</div>
+            <div class="item" style="color:#8b8b85;">📊 销售数据分析</div>
+            <div class="item" style="color:#8b8b85;">✉️ 客户邮件翻译</div>
+          </div>
+          <div class="center">
+            <div class="msg">帮我把这份报告转成 PDF</div>
+            <div class="tool" style="background:#f0f8f2;border:1px solid #d5e8dc;color:#2c6e4b;"><span style="color:#2f9e6e;">✓</span> render_document · 12 页</div>
+            <div class="msg">已完成 ✅ 预览图已生成…</div>
+          </div>
+        </div>
+        <div class="composer" style="border:1px solid #bcd8c6;">给 Lily 发送消息… <span class="send" style="background:#2f9e6e;"></span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>④ 苔绿 · 安静自然</h3>
+      <p>低饱和绿,安静、护眼、有"工作台/工具"的踏实感,和成功态的绿天然协调。比较独特,但品牌关联要从零建立。</p>
+    </div>
+  </div>
+
+</div>

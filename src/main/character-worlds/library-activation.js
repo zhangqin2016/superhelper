@@ -5,6 +5,7 @@ const {
   MERGE_STRATEGIES,
   normalizeConversationConfig,
 } = require("./conversation-config");
+const { FEATURE_DISABLED } = require("./character-card-only");
 
 function buildLibraryActivationConfig(current, {
   kind,
@@ -13,7 +14,12 @@ function buildLibraryActivationConfig(current, {
   scope = "chat",
   mergeStrategy = "constant",
 } = {}) {
-  if (!(kind === "character" || kind === "persona" || kind === "worldBook")) {
+  if (kind !== "character") {
+    if (kind === "persona" || kind === "worldBook") {
+      const error = new TypeError(FEATURE_DISABLED);
+      error.code = FEATURE_DISABLED;
+      throw error;
+    }
     throw new TypeError("Unsupported library activation kind");
   }
   if (typeof revisionId !== "string" || !revisionId.trim()) {

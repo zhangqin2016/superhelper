@@ -12,6 +12,25 @@ const { registerWorkspaceImportHandlers } = require("./ipc-workspace-import");
 // after download. A generous timeout so a large, server-approved app still lands.
 const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 600_000;
 
+function isProjectBusy(ctx, projectId) {
+  try {
+    const project = ctx.projectManager?.find?.(projectId);
+    if (project && ctx.workspaceVersionService?.isMutating?.(project.path)) return true;
+    if (!ctx?.turnOrchestrator?.snapshot || !ctx?.sessionManager?.listForProject) return false;
+    return ctx.sessionManager.listForProject(projectId).some((session) => {
+      const snapshot = ctx.turnOrchestrator.snapshot(session.id);
+      return !snapshot || snapshot.phase !== "idle" || Number(snapshot.queueLength) > 0;
+    });
+  } catch {
+    // A mutating version operation must not race an unknown runner state.
+    return true;
+  }
+}
+
+function isVersionId(value) {
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{6,99}$/.test(String(value || "").trim());
+}
+
 function safeFolderName(value) {
   return String(value || "workspace-app")
     .trim()
@@ -81,6 +100,35 @@ async function downloadWorkspaceApp(app) {
 
 function registerProjectHandlers(ctx) {
   const { mainWindow, projectManager, sessionManager, runnerPool } = ctx;
+  const versionService = ctx.workspaceVersionService;
+
+  function resolveVersionProject(projectId) {
+    const project = projectManager.find(String(projectId || ""));
+    if (!project) {
+      const error = new Error("PROJECT_NOT_FOUND");
+      error.code = "PROJECT_NOT_FOUND";
+      throw error;
+    }
+    if (!versionService) {
+      const error = new Error("VERSION_CONTROL_UNAVAILABLE");
+      error.code = "VERSION_CONTROL_UNAVAILABLE";
+      throw error;
+    }
+    return project;
+  }
+
+  async function versionCall(projectId, operation, { mutating = false } = {}) {
+    try {
+      const project = resolveVersionProject(projectId);
+      if (mutating && isProjectBusy(ctx, project.id)) return { ok: false, error: "WORKSPACE_BUSY" };
+      return await operation(project);
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.code || "VERSION_CONTROL_FAILED").slice(0, 80),
+      };
+    }
+  }
 
   ipcMain.handle("project:list", () => projectManager.getAppState());
 
@@ -156,6 +204,23 @@ function registerProjectHandlers(ctx) {
     }
 
     return { ok: true, state: projectManager.getAppState() };
+  });
+
+  ipcMain.handle("project:version-status", (_event, projectId) =>
+    versionCall(projectId, (project) => versionService.status(project.path)));
+  ipcMain.handle("project:version-history", (_event, projectId, limit = 50) =>
+    versionCall(projectId, (project) => versionService.history(project.path, limit)));
+  ipcMain.handle("project:version-save", (_event, projectId) =>
+    versionCall(projectId, (project) => versionService.save(project.path, "manual"), { mutating: true }));
+  ipcMain.handle("project:version-restore", (_event, projectId, revision) => {
+    const id = String(revision || "").trim();
+    if (!isVersionId(id)) return { ok: false, error: "INVALID_VERSION" };
+    return versionCall(projectId, (project) => versionService.restore(project.path, id), { mutating: true });
+  });
+  ipcMain.handle("project:version-preview", (_event, projectId, revision) => {
+    const id = String(revision || "").trim();
+    if (!isVersionId(id)) return { ok: false, error: "INVALID_VERSION" };
+    return versionCall(projectId, (project) => versionService.previewRestore(project.path, id));
   });
 
   registerWorkspaceExportHandlers(ctx);
@@ -400,4 +465,4 @@ function registerProjectHandlers(ctx) {
   });
 }
 
-module.exports = { registerProjectHandlers };
+module.exports = { registerProjectHandlers, isProjectBusy, isVersionId };

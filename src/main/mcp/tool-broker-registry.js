@@ -83,7 +83,7 @@ function isPlatformTool(tool) {
   return (
     Array.isArray(tool?.requiredSkillIds) &&
     tool.requiredSkillIds.length === 0 &&
-    (tool.group === "capabilities" || tool.group === "runtime-packs" || tool.group === "character-worlds")
+    (tool.group === "capabilities" || tool.group === "runtime-packs" || tool.group === "character-worlds" || tool.group === "legal-kb")
   );
 }
 
@@ -157,6 +157,24 @@ const STATIC_TOOL_DEFINITIONS = [
     executionSurface: EXECUTION_SURFACES.toolBroker,
     mcpServerName: MCP_SERVER_NAMES.toolBroker,
   }),
+  {
+    id: "lily_legal_search",
+    name: "lily_legal_search",
+    group: "legal-kb",
+    requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
+    description: "Search the authorized local China legal knowledge pack and return cited law/article evidence. Use this before legal conclusions; results include version, verification, and source metadata.",
+    inputSchema: {
+      query: z.string().min(1).max(240).describe("legal issue, fact pattern, law title, or article to search"),
+      topK: z.number().int().min(1).max(20).optional().describe("maximum evidence results"),
+    },
+    annotations: { readOnlyHint: true, evidenceKind: "knowledge_base" },
+    handler: async ({ query, topK }, _context, deps = {}) => {
+      const manager = deps.legalKnowledgeManager || require("../legal-kb/legal-kb-manager");
+      return manager.search({ query, topK }, deps.legalKnowledgeOptions || {});
+    },
+  },
   {
     id: "lily_capability_list",
     name: "lily_capability_list",

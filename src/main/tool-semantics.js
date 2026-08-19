@@ -39,6 +39,7 @@ function semanticsFromAnnotations(annotations = {}) {
     destructive: annotations.destructiveHint === true,
     idempotent: annotations.idempotentHint === true || annotations.readOnlyHint === true,
     externalSideEffect: annotations.openWorldHint === true && annotations.readOnlyHint !== true,
+    evidenceKind: String(annotations.evidenceKind || "tool_observation"),
   };
 }
 

@@ -9,9 +9,7 @@ const ACTION_LABEL_KEYS = {
   archive: "character.library.archive",
 };
 
-function rowActions(state) {
-  if (state.tab === "books") return ["edit", "history", "archive"];
-  if (state.tab === "personas") return ["edit", "history", "archive"];
+function rowActions() {
   return ["edit", "history", "duplicate", "export", "archive"];
 }
 
@@ -27,102 +25,6 @@ function confirmBar(text) {
     "data-library-confirm": "no",
   }));
   return bar;
-}
-
-function renderPersonaDetail(detail, data) {
-  const section = el("section", "character-library-detail-section");
-  section.appendChild(el("h3", "character-library-detail-section-title", {
-    textContent: t("character.library.detailPersona"),
-  }));
-  const completion = data.completion === "ready"
-    ? t("character.library.statusReady")
-    : t("character.library.statusIncomplete");
-  section.appendChild(el("p", "character-library-detail-copy", {
-    textContent: `${t("character.library.detailCompletion")}: ${completion}`,
-  }));
-  if (Number.isSafeInteger(data.descriptionChars)) {
-    section.appendChild(el("p", "character-library-detail-copy", {
-      textContent: t("character.library.personaMeta", { count: data.descriptionChars }),
-    }));
-  }
-  section.appendChild(el("p", "character-library-detail-copy", {
-    textContent: t("character.library.detailPersonaSafe"),
-  }));
-  const fields = [
-    ["character.library.fieldIdentity", data.identity],
-    ["character.library.fieldBackground", data.background],
-    ["character.library.fieldExpertise", Array.isArray(data.expertise) ? data.expertise.join("、") : ""],
-    ["character.library.fieldCommunicationStyle", data.communicationStyle],
-    ["character.library.fieldGoals", Array.isArray(data.goals) ? data.goals.join("、") : ""],
-    ["character.library.fieldPreferences", Array.isArray(data.preferences) ? data.preferences.join("、") : ""],
-    ["character.library.fieldConstraints", Array.isArray(data.constraints) ? data.constraints.join("、") : ""],
-  ];
-  for (const [labelKey, value] of fields) {
-    if (!value) continue;
-    section.appendChild(el("p", "character-library-detail-copy", {
-      textContent: `${t(labelKey)}: ${value}`,
-    }));
-  }
-  detail.appendChild(section);
-}
-
-function renderWorldBookDetail(detail, data) {
-  const section = el("section", "character-library-detail-section");
-  section.appendChild(el("h3", "character-library-detail-section-title", {
-    textContent: t("character.library.detailWorldBook"),
-  }));
-  const report = data.report || {};
-  const healthKey = `character.library.health.${data.health}`;
-  const health = t(healthKey) === healthKey
-    ? (data.health || t("character.library.unavailable"))
-    : t(healthKey);
-  const conflictKey = `character.library.conflictStatus.${data.conflictStatus}`;
-  const conflicts = t(conflictKey) === conflictKey
-    ? (data.conflictStatus || t("character.library.unavailable"))
-    : t(conflictKey);
-  const rows = [
-    [t("character.library.detailEntries"), data.entryCount ?? report.entryCount],
-    [t("character.library.detailEnabledEntries"), report.enabledCount],
-    [t("character.library.detailConstantEntries"), report.constantCount],
-    [t("character.library.detailScope"), data.scope ?? t("character.library.unavailable")],
-    [t("character.library.detailHealth"), health],
-    [t("character.library.detailConflicts"), conflicts],
-    [t("character.library.detailBudget"), Number.isSafeInteger(data.estimatedContextTokens)
-      ? `${data.estimatedContextTokens} tokens`
-      : t("character.library.unavailable")],
-    [t("character.library.detailMergeStrategy"), data.mergeStrategy ?? t("character.library.unavailable")],
-  ];
-  for (const [label, value] of rows) {
-    section.appendChild(el("p", "character-library-detail-copy", {
-      textContent: `${label}: ${value ?? t("character.library.unavailable")}`,
-    }));
-  }
-  const entries = Array.isArray(data.entries) ? data.entries : [];
-  if (entries.length) {
-    const entrySection = el("section", "character-library-detail-section");
-    entrySection.appendChild(el("h3", "character-library-detail-section-title", {
-      textContent: t("character.library.detailEntryList"),
-    }));
-    const list = el("ul", "character-library-detail-list");
-    for (const entry of entries.slice(0, 40)) {
-      const title = entry.title || entry.id || t("character.library.untitledEntry");
-      const flags = [
-        entry.constant ? t("character.library.entryConstant") : t("character.library.entryTriggered"),
-        entry.enabled === false ? t("character.library.entryDisabled") : t("character.library.entryEnabled"),
-      ];
-      list.appendChild(el("li", "character-library-detail-list-item", {
-        textContent: `${title} · ${flags.join(" · ")}`,
-      }));
-    }
-    if (data.entriesTruncated) {
-      entrySection.appendChild(el("p", "character-library-detail-copy", {
-        textContent: t("character.library.entryListTruncated"),
-      }));
-    }
-    entrySection.appendChild(list);
-    detail.appendChild(entrySection);
-  }
-  detail.appendChild(section);
 }
 
 export function renderLibraryDetail(state) {
@@ -220,27 +122,16 @@ export function renderLibraryDetail(state) {
       detail.appendChild(section);
     }
   }
-  if (item.kind === "persona") renderPersonaDetail(detail, data);
-  if (item.kind === "worldBook") renderWorldBookDetail(detail, data);
-
   const mutationActions = el("div", "character-library-detail-actions character-library-mutation-actions");
-  const canMutateWorldBook = item.kind === "worldBook" && Boolean(item.currentRevisionId);
-  if (!item.official || canMutateWorldBook) {
+  if (!item.official) {
     if (state.confirm?.action === "archive" && state.confirm.entityId === item.id) {
       mutationActions.appendChild(confirmBar(t("character.library.confirmArchive", { name: item.name })));
     }
-    for (const action of rowActions(state)) {
+    for (const action of rowActions()) {
       mutationActions.appendChild(el("button", "character-library-action", {
         type: "button", textContent: t(ACTION_LABEL_KEYS[action]), "data-library-action": action,
       }));
     }
-  }
-  if (item.kind === "worldBook" && data.active) {
-    mutationActions.appendChild(el("button", "character-library-action", {
-      type: "button",
-      textContent: t("character.library.removeFromConversation"),
-      "data-library-remove-book": "true",
-    }));
   }
   detail.appendChild(mutationActions);
   const actions = el("div", "character-library-detail-actions");
@@ -253,8 +144,7 @@ export function renderLibraryDetail(state) {
         : t("character.library.useInConversation"),
     "data-library-activate": "true",
   });
-  activate.disabled = state.activation.status === "running"
-    || (item.kind === "persona" && data.completion === "incomplete");
+  activate.disabled = state.activation.status === "running";
   actions.appendChild(activate);
   detail.appendChild(actions);
 }

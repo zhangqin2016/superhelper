@@ -87,12 +87,17 @@ function bindingEnvelope({
 
 function expectedReady(bindingVersion, revisionId, compatibilityProfile = CHARACTER_COMPATIBILITY_PROFILE) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     mode: "character",
     bindingVersion,
+    previewVersion: 0,
     characterRevisionId: revisionId,
     personaRevisionId: null,
+    worldBookBindings: [],
     compatibilityProfile,
+    greetingIndex: null,
+    sceneId: null,
+    groupId: null,
     snapshotStatus: "ready",
   };
 }

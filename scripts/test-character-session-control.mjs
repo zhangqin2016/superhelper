@@ -32,7 +32,7 @@ const characterBinding = {
     binding: { mode: "character", bindingVersion: 2, characterRevisionId: "rev-a", personaRevisionId: "persona-a" },
   });
   assert.equal(state.mode, "character");
-  assert.equal(state.personaRevisionId, "persona-a", "persona pin surfaces for the §13.1 indicator");
+  assert.equal(state.personaRevisionId, undefined, "retired persona pins never enter renderer state");
 
   const conflicted = reduceCharacterControl(state, {
     type: "binding.conflict",
@@ -675,11 +675,11 @@ const characterBinding = {
   render();
   assert.equal(banner.hidden, false);
   assert.equal(name.textContent, "糖糖");
-  assert.deepEqual(badges.children.map((child) => child.textContent), ["已选择", "设定", "世界书"]);
-  assert.match(attributes.get("aria-label"), /糖糖 · 已选择 · 设定 · 世界书/);
+  assert.deepEqual(badges.children.map((child) => child.textContent), ["已选择"]);
+  assert.match(attributes.get("aria-label"), /糖糖 · 已选择/);
   state = { ...state, application: { status: "applied", revisionId: "revision-a" } };
   render();
-  assert.deepEqual(badges.children.map((child) => child.textContent), ["已生效", "设定", "世界书"]);
+  assert.deepEqual(badges.children.map((child) => child.textContent), ["已生效"]);
   assert.equal(classes.has("is-character"), true);
 
   state = { available: true, sessionId: "session-a", mode: "native" };
@@ -688,19 +688,10 @@ const characterBinding = {
   assert.equal(badges.children.length, 0, "native mode must clear character context badges");
   assert.equal(classes.has("is-character"), false);
 
-  state = {
-    available: true,
-    sessionId: "session-a",
-    mode: "native",
-    personaRevisionId: "persona-a",
-    worldBookRevisionId: "world-a",
-  };
+  state = { available: true, sessionId: "session-a", mode: "native" };
   render();
-  assert.deepEqual(
-    badges.children.map((child) => child.textContent),
-    ["设定", "世界书"],
-    "native Lily must expose independently active persona and world-book context",
-  );
+  assert.deepEqual(badges.children.map((child) => child.textContent), [],
+    "native Lily must not expose retired facet context");
 }
 
 console.log("character session control reducer: ok");

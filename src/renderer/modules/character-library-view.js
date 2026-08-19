@@ -44,7 +44,9 @@ const ACTION_LABEL_KEYS = {
 };
 
 const GROUP_LABEL_KEYS = {
+  featured: "character.library.groupFeatured",
   all: "character.library.groupAll",
+  industry: "character.library.groupIndustry",
   official: "character.library.groupOfficial",
   my: "character.library.groupMy",
   recent: "character.library.groupRecent",
@@ -53,8 +55,6 @@ const GROUP_LABEL_KEYS = {
 
 const FORM_FIELDS = {
   character: ["name", "description", "personality", "scenario", "tags"],
-  persona: ["name", "identity", "background", "expertise", "communicationStyle", "goals", "preferences", "constraints", "description"],
-  worldBook: ["name"],
 };
 const FORM_FIELD_LABELS = {
   name: "character.library.fieldName",
@@ -62,13 +62,6 @@ const FORM_FIELD_LABELS = {
   personality: "character.library.fieldPersonality",
   scenario: "character.library.fieldScenario",
   tags: "character.library.fieldTags",
-  identity: "character.library.fieldIdentity",
-  background: "character.library.fieldBackground",
-  expertise: "character.library.fieldExpertise",
-  communicationStyle: "character.library.fieldCommunicationStyle",
-  goals: "character.library.fieldGoals",
-  preferences: "character.library.fieldPreferences",
-  constraints: "character.library.fieldConstraints",
 };
 
 function renderToolbar(state) {
@@ -80,7 +73,7 @@ function renderToolbar(state) {
       tabBtn.classList.toggle("is-active", selected);
     }
   }
-  const onCharacters = state.tab === "characters";
+  const onCharacters = true;
   const tagFilter = $("characterLibraryTagFilter");
   if (tagFilter) tagFilter.hidden = !onCharacters;
   const sourceFilter = $("characterLibrarySourceFilter");
@@ -97,32 +90,15 @@ function renderToolbar(state) {
   }
   const hint = $("characterLibraryFacetHint");
   if (hint) {
-    const key = state.tab === "personas"
-      ? "character.library.facetHintPersona"
-      : state.tab === "books"
-        ? "character.library.facetHintWorldBook"
-        : "character.library.facetHintCharacter";
-    hint.textContent = t(key);
+    hint.textContent = t("character.library.facetHintCharacter");
   }
 }
 
 function rowMeta(state, item) {
-  if (state.tab === "personas") {
-    return item.descriptionChars != null
-      ? t("character.library.personaMeta", { count: item.descriptionChars })
-      : "";
-  }
-  if (state.tab === "books") {
-    return item.entryCount != null
-      ? t("character.library.bookMeta", { count: item.entryCount })
-      : "";
-  }
   return (item.tags || []).join(" · ");
 }
 
-function rowActions(state) {
-  if (state.tab === "books") return ["edit", "history", "archive"];
-  if (state.tab === "personas") return ["edit", "history", "archive"];
+function rowActions() {
   return ["edit", "history", "duplicate", "export", "archive"];
 }
 
@@ -166,11 +142,7 @@ function renderList(state) {
   }));
   if (!items.length) {
     grid.appendChild(el("div", "character-library-empty", {
-      textContent: t(state.tab === "personas"
-        ? "character.library.emptyPersona"
-        : state.tab === "books"
-          ? "character.library.emptyWorldBook"
-          : "character.library.emptyList"),
+      textContent: t("character.library.emptyList"),
     }));
     return;
   }
@@ -232,7 +204,7 @@ function renderList(state) {
     // visible mutation actions are rendered in the details pane below.
     if (!item.official) {
       const compatibilityActions = el("div", "character-library-compat-actions");
-      for (const action of rowActions(state)) {
+      for (const action of rowActions()) {
         compatibilityActions.appendChild(el("button", "character-library-action", {
           type: "button",
           tabindex: "-1",
@@ -288,172 +260,8 @@ function formFieldValues(form) {
   };
 }
 
-function parseWorldBookEntries(value) {
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function worldBookEntryDefaults(index) {
-  return {
-    id: `entry-${index + 1}`,
-    title: "",
-    enabled: true,
-    content: "",
-    activation: { constant: false, primaryKeys: [], secondaryKeys: [] },
-    insertion: { position: "before_character" },
-  };
-}
-
-const WORLD_BOOK_POSITIONS = [
-  ["before_character", "character.library.worldBookPositionBeforeCharacter"],
-  ["after_character", "character.library.worldBookPositionAfterCharacter"],
-  ["before_examples", "character.library.worldBookPositionBeforeExamples"],
-  ["after_examples", "character.library.worldBookPositionAfterExamples"],
-  ["author_note_top", "character.library.worldBookPositionAuthorNoteTop"],
-  ["author_note_bottom", "character.library.worldBookPositionAuthorNoteBottom"],
-];
-
-function appendWorldBookField(parent, labelKey, value, field, { multiline = false, formField = false } = {}) {
-  const label = el("label", "character-library-field world-book-field");
-  label.appendChild(el("span", "character-library-field-label", { textContent: t(labelKey) }));
-  const input = el(multiline ? "textarea" : "input", multiline
-    ? "character-library-textarea world-book-entry-content"
-    : "character-library-input", {
-    ...(multiline ? { rows: "5" } : { type: "text" }),
-    ...(formField ? { "data-field": field } : { "data-world-entry-field": field }),
-  });
-  if (multiline) input.value = value || "";
-  else input.value = value || "";
-  label.appendChild(input);
-  parent.appendChild(label);
-  return input;
-}
-
-function appendWorldBookCheckbox(parent, labelKey, checked, field) {
-  const label = el("label", "world-book-check");
-  const input = el("input", null, { type: "checkbox", "data-world-entry-field": field });
-  input.checked = Boolean(checked);
-  label.appendChild(input);
-  label.appendChild(el("span", null, { textContent: t(labelKey) }));
-  parent.appendChild(label);
-  return input;
-}
-
-function renderWorldBookForm(state, detail) {
-  const form = state.form;
-  const values = formFieldValues(form);
-  const wrap = el("div", "character-library-form world-book-editor");
-  wrap.appendChild(el("p", "world-book-editor-hint", {
-    textContent: t("character.library.worldBookEditorHint"),
-  }));
-  appendWorldBookField(wrap, "character.library.fieldName", values.name, "name", { formField: true });
-
-  const entries = parseWorldBookEntries(values.worldBookEntries);
-  const entriesHead = el("div", "world-book-editor-section-head");
-  const entriesTitle = el("div", "world-book-editor-section-title");
-  entriesTitle.appendChild(el("strong", null, { textContent: t("character.library.worldBookEditorEntries") }));
-  entriesTitle.appendChild(el("span", "world-book-editor-count", { textContent: String(entries.length) }));
-  entriesHead.appendChild(entriesTitle);
-  entriesHead.appendChild(el("button", "world-book-add-entry", {
-    type: "button",
-    textContent: t("character.library.worldBookEditorAddEntry"),
-    "data-world-book-add": "true",
-  }));
-  wrap.appendChild(entriesHead);
-
-  const list = el("div", "world-book-entry-list");
-  if (!entries.length) {
-    const empty = el("div", "world-book-entry-empty");
-    empty.appendChild(el("strong", null, { textContent: t("character.library.worldBookEditorEmpty") }));
-    empty.appendChild(el("span", null, { textContent: t("character.library.worldBookEditorEmptyHint") }));
-    list.appendChild(empty);
-  }
-  entries.forEach((rawEntry, index) => {
-    const entry = { ...worldBookEntryDefaults(index), ...rawEntry };
-    entry.activation = { ...worldBookEntryDefaults(index).activation, ...(rawEntry.activation || {}) };
-    entry.insertion = { ...worldBookEntryDefaults(index).insertion, ...(rawEntry.insertion || {}) };
-    const card = el("article", "world-book-entry-editor");
-    card.dataset.worldBookEntry = entry.id || `entry-${index + 1}`;
-    const header = el("div", "world-book-entry-head");
-    const heading = el("div", "world-book-entry-heading");
-    heading.appendChild(el("span", "world-book-entry-index", { textContent: String(index + 1).padStart(2, "0") }));
-    heading.appendChild(el("strong", null, { textContent: entry.title || t("character.library.worldBookEditorUntitled") }));
-    header.appendChild(heading);
-    appendWorldBookCheckbox(header, "character.library.worldBookEditorEnabled", entry.enabled !== false, "enabled");
-    header.appendChild(el("button", "world-book-remove-entry", {
-      type: "button",
-      textContent: "×",
-      title: t("character.library.worldBookEditorRemoveEntry"),
-      "aria-label": t("character.library.worldBookEditorRemoveEntry"),
-      "data-world-book-remove": "true",
-    }));
-    card.appendChild(header);
-
-    const titleInput = appendWorldBookField(card, "character.library.worldBookEditorEntryTitle", entry.title, "title");
-    titleInput.addEventListener("input", () => {
-      const title = card.querySelector(".world-book-entry-heading strong");
-      if (title) title.textContent = titleInput.value.trim() || t("character.library.worldBookEditorUntitled");
-    });
-    appendWorldBookField(card, "character.library.worldBookEditorContent", entry.content, "content", { multiline: true });
-    appendWorldBookField(card, "character.library.worldBookEditorPrimaryKeys", (entry.activation.primaryKeys || []).join(", "), "primaryKeys");
-    appendWorldBookField(card, "character.library.worldBookEditorSecondaryKeys", (entry.activation.secondaryKeys || []).join(", "), "secondaryKeys");
-
-    const options = el("div", "world-book-entry-options");
-    appendWorldBookCheckbox(options, "character.library.worldBookEditorConstant", entry.activation.constant === true, "constant");
-    const positionLabel = el("label", "world-book-position-field");
-    positionLabel.appendChild(el("span", "character-library-field-label", { textContent: t("character.library.worldBookEditorPosition") }));
-    const select = el("select", "character-library-select", { "data-world-entry-field": "position" });
-    for (const [value, labelKey] of WORLD_BOOK_POSITIONS) {
-      const option = el("option", null, { value, textContent: t(labelKey) });
-      option.selected = value === (entry.insertion.position || "before_character");
-      select.appendChild(option);
-    }
-    positionLabel.appendChild(select);
-    options.appendChild(positionLabel);
-    card.appendChild(options);
-    list.appendChild(card);
-  });
-  wrap.appendChild(list);
-
-  const policy = el("section", "world-book-policy");
-  policy.appendChild(el("div", "world-book-editor-section-title", {
-    textContent: t("character.library.worldBookEditorPolicy"),
-  }));
-  const policyGrid = el("div", "world-book-policy-grid");
-  appendWorldBookField(policyGrid, "character.library.worldBookEditorScanDepth", values.scanDepthMessages, "scanDepthMessages", { formField: true });
-  appendWorldBookField(policyGrid, "character.library.worldBookEditorTokenBudget", values.tokenBudget, "tokenBudget", { formField: true });
-  const recursive = el("label", "world-book-check world-book-recursive");
-  const recursiveInput = el("input", null, { type: "checkbox", "data-field": "recursive" });
-  recursiveInput.checked = values.recursive !== "false";
-  recursive.appendChild(recursiveInput);
-  recursive.appendChild(el("span", null, { textContent: t("character.library.worldBookEditorRecursive") }));
-  policyGrid.appendChild(recursive);
-  policy.appendChild(policyGrid);
-  wrap.appendChild(policy);
-
-  const actions = el("div", "character-library-form-actions");
-  const save = el("button", "character-library-save", {
-    type: "button", textContent: t("character.library.save"), "data-library-save": "true",
-  });
-  save.disabled = state.busy;
-  actions.appendChild(save);
-  actions.appendChild(el("button", "character-library-back", {
-    type: "button", textContent: t("character.library.cancel"), "data-library-back": "true",
-  }));
-  wrap.appendChild(actions);
-  detail.appendChild(wrap);
-}
-
 function renderForm(state, detail) {
   const form = state.form;
-  if (form.kind === "worldBook") {
-    renderWorldBookForm(state, detail);
-    return;
-  }
   const wrap = el("div", "character-library-form");
   if (form.mode === "create" && form.kind === "character") {
     wrap.appendChild(el("p", "character-library-form-hint", {
@@ -537,20 +345,16 @@ function renderHistory(state, detail) {
         textContent: String(revision.createdAt).slice(0, 10),
       }));
     }
-    // Restore-as-new-revision is a character-channel capability in Phase 2B;
-    // persona/book history stays read-only.
-    if (history.kind === "character") {
-      if (state.confirm?.action === "restore" && state.confirm.revisionId === revision.revisionId) {
-        row.appendChild(confirmBar(
-          t("character.library.confirmRestore", { number: revision.revisionNumber }),
-        ));
-      } else {
-        row.appendChild(el("button", "character-library-action", {
-          type: "button",
-          textContent: t("character.library.restore"),
-          "data-library-restore": "true",
-        }));
-      }
+    if (state.confirm?.action === "restore" && state.confirm.revisionId === revision.revisionId) {
+      row.appendChild(confirmBar(
+        t("character.library.confirmRestore", { number: revision.revisionNumber }),
+      ));
+    } else {
+      row.appendChild(el("button", "character-library-action", {
+        type: "button",
+        textContent: t("character.library.restore"),
+        "data-library-restore": "true",
+      }));
     }
     wrap.appendChild(row);
   }

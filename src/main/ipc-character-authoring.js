@@ -11,6 +11,7 @@ const {
   resolveOwnerScope,
   policyDeniesSelection,
 } = require("./ipc-character-guards");
+const { FEATURE_DISABLED } = require("./character-worlds/character-card-only");
 
 // Character Worlds authoring IPC boundary (Phase 2B, Task P2B-4; design spec
 // §13.2/§15/§16). Guarded mutation channels on top of the ONE validated
@@ -70,6 +71,9 @@ function registerCharacterAuthoringHandlers(ctx) {
     ipcMain.handle(channel, async (event, payload = {}) => {
       const denied = guard(event, payload);
       if (denied) return denied;
+      if (channel.startsWith("persona:") || channel.startsWith("world-book:")) {
+        return failure(FEATURE_DISABLED);
+      }
       const policyDenied = policyDeniesSelection(ctx);
       if (policyDenied) return policyDenied;
       const svc = authoring();

@@ -469,91 +469,15 @@ try {
     assert.deepEqual(unknown, { ok: false, error: "CHARACTER_NOT_FOUND" });
   });
 
-  // --- persona + world-book lifecycle -----------------------------------------
+  // --- retired standalone facets ----------------------------------------------
 
-  let persona;
-  await check("persona:create/update-revision/archive over the bridge", async () => {
-    const created = await handlers.get("persona:create")(trustedEvent(), {
-      canonical: { name: "Aurelia", description: "Harbor cartographer." },
-      ownerScope: OTHER_OWNER,
-    });
-    assert.equal(created.ok, true);
-    assert.equal(created.revision.revisionNumber, 1);
-    persona = { entity: created.entity, revision: created.revision };
-
-    const read = await handlers.get("persona:get-revision")(trustedEvent(), {
-      revisionId: persona.revision.id,
-    });
-    assert.equal(read.ok, true);
-    assert.equal(read.revision.canonical.description, "Harbor cartographer.");
-
-    const edited = await handlers.get("persona:update-revision")(trustedEvent(), {
-      personaId: persona.entity.id,
-      expectedBaseRevisionId: persona.revision.id,
-      canonical: { name: "Aurelia", description: "Tide-locked." },
-    });
-    assert.equal(edited.ok, true);
-    assert.equal(edited.revision.revisionNumber, 2);
-
-    const stale = await handlers.get("persona:update-revision")(trustedEvent(), {
-      personaId: persona.entity.id,
-      expectedBaseRevisionId: persona.revision.id,
-      canonical: { name: "Aurelia" },
-    });
-    assert.deepEqual(stale, { ok: false, error: "PERSONA_REVISION_CONFLICT" });
-
-    const history = await handlers.get("persona:history")(trustedEvent(), {
-      personaId: persona.entity.id,
-    });
-    assert.equal(history.ok, true);
-    assert.equal(history.revisions.length, 2);
-
-    // Authorization-shaped fields are rejected by the persona model (§7.3).
-    const hostile = await handlers.get("persona:create")(trustedEvent(), {
-      canonical: { name: "Bad", role: "admin" },
-    });
-    assert.equal(hostile.ok, false);
-    assert.match(hostile.error, /^PERSONA_/, "persona model code crosses the bridge");
-
-    const archived = await handlers.get("persona:archive")(trustedEvent(), {
-      personaId: persona.entity.id,
-    });
-    assert.equal(archived.ok, true);
-    assert(archived.entity.archivedAt);
-  });
-
-  let book;
-  await check("world-book:create/archive over the bridge", async () => {
-    const created = await handlers.get("world-book:create")(trustedEvent(), {
-      canonical: { name: "Atlas", entries: [] },
-      ownerScope: OTHER_OWNER,
-    });
-    assert.equal(created.ok, true);
-    assert.equal(created.revision.revisionNumber, 1);
-    book = created;
-
-    const invalid = await handlers.get("world-book:create")(trustedEvent(), {
-      canonical: { name: "Bad", entries: "not-an-array" },
-    });
-    assert.equal(invalid.ok, false);
-    assert.match(invalid.error, /^WORLD_BOOK_/, "world-book model code crosses the bridge");
-
-    const history = await handlers.get("world-book:history")(trustedEvent(), {
-      worldBookId: book.entity.id,
-    });
-    assert.equal(history.ok, true);
-    assert.equal(history.revisions.length, 1);
-
-    const archived = await handlers.get("world-book:archive")(trustedEvent(), {
-      worldBookId: book.entity.id,
-    });
-    assert.equal(archived.ok, true);
-    assert(archived.entity.archivedAt);
-
-    const unknown = await handlers.get("world-book:archive")(trustedEvent(), {
-      worldBookId: crypto.randomUUID(),
-    });
-    assert.deepEqual(unknown, { ok: false, error: "WORLD_BOOK_NOT_FOUND" });
+  await check("persona and world-book mutations are retired", async () => {
+    for (const channel of MUTATION_CHANNELS.filter((name) => (
+      name.startsWith("persona:") || name.startsWith("world-book:")
+    ))) {
+      const result = await handlers.get(channel)(trustedEvent(), samplePayload(channel));
+      assert.deepEqual(result, { ok: false, error: "FEATURE_DISABLED" }, channel);
+    }
   });
 
   // --- rollout policy gate ------------------------------------------------------
@@ -566,9 +490,13 @@ try {
           characterId: character.entity.id,
           revisionId: character.revision.id,
         }));
+        const expected = MUTATION_CHANNELS.includes(channel)
+          && (channel.startsWith("persona:") || channel.startsWith("world-book:"))
+          ? { ok: false, error: "FEATURE_DISABLED" }
+          : { ok: false, error: "CHARACTER_WORLDS_UNAVAILABLE" };
         assert.deepEqual(
           result,
-          { ok: false, error: "CHARACTER_WORLDS_UNAVAILABLE" },
+          expected,
           `${channel} gated (archive is a mutation and stays gated; no unarchive exists)`,
         );
       }
@@ -580,14 +508,6 @@ try {
         revisionId: character.revision.id,
       });
       assert.equal(read.ok, true, "revision reads stay available under a disabled policy");
-      const personaHistory = await handlers.get("persona:history")(trustedEvent(), {
-        personaId: persona.entity.id,
-      });
-      assert.equal(personaHistory.ok, true);
-      const bookHistory = await handlers.get("world-book:history")(trustedEvent(), {
-        worldBookId: book.entity.id,
-      });
-      assert.equal(bookHistory.ok, true);
     } finally {
       ctx.characterWorldsPolicy = () => ({ enabled: true, compatibilityProfile: "lily-character-compat-1" });
     }
@@ -617,9 +537,13 @@ try {
     try {
       for (const channel of CHANNELS) {
         const result = await handlers.get(channel)(trustedEvent(), samplePayload(channel));
+        const expected = MUTATION_CHANNELS.includes(channel)
+          && (channel.startsWith("persona:") || channel.startsWith("world-book:"))
+          ? { ok: false, error: "FEATURE_DISABLED" }
+          : { ok: false, error: "CHARACTER_WORLDS_UNAVAILABLE" };
         assert.deepEqual(
           result,
-          { ok: false, error: "CHARACTER_WORLDS_UNAVAILABLE" },
+          expected,
           `${channel} fails closed without throwing`,
         );
       }

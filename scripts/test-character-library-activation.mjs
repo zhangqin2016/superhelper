@@ -28,39 +28,19 @@ assert.deepEqual(
   },
 );
 
-assert.deepEqual(
-  buildLibraryActivationConfig(current, { kind: "persona", revisionId: "persona-rev-2" }).personaRevisionId,
-  "persona-rev-2",
+assert.throws(
+  () => buildLibraryActivationConfig(current, { kind: "persona", revisionId: "persona-rev-2" }),
+  (error) => error.code === "FEATURE_DISABLED",
 );
-
-const withBook = buildLibraryActivationConfig(current, {
-  kind: "worldBook",
-  revisionId: "book-rev-3",
-  scope: "chat",
-  mergeStrategy: "keyed",
-});
-assert.deepEqual(withBook.books, [
-  { scope: "persona", worldBookRevisionId: "book-rev-2", mergeStrategy: "keyed" },
-  { scope: "chat", worldBookRevisionId: "book-rev-3", mergeStrategy: "keyed" },
-]);
-
-const withoutBook = buildLibraryActivationConfig(current, {
-  kind: "worldBook",
-  revisionId: "book-rev-1",
-  action: "remove",
-  scope: "chat",
-});
-assert.deepEqual(withoutBook.books, [
-  { scope: "persona", worldBookRevisionId: "book-rev-2", mergeStrategy: "keyed" },
-]);
-
-const withoutMissingBook = buildLibraryActivationConfig(current, {
-  kind: "worldBook",
-  revisionId: "not-active",
-  action: "remove",
-  scope: "chat",
-});
-assert.deepEqual(withoutMissingBook.books, current.books);
+assert.throws(
+  () => buildLibraryActivationConfig(current, {
+    kind: "worldBook",
+    revisionId: "book-rev-3",
+    scope: "chat",
+    mergeStrategy: "keyed",
+  }),
+  (error) => error.code === "FEATURE_DISABLED",
+);
 
 assert.throws(
   () => buildLibraryActivationConfig(current, { kind: "unknown", revisionId: "x" }),
@@ -68,7 +48,7 @@ assert.throws(
 );
 assert.throws(
   () => buildLibraryActivationConfig(current, { kind: "worldBook", revisionId: "x", scope: "nope" }),
-  /Invalid world book activation options/,
+  (error) => error.code === "FEATURE_DISABLED",
 );
 
 console.log("PASS: test-character-library-activation");

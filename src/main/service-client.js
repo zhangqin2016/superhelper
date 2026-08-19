@@ -17,7 +17,6 @@ function electronSafeStorage() {
   }
 }
 const { base64urlEncode, stableStringify } = require("./crypto-signing");
-
 const DEVICE_FILE = "device-state.json";
 const CLIENT_POLICY_FILE = "client-bootstrap-policy.json";
 const FETCH_TIMEOUT_MS = 15_000;
@@ -871,6 +870,7 @@ module.exports = {
   rotateDeviceKeypair,
   latestRelease,
   runtimePackArtifact,
+  legalKnowledgePackArtifact: require("./legal-kb/legal-kb-client").legalKnowledgePackArtifact,
   testConnection,
   submitContactRequest,
   requestFeedbackAttachmentUpload,

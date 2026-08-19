@@ -32,12 +32,12 @@
     "src/main/skill-manager.js": 1936,
     "src/main/store/message-store.js": 1014,
     "src/main/task-contract.js": 1264,
-    "src/main/turn-orchestrator.js": 2014,
+    "src/main/turn-orchestrator.js": 2050,
     "src/main/update-manager.js": 587,
     "src/main/voice-dictation-service.js": 517,
     "src/main/workspace-knowledge-store.js": 532,
     "src/main/workspace-share.js": 635,
-    "src/renderer/modules/composer.js": 715,
+    "src/renderer/modules/composer.js": 717,
     "src/renderer/modules/markdown.js": 863,
     "src/renderer/modules/message.js": 949,
     "src/renderer/modules/model-settings.js": 551,
@@ -54,7 +54,9 @@
     "src/renderer/modules/character-library.js": 558,
     "src/renderer/modules/character-session-control.js": 527,
     "src/main/character-worlds/repository.js": 557,
-    "src/main/ipc-character-worlds.js": 551
+    "src/main/ipc-character-worlds.js": 551,
+    "src/main/character-worlds/authoring-service.js": 514,
+    "src/main/character-worlds/service.js": 502
   },
   "forbiddenImports": [
     {

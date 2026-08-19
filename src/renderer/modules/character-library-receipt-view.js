@@ -1,12 +1,8 @@
-const RECEIPT_TABS = Object.freeze({
-  character: "characters",
-  persona: "personas",
-  worldBook: "books",
-});
+const RECEIPT_TABS = Object.freeze({ character: "characters" });
 
 export function findCharacterLibraryItem(items = {}, stableId = "") {
   if (!stableId) return null;
-  for (const tab of ["characters", "personas", "books"]) {
+  for (const tab of ["characters"]) {
     const item = (items[tab] || []).find((entry) => (
       entry.id === stableId
       || entry.currentRevisionId === stableId

@@ -4,6 +4,7 @@ const { CharacterPreviewStore } = require("./preview-store");
 const { CharacterWorldsReceiptStore } = require("./receipt-store");
 const { ReceiptActionBroker } = require("./receipt-actions");
 const { buildLibraryActivationConfig } = require("./library-activation");
+const { FEATURE_DISABLED } = require("./character-card-only");
 
 const LIBRARY_ACTIVATION_KINDS = new Set(["character", "persona", "worldBook"]);
 
@@ -82,10 +83,7 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
       const config = resolved.repo.getConversationConfig(
         resolved.session.sessionId, resolved.session.ownerScope,
       );
-      const revisionId = preview?.character?.revisionId
-        || preview?.persona?.revisionId
-        || preview?.worldBooks?.[0]?.revisionId
-        || null;
+      const revisionId = preview?.character?.revisionId || null;
       const receipt = revisionId ? resolved.receipts.getLatestByRevision(
         resolved.session.ownerScope, resolved.session.sessionId, revisionId,
       ) : null;
@@ -93,8 +91,8 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
         previewVersion: preview?.previewVersion || 0,
         bindingVersion: config.bindingVersion,
         character: Boolean(preview?.character),
-        persona: Boolean(preview?.persona),
-        worldBookCount: preview?.worldBooks?.length || 0,
+        persona: false,
+        worldBookCount: 0,
         activation: receipt ? {
           receiptId: receipt.id,
           actionToken: actions.issue({
@@ -121,6 +119,7 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
       receiptId: payload.receiptId,
       action: "preview",
     })) return failure("CHARACTER_ACTION_FORBIDDEN");
+    if (receipt.kind !== "character") return failure(FEATURE_DISABLED);
     try {
       const common = {
         ownerScope: resolved.session.ownerScope,
@@ -163,6 +162,7 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
       receiptId: payload.receiptId,
       action: "activate",
     })) return failure("CHARACTER_ACTION_FORBIDDEN");
+    if (receipt.kind !== "character") return failure(FEATURE_DISABLED);
     try {
       const activated = resolved.previews.activateFacet({
         ownerScope: resolved.session.ownerScope,
@@ -190,6 +190,7 @@ function registerCharacterWorldsExperienceHandlers({ ipcMain, ctx, guard, failur
     if (!LIBRARY_ACTIVATION_KINDS.has(payload?.kind) || !validLibraryActivationId(payload?.revisionId)) {
       return failure("INVALID_INPUT");
     }
+    if (payload.kind !== "character") return failure(FEATURE_DISABLED);
     const action = payload?.action === "remove" ? "remove" : "activate";
     if (!Number.isInteger(payload?.expectedBindingVersion) || payload.expectedBindingVersion < 0) {
       return failure("INVALID_INPUT");

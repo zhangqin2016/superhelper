@@ -18,7 +18,7 @@ import {
   effectiveCharacterMode,
   effectiveBindingUpdates,
 } from "./character-control-model.js";
-import { createBindingUpdateApplier, createRoleBannerRenderer, createSwitchNoticeLoader, createWorldIndicatorLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
+import { createBindingUpdateApplier, createRoleBannerRenderer, createSwitchNoticeLoader, renderBindingUpdateRow } from "./character-binding-updates.js";
 import { monogram, renderCharacterImportPreview } from "./character-import-preview.js";
 import { createCharacterImportOpener } from "./character-import-opener.js";
 import { createSceneSectionController } from "./character-scene-section.js";
@@ -264,7 +264,6 @@ async function loadBinding(sessionId) {
         updates: res.updates,
       });
       void loadSwitchNotices(sessionId);
-      void refreshWorldIndicator(sessionId, seq, res.binding);
     } else {
       dispatch({ type: "binding.loadFailed", sessionId, seq, error: res?.error });
     }
@@ -340,7 +339,6 @@ async function selectMode(mode, character = null) {
   }
 }
 
-const refreshWorldIndicator = createWorldIndicatorLoader({ getState: () => controlState, dispatch, getFacade: facade });
 const sceneSection = createSceneSectionController({ getState: () => controlState, getFacade: facade, getElement: $, t });
 const renderRoleBanner = createRoleBannerRenderer({ getState: () => controlState, getElement: $, monogram, el, t });
 const previewController = createCharacterPreviewController({ getState: () => controlState, dispatch, getFacade: facade, getElement: $, refreshBinding: loadBinding });

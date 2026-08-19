@@ -1,0 +1,370 @@
+<style>
+  .flow {
+    display: grid;
+    grid-template-columns: .78fr .9fr 1.5fr;
+    gap: 18px;
+    margin-top: 22px;
+  }
+  .stage {
+    min-width: 0;
+  }
+  .stage .card-image {
+    height: 500px;
+    padding: 14px;
+    background: #f3f4f6;
+  }
+  .app {
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid #d7dbe2;
+    border-radius: 8px;
+    background: #fff;
+    color: #252a32;
+    font: 11px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .sidebar {
+    height: 100%;
+    padding: 14px 10px;
+    box-sizing: border-box;
+    background: #f6f7f8;
+  }
+  .brand {
+    margin: 2px 4px 16px;
+    font-weight: 750;
+    font-size: 13px;
+  }
+  .search-row {
+    display: grid;
+    grid-template-columns: 1fr 30px;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 9px;
+    border: 1px solid #d9dde4;
+    border-radius: 6px;
+    background: #fff;
+    color: #9299a5;
+  }
+  .grid-button {
+    display: grid;
+    place-items: center;
+    height: 28px;
+    border: 1px solid #d9dde4;
+    border-radius: 6px;
+    background: #fff;
+  }
+  .nine-dot {
+    display: grid;
+    grid-template-columns: repeat(3, 3px);
+    gap: 2px;
+  }
+  .nine-dot i {
+    width: 3px;
+    height: 3px;
+    border-radius: 1px;
+    background: #586170;
+  }
+  .section-label {
+    margin: 0 4px 8px;
+    color: #777f8b;
+    font-size: 9px;
+    font-weight: 650;
+  }
+  .workspace {
+    position: relative;
+    margin: 3px 0;
+    padding: 9px 27px 9px 24px;
+    border-radius: 6px;
+    background: transparent;
+  }
+  .workspace.active {
+    background: #e9eef7;
+  }
+  .workspace .chev {
+    position: absolute;
+    left: 8px;
+    top: 10px;
+    color: #858c98;
+  }
+  .workspace .grip {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    display: grid;
+    grid-template-columns: repeat(2, 2px);
+    gap: 2px;
+    padding: 4px;
+  }
+  .workspace .grip i {
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: #858c98;
+  }
+  .workspace b {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .workspace small {
+    display: block;
+    margin-top: 3px;
+    color: #858c98;
+  }
+  .dragged {
+    z-index: 2;
+    background: #fff !important;
+    border: 1px solid #8ba7d7;
+    box-shadow: 0 8px 18px rgba(37, 49, 67, .18);
+    transform: translateY(8px) scale(1.015);
+  }
+  .drop-line {
+    height: 2px;
+    margin: 7px 5px;
+    border-radius: 2px;
+    background: #4d78c5;
+  }
+  .drag-note {
+    margin: 14px 4px 0;
+    padding: 8px;
+    border-radius: 5px;
+    background: #eaf1fd;
+    color: #476286;
+    font-size: 9px;
+  }
+  .wide-app {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid #d7dbe2;
+    border-radius: 8px;
+    background: #f5f6f7;
+    color: #252a32;
+    font: 10px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wide-rail {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 27%;
+    padding: 14px 9px;
+    box-sizing: border-box;
+    background: #eef0f2;
+    border-right: 1px solid #d7dbe2;
+  }
+  .wide-main {
+    position: absolute;
+    inset: 0 0 0 27%;
+    padding: 18px;
+  }
+  .ghost-line {
+    height: 7px;
+    margin: 9px 4px;
+    border-radius: 3px;
+    background: #ccd1d8;
+  }
+  .center-modal {
+    position: absolute;
+    inset: 34px 18px 24px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #cfd4dc;
+    border-radius: 8px;
+    background: white;
+    box-shadow: 0 18px 42px rgba(24, 30, 40, .18);
+  }
+  .modal-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 12px 9px;
+    border-bottom: 1px solid #e6e8ec;
+  }
+  .modal-search {
+    color: #9aa1ab;
+  }
+  .esc {
+    padding: 2px 5px;
+    border: 1px solid #d8dce2;
+    border-radius: 4px;
+    color: #868e99;
+    font-size: 8px;
+  }
+  .modal-title-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 9px 12px 1px;
+  }
+  .modal-title-row strong {
+    font-size: 10px;
+  }
+  .modal-title-row span {
+    color: #858c98;
+    font-size: 8px;
+  }
+  .grid9 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    padding: 8px 12px;
+  }
+  .tile {
+    min-width: 0;
+    min-height: 58px;
+    padding: 7px;
+    border: 1px solid #e0e3e8;
+    border-radius: 6px;
+    background: #fafafa;
+  }
+  .tile.selected {
+    border-color: #7294d1;
+    background: #edf3fe;
+  }
+  .tile b, .tile span {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .tile span {
+    margin-top: 3px;
+    color: #818995;
+    font-size: 8px;
+  }
+  .recent {
+    margin: auto 12px 11px;
+    padding-top: 8px;
+    border-top: 1px solid #e4e7eb;
+  }
+  .recent-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .recent-head span {
+    color: #858c98;
+    font-size: 8px;
+  }
+  .session-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 6px 7px;
+    margin-top: 3px;
+    border-radius: 5px;
+    background: #f4f5f7;
+  }
+  .session-row.active {
+    background: #eaf1fd;
+  }
+  .session-row span {
+    color: #858c98;
+    font-size: 8px;
+  }
+  .status {
+    color: #4c79c7 !important;
+  }
+  @media (max-width: 1050px) {
+    .flow { grid-template-columns: 1fr; }
+    .stage .card-image { height: 440px; }
+  }
+</style>
+
+<h2>建议收敛为这一套交互</h2>
+<p class="subtitle">从左到右：日常入口、手动排序、快速切换。三者使用同一套空间顺序。</p>
+
+<div class="cards flow">
+  <div class="card stage">
+    <div class="card-image">
+      <div class="app">
+        <div class="sidebar">
+          <div class="brand">智能工作台</div>
+          <div class="search-row">
+            <div class="search">搜索对话…</div>
+            <div class="grid-button" title="空间中心">
+              <span class="nine-dot">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </span>
+            </div>
+          </div>
+          <div class="section-label">我的工作空间</div>
+          <div class="workspace active"><span class="chev">⌄</span><b>品牌升级</b><small>3 个最近会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="workspace"><span class="chev">›</span><b>财务资料</b><small>8 个会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="workspace"><span class="chev">›</span><b>客户交付</b><small>6 个会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="workspace"><span class="chev">›</span><b>产品规划</b><small>9 个会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>1. 搜索旁增加“空间中心”</h3>
+      <p>按钮保持 28×28，与搜索框同高；悬停提示名称，避免在侧栏增加文字负担。</p>
+    </div>
+  </div>
+
+  <div class="card stage">
+    <div class="card-image">
+      <div class="app">
+        <div class="sidebar">
+          <div class="brand">工作空间排序</div>
+          <div class="section-label">按住拖动，也可直接拖右侧手柄</div>
+          <div class="workspace"><span class="chev">›</span><b>品牌升级</b><small>12 个会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="workspace"><span class="chev">›</span><b>财务资料</b><small>8 个会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="drop-line"></div>
+          <div class="workspace dragged"><span class="chev">›</span><b>产品规划</b><small>移动到第 3 位</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="workspace"><span class="chev">›</span><b>客户交付</b><small>6 个会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="workspace"><span class="chev">›</span><b>法务协作</b><small>5 个会话</small><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="drag-note">松开立即保存。按 Esc 取消，拖到边缘会自动滚动。</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>2. 全部空间手动排序</h3>
+      <p>快速点击仍展开/收起；按住约 250ms 后进入拖动。鼠标用户也可直接抓取手柄，无需等待。</p>
+    </div>
+  </div>
+
+  <div class="card stage" data-choice="approved-refined-flow" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="wide-app">
+        <div class="wide-rail">
+          <div class="brand">智能工作台</div>
+          <div class="search-row"><div class="search"></div><div class="grid-button"><span class="nine-dot"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div></div>
+          <div class="ghost-line"></div><div class="ghost-line"></div><div class="ghost-line"></div>
+        </div>
+        <div class="wide-main">
+          <div class="center-modal">
+            <div class="modal-head"><div class="modal-search">搜索空间或会话…</div><span class="esc">ESC</span></div>
+            <div class="modal-title-row"><strong>工作空间</strong><span>按你的手动顺序</span></div>
+            <div class="grid9">
+              <div class="tile selected"><b>品牌升级</b><span>首页文案调整</span><span>刚刚</span></div>
+              <div class="tile"><b>财务资料</b><span>整理六月报表</span><span>18 分钟前</span></div>
+              <div class="tile"><b>产品规划</b><span>产品路线图</span><span>昨天</span></div>
+              <div class="tile"><b>客户交付</b><span>交付清单检查</span><span>昨天</span></div>
+              <div class="tile"><b>法务协作</b><span>合同风险检查</span><span>周一</span></div>
+              <div class="tile"><b>招聘计划</b><span>面试反馈汇总</span><span>周一</span></div>
+              <div class="tile"><b>团队运营</b><span>周会纪要</span><span>上周</span></div>
+              <div class="tile"><b>市场研究</b><span>竞品调研</span><span>上周</span></div>
+              <div class="tile"><b>归档资料</b><span>2025 年总结</span><span>6 月</span></div>
+            </div>
+            <div class="recent">
+              <div class="recent-head"><b>品牌升级 · 最近会话</b><span>回车打开</span></div>
+              <div class="session-row active"><b>首页文案调整</b><span class="status">● 运行中</span></div>
+              <div class="session-row"><b>品牌视觉方向</b><span>昨天</span></div>
+              <div class="session-row"><b>发布计划</b><span>周一</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>3. 空间中心在主界面居中打开</h3>
+      <p>九宫格保持空间层级；选中空间后显示 3 条最近会话。输入时转为跨空间搜索，键盘与鼠标都能快速切换。</p>
+    </div>
+  </div>
+</div>

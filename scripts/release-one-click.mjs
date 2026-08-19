@@ -688,6 +688,12 @@ try {
       "stable",
       "--version",
       nextVersion,
+      "--bucket",
+      bucket,
+      "--domain",
+      domain,
+      "--qiniu-up-host",
+      qiniuUpHost,
     ];
     if (options.force) catalogArgs.push("--force");
     if (options["skip-skill-publish"]) catalogArgs.push("--skip-skills");

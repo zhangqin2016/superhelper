@@ -178,6 +178,9 @@ ipcMain.handle("session-character:set-binding", (_e, payload) => ({
   },
 }));
 ipcMain.handle("session-character:get-events", () => ({ ok: true, events: [] }));
+ipcMain.handle("scene:get", () => ({ ok: false, error: "FEATURE_DISABLED" }));
+ipcMain.handle("character-worlds:preview-get", () => ({ ok: false, error: "FEATURE_DISABLED" }));
+ipcMain.handle("character:greetings", () => ({ ok: true, greetings: [] }));
 ipcMain.handle("persona:list", () => ({ ok: true, personas: cwPersonas.filter((p) => !p.archivedAt) }));
 ipcMain.handle("persona:list-official", () => ({ ok: true, personas: [] }));
 ipcMain.handle("persona:get", () => ({ ok: false, error: "PERSONA_NOT_FOUND" }));
@@ -463,33 +466,20 @@ app.whenReady().then(async () => {
     return "exports present";
   })()`);
 
-  // 2. The popover manage entry is enabled (Phase 2 placeholder replaced) and
-  // opens the library, closing the popover and moving focus into the dialog.
-  await run("open-from-popover", `(async () => {
+  // 2. The composer role control opens the full library directly. The legacy
+  // popover manage entry remains present for compatibility but is no longer
+  // the primary navigation path.
+  await run("open-from-role-manager", `(async () => {
     const manageBtn = document.getElementById("characterManageBtn");
     if (!manageBtn) throw new Error("manage button missing");
     if (manageBtn.disabled) throw new Error("manage library must be enabled in Phase 2B");
     if (/Phase 2|第二/.test(manageBtn.textContent)) throw new Error("Phase 2 placeholder label must be gone: " + manageBtn.textContent);
     document.getElementById("sessionRoleBanner").click();
-    await new Promise((r) => setTimeout(r, 120));
-    const popover = document.getElementById("characterPopover");
-    if (popover.hidden) throw new Error("popover should open first");
-    const popoverList = document.getElementById("characterList");
-    const popoverFooter = popover.querySelector(".character-popover-footer");
-    const popoverListStyle = getComputedStyle(popoverList);
-    const popoverFooterStyle = getComputedStyle(popoverFooter);
-    if (popoverListStyle.display !== "grid") throw new Error("quick selector must use a grid layout");
-    if (popoverFooterStyle.display !== "grid") throw new Error("quick selector actions must use a compact grid");
-    const columnCount = popoverListStyle.gridTemplateColumns.split(" ").filter(Boolean).length;
-    if (popover.querySelectorAll(".character-option").length > 1 && columnCount < 2) {
-      throw new Error("quick selector must expose stable columns");
-    }
-    if (popover.getBoundingClientRect().width > window.innerWidth) {
-      throw new Error("quick selector must stay within the viewport");
-    }
-    manageBtn.click();
     await new Promise((r) => setTimeout(r, 300));
-    if (!popover.hidden) throw new Error("opening the library closes the popover");
+    const popover = document.getElementById("characterPopover");
+    if (popover.hidden) throw new Error("role control should open the character popover");
+    document.getElementById("characterManageBtn")?.click();
+    await new Promise((r) => setTimeout(r, 300));
     const modal = document.getElementById("characterLibraryModal");
     if (!modal || modal.hidden) throw new Error("library modal should open");
     const dialog = modal.querySelector("[role='dialog']");
@@ -521,6 +511,8 @@ app.whenReady().then(async () => {
     const list = document.getElementById("characterLibraryList");
     const grid = document.getElementById("characterLibraryGrid");
     if (grid.getAttribute("role") !== "list") throw new Error("catalog grid needs list semantics");
+    document.querySelector("[data-library-group='all']")?.click();
+    await new Promise((r) => setTimeout(r, 120));
     const rows = [...list.querySelectorAll("[data-entity-id]")];
     if (rows.length !== 2) throw new Error("expected 2 character rows, got " + rows.length);
     if (!rows.some((r) => r.textContent.includes("巡夜人"))) throw new Error("巡夜人 row missing");
@@ -595,12 +587,16 @@ app.whenReady().then(async () => {
     return "filters work";
   })()`);
 
-  // 5. Tabs switch to personas and world books with read-first metadata.
-  await run("tabs", `(async () => {
+  // 5. The production library is character-card-only. Legacy persona and
+  // world-book data remains readable through compatibility IPC, but must not
+  // reappear as user-facing library tabs.
+  await run("character-card-only-tabs", `(async () => {
     const tablist = document.getElementById("characterLibraryTabs");
     if (tablist.getAttribute("role") !== "tablist") throw new Error("tabs need role=tablist");
     const tabs = [...tablist.querySelectorAll("[role='tab']")];
-    if (tabs.length !== 3) throw new Error("expected 3 tabs");
+    if (tabs.length !== 1 || tabs[0].dataset.libraryTab !== "characters") throw new Error("expected one character tab");
+    if (!document.querySelector("[data-library-group='all']")) throw new Error("character groups should remain available");
+    return "character-card-only library";
     tabs.find((t) => t.dataset.libraryTab === "personas").click();
     await new Promise((r) => setTimeout(r, 200));
     let rows = [...document.querySelectorAll("#characterLibraryList [data-entity-id]")];
@@ -1078,7 +1074,7 @@ app.whenReady().then(async () => {
     name.value = "切换前输入";
     name.dispatchEvent(new Event("input", { bubbles: true }));
     // Dirty: a tab click is refused with the unsaved notice.
-    document.querySelector("[data-library-tab='personas']").click();
+    document.querySelector("[data-library-tab='characters']").click();
     await new Promise((r) => setTimeout(r, 150));
     const notice = document.getElementById("characterLibraryNotice");
     if (notice.hidden || !notice.textContent.includes("未保存")) {
@@ -1102,13 +1098,13 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 100));
     (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
-    document.querySelector("[data-library-tab='personas']").click();
+    document.querySelector("[data-library-tab='characters']").click();
     await new Promise((r) => setTimeout(r, 250));
-    if (document.querySelector("[data-library-tab='personas']").getAttribute("aria-selected") !== "true") {
-      throw new Error("a clean form must not block a tab switch");
+    if (document.querySelector("[data-library-tab='characters']").getAttribute("aria-selected") !== "true") {
+      throw new Error("a clean form must not block the character tab switch");
     }
     const rows = [...document.querySelectorAll("#characterLibraryList [data-entity-id]")];
-    if (!rows.some((r) => r.textContent.includes("阿黎"))) throw new Error("persona tab should list after switch");
+    if (!rows.some((r) => r.textContent.includes("巡夜人"))) throw new Error("character tab should list after switch");
     const modal = document.getElementById("characterLibraryModal");
     modal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     await new Promise((r) => setTimeout(r, 100));

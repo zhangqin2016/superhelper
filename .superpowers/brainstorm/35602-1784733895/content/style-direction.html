@@ -1,0 +1,116 @@
+<h2>三种整体风格方向,哪种气质对味?</h2>
+<p class="subtitle">这是 Lily 工作台的三栏聊天界面。点击你最有感觉的方向(可点多个,我们再细化)</p>
+
+<style>
+  .mini { font-size: 9px; line-height: 1.5; border-radius: 8px; overflow: hidden; height: 240px; display: flex; flex-direction: column; font-family: -apple-system, "PingFang SC", sans-serif; }
+  .mini .top { padding: 5px 10px; display: flex; align-items: center; gap: 5px; }
+  .mini .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .mini .body { flex: 1; display: flex; min-height: 0; }
+  .mini .side { width: 26%; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .mini .center { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+  .mini .item { border-radius: 4px; padding: 3px 6px; white-space: nowrap; overflow: hidden; }
+  .mini .msg { border-radius: 8px; padding: 5px 8px; max-width: 85%; }
+  .mini .tool { border-radius: 6px; padding: 4px 7px; display: flex; align-items: center; gap: 5px; }
+  .mini .composer { margin: 6px 8px; border-radius: 8px; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; }
+  .mini .send { width: 14px; height: 14px; border-radius: 5px; }
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="aurora" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mini" style="background: linear-gradient(160deg,#0a0e1a 0%,#0d1526 55%,#0a1a22 100%); color:#e6edf7;">
+        <div class="top" style="background: rgba(255,255,255,0.03); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(120,200,255,0.08);">
+          <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+          <span style="margin-left:6px; color:#8fa3c0;">Lily 工作台</span>
+        </div>
+        <div class="body">
+          <div class="side" style="background: rgba(255,255,255,0.025); border-right: 1px solid rgba(120,200,255,0.07);">
+            <div class="item" style="background: linear-gradient(90deg, rgba(56,189,248,0.18), rgba(56,189,248,0.05)); color:#7dd3fc; border-left: 2px solid #38bdf8;">📄 季度报告.docx</div>
+            <div class="item" style="color:#7c8aa5;">📊 销售数据分析</div>
+            <div class="item" style="color:#7c8aa5;">✉️ 客户邮件翻译</div>
+            <div class="item" style="color:#7c8aa5;">📑 合同要点提取</div>
+          </div>
+          <div class="center">
+            <div class="msg" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.06); color:#c6d2e3; align-self:flex-start;">帮我把这份报告转成 PDF,并生成每页预览图</div>
+            <div class="tool" style="background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.2); color:#7dd3fc;"><span style="color:#34d399;">✓</span> read_document · 报告.docx</div>
+            <div class="tool" style="background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.2); color:#7dd3fc;"><span style="color:#34d399;">✓</span> render_document · 12 页</div>
+            <div class="msg" style="background: linear-gradient(135deg, rgba(56,189,248,0.16), rgba(99,102,241,0.14)); border: 1px solid rgba(56,189,248,0.25); color:#dbeafe; align-self:flex-start;">已完成 ✅ 转换成功,共 12 页,预览图已生成…</div>
+          </div>
+        </div>
+        <div class="composer" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(56,189,248,0.18); color:#5b6b84;">
+          给 Lily 发送消息… <span class="send" style="background: linear-gradient(135deg,#38bdf8,#6366f1);"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 深空极光</h3>
+      <p>深色打底 + 青蓝→紫渐变点缀,玻璃拟态、微发光。科技感强,依然是深色但和现在的"暗紫"气质完全不同。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="daylight" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mini" style="background: #f7f7f5; color:#1f2328;">
+        <div class="top" style="background: #ffffff; border-bottom: 1px solid #e8e8e4;">
+          <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+          <span style="margin-left:6px; color:#9a9a94;">Lily 工作台</span>
+        </div>
+        <div class="body">
+          <div class="side" style="background: #fbfbfa; border-right: 1px solid #ececea;">
+            <div class="item" style="background: #ffffff; border: 1px solid #e8e8e4; box-shadow: 0 1px 2px rgba(0,0,0,0.04); color:#1f2328;">📄 季度报告.docx</div>
+            <div class="item" style="color:#8b8b85;">📊 销售数据分析</div>
+            <div class="item" style="color:#8b8b85;">✉️ 客户邮件翻译</div>
+            <div class="item" style="color:#8b8b85;">📑 合同要点提取</div>
+          </div>
+          <div class="center">
+            <div class="msg" style="background: #ffffff; border: 1px solid #e8e8e4; color:#37352f; align-self:flex-start; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">帮我把这份报告转成 PDF,并生成每页预览图</div>
+            <div class="tool" style="background: #f1f8f3; border: 1px solid #d9eadf; color:#3d7a57;"><span style="color:#2f9e6e;">✓</span> read_document · 报告.docx</div>
+            <div class="tool" style="background: #f1f8f3; border: 1px solid #d9eadf; color:#3d7a57;"><span style="color:#2f9e6e;">✓</span> render_document · 12 页</div>
+            <div class="msg" style="background: #ffffff; border: 1px solid #e8e8e4; color:#37352f; align-self:flex-start; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">已完成 ✅ 转换成功,共 12 页,预览图已生成…</div>
+          </div>
+        </div>
+        <div class="composer" style="background: #ffffff; border: 1px solid #e0e0dc; color:#a3a39d; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+          给 Lily 发送消息… <span class="send" style="background: #1f2328;"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 日光极简</h3>
+      <p>Notion / Linear 式的浅色极简:白+暖灰,几乎无彩色,靠留白、发丝线、细腻阴影分层。干净、专业、最耐看。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="paper" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mini" style="background: #faf6ef; color:#3d3428;">
+        <div class="top" style="background: #f4eee2; border-bottom: 1px solid #e6dcc8;">
+          <span class="dot" style="background:#e07856"></span><span class="dot" style="background:#e5b64f"></span><span class="dot" style="background:#7fb069"></span>
+          <span style="margin-left:6px; color:#a8997f;">Lily 工作台</span>
+        </div>
+        <div class="body">
+          <div class="side" style="background: #f6f0e4; border-right: 1px solid #e8dfcc;">
+            <div class="item" style="background: #fdfaf3; border: 1px solid #e6dcc8; border-left: 3px solid #d97706; color:#3d3428;">📄 季度报告.docx</div>
+            <div class="item" style="color:#a09480;">📊 销售数据分析</div>
+            <div class="item" style="color:#a09480;">✉️ 客户邮件翻译</div>
+            <div class="item" style="color:#a09480;">📑 合同要点提取</div>
+          </div>
+          <div class="center">
+            <div class="msg" style="background: #fdfaf3; border: 1px solid #e8dfcc; color:#4a4033; align-self:flex-start;">帮我把这份报告转成 PDF,并生成每页预览图</div>
+            <div class="tool" style="background: #f2ecdd; border: 1px solid #e0d4ba; color:#8a6d3b;"><span style="color:#7fb069;">✓</span> read_document · 报告.docx</div>
+            <div class="tool" style="background: #f2ecdd; border: 1px solid #e0d4ba; color:#8a6d3b;"><span style="color:#7fb069;">✓</span> render_document · 12 页</div>
+            <div class="msg" style="background: #fdf3e3; border: 1px solid #ecd9b8; color:#4a4033; align-self:flex-start;">已完成 ✅ 转换成功,共 12 页,预览图已生成…</div>
+          </div>
+        </div>
+        <div class="composer" style="background: #fdfaf3; border: 1px solid #e0d4ba; color:#b0a48c;">
+          给 Lily 发送消息… <span class="send" style="background: #d97706;"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 暖纸人文</h3>
+      <p>米白纸感 + 琥珀点缀,圆角更大、气质温润亲切。对非开发者最友好,像文具不像 IDE,在一众深色 AI 工具里辨识度极高。</p>
+    </div>
+  </div>
+
+</div>

@@ -850,9 +850,10 @@ try {
       };
       for (const [channel, payload] of Object.entries(payloads)) {
         const result = await handlers.get(channel)(trustedEvent(), payload);
+        const expected = { ok: false, error: "CHARACTER_WORLDS_UNAVAILABLE" };
         assert.deepEqual(
           result,
-          { ok: false, error: "CHARACTER_WORLDS_UNAVAILABLE" },
+          expected,
           `${channel} fails closed without throwing`,
         );
       }

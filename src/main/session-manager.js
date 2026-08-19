@@ -29,27 +29,15 @@ const legacyImport = require("./store/legacy-import");
 const {
   resolveCharacterOwnerScope,
 } = require("./character-worlds/owner-scope");
-
+const { recoverIndexedMessageSessionsForManager } = require("./session-index-recovery");
 const DEFAULT_SESSION_TITLES = {
   "zh-CN": "新对话",
   en: "Chat",
   ar: "محادثة جديدة",
 };
-const RECOVERED_SESSION_TITLES = {
-  "zh-CN": "恢复的历史会话",
-  en: "Recovered conversation",
-  ar: "محادثة مستردة",
-};
-const INDEXED_ORPHAN_RECOVERY_LIMIT = 3;
-
 function defaultSessionTitle() {
   return DEFAULT_SESSION_TITLES[getLocale()] || DEFAULT_SESSION_TITLES.en;
 }
-
-function recoveredSessionTitle() {
-  return RECOVERED_SESSION_TITLES[getLocale()] || RECOVERED_SESSION_TITLES.en;
-}
-
 function messageMergeKey(message) {
   if (message?.id) return `id:${message.id}`;
   const hash = crypto.createHash("sha256");
@@ -219,10 +207,7 @@ class SessionManager {
       return;
     }
 
-    // Legacy clients could overwrite the lightweight JSON index while the
-    // durable SQLite transcript remained intact. Repair that split before a
-    // default chat is created, while respecting explicit deletion tombstones.
-    this._recoverIndexedMessageSessions();
+    recoverIndexedMessageSessionsForManager(this, defaultSessionTitle());
 
     // Only ensure the active project has a session — avoids flooding
     // every project with a default when persisted data is missing/corrupt.
@@ -417,61 +402,6 @@ class SessionManager {
       }
     }
     return null;
-  }
-
-  _recoverIndexedMessageSessions() {
-    const activeProject = this.pm.getActive();
-    if (!activeProject?.id) return 0;
-
-    const knownIds = new Set(this.iterateSessions().map((session) => session.id));
-    const deletedRaw = readJson(deletedSessionsPath());
-    const deletedIds = new Set(Object.keys(deletedRaw?.sessions || {}));
-    let candidates;
-    try {
-      candidates = this._store().listSessionSummaries()
-        .filter((summary) => !knownIds.has(summary.sessionId) && !deletedIds.has(summary.sessionId));
-    } catch (err) {
-      console.warn("[sessions] indexed history recovery skipped:", err?.message || err);
-      return 0;
-    }
-
-    if (candidates.length === 0) return 0;
-    if (candidates.length > INDEXED_ORPHAN_RECOVERY_LIMIT) {
-      writeJson(path.join(path.dirname(sessionsIndexPath()), "sqlite-message-recovery.json"), {
-        schemaVersion: 1,
-        updatedAt: new Date().toISOString(),
-        skippedBulkIndexedRecovery: {
-          reason: "too_many_orphaned_message_store_sessions",
-          count: candidates.length,
-          limit: INDEXED_ORPHAN_RECOVERY_LIMIT,
-          sessions: candidates.map((candidate) => ({
-            id: candidate.sessionId,
-            messageCount: candidate.messageCount,
-            updatedAt: candidate.updatedAt ? new Date(candidate.updatedAt).toISOString() : null,
-          })),
-        },
-      });
-      console.warn(`[sessions] skipped ${candidates.length} orphaned SQLite histories; wrote recovery manifest instead of flooding the sidebar`);
-      return 0;
-    }
-
-    const target = this.sessions[activeProject.id] ||= [];
-    for (const candidate of candidates) {
-      const createdAt = candidate.createdAt || Date.now();
-      const updatedAt = candidate.updatedAt || createdAt;
-      target.push({
-        id: candidate.sessionId,
-        projectId: activeProject.id,
-        title: recoveredSessionTitle(),
-        createdAt: new Date(createdAt).toISOString(),
-        updatedAt: new Date(updatedAt).toISOString(),
-        status: "idle",
-        messageCount: candidate.messageCount,
-        recoveredFromMessageStore: true,
-      });
-    }
-    console.info(`[sessions] recovered ${candidates.length} orphaned SQLite session history record(s)`);
-    return candidates.length;
   }
 
   _mergeLegacySessions(legacyStore) {

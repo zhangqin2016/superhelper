@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { config } from "../../config.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { publicId } from "../../services/ids.js";
 import {
@@ -99,6 +100,12 @@ function newestRelease(releases) {
   }, null);
 }
 
+function releaseFeedUrl(platform, version) {
+  const base = String(config.qiniuPublicBaseUrl || "").replace(/\/+$/g, "");
+  const file = String(platform || "").startsWith("darwin-") ? "latest-mac.yml" : "latest.yml";
+  return `${base}/app/auto-updates/${encodeURIComponent(platform)}/stable/${file}?v=${encodeURIComponent(version)}`;
+}
+
 export async function publicCatalogRoutes(app) {
   app.post(
     "/api/contact-requests",
@@ -169,6 +176,7 @@ export async function publicCatalogRoutes(app) {
       sizeBytes: Number(release.size_bytes || 0),
       notes: release.notes || "",
       force: release.force_update,
+      feedUrl: releaseFeedUrl(release.platform, release.version),
     };
   });
 

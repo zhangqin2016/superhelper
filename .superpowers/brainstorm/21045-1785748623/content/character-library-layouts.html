@@ -1,0 +1,58 @@
+<h2>角色库：哪种结构更适合长期扩展？</h2>
+<p class="subtitle">假设未来有 30–100 个角色。请选择你更喜欢的浏览结构；卡片视觉细节下一步再定。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;background:#f7f8fa;min-height:300px">
+      <div style="display:flex;gap:10px;height:276px">
+        <aside style="width:104px;border-right:1px solid #d8dce3;padding-right:8px;font-size:11px;color:#596170">
+          <strong style="display:block;color:#171a21;margin-bottom:10px">角色库</strong>
+          <div style="padding:6px;background:#e8ebf5;border-left:3px solid #6558d9">全部 32</div>
+          <div style="padding:6px">官方精选 12</div>
+          <div style="padding:6px">工作效率 8</div>
+          <div style="padding:6px">创作表达 6</div>
+          <div style="padding:6px">学习成长 4</div>
+          <div style="padding:6px">我的角色 2</div>
+        </aside>
+        <main style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;margin-bottom:9px"><div style="flex:1;border:1px solid #ccd1da;padding:6px;font-size:10px">搜索角色、能力、场景</div><div style="border:1px solid #ccd1da;padding:6px;font-size:10px">筛选</div></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
+            <div style="border:1px solid #d7dbe3;background:white;padding:8px"><b style="font-size:11px">产品经理</b><p style="font-size:9px;margin:5px 0;color:#606878">从需求到验收，输出完整产品方案</p><small>产品 · 需求 · 验收</small></div>
+            <div style="border:1px solid #d7dbe3;background:white;padding:8px"><b style="font-size:11px">数据分析师</b><p style="font-size:9px;margin:5px 0;color:#606878">清洗数据、验证假设、形成结论</p><small>数据 · 图表 · 洞察</small></div>
+            <div style="border:1px solid #d7dbe3;background:white;padding:8px"><b style="font-size:11px">合同审阅</b><p style="font-size:9px;margin:5px 0;color:#606878">识别风险条款并给出修改建议</p><small>法务 · 风险 · 修订</small></div>
+            <div style="border:1px solid #d7dbe3;background:white;padding:8px"><b style="font-size:11px">内容总编</b><p style="font-size:9px;margin:5px 0;color:#606878">策划、改写并校验完整内容</p><small>写作 · 编辑 · 发布</small></div>
+            <div style="border:1px solid #d7dbe3;background:white;padding:8px"><b style="font-size:11px">研究员</b><p style="font-size:9px;margin:5px 0;color:#606878">多源检索、证据分级、形成报告</p><small>研究 · 证据 · 报告</small></div>
+            <div style="border:1px solid #d7dbe3;background:white;padding:8px"><b style="font-size:11px">会议助理</b><p style="font-size:9px;margin:5px 0;color:#606878">整理议题、纪要、决议和待办</p><small>会议 · 纪要 · 跟进</small></div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <div class="card-body"><h3>A. 左侧分组 + 九宫格（推荐）</h3><p>分类始终可见，适合几十到上百个角色；搜索、筛选和“我的角色”都有明确位置。</p></div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;background:#f7f8fa;min-height:300px">
+      <div style="display:flex;gap:6px;margin-bottom:10px"><div style="flex:1;border:1px solid #ccd1da;padding:7px;font-size:10px">搜索</div><div style="padding:7px;border:1px solid #ccd1da;font-size:10px">全部分类</div></div>
+      <strong style="font-size:12px">官方精选</strong><span style="float:right;font-size:9px;color:#6a7280">查看全部</span>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:7px 0 14px">
+        <div style="border:1px solid #d7dbe3;background:white;padding:9px;font-size:10px"><b>产品经理</b><p>需求与产品方案</p></div><div style="border:1px solid #d7dbe3;background:white;padding:9px;font-size:10px"><b>研究员</b><p>检索与研究报告</p></div><div style="border:1px solid #d7dbe3;background:white;padding:9px;font-size:10px"><b>数据分析师</b><p>数据与洞察</p></div>
+      </div>
+      <strong style="font-size:12px">工作效率</strong><span style="float:right;font-size:9px;color:#6a7280">8 个角色</span>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:7px">
+        <div style="border:1px solid #d7dbe3;background:white;padding:9px;font-size:10px"><b>会议助理</b><p>纪要与跟进</p></div><div style="border:1px solid #d7dbe3;background:white;padding:9px;font-size:10px"><b>合同审阅</b><p>风险与修订</p></div><div style="border:1px solid #d7dbe3;background:white;padding:9px;font-size:10px"><b>项目经理</b><p>计划与交付</p></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>B. 分组区块 + 九宫格</h3><p>首屏更像内容商店，发现感强；分类多时页面会很长，跨组查找效率较低。</p></div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;background:#f7f8fa;min-height:300px">
+      <div style="display:flex;gap:6px;margin-bottom:9px"><div style="flex:1;border:1px solid #ccd1da;padding:7px;font-size:10px">搜索角色、能力、场景</div><div style="padding:7px;border:1px solid #ccd1da;font-size:10px">排序</div></div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;font-size:9px"><span style="padding:4px 7px;background:#e8ebf5">全部</span><span style="padding:4px 7px;border:1px solid #d7dbe3">官方</span><span style="padding:4px 7px;border:1px solid #d7dbe3">产品</span><span style="padding:4px 7px;border:1px solid #d7dbe3">办公</span><span style="padding:4px 7px;border:1px solid #d7dbe3">创作</span><span style="padding:4px 7px;border:1px solid #d7dbe3">生活</span></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
+        <div style="border:1px solid #d7dbe3;background:white;padding:10px;height:76px"><b style="font-size:11px">产品经理</b><p style="font-size:9px">需求 → 方案 → 验收</p></div><div style="border:1px solid #d7dbe3;background:white;padding:10px;height:76px"><b style="font-size:11px">研究员</b><p style="font-size:9px">检索 → 证据 → 报告</p></div><div style="border:1px solid #d7dbe3;background:white;padding:10px;height:76px"><b style="font-size:11px">数据分析师</b><p style="font-size:9px">清洗 → 分析 → 图表</p></div><div style="border:1px solid #d7dbe3;background:white;padding:10px;height:76px"><b style="font-size:11px">内容总编</b><p style="font-size:9px">策划 → 编辑 → 校验</p></div><div style="border:1px solid #d7dbe3;background:white;padding:10px;height:76px"><b style="font-size:11px">合同审阅</b><p style="font-size:9px">识别 → 解释 → 修订</p></div><div style="border:1px solid #d7dbe3;background:white;padding:10px;height:76px"><b style="font-size:11px">学习教练</b><p style="font-size:9px">评估 → 练习 → 反馈</p></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>C. 标签筛选 + 统一九宫格</h3><p>界面最简洁、响应式最好；但分类层级弱，角色很多时容易变成“标签海洋”。</p></div>
+  </div>
+</div>

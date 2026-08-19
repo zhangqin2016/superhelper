@@ -13,6 +13,7 @@ class TurnArchive {
   constructor(sessionManager, options = {}) {
     this.sessionManager = sessionManager;
     this.eventBus = options.eventBus || null;
+    this.versionService = options.versionService || null;
   }
 
   buildRecord(state, terminalType, payload = {}) {
@@ -246,6 +247,7 @@ class TurnArchive {
               trace: enginePayload.trace || null,
             }
           : null,
+        workspaceVersionBaseline: state.workspaceVersionBaseline || null,
       },
     };
     try {
@@ -378,6 +380,30 @@ class TurnArchive {
           });
         }
         this._maybeReconcileWorkspace(workspacePath);
+      }
+    }
+    if (this.versionService && record.terminal === "turn.completed" && record.meta?.workspaceVersionBaseline) {
+      const workspacePath = this._resolveWorkspacePath(sessionId);
+      if (workspacePath) {
+        setImmediate(() => {
+          Promise.resolve(this.versionService.autoSaveTurn({
+            workspacePath,
+            baseline: record.meta.workspaceVersionBaseline,
+            changedPaths: (record.fileChanges || []).map((change) => change.filePath),
+            terminal: record.terminal,
+          })).then((result) => {
+            if (result?.saved) {
+              this.eventBus?.emit?.(sessionId, {
+                type: "workspace.version.changed",
+                turnId: record.turnId || null,
+                source: "turn_archive",
+                payload: { mode: result.mode, version: result.version || null },
+              });
+            }
+          }).catch((error) => {
+            console.warn("[workspace-version] automatic snapshot failed:", error?.message || error);
+          });
+        });
       }
     }
     return extra;

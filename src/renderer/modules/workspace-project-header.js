@@ -13,6 +13,7 @@ export function createWorkspaceProjectHeader({
   onRename,
   onCreateSession,
   onShowMenu,
+  onShowVersion,
 }) {
   const header = document.createElement("div");
   header.className = "project-header";
@@ -90,7 +91,22 @@ export function createWorkspaceProjectHeader({
     onShowMenu(event);
   });
 
+  const versionBtn = document.createElement("button");
+  versionBtn.type = "button";
+  versionBtn.className = "project-action-btn workspace-version-entry is-loading";
+  versionBtn.title = t("workspaceVersion.open");
+  versionBtn.setAttribute("aria-label", t("workspaceVersion.open"));
+  versionBtn.dataset.projectId = project.id;
+  const versionGlyph = document.createElement("span");
+  versionGlyph.className = "workspace-version-glyph";
+  versionGlyph.setAttribute("aria-hidden", "true");
+  versionBtn.appendChild(versionGlyph);
+  versionBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onShowVersion?.();
+  });
+
   actions.append(newSessionBtn, moreBtn);
-  header.append(headerMain, dragHandle, actions);
+  header.append(headerMain, dragHandle, versionBtn, actions);
   return header;
 }

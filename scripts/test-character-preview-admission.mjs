@@ -42,26 +42,11 @@ try {
     canonical: { name: "Preview Guide", description: "A preview-only guide.", personality: "direct" },
     source,
   });
-  const persona = repo.createPersona({
-    ownerScope: OWNER,
-    canonical: { schemaVersion: 1, name: "Operator", description: "Runs the product." },
-    source,
-  });
-  const book = repo.createWorldBook({
-    ownerScope: OWNER,
-    canonical: {
-      schemaVersion: 1,
-      name: "Preview Lore",
-      entries: [{ id: "entry", content: "Preview facts are pinned.", activation: { constant: true } }],
-    },
-    source,
-  });
-
   const durable = repo.setConversationConfig({
     sessionId: "composed-session",
     ownerScope: OWNER,
     expectedBindingVersion: 0,
-    next: { personaRevisionId: persona.revision.id },
+    next: { personaRevisionId: "retired-persona-revision" },
   });
   assert.equal(durable.mode, "native");
   const characterPreview = previews.replaceFacet({
@@ -71,12 +56,15 @@ try {
     facet: "character",
     revisionId: character.revision.id,
   });
-  const bookPreview = previews.addWorldBook({
-    ownerScope: OWNER,
-    sessionId: "composed-session",
-    expectedPreviewVersion: characterPreview.previewVersion,
-    revisionId: book.revision.id,
-  });
+  assert.throws(
+    () => previews.addWorldBook({
+      ownerScope: OWNER,
+      sessionId: "composed-session",
+      expectedPreviewVersion: characterPreview.previewVersion,
+      revisionId: "retired-book-revision",
+    }),
+    (error) => error.code === "FEATURE_DISABLED",
+  );
 
   const admitted = admit("composed-session", "turn-composed-1");
   const snapshot = admitted.metadata.characterWorlds;
@@ -84,14 +72,10 @@ try {
   assert.equal(snapshot.snapshotStatus, "ready");
   assert.equal(snapshot.mode, "character");
   assert.equal(snapshot.bindingVersion, durable.bindingVersion);
-  assert.equal(snapshot.previewVersion, bookPreview.previewVersion);
+  assert.equal(snapshot.previewVersion, characterPreview.previewVersion);
   assert.equal(snapshot.characterRevisionId, character.revision.id);
-  assert.equal(snapshot.personaRevisionId, persona.revision.id);
-  assert.deepEqual(snapshot.worldBookBindings, [{
-    scope: "chat",
-    worldBookRevisionId: book.revision.id,
-    mergeStrategy: "constant",
-  }]);
+  assert.equal(snapshot.personaRevisionId, null);
+  assert.deepEqual(snapshot.worldBookBindings, []);
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.worldBookBindings), true);
 
@@ -104,7 +88,7 @@ try {
   previews.clear({
     ownerScope: OWNER,
     sessionId: "composed-session",
-    expectedPreviewVersion: bookPreview.previewVersion,
+    expectedPreviewVersion: characterPreview.previewVersion,
   });
   repo.setConversationConfig({
     sessionId: "composed-session",
@@ -127,35 +111,6 @@ try {
     ).character_worlds_snapshot_json),
     snapshot,
   );
-
-  const personaOnly = repo.setConversationConfig({
-    sessionId: "persona-only-session",
-    ownerScope: OWNER,
-    expectedBindingVersion: 0,
-    next: { personaRevisionId: persona.revision.id },
-  });
-  const personaTurn = admit("persona-only-session", "turn-persona-only");
-  assert.equal(personaTurn.metadata.characterWorlds.mode, "native");
-  assert.equal(personaTurn.metadata.characterWorlds.snapshotStatus, "ready");
-  assert.equal(personaTurn.metadata.characterWorlds.characterRevisionId, null);
-  assert.equal(personaTurn.metadata.characterWorlds.personaRevisionId, persona.revision.id);
-  assert.equal(personaTurn.metadata.characterWorlds.bindingVersion, personaOnly.bindingVersion);
-
-  previews.replaceFacet({
-    ownerScope: OWNER,
-    sessionId: "persona-only-session",
-    expectedPreviewVersion: 0,
-    facet: "character",
-    revisionId: character.revision.id,
-  });
-  store.db.run(
-    "UPDATE character_session_previews SET preview_json = ? WHERE session_id = ? AND owner_scope = ?",
-    "{broken", "persona-only-session", OWNER,
-  );
-  const corruptPreviewTurn = admit("persona-only-session", "turn-corrupt-preview");
-  assert.equal(corruptPreviewTurn.metadata.characterWorlds.mode, "native");
-  assert.equal(corruptPreviewTurn.metadata.characterWorlds.characterRevisionId, null);
-  assert.equal(corruptPreviewTurn.metadata.characterWorlds.personaRevisionId, persona.revision.id);
 
   const native = admit("empty-native-session", "turn-native-empty");
   assert.equal(Object.hasOwn(native.metadata, "characterWorlds"), false);

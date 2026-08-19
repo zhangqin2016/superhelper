@@ -61,7 +61,9 @@ const { createExternalCommandRuntime } = require("./external-command-runtime");
 const { createTurnRecoveryRuntime, modelRecipes, selfHealProbeText } = require("./turn-recovery-runtime");
 const { createContextCompactionRuntime } = require("./context-compaction-runtime");
 const { createTurnTerminalFinalizer } = require("./turn-terminal-finalizer");
-const { emitRuntimePackProgress } = require("./turn-progress-notices");
+const { emitRuntimePackProgress, emitLegalKnowledgeProgress } = require("./turn-progress-notices");
+const { prepareLegalKnowledgeForTurn } = require("./legal-kb/turn-preparation");
+const { rejectIfWorkspaceVersionBusy, captureWorkspaceVersionBaseline } = require("./workspace-version-turn-guard");
 const { isCurrentTurnStart, startCancellationResult } = require("./turn-start-guard");
 const { TERMINAL_TYPES, TURN_OPTIONAL_TYPES } = require("./turn-event-types");
 const { createTurnRuntimeEventRouter } = require("./turn-runtime-event-router");
@@ -776,6 +778,8 @@ class TurnOrchestrator {
     const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
       ? this.ctx.projectManager.find(session.projectId)
       : null;
+    const workspaceBusy = rejectIfWorkspaceVersionBusy(this.ctx.workspaceVersionService, project?.path);
+    if (workspaceBusy) return workspaceBusy;
     const displaySourceFiles = Array.isArray(files) ? files : [];
     if (!opts.skipDocument && project?.path) {
       try {
@@ -826,6 +830,9 @@ class TurnOrchestrator {
     state.tools.clear();
     state.startedAt = Date.now();
     state.updatedAt = state.startedAt;
+    state.workspaceVersionBaseline = await captureWorkspaceVersionBaseline(
+      this.ctx.workspaceVersionService, project?.path, log,
+    );
     const turnStartId = state.turnId;
     const turnStartGeneration = state.turnGeneration;
     const isCurrentStart = () => isCurrentTurnStart(
@@ -866,6 +873,22 @@ class TurnOrchestrator {
     }
     const admitted = preadmitted || this._admitTurnInput(session, admissionOptions);
     bindTurnAdmission(this, session, state, admitted, "direct");
+    const legalKnowledge = await prepareLegalKnowledgeForTurn({
+      ctx: this.ctx, session, state, log,
+      options: { onProgress: (progress) => emitLegalKnowledgeProgress(this, session.id, progress) },
+    });
+    if (!isCurrentStart()) return staleStartResult();
+    if (legalKnowledge.required && !legalKnowledge.ready) {
+      const detail = "官方法律角色需要授权的法律知识库，当前未能准备完成。请检查账号权限和网络后重试。";
+      this._finalize(session.id, "turn.failed", {
+        failed: true,
+        assistant: detail,
+        code: "LEGAL_KB_UNAVAILABLE",
+        errorCode: legalKnowledge.error || "LEGAL_KB_UNAVAILABLE",
+      });
+      return { ok: false, error: "LEGAL_KB_UNAVAILABLE", detail, legalKnowledge };
+    }
+    state.legalKnowledge = legalKnowledge;
     const sourceTaskCore = trustedSourceTaskCore(session.id, state.admittedTurnInput?.ownerScope, opts.sourceTaskCore);
     state.scheduledTask = opts.scheduledTaskRunId
       ? {

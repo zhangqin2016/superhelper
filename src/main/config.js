@@ -139,6 +139,14 @@ function legacyRuntimePackBaseDir() {
   return userDataPath();
 }
 
+function legalKnowledgePackRoot() {
+  return userDataPath("legal-kb");
+}
+
+function legalKnowledgePackStatePath() {
+  return path.join(legalKnowledgePackRoot(), "state.json");
+}
+
 function runtimePackRootConfigPath() {
   return userDataPath("runtime-pack-root.json");
 }
@@ -346,6 +354,8 @@ module.exports = {
   defaultWorkspacePath,
   userDataPath,
   legacyRuntimePackBaseDir,
+  legalKnowledgePackRoot,
+  legalKnowledgePackStatePath,
   legacyRuntimePackPacksRoot,
   legacyRuntimePackStatePath,
   runtimePackBaseDir,

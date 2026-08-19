@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1800" viewBox="0 0 2560 1800" role="img" aria-labelledby="title desc">
+  <title id="title">Lily Workbench 两个月研发作战全景</title>
+  <desc id="desc">高密度研发信息图，展示2026年6月至8月期间的十条能力线、关键修复、质量守门和发布历程。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b1020"/><stop offset=".56" stop-color="#141832"/><stop offset="1" stop-color="#091923"/></linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d0b8ff"/><stop offset="1" stop-color="#745fff"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#74e4ff"/><stop offset="1" stop-color="#5684ff"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8bf3cf"/><stop offset="1" stop-color="#3bc9dd"/></linearGradient>
+    <linearGradient id="rose" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffb5da"/><stop offset="1" stop-color="#b778ff"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-25%" width="140%" height="160%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#00030f" flood-opacity=".55"/></filter>
+    <filter id="glow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M42 0H0V42" fill="none" stroke="#9aa6d4" stroke-opacity=".07"/></pattern>
+    <style>
+      .cn{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Arial,sans-serif}
+      .h1{fill:#f5f6ff;font-size:47px;font-weight:700;letter-spacing:1px}.lead{fill:#b2bbdc;font-size:20px}.eyebrow{fill:#c7bdff;font-size:15px;font-weight:700;letter-spacing:3px}.metric{fill:#f5f6ff;font-size:28px;font-weight:700}.metricSub{fill:#a7b2d4;font-size:14px}.bandTitle{fill:#f4f5ff;font-size:27px;font-weight:700}.bandSub{fill:#9faad0;font-size:16px}.cardTitle{fill:#f7f8ff;font-size:22px;font-weight:700}.cardLead{fill:#d4d9ef;font-size:16px;font-weight:500}.line{fill:#9fa9cb;font-size:14px}.tag{fill:#c5cdeb;font-size:13px;font-weight:500}.month{fill:#f3f5ff;font-size:24px;font-weight:700}.monthSub{fill:#b3bddb;font-size:15px}.event{fill:#d9def3;font-size:14px}.fixTitle{fill:#f4f6ff;font-size:18px;font-weight:700}.fixCopy{fill:#b7c1df;font-size:14px}.foot{fill:#7280a9;font-size:13px}
+    </style>
+  </defs>
+  <rect width="2560" height="1800" fill="url(#bg)"/><rect width="2560" height="1800" fill="url(#grid)"/>
+  <circle cx="1280" cy="745" r="690" fill="#7669ff" opacity=".035"/><circle cx="1280" cy="745" r="465" fill="#65dcff" opacity=".025"/>
+
+  <!-- HEADER -->
+  <text class="cn eyebrow" x="100" y="75">LILY WORKBENCH · BUILD LOG / 2026.06.14—08.14</text>
+  <text class="cn h1" x="100" y="132">这不是六个功能：是 58 天连续作战的产品重构</text>
+  <text class="cn lead" x="100" y="170">从 Agent 运行时、模型网关，到移动协同、角色世界、可信记忆、跨平台交付——每条链路都经历了“能跑 → 可用 → 可靠”的闭环。</text>
+  <g transform="translate(1780 60)" filter="url(#shadow)">
+    <rect width="680" height="124" rx="22" fill="#1d223c" stroke="#7783b6" stroke-opacity=".5"/>
+    <line x1="170" y1="22" x2="170" y2="102" stroke="#5c668e"/><line x1="340" y1="22" x2="340" y2="102" stroke="#5c668e"/><line x1="510" y1="22" x2="510" y2="102" stroke="#5c668e"/>
+    <text class="cn metric" x="85" y="62" text-anchor="middle">913</text><text class="cn metricSub" x="85" y="88" text-anchor="middle">可达提交</text>
+    <text class="cn metric" x="255" y="62" text-anchor="middle">268</text><text class="cn metricSub" x="255" y="88" text-anchor="middle">功能提交</text>
+    <text class="cn metric" x="425" y="62" text-anchor="middle">284</text><text class="cn metricSub" x="425" y="88" text-anchor="middle">修复提交</text>
+    <text class="cn metric" x="595" y="62" text-anchor="middle">629</text><text class="cn metricSub" x="595" y="88" text-anchor="middle">测试文件触达</text>
+  </g>
+
+  <!-- FEATURE MAP TITLE -->
+  <g transform="translate(100 235)"><rect width="2360" height="54" rx="13" fill="#1a1f36" stroke="#65729f" stroke-opacity=".35"/><text class="cn bandTitle" x="26" y="36">十条研发主线：把“智能工作台”从界面，做成真正的本地 Agent 平台</text><text class="cn bandSub" x="2290" y="35" text-anchor="end">每块代表一组连续实现、验证与回归修复</text></g>
+
+  <!-- CARDS ROW 1 -->
+  <g transform="translate(100 325)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#202040" stroke="#9e8bff" stroke-opacity=".62"/><rect width="7" height="150" x="0" y="40" rx="3" fill="url(#violet)"/>
+    <text class="cn cardTitle" x="34" y="48">01　Agent 运行时重构</text><text class="cn cardLead" x="34" y="78">从 Claude CLI 彻底迁移到 OpenCode</text>
+    <text class="cn line" x="34" y="115">• HTTP / SSE 流式协议与会话运行池</text><text class="cn line" x="34" y="142">• Resume、压缩、工具调用、任务编排</text><text class="cn line" x="34" y="169">• 空回复、卡死、重启竞态的自愈链</text>
+    <rect x="34" y="190" width="115" height="24" rx="12" fill="#7564ff" opacity=".23"/><text class="cn tag" x="91" y="207" text-anchor="middle">核心底座</text>
+  </g>
+  <g transform="translate(585 325)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#172b40" stroke="#67d9ff" stroke-opacity=".62"/><rect width="7" height="150" x="443" y="40" rx="3" fill="url(#blue)"/>
+    <text class="cn cardTitle" x="34" y="48">02　模型、网关与账户</text><text class="cn cardLead" x="34" y="78">让不同模型“能接入，也能稳定工作”</text>
+    <text class="cn line" x="34" y="115">• BYOK 提供商目录与自定义模型配置</text><text class="cn line" x="34" y="142">• 国内外端点、兼容性探测、推理模型容错</text><text class="cn line" x="34" y="169">• Token 刷新、模型恢复、钱包与授权状态</text>
+    <rect x="34" y="190" width="132" height="24" rx="12" fill="#4bcbff" opacity=".2"/><text class="cn tag" x="100" y="207" text-anchor="middle">服务可用性</text>
+  </g>
+  <g transform="translate(1070 325)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#1b3034" stroke="#74efd0" stroke-opacity=".62"/><rect width="7" height="150" x="0" y="40" rx="3" fill="url(#mint)"/>
+    <text class="cn cardTitle" x="34" y="48">03　技能、MCP 与 Web 学习</text><text class="cn cardLead" x="34" y="78">把一次操作沉淀为可复用的确定性能力</text>
+    <text class="cn line" x="34" y="115">• 技能索引、意图路由、目录同步与权限</text><text class="cn line" x="34" y="142">• 邮件 MCP、浏览器自动化、运行时依赖包</text><text class="cn line" x="34" y="169">• API 契约发现、登录捕获、脚本化执行</text>
+    <rect x="34" y="190" width="132" height="24" rx="12" fill="#57e1bd" opacity=".2"/><text class="cn tag" x="100" y="207" text-anchor="middle">能力生态</text>
+  </g>
+  <g transform="translate(1555 325)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#211d3b" stroke="#bd9dff" stroke-opacity=".62"/><rect width="7" height="150" x="443" y="40" rx="3" fill="url(#rose)"/>
+    <text class="cn cardTitle" x="34" y="48">04　移动端远程指挥</text><text class="cn cardLead" x="34" y="78">把电脑上的 Agent 延伸到手机</text>
+    <text class="cn line" x="34" y="115">• QR 扫码、短码 + 密码、免登录配对</text><text class="cn line" x="34" y="142">• 手机看会话、指定任务、打断运行中回合</text><text class="cn line" x="34" y="169">• 图片发送、实时语音、服务端 ASR 中继</text>
+    <rect x="34" y="190" width="132" height="24" rx="12" fill="#bf83ff" opacity=".2"/><text class="cn tag" x="100" y="207" text-anchor="middle">跨端协同</text>
+  </g>
+  <g transform="translate(2040 325)" filter="url(#shadow)">
+    <rect width="420" height="230" rx="20" fill="#192b3b" stroke="#77bbff" stroke-opacity=".62"/><rect width="7" height="150" x="0" y="40" rx="3" fill="url(#blue)"/>
+    <text class="cn cardTitle" x="34" y="48">05　聊天与数据基础</text><text class="cn cardLead" x="34" y="78">把长会话变成可持续使用的工作空间</text>
+    <text class="cn line" x="34" y="115">• SQLite + 内容寻址 Blob 消息存储</text><text class="cn line" x="34" y="142">• typed block / lit-html 渲染契约</text><text class="cn line" x="34" y="169">• 流式无闪烁、滚动锚定、任务可见性</text>
+    <rect x="34" y="190" width="132" height="24" rx="12" fill="#5f9dff" opacity=".2"/><text class="cn tag" x="100" y="207" text-anchor="middle">日常体验</text>
+  </g>
+
+  <!-- CARDS ROW 2 -->
+  <g transform="translate(100 585)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#1e253d" stroke="#a596ff" stroke-opacity=".62"/><rect width="7" height="150" x="443" y="40" rx="3" fill="url(#violet)"/>
+    <text class="cn cardTitle" x="34" y="48">06　角色、人格与世界书</text><text class="cn cardLead" x="34" y="78">把角色从一段提示词做成完整的产品系统</text>
+    <text class="cn line" x="34" y="115">• 角色库、官方角色目录、角色卡 PNG / JSON</text><text class="cn line" x="34" y="142">• 人格绑定、世界书、多书合并、场景记忆</text><text class="cn line" x="34" y="169">• 群组模式、激活证据、导入预览与可移植性</text>
+    <rect x="34" y="190" width="146" height="24" rx="12" fill="#7c69ff" opacity=".22"/><text class="cn tag" x="107" y="207" text-anchor="middle">8 月主战场</text>
+  </g>
+  <g transform="translate(585 585)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#183237" stroke="#75edcf" stroke-opacity=".62"/><rect width="7" height="150" x="0" y="40" rx="3" fill="url(#mint)"/>
+    <text class="cn cardTitle" x="34" y="48">07　可信记忆与证据链</text><text class="cn cardLead" x="34" y="78">不只“记住”，还要避免记错和答错</text>
+    <text class="cn line" x="34" y="115">• 语义 embedding 召回、记忆反馈强化</text><text class="cn line" x="34" y="142">• 工作区自动索引与实时文件新鲜度校验</text><text class="cn line" x="34" y="169">• 数值 / 强事实 verify-before-assert 守门</text>
+    <rect x="34" y="190" width="146" height="24" rx="12" fill="#43dcb7" opacity=".2"/><text class="cn tag" x="107" y="207" text-anchor="middle">可靠性升级</text>
+  </g>
+  <g transform="translate(1070 585)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#1d293d" stroke="#7db2ff" stroke-opacity=".62"/><rect width="7" height="150" x="443" y="40" rx="3" fill="url(#blue)"/>
+    <text class="cn cardTitle" x="34" y="48">08　文档、附件与本地文件</text><text class="cn cardLead" x="34" y="78">让 Agent 能正确处理现实世界的工作资料</text>
+    <text class="cn line" x="34" y="115">• 任意本地路径、目录、归档与大文件理解</text><text class="cn line" x="34" y="142">• PDF / Office 渲染、中文字体、样式参考生成</text><text class="cn line" x="34" y="169">• 当前文件权威性，避免旧附件覆盖新内容</text>
+    <rect x="34" y="190" width="146" height="24" rx="12" fill="#598eff" opacity=".2"/><text class="cn tag" x="107" y="207" text-anchor="middle">真实生产资料</text>
+  </g>
+  <g transform="translate(1555 585)" filter="url(#shadow)">
+    <rect width="450" height="230" rx="20" fill="#28213c" stroke="#bd9cff" stroke-opacity=".62"/><rect width="7" height="150" x="0" y="40" rx="3" fill="url(#rose)"/>
+    <text class="cn cardTitle" x="34" y="48">09　工作区与自动化</text><text class="cn cardLead" x="34" y="78">让工作流可以保存、分享、持续运行</text>
+    <text class="cn line" x="34" y="115">• 工作区排序、空间中心、能力包导入导出</text><text class="cn line" x="34" y="142">• 已安装技能、自动化任务、应用拖拽导入</text><text class="cn line" x="34" y="169">• 定时任务隔离、暂停导入、失败恢复与追踪</text>
+    <rect x="34" y="190" width="146" height="24" rx="12" fill="#bc80ff" opacity=".2"/><text class="cn tag" x="107" y="207" text-anchor="middle">持续工作流</text>
+  </g>
+  <g transform="translate(2040 585)" filter="url(#shadow)">
+    <rect width="420" height="230" rx="20" fill="#19312d" stroke="#78e7cb" stroke-opacity=".62"/><rect width="7" height="150" x="413" y="40" rx="3" fill="url(#mint)"/>
+    <text class="cn cardTitle" x="34" y="48">10　交付与跨平台</text><text class="cn cardLead" x="34" y="78">把开发机上的能力交付给真实用户</text>
+    <text class="cn line" x="34" y="115">• Windows / macOS 安装、更新与运行时</text><text class="cn line" x="34" y="142">• 签名、打包、发布指针与平台包校验</text><text class="cn line" x="34" y="169">• 版本 0.1.44 → 0.1.156 高频交付</text>
+    <rect x="34" y="190" width="132" height="24" rx="12" fill="#4adeb8" opacity=".2"/><text class="cn tag" x="100" y="207" text-anchor="middle">上线闭环</text>
+  </g>
+
+  <!-- FIX WALL -->
+  <g transform="translate(100 865)">
+    <rect width="2360" height="238" rx="20" fill="#151b31" stroke="#66749e" stroke-opacity=".42"/>
+    <text class="cn bandTitle" x="30" y="45">修复墙：284 个修复提交不是“补洞”，是把关键链路锤到可长期运行</text>
+    <text class="cn bandSub" x="30" y="72">高频复盘的故障类型被沉淀成守门测试、降级路径或明确的用户可见状态</text>
+    <g transform="translate(28 98)">
+      <g transform="translate(0 0)"><circle cx="18" cy="18" r="18" fill="#745fff"/><text class="cn fixTitle" x="48" y="15">会话不丢</text><text class="cn fixCopy" x="48" y="38">resume DB、上下文、空回复、卡死回合</text></g>
+      <g transform="translate(390 0)"><circle cx="18" cy="18" r="18" fill="#518bff"/><text class="cn fixTitle" x="48" y="15">模型不误杀</text><text class="cn fixCopy" x="48" y="38">Thinking 兼容、网关 502、Token、配置刷新</text></g>
+      <g transform="translate(790 0)"><circle cx="18" cy="18" r="18" fill="#44dcb7"/><text class="cn fixTitle" x="48" y="15">文件不回滚</text><text class="cn fixCopy" x="48" y="38">实时文件优先、索引新鲜度、附件与文档路径</text></g>
+      <g transform="translate(1190 0)"><circle cx="18" cy="18" r="18" fill="#bc83ff"/><text class="cn fixTitle" x="48" y="15">任务不串线</text><text class="cn fixCopy" x="48" y="38">定时任务隔离、队列恢复、无人值守权限</text></g>
+      <g transform="translate(1590 0)"><circle cx="18" cy="18" r="18" fill="#63d8ff"/><text class="cn fixTitle" x="48" y="15">体验不闪烁</text><text class="cn fixCopy" x="48" y="38">流式渲染、滚动锚定、卡片去重、状态可见</text></g>
+      <g transform="translate(1990 0)"><circle cx="18" cy="18" r="18" fill="#75edcf"/><text class="cn fixTitle" x="48" y="15">交付不翻车</text><text class="cn fixCopy" x="48" y="38">Windows 安装器、签名、运行时、更新清单</text></g>
+    </g>
+    <g transform="translate(28 175)"><rect width="223" height="30" rx="15" fill="#262a48"/><text class="cn tag" x="111" y="20" text-anchor="middle">Capability Gate：失败不比今天更差</text><rect x="240" width="205" height="30" rx="15" fill="#203a39"/><text class="cn tag" x="343" y="20" text-anchor="middle">自动化守门与回归测试</text><rect x="462" width="215" height="30" rx="15" fill="#24314c"/><text class="cn tag" x="570" y="20" text-anchor="middle">错误可见、可恢复、可解释</text></g>
+  </g>
+
+  <!-- THREE MONTH CAMPAIGN -->
+  <g transform="translate(100 1142)">
+    <text class="cn bandTitle" x="0" y="0">58 天推进轴：每一段“功能上线”背后，都跟着验证、纠偏和再次加固</text>
+    <text class="cn bandSub" x="0" y="28">按提交密度划分：6 月 268 次　·　7 月 523 次　·　8 月（至 14 日）122 次</text>
+    <line x1="20" y1="112" x2="2340" y2="112" stroke="#62709a" stroke-width="2" opacity=".55"/>
+    <g transform="translate(0 58)">
+      <circle cx="20" cy="54" r="14" fill="#9b8cff" filter="url(#glow)"/><text class="cn month" x="52" y="36">6 月：架构换挡</text><text class="cn monthSub" x="52" y="61">268 次提交 · 基座能力集中重写</text>
+      <g transform="translate(52 86)"><rect width="690" height="166" rx="18" fill="#20203d" stroke="#8174db" stroke-opacity=".5"/>
+        <text class="cn event" x="26" y="33">▸ OpenCode 成为唯一运行时，接入 HTTP/SSE 与引擎选择</text><text class="cn event" x="26" y="61">▸ 消息迁 SQLite + Blob；typed block 与 lit-html 渲染契约</text><text class="cn event" x="26" y="89">▸ Web 学习：API 契约、登录捕获、确定性脚本与 MCP</text><text class="cn event" x="26" y="117">▸ 邮件连接器、工作区技能打包、流式无闪烁与滚动修复</text><text class="cn event" x="26" y="145">▸ 0.1.44 → 0.1.80，开始高频跨平台发布</text>
+      </g>
+    </g>
+    <g transform="translate(790 58)">
+      <circle cx="20" cy="54" r="14" fill="#64d5ff" filter="url(#glow)"/><text class="cn month" x="52" y="36">7 月：能力爆发 + 稳定性攻坚</text><text class="cn monthSub" x="52" y="61">523 次提交 · 最大投入月</text>
+      <g transform="translate(52 86)"><rect width="740" height="166" rx="18" fill="#1a2d40" stroke="#609bc9" stroke-opacity=".5"/>
+        <text class="cn event" x="26" y="33">▸ 账号钱包、模型目录、媒体服务、运行时依赖包与发布后台</text><text class="cn event" x="26" y="61">▸ 手机配对全链：WebSocket、QR、远控、图片、语音、ASR</text><text class="cn event" x="26" y="89">▸ 可信证据链、语义记忆、工作区检索与实时文件权威性</text><text class="cn event" x="26" y="117">▸ 文档样式参考、PDF/Office 兼容、主题与聊天体验全面重做</text><text class="cn event" x="26" y="145">▸ 对模型、会话、Windows 安装和任务队列逐层补强</text>
+      </g>
+    </g>
+    <g transform="translate(1570 58)">
+      <circle cx="20" cy="54" r="14" fill="#71eac9" filter="url(#glow)"/><text class="cn month" x="52" y="36">8 月：角色世界落地与恢复闭环</text><text class="cn monthSub" x="52" y="61">122 次提交 · 复杂产品线收敛</text>
+      <g transform="translate(52 86)"><rect width="738" height="166" rx="18" fill="#193431" stroke="#66bfa8" stroke-opacity=".5"/>
+        <text class="cn event" x="26" y="33">▸ 角色库、官方角色、导入预览、人格绑定与激活证据</text><text class="cn event" x="26" y="61">▸ 世界书、场景记忆、群组角色、多书合并与工作区可移植</text><text class="cn event" x="26" y="89">▸ Agent 草稿、任务恢复、长研究回合、误判定时任务恢复</text><text class="cn event" x="26" y="117">▸ 已发送附件预览、会话近期排序、OpenCode 升级与 UI 收束</text><text class="cn event" x="26" y="145">▸ 0.1.147 → 0.1.156，完成生产级角色工作流</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- FOOTER -->
+  <g transform="translate(100 1660)"><rect width="2360" height="74" rx="16" fill="#12182b" stroke="#5e6a92" stroke-opacity=".35"/>
+    <text class="cn bandTitle" x="28" y="32">研发不是“加功能”而已：</text><text class="cn bandSub" x="28" y="57">一边把新能力接进来，一边确保它出错时能回到强默认值；一边扩大产品半径，一边修复会话、模型、文件、任务、UI 与发布中的真实边界问题。</text>
+    <text class="cn tag" x="2300" y="45" text-anchor="end">v0.1.44 → v0.1.156　·　当前分支可达提交口径</text>
+  </g>
+  <text class="cn foot" x="100" y="1772">Lily Workbench 研发作战全景　·　基于 2026-06-14 至 2026-08-14 的 Git 提交记录整理　·　可编辑 SVG</text>
+</svg>

@@ -1,0 +1,83 @@
+<h2>翻新后的聊天主界面(骨架微调版)</h2>
+<p class="subtitle">三个变化:① 消息去边框,靠排版分层 ② 输入区浮起成卡片 ③ 顶栏瘦身。点"认可"或终端提意见</p>
+
+<style>
+  .full { font-size: 11px; line-height: 1.6; border-radius: 10px; overflow: hidden; height: 420px; display: flex; flex-direction: column; font-family: -apple-system, "PingFang SC", sans-serif; background: #f7f7f5; color: #1f2328; border: 1px solid #e4e4e0; }
+  .full .topbar { height: 34px; background: rgba(255,255,255,0.8); border-bottom: 1px solid #eeece8; display: flex; align-items: center; padding: 0 12px; gap: 8px; flex: none; }
+  .full .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .full .crumb { color: #6b6b66; font-weight: 600; }
+  .full .crumb span { color: #a3a39d; font-weight: 400; }
+  .full .top-actions { margin-left: auto; display: flex; gap: 6px; }
+  .full .pill { border: 1px solid #e4e4e0; border-radius: 999px; padding: 1px 8px; color: #8b8b85; font-size: 9.5px; background: #fff; }
+  .full .body { flex: 1; display: flex; min-height: 0; }
+  .full .side { width: 180px; background: #fbfbfa; border-right: 1px solid #f0eee9; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; flex: none; }
+  .full .side-label { color: #b0aea6; font-size: 9px; letter-spacing: 0.08em; padding: 4px 8px 2px; }
+  .full .side-item { border-radius: 6px; padding: 5px 8px; color: #6b6b66; white-space: nowrap; overflow: hidden; }
+  .full .side-item.on { background: #f3f1ff; color: #5b54c4; font-weight: 600; }
+  .full .center { flex: 1; overflow: hidden; padding: 18px 0 0; display: flex; flex-direction: column; }
+  .full .stream { flex: 1; padding: 0 28px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+  .full .u-msg { align-self: flex-end; background: #ededf9; color: #3d3a6e; border-radius: 14px 14px 4px 14px; padding: 7px 12px; max-width: 70%; }
+  .full .a-head { display: flex; align-items: center; gap: 7px; color: #1f2328; font-weight: 650; }
+  .full .avatar { width: 18px; height: 18px; border-radius: 6px; background: linear-gradient(135deg,#6366f1,#8b5cf6); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; }
+  .full .a-text { color: #37352f; max-width: 78%; }
+  .full .tool-card { border: 1px solid #eae8f8; background: #faf9fe; border-radius: 10px; padding: 7px 10px; max-width: 78%; display: flex; align-items: center; gap: 8px; color: #6d64c9; }
+  .full .tool-card .ok { width: 15px; height: 15px; border-radius: 50%; background: #e6f6ec; color: #2f9e6e; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; flex: none; }
+  .full .tool-card .path { color: #a3a1c4; }
+  .full .composer-wrap { padding: 10px 28px 14px; }
+  .full .composer { background: #fff; border: 1px solid #e6e4f0; border-radius: 14px; box-shadow: 0 4px 16px rgba(80,72,180,0.08), 0 1px 3px rgba(0,0,0,0.04); padding: 10px 12px; }
+  .full .composer .ph { color: #a3a39d; }
+  .full .composer .row { display: flex; align-items: center; margin-top: 8px; gap: 6px; }
+  .full .chip { border: 1px solid #eceae6; background: #fafafa; border-radius: 999px; padding: 1px 8px; color: #8b8b85; font-size: 9.5px; }
+  .full .send { margin-left: auto; width: 22px; height: 22px; border-radius: 8px; background: #6366f1; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
+</style>
+
+<div class="mockup">
+  <div class="mockup-header">目标效果 · 浅色默认(深色版同语言,设计文档里会给出全部令牌值)</div>
+  <div class="mockup-body" style="padding:0;">
+    <div class="full">
+      <div class="topbar">
+        <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+        <span class="crumb">季度报告.docx <span>/ 与 Lily 对话中</span></span>
+        <span class="top-actions"><span class="pill">claude-sonnet</span><span class="pill">技能 3</span><span class="pill">⚙</span></span>
+      </div>
+      <div class="body">
+        <div class="side">
+          <div class="side-label">今天</div>
+          <div class="side-item on">📄 季度报告.docx</div>
+          <div class="side-item">📊 销售数据分析</div>
+          <div class="side-item">✉️ 客户邮件翻译</div>
+          <div class="side-label">更早</div>
+          <div class="side-item">📑 合同要点提取</div>
+          <div class="side-item">🧾 发票批量重命名</div>
+        </div>
+        <div class="center">
+          <div class="stream">
+            <div class="u-msg">帮我把这份报告转成 PDF,并生成每页的预览图</div>
+            <div class="a-head"><span class="avatar">L</span>Lily</div>
+            <div class="a-text">好的,我先读取文档内容,然后渲染为 PDF 并导出页面预览。</div>
+            <div class="tool-card"><span class="ok">✓</span>read_document <span class="path">季度报告.docx · 2.1 MB</span></div>
+            <div class="tool-card"><span class="ok">✓</span>render_document <span class="path">输出 12 页 PNG · 用时 8s</span></div>
+            <div class="a-text">已完成 ✅ 转换成功,共 12 页。预览图已生成,第 3 页有一个表格跨页,需要我顺手修一下吗?</div>
+          </div>
+          <div class="composer-wrap">
+            <div class="composer">
+              <div class="ph">给 Lily 发送消息…</div>
+              <div class="row"><span class="chip">📎 附件</span><span class="chip">@ 提及文件</span><span class="chip">/ 技能</span><span class="send">↑</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:18px;">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>认可这个方向</h3><p>按这个骨架写设计文档,细节在实施中打磨</p></div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content"><h3>要调整</h3><p>终端里告诉我哪里不对(比如侧栏、气泡、工具卡)</p></div>
+  </div>
+</div>

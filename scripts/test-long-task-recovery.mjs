@@ -19,7 +19,7 @@ let now = 1_000;
 const store = new LongTaskStore({ filePath: dbPath, now: () => now });
 
 function running(id, identity) {
-  store.createJob({ id, scope, command: process.execPath, cwd: dir, idempotencyKey: id });
+  store.createJob({ id, scope, command: process.execPath, cwd: dir, replayPolicy: "inspect", idempotencyKey: id });
   const lease = store.claimLease(scope, id, { holder: "starter", ttlMs: 1_000 });
   return store.attachProcess(scope, id, {
     holder: "starter", fencingEpoch: lease.job.fencingEpoch, pid: identity.pid,

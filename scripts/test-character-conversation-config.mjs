@@ -96,13 +96,13 @@ try {
   assert.equal(committed.mode, "native");
   assert.equal(committed.bindingVersion, 1);
   assert.equal(committed.characterRevisionId, null);
-  assert.equal(committed.personaRevisionId, persona.revision.id);
-  assert.deepEqual(committed.books, normalized.books);
+  assert.equal(committed.personaRevisionId, null);
+  assert.deepEqual(committed.books, []);
 
   const loaded = repo.getConversationConfig("session-native-context", OWNER);
   assert.deepEqual(loaded, committed);
-  assert.equal(repo.getBinding("session-native-context", OWNER).personaRevisionId, persona.revision.id);
-  assert.deepEqual(repo.getBookBindings("session-native-context", OWNER), normalized.books);
+  assert.equal(repo.getBinding("session-native-context", OWNER).personaRevisionId, null);
+  assert.deepEqual(repo.getBookBindings("session-native-context", OWNER), []);
 
   assert.throws(
     () => repo.setConversationConfig({
@@ -114,15 +114,13 @@ try {
     (error) => error.code === "CHARACTER_BINDING_CONFLICT"
       && error.current?.bindingVersion === 1,
   );
-  assert.throws(
-    () => repo.setConversationConfig({
-      sessionId: "session-foreign-persona",
-      ownerScope: OWNER,
-      expectedBindingVersion: 0,
-      next: { personaRevisionId: foreignPersona.revision.id },
-    }),
-    (error) => error.code === "PERSONA_REVISION_NOT_FOUND",
-  );
+  const foreignFacet = repo.setConversationConfig({
+    sessionId: "session-foreign-persona",
+    ownerScope: OWNER,
+    expectedBindingVersion: 0,
+    next: { personaRevisionId: foreignPersona.revision.id },
+  });
+  assert.equal(foreignFacet.personaRevisionId, null);
 
   const nativeViaLegacy = repo.setBinding({
     sessionId: "session-native-context",
@@ -131,11 +129,8 @@ try {
     next: { mode: "native" },
   });
   assert.equal(nativeViaLegacy.personaRevisionId, null, "legacy native selection still clears persona");
-  assert.deepEqual(
-    repo.getBookBindings("session-native-context", OWNER),
-    normalized.books,
-    "legacy character selection does not silently remove independently configured books",
-  );
+  assert.deepEqual(repo.getBookBindings("session-native-context", OWNER), [],
+    "character-card-only binding clears retired facet rows");
 
   console.log("PASS: test-character-conversation-config");
 } finally {

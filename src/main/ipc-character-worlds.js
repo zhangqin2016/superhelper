@@ -10,6 +10,7 @@ const {
   summarizePersonaEntity,
 } = require("./character-worlds/persona-inspection");
 const { projectBindingSwitchNotices, resolveBindingCharacterName, resolveBindingUpdates } = require("./character-worlds/binding-projection");
+const { FEATURE_DISABLED } = require("./character-worlds/character-card-only");
 
 // Character Worlds IPC boundary (design spec §15/§16, HANDOFF.md §5/§6).
 //
@@ -519,30 +520,9 @@ function registerCharacterWorldsHandlers(ctx) {
   ipcMain.handle("character:greetings", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
-    const repo = repository();
-    if (!repo) return failure("CHARACTER_WORLDS_UNAVAILABLE");
-    const owner = resolveOwnerScope(ctx);
-    if (!owner) return failure("CHARACTER_WORLDS_UNAVAILABLE");
-    const revisionId = typeof payload?.revisionId === "string" && payload.revisionId
-      ? payload.revisionId
-      : "";
-    if (!validId(revisionId)) return { ok: true, greetings: [] };
-    try {
-      const revision = repo.getRevision(owner, revisionId);
-      if (!revision || !revision.characterBookRevisionId) return { ok: true, greetings: [] };
-      const book = repo.getWorldBookRevision(owner, revision.characterBookRevisionId);
-      const entries = book?.canonical?.entries || [];
-      const greetings = entries
-        .filter((entry) => Number.isSafeInteger(entry.activation?.greetingIndex))
-        .map((entry) => ({
-          index: entry.activation.greetingIndex,
-          text: String(entry.content || "").slice(0, 80),
-        }))
-        .sort((a, b) => a.index - b.index);
-      return { ok: true, greetings };
-    } catch (error) {
-      return mapDomainError(error);
-    }
+    // Greetings stored as embedded character-book entries belong to the
+    // retired world-book path and are no longer exposed to the renderer.
+    return { ok: true, greetings: [] };
   });
 }
 

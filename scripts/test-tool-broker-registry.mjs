@@ -23,6 +23,7 @@ const PLATFORM_TOOLS = [
   "lily_capability_list",
   "lily_capability_status",
   "lily_intent_contract_commit",
+  "lily_legal_search",
   "runtime_pack_install",
   "runtime_pack_list",
 ];

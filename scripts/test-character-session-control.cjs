@@ -152,6 +152,9 @@ ipcMain.handle("session-character:set-binding", async (_event, payload) => {
   return { ok: true, binding: next };
 });
 ipcMain.handle("session-character:get-events", () => ({ ok: true, events: [], notices: [] }));
+ipcMain.handle("scene:get", () => ({ ok: false, error: "FEATURE_DISABLED" }));
+ipcMain.handle("character-worlds:preview-get", () => ({ ok: false, error: "FEATURE_DISABLED" }));
+ipcMain.handle("character:greetings", () => ({ ok: true, greetings: [] }));
 ipcMain.handle("persona:list-official", () => ({ ok: true, personas: [] }));
 ipcMain.handle("world-book:list-official", () => ({ ok: true, worldBooks: [] }));
 ipcMain.handle("character:import-preview", () => {
@@ -470,7 +473,8 @@ app.whenReady().then(async () => {
     return "guards hold";
   })()`);
 
-  // 6c. Persona/world state stays readable instead of unexplained P/W glyphs.
+  // 6c. Character-card-only runtime does not leak legacy persona/world-book
+  // state into the composer context label.
   {
     const current = cwBindings.get("session_alpha_recent");
     cwBindings.set("session_alpha_recent", { ...current, personaRevisionId: "persona-revision-1" });
@@ -481,10 +485,14 @@ app.whenReady().then(async () => {
       store.set("activeSessionId", "session_alpha_recent");
       await new Promise((r) => setTimeout(r, 260));
       const badges = document.querySelector("#sessionRoleBanner .session-role-banner-badges");
-      if (!badges.textContent.includes("设定")) throw new Error("persona state needs a localized text label: " + badges.textContent);
-      if (!badges.textContent.includes("世界书")) throw new Error("world state needs a localized text label: " + badges.textContent);
+      if (!badges.textContent.includes("已选择")) throw new Error("character state needs a localized text label: " + badges.textContent);
+      if (badges.textContent.includes("设定") || badges.textContent.includes("世界书")) {
+        throw new Error("legacy persona/world-book labels must stay out of the character context: " + badges.textContent);
+      }
       const accessibleName = document.getElementById("sessionRoleBanner").getAttribute("aria-label") || "";
-      if (!accessibleName.includes("设定") || !accessibleName.includes("世界书")) throw new Error("context labels must be announced: " + accessibleName);
+      if (!accessibleName.includes("已选择") || accessibleName.includes("设定") || accessibleName.includes("世界书")) {
+        throw new Error("character context label must be announced without legacy labels: " + accessibleName);
+      }
       return badges.textContent;
     })()`);
   }

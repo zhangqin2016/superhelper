@@ -868,6 +868,10 @@ try {
   assert.equal(latest.statusCode, 200);
   assert.equal(latest.json().sizeBytes, 123);
   assert.equal(latest.json().version, `9.9.9-integration-${runId}`);
+  assert.equal(
+    latest.json().feedUrl,
+    `https://qny.lanrensoft.cn/app/auto-updates/darwin-arm64/stable/latest-mac.yml?v=9.9.9-integration-${runId}`,
+  );
 
   const restoredSettings = await app.inject({
     method: "PATCH",

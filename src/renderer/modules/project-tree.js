@@ -15,11 +15,64 @@ import { reviewWorkspacePackage } from "./workspace-package-review.js";
 import { reorderWorkspaceByCommand } from "./workspace-order.js";
 import { createWorkspaceProjectHeader } from "./workspace-project-header.js";
 import { sortSessionsByRecency } from "./workspace-switcher-model.js";
+import { showWorkspaceVersionDialog } from "./workspace-version-dialog.js";
 
 const container = () => $("projectTree");
 
 // Which projects are collapsed
 const collapsed = new Set();
+const versionIndicatorCache = new Map();
+const VERSION_INDICATOR_CACHE_MS = 20_000;
+
+async function refreshVersionIndicator(button, project, force = false) {
+  if (!button || !project?.id || !window.assistantClient?.getProjectVersionStatus) return;
+  const cached = versionIndicatorCache.get(project.id);
+  if (!force && cached && Date.now() - cached.at < VERSION_INDICATOR_CACHE_MS) {
+    applyVersionIndicator(button, project, cached.status);
+    return;
+  }
+  button.classList.add("is-loading");
+  try {
+    const status = await window.assistantClient.getProjectVersionStatus(project.id);
+    if (!status?.ok) throw new Error("VERSION_STATUS_UNAVAILABLE");
+    versionIndicatorCache.set(project.id, { at: Date.now(), status });
+    applyVersionIndicator(button, project, status);
+  } catch {
+    button.classList.remove("is-loading", "is-protected", "is-warning");
+    button.classList.add("is-unavailable");
+    button.title = t("workspaceVersion.indicatorUnavailable");
+    button.setAttribute("aria-label", t("workspaceVersion.indicatorUnavailable"));
+  }
+}
+
+function applyVersionIndicator(button, project, status) {
+  const warning = Number(status?.unprotectedCount) > 0;
+  const hasVersion = Boolean(status?.hasVersion);
+  button.classList.remove("is-loading", "is-unavailable", "is-protected", "is-warning");
+  button.classList.add(warning ? "is-warning" : hasVersion ? "is-protected" : "is-ready");
+  const label = warning
+    ? t("workspaceVersion.indicatorWarning")
+    : hasVersion
+      ? t("workspaceVersion.indicatorProtected")
+      : t("workspaceVersion.indicatorReady");
+  button.title = `${t("workspaceVersion.open")} · ${project.name} · ${label}`;
+  button.setAttribute("aria-label", `${t("workspaceVersion.open")} · ${label}`);
+}
+
+function invalidateVersionIndicator(projectId) {
+  if (!projectId) return;
+  versionIndicatorCache.delete(projectId);
+  const button = [...(container()?.querySelectorAll(".workspace-version-entry") || [])]
+    .find((item) => item.dataset.projectId === projectId);
+  const project = (store.get("projects") || []).find((item) => item.id === projectId);
+  if (button && project) void refreshVersionIndicator(button, project, true);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("workspace-version-changed", (event) => {
+    invalidateVersionIndicator(event.detail?.projectId);
+  });
+}
 
 /** Expand a project's session list (e.g. after creating a session). */
 export function expandProjectGroup(projectId) {
@@ -112,8 +165,10 @@ export function renderProjectTree() {
         await applySessionSwitch(switched, result.session.id, project.id);
       },
       onShowMenu: (event) => showProjectMenu(event, project),
+      onShowVersion: () => showWorkspaceVersionDialog(project),
     });
     group.appendChild(header);
+    void refreshVersionIndicator(header.querySelector(".workspace-version-entry"), project);
 
     const sessionList = document.createElement("div");
     sessionList.className = "project-sessions";
@@ -338,6 +393,10 @@ function showProjectMenu(e, project) {
     {
       label: t("ctx.openInFinder"),
       action: () => window.assistantClient.openProject(project.id),
+    },
+    {
+      label: t("ctx.versionProtection"),
+      action: () => showWorkspaceVersionDialog(project),
     },
     {
       label: t("ctx.sharePack"),

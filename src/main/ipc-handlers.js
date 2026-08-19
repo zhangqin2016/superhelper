@@ -105,7 +105,19 @@ function registerAll(ctx) {
   } catch {
     ctx.runtimeCheckpointStore = null;
   }
-  ctx.turnArchive = new TurnArchive(sessionManager, { eventBus: ctx.eventBus });
+  if (!ctx.workspaceVersionService) {
+    try {
+      const { WorkspaceVersionService } = require("./workspace-version-service");
+      ctx.workspaceVersionService = new WorkspaceVersionService();
+    } catch (error) {
+      ctx.workspaceVersionService = null;
+      console.warn("[workspace-version] disabled:", error?.message || error);
+    }
+  }
+  ctx.turnArchive = new TurnArchive(sessionManager, {
+    eventBus: ctx.eventBus,
+    versionService: ctx.workspaceVersionService,
+  });
   runnerPool.publicHookRuntime = ctx.publicHookRuntime;
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);
   require("./ipc-agent-runtime").registerAgentRuntimeHandlers(ctx);

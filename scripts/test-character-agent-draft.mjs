@@ -423,7 +423,7 @@ try {
     return result;
   });
 
-  await check("create drafts a world book into the library instead of a Markdown file", async () => {
+  await check("world-book drafts stay disabled in character-card-only mode", async () => {
     const result = await call({
       action: "create",
       kind: "worldBook",
@@ -432,11 +432,8 @@ try {
         entries: [{ id: "district", keys: ["旧城区"], content: "雨夜中的旧城区。" }],
       },
     });
-    assert.equal(result.ok, true, JSON.stringify(result));
-    const revision = repository.getWorldBookRevision(OWNER, result.revisionId);
-    assert.equal(revision.worldBookId, result.entityId);
-    assert.equal(revision.source.kind, "agent_draft");
-    assert.equal(revision.canonical.name, "霓虹城");
+    assert.equal(result.ok, false, JSON.stringify(result));
+    assert.equal(result.error, "FEATURE_DISABLED");
   });
 
   await check("hostile create input fails with the identical authoring codes", async () => {
@@ -474,7 +471,7 @@ try {
       canonical: { name: "Bad", role: "admin" },
     });
     assert.equal(personaAuthz.ok, false);
-    assert.equal(personaAuthz.error, "PERSONA_DATA_INVALID");
+    assert.equal(personaAuthz.error, "FEATURE_DISABLED");
     assert.equal(repository.listCharacters(OWNER).length, 1, "rejections write nothing");
   });
 
@@ -560,17 +557,8 @@ try {
     const persona = await call({
       action: "create", kind: "persona", canonical: { name: "Aurelia" },
     });
-    assert.equal(persona.ok, true);
-    const personaConflict = await call({
-      action: "revise",
-      kind: "persona",
-      entityId: persona.entityId,
-      expectedBaseRevisionId: "not-the-tip",
-      canonical: { name: "Aurelia" },
-    });
-    assert.equal(personaConflict.ok, false);
-    assert.equal(personaConflict.error, "PERSONA_REVISION_CONFLICT");
-    assert.equal(personaConflict.currentRevisionId, persona.revisionId);
+    assert.equal(persona.ok, false);
+    assert.equal(persona.error, "FEATURE_DISABLED");
   });
 
   // --- no activation: structural + behavioral proof ------------------------------

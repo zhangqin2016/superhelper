@@ -238,6 +238,8 @@ function compileTurnWorldCharacterContext({
   let baseVersion = 0;
   let diagnostic = null;
   try {
+    const isCharacterCardOnlySnapshot = snapshot?.schemaVersion === 2
+      && Array.isArray(snapshot?.worldBookBindings);
     const prepared = Array.isArray(snapshot?.worldBookBindings)
       && snapshot.worldBookBindings.length > 0
       ? prepareTurnWorldBooks({
@@ -246,7 +248,9 @@ function compileTurnWorldCharacterContext({
           compatibilityProfile: snapshot?.compatibilityProfile,
           greetingIndex: snapshot?.greetingIndex,
         })
-      : prepareTurnWorldBook({
+      : isCharacterCardOnlySnapshot
+        ? null
+        : prepareTurnWorldBook({
           repository, store, ownerScope, sessionId, turnId, revision,
           compatibilityProfile: snapshot?.compatibilityProfile,
         });

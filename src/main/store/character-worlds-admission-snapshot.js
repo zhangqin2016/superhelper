@@ -10,6 +10,7 @@ const {
   readyCompositionSnapshot,
 } = require("../character-worlds/turn-binding-snapshot");
 const { parsePreview } = require("../character-worlds/preview-store");
+const { projectCharacterCardSnapshot } = require("../character-worlds/character-card-only");
 
 function parseEnvelope(row) {
   if (
@@ -72,7 +73,7 @@ function currentConversationSnapshot(db, sessionId, ownerScope) {
   const envelope = row ? parseEnvelope(row) : null;
   if (row && !validBindingRow(row, envelope)) return fallbackSnapshot();
   let characterRevisionId = row?.character_revision_id || null;
-  let personaRevisionId = row?.persona_revision_id || null;
+  let personaRevisionId = null;
   let compatibilityProfile = row?.compatibility_profile || null;
   let greetingIndex = Number.isSafeInteger(envelope?.activeGreetingIndex)
     ? envelope.activeGreetingIndex
@@ -89,6 +90,9 @@ function currentConversationSnapshot(db, sessionId, ownerScope) {
     worldBookRevisionId: book.world_book_revision_id,
     mergeStrategy: book.merge_strategy || "constant",
   }));
+  // Legacy persona/world-book rows remain in storage for compatibility, but
+  // the live product is character-card-only. Never carry them into a turn.
+  books = [];
 
   if (characterRevisionId && !revisionEntity(
     db, "character_revisions", characterRevisionId, ownerScope,
@@ -107,48 +111,14 @@ function currentConversationSnapshot(db, sessionId, ownerScope) {
       groupId = null;
     }
   }
-  if (preview?.persona) {
-    const revision = revisionEntity(
-      db, "persona_revisions", preview.persona.revisionId, ownerScope,
-    );
-    if (revision?.entity_id === preview.persona.entityId) personaRevisionId = revision.id;
-  }
-  for (const item of preview?.worldBooks || []) {
-    const revision = revisionEntity(
-      db, "world_book_revisions", item.revisionId, ownerScope,
-    );
-    if (revision?.entity_id !== item.entityId) continue;
-    books = books.filter((book) => {
-      const durable = revisionEntity(
-        db, "world_book_revisions", book.worldBookRevisionId, ownerScope,
-      );
-      return book.scope !== item.scope && durable?.entity_id !== item.entityId;
-    });
-    books.push({
-      scope: item.scope,
-      worldBookRevisionId: item.revisionId,
-      mergeStrategy: item.mergeStrategy,
-    });
-  }
-
-  const hasActivePreview = Boolean(
-    preview?.character || preview?.persona || preview?.worldBooks?.length,
-  );
-  if (characterRevisionId && books.length === 0 && !hasActivePreview) {
-    return readySnapshot({
-      bindingVersion: row.binding_version,
-      characterRevisionId,
-      personaRevisionId,
-      compatibilityProfile,
-    }) || fallbackSnapshot();
-  }
-  return readyCompositionSnapshot({
+  return projectCharacterCardSnapshot({
+    schemaVersion: 2,
     mode: characterRevisionId ? "character" : "native",
     bindingVersion: row?.binding_version || 0,
     previewVersion: preview?.previewVersion || 0,
     characterRevisionId,
-    personaRevisionId,
-    worldBookBindings: books,
+    personaRevisionId: null,
+    worldBookBindings: [],
     compatibilityProfile: characterRevisionId ? compatibilityProfile || CHARACTER_COMPATIBILITY_PROFILE : null,
     greetingIndex,
     sceneId,

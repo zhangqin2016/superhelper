@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Lily Workbench 两个月研发全景</title>
+  <desc id="desc">以智能工作台为中心，展示 Agent 引擎、移动协同、角色世界、可信记忆、技能生态和交付质量六条研发主线。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#10131f"/>
+      <stop offset=".55" stop-color="#15162a"/>
+      <stop offset="1" stop-color="#0b1420"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#b79cff"/>
+      <stop offset="1" stop-color="#6e67ff"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5cdbff"/>
+      <stop offset="1" stop-color="#5287ff"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#73f0cc"/>
+      <stop offset="1" stop-color="#36bde5"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000716" flood-opacity=".46"/>
+    </filter>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#8791bd" stroke-opacity=".08"/>
+    </pattern>
+    <style>
+      .cn { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+      .title { fill:#f6f7ff; font-size:38px; font-weight:700; letter-spacing:1px; }
+      .subtitle { fill:#aeb5d5; font-size:18px; font-weight:400; }
+      .metric { fill:#eff1ff; font-size:21px; font-weight:600; }
+      .metric-small { fill:#aeb5d5; font-size:14px; }
+      .card-title { fill:#f8f8ff; font-size:25px; font-weight:700; }
+      .card-sub { fill:#c8cce3; font-size:17px; font-weight:500; }
+      .card-note { fill:#8f98bd; font-size:14px; }
+      .center-kicker { fill:#c7bdff; font-size:16px; font-weight:600; letter-spacing:4px; }
+      .center-title { fill:#ffffff; font-size:41px; font-weight:700; }
+      .center-sub { fill:#ccd3ff; font-size:19px; }
+      .timeline { fill:#e8ebff; font-size:18px; font-weight:700; }
+      .timeline-sub { fill:#a9b3d5; font-size:14px; }
+      .foot { fill:#7681a8; font-size:13px; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <circle cx="960" cy="470" r="435" fill="#776bff" opacity=".045"/>
+  <circle cx="960" cy="470" r="310" fill="#6edbff" opacity=".035"/>
+
+  <!-- Header -->
+  <text class="cn title" x="100" y="92">Lily Workbench · 两个月研发全景</text>
+  <text class="cn subtitle" x="100" y="124">2026.06.14 — 2026.08.14　从桌面 Agent 工具，演进为可协同、可记忆、可扩展的平台</text>
+  <g transform="translate(1350 57)">
+    <rect width="470" height="82" rx="18" fill="#1e2239" stroke="#7078aa" stroke-opacity=".38"/>
+    <line x1="156" y1="16" x2="156" y2="66" stroke="#5b638d" stroke-opacity=".45"/>
+    <line x1="312" y1="16" x2="312" y2="66" stroke="#5b638d" stroke-opacity=".45"/>
+    <text class="cn metric" x="78" y="42" text-anchor="middle">913</text>
+    <text class="cn metric-small" x="78" y="62" text-anchor="middle">次提交</text>
+    <text class="cn metric" x="234" y="42" text-anchor="middle">58</text>
+    <text class="cn metric-small" x="234" y="62" text-anchor="middle">活跃日</text>
+    <text class="cn metric" x="391" y="42" text-anchor="middle">0.1.156</text>
+    <text class="cn metric-small" x="391" y="62" text-anchor="middle">当前版本</text>
+  </g>
+
+  <!-- Connectors -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M770 390 C660 350 610 300 535 262" stroke="#8e8cff" stroke-width="2" opacity=".72"/>
+    <path d="M1150 390 C1260 350 1310 300 1385 262" stroke="#5ad5ff" stroke-width="2" opacity=".72"/>
+    <path d="M735 500 C640 515 585 530 520 560" stroke="#6de7d1" stroke-width="2" opacity=".72"/>
+    <path d="M1185 500 C1280 515 1335 530 1400 560" stroke="#a287ff" stroke-width="2" opacity=".72"/>
+    <path d="M795 650 C700 700 630 747 548 788" stroke="#609cff" stroke-width="2" opacity=".72"/>
+    <path d="M1125 650 C1220 700 1290 747 1372 788" stroke="#72e8cd" stroke-width="2" opacity=".72"/>
+    <g opacity=".9" filter="url(#glow)">
+      <circle cx="535" cy="262" r="5" fill="#9b91ff"/><circle cx="1385" cy="262" r="5" fill="#65dfff"/>
+      <circle cx="520" cy="560" r="5" fill="#73f0cc"/><circle cx="1400" cy="560" r="5" fill="#aa91ff"/>
+      <circle cx="548" cy="788" r="5" fill="#6a9dff"/><circle cx="1372" cy="788" r="5" fill="#79efd2"/>
+    </g>
+  </g>
+
+  <!-- Card 1: engine -->
+  <g transform="translate(110 180)" filter="url(#shadow)">
+    <rect width="420" height="174" rx="22" fill="#1b2036" stroke="#978dff" stroke-opacity=".56"/>
+    <rect width="7" height="104" x="0" y="35" rx="3.5" fill="url(#violet)"/>
+    <g transform="translate(35 34)" fill="none" stroke="#c1b5ff" stroke-width="2.5">
+      <rect width="55" height="42" rx="7"/><path d="M10 12h21M10 23h33M10 34h16"/><circle cx="45" cy="13" r="3" fill="#6ce8d2" stroke="none"/>
+    </g>
+    <text class="cn card-title" x="112" y="62">Agent 引擎</text>
+    <text class="cn card-sub" x="112" y="92">OpenCode 迁移 · 多模型 · 会话恢复</text>
+    <text class="cn card-note" x="35" y="137">HTTP/SSE　上下文压缩　工具执行　故障自愈</text>
+  </g>
+
+  <!-- Card 2: mobile -->
+  <g transform="translate(1390 180)" filter="url(#shadow)">
+    <rect width="420" height="174" rx="22" fill="#17253a" stroke="#64d9ff" stroke-opacity=".56"/>
+    <rect width="7" height="104" x="413" y="35" rx="3.5" fill="url(#blue)"/>
+    <g transform="translate(36 27)" fill="none" stroke="#83e2ff" stroke-width="2.5">
+      <rect x="7" y="0" width="33" height="62" rx="7"/><path d="M16 11h15M19 51h9"/>
+      <path d="M48 17c12 8 12 20 0 28M55 10c19 13 19 30 0 43"/>
+    </g>
+    <text class="cn card-title" x="112" y="62">移动协同</text>
+    <text class="cn card-sub" x="112" y="92">扫码配对 · 远程指挥 · 语音 / 图片</text>
+    <text class="cn card-note" x="35" y="137">手机看会话　打断任务　WebSocket 中继　ASR</text>
+  </g>
+
+  <!-- Card 3: memory -->
+  <g transform="translate(80 470)" filter="url(#shadow)">
+    <rect width="440" height="178" rx="22" fill="#172b34" stroke="#6be8cc" stroke-opacity=".54"/>
+    <rect width="7" height="108" x="0" y="35" rx="3.5" fill="url(#mint)"/>
+    <g transform="translate(38 34)" fill="none" stroke="#8df1d8" stroke-width="2.4">
+      <circle cx="30" cy="30" r="25"/><path d="M18 23c7-11 18-10 24-2 7 7 4 19-4 24M18 38c7 5 16 5 24-1"/>
+      <circle cx="30" cy="6" r="3" fill="#8df1d8"/><circle cx="53" cy="23" r="3" fill="#8df1d8"/><circle cx="50" cy="47" r="3" fill="#8df1d8"/>
+    </g>
+    <text class="cn card-title" x="116" y="63">可信记忆</text>
+    <text class="cn card-sub" x="116" y="93">语义召回 · 工作区索引 · 证据校验</text>
+    <text class="cn card-note" x="38" y="140">文件新鲜度　知识库证据　先验证再断言</text>
+  </g>
+
+  <!-- Card 4: ecosystem -->
+  <g transform="translate(1400 470)" filter="url(#shadow)">
+    <rect width="440" height="178" rx="22" fill="#251e3d" stroke="#af96ff" stroke-opacity=".55"/>
+    <rect width="7" height="108" x="433" y="35" rx="3.5" fill="url(#violet)"/>
+    <g transform="translate(37 34)" fill="none" stroke="#c1b1ff" stroke-width="2.5">
+      <rect x="0" y="0" width="24" height="24" rx="5"/><rect x="34" y="0" width="24" height="24" rx="5"/><rect x="0" y="34" width="24" height="24" rx="5"/>
+      <path d="M58 12h17M66 4v16M40 46h35"/>
+    </g>
+    <text class="cn card-title" x="116" y="63">技能生态</text>
+    <text class="cn card-sub" x="116" y="93">技能目录 · MCP / Web 学习 · 自动化共享</text>
+    <text class="cn card-note" x="37" y="140">运行时依赖包　邮件连接器　工作区能力沉淀</text>
+  </g>
+
+  <!-- Card 5: character worlds -->
+  <g transform="translate(120 720)" filter="url(#shadow)">
+    <rect width="428" height="177" rx="22" fill="#17233c" stroke="#6d9eff" stroke-opacity=".55"/>
+    <rect width="7" height="107" x="0" y="35" rx="3.5" fill="url(#blue)"/>
+    <g transform="translate(35 31)" fill="none" stroke="#91b6ff" stroke-width="2.4">
+      <path d="M8 5h28c9 0 15 5 19 10v44c-5-5-11-8-19-8H8z"/><path d="M31 5v46"/>
+      <circle cx="20" cy="23" r="7"/><path d="M11 43c3-8 15-8 19 0"/>
+    </g>
+    <text class="cn card-title" x="112" y="63">角色世界</text>
+    <text class="cn card-sub" x="112" y="93">角色库 · 人格 / 世界书 · 场景记忆</text>
+    <text class="cn card-note" x="35" y="140">角色卡导入　官方目录　多书合并　群组场景</text>
+  </g>
+
+  <!-- Card 6: delivery -->
+  <g transform="translate(1372 720)" filter="url(#shadow)">
+    <rect width="428" height="177" rx="22" fill="#172e2c" stroke="#6de7cc" stroke-opacity=".55"/>
+    <rect width="7" height="107" x="421" y="35" rx="3.5" fill="url(#mint)"/>
+    <g transform="translate(35 31)" fill="none" stroke="#89efd6" stroke-width="2.4">
+      <path d="M30 2l23 9v18c0 16-10 26-23 32C17 55 7 45 7 29V11z"/>
+      <path d="M18 30l8 8 16-18" stroke-width="3"/>
+    </g>
+    <text class="cn card-title" x="112" y="63">交付与质量</text>
+    <text class="cn card-sub" x="112" y="93">Windows / macOS · 发布链路 · 稳定性修复</text>
+    <text class="cn card-note" x="35" y="140">打包签名　安装更新　测试守门　跨平台运行时</text>
+  </g>
+
+  <!-- Central hub -->
+  <g transform="translate(730 317)" filter="url(#shadow)">
+    <circle cx="230" cy="166" r="183" fill="#10162d" stroke="#756dff" stroke-width="2"/>
+    <circle cx="230" cy="166" r="158" fill="#1c1b47" stroke="#68dff8" stroke-opacity=".38"/>
+    <circle cx="230" cy="166" r="123" fill="url(#violet)" opacity=".13"/>
+    <path d="M135 205h190" stroke="#8178ff" stroke-opacity=".45"/>
+    <path d="M230 68v53M184 94l28 38M276 94l-28 38" stroke="#80e4ff" stroke-width="2" opacity=".8"/>
+    <circle cx="230" cy="59" r="7" fill="#76edcf" filter="url(#glow)"/>
+    <circle cx="180" cy="91" r="6" fill="#9c8dff" filter="url(#glow)"/>
+    <circle cx="280" cy="91" r="6" fill="#66d9ff" filter="url(#glow)"/>
+    <text class="cn center-kicker" x="230" y="150" text-anchor="middle">LOCAL AGENT PLATFORM</text>
+    <text class="cn center-title" x="230" y="197" text-anchor="middle">Lily Workbench</text>
+    <text class="cn center-sub" x="230" y="229" text-anchor="middle">智能工作台</text>
+    <text class="cn center-sub" x="230" y="263" text-anchor="middle">让自然语言驱动真实工作</text>
+  </g>
+
+  <!-- Timeline -->
+  <g transform="translate(172 970)">
+    <path d="M0 0H1576" stroke="#65709c" stroke-width="2" opacity=".55"/>
+    <path d="M0 0H525" stroke="url(#violet)" stroke-width="4"/>
+    <path d="M525 0H1080" stroke="url(#blue)" stroke-width="4"/>
+    <path d="M1080 0H1576" stroke="url(#mint)" stroke-width="4"/>
+    <g>
+      <circle cx="0" cy="0" r="10" fill="#9a8dff"/><circle cx="525" cy="0" r="10" fill="#68cfff"/><circle cx="1080" cy="0" r="10" fill="#72eccc"/><circle cx="1576" cy="0" r="10" fill="#72eccc"/>
+      <text class="cn timeline" x="0" y="-25">6月 · 架构迁移</text>
+      <text class="cn timeline-sub" x="0" y="28">OpenCode、SQLite、Web 学习、流式渲染</text>
+      <text class="cn timeline" x="525" y="-25">7月 · 能力扩展与稳定性</text>
+      <text class="cn timeline-sub" x="525" y="28">移动协同、记忆证据、模型与发布加固</text>
+      <text class="cn timeline" x="1080" y="-25">8月 · 角色世界与恢复</text>
+      <text class="cn timeline-sub" x="1080" y="28">角色库、世界书、任务恢复、附件预览</text>
+    </g>
+  </g>
+  <text class="cn foot" x="100" y="1045">提交口径：当前分支可达历史　·　功能 268　·　问题修复 284　·　测试与质量守门持续覆盖</text>
+</svg>

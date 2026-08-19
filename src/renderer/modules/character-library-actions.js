@@ -2,7 +2,6 @@
 
 import { kindForTab, initialFormValues } from "./character-library-model.js";
 import { installOfficialCharacter } from "./official-character-picker.js";
-import { removeWorldBookFromConversation } from "./character-library-book-actions.js";
 function isRevisionConflict(error) {
   return typeof error === "string" && error.endsWith("REVISION_CONFLICT");
 }
@@ -133,7 +132,7 @@ export function createLibraryActions(ctx) {
 
   async function openDetail(item) {
     const api = facade();
-    if (!api || !item?.id) return;
+    if (!api || !item?.id || item.kind !== "character") return;
     dispatch({ type: "detail.selected", itemId: item.id });
     try {
       let detail;
@@ -224,7 +223,7 @@ export function createLibraryActions(ctx) {
   async function activateItem(item) {
     const api = facade();
     const sessionId = getActiveSessionId?.();
-    if (!api || !sessionId || !item || getState().activation.status === "running") return;
+    if (!api || !sessionId || !item || item.kind !== "character" || getState().activation.status === "running") return;
     if (item.kind === "persona" && item.completion === "incomplete") {
       setNotice("action_failed");
       return;
@@ -287,7 +286,7 @@ export function createLibraryActions(ctx) {
   async function saveForm() {
     const api = facade();
     const form = getState().form;
-    if (!api || !form || getState().busy) return;
+    if (!api || !form || form.kind !== "character" || getState().busy) return;
     const values = readFormValues();
     const name = (values.name || "").trim();
     if (!name) {
@@ -381,7 +380,7 @@ export function createLibraryActions(ctx) {
 
   async function openEdit(item) {
     const api = facade();
-    if (!api) return;
+    if (!api || item?.kind !== "character") return;
     const kind = kindForTab(getState().tab);
     try {
       const res = kind === "character"
@@ -415,7 +414,7 @@ export function createLibraryActions(ctx) {
 
   async function openHistory(item) {
     const api = facade();
-    if (!api) return;
+    if (!api || item?.kind !== "character") return;
     const kind = kindForTab(getState().tab);
     try {
       const res = kind === "character"
@@ -470,7 +469,7 @@ export function createLibraryActions(ctx) {
   async function confirmAction() {
     const api = facade();
     const confirm = getState().confirm;
-    if (!api || !confirm || getState().busy) return;
+    if (!api || !confirm || confirm.kind !== "character" || getState().busy) return;
     dispatch({ type: "busy.set", busy: true });
     try {
       if (confirm.action === "archive") {
@@ -563,8 +562,5 @@ export function createLibraryActions(ctx) {
     startImport,
     openDetail,
     activateItem,
-    removeWorldBook: (item) => removeWorldBookFromConversation({
-      facade, getState, getActiveSessionId, dispatch, setNotice, openDetail,
-    }, item),
   };
 }

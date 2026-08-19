@@ -39,6 +39,7 @@ const {
   getConversationConfig,
   setConversationConfig,
 } = require("./conversation-config-repository");
+const { projectCharacterCardBinding } = require("./character-card-only");
 function entityFromRow(row) {
   if (!row) return null;
   return {
@@ -53,7 +54,7 @@ function entityFromRow(row) {
   };
 }
 function nativeBinding(sessionId, bindingVersion = 0) {
-  return {
+  return projectCharacterCardBinding({
     schemaVersion: C.CHARACTER_BINDING_SCHEMA_VERSION,
     sessionId,
     mode: "native",
@@ -62,7 +63,7 @@ function nativeBinding(sessionId, bindingVersion = 0) {
     personaRevisionId: null,
     compatibilityProfile: null,
     greetingIndex: null,
-  };
+  });
 }
 function bindingFromRow(row, sessionId) {
   if (!row) return nativeBinding(sessionId);
@@ -74,7 +75,7 @@ function bindingFromRow(row, sessionId) {
   } catch {
     greetingIndex = null;
   }
-  return {
+  return projectCharacterCardBinding({
     schemaVersion: C.CHARACTER_BINDING_SCHEMA_VERSION,
     sessionId,
     mode: row.mode,
@@ -83,7 +84,7 @@ function bindingFromRow(row, sessionId) {
     personaRevisionId: row.persona_revision_id || null,
     compatibilityProfile: row.compatibility_profile || null,
     greetingIndex,
-  };
+  });
 }
 function bindingEnvelope(binding, updatedAt) {
   return {

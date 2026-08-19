@@ -7,6 +7,7 @@ const {
   getOfficialWorldBook,
   listOfficialWorldBooks,
 } = require("./character-worlds/official-context-catalog");
+const { FEATURE_DISABLED } = require("./character-worlds/character-card-only");
 
 function safeLocale() {
   try { return getLocale() || "en"; } catch { return "en"; }
@@ -16,6 +17,7 @@ function registerOfficialContextHandlers({ ipcMain, ctx, guard, failure, mapDoma
   ipcMain.handle("persona:list-official", async (event, payload) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    return failure(FEATURE_DISABLED);
     if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     const owner = resolveOwnerScope(ctx);
     if (!owner || !repository()) return failure("CHARACTER_WORLDS_UNAVAILABLE");
@@ -42,6 +44,7 @@ function registerOfficialContextHandlers({ ipcMain, ctx, guard, failure, mapDoma
   ipcMain.handle("persona:get-official", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    return failure(FEATURE_DISABLED);
     if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     const owner = resolveOwnerScope(ctx);
     if (!owner || !repository() || typeof payload?.officialId !== "string") return failure("INVALID_INPUT");
@@ -52,6 +55,7 @@ function registerOfficialContextHandlers({ ipcMain, ctx, guard, failure, mapDoma
   ipcMain.handle("persona:install-official", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    return failure(FEATURE_DISABLED);
     if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     const owner = resolveOwnerScope(ctx);
     const repo = repository();
@@ -108,6 +112,7 @@ function registerOfficialContextHandlers({ ipcMain, ctx, guard, failure, mapDoma
   ipcMain.handle("world-book:list-official", async (event, payload) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    return failure(FEATURE_DISABLED);
     if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     const owner = resolveOwnerScope(ctx);
     if (!owner || !repository()) return failure("CHARACTER_WORLDS_UNAVAILABLE");
@@ -133,6 +138,7 @@ function registerOfficialContextHandlers({ ipcMain, ctx, guard, failure, mapDoma
   ipcMain.handle("world-book:get-official", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    return failure(FEATURE_DISABLED);
     if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     const owner = resolveOwnerScope(ctx);
     if (!owner || !repository() || typeof payload?.officialId !== "string") return failure("INVALID_INPUT");
@@ -143,6 +149,7 @@ function registerOfficialContextHandlers({ ipcMain, ctx, guard, failure, mapDoma
   ipcMain.handle("world-book:install-official", async (event, payload = {}) => {
     const denied = guard(event, payload);
     if (denied) return denied;
+    return failure(FEATURE_DISABLED);
     if (policyDeniesSelection(ctx)) return failure("CHARACTER_WORLDS_UNAVAILABLE");
     const owner = resolveOwnerScope(ctx);
     const repo = repository();

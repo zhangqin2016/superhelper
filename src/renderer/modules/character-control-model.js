@@ -18,8 +18,6 @@ export function initialCharacterControlState(overrides = {}) {
     bindingVersion: 0,
     characterRevisionId: null,
     compatibilityProfile: null,
-    personaRevisionId: null,
-    worldBookRevisionId: null,
     characterName: "",
     application: null,
     characters: [],
@@ -28,7 +26,7 @@ export function initialCharacterControlState(overrides = {}) {
     notice: null,
     importPreview: null,
     importCommitting: false,
-    preview: { previewVersion: 0, bindingVersion: 0, character: false, persona: false, worldBookCount: 0, activation: null, loading: false, conflict: null },
+    preview: { previewVersion: 0, bindingVersion: 0, character: false, activation: null, loading: false, conflict: null },
     // Update-available hint (Phase 2B, §8): main-resolved newer current
     // revisions than the binding's pin. Never changes the pinned snapshot —
     // applying is an explicit set-binding.
@@ -58,9 +56,6 @@ function normalizeUpdates(updates) {
   if (typeof updates.character?.currentRevisionId === "string" && updates.character.currentRevisionId) {
     out.character = { currentRevisionId: updates.character.currentRevisionId };
   }
-  if (typeof updates.persona?.currentRevisionId === "string" && updates.persona.currentRevisionId) {
-    out.persona = { currentRevisionId: updates.persona.currentRevisionId };
-  }
   return Object.keys(out).length ? out : null;
 }
 
@@ -72,11 +67,8 @@ function normalizeBinding(binding) {
     ? binding.characterRevisionId
     : null;
   const profile = typeof binding?.compatibilityProfile === "string" ? binding.compatibilityProfile : null;
-  const personaRevisionId = typeof binding?.personaRevisionId === "string" && binding.personaRevisionId
-    ? binding.personaRevisionId
-    : null;
   if (binding?.mode === "character" && revisionId) {
-    return { mode: "character", bindingVersion: version, characterRevisionId: revisionId, compatibilityProfile: profile, personaRevisionId, recovered: false };
+    return { mode: "character", bindingVersion: version, characterRevisionId: revisionId, compatibilityProfile: profile, recovered: false };
   }
   // Native, or a corrupt character binding failing open to native (the binding
   // version is preserved so a later recovery can resume from it).
@@ -185,7 +177,6 @@ export function reduceCharacterControl(state, action) {
         bindingVersion: b.bindingVersion,
         characterRevisionId: b.characterRevisionId,
         compatibilityProfile: b.compatibilityProfile,
-        personaRevisionId: b.personaRevisionId || null,
         characterName: b.characterRevisionId
           ? (typeof action.characterName === "string" && action.characterName)
             || (state.characterRevisionId === b.characterRevisionId && state.characterName)
@@ -198,10 +189,6 @@ export function reduceCharacterControl(state, action) {
       };
       if (b.recovered && action.binding?.mode === "character") next.notice = "binding_fallback";
       return next;
-    }
-    case "world.indicator": {
-      if (isStale(state, action)) return state;
-      return { ...state, worldBookRevisionId: action.worldBookRevisionId || null };
     }
     case "binding.loadFailed": {
       if (isStale(state, action)) return state;

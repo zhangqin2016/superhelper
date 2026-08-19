@@ -7,6 +7,10 @@ const {
   emptyConversationConfig,
   normalizeConversationConfig,
 } = require("./conversation-config");
+const {
+  projectCharacterCardBinding,
+  projectCharacterCardConfig,
+} = require("./character-card-only");
 const { codedError, isoTime, stableJson } = require("./persistence-codec");
 
 function envelope(config, binding, updatedAt) {
@@ -45,7 +49,7 @@ function getConversationConfig(repository, sessionId, ownerScope) {
     sessionId, ownerScope,
   );
   const stored = readEnvelope(row);
-  const config = normalizeConversationConfig({
+  const config = projectCharacterCardConfig({
     characterRevisionId: binding.characterRevisionId,
     personaRevisionId: binding.personaRevisionId,
     books: repository.getBookBindings(sessionId, ownerScope),
@@ -54,7 +58,7 @@ function getConversationConfig(repository, sessionId, ownerScope) {
     groupId: stored?.groupSceneId || null,
   });
   return {
-    ...binding,
+    ...projectCharacterCardBinding(binding),
     books: config.books,
     sceneId: config.sceneId,
     groupId: config.groupId,
@@ -107,7 +111,9 @@ function setConversationConfig(repository, {
   if (!Number.isInteger(expectedBindingVersion) || expectedBindingVersion < 0) {
     throw new TypeError("expectedBindingVersion must be a non-negative integer");
   }
-  const config = normalizeConversationConfig(next || emptyConversationConfig());
+  const config = projectCharacterCardConfig(
+    normalizeConversationConfig(next || emptyConversationConfig()),
+  );
   validatePins(repository, ownerScope, config);
 
   return repository.db.transaction(() => {
@@ -182,7 +188,7 @@ function setConversationConfig(repository, {
     replaceBooks(repository, sessionId, ownerScope, config.books, createdAt);
 
     const previousConfig = row
-      ? normalizeConversationConfig({
+      ? projectCharacterCardConfig({
           characterRevisionId: current.characterRevisionId,
           personaRevisionId: current.personaRevisionId,
           books: currentBooks,

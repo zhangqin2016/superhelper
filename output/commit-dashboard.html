@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>多工程提交记录 Dashboard</title>
+  <style>
+    @import url('output/base.css');
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f5f7fa; color: #1a1a2e; padding: 32px 24px; }
+    .container { max-width: 1500px; margin: 0 auto; }
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: #6b7280; font-size: 14px; margin-bottom: 24px; }
+    .date-range { background: #eef2ff; color: #4338ca; display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
+    .repo-list { margin-left: 16px; font-size:12px; color:#6b7280; margin-bottom:28px; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .card { background: #fff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+    .card .label { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .card .value { font-size: 32px; font-weight: 700; }
+    .card .sub { font-size: 13px; color: #6b7280; margin-top: 4px; }
+    .card-blue .value { color: #4f46e5; }
+    .card-green .value { color: #059669; }
+    .card-orange .value { color: #ea580c; }
+    .card-purple .value { color: #7c3aed; }
+    .card-gray .value { color: #374151; }
+    .card-red .value { color: #dc2626; }
+
+    .highlight { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; }
+    .highlight .label { color: rgba(255,255,255,.7); }
+    .highlight .value { color: #fff; }
+    .highlight .sub { color: rgba(255,255,255,.75); }
+
+    .section-title { font-size: 18px; font-weight: 700; margin: 32px 0 16px; }
+    .chart-box { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 24px; }
+    .chart-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #374151; }
+
+    .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
+
+    .bar-group { display: flex; align-items: end; gap: 6px; height: 160px; margin-top: 8px; }
+    .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; }
+    .bar-stack { width: 100%; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 4px 4px 0 0; overflow: hidden; }
+    .bar-seg { width: 100%; min-height: 1px; }
+    .bar-feat { background: #4f46e5; } .bar-fix { background: #ef4444; } .bar-docs { background: #f59e0b; } .bar-chore { background: #8b5cf6; }
+    .bar-lily { background: #4f46e5; } .bar-stock { background: #10b981; }
+    .bar-label { font-size: 10px; color: #6b7280; margin-top: 4px; }
+
+    .legend { display: flex; gap: 16px; margin-bottom: 12px; font-size: 12px; flex-wrap: wrap; }
+    .legend span { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+    .legend .l-lily { background: #4f46e5; } .legend .l-stock { background: #10b981; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f9fafb; text-align: left; padding: 10px 12px; font-weight: 600; color: #6b7280; border-bottom: 2px solid #e5e7eb; white-space: nowrap; }
+    td { padding: 9px 12px; border-bottom: 1px solid #f3f4f6; }
+    tr:hover td { background: #f9fafb; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .a { color: #059669; }
+    .d { color: #dc2626; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-feat { background: #dbeafe; color: #1d4ed8; }
+    .badge-fix { background: #fee2e2; color: #dc2626; }
+    .badge-docs { background: #fef3c7; color: #92400e; }
+    .badge-chore { background: #e0e7ff; color: #4338ca; }
+
+    .table-wrap { overflow-x: auto; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 4px; margin-bottom: 24px; }
+
+    .footer { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 40px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+<h1>多工程提交记录 Dashboard</h1>
+<p class="subtitle">全部 Git 工程 · 所有分支 · 2026-07-25 (上周六) — 2026-07-30 (今天)</p>
+<div class="repo-list">
+  覆盖工程：
+  <strong>Lily Workbench</strong>（root, 17 分支）·
+  <strong>daily_stock_analysis</strong>（.cache/app-sources, 1 分支）·
+  <strong>OpenStock</strong>（.cache/app-sources, 1 分支，期间无提交）
+</div>
+
+<div class="cards">
+  <div class="card card-blue">
+    <div class="label">总提交（3 工程）</div>
+    <div class="value">55</div>
+    <div class="sub">功能 15 · 修复 25 · 文档 9 · 发布 6</div>
+  </div>
+  <div class="card card-green">
+    <div class="label">新增代码</div>
+    <div class="value">+46,926</div>
+    <div class="sub">488 个文件变动</div>
+  </div>
+  <div class="card card-red">
+    <div class="label">删除代码</div>
+    <div class="value">-3,057</div>
+    <div class="sub">净增 +43,869</div>
+  </div>
+  <div class="card card-orange">
+    <div class="label">Bug 修复</div>
+    <div class="value">25</div>
+    <div class="sub">占比 45%</div>
+  </div>
+  <div class="card card-purple">
+    <div class="label">新功能</div>
+    <div class="value">15</div>
+    <div class="sub">占比 27%</div>
+  </div>
+  <div class="card highlight">
+    <div class="label">Lily Workbench</div>
+    <div class="value">42</div>
+    <div class="sub">功能 13 · 修复 16 · 文档 7 · 发布 6 · 4 分支</div>
+  </div>
+<div class="card ">
+    <div class="label">daily_stock_analysis</div>
+    <div class="value">13</div>
+    <div class="sub">功能 2 · 修复 9 · 文档 2 · 发布 0 · 1 分支</div>
+  </div>
+
+</div>
+
+<div class="chart-box">
+  <h3>每日提交量（按工程堆叠）</h3>
+  <div class="legend">
+    <span><i class="l-lily"></i> Lily Workbench</span>
+    <span><i class="l-stock"></i> daily_stock_analysis</span>
+  </div>
+  <div class="bar-group">
+    <div class="bar-col">
+    <div class="bar-stack" style="height:29px">
+      <div class="bar-seg bar-lily" style="height:25%"></div>
+      <div class="bar-seg bar-stock" style="height:75%"></div>
+    </div>
+    <div class="bar-label" style="font-size:11px;font-weight:600">4</div>
+    <div class="bar-label">07-25</div>
+  </div><div class="bar-col">
+    <div class="bar-stack" style="height:140px">
+      <div class="bar-seg bar-lily" style="height:57%"></div>
+      <div class="bar-seg bar-stock" style="height:43%"></div>
+    </div>
+    <div class="bar-label" style="font-size:11px;font-weight:600">19</div>
+    <div class="bar-label">07-26</div>
+  </div><div class="bar-col">
+    <div class="bar-stack" style="height:103px">
+      <div class="bar-seg bar-lily" style="height:92%"></div>
+      <div class="bar-seg bar-stock" style="height:8%"></div>
+    </div>
+    <div class="bar-label" style="font-size:11px;font-weight:600">14</div>
+    <div class="bar-label">07-27</div>
+  </div><div class="bar-col">
+    <div class="bar-stack" style="height:29px">
+      <div class="bar-seg bar-lily" style="height:75%"></div>
+      <div class="bar-seg bar-stock" style="height:25%"></div>
+    </div>
+    <div class="bar-label" style="font-size:11px;font-weight:600">4</div>
+    <div class="bar-label">07-28</div>
+  </div><div class="bar-col">
+    <div class="bar-stack" style="height:44px">
+      <div class="bar-seg bar-lily" style="height:100%"></div>
+      <div class="bar-seg bar-stock" style="height:0%"></div>
+    </div>
+    <div class="bar-label" style="font-size:11px;font-weight:600">6</div>
+    <div class="bar-label">07-29</div>
+  </div><div class="bar-col">
+    <div class="bar-stack" style="height:58px">
+      <div class="bar-seg bar-lily" style="height:100%"></div>
+      <div class="bar-seg bar-stock" style="height:0%"></div>
+    </div>
+    <div class="bar-label" style="font-size:11px;font-weight:600">8</div>
+    <div class="bar-label">07-30</div>
+  </div>
+  </div>
+</div>
+
+<h2 class="section-title">按工程明细</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>工程</th><th>提交</th><th>功能</th><th>修复</th><th>文档</th><th>发布</th><th>文件</th><th>+新增</th><th>-删除</th><th>净变动</th></tr>
+  <tr>
+    <td><strong>Lily Workbench</strong></td>
+    <td class="num">42</td>
+    <td class="num">13</td><td class="num">16</td>
+    <td class="num">7</td><td class="num">6</td>
+    <td class="num">366</td>
+    <td class="num a">+40,254</td><td class="num d">-2,191</td>
+    <td class="num" style="font-weight:600">42,445</td>
+  </tr>
+<tr>
+    <td><strong>daily_stock_analysis</strong></td>
+    <td class="num">13</td>
+    <td class="num">2</td><td class="num">9</td>
+    <td class="num">2</td><td class="num">0</td>
+    <td class="num">122</td>
+    <td class="num a">+6,672</td><td class="num d">-866</td>
+    <td class="num" style="font-weight:600">7,538</td>
+  </tr>
+<tr>
+    <td><strong>OpenStock</strong></td>
+    <td class="num">0</td>
+    <td class="num">0</td><td class="num">0</td>
+    <td class="num">0</td><td class="num">0</td>
+    <td class="num">0</td>
+    <td class="num a">+0</td><td class="num d">-0</td>
+    <td class="num" style="font-weight:600">0</td>
+  </tr>
+
+  <tr style="font-weight:700;background:#f9fafb">
+    <td>合计</td>
+    <td class="num">55</td><td class="num">15</td><td class="num">25</td>
+    <td class="num">9</td><td class="num">6</td>
+    <td class="num">488</td>
+    <td class="num a">+46,926</td><td class="num d">-3,057</td>
+    <td class="num">49,983</td>
+  </tr>
+</table>
+</div>
+
+<h2 class="section-title">全部提交明细（55 条，按日期倒序）</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>日期</th><th>工程</th><th>类型</th><th>Hash</th><th>描述</th><th>文件</th><th>+新增</th><th>-删除</th><th>模块</th><th>分支</th></tr>
+  <tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="87eecaf">87eecaf</td><td>snapshot character bindings per turn</td><td class="num">15</td><td class="num a">+2,594</td><td class="num d">-325</td><td>Character Worlds</td><td>codex/character-worlds-phase-1</td></tr>
+<tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="ae14dab">ae14dab</td><td>add character import preview flow</td><td class="num">27</td><td class="num a">+8,451</td><td class="num d">-11</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="897f58c">897f58c</td><td>add safe character macros</td><td class="num">11</td><td class="num a">+2,370</td><td class="num d">-0</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="c005d2d">c005d2d</td><td>import character cards from png</td><td class="num">8</td><td class="num a">+1,573</td><td class="num d">-2</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="a4778d5">a4778d5</td><td>parse character card json safely</td><td class="num">19</td><td class="num a">+2,895</td><td class="num d">-0</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="9d9617d">9d9617d</td><td>add character worlds persistence</td><td class="num">7</td><td class="num a">+2,486</td><td class="num d">-5</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-docs">文档</span></td><td title="6ef0619">6ef0619</td><td>specify character worlds algorithms</td><td class="num">1</td><td class="num a">+527</td><td class="num d">-49</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-30</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="04ff58c">04ff58c</td><td>harden archive handling and release 0.1.145</td><td class="num">6</td><td class="num a">+26</td><td class="num d">-8</td><td>Release / Win</td><td>github/feat/opencode-engine</td></tr>
+<tr><td>2026-07-29</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-docs">文档</span></td><td title="a295287">a295287</td><td>add release gates to character worlds design</td><td class="num">1</td><td class="num a">+130</td><td class="num d">-0</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-29</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-docs">文档</span></td><td title="9433433">9433433</td><td>harden character worlds architecture</td><td class="num">1</td><td class="num a">+503</td><td class="num d">-74</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-29</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-docs">文档</span></td><td title="e666478">e666478</td><td>design native character worlds integration</td><td class="num">1</td><td class="num a">+915</td><td class="num d">-0</td><td>Character Worlds</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-29</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="1f4720c">1f4720c</td><td>fix scheduled task conversation isolation</td><td class="num">18</td><td class="num a">+548</td><td class="num d">-165</td><td>Scheduler</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-29</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="2408514">2408514</td><td>fix chat history scroll anchoring</td><td class="num">4</td><td class="num a">+120</td><td class="num d">-3</td><td>Chat UI</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-29</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="d72d939">d72d939</td><td>add legal and privacy center</td><td class="num">14</td><td class="num a">+1,122</td><td class="num d">-10</td><td>Web</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-28</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-feat">功能</span></td><td title="85ded1d">85ded1d</td><td>add skill opinion outcome evaluation core (#2116)</td><td class="num">10</td><td class="num a">+1,579</td><td class="num d">-84</td><td>AI 评测</td><td>main</td></tr>
+<tr><td>2026-07-28</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="d595ba1">d595ba1</td><td>remove spaces from Windows installer names</td><td class="num">8</td><td class="num a">+58</td><td class="num d">-12</td><td>Release / Win</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-28</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="95e5366">95e5366</td><td>isolate and harden scheduled tasks</td><td class="num">21</td><td class="num a">+886</td><td class="num d">-433</td><td>Scheduler</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-28</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="494e2bb">494e2bb</td><td>support local analysis for arbitrary paths</td><td class="num">33</td><td class="num a">+1,567</td><td class="num d">-231</td><td>File System</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="f4d9956">f4d9956</td><td>backtest stock identity and daily-window correctness refactor (#2073)</td><td class="num">12</td><td class="num a">+1,786</td><td class="num d">-532</td><td>回测引擎</td><td>main</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-chore">发布</span></td><td title="7a7b86e">7a7b86e</td><td>publish windows 0.1.144</td><td class="num">2</td><td class="num a">+3</td><td class="num d">-3</td><td>Release</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="a235db8">a235db8</td><td>prevent stale pointer overwrite</td><td class="num">4</td><td class="num a">+68</td><td class="num d">-2</td><td>Release</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="fdf01cd">fdf01cd</td><td>preserve platforms in update manifest</td><td class="num">4</td><td class="num a">+103</td><td class="num d">-2</td><td>Release</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="c798dfc">c798dfc</td><td>preserve final markdown deliverables</td><td class="num">4</td><td class="num a">+243</td><td class="num d">-0</td><td>Chat</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="ba95e2b">ba95e2b</td><td>preserve source documents during conversion</td><td class="num">1</td><td class="num a">+5</td><td class="num d">-0</td><td>Skills / Docs</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-chore">发布</span></td><td title="97d06a0">97d06a0</td><td>publish mac 0.1.143</td><td class="num">2</td><td class="num a">+3</td><td class="num d">-3</td><td>Release</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="0f74622">0f74622</td><td>preserve activation access after login</td><td class="num">4</td><td class="num a">+26</td><td class="num d">-10</td><td>Server / Auth</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-chore">发布</span></td><td title="1abe8f1">1abe8f1</td><td>publish mac 0.1.141</td><td class="num">2</td><td class="num a">+3</td><td class="num d">-3</td><td>Release</td><td>codex/release-mac-0.1.141</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="32afbb4">32afbb4</td><td>fetch cross-architecture OpenCode engine</td><td class="num">2</td><td class="num a">+47</td><td class="num d">-0</td><td>Engine / Runtime</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-chore">发布</span></td><td title="c4b797a">c4b797a</td><td>release windows 0.1.142</td><td class="num">2</td><td class="num a">+3</td><td class="num d">-3</td><td>Release</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="df21233">df21233</td><td>complete Intel Mac runtime pack coverage</td><td class="num">3</td><td class="num a">+101</td><td class="num d">-2</td><td>Runtime Packs</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="3bbf248">3bbf248</td><td>keep LibreOffice rendering background-only</td><td class="num">12</td><td class="num a">+222</td><td class="num d">-23</td><td>Documents / Win</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-27</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-chore">发布</span></td><td title="83e53cb">83e53cb</td><td>release windows 0.1.141</td><td class="num">2</td><td class="num a">+3</td><td class="num d">-3</td><td>Release</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-docs">文档</span></td><td title="905c339">905c339</td><td>add v3.28.0 release changelog</td><td class="num">1</td><td class="num a">+47</td><td class="num d">-22</td><td>发布/文档</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="90f6234">90f6234</td><td>将 Tencent 日 K 保持为最终兜底 (#2107)</td><td class="num">10</td><td class="num a">+167</td><td class="num d">-8</td><td>数据源</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="20c399e">20c399e</td><td>避免港股实时行情重复拉取全市场数据 (#2104)</td><td class="num">3</td><td class="num a">+287</td><td class="num d">-46</td><td>数据源</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="2643d47">2643d47</td><td>让 Agent Chat 默认遵循 REPORT_LANGUAGE (#2102)</td><td class="num">11</td><td class="num a">+162</td><td class="num d">-48</td><td>Agent Chat</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="189b2fc">189b2fc</td><td>补齐 Web 钉钉群机器人配置 (#2106)</td><td class="num">11</td><td class="num a">+156</td><td class="num d">-6</td><td>Web 集成</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-docs">文档</span></td><td title="f5bf48d">f5bf48d</td><td>fix broken relative links (#2108)</td><td class="num">2</td><td class="num a">+3</td><td class="num d">-3</td><td>文档</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="2e7f4ca">2e7f4ca</td><td>避免 macOS unsigned 包携带残缺签名 (#2101)</td><td class="num">10</td><td class="num a">+379</td><td class="num d">-4</td><td>构建/打包</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="0271777">0271777</td><td>修复 YfinanceFetcher 4-5 位裸港股码路由到 .SZ 的 bug (fixes #2091)</td><td class="num">8</td><td class="num a">+508</td><td class="num d">-7</td><td>数据源</td><td>main</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="a7ed2b5">a7ed2b5</td><td>repair managed runtime capabilities</td><td class="num">17</td><td class="num a">+490</td><td class="num d">-98</td><td>Runtime</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="3b2d0e9">3b2d0e9</td><td>share automations and import dropped apps</td><td class="num">25</td><td class="num a">+1,641</td><td class="num d">-378</td><td>Workspace / Automation</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="cffe589">cffe589</td><td>use valid LibreOffice profile URI</td><td class="num">2</td><td class="num a">+41</td><td class="num d">-1</td><td>Documents</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="adda084">adda084</td><td>make Windows Python bundle relocatable</td><td class="num">12</td><td class="num a">+312</td><td class="num d">-63</td><td>Runtime / Win</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="71ff72f">71ff72f</td><td>make scheduled tasks portable</td><td class="num">5</td><td class="num a">+343</td><td class="num d">-41</td><td>Scheduler</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-docs">文档</span></td><td title="d6b96d1">d6b96d1</td><td>plan workspace automation portability</td><td class="num">1</td><td class="num a">+373</td><td class="num d">-0</td><td>Workspace / Docs</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-docs">文档</span></td><td title="5950096">5950096</td><td>design workspace automation sharing</td><td class="num">1</td><td class="num a">+218</td><td class="num d">-0</td><td>Workspace / Docs</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-fix">修复</span></td><td title="e7ce4a1">e7ce4a1</td><td>keep live workspace files authoritative</td><td class="num">20</td><td class="num a">+701</td><td class="num d">-74</td><td>Workspace</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="84200ab">84200ab</td><td>compact session skills into responsive grid</td><td class="num">4</td><td class="num a">+328</td><td class="num d">-0</td><td>Session UI</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-docs">文档</span></td><td title="c98b740">c98b740</td><td>design responsive session skills grid</td><td class="num">1</td><td class="num a">+86</td><td class="num d">-0</td><td>Session UI / Docs</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-26</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-chore">发布</span></td><td title="3687ca0">3687ca0</td><td>release windows 0.1.140</td><td class="num">2</td><td class="num a">+3</td><td class="num d">-3</td><td>Release</td><td>feat/opencode-engine</td></tr>
+<tr><td>2026-07-25</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="e1e0420">e1e0420</td><td>修复 WebUI 版本与静态资源识别 (#2099)</td><td class="num">13</td><td class="num a">+446</td><td class="num d">-28</td><td>Web UI</td><td>main</td></tr>
+<tr><td>2026-07-25</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-feat">功能</span></td><td title="68fc575">68fc575</td><td>支持 Web/API 按市场触发大盘复盘 (#2074)</td><td class="num">28</td><td class="num a">+1,005</td><td class="num d">-76</td><td>大盘复盘</td><td>main</td></tr>
+<tr><td>2026-07-25</td><td><strong>daily_stock_analysis</strong></td><td><span class="badge badge-fix">修复</span></td><td title="6194c7b">6194c7b</td><td>ai_review 对事件载荷读取/解析失败输出可定位警告 (fixes #2070)</td><td class="num">3</td><td class="num a">+147</td><td class="num d">-2</td><td>AI Review</td><td>main</td></tr>
+<tr><td>2026-07-25</td><td><strong>Lily Workbench</strong></td><td><span class="badge badge-feat">功能</span></td><td title="247f7f9">247f7f9</td><td>add workspace ordering and space center</td><td class="num">37</td><td class="num a">+8,117</td><td class="num d">-151</td><td>Workspace</td><td>feat/opencode-engine</td></tr>
+
+</table>
+</div>
+
+<div class="footer">
+  Generated by Lily Workbench · 数据来源：3 个 Git 仓库 (git log --all --since=2026-07-25 --until=2026-07-31)
+</div>
+
+</div>
+</body>
+</html>

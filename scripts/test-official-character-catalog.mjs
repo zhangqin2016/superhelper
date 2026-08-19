@@ -7,6 +7,7 @@ const {
   ADDITIONAL_OFFICIAL_CHARACTERS,
   INDUSTRY_OFFICIAL_CHARACTERS,
   ALL_OFFICIAL_CHARACTERS,
+  FEATURED_OFFICIAL_CHARACTER_IDS,
   getOfficialCharacter,
   getOfficialCharacterDetail,
   listOfficialCharacters,
@@ -31,10 +32,16 @@ assert.equal(ADDITIONAL_OFFICIAL_CHARACTERS.length, 4);
 assert.deepEqual(new Set(ALL_OFFICIAL_CHARACTERS.map((item) => item.id)), expectedIds);
 assert.equal(INDUSTRY_OFFICIAL_CHARACTERS.length, 46);
 assert.equal(ALL_OFFICIAL_CHARACTERS.length, 68);
+assert.equal(FEATURED_OFFICIAL_CHARACTER_IDS.length, 12);
+assert.deepEqual(
+  new Set(ALL_OFFICIAL_CHARACTERS.filter((item) => item.featured).map((item) => item.id)),
+  new Set(FEATURED_OFFICIAL_CHARACTER_IDS),
+);
 assert.ok(new Set(ALL_OFFICIAL_CHARACTERS.map((item) => item.categoryId)).size >= 14);
 const summaries = listOfficialCharacters();
 assert.equal(summaries.length, ALL_OFFICIAL_CHARACTERS.length);
 assert.equal(new Set(summaries.map((item) => item.id)).size, ALL_OFFICIAL_CHARACTERS.length);
+assert.equal(summaries.filter((item) => item.featured).length, 12);
 
 for (const summary of summaries) {
   const full = getOfficialCharacter(summary.id);
@@ -68,6 +75,7 @@ const legal = getOfficialCharacter("lily-cn-legal-counsel", "zh-CN");
 assert.match(legal.canonical.creatorNotes, /中国大陆|司法辖区|持证律师|人类律师/);
 assert.ok(legal.locales?.["zh-CN"]?.boundaries?.length || legal.boundaries.length);
 assert.ok(legal.canonical.creatorNotes.includes("材料时点"));
+assert.ok(legal.canonical.creatorNotes.includes("lily_legal_search"));
 const fullStack = getOfficialCharacter("lily-full-stack-engineer", "zh-CN");
 assert.equal(fullStack.categoryId, "technology-engineering");
 assert.match(fullStack.name, /全栈工程师/);

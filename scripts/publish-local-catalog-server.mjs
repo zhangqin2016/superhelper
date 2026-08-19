@@ -269,7 +269,15 @@ function uploadQiniuWithQshell({ bucket, objectKey, filePath, upHost }) {
   });
   if (result.status === 0) return;
 
-  const legacyArgs = ["rput", bucket, objectKey, uploadFile, "true"];
+  const legacyArgs = [
+    "rput",
+    bucket,
+    objectKey,
+    uploadFile,
+    "true",
+    "--up-host",
+    upHost || DEFAULT_QINIU_UP_HOST,
+  ];
   console.log(`[publish-local-catalog] qiniu upload retry: qshell ${legacyArgs.map(shellQuote).join(" ")}`);
   const legacy = spawnSync("qshell", legacyArgs, {
     cwd: ROOT,

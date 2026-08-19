@@ -27,6 +27,7 @@ const util = require("node:util");
 const C = require("./constants");
 const { executableKey } = require("./executable-keys");
 const { codedError } = require("./persistence-codec");
+const { FEATURE_DISABLED } = require("./character-card-only");
 const {
   assertPlainData,
   cardError,
@@ -214,7 +215,7 @@ const KINDS = {
 };
 
 class CharacterAuthoringService {
-  constructor({ repository, resolveOwnerScope } = {}) {
+  constructor({ repository, resolveOwnerScope, allowLegacyKinds = false } = {}) {
     if (
       !repository?.createCharacter
       || !repository?.createRevision
@@ -231,6 +232,7 @@ class CharacterAuthoringService {
     }
     this.repository = repository;
     this.resolveOwnerScope = resolveOwnerScope;
+    this.allowLegacyKinds = allowLegacyKinds === true;
   }
 
   // Same owner discipline as CharacterWorldsService._owner: the scope is
@@ -254,6 +256,12 @@ class CharacterAuthoringService {
     const entity = KINDS[kind].getEntity(this.repository, owner, id);
     if (!entity) throw codedError(KINDS[kind].notFoundCode, `${kind} not found`);
     return entity;
+  }
+
+  _assertCharacterOnly(kind) {
+    if (!this.allowLegacyKinds && kind !== "character") {
+      throw codedError(FEATURE_DISABLED, "Only character cards are supported");
+    }
   }
 
   _baseRevisionId(kind, value) {
@@ -282,6 +290,7 @@ class CharacterAuthoringService {
   }
 
   async _create(kind, { ownerScope, canonical, assets = [], source } = {}) {
+    this._assertCharacterOnly(kind);
     const owner = await this._owner(ownerScope);
     const definition = KINDS[kind];
     const droppedExecutableKeys = [];
@@ -301,6 +310,7 @@ class CharacterAuthoringService {
   }
 
   async _edit(kind, { ownerScope, entityId, expectedBaseRevisionId, canonical, assets = [], source } = {}) {
+    this._assertCharacterOnly(kind);
     const owner = await this._owner(ownerScope);
     const definition = KINDS[kind];
     const id = requireId(entityId, definition.notFoundCode, "entityId");
@@ -352,6 +362,7 @@ class CharacterAuthoringService {
   }
 
   async _restore(kind, { ownerScope, entityId, revisionId, expectedBaseRevisionId } = {}) {
+    this._assertCharacterOnly(kind);
     const owner = await this._owner(ownerScope);
     const definition = KINDS[kind];
     const entity = this._entity(kind, owner, entityId);
@@ -382,6 +393,7 @@ class CharacterAuthoringService {
   }
 
   async _duplicate(kind, { ownerScope, entityId } = {}) {
+    this._assertCharacterOnly(kind);
     const owner = await this._owner(ownerScope);
     const definition = KINDS[kind];
     const entity = this._entity(kind, owner, entityId);
@@ -411,6 +423,7 @@ class CharacterAuthoringService {
   }
 
   async _archive(kind, { ownerScope, entityId } = {}) {
+    this._assertCharacterOnly(kind);
     const owner = await this._owner(ownerScope);
     const definition = KINDS[kind];
     const entity = this._entity(kind, owner, entityId);
@@ -446,6 +459,7 @@ class CharacterAuthoringService {
   }
 
   async _delete(kind, { ownerScope, entityId } = {}) {
+    this._assertCharacterOnly(kind);
     const owner = await this._owner(ownerScope);
     const entity = this._entity(kind, owner, entityId);
     const references = this._collectReferences(kind, owner, entity.id);

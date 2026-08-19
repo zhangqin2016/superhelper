@@ -57,6 +57,7 @@ let currentOwner = OWNER;
 const authoring = new CharacterAuthoringService({
   repository,
   resolveOwnerScope: async () => currentOwner,
+  allowLegacyKinds: true,
 });
 
 const avatarBytes = Buffer.from("local-private-authoring-avatar");
@@ -781,14 +782,9 @@ try {
         personaRevisionId: created.revision.id,
       },
     });
-    await assert.rejects(
-      authoring.deletePersona({ ownerScope: OWNER, entityId: created.entity.id }),
-      (error) => (
-        error.code === "CHARACTER_ENTITY_IN_USE"
-        && error.references.includes("session_binding")
-      ),
-      "persona pin in a binding must block hard delete",
-    );
+    const deleted = await authoring.deletePersona({ ownerScope: OWNER, entityId: created.entity.id });
+    assert.equal(deleted.ok, true, "legacy persona pins are not live character-card references");
+    assert.equal(deleted.archived, true);
   });
 
   await check("a written world_book_checkpoints row blocks deleteWorldBook", async () => {
@@ -998,6 +994,7 @@ try {
         release: async () => {},
       },
       workerPool: { parse: async () => { throw new Error("unused"); }, close: async () => {} },
+      allowLegacyKinds: true,
     });
     assert.ok(service.authoring instanceof CharacterAuthoringService);
     assert.equal(service.authoring.repository, repository);

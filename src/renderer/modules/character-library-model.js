@@ -3,14 +3,14 @@
  * Phase 2B, Task P2B-4; design spec §13.2). No IPC, DOM, or timers — the
  * controller in ./character-library.js owns all async work and re-renders.
  *
- * The library is read-first: tabs list characters/personas/world books,
+ * The library is read-first: the only supported tab lists character cards,
  * search + tag filtering is local, and every mutation (create/edit-as-new-
  * revision/restore/duplicate/archive) is an explicit user action confirmed
  * where destructive. Editing never rewrites a revision — a save creates
  * revision N+1 through the validated authoring bridge (§8).
  */
 
-export const LIBRARY_TABS = ["characters", "personas", "books"];
+export const LIBRARY_TABS = ["characters"];
 
 const MAX_ID_CHARS = 128;
 const MAX_NAME_CHARS = 256;
@@ -44,7 +44,9 @@ const CATEGORY_ORDER_BY_TAB = Object.freeze({
 });
 
 export const LIBRARY_GROUPS = Object.freeze({
+  featured: { id: "featured", kind: "featured" },
   all: { id: "all", kind: "all" },
+  industry: { id: "industry", kind: "industry" },
   official: { id: "official", kind: "source", source: "official" },
   my: { id: "my", kind: "source", source: "local" },
   recent: { id: "recent", kind: "recent" },
@@ -53,7 +55,7 @@ export const LIBRARY_GROUPS = Object.freeze({
 
 /** Domain kind served by the authoring bridge for a library tab. */
 export function kindForTab(tab) {
-  return tab === "personas" ? "persona" : tab === "books" ? "worldBook" : "character";
+  return "character";
 }
 
 export function initialCharacterLibraryState(overrides = {}) {
@@ -63,7 +65,7 @@ export function initialCharacterLibraryState(overrides = {}) {
     query: "",
     tag: "",
     source: "",
-    groupId: "all",
+    groupId: "featured",
     items: { characters: [], personas: [], books: [] },
     selectedItemId: null,
     detail: null,
@@ -145,6 +147,7 @@ export function normalizeLibraryItem(tab, entry = {}) {
     editorialOrder: Number.isSafeInteger(entry?.editorialOrder) ? entry.editorialOrder : Number.MAX_SAFE_INTEGER,
     recentlyUsedAt: text(entry?.recentlyUsedAt, 64),
     archived: Boolean(entry?.archived || entry?.archivedAt),
+    featured: Boolean(entry?.featured),
     active: Boolean(entry?.active),
     installed: Boolean(entry?.installed || entry?.installedCharacterId || entry?.currentRevisionId),
     updateAvailable: Boolean(entry?.updateAvailable),
@@ -170,7 +173,11 @@ function isRecent(item) {
 }
 
 function groupMatches(item, groupId) {
+  if (groupId === "featured") {
+    return !item.archived && (item.featured || (!item.official && isRecent(item)));
+  }
   if (groupId === "all") return !item.archived;
+  if (groupId === "industry") return item.source === "official" && !item.featured && !item.archived;
   if (groupId === "official") return item.source === "official" && !item.archived;
   if (groupId === "my") return item.source === "local" && !item.archived;
   if (groupId === "recent") return isRecent(item) && !item.archived;
@@ -181,10 +188,17 @@ function groupMatches(item, groupId) {
 /** Derive visible groups from data while keeping global groups stable. */
 export function deriveLibraryGroups(tab, items) {
   const values = Array.isArray(items) ? items : [];
-  const groups = [
-    { ...LIBRARY_GROUPS.all, labelKey: "all" },
-    { ...LIBRARY_GROUPS.official, labelKey: "official" },
-  ];
+  const groups = tab === "characters"
+    ? [
+      { ...LIBRARY_GROUPS.featured, labelKey: "featured" },
+      { ...LIBRARY_GROUPS.all, labelKey: "all" },
+      { ...LIBRARY_GROUPS.industry, labelKey: "industry" },
+      { ...LIBRARY_GROUPS.official, labelKey: "official" },
+    ]
+    : [
+      { ...LIBRARY_GROUPS.all, labelKey: "all" },
+      { ...LIBRARY_GROUPS.official, labelKey: "official" },
+    ];
   const categoryIds = [...(CATEGORY_ORDER_BY_TAB[tab] || ["uncategorized"])];
   for (const item of values) {
     if (!categoryIds.includes(item.categoryId)) categoryIds.push(item.categoryId);
@@ -313,7 +327,7 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
         query: "",
         tag: "",
         source: "",
-        groupId: "all",
+        groupId: tab === "characters" ? "featured" : "all",
         selectedItemId: null,
         detail: null,
         detailLoading: false,

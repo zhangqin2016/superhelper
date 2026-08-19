@@ -1,7 +1,7 @@
 /**
  * Update-available affordance (Character Worlds Phase 2B, §8).
  *
- * When the active character/persona has a newer current revision than the
+ * When the active character card has a newer current revision than the
  * session binding's pin, the session control shows a subtle row with an
  * explicit apply action. The hint NEVER changes the pinned snapshot; applying
  * is an explicit set-binding call whose expectedBindingVersion comes from a
@@ -96,8 +96,6 @@ export function createBindingUpdateApplier({ getState, dispatch, getFacade, anno
         expectedBindingVersion: binding.bindingVersion,
         mode: "character",
         characterRevisionId: updates.character?.currentRevisionId || binding.characterRevisionId,
-        // Keep the existing persona pin unless a persona update supersedes it.
-        personaRevisionId: updates.persona?.currentRevisionId || binding.personaRevisionId || undefined,
       });
       if (!isCurrent()) return;
       if (res?.ok) {
@@ -120,33 +118,8 @@ export function createBindingUpdateApplier({ getState, dispatch, getFacade, anno
 
 
 /**
- * §13.1 world indicator: the pinned revision may carry a character book.
- * A hint only — a failed lookup never changes the binding.
- */
-export function createWorldIndicatorLoader({ getState, dispatch, getFacade }) {
-  return async function refreshWorldIndicator(sessionId, seq, binding) {
-    const api = getFacade();
-    if (!api || !binding?.characterRevisionId) return;
-    try {
-      const res = await api.getCharacterRevision(binding.characterRevisionId);
-      const state = getState();
-      if (sessionId !== state.sessionId || seq !== state.loadSeq) return;
-      const worldBookRevisionId = res?.ok && res.revision?.characterBookRevisionId
-        ? res.revision.characterBookRevisionId
-        : null;
-      if (worldBookRevisionId !== state.worldBookRevisionId) {
-        dispatch({ type: "world.indicator", sessionId, seq, worldBookRevisionId });
-      }
-    } catch {
-      /* world indicator is a hint only; failure never changes the binding */
-    }
-  };
-}
-
-
-/**
  * Composer-owned conversation context selector. Shows native Lily or the
- * pinned character plus readable persona/world labels. It is hidden only when
+ * pinned character card. It is hidden only when
  * the feature or active session is unavailable.
  */
 export function createRoleBannerRenderer({ getState, getElement, monogram, el: createEl, t: translate }) {
@@ -156,8 +129,6 @@ export function createRoleBannerRenderer({ getState, getElement, monogram, el: c
     const state = getState();
     const isCharacter = state?.available !== false && (state?.mode || "native") === "character"
       && state.characterRevisionId;
-    const hasPersona = state?.available !== false && Boolean(state?.personaRevisionId);
-    const hasWorldBook = state?.available !== false && Boolean(state?.worldBookRevisionId);
     const visible = state?.available !== false && Boolean(state?.sessionId);
     banner.hidden = !visible;
     if (!visible) return;
@@ -179,16 +150,6 @@ export function createRoleBannerRenderer({ getState, getElement, monogram, el: c
       const label = translate(applicationKey);
       contextLabels.push(label);
       badges.appendChild(createEl("span", "character-application-status", { textContent: label }));
-    }
-    if (hasPersona) {
-      const label = translate("character.contextPersona");
-      contextLabels.push(label);
-      badges.appendChild(createEl("span", null, { textContent: label }));
-    }
-    if (hasWorldBook) {
-      const label = translate("character.contextWorld");
-      contextLabels.push(label);
-      badges.appendChild(createEl("span", null, { textContent: label }));
     }
     const contextSummary = contextLabels.length ? ` · ${contextLabels.join(" · ")}` : "";
     banner.title = `${name}${contextSummary} · ${translate("character.roleBannerTitle")}`;
