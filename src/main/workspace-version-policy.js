@@ -7,6 +7,8 @@ const INTERNAL_DIR = ".lily-work";
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 const MAX_FILES = 10_000;
+const MAX_GIT_FILES = 100_000;
+const MAX_GIT_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const HISTORY_LIMIT = 50;
 
 const IGNORED_DIRECTORY_NAMES = new Set([
@@ -94,8 +96,10 @@ function assertSafeExistingPath(workspacePath, relative) {
   return absolute;
 }
 
-async function collectSafeFiles(workspacePath) {
+async function collectSafeFiles(workspacePath, options = {}) {
   const root = path.resolve(workspacePath);
+  const maxFiles = Number.isSafeInteger(options.maxFiles) ? options.maxFiles : MAX_FILES;
+  const maxTotalBytes = Number.isSafeInteger(options.maxTotalBytes) ? options.maxTotalBytes : MAX_TOTAL_BYTES;
   const files = [];
   let totalBytes = 0;
   let truncated = false;
@@ -122,12 +126,12 @@ async function collectSafeFiles(workspacePath) {
       // Symlinks and special files are deliberately outside the protection
       // boundary; following them could copy content outside the workspace.
       if (entry.isSymbolicLink() || !entry.isFile()) continue;
-      if (files.length >= MAX_FILES) {
+      if (files.length >= maxFiles) {
         truncated = true;
         return;
       }
       const stat = await fs.promises.lstat(absolute);
-      if (stat.size > MAX_FILE_BYTES || totalBytes + stat.size > MAX_TOTAL_BYTES) {
+      if (stat.size > MAX_FILE_BYTES || totalBytes + stat.size > maxTotalBytes) {
         truncated = true;
         return;
       }
@@ -190,6 +194,8 @@ module.exports = {
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
   MAX_FILES,
+  MAX_GIT_FILES,
+  MAX_GIT_TOTAL_BYTES,
   HISTORY_LIMIT,
   normalizeRelative,
   relativePath,

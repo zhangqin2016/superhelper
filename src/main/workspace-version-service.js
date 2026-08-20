@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   HISTORY_LIMIT,
+  MAX_GIT_FILES,
+  MAX_GIT_TOTAL_BYTES,
   collectSafeFiles,
   relativePath,
   isSafeRelativePath,
@@ -167,16 +169,19 @@ class WorkspaceVersionService {
     if (backend.mode === "local") {
       return this.snapshots.save(key, reason);
     }
-    const current = await collectSafeFiles(key);
-    if (current.truncated) {
+    const tracked = await this.git.trackedFiles(key);
+    const currentFiles = await collectSafeFiles(key, {
+      maxFiles: MAX_GIT_FILES,
+      maxTotalBytes: MAX_GIT_TOTAL_BYTES,
+    });
+    if (currentFiles.truncated) {
       const error = new Error("VERSION_SNAPSHOT_LIMIT_REACHED");
       error.code = "VERSION_SNAPSHOT_LIMIT_REACHED";
       throw error;
     }
-    const tracked = await this.git.trackedFiles(key);
     const candidates = [...new Set([
       ...tracked,
-      ...current.files.map((file) => file.relative),
+      ...currentFiles.files.map((file) => file.relative),
       ...(Array.isArray(paths) ? paths : []),
     ])].filter(isSafeRelativePath);
     await this.git.stage(key, candidates);

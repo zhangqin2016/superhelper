@@ -143,6 +143,7 @@ try {
   assert.equal(catalog.packs.some((pack) => pack.id === "rembg" && pack.category === "image"), true);
   assert.equal(catalog.packs.some((pack) => pack.id === "web-automation" && pack.category === "browser"), true);
   assert.equal(catalog.packs.some((pack) => pack.id === "ffmpeg" && pack.category === "media"), true);
+  assert.equal(catalog.packs.some((pack) => pack.id === "git"), false, "internal Git must not be exposed in dependency settings");
   const bundledWebPack = catalog.packs.find((pack) => pack.id === "web-automation");
   assert.equal(bundledWebPack?.installed, true);
   assert.equal(bundledWebPack?.source, "bundled");

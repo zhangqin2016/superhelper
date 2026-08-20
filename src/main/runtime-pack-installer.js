@@ -639,17 +639,23 @@ function publicPackFromSpec(spec, userEntry = null, missingRec = null, bundledDi
   };
 }
 
+function isInternalPack(id) {
+  return Boolean(PACK_SPECS[id]?.internal);
+}
+
 function listRuntimePacks() {
   const state = readState();
   const userEntries = userInstallEntriesById();
   const baseProvided = baseProvidedRuntimePackMap();
   const seen = new Set();
-  const packs = Object.values(PACK_SPECS).map((spec) => {
+  const visibleSpecs = Object.values(PACK_SPECS).filter((spec) => !spec.internal);
+  const packs = visibleSpecs.map((spec) => {
     seen.add(spec.id);
     return publicPackFromSpec(spec, userEntries.get(spec.id), state.installed[spec.id], bundledPackDir(spec.id), baseProvided.get(spec.id));
   });
   for (const installState of readInstallStates()) {
     for (const [id, rec] of Object.entries(installState.state.installed || {})) {
+      if (isInternalPack(id)) continue;
       if (seen.has(id)) continue;
       const entry = userEntries.get(id);
       const installed = Boolean(entry);
@@ -677,6 +683,7 @@ function listRuntimePacks() {
     }
   }
   for (const [id, dir] of listBundledRuntimePackDirs()) {
+    if (isInternalPack(id)) continue;
     if (seen.has(id)) continue;
     packs.push({
       id,
@@ -710,7 +717,9 @@ function listRuntimePacks() {
   return {
     ok: true,
     platform: platformKey(),
-    categories: PACK_CATEGORIES.map((category) => ({ ...category, label: localizeObject(category.label) })),
+    categories: PACK_CATEGORIES
+      .filter((category) => visibleSpecs.some((spec) => (spec.category || "common") === category.id))
+      .map((category) => ({ ...category, label: localizeObject(category.label) })),
     packs,
   };
 }

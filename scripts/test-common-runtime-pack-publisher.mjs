@@ -12,7 +12,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"))
 
 assert.match(pkg.scripts["release:runtime-pack"], /publish-common-runtime-pack\.mjs/, "package script must expose common runtime pack publishing");
 
-for (const pack of ["web-automation", "ffmpeg", "pandoc"]) {
+for (const pack of ["web-automation", "ffmpeg", "pandoc", "git"]) {
   assert.match(script, new RegExp(pack.replace("-", "-")), `publisher must support ${pack}`);
 }
 
@@ -26,6 +26,8 @@ assert.match(script, /result\.error/, "publisher must surface spawn errors inste
 assert.match(script, /github\.com\/jgm\/pandoc\/releases/, "pandoc runtime artifact must use official pandoc release binaries");
 assert.match(script, /POST|runtime-packs/, "publisher must register artifacts with the runtime-pack API");
 assert.match(script, /refusing to publish unverified native\/browser binaries/, "publisher must fail loud on unverified cross-platform native/browser packs");
+assert.match(script, /portable Git source/, "Git publisher must require a platform-native portable source directory");
+assert.match(script, /--source <portable-git-dir>/, "Git publisher must document the source directory input");
 assert.match(pythonPackBuilder, /--register requires RELEASE_ADMIN_TOKEN/, "Python dependency pack builder must support server registration");
 assert.match(pythonPackBuilder, /release-admin\.mjs/, "Python dependency pack builder must support CDN upload");
 assert.match(pythonPackBuilder, /updateRuntimePackLock/, "verified Python packs must update the release lock");
@@ -39,7 +41,7 @@ assert.match(
   /rembg:[\s\S]*numpy>=1\.26,<2\.5/,
   "rembg runtime pack must carry a NumPy pin compatible with numba/pymatting",
 );
-for (const category of ["document", "image", "browser", "media"]) {
+for (const category of ["document", "image", "browser", "media", "system"]) {
   assert.match(specs, new RegExp(`id: "${category}"`), `dependency catalog must include ${category} group`);
 }
 

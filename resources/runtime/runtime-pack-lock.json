@@ -7,6 +7,7 @@
   ],
   "releaseRequiredPackIds": [
     "ffmpeg",
+    "git",
     "large-document",
     "libreoffice",
     "opencv",
@@ -17,5 +18,39 @@
     "rembg",
     "web-automation"
   ],
-  "entries": []
+  "entries": [
+    {
+      "packId": "git",
+      "platform": "darwin-arm64",
+      "version": "2.55.0",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/git-darwin-arm64-2.55.0.tar.gz",
+      "sha256": "908e2c8e2ab21f27053f8afab4e99aa5c509e7b66c8aef49c1b6b4d768621fe9",
+      "sizeBytes": 9187448,
+      "healthProbe": "git --version",
+      "enabled": true,
+      "verifiedAt": "2026-08-20T07:03:52.358Z"
+    },
+    {
+      "packId": "git",
+      "platform": "darwin-x64",
+      "version": "2.55.0",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/git-darwin-x64-2.55.0.tar.gz",
+      "sha256": "a7d6b5df739641633e53b42fbaf67f776a7f4064da8dec8e16e397d9377f8c13",
+      "sizeBytes": 9766942,
+      "healthProbe": "git --version",
+      "enabled": true,
+      "verifiedAt": "2026-08-20T07:04:20.925Z"
+    },
+    {
+      "packId": "git",
+      "platform": "win32-x64",
+      "version": "2.55.0.4",
+      "url": "https://qny.lanrensoft.cn/app/runtime-packs/git-win32-x64-2.55.0.4.tar.gz",
+      "sha256": "c2296f3bb43451b25cc315298f982a903cb471f2526e283dd91606daab11b06c",
+      "sizeBytes": 40477772,
+      "healthProbe": "git --version",
+      "enabled": true,
+      "verifiedAt": "2026-08-20T07:04:59.584Z"
+    }
+  ]
 }

@@ -4,6 +4,7 @@
  * - web-automation: Node Playwright modules + Chromium browser cache
  * - ffmpeg: ffmpeg + ffprobe binaries
  * - pandoc: official pandoc binary
+ * - git: a platform-native Git directory supplied by the release builder
  *
  * These packs are not Python target packs, so scripts/build-runtime-pack.mjs is
  * intentionally the wrong tool for them. Build on the target OS; browser/native
@@ -44,9 +45,12 @@ const PANDOC_URLS = {
 
 function usage() {
   console.error(`usage:
-  node scripts/publish-common-runtime-pack.mjs --pack web-automation|ffmpeg|pandoc|all \\
+  node scripts/publish-common-runtime-pack.mjs --pack web-automation|ffmpeg|pandoc|git|all \\
     [--platform darwin-arm64] [--out dist/runtime-packs] \\
     [--upload] [--register] [--dry-run]
+
+  node scripts/publish-common-runtime-pack.mjs --pack git --source <portable-git-dir> \\
+    --platform win32-x64 --version 2.50.1 [--upload] [--register]
 
 env for --register:
   RELEASE_ADMIN_TOKEN
@@ -200,6 +204,78 @@ function findFile(root, names) {
     }
   }
   return "";
+}
+
+function findExecutableFile(root, names) {
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!names.includes(entry.name)) continue;
+      if (process.platform === "win32" || (fs.statSync(full).mode & 0o111)) return full;
+    }
+  }
+  return "";
+}
+
+function copyDirectoryContents(source, destination) {
+  if (!source || !fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
+    fail(`runtime pack source directory not found: ${source || ""}`);
+  }
+  const hardlinks = new Map();
+  const copyEntry = (from, to) => {
+    const stat = fs.lstatSync(from);
+    if (stat.isDirectory()) {
+      ensureDir(to);
+      for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+        copyEntry(path.join(from, entry.name), path.join(to, entry.name));
+      }
+      return;
+    }
+    ensureDir(path.dirname(to));
+    if (stat.isSymbolicLink()) {
+      fs.symlinkSync(fs.readlinkSync(from), to);
+      return;
+    }
+    const inodeKey = `${stat.dev}:${stat.ino}`;
+    const existing = hardlinks.get(inodeKey);
+    if (existing) {
+      fs.linkSync(existing, to);
+      return;
+    }
+    fs.copyFileSync(from, to);
+    fs.chmodSync(to, stat.mode & 0o7777);
+    hardlinks.set(inodeKey, to);
+  };
+  copyEntry(source, destination);
+}
+
+function buildGit({ stageDir, platform, source, version }) {
+  assertCurrentPlatform(platform, "git");
+  if (!source) fail("git pack requires --source <portable-git-directory>");
+  copyDirectoryContents(path.resolve(source), stageDir);
+  const names = platform.startsWith("win32") ? ["git.exe", "git.cmd", "git.bat"] : ["git"];
+  const git = findExecutableFile(stageDir, names);
+  if (!git) fail(`portable Git source does not contain ${names.join(" / ")}`);
+  const pathEntries = [
+    path.dirname(git),
+    path.join(stageDir, "bin"),
+    path.join(stageDir, "cmd"),
+    path.join(stageDir, "usr", "bin"),
+    path.join(stageDir, "mingw64", "bin"),
+  ].filter((entry, index, all) => fs.existsSync(entry) && all.indexOf(entry) === index);
+  const output = runCapture(git, ["--version"], {
+    env: { PATH: [...pathEntries, process.env.PATH || ""].join(path.delimiter) },
+  });
+  const detected = output.match(/git version\s+([^\s]+)/i)?.[1] || "";
+  const resolvedVersion = version || detected;
+  if (!resolvedVersion) fail(`could not derive Git version from: ${output}`);
+  return resolvedVersion;
 }
 
 function buildWebAutomation({ stageDir, platform }) {
@@ -383,6 +459,7 @@ async function buildOne(packId, options) {
     if (packId === "web-automation") build = buildWebAutomation({ stageDir, platform });
     else if (packId === "ffmpeg") build = buildFfmpeg({ stageDir, platform });
     else if (packId === "pandoc") build = buildPandoc({ stageDir, platform });
+    else if (packId === "git") build = buildGit({ stageDir, platform, source: options.source, version: options.version });
     else fail(`unsupported pack: ${packId}`);
     const version = typeof build === "string" ? build : build.version;
     const components = typeof build === "object" ? build.components : undefined;
@@ -432,6 +509,8 @@ const options = {
   domain: args.domain || DEFAULT_DOMAIN,
   prefix: String(args.prefix || DEFAULT_PREFIX).replace(/^\/+|\/+$/g, ""),
   api: String(args.api || DEFAULT_API).replace(/\/+$/g, ""),
+  source: args.source || "",
+  version: args.version || "",
 };
 
 ensureDir(CACHE_DIR);

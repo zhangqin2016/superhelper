@@ -127,6 +127,22 @@ async function testAutomaticSaveAndLocalFallback() {
   }
 }
 
+async function testGitBackendSupportsLargeWorkspace() {
+  const workspace = tempWorkspace();
+  try {
+    for (let index = 0; index < 10_001; index += 1) {
+      fs.writeFileSync(path.join(workspace, `case-${String(index).padStart(5, "0")}.md`), "case\n");
+    }
+    const service = new WorkspaceVersionService();
+    const saved = await service.save(workspace);
+    assert.equal(saved.ok, true);
+    assert.equal(saved.mode, "git");
+    assert.equal((await service.status(workspace)).protectedFileCount, 10_001);
+  } finally {
+    removeWorkspace(workspace);
+  }
+}
+
 async function testRestoreRollbackOnFailure() {
   const workspace = tempWorkspace();
   try {
@@ -207,6 +223,7 @@ async function testProjectBusyGuard() {
 await testPolicy();
 await testGitIsolationAndRestore();
 await testAutomaticSaveAndLocalFallback();
+await testGitBackendSupportsLargeWorkspace();
 await testRestoreRollbackOnFailure();
 await testProjectBusyGuard();
 console.log(`workspace-version-control: ok (${crypto.randomUUID().slice(0, 8)})`);

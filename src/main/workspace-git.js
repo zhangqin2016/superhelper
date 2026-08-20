@@ -16,23 +16,150 @@ function gitError(error, args) {
   return wrapped;
 }
 
+function executableNames(name) {
+  if (process.platform !== "win32") return [name];
+  return [`${name}.exe`, `${name}.cmd`, `${name}.bat`, name];
+}
+
+function gitPackPathEntries(packDir) {
+  const root = String(packDir || "");
+  if (!root) return [];
+  return [
+    root,
+    path.join(root, "bin"),
+    path.join(root, "cmd"),
+    path.join(root, "usr", "bin"),
+    path.join(root, "mingw64", "bin"),
+  ].filter((dir) => fs.existsSync(dir));
+}
+
+function gitPackRuntimeEnv(packDir) {
+  const root = String(packDir || "");
+  if (!root) return {};
+  const execPath = [
+    path.join(root, "libexec", "git-core"),
+    path.join(root, "usr", "libexec", "git-core"),
+    path.join(root, "mingw64", "libexec", "git-core"),
+  ].find((dir) => fs.existsSync(dir));
+  const templateDir = [
+    path.join(root, "share", "git-core", "templates"),
+    path.join(root, "usr", "share", "git-core", "templates"),
+    path.join(root, "mingw64", "share", "git-core", "templates"),
+  ].find((dir) => fs.existsSync(dir));
+  return {
+    ...(execPath ? { GIT_EXEC_PATH: execPath } : {}),
+    ...(templateDir ? { GIT_TEMPLATE_DIR: templateDir } : {}),
+  };
+}
+
+function gitExecutableInPack(packDir) {
+  const dirs = gitPackPathEntries(packDir);
+  for (const dir of dirs) {
+    for (const name of executableNames("git")) {
+      const candidate = path.join(dir, name);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return "";
+}
+
 class WorkspaceGit {
   constructor(options = {}) {
     this.gitPath = options.gitPath || process.env.LILY_GIT_PATH || "git";
+    this._systemGitPath = options.systemGitPath === undefined ? "git" : options.systemGitPath;
     this.maxBuffer = options.maxBuffer || 32 * 1024 * 1024;
     this._availability = null;
+    this._availabilityPromise = null;
+    this._autoInstall = options.autoInstall !== false;
+    this._installAttempted = false;
+    this._runtimePackDirs = options.runtimePackDirs || (() => {
+      try {
+        const { getEffectiveRuntimePackDir } = require("./runtime-packs");
+        const dir = getEffectiveRuntimePackDir("git");
+        return dir ? [dir] : [];
+      } catch {
+        return [];
+      }
+    });
+    this._installRuntimePack = options.installRuntimePack || ((id, installOptions) =>
+      require("./runtime-pack-installer").installRuntimePack(id, installOptions));
+    this._gitPathEntries = [];
+    this._gitRuntimeEnv = {};
     this._ensured = new Set();
+  }
+
+  async _probe(candidate, pathEntries = [], runtimeEnv = {}) {
+    if (!candidate) return false;
+    try {
+      await execFileAsync(candidate, ["--version"], {
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          ...runtimeEnv,
+          ...(pathEntries.length ? { PATH: [...pathEntries, process.env.PATH || ""].join(path.delimiter) } : {}),
+        },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async _resolveGitPath() {
+    const packDirs = await this._runtimePackDirs();
+    for (const dir of Array.isArray(packDirs) ? packDirs : []) {
+      const candidate = gitExecutableInPack(dir);
+      const pathEntries = gitPackPathEntries(dir);
+      const runtimeEnv = gitPackRuntimeEnv(dir);
+      if (await this._probe(candidate, pathEntries, runtimeEnv)) {
+        this._gitPathEntries = pathEntries;
+        this._gitRuntimeEnv = runtimeEnv;
+        return candidate;
+      }
+    }
+
+    const initialCandidates = [this.gitPath];
+    if (this.gitPath !== this._systemGitPath && this._systemGitPath) initialCandidates.push(this._systemGitPath);
+    for (const candidate of initialCandidates) {
+      if (await this._probe(candidate)) return candidate;
+    }
+
+    if (!this._autoInstall || this._installAttempted) return "";
+    this._installAttempted = true;
+    let result;
+    try {
+      result = await this._installRuntimePack("git");
+    } catch (error) {
+      result = { ok: false, error: error?.message || String(error) };
+    }
+    if (!result?.ok) return "";
+
+    const installedDirs = [result.path, ...(await this._runtimePackDirs())];
+    for (const dir of installedDirs) {
+      const candidate = gitExecutableInPack(dir);
+      const pathEntries = gitPackPathEntries(dir);
+      const runtimeEnv = gitPackRuntimeEnv(dir);
+      if (await this._probe(candidate, pathEntries, runtimeEnv)) {
+        this._gitPathEntries = pathEntries;
+        this._gitRuntimeEnv = runtimeEnv;
+        return candidate;
+      }
+    }
+    return "";
   }
 
   async isAvailable() {
     if (this._availability !== null) return this._availability;
-    try {
-      await execFileAsync(this.gitPath, ["--version"], { timeout: 5000, maxBuffer: 1024 * 1024 });
-      this._availability = true;
-    } catch {
-      this._availability = false;
+    if (!this._availabilityPromise) {
+      this._availabilityPromise = this._resolveGitPath().then((resolved) => {
+        if (resolved) this.gitPath = resolved;
+        this._availability = Boolean(resolved);
+        return this._availability;
+      });
     }
-    return this._availability;
+    return this._availabilityPromise;
   }
 
   _paths(workspacePath) {
@@ -50,10 +177,12 @@ class WorkspaceGit {
   _env(paths) {
     return {
       ...process.env,
+      ...this._gitRuntimeEnv,
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_TERMINAL_PROMPT: "0",
       GIT_PAGER: "cat",
       GIT_OPTIONAL_LOCKS: "0",
+      PATH: [...this._gitPathEntries, process.env.PATH || ""].filter(Boolean).join(path.delimiter),
       GIT_DIR: paths.vault,
       GIT_WORK_TREE: paths.root,
       GIT_INDEX_FILE: paths.index,
@@ -75,6 +204,11 @@ class WorkspaceGit {
   }
 
   async ensure(workspacePath) {
+    if (!(await this.isAvailable())) {
+      const error = new Error("GIT_RUNTIME_UNAVAILABLE");
+      error.code = "GIT_RUNTIME_UNAVAILABLE";
+      throw error;
+    }
     const paths = this._paths(workspacePath);
     const cacheKey = paths.vault;
     if (this._ensured.has(cacheKey) && fs.existsSync(path.join(paths.vault, "HEAD"))) return paths;
@@ -84,7 +218,7 @@ class WorkspaceGit {
     if (!fs.existsSync(head)) {
       await execFileAsync(this.gitPath, ["init", "--bare", paths.vault], {
         cwd: paths.root,
-        env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
+        env: { ...process.env, ...this._gitRuntimeEnv, GIT_CONFIG_NOSYSTEM: "1" },
         timeout: 30_000,
         maxBuffer: 4 * 1024 * 1024,
       }).catch((error) => { throw gitError(error, ["init", "--bare", paths.vault]); });
@@ -156,7 +290,24 @@ class WorkspaceGit {
     const paths = await this.ensure(workspacePath);
     const unique = [...new Set(relativePaths.map(normalizeRelative).filter(isSafeRelativePath))];
     if (unique.length === 0) return 0;
-    await this._run(paths, ["add", "-A", "--", ...unique], { timeout: 120_000 });
+    // Keep argv below Windows' command-line limit while still allowing large
+    // workspaces to use the Git backend. The policy has already filtered each
+    // path, so batching does not broaden the protected surface.
+    let batch = [];
+    let bytes = 0;
+    const flush = async () => {
+      if (!batch.length) return;
+      await this._run(paths, ["add", "-A", "--", ...batch], { timeout: 120_000 });
+      batch = [];
+      bytes = 0;
+    };
+    for (const relative of unique) {
+      const nextBytes = Buffer.byteLength(relative) + 16;
+      if (batch.length >= 400 || (batch.length && bytes + nextBytes > 6000)) await flush();
+      batch.push(relative);
+      bytes += nextBytes;
+    }
+    await flush();
     return unique.length;
   }
 
@@ -190,4 +341,4 @@ class WorkspaceGit {
   }
 }
 
-module.exports = { WorkspaceGit };
+module.exports = { WorkspaceGit, gitExecutableInPack };

@@ -47,6 +47,17 @@
       ]
     },
     {
+      "id": "workspace-version-protection",
+      "protects": "Workspace version protection remains available to ordinary customers without a manual Git installation and does not regress on large Git-backed workspaces.",
+      "baseline": "Missing Git or a failed dependency install falls back to the existing local snapshot backend without deleting user files.",
+      "failureFallback": "Resolve the hidden Git runtime pack first, then system Git; if both are unavailable, keep the local snapshot path and surface the existing coded save error for files beyond its documented bounds.",
+      "tests": [
+        "scripts/test-workspace-git-dependency.mjs",
+        "scripts/test-workspace-version-control.mjs",
+        "scripts/test-runtime-pack-internal-dependency.mjs"
+      ]
+    },
+    {
       "id": "prompt-envelope",
       "protects": "Internal prompt layers cannot crowd out the original user request.",
       "baseline": "Normal-size prompt layers and the full visible user message remain byte-identical.",

@@ -43,6 +43,14 @@ const PACK_CATEGORIES = [
       ar: "معالجة الصوت والفيديو",
     },
   },
+  {
+    id: "system",
+    label: {
+      en: "System dependencies",
+      "zh-CN": "系统依赖",
+      ar: "تبعية النظام",
+    },
+  },
 ];
 
 const PACK_SPECS = {
@@ -257,6 +265,25 @@ const PACK_SPECS = {
       en: "Local audio/video probing, conversion, clipping, and packaging for media workflows.",
       "zh-CN": "本地音视频探测、转码、裁剪与封装，供媒体类任务使用。",
       ar: "فحص وتحويل وقص وتجميع الصوت والفيديو محلياً لمهام الوسائط.",
+    },
+  },
+  git: {
+    id: "git",
+    category: "system",
+    installKind: "native-tool",
+    internal: true,
+    sizeEstimate: "≈35-150MB download / varies by platform",
+    pathEntries: ["bin", "cmd", "usr/bin", "."],
+    health: { executables: [{ name: "git", args: ["--version"] }] },
+    label: {
+      en: "Git version engine",
+      "zh-CN": "Git 版本引擎",
+      ar: "محرك إصدار Git",
+    },
+    description: {
+      en: "Private local version protection for workspaces. Lily downloads and verifies it when needed; no manual Git installation is required.",
+      "zh-CN": "工作区本地版本保护引擎。Lily 需要时自动下载并校验，不要求客户手动安装 Git。",
+      ar: "محرك حماية الإصدارات المحلي لمساحات العمل. يقوم Lily بالتنزيل والتحقق عند الحاجة دون تثبيت Git يدوياً.",
     },
   },
 };
