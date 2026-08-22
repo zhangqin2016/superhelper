@@ -146,7 +146,16 @@ function registerProjectHandlers(ctx) {
     // renderer so it can say so instead of looking like nothing happened.
     const alreadyExists = projectManager.hasPath(result.filePaths[0]);
     const project = projectManager.add(result.filePaths[0]);
-    if (!alreadyExists) sessionManager.create(project.id, defaultSessionTitle());
+    if (!alreadyExists) {
+      sessionManager.create(project.id, defaultSessionTitle());
+    } else {
+      // projectManager.add changes the active workspace, but does not own the
+      // active conversation. Keep both pointers in the same workspace so the
+      // next message cannot be sent to the previous project's session.
+      const sessions = sessionManager.listForProject(project.id);
+      if (sessions.length > 0) sessionManager.switchTo(sessions[0].id);
+      else sessionManager.create(project.id, defaultSessionTitle());
+    }
     return { ok: true, state: projectManager.getAppState(), existed: alreadyExists, projectId: project.id };
   });
 
