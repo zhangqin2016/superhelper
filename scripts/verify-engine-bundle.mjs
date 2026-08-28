@@ -42,6 +42,16 @@ const expectedVersion = (() => {
   return packageJson.dependencies?.["@opencode-ai/sdk"];
 })();
 
+let installedSdkVersion;
+try {
+  installedSdkVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "node_modules/@opencode-ai/sdk/package.json"), "utf8")).version;
+} catch {
+  fail("未安装 OpenCode SDK，请先运行 npm ci");
+}
+if (installedSdkVersion !== expectedVersion) {
+  fail(`已安装 SDK 与锁定版本不一致（installed=${installedSdkVersion}, expected=${expectedVersion}），请运行 npm ci`);
+}
+
 // A real engine binary is tens of MB; this catches an empty/placeholder/truncated
 // download long before electron-builder happily packages a dud.
 const MIN_BYTES = 5 * 1024 * 1024;
