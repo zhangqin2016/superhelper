@@ -10,16 +10,18 @@ import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { canSend, getTurnPhase, markSessionStopping, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
 import {
-  clearCharacterAuthoringMarker,
   readCharacterAuthoringMarker,
-  restoreCharacterAuthoringMarker,
   characterAuthoringOptions,
 } from "./character-authoring-marker.js";
 import { chooseDialog } from "./confirm-dialog.js";
 import { attachmentDisplayPayload, attachmentSendPayload } from "./attachment-payload.js";
+import { getModelSelectionSnapshot, initModelPicker } from "./model-picker.js";
+import { createComposerDrafts } from "./composer-drafts.js";
 
-/** Unsent composer text per session, restored on switch (in-memory only). */
-const sessionDrafts = new Map();
+const drafts = createComposerDrafts({ onRestore: () => {
+  syncComposerInputHeight();
+  refreshSendEnabled();
+} });
 
 /** Steer ("插话") ships behind a main-process flag; only offer it once confirmed on.
  *  Cached at load — failure leaves it off, so the busy dialog degrades to today's
@@ -224,6 +226,7 @@ export async function sendPrompt(opts = {}) {
     showToast(t("toast.sessionStopping"), "warning");
     return;
   }
+  const savedDraft = drafts.capture(sessionId);
 
   // "记住：xxx" is a meta command: persist as a workspace convention instead
   // of sending it to the model (it applies to every future session here).
@@ -232,7 +235,7 @@ export async function sendPrompt(opts = {}) {
     const result = await window.assistantClient.rememberConvention(sessionId, rememberMatch[1].trim());
     if (result?.ok) {
       if (promptInput) promptInput.value = "";
-      sessionDrafts.delete(sessionId);
+      drafts.forget(sessionId);
       syncComposerInputHeight();
       showToast(t("composer.conventionSaved"), "success");
     } else {
@@ -291,20 +294,11 @@ export async function sendPrompt(opts = {}) {
     if (!sendMode) return;
   }
 
-  const pendingFiles = store.get("pendingFiles") || [];
+  const pendingFiles = savedDraft.files;
   const displayFiles = files.map((file) => (
     attachmentDisplayPayload(file, pendingFiles.find((pending) => pending.id === file.id))
   ));
-  const savedText = text;
-  const savedFiles = [...(store.get("pendingFiles") || [])];
-
-  if (promptInput) {
-    promptInput.value = "";
-    clearCharacterAuthoringMarker(promptInput);
-  }
-  sessionDrafts.delete(sessionId);
-  syncComposerInputHeight();
-  clearPendingFiles();
+  const clearedDraft = drafts.clear(sessionId, savedDraft);
 
   let result;
   try {
@@ -313,7 +307,7 @@ export async function sendPrompt(opts = {}) {
       files,
       sessionId,
       displayFiles.length ? displayFiles : null,
-      characterAuthoringOptions(characterAuthoringMarker),
+      { ...characterAuthoringOptions(characterAuthoringMarker), modelSelection: await getModelSelectionSnapshot(sessionId) },
     ];
     result = sendMode === "interrupt"
       ? await window.assistantClient.interruptAndSend(...dispatchArgs)
@@ -321,25 +315,13 @@ export async function sendPrompt(opts = {}) {
         ? await window.assistantClient.steerMessage(...dispatchArgs)
         : await window.assistantClient.sendMessage(...dispatchArgs);
   } catch (err) {
-    if (promptInput && savedText) promptInput.value = savedText;
-    restoreCharacterAuthoringMarker(promptInput, characterAuthoringMarker);
-    if (savedText) sessionDrafts.set(sessionId, savedText);
-    if (savedFiles.length) {
-      store.set("pendingFiles", savedFiles);
-      renderFilePreview();
-    }
+    drafts.restore(sessionId, savedDraft, clearedDraft);
     showToast(err?.message || t("send.error.GENERIC"), "error");
     return;
   }
 
   if (!result?.ok) {
-    if (promptInput && savedText) promptInput.value = savedText;
-    restoreCharacterAuthoringMarker(promptInput, characterAuthoringMarker);
-    if (savedText) sessionDrafts.set(sessionId, savedText);
-    if (savedFiles.length) {
-      store.set("pendingFiles", savedFiles);
-      renderFilePreview();
-    }
+    drafts.restore(sessionId, savedDraft, clearedDraft);
     showToast(sendErrorMessage(result), "error");
     return;
   }
@@ -391,8 +373,8 @@ export function initComposer() {
   const composer = $("composer");
   const promptInput = $("promptInput");
   let imeComposing = false;
-
   if (composer) {
+    initModelPicker();
     composer.addEventListener("submit", (e) => {
       e.preventDefault();
       // In stop mode the send button is a halt control — interrupt the running
@@ -655,17 +637,7 @@ export function initComposer() {
     promptInput.addEventListener("input", refreshSendEnabled);
     refreshSendEnabled();
 
-    // Per-session draft: typing is saved as you go, switching sessions
-    // restores what you were writing. In-memory only by design.
-    promptInput.addEventListener("input", () => {
-      const sid = store.get("activeSessionId");
-      if (sid) sessionDrafts.set(sid, promptInput.value);
-    });
-    store.on("activeSessionId", (nextId) => {
-      promptInput.value = (nextId && sessionDrafts.get(nextId)) || "";
-      syncComposerInputHeight();
-      refreshSendEnabled();
-    });
+    drafts.bind(promptInput);
   }
 
   $("attachBtn")?.addEventListener("click", async () => {

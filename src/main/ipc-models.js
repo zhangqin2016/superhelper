@@ -11,6 +11,7 @@ const {
   setApiGateway,
   diagnoseAndRestoreDefaultModel,
 } = require("./model-presets");
+const { listModelSelectionPublic, setModelSelectionPreference } = require("./model-selection-catalog");
 const { withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
 
 function currentSystemPromptProbeText(ctx) {
@@ -74,6 +75,31 @@ function registerModelHandlers(ctx) {
       });
       return { ok: true, ...listPresetsPublic() };
     }, { liveEnv: false });
+  });
+
+  // Per-turn model routing is a lightweight preference update. It must remain
+  // usable while a turn is running, so it deliberately does not tear down or
+  // restart the shared OpenCode runner like global model changes do.
+  ipcMain.handle("models:selection-list", async (_event, payload) => {
+    const sessionId = payload?.sessionId;
+    if (sessionId && (typeof sessionId !== "string" || !ctx.sessionManager.findById(sessionId))) return { ok: false, error: "SESSION_NOT_FOUND" };
+    try {
+      await require("./ipc-utils").refreshRemoteConfigForSend({
+        force: false,
+        timeoutMs: 1500,
+        reason: "model_selection",
+      });
+    } catch {
+      // The last verified catalog remains valid offline.
+    }
+    try { return { ok: true, ...listModelSelectionPublic(sessionId) }; }
+    catch { return { ok: false, error: "MODEL_CATALOG_UNAVAILABLE" }; }
+  });
+
+  ipcMain.handle("models:set-selection", (_event, payload) => {
+    const sessionId = payload?.sessionId;
+    if (sessionId && (typeof sessionId !== "string" || !ctx.sessionManager.findById(sessionId))) return { ok: false, error: "SESSION_NOT_FOUND" };
+    return setModelSelectionPreference(payload?.selection || payload || {}, sessionId);
   });
 
   ipcMain.handle("models:save-custom", (_event, payload) => {

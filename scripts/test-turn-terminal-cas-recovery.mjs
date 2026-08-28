@@ -78,8 +78,12 @@ function archive(commits = [], { buildRecordThrows = false } = {}) {
   };
 }
 
-async function runScenario({ turnId, markTerminal, durableLookup, assistant = "late loser answer", buildRecordThrows = false }) {
+async function runScenario({ turnId, markTerminal, durableLookup, assistant = "late loser answer", buildRecordThrows = false, beforeDispatchRoute = null }) {
   const state = activeState(turnId, assistant);
+  if (beforeDispatchRoute) {
+    state.turnModelRoute = beforeDispatchRoute;
+    state.enginePayload = null;
+  }
   const observed = [];
   const commits = [];
   const bus = new RuntimeEventBus(() => null);
@@ -113,6 +117,14 @@ async function runScenario({ turnId, markTerminal, durableLookup, assistant = "l
   });
   return { state, observed, commits };
 }
+
+const beforeDispatchRoute = { mode: "manual", selectionId: "original-model", modelId: "original", selection: { mode: "manual", manualModelId: "original-model" } };
+let terminalPatch;
+await runScenario({
+  turnId: "turn_preflight_failure", beforeDispatchRoute,
+  markTerminal: (_claim, _type, patch) => { terminalPatch = patch; return { ok: true }; },
+});
+assert.deepEqual(terminalPatch.metadata?.modelRoute, beforeDispatchRoute, "preflight failures retain the original model for retry even before an engine payload exists");
 
 const terminalWinner = await runScenario({
   turnId: "turn_terminal_winner",

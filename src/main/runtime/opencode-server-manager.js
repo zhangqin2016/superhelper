@@ -1,11 +1,11 @@
 "use strict";
 
 /**
- * Per-session VIEW over the app's single shared `opencode serve`.
+ * Per-session VIEW over a compatible shared `opencode serve`.
  *
- * Architecture (matches the official desktop client): ONE serve hosts every
- * session across every directory. This class no longer spawns a process — it
- * acquires the shared serve (OpencodeSharedServer singleton) and scopes all of
+ * One serve hosts sessions across directories with the same execution profile.
+ * This class does not spawn a process; it acquires a compatible shared serve
+ * from OpencodeSharedServer's profile pool and scopes all of
  * its calls to this session's directory via the `X-OpenCode-Directory` header,
  * and to this session's id by filtering the shared event stream. It remains the
  * transport only; raw events are reduced by opencode-runtime-reducer in the
@@ -23,6 +23,7 @@ const { getSharedServer } = require("./opencode-shared-server");
 const { buildOpencodePromptBody, characterApplicationOf, characterBuildFailureApplication } = require("./opencode-message-parts");
 const { createOpencodeSdkSession } = require("./opencode-sdk-session");
 const { classifyOpencodeEventOwnership } = require("./opencode-event-ownership");
+const { createOpencodeSessionWork } = require("./opencode-session-work");
 
 const log = getLogger("opencode-server");
 
@@ -67,6 +68,7 @@ class OpencodeServerManager extends EventEmitter {
      *  route session-less events (message.part.delta) on a shared serve. */
     this._ownedMessages = new Set();
     this._childSessionIDs = new Set();
+    this._work = createOpencodeSessionWork(this, opts.ownerSessionId, opts.isChatActive);
     this._terminated = false;
     this._sdkSession = null;
     this._releaseSharedView = null;
@@ -99,8 +101,10 @@ class OpencodeServerManager extends EventEmitter {
     // A crash of the shared serve is a crash for every session on it: re-emit
     // "exit"/"error" so each session's existing crash handling still fires.
     this._onSharedExit = ({ code }) => {
-      this.process = null;
-      if (!this._terminated) this.emit("exit", { code });
+      const notify = !this._terminated;
+      this._work.engineEnded();
+      this.terminate();
+      if (notify) this.emit("exit", { code });
     };
     this._onSharedError = (err) => {
       if (!this._terminated) this.emit("error", err);
@@ -135,6 +139,7 @@ class OpencodeServerManager extends EventEmitter {
         const existing = await this._sdkSession.get(this.resumeSessionID);
         if (existing && existing.id) {
           this.sessionID = existing.id;
+          this._work.bind();
           this.wasResumed = true;
           return existing.id;
         }
@@ -150,6 +155,7 @@ class OpencodeServerManager extends EventEmitter {
     const id = res?.id;
     if (!id) throw new Error("session create returned no id");
     this.sessionID = id;
+    this._work.bind();
     this.wasResumed = false;
     return id;
   }
@@ -161,7 +167,8 @@ class OpencodeServerManager extends EventEmitter {
   subscribe() {
     if (this._unsub || !this._shared) return;
     this._unsub = this._shared.onEvent((directory, event) => {
-      if (this._terminated) return;
+      if (this._terminated && !this._work.hasWork()) return;
+      this._work.discover(directory, event);
       const ownership = classifyOpencodeEventOwnership({
         directory,
         cwd: this.cwd,
@@ -171,13 +178,17 @@ class OpencodeServerManager extends EventEmitter {
       });
       this._recordRoutingDecision(directory, event, ownership);
       if (ownership.rememberMessage) this._ownedMessages.add(ownership.rememberMessage);
-      if (ownership.action === "drop" && ownership.reason === "different_session" && this._childSessionIDs.has(ownership.sid)) {
+      const childID = ownership.reason === "different_session" ? ownership.sid
+        : ownership.reason === "unowned_message" ? this._work.messageSession(ownership.mid) : "";
+      if (ownership.action === "drop" && this._childSessionIDs.has(childID)) {
+        this._work.observe(event, childID, ownership.mid);
         this._recordRoutingDecision(directory, event, { ...ownership, action: "deliver", scope: "child_session", reason: "known_child_session" });
-        this.emit("event", { ...event, __lilySubagentSessionID: ownership.sid });
+        if (!this._terminated) this.emit("event", { ...event, __lilySubagentSessionID: childID });
         return;
       }
       if (ownership.action === "deliver") {
-        this.emit("event", event);
+        if (ownership.scope !== "directory") this._work.observe(event, ownership.sid || this.sessionID, ownership.mid);
+        if (!this._terminated) this.emit("event", event);
       }
     });
   }
@@ -185,6 +196,7 @@ class OpencodeServerManager extends EventEmitter {
   allowChildSession(sessionID) {
     const id = String(sessionID || "").trim();
     if (!id || id === this.sessionID) return false;
+    this._work.rememberChild(id);
     this._childSessionIDs.add(id);
     return true;
   }
@@ -208,12 +220,15 @@ class OpencodeServerManager extends EventEmitter {
     if (this._recentRouting.length > 120) this._recentRouting.splice(0, this._recentRouting.length - 120);
   }
 
-  async sendPrompt({ text, files, guidance, allowImageFileParts, allowedFilePartMimes, characterContext, onCharacterApplication }) {
+  async sendPrompt({ text, files, guidance, model, allowImageFileParts, allowedFilePartMimes, characterContext, onCharacterApplication }) {
     if (!this.sessionID) throw new Error("no session");
     if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
+    // Explicit null starts a legacy/default turn; omission continues the
+    // current turn on this session, never another session's selected model.
+    if (model !== undefined) this._turnModel = model;
     // Non-image file-part support is opt-in per model (default: none). Resolve
     // from the active preset when the caller didn't pass it, fail-safe to [].
-    let filePartMimes = Array.isArray(allowedFilePartMimes) ? allowedFilePartMimes : null;
+    let filePartMimes = Array.isArray(allowedFilePartMimes) ? allowedFilePartMimes : this._turnModel?.capabilities?.filePartMimes;
     if (!filePartMimes) {
       try { filePartMimes = require("../model-presets").activePresetFilePartMimes(); }
       catch { filePartMimes = []; }
@@ -245,7 +260,7 @@ class OpencodeServerManager extends EventEmitter {
     let body;
     try {
       body = buildOpencodePromptBody({
-        text: promptText, files, guidance, agent: this.agent, model: this.model,
+        text: promptText, files, guidance, agent: this.agent, model: this._turnModel || this.model,
         maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
         allowImageFileParts: allowImageFileParts === true,
         allowedFilePartMimes: filePartMimes,
@@ -360,7 +375,11 @@ class OpencodeServerManager extends EventEmitter {
   async summarize(body = {}) {
     if (!this.sessionID) throw new Error("no session");
     if (!this._sdkSession?.summarize) throw new Error("opencode SDK session is not ready");
-    return this._sdkSession.summarize(this.sessionID, body);
+    const client = this._shared.clientFor(this.cwd);
+    const sdk = createOpencodeSdkSession({ session: {
+      summarize: params => this._work.request(() => client.session.summarize(params)),
+    } }, this.cwd);
+    return sdk.summarize(this.sessionID, body);
   }
 
   diagnostics() {
@@ -375,6 +394,7 @@ class OpencodeServerManager extends EventEmitter {
         recent: [...this._recentRouting],
       },
       childSessionIDs: [...this._childSessionIDs],
+      work: this._work.diagnostics(),
       shared: this._shared?.diagnostics?.() || null,
     };
   }
@@ -385,6 +405,7 @@ class OpencodeServerManager extends EventEmitter {
     try {
       if (!this._sdkSession) return false;
       await this._sdkSession.abort(this.sessionID);
+      this._work.cancelSession();
       return true;
     } catch (err) {
       log.warn("graceful abort failed (%s); caller should terminate", err.message);
@@ -398,6 +419,16 @@ class OpencodeServerManager extends EventEmitter {
    *  resume. Best-effort abort happens via abort() before this. */
   terminate() {
     this._terminated = true;
+    if (this._releaseSharedView) {
+      const release = this._releaseSharedView;
+      this._releaseSharedView = null;
+      release();
+    }
+    if (!this._work.hasWork()) this._finishTermination();
+  }
+
+  _finishTermination() {
+    this._work.flush();
     if (this._unsub) {
       try { this._unsub(); } catch { /* already gone */ }
       this._unsub = null;
@@ -407,10 +438,6 @@ class OpencodeServerManager extends EventEmitter {
         if (this._onSharedExit) this._shared.off("exit", this._onSharedExit);
         if (this._onSharedError) this._shared.off("error", this._onSharedError);
       } catch { /* best effort */ }
-    }
-    if (this._releaseSharedView) {
-      try { this._releaseSharedView(); } catch { /* best effort */ }
-      this._releaseSharedView = null;
     }
     this._shared = null;
     this._sdkSession = null;

@@ -366,9 +366,9 @@
    a viewport-safe panel. These rules intentionally consolidate the earlier
    compact-toolbar defaults without changing the DOM contract. */
 .session-role-banner {
-  flex: 0 1 260px;
-  width: min(260px, 100%);
-  max-width: 260px;
+  flex: 0 0 160px;
+  width: min(160px, 100%);
+  max-width: 160px;
   min-width: 0;
   height: 32px;
   padding: 0 8px 0 6px;

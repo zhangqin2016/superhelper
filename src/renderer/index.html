@@ -239,6 +239,11 @@
                   <button id="sessionPermissionModeButton" class="permission-mode-button" type="button" data-i18n-aria-label="settings.sessionPermissionSelect" aria-label="选择当前会话权限模式" aria-haspopup="listbox" aria-expanded="false" aria-controls="sessionPermissionModeMenu"></button>
                   <div id="sessionPermissionModeMenu" class="permission-mode-menu" role="listbox" data-i18n-aria-label="settings.sessionPermissionSelect" aria-label="选择当前会话权限模式" hidden></div>
                 </div>
+                <button id="modelSelectionBtn" type="button" class="composer-model-btn" data-i18n-title="composer.modelAutoTitle" title="自动选择模型" aria-label="自动选择模型" aria-haspopup="dialog" aria-expanded="false" aria-controls="modelSelectionPopover">
+                  <span class="composer-model-mark" aria-hidden="true">✦</span>
+                  <span id="modelSelectionLabel">自动</span>
+                  <svg class="composer-model-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
                 <button id="sessionRoleBanner" class="session-role-banner" type="button" data-i18n-title="character.roleBannerTitle" data-i18n-aria-label="character.roleBannerTitle" title="当前对话角色，点击切换" aria-label="当前对话角色，点击切换" aria-haspopup="dialog" aria-expanded="false" aria-controls="characterPopover" hidden>
                   <span class="session-role-banner-avatar" aria-hidden="true"></span>
                   <span class="session-role-banner-name"></span>
@@ -294,6 +299,24 @@
               <button id="sessionSkillsResetBtn" type="button" class="session-skills-reset-btn" hidden data-i18n="composer.resetSkills">恢复全局默认</button>
               <p class="session-skills-popover-hint" data-i18n="composer.sessionSkillsHint">未单独设置时，沿用设置中的全局技能。</p>
             </div>
+          </div>
+          <div id="modelSelectionPopover" class="model-selection-popover" hidden role="dialog" aria-labelledby="modelSelectionTitle">
+            <div class="model-selection-header">
+              <div>
+                <strong id="modelSelectionTitle" data-i18n="composer.modelSelectTitle">本轮模型</strong>
+                <p data-i18n="composer.modelSelectHint">自动会根据任务难度和附件能力选择模型。</p>
+              </div>
+              <button id="modelSelectionClose" type="button" class="model-selection-close" data-i18n-aria-label="composer.close" aria-label="关闭">×</button>
+            </div>
+            <div class="model-selection-modes">
+              <label><input id="modelSelectionModeAuto" type="radio" name="modelSelectionMode" checked><span data-i18n="composer.modelAuto">自动</span></label>
+              <label><input id="modelSelectionModeManual" type="radio" name="modelSelectionMode"><span data-i18n="composer.modelManual">手动选择</span></label>
+            </div>
+            <div id="modelSelectionEmpty" class="model-selection-empty" hidden data-i18n="composer.modelNoModels">模型目录暂不可用，请稍后重试。</div>
+            <div id="modelSelectionAutoList" class="model-selection-list"></div>
+            <div id="modelSelectionManualList" class="model-selection-list" hidden></div>
+            <button id="modelSelectionReset" class="model-selection-reset" type="button"><span aria-hidden="true">↺</span><span data-i18n="composer.modelReset">恢复推荐</span></button>
+            <p id="modelSelectionStatus" class="model-selection-footnote" role="status" aria-live="polite" data-i18n="composer.modelSelectionSaved">选择会自动保存，并从下一轮开始生效。</p>
           </div>
           <div id="characterPopover" class="character-popover" hidden role="dialog" data-i18n-aria-label="character.popoverTitle" aria-label="对话角色" tabindex="-1">
             <div class="character-popover-header">

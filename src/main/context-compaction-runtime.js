@@ -76,7 +76,7 @@ function createContextCompactionRuntime(options = {}) {
           }
         }
       }
-      const model = runner.spawnOptions?.model || null;
+      const model = enginePayload?.model || runner.spawnOptions?.model || null;
       const promptEstimate = estimateTokensForText(String(enginePayload?.text || ""), {
         provider: model?.providerID || enginePayload?.provider || enginePayload?.trace?.provider || "",
         model: model?.modelID || enginePayload?.model || enginePayload?.trace?.model || "",

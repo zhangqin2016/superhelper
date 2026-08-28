@@ -204,7 +204,7 @@ function createTurnTerminalFinalizer(options = {}) {
           terminalClaim,
           type,
           {
-            errorCode: payload.errorCode || payload.code || "",
+            errorCode: payload.errorCode || payload.code || "", metadata: state.turnModelRoute ? { modelRoute: state.turnModelRoute } : {},
           },
         );
         if (terminalResult?.ok === false) {

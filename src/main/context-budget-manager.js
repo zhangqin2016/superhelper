@@ -119,6 +119,7 @@ function resolveContextBudget({
   const windowTokens = positiveInt(
     contextWindowTokens ??
       sourceModel.contextWindowTokens ??
+      sourceModel.limits?.contextTokens ??
       sourceModel.context_window_tokens ??
       sourceModel.maxContextTokens ??
       sourceModel.max_context_tokens ??
@@ -128,6 +129,7 @@ function resolveContextBudget({
   const configuredOutputReserve = positiveInt(
     maxOutputTokens ??
       sourceModel.maxOutputTokens ??
+      sourceModel.limits?.outputTokens ??
       sourceModel.max_output_tokens ??
       sourceModel.outputTokens ??
       sourceModel.output_tokens,
@@ -159,6 +161,7 @@ function resolveContextBudget({
     budgetSource: (
       contextWindowTokens ||
       sourceModel.contextWindowTokens ||
+      sourceModel.limits?.contextTokens ||
       sourceModel.context_window_tokens ||
       sourceModel.maxContextTokens ||
       sourceModel.max_context_tokens ||

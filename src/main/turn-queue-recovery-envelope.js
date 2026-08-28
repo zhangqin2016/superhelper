@@ -67,6 +67,7 @@ const OPTION_KEYS = new Set([
   "requiredSuccessfulTools",
   "turnId",
   "durableQueueKey",
+  "modelSelection",
 ]);
 const DANGEROUS_KEYS = new Set([
   "__proto__",

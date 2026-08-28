@@ -5,6 +5,11 @@ web/.next
 dist
 release
 release-keys
+.env
+**/.env
+.env.*
+**/.env.*
+!**/.env.example
 .git
 .DS_Store
 Archive.zip

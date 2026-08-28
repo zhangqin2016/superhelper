@@ -24,6 +24,8 @@ const usageSchema = z.object({
   appVersion: z.string().max(40).optional().nullable(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   model: z.string().min(1).max(120),
+  providerID: z.string().max(200).optional().nullable(),
+  reportId: z.string().min(1).max(120).optional().nullable(),
   messageCount: z.number().int().min(0).default(0),
   imageCount: z.number().int().min(0).default(0),
   toolCallCount: z.number().int().min(0).default(0),
@@ -65,7 +67,7 @@ export function registerPublicTelemetryRoutes(app) {
         tags: ["public:telemetry"],
         summary: "Report daily usage counters",
         description:
-          "Upserts per-device, per-day, per-model usage counters (messages, images, tool/plugin calls, tokens).",
+          "Upserts per-device, per-day, per-provider/model usage counters. Missing providerID is unknown; reportId deduplicates retries.",
         body: zodBody(usageSchema),
         response: { 200: okResponse() },
       },
@@ -74,33 +76,51 @@ export function registerPublicTelemetryRoutes(app) {
     const input = usageSchema.parse(request.body);
     await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
-    await db
-      .insertInto("usage_daily")
-      .values({
-        usage_date: input.date,
-        license_id: input.licenseId || null,
-        device_id: input.deviceId,
-        model: input.model,
-        message_count: input.messageCount,
-        image_count: input.imageCount,
-        tool_call_count: input.toolCallCount,
-        plugin_call_count: input.pluginCallCount,
-        input_tokens: input.inputTokens,
-        output_tokens: input.outputTokens,
-      })
-      .onConflict((oc) =>
-        oc.columns(["usage_date", "device_id", "model"]).doUpdateSet((eb) => ({
-          license_id: input.licenseId || null,
-          message_count: eb("usage_daily.message_count", "+", input.messageCount),
-          image_count: eb("usage_daily.image_count", "+", input.imageCount),
-          tool_call_count: eb("usage_daily.tool_call_count", "+", input.toolCallCount),
-          plugin_call_count: eb("usage_daily.plugin_call_count", "+", input.pluginCallCount),
-          input_tokens: eb("usage_daily.input_tokens", "+", input.inputTokens),
-          output_tokens: eb("usage_daily.output_tokens", "+", input.outputTokens),
-          updated_at: new Date(),
-        })),
-      )
-      .execute();
+    await db.transaction().execute(async (trx) => {
+      if (input.reportId) {
+        const receipt = await trx
+          .insertInto("usage_report_receipts")
+          .values({ device_id: input.deviceId, report_id: input.reportId })
+          .onConflict((oc) => oc.columns(["device_id", "report_id"]).doNothing())
+          .returning("report_id")
+          .executeTakeFirst();
+        if (!receipt) return;
+      }
+      // Keep old-server/UI totals and provider detail in one receipt transaction.
+      for (const table of ["usage_daily", "usage_provider_daily"]) {
+        const providerScoped = table === "usage_provider_daily";
+        await trx
+          .insertInto(table)
+          .values({
+            usage_date: input.date,
+            license_id: input.licenseId || null,
+            device_id: input.deviceId,
+            ...(providerScoped ? { provider_id: input.providerID || "unknown" } : {}),
+            model: input.model,
+            message_count: input.messageCount,
+            image_count: input.imageCount,
+            tool_call_count: input.toolCallCount,
+            plugin_call_count: input.pluginCallCount,
+            input_tokens: input.inputTokens,
+            output_tokens: input.outputTokens,
+          })
+          .onConflict((oc) =>
+            oc.columns(providerScoped
+              ? ["usage_date", "device_id", "provider_id", "model"]
+              : ["usage_date", "device_id", "model"]).doUpdateSet((eb) => ({
+              license_id: input.licenseId || null,
+              message_count: eb(`${table}.message_count`, "+", input.messageCount),
+              image_count: eb(`${table}.image_count`, "+", input.imageCount),
+              tool_call_count: eb(`${table}.tool_call_count`, "+", input.toolCallCount),
+              plugin_call_count: eb(`${table}.plugin_call_count`, "+", input.pluginCallCount),
+              input_tokens: eb(`${table}.input_tokens`, "+", input.inputTokens),
+              output_tokens: eb(`${table}.output_tokens`, "+", input.outputTokens),
+              updated_at: new Date(),
+            })),
+          )
+          .execute();
+      }
+    });
     return reply.send({ ok: true });
   });
 
@@ -118,6 +138,7 @@ export function registerPublicTelemetryRoutes(app) {
             deviceId: { type: "string" },
             historyDays: { type: "integer" },
             days: { type: "array", items: { type: "object" } },
+            byModel: { type: "array", items: { type: "object" } },
           }),
         },
       },
@@ -145,10 +166,28 @@ export function registerPublicTelemetryRoutes(app) {
       .orderBy("usage_date", "desc")
       .execute();
 
+    const byModel = await db
+      .selectFrom("usage_provider_breakdown")
+      .select(["usage_date", "provider_id", "model", "input_tokens", "output_tokens", "message_count"])
+      .where("device_id", "=", input.deviceId)
+      .where("usage_date", ">=", since)
+      .orderBy("usage_date", "desc")
+      .orderBy("provider_id", "asc")
+      .orderBy("model", "asc")
+      .execute();
+
     return reply.send({
       ok: true,
       deviceId: input.deviceId,
       historyDays,
+      byModel: byModel.map((row) => ({
+        date: usageDateKey(row.usage_date),
+        providerID: row.provider_id,
+        model: row.model,
+        inputTokens: Number(row.input_tokens || 0),
+        outputTokens: Number(row.output_tokens || 0),
+        messageCount: Number(row.message_count || 0),
+      })),
       days: rows.map((row) => ({
         date: usageDateKey(row.usage_date),
         inputTokens: Number(row.input_tokens || 0),

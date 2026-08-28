@@ -105,10 +105,11 @@ function parseBodyOverlay(value) {
 
 /**
  * @param {Record<string, string>} lilyEnv
+ * @param {{ modelPool?: Array<string | {providerID: string, modelID: string, env: object}> }} [runtimeOptions]
  * @returns {{ ok:boolean, reason?:string, model:{providerID:string,modelID:string}|null,
  *             tiers:object|null, configContent:string|null, baseUrl:string, protocol?:string }}
  */
-function resolveOpencodeModelConfig(lilyEnv = {}) {
+function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
   const rawBase = lilyEnv.LILY_OPENCODE_BASE_URL || lilyEnv.LILY_API_BASE_URL || "";
   const token = lilyEnv.LILY_OPENCODE_API_KEY || lilyEnv.LILY_API_KEY || "";
   const requestedModelId = lilyEnv.LILY_OPENCODE_MODEL || lilyEnv.LILY_MODEL || "";
@@ -167,9 +168,32 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     subagent: modelId,
   };
   const modelOptions = bodyOverlay.body && protocol === "openai" ? { ...bodyOverlay.body } : null;
+  const modelIds = [
+    tiers.main,
+    tiers.opus,
+    tiers.sonnet,
+    tiers.haiku,
+    tiers.subagent,
+    ...(Array.isArray(runtimeOptions.modelPool) ? runtimeOptions.modelPool.filter(id => typeof id === "string") : []),
+  ]
+    .map((id) => normalizeModelIdForProtocol(id, protocol))
+    .filter(Boolean)
+    .filter((id, index, list) => list.indexOf(id) === index);
   const models = {};
-  for (const id of [tiers.main, tiers.opus, tiers.sonnet, tiers.haiku, tiers.subagent]) {
+  for (const id of modelIds) {
     if (id) models[id] = models[id] || (modelOptions ? { options: modelOptions } : {});
+  }
+  const profile = runtimeOptions.modelProfile;
+  const context = positiveInt(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS);
+  const output = positiveInt(lilyEnv.LILY_MAX_OUTPUT_TOKENS);
+  // OpenCode requires both keys; zero retains its existing unknown-limit behavior.
+  if (context || output) models[modelId].limit = { context: context || 0, output: output || 0 };
+  if (profile?.capabilities) {
+    models[modelId].tool_call = profile.capabilities.toolCall !== false;
+    models[modelId].modalities = {
+      input: ["text", ...(profile.capabilities.vision ? ["image"] : []), ...(profile.capabilities.filePartMimes?.includes("application/pdf") ? ["pdf"] : [])],
+      output: ["text"],
+    };
   }
 
   const options = {};
@@ -204,6 +228,14 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     },
   };
 
+  for (const entry of runtimeOptions.modelPool || []) {
+    if (!entry || typeof entry !== "object" || !entry.env) continue;
+    const extra = resolveOpencodeModelConfig(entry.env);
+    if (!extra.ok || extra.model.providerID !== entry.providerID || extra.model.modelID !== entry.modelID) continue;
+    if (entry.providerID === providerID) continue;
+    config.provider[entry.providerID] = JSON.parse(extra.configContent).provider[entry.providerID];
+  }
+
   return {
     ok: true,
     model: {
@@ -223,6 +255,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
       opencodeProviderID: providerID,
       opencodeProviderNpm: npm,
       forcedMainModelForAllTiers: true,
+      registeredModelIds: modelIds,
       ignoredTierModels: {
         opus: lilyEnv.LILY_MODEL_OPUS || "",
         sonnet: lilyEnv.LILY_MODEL_SONNET || "",

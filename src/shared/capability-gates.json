@@ -308,6 +308,34 @@
         "scripts/test-public-hook-bridge.mjs",
         "scripts/test-turn-orchestrator.mjs"
       ]
+    },
+    {
+      "id": "auto-model-selection",
+      "protects": "Auto/manual choices cannot cross conversations, widen custom pools, lose retry identity, conflate providers, bypass the quality floor for vision, or drift between execution, compaction and usage models.",
+      "baseline": "Recommended Auto preserves the active model when reliable metadata is absent; per-turn execution profiles drive main/helper models and budgets while retaining bulk-input staging and history compaction.",
+      "failureFallback": "Recommended Auto can use the legacy active engine only when the catalog is unavailable, not when models are revoked. Expired catalogs refresh once. Ambiguous legacy identities and explicit choices never silently change models.",
+      "tests": [
+        "scripts/test-model-selection.mjs",
+        "scripts/test-model-catalog-lifecycle.mjs",
+        "scripts/test-model-identity-migration.mjs",
+        "scripts/test-model-ownership-steer.mjs",
+        "scripts/test-model-ownership-composer.mjs",
+        "scripts/test-opencode-runtime-ownership.mjs",
+        "scripts/test-opencode-bundled-usage.mjs",
+        "scripts/test-usage-provider-persistence.mjs",
+        "scripts/test-long-task-session-wakeup.mjs",
+        "scripts/test-model-selection-ipc.mjs",
+        "scripts/test-model-picker-state.mjs",
+        "scripts/test-model-execution.mjs",
+        "scripts/test-model-execution-runner.mjs",
+        "scripts/test-usage-reporter-models.mjs",
+        "scripts/test-opencode-shared-server.mjs",
+        "scripts/test-context-window-guard.mjs",
+        "scripts/test-turn-queue-recovery-task-core.mjs",
+        "scripts/test-turn-terminal-cas-recovery.mjs",
+        "scripts/test-renderer-import.cjs",
+        "scripts/test-turn-archive.mjs"
+      ]
     }
   ]
 }

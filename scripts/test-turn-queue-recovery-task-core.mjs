@@ -52,8 +52,12 @@ assert.deepEqual(envelope.options.requiredSuccessfulTools, ["artifact.verify"]);
 const durable = queueRecoveryEnvelope({
   id: "queue-retry",
   displayFiles: [],
-  options: { requiredSuccessfulTools: ["artifact.verify"] },
+  options: { requiredSuccessfulTools: ["artifact.verify"], modelSelection: { mode: "auto", autoPoolMode: "custom", autoModelIds: ["original"] } },
 });
 assert.deepEqual(durable.options.requiredSuccessfulTools, ["artifact.verify"]);
+assert.deepEqual(durable.options.modelSelection.autoModelIds, ["original"]);
+assert.equal(durable.options.modelSelection.autoPoolMode, "custom");
+const restored = recoveredQueueOptions({ ...admitted, metadata: { queueRecovery: JSON.parse(JSON.stringify(durable)) } }, value => value);
+assert.deepEqual(restored.options.modelSelection.autoModelIds, ["original"]);
 
 console.log("turn-queue-recovery-task-core: ok");

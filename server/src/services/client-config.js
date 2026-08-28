@@ -7,6 +7,7 @@ import { discoveredModelMetadataSync, discoveredModelsSync } from "./model-gatew
 import { normalizeProviderForProtocol } from "./model-gateway/model-aliases.js";
 import { getModelCatalog } from "./model-catalog.js";
 import { resolveModelRuntimeBudget } from "./model-runtime-budget.js";
+import { resolveModelCapabilities } from "./model-capabilities.js";
 import { buildMediaProviderContracts } from "./media-provider-contracts.js";
 import { stripDisabledLilyMediaEnv } from "./lily-media-env.js";
 import {
@@ -172,19 +173,6 @@ function defaultModelFor(provider) {
   return def && models.includes(def) ? def : models[0];
 }
 
-function providerVisionCapability(provider, providerCapabilities = {}) {
-  const explicit = providerCapabilities?.[provider?.id]?.vision;
-  // Provider metadata is the current source of truth from the model-provider
-  // registry. Older config profiles may carry a generated `vision:false` from
-  // before the provider was marked native-vision; that stale false must not
-  // suppress the newer provider capability.
-  return Boolean(explicit || provider?.metadata?.nativeVision || provider?.capabilities?.vision);
-}
-
-function modelSlug(model) {
-  return String(model || "").replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
 function managedPresetId(providerId, deliveryMode, suffix = "") {
   return `lily-managed:${providerId}:${deliveryMode}${suffix}`;
 }
@@ -204,11 +192,12 @@ function resolveManagedActivePresetId(presets, preferredProviderId, deliveryMode
   const list = Array.isArray(presets) ? presets : [];
   const preferred = String(preferredProviderId || "").trim();
   const exact = preferred
-    ? list.find((preset) => preset.id === managedPresetId(preferred, deliveryMode))
+    ? list.find((preset) => preset.id.startsWith(`lily-managed:${preferred}:`) && preset.defaultModel)
+      || list.find((preset) => preset.id === managedPresetId(preferred, deliveryMode))
       || list.find((preset) => preset.id.startsWith(`lily-managed:${preferred}:`))
     : null;
   if (exact) return exact.id;
-  const fallback = list[0]?.id || "";
+  const fallback = list.find(preset => preset.defaultModel)?.id || list[0]?.id || "";
   if (preferred && fallback) {
     const seenKey = `${preferred}->${fallback}`;
     if (!warnedDefaultProviderDrift.has(seenKey)) {
@@ -311,11 +300,14 @@ function normalizeVisionModel(model) {
   return legacyAliases[value.toLowerCase()] || value;
 }
 
-/** Build ONE preset for a specific model. The provider's default model keeps the
- *  bare managed provider/mode preset id; extra models get a suffixed id.
+/** Build ONE stable preset for a specific model, independent of the default.
  *  All OpenCode model tiers map to the same model (the engine runs one model). */
 function providerPreset(provider, deliveryMode, model, isDefault, providerCapabilities = {}) {
-  const capabilities = { vision: providerVisionCapability(provider, providerCapabilities) };
+  const { modelSpecific } = modelMetadata(provider, model);
+  const rating = modelSpecific.routing;
+  const routing = rating && Number.isFinite(rating.quality) && rating.quality >= 0
+    ? { quality: rating.quality, cost: Number.isFinite(rating.cost) && rating.cost >= 0 ? rating.cost : null } : null;
+  const capabilities = resolveModelCapabilities(provider, modelMetadata(provider, model), providerCapabilities);
   const modelEnv = model
     ? {
         LILY_MODEL: model,
@@ -326,14 +318,16 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
       }
     : {};
   const metadataEnv = providerModelEnv(provider, model);
-  const suffix = isDefault ? "" : `--${modelSlug(model)}`;
+  const suffix = model ? `--model-${sha256(String(model)).slice(0, 32)}` : "";
   if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
     const opencode = opencodeProviderSpecFor(provider, deliveryMode);
     return {
       id: managedPresetId(provider.id, "direct", suffix),
+      defaultModel: isDefault,
       label: providerLabel(provider),
       description: "客户端直连模型供应商。响应更快，但会向客户端下发长期模型密钥。",
       capabilities,
+      routing,
       env: {
         LILY_API_BASE_URL: provider.baseUrl,
         LILY_OPENCODE_BASE_URL: provider.baseUrl,
@@ -352,9 +346,11 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
   const opencode = opencodeProviderSpecFor(provider, effectiveDeliveryMode);
   return {
     id: managedPresetId(provider.id, effectiveDeliveryMode, suffix),
+    defaultModel: isDefault,
     label: providerLabel(provider),
     description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
     capabilities,
+    routing,
     env: {
       LILY_API_BASE_URL: gatewayBaseUrl,
       LILY_OPENCODE_BASE_URL: gatewayBaseUrl,
@@ -370,8 +366,8 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
 }
 
 /** Every selectable model for a provider becomes its own preset, so the client's
- *  model dropdown can offer them all. The default model is marked so it keeps the
- *  bare preset id and becomes the activePresetId. A provider with no model still
+ *  model dropdown can offer them all. The default is a pointer, never an identity.
+ *  A provider with no model still
  *  yields one (model-less) preset, preserving prior behavior. */
 function providerPresets(provider, deliveryMode, providerCapabilities = {}) {
   const models = providerModelList(provider);

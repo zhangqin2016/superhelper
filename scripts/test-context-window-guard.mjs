@@ -84,6 +84,15 @@ const MARKER = "content trimmed to fit the model context window";
 }
 
 // --- fail-open + kill switch ------------------------------------------------
+{
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "12000";
+  const small = await (await import(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js") + "?small-model")).ContextWindowGuardPlugin({});
+  const messages = Array.from({ length: 4 }, () => ({ parts: [{ type: "text", text: "x".repeat(40000) }] }));
+  await small["experimental.chat.messages.transform"]({}, { messages });
+  assert(messages.reduce((sum, message) => sum + message.parts[0].text.length * 0.28, 0) < 12000 * 1.1,
+    "small models must not be forced up to the old 50K minimum budget");
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "";
+}
 await transform({}, null);
 await transform({}, { messages: null });
 await transform({}, { messages: [null, {}, { parts: [null, { type: "tool" }] }] });

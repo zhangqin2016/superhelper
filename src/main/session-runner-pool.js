@@ -40,7 +40,7 @@ class SessionRunnerPool {
     let runner = this._sessions.get(sessionId);
     const basePrompt = this._opencodeBasePersona();
     if (!String(basePrompt || "").trim()) {
-      if (this._hasLastKnownGoodRunner(runner) && !callOpts.requireFreshConfig) {
+      if (this._hasLastKnownGoodRunner(runner, extra.modelExecution) && !callOpts.requireFreshConfig) {
         log.warn("opencode base persona unavailable; keeping last-known-good runner for session %s", sessionId);
         return this._reuseLastKnownGoodRunner(runner, cwd, callOpts);
       }
@@ -50,7 +50,7 @@ class SessionRunnerPool {
     const { resolveLilyEnv, buildAgentSpawnEnv } = require("./spawn-env");
     const { buildSharedBaseConfig } = require("./runtime/opencode-config-builder");
     const permissionMode = extra.permissionMode || getActivePermissionMode();
-    const lilyEnv = resolveLilyEnv();
+    const lilyEnv = extra.modelExecution?.env || resolveLilyEnv();
     const runtimeIdentity = buildOpencodeRuntimeIdentityConfig(sessionId, cwd, {
       ...extra,
       permissionMode,
@@ -90,10 +90,12 @@ class SessionRunnerPool {
       // still rides body.system (see `guidance` below).
       basePrompt,
       subagentPrompt: this._opencodeSubagentPersona(),
+      modelPool: extra.modelPool,
+      modelProfile: extra.modelExecution?.model,
     });
     if (!cfg.ok) {
       const reason = String(cfg.reason || "UNKNOWN").trim() || "UNKNOWN";
-      if (this._hasLastKnownGoodRunner(runner) && !callOpts.requireFreshConfig) {
+      if (this._hasLastKnownGoodRunner(runner, extra.modelExecution) && !callOpts.requireFreshConfig) {
         log.warn(
           "opencode config invalid (%s); keeping last-known-good runner for session %s",
           reason,
@@ -147,7 +149,7 @@ class SessionRunnerPool {
     try {
       env = buildAgentSpawnEnv({ configDir: extra.configDir, lilyEnv });
     } catch {
-      env = {};
+      env = { ...lilyEnv };
     }
     if (runtimeIdentity) {
       env.LILY_RUNTIME_IDENTITY_V1 = "1";
@@ -208,8 +210,8 @@ class SessionRunnerPool {
       // request under the window. Proportional (not a fixed subtraction) so it
       // scales safely from a 32k model to a 1M one.
       const guardBudget = Math.floor(budget.usableInputTokens * 0.85);
-      if (!env.LILY_CONTEXT_TOKEN_BUDGET && guardBudget > 0) {
-        env.LILY_CONTEXT_TOKEN_BUDGET = String(guardBudget);
+      if (guardBudget > 0) {
+        env.LILY_CONTEXT_TOKEN_BUDGET = String(Math.min(Number(env.LILY_CONTEXT_TOKEN_BUDGET) || guardBudget, guardBudget));
       }
     } catch {
       /* guard keeps its own conservative default */
@@ -236,7 +238,9 @@ class SessionRunnerPool {
         });
         if (!refreshed?.ok) return refreshed;
         try {
-          this.ensure(sessionId, cwd, extra, { lazy: true, requireFreshConfig: true });
+          const modelExecution = extra.modelExecution
+            ? require("./turn-model-runtime").refreshModelExecution(extra.modelExecution) : null;
+          this.ensure(sessionId, cwd, { ...extra, modelExecution }, { lazy: true, requireFreshConfig: true });
           return { ok: true };
         } catch (err) {
           const error = err?.message || String(err) || "OPENCODE_CONFIG_REFRESH_FAILED";
@@ -253,8 +257,10 @@ class SessionRunnerPool {
     return runner;
   }
 
-  _hasLastKnownGoodRunner(runner) {
+  _hasLastKnownGoodRunner(runner, execution = null) {
     const options = runner?.spawnOptions;
+    if (execution && (options?.model?.modelID !== execution.model?.modelID
+      || options?.model?.providerID !== execution.model?.providerID)) return false;
     return Boolean(
       options &&
       String(options.agentCommand || "").trim() &&

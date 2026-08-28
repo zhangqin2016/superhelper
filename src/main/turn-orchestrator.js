@@ -87,44 +87,7 @@ function newQueueId() {
   return `queue_${crypto.randomUUID()}`;
 }
 
-function queueDispatchOptions(opts = {}) {
-  const localAssistant =
-    opts.localAssistant && typeof opts.localAssistant === "object"
-      ? opts.localAssistant
-      : null;
-  const queueOrigin = opts.queueOrigin ||
-    (opts.scheduledTaskId ? "scheduled_task" : localAssistant ? "local_assistant" : "user");
-  const options = {
-    engineText: typeof opts.engineText === "string" ? opts.engineText : null,
-    recordUser: opts.recordUser !== false,
-    recovery: opts.recovery && typeof opts.recovery === "object" ? opts.recovery : null,
-    localAssistant,
-    reloadSkillsBeforeStart: Boolean(opts.reloadSkillsBeforeStart),
-    spawnEngine: opts.spawnEngine,
-    skipPreflight: Boolean(opts.skipPreflight),
-    skipVision: Boolean(opts.skipVision),
-    skipDocument: Boolean(opts.skipDocument),
-    ...scheduledTaskTurnOptions(opts),
-    queueOrigin,
-    queueVisibility: opts.queueVisibility === "background" ? "background" : "composer",
-    ...documentDeliveryDispatchOptions(opts),
-    // Mobile Command: durable command metadata must survive _tryStartQueuedItem
-    // dispatch into the started turn (contract §3.2), so it rides the options.
-    externalCommand: opts.externalCommand && typeof opts.externalCommand === "object"
-      ? opts.externalCommand
-      : null,
-    requiredSuccessfulTools: normalizeRequiredTools(opts.requiredSuccessfulTools),
-    turnId: typeof opts.turnId === "string" ? opts.turnId : null,
-    durableQueueKey: typeof opts.durableQueueKey === "string" ? opts.durableQueueKey : null,
-  };
-  if (Object.hasOwn(opts, "sourceTurnId")) {
-    options.sourceTurnId = opts.sourceTurnId;
-  }
-  if (opts.sourceTaskCore && typeof opts.sourceTaskCore === "object") {
-    options.sourceTaskCore = opts.sourceTaskCore;
-  }
-  return options;
-}
+const { queueDispatchOptions } = require("./turn-queue-options");
 function redactDiagnosticString(value) {
   return String(value || "")
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
@@ -663,7 +626,7 @@ class TurnOrchestrator {
     state.turnPolicy = null;
     initializeTurnEvidenceState(state);
     state.taskRun = null; state.lifecycleTaskId = null; state.contextSnapshot = null; state.contextRegistryId = null; state.taskCore = null;
-    state.enginePayload = null;
+    state.enginePayload = null; state.turnModelRoute = null;
     state.legacyContextHydrated = false;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
@@ -756,23 +719,6 @@ class TurnOrchestrator {
     } = require("./ipc-utils");
     const diagnoseSendBlocker = this.ctx.diagnoseSendBlocker || defaultDiagnoseSendBlocker;
     const ensureSessionRunner = this.ctx.ensureSessionRunner || defaultEnsureSessionRunner;
-    if (!opts.skipPreflight) {
-      let blocked = diagnoseSendBlocker(this.ctx, session.id);
-      if (blocked?.error === "SERVICE_MODEL_CONFIG_UNAVAILABLE") {
-        const configRefresh = await refreshRemoteConfigForSend({
-          force: true,
-          timeoutMs: MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS,
-          repairManagedService: true,
-        });
-        const cancellation = startCancellationResult(this, session.id);
-        if (cancellation) return cancellation;
-        if (configRefresh?.ok) {
-          this.ctx.runnerPool?.terminateSession?.(session.id);
-        }
-        blocked = diagnoseSendBlocker(this.ctx, session.id);
-      }
-      if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };
-    }
     let ensured = null;
     let runner = null;
     const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
@@ -786,16 +732,43 @@ class TurnOrchestrator {
         const mentioned = resolveMentionedDocumentFiles(rawUserText, project.path, displaySourceFiles);
         files = mergeMentionedDocumentFiles(files, mentioned.files);
       } catch (err) {
-        // Fail open to the original payload. Filename auto-resolution is a convenience,
-        // not a reason to block a normal turn.
         log.warn("workspace document mention resolution failed: %s", err?.message || err);
       }
     }
-
+    const modelRuntime = require("./turn-model-runtime");
+    let modelRoute = modelRuntime.resolveTurnModel(opts, rawUserText, files, { manager: this.ctx.sessionManager, sessionId: session.id });
+    let refreshedModelCatalog = false;
+    if (modelRoute.error === "MODEL_CATALOG_STALE") {
+      await refreshRemoteConfigForSend({ force: true, timeoutMs: MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS, repairManagedService: true });
+      refreshedModelCatalog = true;
+      const cancellation = startCancellationResult(this, session.id);
+      if (cancellation) return cancellation;
+      modelRoute = modelRuntime.resolveTurnModel(opts, rawUserText, files, { manager: this.ctx.sessionManager, sessionId: session.id });
+    }
+    if (!modelRoute.ok) return modelRuntime.modelRouteFailure(modelRoute);
+    if (!opts.skipPreflight) {
+      let blocked = diagnoseSendBlocker(this.ctx, session.id, { modelExecution: modelRoute.execution });
+      if (blocked?.error === "SERVICE_MODEL_CONFIG_UNAVAILABLE" && !refreshedModelCatalog) {
+        const configRefresh = await refreshRemoteConfigForSend({
+          force: true,
+          timeoutMs: MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS,
+          repairManagedService: true,
+        });
+        const cancellation = startCancellationResult(this, session.id);
+        if (cancellation) return cancellation;
+        if (configRefresh?.ok) {
+          this.ctx.runnerPool?.terminateSession?.(session.id);
+        }
+        modelRoute = modelRuntime.resolveTurnModel(opts, rawUserText, files, { manager: this.ctx.sessionManager, sessionId: session.id });
+        if (!modelRoute.ok) return modelRuntime.modelRouteFailure(modelRoute);
+        blocked = diagnoseSendBlocker(this.ctx, session.id, { modelExecution: modelRoute.execution });
+      }
+      if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };
+    }
     const state = this._state(session.id);
     const cancellation = startCancellationResult(this, session.id);
     if (cancellation) return cancellation;
-    const allowImageFileParts = Boolean(require("./model-presets").activePresetSupportsVision());
+    const allowImageFileParts = modelRuntime.allowImageFileParts(modelRoute);
     state.phase = "starting";
     state.turnGeneration = (state.turnGeneration || 0) + 1;
     state.turnId = preadmitted?.turnId || newTurnId();
@@ -819,7 +792,7 @@ class TurnOrchestrator {
     state.turnPolicy = null;
     initializeTurnEvidenceState(state, opts.recovery);
     state.taskRun = null; state.lifecycleTaskId = null; state.contextSnapshot = null; state.contextRegistryId = null; state.taskCore = null;
-    state.enginePayload = null;
+    state.enginePayload = null; state.turnModelRoute = modelRuntime.routeTrace(modelRoute);
     state.legacyContextHydrated = false;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
@@ -862,7 +835,7 @@ class TurnOrchestrator {
       userText: rawUserText,
       files: displayFiles,
       metadata: {
-        fromQueue: Boolean(opts.fromQueue),
+        fromQueue: Boolean(opts.fromQueue), ...modelRuntime.routeMetadata(modelRoute),
         scheduledTaskId: opts.scheduledTaskId || null,
         scheduledTaskRunId: opts.scheduledTaskRunId || null,
       },
@@ -908,7 +881,6 @@ class TurnOrchestrator {
         files: displayFiles.length ? displayFiles : null,
       }, { turnId: state.turnId });
     }
-
     const turnIntelligence = resolveTurnIntelligence({
       ctx: this.ctx,
       session,
@@ -939,7 +911,6 @@ class TurnOrchestrator {
         intentContract: taskContract.intentContract || null,
       });
     }
-
     const capabilityReadinessTrace = opts.skipPreflight
       ? null
       : await prepareTurnCapabilityReadiness({
@@ -957,13 +928,13 @@ class TurnOrchestrator {
     if (capabilityReadinessTrace?.status === "ready") {
       dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
     }
-
     ensured = opts.skipPreflight
       ? { runner: this.ctx.runnerPool.get(session.id) }
       : ensureSessionRunner(this.ctx, session.id, {
           spawn: opts.spawnEngine !== false,
           permissionMode: opts.permissionMode,
           disallowedTools: opts.disallowedTools,
+          modelExecution: modelRoute.execution,
           turnId: state.turnId,
         });
     runner = ensured.runner;
@@ -1011,6 +982,7 @@ class TurnOrchestrator {
             spawn: opts.spawnEngine !== false,
             permissionMode: opts.permissionMode,
             disallowedTools: opts.disallowedTools,
+            modelExecution: modelRoute.execution,
             turnId: state.turnId,
           });
           runner = ensured.runner;
@@ -1031,7 +1003,6 @@ class TurnOrchestrator {
         log.warn("opencode resume continuity check failed open: %s", err?.message || String(err));
       }
     }
-
     if (!opts.skipVision) {
       const vision = await runVisionPreflight(text, files, {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
@@ -1059,7 +1030,6 @@ class TurnOrchestrator {
         state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
       }
     }
-
     if (!opts.skipDocument) {
       const document = await runDocumentPreflight(text, files, {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
@@ -1315,6 +1285,7 @@ class TurnOrchestrator {
       files,
       displayFiles,
       allowImageFileParts,
+      model: modelRoute.model || null,
       taskContract: state.taskContract,
       turnPolicy: state.turnPolicy,
       nonInteractive: Boolean(opts.nonInteractive || state.wasRescueAttempt || state.documentDeliveryRecovery),
@@ -1368,6 +1339,7 @@ class TurnOrchestrator {
             }
           : null,
         taskContract: Boolean(state.taskContract),
+        modelRoute: modelRuntime.routeTrace(modelRoute),
       },
     };
     const characterContext = this._compileTurnCharacterContext(session, state, runner);
@@ -1625,12 +1597,12 @@ class TurnOrchestrator {
       }
       this._markTurnDispatchAccepted(state.turnId, dispatchAttemptId, {
         engineTextChanged: engineText !== rawUserText,
-        taskContract: Boolean(state.taskContract),
+        taskContract: Boolean(state.taskContract), ...modelRuntime.routeMetadata(modelRoute),
       });
     } catch {
       // The dispatching row remains outcome-unknown and is never auto-replayed.
     }
-    require("./usage-reporter").recordUserSend(session.id, files);
+    require("./usage-reporter").recordUserSend(session.id, files, modelRoute.model);
     return {
       ok: true,
       turnId: state.turnId,

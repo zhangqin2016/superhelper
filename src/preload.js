@@ -16,18 +16,21 @@ contextBridge.exposeInMainWorld("assistantClient", {
       text, files, sessionId, displayFiles,
       characterAuthoringKind: options?.characterAuthoringKind,
       characterWorldsAdjustmentHandle: options?.characterWorldsAdjustmentHandle,
+      modelSelection: options?.modelSelection,
     }),
   interruptAndSend: (text, files, sessionId, displayFiles, options = null) =>
     ipcRenderer.invoke("assistant:interrupt-and-send", {
       text, files, sessionId, displayFiles,
       characterAuthoringKind: options?.characterAuthoringKind,
       characterWorldsAdjustmentHandle: options?.characterWorldsAdjustmentHandle,
+      modelSelection: options?.modelSelection,
     }),
   steerMessage: (text, files, sessionId, displayFiles, options = null) =>
     ipcRenderer.invoke("assistant:steer", {
       text, files, sessionId, displayFiles,
       characterAuthoringKind: options?.characterAuthoringKind,
       characterWorldsAdjustmentHandle: options?.characterWorldsAdjustmentHandle,
+      modelSelection: options?.modelSelection,
     }),
   getFeatureFlags: () => ipcRenderer.invoke("assistant:feature-flags"),
   retryLastMessage: (sessionId) =>
@@ -80,6 +83,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getFullState: () => ipcRenderer.invoke("state:full"),
 
   listModels: () => ipcRenderer.invoke("models:list"),
+  listModelSelection: (sessionId) => ipcRenderer.invoke("models:selection-list", { sessionId }),
+  setModelSelection: (selection, sessionId) => ipcRenderer.invoke("models:set-selection", { selection, sessionId }),
   setActiveModel: (presetId) => ipcRenderer.invoke("models:set-active", presetId),
   saveCustomModel: (payload) => ipcRenderer.invoke("models:save-custom", payload),
   updateCustomModel: (presetId, values) => ipcRenderer.invoke("models:update-custom", { presetId, values }),

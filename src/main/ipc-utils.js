@@ -59,7 +59,7 @@ function resolveProjectForSession(projectManager, session) {
   return projectManager.find(session.projectId) || null;
 }
 
-function diagnoseSendBlocker(ctx, sessionId) {
+function diagnoseSendBlocker(ctx, sessionId, options = {}) {
   const cliPath = resolveOpencodeCommand();
   if (!cliPath) {
     return {
@@ -81,7 +81,7 @@ function diagnoseSendBlocker(ctx, sessionId) {
   if (disk) return disk;
 
   const { resolveLilyEnv } = require("./spawn-env");
-  const lilyEnv = resolveLilyEnv();
+  const lilyEnv = options.modelExecution?.env || resolveLilyEnv();
   const modelConnection = require("./model-presets").getActiveModelConnectionStatus(lilyEnv);
   if (!modelConnection.ok) return { error: modelConnection.error, detail: modelConnection.detail };
 
@@ -274,6 +274,8 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     stagingDir,
     resumeSessionId,
     configDir,
+    modelExecution: opts.modelExecution || null,
+    modelPool: require("./turn-model-runtime").runtimeModelPool(opts.modelPool),
     // An unattended (scheduled) run must not block on a permission prompt
     // nobody will answer — callers can force a non-interactive mode.
     permissionMode: opts.permissionMode

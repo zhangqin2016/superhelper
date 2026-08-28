@@ -121,7 +121,8 @@ function readCache() {
 }
 
 function writeCache(state) {
-  cachedState = state || {};
+  const aliases = getRemoteModelIdentityAliasesSync();
+  cachedState = { ...(state || {}), modelIdentityAliases: require("./model-identity").legacyAliases(state?.effectiveConfig?.models?.presets, aliases) };
   writeJson(cachePath(), {
     config: protectText(JSON.stringify(cachedState)),
     updatedAt: new Date().toISOString(),
@@ -134,7 +135,7 @@ function reloadRemoteConfigCache() {
 
 function normalizeRemoteCatalog(effectiveConfig) {
   const models = effectiveConfig?.models;
-  if (!models || !Array.isArray(models.presets) || models.presets.length === 0) return null;
+  if (!models || !Array.isArray(models.presets) || (models.source === "packaged" && !models.presets.length)) return null;
   return {
     activePresetId: String(models.activePresetId || models.presets[0]?.id || "standard"),
     presets: models.presets
@@ -146,7 +147,9 @@ function normalizeRemoteCatalog(effectiveConfig) {
         // Native image support is a property of the model; when true the client
         // skips the Qwen vision-to-text bridge and sends images straight to the
         // (multimodal) engine. Defaults to false → bridge.
-        capabilities: { vision: Boolean(preset.capabilities?.vision) },
+        capabilities: { ...preset.capabilities, vision: Boolean(preset.capabilities?.vision) },
+        routing: preset.routing || null,
+        enabled: preset.enabled !== false,
         env: { ...preset.env },
       })),
   };
@@ -208,11 +211,23 @@ function effectiveConfigHasExpiredGatewayToken(effectiveConfig, skewMs = 5 * 60_
 }
 
 function getRemoteModelCatalogSync() {
+  return getRemoteModelCatalogStateSync().catalog;
+}
+
+function getRemoteModelCatalogStateSync() {
   const state = readCache();
+  const catalog = normalizeRemoteCatalog(state.effectiveConfig);
+  if (!catalog) return { status: "unavailable", catalog: null };
   const expiresAt = Date.parse(String(state.expiresAt || ""));
-  if (expiresAt && Date.now() > expiresAt) return null;
-  if (effectiveConfigHasExpiredGatewayToken(state.effectiveConfig)) return null;
-  return normalizeRemoteCatalog(state.effectiveConfig);
+  if ((expiresAt && Date.now() > expiresAt) || effectiveConfigHasExpiredGatewayToken(state.effectiveConfig)) {
+    return { status: "stale", catalog: null };
+  }
+  return { status: "ready", catalog };
+}
+
+function getRemoteModelIdentityAliasesSync() {
+  const state = readCache();
+  return require("./model-identity").legacyAliases(state.effectiveConfig?.models?.presets, state.modelIdentityAliases);
 }
 
 function hasRemoteModelCatalogSync() {
@@ -333,6 +348,8 @@ module.exports = {
   onRemoteConfigRefreshed,
   reloadRemoteConfigCache,
   getRemoteModelCatalogSync,
+  getRemoteModelCatalogStateSync,
+  getRemoteModelIdentityAliasesSync,
   hasRemoteModelCatalogSync,
   getRemoteEffectiveConfigSync,
   getRemoteRuntimeEnvSync,

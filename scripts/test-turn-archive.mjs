@@ -22,6 +22,15 @@ const sessionManager = {
 };
 
 const archive = new TurnArchive(sessionManager);
+const { estimateTokensForText } = require("../src/main/context-budget-manager.js");
+const engineText = "测试模型的上下文统计".repeat(20);
+const modelRecord = archive.buildRecord({
+  sessionId: "s1", turnId: "turn_model_receipt", assistantText: "done",
+  enginePayload: { text: engineText, model: { providerID: "anthropic", modelID: "claude-example" } },
+}, "turn.completed");
+assert.equal(modelRecord.meta.engine.estimatedPromptTokens,
+  estimateTokensForText(engineText, { provider: "anthropic", model: "claude-example" }).tokens,
+  "per-turn model references must retain provider-aware token estimates");
 archive.commit("s1", {
   turnId: "turn_opencode",
   sessionId: "s1",

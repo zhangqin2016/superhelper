@@ -108,6 +108,7 @@ function registerAssistantHandlers(ctx) {
       engineText,
       requiredSuccessfulTools,
       reloadSkillsBeforeStart,
+      modelSelection: payload?.modelSelection || null,
     });
     return attachRouting(result, session);
   });
@@ -154,6 +155,7 @@ function registerAssistantHandlers(ctx) {
       engineText,
       requiredSuccessfulTools,
       reloadSkillsBeforeStart,
+      modelSelection: payload?.modelSelection || null,
     });
     return attachRouting(result, session);
   });
@@ -188,6 +190,7 @@ function registerAssistantHandlers(ctx) {
         displayFiles,
         engineText: routing.engineText,
         requiredSuccessfulTools: routing.requiredSuccessfulTools,
+        modelSelection: payload?.modelSelection || null,
       });
       return attachRouting(result, session);
     }
@@ -195,6 +198,7 @@ function registerAssistantHandlers(ctx) {
     const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
       mode: "steer",
       displayFiles,
+      modelSelection: payload?.modelSelection || null,
     });
     return attachRouting(result, session);
   });

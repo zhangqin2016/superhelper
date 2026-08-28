@@ -81,6 +81,8 @@ class TurnArchive {
       ? String(userPayload.rawText || userPayload.displayText || userPayload.text || "")
       : "";
     const enginePayload = state.enginePayload || null;
+    const model = enginePayload?.model?.modelID || enginePayload?.model || enginePayload?.trace?.model || "";
+    const provider = enginePayload?.model?.providerID || enginePayload?.provider || enginePayload?.trace?.provider || "";
     const engineText = String(enginePayload?.text || "");
     const usageInputTokens = Number(
       state.usage?.input_tokens ??
@@ -92,12 +94,12 @@ class TurnArchive {
       ? {
           tokens: usageInputTokens,
           source: "runtime_usage",
-          provider: enginePayload?.provider || enginePayload?.trace?.provider || "",
-          model: enginePayload?.model || enginePayload?.trace?.model || "",
+          provider,
+          model,
         }
       : estimateTokensForText(engineText, {
-      provider: enginePayload?.provider || enginePayload?.trace?.provider || "",
-      model: enginePayload?.model || enginePayload?.trace?.model || "",
+      provider,
+      model,
     });
     const usageOutputTokens = Number(
       state.usage?.output_tokens ??
@@ -123,8 +125,8 @@ class TurnArchive {
           source: "runtime_usage",
         }
       : estimateTokensForText(estimatedOutputText, {
-          provider: enginePayload?.provider || enginePayload?.trace?.provider || "",
-          model: enginePayload?.model || enginePayload?.trace?.model || "",
+          provider,
+          model,
         });
     const effectiveTextPreview =
       engineText && engineText !== rawUserText

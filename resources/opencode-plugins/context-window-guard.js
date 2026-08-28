@@ -40,7 +40,7 @@ const PART_MAX_CHARS = Math.max(4_000, Number(process.env.LILY_CONTEXT_PART_MAX_
 // fallback below is only for headless/tests or if that wiring is absent — kept
 // CONSERVATIVE (safe for a ~128k model) so an unknown window never overflows;
 // it is never a large guess that could break a small model.
-const TOKEN_BUDGET = Math.max(50_000, Number(process.env.LILY_CONTEXT_TOKEN_BUDGET) || 110_000);
+const TOKEN_BUDGET = Math.max(1_000, Number(process.env.LILY_CONTEXT_TOKEN_BUDGET) || 110_000);
 const MARKER = "[lily: content trimmed to fit the model context window]";
 
 // Rough, CJK-aware token estimate (no tokenizer in a plugin). CJK ~1 token/char,

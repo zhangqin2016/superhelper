@@ -1,6 +1,10 @@
 "use strict";
 
 const pending = new Map();
+const activeModels = new Map();
+const retryReports = new Map();
+const flushing = new Map();
+const { randomUUID } = require("node:crypto");
 const { localDateKey } = require("./local-date-key");
 
 function mergeLocalSessionRecord(record) {
@@ -35,13 +39,24 @@ function licenseId() {
   }
 }
 
-function ensure(sessionId) {
-  const key = String(sessionId || "global");
-  const existing = pending.get(key);
+function modelRef(model) {
+  return typeof model === "string" ? { modelID: model } : model;
+}
+
+function ensure(sessionId, model = null) {
+  const session = String(sessionId || "global");
+  const ref = modelRef(model) || activeModels.get(session) || { modelID: activeModel() };
+  const providerID = ref.providerID || "unknown";
+  const key = JSON.stringify([providerID, ref.modelID || "unknown", today(), licenseId()]);
+  const records = pending.get(session) || new Map();
+  pending.set(session, records);
+  const existing = records.get(key);
   if (existing) return existing;
   const record = {
+    reportId: randomUUID(),
     date: today(),
-    model: activeModel(),
+    providerID,
+    model: ref.modelID || "unknown",
     licenseId: licenseId(),
     messageCount: 0,
     imageCount: 0,
@@ -50,11 +65,13 @@ function ensure(sessionId) {
     inputTokens: 0,
     outputTokens: 0,
   };
-  pending.set(key, record);
+  records.set(key, record);
   return record;
 }
 
-function recordUserSend(sessionId, files = []) {
+function recordUserSend(sessionId, files = [], model = null) {
+  const key = String(sessionId || "global");
+  activeModels.set(key, modelRef(model) || { modelID: activeModel() });
   const record = ensure(sessionId);
   record.messageCount += 1;
   record.imageCount += (files || []).filter((file) => file?.isImage).length;
@@ -118,35 +135,51 @@ function extractUsageTotals(usage = {}) {
   return totals;
 }
 
-function recordModelUsage(sessionId, usage = {}) {
-  const record = ensure(sessionId);
+function recordModelUsage(sessionId, usage = {}, model = null) {
   const totals = extractUsageTotals(usage);
-  record.inputTokens += totals.inputTokens;
-  record.outputTokens += totals.outputTokens;
+  const entries = isUsageEntry(usage) ? [[model, totals]]
+    : Object.entries(usage || {}).filter(([, value]) => isUsageEntry(value)).map(([id, value]) => [id, usageTokens(value)]);
+  for (const [ref, delta] of entries) {
+    const bound = modelRef(model) || activeModels.get(String(sessionId || "global"));
+    const target = typeof ref === "string" && bound?.modelID === ref ? bound : ref;
+    const record = ensure(sessionId, target);
+    record.inputTokens += delta.inputTokens;
+    record.outputTokens += delta.outputTokens;
+  }
   return totals;
 }
 
-async function flush(sessionId) {
-  const key = String(sessionId || "global");
-  const record = pending.get(key);
-  if (!record) return { ok: true, skipped: true };
+async function flushBatch(key) {
+  const records = [...(pending.get(key)?.values() || [])];
   pending.delete(key);
-  if (
-    record.messageCount === 0 &&
-    record.imageCount === 0 &&
-    record.toolCallCount === 0 &&
-    record.pluginCallCount === 0 &&
-    record.inputTokens === 0 &&
-    record.outputTokens === 0
-  ) {
-    return { ok: true, skipped: true };
+  const reports = retryReports.get(key) || [];
+  retryReports.delete(key);
+  for (const record of records) {
+    if (!record.messageCount && !record.toolCallCount && !record.inputTokens && !record.outputTokens && !record.imageCount) continue;
+    mergeLocalSessionRecord(record);
+    reports.push(record);
   }
-  mergeLocalSessionRecord(record);
-  const result = await require("./service-client").reportUsage(record);
-  if (!result.ok && result.error !== "NO_SERVICE_URL") {
-    pending.set(key, record);
+  let result = { ok: true, skipped: reports.length === 0 };
+  for (const record of reports) {
+    let sent;
+    try { sent = await require("./service-client").reportUsage(record); }
+    catch { sent = { ok: false, error: "USAGE_REPORT_FAILED" }; }
+    if (!sent?.ok && sent?.error !== "NO_SERVICE_URL") {
+      const retry = retryReports.get(key) || [];
+      retry.push(record);
+      retryReports.set(key, retry);
+      result = sent || { ok: false, error: "USAGE_REPORT_FAILED" };
+    }
   }
+  if (!pending.has(key)) activeModels.delete(key);
   return result;
+}
+
+function flush(sessionId) {
+  const key = String(sessionId || "global");
+  const next = (flushing.get(key) || Promise.resolve()).catch(() => {}).then(() => flushBatch(key));
+  flushing.set(key, next);
+  return next.finally(() => { if (flushing.get(key) === next) flushing.delete(key); });
 }
 
 function getPendingTodayTotals() {
@@ -156,7 +189,7 @@ function getPendingTodayTotals() {
     outputTokens: 0,
     messageCount: 0,
   };
-  for (const record of pending.values()) {
+  for (const record of [...pending.values()].flatMap(records => [...records.values()])) {
     if (record.date !== date) continue;
     totals.inputTokens += record.inputTokens;
     totals.outputTokens += record.outputTokens;

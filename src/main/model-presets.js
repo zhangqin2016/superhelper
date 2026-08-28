@@ -602,14 +602,9 @@ function findPresetById(presetId) {
 }
 
 function getActivePresetId() {
-  const user = loadUserChoice();
-  if (user?.activePresetId && findPresetById(user.activePresetId)) {
-    return user.activePresetId;
-  }
-  const catalog = loadCatalog();
-  const fallback = catalog.activePresetId || catalog.presets[0]?.id || "standard";
-  if (findPresetById(fallback)) return fallback;
-  return getAllPresets()[0]?.id || "";
+  return require("./model-identity").resolveActivePresetId(
+    loadUserChoice()?.activePresetId, loadCatalog(), getAllPresets(), remoteConfig.getRemoteModelIdentityAliasesSync?.(),
+  );
 }
 
 function getActivePreset() {

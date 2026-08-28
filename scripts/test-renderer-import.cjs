@@ -15,6 +15,8 @@ const capturedQuestionResponses = [];
 const capturedRevealPaths = [];
 const capturedOpenPaths = [];
 const capturedAccountLoginPayloads = [];
+let composerSendEntered;
+let pendingComposerSend;
 const delayedMediaStatusCalls = new Map();
 const rendererProjects = [
   {
@@ -108,6 +110,15 @@ function makeTinyPdf() {
 ipcMain.handle("assistant:question-response", (_event, payload) => {
   capturedQuestionResponses.push(payload);
   return { ok: true };
+});
+
+ipcMain.handle("assistant:input", (_event, payload) => {
+  if (!composerSendEntered) return { ok: false, error: "TEST_STOP" };
+  return new Promise((resolve, reject) => {
+    pendingComposerSend = { resolve, reject };
+    composerSendEntered(payload);
+    composerSendEntered = null;
+  });
 });
 
 ipcMain.handle("filetree:reveal", (_event, payload) => {
@@ -265,6 +276,13 @@ ipcMain.handle("account:sms-login", (_event, payload) => {
 });
 ipcMain.handle("mail-accounts:list", () => ({ ok: true, accounts: [] }));
 ipcMain.handle("models:list", () => ({ ok: true, presets: [], activePresetId: "" }));
+let modelSelection = { mode: "auto", autoPoolMode: "recommended", autoModelIds: ["one", "two"], manualModelId: "one" };
+const selectionModels = [{ id: "one", label: "Model One", modelID: "one" }, { id: "two", label: "Model Two", modelID: "two" }];
+ipcMain.handle("models:selection-list", () => ({ ok: true, models: selectionModels, selection: modelSelection }));
+ipcMain.handle("models:set-selection", (_event, payload) => {
+  modelSelection = payload.selection || payload;
+  return { ok: true, models: selectionModels, selection: modelSelection };
+});
 ipcMain.handle("permissions:list", () => ({ ok: true, modes: [], currentMode: "" }));
 ipcMain.handle("search:list", () => ({ ok: true, providers: [], activeProviderId: "" }));
 ipcMain.handle("skills:list", () => ({ ok: true, groups: [], skills: [] }));
@@ -353,6 +371,8 @@ app.whenReady().then(async () => {
         "./modules/pdf-viewer.js",
         "./modules/turn-view-renderer.js",
         "./modules/session-runtime-store.js",
+        "./modules/composer-drafts.js",
+        "./modules/composer.js",
         "./modules/task-center.js",
         "./modules/message.js",
         "./modules/workbench-empty.js",
@@ -372,6 +392,89 @@ app.whenReady().then(async () => {
   if (result.includes("FAIL")) {
     app.exitCode = 1;
   } else {
+    const modelPickerResult = await win.webContents.executeJavaScript(`(async () => {
+      const picker = await import("./modules/model-picker.js");
+      const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+      document.getElementById("modelSelectionLabel").click();
+      await tick();
+      const popover = document.getElementById("modelSelectionPopover");
+      if (popover.hidden) throw new Error("clicking a child of the model button must keep the popover open");
+      if (getComputedStyle(document.getElementById("modelSelectionManualList")).display !== "none") {
+        throw new Error("Auto must hide the manual list, including its layout");
+      }
+      document.getElementById("modelSelectionModeManual").click();
+      await tick();
+      document.querySelector('#modelSelectionManualList input[value="two"]').click();
+      await tick();
+      const snapshot = await picker.getModelSelectionSnapshot();
+      if (snapshot.manualModelId !== "two" || snapshot.mode !== "manual") throw new Error("manual model must survive persistence");
+      if (getComputedStyle(document.getElementById("modelSelectionAutoList")).display !== "none") throw new Error("manual mode must hide Auto options");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      if (!popover.hidden || document.activeElement.id !== "modelSelectionBtn") throw new Error("Escape must close and return focus");
+      return "model-picker interaction: ok";
+    })()`);
+    console.log(modelPickerResult);
+    for (const failureMode of ["result", "throw"]) {
+      const entered = new Promise(resolve => { composerSendEntered = resolve; });
+      await win.webContents.executeJavaScript(`(async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { applySessionSwitch } = await import("./modules/session-chrome.js");
+        const { sendPrompt } = await import("./modules/composer.js");
+        const { clearCharacterAuthoringMarker, restoreCharacterAuthoringMarker, readCharacterAuthoringMarker } =
+          await import("./modules/character-authoring-marker.js");
+        const { renderFilePreview } = await import("./modules/file-handler.js");
+        const input = document.getElementById("promptInput");
+        const switchTo = async id => applySessionSwitch(await window.assistantClient.switchSession(id), id, "project_alpha");
+        const setDraft = name => {
+          input.value = name ? "draft for " + name : "";
+          clearCharacterAuthoringMarker(input);
+          if (name) restoreCharacterAuthoringMarker(input, { kind: "characterWorldsAdjustment", adjustmentHandle: name + "-handle" });
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          store.set("pendingFiles", name ? [{ id: name + "-file", name: name + ".txt", path: "/virtual/" + name + ".txt" }] : []);
+          renderFilePreview();
+        };
+        const assertDraft = name => {
+          const files = store.get("pendingFiles");
+          const marker = readCharacterAuthoringMarker(input, input.value);
+          if (input.value !== "draft for " + name || files.length !== 1 || files[0].id !== name + "-file"
+            || marker?.adjustmentHandle !== name + "-handle"
+            || document.querySelector(".file-chip-name")?.textContent !== name + ".txt") {
+            throw new Error("real session switch lost draft text, files, chip or marker for " + name);
+          }
+        };
+        await switchTo("session_alpha_recent");
+        setDraft("A");
+        window.__composerDraftTest = { switchTo, setDraft, assertDraft, sending: sendPrompt() };
+      })()`);
+      const payload = await entered;
+      if (payload.sessionId !== "session_alpha_recent" || payload.files[0]?.id !== "A-file"
+        || payload.characterWorldsAdjustmentHandle !== "A-handle") {
+        throw new Error("composer send must preserve the originating session, files and marker through preload IPC");
+      }
+      await win.webContents.executeJavaScript(`(async () => {
+        const { switchTo, setDraft } = window.__composerDraftTest;
+        if (document.getElementById("promptInput").value !== "") throw new Error("send must clear its own draft");
+        await switchTo("session_alpha_older");
+        setDraft("B");
+      })()`);
+      if (failureMode === "throw") pendingComposerSend.reject(new Error("simulated composer IPC failure"));
+      else pendingComposerSend.resolve({ ok: false, error: "INVALID_MODEL_SELECTION" });
+      pendingComposerSend = null;
+      await win.webContents.executeJavaScript(`(async () => {
+        const { switchTo, setDraft, assertDraft, sending } = window.__composerDraftTest;
+        await sending;
+        assertDraft("B");
+        await switchTo("session_alpha_recent");
+        assertDraft("A");
+        await switchTo("session_alpha_older");
+        assertDraft("B");
+        setDraft("");
+        await switchTo("session_alpha_recent");
+        setDraft("");
+        delete window.__composerDraftTest;
+      })()`);
+      console.log(`composer-draft-real-session-switch (${failureMode}): ok`);
+    }
     const skillSettingsPresetResult = await win.webContents.executeJavaScript(`(
       () => {
         const page = document.getElementById("settingsPageSkills");

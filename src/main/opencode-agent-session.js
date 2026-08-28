@@ -268,7 +268,8 @@ class OpencodeAgentSession extends EventEmitter {
     } else if (require("./opencode-config-freshness").toolConfigChanged(this, options, previousOptions)) {
       this.recycleIdleEngine("tool_config_changed");
     }
-    if (callOpts.lazy) return;
+    // Invalidation synchronously lets the host replace and terminate this runner.
+    if (callOpts.lazy || this.spawnOptions !== options) return;
     void this._ensureStarted();
   }
 
@@ -347,6 +348,8 @@ class OpencodeAgentSession extends EventEmitter {
     }
     this._starting = (async () => {
       const server = this._createServer({
+        ownerSessionId: this.sessionId,
+        isChatActive: () => this.busy && !this._turnSettled,
         serverCommand: spawnOptions.agentCommand,
         cwd: this.cwd,
         dataDir: this._dataDir(),
@@ -521,7 +524,7 @@ class OpencodeAgentSession extends EventEmitter {
         this._pendingPromptPayload = {
           text,
           files,
-          guidance,
+          guidance, model: typeof payload === "object" ? payload?.model || null : null,
           allowImageFileParts: typeof payload === "object" && payload?.allowImageFileParts === true,
           characterContext: typeof payload === "object" ? payload?.characterContext || null : null,
           onCharacterApplication: (application) => this._ingest([{ type: "character.application", payload: characterApplicationForTrace(application, payload?.trace?.characterContext) }]),
@@ -1011,15 +1014,7 @@ class OpencodeAgentSession extends EventEmitter {
       }
 
       case "usage":
-        // Token usage from a step-finish — record it for cost/usage tracking;
-        // the reducer already produced usage.updated for the renderer.
-        if (effect.usage && typeof effect.usage === "object") {
-          try {
-            require("./usage-reporter").recordModelUsage(this.sessionId, effect.usage);
-          } catch (err) {
-            log.warn("usage record failed: %s", err?.message || String(err));
-          }
-        }
+        // Accounting belongs to the owned transport stream, including idle work.
         break;
 
       case "context_compacted":

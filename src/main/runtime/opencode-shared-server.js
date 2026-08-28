@@ -1,14 +1,14 @@
 "use strict";
 
 /**
- * Shared OpenCode server — mirrors the official desktop client's `serverSDK`:
- * ONE `opencode serve` for the whole app, the official `@opencode-ai/sdk` as the
- * transport, ONE event stream demuxed by directory + sessionID, and per-directory
+ * Shared OpenCode server — uses the official desktop client's SDK transport:
+ * one `opencode serve` per compatible execution profile, the official SDK as
+ * transport, one event stream demuxed by directory + sessionID, and per-directory
  * SDK clients (`createOpencodeClient({ baseUrl, directory })`, == official `sdkFor`).
  *
- * Multiple Lily sessions — across multiple directories — all live on this one
- * serve (model/agent/permission are per-request; the directory is per-client).
- * This replaces the old one-serve-per-session model.
+ * Multiple sessions across directories share a serve when their model/helper
+ * configuration agrees. Different profiles coexist without interrupting work;
+ * session permissions remain per-request and the directory is per-client.
  *
  * The SDK is ESM-only, so it's loaded via dynamic import() and cached.
  */
@@ -45,7 +45,7 @@ class OpencodeSharedServer extends EventEmitter {
     this.serverCommand = opts.serverCommand;
     this.cwd = opts.cwd; // serve's own root; per-session directory is set per client
     this.dataDir = opts.dataDir;
-    this.env = opts.env || {};
+    this.env = processProfileEnv(opts.env);
     this.configContent = opts.configContent || "";
 
     this.process = null;
@@ -65,6 +65,7 @@ class OpencodeSharedServer extends EventEmitter {
     this._resolveEventStreamReady = null;
     this._rejectEventStreamReady = null;
     this._activeViews = 0;
+    this._activeWork = 0;
     this._eventQueue = [];
     this._eventTimer = null;
     this._coalesced = new Map();
@@ -89,13 +90,21 @@ class OpencodeSharedServer extends EventEmitter {
   }
 
   retainView() {
-    this._activeViews += 1;
+    return this._retain("_activeViews");
+  }
+
+  retainWork() {
+    return this._retain("_activeWork");
+  }
+
+  _retain(counter) {
+    this[counter] += 1;
+    let released = false;
     return () => {
-      this._activeViews = Math.max(0, this._activeViews - 1);
-      if (this._retireWhenIdle && this._activeViews === 0) {
-        log.info("retired shared opencode serve has no attached views — terminating");
-        this.terminate();
-      }
+      if (released) return;
+      released = true;
+      this[counter] -= 1;
+      if (this._retireWhenIdle && !this.hasActiveViews() && !this._activeWork) this.terminate();
     };
   }
 
@@ -105,7 +114,7 @@ class OpencodeSharedServer extends EventEmitter {
 
   retireWhenIdle() {
     this._retireWhenIdle = true;
-    if (this._activeViews === 0) this.terminate();
+    if (!this.hasActiveViews() && !this._activeWork) this.terminate();
   }
 
   /** Spawn the serve once; resolve when it reports its listening port. Idempotent. */
@@ -122,10 +131,13 @@ class OpencodeSharedServer extends EventEmitter {
         return;
       }
       const serveEnv = { ...process.env, ...this.env, OPENCODE_DB: this.dataDir };
+      delete serveEnv.CLAUDE_CONFIG_DIR;
       if (this.configContent) {
         try {
-          const cfgPath = path.join(path.dirname(this.dataDir), "opencode-config.json");
-          fs.writeFileSync(cfgPath, this.configContent);
+          const identity = crypto.createHash("sha256").update(serveSignature(this)).digest("hex");
+          const cfgPath = path.join(path.dirname(this.dataDir), `opencode-config-${identity}.json`);
+          fs.writeFileSync(cfgPath, this.configContent, { mode: 0o600 });
+          this._configPath = cfgPath;
           serveEnv.OPENCODE_CONFIG = cfgPath;
           delete serveEnv.OPENCODE_CONFIG_CONTENT;
         } catch (err) {
@@ -195,12 +207,13 @@ class OpencodeSharedServer extends EventEmitter {
         if (text) log.warn("serve stderr: %s", text.slice(0, 4000));
       });
       child.on("exit", (code) => {
-        const wasReady = Boolean(this._baseClient);
         this._baseClient = null;
         this._clients.clear();
         this.process = null;
         this._starting = null;
-        if (!this._terminated && wasReady) this.emit("exit", { code });
+        this._flushEvents();
+        this.emit("exit", { code });
+        this.terminate();
         settle(() => {
           clearTimeout(timer);
           reject(new Error(`opencode serve exited before listening (code ${code})`));
@@ -239,6 +252,7 @@ class OpencodeSharedServer extends EventEmitter {
     return {
       baseUrl: this._baseClient ? this.baseUrl : "",
       activeViews: this._activeViews,
+      activeWork: this._activeWork,
       queuedEvents: this._eventQueue.length,
       eventStats: {
         received: this._eventStats.received,
@@ -431,7 +445,8 @@ class OpencodeSharedServer extends EventEmitter {
     try {
       // Global SSE — every event across all directories, tagged with `name`
       // (directory) + `details`. Same stream the official client listens on.
-      const result = await this._baseClient.global.event();
+      this._sseAbort = new AbortController();
+      const result = await this._baseClient.global.event({ signal: this._sseAbort.signal });
       this._markEventStreamReady();
       this._sseRetries = 0;
       // Raw global-stream frame shape: { directory, project, payload:{ id, type,
@@ -460,6 +475,7 @@ class OpencodeSharedServer extends EventEmitter {
 
   terminate() {
     this._terminated = true;
+    this._sseAbort?.abort();
     this._flushEvents();
     this._eventHandlers.clear();
     this._clients.clear();
@@ -467,25 +483,35 @@ class OpencodeSharedServer extends EventEmitter {
     const child = this.process;
     this.process = null;
     killProcessTree(child); // reap the serve + its tool children (unlock the dir)
+    if (this._configPath) {
+      try { fs.unlinkSync(this._configPath); } catch { /* best-effort credential cleanup */ }
+      this._configPath = null;
+    }
   }
 }
 
 // ---------------------------------------------------------------------------
-// App-wide singleton — model A: ONE shared serve for the whole app, hosting
-// every session across every directory (official desktop client topology).
-// The FIRST caller's opts (serverCommand / env / config / dataDir) define the
-// serve; later callers reuse it. Config is delivered per-directory via each
-// directory's .opencode/, so the shared base config only needs the providers.
+// Share by complete execution profile. Different model/tool policies coexist
+// while their sessions are attached; the most recent profile stays warm and
+// older profiles retire after their last view detaches.
 // ---------------------------------------------------------------------------
 let _singleton = null;
+const _profiles = new Map();
 
 /** Signature of the serve-defining opts. If these change (the user switched
  *  model / gateway / skills, so providers + MCP differ), the running serve is
  *  stale and must be rebuilt — otherwise it keeps talking to the OLD gateway and
  *  every turn fails to reach the model. Env matters too: short-lived gateway
  *  tokens are injected via LILY_* env, not the config JSON. */
+function processProfileEnv(env = {}) {
+  // Legacy Claude guide directories are conversation-scoped, not OpenCode config.
+  const profile = { ...env };
+  delete profile.CLAUDE_CONFIG_DIR;
+  return profile;
+}
+
 function envSignature(env = {}) {
-  const keys = Object.keys(env || {}).sort();
+  const keys = Object.keys(processProfileEnv(env)).sort();
   const stable = {};
   for (const key of keys) stable[key] = String(env[key] ?? "");
   return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
@@ -494,47 +520,39 @@ function envSignature(env = {}) {
 function serveSignature(opts) {
   return JSON.stringify({
     cmd: opts.serverCommand || "",
+    dataDir: opts.dataDir || "",
     cfg: opts.configContent || "",
     env: envSignature(opts.env || {}),
   });
 }
 
-/** Get the app's single shared serve, creating it on first use and REBUILDING it
- *  when the serve-defining config changes (so config edits take effect, matching
- *  the official client's live per-directory config resolution). */
+/** Reuse a compatible serve without mutating another conversation's policy. */
 function getSharedServer(opts) {
   const sig = serveSignature(opts);
-  if (_singleton && !_singleton._terminated && _singleton._sig === sig) {
-    return _singleton;
-  }
+  for (const [key, server] of _profiles) if (server._terminated) _profiles.delete(key);
+  const existing = _profiles.get(sig);
+  if (existing === _singleton) return existing;
   if (_singleton && !_singleton._terminated) {
-    if (_singleton.hasActiveViews()) {
-      log.info("shared serve config changed — starting replacement and retiring old serve when idle");
-      _singleton.retireWhenIdle();
-    } else {
-      log.info("shared serve config changed — rebuilding");
-      try {
-        _singleton.terminate();
-      } catch {
-        /* best effort */
-      }
-    }
+    _singleton.retireWhenIdle();
   }
-  _singleton = new OpencodeSharedServer(opts);
+  _singleton = existing || new OpencodeSharedServer(opts);
+  _singleton._retireWhenIdle = false;
   _singleton._sig = sig;
+  _profiles.set(sig, _singleton);
   return _singleton;
 }
 
 /** Tear the shared serve down (app quit / hard reset). */
 function resetSharedServer() {
-  if (_singleton) {
+  for (const server of _profiles.values()) {
     try {
-      _singleton.terminate();
+      server.terminate();
     } catch {
       /* best effort */
     }
-    _singleton = null;
   }
+  _profiles.clear();
+  _singleton = null;
 }
 
 module.exports = { OpencodeSharedServer, getSharedServer, resetSharedServer, parseListeningPort, killProcessTree };

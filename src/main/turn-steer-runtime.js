@@ -5,7 +5,7 @@ const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight")
 
 function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMetadata }) {
   return {
-    // Freeze the active turn before the engine await. A delayed accepted steer
+    // Freeze the active turn before any preflight or engine await. A delayed steer
     // may only commit while that exact state/generation/runner claim is active.
     async _trySteer(session, text, files, opts = {}) {
       const sessionId = session.id;
@@ -22,38 +22,61 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
         || !runner?.isBusy?.()
         || typeof runner.steer !== "function"
       ) return { ok: false };
+      const claim = Object.freeze({
+        turnId: state.turnId,
+        turnGeneration: state.turnGeneration || 0,
+        runner,
+        dispatchAttemptId: state.dispatchAttemptId,
+        ownerScope: state.admittedTurnInput.ownerScope,
+        characterWorldsSnapshot: state.characterWorldsSnapshot || null,
+        state,
+      });
+      const claimStillActive = () => {
+        const currentState = this.states.get(sessionId);
+        return (
+          currentState === claim.state
+          && currentState?.turnId === claim.turnId
+          && (currentState?.turnGeneration || 0) === claim.turnGeneration
+          && isActiveTurnPhase(currentState?.phase)
+          && currentState?.finalizing !== true
+          && currentState?.terminalEmitted !== true
+          && currentState?.admittedTurnInput?.turnId === claim.turnId
+          && currentState?.admittedTurnInput?.ownerScope === claim.ownerScope
+          && currentState?.dispatchAttemptId === claim.dispatchAttemptId
+          && this.ctx.runnerPool.get(sessionId) === claim.runner
+          && currentState?.characterWorldsSnapshot === claim.characterWorldsSnapshot
+        );
+      };
+      const emitNotice = (notice) => {
+        if (claimStillActive()) this._emitEngineNotice(sessionId, notice);
+      };
       const allowImageFileParts = Boolean(
-        require("./model-presets").activePresetSupportsVision(),
+        state.enginePayload?.allowImageFileParts ?? require("./model-presets").activePresetSupportsVision(),
       );
       let engineText = text;
       let engineFiles = files;
       if (files?.length) {
         const vision = await runVisionPreflight(text, files, {
-          emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
+          emitNotice,
           nativeVision: allowImageFileParts,
         });
+        if (!claimStillActive()) return { ok: false };
         if (vision.visionEvidence) state.evidenceLedger?.recordVisionObservation?.(vision.visionEvidence);
         if (vision.ok) {
           engineText = vision.text;
           engineFiles = vision.files;
         }
         const document = await runDocumentPreflight(engineText, engineFiles, {
-          emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
+          emitNotice,
         });
+        if (!claimStillActive()) return { ok: false };
         if (document.documentEvidence) state.evidenceLedger?.recordDocumentExtraction?.(document.documentEvidence);
         if (document.ok) {
           engineText = document.text;
           engineFiles = document.files;
         }
       }
-      const claim = Object.freeze({
-        turnId: state.turnId,
-        turnGeneration: state.turnGeneration || 0,
-        runner,
-        dispatchAttemptId: state.dispatchAttemptId,
-        characterWorldsSnapshot: state.characterWorldsSnapshot || null,
-        state,
-      });
+      if (!claimStillActive()) return { ok: false };
       let accepted = false;
       try {
         accepted = await runner.steer({
@@ -66,20 +89,7 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
         return { ok: false };
       }
       if (!accepted) return { ok: false };
-      const currentState = this.states.get(sessionId);
-      const claimStillActive = (
-        currentState === claim.state
-        && currentState?.turnId === claim.turnId
-        && (currentState?.turnGeneration || 0) === claim.turnGeneration
-        && isActiveTurnPhase(currentState?.phase)
-        && currentState?.finalizing !== true
-        && currentState?.terminalEmitted !== true
-        && currentState?.admittedTurnInput?.turnId === claim.turnId
-        && currentState?.dispatchAttemptId === claim.dispatchAttemptId
-        && this.ctx.runnerPool.get(sessionId) === claim.runner
-        && currentState?.characterWorldsSnapshot === claim.characterWorldsSnapshot
-      );
-      if (!claimStillActive) {
+      if (!claimStillActive()) {
         log.warn(
           "accepted steer became orphaned: session=%s turn=%s generation=%d",
           sessionId,

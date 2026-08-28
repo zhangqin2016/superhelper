@@ -214,6 +214,19 @@ try {
     cold.terminate();
   }
 
+  {
+    resetSharedServer();
+    const opts = { serverCommand: "/bin/true", cwd: process.cwd(), dataDir: ":memory:", configContent: "MODEL_A" };
+    const a = getSharedServer(opts);
+    const releaseA = a.retainView();
+    const b = getSharedServer({ ...opts, configContent: "MODEL_B" });
+    const releaseB = b.retainView();
+    assert.equal(getSharedServer(opts), a, "A/B/A sessions reuse A's still-live engine instead of spawning a third one");
+    resetSharedServer();
+    assert.equal(a._terminated, true, "shutdown closes all model profiles");
+    assert.equal(b._terminated, true, "shutdown also closes non-current model profiles");
+    releaseA(); releaseB();
+  }
   console.log("opencode-shared-server: ok");
 } finally {
   resetSharedServer();

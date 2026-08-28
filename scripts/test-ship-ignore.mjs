@@ -20,6 +20,10 @@ function assert(cond, msg) {
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "ship-ignore-test-"));
 
 try {
+  const dockerIgnore = fs.readFileSync(path.join(__dirname, "../.dockerignore"), "utf8").split(/\r?\n/);
+  for (const rule of [".env", "**/.env", ".env.*", "**/.env.*"]) {
+    assert(dockerIgnore.includes(rule), `Docker publish context must exclude ${rule}`);
+  }
   assert(isShipIgnoredEntry("__MACOSX", true), "__MACOSX dir");
   assert(isShipIgnoredEntry(".DS_Store", false), ".DS_Store file");
   assert(isShipIgnoredEntry("._foo", false), "AppleDouble");

@@ -19,6 +19,7 @@ export function registerAdminSummaryRoutes(app) {
             todayMessages: { type: "number" },
             todayTokens: { type: "number" },
             models: { type: "array", items: { type: "object" } },
+            byModel: { type: "array", items: { type: "object" } },
             trend: { type: "array", items: { type: "object" } },
           }),
         },
@@ -27,7 +28,7 @@ export function registerAdminSummaryRoutes(app) {
     async () => {
     const today = new Date().toISOString().slice(0, 10);
     const since = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const [licenses, activeLicenses, devices, activeDevices, todayUsage, models, trend] = await Promise.all([
+    const [licenses, activeLicenses, devices, activeDevices, todayUsage, models, trend, byModel] = await Promise.all([
       db.selectFrom("licenses").select((eb) => eb.fn.count("id").as("count")).executeTakeFirst(),
       db.selectFrom("licenses").select((eb) => eb.fn.count("id").as("count")).where("status", "=", "active").executeTakeFirst(),
       db.selectFrom("devices").select((eb) => eb.fn.count("id").as("count")).executeTakeFirst(),
@@ -63,6 +64,13 @@ export function registerAdminSummaryRoutes(app) {
         .groupBy("usage_date")
         .orderBy("usage_date", "asc")
         .execute(),
+      db
+        .selectFrom("usage_provider_breakdown")
+        .select((eb) => ["provider_id", "model", eb.fn.sum("message_count").as("messages")])
+        .groupBy(["provider_id", "model"])
+        .orderBy("messages", "desc")
+        .limit(8)
+        .execute(),
     ]);
     return {
       licenses: Number(licenses?.count || 0),
@@ -72,6 +80,7 @@ export function registerAdminSummaryRoutes(app) {
       todayMessages: Number(todayUsage?.messages || 0),
       todayTokens: Number(todayUsage?.input_tokens || 0) + Number(todayUsage?.output_tokens || 0),
       models: models.map((row) => ({ model: row.model, messages: Number(row.messages || 0) })),
+      byModel: byModel.map((row) => ({ providerID: row.provider_id, model: row.model, messages: Number(row.messages || 0) })),
       trend: trend.map((row) => ({
         date: String(row.usage_date).slice(0, 10),
         messages: Number(row.messages || 0),

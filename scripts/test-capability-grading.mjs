@@ -410,17 +410,15 @@ try {
   assert.equal(full.mcpOpts.capabilityGrade, "full", "full grade is passed through (未来增益挂点)");
   const fullCfg = JSON.parse(full.spawnOptions.opencodeConfig || "{}");
   assert.equal(fullCfg.permission?.task, undefined, "full keeps today's permission set — no task rule at all");
-  // Under plain node buildAgentSpawnEnv fails open to {} (no electron), so the
-  // ONLY way this key can appear is the lite injection — full must not inject.
-  assert.equal(full.spawnOptions.env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, undefined,
-    "full must not inject a tightened prompt budget");
+  assert.equal(full.spawnOptions.env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, "24576",
+    "full preserves its probed budget without tightening it to the lite budget");
 
   const standard = buildFor("custom-standard", "session_standard");
   assert.equal(standard.mcpOpts.capabilityGrade, "standard", "standard grade reaches MCP assembly without changing it");
   const standardCfg = JSON.parse(standard.spawnOptions.opencodeConfig || "{}");
   assert.equal(standardCfg.permission?.task, undefined, "standard keeps today's permission set — no task rule at all");
-  assert.equal(standard.spawnOptions.env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, undefined,
-    "standard must not inject a tightened prompt budget");
+  assert.equal(standard.spawnOptions.env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, "24576",
+    "standard preserves its probed budget without tightening it to the lite budget");
 
   const ungraded = buildFor("custom-nograde", "session_nograde");
   assert.equal(ungraded.mcpOpts.capabilityGrade, "", "no stored grade → empty grade → standard behavior");
@@ -468,8 +466,8 @@ try {
     assert.equal(killed.mcpOpts.capabilityGrade, "", "kill switch blanks the grade before it reaches MCP assembly");
     const killedCfg = JSON.parse(killed.spawnOptions.opencodeConfig || "{}");
     assert.equal(killedCfg.permission?.task, undefined, "kill switch restores today's permission set for a lite model");
-    assert.equal(killed.spawnOptions.env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, undefined,
-      "kill switch must not inject the tightened prompt budget");
+    assert.equal(killed.spawnOptions.env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, "24576",
+      "kill switch preserves the probed budget without the lite tightening");
     assert.equal(killed.spawnOptions.guidance, ungraded.spawnOptions.guidance,
       "kill switch restores the strong-default guide without the lite execution protocol");
   } finally {

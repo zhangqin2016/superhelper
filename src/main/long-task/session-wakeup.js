@@ -9,6 +9,10 @@ function wakeTurnId(wakeId) {
 
 function createLongTaskWakeHandler(ctx) {
   return async (wake, job) => {
+    if (!job?.turnId || job.id !== wake.jobId || job.turnId !== wake.turnId
+      || job.sessionId !== wake.sessionId || job.projectId !== wake.projectId || job.ownerScope !== wake.ownerScope) {
+      return { ok: false, permanent: true, error: "JOB_SCOPE_CHANGED" };
+    }
     const session = ctx.sessionManager?.findById?.(wake.sessionId);
     if (!session) return { ok: false, permanent: true, error: "SESSION_NOT_FOUND" };
     if (String(session.projectId || "") !== wake.projectId) {
@@ -42,6 +46,7 @@ function createLongTaskWakeHandler(ctx) {
         skipVision: true,
         turnId: wakeTurnId(wake.id),
         durableQueueKey: wake.id,
+        sourceTurnId: job.turnId,
       },
     );
     return result?.ok ? { ok: true, duplicate: Boolean(result.duplicate) } : result;

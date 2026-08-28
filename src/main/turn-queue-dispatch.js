@@ -290,6 +290,7 @@ function createTurnQueueDispatchMethods({
           admittedTurnInput: item.admittedTurnInput || null,
           dispatchAttemptId: item.dispatchAttemptId,
           queueSelection,
+          modelSelection: item.options?.modelSelection || null,
         });
       }
       return await require("./turn-start-guard").guardTurnStart(
@@ -309,8 +310,10 @@ function createTurnQueueDispatchMethods({
           engineText: item.options?.engineText || null,
           recovery: item.options?.recovery || null,
           sourceTaskCore: item.options?.sourceTaskCore || null,
+          sourceTurnId: item.options?.sourceTurnId || null,
           admittedTurnInput: item.admittedTurnInput || null,
           queueSelection,
+          modelSelection: item.options?.modelSelection || null,
           ...documentDeliveryDispatchOptions(item.options),
         },
       );

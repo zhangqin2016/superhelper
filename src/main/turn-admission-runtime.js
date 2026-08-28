@@ -48,6 +48,9 @@ function queueRecoveryEnvelope(item) {
       : [],
     turnId: typeof options.turnId === "string" ? options.turnId : null,
     durableQueueKey: typeof options.durableQueueKey === "string" ? options.durableQueueKey : null,
+    modelSelection: options.modelSelection && typeof options.modelSelection === "object"
+      ? options.modelSelection
+      : null,
   };
   return createQueueRecoveryEnvelope({
     item: {

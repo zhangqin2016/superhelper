@@ -6,6 +6,8 @@ process.env.DATABASE_URL ||= "postgres://integration:integration@localhost:5432/
 process.env.ADMIN_TOKEN ||= "integration-token";
 process.env.ALLOW_UNSIGNED_LICENSES ||= "true";
 process.env.PUBLIC_BASE_URL ||= "https://lily.integration.test";
+process.env.CLIENT_BOOTSTRAP_CHINA_BASE_URL ||= process.env.PUBLIC_BASE_URL;
+process.env.CLIENT_BOOTSTRAP_UAE_BASE_URL ||= process.env.PUBLIC_BASE_URL;
 process.env.QINIU_ACCESS_KEY ||= "integration-qiniu-ak";
 process.env.QINIU_SECRET_KEY ||= "integration-qiniu-sk";
 process.env.QINIU_BUCKET ||= "integration-bucket";
@@ -25,6 +27,8 @@ process.env.MODEL_GATEWAY_PROVIDERS ||= JSON.stringify({
 });
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const initialFetch = globalThis.fetch;
+let app;
 
 function stableStringify(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -98,10 +102,17 @@ try {
     await pool.query(fs.readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   }
 
+  // Production seeds intentionally override env providers. Bind this fixture's
+  // protocol and endpoint explicitly so its mocked responses remain meaningful.
+  await pool.query(
+    "update model_gateway_providers set type = $1, base_url = $2, default_model = $3, models = $4::jsonb where id = $5",
+    ["anthropic", "https://upstream.integration.test/anthropic", "deepseek-v4-pro[1m]", JSON.stringify(["deepseek-v4-pro[1m]"]), "deepseek"],
+  );
+
   const { buildApp } = await import("../src/app.js");
   const { createAccessToken, hashRefreshToken, verifyWebSessionToken } = await import("../src/services/account-auth.js");
   const { signModelGatewayToken } = await import("../src/services/model-gateway.js");
-  const app = await buildApp();
+  app = await buildApp();
   const adminHeaders = { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` };
   const runId = Date.now();
 
@@ -870,7 +881,7 @@ try {
   assert.equal(latest.json().version, `9.9.9-integration-${runId}`);
   assert.equal(
     latest.json().feedUrl,
-    `https://qny.lanrensoft.cn/app/auto-updates/darwin-arm64/stable/latest-mac.yml?v=9.9.9-integration-${runId}`,
+    `${process.env.QINIU_PUBLIC_BASE_URL}/app/auto-updates/darwin-arm64/stable/latest-mac.yml?v=9.9.9-integration-${runId}`,
   );
 
   const restoredSettings = await app.inject({
@@ -881,8 +892,11 @@ try {
   });
   assert.equal(restoredSettings.statusCode, 200);
 
-  await app.close();
   console.log("server-integration: ok");
 } finally {
+  globalThis.fetch = initialFetch;
+  await app?.close();
+  const { closeDb } = await import("../src/db.js");
+  await closeDb();
   await pool.end();
 }

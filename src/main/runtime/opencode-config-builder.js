@@ -191,7 +191,7 @@ function translatePermission(mode, disallowedTools) {
  * @returns {{ ok: boolean, reason?: string, model: object|null, configContent: string|null }}
  */
 function buildOpencodeConfig(opts = {}) {
-  const modelCfg = resolveOpencodeModelConfig(opts.lilyEnv || {});
+  const modelCfg = resolveOpencodeModelConfig(opts.lilyEnv || {}, { modelPool: opts.modelPool, modelProfile: opts.modelProfile });
   if (!modelCfg.ok) {
     return { ok: false, reason: modelCfg.reason, model: modelCfg.model, configContent: null, diagnostics: modelCfg.diagnostics || null };
   }
@@ -272,17 +272,17 @@ function baseSharedPermission() {
 }
 
 /**
- * The config for the app's ONE shared serve — only truly app-wide pieces:
+ * The config for a shared execution profile, without conversation-specific state:
  * provider(s) + model tiers, the UNION of all skills' MCP servers, local
  * plugins, and the single "ask every mutation" base permission. Per-session
  * bits (skill guidance, permission mode) are delivered per-request + host-side,
- * NOT baked here — that's what lets one serve host every session/directory
+ * NOT baked here — that's what lets a serve host compatible sessions/directories
  * without cross-session config bleed.
  * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], skillPaths?: string[], disallowedTools?: string[], basePrompt?: string, subagentPrompt?: string }} opts
  * @returns {{ ok:boolean, reason?:string, model:object|null, configContent:string|null }}
  */
 function buildSharedBaseConfig(opts = {}) {
-  const modelCfg = resolveOpencodeModelConfig(opts.lilyEnv || {});
+  const modelCfg = resolveOpencodeModelConfig(opts.lilyEnv || {}, { modelPool: opts.modelPool, modelProfile: opts.modelProfile });
   if (!modelCfg.ok) {
     return { ok: false, reason: modelCfg.reason, model: modelCfg.model, configContent: null, diagnostics: modelCfg.diagnostics || null };
   }
