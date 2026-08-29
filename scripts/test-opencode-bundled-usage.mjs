@@ -117,5 +117,6 @@ try {
   server?.terminate(); resetSharedServer();
   api.closeAllConnections();
   await new Promise(resolve => api.close(resolve));
-  fs.rmSync(temp, { recursive: true, force: true });
+  // Windows tree termination is asynchronous and briefly retains the engine DB lock.
+  await fs.promises.rm(temp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }

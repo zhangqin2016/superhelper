@@ -2,10 +2,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const mod = await import(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js"));
+const pluginUrl = pathToFileURL(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js")).href;
+const mod = await import(pluginUrl);
 const { ContextWindowGuardPlugin } = mod;
 
 // export-only-the-factory regression guard (OpenCode instantiates every export)
@@ -69,7 +70,7 @@ const MARKER = "content trimmed to fit the model context window";
 // --- many medium parts: total-budget pass tightens until under budget -------
 {
   process.env.LILY_CONTEXT_TOKEN_BUDGET = "60000"; // force the second pass
-  const hooks2 = await (await import(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js") + `?v=${2}`)).ContextWindowGuardPlugin({});
+  const hooks2 = await (await import(pluginUrl + `?v=${2}`)).ContextWindowGuardPlugin({});
   const transform2 = hooks2["experimental.chat.messages.transform"];
   const msgs = [];
   for (let i = 0; i < 40; i += 1) {
@@ -86,7 +87,7 @@ const MARKER = "content trimmed to fit the model context window";
 // --- fail-open + kill switch ------------------------------------------------
 {
   process.env.LILY_CONTEXT_TOKEN_BUDGET = "12000";
-  const small = await (await import(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js") + "?small-model")).ContextWindowGuardPlugin({});
+  const small = await (await import(pluginUrl + "?small-model")).ContextWindowGuardPlugin({});
   const messages = Array.from({ length: 4 }, () => ({ parts: [{ type: "text", text: "x".repeat(40000) }] }));
   await small["experimental.chat.messages.transform"]({}, { messages });
   assert(messages.reduce((sum, message) => sum + message.parts[0].text.length * 0.28, 0) < 12000 * 1.1,
@@ -98,7 +99,7 @@ await transform({}, { messages: null });
 await transform({}, { messages: [null, {}, { parts: [null, { type: "tool" }] }] });
 {
   process.env.LILY_CONTEXT_GUARD = "0";
-  const hooks3 = await (await import(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js") + `?v=${3}`)).ContextWindowGuardPlugin({});
+  const hooks3 = await (await import(pluginUrl + `?v=${3}`)).ContextWindowGuardPlugin({});
   const transform3 = hooks3["experimental.chat.messages.transform"];
   const huge = "Z".repeat(2_000_000);
   const msgs = [{ info: { role: "assistant" }, parts: [{ type: "tool", tool: "write", callID: "x", state: { status: "completed", input: { content: huge }, output: "" } }] }];
@@ -123,7 +124,7 @@ await transform({}, { messages: [null, {}, { parts: [null, { type: "tool" }] }] 
   assert.ok(deepseek.usableInputTokens > small.usableInputTokens * 10, "the budget scales with the model window");
 
   process.env.LILY_CONTEXT_TOKEN_BUDGET = String(deepseek.usableInputTokens);
-  const g = await (await import(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js") + `?v=ma`)).ContextWindowGuardPlugin({});
+  const g = await (await import(pluginUrl + `?v=ma`)).ContextWindowGuardPlugin({});
   const t = g["experimental.chat.messages.transform"];
 
   // ~500k tokens of content on a ~964k budget: fits → left intact (not dumber).

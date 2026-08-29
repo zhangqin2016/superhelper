@@ -94,7 +94,7 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
       } };
       if (id === "electron") return { app: { isPackaged: true, getPath: () => home } };
       if (!id.startsWith(".")) throw new Error(`External dependency forbidden: ${id}`);
-      const resolved = path.relative(sourceRoot, path.resolve(path.dirname(filename), id)).replace(/\.js$/, "");
+      const resolved = path.relative(sourceRoot, path.resolve(path.dirname(filename), id)).split(path.sep).join("/").replace(/\.js$/, "");
       if (resolved.startsWith("..")) throw new Error(`Source outside main forbidden: ${id}`);
       return load(resolved);
     };
