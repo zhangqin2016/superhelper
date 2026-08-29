@@ -3,7 +3,8 @@
 > 好友、Team、消息、加密附件与本地工作空间交接
 
 - 日期：2026-08-29
-- 状态：待产品负责人审阅
+- 状态：工程可靠性评审完成，待产品负责人确认
+- 可靠性评审：2026-08-29，重点覆盖超时、ACK 丢失、重复、乱序、重连、多设备游标、并发撤权与实时提示故障
 - 适用范围：Lily Workbench 桌面端、Lily Server、对象存储
 - 设计目标：给出可直接进入工程计划的产品、交互、架构、安全、故障与验收闭环
 
@@ -68,6 +69,8 @@ Lily 已经能在本地完成复杂工作，但成果仍主要停留在单人工
 - 已持久化消息在双方在线时 P95 可见延迟不高于 800 ms。
 - 断线重连后同步 P95 不高于 2 秒（1,000 个待同步事件以内）。
 - 客户端重复发送、超时重试或重连不得产生重复可见消息。
+- 客户端一旦展示“已发送”，必须已经获得服务端 message id 与 conversation seq，或已通过增量同步观察到同一 `client_command_id`；任何超时不允许直接把未知结果标记为失败或从 outbox 删除。
+- 服务端已提交的授权事件在任意 WebSocket 丢包、进程重启和客户端离线组合下最终可通过 durable sync 找回；系统不承诺网络层 exactly-once，只承诺用户可见的 effectively-once（至少一次重试、服务端去重、单一权威顺序）。
 - 工作空间分享从“选择发送”到“对方成功导入”的闭环成功率不低于 98%，用户主动取消和源内容超限不计失败。
 - 未经授权的附件下载、Team 历史读取和私密频道访问必须为零容忍安全事件。
 - 协作服务完全不可用时，现有本地 AI 会话、文件操作和工作空间导出仍可正常运行。
@@ -354,11 +357,13 @@ flowchart LR
     AUTH["账号 / 设备 / 组织鉴权"]
     CORE["Collaboration Domain"]
     SYNC["Durable Sync Event Log"]
+    ROUT["Durable Realtime Outbox"]
     KEY["Object Key Broker"]
     JOB["Cleanup / Retention Jobs"]
     API --> AUTH --> CORE
     WS --> AUTH
     CORE --> SYNC
+    CORE --> ROUT
     CORE --> KEY
   end
 
@@ -372,7 +377,7 @@ flowchart LR
   CORE --> DB
   SYNC --> DB
   KEY --> DB
-  CORE --> FAN --> WS
+  ROUT --> FAN --> WS
   JOB --> DB
   JOB --> OBJ
 ```
@@ -460,11 +465,17 @@ erDiagram
 ### 7.3 有序事件与消息投影
 
 - `collaboration_events(id, conversation_id, seq, type, actor_user_id, actor_device_id, client_command_id, payload, created_at)` 是不可变会话事件流。
-- `messages(id, conversation_id, create_seq, sender_user_id, kind, body_ciphertext, body_key_version, reply_to_message_id, edited_at, revoked_at, created_at)` 是读取优化投影。
+- `messages(id, conversation_id, create_seq, sender_user_id, kind, body_ciphertext, body_key_version, revision, reply_to_message_id, edited_at, revoked_at, created_at)` 是读取优化投影。
 - `message_revisions(id, message_id, event_seq, body_ciphertext, key_version, created_at)` 保存编辑历史，Team 审计可见，普通成员只见最新投影。
-- 唯一约束：`(conversation_id, seq)`、`(actor_device_id, client_command_id)`。
+- `command_receipts(actor_device_id, command_type, client_command_id, request_fingerprint, state, result_event_id, response_code, created_at, completed_at)` 保存所有持久写命令的幂等结果。
+- `collaboration_realtime_outbox(id, user_id, max_cursor, state, available_at, attempts, created_at)` 保存提交后的实时唤醒任务。
+- 唯一约束：`(conversation_id, seq)`、`(actor_device_id, command_type, client_command_id)`。
 
-每个会话的写事务锁定 conversation 行，读取并递增 `next_seq`，写入事件、更新投影、为当前授权成员写入用户同步事件，最后提交。客户端时钟不参与权威顺序。
+每个会话的写事务在同一事务内完成：重新验证并锁定授权依据、锁定 conversation 行、读取并递增 `next_seq`、写入 event、更新 projection、批量写入用户同步事件、完成 command receipt、写入 realtime outbox，最后提交。客户端时钟不参与权威顺序，对象存储、网络调用和用户输入绝不发生在数据库事务内。
+
+所有协作写路径遵循同一锁顺序：组织/好友授权行 → conversation → message/object（按 ID 排序）→ `user_sync_state`（按 user id 排序）。成员移除和发送消息必须锁定同一授权行，使“撤权成功以后又插入一条消息”的竞态不可能发生。PostgreSQL `40P01` deadlock 和 `40001` serialization failure 统一映射为 retryable，客户端沿用原幂等键安全重试；实现还必须设置短事务、数据库 lock timeout 和 statement timeout，禁止无限等待。
+
+`collaboration_events.payload` 只保存事件类型需要的最小密文或投影引用，不得复制消息正文、DEK、签名 URL 或本地路径。客户端需要正文时，由已授权的 sync/history 响应从 message projection 解密后通过 TLS 返回。
 
 消息正文使用独立的 `COLLAB_MESSAGE_KEK` 做服务端信封加密后存入 PostgreSQL；密钥与对象 KEK 分离并独立轮换。第一版不建立消息明文搜索索引，也不宣称聊天内容端到端加密。
 
@@ -472,8 +483,11 @@ erDiagram
 
 - `user_sync_state(user_id PK, next_cursor, compacted_before_cursor, updated_at)`。
 - `user_sync_events(user_id, cursor, event_id, conversation_id, created_at)`。
+- `device_sync_state(user_id, device_id, last_acked_cursor, last_seen_at, requires_full_resync)`。
 
-同一业务事务为受影响用户分配单调递增 cursor。客户端只保存最后完整应用的 cursor。事件被重复返回时必须幂等；发现游标早于压缩点时，服务端返回 `FULL_RESYNC_REQUIRED`，客户端重建协作缓存，不影响其他本地数据。
+同一业务事务为受影响用户分配单调递增 cursor。批量 fanout 必须先按 user id 排序并锁定对应 `user_sync_state`，避免两个交叉会话并发写入时形成反向锁等待。客户端只保存最后完整应用的 cursor，本地 `applied_events(event_id UNIQUE)` 负责去重。事件被重复返回时必须幂等；发现游标早于压缩点时，服务端返回 `FULL_RESYNC_REQUIRED`，客户端重建协作缓存，不影响其他本地数据。
+
+事件压缩不能只看“这个用户最近一台设备”的 cursor。服务端按每台 active device 的 `last_acked_cursor` 保留事件；30 天未出现的设备标记为 stale，重新上线必须 full resync。压缩水位取所有 active device 最小 ACK 与时间保留下限中的更保守值，从而避免手机/第二台电脑长期离线后永久漏消息。
 
 ### 7.5 读取状态
 
@@ -507,15 +521,19 @@ erDiagram
 }
 ```
 
-服务端以 `(actor_device_id, client_command_id)` 去重。第一次请求成功但响应丢失时，重试返回原 message/event，不创建新消息。
+服务端以 `(actor_device_id, command_type, client_command_id)` 去重，并对规范化请求计算 `request_fingerprint`。相同键、相同 fingerprint 返回原 message/event；相同键、不同 fingerprint 返回 `IDEMPOTENCY_KEY_REUSED`，绝不能把旧结果套到新正文。幂等 receipt 的保留期不得短于消息和最大离线重试窗口。
+
+服务端提交成功但 HTTP ACK 丢失时，客户端进入 `confirming`，不显示永久失败。后续 sync/history 若看到本设备相同 `client_command_id`，必须原位结算 outbox 并绑定服务端 message id/seq；若尚未观察到，再用同一键查询 command receipt 或重试原命令。进程崩溃发生在 commit 前则事务回滚，发生在 commit 后则 receipt 与 event 都可重放，因此不会出现“服务端有消息、本地永远重发”或“本地说成功、服务端没有”的中间态。
+
+消息编辑和撤回携带 `expected_revision`。服务端用 CAS 更新；两个设备同时编辑时只有一个成功，另一个收到 `MESSAGE_REVISION_CONFLICT` 并展示当前版本，不能静默 last-write-wins 覆盖。
 
 ### 8.3 Outbox 状态机
 
 ```text
-draft -> queued -> submitting -> persisted
-                     |             |
-                     v             v
-             retryable_failed   projected
+draft -> queued -> submitting -> confirming -> persisted -> projected
+                     |              ^              |
+                     v              |              v
+             retryable_failed ------+        reconciled_by_sync
                      |
                      v
                permanent_failed
@@ -525,6 +543,9 @@ draft -> queued -> submitting -> persisted
 - 权限、成员已移除、内容超限和对象未完成为永久失败，必须让用户处理。
 - 只有未产生外部副作用或拥有相同幂等键的命令可以自动重试。
 - 用户点击重试沿用原 `client_command_id`；修改内容后创建新命令。
+- 同一 conversation 的 outbox 严格串行，避免离线消息 2 抢在消息 1 前提交；不同 conversation 可并发。
+- 严格串行只覆盖已经完成附件准备、进入 `queued` 的消息命令。前一条达到自动重试上限时暂停该会话发送 lane，并让用户选择“继续重试、跳过此条、取消”；只有用户跳过/取消后，后续消息才可继续，避免静默改写离线发送顺序。
+- 用户在 `submitting/confirming` 状态取消发送时，客户端先查 receipt。若尚未提交则取消队列；若已经提交则提示“已发送”并允许执行新的撤回命令，不能假装网络中的命令已被取消。
 
 ### 8.4 WebSocket 生命周期
 
@@ -534,6 +555,7 @@ draft -> queued -> submitting -> persisted
 4. 服务端回复 `ready`，随后只推事件提示。
 5. 心跳 30 秒；网络变化触发立即重连；退避加随机抖动，上限 30 秒。
 6. 每次重连都先 sync，再恢复在线/输入状态。
+7. WebSocket 只降低延迟。前台客户端即使连接显示正常也每 15 秒做一次轻量 cursor check，后台每 60 秒检查；从睡眠恢复、网络切换和窗口重新聚焦时立即检查，彻底覆盖半开连接与通知丢失。
 
 ### 8.5 历史与同步
 
@@ -541,6 +563,52 @@ draft -> queued -> submitting -> persisted
 - 全局增量同步按用户 cursor，默认 500 个事件，最大 2,000 个。
 - sync 响应携带 `hasMore` 和 `nextCursor`；客户端只有在整页事务应用成功后推进游标。
 - 本地应用事件也使用 SQLite 事务，避免列表已更新但消息未落盘的半状态。
+- bootstrap/full resync 必须在 PostgreSQL `REPEATABLE READ READ ONLY` 快照中读取投影与用户 cursor watermark：先在同一快照得到 watermark 和所有初始投影，客户端落盘后只从该 watermark 继续 sync。禁止“先列会话、后读当前 cursor”的非原子实现，否则两次查询之间提交的消息可能永久落在快照和增量区间之外。
+- 每个 sync page 返回稳定的 `fromCursor/toCursor`；客户端提交本地事务后才 ACK `toCursor` 到 `device_sync_state`。如果响应、进程或磁盘写入在此之前失败，重复拉取同一页并依赖 event id 去重。
+
+### 8.6 消息不丢、不重、不乱的闭环
+
+```text
+用户按发送
+   │
+   ▼
+[本地 SQLite 事务]
+写 outbox + 乐观气泡 + client_command_id
+   │  失败：仍是草稿，不发请求
+   ▼
+HTTPS POST（可重复，payload fingerprint 固定）
+   │
+   ▼
+[PostgreSQL 单事务 / 唯一 COMMIT 点]
+锁授权 → 分配 conversation seq → 写 event/projection
+→ 写每用户 sync cursor → 完成 command receipt → 写 realtime outbox
+   │                 │
+   │ rollback        │ commit
+   ▼                 ▼
+原幂等键可重试      ACK 可能到达，也可能超时/断线丢失
+                      │
+           ┌──────────┴──────────┐
+           ▼                     ▼
+      HTTP ACK 到达         客户端保持 confirming
+           │                     │
+           └──────────┬──────────┘
+                      ▼
+          durable sync 返回同一 event/client_command_id
+                      │
+                      ▼
+[本地 SQLite 事务]
+event_id 去重 + 以 server seq 重排 + 结算 outbox + 推进本地 cursor
+                      │
+                      ▼
+              ACK device cursor
+```
+
+这条链的四个不可变条件：
+
+1. outbox 在发网络请求前落盘，客户端崩溃不会忘记用户已发起的意图。
+2. 服务端只有一个 commit 点；receipt、消息、seq、sync event 和 realtime outbox 同成同败。
+3. HTTP/WS 都可以丢，durable sync 才是交付依据；超时只表示“结果未知”，不表示失败。
+4. UI 只按服务端 seq 排最终顺序。乐观气泡先使用本地临时顺序，收到 ACK/sync 后原位绑定并平滑移动；不得按客户端时间重新排序。
 
 ## 9. 对象存储与加密设计
 
@@ -823,8 +891,10 @@ bound -> revoked | expired | deleted
 
 - PostgreSQL 保存权威消息、事件、读取指针和对象元数据。
 - 单 API 实例内使用内存连接表做 WebSocket fanout。
-- 多 API 实例时使用 PostgreSQL `LISTEN/NOTIFY` 发送“用户有新 cursor”的轻量提示。
-- NOTIFY 丢失不影响正确性，因为客户端周期同步和重连同步都读取 durable event log。
+- 消息事务只写 durable `collaboration_realtime_outbox`，不直接调用 `NOTIFY`。独立 dispatcher 在提交后领取 outbox，使用 PostgreSQL `LISTEN/NOTIFY` 发送“用户有新 cursor”的轻量提示，再幂等标记完成。
+- `NOTIFY` 队列满、listener 重启或 dispatcher 崩溃只会延迟提示，不会回滚已经提交的消息。dispatcher 使用租约和重试；客户端周期同步和重连同步始终可从 durable event log 找回消息。
+- 每个 API 实例使用专用、短事务的 LISTEN 连接；启动顺序为“LISTEN 提交 → 查询当前 durable outbox/cursor → 开始接受 realtime ready”，覆盖 LISTEN 建立瞬间的竞态。presence/typing 在多实例下仍是 best-effort，不进入任何正确性承诺。
+- 优雅停机先停止签发 WS ticket，发送 `server.draining`，停止接收新 WS，再等待短事务完成；超时退出不会损坏消息事务，客户端根据幂等 receipt 和 sync 恢复未知结果。
 
 ### 14.2 拆服务阈值
 
@@ -841,8 +911,10 @@ bound -> revoked | expired | deleted
 
 - `collaboration_events` 按月或哈希分区的需求在实测数据量达到阈值后启用，首版不预先复杂化。
 - 所有高频查询有 `(conversation_id, seq)`、`(user_id, cursor)`、成员状态和对象状态索引。
-- 大群 fanout 不在消息事务内逐行做重计算；成员集合先由授权投影确定，再批量写 user sync events。
+- 大群 fanout 不在消息事务内逐行做权限重计算；成员集合先由授权投影确定，再按 user id 排序锁定 cursor 行并批量写 user sync events。消息事务不得对 1,000 个成员执行 N+1 查询。
 - 超大公开 Team 频道未来可改为按组织 cursor 投影，第一版设置 Team 成员上限，避免过早引入双游标模型。
+
+上线前的容量门必须以 1、50、200、500、1,000 人 fanout 分别压测事务时长、锁等待和 sync 写放大。若 1,000 人场景无法在消息写入 P95 目标内完成，不把超时调大掩盖问题，而是在首发前降低 Team 上限或实现组织级共享 cursor；两者必须由实测决定。
 
 首发默认上限：单 Team 1,000 人、个人群 200 人、私密频道 500 人、单条文本 32 KiB、普通附件 1 GiB、工作空间包密文 256 MiB、包内最多 20,000 个文件且明文总量 512 MiB。超过工作空间限制时必须让用户选择子目录或仅分享成果，不能静默漏文件。
 
@@ -881,6 +953,14 @@ Team 审计记录：成员/频道变更、消息撤回、对象上传/下载授�
 | 协作服务宕机 | 协作区离线、outbox 保留、本地 AI 正常 | 阻止应用启动或 AI 对话 |
 | WS 丢事件 | REST cursor sync 补齐 | 永久缺消息 |
 | 命令响应丢失 | 同幂等键重试返回原消息 | 重复消息 |
+| 服务端 commit 后、ACK 前崩溃 | sync/receipt 结算本地 confirming 消息 | 本地永久转圈或重复发送 |
+| bootstrap 期间并发新消息 | snapshot watermark 后由增量 sync 补齐 | 落入快照与游标之间的消息消失 |
+| 第二设备长期离线 | active-device ACK 阻止过早压缩，stale 设备 full resync | 旧设备上线后静默缺历史 |
+| 相同幂等键携带不同正文 | 明确拒绝 `IDEMPOTENCY_KEY_REUSED` | 返回旧消息并把新正文说成已发 |
+| 撤权与发送并发 | 同一授权行锁决定唯一先后顺序 | 撤权成功后仍插入新消息 |
+| 两设备同时编辑 | revision CAS，一方冲突并刷新 | 静默覆盖另一台设备的编辑 |
+| `NOTIFY`/dispatcher 故障 | durable realtime outbox 重试，客户端轮询补齐 | 回滚或丢失已提交消息 |
+| 数据库死锁/锁超时 | 短事务回滚并以原幂等键重试 | 无限等待或生成第二条消息 |
 | 本地协作库损坏 | 隔离、备份、重建协作缓存 | 修改/删除 AI `messages.db` |
 | 对象上传失败 | 草稿可重试、别人不可见 | 创建不可下载的正式消息 |
 | 对象存储不可用 | 文本消息可继续、附件明确失败 | 整个聊天不可用 |
@@ -952,8 +1032,9 @@ Team 审计记录：成员/频道变更、消息撤回、对象上传/下载授�
 
 - 好友状态机、重复/交叉请求、屏蔽优先级。
 - 会话作用域与角色权限矩阵。
-- seq 分配、client command 去重、读取指针单调性。
+- seq 分配、client command 去重、不同 payload 复用键拒绝、读取指针单调性。
 - outbox 重试分类与非幂等保护。
+- message revision CAS 与双设备编辑冲突。
 - retention、对象状态机和下载授权。
 - 加密固定向量、nonce 唯一、截断、位翻转和错误密钥。
 - 工作空间 share 版本谱系和过期规则。
@@ -962,6 +1043,11 @@ Team 审计记录：成员/频道变更、消息撤回、对象上传/下载授�
 
 - 两个并发发送者获得唯一连续 seq。
 - 同命令并发重试只产生一个可见消息。
+- 相同命令在 commit 后、HTTP ACK 前注入进程崩溃，重启后由 receipt/sync 原位结算。
+- bootstrap 的每一个查询边界注入并发消息，证明 snapshot watermark 前后都不漏。
+- 两台设备 ACK 不同 cursor 后执行压缩，证明较慢 active device 仍可增量同步；stale device 收到 full resync。
+- 交叉会话并发 fanout 按统一锁顺序完成；强制 `40P01/40001` 时原幂等键重试且不重复。
+- 成员移除与发送、屏蔽与下载 ticket 并发时，结果严格等价于某一个串行顺序。
 - 消息、projection 和 user sync event 同事务提交或回滚。
 - 成员在下载 ticket 请求前被移除时必然 403。
 - 好友接受并发只创建一个 friendship 和一个 direct conversation。
@@ -971,6 +1057,8 @@ Team 审计记录：成员/频道变更、消息撤回、对象上传/下载授�
 
 - 丢弃、重复和乱序 WS 通知后，sync 结果一致。
 - 服务重启、连接替换、token 过期和 ticket 重放。
+- dispatcher 在 durable outbox 写入后、NOTIFY 前、NOTIFY 后分别崩溃，均不丢消息且最多重复唤醒。
+- LISTEN 建立竞态、半开 WebSocket、电脑睡眠恢复以及前台 15 秒 fallback check。
 - full resync 只重建 collaboration cache。
 - presence/typing 丢失不改变消息投影。
 
@@ -979,6 +1067,9 @@ Team 审计记录：成员/频道变更、消息撤回、对象上传/下载授�
 - 多账号缓存密钥隔离。
 - Renderer 不能获得 token、DEK 或任意文件读取能力。
 - 离线草稿、outbox、上传续传和重启恢复。
+- 同一会话离线消息严格顺序提交；不同会话允许并行且互不阻塞。
+- HTTP timeout 后进入 confirming，自己的回流 sync event 以 `client_command_id` 原位替换乐观气泡。
+- 本地应用 sync page 后、ACK cursor 前崩溃，重启后重复应用不产生重复消息。
 - 协作 DB 损坏不触碰 AI 数据。
 - Team 撤权清除对应缓存密钥。
 
@@ -1008,16 +1099,20 @@ Team 审计记录：成员/频道变更、消息撤回、对象上传/下载授�
 3. 公开频道、私密频道和 Team direct 的权限矩阵经过自动化证明。
 4. 重复请求、超时重试和重连不产生重复可见消息。
 5. 消息历史顺序只由服务端 seq 决定。
-6. 对象存储中只有密文，没有永久公开 URL和明文 DEK。
-7. 未授权用户即使知道 object id/key 也不能取得有效下载 ticket。
-8. 发送方可预检并发送工作空间，接收方可在发送方离线时下载和导入。
-9. 工作空间导入始终创建新目录，任何失败不修改既有工作空间。
-10. 分享包撤销、过期、损坏、超限和权限撤销都有明确用户状态。
-11. AI 代表用户发送前有收件人和内容确认，未 ACK 不报告成功。
-12. 关闭 AI 后所有人工 IM 功能正常。
-13. 关闭协作功能或停止协作服务后，现有 AI 工作台全部回归测试通过。
-14. 日志扫描证明不包含消息正文、密钥、token、签名 URL 和完整本地路径。
-15. 对象孤儿、保留删除、密钥轮换和服务重启经过演练。
+6. commit 后 ACK 丢失、bootstrap 并发写入、sync page 重放和多设备游标压缩的故障注入测试均证明零静默丢消息。
+7. 幂等键绑定请求 fingerprint；不同正文复用同一键被拒绝，自己的 sync 回流能结算 confirming outbox。
+8. 撤权/屏蔽与发送/下载并发遵循同一锁顺序，死锁和 serialization failure 可安全重试且不会重复。
+9. 关闭或阻塞 realtime dispatcher 后，轮询同步仍能送达消息；`NOTIFY` 故障不能回滚已提交消息。
+10. 对象存储中只有密文，没有永久公开 URL和明文 DEK。
+11. 未授权用户即使知道 object id/key 也不能取得有效下载 ticket。
+12. 发送方可预检并发送工作空间，接收方可在发送方离线时下载和导入。
+13. 工作空间导入始终创建新目录，任何失败不修改既有工作空间。
+14. 分享包撤销、过期、损坏、超限和权限撤销都有明确用户状态。
+15. AI 代表用户发送前有收件人和内容确认，未 ACK 不报告成功。
+16. 关闭 AI 后所有人工 IM 功能正常。
+17. 关闭协作功能或停止协作服务后，现有 AI 工作台全部回归测试通过。
+18. 日志扫描证明不包含消息正文、密钥、token、签名 URL 和完整本地路径。
+19. 对象孤儿、保留删除、密钥轮换和服务重启经过演练。
 
 ## 20. 被拒绝的方案
 
@@ -1065,3 +1160,17 @@ Team 审计记录：成员/频道变更、消息撤回、对象上传/下载授�
 本设计已对产品范围、所有权、交互、服务边界、数据模型、消息顺序、离线同步、对象加密、工作空间交接、安全、故障、扩展、分期与验收做出明确选择，没有依赖实时共享工作空间，也没有把 AI 当作确定性通信基础设施。
 
 用户审阅并确认本文后，下一步才是编写实施计划。实施计划需要把每个 slice 进一步拆成数据库迁移、服务端路由/领域、Electron main/preload、Renderer、测试和灰度步骤；未获得设计确认前不进入代码实现。
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | NOT RUN | 产品方向已由本设计对话确认，尚未做独立 CEO 评审 |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | NOT RUN | 未引入外部模型意见 |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 7 个消息可靠性缺口已全部折入：snapshot watermark、多设备 ACK、幂等 fingerprint、outbox 回流结算、统一锁顺序、revision CAS、durable realtime outbox |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | NOT RUN | 已有完整交互规格，但尚未制作高保真视觉稿或独立视觉评审 |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | NOT RUN | 尚未进入实施计划，无工程接入体验可测 |
+
+**VERDICT:** ENG CLEARED。协议设计已经明确覆盖超时未知结果、commit 后 ACK 丢失、重复重试、服务端权威顺序、WebSocket/NOTIFY 丢失、bootstrap 竞态、多设备压缩、并发撤权、编辑冲突与数据库死锁；进入实施前仍需产品负责人确认本文。
+
+NO UNRESOLVED DECISIONS
