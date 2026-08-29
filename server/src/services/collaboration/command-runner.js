@@ -139,6 +139,7 @@ export async function runCollaborationCommand({
   commandType: rawCommandType,
   clientCommandId: rawClientCommandId,
   input = {},
+  resolveInput,
   authorize,
   project,
   database,
@@ -154,7 +155,7 @@ export async function runCollaborationCommand({
   if (!database || typeof database.transaction !== "function") throw new TypeError("A collaboration database transaction provider is required.");
   if (typeof authorize !== "function" || typeof project !== "function") throw new TypeError("Collaboration commands require authorize() and project() functions.");
   const identity = receiptIdentity(actor, commandType, clientCommandId);
-  const requestFingerprint = collaborationRequestFingerprint(input);
+  if (resolveInput != null && typeof resolveInput !== "function") throw new TypeError("Collaboration command resolveInput must be a function.");
   const operations = { ...DEFAULT_OPERATIONS, ...(operationOverrides || {}) };
   const retryLimit = Math.max(0, Math.min(Number(maxTransactionRetries) || 0, 3));
 
@@ -165,9 +166,21 @@ export async function runCollaborationCommand({
         // Authorization always precedes a receipt replay. The callback locks
         // the current membership/block/device facts, so a command id cannot
         // become a back door after the actor is revoked.
-        const authorization = await authorize({ trx, account: actor, input, commandType, clientCommandId });
+        let authorization = await authorize({ trx, account: actor, input, commandType, clientCommandId });
         if (!authorization?.ok) throw commandErrorFromAuthorization(authorization);
         const existing = await operations.findReceipt(trx, identity);
+        let effectiveInput = input;
+        if (typeof resolveInput === "function") {
+          effectiveInput = await resolveInput({
+            trx, account: actor, commandType, clientCommandId, input, receipt: existing || null,
+          });
+          // A resolver is allowed to restore safe receipt-bound data (for
+          // example an old HMAC key version), never to bypass authorization
+          // facts derived from the final command scope.
+          authorization = await authorize({ trx, account: actor, input: effectiveInput, commandType, clientCommandId });
+          if (!authorization?.ok) throw commandErrorFromAuthorization(authorization);
+        }
+        let requestFingerprint = collaborationRequestFingerprint(effectiveInput);
         if (existing) {
           assertReusableCommandReceipt(existing, requestFingerprint);
           if (receiptState(existing) === "completed") return receiptResponse(existing);
@@ -176,13 +189,21 @@ export async function runCollaborationCommand({
 
         const claimed = await operations.claimReceipt(trx, identity, requestFingerprint);
         if (!claimed.inserted) {
+          if (typeof resolveInput === "function") {
+            effectiveInput = await resolveInput({
+              trx, account: actor, commandType, clientCommandId, input, receipt: claimed.receipt,
+            });
+            authorization = await authorize({ trx, account: actor, input: effectiveInput, commandType, clientCommandId });
+            if (!authorization?.ok) throw commandErrorFromAuthorization(authorization);
+            requestFingerprint = collaborationRequestFingerprint(effectiveInput);
+          }
           assertReusableCommandReceipt(claimed.receipt, requestFingerprint);
           if (receiptState(claimed.receipt) === "completed") return receiptResponse(claimed.receipt);
           throw new CollaborationCommandError("COLLAB_COMMAND_IN_PROGRESS", "This collaboration command is still being finalized.", { retryable: true });
         }
 
         const plan = requireProjectPlan(await project({
-          trx, account: actor, input, authorization, commandType, clientCommandId,
+          trx, account: actor, input: effectiveInput, authorization, commandType, clientCommandId,
         }));
         const conversationId = requiredText(plan.event.conversationId ?? plan.event.conversation_id, "Event conversation id");
         const allocated = await operations.allocateSequence(trx, conversationId);
@@ -195,7 +216,7 @@ export async function runCollaborationCommand({
           clientCommandId,
         };
         const writtenEvent = await operations.writeEvent(trx, event);
-        await plan.project({ trx, event: writtenEvent, conversation: allocated.conversation, authorization, account: actor, input });
+        await plan.project({ trx, event: writtenEvent, conversation: allocated.conversation, authorization, account: actor, input: effectiveInput });
         const recipientUserIds = assertSortedRecipientUserIds(plan.recipientUserIds);
         const syncRows = await operations.fanout(trx, { event: writtenEvent, recipientUserIds });
         const responsePayload = sanitizeCommandReceiptPayload(plan.response || {

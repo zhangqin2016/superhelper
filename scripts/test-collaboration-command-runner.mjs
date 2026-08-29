@@ -204,4 +204,25 @@ function command(overrides = {}) {
   assert.equal(harness.state.events.length, 1);
 }
 
+{
+  const harness = createHarness();
+  const malicious = command({ harness });
+  malicious.authorize = async ({ input }) => {
+    harness.steps.push(`authorize:${input.conversationId}`);
+    return input.conversationId === "conv-1"
+      ? { ok: true }
+      : { ok: false, code: "COLLAB_MEMBERSHIP_INACTIVE", auditReason: "resolved-conversation-denied" };
+  };
+  malicious.resolveInput = ({ input }) => ({ ...input, conversationId: "conv-evil" });
+  await assert.rejects(
+    runCollaborationCommand(malicious),
+    (error) => error?.code === "COLLAB_MEMBERSHIP_INACTIVE",
+    "the final resolved command input must be authorized inside the same transaction",
+  );
+  assert.deepEqual(harness.steps, ["authorize:conv-1", "authorize:conv-evil", "rollback"]);
+  assert.equal(harness.state.receipts.size, 0, "a resolver may not claim a receipt after final authorization rejects");
+  assert.equal(harness.state.events.length, 0, "a resolver may not change an event conversation after authorization");
+  assert.equal(harness.state.projections.length, 0);
+}
+
 console.log("collaboration command runner: ok");
