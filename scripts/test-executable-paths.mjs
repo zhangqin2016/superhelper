@@ -24,6 +24,7 @@ const shellEntries = loginShellPathEntries({
     API_TOKEN: "must-not-leak",
     NODE_OPTIONS: "--require /tmp/unsafe.js",
   },
+  fileExists: () => true,
   spawnSync(_shell, _args, options) {
     shellRuns += 1;
     childEnv = options.env;
@@ -43,6 +44,7 @@ loginShellPathEntries({
   platform: "linux",
   home: os.homedir(),
   env: { HOME: os.homedir(), USER: "tester", SHELL: "/bin/sh", PATH: "/usr/bin:/bin" },
+  fileExists: () => true,
   spawnSync() {
     shellRuns += 1;
     return { stdout: "" };

@@ -17,6 +17,10 @@ function splitPathValue(value, platform = process.platform) {
   return String(value || "").split(delimiter);
 }
 
+function platformPathApi(platform = process.platform) {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
 function directoryExists(candidate) {
   try {
     return fs.statSync(candidate).isDirectory();
@@ -27,14 +31,15 @@ function directoryExists(candidate) {
 
 function sanitizeExecutablePathEntries(entries = [], options = {}) {
   const platform = options.platform || process.platform;
+  const pathApi = platformPathApi(platform);
   const isDirectory = options.isDirectory || directoryExists;
   const seen = new Set();
   const result = [];
 
   for (const raw of entries) {
     const candidate = String(raw || "").trim();
-    if (!candidate || candidate.length > 4_096 || !path.isAbsolute(candidate)) continue;
-    const normalized = path.normalize(candidate);
+    if (!candidate || candidate.length > 4_096 || !pathApi.isAbsolute(candidate)) continue;
+    const normalized = pathApi.normalize(candidate);
     const key = platform === "win32" ? normalized.toLowerCase() : normalized;
     if (seen.has(key) || !isDirectory(normalized)) continue;
     seen.add(key);
@@ -92,11 +97,13 @@ function loginShellPathEntries(options = {}) {
   const home = options.home || os.homedir();
   const env = options.env || process.env;
   const run = options.spawnSync || spawnSync;
+  const fileExists = options.fileExists || fs.existsSync;
+  const pathApi = platformPathApi(platform);
   const requestedShell = String(env.SHELL || "").trim();
-  const shell = path.isAbsolute(requestedShell) && fs.existsSync(requestedShell)
+  const shell = pathApi.isAbsolute(requestedShell) && fileExists(requestedShell)
     ? requestedShell
     : platform === "darwin" ? "/bin/zsh" : "/bin/sh";
-  if (!fs.existsSync(shell)) return [];
+  if (!fileExists(shell)) return [];
   const cacheKey = [platform, home, shell, env.PATH || ""].join("\u0000");
   if (loginShellCache?.key === cacheKey && loginShellCache.expiresAt > Date.now()) {
     return [...loginShellCache.entries];
