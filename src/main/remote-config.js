@@ -17,6 +17,14 @@ function electronSafeStorage() {
 const { stableStringify, verifyDetached } = require("./crypto-signing");
 
 const CACHE_FILE = "remote-config-cache.json";
+const DISABLED_COLLABORATION_POLICY = Object.freeze({
+  enabled: false,
+  schemaVersion: 1,
+  realtime: true,
+  attachments: false,
+  workspaceShares: false,
+  aiTools: false,
+});
 const DEFAULT_PUBLIC_KEY_PATHS = [
   path.join(process.resourcesPath || "", "resources", "license-public-key.pem"),
   path.join(PROJECT_ROOT, "resources", "license-public-key.pem"),
@@ -285,6 +293,23 @@ function getRemoteCharacterWorldsPolicySync() {
   };
 }
 
+/** Validated Collaboration Center policy from the signed remote config. */
+function getRemoteCollaborationPolicySync() {
+  const cfg = getRemoteEffectiveConfigSync();
+  const policy = cfg?.collaboration;
+  if (!policy || typeof policy !== "object" || Array.isArray(policy) || policy.schemaVersion !== 1) {
+    return { ...DISABLED_COLLABORATION_POLICY };
+  }
+  return {
+    enabled: policy.enabled === true,
+    schemaVersion: 1,
+    realtime: policy.realtime !== false,
+    attachments: policy.attachments === true,
+    workspaceShares: policy.workspaceShares === true,
+    aiTools: policy.aiTools === true,
+  };
+}
+
 // Modules that cache derived views of the remote config (e.g. model-presets)
 // subscribe here instead of being required from this file — keeps the
 // dependency one-directional: consumers depend on remote-config, never back.
@@ -355,6 +380,7 @@ module.exports = {
   getRemoteRuntimeEnvSync,
   getRemoteProviderCatalogSync,
   getRemoteCharacterWorldsPolicySync,
+  getRemoteCollaborationPolicySync,
   decodeGatewayTokenPayload,
   effectiveConfigHasExpiredGatewayToken,
   shouldRetryAfterDeviceRegister,

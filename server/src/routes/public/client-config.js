@@ -15,6 +15,10 @@ import {
   rolloutAllows,
   withGatewayRuntimeConfig,
 } from "../../services/client-config.js";
+import {
+  applyCollaborationPolicyGate,
+  profileMatchesCollaborationContext,
+} from "../../services/collaboration/policy.js";
 import { discoverLilyMediaProviderContracts } from "../../services/media-provider-contracts.js";
 import {
   recoverLicenseScopeByFingerprint,
@@ -58,6 +62,19 @@ async function resolveDeviceGroupId(deviceId, licenseId) {
   return null;
 }
 
+async function resolveActiveOrganizationIds(userId) {
+  if (!userId) return [];
+  const memberships = await db
+    .selectFrom("organization_members")
+    .innerJoin("organizations", "organizations.id", "organization_members.organization_id")
+    .select("organization_members.organization_id")
+    .where("organization_members.user_id", "=", userId)
+    .where("organization_members.status", "=", "active")
+    .where("organizations.status", "=", "active")
+    .execute();
+  return memberships.map((row) => row.organization_id);
+}
+
 async function resolveEffectiveConfig(input, options = {}) {
   // Prefer the device's own valid binding; if it has none (typically a reinstall
   // / data reset regenerated the client-stored deviceId), try to recover and
@@ -79,6 +96,7 @@ async function resolveEffectiveConfig(input, options = {}) {
     if (profile.scope === "group") return groupId && profile.target_id === groupId;
     if (profile.scope === "license") return licenseId && profile.target_id === licenseId;
     if (profile.scope === "device") return profile.target_id === input.deviceId;
+    if (profileMatchesCollaborationContext(profile, options.accountContext)) return true;
     return false;
   });
 
@@ -154,13 +172,28 @@ export function registerPublicClientConfigRoutes(app) {
     const modelDeliveryMode = await getModelDeliveryMode();
     const baselineEffectiveConfig =
       buildEnvManagedClientConfig(config, undefined, modelDeliveryMode) || DEFAULT_EFFECTIVE_CONFIG;
-    const resolved = await resolveEffectiveConfig(input, { baselineEffectiveConfig });
+    const account = await resolveAccountContextForClientConfig(input, db);
+    const organizationIds = await resolveActiveOrganizationIds(account?.userId);
+    const organizationEligible = config.collaborationRolloutOrganizations.length === 0
+      || config.collaborationRolloutOrganizations.some((id) => organizationIds.includes(id));
+    const resolved = await resolveEffectiveConfig(input, {
+      baselineEffectiveConfig,
+      accountContext: { userId: account?.userId || "", organizationIds },
+    });
+    const collaborationGatedConfig = applyCollaborationPolicyGate(resolved.effectiveConfig, {
+      collaborationEnabled: config.collaborationEnabled,
+      killSwitch: config.collaborationKillSwitch,
+      organizationEligible,
+      realtime: config.collaborationRealtimeEnabled,
+      attachments: config.collaborationAttachmentsEnabled,
+      workspaceShares: config.collaborationWorkspaceSharesEnabled,
+      aiTools: config.collaborationAiToolsEnabled,
+    });
     // Expand any per-scope `models.providers` directive into its preset menu
     // before tokens are injected.
-    const scopedConfig = expandModelProviderMenu(resolved.effectiveConfig, {
+    const scopedConfig = expandModelProviderMenu(collaborationGatedConfig, {
       deliveryMode: modelDeliveryMode,
     });
-    const account = await resolveAccountContextForClientConfig(input, db);
     const bootstrapPolicy = buildClientBootstrapPolicy(request);
     const mediaDeliveryMode = await getMediaDeliveryMode();
     const scopedPreview = withGatewayRuntimeConfig(scopedConfig, request, input, {

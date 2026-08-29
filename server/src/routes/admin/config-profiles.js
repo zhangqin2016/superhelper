@@ -22,7 +22,7 @@ import { getMediaDeliveryMode, getModelDeliveryMode } from "../../services/app-s
 const configProfileSchema = z.object({
   id: z.string().min(2).max(80),
   name: z.string().min(1).max(160),
-  scope: z.enum(["global", "group", "license", "device"]).default("global"),
+  scope: z.enum(["global", "group", "license", "device", "user", "organization"]).default("global"),
   targetId: z.string().max(160).optional().nullable(),
   priority: z.number().int().min(-100000).max(100000).default(0),
   rolloutPercent: z.number().int().min(0).max(100).default(100),
@@ -32,7 +32,7 @@ const configProfileSchema = z.object({
 
 const updateConfigProfileSchema = z.object({
   name: z.string().min(1).max(160).optional(),
-  scope: z.enum(["global", "group", "license", "device"]).optional(),
+  scope: z.enum(["global", "group", "license", "device", "user", "organization"]).optional(),
   targetId: z.string().max(160).optional().nullable(),
   priority: z.number().int().min(-100000).max(100000).optional(),
   rolloutPercent: z.number().int().min(0).max(100).optional(),

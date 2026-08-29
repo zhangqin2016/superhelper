@@ -71,6 +71,20 @@ export const config = {
   characterWorldsEnabled: process.env.CHARACTER_WORLDS_ENABLED === "true",
   characterWorldsCompatibilityProfile: process.env.CHARACTER_WORLDS_COMPATIBILITY_PROFILE || "lily-character-compat-1",
   characterWorldsMinimumClientVersion: process.env.CHARACTER_WORLDS_MINIMUM_CLIENT_VERSION || "0.1.145",
+  // Collaboration Center is opt-in and separately keyed. The policy block is
+  // signed to clients, while message/object KEKs remain server-only.
+  collaborationEnabled: process.env.COLLABORATION_ENABLED === "true",
+  collaborationRealtimeEnabled: process.env.COLLABORATION_REALTIME_ENABLED !== "false",
+  collaborationAttachmentsEnabled: process.env.COLLABORATION_ATTACHMENTS_ENABLED === "true",
+  collaborationWorkspaceSharesEnabled: process.env.COLLABORATION_WORKSPACE_SHARES_ENABLED === "true",
+  collaborationAiToolsEnabled: process.env.COLLABORATION_AI_TOOLS_ENABLED === "true",
+  collaborationKillSwitch: process.env.COLLABORATION_KILL_SWITCH === "true",
+  collaborationRolloutOrganizations: String(process.env.COLLABORATION_ROLLOUT_ORGANIZATIONS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+  collaborationMessageKek: process.env.COLLAB_MESSAGE_KEK || "",
+  collaborationMessageKekVersion: process.env.COLLAB_MESSAGE_KEK_VERSION || "v1",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "",
   anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com",
   openaiApiKey: process.env.OPENAI_API_KEY || "",
@@ -152,12 +166,17 @@ export function requireDatabaseUrl() {
 // Fail-closed on boot: a production server must not run on the packaged dev
 // secret. The model-gateway token secret falls back to SESSION_SECRET, so
 // either one being unset (→ dev default) leaves gateway tokens forgeable.
-export function assertProductionSecrets(env = process.env) {
+export function assertProductionSecrets(env = process.env, resolvedConfig = config) {
   if (String(env.NODE_ENV || "").toLowerCase() !== "production") return;
   const offenders = [];
-  if (config.sessionSecret === DEV_SHARED_SECRET) offenders.push("SESSION_SECRET");
-  if (config.modelGatewayTokenSecret === DEV_SHARED_SECRET) {
+  const sessionSecret = resolvedConfig.sessionSecret;
+  const gatewaySecret = resolvedConfig.modelGatewayTokenSecret;
+  if (sessionSecret === DEV_SHARED_SECRET) offenders.push("SESSION_SECRET");
+  if (gatewaySecret === DEV_SHARED_SECRET) {
     offenders.push("MODEL_GATEWAY_TOKEN_SECRET (or SESSION_SECRET)");
+  }
+  if (resolvedConfig.collaborationEnabled && !resolvedConfig.collaborationMessageKek) {
+    offenders.push("COLLAB_MESSAGE_KEK (required when COLLABORATION_ENABLED=true)");
   }
   if (offenders.length) {
     throw new Error(
