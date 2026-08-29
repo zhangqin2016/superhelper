@@ -10,6 +10,11 @@ const { normalizeToLilyEnv, toEngineEnv } = require("./agent-env");
 const { ensureRuntimeNodeShim, runtimeBinDir } = require("./runtime-node");
 const { getRuntimePathEntries, getRuntimeEnvExtras } = require("./runtime-python");
 const { pickInheritedEnv } = require("./spawn-env-allowlist");
+const {
+  discoverHostExecutablePaths,
+  platformPathCandidates,
+  sanitizeExecutablePathEntries,
+} = require("./executable-paths");
 
 /**
  * Resolve the distributed model config in LILY_* form (gateway URL / token /
@@ -61,26 +66,10 @@ function buildAgentSpawnEnv(options = {}) {
 
   const runtimePaths = getRuntimePathEntries();
   const pathSegments = [runtimeBinDir(), ...runtimePaths, agentBinDir()];
+  const discoverHostPath = options.discoverHostPath || discoverHostExecutablePaths;
+  pathSegments.push(...platformPathCandidates({ home, env: process.env, platform: process.platform }));
+  pathSegments.push(...discoverHostPath({ home, env: process.env, platform: process.platform }));
   const devSystem = !app.isPackaged && process.env.DEV_USE_SYSTEM_AGENT === "1";
-  if (devSystem) {
-    pathSegments.push(
-      path.join(home, ".local", "bin"),
-      path.join(home, ".npm-global", "bin"),
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-      process.env.PATH || "",
-    );
-  } else if (process.platform === "win32") {
-    const winRoot = process.env.WINDIR || "C:\\Windows";
-    pathSegments.push(
-      path.join(winRoot, "System32"),
-      path.join(winRoot, "System32", "WindowsPowerShell", "v1.0"),
-    );
-  } else {
-    pathSegments.push("/usr/bin", "/bin");
-  }
 
   // Built-in browser runtime (node + playwright + bundled Chromium) for the web
   // learning skill's foreground tools. Gated on the platform bundle actually
@@ -113,6 +102,8 @@ function buildAgentSpawnEnv(options = {}) {
     /* browser runtime is optional; never block spawn env on it */
   }
 
+  const executablePath = sanitizeExecutablePathEntries(pathSegments, { platform: process.platform });
+
   const env = {
     ...pickInheritedEnv(process.env),
     ...engineEnv,
@@ -135,7 +126,7 @@ function buildAgentSpawnEnv(options = {}) {
     PYTHONIOENCODING: "utf-8",
     PYTHONUTF8: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-    PATH: pathSegments.join(path.delimiter),
+    PATH: executablePath.join(path.delimiter),
     // Lets agent-run CLIs (e.g. runtime-pack-cli) resolve the same userData
     // dir the main process uses — they run as plain node without electron.
     LILY_USER_DATA_DIR: app.getPath("userData"),

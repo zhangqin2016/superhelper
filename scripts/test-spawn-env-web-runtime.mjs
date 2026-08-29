@@ -24,10 +24,13 @@ const fakeResources = fs.mkdtempSync(path.join(os.tmpdir(), "lily-web-runtime-")
 process.resourcesPath = fakeResources;
 
 const runtimeRoot = path.join(fakeResources, "bundles", platformBundleKey(), "runtime");
+const nodeExecutable = path.join(runtimeRoot, "node", "bin", process.platform === "win32" ? "node.exe" : "node");
 const nodeModules = path.join(runtimeRoot, "web", "node_modules");
 const browsers = path.join(runtimeRoot, "web", "browsers");
+fs.mkdirSync(path.dirname(nodeExecutable), { recursive: true });
 fs.mkdirSync(path.join(nodeModules, "playwright"), { recursive: true });
 fs.mkdirSync(browsers, { recursive: true });
+fs.writeFileSync(nodeExecutable, "");
 fs.writeFileSync(path.join(nodeModules, "playwright", "package.json"), JSON.stringify({ name: "playwright" }));
 
 const electronPath = require.resolve("electron");
@@ -58,6 +61,9 @@ if (env.LILY_PLAYWRIGHT_NODE_MODULES !== nodeModules) {
 }
 if (env.PLAYWRIGHT_BROWSERS_PATH !== browsers) {
   throw new Error(`spawn env browsers path mismatch, got ${env.PLAYWRIGHT_BROWSERS_PATH}`);
+}
+if (!env.PATH.split(path.delimiter).includes(path.dirname(nodeExecutable))) {
+  throw new Error(`spawn env PATH missing bundled Node directory: ${env.PATH}`);
 }
 
 fs.rmSync(fakeResources, { recursive: true, force: true });

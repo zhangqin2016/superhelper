@@ -56,6 +56,11 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     "runtime-node": { ensureRuntimeNodeShim: () => { stats.envBuilds++; }, runtimeBinDir: () => home },
     "runtime-python": { getRuntimePathEntries: () => [], getRuntimeEnvExtras: () => ({}) },
     "spawn-env-allowlist": { pickInheritedEnv: () => ({}) },
+    "executable-paths": {
+      discoverHostExecutablePaths: () => [],
+      platformPathCandidates: () => [],
+      sanitizeExecutablePathEntries: entries => [...new Set(entries.filter(Boolean))],
+    },
     "search-settings": { getSearchSpawnEnv: () => ({}) },
     "media-provider-settings": { getMediaProviderSpawnEnv: () => ({}) },
     "connector-bridge": { getConnectorBridgeEnvSync: () => ({}) },

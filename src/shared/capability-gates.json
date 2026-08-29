@@ -336,6 +336,17 @@
         "scripts/test-renderer-import.cjs",
         "scripts/test-turn-archive.mjs"
       ]
+    },
+    {
+      "id": "local-software-discovery",
+      "protects": "Packaged Lily can discover installed local command-line software without inheriting unrelated host secrets or unsafe search paths.",
+      "baseline": "Bundled runtimes and verified packs keep priority while existing absolute platform, installer, inherited, and login-shell executable directories remain discoverable.",
+      "failureFallback": "Ignore failed login-shell discovery and continue with the bounded known system and installer paths.",
+      "tests": [
+        "scripts/test-executable-paths.mjs",
+        "scripts/test-spawn-env-software-discovery.mjs",
+        "scripts/test-spawn-env-allowlist.mjs"
+      ]
     }
   ]
 }
