@@ -2,7 +2,10 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
+import { sql } from "kysely";
+import pg from "pg";
 import { config, assertProductionSecrets } from "./config.js";
+import { db } from "./db.js";
 import { publicRoutes } from "./routes/public.js";
 import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
@@ -14,6 +17,9 @@ import { refreshModelCatalog } from "./services/model-catalog.js";
 import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
 import { installDocOnlyCompilers, registerOpenapi } from "./openapi.js";
 import { ADMIN_UPLOAD_LIMIT_BYTES } from "./limits.js";
+import { createCollaborationWsTicketService } from "./services/collaboration/ws-ticket.js";
+import { COLLABORATION_NOTIFY_CHANNEL, createRealtimeDispatcher, createRealtimeNotifyLifecycle } from "./services/collaboration/realtime-dispatcher.js";
+import { registerCollaborationRealtimeGateway } from "./services/collaboration/realtime-gateway.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -94,6 +100,58 @@ export async function buildApp() {
   // upgrade event (fastify has no WS server). Gated so it only runs in the full
   // app, not the doc-only app used by the OpenAPI coverage test.
   registerMobileRelay(app);
+  // Durable sync remains the delivery source of truth. This optional layer
+  // emits only wake-up hints and is absent entirely when rollout is disabled.
+  if (config.collaborationEnabled && config.collaborationRealtimeEnabled && !config.collaborationKillSwitch) {
+    const gateway = registerCollaborationRealtimeGateway(app, {
+      ticketService: createCollaborationWsTicketService({ db }),
+      resolveEphemeralRecipients: async ({ userId, conversationId }) => {
+        const conversation = await db.selectFrom("conversations").select(["scope_type", "organization_id"])
+          .where("id", "=", conversationId).where("status", "=", "active").executeTakeFirst();
+        if (!conversation) return [];
+        if (conversation.scope_type === "organization") {
+          const organizationMembers = await db.selectFrom("organization_members").select("user_id")
+            .where("organization_id", "=", conversation.organization_id).where("status", "=", "active").execute();
+          const activeOrganizationUserIds = new Set(organizationMembers.map((member) => String(member.user_id)));
+          if (!activeOrganizationUserIds.has(userId)) return [];
+          const members = await db.selectFrom("conversation_members").select("user_id")
+            .where("conversation_id", "=", conversationId).where("status", "=", "active").execute();
+          return members.map((member) => String(member.user_id)).filter((memberId) => activeOrganizationUserIds.has(memberId));
+        }
+        const members = await db.selectFrom("conversation_members").select("user_id")
+          .where("conversation_id", "=", conversationId).where("status", "=", "active").execute();
+        const recipientUserIds = members.map((member) => String(member.user_id));
+        return recipientUserIds.includes(userId) ? recipientUserIds : [];
+      },
+    });
+    const dispatcher = createRealtimeDispatcher({
+      db,
+      notify: async ({ userId, maxCursor }) => {
+        gateway.notifySyncAvailable(userId, maxCursor);
+        await sql`select pg_notify(${COLLABORATION_NOTIFY_CHANNEL}, ${JSON.stringify({ userId, cursor: maxCursor })})`.execute(db);
+      },
+    });
+    let realtimeTimer = null;
+    const startDispatcher = () => {
+      if (realtimeTimer) return;
+      realtimeTimer = setInterval(() => dispatcher.dispatchOnce({ workerId: `app-${process.pid}` }).catch((err) => app.log.warn({ err }, "collaboration realtime dispatch failed")), 1000);
+      realtimeTimer.unref?.();
+    };
+    // Local durable delivery must not depend on the optional cross-instance
+    // LISTEN connection. A reconnecting listener only fan-outs best-effort
+    // wake-up hints; the dispatcher continuously drains the outbox itself.
+    startDispatcher();
+    const listener = createRealtimeNotifyLifecycle({
+      createClient: () => new pg.Client({ connectionString: config.databaseUrl }),
+      onHint: ({ userId, cursor }) => gateway.notifySyncAvailable(userId, cursor),
+    });
+    try { await listener.start(); } catch (err) { app.log.warn({ err }, "collaboration realtime LISTEN failed; continuing local dispatcher while reconnecting"); }
+    app.addHook("onClose", (_instance, done) => {
+      if (realtimeTimer) clearInterval(realtimeTimer);
+      listener.stop().catch(() => {});
+      done();
+    });
+  }
 
   return app;
 }
