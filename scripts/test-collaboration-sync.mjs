@@ -30,6 +30,10 @@ assert.match(syncServiceSource, /member\.user_id.*member\.status.*message\.creat
   "bootstrap history must be authorized by the current active membership and joined sequence");
 assert.match(syncServiceSource, /orderBy\("history_rank", "asc"\)\.orderBy\("conversation_id", "asc"\)/,
   "the global bootstrap history cap must round-robin newest messages across conversations before taking deeper history");
+assert.match(syncServiceSource, /event\.client_command_id as client_command_id/,
+  "durable sync must select the originating command id so a confirming local command can reconcile in place");
+assert.match(syncServiceSource, /clientCommandId: String\(row\?\.clientCommandId \?\? row\?\.client_command_id \?\? ""\)/,
+  "sync normalization must expose a stable command id without putting it into the event payload");
 
 assert.equal(DEFAULT_SYNC_LIMIT, 500);
 assert.equal(MAX_SYNC_LIMIT, 2000);

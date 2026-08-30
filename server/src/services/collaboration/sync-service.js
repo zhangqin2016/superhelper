@@ -83,6 +83,7 @@ function normalizedSyncEvent(row) {
     scope,
     seq: Number.isSafeInteger(Number(row?.seq)) ? Number(row.seq) : null,
     type: requiredId(row?.type, "Collaboration sync event type"),
+    clientCommandId: String(row?.clientCommandId ?? row?.client_command_id ?? ""),
     actorUserId: String(row?.actorUserId ?? row?.actor_user_id ?? ""),
     createdAt: row?.createdAt ?? row?.created_at ?? null,
     payload,
@@ -300,7 +301,7 @@ function createKyselyRepository(db) {
         .innerJoin("collaboration_events as event", "event.id", "use.event_id")
         .select([
           "use.cursor as cursor", "event.id as id", "event.conversation_id as conversation_id", "event.seq as seq",
-          "event.type as type", "event.actor_user_id as actor_user_id", "event.created_at as created_at", "event.payload as payload",
+          "event.type as type", "event.client_command_id as client_command_id", "event.actor_user_id as actor_user_id", "event.created_at as created_at", "event.payload as payload",
         ])
         .where("use.user_id", "=", userId).where("use.cursor", ">", afterCursor)
         .orderBy("use.cursor", "asc").limit(fetchLimit).execute();
