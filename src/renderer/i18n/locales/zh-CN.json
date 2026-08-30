@@ -1755,5 +1755,18 @@
   "character.preview.active": "预览已启用，只影响之后的消息",
   "character.preview.activate": "正式启用",
   "character.preview.exit": "退出预览",
-  "character.preview.actionFailed": "操作失败，状态已刷新，请重试"
+  "character.preview.actionFailed": "操作失败，状态已刷新，请重试",
+  "collaboration.nav": "协作中心",
+  "collaboration.workbench": "工作台",
+  "collaboration.inbox": "收件箱",
+  "collaboration.people": "联系人",
+  "collaboration.teams": "团队",
+  "collaboration.conversation": "对话",
+  "collaboration.empty": "选择一个对话开始协作",
+  "collaboration.ariaLabel": "协作中心",
+  "collaboration.navLabel": "协作导航",
+  "collaboration.statusAvailable": "协作已连接",
+  "collaboration.statusUnavailable": "协作暂不可用",
+  "collaboration.scopePersonal": "个人",
+  "collaboration.scopeTeam": "团队"
 }

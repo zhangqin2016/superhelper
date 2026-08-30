@@ -69,6 +69,16 @@ const COLLABORATION_MIGRATIONS = [
   // v3 — retry decisions survive restart; an exhausted command must wait for a
   // person rather than retrying forever with a possibly side-effecting intent.
   (db) => db.exec(`ALTER TABLE outbox ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;`),
+  // v4 — a cursor page that contains message activity cannot be ACKed until
+  // its server-authorized plaintext history has been persisted locally. This
+  // checkpoint survives a crash between SQLite page application and history
+  // hydration, so startup can finish hydration before acknowledging later.
+  (db) => db.exec(`
+    CREATE TABLE history_hydration (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, conversation_id)
+    );
+  `),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

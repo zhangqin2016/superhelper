@@ -15,6 +15,13 @@ function parseEnvelope(value) {
   try { return JSON.parse(value); } catch { throw new Error("collaboration store: encrypted payload is invalid"); }
 }
 
+function projectedScopeId(value, fallback = "personal") {
+  const scopeType = String(value?.scopeType ?? value?.scope_type ?? "");
+  const organizationId = String(value?.organizationId ?? value?.organization_id ?? "").trim();
+  if (scopeType === "organization" && organizationId) return `team:${organizationId}`;
+  return String(value?.scopeId ?? value?.scope_id ?? fallback).trim() || fallback;
+}
+
 class CollaborationStore {
   constructor({ dbPath = collaborationDbPath(), accountId, keyring, now = () => Date.now() } = {}) {
     this.accountId = requireId(accountId, "account id");
@@ -91,6 +98,15 @@ class CollaborationStore {
       .map((row) => ({ id: row.id, conversationId: row.conversation_id, clientCommandId: row.client_command_id, scopeId: row.scope_id, state: row.state, attempts: Number(row.attempts), createdAt: row.created_at }));
   }
 
+  /** A process can exit between network dispatch and durable confirmation. */
+  recoverAbandonedSubmittingOutbox() {
+    const recovered = this.db.run(
+      `UPDATE outbox SET state = 'queued', updated_at = ? WHERE account_id = ? AND state = 'submitting'`,
+      this.now(), this.accountId,
+    );
+    return { recovered: Number(recovered.changes || 0) };
+  }
+
   getOutbox({ outboxId }) {
     const id = requireId(outboxId, "outbox id");
     const row = this.db.get(`SELECT * FROM outbox WHERE account_id = ? AND id = ?`, this.accountId, id);
@@ -139,7 +155,7 @@ class CollaborationStore {
     const event = requireId(eventId, "event id");
     const settle = this.db.transaction(() => {
       const pending = this.db.get(
-        `SELECT 1 AS present FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'cancelled')`,
+        `SELECT 1 AS present FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled')`,
         this.accountId, command,
       );
       if (pending) this._settleOptimisticCommand({ clientCommandId: command, event: { seq: sequence, payload: { messageId } } });
@@ -168,7 +184,7 @@ class CollaborationStore {
 
   _settleOptimisticCommand({ clientCommandId, event }) {
     const rows = this.db.all(
-      `SELECT * FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'cancelled')`,
+      `SELECT * FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled')`,
       this.accountId, clientCommandId,
     );
     for (const outbox of rows) {
@@ -204,13 +220,14 @@ class CollaborationStore {
     }
   }
 
-  applySyncPage({ fromCursor, toCursor, events, projectEvent = () => {} }) {
+  applySyncPage({ fromCursor, toCursor, events, projectEvent = () => {}, historyHydrationConversationIds = [] }) {
     const from = Number(fromCursor);
     const to = Number(toCursor);
     if (!Number.isSafeInteger(from) || from < 0 || !Number.isSafeInteger(to) || to < from) {
       throw new Error("collaboration store: sync page cursor is invalid");
     }
     const rows = Array.isArray(events) ? events : [];
+    const hydrationIds = [...new Set((Array.isArray(historyHydrationConversationIds) ? historyHydrationConversationIds : []).map((value) => requireId(value, "history hydration conversation id")))];
     const apply = this.db.transaction(() => {
       this.db.run(`INSERT OR IGNORE INTO sync_state (account_id, cursor, watermark, updated_at) VALUES (?, 0, 0, ?)`, this.accountId, this.now());
       const current = this.db.get(`SELECT cursor FROM sync_state WHERE account_id = ?`, this.accountId);
@@ -236,10 +253,27 @@ class CollaborationStore {
         }
         appliedEventIds.push(id);
       }
+      for (const conversationId of hydrationIds) {
+        this.db.run(
+          `INSERT INTO history_hydration (account_id, conversation_id, created_at) VALUES (?, ?, ?)
+           ON CONFLICT(account_id, conversation_id) DO NOTHING`,
+          this.accountId, conversationId, this.now(),
+        );
+      }
       this.db.run(`UPDATE sync_state SET cursor = ?, watermark = MAX(watermark, ?), updated_at = ? WHERE account_id = ?`, to, to, this.now(), this.accountId);
       return { cursor: to, appliedEventIds };
     });
     return apply();
+  }
+
+  listPendingHistoryHydration() {
+    return this.db.all(`SELECT conversation_id FROM history_hydration WHERE account_id = ? ORDER BY created_at, conversation_id`, this.accountId)
+      .map((row) => row.conversation_id);
+  }
+
+  completeHistoryHydration({ conversationId } = {}) {
+    const result = this.db.run(`DELETE FROM history_hydration WHERE account_id = ? AND conversation_id = ?`, this.accountId, requireId(conversationId, "history hydration conversation id"));
+    return { completed: Number(result.changes || 0) };
   }
 
   replaceProjectionFromBootstrap({ watermark = 0, profile = null, profiles = [], conversations = [], members = [], history = [] } = {}) {
@@ -250,7 +284,7 @@ class CollaborationStore {
     const historyRows = Array.isArray(history) ? history : [];
     const replace = this.db.transaction(() => {
       const confirmingBubbles = this.db.all(
-        `SELECT * FROM outbox WHERE account_id = ? AND state IN ('confirming', 'cancellation_requested') ORDER BY created_at, id`,
+        `SELECT * FROM outbox WHERE account_id = ? AND state IN ('confirming', 'cancellation_requested', 'delivery_unknown') ORDER BY created_at, id`,
         this.accountId,
       ).map((outbox) => ({
         outbox,
@@ -258,14 +292,14 @@ class CollaborationStore {
       }));
       // Only server-rebuildable projection tables for this account are reset.
       // Drafts and the encrypted outbox are intentionally outside this list.
-      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "profiles"]) {
+      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "profiles", "history_hydration"]) {
         this.db.run(`DELETE FROM ${table} WHERE account_id = ?`, this.accountId);
       }
       for (const conversation of rows) {
         const id = requireId(conversation?.id, "conversation id");
         this.db.run(
           `INSERT INTO conversations (account_id, id, scope_id, kind, title, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-          this.accountId, id, this._scope(conversation.scopeId ?? conversation.scope_id ?? "personal"), String(conversation.kind || "unknown"),
+          this.accountId, id, this._scope(projectedScopeId(conversation)), String(conversation.kind || "unknown"),
           conversation.title == null ? null : String(conversation.title), this.now(),
         );
       }
@@ -324,6 +358,62 @@ class CollaborationStore {
     return this.db.all(`SELECT id FROM conversations WHERE account_id = ? ORDER BY id`, this.accountId).map((row) => row.id);
   }
 
+  listConversations() {
+    return this.db.all(
+      `SELECT c.id, c.scope_id, c.kind, c.title, c.updated_at, MAX(m.seq) AS last_seq
+       FROM conversations c
+       LEFT JOIN messages m ON m.account_id = c.account_id AND m.conversation_id = c.id
+       WHERE c.account_id = ?
+       GROUP BY c.id, c.scope_id, c.kind, c.title, c.updated_at
+       ORDER BY MAX(m.seq) DESC, c.updated_at DESC, c.id ASC`,
+      this.accountId,
+    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq) }));
+  }
+
+  getConversation({ conversationId }) {
+    const row = this.db.get(`SELECT id, scope_id, kind, title, updated_at FROM conversations WHERE account_id = ? AND id = ?`, this.accountId, requireId(conversationId, "conversation id"));
+    return row ? { id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at) } : null;
+  }
+
+  listMessages({ conversationId, limit = 200 } = {}) {
+    const conversation = requireId(conversationId, "conversation id");
+    const cappedLimit = Math.min(200, Math.max(1, Number.isSafeInteger(Number(limit)) ? Number(limit) : 200));
+    return this.db.all(
+      `SELECT * FROM messages WHERE account_id = ? AND conversation_id = ? ORDER BY seq DESC, created_at DESC, id DESC LIMIT ?`,
+      this.accountId, conversation, cappedLimit,
+    ).reverse().map((row) => ({
+      id: row.id, conversationId: row.conversation_id, seq: row.seq == null ? null : Number(row.seq), senderUserId: row.sender_user_id,
+      state: row.state, ...this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, row.id), value: row.body_envelope_json }),
+    }));
+  }
+
+  /** Persist only the server's authorized plaintext history view, encrypted locally. */
+  hydrateAuthorizedHistory({ conversationId, messages = [] } = {}) {
+    const conversation = requireId(conversationId, "conversation id");
+    const target = this.db.get(`SELECT scope_id FROM conversations WHERE account_id = ? AND id = ?`, this.accountId, conversation);
+    if (!target) return { hydrated: 0 };
+    const rows = Array.isArray(messages) ? messages : [];
+    const apply = this.db.transaction(() => {
+      let hydrated = 0;
+      for (const message of rows) {
+        const id = requireId(message?.id, "history message id");
+        const bodyText = message?.bodyText == null ? "" : String(message.bodyText);
+        const seq = Number(message?.createSeq ?? message?.create_seq ?? message?.seq);
+        this.db.run(
+          `INSERT INTO messages (account_id, conversation_id, id, scope_id, seq, sender_user_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'persisted', ?, ?, ?)
+           ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET seq = excluded.seq, sender_user_id = excluded.sender_user_id, state = excluded.state, body_envelope_json = excluded.body_envelope_json, updated_at = excluded.updated_at`,
+          this.accountId, conversation, id, target.scope_id, Number.isSafeInteger(seq) ? seq : null, message?.senderUserId ?? message?.sender_user_id ?? null,
+          this._encrypt({ scopeId: target.scope_id, recordId: this._messageRecord(conversation, id), value: { bodyText } }), this.now(), this.now(),
+        );
+        hydrated += 1;
+      }
+      return { hydrated };
+    });
+    const result = apply();
+    this.completeHistoryHydration({ conversationId: conversation });
+    return result;
+  }
+
   getProfile({ userId }) {
     const row = this.db.get(`SELECT * FROM profiles WHERE account_id = ? AND user_id = ?`, this.accountId, requireId(userId, "profile user id"));
     if (!row) return null;
@@ -366,4 +456,4 @@ function openCollaborationStore(options = {}) {
   }
 }
 
-module.exports = { CollaborationStore, openCollaborationStore };
+module.exports = { CollaborationStore, openCollaborationStore, projectedScopeId };

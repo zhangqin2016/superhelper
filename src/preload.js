@@ -2,6 +2,8 @@
 
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
+let collaborationStateSubscriberCount = 0;
+
 contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
   getAppVersion: () => ipcRenderer.invoke("app:get-version"),
@@ -443,6 +445,35 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:open", { filePath, sessionId }),
   localMediaStatus: (filePath) =>
     ipcRenderer.invoke("files:local-media-status", { filePath }),
+
+  // Intentionally a closed command set. The renderer never receives bearer
+  // credentials, device signatures, encrypted key material, or local paths.
+  collaboration: {
+    getState: () => ipcRenderer.invoke("collaboration:get-state"),
+    bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),
+    list: () => ipcRenderer.invoke("collaboration:list"),
+    open: (conversationId) => ipcRenderer.invoke("collaboration:open", { conversationId }),
+    send: ({ conversationId, clientCommandId, bodyText }) => ipcRenderer.invoke("collaboration:send", {
+      conversationId, clientCommandId, bodyText,
+    }),
+    retry: (outboxId) => ipcRenderer.invoke("collaboration:retry", { outboxId }),
+    cancel: (outboxId) => ipcRenderer.invoke("collaboration:cancel", { outboxId }),
+    markRead: (conversationId, seq) => ipcRenderer.invoke("collaboration:mark-read", { conversationId, seq }),
+    onStateChange: (callback) => {
+      if (typeof callback !== "function") return () => {};
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on("collaboration:state", handler);
+      collaborationStateSubscriberCount += 1;
+      if (collaborationStateSubscriberCount === 1) {
+        void ipcRenderer.invoke("collaboration:subscribe").then((state) => callback({ type: "initial", state })).catch(() => callback({ type: "initial", state: { ok: false, code: "COLLABORATION_UNAVAILABLE" } }));
+      }
+      return () => {
+        ipcRenderer.removeListener("collaboration:state", handler);
+        collaborationStateSubscriberCount = Math.max(0, collaborationStateSubscriberCount - 1);
+        if (collaborationStateSubscriberCount === 0) void ipcRenderer.invoke("collaboration:unsubscribe");
+      };
+    },
+  },
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

@@ -190,7 +190,18 @@ export function buildBootstrapSnapshot({ profile = null, relationships = [], tea
     profile: normalizedProfile,
     relationships: Array.isArray(relationships) ? relationships : [],
     teams: Array.isArray(teams) ? teams : [],
-    conversations: Array.isArray(conversations) ? conversations : [],
+    // This is the server-to-desktop projection contract. Raw database scope
+    // columns deliberately never leak to the local keyring/outbox layer:
+    // organization conversations always use the stable Team scope namespace.
+    conversations: Array.isArray(conversations) ? conversations.map((conversation) => {
+      const scopeType = String(conversation?.scopeType ?? conversation?.scope_type ?? "");
+      const organizationId = String(conversation?.organizationId ?? conversation?.organization_id ?? "").trim();
+      const suppliedScope = String(conversation?.scopeId ?? conversation?.scope_id ?? "").trim();
+      return {
+        ...conversation,
+        scopeId: scopeType === "organization" && organizationId ? `team:${organizationId}` : (suppliedScope || "personal"),
+      };
+    }) : [],
     members: Array.isArray(members) ? members : [],
     profiles: Array.isArray(profiles) ? profiles : [],
     // Controlled history lets a compacted local DB reconstruct useful

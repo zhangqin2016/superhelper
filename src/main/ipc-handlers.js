@@ -17,6 +17,7 @@ const { registerConnectorHandlers } = require("./ipc-connectors");
 const { registerRuntimePackHandlers } = require("./ipc-runtime-packs");
 const { registerCharacterWorldsHandlers } = require("./ipc-character-worlds");
 const { registerCharacterAuthoringHandlers } = require("./ipc-character-authoring");
+const { createCollaborationIpc } = require("./ipc-collaboration");
 const { RuntimeEventBus } = require("./runtime-event-bus");
 const { TranscriptStore } = require("./transcript-store");
 const { TurnArchive } = require("./turn-archive");
@@ -176,7 +177,12 @@ function registerAll(ctx) {
   ipcMain.handle("app:get-policy", async () => {
     const serviceClient = require("./service-client");
     const policy = await serviceClient.refreshClientBootstrap().catch(() => serviceClient.getClientPolicy());
-    return { ok: policy?.ok !== false, ...serviceClient.getClientPolicy(), ...(policy || {}) };
+    return {
+      ok: policy?.ok !== false,
+      ...serviceClient.getClientPolicy(),
+      ...(policy || {}),
+      collaboration: require("./remote-config").getRemoteCollaborationPolicySync(),
+    };
   });
   ipcMain.handle("app:get-locale", () => ({ ok: true, ...listLocalesPublic() }));
   ipcMain.handle("app:set-locale", (_event, locale) => {
@@ -256,6 +262,7 @@ function registerAll(ctx) {
     if (!result?.ok) return result;
     ctx.scheduledTaskManager?.handlePrincipalChange?.();
     ctx.turnOrchestrator?.handlePrincipalChange?.();
+    ctx.refreshCollaborationService?.();
     try {
       const configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
         force: true,
@@ -301,6 +308,7 @@ function registerAll(ctx) {
     const result = await require("./account-manager").logout();
     ctx.scheduledTaskManager?.handlePrincipalChange?.();
     ctx.turnOrchestrator?.handlePrincipalChange?.();
+    ctx.refreshCollaborationService?.();
     return result;
   });
 
@@ -349,6 +357,11 @@ function registerAll(ctx) {
   registerRuntimePackHandlers(ctx);
   registerCharacterWorldsHandlers(ctx);
   registerCharacterAuthoringHandlers(ctx);
+  createCollaborationIpc({
+    ipcMain,
+    getService: () => ctx.collaborationService,
+    subscribeState: (listener) => ctx.onCollaborationStateChange?.(listener) || (() => {}),
+  });
 
   ipcMain.handle("usage:get-summary", async () => require("./usage-settings").getUsageSettingsPublic());
 

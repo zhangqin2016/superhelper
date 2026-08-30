@@ -110,8 +110,22 @@ const absentCancel = createCollaborationOutbox({
   store,
   transport: { async submit() {}, async lookupReceipt() { return { committed: false }; } },
 });
-assert.deepEqual(await absentCancel.cancel("command-cancel-2"), { state: "cancelled" }, "only a receipt that proves no server commit permits cancellation");
-assert.equal(store.getOutbox({ outboxId: "command-cancel-2" }).state, "cancelled");
+assert.deepEqual(await absentCancel.cancel("command-cancel-2"), { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true }, "an absent receipt is not proof that an ambiguous server command never committed");
+assert.equal(store.getOutbox({ outboxId: "command-cancel-2" }).state, "delivery_unknown");
+
+store.persistDraftAndOptimisticMessage({ conversationId: "conv-cancel-receipt-error", draftId: "draft-cancel-receipt-error", draftText: "draft", messageId: "message-cancel-receipt-error", clientCommandId: "command-cancel-receipt-error", bodyText: "cancel" });
+store.setOutboxState({ outboxId: "command-cancel-receipt-error", expectedStates: ["queued"], state: "confirming" });
+const receiptErrorCancel = createCollaborationOutbox({ store, transport: { async submit() {}, async lookupReceipt() { throw new Error("receipt transport offline"); } } });
+assert.deepEqual(await receiptErrorCancel.cancel("command-cancel-receipt-error"), { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true }, "a receipt transport failure never strands cancellation_requested");
+assert.equal(store.getOutbox({ outboxId: "command-cancel-receipt-error" }).state, "delivery_unknown");
+
+store.persistDraftAndOptimisticMessage({ conversationId: "conv-cancel-no-receipt", draftId: "draft-cancel-no-receipt", draftText: "draft", messageId: "message-cancel-no-receipt", clientCommandId: "command-cancel-no-receipt", bodyText: "cancel" });
+store.setOutboxState({ outboxId: "command-cancel-no-receipt", expectedStates: ["queued"], state: "confirming" });
+const noReceiptCancel = createCollaborationOutbox({ store, transport: { async submit() {} } });
+assert.deepEqual(await noReceiptCancel.cancel("command-cancel-no-receipt"), { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true }, "without a receipt endpoint cancellation is explicitly recoverable rather than falsely cancelled");
+assert.equal(store.getOutbox({ outboxId: "command-cancel-no-receipt" }).state, "delivery_unknown");
+assert.equal(noReceiptCancel.continue("command-cancel-no-receipt").state, "queued", "delivery-unknown recovery retries the original idempotency key");
+assert.equal(noReceiptCancel.skip("command-cancel-no-receipt").state, "cancelled", "a user may explicitly discard a delivery-unknown draft without claiming server cancellation");
 
 store.persistDraftAndOptimisticMessage({ conversationId: "conv-cancel-race", draftId: "draft-cancel-race", draftText: "draft", messageId: "message-cancel-race", clientCommandId: "command-cancel-race", bodyText: "race" });
 let releaseSubmitting;
@@ -131,7 +145,7 @@ assert.deepEqual(raceOrder, ["submit:start"], "cancel is serialized behind an in
 releaseSubmitting();
 await Promise.all([submitting, cancelling]);
 assert.deepEqual(raceOrder, ["submit:start", "submit:end", "receipt"], "cancellation checks the original receipt after the submit reaches a durable confirmation state");
-assert.equal(store.getOutbox({ outboxId: "command-cancel-race" }).state, "cancelled");
+assert.equal(store.getOutbox({ outboxId: "command-cancel-race" }).state, "delivery_unknown", "an absent receipt after a race remains explicitly delivery-unknown");
 
 store.persistDraftAndOptimisticMessage({ conversationId: "conv-auto", draftId: "draft-auto", draftText: "draft", messageId: "message-auto", clientCommandId: "command-auto", bodyText: "automatic retry" });
 const retryTimers = [];

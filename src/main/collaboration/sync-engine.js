@@ -38,7 +38,11 @@ function createCollaborationSyncEngine({ store, projectEvent = (event) => {
       const local = store.getSyncState();
       const normalized = validatePage(page, local.cursor);
       if (normalized.status !== "OK") return { cursor: local.cursor, appliedEventIds: [] };
-      return store.applySyncPage({ ...normalized, projectEvent });
+      const historyHydrationConversationIds = normalized.events
+        .filter((event) => String(event?.type || "").startsWith("message."))
+        .map((event) => event?.conversationId ?? event?.conversation_id)
+        .filter(Boolean);
+      return store.applySyncPage({ ...normalized, projectEvent, historyHydrationConversationIds });
     },
     applyBootstrap(snapshot) {
       return store.replaceProjectionFromBootstrap(snapshot);

@@ -30,6 +30,24 @@ assert.equal(seen[0].authorization, "Bearer short-lived-a");
 assert.equal(seen[1].authorization, "Bearer short-lived-b");
 assert.equal(Object.values(response).includes("short-lived-b"), false, "client responses never expose an access token to renderer consumers");
 
+let historyRequest = null;
+const historyClient = createCollaborationClient({
+  accountManager: { async accessTokenForService() { return { ok: true, accessToken: "main-only" }; } }, signDeviceRequest: async () => ({}),
+  request: async (request) => { historyRequest = request; return { ok: true, status: 200, json: { ok: true, result: { messages: [{ id: "m1", bodyText: "authorized plaintext" }] } } }; },
+});
+assert.deepEqual(await historyClient.listMessageHistory({ deviceId: "device-1", conversationId: "c1", limit: 20 }), { messages: [{ id: "m1", bodyText: "authorized plaintext" }] });
+assert.equal(historyRequest.path, "/api/collaboration/v1/messages");
+assert.equal(historyRequest.body.action, "history");
+assert.equal(historyRequest.body.bodyCiphertext, undefined, "history requests use the server-authorized decrypted view, never client ciphertext/key material");
+
+let receiptRequest = null;
+const receiptClient = createCollaborationClient({
+  accountManager: { async accessTokenForService() { return { ok: true, accessToken: "main-only" }; } }, signDeviceRequest: async () => ({}),
+  request: async (request) => { receiptRequest = request; return { ok: true, status: 200, json: { ok: true, state: "completed", committed: true } }; },
+});
+assert.deepEqual(await receiptClient.lookupCommandReceipt({ deviceId: "device-1", conversationId: "client-untrusted-c1", clientCommandId: "cmd-1" }), { ok: true, state: "completed", committed: true });
+assert.deepEqual(receiptRequest.body, { deviceId: "device-1", clientCommandId: "cmd-1", commandType: "message.create" }, "receipt lookup omits client conversation metadata; the server derives scope from the receipt event");
+
 const ordering = [];
 const syncClient = createCollaborationClient({
   accountManager: { async accessTokenForService() { return { ok: true, accessToken: "only-main-process" }; } },
@@ -57,8 +75,64 @@ const resyncClient = createCollaborationClient({
   },
 });
 const bootstrapEngine = { applyBootstrap(snapshot) { resyncOrdering.push(`bootstrap-commit:${snapshot.watermark}`); return { cursor: snapshot.watermark }; } };
-await resyncClient.syncAndAcknowledge({ deviceId: "device-1", afterCursor: 1, syncEngine: bootstrapEngine });
-assert.deepEqual(resyncOrdering, ["/api/collaboration/v1/sync", "/api/collaboration/v1/bootstrap", "bootstrap-commit:7", "/api/collaboration/v1/ack"], "full resync ACK follows only a committed bootstrap projection and uses the server completion token");
+const rawResync = await resyncClient.syncAndAcknowledge({ deviceId: "device-1", afterCursor: 1, syncEngine: bootstrapEngine });
+assert.equal(rawResync.requiresHydration, true, "a direct client receives a snapshot requiring service-owned hydration");
+assert.deepEqual(resyncOrdering, ["/api/collaboration/v1/sync", "/api/collaboration/v1/bootstrap"], "a bare client never consumes a full-resync ACK token before the service hydrates authorized history");
+
+// The client deliberately delegates FULL_RESYNC completion to the service:
+// raw bootstrap history is ciphertext and must not be ACKed before that
+// service has fetched and stored the authorized plaintext projection.
+const serviceResyncOrder = [];
+const serviceResyncClient = createCollaborationClient({
+  accountManager: { async accessTokenForService() { return { ok: true, accessToken: "only-main-process" }; } },
+  signDeviceRequest: async () => ({}),
+  request: async ({ path, body }) => {
+    serviceResyncOrder.push(path);
+    if (path.endsWith("/sync")) return { ok: true, status: 200, json: { status: "FULL_RESYNC_REQUIRED" } };
+    if (path.endsWith("/bootstrap")) return { ok: true, status: 200, json: { watermark: 8, bootstrapCompletionToken: "completion-8", conversations: [{ id: "c-history" }], history: [{ body_ciphertext: "never-project-this" }] } };
+    if (path.endsWith("/messages")) return { ok: true, status: 200, json: { ok: true, result: { messages: [{ id: "m-history", bodyText: "authorized only" }] } } };
+    assert.deepEqual(body, { deviceId: "device-1", cursor: 8, bootstrapCompletionToken: "completion-8", clientCommandId: "ack:device-1:8:bootstrap" });
+    return { ok: true, status: 200, json: { ok: true } };
+  },
+});
+const serviceResyncStore = {
+  getSyncState() { return { cursor: 2, watermark: 2 }; },
+  applySyncPage() { throw new Error("incremental projection is not expected during full resync"); },
+  replaceProjectionFromBootstrap(snapshot) {
+    serviceResyncOrder.push(`apply:${JSON.stringify(snapshot.history)}`);
+    assert.deepEqual(snapshot.history, [], "raw encrypted bootstrap history is not placed in the desktop projection");
+    return { cursor: snapshot.watermark };
+  },
+  hydrateAuthorizedHistory({ messages }) { serviceResyncOrder.push(`hydrate:${messages[0]?.bodyText}`); },
+  close() {},
+};
+const serviceResync = createCollaborationService({ openStore: () => ({ ok: true, store: serviceResyncStore }), client: serviceResyncClient, deviceId: "device-1" });
+await serviceResync.realtime.notifyAvailable();
+assert.deepEqual(serviceResyncOrder, ["/api/collaboration/v1/sync", "/api/collaboration/v1/bootstrap", "apply:[]", "/api/collaboration/v1/messages", "hydrate:authorized only", "/api/collaboration/v1/ack"], "FULL_RESYNC ACK follows durable bootstrap plus authorized plaintext history hydration");
+serviceResync.stop();
+
+const pageHydrationOrder = [];
+const pageHydrationClient = createCollaborationClient({
+  accountManager: { async accessTokenForService() { return { ok: true, accessToken: "only-main-process" }; } }, signDeviceRequest: async () => ({}),
+  request: async ({ path, body }) => {
+    pageHydrationOrder.push(path);
+    if (path.endsWith("/sync")) return { ok: true, status: 200, json: { status: "OK", fromCursor: 4, toCursor: 5, events: [{ id: "evt-page", cursor: 5, type: "message.created", conversationId: "c-page" }] } };
+    if (path.endsWith("/messages")) return { ok: true, status: 200, json: { ok: true, result: { messages: [{ id: "m-page", bodyText: "incremental plaintext" }] } } };
+    assert.equal(body.cursor, 5);
+    return { ok: true, status: 200, json: { ok: true } };
+  },
+});
+const pageHydrationStore = {
+  getSyncState() { return { cursor: 4, watermark: 4 }; },
+  applySyncPage({ events }) { pageHydrationOrder.push(`apply:${events[0].id}`); return { cursor: 5 }; },
+  replaceProjectionFromBootstrap() { throw new Error("bootstrap is not expected for an incremental page"); },
+  hydrateAuthorizedHistory({ messages }) { pageHydrationOrder.push(`hydrate:${messages[0]?.bodyText}`); },
+  close() {},
+};
+const pageHydrationService = createCollaborationService({ openStore: () => ({ ok: true, store: pageHydrationStore }), client: pageHydrationClient, deviceId: "device-1" });
+await pageHydrationService.realtime.notifyAvailable();
+assert.deepEqual(pageHydrationOrder, ["/api/collaboration/v1/sync", "apply:evt-page", "/api/collaboration/v1/messages", "hydrate:incremental plaintext", "/api/collaboration/v1/ack"], "incremental ACK follows durable page application and authorized history hydration");
+pageHydrationService.stop();
 
 const scheduled = [];
 const cleared = [];
@@ -111,6 +185,71 @@ const service = createCollaborationService({
 await service.realtime.notifyAvailable();
 assert.equal(cursorReads, 1, "service reads the latest durable local cursor for every realtime-triggered sync");
 assert.equal(syncArgs.afterCursor, 42);
+
+let httpOnlySyncs = 0;
+const httpOnlyStore = { getSyncState() { return { cursor: 9, watermark: 9 }; }, applySyncPage() {}, close() {} };
+const httpOnlyService = createCollaborationService({
+  openStore: () => ({ ok: true, store: httpOnlyStore }), realtimeEnabled: false,
+  client: { async syncAndAcknowledge() { httpOnlySyncs += 1; } },
+});
+assert.equal(httpOnlyService.realtime, null, "signed realtime:false creates no websocket client");
+httpOnlyService.start();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(httpOnlySyncs, 1, "realtime:false retains the initial durable HTTP cursor sync");
+httpOnlyService.stop();
+
+const recoveryOrder = [];
+const recoveryStore = {
+  getSyncState() { return { cursor: 6, watermark: 6 }; },
+  listPendingHistoryHydration() { return ["c-crash"]; },
+  hydrateAuthorizedHistory() { recoveryOrder.push("hydrate"); },
+  applySyncPage() { recoveryOrder.push("apply"); return { cursor: 6 }; },
+  close() {},
+};
+const recoveryService = createCollaborationService({
+  openStore: () => ({ ok: true, store: recoveryStore }), realtimeEnabled: false, deviceId: "device-1",
+  client: {
+    async listMessageHistory() { recoveryOrder.push("history"); return { messages: [] }; },
+    async syncAndAcknowledge({ onIncrementalPage }) {
+      recoveryOrder.push("sync");
+      return onIncrementalPage({ page: { fromCursor: 6, toCursor: 6, events: [] }, acknowledge: async () => { recoveryOrder.push("ack"); } });
+    },
+  },
+});
+recoveryService.start();
+await new Promise((resolve) => setImmediate(resolve));
+assert.deepEqual(recoveryOrder, ["history", "hydrate", "sync", "apply", "ack"], "startup completes a crash-surviving hydration checkpoint before the next cursor ACK");
+recoveryService.stop();
+
+let retryPending = true;
+const retryRecoveryOrder = [];
+const retryRecoveryStore = {
+  getSyncState() { return { cursor: 11, watermark: 11 }; },
+  listPendingHistoryHydration() { return retryPending ? ["c-retry"] : []; },
+  hydrateAuthorizedHistory() { retryPending = false; retryRecoveryOrder.push("hydrate"); },
+  applySyncPage() { retryRecoveryOrder.push("apply"); return { cursor: 11 }; },
+  close() {},
+};
+const retryRecoveryService = createCollaborationService({
+  openStore: () => ({ ok: true, store: retryRecoveryStore }), deviceId: "device-1",
+  client: {
+    async listMessageHistory() {
+      retryRecoveryOrder.push("history");
+      if (retryRecoveryOrder.filter((value) => value === "history").length === 1) throw new Error("temporary history failure");
+      return { messages: [] };
+    },
+    async syncAndAcknowledge({ onIncrementalPage }) {
+      retryRecoveryOrder.push("sync");
+      return onIncrementalPage({ page: { fromCursor: 11, toCursor: 11, events: [] }, acknowledge: async () => { retryRecoveryOrder.push("ack"); } });
+    },
+  },
+});
+retryRecoveryService.start();
+await new Promise((resolve) => setImmediate(resolve));
+assert.deepEqual(retryRecoveryOrder, ["history"], "a failed pending-history recovery aborts the entire sync/ACK attempt");
+await retryRecoveryService.realtime.notifyAvailable();
+assert.deepEqual(retryRecoveryOrder, ["history", "history", "hydrate", "sync", "apply", "ack"], "the next serialized trigger repairs pending history before any later page ACK");
+retryRecoveryService.stop();
 
 let drainCalls = 0;
 const reconnectHandlers = {};

@@ -28,6 +28,7 @@ let runnerPoolRef = null;
 let sessionManagerRef = null;
 let scheduledTaskManagerRef = null;
 let characterWorldsServiceRef = null;
+let collaborationServiceRef = null;
 let longTaskSupervisorRef = null;
 let agentRuntimeControlServerRef = null;
 let publicHookBridgeRef = null;
@@ -217,6 +218,79 @@ app.whenReady().then(async () => {
   const scheduledTaskManager = new ScheduledTaskManager();
   scheduledTaskManager.load();
   scheduledTaskManagerRef = scheduledTaskManager;
+  // Collaboration is additive. A missing account, disabled signed policy, or
+  // locked OS keyring must leave the ordinary workbench entirely unaffected.
+  const collaboration = require("./main/collaboration/service");
+  const { createCollaborationClient } = require("./main/collaboration/client");
+  const remoteConfig = require("./main/remote-config");
+  const accountManager = require("./main/account-manager");
+  const serviceClient = require("./main/service-client");
+  let collaborationService = null;
+  let unsubscribeCollaborationService = null;
+  const collaborationStateListeners = new Set();
+  const notifyCollaborationState = (change) => {
+    for (const listener of collaborationStateListeners) {
+      try { listener(change || { type: "availability" }); } catch { /* renderer observers are optional */ }
+    }
+  };
+  const refreshCollaborationService = () => {
+    try { unsubscribeCollaborationService?.(); } catch { /* optional observer */ }
+    unsubscribeCollaborationService = null;
+    try { collaborationService?.stop?.(); } catch { /* optional cache only */ }
+    collaborationService = collaboration.initializeCollaborationService({
+      policy: remoteConfig.getRemoteCollaborationPolicySync(),
+      accountStatus: () => accountManager.accountStatus(),
+      createService: ({ storeOptions, policy }) => {
+        const deviceId = serviceClient.getDeviceId();
+        const client = createCollaborationClient({
+          accountManager,
+          // serviceFetch applies the desktop's signed device headers in the
+          // main process. The renderer never sees either those headers or the
+          // short-lived bearer token consumed by this client.
+          signDeviceRequest: async () => ({}),
+          request: async ({ path: requestPath, method, body, headers }) => {
+            const result = await serviceClient.serviceFetch(requestPath, {
+              method,
+              body: JSON.stringify(body || {}),
+              headers,
+            });
+            return {
+              ok: result.ok,
+              status: result.status || (result.ok ? 200 : 0),
+              json: result.json,
+              code: result.error,
+            };
+          },
+        });
+        return collaboration.createCollaborationService({
+          storeOptions,
+          client,
+          realtimeEnabled: policy?.realtime !== false,
+          deviceId,
+          transport: {
+            submit: (item) => client.submitMessage({
+              action: "send",
+              deviceId,
+              conversationId: item.conversationId,
+              clientCommandId: item.clientCommandId,
+              bodyText: item.bodyText,
+            }),
+            lookupReceipt: ({ clientCommandId, conversationId }) => client.lookupCommandReceipt({
+              deviceId, clientCommandId, conversationId,
+            }),
+          },
+          realtimeOptions: { syncArgs: { deviceId } },
+        });
+      },
+    });
+    if (collaborationService?.ok) collaborationService.start();
+    if (collaborationService?.ok) unsubscribeCollaborationService = collaborationService.subscribe?.(notifyCollaborationState) || null;
+    collaborationServiceRef = collaborationService?.ok ? collaborationService : null;
+    notifyCollaborationState({ type: "availability" });
+    return collaborationService;
+  };
+  refreshCollaborationService();
+  remoteConfig.onRemoteConfigRefreshed(refreshCollaborationService);
   require("./main/app-watchdog").startAppWatchdog({
     sessionManager,
     runnerPool,
@@ -288,6 +362,15 @@ app.whenReady().then(async () => {
     scheduledTaskManager,
     characterWorldsService,
     characterWorldsRepository,
+    get collaborationService() {
+      return collaborationService;
+    },
+    refreshCollaborationService,
+    onCollaborationStateChange(listener) {
+      if (typeof listener !== "function") return () => {};
+      collaborationStateListeners.add(listener);
+      return () => collaborationStateListeners.delete(listener);
+    },
   };
 
   ipcHandlers.registerAll(appContext);
@@ -406,6 +489,7 @@ app.on("before-quit", () => {
   // launch (writer/broker reconciliation), and each broker helper's own
   // emergencyCleanup covers the helper-process side.
   try { characterWorldsServiceRef?.close()?.catch?.(() => {}); } catch { /* best effort */ }
+  try { collaborationServiceRef?.stop?.(); } catch { /* optional cache only */ }
   // Backstop: reap the shared opencode serve + its whole tool-process tree even
   // if a session leaked its view. This is what keeps closing the app from
   // leaving node/python/engine children alive that lock the install dir (the

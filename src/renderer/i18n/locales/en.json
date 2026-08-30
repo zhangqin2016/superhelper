@@ -1755,5 +1755,18 @@
   "character.preview.active": "Preview is active for future messages",
   "character.preview.activate": "Use",
   "character.preview.exit": "Exit preview",
-  "character.preview.actionFailed": "Action failed. State refreshed; try again."
+  "character.preview.actionFailed": "Action failed. State refreshed; try again.",
+  "collaboration.nav": "Collaboration",
+  "collaboration.workbench": "Workbench",
+  "collaboration.inbox": "Inbox",
+  "collaboration.people": "People",
+  "collaboration.teams": "Teams",
+  "collaboration.conversation": "Conversation",
+  "collaboration.empty": "Choose a conversation to collaborate",
+  "collaboration.ariaLabel": "Collaboration Center",
+  "collaboration.navLabel": "Collaboration navigation",
+  "collaboration.statusAvailable": "Collaboration connected",
+  "collaboration.statusUnavailable": "Collaboration unavailable",
+  "collaboration.scopePersonal": "Personal",
+  "collaboration.scopeTeam": "Team"
 }

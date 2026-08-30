@@ -39,20 +39,52 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request 
     submitMessage(item) {
       return invoke({ path: "/api/collaboration/v1/messages", body: item, deviceId: item?.deviceId });
     },
-    async syncAndAcknowledge({ deviceId, afterCursor, syncEngine, limit } = {}) {
+    lookupCommandReceipt({ deviceId, clientCommandId } = {}) {
+      return invoke({
+        path: "/api/collaboration/v1/command-receipt",
+        body: { deviceId, clientCommandId, commandType: "message.create" },
+        deviceId,
+      });
+    },
+    async listMessageHistory({ deviceId, conversationId, beforeSeq, limit = 200 } = {}) {
+      const result = await invoke({
+        path: "/api/collaboration/v1/messages",
+        body: {
+          action: "history", deviceId, conversationId,
+          clientCommandId: `history:${String(conversationId || "")}:${Number(beforeSeq || 0)}`,
+          ...(beforeSeq == null ? {} : { beforeSeq }), limit,
+        },
+        deviceId,
+      });
+      return result?.result || result;
+    },
+    async syncAndAcknowledge({ deviceId, afterCursor, syncEngine, limit, onFullResync, onIncrementalPage } = {}) {
       if (!syncEngine) throw new TypeError("A sync engine is required.");
       const page = await this.syncAfterCursor({ deviceId, afterCursor, limit });
       if (page?.status === "FULL_RESYNC_REQUIRED") {
-        if (typeof syncEngine.applyBootstrap !== "function") throw new TypeError("A bootstrap-capable sync engine is required.");
         const snapshot = await this.bootstrap({ deviceId });
-        const applied = syncEngine.applyBootstrap(snapshot); // must commit before completion ACK
-        await this.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });
-        return applied;
+        if (typeof onFullResync === "function") {
+          return onFullResync({
+            snapshot,
+            acknowledge: () => this.acknowledgeCursor({ deviceId, cursor: snapshot.watermark, bootstrapCompletionToken: snapshot.bootstrapCompletionToken }),
+          });
+        }
+        // A bare client has no authority to claim a full-resync is complete:
+        // it cannot safely decrypt/hydrate the server history projection. The
+        // service callback owns local replacement, authorized history fetch,
+        // and only then the server-issued completion ACK.
+        return { status: "FULL_RESYNC_REQUIRED", snapshot, requiresHydration: true };
       }
       if (typeof syncEngine.applyPage !== "function") throw new TypeError("A page-capable sync engine is required.");
+      if (typeof onIncrementalPage === "function") {
+        return onIncrementalPage({
+          page,
+          acknowledge: () => this.acknowledgeCursor({ deviceId, cursor: page.toCursor }),
+        });
+      }
       const applied = syncEngine.applyPage(page); // SQLite commit completes before network ACK begins.
       await this.acknowledgeCursor({ deviceId, cursor: applied.cursor });
-      return applied;
+      return { ...applied, events: Array.isArray(page.events) ? page.events : [] };
     },
   };
 }

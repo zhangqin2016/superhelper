@@ -1755,5 +1755,18 @@
   "character.receipt.view": "عرض",
   "character.preview.active": "المعاينة مفعلة للرسائل القادمة",
   "character.preview.activate": "استخدام",
-  "character.preview.exit": "إنهاء المعاينة"
+  "character.preview.exit": "إنهاء المعاينة",
+  "collaboration.nav": "مركز التعاون",
+  "collaboration.workbench": "مساحة العمل",
+  "collaboration.inbox": "البريد الوارد",
+  "collaboration.people": "الأشخاص",
+  "collaboration.teams": "الفرق",
+  "collaboration.conversation": "محادثة",
+  "collaboration.empty": "اختر محادثة لبدء التعاون",
+  "collaboration.ariaLabel": "مركز التعاون",
+  "collaboration.navLabel": "تنقل التعاون",
+  "collaboration.statusAvailable": "التعاون متصل",
+  "collaboration.statusUnavailable": "التعاون غير متاح",
+  "collaboration.scopePersonal": "شخصي",
+  "collaboration.scopeTeam": "فريق"
 }

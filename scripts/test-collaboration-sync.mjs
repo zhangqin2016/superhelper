@@ -109,6 +109,10 @@ assert.equal(snapshot.fromCursor, 18, "bootstrap returns the snapshot watermark,
 assert.deepEqual(snapshot.profile, {
   userId: "user-1", lilyId: "alice", displayName: "", avatarObjectId: null, discoverability: null,
 });
+const organizationScopeSnapshot = buildBootstrapSnapshot({
+  conversations: [{ id: "team-conversation", scope_type: "organization", organization_id: "org-design", kind: "group", title: "Design" }],
+});
+assert.equal(organizationScopeSnapshot.conversations[0].scopeId, "team:org-design", "organization bootstrap rows normalize to the desktop Team scope contract");
 const boundedHistory = boundBootstrapHistory([
   { id: "history-1", conversation_id: "conv-1", body: "x".repeat(30) },
   { id: "history-2", conversation_id: "conv-2", body: "x".repeat(30) },
