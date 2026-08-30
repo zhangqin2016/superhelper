@@ -66,6 +66,9 @@ const COLLABORATION_MIGRATIONS = [
     ALTER TABLE outbox ADD COLUMN scope_id TEXT NOT NULL DEFAULT 'personal';
     CREATE INDEX outbox_scope_idx ON outbox(account_id, scope_id, state);
   `),
+  // v3 — retry decisions survive restart; an exhausted command must wait for a
+  // person rather than retrying forever with a possibly side-effecting intent.
+  (db) => db.exec(`ALTER TABLE outbox ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };
