@@ -68,6 +68,10 @@ function createHarness() {
       steps.push("sequence");
       return { conversation: { id: "conv-1" }, seq: state.nextSeq++ };
     },
+    async allocateRelationshipSequence() {
+      steps.push("relationship-sequence");
+      return { conversation: null, seq: state.nextSeq++ };
+    },
     async writeEvent(_trx, event) {
       steps.push("event");
       state.events.push(structuredClone(event));
@@ -89,6 +93,23 @@ function createHarness() {
     },
   };
   return { state, steps, database, operations };
+}
+
+{
+  const harness = createHarness();
+  const relationship = command({ harness });
+  relationship.commandType = "friend.request";
+  relationship.clientCommandId = "relationship-1";
+  relationship.input = { lilyId: "lily-b" };
+  relationship.project = async () => ({
+    event: { id: "evt-relationship-1", conversationId: null, type: "friend.requested", payload: { peerUserId: "user-b" } },
+    recipientUserIds: ["user-a", "user-b"],
+    project: async () => { harness.steps.push("projection"); },
+  });
+  const response = await runCollaborationCommand(relationship);
+  assert.equal(response.eventId, "evt-relationship-1");
+  assert.deepEqual(harness.steps, ["authorize", "relationship-sequence", "event", "projection", "sync", "receipt", "outbox", "commit"], "relationship events remain immutable, cursor-fanned and outboxed without inventing a direct conversation");
+  assert.equal(harness.state.events[0].conversationId, null);
 }
 
 function command(overrides = {}) {

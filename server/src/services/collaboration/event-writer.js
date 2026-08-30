@@ -10,6 +10,11 @@ function requiredId(value, label) {
   return id;
 }
 
+function optionalConversationId(value) {
+  if (value == null || String(value).trim() === "") return null;
+  return requiredId(value, "Event conversation id");
+}
+
 /** Recipient order is a lock-order contract, not a display preference. */
 export function assertSortedRecipientUserIds(recipientUserIds) {
   if (!Array.isArray(recipientUserIds) || recipientUserIds.length === 0) {
@@ -71,7 +76,7 @@ export async function lockAndAllocateConversationSequence(trx, conversationId) {
 export async function writeCollaborationEvent(trx, event) {
   const normalized = {
     id: requiredId(event?.id, "Event id"),
-    conversationId: requiredId(event?.conversationId ?? event?.conversation_id, "Event conversation id"),
+    conversationId: optionalConversationId(event?.conversationId ?? event?.conversation_id),
     seq: Number(event?.seq),
     type: requiredId(event?.type, "Event type"),
     actorUserId: requiredId(event?.actorUserId ?? event?.actor_user_id, "Event actor user id"),

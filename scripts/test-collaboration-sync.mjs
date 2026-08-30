@@ -71,12 +71,19 @@ const firstPage = applyDurableSyncPage({ cursor: 10, appliedEventIds: [] }, {
 assert.deepEqual(applied, ["evt-known"], "known durable events are applied");
 assert.equal(firstPage.cursor, 12, "an unknown durable event must still advance the cursor");
 assert.deepEqual(firstPage.ignoredEventIds, ["evt-future"]);
+const relationshipPage = applyDurableSyncPage({ cursor: 0 }, {
+  status: "OK", fromCursor: 0, toCursor: 1,
+  events: [{ cursor: 1, id: "evt-friend", type: "friend.declined", conversationId: null, payload: { scope: "relationship", peerUserId: "user-b" } }],
+}, (row) => applied.push(`${row.scope}:${row.type}`));
+assert.equal(relationshipPage.cursor, 1, "a relationship event without a direct conversation remains a durable sync page item");
+assert.ok(applied.includes("relationship:friend.declined"));
+assert.throws(() => paginateSyncEvents([{ cursor: 1, id: "bad-null-conversation", type: "message.created", conversationId: null, payload: {} }], { afterCursor: 0 }), (error) => error?.code === "COLLAB_SYNC_EVENT_INVALID", "ordinary conversation events cannot silently lose their conversation id");
 const replay = applyDurableSyncPage(firstPage, {
   status: "OK", fromCursor: 12, toCursor: 13,
   events: [event(13, "evt-known")],
 }, (row) => applied.push(row.id));
 assert.equal(replay.cursor, 13);
-assert.deepEqual(applied, ["evt-known"], "replayed durable event ids cannot duplicate local projection");
+assert.deepEqual(applied, ["evt-known", "relationship:friend.declined"], "replayed durable event ids cannot duplicate local projection");
 assert.throws(
   () => applyDurableSyncPage({ cursor: 10 }, { status: "OK", fromCursor: 9, toCursor: 10, events: [event(10, "evt-old")] }),
   (error) => error?.code === "COLLAB_SYNC_PAGE_INVALID",

@@ -69,15 +69,23 @@ function normalizePayload(payload) {
 function normalizedSyncEvent(row) {
   const cursor = nonNegativeCursor(row?.cursor, "Collaboration sync event cursor");
   if (cursor < 1) throw collaborationError("COLLAB_SYNC_EVENT_INVALID", "A collaboration sync event cursor must be positive.");
+  const payload = normalizePayload(row?.payload);
+  const scope = row?.scope ?? payload?.scope ?? "conversation";
+  const rawConversationId = row?.conversationId ?? row?.conversation_id;
+  const conversationId = rawConversationId == null || String(rawConversationId).trim() === "" ? null : requiredId(rawConversationId, "Collaboration sync conversation id");
+  if (conversationId === null && scope !== "relationship") {
+    throw collaborationError("COLLAB_SYNC_EVENT_INVALID", "Only relationship sync events may omit a conversation id.");
+  }
   return {
     cursor,
     id: requiredId(row?.id ?? row?.eventId ?? row?.event_id, "Collaboration sync event id"),
-    conversationId: requiredId(row?.conversationId ?? row?.conversation_id, "Collaboration sync conversation id"),
+    conversationId,
+    scope,
     seq: Number.isSafeInteger(Number(row?.seq)) ? Number(row.seq) : null,
     type: requiredId(row?.type, "Collaboration sync event type"),
     actorUserId: String(row?.actorUserId ?? row?.actor_user_id ?? ""),
     createdAt: row?.createdAt ?? row?.created_at ?? null,
-    payload: normalizePayload(row?.payload),
+    payload,
   };
 }
 

@@ -108,6 +108,12 @@ const DEFAULT_OPERATIONS = Object.freeze({
   findReceipt: defaultFindReceipt,
   claimReceipt: defaultClaimReceipt,
   allocateSequence: (_trx, conversationId) => lockAndAllocateConversationSequence(_trx, conversationId),
+  async allocateRelationshipSequence(trx) {
+    const row = await sql`select nextval('collaboration_relationship_event_seq') as seq`.execute(trx);
+    const seq = Number(row.rows?.[0]?.seq);
+    if (!Number.isSafeInteger(seq) || seq < 1) throw new Error("Collaboration relationship event sequence is invalid.");
+    return { conversation: null, seq };
+  },
   writeEvent: (trx, event) => writeCollaborationEvent(trx, event),
   fanout: (trx, payload) => writeUserSyncEvents(trx, payload),
   completeReceipt: defaultCompleteReceipt,
@@ -140,6 +146,8 @@ export async function runCollaborationCommand({
   clientCommandId: rawClientCommandId,
   input = {},
   resolveInput,
+  prepare,
+  prepareProjection,
   authorize,
   project,
   database,
@@ -154,6 +162,9 @@ export async function runCollaborationCommand({
   const actor = normalizeAccount(account);
   if (!database || typeof database.transaction !== "function") throw new TypeError("A collaboration database transaction provider is required.");
   if (typeof authorize !== "function" || typeof project !== "function") throw new TypeError("Collaboration commands require authorize() and project() functions.");
+  if (prepare != null && typeof prepare !== "function") throw new TypeError("Collaboration command prepare must be a function.");
+  if (prepareProjection != null && typeof prepareProjection !== "function") throw new TypeError("Collaboration command prepareProjection must be a function.");
+  if (prepare != null && prepareProjection != null) throw new TypeError("Collaboration command may specify only one preparation hook.");
   const identity = receiptIdentity(actor, commandType, clientCommandId);
   if (resolveInput != null && typeof resolveInput !== "function") throw new TypeError("Collaboration command resolveInput must be a function.");
   const operations = { ...DEFAULT_OPERATIONS, ...(operationOverrides || {}) };
@@ -202,11 +213,25 @@ export async function runCollaborationCommand({
           throw new CollaborationCommandError("COLLAB_COMMAND_IN_PROGRESS", "This collaboration command is still being finalized.", { retryable: true });
         }
 
-        const plan = requireProjectPlan(await project({
+        const preparationHook = prepareProjection || prepare;
+        const preparation = typeof preparationHook === "function" ? await preparationHook({
           trx, account: actor, input: effectiveInput, authorization, commandType, clientCommandId,
+        }) : null;
+        const plan = requireProjectPlan(await project({
+          trx, account: actor, input: effectiveInput, authorization, commandType, clientCommandId, preparation,
         }));
-        const conversationId = requiredText(plan.event.conversationId ?? plan.event.conversation_id, "Event conversation id");
-        const allocated = await operations.allocateSequence(trx, conversationId);
+        if (plan.noEvent === true) {
+          const responsePayload = sanitizeCommandReceiptPayload(plan.response || {});
+          await operations.completeReceipt(trx, identity, { resultEventId: null, responseCode: plan.responseCode || "OK", responsePayload });
+          return { ...responsePayload, responseCode: plan.responseCode || "OK" };
+        }
+        const rawConversationId = plan.event.conversationId ?? plan.event.conversation_id;
+        const conversationId = rawConversationId == null || String(rawConversationId).trim() === ""
+          ? null
+          : requiredText(rawConversationId, "Event conversation id");
+        const allocated = conversationId
+          ? await operations.allocateSequence(trx, conversationId)
+          : await operations.allocateRelationshipSequence(trx);
         const event = {
           ...plan.event,
           conversationId,
@@ -216,7 +241,7 @@ export async function runCollaborationCommand({
           clientCommandId,
         };
         const writtenEvent = await operations.writeEvent(trx, event);
-        await plan.project({ trx, event: writtenEvent, conversation: allocated.conversation, authorization, account: actor, input: effectiveInput });
+        await plan.project({ trx, event: writtenEvent, conversation: allocated.conversation, authorization, account: actor, input: effectiveInput, preparation });
         const recipientUserIds = assertSortedRecipientUserIds(plan.recipientUserIds);
         const syncRows = await operations.fanout(trx, { event: writtenEvent, recipientUserIds });
         const responsePayload = sanitizeCommandReceiptPayload(plan.response || {
