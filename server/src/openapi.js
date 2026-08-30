@@ -23,6 +23,7 @@ export const OPENAPI_TAGS = [
   { name: "public:skills", description: "Public skill packages" },
   { name: "public:telemetry", description: "Usage / skill / diagnostics reporting" },
   { name: "public:wishes", description: "Public wish pool and account-backed support" },
+  { name: "public:collaboration", description: "Versioned collaboration sync, messaging and relationships" },
   { name: "public:enterprise", description: "Enterprise organizations: members, quotas, usage" },
   { name: "admin:auth", description: "Admin authentication" },
   { name: "admin:billing", description: "Admin billing products and pricing" },
