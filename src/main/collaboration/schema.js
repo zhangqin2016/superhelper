@@ -117,6 +117,15 @@ const COLLABORATION_MIGRATIONS = [
     CREATE TABLE revoked_conversations (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
       scope_id TEXT, PRIMARY KEY(account_id, conversation_id));
   `),
+  // v10 — a v9 crash may leave history for a not-yet-discovered conversation.
+  // Preserve its checkpoint and fetch current authorized metadata before ACK.
+  (db) => db.exec(`CREATE TABLE conversation_hydration (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,conversation_id));
+    INSERT INTO conversation_hydration (account_id, conversation_id, created_at)
+      SELECT h.account_id, h.conversation_id, h.created_at FROM history_hydration h
+      WHERE NOT EXISTS (SELECT 1 FROM conversations c WHERE c.account_id = h.account_id AND c.id = h.conversation_id)
+        AND NOT EXISTS (SELECT 1 FROM revoked_conversations r WHERE r.account_id = h.account_id AND r.conversation_id = h.conversation_id);`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

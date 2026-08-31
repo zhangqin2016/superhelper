@@ -14,7 +14,7 @@ function assertScopeWritable(store, scopeId) {
 function removeConversationRows(store, conversationId, scopeId = null) {
   store.db.run(`INSERT OR IGNORE INTO revoked_conversations (account_id, conversation_id, scope_id) VALUES (?, ?, ?)`, store.accountId, conversationId, scopeId);
   let deletedOutbox = 0;
-  for (const table of ["conversation_members", "messages", "drafts", "outbox", "events", "history_hydration", "history_hydration_targets"]) {
+  for (const table of ["conversation_members", "messages", "drafts", "outbox", "events", "history_hydration", "history_hydration_targets", "conversation_hydration"]) {
     const result = store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     if (table === "outbox") deletedOutbox = Number(result.changes);
   }
@@ -64,7 +64,8 @@ function projectAccessRevocation(store, event) {
 
 function pruneRevokedHistory(store) {
   for (const table of ["events", "history_hydration", "history_hydration_targets"]) store.db.run(`DELETE FROM ${table}
-    WHERE account_id = ? AND conversation_id IN (SELECT conversation_id FROM revoked_conversations WHERE account_id = ?)`, store.accountId, store.accountId);
+    WHERE account_id = ? AND conversation_id IN (SELECT conversation_id FROM revoked_conversations WHERE account_id = ?)
+    AND conversation_id NOT IN (SELECT conversation_id FROM conversation_hydration WHERE account_id = ?)`, store.accountId, store.accountId, store.accountId);
 }
 
 /** Use only the server's current authorization errors, never connectivity failures. */

@@ -1,12 +1,12 @@
 "use strict";
 
-const crypto = require("node:crypto");
 const { collaborationDbPath } = require("../config");
 const { openDatabase } = require("../store/sqlite-db");
 const { COLLABORATION_MIGRATIONS } = require("./schema");
 const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./history-cache");
-const { queueHistoryTarget, listHistoryTargets } = require("./history-hydration");
+const { queueHistoryTarget, listHistoryTargets, completeHistoryHydration } = require("./history-hydration");
 const access = require("./access-revocation");
+const { queueConversationHydration } = require("./conversation-hydration");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -289,6 +289,7 @@ class CollaborationStore {
         const inserted = this.db.run(`INSERT OR IGNORE INTO applied_events (account_id, event_id, applied_at) VALUES (?, ?, ?)`, this.accountId, id, this.now());
         if (inserted.changes === 0) continue;
         projectEvent(row);
+        queueConversationHydration(this, row);
         queueHistoryTarget(this, row);
         this.db.run(
           `INSERT OR IGNORE INTO events (account_id, id, conversation_id, seq, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -325,11 +326,7 @@ class CollaborationStore {
   }
 
   completeHistoryHydration({ conversationId } = {}) {
-    const id = requireId(conversationId, "history hydration conversation id");
-    return this.db.transaction(() => {
-      this.db.run(`DELETE FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ?`, this.accountId, id);
-      return { completed: Number(this.db.run(`DELETE FROM history_hydration WHERE account_id = ? AND conversation_id = ?`, this.accountId, id).changes || 0) };
-    })();
+    return completeHistoryHydration(this, requireId(conversationId, "history hydration conversation id"));
   }
 
   listHistoryTargets({ conversationId }) { return listHistoryTargets(this, conversationId); }
@@ -352,7 +349,7 @@ class CollaborationStore {
       }));
       // Only server-rebuildable projection tables for this account are reset.
       // Drafts and the encrypted outbox are intentionally outside this list.
-      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "profiles", "history_hydration", "history_hydration_targets"]) {
+      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "profiles", "history_hydration", "history_hydration_targets", "conversation_hydration"]) {
         this.db.run(`DELETE FROM ${table} WHERE account_id = ?`, this.accountId);
       }
       for (const conversation of rows) {

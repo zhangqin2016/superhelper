@@ -71,6 +71,10 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     submitFriend(item) {
       return invoke({ path: "/api/collaboration/v1/friends", body: item, deviceId: item?.deviceId });
     },
+    async getConversationProjection({ deviceId, conversationId }) {
+      const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });
+      return response?.result;
+    },
     lookupCommandReceipt({ deviceId, clientCommandId, conversationId } = {}) {
       return invoke({
         path: "/api/collaboration/v1/command-receipt",

@@ -20,6 +20,13 @@ function listHistoryTargets(store, conversationId) {
   return store.db.all(`SELECT message_id AS messageId, revision FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ? ORDER BY message_id`, store.accountId, conversationId);
 }
 
+function completeHistoryHydration(store, conversationId) {
+  return store.db.transaction(() => {
+    store.db.run(`DELETE FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
+    return { completed: Number(store.db.run(`DELETE FROM history_hydration WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId).changes || 0) };
+  })();
+}
+
 async function hydratePendingConversation({ store, client, deviceId, conversationId, assertActive }) {
   const targets = listHistoryTargets(store, conversationId);
   const batches = targets.length ? Array.from({ length: Math.ceil(targets.length / 200) }, (_, i) => targets.slice(i * 200, (i + 1) * 200)) : [null];
@@ -55,4 +62,4 @@ async function hydratePendingConversation({ store, client, deviceId, conversatio
   store.completeHistoryHydration({ conversationId });
 }
 
-module.exports = { queueHistoryTarget, listHistoryTargets, hydratePendingConversation };
+module.exports = { queueHistoryTarget, listHistoryTargets, completeHistoryHydration, hydratePendingConversation };

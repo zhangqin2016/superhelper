@@ -7,6 +7,7 @@ const { createCollaborationRealtimeClient } = require("./realtime-client");
 const { readHistoryPage } = require("./history-page");
 const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
+const { recoverConversationHydration } = require("./conversation-hydration");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -104,6 +105,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     const recoverPendingHistory = async () => {
       assertActive();
       store.flushRevokedKeys?.();
+      await recoverConversationHydration({ store, client, deviceId, assertActive, recoverDeniedHistory });
       const pending = typeof store.listPendingHistoryHydration === "function"
         ? store.listPendingHistoryHydration() : [];
       // A failed history request intentionally rejects. The lane must not
@@ -125,7 +127,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         },
         onIncrementalPage: async ({ page, acknowledge }) => {
           const applied = syncEngine.applyPage(page);
-          await hydrateAuthorizedHistory(messageConversationIdsFor(page.events));
+          await recoverPendingHistory();
+          if (typeof store.listPendingHistoryHydration !== "function") await hydrateAuthorizedHistory(messageConversationIdsFor(page.events));
           assertActive();
           await acknowledge();
           assertActive();

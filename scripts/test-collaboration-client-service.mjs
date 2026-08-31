@@ -199,10 +199,11 @@ assert.equal(httpOnlySyncs, 1, "realtime:false retains the initial durable HTTP 
 httpOnlyService.stop();
 
 const recoveryOrder = [];
+let recoveryPending = true;
 const recoveryStore = {
   getSyncState() { return { cursor: 6, watermark: 6 }; },
-  listPendingHistoryHydration() { return ["c-crash"]; },
-  hydrateAuthorizedHistory() { recoveryOrder.push("hydrate"); },
+  listPendingHistoryHydration() { return recoveryPending ? ["c-crash"] : []; },
+  hydrateAuthorizedHistory() { recoveryOrder.push("hydrate"); recoveryPending = false; },
   applySyncPage() { recoveryOrder.push("apply"); return { cursor: 6 }; },
   close() {},
 };

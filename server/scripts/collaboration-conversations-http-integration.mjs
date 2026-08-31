@@ -4,6 +4,15 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import Fastify from "fastify";
 import { sql } from "kysely";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { CollaborationStore } = require("../../src/main/collaboration/collaboration-store.js");
+const { LocalCollaborationKeyring } = require("../../src/main/collaboration/local-keyring.js");
+const { createCollaborationClient } = require("../../src/main/collaboration/client.js");
+const { createCollaborationService } = require("../../src/main/collaboration/service.js");
 
 if (!process.env.DATABASE_URL) { console.log("collaboration conversations HTTP: skipped (DATABASE_URL is not configured)"); process.exit(0); }
 const schema = `collab_conversations_http_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -103,6 +112,28 @@ try {
   const join = await command("member", { action: "member", conversationId: priv, targetUserId: "invited", operation: "add" });
   assert.equal(join.status, 200, JSON.stringify(join.body));
   const afterJoin = await send("member", priv, "after invite");
+  // A desktop with no channel projection consumes the actual joined event,
+  // calls the signed get/history routes, then ACKs its fully materialized page.
+  const joinCursor = Number((await pool.query("select cursor from user_sync_events where user_id='invited' and event_id=$1", [join.body.result.eventId])).rows[0].cursor);
+  await pool.query("insert into device_sync_state(user_id,device_id,last_acked_cursor) values('invited','device-invited',$1)", [joinCursor - 1]);
+  const localDir = fs.mkdtempSync(path.join(os.tmpdir(), "collab-http-discovery-"));
+  const keyring = new LocalCollaborationKeyring({ filePath: path.join(localDir, "keys"), safeStorage: { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString() } });
+  const local = new CollaborationStore({ dbPath: ":memory:", accountId: "invited", keyring });
+  local.replaceProjectionFromBootstrap({ watermark: joinCursor - 1, conversations: [] });
+  const desktopCalls = [];
+  const client = createCollaborationClient({ accountManager: { accessTokenForService: async () => ({ ok: true, accessToken: "test-adapter" }) }, signDeviceRequest: async () => ({}), request: async ({ path: route, body }) => {
+    const endpoint = route.split("/api/collaboration/v1/")[1]; desktopCalls.push(endpoint);
+    const response = await request("invited", endpoint, body); // Real session + Ed25519 signed adapter above.
+    return { ok: response.status === 200, status: response.status, json: response.body };
+  } });
+  const desktop = createCollaborationService({ openStore: () => ({ ok: true, store: local }), client, deviceId: "device-invited", realtimeOptions: { syncArgs: { deviceId: "device-invited" } } });
+  try {
+    await desktop.realtime.notifyAvailable();
+    assert.deepEqual(desktopCalls, ["sync", "conversations/get", "messages", "ack"]);
+    assert.equal(local.getConversation({ conversationId: priv }).scopeId, "team:org");
+    assert.equal(local.getMessage({ conversationId: priv, messageId: afterJoin.id }).bodyText, "after invite");
+    assert.equal(local.getMessage({ conversationId: priv, messageId: beforeJoin.id }), null, "first discovery cannot hydrate pre-membership history");
+  } finally { desktop.stop(); fs.rmSync(localDir, { recursive: true, force: true }); }
   const memberView = await bootstrap("invited");
   assert.deepEqual(memberView.conversations.map((row) => row.id).sort(), [pub, priv].sort());
   assert.equal(memberView.conversations.find((row) => row.id === pub).visibility, "public");
