@@ -72,3 +72,31 @@ test("model-keyed runtime usage is preserved and malformed payloads are harmless
   await usage.flush("s");
   assert.deepEqual(reports.map(r => [r.model, r.inputTokens, r.outputTokens]), [["a", 10, 0], ["b", 0, 20]]);
 });
+
+test("read-only snapshots preserve model buckets, exclude flushed records and signal upload uncertainty", async () => {
+  let release, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  let first = true;
+  const { usage } = fixture(async () => {
+    if (first) { first = false; entered(); await new Promise(resolve => { release = resolve; }); }
+    return { ok: true };
+  });
+  assert.equal(typeof usage.getPendingUsageSnapshot, "function");
+  const empty = usage.getPendingUsageSnapshot();
+  usage.recordModelUsage("s", { inputTokens: 120 }, { providerID: "one", modelID: "same" });
+  usage.recordModelUsage("s", { inputTokens: 80 }, { providerID: "two", modelID: "same" });
+  const snapshot = usage.getPendingUsageSnapshot();
+  assert.equal(snapshot.records.length, 2);
+  assert.ok(snapshot.revision > empty.revision);
+  snapshot.records[0].inputTokens = 999;
+  assert.equal(usage.getPendingUsageSnapshot().records[0].inputTokens, 120, "snapshots cannot mutate reporter state");
+  const flushing = usage.flush("s");
+  await started;
+  const during = usage.getPendingUsageSnapshot();
+  assert.equal(during.records.length, 0, "persisted records must not be added to local twice");
+  assert.equal(during.unconfirmedReports, true);
+  release();
+  await flushing;
+  assert.equal(usage.getPendingUsageSnapshot().unconfirmedReports, false);
+  assert.ok(usage.getPendingUsageSnapshot().revision > snapshot.revision);
+});

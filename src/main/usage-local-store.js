@@ -120,9 +120,10 @@ function mergeSessionRecord(record = {}) {
   });
 }
 
-function getUsageSummary({ historyDays = DEFAULT_HISTORY_DAYS, pendingToday = null } = {}) {
+function getUsageSummary({ historyDays = DEFAULT_HISTORY_DAYS, pendingToday = null, pendingUsage = [] } = {}) {
   const store = readStore();
   const days = [];
+  const byModel = [];
   for (const [date, day] of Object.entries(store.days || {})) {
     days.push({
       date,
@@ -131,14 +132,9 @@ function getUsageSummary({ historyDays = DEFAULT_HISTORY_DAYS, pendingToday = nu
       messageCount: day.messageCount || 0,
       turnCount: day.turnCount || 0,
     });
+    byModel.push(...dayModels(day).map(row => ({ date, ...row })));
   }
-  const summary = buildUsageSummary({ days, historyDays, pendingToday });
-  const dates = [summary.today.date, ...summary.history.map(day => day.date)];
-  return {
-    ...summary,
-    byModel: dates.flatMap(date => store.days[date]
-      ? dayModels(store.days[date]).map(row => ({ date, ...row })) : []),
-  };
+  return buildUsageSummary({ days, byModel, historyDays, pendingToday, pendingUsage });
 }
 
 function setPricingId(_pricingId) {

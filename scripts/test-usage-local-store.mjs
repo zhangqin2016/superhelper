@@ -31,25 +31,28 @@ function loadUsageStore() {
 }
 
 const store = loadUsageStore();
+const yesterday = new Date();
+yesterday.setDate(yesterday.getDate() - 1);
+const date = require("../src/main/local-date-key.js").localDateKey(yesterday);
 const storeFile = store.storePath();
 if (fs.existsSync(storeFile)) fs.unlinkSync(storeFile);
 
 store.addUsageDelta({
-  date: "2026-06-04",
+  date,
   inputTokens: 1000,
   outputTokens: 500,
   messageCount: 2,
 });
 
 store.addUsageDelta({
-  date: "2026-06-04",
+  date,
   inputTokens: 2000,
   outputTokens: 1000,
   messageCount: 1,
 });
 
 const summary = store.getUsageSummary({ historyDays: 30 });
-const day = summary.history.find((row) => row.date === "2026-06-04");
+const day = summary.history.find((row) => row.date === date);
 if (!day || day.inputTokens !== 3000 || day.outputTokens !== 1500 || day.messageCount !== 3) {
   throw new Error(`merged day record wrong: ${JSON.stringify(day)}`);
 }

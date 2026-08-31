@@ -613,23 +613,43 @@
                   <option value="" data-i18n="settings.accountOrgPersonal">不使用企业额度（个人）</option>
                 </select>
               </section>
-              <div id="usageDeviceId" class="usage-device-id" aria-live="polite"></div>
-              <p id="usageDataSource" class="usage-data-source" hidden></p>
-              <div id="usageTodayStats" class="usage-today-stats" aria-live="polite"></div>
-              <p id="usageRangeTotals" class="usage-range-summary"></p>
-              <div class="usage-history-wrap">
-                <table class="usage-history-table" aria-describedby="usageRangeTotals">
-                  <thead>
-                    <tr>
-                      <th scope="col" data-i18n="settings.usage.colDate">日期</th>
-                      <th scope="col" data-i18n="settings.usage.colTokens">Token</th>
-                      <th scope="col" data-i18n="settings.usage.colInOut">输入 / 输出</th>
-                      <th scope="col" data-i18n="settings.usage.colCost">估算费用</th>
-                    </tr>
-                  </thead>
-                  <tbody id="usageHistoryBody"></tbody>
-                </table>
+              <!-- Usage details start -->
+              <div id="usageContent" class="usage-content">
+                <div class="usage-heading">
+                  <h4 data-i18n="settings.usage.deviceScope">本设备用量</h4>
+                  <button id="usageRefresh" class="usage-icon-btn" type="button" data-i18n-title="settings.usage.refresh" data-i18n-aria-label="settings.usage.refresh" title="刷新用量" aria-label="刷新用量"><span aria-hidden="true">&#8635;</span></button>
+                </div>
+                <p id="usageStatus" class="usage-status" role="status" hidden></p>
+                <p id="usageDataSource" class="usage-data-source" role="status" hidden></p>
+                <div id="usageTodayStats" class="usage-today-stats"></div>
+                <div class="usage-toolbar">
+                  <div class="usage-view-switch" role="group" data-i18n-aria-label="settings.usage.groupBy">
+                    <button type="button" data-usage-view="dates" aria-pressed="true" aria-controls="usageDatesView" data-i18n="settings.usage.byDate">按日期</button>
+                    <button type="button" data-usage-view="models" aria-pressed="false" aria-controls="usageModelsView" data-i18n="settings.usage.byModel">按模型</button>
+                  </div>
+                  <p id="usageRangeTotals" class="usage-range-summary"></p>
+                </div>
+                <div id="usageDatesView" aria-describedby="usageRangeTotals">
+                  <div id="usageDateHeader" class="usage-day-row usage-day-header" aria-hidden="true">
+                    <span data-i18n="settings.usage.colDate">日期</span>
+                    <span data-i18n="settings.usage.colModels">使用模型</span>
+                    <span data-i18n="settings.usage.colTokens">Token</span>
+                    <span data-i18n="settings.usage.colInOut">输入 / 输出</span>
+                    <span data-i18n="settings.usage.colCost">参考费用</span>
+                  </div>
+                  <div id="usageHistoryBody"></div>
+                </div>
+                <div id="usageModelsView" aria-describedby="usageRangeTotals" hidden></div>
+                <details class="usage-footnote">
+                  <summary data-i18n="settings.usage.costBasis">参考费用口径</summary>
+                  <p id="usagePricingNote"></p>
+                </details>
+                <details class="usage-footnote">
+                  <summary data-i18n="settings.usage.deviceInfo">设备信息</summary>
+                  <div id="usageDeviceId" class="usage-device-id"></div>
+                </details>
               </div>
+              <!-- Usage details end -->
             </section>
             <section id="settingsPageMobile" class="settings-page" data-settings-page="mobile" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.mobile">手机控制</h3>

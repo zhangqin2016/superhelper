@@ -1,11 +1,22 @@
 "use strict";
 
-const { DEFAULT_PRICING_ID, estimateCostRmb } = require("./usage-cost-estimate");
+const { DEFAULT_PRICING_ID, PRICING, estimateCostRmb } = require("./usage-cost-estimate");
 const { localDateKey } = require("./local-date-key");
 
 /** Fixed estimate basis for user-facing cost display. */
 const USAGE_PRICING_ID = DEFAULT_PRICING_ID;
 const DEFAULT_HISTORY_DAYS = 30;
+const COUNTERS = ["inputTokens", "outputTokens", "messageCount", "turnCount"];
+
+function count(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+}
+
+function addCounters(target, source) {
+  for (const field of COUNTERS) target[field] = count(target[field]) + count(source?.[field]);
+  return target;
+}
 
 function today() {
   return localDateKey();
@@ -21,17 +32,19 @@ function emptyDay() {
 }
 
 function daySummary(date, day) {
-  const inputTokens = day.inputTokens || 0;
-  const outputTokens = day.outputTokens || 0;
+  const inputTokens = count(day.inputTokens);
+  const outputTokens = count(day.outputTokens);
   const totalTokens = inputTokens + outputTokens;
+  const price = PRICING[USAGE_PRICING_ID];
   return {
     date,
     inputTokens,
     outputTokens,
     totalTokens,
-    messageCount: day.messageCount || 0,
-    turnCount: day.turnCount || 0,
+    messageCount: count(day.messageCount),
+    turnCount: count(day.turnCount),
     costRmb: estimateCostRmb(inputTokens, outputTokens, USAGE_PRICING_ID),
+    referenceCostRmb: (inputTokens * price.inputPerMillion + outputTokens * price.outputPerMillion) / 1_000_000,
   };
 }
 
@@ -88,53 +101,83 @@ function normalizeUsageDateKey(value) {
 
 function daysMapFromList(days = []) {
   const map = {};
-  for (const row of days) {
+  for (const row of Array.isArray(days) ? days : []) {
     if (!row?.date) continue;
     const date = normalizeUsageDateKey(row.date);
-    if (!date) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T12:00:00`).getTime())) continue;
     const existing = map[date] || emptyDay();
-    map[date] = {
-      inputTokens: existing.inputTokens + (row.inputTokens || 0),
-      outputTokens: existing.outputTokens + (row.outputTokens || 0),
-      messageCount: existing.messageCount + (row.messageCount || 0),
-      turnCount: existing.turnCount + (row.turnCount || 0),
-    };
+    map[date] = addCounters(existing, row);
   }
   return map;
+}
+
+function mergeModels(rows) {
+  const models = new Map();
+  for (const row of rows) {
+    if (!row || !COUNTERS.some(field => count(row[field]))) continue;
+    const providerID = typeof row.providerID === "string" && row.providerID ? row.providerID : "unknown";
+    const model = typeof row.model === "string" && row.model ? row.model : "unknown";
+    const key = JSON.stringify([providerID, model]);
+    const value = models.get(key) || { providerID, model, ...emptyDay() };
+    models.set(key, addCounters(value, row));
+  }
+  return [...models.values()];
+}
+
+function reconcileModels(day, rows) {
+  let models = mergeModels(rows);
+  let totals = models.reduce(addCounters, emptyDay());
+  // Detail is optional evidence, never a reason to change authoritative totals.
+  if (COUNTERS.some(field => totals[field] > count(day[field]))) {
+    models = [];
+    totals = emptyDay();
+  }
+  const residual = Object.fromEntries(COUNTERS.map(field => [field, count(day[field]) - totals[field]]));
+  return mergeModels([...models, { providerID: "unknown", model: "unknown", ...residual }]);
+}
+
+function modelSummary(row, totalTokens) {
+  const summary = daySummary(row.date, row);
+  return { ...row, ...summary, share: totalTokens > 0 ? summary.totalTokens / totalTokens : 0 };
 }
 
 function buildUsageSummary({
   days = [],
   historyDays = DEFAULT_HISTORY_DAYS,
   pendingToday = null,
+  byModel = [],
+  pendingUsage = [],
 } = {}) {
   const daysMap = daysMapFromList(days);
   const todayKey = today();
-
-  const mergedToday = { ...emptyDay(), ...(daysMap[todayKey] || {}) };
-  if (pendingToday) {
-    mergedToday.inputTokens += pendingToday.inputTokens || 0;
-    mergedToday.outputTokens += pendingToday.outputTokens || 0;
-    mergedToday.messageCount += pendingToday.messageCount || 0;
-  }
-
-  const todaySummary = daySummary(todayKey, mergedToday);
-
-  const dayKeys = Object.keys(daysMap)
-    .filter((key) => key !== todayKey)
-    .sort((a, b) => b.localeCompare(a))
-    .slice(0, Math.max(0, historyDays - 1));
-
-  const history = dayKeys.map((key) => daySummary(key, daysMap[key]));
-
-  const rangeDays = [todaySummary, ...history];
+  historyDays = Math.min(90, Math.max(1, count(historyDays) || DEFAULT_HISTORY_DAYS));
+  const start = new Date();
+  start.setDate(start.getDate() - historyDays + 1);
+  const startDate = localDateKey(start);
+  const pending = Array.isArray(pendingUsage) ? [...pendingUsage] : [];
+  if (pendingToday) pending.push({ ...pendingToday, date: todayKey });
+  const pendingDays = daysMapFromList(pending);
+  const detail = (Array.isArray(byModel) ? byModel : []).filter(row => row?.date);
+  const dates = [...new Set([todayKey, ...Object.keys(daysMap), ...Object.keys(pendingDays)])]
+    .filter(key => key >= startDate && key <= todayKey).sort((a, b) => b.localeCompare(a));
+  const rawModels = [];
+  const rangeDays = dates.map(date => {
+    const persisted = daysMap[date] || emptyDay();
+    const models = mergeModels([
+      ...reconcileModels(persisted, detail.filter(row => normalizeUsageDateKey(row.date) === date)),
+      ...pending.filter(row => normalizeUsageDateKey(row?.date) === date),
+    ]);
+    const day = daySummary(date, addCounters({ ...persisted }, pendingDays[date]));
+    rawModels.push(...models.map(row => ({ date, ...row })));
+    return { ...day, models: models.map(row => modelSummary({ date, ...row }, day.totalTokens)),
+      hasUnattributed: models.some(row => row.model === "unknown") };
+  });
   const rangeTotals = rangeDays.reduce(
     (acc, row) => {
       acc.inputTokens += row.inputTokens;
       acc.outputTokens += row.outputTokens;
       acc.totalTokens += row.totalTokens;
       acc.messageCount += row.messageCount;
-      acc.costRmb += row.costRmb;
       return acc;
     },
     {
@@ -142,17 +185,23 @@ function buildUsageSummary({
       outputTokens: 0,
       totalTokens: 0,
       messageCount: 0,
-      costRmb: 0,
     },
   );
-  rangeTotals.costRmb = Math.round(rangeTotals.costRmb * 100) / 100;
+  Object.assign(rangeTotals, daySummary(undefined, rangeTotals));
+  delete rangeTotals.date;
+  const price = PRICING[USAGE_PRICING_ID];
 
   return {
     pricingId: USAGE_PRICING_ID,
-    today: todaySummary,
-    history,
+    pricing: { kind: "reference", currency: "CNY", inputPerMillion: price.inputPerMillion, outputPerMillion: price.outputPerMillion },
+    today: rangeDays[0],
+    history: rangeDays.slice(1),
     rangeTotals,
     historyDays,
+    startDate,
+    byModel: rawModels,
+    modelTotals: mergeModels(rawModels).map(row => modelSummary(row, rangeTotals.totalTokens))
+      .sort((a, b) => b.totalTokens - a.totalTokens || a.model.localeCompare(b.model) || a.providerID.localeCompare(b.providerID)),
   };
 }
 

@@ -4,6 +4,7 @@ const pending = new Map();
 const activeModels = new Map();
 const retryReports = new Map();
 const flushing = new Map();
+let revision = 0;
 const { randomUUID } = require("node:crypto");
 const { localDateKey } = require("./local-date-key");
 
@@ -70,6 +71,7 @@ function ensure(sessionId, model = null) {
 }
 
 function recordUserSend(sessionId, files = [], model = null) {
+  revision++;
   const key = String(sessionId || "global");
   activeModels.set(key, modelRef(model) || { modelID: activeModel() });
   const record = ensure(sessionId);
@@ -78,6 +80,7 @@ function recordUserSend(sessionId, files = [], model = null) {
 }
 
 function recordToolCall(sessionId, tool = {}) {
+  revision++;
   const record = ensure(sessionId);
   record.toolCallCount += 1;
   if (String(tool.name || "").toLowerCase().includes("skill")) {
@@ -143,6 +146,7 @@ function recordModelUsage(sessionId, usage = {}, model = null) {
     const bound = modelRef(model) || activeModels.get(String(sessionId || "global"));
     const target = typeof ref === "string" && bound?.modelID === ref ? bound : ref;
     const record = ensure(sessionId, target);
+    revision++;
     record.inputTokens += delta.inputTokens;
     record.outputTokens += delta.outputTokens;
   }
@@ -150,6 +154,7 @@ function recordModelUsage(sessionId, usage = {}, model = null) {
 }
 
 async function flushBatch(key) {
+  revision++;
   const records = [...(pending.get(key)?.values() || [])];
   pending.delete(key);
   const reports = retryReports.get(key) || [];
@@ -179,7 +184,21 @@ function flush(sessionId) {
   const key = String(sessionId || "global");
   const next = (flushing.get(key) || Promise.resolve()).catch(() => {}).then(() => flushBatch(key));
   flushing.set(key, next);
-  return next.finally(() => { if (flushing.get(key) === next) flushing.delete(key); });
+  return next.finally(() => {
+    revision++;
+    if (flushing.get(key) === next) flushing.delete(key);
+  });
+}
+
+function getPendingUsageSnapshot() {
+  return {
+    revision,
+    unconfirmedReports: flushing.size > 0 || retryReports.size > 0,
+    records: [...pending.values()].flatMap(records => [...records.values()].map(record => ({
+      date: record.date, providerID: record.providerID, model: record.model,
+      inputTokens: record.inputTokens, outputTokens: record.outputTokens, messageCount: record.messageCount,
+    }))),
+  };
 }
 
 function getPendingTodayTotals() {
@@ -205,4 +224,5 @@ module.exports = {
   extractUsageTotals,
   flush,
   getPendingTodayTotals,
+  getPendingUsageSnapshot,
 };

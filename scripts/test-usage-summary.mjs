@@ -17,10 +17,15 @@ if (USAGE_PRICING_ID !== "deepseek_standard") {
   throw new Error(`usage pricing must be deepseek_standard, got ${USAGE_PRICING_ID}`);
 }
 
+function daysAgo(n) {
+  const date = new Date();
+  date.setDate(date.getDate() - n);
+  return localDateKey(date);
+}
 const summary = buildUsageSummary({
   days: [
-    { date: "2026-06-04", inputTokens: 1_000_000, outputTokens: 500_000, messageCount: 3 },
-    { date: "2026-06-03", inputTokens: 100_000, outputTokens: 50_000, messageCount: 1 },
+    { date: daysAgo(1), inputTokens: 1_000_000, outputTokens: 500_000, messageCount: 3 },
+    { date: daysAgo(2), inputTokens: 100_000, outputTokens: 50_000, messageCount: 1 },
   ],
   historyDays: 30,
   pendingToday: { inputTokens: 2000, outputTokens: 1000, messageCount: 1 },
