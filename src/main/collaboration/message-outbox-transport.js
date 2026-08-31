@@ -52,9 +52,32 @@ function createCollaborationOutboxTransport({ client, deviceId } = {}) {
       if (!committed && (item?.commandType || CREATE) === CREATE) throw Object.assign(new Error("Collaboration create response is not commit evidence"), { code: "COLLAB_RESPONSE_UNKNOWN" });
       return committed;
     },
-    lookupReceipt: ({ clientCommandId, commandType, conversationId, messageId, expectedRevision }) => client.lookupCommandReceipt({
-      deviceId, clientCommandId, commandType, conversationId, messageId, expectedRevision,
-    }),
+    async lookupReceipt({ clientCommandId, commandType = CREATE, conversationId, messageId, expectedRevision }) {
+      const receipt = await client.lookupCommandReceipt({ deviceId, clientCommandId, commandType, conversationId, messageId, expectedRevision });
+      // Only a well-typed server unknown response can reach the generic
+      // adapter's legacy-compatible replay predicate, for every command type.
+      if (receipt?.state === "unknown") {
+        if (receipt.ok !== true || receipt.committed !== false || receipt.deliveryUnknown !== true
+          || (Object.hasOwn(receipt, "pending") && receipt.pending !== false)
+          || ["eventId", "messageId", "sequence", "eventSequence", "commandType", "conversationId", "revision", "revoked"].some(key => receipt[key] != null)) {
+          throw Object.assign(new Error("Collaboration unknown receipt is not replay evidence"), { code: "COLLAB_RESPONSE_UNKNOWN" });
+        }
+        return receipt;
+      }
+      // Completed mutations retain their existing typed settlement contract.
+      // Creates must be strict before reaching the generic adapter boundary.
+      if (commandType !== CREATE) return receipt;
+      if (receipt?.ok !== true || receipt.state !== "completed" || receipt.committed !== true
+        || receipt.commandType !== CREATE || receipt.conversationId !== conversationId
+        || !messageIdentifier(receipt.messageId) || !messageIdentifier(receipt.eventId)
+        || receipt.revision !== 1 || (Object.hasOwn(receipt, "revoked") && receipt.revoked !== false)
+        || !strictInteger(receipt.eventSequence) || !strictInteger(receipt.sequence) || receipt.eventSequence !== receipt.sequence
+        || (Object.hasOwn(receipt, "pending") && receipt.pending !== false)
+        || (Object.hasOwn(receipt, "deliveryUnknown") && receipt.deliveryUnknown !== false)) {
+        throw Object.assign(new Error("Collaboration create receipt is not commit evidence"), { code: "COLLAB_RESPONSE_UNKNOWN" });
+      }
+      return receipt;
+    },
   };
 }
 

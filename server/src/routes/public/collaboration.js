@@ -14,6 +14,7 @@ import { createCollaborationMessageService, createHmacMessageBodyIntentSigner } 
 import { createCollaborationMessageCrypto } from "../../services/collaboration/message-crypto.js";
 import { createKyselyMessageRepository, createLockedMessageAuthorizer } from "../../services/collaboration/message-repository.js";
 import { assertCollaborationReceiptIdentity } from "../../services/collaboration/receipt-identity.js";
+import { commandReceiptView, receiptEvidenceError } from "../../services/collaboration/receipt-view.js";
 import { registerCollaborationConversationRoutes } from "./collaboration-conversations.js";
 import { registerCollaborationObjectRoutes, objectRouteOptions } from "./collaboration-objects.js";
 import { createConfiguredCollaborationObjectService } from "../../services/collaboration/object-config.js";
@@ -25,27 +26,6 @@ const commandBody = deviceBody.extend({ clientCommandId: z.string().min(1).max(2
 const messageCommandBody = commandBody.extend({ replySnapshot: z.never().optional(), replySnapshotCiphertext: z.never().optional(), replySnapshotKeyVersion: z.never().optional() });
 const errorBody = (error, requestId) => ({ ok: false, code: error?.code || "COLLABORATION_REQUEST_FAILED", retryable: error?.retryable === true, requestId });
 function receiptPayload(value) { if (value && typeof value === "object") return value; try { return JSON.parse(String(value || "{}")); } catch { return {}; } }
-function commandReceiptView(receipt, event, commandType) {
-  if (!receipt) return { state: "unknown", committed: false, deliveryUnknown: true };
-  const payload = receiptPayload(receipt.response_payload);
-  const result = payload?.result && typeof payload.result === "object" ? payload.result : payload;
-  const message = result?.message && typeof result.message === "object" ? result.message : {};
-  const eventPayload = receiptPayload(event?.payload);
-  const eventMessageId = eventPayload?.messageId ?? eventPayload?.message_id ?? message?.id;
-  const revision = Number(eventPayload?.revision ?? message?.revision);
-  return {
-    state: String(receipt.state || "unknown"),
-    committed: String(receipt.state || "") === "completed",
-    commandType,
-    ...(event?.conversation_id ? { conversationId: event.conversation_id } : {}),
-    ...(result?.eventId || receipt.result_event_id ? { eventId: result.eventId || receipt.result_event_id } : {}),
-    ...(eventMessageId ? { messageId: eventMessageId } : {}),
-    ...(Number.isSafeInteger(revision) ? { revision } : {}),
-    ...(message?.revoked === true ? { revoked: true } : {}),
-    ...(Number.isSafeInteger(Number(event?.seq)) ? { eventSequence: Number(event.seq), sequence: Number(event.seq) } : {}),
-    ...(String(receipt.state || "") === "running" ? { pending: true } : {}),
-  };
-}
 function receiptAuthorizationError(decision) { const error = new Error(decision?.auditReason || "receipt authorization denied"); error.code = decision?.code || "COLLAB_AUTHORIZATION_DENIED"; error.status = 403; return error; }
 function defaultMessageService(database, objectService) { try { const raw = String(config.collaborationMessageKek || ""); const version = /^v(\d+)$/.exec(String(config.collaborationMessageKekVersion || "")); if (!version) return null; const key = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64"); if (key.length !== 32) return null; const current = Number(version[1]); const intent = createHash("sha256").update(`lily-collab-message-intent-v${current}`).update(key).digest(); return { service: createCollaborationMessageService({ objectService, repository: createKyselyMessageRepository(database), messageCrypto: createCollaborationMessageCrypto({ currentKekVersion: current, kekByVersion: { [current]: key } }), bodyIntentSigner: createHmacMessageBodyIntentSigner({ currentKeyVersion: current, keysByVersion: { [current]: intent } }) }), authorize: createLockedMessageAuthorizer() }; } catch { return null; } }
 
@@ -87,12 +67,13 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
       const receipt = await trx.selectFrom("command_receipts").select(["state", "result_event_id", "response_payload"])
         .where("actor_device_id", "=", account.deviceId).where("command_type", "=", input.commandType)
         .where("client_command_id", "=", input.clientCommandId).executeTakeFirst();
-      if (!receipt || receipt.state !== "completed" || !receipt.result_event_id) return { state: "unknown", committed: false, deliveryUnknown: true };
+      if (!receipt || receipt.state !== "completed") return { state: "unknown", committed: false, deliveryUnknown: true };
+      if (!receipt.result_event_id) throw receiptEvidenceError();
       // The event is the sole authority for the conversation. Never use an
       // untrusted request value or stale receipt payload to choose scope.
-      const event = await trx.selectFrom("collaboration_events").select(["conversation_id", "actor_user_id", "actor_device_id", "payload", "seq"])
+      const event = await trx.selectFrom("collaboration_events").select(["id", "type", "client_command_id", "conversation_id", "actor_user_id", "actor_device_id", "payload", "seq"])
         .where("id", "=", receipt.result_event_id).executeTakeFirst();
-      if (!event?.conversation_id) return { state: "unknown", committed: false, deliveryUnknown: true };
+      if (!event?.conversation_id) throw receiptEvidenceError();
       assertCollaborationReceiptIdentity({ event, accountUserId: account.userId, expectedConversationId: input.expectedConversationId });
       if (event.actor_device_id != null && event.actor_device_id !== account.deviceId) throw receiptAuthorizationError({ code: "COLLAB_RECEIPT_IDENTITY_DENIED", auditReason: "receipt-device-mismatch" });
       const eventPayload = receiptPayload(event.payload);
@@ -101,7 +82,7 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
       }
       const decision = await authorizeReceipt({ trx, account, input: { conversationId: event.conversation_id }, action: "read" });
       if (!decision?.ok) throw receiptAuthorizationError(decision);
-      return commandReceiptView(receipt, event, input.commandType);
+      return commandReceiptView(receipt, event, input);
     });
     return reply.send({ ok: true, requestId: account.requestId, ...response });
   });

@@ -19,6 +19,8 @@
         "scripts/test-collaboration-mutation-transport.mjs",
         "scripts/test-collaboration-create-intent.mjs",
         "scripts/test-collaboration-create-ack.mjs",
+        "scripts/test-collaboration-create-receipt.mjs",
+        "scripts/test-collaboration-receipt-view.mjs",
         "scripts/test-collaboration-reply-snapshot.mjs",
         "scripts/test-collaboration-reply-snapshot-input.mjs",
         "scripts/test-collaboration-reply-cache.mjs",

@@ -429,7 +429,9 @@ check ((scope_type = 'organization') = (organization_id is not null));
 
 2026-08-31 桌面引用验证检查点：v14 source masks 与新会话 generation 插入 trigger、加密 history/get/list/readMessages/IPC、不可见优先、授权代际 fence 已实现。父独立91个脚本（89协作Node+architecture/registry）通过；14组真实PG集成通过；完整能力门禁176项退出0。新PG链路从正式bootstrap、授权history持久化、completion ACK进入sync，覆盖重启后的quote/真实IPC/源撤回即时屏蔽/同revision迟到history和新成员隐私；好友accepted创建/删除重建漏fence已实际RED→GREEN。能力门禁仍有bundled OpenCode shape/usage缺失跳过与121行既有Renderer宿主IPC诊断。尚无引用UI、@候选、真实双应用交互或Task20物理擦除验收，不据此关闭Task13整体。
 
-- [ ] 近期补强：生产 receipt transport 与 create ACK 使用一致的不可矛盾提交证据。2026-08-31实际SQLite+生产transport/outbox注入 completed create receipt（revision=3、revoked=true）后，错误进入persisted/deliveryConfirmed=true并采用sequence=9。不是正常服务端已返回此数据的证据，而是客户端确实缺少防御；桌面引用切片后立即修复。覆盖缺失/错类型/错会话/错revision/revoked/两sequence矛盾、显式unknown兼容、cancel/reconcile/重启与原UUID/device保持。不得把不完整回执当成未知重发证明；服务器receipt视图只在revoked=true时携带该字段，正常create省略false须兼容。
+- [x] 近期补强：生产 receipt transport 与 create ACK 使用一致的不可矛盾提交证据。2026-08-31实际SQLite+生产transport/outbox注入 completed create receipt（revision=3、revoked=true）后，错误进入persisted/deliveryConfirmed=true并采用sequence=9。不是正常服务端已返回此数据的证据，而是客户端确实缺少防御；桌面引用切片后立即修复。覆盖缺失/错类型/错会话/错revision/revoked/两sequence矛盾、显式unknown兼容、cancel/reconcile/重启与原UUID/device保持。不得把不完整回执当成未知重发证明；服务器receipt视图只在revoked=true时携带该字段，正常create省略false须兼容。
+
+回执补强实现冻结：客户端生产lookup严格验证创建提交证据及可选布尔字段；显式unknown保留原UUID/device重试，通用outbox兼容接口不变。服务端从原始event确认id/type/client_command_id，兼容旧创建回执缺revision并拒绝矛盾字段；completed缺event链接报错而不是授权重发，mutation仍用其事件序号而非原创建序号。父独立209项客户端矩阵、85项服务端矩阵、93个Node/architecture/registry脚本及14组PG通过；PG新增真实签名旧回执→桌面transport→SQLite重启确认，并覆盖错误持久回执和断链接。补查实际复现unknown的pending字符串授权重发，已在生产边界对所有命令严格校验unknown类型（合法null proof仍兼容），原通用outbox不变；规格与质量均已独立复审通过。最终冻结代码完整能力门禁178项退出0；仍有bundled OpenCode shape/usage缺失跳过和121行既有Renderer宿主IPC诊断。此回执补强切片闭合，不等于全项目零跳过、真实双客户端/私有bucket或整个IM验收；未合并主分支或部署。
 
 **Files:**
 
