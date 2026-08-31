@@ -75,6 +75,7 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
     async listHistory(_trx, args) {
       const values = [...state.messages.values()]
         .filter((message) => message.conversationId === args.conversationId)
+        .filter((message) => args.messageIds == null || args.messageIds.includes(message.id))
         .filter((message) => args.beforeSeq == null || message.createSeq < args.beforeSeq)
         .filter((message) => message.createSeq > args.visibleAfterSeq)
         .sort((left, right) => right.createSeq - left.createSeq);
@@ -456,6 +457,14 @@ const authorized = async () => ({ ok: true, visibleAfterSeq: 0 });
     }),
   });
   assert.deepEqual(joinedLater.map((message) => message.createSeq), [2], "a new member receives only messages strictly after its locked joined sequence");
+  const targeted = await service.listMessageHistory({ account, conversationId: "conversation-1", messageIds: [page[0].id], authorize: authorized });
+  assert.deepEqual(targeted.map((message) => message.id), [page[0].id], "target hydration retrieves an old message independent of the newest window");
+  const invisibleTarget = await service.listMessageHistory({ account, conversationId: "conversation-1", messageIds: [page[0].id], authorize: async () => ({ ok: true, visibleAfterSeq: 1 }) });
+  assert.deepEqual(invisibleTarget, [], "target IDs cannot bypass the current joined-sequence boundary");
+  for (const messageIds of [[], [page[0].id, page[0].id], Array.from({ length: 201 }, (_, i) => `message-${i}`), [1]]) {
+    await assert.rejects(service.listMessageHistory({ account, conversationId: "conversation-1", messageIds, authorize: authorized }), /message ids/i);
+  }
+  await assert.rejects(service.listMessageHistory({ account, conversationId: "conversation-1", messageIds: [page[0].id], beforeSeq: 2, authorize: authorized }), /message ids/i);
   await assert.rejects(service.listMessageHistory({ account, conversationId: "conversation-1", authorize: authorized, limit: 201 }), /between 1 and 200/);
 }
 

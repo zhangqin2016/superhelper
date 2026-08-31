@@ -95,6 +95,20 @@ const COLLABORATION_MIGRATIONS = [
     UPDATE outbox SET delivery_uncertain = 1
       WHERE delivery_confirmed = 0 AND state NOT IN ('persisted', 'cancelled');
   `),
+  // v8 — edits/revokes can target history older than the newest 200 messages.
+  // Recover existing pending pages from durable metadata, never message bodies.
+  (db) => db.exec(`
+    CREATE TABLE history_hydration_targets (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+      revision INTEGER NOT NULL, PRIMARY KEY (account_id, conversation_id, message_id)
+    );
+    INSERT OR IGNORE INTO history_hydration_targets
+      SELECT e.account_id, e.conversation_id, json_extract(e.payload_json, '$.messageId'),
+        MAX(COALESCE(json_extract(e.payload_json, '$.revision'), 1))
+      FROM events e JOIN history_hydration h ON h.account_id = e.account_id AND h.conversation_id = e.conversation_id
+      WHERE e.type LIKE 'message.%' AND json_type(e.payload_json, '$.messageId') = 'text'
+      GROUP BY e.account_id, e.conversation_id, json_extract(e.payload_json, '$.messageId');
+  `),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

@@ -5,6 +5,7 @@ const { createCollaborationSyncEngine } = require("./sync-engine");
 const { createCollaborationOutbox } = require("./outbox");
 const { createCollaborationRealtimeClient } = require("./realtime-client");
 const { readHistoryPage } = require("./history-page");
+const { hydratePendingConversation } = require("./history-hydration");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -62,6 +63,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       assertActive();
       if (!client || !deviceId || typeof client.listMessageHistory !== "function" || typeof store.hydrateAuthorizedHistory !== "function") return;
       for (const conversationId of [...new Set((conversationIds || []).map(String).filter(Boolean))]) {
+        if (typeof store.listHistoryTargets === "function") {
+          await hydratePendingConversation({ store, client, deviceId, conversationId, assertActive });
+          continue;
+        }
         const history = await client.listMessageHistory({ deviceId, conversationId });
         assertActive();
         const messages = Array.isArray(history) ? history : history?.messages ?? history?.items;
@@ -87,7 +92,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       return Promise.resolve(client.syncAndAcknowledge({
         ...realtimeOptions.syncArgs, afterCursor: current.cursor, syncEngine,
         onFullResync: async ({ snapshot, acknowledge }) => {
-          const applied = syncEngine.applyBootstrap({ ...snapshot, history: [] });
+          const applied = syncEngine.applyBootstrap({ ...snapshot, history: [], requireHistoryHydration: true });
           await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
           assertActive();
           await acknowledge();
@@ -198,7 +203,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           // Raw bootstrap history is encrypted at rest on the server. It never
           // crosses into the desktop projection; authorized history is fetched
           // through the server's decrypting history endpoint below.
-          const applied = syncEngine.applyBootstrap({ ...snapshot, history: [] });
+          const applied = syncEngine.applyBootstrap({ ...snapshot, history: [], requireHistoryHydration: true });
           await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
           assertActive();
           await client.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });

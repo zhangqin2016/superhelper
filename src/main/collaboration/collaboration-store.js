@@ -5,6 +5,7 @@ const { collaborationDbPath } = require("../config");
 const { openDatabase } = require("../store/sqlite-db");
 const { COLLABORATION_MIGRATIONS } = require("./schema");
 const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./history-cache");
+const { queueHistoryTarget, listHistoryTargets } = require("./history-hydration");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -282,6 +283,7 @@ class CollaborationStore {
         const inserted = this.db.run(`INSERT OR IGNORE INTO applied_events (account_id, event_id, applied_at) VALUES (?, ?, ?)`, this.accountId, id, this.now());
         if (inserted.changes === 0) continue;
         projectEvent(row);
+        queueHistoryTarget(this, row);
         this.db.run(
           `INSERT OR IGNORE INTO events (account_id, id, conversation_id, seq, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           this.accountId, id, row.conversationId == null ? null : String(row.conversationId), Number.isSafeInteger(row.seq) ? row.seq : null,
@@ -314,11 +316,16 @@ class CollaborationStore {
   }
 
   completeHistoryHydration({ conversationId } = {}) {
-    const result = this.db.run(`DELETE FROM history_hydration WHERE account_id = ? AND conversation_id = ?`, this.accountId, requireId(conversationId, "history hydration conversation id"));
-    return { completed: Number(result.changes || 0) };
+    const id = requireId(conversationId, "history hydration conversation id");
+    return this.db.transaction(() => {
+      this.db.run(`DELETE FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ?`, this.accountId, id);
+      return { completed: Number(this.db.run(`DELETE FROM history_hydration WHERE account_id = ? AND conversation_id = ?`, this.accountId, id).changes || 0) };
+    })();
   }
 
-  replaceProjectionFromBootstrap({ watermark = 0, profile = null, profiles = [], conversations = [], members = [], history = [] } = {}) {
+  listHistoryTargets({ conversationId }) { return listHistoryTargets(this, conversationId); }
+
+  replaceProjectionFromBootstrap({ watermark = 0, profile = null, profiles = [], conversations = [], members = [], history = [], requireHistoryHydration = false } = {}) {
     const cursor = Number(watermark);
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("collaboration store: bootstrap watermark is invalid");
     const rows = Array.isArray(conversations) ? conversations : [];
@@ -334,11 +341,12 @@ class CollaborationStore {
       }));
       // Only server-rebuildable projection tables for this account are reset.
       // Drafts and the encrypted outbox are intentionally outside this list.
-      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "profiles", "history_hydration"]) {
+      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "profiles", "history_hydration", "history_hydration_targets"]) {
         this.db.run(`DELETE FROM ${table} WHERE account_id = ?`, this.accountId);
       }
       for (const conversation of rows) {
         const id = requireId(conversation?.id, "conversation id");
+        if (requireHistoryHydration) this.db.run(`INSERT INTO history_hydration (account_id, conversation_id, created_at) VALUES (?, ?, ?)`, this.accountId, id, this.now());
         this.db.run(
           `INSERT INTO conversations (account_id, id, scope_id, kind, title, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
           this.accountId, id, this._scope(projectedScopeId(conversation)), String(conversation.kind || "unknown"),

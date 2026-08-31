@@ -21,6 +21,20 @@ try {
   assert.equal(Buffer.from(row.body_ciphertext).includes(Buffer.from("private-pg-body")), false, "plaintext is never persisted");
   const history = await service.listMessageHistory({ account: { userId: "user-a", deviceId: "device-a" }, conversationId: "conv-1", authorize: createLockedMessageAuthorizer(), trx: db });
   assert.equal(history[0].bodyText, "private-pg-body");
+  for (let i = 0; i < 201; i++) {
+    await service.sendMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: `pg-fill-${i}`, conversationId: "conv-1", bodyText: `later-${i}`, authorize: createLockedMessageAuthorizer(), database: db });
+  }
+  const latest = await service.listMessageHistory({ account: { userId: "user-a", deviceId: "device-a" }, conversationId: "conv-1", limit: 200, authorize: createLockedMessageAuthorizer(), trx: db });
+  assert.equal(latest.some((message) => message.id === sent.message.id), false, "old message is outside newest history window");
+  const lookup = () => service.listMessageHistory({ account: { userId: "user-a", deviceId: "device-a" }, conversationId: "conv-1", messageIds: [sent.message.id], authorize: createLockedMessageAuthorizer(), trx: db });
+  assert.equal((await lookup())[0].bodyText, "private-pg-body", "target hydration reaches old history through real SQL");
+  await service.editMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "edit-old", conversationId: "conv-1", messageId: sent.message.id, expectedRevision: 1, bodyText: "edited-old-body", authorize: createLockedMessageAuthorizer(), database: db });
+  assert.equal((await lookup())[0].bodyText, "edited-old-body");
+  await service.revokeMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "revoke-old", conversationId: "conv-1", messageId: sent.message.id, expectedRevision: 2, authorize: createLockedMessageAuthorizer(), database: db });
+  assert.equal((await lookup())[0].bodyText, null, "revoked ciphertext is absent, not decrypted"); assert.equal((await lookup())[0].revision, 3);
+  await pool.query("update conversation_members set joined_seq=1 where conversation_id='conv-1' and user_id='user-a'");
+  assert.deepEqual(await lookup(), [], "targeted history cannot bypass joined-sequence authorization");
+  await pool.query("update conversation_members set joined_seq=0 where conversation_id='conv-1' and user_id='user-a'");
   await pool.query("insert into user_blocks values('user-b','user-a')");
   await assert.rejects(() => service.sendMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "pg-blocked", conversationId: "conv-1", bodyText: "blocked", authorize: createLockedMessageAuthorizer(), database: db }), (error) => error?.code === "COLLAB_BLOCKED");
   await pool.query("delete from user_blocks; update user_devices set status='revoked' where user_id='user-a'");

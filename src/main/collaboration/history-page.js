@@ -27,7 +27,7 @@ async function readHistoryPage({ store, client, deviceId, conversationId, before
         if (!row.id || ids.has(row.id) || seqs.has(seq) || !Number.isSafeInteger(seq) || seq < 1 || (beforeSeq != null && seq >= beforeSeq)) throw invalidHistory();
         ids.add(row.id); seqs.add(seq);
       }
-      store.hydrateAuthorizedHistory({ conversationId, messages: rows, completeCheckpoint: beforeSeq == null });
+      store.hydrateAuthorizedHistory({ conversationId, messages: rows, completeCheckpoint: false });
       messages = rows.map((row) => ({ ...row, ...store.getMessage({ conversationId, messageId: row.id }),
         seq: sequence(row), senderUserId: row.senderUserId ?? row.sender_user_id ?? null,
       })).sort((a, b) => a.seq - b.seq);

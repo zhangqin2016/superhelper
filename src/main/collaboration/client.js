@@ -78,13 +78,13 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
         deviceId,
       });
     },
-    async listMessageHistory({ deviceId, conversationId, beforeSeq, limit = 200 } = {}) {
+    async listMessageHistory({ deviceId, conversationId, beforeSeq, messageIds, limit = 200 } = {}) {
       const result = await invoke({
         path: "/api/collaboration/v1/messages",
         body: {
           action: "history", deviceId, conversationId,
           clientCommandId: `history:${String(conversationId || "")}:${Number(beforeSeq || 0)}`,
-          ...(beforeSeq == null ? {} : { beforeSeq }), limit,
+          ...(beforeSeq == null ? {} : { beforeSeq }), ...(messageIds == null ? {} : { messageIds }), limit,
         },
         deviceId,
       });

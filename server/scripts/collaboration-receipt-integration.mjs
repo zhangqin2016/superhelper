@@ -18,14 +18,17 @@ const [{ db, pool, closeDb }, { registerCollaborationRoutes }, { createAccessTok
   import("../src/db.js"), import("../src/routes/public/collaboration.js"), import("../src/services/account-auth.js"), import("../src/services/security.js"),
 ]);
 const app = Fastify({ logger: false });
+const { createLockedMessageAuthorizer } = await import("../src/services/collaboration/message-repository.js");
+const authorize = createLockedMessageAuthorizer();
+let historyBarrier = null;
 const key = crypto.generateKeyPairSync("ed25519");
 const pathname = "/api/collaboration/v1/command-receipt";
 const accountToken = (userId, deviceId = "device") => createAccessToken({ userId, deviceId, sessionId: `session-${userId}` });
-async function receipt(userId, changes = {}, { validSignature = true, token = accountToken(userId) } = {}) {
+async function receipt(userId, changes = {}, { validSignature = true, token = accountToken(userId), route = pathname } = {}) {
   const body = { deviceId: "device", clientCommandId: "send", commandType: "message.create", expectedConversationId: "conv", ...changes };
   const timestamp = new Date().toISOString(), nonce = crypto.randomUUID(), bodyHash = sha256(stableStringify(body));
-  const signature = crypto.sign(null, Buffer.from(stableStringify({ method: "POST", pathname, timestamp, nonce, bodyHash })), key.privateKey).toString("base64url");
-  const result = await app.inject({ method: "POST", url: pathname, payload: body, headers: {
+  const signature = crypto.sign(null, Buffer.from(stableStringify({ method: "POST", pathname: route, timestamp, nonce, bodyHash })), key.privateKey).toString("base64url");
+  const result = await app.inject({ method: "POST", url: route, payload: body, headers: {
     authorization: `Bearer ${token}`, "x-lily-device-id": body.deviceId, "x-lily-timestamp": timestamp,
     "x-lily-nonce": nonce, "x-lily-body-sha256": bodyHash, "x-lily-signature": validSignature ? signature : "invalid",
   } });
@@ -44,6 +47,8 @@ try {
     create table conversation_members(conversation_id text,user_id text,status text,role text,joined_seq bigint default 0);
     create table friendships(user_low_id text,user_high_id text,status text);
     create table user_blocks(blocker_user_id text,blocked_user_id text);
+    create table messages(id text primary key,conversation_id text,create_seq bigint,sender_user_id text,kind text,body_ciphertext bytea,body_key_version int,revision int,reply_to_message_id text,edited_at timestamptz,revoked_at timestamptz,created_at timestamptz default now());
+    insert into messages(id,conversation_id,create_seq,sender_user_id,kind,revision,revoked_at) values('old','conv',1,'alice','text',2,now()),('new','conv',2,'alice','text',2,now());
     insert into user_sessions values('session-alice','alice','device',null,now()+interval '1 hour'),('session-bob','bob','device',null,now()+interval '1 hour');
     insert into user_devices values('alice','device','active'),('bob','device','active');
     insert into conversations values('conv','personal','direct','alice','bob',null);
@@ -53,12 +58,51 @@ try {
     insert into command_receipts values('device','message.create','send','completed','evt','{"message":{"id":"message","seq":1},"eventId":"evt"}');
   `);
   await pool.query("insert into device_public_keys values($1,$2)", ["device", key.publicKey.export({ type: "spki", format: "pem" })]);
-  registerCollaborationRoutes(app, { database: db });
+  registerCollaborationRoutes(app, { database: db, authorizeMessage: async (input) => {
+    const decision = await authorize(input);
+    if (historyBarrier) { historyBarrier.entered.resolve(); await historyBarrier.release.promise; }
+    return decision;
+  } });
   const own = await receipt("alice");
   assert.equal(own.status, 200); assert.equal(own.body.committed, true); assert.equal(own.body.messageId, "message");
   assert.equal((await receipt("bob")).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED", "same physical device/new account cannot read old actor receipt");
   assert.equal((await receipt("alice", { expectedConversationId: "different" })).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED");
   assert.equal((await receipt("alice", {}, { validSignature: false })).status, 401);
+  const history = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  assert.equal(history.status, 200, JSON.stringify(history.body));
+  assert.deepEqual(history.body.result.messages.map((row) => row.id), ["old"], "signed HTTP schema passes targeted IDs to the SQL history filter");
+  assert.deepEqual(history.body.result.unavailableMessageIds, []);
+  assert.equal(history.body.result.messages[0].bodyText, null); assert.equal(history.body.result.messages[0].revision, 2);
+  await pool.query("update conversation_members set joined_seq=1 where user_id='alice'");
+  const invisible = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  assert.deepEqual(invisible.body.result, { messages: [], unavailableMessageIds: ["old"] }, "authorized nonvisibility has explicit proof, never a silent missing body");
+  await pool.query("update conversation_members set joined_seq=0 where user_id='alice'");
+  const invalidHistory = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"], beforeSeq: 2 }, { route: "/api/collaboration/v1/messages" });
+  assert.equal(invalidHistory.status, 400, "targeted lookup cannot also paginate");
+  historyBarrier = { entered: Promise.withResolvers(), release: Promise.withResolvers() };
+  const ongoing = receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  await historyBarrier.entered.promise;
+  const remover = await pool.connect();
+  let removal;
+  try {
+    await remover.query("set lock_timeout='5s'");
+    const { rows: [{ pid }] } = await remover.query("select pg_backend_pid() AS pid");
+    removal = remover.query("update conversation_members set status='removed' where user_id='alice'");
+    let waiting = false;
+    for (let i = 0; i < 100 && !waiting; i++) {
+      const probe = await pool.query("select wait_event_type from pg_stat_activity where pid=$1", [pid]);
+      waiting = probe.rows[0]?.wait_event_type === "Lock";
+    }
+    assert.equal(waiting, true, "membership revoke waits while authorized history holds the same transaction locks");
+  } finally {
+    historyBarrier.release.resolve(); historyBarrier = null;
+    await removal; remover.release();
+  }
+  assert.equal((await ongoing).status, 200, "in-flight history linearizes before the waiting revocation");
+  const deniedHistory = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  assert.equal(deniedHistory.status >= 400, true, "after revoke commits, history returns no body");
+  assert.equal(deniedHistory.body.result, undefined);
+  await pool.query("update conversation_members set status='active' where user_id='alice'");
   await pool.query("update user_sessions set revoked_at=now() where user_id='alice'");
   const revoked = await receipt("alice");
   assert.equal(revoked.body.code, "SESSION_EXPIRED", "revoked login rejects a still-cryptographically-valid bearer token");

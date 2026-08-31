@@ -427,29 +427,33 @@ export function createCollaborationMessageService({
   }
 
   async function listMessageHistory({
-    account, conversationId: rawConversationId, beforeSeq = null, limit = DEFAULT_MESSAGE_HISTORY_LIMIT, trx, authorize,
+    account, conversationId: rawConversationId, beforeSeq = null, messageIds = null, limit = DEFAULT_MESSAGE_HISTORY_LIMIT, trx, authorize,
   } = {}) {
     const conversationId = requiredId(rawConversationId, "Conversation id");
     const actorUserId = requiredId(account?.userId ?? account?.user_id ?? account?.id, "Account user id");
     if (typeof authorize !== "function") throw new TypeError("Collaboration message history requires authorize().");
-    const normalizedLimit = Number(limit);
+    if (messageIds != null && (!Array.isArray(messageIds) || messageIds.length < 1 || messageIds.length > MAX_MESSAGE_HISTORY_LIMIT
+        || messageIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 200)
+        || new Set(messageIds).size !== messageIds.length || beforeSeq != null)) throw new TypeError("History message ids are invalid.");
+    const normalizedLimit = messageIds == null ? Number(limit) : messageIds.length;
     if (!Number.isSafeInteger(normalizedLimit) || normalizedLimit < 1 || normalizedLimit > MAX_MESSAGE_HISTORY_LIMIT) {
       throw new RangeError(`Message history limit must be between 1 and ${MAX_MESSAGE_HISTORY_LIMIT}.`);
     }
     const normalizedBeforeSeq = beforeSeq == null ? null : requiredPositiveInteger(beforeSeq, "History before sequence");
     const authorization = await authorize({
-      trx, account: { ...account, userId: actorUserId }, input: { conversationId, beforeSeq: normalizedBeforeSeq, limit: normalizedLimit }, action: "read",
+      trx, account: { ...account, userId: actorUserId }, input: { conversationId, beforeSeq: normalizedBeforeSeq, messageIds, limit: normalizedLimit }, action: "read",
     });
     if (!authorization?.ok) {
       throw commandError(authorization?.code || "COLLAB_AUTHORIZATION_DENIED", authorization?.auditReason || "Collaboration history authorization was denied.");
     }
     const visibleAfterSeq = lockedVisibleAfterSeq(authorization);
     const rows = await requireRepositoryMethod(repository, "listHistory")(trx, {
-      conversationId, beforeSeq: normalizedBeforeSeq, limit: normalizedLimit, visibleAfterSeq,
+      conversationId, beforeSeq: normalizedBeforeSeq, messageIds, limit: normalizedLimit, visibleAfterSeq,
       account: { ...account, userId: actorUserId }, authorization,
     });
     return (Array.isArray(rows) ? rows : [])
       .filter((message) => Number(message?.createSeq ?? message?.create_seq) > visibleAfterSeq)
+      .filter((message) => messageIds == null || messageIds.includes(message.id))
       .map((message) => historyMessageView(message, messageCrypto));
   }
 
