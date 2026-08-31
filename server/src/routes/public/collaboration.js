@@ -14,6 +14,7 @@ import { createCollaborationMessageService, createHmacMessageBodyIntentSigner } 
 import { createCollaborationMessageCrypto } from "../../services/collaboration/message-crypto.js";
 import { createKyselyMessageRepository, createLockedMessageAuthorizer } from "../../services/collaboration/message-repository.js";
 import { assertCollaborationReceiptIdentity } from "../../services/collaboration/receipt-identity.js";
+import { registerCollaborationConversationRoutes } from "./collaboration-conversations.js";
 
 const deviceBody = z.object({ deviceId: z.string().min(1).max(120) });
 const commandBody = deviceBody.extend({ clientCommandId: z.string().min(1).max(200) });
@@ -103,6 +104,7 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
     } : result;
     return reply.send({ ok: true, requestId: account.requestId, result: historyResult });
   });
+  registerCollaborationConversationRoutes({ post, accountFor, database, conversationService: options.conversationService, projectionService: options.conversationProjectionService });
   const unavailableObjectBody = commandBody.passthrough();
   const objectUnavailable = async (request, reply) => { const input = unavailableObjectBody.parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.code(503).send({ ok: false, code: "COLLAB_OBJECTS_UNAVAILABLE", retryable: false, requestId: account.requestId }); };
   post("/api/collaboration/objects/init", unavailableObjectBody, objectUnavailable, { config: { redact: ["body.dek", "body.wrappedDek", "body.token"] } });

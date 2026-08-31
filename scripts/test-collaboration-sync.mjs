@@ -27,8 +27,10 @@ assert.match(bootstrapMigration, /token_hash text primary key/i);
 assert.match(bootstrapMigration, /foreign key \(user_id, device_id\) references user_devices\(user_id, device_id\)/i);
 assert.match(syncRepositorySource, /row_number\(\) over \(partition by message\.conversation_id order by message\.create_seq desc\)/i,
   "controlled bootstrap history must reserve its cap per conversation, not let one busy conversation starve another");
-assert.match(syncRepositorySource, /member\.user_id.*member\.status.*message\.create_seq.*member\.joined_seq/is,
-  "bootstrap history must be authorized by the current active membership and joined sequence");
+assert.match(syncRepositorySource, /readableConversations\(trx, userId\).*member\.joined_seq.*innerJoin\(readable.*whereRef\("message\.create_seq", ">=", "readable\.joined_seq"\)/is,
+  "bootstrap history must use the shared current read authorization query and its joined-sequence boundary");
+assert.match(syncRepositorySource, /organization\.status", "=", "active".*team_member\.status", "=", "active"/s,
+  "Team snapshot reads require both an active organization and an active Team membership");
 assert.match(syncRepositorySource, /orderBy\("history_rank", "asc"\)\.orderBy\("conversation_id", "asc"\)/,
   "the global bootstrap history cap must round-robin newest messages across conversations before taking deeper history");
 assert.match(syncRepositorySource, /event\.client_command_id as client_command_id/,

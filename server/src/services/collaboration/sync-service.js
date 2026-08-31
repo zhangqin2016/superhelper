@@ -180,7 +180,7 @@ export function applyDurableSyncPage(state = {}, page = {}, applyEvent = () => {
   return { ...state, cursor, appliedEventIds: [...seen], ignoredEventIds };
 }
 
-export function buildBootstrapSnapshot({ profile = null, relationships = [], teams = [], conversations = [], members = [], profiles = [], history = [], historyHydration = null, watermark = 0 } = {}) {
+export function buildBootstrapSnapshot({ profile = null, relationships = [], teams = [], teamMembers = [], conversations = [], members = [], profiles = [], history = [], historyHydration = null, watermark = 0 } = {}) {
   const normalizedWatermark = nonNegativeCursor(watermark, "Collaboration bootstrap watermark");
   const normalizedProfile = profile ? {
     userId: String(profile.userId ?? profile.user_id ?? ""),
@@ -193,6 +193,7 @@ export function buildBootstrapSnapshot({ profile = null, relationships = [], tea
     profile: normalizedProfile,
     relationships: Array.isArray(relationships) ? relationships : [],
     teams: Array.isArray(teams) ? teams : [],
+    teamMembers: Array.isArray(teamMembers) ? teamMembers : [],
     // This is the server-to-desktop projection contract. Raw database scope
     // columns deliberately never leak to the local keyring/outbox layer:
     // organization conversations always use the stable Team scope namespace.
@@ -329,6 +330,8 @@ export function createCollaborationSyncService({
         const profile = await repository.getBootstrapProfile(trx, accountId);
         const relationships = await repository.listBootstrapRelationships(trx, accountId);
         const teams = await repository.listBootstrapTeams(trx, accountId);
+        const teamMembers = typeof repository.listBootstrapTeamMembers === "function"
+          ? await repository.listBootstrapTeamMembers(trx, accountId) : [];
         const conversations = await repository.listBootstrapConversations(trx, accountId);
         const conversationIds = conversations.map((conversation) => String(conversation.id || "")).filter(Boolean).sort();
         const members = typeof repository.listBootstrapConversationMembers === "function"
@@ -343,7 +346,7 @@ export function createCollaborationSyncService({
         });
         const state = await readState(trx, accountId);
         return buildBootstrapSnapshot({
-          profile, relationships, teams, conversations, members, profiles, history: boundedHistory.history,
+          profile, relationships, teams, teamMembers, conversations, members, profiles, history: boundedHistory.history,
           historyHydration: boundedHistory.hydration, watermark: state.watermark,
         });
       });

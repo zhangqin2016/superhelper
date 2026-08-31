@@ -3,6 +3,23 @@ import { sql } from "kysely";
 export const BOOTSTRAP_HISTORY_LIMIT_PER_CONVERSATION = 200;
 export const BOOTSTRAP_HISTORY_TOTAL_LIMIT = 500;
 
+// Snapshot reads use the same access matrix as read authorization, without
+// adding write locks to bootstrap's REPEATABLE READ READ ONLY transaction.
+function readableConversations(trx, userId) {
+  return trx.selectFrom("conversations as conversation")
+    .leftJoin("conversation_members as member", (join) => join.onRef("member.conversation_id", "=", "conversation.id").on("member.user_id", "=", userId).on("member.status", "=", "active"))
+    .leftJoin("organizations as organization", "organization.id", "conversation.organization_id")
+    .leftJoin("organization_members as team_member", (join) => join.onRef("team_member.organization_id", "=", "conversation.organization_id").on("team_member.user_id", "=", userId))
+    .where("conversation.status", "=", "active")
+    .where((eb) => eb.or([
+      eb.and([eb("conversation.scope_type", "=", "personal"), eb("conversation.kind", "in", ["direct", "group"]), eb("member.status", "=", "active")]),
+      eb.and([eb("conversation.scope_type", "=", "organization"), eb("organization.status", "=", "active"), eb("team_member.status", "=", "active"), eb.or([
+        eb.and([eb("conversation.kind", "=", "channel"), eb("conversation.visibility", "=", "public")]),
+        eb.and([eb("member.status", "=", "active"), eb.or([eb("conversation.kind", "=", "direct"), eb.and([eb("conversation.kind", "=", "channel"), eb("conversation.visibility", "=", "private")])])]),
+      ])]),
+    ]));
+}
+
 export function createKyselyRepository(db) {
   if (!db || typeof db.transaction !== "function") throw new TypeError("A Kysely database is required for collaboration sync.");
   return {
@@ -46,38 +63,55 @@ export function createKyselyRepository(db) {
       return trx.selectFrom("organization_members as member").innerJoin("organizations as organization", "organization.id", "member.organization_id")
         .select(["organization.id", "organization.name", "organization.status", "member.role", "member.joined_at"])
         .where("member.user_id", "=", userId).where("member.status", "=", "active")
+        .where("organization.status", "=", "active")
         .orderBy("organization.id", "asc").execute();
     },
-    async listBootstrapConversations(trx, userId) {
-      return trx.selectFrom("conversation_members as member").innerJoin("conversations as conversation", "conversation.id", "member.conversation_id")
+    async listBootstrapTeamMembers(trx, userId) {
+      return trx.selectFrom("organization_members as viewer")
+        .innerJoin("organizations as organization", "organization.id", "viewer.organization_id")
+        .innerJoin("organization_members as member", "member.organization_id", "viewer.organization_id")
+        .leftJoin("user_profiles as profile", "profile.user_id", "member.user_id")
+        .select(["member.organization_id", "member.user_id", "profile.lily_id", "profile.display_name", "profile.avatar_object_id"])
+        .where("viewer.user_id", "=", userId).where("viewer.status", "=", "active")
+        .where("organization.status", "=", "active").where("member.status", "=", "active")
+        .orderBy("member.organization_id", "asc").orderBy("member.user_id", "asc").execute();
+    },
+    async listBootstrapConversations(trx, userId, conversationId) {
+      return readableConversations(trx, userId)
         .select([
-          "conversation.id", "conversation.scope_type", "conversation.organization_id", "conversation.kind", "conversation.title", "conversation.status",
-          "conversation.next_seq", "member.role", "member.last_read_seq", "member.notification_level", "member.joined_seq",
+          "conversation.id", "conversation.scope_type", "conversation.organization_id", "conversation.kind", "conversation.visibility", "conversation.title", "conversation.status",
+          "conversation.next_seq", sql`coalesce(member.role, team_member.role, 'member')`.as("role"),
+          sql`coalesce(member.last_read_seq, 0)`.as("last_read_seq"), sql`coalesce(member.notification_level, 'all')`.as("notification_level"),
+          sql`case when conversation.visibility = 'public' then 0 else coalesce(member.joined_seq, 0) end`.as("joined_seq"),
         ])
-        .where("member.user_id", "=", userId).where("member.status", "=", "active")
-        .where("conversation.status", "=", "active").orderBy("conversation.id", "asc").execute();
+        .$if(Boolean(conversationId), (query) => query.where("conversation.id", "=", conversationId))
+        .orderBy("conversation.id", "asc").execute();
     },
     async listBootstrapConversationMembers(trx, conversationIds) {
       if (!Array.isArray(conversationIds) || conversationIds.length === 0) return [];
-      return trx.selectFrom("conversation_members").selectAll().where("conversation_id", "in", conversationIds)
-        .where("status", "=", "active").orderBy("conversation_id", "asc").orderBy("user_id", "asc").execute();
+      return trx.selectFrom("conversation_members as member").innerJoin("conversations as conversation", "conversation.id", "member.conversation_id")
+        .leftJoin("organization_members as team_member", (join) => join.onRef("team_member.organization_id", "=", "conversation.organization_id").onRef("team_member.user_id", "=", "member.user_id"))
+        .selectAll("member").where("member.conversation_id", "in", conversationIds).where("member.status", "=", "active")
+        .where((eb) => eb.or([eb("conversation.scope_type", "=", "personal"), eb("team_member.status", "=", "active")]))
+        .orderBy("member.conversation_id", "asc").orderBy("member.user_id", "asc").execute();
     },
     async listBootstrapProfiles(trx, userIds) {
       if (!Array.isArray(userIds) || userIds.length === 0) return [];
-      return trx.selectFrom("user_profiles").select(["user_id", "lily_id", "display_name", "avatar_object_id", "discoverability"])
+      return trx.selectFrom("user_profiles").select(["user_id", "lily_id", "display_name", "avatar_object_id"])
         .where("user_id", "in", userIds).orderBy("user_id", "asc").execute();
     },
     async listBootstrapHistory(trx, userId, conversationIds, perConversationLimit) {
       if (!Array.isArray(conversationIds) || conversationIds.length === 0) return [];
       const limit = Math.min(Math.max(1, Number(perConversationLimit) || BOOTSTRAP_HISTORY_LIMIT_PER_CONVERSATION), BOOTSTRAP_HISTORY_LIMIT_PER_CONVERSATION);
+      const readable = readableConversations(trx, userId).select(["conversation.id", sql`case when conversation.visibility = 'public' then 0 else coalesce(member.joined_seq, 0) end`.as("joined_seq")]).where("conversation.id", "in", conversationIds).as("readable");
       const rankedHistory = trx.selectFrom("messages as message")
-        .innerJoin("conversation_members as member", (join) => join.onRef("member.conversation_id", "=", "message.conversation_id").on("member.user_id", "=", userId))
+        .innerJoin(readable, "readable.id", "message.conversation_id")
         .select([
         "message.id", "message.conversation_id", "message.create_seq", "message.sender_user_id", "message.kind", "message.body_ciphertext", "message.body_key_version",
         "message.revision", "message.reply_to_message_id", "message.edited_at", "message.revoked_at", "message.created_at",
         sql`row_number() over (partition by message.conversation_id order by message.create_seq desc)`.as("history_rank"),
-      ]).where("message.conversation_id", "in", conversationIds).where("member.status", "=", "active")
-        .whereRef("message.create_seq", ">=", "member.joined_seq").as("ranked_history");
+      ]).where("message.conversation_id", "in", conversationIds)
+        .whereRef("message.create_seq", ">=", "readable.joined_seq").as("ranked_history");
       return trx.selectFrom(rankedHistory).selectAll().where("history_rank", "<=", limit)
         // Round-robin the newest window across conversations before the global
         // cap, so a lexically early busy conversation cannot starve all others.

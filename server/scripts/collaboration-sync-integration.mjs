@@ -36,7 +36,7 @@ async function executeSchema() {
     create table friendships (user_low_id text, user_high_id text, status text);
     create table organizations (id text primary key, name text, status text);
     create table organization_members (organization_id text, user_id text, role text, status text, joined_at timestamptz default now());
-    create table conversations (id text primary key, scope_type text, organization_id text, kind text, title text, status text, next_seq bigint);
+    create table conversations (id text primary key, scope_type text, organization_id text, kind text, title text, status text, next_seq bigint, visibility text);
     create table conversation_members (conversation_id text, user_id text, role text, status text, last_read_seq bigint, notification_level text, joined_seq bigint);
     create table user_sync_state (user_id text primary key, next_cursor bigint not null, compacted_before_cursor bigint not null default 0, updated_at timestamptz default now());
     create table device_sync_state (user_id text, device_id text, last_acked_cursor bigint not null default 0, last_seen_at timestamptz not null default now(), requires_full_resync boolean not null default false, primary key (user_id, device_id));
@@ -51,8 +51,8 @@ async function executeSchema() {
     await writer.query("insert into user_devices (user_id, device_id, status) values ($1, $2, 'active')", [userId, deviceId]);
   }
   await writer.query("insert into user_profiles (user_id, lily_id, display_name, discoverability) values ($1, 'alice', 'Alice', 'contacts')", [userId]);
-  await writer.query("insert into conversations values ($1, 'personal', null, 'direct', '', 'active', 7)", [conversationId]);
-  await writer.query("insert into conversations values ($1, 'personal', null, 'group', 'Second', 'active', 1)", [secondConversationId]);
+  await writer.query("insert into conversations values ($1, 'personal', null, 'direct', '', 'active', 7, null)", [conversationId]);
+  await writer.query("insert into conversations values ($1, 'personal', null, 'group', 'Second', 'active', 1, null)", [secondConversationId]);
   await writer.query("insert into conversation_members values ($1, $2, 'member', 'active', 0, 'all', 2)", [conversationId, userId]);
   await writer.query("insert into conversation_members values ($1, $2, 'member', 'active', 0, 'all', 0)", [secondConversationId, userId]);
   await writer.query("insert into collaboration_events values ('evt-1', $1, 1, 'message.created', $2, $3, 'cmd-1', '{\"messageId\":\"message-1\"}', now())", [conversationId, userId, fastDeviceId]);
