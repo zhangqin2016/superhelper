@@ -1,5 +1,7 @@
 "use strict";
 
+const { projectAcceptedDirect } = require("./direct-projection");
+
 function syncError(message) {
   const error = new Error(message);
   error.code = "COLLAB_SYNC_PAGE_INVALID";
@@ -42,7 +44,10 @@ function createCollaborationSyncEngine({ store, projectEvent = (event) => {
         .filter((event) => String(event?.type || "").startsWith("message."))
         .map((event) => event?.conversationId ?? event?.conversation_id)
         .filter(Boolean);
-      return store.applySyncPage({ ...normalized, projectEvent, historyHydrationConversationIds });
+      return store.applySyncPage({ ...normalized, projectEvent(event) {
+        projectAcceptedDirect(store, event);
+        projectEvent(event);
+      }, historyHydrationConversationIds });
     },
     applyBootstrap(snapshot) {
       return store.replaceProjectionFromBootstrap(snapshot);
