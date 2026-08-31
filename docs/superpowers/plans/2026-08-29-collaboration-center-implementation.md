@@ -72,6 +72,8 @@
 
 Task18A 本地切片审查闭环：复用普通导入选择/路径规则，增加原始central/local名称一致性、ZIP64/分卷拒绝、真实流式展开限额/CRC/SHA-256、最终目标NFC/大小写冲突防护、包含技能的实际落地文件数、独占新目录/隔离stage/身份复验与失败清理。`plumless`/`buckeroo` 等长CRC碰撞、hidden/legacy `SKILL.md`/`skill.md`覆盖、伪造解压大小、目标被写入/替换symlink均有持久回归。规格与质量独立审查批准；父进程重新跑strict/share/inspector/skill-import/automation-sharing/character-portability/architecture/registry通过。164项注册门禁退出0（其strict测试执行早于最后的最终路径别名修复，该修复随后单独重跑通过）；新全量自动发现回归正在冻结版本上运行，不用尚未结束的结果声明全部通过。Windows仅分支模拟，未实机验证；没有接通分享网络/UI，也没有注册或运行导入能力。
 
+冻结版本全量结果（e51340e）：显式给自动发现器及其子进程配置 Node24 和既有 `LILY_RUNTIME_ROOT`，完整运行318秒，738/740通过，退出1。仅失败 `test-stock-workspace-app-package.mjs`（默认股票应用源码缺失）与 `test-web-system-playwright-runtime-loader.mjs`（未安装可发现的Playwright Node模块）；未跳过或改弱它们以制造全绿。此前一次只为父进程指定Node24、子进程仍用系统Node16的错误环境运行已终止，不计作有效全套结果。冻结解除后开始Task13 typed edit/revoke持久恢复；上述738/740只对应e51340e，不代表后续未实现改动。
+
 2026-08-31 验证检查点：早期Node24下35个 `test-collaboration-*.mjs` 全部通过（含1GiB加密测试），当时沙箱外完整 `npm run test:capability-gate` 退出码0；后续曾回归40个协作脚本通过。最新上述提交按专项测试、独立双审与真实Electron验证，不沿用旧检查点声称所有新改动已过全套。已在独立本地PostgreSQL随机schema验证friend/message/realtime/sync，以及signed receipt/history的撤权竞争；仍没有私有bucket和真实双客户端验收，尚未合并或部署。
 
 后续检查点（5f21c8a）：加入协作可靠性gate后，沙箱外Node24执行完整 `npm run test:capability-gate` 退出码0（包含本轮历史、恢复和显示测试及原工作台门禁）。Renderer测试宿主仍打印缺省未注册IPC/故障注入的错误日志，runner整体通过；不能把该结果当作真实双客户端或生产发布验收。此后Task14等改动需重新运行门禁。
