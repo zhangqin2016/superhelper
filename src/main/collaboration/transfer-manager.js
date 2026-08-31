@@ -47,7 +47,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
   const deviceChanged = (item) => item.direction === "upload" && (item.checkpoint?.state || item.checkpoint?.content) && item.checkpoint.deviceId !== deviceId;
   function guard(item, allowCancelled = false, checkDevice = true) {
     if (stopped) throw fail("COLLABORATION_STOPPED");
-    const result = assertAuthorized({ accountId: item.accountId, scopeId: item.scopeId, conversationId: item.conversationId, direction: item.direction });
+    const result = assertAuthorized({ accountId: item.accountId, scopeId: item.scopeId, conversationId: item.conversationId, direction: item.direction, purpose: item.purpose });
     if (result === false || result?.then) throw fail("COLLAB_ACCESS_REVOKED");
     // Server receipts are partitioned by device, not only command ID. Legacy
     // uploads without identity are also ambiguous and must not be adopted.
@@ -194,7 +194,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       return { ...view(item), serverCancelled: false };
     },
     async prepareUpload({ inputPath, conversationId, scopeId, purpose = "attachment", originalName, mimeType = "application/octet-stream" }) {
-      guard({ conversationId, scopeId, direction: "upload" });
+      guard({ conversationId, scopeId, direction: "upload", purpose });
       let item = manifests.create({ scopeId, conversationId, direction: "upload", purpose });
       item = save(item, { state: "encrypting", deviceId });
       const key = crypto.randomBytes(32);
@@ -216,7 +216,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       running.set(id, promise); return promise;
     },
     prepareDownload({ objectId, conversationId, scopeId, purpose = "attachment" }) {
-      guard({ conversationId, scopeId, direction: "download" }); ensure(safeId(objectId));
+      guard({ conversationId, scopeId, direction: "download", purpose }); ensure(safeId(objectId));
       return view(save(manifests.create({ scopeId, conversationId, direction: "download", purpose }), { state: "prepared", objectId }));
     },
     resumeDownload(id) {

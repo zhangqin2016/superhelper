@@ -233,7 +233,7 @@ function fileInput(inputPath) {
   return fs.createReadStream(inputPath, { highWaterMark: 65536, flags: fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) });
 }
 
-async function exclusiveOutput(outputPath, action) {
+async function exclusiveOutput(outputPath, action, beforePublish = () => {}) {
   // Never rename over an existing target. link() is atomic and fails with EEXIST
   // even when another writer creates the target after our preliminary check.
   try { await fs.promises.lstat(outputPath); throw Object.assign(new Error("Output already exists."), { code: "EEXIST" }); }
@@ -259,6 +259,7 @@ async function exclusiveOutput(outputPath, action) {
     });
     const result = await action(output);
     await handle.sync(); await handle.close(); closed = true;
+    await beforePublish();
     await fs.promises.link(tempPath, outputPath);
     return result;
   } finally {
@@ -295,4 +296,4 @@ async function decryptFile({ inputPath, outputPath, key } = {}) {
   return exclusiveOutput(outputPath, (output) => decryptStream({ input: fileInput(inputPath), output, key }));
 }
 
-module.exports = { createEncryptionSession, encryptStream, decryptStream, encryptFile, decryptFile };
+module.exports = { createEncryptionSession, encryptStream, decryptStream, encryptFile, decryptFile, brokerPath, exclusiveOutput };
