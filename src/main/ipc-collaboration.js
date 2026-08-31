@@ -1,6 +1,7 @@
 "use strict";
 const { directoryView } = require("./collaboration/directory-view");
 const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/social-command-contract");
+const { attachmentIds } = require("./collaboration/history-cache");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
@@ -62,6 +63,7 @@ function rendererMessage(value = {}) {
     id: safeIdentifier(value.id) || "", conversationId: safeIdentifier(value.conversationId) || "", seq: optionalInteger(value.seq),
     senderUserId: safeIdentifier(value.senderUserId) || "", state: safeIdentifier(value.state) || "",
     bodyText: typeof value.bodyText === "string" ? value.bodyText.slice(0, MAX_TEXT_BYTES) : "",
+    kind: ["text", "attachment", "workspace_share"].includes(value.kind) ? value.kind : "text", attachmentIds: attachmentIds(value),
     createdAt: nonNegativeInteger(value.createdAt), updatedAt: nonNegativeInteger(value.updatedAt),
     ...(safeIdentifier(value.clientCommandId) ? { clientCommandId: safeIdentifier(value.clientCommandId) } : {}),
     ...(optionalInteger(value.revision) != null ? { revision: optionalInteger(value.revision) } : {}),

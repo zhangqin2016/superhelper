@@ -1,5 +1,14 @@
 "use strict";
 
+function attachmentIds(message) {
+  const ids = message.attachmentIds === undefined ? [] : message.attachmentIds;
+  if (!Array.isArray(ids) || ids.length > 20 || new Set(ids).size !== ids.length
+    || ids.some((id) => typeof id !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(id))) {
+    throw Object.assign(new Error("Invalid collaboration attachment history"), { code: "COLLAB_HISTORY_INVALID" });
+  }
+  return message.revokedAt ? [] : [...ids];
+}
+
 /** Persist only the server's authorized plaintext history view, encrypted locally. */
 function hydrateAuthorizedHistory(store, { conversation, messages = [], completeCheckpoint = true }) {
   const target = store.db.get(`SELECT scope_id FROM conversations WHERE account_id = ? AND id = ?`, store.accountId, conversation);
@@ -13,14 +22,16 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
       if (message.conversationId != null && message.conversationId !== conversation) throw new Error("collaboration store: history conversation mismatch");
       const revision = Number(message.revision ?? 1);
       if (!Number.isSafeInteger(revision) || revision < 1) throw new Error("collaboration store: invalid history revision");
+      const normalizedAttachments = attachmentIds(message);
       const prior = store.getMessage({ conversationId: conversation, messageId: id });
       // Different fetches can finish out of order. Never resurrect an old
       // revision or overwrite a revocation with stale authorized history.
-      if (prior && Number(prior.revision || 1) > revision) continue;
+      if (prior && (Number(prior.revision || 1) > revision || prior.revokedAt && !message.revokedAt)) continue;
       const content = {
         bodyText: message.revokedAt ? "" : String(message.bodyText ?? ""), revision,
         replyToMessageId: message.replyToMessageId ?? null, revokedAt: message.revokedAt ?? null,
         editedAt: message.editedAt ?? null, kind: String(message.kind || "text"),
+        attachmentIds: normalizedAttachments,
         ...(prior?.clientCommandId ? { clientCommandId: prior.clientCommandId } : {}),
       };
       const seq = Number(message?.createSeq ?? message?.create_seq ?? message?.seq);
@@ -56,4 +67,4 @@ function backfillMessageCommandIds(store) {
   })();
 }
 
-module.exports = { hydrateAuthorizedHistory, backfillMessageCommandIds };
+module.exports = { hydrateAuthorizedHistory, backfillMessageCommandIds, attachmentIds };
