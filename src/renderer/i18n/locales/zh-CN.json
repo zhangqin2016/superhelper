@@ -1768,5 +1768,13 @@
   "collaboration.statusAvailable": "协作已连接",
   "collaboration.statusUnavailable": "协作暂不可用",
   "collaboration.scopePersonal": "个人",
-  "collaboration.scopeTeam": "团队"
+  "collaboration.scopeTeam": "团队",
+  "collaboration.messageLabel": "消息",
+  "collaboration.messagePlaceholder": "输入消息",
+  "collaboration.send": "发送",
+  "collaboration.confirming": "正在确认送达…",
+  "collaboration.deliveryUnknown": "送达结果未知，请重试或同步",
+  "collaboration.sendFailed": "消息需要处理",
+  "collaboration.noFriends": "还没有联系人",
+  "collaboration.messageRevoked": "消息已撤回"
 }

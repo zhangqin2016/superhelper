@@ -1768,5 +1768,13 @@
   "collaboration.statusAvailable": "التعاون متصل",
   "collaboration.statusUnavailable": "التعاون غير متاح",
   "collaboration.scopePersonal": "شخصي",
-  "collaboration.scopeTeam": "فريق"
+  "collaboration.scopeTeam": "فريق",
+  "collaboration.messageLabel": "رسالة",
+  "collaboration.messagePlaceholder": "اكتب رسالة",
+  "collaboration.send": "إرسال",
+  "collaboration.confirming": "جارٍ تأكيد التسليم…",
+  "collaboration.deliveryUnknown": "نتيجة التسليم غير معروفة — أعد المحاولة أو المزامنة",
+  "collaboration.sendFailed": "تحتاج الرسالة إلى متابعة",
+  "collaboration.noFriends": "لا توجد جهات اتصال بعد",
+  "collaboration.messageRevoked": "تم سحب الرسالة"
 }

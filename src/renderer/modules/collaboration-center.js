@@ -1,28 +1,9 @@
 import { t } from "../i18n/index.js";
+import { renderCollaborationInbox } from "./collaboration-inbox.js";
+import { renderCollaborationTimeline } from "./collaboration-timeline.js";
+import { initCollaborationComposer } from "./collaboration-composer.js";
 
 function byId(id) { return document.getElementById(id); }
-
-function renderInbox(result, onOpen = () => {}) {
-  const inbox = byId("collaborationInbox");
-  if (!inbox) return;
-  const rows = Array.isArray(result?.conversations) ? result.conversations : Array.isArray(result?.rows) ? result.rows : [];
-  inbox.replaceChildren();
-  if (rows.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "collaboration-empty";
-    empty.textContent = t("collaboration.empty");
-    inbox.append(empty);
-    return;
-  }
-  for (const row of rows) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "collaboration-inbox-item";
-    item.textContent = String(row.title || row.displayName || row.id || "");
-    item.addEventListener("click", () => onOpen(String(row.id || "")));
-    inbox.append(item);
-  }
-}
 
 /**
  * A deliberately thin shell: normal workbench DOM remains mounted and is only
@@ -38,7 +19,35 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const status = byId("collaborationStatus");
   const live = byId("collaborationLive");
   const scopeBadge = byId("collaborationScopeBadge");
+  const timeline = byId("collaborationTimeline");
+  const empty = byId("collaborationConversationEmpty");
+  let activeConversationId = "";
   let bootstrapAttempted = false;
+  let viewGeneration = 0;
+  let openGeneration = 0;
+  let opening = false;
+  const composer = initCollaborationComposer({
+    textarea: byId("collaborationComposer"), sendButton: byId("collaborationSendButton"),
+    getConversationId: () => activeConversationId,
+    onSent: (_result, origin) => { if (!opening && activeConversationId && origin?.conversationId === activeConversationId) void openConversation(activeConversationId); },
+    onError: () => { if (live) live.textContent = t("collaboration.sendFailed"); },
+  });
+
+  const openConversation = async (conversationId) => {
+    const generation = ++openGeneration;
+    const view = viewGeneration;
+    opening = true;
+    const opened = await window.assistantClient?.collaboration?.open?.(conversationId).catch(() => null);
+    if (generation === openGeneration) opening = false;
+    if (!opened?.ok || generation !== openGeneration || view !== viewGeneration) return;
+    activeConversationId = conversationId;
+    composer.setConversation(conversationId);
+    const scope = String(opened.conversation?.scopeId || "");
+    if (scopeBadge) scopeBadge.textContent = t(scope.startsWith("team:") ? "collaboration.scopeTeam" : "collaboration.scopePersonal");
+    renderCollaborationTimeline(timeline, opened.messages || []);
+    if (empty) empty.hidden = (opened.messages || []).length > 0;
+    if (live) live.textContent = String(opened.conversation?.title || t("collaboration.conversation"));
+  };
 
   const setActive = (active) => {
     shell.classList.toggle("collaboration-active", active);
@@ -47,18 +56,16 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (active) byId("collaborationInboxColumn")?.focus?.();
   };
   const load = async () => {
+    const view = viewGeneration;
     let result = await window.assistantClient?.collaboration?.list?.().catch(() => null);
+    if (view !== viewGeneration) return;
     if (!bootstrapAttempted && result?.ok === true && Array.isArray(result.conversations) && result.conversations.length === 0) {
       bootstrapAttempted = true;
       await window.assistantClient?.collaboration?.bootstrap?.().catch(() => null);
       result = await window.assistantClient?.collaboration?.list?.().catch(() => result);
     }
-    renderInbox(result, async (conversationId) => {
-      const opened = await window.assistantClient?.collaboration?.open?.(conversationId).catch(() => null);
-      const scope = String(opened?.conversation?.scopeId || "");
-      if (scopeBadge) scopeBadge.textContent = t(scope.startsWith("team:") ? "collaboration.scopeTeam" : "collaboration.scopePersonal");
-      if (live) live.textContent = String(opened?.conversation?.title || t("collaboration.conversation"));
-    });
+    if (view !== viewGeneration) return;
+    renderCollaborationInbox(byId("collaborationInbox"), result?.conversations || result?.rows || [], { onOpen: openConversation });
     const available = result?.ok === true;
     if (status) { status.textContent = t(available ? "collaboration.statusAvailable" : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
   };
@@ -73,15 +80,29 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     return enabled;
   }
   const unsubscribe = window.assistantClient?.collaboration?.onStateChange?.((payload) => {
+    if (payload?.type === "availability" || payload?.state?.ok !== true) {
+      viewGeneration += 1;
+      openGeneration += 1;
+      opening = false;
+      activeConversationId = "";
+      bootstrapAttempted = false;
+      composer.reset?.();
+      timeline?.replaceChildren();
+      byId("collaborationInbox")?.replaceChildren();
+      if (empty) empty.hidden = false;
+      if (scopeBadge) scopeBadge.textContent = "";
+    }
+    const view = viewGeneration;
     void refresh().then((enabled) => {
+      if (view !== viewGeneration) return;
       const available = payload?.state?.ok === true;
       if (status) { status.textContent = t(available ? "collaboration.statusAvailable" : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
       nav.hidden = !enabled || !available;
       if (!enabled || !available) setActive(false);
-      else if (!panel.hidden) void load();
+      else if (!panel.hidden) void load().then(() => { if (!opening && activeConversationId && view === viewGeneration) void openConversation(activeConversationId); });
       if (live) live.textContent = t(available ? "collaboration.statusAvailable" : "collaboration.statusUnavailable");
     });
   });
   void refresh();
-  return { refresh, show: () => { setActive(true); void load(); }, hide: () => setActive(false), destroy: () => unsubscribe?.() };
+  return { refresh, open: openConversation, show: () => { setActive(true); void load(); }, hide: () => setActive(false), destroy: () => { viewGeneration += 1; openGeneration += 1; unsubscribe?.(); composer.destroy(); } };
 }

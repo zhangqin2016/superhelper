@@ -1,0 +1,60 @@
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+const { app, BrowserWindow } = require("electron");
+if (!app?.whenReady) { console.error("Run with Electron: electron scripts/test-collaboration-timeline.cjs"); process.exit(2); }
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collaboration-timeline-dom-"));
+app.setPath("userData", path.join(dir, "userData"));
+app.disableHardwareAcceleration();
+let win;
+const deadline = setTimeout(() => { console.error("collaboration timeline DOM timed out"); finish(1); }, 30_000);
+function finish(code) { clearTimeout(deadline); if (win && !win.isDestroyed()) win.destroy(); fs.rmSync(dir, { recursive: true, force: true }); app.exit(code); }
+app.whenReady().then(async () => {
+  const page = path.join(dir, "test.html");
+  fs.writeFileSync(page, '<!doctype html><html><body><div id="timeline" role="log"></div></body></html>');
+  win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true } });
+  await win.loadFile(page);
+  const moduleUrl = pathToFileURL(path.join(__dirname, "../src/renderer/modules/collaboration-timeline.js")).href;
+  const result = await win.webContents.executeJavaScript(`(async () => {
+    const { renderCollaborationTimeline: render } = await import(${JSON.stringify(moduleUrl)});
+    const root = document.getElementById('timeline');
+    const first = { id: 'one', seq: 1, bodyText: '<img src=x onerror=alert(1)>' };
+    const pending = { id: 'local', clientCommandId: 'cmd', seq: null, state: 'confirming', bodyText: 'draft' };
+    render(root, [first, pending]);
+    const initialOrder = [...root.children].map(n => n.dataset.messageKey);
+    const row = root.querySelector('[data-message-key="cmd"]');
+    const body = row.querySelector('.collaboration-message-body');
+    render(root, [first, { ...pending, id: 'server', seq: 2, state: 'persisted' }]);
+    const sameRow = row === root.querySelector('[data-message-key="cmd"]');
+    const sameBody = body === row.querySelector('.collaboration-message-body');
+    const safeText = root.querySelector('img') === null;
+    render(root, [first, { ...pending, id: 'server', seq: 2, state: 'persisted', bodyText: '', revokedAt: '2026-08-31T00:00:00Z' }]);
+    const tombstone = row.querySelector('.collaboration-message-body').textContent;
+    root.style.cssText = 'height:120px; overflow:auto; margin-top:400px; overflow-anchor:none';
+    const style = document.createElement('style'); style.textContent = '.collaboration-message { min-height:40px; margin:0 } .collaboration-message-body { margin:0; line-height:40px; white-space:pre }'; document.head.append(style);
+    const history = Array.from({length:30}, (_, i) => ({id:'h'+i,seq:i+10,bodyText:'line '+i}));
+    render(root, history);
+    root.scrollTop = 415;
+    const visible = root.querySelector('[data-message-key="h10"]');
+    const before = visible.getBoundingClientRect().top;
+    // An edit to an offscreen message changes its height without changing its
+    // identity. The currently visible message must not jump.
+    render(root, history.map((message,i) => i===5 ? {...message,bodyText:'line 5\\nextra line'} : message));
+    const after = visible.getBoundingClientRect().top;
+    root.scrollTop = root.scrollHeight;
+    render(root, [...history,{id:'new',seq:41,bodyText:'last'}]);
+    return { initialOrder, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before,
+      bottomGap:root.scrollHeight-root.scrollTop-root.clientHeight };
+  })()`);
+  assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
+  assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
+  assert.equal(result.sameBody, true, "unchanged content is not removed/re-announced on ACK");
+  assert.equal(result.safeText, true, "untrusted message markup remains text");
+  assert.equal(result.tombstone, "collaboration.messageRevoked", "revoked message has an explicit tombstone");
+  assert.equal(result.anchorDelta, 0, "offscreen edits preserve the visible anchor even when the scroller has a page offset");
+  assert.equal(result.bottomGap, 0, "new messages follow only when already at the bottom");
+  console.log("collaboration timeline: actual Electron DOM passed");
+}).then(() => finish(0)).catch((error) => { console.error(error); finish(1); });

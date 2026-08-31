@@ -34,6 +34,12 @@
 .collaboration-status { color: var(--muted, #98a1b8); font-size: .85rem; }
 .collaboration-status.is-available { color: var(--success, #62c78c); }
 .collaboration-scope-badge { display: inline-flex; padding: 3px 7px; border-radius: 999px; background: var(--surface-hover, #202636); color: var(--muted, #98a1b8); font-size: .75rem; }
+.collaboration-timeline { display: grid; gap: 10px; min-block-size: 160px; max-block-size: 48vh; overflow: auto; margin-block: 16px; }
+.collaboration-message { padding: 9px 11px; border-radius: 10px; background: var(--surface-hover, #202636); }
+.collaboration-message-body { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.collaboration-message-status { display: block; margin-block-start: 5px; color: var(--muted, #98a1b8); }
+.collaboration-composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-block-start: 12px; }
+.collaboration-composer textarea { min-inline-size: 0; resize: vertical; }
 
 @media (max-width: 900px) {
   .collaboration-center { grid-template-columns: 1fr; overflow: auto; }
