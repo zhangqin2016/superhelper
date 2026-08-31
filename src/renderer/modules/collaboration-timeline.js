@@ -15,7 +15,7 @@ function sequence(message) {
   return message.seq != null && Number.isSafeInteger(value) && value > 0 ? value : Infinity;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, currentUserId = "" } = {}) {
   if (!node) return;
   const prior = new Map([...node.children].map((child) => [child.dataset.messageKey, child]));
   const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
@@ -35,6 +35,13 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     const hiddenSource = message.revokedAt || message.visibilityMask;
     const text = message.visibilityMask === "unavailable" ? t("collaboration.messageUnavailable") : hiddenSource ? t("collaboration.messageRevoked") : String(message.bodyText || "");
     if (body.textContent !== text) body.textContent = text;
+    const mentionIds = Array.isArray(message.mentionUserIds) ? [...new Set(message.mentionUserIds.filter((id) => typeof id === "string" && id))] : [];
+    let mentions = row.querySelector(".collaboration-message-mentions");
+    if (!hiddenSource && mentionIds.length) {
+      if (!mentions) { mentions = document.createElement("small"); mentions.className = "collaboration-message-mentions"; row.append(mentions); }
+      const label = currentUserId && mentionIds.includes(currentUserId) ? t("collaboration.mentions.you") : t("collaboration.mentions.count", { count: mentionIds.length });
+      if (mentions.textContent !== label) mentions.textContent = label;
+    } else mentions?.remove();
     let quote = row.querySelector(".collaboration-reply-quote");
     if (!hiddenSource && (message.replyToMessageId || message.replySnapshot)) {
       if (!quote) { quote = document.createElement("blockquote"); quote.className = "collaboration-reply-quote"; quote.dir = "auto"; row.insertBefore(quote, body); }

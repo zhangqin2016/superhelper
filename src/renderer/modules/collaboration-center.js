@@ -33,6 +33,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const replySourceMasks = createReplySourceMaskView();
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
   const renderTimeline = () => renderCollaborationTimeline(timeline, historyMessages, {
+    currentUserId: directory?.profile?.userId || "",
     onDownload: (input, purpose) => attachments.download(input, purpose),
     canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
     canReply: (message) => !disposed && policyEnabled && !panel.hidden && !navigating && Boolean(activeConversationId) && historyMessages.includes(message),
@@ -151,6 +152,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     composer.setActive?.(!panel.hidden && policyEnabled);
     composer.refreshReply?.(historyMessages);
     attachments.setConversation(opened.conversation, transferPolicy);
+    composer.refreshMentionCandidates?.();
     const scope = String(opened.conversation?.scopeId || "");
     if (scopeBadge) scopeBadge.textContent = scope.startsWith("team:")
       ? `${directory?.teams?.find((team) => team.scopeId === scope)?.name || t("collaboration.scopeTeam")} · ${scope}` : t("collaboration.scopePersonal");
@@ -222,6 +224,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       directory = socialDirectory;
       const social = { directory, commands: socialCommands?.commands || [], conversations: result?.conversations || [] };
       friends.update(social); teams.update(social);
+      renderTimeline();
     }
     renderCollaborationInbox(byId("collaborationInbox"), result?.conversations || result?.rows || [], { onOpen: openConversation, teams: directory?.teams || [] });
     const available = result?.ok === true;
@@ -247,6 +250,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     return enabled;
   }
   const unsubscribe = window.assistantClient?.collaboration?.onStateChange?.((payload) => {
+    if (payload?.state?.ok === true && ["sync", "access-revoked", "bootstrap", "relationship"].includes(payload.type)) composer.refreshMentionCandidates?.();
     if (payload?.type === "availability" || payload?.state?.ok !== true) {
       viewGeneration += 1;
       openGeneration += 1;

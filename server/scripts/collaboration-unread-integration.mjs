@@ -128,6 +128,8 @@ try {
   await message("viewer-one", { action: "read", seq: 2 });
   assert.deepEqual(counts(await projection()), { projectionSeq: 606, lastReadSeq: 300, unreadCount: 251, mentionCount: 51 }, "older reads cannot regress the shared watermark");
   let acknowledged = 0;
+  let expectedAckCounts = { projectionSeq: 606, lastReadSeq: 300, unreadCount: 251, mentionCount: 51 };
+  let expectedAckMentions = null;
   const client = createCollaborationClient({
     accountManager: { accessTokenForService: async () => ({ ok: true, accessToken: "fixture-adapter" }) },
     signDeviceRequest: async () => ({}),
@@ -135,8 +137,12 @@ try {
       const endpoint = route.split("/api/collaboration/v1/")[1];
       if (endpoint === "ack") {
         assert.deepEqual(counts(local.getConversation({ conversationId: "group" })),
-          { projectionSeq: 606, lastReadSeq: 300, unreadCount: 251, mentionCount: 51 },
+          expectedAckCounts,
           "the desktop must persist the exact authorized read projection before cursor ACK");
+        if (expectedAckMentions) {
+          for (const [messageId, ids] of expectedAckMentions) assert.deepEqual(local.getMessage({ conversationId: "group", messageId })?.mentionUserIds, ids,
+            "bootstrap cannot ACK before authorized reminder identities are persisted");
+        }
         acknowledged += 1;
       }
       // The adapter retains the real bearer session + Ed25519 signature above.
@@ -168,7 +174,37 @@ try {
     "private-channel counts must exclude pre-membership history");
   assert.deepEqual(counts(await channel("public")), { projectionSeq: 6, lastReadSeq: 0, unreadCount: 5, mentionCount: 1 },
     "an active Team member can count public history without an explicit conversation member row");
+
+  // The plain-text composer exposes explicit reminder tags. Neither a typed
+  // display name nor hostile HTML in a body may manufacture notification IDs.
+  const beforeReminders = counts(await projection());
+  const plain = await message("writer-one", { action: "send", bodyText: '@viewer <span data-user-id="viewer">@Viewer</span>', mentionUserIds: [] });
+  const afterPlain = counts(await projection());
+  assert.equal(afterPlain.mentionCount, beforeReminders.mentionCount, "body @ text/markup alone never creates a mention");
+  assert.equal(afterPlain.unreadCount, beforeReminders.unreadCount + 1, "plain body still creates an ordinary unread message");
+  const detail = (await request("writer-one", "conversations/get", { conversationId: "group" })).result;
+  const selected = detail.mentionCandidates.items.find((item) => item.userId === "viewer");
+  assert.ok(selected, "the signed authorized candidate supplies the stable reminder identity");
+  const reminderIntent = { action: "send", clientCommandId: "explicit-reminder-tag", bodyText: "Please review the result", mentionUserIds: [selected.userId] };
+  const tagged = await message("writer-one", reminderIntent);
+  assert.deepEqual((await message("writer-one", reminderIntent)).result, tagged.result, "reminder retry uses the original committed command");
+  const afterTagged = counts(await projection());
+  assert.equal(afterTagged.mentionCount, afterPlain.mentionCount + 1, "explicit stable ID adds one mention without an @ name in the body");
+  assert.equal(afterTagged.unreadCount, afterPlain.unreadCount + 1);
+  assert.equal(afterTagged.projectionSeq, afterPlain.projectionSeq + 1, "retry adds no duplicate event");
+  const reminderEvents = await pool.query("select client_command_id,payload from collaboration_events where client_command_id=$1", [reminderIntent.clientCommandId]);
+  assert.equal(reminderEvents.rows.length, 1);
+  assert.deepEqual(reminderEvents.rows[0].payload.mentionUserIds, ["viewer"]);
+  // Raw bootstrap history is encrypted server metadata, not a ready local
+  // message view. The real service owns authorized hydration before ACK.
+  expectedAckCounts = afterTagged;
+  expectedAckMentions = [[plain.result.message.id, []], [tagged.result.message.id, ["viewer"]]];
+  await desktop.bootstrap();
+  assert.equal(acknowledged, 3, "explicit reminder bootstrap completes its authorized hydration and ACK");
+  assert.deepEqual(local.getMessage({ conversationId: "group", messageId: plain.result.message.id }).mentionUserIds, []);
+  assert.deepEqual(local.getMessage({ conversationId: "group", messageId: tagged.result.message.id }).mentionUserIds, ["viewer"], "signed bootstrap, authorized hydration and encrypted SQLite retain explicit reminder IDs");
   console.log("collaboration unread integration: signed HTTP exact counts, bounded history, read replay and SQLite restart passed");
+  console.log("collaboration mentions: plain @ text versus explicit authorized reminder IDs and replay passed");
 } finally {
   if (desktop) desktop.stop(); else local?.close();
   await app.close(); await closeDb();

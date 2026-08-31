@@ -51,6 +51,9 @@
         "scripts/test-collaboration-reply-ui.cjs",
         "scripts/test-collaboration-reply-navigation.cjs",
         "scripts/test-collaboration-reply-locales.mjs",
+        "scripts/test-collaboration-mentions-ui.cjs",
+        "scripts/test-collaboration-mention-navigation.cjs",
+        "scripts/test-collaboration-mentions-locales.mjs",
         "scripts/test-collaboration-encryption.mjs",
         "scripts/test-account-resilience.mjs"
       ]

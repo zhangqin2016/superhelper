@@ -1,8 +1,9 @@
 import { t, onLocaleChange } from "../i18n/index.js";
 import { draftReplyPreview, replyDisplay } from "./collaboration-reply-view.js";
+import { initCollaborationMentions } from "./collaboration-mentions.js";
 
 function commandId() { return globalThis.crypto?.randomUUID?.() || `collab-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
-function draftIntent(value = {}) { return { text: String(value.text || ""), replyToMessageId: value.replyToMessageId || null, mentionUserIds: [...(value.mentionUserIds || [])] }; }
+function draftIntent(value = {}) { return { text: String(value.text || ""), replyToMessageId: value.replyToMessageId || null, mentionUserIds: [...new Set(value.mentionUserIds || [])].sort() }; }
 function sameIntent(a, b) { return Boolean(a && b) && a.text === b.text && a.replyToMessageId === b.replyToMessageId && JSON.stringify(a.mentionUserIds) === JSON.stringify(b.mentionUserIds); }
 
 export function initCollaborationComposer({ textarea, sendButton, getConversationId, getReplySourceStatus = () => null, onSent = () => {}, onError = () => {} } = {}) {
@@ -17,6 +18,11 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   preview?.setAttribute("aria-live", "polite");
   const api = () => window.assistantClient?.collaboration;
   const currentIntent = () => draftIntent({ ...drafts.get(conversationId), text: textarea.value });
+  const mentions = initCollaborationMentions({ textarea, getIds: () => currentIntent().mentionUserIds, onChange: ({ text, mentionUserIds }) => {
+    if (disposed || !active || !conversationId) return;
+    const value = { ...currentIntent(), text, mentionUserIds };
+    textarea.value = text; editVersion += 1; saveDraft(conversationId, value); mentions.update(); refreshReply();
+  } });
   const current = (id, epoch, selection, version) => !disposed && active && conversationId === id && generation === epoch && selectionVersion === selection && editVersion === version;
   const updateButton = () => { sendButton.disabled = !active || !conversationId || sending.has(conversationId); };
   const paintPreview = () => {
@@ -80,7 +86,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     catch (error) { if (current(id, epoch, selection, version)) onError(error); return; }
     void Promise.resolve(result).then((result) => {
       if (!current(id, epoch, selection, version) || !result?.ok) return;
-      const intent = draftIntent(result); drafts.set(id, intent); textarea.value = intent.text; refreshReply();
+      const intent = draftIntent(result); drafts.set(id, intent); textarea.value = intent.text; mentions.update(); mentions.refresh(); refreshReply();
     }).catch((error) => { if (current(id, epoch, selection, version)) onError(error); });
   };
   const send = async () => {
@@ -101,21 +107,22 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       const visibleMatches = conversationId === id && sameIntent(currentIntent(), value);
       if (sameIntent(drafts.get(id), value)) drafts.set(id, draftIntent());
       if (visibleMatches) {
-        textarea.value = ""; drafts.set(id, draftIntent()); editVersion += 1; refreshReply();
+        textarea.value = ""; drafts.set(id, draftIntent()); editVersion += 1; mentions.update(); refreshReply();
       }
       if (active && conversationId === id && selection === selectionVersion) onSent(result, { conversationId: id });
     } catch (error) { if (!disposed && active && epoch === generation && conversationId === id && selection === selectionVersion) onError(error); }
     finally { if (epoch === generation && sending.get(id) === intent) { sending.delete(id); if (!disposed) updateButton(); } }
   };
-  const input = () => { if (disposed || !active) return; editVersion += 1; saveDraft(conversationId, currentIntent()); refreshReply(); };
+  const input = () => { if (disposed || !active) return; editVersion += 1; saveDraft(conversationId, currentIntent()); refreshReply(); mentions.input(); };
   const keydown = (event) => {
+    if (mentions.handleKeydown(event)) return;
     if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
     event.preventDefault(); void send();
   };
   const click = () => void send();
   const forgetConversation = (id) => {
     drafts.delete(id); intents.delete(id); sending.delete(id);
-    if (id === conversationId) { conversationId = ""; textarea.value = ""; selectionVersion += 1; editVersion += 1; previewVersion += 1; updateButton(); paintPreview(); }
+    if (id === conversationId) { conversationId = ""; textarea.value = ""; selectionVersion += 1; editVersion += 1; previewVersion += 1; mentions.setContext("", active); updateButton(); paintPreview(); }
   };
   sendButton.addEventListener("click", click); textarea.addEventListener("input", input); textarea.addEventListener("keydown", keydown);
   const unsubscribeLocale = onLocaleChange(() => { textarea.placeholder = t("collaboration.messagePlaceholder"); paintPreview(); });
@@ -127,17 +134,19 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       if (conversationId && (drafts.has(conversationId) || textarea.value)) drafts.set(conversationId, currentIntent());
       conversationId = id; selectionVersion += 1; editVersion += 1; previewVersion += 1;
       textarea.value = drafts.get(id)?.text || ""; previewValue = { status: "unavailable" };
+      mentions.setContext(id, active);
       textarea.placeholder = t("collaboration.messagePlaceholder"); updateButton(); paintPreview(); restoreDraft();
     },
-    setReply, refreshReply,
+    setReply, refreshReply, refreshMentionCandidates: () => mentions.refresh(),
     setActive(value) {
       if (disposed || active === Boolean(value)) return;
       active = Boolean(value); selectionVersion += 1; editVersion += 1; previewVersion += 1;
+      mentions.setContext(conversationId, active);
       updateButton(); paintPreview(); if (active) restoreDraft();
     },
     forgetConversation,
     retainConversations(ids) { const allowed = new Set(ids); for (const id of new Set([...drafts.keys(), ...intents.keys(), ...sending.keys(), conversationId])) if (id && !allowed.has(id)) forgetConversation(id); },
-    reset() { generation += 1; selectionVersion += 1; editVersion += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); conversationId = ""; textarea.value = ""; updateButton(); paintPreview(); },
-    destroy() { disposed = true; generation += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); preview?.replaceChildren(); if (preview) preview.hidden = true; unsubscribeLocale(); sendButton.removeEventListener("click", click); textarea.removeEventListener("input", input); textarea.removeEventListener("keydown", keydown); },
+    reset() { generation += 1; selectionVersion += 1; editVersion += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); conversationId = ""; textarea.value = ""; mentions.reset(); updateButton(); paintPreview(); },
+    destroy() { disposed = true; generation += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); mentions.destroy(); preview?.replaceChildren(); if (preview) preview.hidden = true; unsubscribeLocale(); sendButton.removeEventListener("click", click); textarea.removeEventListener("input", input); textarea.removeEventListener("keydown", keydown); },
   };
 }
