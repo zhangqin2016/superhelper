@@ -63,6 +63,16 @@
       ]
     },
     {
+      "id": "collaboration-edit-draft-foundation",
+      "protects": "Unsent message edits cannot leak plaintext, cross accounts, lose newer window state, or survive access revocation.",
+      "baseline": "Composer drafts remain unchanged while edit drafts use a separate encrypted account/conversation/message record.",
+      "failureFallback": "Reject malformed or stale generations, fence stopped/replaced services, and delete edit drafts transactionally on revocation.",
+      "tests": [
+        "scripts/test-collaboration-edit-draft.mjs",
+        "scripts/test-collaboration-edit-draft-ipc.mjs"
+      ]
+    },
+    {
       "id": "task-intelligence-baseline",
       "protects": "Local task classification and verification cannot be disabled by remote configuration.",
       "baseline": "The bundled deterministic task registry remains active.",

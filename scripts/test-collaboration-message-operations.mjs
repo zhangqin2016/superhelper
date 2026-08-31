@@ -24,7 +24,7 @@ try {
   legacy.run("INSERT INTO conversations(account_id,id,scope_id,kind,updated_at) VALUES('alice','c','personal','direct',1)");
   legacy.run("INSERT INTO outbox(account_id,id,conversation_id,client_command_id,scope_id,state,payload_envelope_json,created_at,updated_at) VALUES('alice','legacy','c','legacy','personal','queued',?,1,1)", encrypted);
   legacy.close(); store = new CollaborationStore(options);
-  assert.equal(store.db.pragma("user_version"), 15, "v14 data upgrades additively to v15");
+  assert.equal(store.db.pragma("user_version"), COLLABORATION_MIGRATIONS.length, "v14 data upgrades through every additive migration");
   const add = (id, cid = "c", type = "message.edit", origin = "device-a") => store.persistMessageMutation({ conversationId: cid, commandType: type, messageId: "m", clientCommandId: id, expectedRevision: 1, bodyText: "private persisted edit", originDeviceId: origin });
   store.db.run("INSERT INTO conversations(account_id,id,scope_id,kind,updated_at) VALUES('alice','foreign','personal','direct',2)");
   add("edit"); add("revoke", "c", "message.revoke"); add("foreign-edit", "foreign");

@@ -123,6 +123,25 @@ function rendererView(method, value, payload) {
   if (method === "bootstrap") return { ok: true, cursor: nonNegativeInteger(value?.cursor) };
   if (method === "getDraft") return { ok: true, text: typeof value?.text === "string" ? value.text.slice(0, MAX_TEXT_BYTES) : "", ...messageMetadata(value || {}) };
   if (method === "saveDraft") return { ok: true };
+  if (["getEditDraft", "saveEditDraft", "clearEditDraft"].includes(method)) {
+    if (value?.ok !== true || value.conversationId !== payload?.conversationId || value.messageId !== payload?.messageId) {
+      return { ok: false, code: "COLLAB_EDIT_DRAFT_INVALID", retryable: false };
+    }
+    if (method === "getEditDraft") {
+      if (value.draft == null) return { ok: true, conversationId: payload.conversationId, messageId: payload.messageId, draft: null };
+      const draft = value.draft;
+      if (!draft || typeof draft !== "object" || Array.isArray(draft) || typeof draft.bodyText !== "string" || bytes(draft.bodyText) > MAX_TEXT_BYTES
+        || !Number.isSafeInteger(draft.baseRevision) || draft.baseRevision < 1 || !Number.isSafeInteger(draft.generation) || draft.generation < 1
+        || !Number.isSafeInteger(draft.updatedAt) || draft.updatedAt < 0) return { ok: false, code: "COLLAB_EDIT_DRAFT_INVALID", retryable: false };
+      return { ok: true, conversationId: payload.conversationId, messageId: payload.messageId,
+        draft: { bodyText: draft.bodyText, baseRevision: draft.baseRevision, generation: draft.generation, updatedAt: draft.updatedAt } };
+    }
+    if (method === "saveEditDraft" && Number.isSafeInteger(value.generation) && value.generation >= 1 && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0) {
+      return { ok: true, conversationId: payload.conversationId, messageId: payload.messageId, generation: value.generation, updatedAt: value.updatedAt };
+    }
+    if (method === "clearEditDraft" && typeof value.cleared === "boolean") return { ok: true, conversationId: payload.conversationId, messageId: payload.messageId, cleared: value.cleared };
+    return { ok: false, code: "COLLAB_EDIT_DRAFT_INVALID", retryable: false };
+  }
   if (method === "readMessages") return { ok: true, messages: (value?.messages || []).map(rendererMessage), unavailableMessageIds: (value?.unavailableMessageIds || []).map(safeIdentifier).filter(Boolean) };
   if (["send", "edit", "revoke", "friend", "retry", "skip", "cancel", "markRead"].includes(method)) {
     return {
@@ -202,6 +221,29 @@ function validMessageMutation(payload, { bodyRequired }) {
   return { conversationId, messageId, clientCommandId, expectedRevision, ...(bodyRequired ? { bodyText: payload.bodyText } : {}) };
 }
 
+function validEditDraftKey(payload) {
+  if (!hasOnlyKeys(payload, new Set(["conversationId", "messageId"]))) return null;
+  const conversationId = safeIdentifier(payload.conversationId);
+  const messageId = safeIdentifier(payload.messageId);
+  return conversationId && messageId ? { conversationId, messageId } : null;
+}
+
+function validSaveEditDraft(payload) {
+  if (!hasOnlyKeys(payload, new Set(["conversationId", "messageId", "bodyText", "baseRevision", "expectedGeneration"]))) return null;
+  const key = validEditDraftKey({ conversationId: payload.conversationId, messageId: payload.messageId });
+  return key && typeof payload.bodyText === "string" && bytes(payload.bodyText) <= MAX_TEXT_BYTES
+    && Number.isSafeInteger(payload.baseRevision) && payload.baseRevision >= 1
+    && Number.isSafeInteger(payload.expectedGeneration) && payload.expectedGeneration >= 0
+    ? { ...key, bodyText: payload.bodyText, baseRevision: payload.baseRevision, expectedGeneration: payload.expectedGeneration } : null;
+}
+
+function validClearEditDraft(payload) {
+  if (!hasOnlyKeys(payload, new Set(["conversationId", "messageId", "expectedGeneration"]))) return null;
+  const key = validEditDraftKey({ conversationId: payload.conversationId, messageId: payload.messageId });
+  return key && Number.isSafeInteger(payload.expectedGeneration) && payload.expectedGeneration >= 0
+    ? { ...key, expectedGeneration: payload.expectedGeneration } : null;
+}
+
 function validFriend(payload) {
   return normalizeSocialCommand("friend", payload);
 }
@@ -236,6 +278,9 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
     return { ...normalized, ...(payload.beforeSeq == null ? {} : { beforeSeq: payload.beforeSeq }) };
   });
   registerCommand(ipcMain, "collaboration:get-draft", getService, "getDraft", validOpen);
+  registerCommand(ipcMain, "collaboration:get-edit-draft", getService, "getEditDraft", validEditDraftKey);
+  registerCommand(ipcMain, "collaboration:save-edit-draft", getService, "saveEditDraft", validSaveEditDraft);
+  registerCommand(ipcMain, "collaboration:clear-edit-draft", getService, "clearEditDraft", validClearEditDraft);
   registerCommand(ipcMain, "collaboration:read-messages", getService, "readMessages", (payload) => {
     if (!hasOnlyKeys(payload, new Set(["conversationId", "messageIds"])) || !safeIdentifier(payload.conversationId) || !Array.isArray(payload.messageIds)
       || payload.messageIds.length < 1 || payload.messageIds.length > 200 || payload.messageIds.some((id) => !safeIdentifier(id)) || new Set(payload.messageIds).size !== payload.messageIds.length) return null;

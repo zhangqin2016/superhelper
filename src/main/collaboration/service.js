@@ -17,6 +17,7 @@ const { createAttachmentSendCoordinator } = require("./attachment-send");
 const { createReadRecovery } = require("./read-recovery");
 const { messageMetadata, messageIdentifier, validateCreateBody, sameCreateIntent } = require("./message-intent");
 const { validOperationRequest } = require("./message-operation-view");
+const { createEditDraftService } = require("./edit-draft-service");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -282,6 +283,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         const draft = store.getDraft({ conversationId, draftId: "composer" });
         return { ok: true, text: draft?.text || "", ...messageMetadata(draft || {}) };
       },
+      ...createEditDraftService({ store, enqueueSync, assertActive, isStopped: () => stopped, stoppedResult }),
       readMessages({ conversationId, messageIds } = {}) {
         if (stopped) return stoppedResult();
         if (!Array.isArray(messageIds) || messageIds.length > 200 || messageIds.some((id) => typeof id !== "string" || !id || id.length > 200)) return { ok: false, code: "COLLABORATION_INVALID_INPUT" };

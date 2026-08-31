@@ -62,7 +62,7 @@ function applyAuthorizedConversation(store, conversationId, value) {
     if (priorSelf && normalized.self?.joinedSeq > priorSelf.joinedSeq) {
       // A new membership epoch cannot inherit pre-removal drafts or messages;
       // retain current sync targets, which will be freshly authorized below.
-      for (const table of ["messages", "drafts", "outbox"]) store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
+      for (const table of ["messages", "drafts", "edit_drafts", "outbox"]) store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     }
     store.db.run(`DELETE FROM revoked_scopes WHERE account_id = ? AND scope_id = ?`, store.accountId, normalized.scopeId);
     store.db.run(`DELETE FROM revoked_conversations WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);

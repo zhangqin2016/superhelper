@@ -20,6 +20,7 @@ const { replySnapshotView } = require("./reply-snapshot");
 const { safeOperationErrorCode } = require("./message-operation-view");
 const { readMessageOperations } = require("./message-operation-read");
 const { recordOutboxRetry } = require("./outbox-retry");
+const editDraft = require("./edit-draft");
 function requireId(value, label) {
   const id = String(value || "").trim();
   if (!id || id.length > 512) throw new Error(`collaboration store: ${label} is required`);
@@ -113,6 +114,10 @@ class CollaborationStore {
     this.accountId, conversation.id, id, conversation.scopeId,
     this._encrypt({ scopeId: conversation.scopeId, recordId: this._draftRecord(conversation.id, id), value: { text: String(text || ""), ...messageMetadata({ replyToMessageId, mentionUserIds }) } }), this.now());
   }
+
+  getEditDraft(input) { return editDraft.getEditDraft(this, input); }
+  saveEditDraft(input) { return editDraft.saveEditDraft(this, input); }
+  clearEditDraft(input) { return editDraft.clearEditDraft(this, input); }
 
   getMessage({ conversationId, messageId }) {
     const conversation = requireId(conversationId, "conversation id");

@@ -490,6 +490,8 @@ SPEC实际复现并修复原生按钮输入法误激活：仅return没有阻止�
 
 审查另外实际复现并关闭两类边界问题：迟到的同状态网络错误不能覆盖已保存的正向 ACK；敏感操作读取完成后若服务停止或生产撤权，最终响应必须失败关闭且不能携带编辑正文。固定响应契约要求每条记录包含合法 scopeId，缺失、空值或非法值使整批失败。修复后父进程 100 项协作 Node/architecture/registry、14 项隔离 PostgreSQL 集成和完整能力门禁 189 项全部通过；门禁仍有 bundled OpenCode shape/usage 缺失跳过和 121 行既有 Renderer 测试宿主 IPC 诊断。此检查点只关闭恢复基础，不代表行内编辑/撤回 UI、双真实客户端、私有 bucket 或生产验收已完成，也未合并或部署。
 
+2026-09-01 加密未提交编辑稿基础随后完成规格与质量独立审查。SQLite v16 使用独立 `edit_drafts` 记录，正文复用现有 scope key/field envelope；账号、会话、消息、base revision 和 generation 组成严格边界，composer 不受影响。新建稿必须绑定当前本人未撤回消息的权威 revision；同一草稿生命周期的加密 base 不可改写，权威 revision 提升后仍保留旧 base 供冲突比较，只有显式清除后才能基于当前 revision 重建。重启、跨窗口 CAS、停机/账号替换/撤权迟到响应、remove/regrant membership epoch 和 scope/conversation 撤权清理均有真实 SQLite/service/IPC 回归。修复后 102 项协作 Node/architecture/registry 与完整能力门禁 191 项通过；这仍只是编辑 UI 的持久化基础，不代表行内编辑、撤回确认、冲突比较界面或 Electron 双窗口验收完成。
+
 ## Task 14：实现个人群、Team direct 与公开/私密频道
 
 **Files:**

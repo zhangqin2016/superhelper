@@ -169,6 +169,13 @@ const COLLABORATION_MIGRATIONS = [
     END;`),
   // v15 — bounded recovery reasons only; legacy NULL means no known reason.
   (db) => db.exec(`ALTER TABLE outbox ADD COLUMN error_code TEXT;`),
+  // v16 — unsent message edits are separate from the composer and encrypted
+  // with their conversation scope. Generation supplies cross-window CAS.
+  (db) => db.exec(`CREATE TABLE edit_drafts (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+    scope_id TEXT NOT NULL, generation INTEGER NOT NULL,
+    content_envelope_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,conversation_id,message_id));`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };
