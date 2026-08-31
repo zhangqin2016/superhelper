@@ -387,6 +387,14 @@ check ((scope_type = 'organization') = (organization_id is not null));
 
 ## Task 13：完成好友、消息时间线、编辑撤回和恢复交互
 
+### 继续实施的依赖顺序（审计确认，未实现项不能当完成）
+
+1. **持久编辑/撤回**：复用现有 outbox 的类型化命令、同键恢复和会话屏障；device-bound receipt确认与最低revision历史刷新检查点原子写入。原消息createSeq和创建command ID不变，不新增乐观气泡；旧历史响应只能清掉自己已验证的刷新目标，不能删除并发新增的更高revision。
+2. **持久已读与准确统计**：独立read checkpoint，不进入消息发送屏障。pendingMax可合并，已经发出的UUID/device/seq冻结；ACK或授权快照确认后仍保留更高pendingMax。扩既有bootstrap/conversations-get准确返回projectionSeq/lastReadSeq/unreadCount/mentionCount，从全部授权消息及对应创建事件统计，而非seq差或最近200条。增量事件按snapshot覆盖序号去重；自己的read事件触发持久conversation hydration精确刷新，再ACK。
+3. **引用/@与消息字段**：引用ID、mention IDs贯穿draft/outbox/重启恢复/完整意图比较；有限引用快照由main从授权目标取得，撤回后显示占位。public Team频道的@候选需与activeRecipients同源（全体active Team成员）；private/group/direct不能放宽成整个Team名册。保留服务端createdAt，不能以本地缓存写入时间推断15分钟编辑/24小时撤回窗口。
+4. **实际消息交互**：在现有timeline/composer/shell上增加行内编辑、撤回确认、冲突比较、引用条和键盘@候选，不新增第二面板。mutation恢复视图区分原消息发送状态与修改状态，保留未提交编辑稿。收件箱按稳定conversation ID更新，使用持久pin/notification偏好、未读提及和权威最近活动排序，不跨会话比较局部seq。
+5. **可见已读与Electron验收**：窗口聚焦、document/面板/当前会话可见才观察viewport内已持久消息；切换/隐藏/账号/撤权令迟到回调失效。主进程复核可见窗口、授权会话及缓存seq。复用真实timeline/attachments/social-navigation Electron夹具，测试旧detached按钮、失焦、跨会话迟到结果、冲突/撤回及三语言；静态surface检查不算交互E2E。
+
 **Files:**
 
 - Create: `src/renderer/modules/collaboration-inbox.js`
