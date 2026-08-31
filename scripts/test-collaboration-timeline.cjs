@@ -46,8 +46,21 @@ app.whenReady().then(async () => {
     const after = visible.getBoundingClientRect().top;
     root.scrollTop = root.scrollHeight;
     render(root, [...history,{id:'new',seq:41,bodyText:'last'}]);
-    return { initialOrder, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before,
-      bottomGap:root.scrollHeight-root.scrollTop-root.clientHeight };
+    const bottomGap = root.scrollHeight-root.scrollTop-root.clientHeight;
+    const { initCollaborationCenter } = await import(${JSON.stringify(pathToFileURL(path.join(__dirname, "../src/renderer/modules/collaboration-center.js")).href)});
+    document.body.innerHTML = '<button id="collaborationNavButton"></button><button id="workbenchNavButton"></button><div id="centerPanel"><div id="collaborationCenter"><div id="collaborationInboxColumn"><div id="collaborationInbox"></div></div><div id="collaborationStatus"></div><div id="collaborationLive"></div><div id="collaborationScopeBadge"></div><button id="collaborationLoadOlder"></button><div id="collaborationTimeline"></div><p id="collaborationConversationEmpty"></p><textarea id="collaborationComposer"></textarea><button id="collaborationSendButton"></button></div></div>';
+    const calls = [];
+    window.assistantClient = { collaboration: {
+      getDraft: async () => ({ok:true,text:''}), onStateChange: () => () => {},
+      open: async (id,beforeSeq) => { calls.push(beforeSeq ?? null); return {ok:true,conversation:{id},hasMore:beforeSeq==null,nextBeforeSeq:beforeSeq==null?3:1,
+        messages:(beforeSeq==null?[3,4]:[1,2]).map(seq=>({id:'page'+seq,seq,bodyText:'page '+seq}))}; },
+    } };
+    const center = initCollaborationCenter({getPolicy:async()=>({collaboration:{enabled:true}})});
+    await center.open('c'); await center.loadOlder(); await center.open('c');
+    const pagedOrder = [...document.getElementById('collaborationTimeline').children].map(n=>n.dataset.messageKey);
+    const olderHidden = document.getElementById('collaborationLoadOlder').hidden;
+    center.destroy();
+    return { initialOrder, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
   assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
@@ -56,5 +69,8 @@ app.whenReady().then(async () => {
   assert.equal(result.tombstone, "collaboration.messageRevoked", "revoked message has an explicit tombstone");
   assert.equal(result.anchorDelta, 0, "offscreen edits preserve the visible anchor even when the scroller has a page offset");
   assert.equal(result.bottomGap, 0, "new messages follow only when already at the bottom");
+  assert.deepEqual(result.pagedOrder, ["page1", "page2", "page3", "page4"], "older history remains after a newest-window refresh");
+  assert.equal(result.olderHidden, true, "exhausted history hides the load-more action");
+  assert.deepEqual(result.calls, [null, 3, null], "actual UI passes the exclusive cursor to preload");
   console.log("collaboration timeline: actual Electron DOM passed");
 }).then(() => finish(0)).catch((error) => { console.error(error); finish(1); });

@@ -29,7 +29,7 @@ assert.deepEqual([...handlers.keys()].sort(), [
 const publicState = { ok: true, cursor: 2, watermark: 0, outbox: [{ id: "o1", conversationId: "", clientCommandId: "", scopeId: "", state: "queued", attempts: 0, createdAt: 0 }] };
 assert.deepEqual(await handlers.get("collaboration:get-state")(), publicState);
 assert.deepEqual(await handlers.get("collaboration:list")(), { ok: true, conversations: [{ id: "c1", scopeId: "team:t", kind: "team", title: "Safe", updatedAt: 0, lastSeq: null }] });
-assert.deepEqual(await handlers.get("collaboration:open")(null, { conversationId: "c1" }), { ok: true, conversation: { id: "c1", scopeId: "", kind: "", title: "Safe", updatedAt: 0, lastSeq: null }, messages: [{ id: "m1", conversationId: "c1", seq: null, senderUserId: "", state: "", bodyText: "hi", createdAt: 0, updatedAt: 0 }] });
+assert.deepEqual(await handlers.get("collaboration:open")(null, { conversationId: "c1" }), { ok: true, conversation: { id: "c1", scopeId: "", kind: "", title: "Safe", updatedAt: 0, lastSeq: null }, messages: [{ id: "m1", conversationId: "c1", seq: null, senderUserId: "", state: "", bodyText: "hi", createdAt: 0, updatedAt: 0 }], hasMore: false, nextBeforeSeq: null, offline: false });
 assert.deepEqual(await handlers.get("collaboration:bootstrap")(), { ok: true, cursor: 0 });
 
 const sent = await handlers.get("collaboration:send")(null, {

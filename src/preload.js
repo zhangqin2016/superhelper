@@ -452,7 +452,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     getState: () => ipcRenderer.invoke("collaboration:get-state"),
     bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),
     list: () => ipcRenderer.invoke("collaboration:list"),
-    open: (conversationId) => ipcRenderer.invoke("collaboration:open", { conversationId }),
+    open: (conversationId, beforeSeq) => ipcRenderer.invoke("collaboration:open", { conversationId, ...(beforeSeq == null ? {} : { beforeSeq }) }),
     getDraft: (conversationId) => ipcRenderer.invoke("collaboration:get-draft", { conversationId }),
     saveDraft: ({ conversationId, text }) => ipcRenderer.invoke("collaboration:save-draft", { conversationId, text }),
     send: ({ conversationId, clientCommandId, bodyText }) => ipcRenderer.invoke("collaboration:send", {

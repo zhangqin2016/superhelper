@@ -408,15 +408,18 @@ class CollaborationStore {
     return row ? { id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at) } : null;
   }
 
-  listMessages({ conversationId, limit = 200 } = {}) {
+  listMessages({ conversationId, beforeSeq, limit = 200, includePending = true } = {}) {
     const conversation = requireId(conversationId, "conversation id");
+    if (beforeSeq != null && (!Number.isSafeInteger(beforeSeq) || beforeSeq < 1)) throw new Error("collaboration history cursor is invalid");
     const cappedLimit = Math.min(200, Math.max(1, Number.isSafeInteger(Number(limit)) ? Number(limit) : 200));
     return this.db.all(
       `SELECT m.* FROM messages m LEFT JOIN outbox o
         ON o.account_id = m.account_id AND o.client_command_id = m.client_command_id
        WHERE m.account_id = ? AND m.conversation_id = ? AND COALESCE(o.state, '') <> 'cancelled'
+         AND (? IS NULL OR m.seq < ?)
+         AND (? = 1 OR m.seq IS NOT NULL)
        ORDER BY (m.seq IS NULL) DESC, m.seq DESC, m.created_at DESC, m.rowid DESC LIMIT ?`,
-      this.accountId, conversation, cappedLimit,
+      this.accountId, conversation, beforeSeq ?? null, beforeSeq ?? null, includePending ? 1 : 0, cappedLimit,
     ).reverse().map((row) => {
       const content = this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, row.id), value: row.body_envelope_json });
       const clientCommandId = row.client_command_id || content.clientCommandId;
@@ -428,8 +431,8 @@ class CollaborationStore {
     }).filter((message) => message.state !== "cancelled");
   }
 
-  hydrateAuthorizedHistory({ conversationId, messages = [] } = {}) {
-    return hydrateAuthorizedHistory(this, { conversation: requireId(conversationId, "conversation id"), messages });
+  hydrateAuthorizedHistory({ conversationId, messages = [], completeCheckpoint = true } = {}) {
+    return hydrateAuthorizedHistory(this, { conversation: requireId(conversationId, "conversation id"), messages, completeCheckpoint });
   }
 
   getProfile({ userId }) {

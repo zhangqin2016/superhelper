@@ -4,6 +4,7 @@ const { openCollaborationStore } = require("./collaboration-store");
 const { createCollaborationSyncEngine } = require("./sync-engine");
 const { createCollaborationOutbox } = require("./outbox");
 const { createCollaborationRealtimeClient } = require("./realtime-client");
+const { readHistoryPage } = require("./history-page");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -178,21 +179,15 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         store.saveDraft({ conversationId, text });
         return { ok: true };
       },
-      async open({ conversationId } = {}) {
+      async open({ conversationId, beforeSeq } = {}) {
         if (stopped) return stoppedResult();
         if (typeof store.getConversation !== "function" || typeof store.listMessages !== "function") return unavailableService();
         return enqueueSync(async () => {
           const conversation = store.getConversation({ conversationId });
           if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-          try {
-            await hydrateAuthorizedHistory([conversationId]);
-          } catch (error) {
-            // Offline reading is local-first. An authorization failure is NOT
-            // an offline condition and must never expose cached content here.
-            if (!["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_RESPONSE_UNKNOWN"].includes(error?.code)) throw error;
-          }
+          const page = await readHistoryPage({ store, client, deviceId, conversationId, beforeSeq, assertActive });
           assertActive();
-          return { ok: true, conversation, messages: store.listMessages({ conversationId }) };
+          return { ok: true, conversation, ...page };
         });
       },
       async bootstrap() {

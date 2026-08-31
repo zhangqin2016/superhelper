@@ -80,7 +80,8 @@ function rendererView(method, value) {
   if (value?.ok === false) return { ok: false, code: safeIdentifier(value.code) || "COLLABORATION_UNAVAILABLE", retryable: value.retryable === true };
   if (method === "getState") return { ok: true, cursor: nonNegativeInteger(value?.cursor), watermark: nonNegativeInteger(value?.watermark), outbox: Array.isArray(value?.outbox) ? value.outbox.map(rendererOutbox) : [] };
   if (method === "list") return { ok: true, conversations: Array.isArray(value?.conversations) ? value.conversations.map(rendererConversation) : [] };
-  if (method === "open") return { ok: true, conversation: rendererConversation(value?.conversation), messages: Array.isArray(value?.messages) ? value.messages.map(rendererMessage) : [] };
+  if (method === "open") return { ok: true, conversation: rendererConversation(value?.conversation), messages: Array.isArray(value?.messages) ? value.messages.map(rendererMessage) : [],
+    hasMore: value?.hasMore === true, nextBeforeSeq: optionalInteger(value?.nextBeforeSeq), offline: value?.offline === true };
   if (method === "bootstrap") return { ok: true, cursor: nonNegativeInteger(value?.cursor) };
   if (method === "getDraft") return { ok: true, text: typeof value?.text === "string" ? value.text.slice(0, MAX_TEXT_BYTES) : "" };
   if (method === "saveDraft") return { ok: true };
@@ -190,7 +191,12 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
   ipcMain.handle("collaboration:get-state", () => invoke(getService, "getState"));
   ipcMain.handle("collaboration:list", () => invoke(getService, "list"));
   ipcMain.handle("collaboration:bootstrap", () => invoke(getService, "bootstrap"));
-  registerCommand(ipcMain, "collaboration:open", getService, "open", validOpen);
+  registerCommand(ipcMain, "collaboration:open", getService, "open", (payload) => {
+    if (!hasOnlyKeys(payload, new Set(["conversationId", "beforeSeq"]))) return null;
+    const normalized = validOpen({ conversationId: payload.conversationId });
+    if (!normalized || (payload.beforeSeq != null && (!Number.isSafeInteger(payload.beforeSeq) || payload.beforeSeq < 1))) return null;
+    return { ...normalized, ...(payload.beforeSeq == null ? {} : { beforeSeq: payload.beforeSeq }) };
+  });
   registerCommand(ipcMain, "collaboration:get-draft", getService, "getDraft", validOpen);
   registerCommand(ipcMain, "collaboration:save-draft", getService, "saveDraft", (payload) => {
     if (!hasOnlyKeys(payload, new Set(["conversationId", "text"])) || !safeIdentifier(payload.conversationId) || typeof payload.text !== "string" || bytes(payload.text) > MAX_TEXT_BYTES) return null;

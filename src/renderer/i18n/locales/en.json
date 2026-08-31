@@ -1776,5 +1776,8 @@
   "collaboration.deliveryUnknown": "Delivery outcome unknown — retry or sync",
   "collaboration.sendFailed": "Message needs attention",
   "collaboration.noFriends": "No contacts yet",
-  "collaboration.messageRevoked": "Message revoked"
+  "collaboration.messageRevoked": "Message revoked",
+  "collaboration.loadOlder": "Load earlier messages",
+  "collaboration.offlineCache": "Offline — showing cached messages",
+  "collaboration.historyLoadFailed": "Could not load earlier messages. Try again."
 }

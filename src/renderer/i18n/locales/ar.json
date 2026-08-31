@@ -1776,5 +1776,8 @@
   "collaboration.deliveryUnknown": "نتيجة التسليم غير معروفة — أعد المحاولة أو المزامنة",
   "collaboration.sendFailed": "تحتاج الرسالة إلى متابعة",
   "collaboration.noFriends": "لا توجد جهات اتصال بعد",
-  "collaboration.messageRevoked": "تم سحب الرسالة"
+  "collaboration.messageRevoked": "تم سحب الرسالة",
+  "collaboration.loadOlder": "تحميل الرسائل السابقة",
+  "collaboration.offlineCache": "غير متصل — عرض الرسائل المحفوظة محليًا",
+  "collaboration.historyLoadFailed": "تعذر تحميل الرسائل السابقة. حاول مجددًا."
 }

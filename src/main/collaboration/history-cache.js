@@ -1,7 +1,7 @@
 "use strict";
 
 /** Persist only the server's authorized plaintext history view, encrypted locally. */
-function hydrateAuthorizedHistory(store, { conversation, messages = [] }) {
+function hydrateAuthorizedHistory(store, { conversation, messages = [], completeCheckpoint = true }) {
   const target = store.db.get(`SELECT scope_id FROM conversations WHERE account_id = ? AND id = ?`, store.accountId, conversation);
   if (!target) return { hydrated: 0 };
   const rows = Array.isArray(messages) ? messages : [];
@@ -35,7 +35,7 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [] }) {
     return { hydrated };
   });
   const result = apply();
-  store.completeHistoryHydration({ conversationId: conversation });
+  if (completeCheckpoint) store.completeHistoryHydration({ conversationId: conversation });
   return result;
 }
 
