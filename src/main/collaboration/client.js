@@ -10,17 +10,40 @@ function clientError(code, message) {
  * Main-process-only collaboration HTTP client. The renderer receives decoded
  * domain values, never the short-lived bearer token or signed-device headers.
  */
-function createCollaborationClient({ accountManager, signDeviceRequest, request } = {}) {
+function createCollaborationClient({ accountManager, signDeviceRequest, request, expectedAccountId = "" } = {}) {
   if (!accountManager || typeof accountManager.accessTokenForService !== "function") throw new TypeError("An account token provider is required.");
   if (typeof signDeviceRequest !== "function" || typeof request !== "function") throw new TypeError("Signed device request dependencies are required.");
+  function assertAccountBinding() {
+    if (!expectedAccountId) return;
+    const status = accountManager.accountStatus?.();
+    if (!status?.loggedIn || String(status?.user?.id || "") !== String(expectedAccountId)) throw clientError("COLLAB_ACCOUNT_CHANGED");
+  }
   async function invoke({ path, method = "POST", body = {}, deviceId }) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const account = await accountManager.accessTokenForService();
-      if (!account?.ok || !account.accessToken) throw clientError(account?.error || "ACCOUNT_LOGIN_REQUIRED", "A collaboration account token is unavailable.");
+      assertAccountBinding();
+      const account = await accountManager.accessTokenForService({ forceRefresh: attempt > 0 });
+      assertAccountBinding();
+      if (!account?.ok || !account.accessToken) throw clientError(account?.transient ? "COLLAB_NETWORK_UNAVAILABLE" : account?.error || "ACCOUNT_LOGIN_REQUIRED", "A collaboration account token is unavailable.");
       const deviceHeaders = await signDeviceRequest({ path, method, body, deviceId });
-      const result = await request({ path, method, body, headers: { authorization: `Bearer ${account.accessToken}`, ...(deviceHeaders || {}) } });
+      assertAccountBinding();
+      let result;
+      try {
+        result = await request({ path, method, body, headers: { authorization: `Bearer ${account.accessToken}`, ...(deviceHeaders || {}) } });
+      } catch {
+        // Once handed to transport there is no proof that a command did not
+        // commit. Do not mistake a reset/timeout for a permanent rejection.
+        throw clientError("COLLAB_RESPONSE_UNKNOWN");
+      }
       if (Number(result?.status) === 401 && attempt === 0) continue;
-      if (!result?.ok) throw clientError(result?.json?.code || result?.code || "COLLAB_SERVICE_REQUEST_FAILED", "Collaboration request failed.");
+      if (!result?.ok) {
+        const status = Number(result?.status || 0);
+        const code = status === 0 || status === 408 || status >= 500 ? "COLLAB_RESPONSE_UNKNOWN"
+          : status === 429 ? "COLLAB_RATE_LIMITED"
+            : result?.json?.code || result?.code || "COLLAB_SERVICE_REQUEST_FAILED";
+        const error = clientError(code, "Collaboration request failed.");
+        error.retryable = result?.json?.retryable === true || ["COLLAB_RESPONSE_UNKNOWN", "COLLAB_RATE_LIMITED"].includes(code);
+        throw error;
+      }
       return result.json;
     }
     throw clientError("COLLAB_SERVICE_UNAUTHORIZED", "Collaboration authorization could not be refreshed.");
@@ -39,10 +62,13 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request 
     submitMessage(item) {
       return invoke({ path: "/api/collaboration/v1/messages", body: item, deviceId: item?.deviceId });
     },
-    lookupCommandReceipt({ deviceId, clientCommandId } = {}) {
+    submitFriend(item) {
+      return invoke({ path: "/api/collaboration/v1/friends", body: item, deviceId: item?.deviceId });
+    },
+    lookupCommandReceipt({ deviceId, clientCommandId, conversationId } = {}) {
       return invoke({
         path: "/api/collaboration/v1/command-receipt",
-        body: { deviceId, clientCommandId, commandType: "message.create" },
+        body: { deviceId, clientCommandId, commandType: "message.create", expectedConversationId: conversationId },
         deviceId,
       });
     },

@@ -43,6 +43,7 @@ function nonNegativeInteger(value, fallback = 0) {
 }
 
 function optionalInteger(value) {
+  if (value == null) return null;
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
@@ -60,6 +61,11 @@ function rendererMessage(value = {}) {
     senderUserId: safeIdentifier(value.senderUserId) || "", state: safeIdentifier(value.state) || "",
     bodyText: typeof value.bodyText === "string" ? value.bodyText.slice(0, MAX_TEXT_BYTES) : "",
     createdAt: nonNegativeInteger(value.createdAt), updatedAt: nonNegativeInteger(value.updatedAt),
+    ...(safeIdentifier(value.clientCommandId) ? { clientCommandId: safeIdentifier(value.clientCommandId) } : {}),
+    ...(optionalInteger(value.revision) != null ? { revision: optionalInteger(value.revision) } : {}),
+    ...(safeIdentifier(value.replyToMessageId) ? { replyToMessageId: safeIdentifier(value.replyToMessageId) } : {}),
+    ...(typeof value.revokedAt === "string" ? { revokedAt: value.revokedAt.slice(0, 40) } : {}),
+    ...(typeof value.editedAt === "string" ? { editedAt: value.editedAt.slice(0, 40) } : {}),
   };
 }
 
@@ -76,7 +82,9 @@ function rendererView(method, value) {
   if (method === "list") return { ok: true, conversations: Array.isArray(value?.conversations) ? value.conversations.map(rendererConversation) : [] };
   if (method === "open") return { ok: true, conversation: rendererConversation(value?.conversation), messages: Array.isArray(value?.messages) ? value.messages.map(rendererMessage) : [] };
   if (method === "bootstrap") return { ok: true, cursor: nonNegativeInteger(value?.cursor) };
-  if (["send", "retry", "cancel", "markRead"].includes(method)) {
+  if (method === "getDraft") return { ok: true, text: typeof value?.text === "string" ? value.text.slice(0, MAX_TEXT_BYTES) : "" };
+  if (method === "saveDraft") return { ok: true };
+  if (["send", "edit", "revoke", "friend", "retry", "cancel", "markRead"].includes(method)) {
     return {
       ok: value?.ok !== false,
       ...(safeIdentifier(value?.code) ? { code: safeIdentifier(value.code) } : {}),
@@ -138,6 +146,30 @@ function validMarkRead(payload) {
   return conversationId && Number.isSafeInteger(seq) && seq >= 0 ? { conversationId, seq } : null;
 }
 
+function validMessageMutation(payload, { bodyRequired }) {
+  const allowed = new Set(["conversationId", "messageId", "clientCommandId", "expectedRevision", ...(bodyRequired ? ["bodyText"] : [])]);
+  if (!hasOnlyKeys(payload, allowed)) return null;
+  const conversationId = safeIdentifier(payload.conversationId);
+  const messageId = safeIdentifier(payload.messageId);
+  const clientCommandId = safeIdentifier(payload.clientCommandId);
+  const expectedRevision = Number(payload.expectedRevision);
+  if (!conversationId || !messageId || !clientCommandId || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) return null;
+  if (bodyRequired && (typeof payload.bodyText !== "string" || bytes(payload.bodyText) > MAX_TEXT_BYTES)) return null;
+  return { conversationId, messageId, clientCommandId, expectedRevision, ...(bodyRequired ? { bodyText: payload.bodyText } : {}) };
+}
+
+function validFriend(payload) {
+  const allowed = new Set(["action", "clientCommandId", "lilyId", "requestId", "accept", "peerUserId"]);
+  if (!hasOnlyKeys(payload, allowed)) return null;
+  const action = String(payload.action || "");
+  const clientCommandId = safeIdentifier(payload.clientCommandId);
+  if (!clientCommandId || !["request", "respond", "remove", "block", "unblock"].includes(action)) return null;
+  if (action === "request") { const lilyId = safeIdentifier(payload.lilyId); return lilyId ? { action, clientCommandId, lilyId } : null; }
+  if (action === "respond") { const requestId = safeIdentifier(payload.requestId); return requestId && typeof payload.accept === "boolean" ? { action, clientCommandId, requestId, accept: payload.accept } : null; }
+  const peerUserId = safeIdentifier(payload.peerUserId);
+  return peerUserId ? { action, clientCommandId, peerUserId } : null;
+}
+
 function registerCommand(ipcMain, channel, getService, method, validate) {
   ipcMain.handle(channel, (_event, payload) => {
     const normalized = validate(payload);
@@ -159,7 +191,15 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
   ipcMain.handle("collaboration:list", () => invoke(getService, "list"));
   ipcMain.handle("collaboration:bootstrap", () => invoke(getService, "bootstrap"));
   registerCommand(ipcMain, "collaboration:open", getService, "open", validOpen);
+  registerCommand(ipcMain, "collaboration:get-draft", getService, "getDraft", validOpen);
+  registerCommand(ipcMain, "collaboration:save-draft", getService, "saveDraft", (payload) => {
+    if (!hasOnlyKeys(payload, new Set(["conversationId", "text"])) || !safeIdentifier(payload.conversationId) || typeof payload.text !== "string" || bytes(payload.text) > MAX_TEXT_BYTES) return null;
+    return { conversationId: safeIdentifier(payload.conversationId), text: payload.text };
+  });
   registerCommand(ipcMain, "collaboration:send", getService, "send", validSend);
+  registerCommand(ipcMain, "collaboration:edit", getService, "edit", (payload) => validMessageMutation(payload, { bodyRequired: true }));
+  registerCommand(ipcMain, "collaboration:revoke", getService, "revoke", (payload) => validMessageMutation(payload, { bodyRequired: false }));
+  registerCommand(ipcMain, "collaboration:friend", getService, "friend", validFriend);
   registerCommand(ipcMain, "collaboration:retry", getService, "retry", validOutbox);
   registerCommand(ipcMain, "collaboration:cancel", getService, "cancel", validOutbox);
   registerCommand(ipcMain, "collaboration:mark-read", getService, "markRead", validMarkRead);

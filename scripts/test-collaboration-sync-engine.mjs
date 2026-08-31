@@ -29,12 +29,12 @@ store.persistDraftAndOptimisticMessage({
 store.setOutboxState({ outboxId: "confirm-command", expectedStates: ["queued"], state: "confirming" });
 assert.deepEqual(engine.applyPage({
   status: "OK", fromCursor: 0, toCursor: 1,
-  events: [{ cursor: 1, id: "event-confirm", conversationId: "conv-confirm", seq: 9, type: "message.created", payload: { clientCommandId: "confirm-command", messageId: "server-message-9" } }],
+  events: [{ cursor: 1, id: "event-confirm", conversationId: "conv-confirm", actorUserId: "alice", seq: 9, type: "message.created", payload: { clientCommandId: "confirm-command", messageId: "server-message-9" } }],
 }), { cursor: 1, appliedEventIds: ["event-confirm"] });
 assert.equal(store.getOutbox({ outboxId: "confirm-command" }).state, "persisted");
 assert.equal(store.getMessage({ conversationId: "conv-confirm", messageId: "local-confirm-message" }), null, "sync confirmation replaces the optimistic identifier instead of rendering a second message");
 assert.deepEqual(store.getMessage({ conversationId: "conv-confirm", messageId: "server-message-9" }), {
-  id: "server-message-9", conversationId: "conv-confirm", state: "persisted", seq: 9, bodyText: "keep one local bubble",
+  id: "server-message-9", conversationId: "conv-confirm", state: "persisted", seq: 9, bodyText: "keep one local bubble", clientCommandId: "confirm-command",
 }, "confirmation carries authoritative server id/seq while retaining the encrypted local body");
 assert.equal(store.countMessages({ conversationId: "conv-confirm" }), 1, "a command confirmation has one local message projection");
 

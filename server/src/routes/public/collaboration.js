@@ -13,6 +13,7 @@ import { config } from "../../config.js";
 import { createCollaborationMessageService, createHmacMessageBodyIntentSigner } from "../../services/collaboration/messages.js";
 import { createCollaborationMessageCrypto } from "../../services/collaboration/message-crypto.js";
 import { createKyselyMessageRepository, createLockedMessageAuthorizer } from "../../services/collaboration/message-repository.js";
+import { assertCollaborationReceiptIdentity } from "../../services/collaboration/receipt-identity.js";
 
 const deviceBody = z.object({ deviceId: z.string().min(1).max(120) });
 const commandBody = deviceBody.extend({ clientCommandId: z.string().min(1).max(200) });
@@ -62,8 +63,8 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
   post("/api/collaboration/v1/bootstrap", deviceBody, async (request, reply) => { const input = deviceBody.parse(request.body); const account = await accountFor(request, reply, input); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.bootstrapCollaboration({ userId: account.userId, deviceId: input.deviceId })) }); });
   post("/api/collaboration/v1/sync", deviceBody.extend({ afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }), async (request, reply) => { const input = z.object({ deviceId: z.string(), afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }).parse(request.body); const account = await accountFor(request, reply, input); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.syncAfterCursor({ userId: account.userId, deviceId: input.deviceId, afterCursor: input.afterCursor, limit: input.limit })) }); });
   post("/api/collaboration/v1/ack", commandBody.extend({ cursor: z.number().int().min(0), bootstrapCompletionToken: z.string().optional() }), async (request, reply) => { const input = z.object({ deviceId: z.string(), clientCommandId: z.string(), cursor: z.number().int().min(0), bootstrapCompletionToken: z.string().optional() }).parse(request.body); const account = await accountFor(request, reply, input); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.ackDeviceCursor({ userId: account.userId, deviceId: input.deviceId, cursor: input.cursor, bootstrapCompletionToken: input.bootstrapCompletionToken })) }); });
-  post("/api/collaboration/v1/command-receipt", commandBody.extend({ commandType: z.literal("message.create") }), async (request, reply) => {
-    const input = commandBody.extend({ commandType: z.literal("message.create") }).parse(request.body);
+  post("/api/collaboration/v1/command-receipt", commandBody.extend({ commandType: z.literal("message.create"), expectedConversationId: z.string().min(1).max(200) }), async (request, reply) => {
+    const input = commandBody.extend({ commandType: z.literal("message.create"), expectedConversationId: z.string().min(1).max(200) }).parse(request.body);
     const account = await accountFor(request, reply, input, database); if (!account) return;
     const response = await database.transaction().execute(async (trx) => {
       // JWT/device signatures are necessary but insufficient: a device id can
@@ -75,12 +76,13 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
       const receipt = await trx.selectFrom("command_receipts").select(["state", "result_event_id", "response_payload"])
         .where("actor_device_id", "=", account.deviceId).where("command_type", "=", input.commandType)
         .where("client_command_id", "=", input.clientCommandId).executeTakeFirst();
-      if (!receipt || receipt.state !== "completed" || !receipt.result_event_id) return commandReceiptView(receipt);
+      if (!receipt || receipt.state !== "completed" || !receipt.result_event_id) return { state: "unknown", committed: false, deliveryUnknown: true };
       // The event is the sole authority for the conversation. Never use an
       // untrusted request value or stale receipt payload to choose scope.
-      const event = await trx.selectFrom("collaboration_events").select("conversation_id")
+      const event = await trx.selectFrom("collaboration_events").select(["conversation_id", "actor_user_id"])
         .where("id", "=", receipt.result_event_id).executeTakeFirst();
       if (!event?.conversation_id) return { state: "unknown", committed: false, deliveryUnknown: true };
+      assertCollaborationReceiptIdentity({ event, accountUserId: account.userId, expectedConversationId: input.expectedConversationId });
       const decision = await authorizeReceipt({ trx, account, input: { conversationId: event.conversation_id }, action: "read" });
       if (!decision?.ok) throw receiptAuthorizationError(decision);
       return commandReceiptView(receipt);
@@ -89,13 +91,14 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
   });
   post("/api/collaboration/v1/ws-ticket", commandBody, async (request, reply) => { const input = commandBody.parse(request.body); const account = await accountFor(request, reply, input); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await ticketService.issue({ userId: account.userId, deviceId: account.deviceId })) }); });
   post("/api/collaboration/v1/friends", commandBody.extend({ action: z.enum(["request", "respond", "remove", "block", "unblock"]), lilyId: z.string().optional(), requestId: z.string().optional(), accept: z.boolean().optional(), peerUserId: z.string().optional() }), async (request, reply) => { const input = commandBody.extend({ action: z.enum(["request", "respond", "remove", "block", "unblock"]), lilyId: z.string().optional(), requestId: z.string().optional(), accept: z.boolean().optional(), peerUserId: z.string().optional() }).parse(request.body); const account = await accountFor(request, reply, input); if (!account) return; const methods = { request: () => friendService.requestFriend({ account, clientCommandId: input.clientCommandId, lilyId: input.lilyId, ip: request.ip }), respond: () => friendService.respondToFriendRequest({ account, clientCommandId: input.clientCommandId, requestId: input.requestId, accept: input.accept }), remove: () => friendService.removeFriend({ account, clientCommandId: input.clientCommandId, peerUserId: input.peerUserId }), block: () => friendService.blockUser({ account, clientCommandId: input.clientCommandId, peerUserId: input.peerUserId }), unblock: () => friendService.unblockUser({ account, clientCommandId: input.clientCommandId, peerUserId: input.peerUserId }) }; return reply.send({ ok: true, requestId: account.requestId, ...(await methods[input.action]()) }); });
-  post("/api/collaboration/v1/messages", commandBody.extend({ action: z.enum(["send", "edit", "revoke", "history"]), conversationId: z.string().min(1), messageId: z.string().optional(), bodyText: z.string().max(65536).optional(), expectedRevision: z.number().int().positive().optional(), beforeSeq: z.number().int().positive().optional(), limit: z.number().int().min(1).max(200).optional() }), async (request, reply) => {
-    const input = commandBody.extend({ action: z.enum(["send", "edit", "revoke", "history"]), conversationId: z.string().min(1), messageId: z.string().optional(), bodyText: z.string().max(65536).optional(), expectedRevision: z.number().int().positive().optional(), beforeSeq: z.number().int().positive().optional(), limit: z.number().int().min(1).max(200).optional() }).parse(request.body); const account = await accountFor(request, reply, input); if (!account) return;
+  post("/api/collaboration/v1/messages", commandBody.extend({ action: z.enum(["send", "edit", "revoke", "read", "history"]), conversationId: z.string().min(1), messageId: z.string().optional(), bodyText: z.string().max(65536).optional(), expectedRevision: z.number().int().positive().optional(), seq: z.number().int().min(0).optional(), beforeSeq: z.number().int().positive().optional(), limit: z.number().int().min(1).max(200).optional() }), async (request, reply) => {
+    const input = commandBody.extend({ action: z.enum(["send", "edit", "revoke", "read", "history"]), conversationId: z.string().min(1), messageId: z.string().optional(), bodyText: z.string().max(65536).optional(), expectedRevision: z.number().int().positive().optional(), seq: z.number().int().min(0).optional(), beforeSeq: z.number().int().positive().optional(), limit: z.number().int().min(1).max(200).optional() }).parse(request.body); const account = await accountFor(request, reply, input); if (!account) return;
     if (!messageService || typeof authorizeMessage !== "function") return reply.code(503).send({ ok: false, code: "COLLAB_MESSAGE_SERVICE_UNAVAILABLE", retryable: false, requestId: account.requestId });
     const common = { account, conversationId: input.conversationId, authorize: authorizeMessage, database };
     const result = input.action === "send" ? await messageService.sendMessage({ ...common, clientCommandId: input.clientCommandId, bodyText: input.bodyText })
       : input.action === "edit" ? await messageService.editMessage({ ...common, clientCommandId: input.clientCommandId, messageId: input.messageId, bodyText: input.bodyText, expectedRevision: input.expectedRevision })
         : input.action === "revoke" ? await messageService.revokeMessage({ ...common, clientCommandId: input.clientCommandId, messageId: input.messageId, expectedRevision: input.expectedRevision })
+          : input.action === "read" ? await messageService.markConversationRead({ ...common, clientCommandId: input.clientCommandId, submittedSeq: input.seq })
           : await messageService.listMessageHistory({ ...common, beforeSeq: input.beforeSeq, limit: input.limit, trx: database });
     return reply.send({ ok: true, requestId: account.requestId, result });
   });

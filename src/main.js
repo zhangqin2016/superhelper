@@ -244,6 +244,7 @@ app.whenReady().then(async () => {
         const deviceId = serviceClient.getDeviceId();
         const client = createCollaborationClient({
           accountManager,
+          expectedAccountId: storeOptions.accountId,
           // serviceFetch applies the desktop's signed device headers in the
           // main process. The renderer never sees either those headers or the
           // short-lived bearer token consumed by this client.

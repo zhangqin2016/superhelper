@@ -46,7 +46,7 @@ const receiptClient = createCollaborationClient({
   request: async (request) => { receiptRequest = request; return { ok: true, status: 200, json: { ok: true, state: "completed", committed: true } }; },
 });
 assert.deepEqual(await receiptClient.lookupCommandReceipt({ deviceId: "device-1", conversationId: "client-untrusted-c1", clientCommandId: "cmd-1" }), { ok: true, state: "completed", committed: true });
-assert.deepEqual(receiptRequest.body, { deviceId: "device-1", clientCommandId: "cmd-1", commandType: "message.create" }, "receipt lookup omits client conversation metadata; the server derives scope from the receipt event");
+assert.deepEqual(receiptRequest.body, { deviceId: "device-1", clientCommandId: "cmd-1", commandType: "message.create", expectedConversationId: "client-untrusted-c1" }, "expected conversation is checked for equality; the server still derives authorization scope from the immutable receipt event");
 
 const ordering = [];
 const syncClient = createCollaborationClient({

@@ -50,7 +50,9 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       if (!client || !deviceId || typeof client.listMessageHistory !== "function" || typeof store.hydrateAuthorizedHistory !== "function") return;
       for (const conversationId of [...new Set((conversationIds || []).map(String).filter(Boolean))]) {
         const history = await client.listMessageHistory({ deviceId, conversationId });
-        store.hydrateAuthorizedHistory({ conversationId, messages: history?.messages || history?.items || [] });
+        const messages = Array.isArray(history) ? history : history?.messages ?? history?.items;
+        if (!Array.isArray(messages)) throw Object.assign(new Error("Invalid collaboration history"), { code: "COLLAB_HISTORY_INVALID" });
+        store.hydrateAuthorizedHistory({ conversationId, messages });
       }
     };
     const outbox = transport ? createCollaborationOutbox({ store, transport, onStateChange: () => emitState("outbox") }) : null;
@@ -83,6 +85,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       }))
         .then(async (result) => {
           if (!result?.historyHydrated) await hydrateAuthorizedHistory(messageConversationIdsFor(result?.events));
+          await outbox?.reconcilePending?.();
+          await outbox?.drainQueued?.();
           emitState("sync");
           return result;
         });
@@ -126,11 +130,26 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (typeof store.listConversations !== "function") return unavailableService();
         return { ok: true, conversations: store.listConversations() };
       },
+      getDraft({ conversationId } = {}) {
+        if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        return { ok: true, text: store.getDraft({ conversationId, draftId: "composer" })?.text || "" };
+      },
+      saveDraft({ conversationId, text } = {}) {
+        if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        store.saveDraft({ conversationId, text });
+        return { ok: true };
+      },
       async open({ conversationId } = {}) {
         if (typeof store.getConversation !== "function" || typeof store.listMessages !== "function") return unavailableService();
         const conversation = store.getConversation({ conversationId });
         if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-        await hydrateAuthorizedHistory([conversationId]);
+        try {
+          await hydrateAuthorizedHistory([conversationId]);
+        } catch (error) {
+          // Offline reading is local-first. An authorization failure is NOT
+          // an offline condition and must never expose cached content here.
+          if (!["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_RESPONSE_UNKNOWN"].includes(error?.code)) throw error;
+        }
         return { ok: true, conversation, messages: store.listMessages({ conversationId }) };
       },
       async bootstrap() {
@@ -148,7 +167,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       async send({ conversationId, clientCommandId, bodyText } = {}) {
         if (!outbox || typeof store.getConversation !== "function") return unavailableService();
         const existing = store.getOutbox?.({ outboxId: clientCommandId });
-        if (existing) return { ok: true, state: existing.state, clientCommandId: existing.clientCommandId };
+        if (existing) {
+          if (existing.conversationId !== conversationId || existing.bodyText !== bodyText) return { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false };
+          return { ok: true, state: existing.state, clientCommandId: existing.clientCommandId };
+        }
         const conversation = store.getConversation({ conversationId });
         if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
         const messageId = `optimistic:${clientCommandId}`;
@@ -157,6 +179,27 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         });
         const submitted = await outbox.submit(persisted.outboxId);
         return { ok: true, ...submitted };
+      },
+      async edit({ conversationId, messageId, clientCommandId, expectedRevision, bodyText } = {}) {
+        if (!client || !deviceId || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        const result = await client.submitMessage({ action: "edit", deviceId, conversationId, messageId, clientCommandId, expectedRevision, bodyText });
+        void synchronizeSafely();
+        emitState("message");
+        return { ok: true, clientCommandId, state: "confirming", ...(result?.message?.seq ? { seq: result.message.seq } : {}) };
+      },
+      async revoke({ conversationId, messageId, clientCommandId, expectedRevision } = {}) {
+        if (!client || !deviceId || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        const result = await client.submitMessage({ action: "revoke", deviceId, conversationId, messageId, clientCommandId, expectedRevision });
+        void synchronizeSafely();
+        emitState("message");
+        return { ok: true, clientCommandId, state: "confirming", ...(result?.message?.seq ? { seq: result.message.seq } : {}) };
+      },
+      async friend(command = {}) {
+        if (!client || !deviceId || typeof client.submitFriend !== "function") return unavailableService();
+        const result = await client.submitFriend({ ...command, deviceId });
+        void synchronizeSafely();
+        emitState("relationship");
+        return { ok: true, clientCommandId: command.clientCommandId, state: "confirming", ...(result?.status ? { state: String(result.status) } : {}) };
       },
       async retry({ outboxId } = {}) {
         if (!outbox) return unavailableService();
@@ -170,11 +213,11 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (result.requiresSync) void synchronizeSafely();
         return result;
       },
-      markRead() {
-        // Read markers are not yet a server command. Do not pretend a local
-        // write propagated to teammates; the stable unavailable result keeps
-        // the UI from displaying a false delivery/read state.
-        return unavailableService();
+      async markRead({ conversationId, seq } = {}) {
+        if (!client || !deviceId || !Number.isSafeInteger(Number(seq)) || Number(seq) < 0) return unavailableService();
+        const result = await client.submitMessage({ action: "read", deviceId, conversationId, seq: Number(seq), clientCommandId: `read:${conversationId}:${Number(seq)}` });
+        emitState("read");
+        return { ok: true, conversationId, seq: Number(result?.lastReadSeq ?? seq) };
       },
       start() {
         const recovered = store.recoverAbandonedSubmittingOutbox?.();

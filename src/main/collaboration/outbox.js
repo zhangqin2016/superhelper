@@ -53,11 +53,20 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
     const item = store.getOutbox({ outboxId });
     if (!item) return { state: "missing" };
     if (item.state === "confirming" || item.state === "persisted") return { state: item.state, clientCommandId: item.clientCommandId };
+    const earlier = [];
+    for (const queued of store.listOutbox?.() || []) {
+      if (queued.id === item.id) break;
+      if (queued.conversationId === item.conversationId) earlier.push(queued);
+    }
+    const barrierId = typeof store.findOutboxPredecessor === "function" ? store.findOutboxPredecessor({ outboxId: item.id })
+      : earlier.find((queued) => ["queued", "submitting", "paused", "failed", "delivery_unknown", "cancellation_requested"].includes(queued.state))?.id;
+    if (barrierId) return { state: item.state, clientCommandId: item.clientCommandId, blockedBy: barrierId };
     if (!store.setOutboxState({ outboxId: item.id, expectedStates: ["queued"], state: "submitting" })) {
       return { state: store.getOutbox({ outboxId: item.id })?.state || "missing", clientCommandId: item.clientCommandId };
     }
     try {
       await transport.submit(transportSnapshot(item));
+      store.confirmOutboxDelivery?.({ outboxId: item.id });
       store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
       onStateChange({ outboxId: item.id, state: "confirming" });
       return { state: "confirming", clientCommandId: item.clientCommandId };
@@ -86,6 +95,19 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
   }
   return {
     submit,
+    async reconcilePending() {
+      if (typeof transport.lookupReceipt !== "function") return;
+      for (const item of store.listOutbox().filter((row) => ["confirming", "delivery_unknown", "cancellation_requested"].includes(row.state))) {
+        await enqueue(item.conversationId, async () => {
+          const current = store.getOutbox({ outboxId: item.id });
+          if (!current || !["confirming", "delivery_unknown", "cancellation_requested"].includes(current.state)) return;
+          const receipt = await transport.lookupReceipt({ clientCommandId: current.clientCommandId, conversationId: current.conversationId });
+          if (!receipt?.committed || !receipt.messageId || !receipt.eventId || !Number.isSafeInteger(receipt.sequence) || receipt.sequence < 1) return;
+          store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence });
+          onStateChange({ outboxId: current.id, state: "persisted" });
+        }).catch(() => undefined); // an unavailable receipt never proves non-delivery
+      }
+    },
     continue(outboxId) {
       const item = store.getOutbox({ outboxId });
       if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["paused", "delivery_unknown"], state: "queued" })) return { state: item?.state || "missing" };

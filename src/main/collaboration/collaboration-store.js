@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const { collaborationDbPath } = require("../config");
 const { openDatabase } = require("../store/sqlite-db");
 const { COLLABORATION_MIGRATIONS } = require("./schema");
+const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./history-cache");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -32,6 +33,7 @@ class CollaborationStore {
     this.now = now;
     this.db = openDatabase(dbPath);
     this.db.migrate(COLLABORATION_MIGRATIONS);
+    backfillMessageCommandIds(this);
   }
 
   _scope(scopeId) { return requireId(scopeId || "personal", "scope id"); }
@@ -54,16 +56,18 @@ class CollaborationStore {
     const outboxId = command;
     const at = this.now();
     const create = this.db.transaction(() => {
+      const currentDraft = this.getDraft({ conversationId: conversation, draftId: draft });
+      const retainedDraft = currentDraft && currentDraft.text !== String(bodyText || "") ? currentDraft.text : String(draftText || "");
       this.db.run(
         `INSERT INTO drafts (account_id, conversation_id, id, scope_id, content_envelope_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET scope_id = excluded.scope_id, content_envelope_json = excluded.content_envelope_json, updated_at = excluded.updated_at`,
         this.accountId, conversation, draft, scope,
-        this._encrypt({ scopeId: scope, recordId: this._draftRecord(conversation, draft), value: { text: String(draftText || "") } }), at,
+        this._encrypt({ scopeId: scope, recordId: this._draftRecord(conversation, draft), value: { text: retainedDraft } }), at,
       );
       this.db.run(
-        `INSERT INTO messages (account_id, conversation_id, id, scope_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, 'optimistic', ?, ?, ?)`,
-        this.accountId, conversation, message, scope,
-        this._encrypt({ scopeId: scope, recordId: this._messageRecord(conversation, message), value: { bodyText: String(bodyText || "") } }), at, at,
+        `INSERT INTO messages (account_id, conversation_id, id, scope_id, client_command_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'optimistic', ?, ?, ?)`,
+        this.accountId, conversation, message, scope, command,
+        this._encrypt({ scopeId: scope, recordId: this._messageRecord(conversation, message), value: { bodyText: String(bodyText || ""), clientCommandId: command } }), at, at,
       );
       this.db.run(
         `INSERT INTO outbox (account_id, id, conversation_id, client_command_id, scope_id, state, payload_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
@@ -85,16 +89,28 @@ class CollaborationStore {
     return { id: row.id, conversationId: row.conversation_id, ...this._decrypt({ scopeId: row.scope_id, recordId: this._draftRecord(conversation, draft), value: row.content_envelope_json }), updatedAt: row.updated_at };
   }
 
+  saveDraft({ conversationId, text, draftId = "composer" }) {
+    const conversation = this.getConversation({ conversationId });
+    if (!conversation) throw new Error("collaboration store: draft conversation not found");
+    const id = requireId(draftId, "draft id");
+    this.db.run(`INSERT INTO drafts (account_id, conversation_id, id, scope_id, content_envelope_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET content_envelope_json = excluded.content_envelope_json, updated_at = excluded.updated_at`,
+    this.accountId, conversation.id, id, conversation.scopeId,
+    this._encrypt({ scopeId: conversation.scopeId, recordId: this._draftRecord(conversation.id, id), value: { text: String(text || "") } }), this.now());
+  }
+
   getMessage({ conversationId, messageId }) {
     const conversation = requireId(conversationId, "conversation id");
     const message = requireId(messageId, "message id");
     const row = this.db.get(`SELECT * FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, this.accountId, conversation, message);
     if (!row) return null;
-    return { id: row.id, conversationId: row.conversation_id, state: row.state, seq: row.seq, ...this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, message), value: row.body_envelope_json }) };
+    const content = this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, message), value: row.body_envelope_json });
+    return { id: row.id, conversationId: row.conversation_id, state: row.state, seq: row.seq, ...content,
+      ...((row.client_command_id || content.clientCommandId) ? { clientCommandId: row.client_command_id || content.clientCommandId } : {}) };
   }
 
   listOutbox() {
-    return this.db.all(`SELECT id, conversation_id, client_command_id, scope_id, state, attempts, created_at FROM outbox WHERE account_id = ? ORDER BY created_at, id`, this.accountId)
+    return this.db.all(`SELECT id, conversation_id, client_command_id, scope_id, state, attempts, created_at FROM outbox WHERE account_id = ? ORDER BY rowid`, this.accountId)
       .map((row) => ({ id: row.id, conversationId: row.conversation_id, clientCommandId: row.client_command_id, scopeId: row.scope_id, state: row.state, attempts: Number(row.attempts), createdAt: row.created_at }));
   }
 
@@ -148,6 +164,20 @@ class CollaborationStore {
       return { state, attempts };
     });
     return retry();
+  }
+
+  confirmOutboxDelivery({ outboxId }) {
+    this.db.run(`UPDATE outbox SET delivery_confirmed = 1 WHERE account_id = ? AND id = ?`, this.accountId, requireId(outboxId, "outbox id"));
+  }
+
+  findOutboxPredecessor({ outboxId }) {
+    const row = this.db.get(`SELECT prior.id FROM outbox prior JOIN outbox current
+      ON prior.account_id = current.account_id AND prior.conversation_id = current.conversation_id
+      WHERE current.account_id = ? AND current.id = ? AND prior.rowid < current.rowid
+      AND (prior.state IN ('queued', 'submitting', 'paused', 'failed', 'delivery_unknown', 'cancellation_requested')
+        OR (prior.state = 'confirming' AND prior.delivery_confirmed = 0))
+      ORDER BY prior.rowid LIMIT 1`, this.accountId, requireId(outboxId, "outbox id"));
+    return row?.id || null;
   }
 
   settleOutboxFromSync({ clientCommandId, eventId, messageId = null, sequence = null }) {
@@ -248,7 +278,9 @@ class CollaborationStore {
           requireId(row.type, "event type"), JSON.stringify(row.payload ?? {}), this.now(),
         );
         const command = row?.clientCommandId ?? row?.client_command_id ?? row?.payload?.clientCommandId ?? row?.payload?.client_command_id;
-        if (command) {
+        if (command && row.type === "message.created" && (row.actorUserId ?? row.actor_user_id) === this.accountId) {
+          const intent = this.getOutbox({ outboxId: String(command) });
+          if (intent && intent.conversationId !== (row.conversationId ?? row.conversation_id)) throw new Error("collaboration store: command conversation mismatch");
           this._settleOptimisticCommand({ clientCommandId: String(command), event: row });
         }
         appliedEventIds.push(id);
@@ -284,7 +316,7 @@ class CollaborationStore {
     const historyRows = Array.isArray(history) ? history : [];
     const replace = this.db.transaction(() => {
       const confirmingBubbles = this.db.all(
-        `SELECT * FROM outbox WHERE account_id = ? AND state IN ('confirming', 'cancellation_requested', 'delivery_unknown') ORDER BY created_at, id`,
+        `SELECT * FROM outbox WHERE account_id = ? AND state IN ('queued', 'submitting', 'paused', 'failed', 'confirming', 'cancellation_requested', 'delivery_unknown') ORDER BY created_at, id`,
         this.accountId,
       ).map((outbox) => ({
         outbox,
@@ -307,7 +339,8 @@ class CollaborationStore {
       for (const value of profileRows) {
         const userId = requireId(value?.userId ?? value?.user_id, "profile user id");
         this.db.run(
-          `INSERT INTO profiles (account_id, user_id, lily_id, display_name, avatar_object_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO profiles (account_id, user_id, lily_id, display_name, avatar_object_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(account_id, user_id) DO UPDATE SET lily_id = excluded.lily_id, display_name = excluded.display_name, avatar_object_id = excluded.avatar_object_id, updated_at = excluded.updated_at`,
           this.accountId, userId, value.lilyId ?? value.lily_id ?? null, value.displayName ?? value.display_name ?? null,
           value.avatarObjectId ?? value.avatar_object_id ?? null, this.now(),
         );
@@ -338,9 +371,9 @@ class CollaborationStore {
         const messageId = String(intent.messageId || "");
         if (!messageId) continue;
         this.db.run(
-          `INSERT OR IGNORE INTO messages (account_id, conversation_id, id, scope_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, 'optimistic', ?, ?, ?)`,
-          this.accountId, outbox.conversation_id, messageId, outbox.scope_id,
-          this._encrypt({ scopeId: outbox.scope_id, recordId: this._messageRecord(outbox.conversation_id, messageId), value: { bodyText: String(intent.bodyText || "") } }),
+          `INSERT OR IGNORE INTO messages (account_id, conversation_id, id, scope_id, client_command_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'optimistic', ?, ?, ?)`,
+          this.accountId, outbox.conversation_id, messageId, outbox.scope_id, outbox.client_command_id,
+          this._encrypt({ scopeId: outbox.scope_id, recordId: this._messageRecord(outbox.conversation_id, messageId), value: { bodyText: String(intent.bodyText || ""), clientCommandId: outbox.client_command_id } }),
           this.now(), this.now(),
         );
       }
@@ -379,39 +412,24 @@ class CollaborationStore {
     const conversation = requireId(conversationId, "conversation id");
     const cappedLimit = Math.min(200, Math.max(1, Number.isSafeInteger(Number(limit)) ? Number(limit) : 200));
     return this.db.all(
-      `SELECT * FROM messages WHERE account_id = ? AND conversation_id = ? ORDER BY seq DESC, created_at DESC, id DESC LIMIT ?`,
+      `SELECT m.* FROM messages m LEFT JOIN outbox o
+        ON o.account_id = m.account_id AND o.client_command_id = m.client_command_id
+       WHERE m.account_id = ? AND m.conversation_id = ? AND COALESCE(o.state, '') <> 'cancelled'
+       ORDER BY (m.seq IS NULL) DESC, m.seq DESC, m.created_at DESC, m.rowid DESC LIMIT ?`,
       this.accountId, conversation, cappedLimit,
-    ).reverse().map((row) => ({
-      id: row.id, conversationId: row.conversation_id, seq: row.seq == null ? null : Number(row.seq), senderUserId: row.sender_user_id,
-      state: row.state, ...this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, row.id), value: row.body_envelope_json }),
-    }));
+    ).reverse().map((row) => {
+      const content = this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, row.id), value: row.body_envelope_json });
+      const clientCommandId = row.client_command_id || content.clientCommandId;
+      const delivery = clientCommandId ? this.db.get(`SELECT state FROM outbox WHERE account_id = ? AND client_command_id = ?`, this.accountId, clientCommandId) : null;
+      return {
+        id: row.id, conversationId: row.conversation_id, seq: row.seq == null ? null : Number(row.seq), senderUserId: row.sender_user_id,
+        ...content, ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+      };
+    }).filter((message) => message.state !== "cancelled");
   }
 
-  /** Persist only the server's authorized plaintext history view, encrypted locally. */
   hydrateAuthorizedHistory({ conversationId, messages = [] } = {}) {
-    const conversation = requireId(conversationId, "conversation id");
-    const target = this.db.get(`SELECT scope_id FROM conversations WHERE account_id = ? AND id = ?`, this.accountId, conversation);
-    if (!target) return { hydrated: 0 };
-    const rows = Array.isArray(messages) ? messages : [];
-    const apply = this.db.transaction(() => {
-      let hydrated = 0;
-      for (const message of rows) {
-        const id = requireId(message?.id, "history message id");
-        const bodyText = message?.bodyText == null ? "" : String(message.bodyText);
-        const seq = Number(message?.createSeq ?? message?.create_seq ?? message?.seq);
-        this.db.run(
-          `INSERT INTO messages (account_id, conversation_id, id, scope_id, seq, sender_user_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'persisted', ?, ?, ?)
-           ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET seq = excluded.seq, sender_user_id = excluded.sender_user_id, state = excluded.state, body_envelope_json = excluded.body_envelope_json, updated_at = excluded.updated_at`,
-          this.accountId, conversation, id, target.scope_id, Number.isSafeInteger(seq) ? seq : null, message?.senderUserId ?? message?.sender_user_id ?? null,
-          this._encrypt({ scopeId: target.scope_id, recordId: this._messageRecord(conversation, id), value: { bodyText } }), this.now(), this.now(),
-        );
-        hydrated += 1;
-      }
-      return { hydrated };
-    });
-    const result = apply();
-    this.completeHistoryHydration({ conversationId: conversation });
-    return result;
+    return hydrateAuthorizedHistory(this, { conversation: requireId(conversationId, "conversation id"), messages });
   }
 
   getProfile({ userId }) {

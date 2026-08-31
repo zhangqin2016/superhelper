@@ -79,6 +79,13 @@ const COLLABORATION_MIGRATIONS = [
       PRIMARY KEY (account_id, conversation_id)
     );
   `),
+  // v5 — distinguish a server ACK from a transport timeout. Both await the
+  // projected history, but only an ACK can release the same-conversation lane.
+  (db) => db.exec(`ALTER TABLE outbox ADD COLUMN delivery_confirmed INTEGER NOT NULL DEFAULT 0;`),
+  // v6 — command identity is non-secret metadata. Joining it before LIMIT
+  // keeps cancelled optimistic aliases out of the visible history window.
+  (db) => db.exec(`ALTER TABLE messages ADD COLUMN client_command_id TEXT;
+    CREATE INDEX messages_command_idx ON messages(account_id, client_command_id);`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

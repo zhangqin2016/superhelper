@@ -11,6 +11,9 @@ const service = {
   list: () => ({ ok: true, conversations: [{ id: "c1", kind: "team", title: "Safe", scopeId: "team:t", localPath: "/private", sourcePath: "/source", deviceSignature: "no", nested: { token: "no" } }] }),
   open: ({ conversationId }) => ({ ok: true, conversation: { id: conversationId, title: "Safe", encryptedPath: "/no" }, messages: [{ id: "m1", conversationId, bodyText: "hi", filePath: "/no", authorization: "no" }], wrappedDek: "never-render" }),
   send: (payload) => { calls.push(payload); return { ok: true, clientCommandId: payload.clientCommandId, authorization: "never", internalReceipt: { token: "never" } }; },
+  edit: (payload) => ({ ok: true, clientCommandId: payload.clientCommandId, state: "confirming", authorization: "never" }),
+  revoke: (payload) => ({ ok: true, clientCommandId: payload.clientCommandId, state: "confirming", authorization: "never" }),
+  friend: (payload) => ({ ok: true, clientCommandId: payload.clientCommandId, state: "confirming", authorization: "never" }),
   retry: ({ outboxId }) => ({ ok: true, outboxId }),
   cancel: ({ outboxId }) => ({ ok: true, outboxId, state: "delivery_unknown", recovery: "retry_or_sync" }),
   markRead: ({ conversationId, seq }) => ({ ok: true, conversationId, seq }),
@@ -19,8 +22,8 @@ const service = {
 
 createCollaborationIpc({ ipcMain, getService: () => service });
 assert.deepEqual([...handlers.keys()].sort(), [
-  "collaboration:bootstrap", "collaboration:cancel", "collaboration:get-state", "collaboration:list",
-  "collaboration:mark-read", "collaboration:open", "collaboration:retry", "collaboration:send", "collaboration:subscribe", "collaboration:unsubscribe",
+  "collaboration:bootstrap", "collaboration:cancel", "collaboration:edit", "collaboration:friend", "collaboration:get-draft", "collaboration:get-state", "collaboration:list",
+  "collaboration:mark-read", "collaboration:open", "collaboration:retry", "collaboration:revoke", "collaboration:save-draft", "collaboration:send", "collaboration:subscribe", "collaboration:unsubscribe",
 ]);
 
 const publicState = { ok: true, cursor: 2, watermark: 0, outbox: [{ id: "o1", conversationId: "", clientCommandId: "", scopeId: "", state: "queued", attempts: 0, createdAt: 0 }] };

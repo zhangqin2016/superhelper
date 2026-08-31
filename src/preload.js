@@ -453,9 +453,18 @@ contextBridge.exposeInMainWorld("assistantClient", {
     bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),
     list: () => ipcRenderer.invoke("collaboration:list"),
     open: (conversationId) => ipcRenderer.invoke("collaboration:open", { conversationId }),
+    getDraft: (conversationId) => ipcRenderer.invoke("collaboration:get-draft", { conversationId }),
+    saveDraft: ({ conversationId, text }) => ipcRenderer.invoke("collaboration:save-draft", { conversationId, text }),
     send: ({ conversationId, clientCommandId, bodyText }) => ipcRenderer.invoke("collaboration:send", {
       conversationId, clientCommandId, bodyText,
     }),
+    edit: ({ conversationId, messageId, clientCommandId, expectedRevision, bodyText }) => ipcRenderer.invoke("collaboration:edit", {
+      conversationId, messageId, clientCommandId, expectedRevision, bodyText,
+    }),
+    revoke: ({ conversationId, messageId, clientCommandId, expectedRevision }) => ipcRenderer.invoke("collaboration:revoke", {
+      conversationId, messageId, clientCommandId, expectedRevision,
+    }),
+    friend: (command) => ipcRenderer.invoke("collaboration:friend", command),
     retry: (outboxId) => ipcRenderer.invoke("collaboration:retry", { outboxId }),
     cancel: (outboxId) => ipcRenderer.invoke("collaboration:cancel", { outboxId }),
     markRead: (conversationId, seq) => ipcRenderer.invoke("collaboration:mark-read", { conversationId, seq }),
