@@ -47,6 +47,16 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     onError: () => { if (live) live.textContent = t("collaboration.sendFailed"); },
   });
 
+  const clearRevokedSelection = (result, conversationId) => {
+    if (activeConversationId !== conversationId || !["COLLAB_ACCESS_REVOKED", "COLLABORATION_NOT_FOUND"].includes(result?.code)) return false;
+    activeConversationId = "";
+    historyMessages = []; nextBeforeSeq = null; hasMore = false; historyOffline = false;
+    composer.reset?.(); timeline?.replaceChildren(); updateOlderButton();
+    if (empty) empty.hidden = false;
+    if (scopeBadge) scopeBadge.textContent = "";
+    if (live) live.textContent = t("collaboration.statusUnavailable");
+    return true;
+  };
   const openConversation = async (conversationId) => {
     const generation = ++openGeneration;
     const view = viewGeneration;
@@ -63,7 +73,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       } catch { refreshFailed = true; }
     }
     if (generation === openGeneration) { opening = false; updateOlderButton(); }
-    if (!opened?.ok || generation !== openGeneration || view !== viewGeneration) return;
+    if (generation !== openGeneration || view !== viewGeneration) return;
+    if (!opened?.ok) { clearRevokedSelection(opened, conversationId); return; }
     const sameConversation = activeConversationId === conversationId;
     activeConversationId = conversationId;
     acceptPage(opened, { latest: true, reset: !sameConversation });
@@ -85,6 +96,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     const page = await window.assistantClient?.collaboration?.open?.(conversationId, cursor).catch(() => null);
     if (view !== viewGeneration || generation !== openGeneration || conversationId !== activeConversationId) return;
     loadingOlder = false;
+    if (clearRevokedSelection(page, conversationId)) return;
     if (!page?.ok || (page.hasMore && !(page.nextBeforeSeq > 0 && page.nextBeforeSeq < cursor))) {
       if (live) live.textContent = t("collaboration.historyLoadFailed");
     } else {
@@ -102,8 +114,9 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     nav.setAttribute("aria-current", active ? "page" : "false");
     if (active) byId("collaborationInboxColumn")?.focus?.();
   };
-  const load = async () => {
+  const load = async ({ checkAccess = false } = {}) => {
     const view = viewGeneration;
+    const displayedConversationId = activeConversationId;
     let result = await window.assistantClient?.collaboration?.list?.().catch(() => null);
     if (view !== viewGeneration) return;
     if (!bootstrapAttempted && result?.ok === true && Array.isArray(result.conversations) && result.conversations.length === 0) {
@@ -112,6 +125,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       result = await window.assistantClient?.collaboration?.list?.().catch(() => result);
     }
     if (view !== viewGeneration) return;
+    if (checkAccess && displayedConversationId && activeConversationId === displayedConversationId && result?.ok && Array.isArray(result.conversations) && !result.conversations.some((row) => row.id === displayedConversationId)) clearRevokedSelection({ code: "COLLAB_ACCESS_REVOKED" }, displayedConversationId);
     renderCollaborationInbox(byId("collaborationInbox"), result?.conversations || result?.rows || [], { onOpen: openConversation });
     const available = result?.ok === true;
     if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
@@ -147,7 +161,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
       nav.hidden = !enabled || !available;
       if (!enabled || !available) setActive(false);
-      else if (!panel.hidden) void load().then(() => { if (!opening && activeConversationId && view === viewGeneration) void openConversation(activeConversationId); });
+      else if (!panel.hidden || payload?.type === "access-revoked") void load({ checkAccess: true }).then(() => { if (!panel.hidden && !opening && activeConversationId && view === viewGeneration) void openConversation(activeConversationId); });
       if (live) live.textContent = t(available ? "collaboration.statusAvailable" : "collaboration.statusUnavailable");
     });
   });

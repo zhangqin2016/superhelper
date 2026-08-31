@@ -6,6 +6,7 @@ const { openDatabase } = require("../store/sqlite-db");
 const { COLLABORATION_MIGRATIONS } = require("./schema");
 const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./history-cache");
 const { queueHistoryTarget, listHistoryTargets } = require("./history-hydration");
+const access = require("./access-revocation");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -33,8 +34,11 @@ class CollaborationStore {
     this.keyring = keyring;
     this.now = now;
     this.db = openDatabase(dbPath);
+    try {
     this.db.migrate(COLLABORATION_MIGRATIONS);
+    access.flushRevokedKeys(this);
     backfillMessageCommandIds(this);
+    } catch (error) { this.db.close(); throw error; }
   }
 
   _scope(scopeId) { return requireId(scopeId || "personal", "scope id"); }
@@ -42,6 +46,7 @@ class CollaborationStore {
   _messageRecord(conversationId, messageId) { return `message:${conversationId}:${messageId}`; }
   _outboxRecord(outboxId) { return `outbox:${outboxId}`; }
   _encrypt({ scopeId, recordId, value }) {
+    access.assertScopeWritable(this, scopeId);
     return JSON.stringify(this.keyring.encrypt({ accountId: this.accountId, scopeId, recordId, plaintext: JSON.stringify(value) }));
   }
   _decrypt({ scopeId, recordId, value }) {
@@ -54,6 +59,7 @@ class CollaborationStore {
     const message = requireId(messageId, "message id");
     const command = requireId(clientCommandId, "client command id");
     const scope = this._scope(scopeId);
+    if (access.isConversationRevoked(this, conversation)) throw new Error("collaboration conversation revoked");
     const outboxId = command;
     const at = this.now();
     const create = this.db.transaction(() => {
@@ -304,10 +310,13 @@ class CollaborationStore {
           this.accountId, conversationId, this.now(),
         );
       }
+      access.pruneRevokedHistory(this);
       this.db.run(`UPDATE sync_state SET cursor = ?, watermark = MAX(watermark, ?), updated_at = ? WHERE account_id = ?`, to, to, this.now(), this.accountId);
       return { cursor: to, appliedEventIds };
     });
-    return apply();
+    const result = apply();
+    access.flushRevokedKeys(this);
+    return result;
   }
 
   listPendingHistoryHydration() {
@@ -325,13 +334,15 @@ class CollaborationStore {
 
   listHistoryTargets({ conversationId }) { return listHistoryTargets(this, conversationId); }
 
-  replaceProjectionFromBootstrap({ watermark = 0, profile = null, profiles = [], conversations = [], members = [], history = [], requireHistoryHydration = false } = {}) {
+  replaceProjectionFromBootstrap({ watermark = 0, profile = null, profiles = [], conversations, members = [], teams, history = [], requireHistoryHydration = false } = {}) {
     const cursor = Number(watermark);
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("collaboration store: bootstrap watermark is invalid");
-    const rows = Array.isArray(conversations) ? conversations : [];
-    const memberRows = Array.isArray(members) ? members : [];
-    const historyRows = Array.isArray(history) ? history : [];
+    const rows = access.visibleBootstrapConversations(conversations, teams, projectedScopeId);
+    const memberRows = (Array.isArray(members) ? members : []).filter((member) => rows.some((row) => row.id === (member.conversationId ?? member.conversation_id)));
+    const historyRows = (Array.isArray(history) ? history : []).filter((message) => rows.some((row) => row.id === (message.conversationId ?? message.conversation_id)));
+    access.flushRevokedKeys(this);
     const replace = this.db.transaction(() => {
+      access.prepareBootstrapAccess(this, rows, teams, projectedScopeId);
       const confirmingBubbles = this.db.all(
         `SELECT * FROM outbox WHERE account_id = ? AND state IN ('queued', 'submitting', 'paused', 'failed', 'confirming', 'cancellation_requested', 'delivery_unknown') ORDER BY created_at, id`,
         this.accountId,
@@ -402,7 +413,7 @@ class CollaborationStore {
       );
       return { cursor };
     });
-    return replace();
+    const result = replace(); access.flushRevokedKeys(this); return result;
   }
 
   listConversationIds() {
@@ -464,17 +475,8 @@ class CollaborationStore {
       .map((row) => ({ userId: row.user_id, role: row.role, status: row.status, joinedSeq: Number(row.joined_seq) }));
   }
 
-  /** Remove only retryable outbound intent; projections remain recoverable. */
-  revokeScope({ scopeId }) {
-    const scope = this._scope(scopeId);
-    const remove = this.db.transaction(() => {
-      const outbox = this.db.run(`DELETE FROM outbox WHERE account_id = ? AND scope_id = ?`, this.accountId, scope);
-      return { deletedOutbox: outbox.changes };
-    });
-    const result = remove();
-    this.keyring.destroyScopeKey({ accountId: this.accountId, scopeId: scope });
-    return result;
-  }
+  revokeScope({ scopeId }) { return access.revokeScope(this, this._scope(scopeId)); }
+  flushRevokedKeys() { access.flushRevokedKeys(this); }
 
   close() { this.db.close(); }
 }

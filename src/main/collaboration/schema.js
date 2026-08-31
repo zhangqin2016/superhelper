@@ -87,7 +87,7 @@ const COLLABORATION_MIGRATIONS = [
   (db) => db.exec(`ALTER TABLE messages ADD COLUMN client_command_id TEXT;
     CREATE INDEX messages_command_idx ON messages(account_id, client_command_id);`),
   // v7 — queue state is not evidence of non-delivery: manual continuation and
-  // crash recovery both return previously dispatched work to queued. Legacy
+  // retries may return previously dispatched work to queued. Legacy
   // unresolved rows cannot prove they were never dispatched, so migrate them
   // conservatively; newly admitted, never-dispatched work keeps the zero default.
   (db) => db.exec(`
@@ -108,6 +108,14 @@ const COLLABORATION_MIGRATIONS = [
       FROM events e JOIN history_hydration h ON h.account_id = e.account_id AND h.conversation_id = e.conversation_id
       WHERE e.type LIKE 'message.%' AND json_type(e.payload_json, '$.messageId') = 'text'
       GROUP BY e.account_id, e.conversation_id, json_extract(e.payload_json, '$.messageId');
+  `),
+  // v9 — permissions disappear transactionally; key destruction is retried
+  // after commit and on restart without risking keys for rolled-back pages.
+  (db) => db.exec(`
+    CREATE TABLE revoked_scopes (account_id TEXT NOT NULL, scope_id TEXT NOT NULL,
+      key_delete_pending INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(account_id, scope_id));
+    CREATE TABLE revoked_conversations (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+      scope_id TEXT, PRIMARY KEY(account_id, conversation_id));
   `),
 ];
 

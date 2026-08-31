@@ -2,6 +2,15 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { createCollaborationSyncService } from "../src/services/collaboration/sync-service.js";
+const require = createRequire(import.meta.url);
+const { CollaborationStore } = require("../../src/main/collaboration/collaboration-store.js");
+const { LocalCollaborationKeyring } = require("../../src/main/collaboration/local-keyring.js");
+const { createCollaborationSyncEngine } = require("../../src/main/collaboration/sync-engine.js");
 
 if (!process.env.DATABASE_URL) { console.log("collaboration Team integration: skipped (DATABASE_URL is not configured)"); process.exit(0); }
 const [{ default: pg }, { Kysely, PostgresDialect }, { createKyselyConversationRepository }, { createCollaborationConversationService }, { createCollaborationTeamScopeService }, { createCollaborationMessageService, createHmacMessageBodyIntentSigner }, { createKyselyMessageRepository, createLockedMessageAuthorizer }, { createCollaborationMessageCrypto }] = await Promise.all([
@@ -174,6 +183,23 @@ try {
   const scopeRows = (await pool.query("select e.payload,s.user_id from collaboration_events e join user_sync_events s on s.event_id=e.id where e.id=$1", [revoked.eventId])).rows;
   assert.deepEqual(scopeRows.map((row) => row.user_id), ["d"], "revocation must not wipe unaffected Team members' local scope keys");
   assert.equal(scopeRows[0].payload.organizationId, "org");
+  const revokeCursor = Number((await pool.query("select cursor from user_sync_events where event_id=$1 and user_id='d'", [revoked.eventId])).rows[0].cursor);
+  await pool.query("insert into device_sync_state(user_id,device_id,last_acked_cursor) values('d','device-d',$1)", [revokeCursor - 1]);
+  const syncedRevocation = await createCollaborationSyncService({ db }).syncAfterCursor({ userId: "d", deviceId: "device-d", afterCursor: revokeCursor - 1 });
+  assert.equal(syncedRevocation.events[0].type, "scope.revoked", "real Team producer event must pass the shipped sync service");
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "collab-team-sync-cache-"));
+  const keyring = new LocalCollaborationKeyring({ filePath: path.join(cacheDir, "keys"), safeStorage: { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString() } });
+  const local = new CollaborationStore({ dbPath: ":memory:", accountId: "d", keyring });
+  try {
+    local.replaceProjectionFromBootstrap({ watermark: revokeCursor - 1, conversations: [{ id: priv.conversationId, scopeId: "team:org" }, { id: "personal", scopeId: "personal" }] });
+    local.hydrateAuthorizedHistory({ conversationId: priv.conversationId, messages: [{ id: "cached", seq: 1, bodyText: "private body" }] });
+    const envelope = JSON.parse(local.db.get("select body_envelope_json from messages where id='cached'").body_envelope_json);
+    createCollaborationSyncEngine({ store: local }).applyPage(syncedRevocation);
+    assert.equal(local.getConversation({ conversationId: priv.conversationId }), null);
+    assert.equal(local.getConversation({ conversationId: "personal" }).scopeId, "personal");
+    assert.equal(local.getSyncState().cursor, revokeCursor);
+    assert.throws(() => keyring.decrypt({ accountId: "d", scopeId: "team:org", recordId: `message:${priv.conversationId}:cached`, envelope }), /key.*unavailable/i);
+  } finally { local.close(); fs.rmSync(cacheDir, { recursive: true, force: true }); }
   assert.equal(Number((await pool.query("select count(*) as n from command_receipts where client_command_id='racing-revoked-send'")).rows[0].n), 0);
   await assert.rejects(create("d", "revoked-create", { ...publicInput, visibility: "private" }));
   await assert.rejects(scopes.revokeTeamMember({ account: account("b"), organizationId: "org", targetUserId: "a", clientCommandId: "cannot-revoke-owner" }));

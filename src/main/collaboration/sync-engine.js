@@ -1,6 +1,7 @@
 "use strict";
 
 const { projectAcceptedDirect } = require("./direct-projection");
+const { projectAccessRevocation } = require("./access-revocation");
 
 function syncError(message) {
   const error = new Error(message);
@@ -46,6 +47,7 @@ function createCollaborationSyncEngine({ store, projectEvent = (event) => {
         .filter(Boolean);
       return store.applySyncPage({ ...normalized, projectEvent(event) {
         projectAcceptedDirect(store, event);
+        projectAccessRevocation(store, event);
         projectEvent(event);
       }, historyHydrationConversationIds });
     },

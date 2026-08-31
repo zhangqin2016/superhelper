@@ -5,7 +5,7 @@ import {
 
 export { BOOTSTRAP_HISTORY_LIMIT_PER_CONVERSATION, BOOTSTRAP_HISTORY_TOTAL_LIMIT } from "./sync-repository.js";
 
-import { classifyCollaborationEvent } from "./contracts.js";
+import { classifyCollaborationEvent, collaborationAccountEventScope } from "./contracts.js";
 
 export const DEFAULT_SYNC_LIMIT = 500;
 export const MAX_SYNC_LIMIT = 2000;
@@ -72,11 +72,12 @@ function normalizedSyncEvent(row) {
   const cursor = nonNegativeCursor(row?.cursor, "Collaboration sync event cursor");
   if (cursor < 1) throw collaborationError("COLLAB_SYNC_EVENT_INVALID", "A collaboration sync event cursor must be positive.");
   const payload = normalizePayload(row?.payload);
-  const scope = row?.scope ?? payload?.scope ?? "conversation";
+  const accountScope = collaborationAccountEventScope(row?.type);
+  const scope = accountScope ?? row?.scope ?? payload?.scope ?? "conversation";
   const rawConversationId = row?.conversationId ?? row?.conversation_id;
   const conversationId = rawConversationId == null || String(rawConversationId).trim() === "" ? null : requiredId(rawConversationId, "Collaboration sync conversation id");
-  if (conversationId === null && scope !== "relationship") {
-    throw collaborationError("COLLAB_SYNC_EVENT_INVALID", "Only relationship sync events may omit a conversation id.");
+  if (conversationId === null && !accountScope) {
+    throw collaborationError("COLLAB_SYNC_EVENT_INVALID", "Only account-scoped sync events may omit a conversation id.");
   }
   return {
     cursor,

@@ -6,6 +6,7 @@ const { createCollaborationOutbox } = require("./outbox");
 const { createCollaborationRealtimeClient } = require("./realtime-client");
 const { readHistoryPage } = require("./history-page");
 const { hydratePendingConversation } = require("./history-hydration");
+const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -55,14 +56,32 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     };
     const engine = createCollaborationSyncEngine({ store });
     const syncEngine = {
-      applyPage(page) { assertActive(); return engine.applyPage(page); },
-      applyBootstrap(snapshot) { assertActive(); return engine.applyBootstrap(snapshot); },
+      applyPage(page) {
+        assertActive();
+        try { return engine.applyPage(page); } finally {
+          if (page.events?.some((event) => ["scope.revoked", "member.removed", "member.left"].includes(event.type)) && store.getSyncState().cursor >= page.toCursor) emitState("access-revoked");
+        }
+      },
+      applyBootstrap(snapshot) {
+        assertActive();
+        const previous = store.listConversationIds?.() || [];
+        try { return engine.applyBootstrap(snapshot); } finally {
+          if (previous.some((conversationId) => !store.getConversation({ conversationId }))) emitState("access-revoked");
+        }
+      },
+    };
+    const recoverDeniedHistory = (conversationId, error) => {
+      try { return recoverAccessDenial(store, conversationId, error); } finally {
+        if (isConversationRevoked(store, conversationId)) emitState("access-revoked");
+      }
     };
     let httpPollTimer = null;
     const hydrateAuthorizedHistory = async (conversationIds) => {
       assertActive();
       if (!client || !deviceId || typeof client.listMessageHistory !== "function" || typeof store.hydrateAuthorizedHistory !== "function") return;
       for (const conversationId of [...new Set((conversationIds || []).map(String).filter(Boolean))]) {
+        if (isConversationRevoked(store, conversationId)) continue;
+        try {
         if (typeof store.listHistoryTargets === "function") {
           await hydratePendingConversation({ store, client, deviceId, conversationId, assertActive });
           continue;
@@ -72,6 +91,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         const messages = Array.isArray(history) ? history : history?.messages ?? history?.items;
         if (!Array.isArray(messages)) throw Object.assign(new Error("Invalid collaboration history"), { code: "COLLAB_HISTORY_INVALID" });
         store.hydrateAuthorizedHistory({ conversationId, messages });
+        } catch (error) {
+          assertActive();
+          if (!recoverDeniedHistory(conversationId, error)) throw error;
+        }
       }
     };
     const outbox = transport ? createCollaborationOutbox({ store, transport, onStateChange: () => emitState("outbox") }) : null;
@@ -80,6 +103,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       .map((event) => event?.conversationId ?? event?.conversation_id);
     const recoverPendingHistory = async () => {
       assertActive();
+      store.flushRevokedKeys?.();
       const pending = typeof store.listPendingHistoryHydration === "function"
         ? store.listPendingHistoryHydration() : [];
       // A failed history request intentionally rejects. The lane must not
@@ -203,9 +227,15 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         return enqueueSync(async () => {
           const conversation = store.getConversation({ conversationId });
           if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-          const page = await readHistoryPage({ store, client, deviceId, conversationId, beforeSeq, assertActive });
-          assertActive();
-          return { ok: true, conversation, ...page };
+          try {
+            const page = await readHistoryPage({ store, client, deviceId, conversationId, beforeSeq, assertActive });
+            assertActive();
+            return { ok: true, conversation, ...page };
+          } catch (error) {
+            assertActive();
+            if (!recoverDeniedHistory(conversationId, error)) throw error;
+            return { ok: false, code: "COLLAB_ACCESS_REVOKED", retryable: false };
+          }
         });
       },
       async bootstrap() {

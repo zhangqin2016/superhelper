@@ -81,6 +81,11 @@ const relationshipPage = applyDurableSyncPage({ cursor: 0 }, {
   events: [{ cursor: 1, id: "evt-friend", type: "friend.declined", conversationId: null, payload: { scope: "relationship", peerUserId: "user-b" } }],
 }, (row) => applied.push(`${row.scope}:${row.type}`));
 assert.equal(relationshipPage.cursor, 1, "a relationship event without a direct conversation remains a durable sync page item");
+for (const type of ["scope.revoked", "object.initiated", "object.verified", "object.rejected", "object.aborted", "object.revoked", "object.download_authorized"]) {
+  const result = paginateSyncEvents([{ cursor: 1, id: `account-${type}`, type, conversation_id: null, payload: { objectId: "o", scopeType: "organization", organizationId: "org", userId: "alice" } }], { afterCursor: 0 });
+  assert.equal(result.events[0].type, type, "persisted account/scope events survive the real sync normalization");
+  assert.equal(result.events[0].conversationId, null);
+}
 assert.ok(applied.includes("relationship:friend.declined"));
 assert.throws(() => paginateSyncEvents([{ cursor: 1, id: "bad-null-conversation", type: "message.created", conversationId: null, payload: {} }], { afterCursor: 0 }), (error) => error?.code === "COLLAB_SYNC_EVENT_INVALID", "ordinary conversation events cannot silently lose their conversation id");
 const replay = applyDurableSyncPage(firstPage, {

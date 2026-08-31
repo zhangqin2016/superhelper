@@ -62,8 +62,13 @@ app.whenReady().then(async () => {
     const pagedOrder = [...document.getElementById('collaborationTimeline').children].map(n=>n.dataset.messageKey);
     const olderHidden = document.getElementById('collaborationLoadOlder').hidden;
     const updatedOldBody = document.querySelector('[data-message-key="page1"] .collaboration-message-body').textContent;
+    document.getElementById('collaborationComposer').value = 'revoked private draft';
+    window.assistantClient.collaboration.open = async () => ({ok:false,code:'COLLAB_ACCESS_REVOKED'});
+    await center.open('c');
+    const revokedView = { rows:document.getElementById('collaborationTimeline').children.length, draft:document.getElementById('collaborationComposer').value,
+      disabled:document.getElementById('collaborationSendButton').disabled, scope:document.getElementById('collaborationScopeBadge').textContent };
     center.destroy();
-    return { initialOrder, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody };
+    return { initialOrder, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
   assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
@@ -77,5 +82,6 @@ app.whenReady().then(async () => {
   assert.deepEqual(result.calls, [null, 3, null], "actual UI passes the exclusive cursor to preload");
   assert.deepEqual(result.cacheCalls, [{conversationId:"c",messageIds:["page1","page2"]}]);
   assert.equal(result.updatedOldBody, "collaboration.messageRevoked", "old loaded history reflects a revocation outside the latest page");
+  assert.deepEqual(result.revokedView, { rows: 0, draft: "", disabled: true, scope: "" }, "revocation clears actual DOM content and disables send");
   console.log("collaboration timeline: actual Electron DOM passed");
 }).then(() => finish(0)).catch((error) => { console.error(error); finish(1); });
