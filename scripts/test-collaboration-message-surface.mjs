@@ -1,10 +1,10 @@
-"use strict";
+// Static source-boundary guards only; real interaction tests run in Electron.
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const root = path.join(__dirname, "..");
+const root = fileURLToPath(new URL("../", import.meta.url));
 for (const module of [
   "collaboration-inbox.js",
   "collaboration-timeline.js",
@@ -27,4 +27,4 @@ assert.match(composer, /assistantClient\?\.collaboration\?\.send/, "composer sen
 const friends = fs.readFileSync(path.join(root, "src/renderer/modules/collaboration-friends.js"), "utf8");
 assert.match(friends, /renderCollaborationFriends/, "friend workflow is rendered as a dedicated slice");
 
-console.log("collaboration message UI checks passed");
+console.log("collaboration message source surface checks passed (not interaction E2E)");

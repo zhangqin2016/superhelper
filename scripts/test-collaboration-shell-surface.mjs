@@ -1,10 +1,10 @@
-"use strict";
+// Static source-boundary guards only; real interaction tests run in Electron.
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const root = path.join(__dirname, "..");
+const root = fileURLToPath(new URL("../", import.meta.url));
 const html = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "src/renderer/app.js"), "utf8");
 const center = fs.readFileSync(path.join(root, "src/renderer/modules/collaboration-center.js"), "utf8");
@@ -26,4 +26,4 @@ for (const locale of ["zh-CN", "en", "ar"]) {
   }
 }
 
-console.log("collaboration shell checks passed");
+console.log("collaboration shell source surface checks passed (not interaction E2E)");
