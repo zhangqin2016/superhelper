@@ -40,7 +40,8 @@ function privateDirectory(value) {
 function safeCheckpoint(value) {
   // This closed journal vocabulary is deliberately not a serialized HTTP
   // response. Fresh network capabilities must be reacquired after restart.
-  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext"].includes(key))) throw invalid();
+  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext", "deviceId"].includes(key))) throw invalid();
+  if (value.deviceId !== undefined && !validId(value.deviceId)) throw invalid();
   if (value.state !== undefined && !["prepared", "encrypting", "uploading", "uploaded", "verifying", "verified", "bound", "downloading", "decrypting", "ready", "paused", "failed", "cancelled"].includes(value.state)) throw invalid();
   if (value.objectId !== undefined && (typeof value.objectId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(value.objectId))) throw invalid();
   for (const name of ["uploadId", "etag"]) if (value[name] !== undefined && (typeof value[name] !== "string" || !/^[a-zA-Z0-9_=-]{1,200}$/.test(value[name]))) throw invalid();

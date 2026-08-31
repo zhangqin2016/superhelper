@@ -105,6 +105,33 @@ test("a changed staged ciphertext fails before any upload and never becomes veri
   assert.equal(f.remote.initCalls.length, 0);
 });
 
+test("a changed device cannot replay an unknown upload under a new receipt identity", async (t) => {
+  const f = fixture(t), first = f.manager(), prepared = await f.prepare(first);
+  f.remote.drop = "init";
+  assert.equal((await first.resumeUpload(prepared.id)).state, "paused");
+  first.stop();
+  const before = f.manifests.read(prepared.id);
+  f.options.deviceId = "replacement-device";
+  const second = f.manager(), result = await second.resumeUpload(prepared.id);
+  assert.equal(result.code, "COLLAB_TRANSFER_DEVICE_CHANGED");
+  assert.equal(f.remote.initCalls.length, 1, "the second device must not dispatch the original init identity");
+  assert.deepEqual(f.manifests.read(prepared.id), before, "identity mismatch preserves the original recovery evidence");
+  assert.equal(second.list().transfers[0].code, "COLLAB_TRANSFER_DEVICE_CHANGED");
+});
+
+test("legacy upload without a device identity remains inspectable but cannot be adopted", async (t) => {
+  const f = fixture(t), first = f.manager(), prepared = await f.prepare(first);
+  const item = f.manifests.read(prepared.id), { deviceId: _device, ...legacy } = item.checkpoint;
+  f.manifests.update({ id: item.id, expectedRevision: item.revision, checkpoint: legacy });
+  const before = f.manifests.read(item.id);
+  first.stop();
+  const second = f.manager();
+  assert.equal((await second.resumeUpload(item.id)).code, "COLLAB_TRANSFER_DEVICE_CHANGED");
+  assert.equal(second.list().transfers[0].id, item.id);
+  assert.deepEqual(f.manifests.read(item.id), before);
+  assert.equal(f.remote.initCalls.length, 0);
+});
+
 test("revocation and stopped continuations cannot resume or publish transfer progress", async (t) => {
   const f = fixture(t), api = f.manager(), prepared = await f.prepare(api);
   f.remote.authorized = false;

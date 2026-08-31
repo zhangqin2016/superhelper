@@ -43,10 +43,14 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
   const running = new Map();
   const cancelled = new Set();
   let stopped = false;
-  function guard(item, allowCancelled = false) {
+  const deviceChanged = (item) => item.direction === "upload" && (item.checkpoint?.state || item.checkpoint?.content) && item.checkpoint.deviceId !== deviceId;
+  function guard(item, allowCancelled = false, checkDevice = true) {
     if (stopped) throw fail("COLLABORATION_STOPPED");
     const result = assertAuthorized({ accountId: item.accountId, scopeId: item.scopeId, conversationId: item.conversationId, direction: item.direction });
     if (result === false || result?.then) throw fail("COLLAB_ACCESS_REVOKED");
+    // Server receipts are partitioned by device, not only command ID. Legacy
+    // uploads without identity are also ambiguous and must not be adopted.
+    if (checkDevice && deviceChanged(item)) throw fail("COLLAB_TRANSFER_DEVICE_CHANGED");
     if (!allowCancelled && (cancelled.has(item.id) || item.checkpoint?.state === "cancelled")) throw fail("COLLAB_TRANSFER_CANCELLED");
   }
   function save(item, patch) {
@@ -60,7 +64,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       try { item = save(item, { state: retryable ? "paused" : "failed" }); } catch { /* Revocation/stale revision cannot be overwritten by failure handling. */ }
     }
     const fenced = stopped || ["COLLAB_ACCESS_REVOKED", "COLLAB_ACCOUNT_CHANGED"].includes(code);
-    return { ...(!fenced && item ? view(item) : {}), ok: false, code, retryable, state: code === "COLLAB_TRANSFER_CANCELLED" ? "cancelled" : stopped || retryable ? "paused" : "failed" };
+    return { ...(!fenced && item ? view(item) : {}), ok: false, code, retryable, state: code === "COLLAB_TRANSFER_CANCELLED" ? "cancelled" : stopped || retryable || code === "COLLAB_TRANSFER_DEVICE_CHANGED" ? "paused" : "failed" };
   }
   async function resume(id) {
     let item, file;
@@ -156,7 +160,8 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     list() {
       if (stopped) return { transfers: [] };
       const scan = manifests.scan();
-      return { transfers: scan.transfers.filter((item) => { try { guard(item, true); return true; } catch { return false; } }).map(view), unrecognizedCount: scan.unrecognized.length };
+      return { transfers: scan.transfers.filter((item) => { try { guard(item, true, false); return true; } catch { return false; } })
+        .map((item) => deviceChanged(item) ? { ...view(item), state: "paused", code: "COLLAB_TRANSFER_DEVICE_CHANGED", retryable: false } : view(item)), unrecognizedCount: scan.unrecognized.length };
     },
     async cancel(id) {
       let item = manifests.read(id); guard(item, true);
@@ -181,7 +186,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     async prepareUpload({ inputPath, conversationId, scopeId, purpose = "attachment", originalName, mimeType = "application/octet-stream" }) {
       guard({ conversationId, scopeId, direction: "upload" });
       let item = manifests.create({ scopeId, conversationId, direction: "upload", purpose });
-      item = save(item, { state: "encrypting" });
+      item = save(item, { state: "encrypting", deviceId });
       const key = crypto.randomBytes(32);
       try {
         const result = await encryptFile({ inputPath, outputPath: path.join(manifests.directory(item.id), "ciphertext.lilyenc"), key, fileName: originalName || path.basename(inputPath), contentType: mimeType });
