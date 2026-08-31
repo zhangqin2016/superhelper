@@ -13,7 +13,9 @@ function clientError(code, message) {
 function createCollaborationClient({ accountManager, signDeviceRequest, request, expectedAccountId = "" } = {}) {
   if (!accountManager || typeof accountManager.accessTokenForService !== "function") throw new TypeError("An account token provider is required.");
   if (typeof signDeviceRequest !== "function" || typeof request !== "function") throw new TypeError("Signed device request dependencies are required.");
+  let stopped = false;
   function assertAccountBinding() {
+    if (stopped) throw clientError("COLLABORATION_STOPPED");
     if (!expectedAccountId) return;
     const status = accountManager.accountStatus?.();
     if (!status?.loggedIn || String(status?.user?.id || "") !== String(expectedAccountId)) throw clientError("COLLAB_ACCOUNT_CHANGED");
@@ -34,6 +36,7 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
         // commit. Do not mistake a reset/timeout for a permanent rejection.
         throw clientError("COLLAB_RESPONSE_UNKNOWN");
       }
+      assertAccountBinding();
       if (Number(result?.status) === 401 && attempt === 0) continue;
       if (!result?.ok) {
         const status = Number(result?.status || 0);
@@ -49,6 +52,9 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     throw clientError("COLLAB_SERVICE_UNAUTHORIZED", "Collaboration authorization could not be refreshed.");
   }
   return {
+    // This fences local continuations, not a remote command that may already
+    // have committed. The outbox retains the original durable recovery key.
+    stop() { stopped = true; },
     syncAfterCursor({ deviceId, afterCursor, limit } = {}) {
       return invoke({ path: "/api/collaboration/v1/sync", body: { deviceId, afterCursor, ...(limit == null ? {} : { limit }) }, deviceId });
     },

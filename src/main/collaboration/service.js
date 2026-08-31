@@ -38,18 +38,31 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
   if (!opened?.ok) return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
   try {
     const store = opened.store;
+    let stopped = false;
+    let started = false;
+    const stoppedResult = () => ({ ok: false, code: "COLLABORATION_STOPPED" });
+    const assertActive = () => {
+      if (stopped) throw Object.assign(new Error("Collaboration service stopped"), { code: "COLLABORATION_STOPPED" });
+    };
     const stateListeners = new Set();
     const emitState = (type) => {
+      if (stopped) return;
       for (const listener of stateListeners) {
         try { listener({ type }); } catch { /* view observers never affect durable state */ }
       }
     };
-    const syncEngine = createCollaborationSyncEngine({ store });
+    const engine = createCollaborationSyncEngine({ store });
+    const syncEngine = {
+      applyPage(page) { assertActive(); return engine.applyPage(page); },
+      applyBootstrap(snapshot) { assertActive(); return engine.applyBootstrap(snapshot); },
+    };
     let httpPollTimer = null;
     const hydrateAuthorizedHistory = async (conversationIds) => {
+      assertActive();
       if (!client || !deviceId || typeof client.listMessageHistory !== "function" || typeof store.hydrateAuthorizedHistory !== "function") return;
       for (const conversationId of [...new Set((conversationIds || []).map(String).filter(Boolean))]) {
         const history = await client.listMessageHistory({ deviceId, conversationId });
+        assertActive();
         const messages = Array.isArray(history) ? history : history?.messages ?? history?.items;
         if (!Array.isArray(messages)) throw Object.assign(new Error("Invalid collaboration history"), { code: "COLLAB_HISTORY_INVALID" });
         store.hydrateAuthorizedHistory({ conversationId, messages });
@@ -60,6 +73,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       .filter((event) => String(event?.type || "").startsWith("message."))
       .map((event) => event?.conversationId ?? event?.conversation_id);
     const recoverPendingHistory = async () => {
+      assertActive();
       const pending = typeof store.listPendingHistoryHydration === "function"
         ? store.listPendingHistoryHydration() : [];
       // A failed history request intentionally rejects. The lane must not
@@ -67,42 +81,63 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       await hydrateAuthorizedHistory(pending);
     };
     const synchronizeNow = () => {
+      assertActive();
       const current = store.getSyncState();
       return Promise.resolve(client.syncAndAcknowledge({
         ...realtimeOptions.syncArgs, afterCursor: current.cursor, syncEngine,
         onFullResync: async ({ snapshot, acknowledge }) => {
           const applied = syncEngine.applyBootstrap({ ...snapshot, history: [] });
           await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
+          assertActive();
           await acknowledge();
+          assertActive();
           return { ...applied, events: [], historyHydrated: true };
         },
         onIncrementalPage: async ({ page, acknowledge }) => {
           const applied = syncEngine.applyPage(page);
           await hydrateAuthorizedHistory(messageConversationIdsFor(page.events));
+          assertActive();
           await acknowledge();
+          assertActive();
           return { ...applied, events: Array.isArray(page.events) ? page.events : [], historyHydrated: true };
         },
       }))
         .then(async (result) => {
+          assertActive();
           if (!result?.historyHydrated) await hydrateAuthorizedHistory(messageConversationIdsFor(result?.events));
+          assertActive();
           await outbox?.reconcilePending?.();
+          assertActive();
           await outbox?.drainQueued?.();
+          assertActive();
           emitState("sync");
           return result;
         });
     };
     // One durable lane covers startup, HTTP polling, realtime hints and
-    // cancellation recovery. It prevents a later empty page from ACKing past
+    // cancellation recovery, explicit bootstrap and open-history hydration.
+    // It prevents a later empty page from ACKing past
     // an earlier crash/retry hydration checkpoint.
     let syncLane = Promise.resolve();
-    const synchronize = () => {
-      if (!client) return Promise.resolve(unavailableService());
+    const enqueueSync = (operation) => {
+      if (stopped) return Promise.resolve(stoppedResult());
       const task = syncLane.catch(() => undefined).then(async () => {
-        await recoverPendingHistory();
-        return synchronizeNow();
+        if (stopped) return stoppedResult();
+        return operation();
+      }).catch((error) => {
+        if (stopped) return stoppedResult();
+        throw error;
       });
       syncLane = task.catch(() => undefined);
       return task;
+    };
+    const synchronize = () => {
+      if (stopped) return Promise.resolve(stoppedResult());
+      if (!client) return Promise.resolve(unavailableService());
+      return enqueueSync(async () => {
+        await recoverPendingHistory();
+        return synchronizeNow();
+      });
     };
     // Every fire-and-forget lifecycle trigger terminates its own rejection.
     // UI/realtime are hints; a failed HTTP sync must never become an unhandled
@@ -118,53 +153,67 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     return {
       ok: true, store, syncEngine, outbox, realtime,
       subscribe(listener) {
-        if (typeof listener !== "function") return () => {};
+        if (stopped || typeof listener !== "function") return () => {};
         stateListeners.add(listener);
         return () => stateListeners.delete(listener);
       },
       getState() {
+        if (stopped) return stoppedResult();
         const sync = store.getSyncState();
         return { ok: true, cursor: sync.cursor, watermark: sync.watermark, outbox: store.listOutbox?.() || [] };
       },
       list() {
+        if (stopped) return stoppedResult();
         if (typeof store.listConversations !== "function") return unavailableService();
         return { ok: true, conversations: store.listConversations() };
       },
       getDraft({ conversationId } = {}) {
+        if (stopped) return stoppedResult();
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
         return { ok: true, text: store.getDraft({ conversationId, draftId: "composer" })?.text || "" };
       },
       saveDraft({ conversationId, text } = {}) {
+        if (stopped) return stoppedResult();
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
         store.saveDraft({ conversationId, text });
         return { ok: true };
       },
       async open({ conversationId } = {}) {
+        if (stopped) return stoppedResult();
         if (typeof store.getConversation !== "function" || typeof store.listMessages !== "function") return unavailableService();
-        const conversation = store.getConversation({ conversationId });
-        if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-        try {
-          await hydrateAuthorizedHistory([conversationId]);
-        } catch (error) {
-          // Offline reading is local-first. An authorization failure is NOT
-          // an offline condition and must never expose cached content here.
-          if (!["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_RESPONSE_UNKNOWN"].includes(error?.code)) throw error;
-        }
-        return { ok: true, conversation, messages: store.listMessages({ conversationId }) };
+        return enqueueSync(async () => {
+          const conversation = store.getConversation({ conversationId });
+          if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+          try {
+            await hydrateAuthorizedHistory([conversationId]);
+          } catch (error) {
+            // Offline reading is local-first. An authorization failure is NOT
+            // an offline condition and must never expose cached content here.
+            if (!["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_RESPONSE_UNKNOWN"].includes(error?.code)) throw error;
+          }
+          assertActive();
+          return { ok: true, conversation, messages: store.listMessages({ conversationId }) };
+        });
       },
       async bootstrap() {
+        if (stopped) return stoppedResult();
         if (!client || !deviceId) return unavailableService();
-        const snapshot = await client.bootstrap({ deviceId });
-        // Raw bootstrap history is encrypted at rest on the server. It never
-        // crosses into the desktop projection; authorized history is fetched
-        // through the server's decrypting history endpoint below.
-        const applied = syncEngine.applyBootstrap({ ...snapshot, history: [] });
-        await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
-        await client.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });
-        emitState("bootstrap");
-        return { ok: true, cursor: applied.cursor };
+        return enqueueSync(async () => {
+          const snapshot = await client.bootstrap({ deviceId });
+          // Raw bootstrap history is encrypted at rest on the server. It never
+          // crosses into the desktop projection; authorized history is fetched
+          // through the server's decrypting history endpoint below.
+          const applied = syncEngine.applyBootstrap({ ...snapshot, history: [] });
+          await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
+          assertActive();
+          await client.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });
+          assertActive();
+          emitState("bootstrap");
+          return { ok: true, cursor: applied.cursor };
+        });
       },
       async send({ conversationId, clientCommandId, bodyText } = {}) {
+        if (stopped) return stoppedResult();
         if (!outbox || typeof store.getConversation !== "function") return unavailableService();
         const existing = store.getOutbox?.({ outboxId: clientCommandId });
         if (existing) {
@@ -178,50 +227,65 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           conversationId, draftId: "composer", draftText: "", messageId, clientCommandId, bodyText, scopeId: conversation.scopeId,
         });
         const submitted = await outbox.submit(persisted.outboxId);
+        if (stopped) return stoppedResult();
         return { ok: true, ...submitted };
       },
       async edit({ conversationId, messageId, clientCommandId, expectedRevision, bodyText } = {}) {
+        if (stopped) return stoppedResult();
         if (!client || !deviceId || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
         const result = await client.submitMessage({ action: "edit", deviceId, conversationId, messageId, clientCommandId, expectedRevision, bodyText });
+        if (stopped) return stoppedResult();
         void synchronizeSafely();
         emitState("message");
         return { ok: true, clientCommandId, state: "confirming", ...(result?.message?.seq ? { seq: result.message.seq } : {}) };
       },
       async revoke({ conversationId, messageId, clientCommandId, expectedRevision } = {}) {
+        if (stopped) return stoppedResult();
         if (!client || !deviceId || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
         const result = await client.submitMessage({ action: "revoke", deviceId, conversationId, messageId, clientCommandId, expectedRevision });
+        if (stopped) return stoppedResult();
         void synchronizeSafely();
         emitState("message");
         return { ok: true, clientCommandId, state: "confirming", ...(result?.message?.seq ? { seq: result.message.seq } : {}) };
       },
       async friend(command = {}) {
+        if (stopped) return stoppedResult();
         if (!client || !deviceId || typeof client.submitFriend !== "function") return unavailableService();
         const result = await client.submitFriend({ ...command, deviceId });
+        if (stopped) return stoppedResult();
         void synchronizeSafely();
         emitState("relationship");
         return { ok: true, clientCommandId: command.clientCommandId, state: "confirming", ...(result?.status ? { state: String(result.status) } : {}) };
       },
       async retry({ outboxId } = {}) {
+        if (stopped) return stoppedResult();
         if (!outbox) return unavailableService();
         const continued = outbox.continue(outboxId);
         const result = continued.state === "queued" ? { ok: true, ...(await outbox.submit(outboxId)) } : { ok: true, ...continued };
         return result;
       },
       async cancel({ outboxId } = {}) {
+        if (stopped) return stoppedResult();
         if (!outbox) return unavailableService();
         const result = { ok: true, ...(await outbox.cancel(outboxId)) };
         if (result.requiresSync) void synchronizeSafely();
         return result;
       },
       async markRead({ conversationId, seq } = {}) {
+        if (stopped) return stoppedResult();
         if (!client || !deviceId || !Number.isSafeInteger(Number(seq)) || Number(seq) < 0) return unavailableService();
         const result = await client.submitMessage({ action: "read", deviceId, conversationId, seq: Number(seq), clientCommandId: `read:${conversationId}:${Number(seq)}` });
+        if (stopped) return stoppedResult();
         emitState("read");
         return { ok: true, conversationId, seq: Number(result?.lastReadSeq ?? seq) };
       },
       start() {
+        if (stopped) return stoppedResult();
+        if (started) return;
+        started = true;
         const recovered = store.recoverAbandonedSubmittingOutbox?.();
         if (recovered?.recovered) emitState("outbox");
+        if (stopped) return stoppedResult();
         void Promise.resolve(outbox?.drainQueued?.()).catch(() => undefined);
         // The serialized synchronize lane first recovers any crash-surviving
         // hydration checkpoint before issuing this initial page or any ACK.
@@ -232,7 +296,20 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           httpPollTimer.unref?.();
         }
       },
-      stop() { realtime?.stop(); if (httpPollTimer != null) clearInterval(httpPollTimer); httpPollTimer = null; outbox?.stop?.(); store.close?.(); },
+      stop() {
+        if (stopped) return;
+        // Store operations are synchronous. Fence all async continuations
+        // before closing SQLite so a hung network request cannot retain it.
+        stopped = true;
+        stateListeners.clear();
+        try { client?.stop?.(); } finally {
+          try { realtime?.stop(); } finally {
+            if (httpPollTimer != null) clearInterval(httpPollTimer);
+            httpPollTimer = null;
+            try { outbox?.stop?.(); } finally { store.close?.(); }
+          }
+        }
+      },
     };
   } catch {
     try { opened.store?.close?.(); } catch { /* isolation boundary */ }

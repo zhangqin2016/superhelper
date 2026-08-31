@@ -29,8 +29,10 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
   if (!transport || typeof transport.submit !== "function") throw new TypeError("A collaboration transport is required.");
   const lanes = new Map();
   const retryTimers = new Map();
+  let stopped = false;
+  const stoppedResult = () => ({ ok: false, code: "COLLABORATION_STOPPED" });
   function scheduleRetry(outboxId, attempt) {
-    if (retryTimers.has(outboxId)) return;
+    if (stopped || retryTimers.has(outboxId)) return;
     const exponent = Math.max(0, Number(attempt) - 1);
     const delay = Math.min(Math.max(1, Number(retryMaxMs) || 30_000), Math.max(1, Number(retryBaseMs) || 1_000) * (2 ** exponent));
     const timer = setTimeoutFn(() => {
@@ -41,7 +43,7 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
   }
   function enqueue(conversationId, operation) {
     const prior = lanes.get(conversationId) || Promise.resolve();
-    const task = prior.catch(() => undefined).then(operation);
+    const task = prior.catch(() => undefined).then(() => stopped ? stoppedResult() : operation());
     const tail = task.catch(() => undefined);
     lanes.set(conversationId, tail);
     tail.finally(() => {
@@ -66,11 +68,15 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
     }
     try {
       await transport.submit(transportSnapshot(item));
+      // Shutdown is not proof of delivery or cancellation. Leave submitting
+      // durable so the next service can recover this exact idempotency key.
+      if (stopped) return stoppedResult();
       store.confirmOutboxDelivery?.({ outboxId: item.id });
       store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
       onStateChange({ outboxId: item.id, state: "confirming" });
       return { state: "confirming", clientCommandId: item.clientCommandId };
     } catch (error) {
+      if (stopped) return stoppedResult();
       if (isAmbiguousCommit(error)) {
         store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
         onStateChange({ outboxId: item.id, state: "confirming" });
@@ -89,6 +95,7 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
     }
   }
   function submit(outboxId) {
+      if (stopped) return Promise.resolve(stoppedResult());
       const item = store.getOutbox({ outboxId });
       if (!item) return Promise.resolve({ state: "missing" });
       return enqueue(item.conversationId, () => submitNow(outboxId));
@@ -96,29 +103,35 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
   return {
     submit,
     async reconcilePending() {
+      if (stopped) return stoppedResult();
       if (typeof transport.lookupReceipt !== "function") return;
       for (const item of store.listOutbox().filter((row) => ["confirming", "delivery_unknown", "cancellation_requested"].includes(row.state))) {
         await enqueue(item.conversationId, async () => {
           const current = store.getOutbox({ outboxId: item.id });
           if (!current || !["confirming", "delivery_unknown", "cancellation_requested"].includes(current.state)) return;
           const receipt = await transport.lookupReceipt({ clientCommandId: current.clientCommandId, conversationId: current.conversationId });
+          if (stopped) return stoppedResult();
           if (!receipt?.committed || !receipt.messageId || !receipt.eventId || !Number.isSafeInteger(receipt.sequence) || receipt.sequence < 1) return;
           store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence });
           onStateChange({ outboxId: current.id, state: "persisted" });
         }).catch(() => undefined); // an unavailable receipt never proves non-delivery
+        if (stopped) return stoppedResult();
       }
     },
     continue(outboxId) {
+      if (stopped) return stoppedResult();
       const item = store.getOutbox({ outboxId });
       if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["paused", "delivery_unknown"], state: "queued" })) return { state: item?.state || "missing" };
       return { state: "queued", clientCommandId: item.clientCommandId };
     },
     skip(outboxId) {
+      if (stopped) return stoppedResult();
       const item = store.getOutbox({ outboxId });
       if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["queued", "paused", "failed", "delivery_unknown"], state: "cancelled" })) return { state: item?.state || "missing" };
       return { state: "cancelled" };
     },
     cancel(outboxId) {
+      if (stopped) return Promise.resolve(stoppedResult());
       const item = store.getOutbox({ outboxId });
       if (!item) return Promise.resolve({ state: "missing" });
       return enqueue(item.conversationId, async () => {
@@ -142,12 +155,14 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
         try {
           receipt = await transport.lookupReceipt({ clientCommandId: current.clientCommandId, conversationId: current.conversationId });
         } catch {
+          if (stopped) return stoppedResult();
           // Receipt retrieval has the same ambiguity as the original send.
           // Never strand the durable row in cancellation_requested.
           store.setOutboxState({ outboxId: current.id, expectedStates: ["cancellation_requested"], state: "delivery_unknown" });
           onStateChange({ outboxId: current.id, state: "delivery_unknown" });
           return { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true };
         }
+        if (stopped) return stoppedResult();
         if (receipt?.committed) {
           store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId || `receipt:${current.clientCommandId}`, messageId: receipt.messageId || current.messageId, sequence: receipt.sequence });
           return { state: "persisted", canRevoke: true };
@@ -161,11 +176,15 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
       });
     },
     async drainQueued() {
+      if (stopped) return stoppedResult();
       const rows = store.listOutbox().filter((item) => item.state === "queued");
       await Promise.all(rows.map((item) => submit(item.id).catch(() => undefined)));
+      if (stopped) return stoppedResult();
       return { drained: rows.length };
     },
     stop() {
+      if (stopped) return;
+      stopped = true;
       for (const timer of retryTimers.values()) clearTimeoutFn(timer);
       retryTimers.clear();
     },
