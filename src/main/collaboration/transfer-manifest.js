@@ -40,9 +40,33 @@ function privateDirectory(value) {
 function safeCheckpoint(value) {
   // This closed journal vocabulary is deliberately not a serialized HTTP
   // response. Fresh network capabilities must be reacquired after restart.
-  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts"].includes(key))) throw invalid();
-  if (value.state !== undefined && !["prepared", "encrypting", "uploading", "uploaded", "verifying", "verified", "downloading", "decrypting", "ready", "paused", "failed", "cancelled"].includes(value.state)) throw invalid();
+  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext"].includes(key))) throw invalid();
+  if (value.state !== undefined && !["prepared", "encrypting", "uploading", "uploaded", "verifying", "verified", "bound", "downloading", "decrypting", "ready", "paused", "failed", "cancelled"].includes(value.state)) throw invalid();
   if (value.objectId !== undefined && (typeof value.objectId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(value.objectId))) throw invalid();
+  for (const name of ["uploadId", "etag"]) if (value[name] !== undefined && (typeof value[name] !== "string" || !/^[a-zA-Z0-9_=-]{1,200}$/.test(value[name]))) throw invalid();
+  if (value.download !== undefined) {
+    const d = value.download;
+    if (!d || Object.getPrototypeOf(d) !== Object.prototype || Object.keys(d).some((key) => !["ciphertextSize", "ciphertextSha256"].includes(key))
+      || !Number.isSafeInteger(d.ciphertextSize) || d.ciphertextSize < 1 || d.ciphertextSize > 1024 ** 3
+      || typeof d.ciphertextSha256 !== "string" || !/^[a-f0-9]{64}$/.test(d.ciphertextSha256)) throw invalid();
+  }
+  if (value.plaintext !== undefined) {
+    const p = value.plaintext;
+    if (!p || Object.getPrototypeOf(p) !== Object.prototype || Object.keys(p).some((key) => !["size", "sha256", "originalName"].includes(key))
+      || !Number.isSafeInteger(p.size) || p.size < 0 || p.size > 1024 ** 3 || typeof p.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(p.sha256)
+      || typeof p.originalName !== "string" || !p.originalName || Buffer.byteLength(p.originalName) > 255 || /[\\/\x00-\x1f\x7f]/.test(p.originalName) || [".", ".."].includes(p.originalName)) throw invalid();
+  }
+  if (value.content !== undefined) {
+    // The per-object DEK is encrypted inside the scope-bound manifest, never
+    // returned in a view; upload/download tickets are still forbidden here.
+    const c = value.content;
+    if (!c || Object.getPrototypeOf(c) !== Object.prototype || Object.keys(c).some((key) => !["dek", "originalName", "mimeType", "ciphertextSize", "ciphertextSha256"].includes(key))
+      || typeof c.dek !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(c.dek) || Buffer.from(c.dek, "base64").toString("base64") !== c.dek
+      || typeof c.originalName !== "string" || !c.originalName || c.originalName.length > 200 || /[\\/\x00-\x1f\x7f]/.test(c.originalName) || [".", ".."].includes(c.originalName)
+      || typeof c.mimeType !== "string" || c.mimeType.length > 100 || !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(c.mimeType)
+      || !Number.isSafeInteger(c.ciphertextSize) || c.ciphertextSize < 1 || c.ciphertextSize > 1024 ** 3
+      || typeof c.ciphertextSha256 !== "string" || !/^[a-f0-9]{64}$/.test(c.ciphertextSha256)) throw invalid();
+  }
   if (value.completedParts !== undefined) {
     if (!Array.isArray(value.completedParts) || value.completedParts.length > 1000) throw invalid();
     const seen = new Set();
