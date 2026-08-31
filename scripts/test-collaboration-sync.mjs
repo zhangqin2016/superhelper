@@ -15,22 +15,23 @@ const {
 } = await import("../server/src/services/collaboration/sync-service.js");
 
 const syncServiceSource = fs.readFileSync(new URL("../server/src/services/collaboration/sync-service.js", import.meta.url), "utf8");
+const syncRepositorySource = fs.readFileSync(new URL("../server/src/services/collaboration/sync-repository.js", import.meta.url), "utf8");
 const bootstrapMigration = fs.readFileSync(new URL("../server/migrations/035_collaboration_bootstrap_completion.sql", import.meta.url), "utf8");
 assert.match(
-  syncServiceSource,
+  syncRepositorySource,
   /insertInto\("user_sync_state"\)\.values\(\{ user_id: userId, next_cursor: 1 \}\)/,
   "compaction must materialize a valid next_cursor even on schemas without a database default",
 );
 assert.match(bootstrapMigration, /create table if not exists collaboration_bootstrap_completions/i);
 assert.match(bootstrapMigration, /token_hash text primary key/i);
 assert.match(bootstrapMigration, /foreign key \(user_id, device_id\) references user_devices\(user_id, device_id\)/i);
-assert.match(syncServiceSource, /row_number\(\) over \(partition by message\.conversation_id order by message\.create_seq desc\)/i,
+assert.match(syncRepositorySource, /row_number\(\) over \(partition by message\.conversation_id order by message\.create_seq desc\)/i,
   "controlled bootstrap history must reserve its cap per conversation, not let one busy conversation starve another");
-assert.match(syncServiceSource, /member\.user_id.*member\.status.*message\.create_seq.*member\.joined_seq/is,
+assert.match(syncRepositorySource, /member\.user_id.*member\.status.*message\.create_seq.*member\.joined_seq/is,
   "bootstrap history must be authorized by the current active membership and joined sequence");
-assert.match(syncServiceSource, /orderBy\("history_rank", "asc"\)\.orderBy\("conversation_id", "asc"\)/,
+assert.match(syncRepositorySource, /orderBy\("history_rank", "asc"\)\.orderBy\("conversation_id", "asc"\)/,
   "the global bootstrap history cap must round-robin newest messages across conversations before taking deeper history");
-assert.match(syncServiceSource, /event\.client_command_id as client_command_id/,
+assert.match(syncRepositorySource, /event\.client_command_id as client_command_id/,
   "durable sync must select the originating command id so a confirming local command can reconcile in place");
 assert.match(syncServiceSource, /clientCommandId: String\(row\?\.clientCommandId \?\? row\?\.client_command_id \?\? ""\)/,
   "sync normalization must expose a stable command id without putting it into the event payload");
