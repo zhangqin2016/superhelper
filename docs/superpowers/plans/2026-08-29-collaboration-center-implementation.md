@@ -24,6 +24,46 @@
 
 ## 里程碑与硬出口
 
+### 2026-08-31 执行核对（不是完成声明）
+
+工作目录：`/Users/zhangqin/.config/superpowers/worktrees/ceshitermianl/collaboration-center`；分支：`codex/collaboration-center`。原 Task 1–22 的范围和最终完成定义不变；已有提交不能替代验收证据。
+
+| 顺序 | 交付范围 | 当前事实 / 出口 |
+|---|---|---|
+| A | Task 1–12 基础链路复核 | 有实现和专项测试，但真实 HTTP→SQLite→IPC 联调发现缺陷；以下修复进行中，不把基础切片整体标为完成 |
+| B | Task 13 好友和消息交互 | Composer/时间线初始代码存在；好友页面、读取、编辑撤回等完整交互仍待接通并验证 |
+| C | Task 14 群/Team/频道 | 已开始后端领域的TDD实现；客户端接入、共用授权锁与真实 PostgreSQL 撤权竞态仍待验收 |
+| D | Task 15–17 加密对象传输 | Task15 纯容器完成规格/质量两轮审查，固定向量/篡改/1GiB 测试通过（97b4014）；私有存储、状态机和可恢复传输仍待接通 |
+| E | Task 18–19 工作空间交接和 AI | 仍待现有导入导出适配、接收卡、确定性工具和发送确认 |
+| F | Task 20–22 运营与发布 | 仍待轮换/清理/故障和容量实测、真实双客户端、能力门禁；尚未合并或部署 |
+
+本轮复核新增必须关闭的回归项：
+
+- [x] HTTP history 的 `result` 数组经真实 client/service/store 保留正文，不能按不存在的 `.messages` 字段变成空数组。验证：`node scripts/test-collaboration-history-roundtrip.mjs`。
+- [x] 编辑 revision、引用和撤回信息保留到加密缓存与 IPC；旧响应不得复活已撤回正文。验证：同上。
+- [x] 全量 bootstrap 重复本人 profile 不触发唯一键失败；待发送、失败、暂停和确认中的本地消息保留。验证：`node scripts/test-collaboration-recovery-integrity.mjs`。
+- [x] 其他用户的同名 command ID 不结算本人 outbox；本地相同 command ID 的正文/会话变更必须冲突。验证：同上。
+- [x] 无 HTTP 响应/504 不标成永久失败；401 强制刷新一次 token，普通账号访问缓存行为不变。验证：`node scripts/test-collaboration-transport-errors.mjs`、`node scripts/test-account-resilience.mjs`。
+- [x] 持久插入顺序约束同会话 outbox；暂停/未知送达阻挡后继；同步周期主动查询持久 receipt，不依赖用户点击取消。验证：`node scripts/test-collaboration-queue-barrier.mjs`。
+- [x] Composer 输入法 Enter、重复 Enter、跨会话迟到响应和同一草稿 IPC 重试身份验证。验证：`node scripts/test-collaboration-composer-behavior.mjs`。
+- [x] 草稿加密持久化、进程重启恢复、账号隔离；旧提交不得清空新输入。验证：`node scripts/test-collaboration-drafts.mjs`。
+- [x] 账号切换后旧 refresh 的成功和401均不能覆盖/清除新账号，真实client不得携带旧token；独立复审通过（9f094ae）。验证：`node scripts/test-account-resilience.mjs`。
+- [x] 取消消息在SQL LIMIT之前排除，真实v4/v5→v6迁移及重复重启保留旧paused命令ID和状态；独立复审通过（d369593）。验证：`node scripts/test-collaboration-recovery-integrity.mjs`。
+- [x] 真实Electron验证稳定消息/正文DOM、纯文本、防撤回复活、页面偏移下滚动锚点、底部跟随；独立规格/质量审查通过。验证：Electron运行 `scripts/test-collaboration-timeline.cjs`。这不替代其余交互或双客户端E2E。
+- [x] 好友接受事件原子投影direct（6b3f5c6）；按server seq分页、跨200条刷新补缺口、200 pending不挤掉离线历史（2cefb8f），均完成独立双审。
+- [x] receipt真实签名HTTP路由校验当前登录session/设备/actor/会话（5f00076）；sync/bootstrap/open/stop统一lane与shutdown fence（b4e8cc6），生命周期后续扩充至25项。
+- [x] 未知送达同键有界恢复、部分/畸形receipt、ACK与完整receipt正证据、投影失败、取消与多次重启故障注入（70863ee）。71项恢复测试和25项生命周期测试通过；不得把无receipt的崩溃命令直接重发。
+- [x] 旧于最新200条的edit/revoke持久化目标、201目标分批、崩溃恢复、显式不可见证明、bootstrap待水合检查点（0f489aa）。16项回归及真实PG签名HTTP/并发撤权测试通过；授权与history读取保持同一事务。
+- [x] 已加载旧窗口按200条分批更新新revision/墓碑并移除失效缓存，账号/导航代际隔离（5f21c8a），规格/质量审查、目标Node与真实Electron通过。
+- [ ] scope整体撤权后checkpoint/key/cache清理仍须随Task14闭环。
+- [ ] Renderer 实际 DOM、滚动锚定、所有动作和双窗口验证；现有源文件正则测试仅证明静态结构，不证明交互闭环。
+
+执行方式：逐项测试先行、实现、回归、独立审查。每项保留实际命令与失败/通过记录；不再用“稍后补测试”关闭任务。最终合并依赖全部出口，不因任务序号或新增文件数量推算完成百分比。
+
+2026-08-31 验证检查点：早期Node24下35个 `test-collaboration-*.mjs` 全部通过（含1GiB加密测试），当时沙箱外完整 `npm run test:capability-gate` 退出码0；后续曾回归40个协作脚本通过。最新上述提交按专项测试、独立双审与真实Electron验证，不沿用旧检查点声称所有新改动已过全套。已在独立本地PostgreSQL随机schema验证friend/message/realtime/sync，以及signed receipt/history的撤权竞争；仍没有私有bucket和真实双客户端验收，尚未合并或部署。
+
+后续检查点（5f21c8a）：加入协作可靠性gate后，沙箱外Node24执行完整 `npm run test:capability-gate` 退出码0（包含本轮历史、恢复和显示测试及原工作台门禁）。Renderer测试宿主仍打印缺省未注册IPC/故障注入的错误日志，runner整体通过；不能把该结果当作真实双客户端或生产发布验收。此后Task14等改动需重新运行门禁。
+
 | 里程碑 | 包含任务 | 硬出口 |
 |---|---:|---|
 | Slice 0 协议地基 | 1–7 | 两个无 UI 客户端通过重复、超时、乱序、断线、重启和撤权协议测试 |

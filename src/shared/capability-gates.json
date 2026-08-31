@@ -2,6 +2,31 @@
   "schemaVersion": 1,
   "gates": [
     {
+      "id": "collaboration-local-first-reliability",
+      "protects": "Optional collaboration cannot break AI work, cross accounts, fabricate delivery, lose cached history, or expose unverified decrypted files.",
+      "baseline": "AI workbench behavior remains unchanged when collaboration is disabled or unavailable; collaboration uses its own encrypted store.",
+      "failureFallback": "Disable the optional service on initialization failure, retain original durable command identities on ambiguous delivery, fence stopped instances, and reject unauthorized or corrupted data.",
+      "tests": [
+        "scripts/test-collaboration-startup.mjs",
+        "scripts/test-collaboration-store.mjs",
+        "scripts/test-collaboration-sync-engine.mjs",
+        "scripts/test-collaboration-service-lifecycle.mjs",
+        "scripts/test-collaboration-unknown-recovery.mjs",
+        "scripts/test-collaboration-history-pagination.mjs",
+        "scripts/test-collaboration-history-view.mjs",
+        "scripts/test-collaboration-target-history.mjs",
+        "scripts/test-collaboration-visible-history.mjs",
+        "scripts/test-collaboration-visible-history-service.mjs",
+        "scripts/test-collaboration-history-roundtrip.mjs",
+        "scripts/test-collaboration-direct-projection.mjs",
+        "scripts/test-collaboration-recovery-integrity.mjs",
+        "scripts/test-collaboration-ipc.mjs",
+        "scripts/test-collaboration-timeline.cjs",
+        "scripts/test-collaboration-encryption.mjs",
+        "scripts/test-account-resilience.mjs"
+      ]
+    },
+    {
       "id": "task-intelligence-baseline",
       "protects": "Local task classification and verification cannot be disabled by remote configuration.",
       "baseline": "The bundled deterministic task registry remains active.",
