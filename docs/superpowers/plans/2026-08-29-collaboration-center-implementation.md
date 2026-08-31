@@ -31,9 +31,9 @@
 | 顺序 | 交付范围 | 当前事实 / 出口 |
 |---|---|---|
 | A | Task 1–12 基础链路复核 | 有实现和专项测试，但真实 HTTP→SQLite→IPC 联调发现缺陷；以下修复进行中，不把基础切片整体标为完成 |
-| B | Task 13 好友和消息交互 | Composer/时间线初始代码存在；好友页面、读取、编辑撤回等完整交互仍待接通并验证 |
-| C | Task 14 群/Team/频道 | 领域权限、签名命令/发现、PG撤权竞态、本地缓存清理和好友/Team目录已独立双审；操作UI、既有企业管理入口撤权仍待完成 |
-| D | Task 15–17 加密对象传输 | 纯容器、私有对象状态机、签名HTTP和消息原子绑定已独立双审；真实bucket、可恢复传输和用户入口未完成 |
+| B | Task 13 好友和消息交互 | 好友操作、持久社交命令和实际Electron交互已双审提交；读取、编辑撤回等完整消息交互仍待接通并验证 |
+| C | Task 14 群/Team/频道 | 领域权限、签名命令/发现、PG撤权竞态、本地缓存清理、目录及操作UI已独立双审；既有企业管理入口撤权也已双审提交f50ceca，尚未做生产迁移与企业管理实机点击验收 |
+| D | Task 15–17 加密对象传输 | 等待交接、Team传输退休和同文本独立草稿保护已双审提交81e8adc，原有容器/对象/调度/Renderer链路保留；真实bucket尚未验收 |
 | E | Task 18–19 工作空间交接和 AI | 仍待现有导入导出适配、接收卡、确定性工具和发送确认 |
 | F | Task 20–22 运营与发布 | 仍待轮换/清理/故障和容量实测、真实双客户端、能力门禁；尚未合并或部署 |
 
@@ -62,6 +62,12 @@
 
 执行方式：逐项测试先行、实现、回归、独立审查。每项保留实际命令与失败/通过记录；不再用“稍后补测试”关闭任务。最终合并依赖全部出口，不因任务序号或新增文件数量推算完成百分比。
 
+最新检查点（9f6a6da）：两份仅扫描源码的 `.cjs` 测试被自动发现器交给 Electron 后不退出，实际重现180秒超时；已保留全部断言改名为 `test-collaboration-message-surface.mjs` / `test-collaboration-shell-surface.mjs`，不再将它们称为交互E2E。协作CSS未定义token及硬编码暗色fallback已改用现有深浅主题变量，四项目标测试通过并完成双审。附件等待和Team退休冻结版本下，父进程Node协作262项通过、0跳过；完整能力门禁退出0（162项，原Office/PDF运行时跳过及Renderer缺省IPC日志仍存在）。随后同caption的独立composer草稿问题已通过真实SQLite红灯复现并修复，专项重新通过，正在独立复审；不沿用旧门禁宣称这项修复已经过全部测试。
+
+全项目自动发现测试仍未通过：除已修复的协作主题/静态测试类型及便携CLI夹具问题外，独立复跑确认六项依赖缺失或未隔离的基线失败：`test-ensure-session-runner-resume-reset.mjs` 缺CLI；`test-large-document-skill-routing.mjs` 无bundled runtime时强求环境指南；`test-runtime-health.mjs` 和 `test-runtime-pack-installer.mjs` 缺Python；`test-stock-workspace-app-package.mjs` 缺其默认应用源码；`test-web-system-playwright-runtime-loader.mjs` 缺本地Playwright。相关测试和直接实现相对e4501f2未变。不降低生产健康检查、不删除断言、不把它们算作通过；发布前仍需准备环境或隔离测试夹具并重跑。工作空间交接、AI确认工具、完整消息交互、后台运维和真实桶/双客户端仍未完成，尚未合并或部署。
+
+后续验证（81e8adc / e2c22fa）：同文本独立草稿保护已完成规格/质量复审；父进程15项附件/退休/IPC/Store/Outbox测试及真实PG signedHTTP双附件发送-丢ACK-重启-接收保存链路退出0。第二次完整自动发现回归为732/738，失败精确为上一段六项，无协作测试超时或主题回归。其后两处测试夹具隔离修复e2c22fa保留所有原断言、增加无runtime不虚假宣称环境的反向断言，双审及目标测试通过；复用主工作区既有 `LILY_RUNTIME_ROOT` 后，runtime-health、runtime-pack-installer两项也实际通过（未改健康检查）。本地Playwright模块和股票应用默认源码仍缺，不能用四项目标通过改写上次全套732/738结果。新工作空间严格导入切片仍在实现，未纳入这次全套。
+
 2026-08-31 验证检查点：早期Node24下35个 `test-collaboration-*.mjs` 全部通过（含1GiB加密测试），当时沙箱外完整 `npm run test:capability-gate` 退出码0；后续曾回归40个协作脚本通过。最新上述提交按专项测试、独立双审与真实Electron验证，不沿用旧检查点声称所有新改动已过全套。已在独立本地PostgreSQL随机schema验证friend/message/realtime/sync，以及signed receipt/history的撤权竞争；仍没有私有bucket和真实双客户端验收，尚未合并或部署。
 
 后续检查点（5f21c8a）：加入协作可靠性gate后，沙箱外Node24执行完整 `npm run test:capability-gate` 退出码0（包含本轮历史、恢复和显示测试及原工作台门禁）。Renderer测试宿主仍打印缺省未注册IPC/故障注入的错误日志，runner整体通过；不能把该结果当作真实双客户端或生产发布验收。此后Task14等改动需重新运行门禁。
@@ -70,9 +76,19 @@
 
 后续检查点（43ae4d9 / f0dec2c）：好友/Team目录已完成SQLite v11、bootstrap/incremental、撤权清理和只读IPC，规格与质量复审通过。修复legacy明确空好友列表不清旧好友，以及v1缺少Team成员数组仍提交游标的问题。私有multipart v2适配器完成6组测试及双审：精确bucket/key、4MiB分块、MD5、响应上限、分页和错误分类；成功响应头后断流仍属未知结果。两项已提交功能分支；不代表UI或完整传输管理器完成。
 
-当前执行阻塞（2026-08-31）：自动权限审查拒绝社交命令journal及其提交代码，要求用户明确授权将LilyID/用户ID、群或频道名称及成员操作加密持久化于本地，并提交到现有签名协作后端 `/api/collaboration/v1/friends` 与 `/api/collaboration/v1/conversations`。没有绕过或重试被拒补丁，社交实现已冻结。仅新增未提交的 `scripts/test-collaboration-social-journal.mjs` 红测，证实当前未知社交命令结果仍抛异常，尚无重启持久命令身份；因此当前工作树不能宣称全套测试通过。待获得授权后按此红测继续，不重新制作设计。
+权限检查点（2026-08-31）：先前自动权限审查要求用户明确授权社交命令本地加密持久化与既有签名协作后端提交。用户随后明确同意，补丁重试获准，阻塞已解除。社交journal、好友/Team界面和实际Electron测试已实现并冻结进入独立规格审查；尚未完成双审，不标记整体完成。
 
 同轮对象恢复检查：新增签名 `objects/:id/status` 供原complete命令恢复使用，不代替complete、不自动绑定消息。实际PostgreSQL测试覆盖owner权限、404缺失证明、提供方503、错误密文、verified不再签发上传票据与撤销后拒绝；4项单测额外验证探测耗时后的有效期及verified孤儿过期。Qiniu仍为测试替身；完整transfer-manager、上传/下载续传和用户入口尚未接入。
+
+后续传输检查点（f6ed4e5）：传输核心完成规格/质量双审并提交，20项传输故障测试与11项manifest测试通过。覆盖init、分块、提供方complete、服务端complete回执丢失后原身份恢复，下载授权过期和断流续传，校验/解密、停止/取消/撤权及磁盘读取期间的迟到回调。另有未提交的真实桌面client→签名HTTP→PostgreSQL→两账号加解密联调，经独立双审通过；Qiniu仍为替身。后台恢复调度、主进程装配、附件用户入口与工作空间交接尚待完成，不能据此声称全模块完成。
+
+后续检查点（194a543 / 176563b / e838192）：上传恢复已绑定原设备；好友/Team完整交互、加密社交命令与真实对象client联调已双审提交。父进程重新运行实际Electron social-ui及social-navigation均退出0，真实PG对象链路退出0（Qiniu替身）。后台传输调度通过43项专项测试及双审，最多3次持久化退避、并发2、显式上传授权，暂停和禁用调度同次CAS，EIO/崩溃不能误恢复。同期完整能力门禁退出0（153项），Office/PDF因缺bundled runtime跳过、旧Renderer宿主缺省IPC日志仍存在；不将其算作未跳过的全项目验收。后续新增runtime及企业管理接入需重新验证。附件历史补齐缓存/离线IPC/reopen DB，非法ID整页回滚，撤回与同revision防复活也已双审提交。尚未完成全部模块、真实桶、双客户端发布验收或合并主分支。
+
+授权阻塞已解除：用户明确同意修改相关代码和数据库迁移以完成企业撤权同步，补丁重试获准。migration040严格区分device、enterprise-web、platform-admin来源，保留原设备FK，不伪造设备身份；成员/组织变更和撤权事件、sync游标在同一事务内提交。父进程及独立规格审查均实跑本机随机schema的 `server/scripts/collaboration-enterprise-http-integration.mjs` 退出0；覆盖双认证、事务内session/role重验、多接收者回滚、并发撤权及下载票据竞争。质量审查仍在进行；没有直接修改生产数据库。
+
+后续检查点（cac7243）：native transfer runtime和安全另存为已完成规格/质量双审并提交，8项runtime与7项save测试通过。下载缓存不等于永久授权，保存前重新取得服务端授权、校验明文，并以独占发布防止覆盖用户文件；最终异步路径检查后再次验证撤权。主进程生命周期、7条closed IPC及preload装配随后也完成双审，尚待与共享service改动一起提交。父进程联合运行目录刷新、生命周期、runtime/save、service、IPC及负向/preload测试，共48项通过、0跳过。附件消息持久等待、完整Renderer入口、工作空间交接和真实私有桶仍未完成，不能据此宣布全模块闭环或主分支合并。
+
+后续检查点（f50ceca / 34c4249）：企业撤权与native transfer主装配完成双审提交。父进程三组真实PG signedHTTP（企业、会话、对象）退出0；Node协作专项254项通过、0跳过；新增注册文档漏项曾令完整gate失败，补齐后完整重跑 `capability-gate: ok (158 tests)`，原有运行时跳过及Renderer宿主缺省IPC日志仍需单独说明。随后附件Renderer入口完成双审与真实Electron测试并提交，六项策略/导航/下载/状态问题及一项键盘焦点问题均经过新增红灯回归修复。消息等待交接尚未提交：独立审查发现handoff后原设备丢失、取消整组后崩溃仍恢复网络、损坏coordinator被当不存在，另有enqueue前崩溃与预上传后发送的恢复窗口，正在修复；不能把已通过的正常路径PG“两附件→ACK丢失→重启→单条消息→接收方另存为”当作这些窗口已通过。新PG链路仍使用Qiniu替身。没有合并主分支或部署。
 
 | 里程碑 | 包含任务 | 硬出口 |
 |---|---:|---|
