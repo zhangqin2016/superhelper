@@ -6,13 +6,14 @@ const { COLLABORATION_MIGRATIONS } = require("./schema");
 const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./history-cache");
 const { queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration } = require("./history-hydration");
 const access = require("./access-revocation");
-const { queueConversationHydration } = require("./conversation-hydration");
+const { queueConversationHydration, queueAuthorizedRefresh } = require("./conversation-hydration");
 const directory = require("./directory-projection");
 const { validateAttachmentPayload, optimisticAttachmentProjection, attachmentProjectionFromOutboxIntent } = require("./message-attachment-payload");
 const mutationOutbox = require("./message-mutation-outbox");
 const { projectedScopeId } = require("./projection-scope");
 const { parseEncryptedPayload } = require("./encrypted-payload");
 const { settleCreatedSyncEvent } = require("./outbox-sync-settlement");
+const activity = require("./conversation-activity");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -294,6 +295,7 @@ class CollaborationStore {
         const inserted = this.db.run(`INSERT OR IGNORE INTO applied_events (account_id, event_id, applied_at) VALUES (?, ?, ?)`, this.accountId, id, this.now());
         if (inserted.changes === 0) continue;
         projectEvent(row);
+        activity.projectMessageActivity(this, row);
         queueConversationHydration(this, row);
         queueHistoryTarget(this, row);
         this.db.run(
@@ -341,6 +343,7 @@ class CollaborationStore {
     const replace = this.db.transaction(() => {
       const pendingHistoryTargets = capturePendingHistoryTargets(this);
       access.prepareBootstrapAccess(this, rows, teams, projectedScopeId);
+      for (const row of rows) activity.resetMembershipReadState(this, row.id, memberRows);
       const confirmingBubbles = this.db.all(
         `SELECT * FROM outbox WHERE account_id = ? AND state IN ('queued', 'submitting', 'paused', 'failed', 'confirming', 'cancellation_requested', 'delivery_unknown') ORDER BY created_at, id`,
         this.accountId,
@@ -361,6 +364,7 @@ class CollaborationStore {
           this.accountId, id, this._scope(projectedScopeId(conversation)), String(conversation.kind || "unknown"),
           conversation.title == null ? null : String(conversation.title), this.now(),
         );
+        if (!activity.applyActivitySnapshot(this, id, conversation)) queueAuthorizedRefresh(this, id);
       }
       directory.replaceDirectory(this, snapshot);
       for (const member of memberRows) {
@@ -424,12 +428,12 @@ class CollaborationStore {
        GROUP BY c.id, c.scope_id, c.kind, c.title, c.updated_at
        ORDER BY MAX(m.seq) DESC, c.updated_at DESC, c.id ASC`,
       this.accountId,
-    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq) }));
+    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq), ...activity.activityView(this, row.id) }));
   }
 
   getConversation({ conversationId }) {
     const row = this.db.get(`SELECT id, scope_id, kind, title, updated_at FROM conversations WHERE account_id = ? AND id = ?`, this.accountId, requireId(conversationId, "conversation id"));
-    return row ? { id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at) } : null;
+    return row ? { id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), ...activity.activityView(this, row.id) } : null;
   }
 
   listMessages({ conversationId, beforeSeq, limit = 200, includePending = true } = {}) {

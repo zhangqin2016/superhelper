@@ -16,7 +16,7 @@ function assertScopeWritable(store, scopeId) {
 function removeConversationRows(store, conversationId, scopeId = null) {
   store.db.run(`INSERT OR IGNORE INTO revoked_conversations (account_id, conversation_id, scope_id) VALUES (?, ?, ?)`, store.accountId, conversationId, scopeId);
   let deletedOutbox = 0;
-  for (const table of ["conversation_members", "messages", "drafts", "outbox", "events", "history_hydration", "history_hydration_targets", "conversation_hydration", "social_commands"]) {
+  for (const table of ["conversation_members", "messages", "drafts", "outbox", "events", "history_hydration", "history_hydration_targets", "conversation_hydration", "social_commands", "read_checkpoints", "conversation_activity"]) {
     const result = store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     if (table === "outbox") deletedOutbox = Number(result.changes);
   }
@@ -30,8 +30,9 @@ function removeScopeRows(store, scopeId) {
   const ids = store.db.all(`SELECT id AS conversation_id FROM conversations WHERE account_id = ? AND scope_id = ?
     UNION SELECT conversation_id FROM messages WHERE account_id = ? AND scope_id = ?
     UNION SELECT conversation_id FROM outbox WHERE account_id = ? AND scope_id = ?
-    UNION SELECT conversation_id FROM drafts WHERE account_id = ? AND scope_id = ?`,
-  store.accountId, scopeId, store.accountId, scopeId, store.accountId, scopeId, store.accountId, scopeId);
+    UNION SELECT conversation_id FROM drafts WHERE account_id = ? AND scope_id = ?
+    UNION SELECT conversation_id FROM read_checkpoints WHERE account_id = ? AND scope_id = ?`,
+  store.accountId, scopeId, store.accountId, scopeId, store.accountId, scopeId, store.accountId, scopeId, store.accountId, scopeId);
   let deletedOutbox = 0;
   for (const row of ids) deletedOutbox += removeConversationRows(store, row.conversation_id, scopeId).deletedOutbox;
   pruneDirectoryProfiles(store);
@@ -115,7 +116,7 @@ function prepareBootstrapAccess(store, conversations, teams, scopeFor) {
     for (const { scope_id: scopeId } of oldScopes) if (scopeId?.startsWith("team:") && !allowed.has(scopeId)) removeScopeRows(store, scopeId);
     for (const scopeId of allowed) visibleScopes.add(scopeId);
   }
-  for (const row of store.db.all(`SELECT id, scope_id FROM conversations WHERE account_id = ?`, store.accountId)) {
+  for (const row of store.db.all(`SELECT id, scope_id FROM conversations WHERE account_id = ? UNION SELECT conversation_id AS id, scope_id FROM read_checkpoints WHERE account_id = ?`, store.accountId, store.accountId)) {
     if (!visibleIds.has(row.id)) removeConversationRows(store, row.id, row.scope_id);
   }
   for (const scopeId of visibleScopes) store.db.run(`DELETE FROM revoked_scopes WHERE account_id = ? AND scope_id = ?`, store.accountId, scopeId);

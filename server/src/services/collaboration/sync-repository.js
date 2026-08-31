@@ -86,15 +86,30 @@ export function createKyselyRepository(db) {
         .orderBy("member.organization_id", "asc").orderBy("member.user_id", "asc").execute();
     },
     async listBootstrapConversations(trx, userId, conversationId) {
-      return readableConversations(trx, userId)
+      const rows = await readableConversations(trx, userId)
+        .leftJoinLateral(sql`(select count(*) as unread_count,
+          count(*) filter (where coalesce(creation.payload -> 'mentionUserIds', '[]'::jsonb) @> ${JSON.stringify([userId])}::jsonb) as mention_count
+          from messages as activity_message
+          join collaboration_events as creation on creation.id = activity_message.event_id
+          where activity_message.conversation_id = conversation.id
+            and activity_message.sender_user_id <> ${userId}
+            and activity_message.create_seq > greatest(coalesce(member.last_read_seq, 0),
+              case when conversation.visibility = 'public' then 0 else coalesce(member.joined_seq, 0) end)
+        )`.as("activity"), (join) => join.onTrue())
         .select([
           "conversation.id", "conversation.scope_type", "conversation.organization_id", "conversation.kind", "conversation.visibility", "conversation.title", "conversation.status",
           "conversation.next_seq", sql`coalesce(member.role, team_member.role, 'member')`.as("role"),
           sql`coalesce(member.last_read_seq, 0)`.as("last_read_seq"), sql`coalesce(member.notification_level, 'all')`.as("notification_level"),
           sql`case when conversation.visibility = 'public' then 0 else coalesce(member.joined_seq, 0) end`.as("joined_seq"),
+          sql`conversation.next_seq - 1`.as("projectionSeq"), "activity.unread_count as unreadCount", "activity.mention_count as mentionCount",
         ])
         .$if(Boolean(conversationId), (query) => query.where("conversation.id", "=", conversationId))
         .orderBy("conversation.id", "asc").execute();
+      return rows.map((row) => {
+        const stats = { projectionSeq: Number(row.projectionSeq), lastReadSeq: Number(row.last_read_seq), unreadCount: Number(row.unreadCount), mentionCount: Number(row.mentionCount) };
+        if (Object.values(stats).some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error("Invalid collaboration activity projection");
+        return { ...row, ...stats };
+      });
     },
     async listBootstrapConversationMembers(trx, conversationIds) {
       if (!Array.isArray(conversationIds) || conversationIds.length === 0) return [];

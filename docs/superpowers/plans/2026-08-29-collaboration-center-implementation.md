@@ -31,7 +31,7 @@
 | 顺序 | 交付范围 | 当前事实 / 出口 |
 |---|---|---|
 | A | Task 1–12 基础链路复核 | 有实现和专项测试，但真实 HTTP→SQLite→IPC 联调发现缺陷；以下修复进行中，不把基础切片整体标为完成 |
-| B | Task 13 好友和消息交互 | 好友操作、持久社交命令和实际Electron交互已双审提交；读取、编辑撤回等完整消息交互仍待接通并验证 |
+| B | Task 13 好友和消息交互 | 好友操作、持久社交命令、持久编辑/撤回和持久已读/精确计数已独立双审；引用/@、完整消息操作UI与可见已读仍待接通并验证 |
 | C | Task 14 群/Team/频道 | 领域权限、签名命令/发现、PG撤权竞态、本地缓存清理、目录及操作UI已独立双审；既有企业管理入口撤权也已双审提交f50ceca，尚未做生产迁移与企业管理实机点击验收 |
 | D | Task 15–17 加密对象传输 | 等待交接、Team传输退休和同文本独立草稿保护已双审提交81e8adc，原有容器/对象/调度/Renderer链路保留；真实bucket尚未验收 |
 | E | Task 18–19 工作空间交接和 AI | Task18A 本地严格归档预检/隔离导入已独立双审；仍待发送导出适配、加密分享元数据/接收卡、确定性AI工具和发送确认 |
@@ -391,9 +391,13 @@ check ((scope_type = 'organization') = (organization_id is not null));
 
 2026-08-31 持久 mutation 切片已完成规格与质量独立复审：编辑/撤回先加密进入既有 outbox，原设备 typed ACK/receipt 与最低 revision 刷新目标原子结算，原创建序号不变。新增崩溃 queued 恢复、并发 drain、drain→skip/cancel 和 stop→迟到错误回归；最终发送边界仅允许仍为 queued 的命令。父进程最终遍历79个协作 Node 脚本全部通过，真实迁移033/037/038/040的 PostgreSQL signedHTTP→丢ACK→SQLite重启→receipt→history通过，且断言创建/编辑/撤回各只有一个服务端事件。完整166项能力门禁退出0，但执行早于最后的 queued-only 竞态修复；该修复随后由上述79脚本和PG专项复验，不能冒称最终代码已重新跑完整门禁。原 Renderer 测试宿主未注册IPC日志仍存在。持久已读、准确未读统计、引用/@和完整消息UI尚未实现；没有合并或部署。
 
+2026-08-31 后续已读切片完成规格与质量独立复审：SQLite v13 分离加密 read checkpoint、精确活动投影和会话刷新 generation；原 UUID/device/seq 重放，较高 pending 合并，持久退避（最多60秒间隔，每轮20项/2 worker），不占用文本发送屏障。own-read 精确刷新必须持久化后才 ACK；旧 bootstrap/get、停止和撤权后的迟到结果不能覆盖新状态。异常序号钳制不立即重发，但后续正常较低观察和授权快照/消息/历史证明的真实增长可以继续已读。有序新消息的计数与 projectionSeq 原子前进，自己的消息及已读消息不增加计数，任意历史页不推进覆盖序号。服务端从全部授权消息和原创建事件聚合 unread/mention，legacy 缺省为 unknown。
+
+最终冻结版父进程验证：82个协作 Node 脚本加 architecture/registry 共84项全部通过；12组本地 PostgreSQL 随机 schema 集成全部通过；完整能力门禁 `capability-gate: ok (169 tests)` 退出0。新增 signedHTTP 600条消息/200条缓存/双设备/SQLite重启/私密加入边界/公共频道精确统计和同步前ACK断言通过；既有 sync PG夹具升级为真实迁移033/035/037/038/040并保留边界/压缩断言。门禁仍包含缺少 bundled OpenCode 的跳过与原 Renderer 宿主未注册IPC日志（本次121行），不能等同于全项目零跳过、真实双Electron、私有bucket或生产验收。上段 mutation 检查点是历史结果；此次门禁已覆盖该提交及本次最终修复。没有合并或部署。
+
 1. **持久编辑/撤回**：复用现有 outbox 的类型化命令、同键恢复和会话屏障；device-bound receipt确认与最低revision历史刷新检查点原子写入。原消息createSeq和创建command ID不变，不新增乐观气泡；旧历史响应只能清掉自己已验证的刷新目标，不能删除并发新增的更高revision。
 2. **持久已读与准确统计**：独立read checkpoint，不进入消息发送屏障。pendingMax可合并，已经发出的UUID/device/seq冻结；ACK或授权快照确认后仍保留更高pendingMax。扩既有bootstrap/conversations-get准确返回projectionSeq/lastReadSeq/unreadCount/mentionCount，从全部授权消息及对应创建事件统计，而非seq差或最近200条。增量事件按snapshot覆盖序号去重；自己的read事件触发持久conversation hydration精确刷新，再ACK。
-3. **引用/@与消息字段**：引用ID、mention IDs贯穿draft/outbox/重启恢复/完整意图比较；有限引用快照由main从授权目标取得，撤回后显示占位。public Team频道的@候选需与activeRecipients同源（全体active Team成员）；private/group/direct不能放宽成整个Team名册。保留服务端createdAt，不能以本地缓存写入时间推断15分钟编辑/24小时撤回窗口。
+3. **引用/@与消息字段**：引用ID、mention IDs贯穿draft/outbox/重启恢复/完整意图比较；有限引用快照由main从授权目标取得，撤回后显示占位。public Team频道的@候选需与activeRecipients同源（全体active Team成员）；private/group/direct不能放宽成整个Team名册。保留服务端createdAt，不能以本地缓存写入时间推断15分钟编辑/24小时撤回窗口。先接通不可变字段、准确时间和主进程边界，再完成发送时加密引用快照/授权候选；两个子切片均完成才算此项关闭。创建消息的生产 transport 对缺失/错会话的200响应也必须保持不确定，不能以空的 committedView 提前确认并释放队列。
 4. **实际消息交互**：在现有timeline/composer/shell上增加行内编辑、撤回确认、冲突比较、引用条和键盘@候选，不新增第二面板。mutation恢复视图区分原消息发送状态与修改状态，保留未提交编辑稿。收件箱按稳定conversation ID更新，使用持久pin/notification偏好、未读提及和权威最近活动排序，不跨会话比较局部seq。
 5. **可见已读与Electron验收**：窗口聚焦、document/面板/当前会话可见才观察viewport内已持久消息；切换/隐藏/账号/撤权令迟到回调失效。主进程复核可见窗口、授权会话及缓存seq。复用真实timeline/attachments/social-navigation Electron夹具，测试旧detached按钮、失焦、跨会话迟到结果、冲突/撤回及三语言；静态surface检查不算交互E2E。
 

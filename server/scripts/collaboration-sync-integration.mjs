@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
 
 if (!process.env.DATABASE_URL) {
   console.log("collaboration sync integration: skipped (DATABASE_URL is not configured)");
@@ -33,40 +34,34 @@ async function executeSchema() {
     create table devices (id text primary key);
     create table user_devices (user_id text not null, device_id text not null, first_seen_at timestamptz not null default now(), last_seen_at timestamptz not null default now(), status text not null default 'active', primary key (user_id, device_id));
     create table user_profiles (user_id text primary key, lily_id text not null, display_name text not null default '', avatar_object_id text, discoverability text);
-    create table friendships (user_low_id text, user_high_id text, status text);
-    create table friend_requests (id text, sender_user_id text, receiver_user_id text, status text);
-    create table user_blocks (blocker_user_id text, blocked_user_id text);
     create table organizations (id text primary key, name text, status text);
     create table organization_members (organization_id text, user_id text, role text, status text, joined_at timestamptz default now());
-    create table conversations (id text primary key, scope_type text, organization_id text, kind text, title text, status text, next_seq bigint, visibility text);
-    create table conversation_members (conversation_id text, user_id text, role text, status text, last_read_seq bigint, notification_level text, joined_seq bigint);
-    create table user_sync_state (user_id text primary key, next_cursor bigint not null, compacted_before_cursor bigint not null default 0, updated_at timestamptz default now());
-    create table device_sync_state (user_id text, device_id text, last_acked_cursor bigint not null default 0, last_seen_at timestamptz not null default now(), requires_full_resync boolean not null default false, primary key (user_id, device_id));
-    create table collaboration_events (id text primary key, conversation_id text not null, seq bigint not null, type text not null, actor_user_id text not null, actor_device_id text not null, client_command_id text not null, payload jsonb not null default '{}', created_at timestamptz not null default now());
-    create table user_sync_events (user_id text not null, cursor bigint not null, event_id text not null, conversation_id text not null, created_at timestamptz not null default now(), primary key (user_id, cursor));
-    create table messages (id text primary key, conversation_id text not null, create_seq bigint not null, sender_user_id text not null, kind text not null, body_ciphertext bytea, body_key_version integer, revision integer not null default 1, reply_to_message_id text, edited_at timestamptz, revoked_at timestamptz, created_at timestamptz not null default now());
-    create table collaboration_bootstrap_completions (token_hash text primary key, user_id text not null, device_id text not null, watermark bigint not null, snapshot_schema_version integer not null default 1, issued_at timestamptz not null default now(), expires_at timestamptz not null, consumed_at timestamptz);
   `);
+  for (const migration of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql"]) {
+    await writer.query(fs.readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
+  }
   await writer.query("insert into users values ($1)", [userId]);
   for (const deviceId of [fastDeviceId, slowDeviceId, staleDeviceId, newDeviceId]) {
     await writer.query("insert into devices values ($1)", [deviceId]);
     await writer.query("insert into user_devices (user_id, device_id, status) values ($1, $2, 'active')", [userId, deviceId]);
   }
   await writer.query("insert into user_profiles (user_id, lily_id, display_name, discoverability) values ($1, 'alice', 'Alice', 'contacts')", [userId]);
-  await writer.query("insert into conversations values ($1, 'personal', null, 'direct', '', 'active', 7, null)", [conversationId]);
-  await writer.query("insert into conversations values ($1, 'personal', null, 'group', 'Second', 'active', 1, null)", [secondConversationId]);
-  await writer.query("insert into conversation_members values ($1, $2, 'member', 'active', 0, 'all', 2)", [conversationId, userId]);
-  await writer.query("insert into conversation_members values ($1, $2, 'member', 'active', 0, 'all', 0)", [secondConversationId, userId]);
-  await writer.query("insert into collaboration_events values ('evt-1', $1, 1, 'message.created', $2, $3, 'cmd-1', '{\"messageId\":\"message-1\"}', now())", [conversationId, userId, fastDeviceId]);
+  await writer.query("insert into conversations(id,scope_type,kind,title,next_seq,created_by) values ($1,'personal','group','',202,$2),($3,'personal','group','Second',2,$2)", [conversationId, userId, secondConversationId]);
+  await writer.query("insert into conversation_members(conversation_id,user_id,joined_seq) values ($1,$2,2),($3,$2,0)", [conversationId, userId, secondConversationId]);
+  await writer.query("insert into collaboration_events(id,conversation_id,seq,type,actor_user_id,actor_device_id,client_command_id,payload) values ('evt-1',$1,1,'message.created',$2,$3,'cmd-1','{\"messageId\":\"message-1-1\"}')", [conversationId, userId, fastDeviceId]);
   await writer.query("insert into user_sync_events values ($1, 1, 'evt-1', $2, now())", [userId, conversationId]);
   await writer.query("insert into user_sync_state (user_id, next_cursor, compacted_before_cursor) values ($1, 2, 0)", [userId]);
   await writer.query("insert into device_sync_state values ($1, $2, 1, now(), false)", [userId, fastDeviceId]);
   await writer.query("insert into device_sync_state values ($1, $2, 1, now(), false)", [userId, slowDeviceId]);
   await writer.query("insert into device_sync_state values ($1, $2, 0, $3, false)", [userId, staleDeviceId, new Date(now.getTime() - STALE_DEVICE_AFTER_MS - 1)]);
   for (let sequence = 1; sequence <= 201; sequence += 1) {
-    await writer.query("insert into messages (id, conversation_id, create_seq, sender_user_id, kind, revision) values ($1, $2, $3, $4, 'text', 1)", [`message-1-${sequence}`, conversationId, sequence, userId]);
+    const eventId = sequence === 1 ? "evt-1" : `history-${sequence}`;
+    if (sequence > 1) await writer.query("insert into collaboration_events(id,conversation_id,seq,type,actor_user_id,actor_device_id,client_command_id,payload) values($1,$2,$3,'message.created',$4,$5,$1,$6::jsonb)",
+      [eventId, conversationId, sequence, userId, fastDeviceId, JSON.stringify({ messageId: `message-1-${sequence}` })]);
+    await writer.query("insert into messages (id,event_id,conversation_id,create_seq,sender_user_id,kind,revision) values ($1,$2,$3,$4,$5,'text',1)", [`message-1-${sequence}`, eventId, conversationId, sequence, userId]);
   }
-  await writer.query("insert into messages (id, conversation_id, create_seq, sender_user_id, kind, revision) values ('message-2', $1, 1, $2, 'text', 1)", [secondConversationId, userId]);
+  await writer.query("insert into collaboration_events(id,conversation_id,seq,type,actor_user_id,actor_device_id,client_command_id,payload) values('history-second',$1,1,'message.created',$2,$3,'history-second','{\"messageId\":\"message-2\"}')", [secondConversationId, userId, fastDeviceId]);
+  await writer.query("insert into messages (id,event_id,conversation_id,create_seq,sender_user_id,kind,revision) values ('message-2','history-second',$1,1,$2,'text',1)", [secondConversationId, userId]);
 }
 
 let nextInjectedCursor = 2;
@@ -76,9 +71,10 @@ async function injectAfterBootstrapBoundary(boundary) {
   nextInjectedCursor += 1;
   injectedBoundaries.push(boundary);
   await writer.query(
-    "insert into collaboration_events values ($1, $2, $3, 'message.created', $4, $5, $6, $7::jsonb, now())",
-    [`evt-${cursor}`, conversationId, cursor, userId, fastDeviceId, `cmd-${cursor}`, JSON.stringify({ messageId: `message-${cursor}`, boundary })],
+    "insert into collaboration_events(id,conversation_id,seq,type,actor_user_id,actor_device_id,client_command_id,payload) values ($1,$2,$3,'message.created',$4,$5,$6,$7::jsonb)",
+    [`evt-${cursor}`, conversationId, 200 + cursor, userId, fastDeviceId, `cmd-${cursor}`, JSON.stringify({ messageId: `message-${cursor}`, boundary })],
   );
+  await writer.query("update conversations set next_seq=$1 where id=$2", [201 + cursor, conversationId]);
   await writer.query("insert into user_sync_events values ($1, $2, $3, $4, now())", [userId, cursor, `evt-${cursor}`, conversationId]);
   await writer.query("update user_sync_state set next_cursor = $1 where user_id = $2", [cursor + 1, userId]);
 }

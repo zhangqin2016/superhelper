@@ -1,7 +1,17 @@
 "use strict";
 const { flushRevokedKeys, isConversationRevoked } = require("./access-revocation");
+const activity = require("./conversation-activity");
+const { randomUUID } = require("node:crypto");
+const { confirmRead } = require("./read-checkpoint");
 function invalid() { return Object.assign(new Error("Invalid collaboration conversation projection"), { code: "COLLAB_CONVERSATION_INVALID" }); }
 function id(value) { return typeof value === "string" && value.length > 0 && value.length <= 200 && value.trim() === value && !/[\x00-\x1f\x7f]/.test(value); }
+function queueAuthorizedRefresh(store, conversationId) {
+  store.db.run(`INSERT INTO conversation_hydration (account_id, conversation_id, created_at, generation) VALUES (?, ?, ?, ?)
+    ON CONFLICT(account_id,conversation_id) DO UPDATE SET generation=excluded.generation`, store.accountId, conversationId, store.now(), randomUUID());
+}
+function assertHydrationComplete(store) {
+  if (store.db?.get(`SELECT 1 FROM conversation_hydration WHERE account_id=? LIMIT 1`, store.accountId)) throw Object.assign(invalid(), { code: "COLLAB_CONVERSATION_STALE" });
+}
 
 function queueConversationHydration(store, event) {
   const conversationId = event.conversationId ?? event.conversation_id;
@@ -9,14 +19,17 @@ function queueConversationHydration(store, event) {
   if (["member.removed", "member.left"].includes(event.type) && event.payload?.userId === store.accountId) return;
   const discovery = event.type === "conversation.created" || String(event.type).startsWith("member.");
   const unknownMessage = String(event.type).startsWith("message.") && !store.getConversation({ conversationId }) && !isConversationRevoked(store, conversationId);
-  if (!discovery && !unknownMessage) return;
+  const ownRead = event.type === "conversation.read" && (event.actorUserId ?? event.actor_user_id) === store.accountId && !isConversationRevoked(store, conversationId);
+  if (!discovery && !unknownMessage && !ownRead) return;
   if (!id(conversationId)) throw invalid();
-  store.db.run(`INSERT OR IGNORE INTO conversation_hydration (account_id, conversation_id, created_at) VALUES (?, ?, ?)`, store.accountId, conversationId, store.now());
+  if (ownRead) confirmRead(store, conversationId, event.payload?.lastReadSeq, null, true);
+  queueAuthorizedRefresh(store, conversationId);
 }
 
 function normalizeProjection(value, conversationId, accountId) {
   const c = value?.conversation;
   if (!c || c.id !== conversationId || !id(c.id)) throw invalid();
+  activity.normalizeActivity(c);
   const scopeType = c.scopeType ?? c.scope_type;
   const organizationId = c.organizationId ?? c.organization_id ?? null;
   const scopeId = scopeType === "organization" && id(organizationId) ? `team:${organizationId}` : scopeType === "personal" && organizationId == null ? "personal" : null;
@@ -39,6 +52,7 @@ function applyAuthorizedConversation(store, conversationId, value) {
   if (previous && previous.scopeId !== normalized.scopeId) throw invalid();
   flushRevokedKeys(store);
   store.db.transaction(() => {
+    activity.resetMembershipReadState(store, conversationId, normalized.members);
     const priorSelf = store.listConversationMembers({ conversationId }).find((m) => m.userId === store.accountId);
     if (priorSelf && normalized.self?.joinedSeq > priorSelf.joinedSeq) {
       // A new membership epoch cannot inherit pre-removal drafts or messages;
@@ -53,24 +67,30 @@ function applyAuthorizedConversation(store, conversationId, value) {
     for (const m of normalized.members) store.db.run(`INSERT INTO conversation_members (account_id,conversation_id,user_id,status,role,joined_seq) VALUES (?, ?, ?, ?, ?, ?)`, store.accountId, conversationId, m.userId, m.status, m.role, m.joinedSeq);
     for (const p of normalized.profiles) store.db.run(`INSERT INTO profiles (account_id,user_id,lily_id,display_name,avatar_object_id,updated_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(account_id,user_id) DO UPDATE SET lily_id=excluded.lily_id,display_name=excluded.display_name,avatar_object_id=excluded.avatar_object_id,updated_at=excluded.updated_at`, store.accountId, p.userId, p.lilyId, p.displayName, p.avatarObjectId, store.now());
+    const freshActivity = activity.applyActivitySnapshot(store, conversationId, value.conversation);
+    if (!freshActivity) queueAuthorizedRefresh(store, conversationId);
     store.db.run(`INSERT OR IGNORE INTO history_hydration (account_id,conversation_id,created_at) VALUES (?, ?, ?)`, store.accountId, conversationId, store.now());
-    store.db.run(`DELETE FROM conversation_hydration WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
+    if (freshActivity) store.db.run(`DELETE FROM conversation_hydration WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
   })();
 }
 
 async function recoverConversationHydration({ store, client, deviceId, assertActive, recoverDeniedHistory }) {
   if (!store.db) return;
-  const pending = store.db.all(`SELECT conversation_id FROM conversation_hydration WHERE account_id = ? ORDER BY created_at, conversation_id`, store.accountId);
+  const pending = store.db.all(`SELECT conversation_id, generation FROM conversation_hydration WHERE account_id = ? ORDER BY created_at, conversation_id`, store.accountId);
   if (pending.length && typeof client?.getConversationProjection !== "function") throw invalid();
   for (const row of pending) {
     try {
+      assertActive();
       const value = await client.getConversationProjection({ deviceId, conversationId: row.conversation_id });
       assertActive();
+      const current = store.db.get(`SELECT generation FROM conversation_hydration WHERE account_id=? AND conversation_id=?`, store.accountId, row.conversation_id);
+      if (!current || current.generation !== row.generation) continue;
       applyAuthorizedConversation(store, row.conversation_id, value);
     } catch (error) {
       assertActive();
       if (!recoverDeniedHistory(row.conversation_id, error)) throw error;
     }
   }
+  assertHydrationComplete(store);
 }
-module.exports = { queueConversationHydration, normalizeProjection, applyAuthorizedConversation, recoverConversationHydration };
+module.exports = { queueConversationHydration, queueAuthorizedRefresh, assertHydrationComplete, normalizeProjection, applyAuthorizedConversation, recoverConversationHydration };

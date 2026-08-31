@@ -145,6 +145,15 @@ const COLLABORATION_MIGRATIONS = [
     uncertain INTEGER NOT NULL DEFAULT 0, payload_envelope_json TEXT NOT NULL,
     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));
     CREATE INDEX social_commands_intent ON social_commands(account_id,fingerprint,state);`),
+  // v13 — read watermarks are independent of message delivery barriers.
+  (db) => db.exec(`ALTER TABLE conversation_hydration ADD COLUMN generation TEXT NOT NULL DEFAULT '';
+    CREATE TABLE read_checkpoints (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, scope_id TEXT NOT NULL,
+    payload_envelope_json TEXT NOT NULL, PRIMARY KEY(account_id,conversation_id));
+    CREATE TABLE conversation_activity (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, projection_seq INTEGER NOT NULL,
+      last_read_seq INTEGER NOT NULL, unread_count INTEGER NOT NULL, mention_count INTEGER NOT NULL,
+      PRIMARY KEY(account_id,conversation_id));`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

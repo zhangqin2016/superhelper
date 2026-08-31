@@ -1,4 +1,5 @@
 "use strict";
+const { releaseHandledClamp } = require("./read-checkpoint");
 
 function attachmentIds(message) {
   const ids = message.attachmentIds === undefined ? [] : message.attachmentIds;
@@ -41,6 +42,7 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
         store.accountId, conversation, id, target.scope_id, Number.isSafeInteger(seq) ? seq : null, message?.senderUserId ?? message?.sender_user_id ?? null,
         store._encrypt({ scopeId: target.scope_id, recordId: store._messageRecord(conversation, id), value: content }), store.now(), store.now(),
       );
+      releaseHandledClamp(store, conversation, seq);
       hydrated += 1;
     }
     return { hydrated };

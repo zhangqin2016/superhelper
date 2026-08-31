@@ -7,12 +7,13 @@ const { createCollaborationRealtimeClient } = require("./realtime-client");
 const { readHistoryPage } = require("./history-page");
 const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
-const { recoverConversationHydration } = require("./conversation-hydration");
+const { recoverConversationHydration, assertHydrationComplete } = require("./conversation-hydration");
 const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
 const socialDirectory = require("./social-directory-actions");
 const { createTransferRuntime } = require("./transfer-runtime");
 const { createAttachmentSendCoordinator } = require("./attachment-send");
+const { createReadRecovery } = require("./read-recovery");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -88,6 +89,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (isConversationRevoked(store, conversationId)) emitState("access-revoked");
       }
     };
+    const reads = createReadRecovery({ store, client, deviceId, assertActive, recoverDeniedHistory, onChange: () => emitState("read") });
+    const recoverReadsSafely = () => reads.recover().catch(() => undefined);
     let httpPollTimer = null;
     const hydrateAuthorizedHistory = async (conversationIds) => {
       assertActive();
@@ -138,8 +141,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         ...realtimeOptions.syncArgs, afterCursor: current.cursor, syncEngine,
         onFullResync: async ({ snapshot, acknowledge }) => {
           const applied = syncEngine.applyBootstrap({ ...snapshot, history: [], requireHistoryHydration: true });
+          await recoverConversationHydration({ store, client, deviceId, assertActive, recoverDeniedHistory });
           await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
           assertActive();
+          assertHydrationComplete(store);
           await acknowledge();
           assertActive();
           return { ...applied, events: [], historyHydrated: true };
@@ -150,6 +155,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           if (refreshed) return { ...refreshed, events: page.events || [], historyHydrated: true };
           if (typeof store.listPendingHistoryHydration !== "function") await hydrateAuthorizedHistory(messageConversationIdsFor(page.events));
           assertActive();
+          assertHydrationComplete(store);
           await acknowledge();
           assertActive();
           return { ...applied, events: Array.isArray(page.events) ? page.events : [], historyHydrated: true };
@@ -164,6 +170,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           await outbox?.drainQueued?.();
           assertActive();
           emitState("sync");
+          void recoverReadsSafely();
           return result;
         });
     };
@@ -201,8 +208,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       assertActive();
       if (Number(snapshot.watermark) < store.getSyncState().cursor) throw Object.assign(new Error("Stale collaboration directory snapshot"), { code: "COLLAB_BOOTSTRAP_STALE" });
       const applied = syncEngine.applyBootstrap({ ...snapshot, history: [], requireHistoryHydration: true });
+      await recoverConversationHydration({ store, client, deviceId, assertActive, recoverDeniedHistory });
       await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
       assertActive();
+      assertHydrationComplete(store);
       await client.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });
       assertActive(); emitState("bootstrap");
       return { ok: true, cursor: applied.cursor };
@@ -392,18 +401,13 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       },
       async markRead({ conversationId, seq } = {}) {
         if (stopped) return stoppedResult();
-        if (!client || !deviceId || !Number.isSafeInteger(Number(seq)) || Number(seq) < 0) return unavailableService();
-        const result = await client.submitMessage({ action: "read", deviceId, conversationId, seq: Number(seq), clientCommandId: `read:${conversationId}:${Number(seq)}` });
-        if (stopped) return stoppedResult();
-        const lastReadSeq = result?.result?.lastReadSeq;
-        if (result?.ok !== true || !Number.isSafeInteger(lastReadSeq) || lastReadSeq < 0) return { ok: false, code: "COLLAB_READ_ACK_INVALID" };
-        emitState("read");
-        return { ok: true, conversationId, seq: lastReadSeq };
+        try { const result = await reads.markRead({ conversationId, seq }); return stopped ? stoppedResult() : result; } catch (error) { if (stopped) return stoppedResult(); throw error; }
       },
       start() {
         if (stopped) return stoppedResult();
         if (started) return;
         started = true;
+        void recoverReadsSafely();
         transfers.start?.();
         void attachmentSend?.recover?.().catch(() => undefined);
         const recovered = store.recoverAbandonedSubmittingOutbox?.();

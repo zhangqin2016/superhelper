@@ -53,9 +53,13 @@ function optionalInteger(value) {
 }
 
 function rendererConversation(value = {}) {
+  const fields = ["projectionSeq", "lastReadSeq", "unreadCount", "mentionCount"];
+  const known = value.activityKnown === true && fields.every((key) => Number.isSafeInteger(value[key]) && value[key] >= 0)
+    && value.lastReadSeq <= value.projectionSeq && value.mentionCount <= value.unreadCount;
   return {
     id: safeIdentifier(value.id) || "", scopeId: safeIdentifier(value.scopeId) || "", kind: safeIdentifier(value.kind) || "",
     title: typeof value.title === "string" ? value.title.slice(0, 500) : "", updatedAt: nonNegativeInteger(value.updatedAt), lastSeq: optionalInteger(value.lastSeq),
+    ...(value.activityKnown == null ? {} : known ? { activityKnown: true, ...Object.fromEntries(fields.map((key) => [key, value[key]])) } : { activityKnown: false }),
   };
 }
 
