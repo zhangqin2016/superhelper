@@ -1,4 +1,5 @@
 import { t } from "../i18n/index.js";
+import { replyDisplay } from "./collaboration-reply-view.js";
 
 function messageKey(message) { return String(message.clientCommandId || message.id || ""); }
 
@@ -14,7 +15,7 @@ function sequence(message) {
   return message.seq != null && Number.isSafeInteger(value) && value > 0 ? value : Infinity;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true } = {}) {
   if (!node) return;
   const prior = new Map([...node.children].map((child) => [child.dataset.messageKey, child]));
   const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
@@ -31,11 +32,27 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     row.dataset.clientCommandId = String(message.clientCommandId || "");
     let body = row.querySelector(".collaboration-message-body");
     if (!body) { body = document.createElement("p"); body.className = "collaboration-message-body"; row.append(body); }
-    const text = message.revokedAt ? t("collaboration.messageRevoked") : String(message.bodyText || "");
+    const hiddenSource = message.revokedAt || message.visibilityMask;
+    const text = message.visibilityMask === "unavailable" ? t("collaboration.messageUnavailable") : hiddenSource ? t("collaboration.messageRevoked") : String(message.bodyText || "");
     if (body.textContent !== text) body.textContent = text;
+    let quote = row.querySelector(".collaboration-reply-quote");
+    if (!hiddenSource && (message.replyToMessageId || message.replySnapshot)) {
+      if (!quote) { quote = document.createElement("blockquote"); quote.className = "collaboration-reply-quote"; quote.dir = "auto"; row.insertBefore(quote, body); }
+      const quoteText = replyDisplay(message.replySnapshot || { status: "unavailable", reason: "legacy" });
+      if (quote.textContent !== quoteText) quote.textContent = quoteText;
+    } else quote?.remove();
+    let replyButton = row.querySelector('[data-action="reply-message"]');
+    if (onReply && message.id && sequence(message) !== Infinity && !hiddenSource && canReply(message)) {
+      if (!replyButton) { replyButton = document.createElement("button"); replyButton.type = "button"; replyButton.dataset.action = "reply-message"; row.append(replyButton); }
+      replyButton.textContent = t("collaboration.reply.action");
+      replyButton.setAttribute("aria-label", t("collaboration.reply.action"));
+      replyButton.onclick = () => {
+        if (node.isConnected && !node.closest("[hidden]") && row.parentElement === node && replyButton.parentElement === row && canReply(message)) onReply(message);
+      };
+    } else replyButton?.remove();
     let attachments = row.querySelector(".collaboration-message-attachments");
     const purpose = message.kind === "workspace_share" ? "workspace" : "attachment";
-    if (!message.revokedAt && message.attachmentIds?.length && onDownload && canDownload(purpose)) {
+    if (!hiddenSource && message.attachmentIds?.length && onDownload && canDownload(purpose)) {
       if (!attachments) { attachments = document.createElement("div"); attachments.className = "collaboration-message-attachments"; row.append(attachments); }
       const existing = new Map([...attachments.children].map((button) => [button.dataset.objectId, button]));
       for (const objectId of message.attachmentIds) {

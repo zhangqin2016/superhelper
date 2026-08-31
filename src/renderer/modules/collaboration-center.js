@@ -1,4 +1,4 @@
-import { t } from "../i18n/index.js";
+import { t, onLocaleChange } from "../i18n/index.js";
 import { renderCollaborationInbox } from "./collaboration-inbox.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
@@ -7,6 +7,7 @@ import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
+import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -28,10 +29,18 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const empty = byId("collaborationConversationEmpty");
   const olderButton = byId("collaborationLoadOlder");
   let transferPolicy = {};
+  let disposed = false, policyEnabled = false;
+  const replySourceMasks = createReplySourceMaskView();
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
   const renderTimeline = () => renderCollaborationTimeline(timeline, historyMessages, {
     onDownload: (input, purpose) => attachments.download(input, purpose),
     canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
+    canReply: (message) => !disposed && policyEnabled && !panel.hidden && !navigating && Boolean(activeConversationId) && historyMessages.includes(message),
+    onReply: (message) => {
+      if (disposed || !policyEnabled || panel.hidden || navigating || !activeConversationId || !historyMessages.includes(message) || message.revokedAt || message.visibilityMask || !message.id || !(Number(message.seq) > 0)) return;
+      composer.setReply?.({ messageId: message.id });
+      byId("collaborationComposer")?.focus();
+    },
   });
   let historyMessages = [];
   let nextBeforeSeq = null;
@@ -39,9 +48,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let loadingOlder = false;
   let historyOffline = false;
   const acceptPage = (page, { latest = false, reset = false } = {}) => {
+    replySourceMasks.observe(activeConversationId, page.messages || []);
     const previous = reset ? {} : { messages: historyMessages, nextBeforeSeq, hasMore, offline: historyOffline };
     const next = applyCollaborationHistoryPage(previous, page, { latest });
-    historyMessages = next.messages; nextBeforeSeq = next.nextBeforeSeq; hasMore = next.hasMore; historyOffline = next.offline;
+    historyMessages = replySourceMasks.apply(activeConversationId, next.messages); nextBeforeSeq = next.nextBeforeSeq; hasMore = next.hasMore; historyOffline = next.offline;
   };
   const updateOlderButton = () => { if (olderButton) { olderButton.hidden = !hasMore || nextBeforeSeq == null; olderButton.disabled = loadingOlder || opening; } };
   let activeConversationId = "";
@@ -49,6 +59,9 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let viewGeneration = 0;
   let openGeneration = 0;
   let opening = false;
+  let navigating = false;
+  let openingConversationId = "";
+  const invalidateOpen = () => { openGeneration += 1; opening = false; navigating = false; openingConversationId = ""; loadingOlder = false; updateOlderButton(); };
   let directory = null, loadGeneration = 0, activeSection = "inbox", navigationGeneration = 0;
   const sectionNodes = { inbox: byId("collaborationInbox"), people: byId("collaborationFriends"), teams: byId("collaborationTeams") };
   const sectionButtons = { inbox: byId("collaborationInboxTab"), people: byId("collaborationPeopleTab"), teams: byId("collaborationTeamsTab") };
@@ -68,45 +81,75 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const composer = initCollaborationComposer({
     textarea: byId("collaborationComposer"), sendButton: byId("collaborationSendButton"),
     getConversationId: () => activeConversationId,
-    onSent: (_result, origin) => { if (!opening && activeConversationId && origin?.conversationId === activeConversationId) void openConversation(activeConversationId, { userNavigation: false }); },
+    getReplySourceStatus: replySourceMasks.get,
+    onSent: (_result, origin) => { if (!disposed && policyEnabled && !panel.hidden && !opening && activeConversationId && origin?.conversationId === activeConversationId) void openConversation(activeConversationId, { userNavigation: false }); },
     onError: () => { if (live) live.textContent = t("collaboration.sendFailed"); },
   });
+  composer.setActive?.(!panel.hidden && policyEnabled);
+  const unsubscribeLocale = onLocaleChange(renderTimeline);
 
   const clearRevokedSelection = (result, conversationId) => {
-    if (activeConversationId !== conversationId || !["COLLAB_ACCESS_REVOKED", "COLLABORATION_NOT_FOUND"].includes(result?.code)) return false;
+    if (!["COLLAB_ACCESS_REVOKED", "COLLABORATION_NOT_FOUND"].includes(result?.code)) return false;
+    replySourceMasks.forget(conversationId);
+    composer.forgetConversation?.(conversationId);
+    if (activeConversationId !== conversationId) return false;
+    if (!opening || openingConversationId === conversationId) invalidateOpen();
     activeConversationId = "";
     historyMessages = []; nextBeforeSeq = null; hasMore = false; historyOffline = false;
-    composer.reset?.(); attachments.reset(); timeline?.replaceChildren(); updateOlderButton();
+    attachments.reset(); timeline?.replaceChildren(); updateOlderButton();
     if (empty) empty.hidden = false;
     if (scopeBadge) scopeBadge.textContent = "";
     if (live) live.textContent = t("collaboration.statusUnavailable");
     return true;
   };
   const openConversation = async (conversationId, { userNavigation = true } = {}) => {
+    if (disposed) return;
     if (userNavigation) navigationGeneration += 1;
     const generation = ++openGeneration;
     const view = viewGeneration;
     opening = true;
+    openingConversationId = conversationId;
+    navigating = userNavigation || activeConversationId !== conversationId;
+    if (navigating) composer.setActive?.(false);
+    renderTimeline();
     loadingOlder = false;
     updateOlderButton();
     const opened = await window.assistantClient?.collaboration?.open?.(conversationId).catch(() => null);
     let refreshFailed = false;
     if (opened?.ok && activeConversationId === conversationId && generation === openGeneration && view === viewGeneration) {
+      // Apply already-authoritative newest masks now. Fetching older loaded
+      // rows must not keep a known revoked body/quote visible in the meantime.
+      acceptPage(opened, { latest: true });
+      composer.refreshReply?.(historyMessages);
+      renderTimeline();
       try {
         const refreshed = await refreshVisibleHistory({ conversationId, existing: historyMessages, latest: opened.messages || [],
-          readMessages: window.assistantClient?.collaboration?.readMessages, isCurrent: () => generation === openGeneration && view === viewGeneration });
-        if (refreshed) historyMessages = refreshed;
+          readMessages: window.assistantClient?.collaboration?.readMessages ? async (request) => {
+            const result = await window.assistantClient.collaboration.readMessages(request);
+            if (result?.ok && !disposed && conversationId === activeConversationId && generation === openGeneration && view === viewGeneration) {
+              replySourceMasks.observe(conversationId, result.messages || []);
+              // Each successful batch is visibility evidence already. A later
+              // batch may stall/fail; it must not delay these source masks.
+              historyMessages = replySourceMasks.apply(conversationId, historyMessages);
+              composer.refreshReply?.(historyMessages);
+              renderTimeline();
+            }
+            return result;
+          } : undefined, isCurrent: () => generation === openGeneration && view === viewGeneration });
+        if (refreshed) historyMessages = replySourceMasks.apply(conversationId, refreshed);
       } catch { refreshFailed = true; }
     }
-    if (generation === openGeneration) { opening = false; updateOlderButton(); }
-    if (generation !== openGeneration || view !== viewGeneration) return;
-    if (!opened?.ok) { clearRevokedSelection(opened, conversationId); return; }
+    if (generation === openGeneration) { opening = false; navigating = false; openingConversationId = ""; updateOlderButton(); }
+    if (disposed || generation !== openGeneration || view !== viewGeneration) return;
+    if (!opened?.ok) { clearRevokedSelection(opened, conversationId); composer.setActive?.(!panel.hidden && policyEnabled); renderTimeline(); return; }
     const sameConversation = activeConversationId === conversationId;
     activeConversationId = conversationId;
     acceptPage(opened, { latest: true, reset: !sameConversation });
     loadingOlder = false;
     updateOlderButton();
     composer.setConversation(conversationId);
+    composer.setActive?.(!panel.hidden && policyEnabled);
+    composer.refreshReply?.(historyMessages);
     attachments.setConversation(opened.conversation, transferPolicy);
     const scope = String(opened.conversation?.scopeId || "");
     if (scopeBadge) scopeBadge.textContent = scope.startsWith("team:")
@@ -129,6 +172,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (live) live.textContent = t("collaboration.historyLoadFailed");
     } else {
       acceptPage(page);
+      composer.refreshReply?.(historyMessages);
       renderTimeline();
       if (status) status.textContent = t(page.offline ? "collaboration.offlineCache" : "collaboration.statusAvailable");
     }
@@ -137,15 +181,20 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   olderButton?.addEventListener("click", loadOlder);
 
   const setActive = (active) => {
-    if (!active) { navigationGeneration += 1; attachments.dismiss(); }
+    if (disposed) return;
+    if (!active) { navigationGeneration += 1; invalidateOpen(); attachments.dismiss(); }
     shell.classList.toggle("collaboration-active", active);
     panel.hidden = !active;
     nav.setAttribute("aria-current", active ? "page" : "false");
+    composer.setActive?.(active && policyEnabled && !navigating);
+    renderTimeline();
     if (active) byId("collaborationInboxColumn")?.focus?.();
   };
   const load = async ({ checkAccess = false } = {}) => {
+    if (disposed) return;
     const view = viewGeneration;
     const generation = ++loadGeneration;
+    const accessGeneration = openGeneration;
     const displayedConversationId = activeConversationId;
     let result = await window.assistantClient?.collaboration?.list?.().catch(() => null);
     if (view !== viewGeneration || generation !== loadGeneration) return;
@@ -155,6 +204,15 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       result = await window.assistantClient?.collaboration?.list?.().catch(() => result);
     }
     if (view !== viewGeneration || generation !== loadGeneration) return;
+    // Apply the authorized list before unrelated directory waits. An open
+    // started since this request owns newer selection/authorization evidence.
+    if (checkAccess && accessGeneration === openGeneration && result?.ok && Array.isArray(result.conversations)) {
+      const allowed = result.conversations.map((row) => row.id);
+      composer.retainConversations?.(allowed);
+      replySourceMasks.retainConversations(allowed);
+      if (opening && !allowed.includes(openingConversationId)) { invalidateOpen(); composer.setActive?.(!panel.hidden && policyEnabled); renderTimeline(); }
+      if (displayedConversationId && activeConversationId === displayedConversationId && !allowed.includes(displayedConversationId)) clearRevokedSelection({ code: "COLLAB_ACCESS_REVOKED" }, displayedConversationId);
+    }
     const api = window.assistantClient?.collaboration;
     const [socialDirectory, socialCommands] = await Promise.all([
       Promise.resolve(api?.getDirectory?.()).catch(() => null), Promise.resolve(api?.getSocialCommands?.()).catch(() => null),
@@ -165,19 +223,24 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       const social = { directory, commands: socialCommands?.commands || [], conversations: result?.conversations || [] };
       friends.update(social); teams.update(social);
     }
-    if (checkAccess && displayedConversationId && activeConversationId === displayedConversationId && result?.ok && Array.isArray(result.conversations) && !result.conversations.some((row) => row.id === displayedConversationId)) clearRevokedSelection({ code: "COLLAB_ACCESS_REVOKED" }, displayedConversationId);
     renderCollaborationInbox(byId("collaborationInbox"), result?.conversations || result?.rows || [], { onOpen: openConversation, teams: directory?.teams || [] });
     const available = result?.ok === true;
     if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
   };
-  nav.addEventListener("click", () => { setActive(true); void load(); });
-  back.addEventListener("click", () => setActive(false));
+  const navClick = () => { setActive(true); void load(); };
+  const backClick = () => setActive(false);
+  nav.addEventListener("click", navClick);
+  back.addEventListener("click", backClick);
 
   async function refresh() {
+    const view = viewGeneration;
     const policy = await Promise.resolve(getPolicy()).catch(() => null);
+    if (disposed || view !== viewGeneration) return false;
     const enabled = policy?.collaboration?.enabled === true;
+    policyEnabled = enabled;
     transferPolicy = enabled ? policy.collaboration : {};
     attachments.setPolicy(transferPolicy);
+    composer.setActive?.(enabled && !panel.hidden && !navigating);
     renderTimeline();
     nav.hidden = !enabled;
     if (!enabled) { attachments.reset(); setActive(false); if (status) status.textContent = t("collaboration.statusUnavailable"); }
@@ -188,11 +251,14 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       viewGeneration += 1;
       openGeneration += 1;
       opening = false;
+      navigating = false;
+      openingConversationId = "";
       activeConversationId = "";
       historyMessages = []; nextBeforeSeq = null; hasMore = false; loadingOlder = false; historyOffline = false; updateOlderButton();
       bootstrapAttempted = false;
       loadGeneration += 1; directory = null; friends.reset(); teams.reset();
       composer.reset?.();
+      replySourceMasks.clear();
       attachments.reset();
       timeline?.replaceChildren();
       byId("collaborationInbox")?.replaceChildren();
@@ -211,5 +277,5 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     });
   });
   void refresh();
-  return { refresh, open: openConversation, loadOlder, show: () => { setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); attachments.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); composer.destroy(); } };
+  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); attachments.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back.removeEventListener("click", backClick); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
 }

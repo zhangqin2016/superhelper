@@ -12,8 +12,11 @@ const nodes = new Map();
 globalThis.document = { getElementById: (id) => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); }, createElement: () => new Node(), createDocumentFragment: () => Object.assign(new Node(), { fragment: true }) };
 let publish;
 const opens = [];
+// list() is the full authorized local projection, not a paged inbox. Successful
+// open/getDraft fixtures must be listed until a modeled access revocation.
+let visibleConversationIds = ["a", "b", "c", "offline", "new-selection", "paging", "hidden-revoked", "revoked-a", "missing-b"];
 globalThis.window = { assistantClient: { collaboration: {
-  onStateChange: (cb) => { publish = cb; return () => {}; }, list: async () => ({ ok: true, conversations: [{ id: "a" }] }),
+  onStateChange: (cb) => { publish = cb; return () => {}; }, list: async () => ({ ok: true, conversations: visibleConversationIds.map((id) => ({ id })) }),
   open: (id, beforeSeq) => new Promise((resolve) => opens.push({ id, beforeSeq, resolve })), getDraft: async () => ({ ok: true, text: "private draft" }), saveDraft: async () => ({ ok: true }),
 } } };
 const center = initCollaborationCenter({ getPolicy: async () => ({ collaboration: { enabled: true } }) });
@@ -61,18 +64,20 @@ try {
   const retryPage = center.loadOlder();
   assert.equal(opens.length, count + 1, "earlier history remains retryable after navigation failure");
   opens.at(-1).resolve({ ok: true, messages: [], hasMore: false }); await retryPage;
-  request = center.open("paging"); opens.at(-1).resolve({ ok: false, code: "COLLAB_ACCESS_REVOKED" }); await request;
+  request = center.open("paging"); visibleConversationIds = visibleConversationIds.filter((id) => id !== "paging"); opens.at(-1).resolve({ ok: false, code: "COLLAB_ACCESS_REVOKED" }); await request;
   assert.equal(textarea.value, "", "revoked selection clears renderer draft plaintext");
   assert.equal(nodes.get("collaborationSendButton").disabled, true, "revoked selection cannot submit messages");
   assert.equal(nodes.get("collaborationTimeline").children.length, 0);
   assert.equal(nodes.get("collaborationScopeBadge").textContent, "");
   request = center.open("hidden-revoked"); opens.at(-1).resolve({ ok: true, conversation: { id: "hidden-revoked" }, messages: [] }); await request;
   await settle(); center.hide();
+  visibleConversationIds = visibleConversationIds.filter((id) => id !== "hidden-revoked");
   publish({ type: "access-revoked", state: { ok: true } }); await settle(); await settle();
   assert.equal(textarea.value, "", "hidden views clear revoked plaintext without needing to be opened");
   request = center.open("revoked-a"); opens.at(-1).resolve({ ok: true, conversation: { id: "revoked-a" }, messages: [] }); await request;
   await settle();
   const pendingNavigation = center.open("missing-b");
+  visibleConversationIds = visibleConversationIds.filter((id) => !["revoked-a", "missing-b"].includes(id));
   publish({ type: "access-revoked", state: { ok: true } }); await settle(); await settle();
   opens.at(-1).resolve({ ok: false, code: "COLLABORATION_NOT_FOUND" }); await pendingNavigation;
   assert.equal(textarea.value, "", "pending navigation must not retain revoked prior selection");

@@ -48,6 +48,9 @@
         "scripts/test-collaboration-attachments-ui.cjs",
         "scripts/test-collaboration-attachment-locales.mjs",
         "scripts/test-collaboration-timeline.cjs",
+        "scripts/test-collaboration-reply-ui.cjs",
+        "scripts/test-collaboration-reply-navigation.cjs",
+        "scripts/test-collaboration-reply-locales.mjs",
         "scripts/test-collaboration-encryption.mjs",
         "scripts/test-account-resilience.mjs"
       ]

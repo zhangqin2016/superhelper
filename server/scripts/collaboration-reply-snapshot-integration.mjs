@@ -15,6 +15,7 @@ const schema = `collab_quote_${crypto.randomUUID().replaceAll("-", "")}`;
 const admin = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const scoped = new URL(process.env.DATABASE_URL);
 scoped.searchParams.set("options", `-c search_path=${schema}`);
+scoped.searchParams.set("application_name", schema);
 const kek = crypto.randomBytes(32);
 Object.assign(process.env, {
   DATABASE_URL: scoped.href, SESSION_SECRET: crypto.randomBytes(32).toString("hex"),
@@ -173,7 +174,74 @@ try {
   assert.equal(revokedOrphan.replySnapshot, null, "after source deletion and reply revocation, no quote identity or ciphertext remains");
   assert.equal(revokedOrphan.bodyText, null);
   assert.deepEqual(await snapshotRow(orphanReply.id), { reply_snapshot_ciphertext: null, reply_snapshot_key_version: null });
+
+  // Hold real SQL writes after source capture (INSERT) or inside a source
+  // mutation (UPDATE). No repository mocks or sleeps establish the ordering:
+  // pg_blocking_pids must prove both links in the wait chain before release.
+  await pool.query(`create table quote_race_barriers(source_id text primary key,edge text,lock_id bigint);
+    create function quote_race_barrier() returns trigger language plpgsql as $$
+    declare barrier bigint;
+    begin
+      select lock_id into barrier from quote_race_barriers where
+        (edge='reply' and TG_OP='INSERT' and source_id=NEW.reply_to_message_id) or
+        (edge='mutation' and TG_OP='UPDATE' and source_id=NEW.id);
+      if barrier is not null then perform pg_advisory_xact_lock(barrier); end if;
+      return NEW;
+    end $$;
+    create trigger quote_race_barrier before insert or update on messages for each row execute function quote_race_barrier();`);
+  async function blockedBy(pid, queryFragment) {
+    const deadline = Date.now() + 1200;
+    while (Date.now() < deadline) {
+      const result = await admin.query(`select pid,query from pg_stat_activity where application_name=$1
+        and wait_event_type='Lock' and $2::int=any(pg_blocking_pids(pid)) and query like $3`, [schema, pid, `%${queryFragment}%`]);
+      if (result.rows.length) return result.rows[0].pid;
+    }
+    assert.fail(`Expected a real ${queryFragment} lock waiter behind pid ${pid}`);
+  }
+  for (const action of ["edit", "revoke"]) for (const first of ["reply", "mutation"]) {
+    const prefix = `race-${action}-${first}`;
+    const raceSource = (await command("bob", { action: "send", clientCommandId: `${prefix}-source`, bodyText: "before race" })).message;
+    const reply = { action: "send", clientCommandId: `${prefix}-reply`, replyToMessageId: raceSource.id, bodyText: "race answer" };
+    const mutation = { action, clientCommandId: `${prefix}-mutation`, messageId: raceSource.id, expectedRevision: 1,
+      ...(action === "edit" ? { bodyText: "after race" } : {}) };
+    const lockId = crypto.randomInt(1, 2 ** 30), gate = await pool.connect();
+    let replyPending, mutationPending;
+    try {
+      const { rows: [{ pid }] } = await gate.query("select pg_backend_pid() as pid");
+      await gate.query("select pg_advisory_lock($1::bigint)", [lockId]);
+      await pool.query("insert into quote_race_barriers values($1,$2,$3)", [raceSource.id, first, lockId]);
+      if (first === "reply") replyPending = request("alice", reply); else mutationPending = request("bob", mutation);
+      const firstPid = await blockedBy(pid, first === "reply" ? 'insert into "messages"' : 'update "messages"');
+      if (first === "reply") mutationPending = request("bob", mutation); else replyPending = request("alice", reply);
+      await blockedBy(firstPid, 'from "conversations"');
+    } finally {
+      await gate.query("select pg_advisory_unlock($1::bigint)", [lockId]); gate.release();
+      await Promise.allSettled([replyPending, mutationPending]);
+      await pool.query("delete from quote_race_barriers where source_id=$1", [raceSource.id]);
+    }
+    const [replyResult, mutationResult] = await Promise.all([replyPending, mutationPending]);
+    assert.equal(mutationResult.status, 200, JSON.stringify(mutationResult.body));
+    assert.equal((await pool.query("select count(*)::int as n from collaboration_events where client_command_id=$1", [mutation.clientCommandId])).rows[0].n, 1, "waiting mutation commits exactly once");
+    if (action === "revoke" && first === "mutation") {
+      assert.equal(replyResult.body.code, "COLLAB_REPLY_TARGET_INVALID", "a quote cannot capture a source after its revocation commits");
+      assert.equal(replyResult.body.result, undefined);
+      assert.equal((await pool.query("select count(*)::int as n from command_receipts where client_command_id=$1", [reply.clientCommandId])).rows[0].n, 0, "rejected quote leaves no committed receipt");
+    } else {
+      assert.equal(replyResult.status, 200, JSON.stringify(replyResult.body));
+      assert.equal(replyResult.body.result.message.seq < mutationResult.body.result.message.seq, first === "reply", "server event order follows the observed SQL lock order");
+      const messageId = replyResult.body.result.message.id, cipher = await snapshotRow(messageId);
+      const captured = JSON.parse(messageCrypto.decryptReplySnapshot({ ciphertext: cipher.reply_snapshot_ciphertext,
+        keyVersion: cipher.reply_snapshot_key_version, messageId, conversationId: "group" }).toString("utf8"));
+      assert.equal(captured.bodyText, first === "reply" ? "before race" : "after race");
+      assert.equal(captured.revision, first === "reply" ? 1 : 2, "snapshot revision matches the serialized source body");
+      const visible = (await history("alice", messageId)).replySnapshot;
+      if (action === "revoke") assert.deepEqual(visible, { status: "revoked" }, "committed source revoke masks the already-captured quote");
+      else assert.equal(visible.bodyText, captured.bodyText);
+      assert.equal((await pool.query("select count(*)::int as n from collaboration_events where client_command_id=$1", [reply.clientCommandId])).rows[0].n, 1);
+    }
+  }
   console.log("collaboration reply snapshot integration: signed immutable quotes, receipt replay, body edits and per-recipient visibility passed");
+  console.log("collaboration reply snapshot concurrency: four real PostgreSQL lock-chain orders passed");
 } finally {
   lateStore?.close();
   await app.close(); await closeDb(); await admin.query(`drop schema if exists ${schema} cascade`); await admin.end();

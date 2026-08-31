@@ -40,6 +40,15 @@
 .collaboration-message-status { display: block; margin-block-start: 5px; color: var(--muted); }
 .collaboration-composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-block-start: 12px; }
 .collaboration-composer textarea { min-inline-size: 0; resize: vertical; }
+.collaboration-reply-quote, .collaboration-reply-preview { border-inline-start: 3px solid var(--border); padding-inline-start: 10px; margin-inline: 0; text-align: start; overflow-wrap: anywhere; white-space: pre-wrap; }
+.collaboration-reply-quote { margin-block: 0 8px; color: var(--muted); font-size: .9em; }
+.collaboration-reply-preview { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+.collaboration-reply-preview[hidden] { display: none; }
+.collaboration-reply-label { grid-column: 1; color: var(--muted); }
+.collaboration-reply-content { grid-column: 1; }
+.collaboration-reply-preview [data-action="clear-reply"] { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+.collaboration-message [data-action="reply-message"] { margin-block-start: 6px; }
+.collaboration-composer textarea:focus-visible, .collaboration-reply-preview button:focus-visible, .collaboration-message [data-action="reply-message"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .collaboration-transfer-panel { max-block-size: 32vh; overflow: auto; }
 .collaboration-transfers { display: grid; gap: 8px; }
 .collaboration-transfer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }

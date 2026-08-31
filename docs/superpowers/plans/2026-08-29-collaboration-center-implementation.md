@@ -31,7 +31,7 @@
 | 顺序 | 交付范围 | 当前事实 / 出口 |
 |---|---|---|
 | A | Task 1–12 基础链路复核 | 有实现和专项测试，但真实 HTTP→SQLite→IPC 联调发现缺陷；以下修复进行中，不把基础切片整体标为完成 |
-| B | Task 13 好友和消息交互 | 好友操作、持久社交命令、持久编辑/撤回和持久已读/精确计数已独立双审；引用/@、完整消息操作UI与可见已读仍待接通并验证 |
+| B | Task 13 好友和消息交互 | 好友操作、持久社交命令、持久编辑/撤回、持久已读/精确计数、引用数据与实际回复UI及授权@候选基础已独立双审；键盘@选择、编辑撤回操作UI、完整收件箱与可见已读仍待接通并验证 |
 | C | Task 14 群/Team/频道 | 领域权限、签名命令/发现、PG撤权竞态、本地缓存清理、目录及操作UI已独立双审；既有企业管理入口撤权也已双审提交f50ceca，尚未做生产迁移与企业管理实机点击验收 |
 | D | Task 15–17 加密对象传输 | 等待交接、Team传输退休和同文本独立草稿保护已双审提交81e8adc，原有容器/对象/调度/Renderer链路保留；真实bucket尚未验收 |
 | E | Task 18–19 工作空间交接和 AI | Task18A 本地严格归档预检/隔离导入已独立双审；仍待发送导出适配、加密分享元数据/接收卡、确定性AI工具和发送确认 |
@@ -429,6 +429,10 @@ check ((scope_type = 'organization') = (organization_id is not null));
 
 第4项先完成引用交互闭环，再接键盘@选择及编辑/撤回：沿用timeline稳定DOM，在消息中展示服务端不可变快照/撤回或不可用占位；输入区引用条只持久化目标ID，预览通过授权缓存取得，不作为发送快照。Composer按text/reply ID/mentions整个意图恢复、重试和清稿，迟到getDraft/readMessages/send不能覆盖新输入、切换后的会话或重置后的账号；旧detached动作也必须失效。新增真实Electron DOM测试及三语言/RTL守卫，不把静态源码检查当成交互验收。
 
+2026-08-31 引用回复UI已完成规格→质量独立审查与复审。实际timeline提供安全不可变引用、占位和受当前授权约束的回复按钮；composer按完整意图恢复、保存、同键重试和条件清稿，预览不进入wire。已实证修复同任务输入后立即发送漏存草稿、背景刷新冻结输入、非当前会话撤权后旧稿复活、撤权前迟到open复活，以及新页/跨200条批次已经取得源撤回证据却等待后续读取才屏蔽。屏蔽立即作用于源正文、同源引用和预览；后批失败或旧数据不能复活内容，legacy/引用自身撤回不污染源，普通缓存缺失不推断永久拒绝。授权列表fixture修正为生产一致的完整名单，原草稿/导航/撤权断言全部保留。
+
+最终冻结代码父进程95个协作Node/architecture/registry脚本、14组隔离PostgreSQL集成全部通过；完整能力门禁182项退出0。新Electron守卫覆盖完整意图、旧动作、隐藏/切换/重置、402行跨200+2批次、失败、分页和稳定DOM；真实PG锁链验证引用捕获与编辑/撤回四种先后顺序及只提交一次。门禁仍有bundled OpenCode shape/usage缺失跳过与121行既有Renderer测试宿主未注册IPC诊断，不等于全项目零跳过、真实双客户端或私有bucket验收。这里只关闭引用回复UI切片，键盘@、其他消息操作、Task13整体及后续里程碑仍未完成；未合并或部署。
+
 桌面读模型采用无正文的 account/conversation/source 屏蔽元数据和统一 get/list 占位投影，不为单次撤回扫描解密整个会话。源撤回标记与 cursor 同事务；授权 target-history 的明确 unavailable 也屏蔽旧引用，网络失败不得触发此动作。单条 legacy reply 缺快照或 reply 自身撤回不证明其源不可读，不能屏蔽同源其他有效回复。异步 history 需验证发起时会话代次，防 bootstrap/新 membership/撤权后重建被旧响应污染；仍可见会话 bootstrap 不得遗忘已知不可逆源撤回。显示快照始终不进入 draft/outbox/wire identity。
 
 桌面切片双审无阻断问题；质量审查建议已固化为5项额外回归。两份新guard共37/37通过：有数据的磁盘v13→v14升级保留密文/草稿/cursor，generation回填、INSERT、普通upsert与重复迁移符合预期；page/target两条服务路径的迟到授权拒绝/网络错误跨bootstrap不得清理新代次、改变mask/cursor或ACK。
@@ -628,7 +632,7 @@ check ((scope_type = 'organization') = (organization_id is not null));
 - [ ] 故障矩阵至少覆盖：请求发送前崩溃、数据库 commit 前/后崩溃、ACK 丢失、WS 通知丢失/重复/乱序、sync 本地事务前/后崩溃、cursor ACK 丢失、dispatcher/NOTIFY 关闭、睡眠恢复、对象 complete ACK 丢失。
 - [ ] 每个场景断言最终可见消息数、server seq、client command id、outbox terminal state、两个设备 cursor 和未读数；任何静默缺口或重复气泡使脚本非零退出。
 - [ ] 并发场景覆盖同会话 100 个发送者、交叉会话 fanout、成员撤权竞态、好友并发接受和双设备编辑 CAS。
-- [ ] 引用捕获与原文编辑/撤回使用真实数据库锁屏障验证并发序列化；本阶段单独报告，不将现有顺序执行的快照回归当作该并发验收。
+- [x] 引用捕获与原文编辑/撤回使用真实数据库锁屏障验证并发序列化：`collaboration-reply-snapshot-integration.mjs` 以测试schema内SQL trigger/advisory gate暂停真实消息INSERT/UPDATE，`pg_blocking_pids`证明后继请求被同一会话锁阻挡后才放行。四种先后顺序均验证快照正文/revision、服务端事件顺序、各操作只提交一次；撤回先提交时引用拒绝且无receipt，引用先提交时后续撤回仍屏蔽其正文。2026-08-31父进程两次隔离PG实际通过；不将此当作100发送者负载或整个Task21验收。
 - [ ] 负载脚本输出 p50/p95/p99、DB lock wait、sync lag、realtime backlog；设置首发硬门槛：正常负载 p95 send commit < 500 ms、p95 sync catch-up < 2 s、零序号冲突、零永久丢失。
 - [ ] runbook 写明开关、指标、告警、dispatcher 排障、full resync、KEK 轮换、对象补偿、回滚和“不要手工改 cursor/seq”的禁令。
 - [ ] 在隔离测试数据库和私有测试 bucket 运行；保存机器规格、数据量和结果，不用 mock 结果替代真实报告。
