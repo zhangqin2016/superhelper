@@ -10,6 +10,8 @@ const ACCOUNT_ACCESS_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
 let accessToken = "";
 let accessExpiresAt = 0;
+let accessUserId = "";
+let accountGeneration = 0;
 
 function electronSafeStorage() {
   try {
@@ -77,12 +79,18 @@ function isTransientRefreshFailure(result = {}) {
   return status === 408 || status === 429 || status >= 500;
 }
 
-async function ensureAccessToken() {
-  if (tokenFresh()) return { ok: true, accessToken };
+async function ensureAccessToken({ forceRefresh = false } = {}) {
   const state = readState();
+  const ownerId = String(state.user?.id || "");
+  if (!forceRefresh && tokenFresh() && accessUserId === ownerId) return { ok: true, accessToken };
+  const generation = accountGeneration;
   const refreshToken = unprotectText(state.refreshToken);
   if (!refreshToken) return { ok: false, error: "ACCOUNT_LOGIN_REQUIRED" };
   const refreshed = await serviceClient.refreshAccountAccessToken(refreshToken);
+  const current = readState();
+  if (generation !== accountGeneration || String(current.user?.id || "") !== ownerId || unprotectText(current.refreshToken) !== refreshToken) {
+    return { ok: false, error: "ACCOUNT_SESSION_CHANGED" };
+  }
   if (!refreshed.ok) {
     if (isTransientRefreshFailure(refreshed)) {
       return { ok: false, error: refreshed.error || "SERVICE_REQUEST_FAILED", transient: true };
@@ -91,6 +99,7 @@ async function ensureAccessToken() {
     return refreshed;
   }
   accessToken = refreshed.json?.accessToken || "";
+  accessUserId = ownerId;
   accessExpiresAt = Date.now() + Number(refreshed.json?.expiresIn || 0) * 1000;
   if (!accessToken) return { ok: false, error: "INVALID_ACCOUNT_TOKEN" };
   return { ok: true, accessToken };
@@ -144,10 +153,13 @@ async function sendSmsCode(phone) {
 }
 
 async function loginWithSms({ phone, code } = {}) {
+  const generation = ++accountGeneration;
   const result = await serviceClient.loginWithSms({ phone, code });
+  if (generation !== accountGeneration) return { ok: false, error: "ACCOUNT_SESSION_CHANGED" };
   if (!result.ok) return result;
   const refreshToken = result.json?.refreshToken || "";
   accessToken = result.json?.accessToken || "";
+  accessUserId = String(result.json?.user?.id || "");
   accessExpiresAt = Date.now() + Number(result.json?.expiresIn || 0) * 1000;
   writeState({
     user: result.json?.user || null,
@@ -216,8 +228,8 @@ async function createBillingLink() {
   };
 }
 
-async function accessTokenForService() {
-  return ensureAccessToken();
+async function accessTokenForService(options) {
+  return ensureAccessToken(options);
 }
 
 async function logout() {
@@ -229,7 +241,9 @@ async function logout() {
 }
 
 function clearAccount() {
+  accountGeneration += 1;
   accessToken = "";
+  accessUserId = "";
   accessExpiresAt = 0;
   writeState({});
 }
