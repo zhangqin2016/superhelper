@@ -12,6 +12,8 @@
         "scripts/test-collaboration-sync-engine.mjs",
         "scripts/test-collaboration-service-lifecycle.mjs",
         "scripts/test-collaboration-read-ack.mjs",
+        "scripts/test-collaboration-message-mutations.mjs",
+        "scripts/test-collaboration-mutation-transport.mjs",
         "scripts/test-collaboration-workspace-package.mjs",
         "scripts/test-collaboration-unknown-recovery.mjs",
         "scripts/test-collaboration-history-pagination.mjs",

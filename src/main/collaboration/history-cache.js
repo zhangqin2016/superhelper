@@ -46,7 +46,12 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
     return { hydrated };
   });
   const result = apply();
-  if (completeCheckpoint) store.completeHistoryHydration({ conversationId: conversation });
+  if (completeCheckpoint) {
+    const returnedRevisions = new Map(rows.map((message) => [String(message?.id || ""), Number(message?.revision ?? 1)]));
+    const completedTargets = store.listHistoryTargets({ conversationId: conversation })
+      .filter((target) => Number.isSafeInteger(returnedRevisions.get(target.messageId)) && returnedRevisions.get(target.messageId) >= Number(target.revision));
+    store.completeHistoryHydration({ conversationId: conversation, completedTargets });
+  }
   return result;
 }
 
@@ -58,6 +63,7 @@ function backfillMessageCommandIds(store) {
     const byMessage = new Map();
     for (const item of store.listOutbox()) {
       const intent = store.getOutbox({ outboxId: item.id });
+      if (intent.commandType !== "message.create") continue;
       byMessage.set(JSON.stringify([item.conversationId, intent.messageId]), item.clientCommandId);
     }
     for (const row of rows) {

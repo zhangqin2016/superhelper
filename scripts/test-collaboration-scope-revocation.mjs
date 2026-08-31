@@ -101,7 +101,7 @@ try {
   }
   {
     const { store, keyring } = fixture();
-    for (const conversationId of store.listPendingHistoryHydration()) store.completeHistoryHydration({ conversationId });
+    for (const conversationId of store.listPendingHistoryHydration()) store.completeHistoryHydration({ conversationId, completedTargets: store.listHistoryTargets({ conversationId }) });
     keyring.destroyScopeKey = () => { throw new Error("keyring temporarily unavailable"); };
     const client = { listMessageHistory: async () => [], syncAndAcknowledge: ({ onIncrementalPage }) => onIncrementalPage({ page: page([revoke]), acknowledge: async () => { throw new Error("must not ACK key deletion failure"); } }) };
     const service = createCollaborationService({ openStore: () => ({ ok: true, store }), client, deviceId: "device" });
@@ -130,7 +130,7 @@ try {
   }
   {
     const { store } = fixture();
-    for (const conversationId of store.listPendingHistoryHydration()) store.completeHistoryHydration({ conversationId });
+    for (const conversationId of store.listPendingHistoryHydration()) store.completeHistoryHydration({ conversationId, completedTargets: store.listHistoryTargets({ conversationId }) });
     store.db.run("INSERT INTO history_hydration VALUES ('alice','unknown-channel',1)");
     let acked = false;
     const client = { listMessageHistory: async () => { throw Object.assign(new Error("revoked"), { code: "COLLAB_ORGANIZATION_ACCESS_REVOKED" }); }, syncAndAcknowledge: ({ onIncrementalPage }) => onIncrementalPage({ page: page([]), acknowledge: async () => { acked = true; } }) };

@@ -80,10 +80,12 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
       const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });
       return response?.result;
     },
-    lookupCommandReceipt({ deviceId, clientCommandId, conversationId } = {}) {
+    lookupCommandReceipt({ deviceId, clientCommandId, commandType = "message.create", conversationId, messageId, expectedRevision } = {}) {
       return invoke({
         path: "/api/collaboration/v1/command-receipt",
-        body: { deviceId, clientCommandId, commandType: "message.create", expectedConversationId: conversationId },
+        body: { deviceId, clientCommandId, commandType, expectedConversationId: conversationId,
+          ...(messageId == null ? {} : { expectedMessageId: messageId }),
+          ...(expectedRevision == null ? {} : { expectedRevision }), },
         deviceId,
       });
     },

@@ -309,7 +309,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (!outbox || typeof store.getConversation !== "function") return unavailableService();
         const existing = store.getOutbox?.({ outboxId: clientCommandId });
         if (existing) {
-          if (existing.conversationId !== conversationId || existing.bodyText !== bodyText) return { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false };
+          if ((existing.commandType || "message.create") !== "message.create" || existing.conversationId !== conversationId || existing.bodyText !== bodyText) return { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false };
           return { ok: true, state: existing.state, clientCommandId: existing.clientCommandId };
         }
         const conversation = store.getConversation({ conversationId });
@@ -325,21 +325,39 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       },
       async edit({ conversationId, messageId, clientCommandId, expectedRevision, bodyText } = {}) {
         if (stopped) return stoppedResult();
-        if (!client || !deviceId || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-        const result = await client.submitMessage({ action: "edit", deviceId, conversationId, messageId, clientCommandId, expectedRevision, bodyText });
+        if (!outbox || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        const existing = store.getOutbox?.({ outboxId: clientCommandId });
+        if (existing) {
+          if (existing.commandType !== "message.edit" || existing.conversationId !== conversationId || existing.messageId !== messageId
+            || existing.expectedRevision !== Number(expectedRevision) || existing.bodyText !== String(bodyText ?? "")) return { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false };
+          return { ok: true, state: existing.state, clientCommandId: existing.clientCommandId };
+        }
+        const conversation = store.getConversation?.({ conversationId });
+        if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        const persisted = store.persistMessageMutation({ commandType: "message.edit", conversationId, messageId, clientCommandId, expectedRevision, bodyText,
+          ...(deviceId ? { originDeviceId: deviceId } : {}) });
+        const result = await outbox.submit(persisted.outboxId);
         if (stopped) return stoppedResult();
-        void synchronizeSafely();
         emitState("message");
-        return { ok: true, clientCommandId, state: "confirming", ...(result?.message?.seq ? { seq: result.message.seq } : {}) };
+        return { ok: true, ...result };
       },
       async revoke({ conversationId, messageId, clientCommandId, expectedRevision } = {}) {
         if (stopped) return stoppedResult();
-        if (!client || !deviceId || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-        const result = await client.submitMessage({ action: "revoke", deviceId, conversationId, messageId, clientCommandId, expectedRevision });
+        if (!outbox || !store.getMessage?.({ conversationId, messageId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        const existing = store.getOutbox?.({ outboxId: clientCommandId });
+        if (existing) {
+          if (existing.commandType !== "message.revoke" || existing.conversationId !== conversationId || existing.messageId !== messageId
+            || existing.expectedRevision !== Number(expectedRevision)) return { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false };
+          return { ok: true, state: existing.state, clientCommandId: existing.clientCommandId };
+        }
+        const conversation = store.getConversation?.({ conversationId });
+        if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        const persisted = store.persistMessageMutation({ commandType: "message.revoke", conversationId, messageId, clientCommandId, expectedRevision,
+          ...(deviceId ? { originDeviceId: deviceId } : {}) });
+        const result = await outbox.submit(persisted.outboxId);
         if (stopped) return stoppedResult();
-        void synchronizeSafely();
         emitState("message");
-        return { ok: true, clientCommandId, state: "confirming", ...(result?.message?.seq ? { seq: result.message.seq } : {}) };
+        return { ok: true, ...result };
       },
       async friend(command = {}) {
         if (stopped) return stoppedResult();
@@ -359,8 +377,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       async retry({ outboxId } = {}) {
         if (stopped) return stoppedResult();
         if (!outbox) return unavailableService();
-        const continued = outbox.continue(outboxId);
+        const continued = await outbox.continue(outboxId);
+        if (stopped) return stoppedResult();
         const result = continued.state === "queued" ? { ok: true, ...(await outbox.submit(outboxId)) } : { ok: true, ...continued };
+        if (stopped) return stoppedResult();
         return result;
       },
       async cancel({ outboxId } = {}) {

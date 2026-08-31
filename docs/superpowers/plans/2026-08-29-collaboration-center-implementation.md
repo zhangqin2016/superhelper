@@ -389,6 +389,8 @@ check ((scope_type = 'organization') = (organization_id is not null));
 
 ### 继续实施的依赖顺序（审计确认，未实现项不能当完成）
 
+2026-08-31 持久 mutation 切片已完成规格与质量独立复审：编辑/撤回先加密进入既有 outbox，原设备 typed ACK/receipt 与最低 revision 刷新目标原子结算，原创建序号不变。新增崩溃 queued 恢复、并发 drain、drain→skip/cancel 和 stop→迟到错误回归；最终发送边界仅允许仍为 queued 的命令。父进程最终遍历79个协作 Node 脚本全部通过，真实迁移033/037/038/040的 PostgreSQL signedHTTP→丢ACK→SQLite重启→receipt→history通过，且断言创建/编辑/撤回各只有一个服务端事件。完整166项能力门禁退出0，但执行早于最后的 queued-only 竞态修复；该修复随后由上述79脚本和PG专项复验，不能冒称最终代码已重新跑完整门禁。原 Renderer 测试宿主未注册IPC日志仍存在。持久已读、准确未读统计、引用/@和完整消息UI尚未实现；没有合并或部署。
+
 1. **持久编辑/撤回**：复用现有 outbox 的类型化命令、同键恢复和会话屏障；device-bound receipt确认与最低revision历史刷新检查点原子写入。原消息createSeq和创建command ID不变，不新增乐观气泡；旧历史响应只能清掉自己已验证的刷新目标，不能删除并发新增的更高revision。
 2. **持久已读与准确统计**：独立read checkpoint，不进入消息发送屏障。pendingMax可合并，已经发出的UUID/device/seq冻结；ACK或授权快照确认后仍保留更高pendingMax。扩既有bootstrap/conversations-get准确返回projectionSeq/lastReadSeq/unreadCount/mentionCount，从全部授权消息及对应创建事件统计，而非seq差或最近200条。增量事件按snapshot覆盖序号去重；自己的read事件触发持久conversation hydration精确刷新，再ACK。
 3. **引用/@与消息字段**：引用ID、mention IDs贯穿draft/outbox/重启恢复/完整意图比较；有限引用快照由main从授权目标取得，撤回后显示占位。public Team频道的@候选需与activeRecipients同源（全体active Team成员）；private/group/direct不能放宽成整个Team名册。保留服务端createdAt，不能以本地缓存写入时间推断15分钟编辑/24小时撤回窗口。

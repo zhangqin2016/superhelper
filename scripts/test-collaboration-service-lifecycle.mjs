@@ -256,17 +256,20 @@ for (const method of ["edit", "revoke", "friend", "markRead"]) {
   test(`late ${method} result never emits or starts another sync`, async (t) => {
     const f = fixture(t);
     f.store.persistDraftAndOptimisticMessage({ conversationId: "c1", messageId: "m1", clientCommandId: "key-1", draftId: "composer", draftText: "", bodyText: "body" });
+    f.store.settleOutboxFromSync({ clientCommandId: "key-1", eventId: "event-key-1", messageId: "m1", sequence: 1 });
     const pending = deferred();
     const reached = deferred();
     const emissions = [];
     let syncCalls = 0;
     const submit = async () => { reached.resolve(); return pending.promise; };
-    const service = createCollaborationService({ openStore: () => ({ ok: true, store: f.store }), deviceId: "d", client: {
+    const service = createCollaborationService({ openStore: () => ({ ok: true, store: f.store }), deviceId: "d", transport: { submit }, client: {
       submitMessage: submit, submitFriend: submit, async syncAndAcknowledge() { syncCalls += 1; },
     } });
     service.subscribe((event) => emissions.push(event));
     const run = service[method](method === "friend" ? { action: "request", lilyId: "bob-exact", clientCommandId: "mutation" }
-      : { conversationId: "c1", messageId: "m1", clientCommandId: "mutation", seq: 1 });
+      : method === "edit" ? { conversationId: "c1", messageId: "m1", clientCommandId: "mutation", expectedRevision: 1, bodyText: "edited" }
+        : method === "revoke" ? { conversationId: "c1", messageId: "m1", clientCommandId: "mutation", expectedRevision: 1 }
+          : { conversationId: "c1", messageId: "m1", clientCommandId: "mutation", seq: 1 });
     await reached.promise;
     service.stop();
     const accessesAtStop = f.log.length;
@@ -319,4 +322,20 @@ test("repeated start cannot recover or replay this service's active submitting c
   await run;
   assert.equal(stateAfterSecondStart, "submitting", "restart recovery is only for abandoned prior-instance work");
   assert.equal(recoveryCalls, 1);
+});
+
+test("service retry stopped during uncertain mutation receipt returns stopped without replay", async (t) => {
+  const f = fixture(t);
+  f.store.persistDraftAndOptimisticMessage({ conversationId: "c1", messageId: "m-retry", clientCommandId: "seed-retry", draftId: "composer", draftText: "", bodyText: "body" });
+  f.store.settleOutboxFromSync({ clientCommandId: "seed-retry", eventId: "seed-retry-event", messageId: "m-retry", sequence: 1 });
+  f.store.persistMessageMutation({ commandType: "message.edit", conversationId: "c1", messageId: "m-retry", clientCommandId: "retry-mutation", expectedRevision: 1, bodyText: "after", originDeviceId: "d" });
+  f.store.setOutboxState({ outboxId: "retry-mutation", expectedStates: ["queued"], state: "delivery_unknown" });
+  const pending = deferred(), reached = deferred(); let submits = 0;
+  const service = createCollaborationService({ openStore: () => ({ ok: true, store: f.store }), deviceId: "d", transport: {
+    async submit() { submits += 1; }, async lookupReceipt() { reached.resolve(); return pending.promise; },
+  } });
+  const retry = service.retry({ outboxId: "retry-mutation" });
+  await reached.promise; service.stop(); pending.reject(new Error("late receipt failure"));
+  assert.deepEqual(await retry, stopped);
+  assert.equal(submits, 0, "a stopped service never replays after an uncertain receipt failure");
 });

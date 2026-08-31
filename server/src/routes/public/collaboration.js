@@ -22,17 +22,24 @@ const deviceBody = z.object({ deviceId: z.string().min(1).max(120) });
 const commandBody = deviceBody.extend({ clientCommandId: z.string().min(1).max(200) });
 const errorBody = (error, requestId) => ({ ok: false, code: error?.code || "COLLABORATION_REQUEST_FAILED", retryable: error?.retryable === true, requestId });
 function receiptPayload(value) { if (value && typeof value === "object") return value; try { return JSON.parse(String(value || "{}")); } catch { return {}; } }
-function commandReceiptView(receipt) {
+function commandReceiptView(receipt, event, commandType) {
   if (!receipt) return { state: "unknown", committed: false, deliveryUnknown: true };
   const payload = receiptPayload(receipt.response_payload);
   const result = payload?.result && typeof payload.result === "object" ? payload.result : payload;
   const message = result?.message && typeof result.message === "object" ? result.message : {};
+  const eventPayload = receiptPayload(event?.payload);
+  const eventMessageId = eventPayload?.messageId ?? eventPayload?.message_id ?? message?.id;
+  const revision = Number(eventPayload?.revision ?? message?.revision);
   return {
     state: String(receipt.state || "unknown"),
     committed: String(receipt.state || "") === "completed",
+    commandType,
+    ...(event?.conversation_id ? { conversationId: event.conversation_id } : {}),
     ...(result?.eventId || receipt.result_event_id ? { eventId: result.eventId || receipt.result_event_id } : {}),
-    ...(message?.id ? { messageId: message.id } : {}),
-    ...(Number.isSafeInteger(Number(message?.seq)) ? { sequence: Number(message.seq) } : {}),
+    ...(eventMessageId ? { messageId: eventMessageId } : {}),
+    ...(Number.isSafeInteger(revision) ? { revision } : {}),
+    ...(message?.revoked === true ? { revoked: true } : {}),
+    ...(Number.isSafeInteger(Number(event?.seq)) ? { eventSequence: Number(event.seq), sequence: Number(event.seq) } : {}),
     ...(String(receipt.state || "") === "running" ? { pending: true } : {}),
   };
 }
@@ -64,8 +71,8 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
   post("/api/collaboration/v1/bootstrap", deviceBody, async (request, reply) => { const input = deviceBody.parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.bootstrapCollaboration({ userId: account.userId, deviceId: input.deviceId })) }); });
   post("/api/collaboration/v1/sync", deviceBody.extend({ afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }), async (request, reply) => { const input = z.object({ deviceId: z.string(), afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }).parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.syncAfterCursor({ userId: account.userId, deviceId: input.deviceId, afterCursor: input.afterCursor, limit: input.limit })) }); });
   post("/api/collaboration/v1/ack", commandBody.extend({ cursor: z.number().int().min(0), bootstrapCompletionToken: z.string().optional() }), async (request, reply) => { const input = z.object({ deviceId: z.string(), clientCommandId: z.string(), cursor: z.number().int().min(0), bootstrapCompletionToken: z.string().optional() }).parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.ackDeviceCursor({ userId: account.userId, deviceId: input.deviceId, cursor: input.cursor, bootstrapCompletionToken: input.bootstrapCompletionToken })) }); });
-  post("/api/collaboration/v1/command-receipt", commandBody.extend({ commandType: z.literal("message.create"), expectedConversationId: z.string().min(1).max(200) }), async (request, reply) => {
-    const input = commandBody.extend({ commandType: z.literal("message.create"), expectedConversationId: z.string().min(1).max(200) }).parse(request.body);
+  post("/api/collaboration/v1/command-receipt", commandBody.extend({ commandType: z.enum(["message.create", "message.edit", "message.revoke"]), expectedConversationId: z.string().min(1).max(200), expectedMessageId: z.string().min(1).max(200).optional(), expectedRevision: z.number().int().positive().optional() }), async (request, reply) => {
+    const input = commandBody.extend({ commandType: z.enum(["message.create", "message.edit", "message.revoke"]), expectedConversationId: z.string().min(1).max(200), expectedMessageId: z.string().min(1).max(200).optional(), expectedRevision: z.number().int().positive().optional() }).parse(request.body);
     const account = await accountFor(request, reply, input, database); if (!account) return;
     const response = await database.transaction().execute(async (trx) => {
       // JWT/device signatures are necessary but insufficient: a device id can
@@ -80,13 +87,18 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
       if (!receipt || receipt.state !== "completed" || !receipt.result_event_id) return { state: "unknown", committed: false, deliveryUnknown: true };
       // The event is the sole authority for the conversation. Never use an
       // untrusted request value or stale receipt payload to choose scope.
-      const event = await trx.selectFrom("collaboration_events").select(["conversation_id", "actor_user_id"])
+      const event = await trx.selectFrom("collaboration_events").select(["conversation_id", "actor_user_id", "actor_device_id", "payload", "seq"])
         .where("id", "=", receipt.result_event_id).executeTakeFirst();
       if (!event?.conversation_id) return { state: "unknown", committed: false, deliveryUnknown: true };
       assertCollaborationReceiptIdentity({ event, accountUserId: account.userId, expectedConversationId: input.expectedConversationId });
+      if (event.actor_device_id != null && event.actor_device_id !== account.deviceId) throw receiptAuthorizationError({ code: "COLLAB_RECEIPT_IDENTITY_DENIED", auditReason: "receipt-device-mismatch" });
+      const eventPayload = receiptPayload(event.payload);
+      if (input.commandType !== "message.create" && (eventPayload?.messageId !== input.expectedMessageId || Number(eventPayload?.revision) !== Number(input.expectedRevision) + 1)) {
+        throw receiptAuthorizationError({ code: "COLLAB_RECEIPT_IDENTITY_DENIED", auditReason: "receipt-target-mismatch" });
+      }
       const decision = await authorizeReceipt({ trx, account, input: { conversationId: event.conversation_id }, action: "read" });
       if (!decision?.ok) throw receiptAuthorizationError(decision);
-      return commandReceiptView(receipt);
+      return commandReceiptView(receipt, event, input.commandType);
     });
     return reply.send({ ok: true, requestId: account.requestId, ...response });
   });

@@ -16,13 +16,26 @@ function isStorageId(value) {
 }
 
 function isCompleteReceipt(receipt, item) {
-  return receipt?.committed === true
+  const commandType = item?.commandType || "message.create";
+  const eventSequence = receipt?.eventSequence ?? receipt?.sequence;
+  const identity = commandType === "message.create"
+    ? (receipt?.commandType == null || receipt.commandType === commandType) && (receipt?.conversationId == null || receipt.conversationId === item?.conversationId)
+    : receipt?.commandType === commandType && receipt?.conversationId === item?.conversationId;
+  const common = receipt?.committed === true
     && (receipt.state == null || receipt.state === "completed") && receipt.ok !== false
+    && identity
     && isStorageId(receipt.eventId) && isStorageId(receipt.messageId)
     && isStorageId(item?.clientCommandId) && isStorageId(item?.conversationId)
-    // Local keyring validates the full record key, not just the server ID.
-    && isStorageId(`message:${item.conversationId}:${receipt.messageId}`)
-    && Number.isSafeInteger(receipt.sequence) && receipt.sequence > 0;
+    && Number.isSafeInteger(eventSequence) && eventSequence > 0;
+  if (!common) return false;
+  if (commandType === "message.create") {
+    return isStorageId(`message:${item.conversationId}:${receipt.messageId}`) && Number.isSafeInteger(receipt.sequence) && receipt.sequence > 0;
+  }
+  const matchedMutation = (commandType === "message.edit" || commandType === "message.revoke")
+    && receipt.messageId === item.messageId && Number.isSafeInteger(receipt.revision) && Number.isSafeInteger(item.expectedRevision)
+    && receipt.revision === item.expectedRevision + 1;
+  return matchedMutation && (commandType !== "message.revoke" || receipt.revoked === true)
+    && (commandType !== "message.edit" || receipt.revoked !== true);
 }
 
 function isUnknownReceipt(receipt) {
@@ -30,7 +43,8 @@ function isUnknownReceipt(receipt) {
   // missing, partial, or contradictory receipt is not a replay instruction.
   return receipt?.state === "unknown" && receipt.committed === false && receipt.deliveryUnknown === true
     && receipt.pending !== true && receipt.ok !== false
-    && receipt.eventId == null && receipt.messageId == null && receipt.sequence == null;
+    && receipt.eventId == null && receipt.messageId == null && receipt.sequence == null && receipt.eventSequence == null
+    && receipt.commandType == null && receipt.conversationId == null && receipt.revision == null && receipt.revoked == null;
 }
 
 // Stores may legally return a live object. A transport is asynchronous, so it
@@ -53,8 +67,21 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
   const retryTimers = new Map();
   let stopped = false;
   const stoppedResult = () => ({ ok: false, code: "COLLABORATION_STOPPED" });
-  const deviceMismatch = (item) => typeof deviceId === "string" && deviceId && typeof item?.originDeviceId === "string" && item.originDeviceId !== deviceId;
+  const deviceMismatch = (item) => {
+    const mutation = item?.commandType === "message.edit" || item?.commandType === "message.revoke";
+    if (mutation && (!isStorageId(item?.originDeviceId) || !isStorageId(deviceId))) return true;
+    return typeof deviceId === "string" && deviceId && typeof item?.originDeviceId === "string" && item.originDeviceId !== deviceId;
+  };
   const deviceResult = (item) => ({ state: item?.state || "missing", clientCommandId: item?.clientCommandId, code: "COLLAB_OUTBOX_DEVICE_CHANGED", recovery: "original_device_required" });
+  function settleMutationAcknowledgement(item, acknowledgement) {
+    if (!isCompleteReceipt(acknowledgement, item)) return false;
+    try {
+      store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: acknowledgement.eventId, messageId: acknowledgement.messageId,
+        commandType: item.commandType, conversationId: acknowledgement.conversationId, revision: acknowledgement.revision });
+      onStateChange({ outboxId: item.id, state: "persisted" });
+      return true;
+    } catch { return false; }
+  }
   function scheduleRetry(outboxId, attempt) {
     if (stopped || retryTimers.has(outboxId)) return;
     const exponent = Math.max(0, Number(attempt) - 1);
@@ -78,11 +105,18 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     });
     return task;
   }
-  async function submitNow(outboxId) {
+  async function submitNow(outboxId, { unknownReceiptProof = false } = {}) {
     const item = store.getOutbox({ outboxId });
     if (!item) return { state: "missing" };
+    // A queued drain can have captured this ID while an earlier user action is
+    // changing it. Automatic dispatch owns only a row that is still queued:
+    // confirming/persisted rows never replay, while skip/cancel state changes
+    // cannot be overridden by a stale drain into receipt-first continuation.
+    if (item.state !== "queued") return { state: item.state, clientCommandId: item.clientCommandId };
     if (deviceMismatch(item)) return deviceResult(item);
-    if (item.state === "confirming" || item.state === "persisted") return { state: item.state, clientCommandId: item.clientCommandId };
+    if (!unknownReceiptProof && (item.commandType === "message.edit" || item.commandType === "message.revoke") && item.deliveryUncertain) {
+      return continueUncertainMutation(item);
+    }
     if (item.deliveryConfirmed) {
       // An ACK can survive a crash before the following state transition. It
       // outranks a stale queued/submitting label at the final send boundary.
@@ -103,10 +137,20 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
       return { state: store.getOutbox({ outboxId: item.id })?.state || "missing", clientCommandId: item.clientCommandId };
     }
     try {
-      await transport.submit(transportSnapshot(item));
+      const acknowledgement = await transport.submit(transportSnapshot(item));
       // Shutdown is not proof of delivery or cancellation. Leave submitting
       // durable so the next service can recover this exact idempotency key.
       if (stopped) return stoppedResult();
+      if (item.commandType === "message.edit" || item.commandType === "message.revoke") {
+        // A mutation cannot use a bare HTTP 200 as commit evidence. Keep its
+        // original key confirming until a strict response or typed receipt
+        // binds type/conversation/target/revision to this durable intent.
+        if (settleMutationAcknowledgement(item, acknowledgement)) return { state: "persisted", clientCommandId: item.clientCommandId };
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
+        if (typeof transport.lookupReceipt === "function") scheduleRetry(item.id, item.attempts + 1);
+        onStateChange({ outboxId: item.id, state: "confirming" });
+        return { state: "confirming", clientCommandId: item.clientCommandId };
+      }
       store.confirmOutboxDelivery?.({ outboxId: item.id });
       store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
       onStateChange({ outboxId: item.id, state: "confirming" });
@@ -157,7 +201,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     if (deviceMismatch(item)) return deviceResult(item);
     let receipt;
     try {
-      receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, conversationId: item.conversationId });
+      receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, commandType: item.commandType, conversationId: item.conversationId, messageId: item.messageId, expectedRevision: item.expectedRevision });
     } catch {
       // Receipt failure leaves no positive evidence and cannot authorize replay.
     }
@@ -166,9 +210,10 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     if (isCompleteReceipt(receipt, item)) {
       // Commit evidence must survive even if encrypting the display projection
       // fails. A later stale/unknown receipt can never authorize replay again.
-      store.confirmOutboxDelivery?.({ outboxId: item.id });
+      if (item.commandType === "message.create") store.confirmOutboxDelivery?.({ outboxId: item.id });
       try {
-        store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence });
+        store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
+          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
       } catch {
         projectionFailed = true; // SQLite retained the original command; retry its receipt, never its send.
       }
@@ -196,8 +241,16 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
       try {
         // Keep confirming DURABLY throughout replay. A crash, network error,
         // or cancellation must never turn unknown delivery into "not sent".
-        await transport.submit(transportSnapshot(current));
+        const acknowledgement = await transport.submit(transportSnapshot(current));
         if (stopped) return stoppedResult();
+        if (current.commandType === "message.edit" || current.commandType === "message.revoke") {
+          if (settleMutationAcknowledgement(current, acknowledgement)) return;
+          // A malformed/negative replay response is not a commit proof. Keep
+          // the exact durable key confirming and let the next receipt-first
+          // pass decide whether replay remains authorized.
+          scheduleRetry(outboxId, retry.attempts + 1);
+          return;
+        }
         store.confirmOutboxDelivery?.({ outboxId });
         onStateChange({ outboxId, state: "confirming" });
         return;
@@ -212,6 +265,29 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     }
     scheduleRetry(outboxId, retry.attempts + 1);
   }
+  async function continueUncertainMutation(item) {
+    if (deviceMismatch(item)) return deviceResult(item);
+    if (typeof transport.lookupReceipt !== "function") return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" };
+    let receipt;
+    try {
+      receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, commandType: item.commandType, conversationId: item.conversationId, messageId: item.messageId, expectedRevision: item.expectedRevision });
+    } catch {
+      if (stopped) return stoppedResult();
+      return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" };
+    }
+    if (stopped) return stoppedResult();
+    if (isCompleteReceipt(receipt, item)) {
+      try {
+        store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
+          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+        onStateChange({ outboxId: item.id, state: "persisted" });
+        return { state: "persisted", clientCommandId: item.clientCommandId };
+      } catch { return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" }; }
+    }
+    if (!isUnknownReceipt(receipt)) return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" };
+    if (!store.setOutboxState({ outboxId: item.id, expectedStates: [item.state], state: "queued" })) return { state: store.getOutbox({ outboxId: item.id })?.state || "missing" };
+    return submitNow(item.id, { unknownReceiptProof: true });
+  }
   return {
     submit,
     async reconcilePending() {
@@ -225,6 +301,9 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     continue(outboxId) {
       if (stopped) return stoppedResult();
       const item = store.getOutbox({ outboxId });
+      if (item && (item.commandType === "message.edit" || item.commandType === "message.revoke") && item.deliveryUncertain) {
+        return enqueue(item.conversationId, () => continueUncertainMutation(item));
+      }
       if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["paused", "delivery_unknown"], state: "queued" })) return { state: item?.state || "missing" };
       return { state: "queued", clientCommandId: item.clientCommandId };
     },
@@ -269,7 +348,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         }
         let receipt;
         try {
-          receipt = await transport.lookupReceipt({ clientCommandId: current.clientCommandId, conversationId: current.conversationId });
+          receipt = await transport.lookupReceipt({ clientCommandId: current.clientCommandId, commandType: current.commandType, conversationId: current.conversationId, messageId: current.messageId, expectedRevision: current.expectedRevision });
         } catch {
           if (stopped) return stoppedResult();
           // Receipt retrieval has the same ambiguity as the original send.
@@ -280,9 +359,10 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         }
         if (stopped) return stoppedResult();
         if (isCompleteReceipt(receipt, current)) {
-          store.confirmOutboxDelivery?.({ outboxId: current.id });
+          if (current.commandType === "message.create") store.confirmOutboxDelivery?.({ outboxId: current.id });
           try {
-            store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence });
+            store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
+              commandType: current.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
             return { state: "persisted", canRevoke: true };
           } catch {
             // A local projection failure must also leave an explicit recovery

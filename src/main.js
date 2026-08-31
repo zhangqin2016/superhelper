@@ -17,6 +17,7 @@ const { wireExternalLinks } = require("./main/window-links");
 const { wireContextMenu } = require("./main/window-context-menu");
 const { registerBlobScheme, installBlobProtocol } = require("./main/blob-protocol");
 const { registerLocalMediaScheme, installLocalMediaProtocol } = require("./main/local-media-protocol");
+const { createCollaborationOutboxTransport } = require("./main/collaboration/message-outbox-transport");
 
 // Custom scheme privileges must be declared before app `ready`; the request
 // handler itself is installed in whenReady() below.
@@ -274,19 +275,7 @@ app.whenReady().then(async () => {
           },
           realtimeEnabled: policy?.realtime !== false,
           deviceId,
-          transport: {
-            submit: (item) => client.submitMessage({
-              action: "send",
-              deviceId,
-              conversationId: item.conversationId,
-              clientCommandId: item.clientCommandId,
-              bodyText: item.bodyText,
-              ...(Array.isArray(item.attachmentIds) && item.attachmentIds.length ? { attachmentIds: item.attachmentIds, attachmentPurpose: item.attachmentPurpose } : {}),
-            }),
-            lookupReceipt: ({ clientCommandId, conversationId }) => client.lookupCommandReceipt({
-              deviceId, clientCommandId, conversationId,
-            }),
-          },
+          transport: createCollaborationOutboxTransport({ client, deviceId }),
           realtimeOptions: { syncArgs: { deviceId } },
         });
       },

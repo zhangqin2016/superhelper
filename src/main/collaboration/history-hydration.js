@@ -20,10 +20,36 @@ function listHistoryTargets(store, conversationId) {
   return store.db.all(`SELECT message_id AS messageId, revision FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ? ORDER BY message_id`, store.accountId, conversationId);
 }
 
-function completeHistoryHydration(store, conversationId) {
+/** Preserve only existing, bounded pending targets across a bootstrap reset. */
+function capturePendingHistoryTargets(store) {
+  return store.db.all(`SELECT conversation_id AS conversationId, message_id AS messageId, revision
+    FROM history_hydration_targets WHERE account_id = ? ORDER BY conversation_id, message_id`, store.accountId);
+}
+
+function restorePendingHistoryTargets(store, targets, visibleConversationIds) {
+  const visible = new Set(visibleConversationIds);
+  for (const target of Array.isArray(targets) ? targets : []) {
+    if (!visible.has(target.conversationId)) continue;
+    store.db.run(`INSERT OR IGNORE INTO history_hydration (account_id, conversation_id, created_at) VALUES (?, ?, ?)`, store.accountId, target.conversationId, store.now());
+    store.db.run(`INSERT INTO history_hydration_targets (account_id, conversation_id, message_id, revision) VALUES (?, ?, ?, ?)
+      ON CONFLICT(account_id, conversation_id, message_id) DO UPDATE SET revision = MAX(revision, excluded.revision)`, store.accountId, target.conversationId, target.messageId, target.revision);
+  }
+}
+
+function completeHistoryHydration(store, conversationId, completedTargets = []) {
   return store.db.transaction(() => {
-    store.db.run(`DELETE FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
-    return { completed: Number(store.db.run(`DELETE FROM history_hydration WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId).changes || 0) };
+    for (const target of Array.isArray(completedTargets) ? completedTargets : []) {
+      if (!target?.messageId || !Number.isSafeInteger(Number(target.revision))) continue;
+      // A receipt may have raised this target while an older history request
+      // was in flight. Delete only the exact generation this request proved.
+      store.db.run(`DELETE FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ? AND message_id = ? AND revision <= ?`,
+        store.accountId, conversationId, target.messageId, Number(target.revision));
+    }
+    const remaining = Number(store.db.get(`SELECT COUNT(*) AS count FROM history_hydration_targets WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId)?.count || 0);
+    const completed = remaining === 0
+      ? Number(store.db.run(`DELETE FROM history_hydration WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId).changes || 0)
+      : 0;
+    return { completed };
   })();
 }
 
@@ -57,9 +83,9 @@ async function hydratePendingConversation({ store, client, deviceId, conversatio
       if (batch) for (const id of unavailable) store.db.run(`DELETE FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, store.accountId, conversationId, id);
     })();
   }
-  // The serialized service lane prevents new targets arriving during these
-  // requests. Retaining all targets until here makes partial-batch crashes safe.
-  store.completeHistoryHydration({ conversationId });
+  // Completion is generation-conditional: a newer receipt can arrive while a
+  // previously issued authorized history request is still in flight.
+  completeHistoryHydration(store, conversationId, targets);
 }
 
-module.exports = { queueHistoryTarget, listHistoryTargets, completeHistoryHydration, hydratePendingConversation };
+module.exports = { queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration, hydratePendingConversation };

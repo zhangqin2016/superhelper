@@ -4,27 +4,20 @@ const { collaborationDbPath } = require("../config");
 const { openDatabase } = require("../store/sqlite-db");
 const { COLLABORATION_MIGRATIONS } = require("./schema");
 const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./history-cache");
-const { queueHistoryTarget, listHistoryTargets, completeHistoryHydration } = require("./history-hydration");
+const { queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration } = require("./history-hydration");
 const access = require("./access-revocation");
 const { queueConversationHydration } = require("./conversation-hydration");
 const directory = require("./directory-projection");
 const { validateAttachmentPayload, optimisticAttachmentProjection, attachmentProjectionFromOutboxIntent } = require("./message-attachment-payload");
+const mutationOutbox = require("./message-mutation-outbox");
+const { projectedScopeId } = require("./projection-scope");
+const { parseEncryptedPayload } = require("./encrypted-payload");
+const { settleCreatedSyncEvent } = require("./outbox-sync-settlement");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
   if (!id || id.length > 512) throw new Error(`collaboration store: ${label} is required`);
   return id;
-}
-
-function parseEnvelope(value) {
-  try { return JSON.parse(value); } catch { throw new Error("collaboration store: encrypted payload is invalid"); }
-}
-
-function projectedScopeId(value, fallback = "personal") {
-  const scopeType = String(value?.scopeType ?? value?.scope_type ?? "");
-  const organizationId = String(value?.organizationId ?? value?.organization_id ?? "").trim();
-  if (scopeType === "organization" && organizationId) return `team:${organizationId}`;
-  return String(value?.scopeId ?? value?.scope_id ?? fallback).trim() || fallback;
 }
 
 class CollaborationStore {
@@ -53,7 +46,7 @@ class CollaborationStore {
     return JSON.stringify(this.keyring.encrypt({ accountId: this.accountId, scopeId, recordId, plaintext: JSON.stringify(value) }));
   }
   _decrypt({ scopeId, recordId, value }) {
-    return JSON.parse(this.keyring.decrypt({ accountId: this.accountId, scopeId, recordId, envelope: parseEnvelope(value) }));
+    return JSON.parse(this.keyring.decrypt({ accountId: this.accountId, scopeId, recordId, envelope: parseEncryptedPayload(value) }));
   }
 
   persistDraftAndOptimisticMessage({ conversationId, draftId, draftText, messageId, clientCommandId, bodyText, scopeId = "personal", attachmentIds = [], attachmentPurpose = null, originDeviceId = null, preserveDraft = false, afterCommit } = {}) {
@@ -93,6 +86,8 @@ class CollaborationStore {
     if (typeof afterCommit === "function") afterCommit({ ...result, clientCommandId: command });
     return result;
   }
+
+  persistMessageMutation(input = {}) { return mutationOutbox.persistMessageMutation(this, input); }
 
   getDraft({ conversationId, draftId }) {
     const conversation = requireId(conversationId, "conversation id");
@@ -151,7 +146,7 @@ class CollaborationStore {
       attempts: Number(row.attempts),
       deliveryConfirmed: Boolean(row.delivery_confirmed),
       deliveryUncertain: Boolean(row.delivery_uncertain),
-      ...this._decrypt({ scopeId: row.scope_id, recordId: this._outboxRecord(id), value: row.payload_envelope_json }),
+      ...mutationOutbox.normalizeOutboxIntent(this._decrypt({ scopeId: row.scope_id, recordId: this._outboxRecord(id), value: row.payload_envelope_json })),
     };
   }
 
@@ -203,10 +198,13 @@ class CollaborationStore {
     return row?.id || null;
   }
 
-  settleOutboxFromSync({ clientCommandId, eventId, messageId = null, sequence = null }) {
+  settleOutboxFromSync({ clientCommandId, eventId, messageId = null, sequence = null, commandType = "message.create", conversationId = null, revision = null }) {
     const command = requireId(clientCommandId, "client command id");
     const event = requireId(eventId, "event id");
     const settle = this.db.transaction(() => {
+      if (mutationOutbox.MUTATIONS.has(commandType)) {
+        return mutationOutbox.settleMutationReceipt(this, { clientCommandId: command, eventId: event, commandType, conversationId, messageId, revision });
+      }
       const pending = this.db.get(
         `SELECT 1 AS present FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled', 'paused', 'failed')`,
         this.accountId, command,
@@ -242,6 +240,7 @@ class CollaborationStore {
     );
     for (const outbox of rows) {
       const intent = this._decrypt({ scopeId: outbox.scope_id, recordId: this._outboxRecord(outbox.id), value: outbox.payload_envelope_json });
+      if (mutationOutbox.normalizeOutboxIntent(intent).commandType !== "message.create") continue;
       const optimisticId = String(intent.messageId || "");
       const serverMessageId = String((event?.payload?.messageId ?? event?.payload?.message_id ?? optimisticId) || "");
       if (optimisticId && serverMessageId) {
@@ -302,12 +301,7 @@ class CollaborationStore {
           this.accountId, id, row.conversationId == null ? null : String(row.conversationId), Number.isSafeInteger(row.seq) ? row.seq : null,
           requireId(row.type, "event type"), JSON.stringify(row.payload ?? {}), this.now(),
         );
-        const command = row?.clientCommandId ?? row?.client_command_id ?? row?.payload?.clientCommandId ?? row?.payload?.client_command_id;
-        if (command && row.type === "message.created" && (row.actorUserId ?? row.actor_user_id) === this.accountId) {
-          const intent = this.getOutbox({ outboxId: String(command) });
-          if (intent && intent.conversationId !== (row.conversationId ?? row.conversation_id)) throw new Error("collaboration store: command conversation mismatch");
-          this._settleOptimisticCommand({ clientCommandId: String(command), event: row });
-        }
+        settleCreatedSyncEvent(this, row);
         appliedEventIds.push(id);
       }
       for (const conversationId of hydrationIds) {
@@ -330,9 +324,8 @@ class CollaborationStore {
     return this.db.all(`SELECT conversation_id FROM history_hydration WHERE account_id = ? ORDER BY created_at, conversation_id`, this.accountId)
       .map((row) => row.conversation_id);
   }
-
-  completeHistoryHydration({ conversationId } = {}) {
-    return completeHistoryHydration(this, requireId(conversationId, "history hydration conversation id"));
+  completeHistoryHydration({ conversationId, completedTargets = [] } = {}) {
+    return completeHistoryHydration(this, requireId(conversationId, "history hydration conversation id"), completedTargets);
   }
 
   listHistoryTargets({ conversationId }) { return listHistoryTargets(this, conversationId); }
@@ -346,6 +339,7 @@ class CollaborationStore {
     const historyRows = (Array.isArray(history) ? history : []).filter((message) => rows.some((row) => row.id === (message.conversationId ?? message.conversation_id)));
     access.flushRevokedKeys(this);
     const replace = this.db.transaction(() => {
+      const pendingHistoryTargets = capturePendingHistoryTargets(this);
       access.prepareBootstrapAccess(this, rows, teams, projectedScopeId);
       const confirmingBubbles = this.db.all(
         `SELECT * FROM outbox WHERE account_id = ? AND state IN ('queued', 'submitting', 'paused', 'failed', 'confirming', 'cancellation_requested', 'delivery_unknown') ORDER BY created_at, id`,
@@ -392,6 +386,7 @@ class CollaborationStore {
         );
       }
       for (const { outbox, intent } of confirmingBubbles) {
+        if (mutationOutbox.normalizeOutboxIntent(intent).commandType !== "message.create") continue;
         const messageId = String(intent.messageId || "");
         if (!messageId) continue;
         const attached = attachmentProjectionFromOutboxIntent(intent);
@@ -405,6 +400,7 @@ class CollaborationStore {
           this.now(), this.now(),
         );
       }
+      restorePendingHistoryTargets(this, pendingHistoryTargets, rows.map((row) => row.id));
       this.db.run(
         `INSERT INTO sync_state (account_id, cursor, watermark, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(account_id) DO UPDATE SET cursor = excluded.cursor, watermark = excluded.watermark, updated_at = excluded.updated_at`,

@@ -42,7 +42,7 @@ try {
     create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);
     create table user_devices(user_id text,device_id text,status text,primary key(user_id,device_id));
     create table command_receipts(actor_device_id text,command_type text,client_command_id text,state text,result_event_id text,response_payload jsonb);
-    create table collaboration_events(id text primary key,conversation_id text,actor_user_id text);
+    create table collaboration_events(id text primary key,conversation_id text,actor_user_id text,actor_device_id text,payload jsonb,seq bigint);
     create table conversations(id text primary key,scope_type text,kind text,direct_user_low_id text,direct_user_high_id text,organization_id text);
     create table conversation_members(conversation_id text,user_id text,status text,role text,joined_seq bigint default 0);
     create table friendships(user_low_id text,user_high_id text,status text);
@@ -54,8 +54,13 @@ try {
     insert into conversations values('conv','personal','direct','alice','bob',null);
     insert into conversation_members values('conv','alice','active','member',0),('conv','bob','active','member',0);
     insert into friendships values('alice','bob','active');
-    insert into collaboration_events values('evt','conv','alice');
-    insert into command_receipts values('device','message.create','send','completed','evt','{"message":{"id":"message","seq":1},"eventId":"evt"}');
+    insert into collaboration_events values('evt','conv','alice','device','{"messageId":"message"}',1),
+      ('evt-edit','conv','alice','device','{"messageId":"message","revision":2}',2),
+      ('evt-revoke','conv','alice','device','{"messageId":"message","revision":3}',3);
+    insert into command_receipts values
+      ('device','message.create','send','completed','evt','{"message":{"id":"message","seq":1},"eventId":"evt"}'),
+      ('device','message.edit','edit','completed','evt-edit','{"result":{"message":{"id":"message","conversationId":"conv","seq":1,"revision":2}},"eventId":"evt-edit"}'),
+      ('device','message.revoke','revoke','completed','evt-revoke','{"result":{"message":{"id":"message","conversationId":"conv","seq":1,"revision":3,"revoked":true}},"eventId":"evt-revoke"}');
   `);
   await pool.query("insert into device_public_keys values($1,$2)", ["device", key.publicKey.export({ type: "spki", format: "pem" })]);
   await pool.query("create table users(id text primary key); insert into users values('alice'),('bob'); alter table conversations add column status text default 'active'; alter table conversations add column visibility text");
@@ -66,6 +71,11 @@ try {
   } });
   const own = await receipt("alice");
   assert.equal(own.status, 200); assert.equal(own.body.committed, true); assert.equal(own.body.messageId, "message");
+  const edit = await receipt("alice", { clientCommandId: "edit", commandType: "message.edit", expectedMessageId: "message", expectedRevision: 1 });
+  assert.deepEqual({ type: edit.body.commandType, messageId: edit.body.messageId, revision: edit.body.revision, eventSequence: edit.body.eventSequence }, { type: "message.edit", messageId: "message", revision: 2, eventSequence: 2 }, "typed edit receipt binds the mutation target and revision to its device event");
+  const revoke = await receipt("alice", { clientCommandId: "revoke", commandType: "message.revoke", expectedMessageId: "message", expectedRevision: 2 });
+  assert.equal(revoke.body.revoked, true, "typed revoke receipt carries positive tombstone evidence");
+  assert.equal((await receipt("alice", { clientCommandId: "edit", commandType: "message.edit", expectedMessageId: "new", expectedRevision: 1 })).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED", "a target mismatch is never exposed as a usable mutation receipt");
   assert.equal((await receipt("bob")).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED", "same physical device/new account cannot read old actor receipt");
   assert.equal((await receipt("alice", { expectedConversationId: "different" })).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED");
   assert.equal((await receipt("alice", {}, { validSignature: false })).status, 401);
