@@ -159,7 +159,7 @@ for (const rejects of [false, true]) {
       assert.equal(recovered.getOutbox({ outboxId: "key-1" }).state, "submitting");
       recovered.recoverAbandonedSubmittingOutbox();
       const row = recovered.getOutbox({ outboxId: "key-1" });
-      assert.equal(row.state, "queued", "existing restart recovery replays the same idempotency key");
+      assert.equal(row.state, "confirming", "restart retains same-key receipt-first recovery without blind replay");
       assert.equal(row.clientCommandId, "key-1");
     } finally { recovered.close(); }
   });
@@ -237,6 +237,19 @@ test("a pending open cannot read cached messages after a late offline response",
   pending.reject(Object.assign(new Error("offline"), { code: "COLLAB_NETWORK_UNAVAILABLE" }));
   assert.deepEqual(await run, stopped);
   assert.equal(f.log.length, accessesAtStop);
+});
+
+test("service startup queries a crashed dispatch receipt before considering queued sends", async (t) => {
+  const f = fixture(t), calls = [];
+  f.store.persistDraftAndOptimisticMessage({ conversationId: "c1", messageId: "local", clientCommandId: "key", draftId: "composer", draftText: "", bodyText: "original" });
+  f.store.setOutboxState({ outboxId: "key", expectedStates: ["queued"], state: "submitting" });
+  const service = createCollaborationService({ openStore: () => ({ ok: true, store: f.store }), transport: {
+    async submit() { calls.push("send"); }, async lookupReceipt() { calls.push("receipt"); return { committed: true, eventId: "e", messageId: "server", sequence: 1 }; },
+  }, realtimeEnabled: false });
+  service.start(); await tick(); await tick();
+  assert.deepEqual(calls, ["receipt"]);
+  assert.equal(f.store.getOutbox({ outboxId: "key" }).state, "persisted");
+  service.stop();
 });
 
 for (const method of ["edit", "revoke", "friend", "markRead"]) {

@@ -124,8 +124,9 @@ store.setOutboxState({ outboxId: "command-cancel-no-receipt", expectedStates: ["
 const noReceiptCancel = createCollaborationOutbox({ store, transport: { async submit() {} } });
 assert.deepEqual(await noReceiptCancel.cancel("command-cancel-no-receipt"), { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true }, "without a receipt endpoint cancellation is explicitly recoverable rather than falsely cancelled");
 assert.equal(store.getOutbox({ outboxId: "command-cancel-no-receipt" }).state, "delivery_unknown");
+assert.equal(noReceiptCancel.skip("command-cancel-no-receipt").state, "delivery_unknown", "skip cannot assert cancellation when delivery has not been resolved");
 assert.equal(noReceiptCancel.continue("command-cancel-no-receipt").state, "queued", "delivery-unknown recovery retries the original idempotency key");
-assert.equal(noReceiptCancel.skip("command-cancel-no-receipt").state, "cancelled", "a user may explicitly discard a delivery-unknown draft without claiming server cancellation");
+assert.equal(noReceiptCancel.skip("command-cancel-no-receipt").state, "delivery_unknown", "explicit continuation cannot erase the original uncertainty or authorize false cancellation");
 
 store.persistDraftAndOptimisticMessage({ conversationId: "conv-cancel-race", draftId: "draft-cancel-race", draftText: "draft", messageId: "message-cancel-race", clientCommandId: "command-cancel-race", bodyText: "race" });
 let releaseSubmitting;
@@ -143,9 +144,10 @@ const cancelling = serializedCancel.cancel("command-cancel-race");
 await new Promise((resolve) => setImmediate(resolve));
 assert.deepEqual(raceOrder, ["submit:start"], "cancel is serialized behind an in-flight same-conversation submit");
 releaseSubmitting();
-await Promise.all([submitting, cancelling]);
-assert.deepEqual(raceOrder, ["submit:start", "submit:end", "receipt"], "cancellation checks the original receipt after the submit reaches a durable confirmation state");
-assert.equal(store.getOutbox({ outboxId: "command-cancel-race" }).state, "delivery_unknown", "an absent receipt after a race remains explicitly delivery-unknown");
+const [, cancelledAfterAck] = await Promise.all([submitting, cancelling]);
+assert.deepEqual(raceOrder, ["submit:start", "submit:end"], "a successful ACK is already positive delivery evidence and cancellation must not downgrade it");
+assert.deepEqual(cancelledAfterAck, { state: "confirming", canRevoke: true }, "the committed message can only be revoked, not falsely cancelled");
+assert.equal(store.getOutbox({ outboxId: "command-cancel-race" }).state, "confirming", "the ACK-backed message still awaits its authoritative history projection");
 
 store.persistDraftAndOptimisticMessage({ conversationId: "conv-auto", draftId: "draft-auto", draftText: "draft", messageId: "message-auto", clientCommandId: "command-auto", bodyText: "automatic retry" });
 const retryTimers = [];

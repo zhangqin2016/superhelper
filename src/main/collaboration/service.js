@@ -281,7 +281,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         const recovered = store.recoverAbandonedSubmittingOutbox?.();
         if (recovered?.recovered) emitState("outbox");
         if (stopped) return stoppedResult();
-        void Promise.resolve(outbox?.drainQueued?.()).catch(() => undefined);
+        void Promise.resolve(outbox?.reconcilePending?.()).then(() => outbox?.drainQueued?.()).catch(() => undefined);
         // The serialized synchronize lane first recovers any crash-surviving
         // hydration checkpoint before issuing this initial page or any ACK.
         if (client) void synchronizeSafely();

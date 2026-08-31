@@ -86,6 +86,15 @@ const COLLABORATION_MIGRATIONS = [
   // keeps cancelled optimistic aliases out of the visible history window.
   (db) => db.exec(`ALTER TABLE messages ADD COLUMN client_command_id TEXT;
     CREATE INDEX messages_command_idx ON messages(account_id, client_command_id);`),
+  // v7 — queue state is not evidence of non-delivery: manual continuation and
+  // crash recovery both return previously dispatched work to queued. Legacy
+  // unresolved rows cannot prove they were never dispatched, so migrate them
+  // conservatively; newly admitted, never-dispatched work keeps the zero default.
+  (db) => db.exec(`
+    ALTER TABLE outbox ADD COLUMN delivery_uncertain INTEGER NOT NULL DEFAULT 0;
+    UPDATE outbox SET delivery_uncertain = 1
+      WHERE delivery_confirmed = 0 AND state NOT IN ('persisted', 'cancelled');
+  `),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

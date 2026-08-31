@@ -117,7 +117,9 @@ class CollaborationStore {
   /** A process can exit between network dispatch and durable confirmation. */
   recoverAbandonedSubmittingOutbox() {
     const recovered = this.db.run(
-      `UPDATE outbox SET state = 'queued', updated_at = ? WHERE account_id = ? AND state = 'submitting'`,
+      `UPDATE outbox SET state = 'confirming',
+        delivery_uncertain = CASE WHEN delivery_confirmed = 1 THEN 0 ELSE 1 END,
+        updated_at = ? WHERE account_id = ? AND state = 'submitting'`,
       this.now(), this.accountId,
     );
     return { recovered: Number(recovered.changes || 0) };
@@ -134,40 +136,48 @@ class CollaborationStore {
       scopeId: row.scope_id,
       state: row.state,
       attempts: Number(row.attempts),
+      deliveryConfirmed: Boolean(row.delivery_confirmed),
+      deliveryUncertain: Boolean(row.delivery_uncertain),
       ...this._decrypt({ scopeId: row.scope_id, recordId: this._outboxRecord(id), value: row.payload_envelope_json }),
     };
   }
 
-  setOutboxState({ outboxId, expectedStates, state }) {
+  setOutboxState({ outboxId, expectedStates, state, deliveryUncertain }) {
     const id = requireId(outboxId, "outbox id");
     const next = requireId(state, "outbox state");
     const expected = Array.isArray(expectedStates) ? expectedStates.map((value) => requireId(value, "outbox state")) : [];
     if (expected.length === 0) throw new Error("collaboration store: expected outbox states are required");
     const placeholders = expected.map(() => "?").join(", ");
+    const uncertainty = next === "persisted" ? 0 : typeof deliveryUncertain === "boolean" ? Number(deliveryUncertain)
+      : ["submitting", "confirming", "cancellation_requested", "delivery_unknown"].includes(next) ? 1 : null;
     const result = this.db.run(
-      `UPDATE outbox SET state = ?, updated_at = ? WHERE account_id = ? AND id = ? AND state IN (${placeholders})`,
-      next, this.now(), this.accountId, id, ...expected,
+      `UPDATE outbox SET state = ?, delivery_uncertain = CASE WHEN delivery_confirmed = 1 THEN 0 ELSE COALESCE(?, delivery_uncertain) END,
+        delivery_confirmed = CASE WHEN ? = 'persisted' THEN 1 ELSE delivery_confirmed END, updated_at = ?
+        WHERE account_id = ? AND id = ? AND state IN (${placeholders})
+        AND (? != 'cancelled' OR (delivery_uncertain = 0 AND delivery_confirmed = 0))`,
+      next, uncertainty, next, this.now(), this.accountId, id, ...expected, next,
     );
     return result.changes === 1;
   }
 
-  recordOutboxRetry({ outboxId, maxAttempts }) {
+  recordOutboxRetry({ outboxId, maxAttempts, uncertainDelivery = false }) {
     const id = requireId(outboxId, "outbox id");
     const max = Number(maxAttempts);
     if (!Number.isSafeInteger(max) || max < 1) throw new Error("collaboration store: retry limit is invalid");
+    const expectedState = uncertainDelivery ? "confirming" : "submitting";
     const retry = this.db.transaction(() => {
-      const row = this.db.get(`SELECT attempts FROM outbox WHERE account_id = ? AND id = ? AND state = 'submitting'`, this.accountId, id);
+      const row = this.db.get(`SELECT attempts FROM outbox WHERE account_id = ? AND id = ? AND state = ?`, this.accountId, id, expectedState);
       if (!row) return null;
       const attempts = Number(row.attempts) + 1;
-      const state = attempts >= max ? "paused" : "queued";
-      this.db.run(`UPDATE outbox SET attempts = ?, state = ?, updated_at = ? WHERE account_id = ? AND id = ? AND state = 'submitting'`, attempts, state, this.now(), this.accountId, id);
+      const state = uncertainDelivery ? (attempts >= max ? "delivery_unknown" : "confirming") : (attempts >= max ? "paused" : "queued");
+      this.db.run(`UPDATE outbox SET attempts = ?, state = ?, delivery_uncertain = ?, updated_at = ? WHERE account_id = ? AND id = ? AND state = ?`, attempts, state, Number(uncertainDelivery), this.now(), this.accountId, id, expectedState);
       return { state, attempts };
     });
     return retry();
   }
 
   confirmOutboxDelivery({ outboxId }) {
-    this.db.run(`UPDATE outbox SET delivery_confirmed = 1 WHERE account_id = ? AND id = ?`, this.accountId, requireId(outboxId, "outbox id"));
+    this.db.run(`UPDATE outbox SET delivery_confirmed = 1, delivery_uncertain = 0 WHERE account_id = ? AND id = ?`, this.accountId, requireId(outboxId, "outbox id"));
   }
 
   findOutboxPredecessor({ outboxId }) {
@@ -185,7 +195,7 @@ class CollaborationStore {
     const event = requireId(eventId, "event id");
     const settle = this.db.transaction(() => {
       const pending = this.db.get(
-        `SELECT 1 AS present FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled')`,
+        `SELECT 1 AS present FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled', 'paused', 'failed')`,
         this.accountId, command,
       );
       if (pending) this._settleOptimisticCommand({ clientCommandId: command, event: { seq: sequence, payload: { messageId } } });
@@ -214,7 +224,7 @@ class CollaborationStore {
 
   _settleOptimisticCommand({ clientCommandId, event }) {
     const rows = this.db.all(
-      `SELECT * FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled')`,
+      `SELECT * FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled', 'paused', 'failed')`,
       this.accountId, clientCommandId,
     );
     for (const outbox of rows) {
@@ -246,7 +256,7 @@ class CollaborationStore {
           }
         }
       }
-      this.db.run(`UPDATE outbox SET state = 'persisted', updated_at = ? WHERE account_id = ? AND id = ?`, this.now(), this.accountId, outbox.id);
+      this.db.run(`UPDATE outbox SET state = 'persisted', delivery_confirmed = 1, delivery_uncertain = 0, updated_at = ? WHERE account_id = ? AND id = ?`, this.now(), this.accountId, outbox.id);
     }
   }
 
