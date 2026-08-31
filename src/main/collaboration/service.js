@@ -178,6 +178,19 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
         return { ok: true, text: store.getDraft({ conversationId, draftId: "composer" })?.text || "" };
       },
+      readMessages({ conversationId, messageIds } = {}) {
+        if (stopped) return stoppedResult();
+        if (!Array.isArray(messageIds) || messageIds.length > 200 || messageIds.some((id) => typeof id !== "string" || !id || id.length > 200)) return { ok: false, code: "COLLABORATION_INVALID_INPUT" };
+        return enqueueSync(() => {
+          if (!store.getConversation({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND" };
+          const messages = [], unavailableMessageIds = [];
+          for (const messageId of messageIds) {
+            const row = store.getMessage({ conversationId, messageId });
+            if (row) messages.push(row); else unavailableMessageIds.push(messageId);
+          }
+          return { ok: true, messages, unavailableMessageIds };
+        });
+      },
       saveDraft({ conversationId, text } = {}) {
         if (stopped) return stoppedResult();
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };

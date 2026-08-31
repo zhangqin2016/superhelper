@@ -454,6 +454,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     list: () => ipcRenderer.invoke("collaboration:list"),
     open: (conversationId, beforeSeq) => ipcRenderer.invoke("collaboration:open", { conversationId, ...(beforeSeq == null ? {} : { beforeSeq }) }),
     getDraft: (conversationId) => ipcRenderer.invoke("collaboration:get-draft", { conversationId }),
+    readMessages: ({ conversationId, messageIds }) => ipcRenderer.invoke("collaboration:read-messages", { conversationId, messageIds }),
     saveDraft: ({ conversationId, text }) => ipcRenderer.invoke("collaboration:save-draft", { conversationId, text }),
     send: ({ conversationId, clientCommandId, bodyText }) => ipcRenderer.invoke("collaboration:send", {
       conversationId, clientCommandId, bodyText,

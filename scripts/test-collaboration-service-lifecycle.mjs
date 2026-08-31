@@ -122,7 +122,7 @@ test("stopped service rejects every new operation without reaching storage or ne
     client: network(() => { throw new Error("network after stop"); }), transport: { submit() { throw new Error("send after stop"); } },
   });
   service.stop();
-  for (const method of ["getState", "list", "getDraft", "saveDraft", "open", "bootstrap", "send", "edit", "revoke", "friend", "retry", "cancel", "markRead", "start"]) {
+  for (const method of ["getState", "list", "getDraft", "saveDraft", "readMessages", "open", "bootstrap", "send", "edit", "revoke", "friend", "retry", "cancel", "markRead", "start"]) {
     assert.deepEqual(await service[method]({ conversationId: "c1", seq: 1 }), stopped, method);
   }
   await service.realtime.notifyAvailable();

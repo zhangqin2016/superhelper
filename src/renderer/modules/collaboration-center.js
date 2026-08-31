@@ -3,6 +3,7 @@ import { renderCollaborationInbox } from "./collaboration-inbox.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
 import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
+import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -53,6 +54,14 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     loadingOlder = false;
     updateOlderButton();
     const opened = await window.assistantClient?.collaboration?.open?.(conversationId).catch(() => null);
+    let refreshFailed = false;
+    if (opened?.ok && activeConversationId === conversationId && generation === openGeneration && view === viewGeneration) {
+      try {
+        const refreshed = await refreshVisibleHistory({ conversationId, existing: historyMessages, latest: opened.messages || [],
+          readMessages: window.assistantClient?.collaboration?.readMessages, isCurrent: () => generation === openGeneration && view === viewGeneration });
+        if (refreshed) historyMessages = refreshed;
+      } catch { refreshFailed = true; }
+    }
     if (generation === openGeneration) { opening = false; updateOlderButton(); }
     if (!opened?.ok || generation !== openGeneration || view !== viewGeneration) return;
     const sameConversation = activeConversationId === conversationId;
@@ -65,7 +74,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (scopeBadge) scopeBadge.textContent = t(scope.startsWith("team:") ? "collaboration.scopeTeam" : "collaboration.scopePersonal");
     renderCollaborationTimeline(timeline, historyMessages);
     if (empty) empty.hidden = historyMessages.length > 0;
-    if (live) live.textContent = String(opened.conversation?.title || t("collaboration.conversation"));
+    if (live) live.textContent = refreshFailed ? t("collaboration.historyLoadFailed") : String(opened.conversation?.title || t("collaboration.conversation"));
     if (status) status.textContent = t(opened.offline ? "collaboration.offlineCache" : "collaboration.statusAvailable");
   };
 

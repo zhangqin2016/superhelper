@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { CollaborationStore } = require("../src/main/collaboration/collaboration-store.js");
+const { LocalCollaborationKeyring } = require("../src/main/collaboration/local-keyring.js");
+const { createCollaborationService } = require("../src/main/collaboration/service.js");
+const { createCollaborationIpc } = require("../src/main/ipc-collaboration.js");
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collab-visible-cache-"));
+const keyring = new LocalCollaborationKeyring({ filePath: path.join(dir, "keys"), safeStorage: { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString() } });
+const store = new CollaborationStore({ dbPath: path.join(dir, "cache"), accountId: "alice", keyring });
+const service = createCollaborationService({ openStore: () => ({ ok: true, store }) });
+try {
+  store.replaceProjectionFromBootstrap({ conversations: [{ id: "c1" }, { id: "c2" }] });
+  store.hydrateAuthorizedHistory({ conversationId: "c1", messages: [{ id: "m", seq: 1, revision: 2, revokedAt: "now", bodyText: "" }] });
+  store.hydrateAuthorizedHistory({ conversationId: "c2", messages: [{ id: "m", seq: 1, revision: 1, bodyText: "another conversation" }] });
+  const handlers = new Map();
+  createCollaborationIpc({ ipcMain: { handle: (channel, fn) => handlers.set(channel, fn) }, getService: () => service });
+  const read = (payload) => handlers.get("collaboration:read-messages")(null, payload);
+  const result = await read({ conversationId: "c1", messageIds: ["m", "missing"] });
+  assert.equal(result.ok, true); assert.equal(result.messages.length, 1); assert.equal(result.messages[0].revokedAt, "now");
+  assert.deepEqual(result.unavailableMessageIds, ["missing"]); assert.equal(JSON.stringify(result).includes("another conversation"), false);
+  for (const messageIds of [[], [""], [7], ["m", "m"], Array.from({ length: 201 }, (_, i) => `m${i}`)]) assert.equal((await read({ conversationId: "c1", messageIds })).code, "COLLABORATION_INVALID_INPUT");
+  assert.equal((await read({ conversationId: "c1", messageIds: ["m"], path: "/private" })).code, "COLLABORATION_INVALID_INPUT");
+  assert.equal((await read({ conversationId: "not-found", messageIds: ["m"] })).code, "COLLABORATION_NOT_FOUND");
+  service.stop();
+  assert.equal((await read({ conversationId: "c1", messageIds: ["m"] })).code, "COLLABORATION_STOPPED");
+  console.log("collaboration visible history service/IPC passed");
+} finally { service.stop(); fs.rmSync(dir, { recursive: true, force: true }); }

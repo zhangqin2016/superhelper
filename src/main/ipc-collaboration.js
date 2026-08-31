@@ -85,6 +85,7 @@ function rendererView(method, value) {
   if (method === "bootstrap") return { ok: true, cursor: nonNegativeInteger(value?.cursor) };
   if (method === "getDraft") return { ok: true, text: typeof value?.text === "string" ? value.text.slice(0, MAX_TEXT_BYTES) : "" };
   if (method === "saveDraft") return { ok: true };
+  if (method === "readMessages") return { ok: true, messages: (value?.messages || []).map(rendererMessage), unavailableMessageIds: (value?.unavailableMessageIds || []).map(safeIdentifier).filter(Boolean) };
   if (["send", "edit", "revoke", "friend", "retry", "cancel", "markRead"].includes(method)) {
     return {
       ok: value?.ok !== false,
@@ -198,6 +199,11 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
     return { ...normalized, ...(payload.beforeSeq == null ? {} : { beforeSeq: payload.beforeSeq }) };
   });
   registerCommand(ipcMain, "collaboration:get-draft", getService, "getDraft", validOpen);
+  registerCommand(ipcMain, "collaboration:read-messages", getService, "readMessages", (payload) => {
+    if (!hasOnlyKeys(payload, new Set(["conversationId", "messageIds"])) || !safeIdentifier(payload.conversationId) || !Array.isArray(payload.messageIds)
+      || payload.messageIds.length < 1 || payload.messageIds.length > 200 || payload.messageIds.some((id) => !safeIdentifier(id)) || new Set(payload.messageIds).size !== payload.messageIds.length) return null;
+    return { conversationId: safeIdentifier(payload.conversationId), messageIds: payload.messageIds.map(safeIdentifier) };
+  });
   registerCommand(ipcMain, "collaboration:save-draft", getService, "saveDraft", (payload) => {
     if (!hasOnlyKeys(payload, new Set(["conversationId", "text"])) || !safeIdentifier(payload.conversationId) || typeof payload.text !== "string" || bytes(payload.text) > MAX_TEXT_BYTES) return null;
     return { conversationId: safeIdentifier(payload.conversationId), text: payload.text };
