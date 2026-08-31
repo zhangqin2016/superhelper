@@ -39,6 +39,7 @@ const sendStore = {
   getSyncState: () => ({ cursor: 0, watermark: 0 }), applySyncPage() {}, close() {},
   getConversation: ({ conversationId }) => conversationId === "c1" ? { id: "c1", scopeId: "team:t1" } : null,
   persistDraftAndOptimisticMessage(input) {
+    assert.equal(input.originDeviceId, "device-1", "new send admission carries the actual service device identity");
     pending.set(input.clientCommandId, { id: input.clientCommandId, conversationId: input.conversationId, clientCommandId: input.clientCommandId, bodyText: input.bodyText, state: "queued" });
     return { outboxId: input.clientCommandId };
   },
@@ -52,7 +53,7 @@ const sendStore = {
   listOutbox: () => [...pending.values()],
 };
 const sendingService = createCollaborationService({
-  openStore: () => ({ ok: true, store: sendStore }),
+  openStore: () => ({ ok: true, store: sendStore }), deviceId: "device-1",
   // Keep the exact transport reference: a state transition after transport
   // resolves must never retroactively mutate the submitted command.
   transport: { async submit(item) { submitted.push(item); } },

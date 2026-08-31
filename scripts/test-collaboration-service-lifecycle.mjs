@@ -308,18 +308,20 @@ test("repeated start cannot recover or replay this service's active submitting c
   const f = fixture(t);
   const pending = deferred();
   const reached = deferred();
-  const service = createCollaborationService({ openStore: () => ({ ok: true, store: f.store }), transport: {
+  const service = createCollaborationService({ openStore: () => ({ ok: true, store: f.store }), deviceId: "d", transport: {
     async submit() { reached.resolve(); return pending.promise; },
   } });
   service.start();
   const run = service.send({ conversationId: "c1", clientCommandId: "live-key", bodyText: "body" });
+  assert.ok(f.store.getOutbox({ outboxId: "live-key" }), "the first send must be durably admitted before waiting for its transport");
+  assert.equal(f.store.getOutbox({ outboxId: "live-key" }).originDeviceId, "d");
   await reached.promise;
   service.start();
   const stateAfterSecondStart = f.store.getOutbox({ outboxId: "live-key" }).state;
   const recoveryCalls = f.log.filter((name) => name === "recoverAbandonedSubmittingOutbox").length;
   service.stop();
   pending.resolve();
-  await run;
+  assert.deepEqual(await run, stopped, "the admitted send is deliberately stopped while transport is pending");
   assert.equal(stateAfterSecondStart, "submitting", "restart recovery is only for abandoned prior-instance work");
   assert.equal(recoveryCalls, 1);
 });

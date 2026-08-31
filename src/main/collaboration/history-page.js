@@ -28,9 +28,7 @@ async function readHistoryPage({ store, client, deviceId, conversationId, before
         ids.add(row.id); seqs.add(seq);
       }
       store.hydrateAuthorizedHistory({ conversationId, messages: rows, completeCheckpoint: false });
-      messages = rows.map((row) => ({ ...row, ...store.getMessage({ conversationId, messageId: row.id }),
-        seq: sequence(row), senderUserId: row.senderUserId ?? row.sender_user_id ?? null,
-      })).sort((a, b) => a.seq - b.seq);
+      messages = rows.map((row) => store.getMessage({ conversationId, messageId: row.id })).sort((a, b) => a.seq - b.seq);
       if (beforeSeq == null) messages.push(...store.listMessages({ conversationId }).filter((row) => row.seq == null));
       // The bounded pending tail is separate from the authorized history
       // window; it must not evict a server row or skip its pagination cursor.

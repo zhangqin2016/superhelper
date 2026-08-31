@@ -19,7 +19,9 @@ const safeStorage = {
   decryptString: (value) => Buffer.from(value).toString().replace(/^protected:/, ""),
 };
 const keyringPath = path.join(dir, "keys.json");
-const store = new CollaborationStore({ dbPath, accountId: "alice", keyring: new LocalCollaborationKeyring({ filePath: keyringPath, safeStorage }) });
+const clientCreatedAt = Date.parse("2026-08-31T00:00:00.000Z");
+let localNow = clientCreatedAt;
+const store = new CollaborationStore({ dbPath, accountId: "alice", now: () => localNow, keyring: new LocalCollaborationKeyring({ filePath: keyringPath, safeStorage }) });
 const engine = createCollaborationSyncEngine({ store });
 
 store.persistDraftAndOptimisticMessage({
@@ -27,6 +29,7 @@ store.persistDraftAndOptimisticMessage({
   clientCommandId: "confirm-command", bodyText: "keep one local bubble", scopeId: "personal",
 });
 store.setOutboxState({ outboxId: "confirm-command", expectedStates: ["queued"], state: "confirming" });
+localNow += 1000;
 assert.deepEqual(engine.applyPage({
   status: "OK", fromCursor: 0, toCursor: 1,
   events: [{ cursor: 1, id: "event-confirm", conversationId: "conv-confirm", actorUserId: "alice", seq: 9, type: "message.created", payload: { clientCommandId: "confirm-command", messageId: "server-message-9" } }],
@@ -35,7 +38,10 @@ assert.equal(store.getOutbox({ outboxId: "confirm-command" }).state, "persisted"
 assert.equal(store.getMessage({ conversationId: "conv-confirm", messageId: "local-confirm-message" }), null, "sync confirmation replaces the optimistic identifier instead of rendering a second message");
 assert.deepEqual(store.getMessage({ conversationId: "conv-confirm", messageId: "server-message-9" }), {
   id: "server-message-9", conversationId: "conv-confirm", state: "persisted", seq: 9, bodyText: "keep one local bubble", clientCommandId: "confirm-command",
+  senderUserId: null, replyToMessageId: null, mentionUserIds: [], createdAt: null, clientCreatedAt, updatedAt: localNow,
 }, "confirmation carries authoritative server id/seq while retaining the encrypted local body");
+assert.equal(store.getMessage({ conversationId: "conv-confirm", messageId: "server-message-9" }).createdAt, null,
+  "sync confirmation without authorized creation time cannot turn the client's admission clock into server edit-window authority");
 assert.equal(store.countMessages({ conversationId: "conv-confirm" }), 1, "a command confirmation has one local message projection");
 
 const page = {

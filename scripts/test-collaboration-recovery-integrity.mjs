@@ -12,12 +12,14 @@ const keyring = new LocalCollaborationKeyring({ filePath: path.join(dir, "keys.j
   isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString(),
 } });
 let store = new CollaborationStore({ dbPath: path.join(dir, "cache.db"), accountId: "alice", keyring });
-const service = createCollaborationService({ openStore: () => ({ ok: true, store }), transport: { submit: async () => ({}) } });
+const service = createCollaborationService({ openStore: () => ({ ok: true, store }), deviceId: "device-alice", transport: { submit: async () => ({}) } });
 const snapshot = { watermark: 0, conversations: [{ id: "c1", kind: "direct" }, { id: "c2", kind: "direct" }],
   profile: { userId: "alice", displayName: "Alice" }, profiles: [{ userId: "alice", displayName: "Alice" }] };
 try {
   assert.doesNotThrow(() => store.replaceProjectionFromBootstrap(snapshot), "own profile may also appear among visible member profiles");
-  await service.send({ conversationId: "c1", clientCommandId: "cmd", bodyText: "original" });
+  const initialSend = await service.send({ conversationId: "c1", clientCommandId: "cmd", bodyText: "original" });
+  assert.equal(initialSend.ok, true, "the first original-device send must be admitted before checking reuse conflicts");
+  assert.equal(store.getOutbox({ outboxId: "cmd" }).originDeviceId, "device-alice", "the admitted intent retains its real device identity");
   assert.deepEqual(await service.send({ conversationId: "c2", clientCommandId: "cmd", bodyText: "original" }),
     { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false }, "same local command cannot silently target another conversation");
   assert.deepEqual(await service.send({ conversationId: "c1", clientCommandId: "cmd", bodyText: "different" }),

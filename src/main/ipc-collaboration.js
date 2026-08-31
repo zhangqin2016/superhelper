@@ -3,12 +3,12 @@ const { directoryView } = require("./collaboration/directory-view");
 const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/social-command-contract");
 const { attachmentIds } = require("./collaboration/history-cache");
 const { transferResult, registerTransferIpc } = require("./collaboration/transfer-ipc");
+const { messageMetadata, messageIdentifier, MAX_CREATE_BYTES } = require("./collaboration/message-intent");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
 // storage remain in the main process.
 const MAX_TEXT_BYTES = 64 * 1024;
-const MAX_IDENTIFIER_LENGTH = 200;
 const SENSITIVE_KEY = /(?:token|dek|key|secret|path|cipher|authorization|signature|credential)/i;
 
 function unavailable() {
@@ -20,8 +20,7 @@ function invalid() {
 }
 
 function safeIdentifier(value) {
-  const id = typeof value === "string" ? value.trim() : "";
-  return id && id.length <= MAX_IDENTIFIER_LENGTH ? id : "";
+  return messageIdentifier(value) ? value : "";
 }
 
 function hasOnlyKeys(value, allowed) {
@@ -69,10 +68,10 @@ function rendererMessage(value = {}) {
     senderUserId: safeIdentifier(value.senderUserId) || "", state: safeIdentifier(value.state) || "",
     bodyText: typeof value.bodyText === "string" ? value.bodyText.slice(0, MAX_TEXT_BYTES) : "",
     kind: ["text", "attachment", "workspace_share"].includes(value.kind) ? value.kind : "text", attachmentIds: attachmentIds(value),
-    createdAt: nonNegativeInteger(value.createdAt), updatedAt: nonNegativeInteger(value.updatedAt),
+    createdAt: optionalInteger(value.createdAt), clientCreatedAt: optionalInteger(value.clientCreatedAt), updatedAt: nonNegativeInteger(value.updatedAt),
     ...(safeIdentifier(value.clientCommandId) ? { clientCommandId: safeIdentifier(value.clientCommandId) } : {}),
     ...(optionalInteger(value.revision) != null ? { revision: optionalInteger(value.revision) } : {}),
-    ...(safeIdentifier(value.replyToMessageId) ? { replyToMessageId: safeIdentifier(value.replyToMessageId) } : {}),
+    ...messageMetadata(value),
     ...(typeof value.revokedAt === "string" ? { revokedAt: value.revokedAt.slice(0, 40) } : {}),
     ...(typeof value.editedAt === "string" ? { editedAt: value.editedAt.slice(0, 40) } : {}),
   };
@@ -108,7 +107,7 @@ function rendererView(method, value) {
   if (method === "open") return { ok: true, conversation: rendererConversation(value?.conversation), messages: Array.isArray(value?.messages) ? value.messages.map(rendererMessage) : [],
     hasMore: value?.hasMore === true, nextBeforeSeq: optionalInteger(value?.nextBeforeSeq), offline: value?.offline === true };
   if (method === "bootstrap") return { ok: true, cursor: nonNegativeInteger(value?.cursor) };
-  if (method === "getDraft") return { ok: true, text: typeof value?.text === "string" ? value.text.slice(0, MAX_TEXT_BYTES) : "" };
+  if (method === "getDraft") return { ok: true, text: typeof value?.text === "string" ? value.text.slice(0, MAX_TEXT_BYTES) : "", ...messageMetadata(value || {}) };
   if (method === "saveDraft") return { ok: true };
   if (method === "readMessages") return { ok: true, messages: (value?.messages || []).map(rendererMessage), unavailableMessageIds: (value?.unavailableMessageIds || []).map(safeIdentifier).filter(Boolean) };
   if (["send", "edit", "revoke", "friend", "retry", "cancel", "markRead"].includes(method)) {
@@ -149,11 +148,11 @@ async function invoke(getService, method, payload) {
 }
 
 function validSend(payload) {
-  if (!hasOnlyKeys(payload, new Set(["conversationId", "clientCommandId", "bodyText"]))) return null;
+  if (!hasOnlyKeys(payload, new Set(["conversationId", "clientCommandId", "bodyText", "replyToMessageId", "mentionUserIds"]))) return null;
   const conversationId = safeIdentifier(payload.conversationId);
   const clientCommandId = safeIdentifier(payload.clientCommandId);
-  if (!conversationId || !clientCommandId || typeof payload.bodyText !== "string" || bytes(payload.bodyText) > MAX_TEXT_BYTES) return null;
-  return { conversationId, clientCommandId, bodyText: payload.bodyText };
+  if (!conversationId || !clientCommandId || typeof payload.bodyText !== "string" || bytes(payload.bodyText) > MAX_CREATE_BYTES) return null;
+  try { return { conversationId, clientCommandId, bodyText: payload.bodyText, ...messageMetadata(payload) }; } catch { return null; }
 }
 
 function validOutbox(payload) {
@@ -227,8 +226,8 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
     return { conversationId: safeIdentifier(payload.conversationId), messageIds: payload.messageIds.map(safeIdentifier) };
   });
   registerCommand(ipcMain, "collaboration:save-draft", getService, "saveDraft", (payload) => {
-    if (!hasOnlyKeys(payload, new Set(["conversationId", "text"])) || !safeIdentifier(payload.conversationId) || typeof payload.text !== "string" || bytes(payload.text) > MAX_TEXT_BYTES) return null;
-    return { conversationId: safeIdentifier(payload.conversationId), text: payload.text };
+    if (!hasOnlyKeys(payload, new Set(["conversationId", "text", "replyToMessageId", "mentionUserIds"])) || !safeIdentifier(payload.conversationId) || typeof payload.text !== "string" || bytes(payload.text) > MAX_TEXT_BYTES) return null;
+    try { return { conversationId: safeIdentifier(payload.conversationId), text: payload.text, ...messageMetadata(payload) }; } catch { return null; }
   });
   registerCommand(ipcMain, "collaboration:send", getService, "send", validSend);
   registerCommand(ipcMain, "collaboration:edit", getService, "edit", (payload) => validMessageMutation(payload, { bodyRequired: true }));

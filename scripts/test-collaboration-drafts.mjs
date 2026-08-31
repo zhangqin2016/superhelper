@@ -15,14 +15,15 @@ const keyring = new LocalCollaborationKeyring({ filePath: path.join(dir, "keys.j
 const dbPath = path.join(dir, "cache.db");
 let store = new CollaborationStore({ dbPath, accountId: "alice", keyring });
 const handlers = new Map();
-let service = createCollaborationService({ openStore: () => ({ ok: true, store }), transport: { submit: async () => ({}) } });
+let service = createCollaborationService({ openStore: () => ({ ok: true, store }), deviceId: "device-alice", transport: { submit: async () => ({}) } });
 createCollaborationIpc({ ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, getService: () => service });
 try {
   store.replaceProjectionFromBootstrap({ conversations: [{ id: "a", kind: "direct" }, { id: "b", kind: "direct" }] });
   assert.ok(handlers.has("collaboration:save-draft"), "draft writes cross the validated main-process boundary");
   assert.equal((await handlers.get("collaboration:save-draft")(null, { conversationId: "a", text: "latest unsent text" })).ok, true);
   await handlers.get("collaboration:save-draft")(null, { conversationId: "b", text: "other conversation" });
-  await service.send({ conversationId: "a", clientCommandId: "old-snapshot", bodyText: "older submitted text" });
+  const initialSend = await service.send({ conversationId: "a", clientCommandId: "old-snapshot", bodyText: "older submitted text" });
+  assert.equal(initialSend.ok, true, "draft preservation must exercise a successfully admitted older send");
   assert.equal((await handlers.get("collaboration:get-draft")(null, { conversationId: "a" })).text, "latest unsent text", "sending an older editor snapshot cannot clear newer input");
   service.stop();
   store = new CollaborationStore({ dbPath, accountId: "alice", keyring });

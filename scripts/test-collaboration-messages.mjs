@@ -192,6 +192,33 @@ const account = { userId: "user-a", deviceId: "device-a" };
 const authorized = async () => ({ ok: true, visibleAfterSeq: 0 });
 
 {
+  const { service } = createHarness();
+  const base = { account, conversationId: "conversation-1", bodyText: "source", authorize: authorized };
+  const source = await service.sendMessage({ ...base, clientCommandId: "reply-source", mentionUserIds: ["user-b"] });
+  await assert.rejects(service.sendMessage({ ...base, clientCommandId: "reply-before-join", replyToMessageId: source.message.id,
+    authorize: async () => ({ ok: true, visibleAfterSeq: 1 }) }), (error) => error.code === "COLLAB_REPLY_TARGET_INVALID", "locked private join boundary applies to reply targets, not merely history lists");
+  const publicReply = await service.sendMessage({ ...base, clientCommandId: "reply-public", replyToMessageId: source.message.id });
+  assert.ok(publicReply.message.id, "public visibleAfterSeq zero still permits an old available reply");
+  await service.editMessage({ ...base, clientCommandId: "edit-mentioned-source", messageId: source.message.id, expectedRevision: 1, bodyText: "edited source" });
+  const history = await service.listMessageHistory({ account, conversationId: base.conversationId, messageIds: [source.message.id], authorize: authorized });
+  assert.deepEqual(history[0].mentionUserIds, ["user-b"], "editing the source never drops its original explicit mention metadata");
+  await assert.rejects(service.sendMessage({ ...base, clientCommandId: "create-32k", bodyText: "界".repeat(10923) }), error => error.code === "COLLAB_MESSAGE_BODY_TOO_LARGE", "new creates enforce 32 KiB UTF-8 on the authoritative domain path");
+}
+
+{
+  const signer = createHmacMessageBodyIntentSigner({ key: Buffer.alloc(32, 7) });
+  const { state, service } = createHarness({ bodyIntentSigner: signer });
+  const bodyText = "x".repeat(64 * 1024), conversationId = "conversation-1";
+  const oldInput = { conversationId, bodyIntent: signer.sign({ bodyText, conversationId, actorUserId: account.userId, commandType: "message.create" }),
+    bodyIntentKeyVersion: 1, replyToMessageId: null, attachmentIds: [], mentionUserIds: [] };
+  const response = { eventId: "old-event", bodyIntentKeyVersion: 1, message: { id: "old-message", conversationId, revision: 1, seq: 4 } };
+  state.commandReceipts.set(`${account.deviceId}:message.create:old-64k`, { fingerprint: JSON.stringify(oldInput), response });
+  assert.deepEqual(await service.sendMessage({ account, conversationId, bodyText, clientCommandId: "old-64k", authorize: authorized }), response,
+    "an old 64 KiB committed create retains its original HMAC and receipt replay despite the new admission limit");
+  assert.equal(state.messages.size, 0, "legacy receipt replay never projects a second message");
+}
+
+{
   const { state, service, messageCrypto } = createHarness();
   const send = {
     account,

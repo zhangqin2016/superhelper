@@ -3,7 +3,7 @@
 const { collaborationDbPath } = require("../config");
 const { openDatabase } = require("../store/sqlite-db");
 const { COLLABORATION_MIGRATIONS } = require("./schema");
-const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./history-cache");
+const { hydrateAuthorizedHistory, backfillMessageCommandIds, adoptOptimisticIdentity } = require("./history-cache");
 const { queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration } = require("./history-hydration");
 const access = require("./access-revocation");
 const { queueConversationHydration, queueAuthorizedRefresh } = require("./conversation-hydration");
@@ -14,6 +14,8 @@ const { projectedScopeId } = require("./projection-scope");
 const { parseEncryptedPayload } = require("./encrypted-payload");
 const { settleCreatedSyncEvent } = require("./outbox-sync-settlement");
 const activity = require("./conversation-activity");
+const { messageMetadata, validateCreateBody, retainedComposerDraft } = require("./message-intent");
+const { messageTimes } = require("./message-time");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -50,7 +52,8 @@ class CollaborationStore {
     return JSON.parse(this.keyring.decrypt({ accountId: this.accountId, scopeId, recordId, envelope: parseEncryptedPayload(value) }));
   }
 
-  persistDraftAndOptimisticMessage({ conversationId, draftId, draftText, messageId, clientCommandId, bodyText, scopeId = "personal", attachmentIds = [], attachmentPurpose = null, originDeviceId = null, preserveDraft = false, afterCommit } = {}) {
+  persistDraftAndOptimisticMessage({ conversationId, draftId, draftText, messageId, clientCommandId, bodyText, replyToMessageId, mentionUserIds, scopeId = "personal", attachmentIds = [], attachmentPurpose = null, originDeviceId = null, preserveDraft = false, afterCommit } = {}) {
+    const metadata = messageMetadata({ replyToMessageId, mentionUserIds }); validateCreateBody(bodyText);
     const conversation = requireId(conversationId, "conversation id");
     const draft = requireId(draftId, "draft id");
     const message = requireId(messageId, "message id");
@@ -62,24 +65,23 @@ class CollaborationStore {
     const at = this.now();
     const create = this.db.transaction(() => {
       const currentDraft = this.getDraft({ conversationId: conversation, draftId: draft });
-      const retainedDraft = preserveDraft && currentDraft ? currentDraft.text
-        : currentDraft && currentDraft.text !== String(bodyText || "") ? currentDraft.text : String(draftText || "");
+      const retainedDraft = retainedComposerDraft(currentDraft, { bodyText, draftText, preserveDraft, ...metadata });
       this.db.run(
         `INSERT INTO drafts (account_id, conversation_id, id, scope_id, content_envelope_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET scope_id = excluded.scope_id, content_envelope_json = excluded.content_envelope_json, updated_at = excluded.updated_at`,
         this.accountId, conversation, draft, scope,
-        this._encrypt({ scopeId: scope, recordId: this._draftRecord(conversation, draft), value: { text: retainedDraft } }), at,
+        this._encrypt({ scopeId: scope, recordId: this._draftRecord(conversation, draft), value: retainedDraft }), at,
       );
       this.db.run(
         `INSERT INTO messages (account_id, conversation_id, id, scope_id, client_command_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'optimistic', ?, ?, ?)`,
         this.accountId, conversation, message, scope, command,
         this._encrypt({ scopeId: scope, recordId: this._messageRecord(conversation, message), value: { bodyText: String(bodyText || ""), clientCommandId: command,
-          ...optimisticAttachmentProjection(attachmentPayload) } }), at, at,
+          ...metadata, ...optimisticAttachmentProjection(attachmentPayload) } }), at, at,
       );
       this.db.run(
         `INSERT INTO outbox (account_id, id, conversation_id, client_command_id, scope_id, state, payload_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
         this.accountId, outboxId, conversation, command, scope,
-        this._encrypt({ scopeId: scope, recordId: this._outboxRecord(outboxId), value: { messageId: message, clientCommandId: command, bodyText: String(bodyText || ""), ...(attachmentPayload || {}) } }), at, at,
+        this._encrypt({ scopeId: scope, recordId: this._outboxRecord(outboxId), value: { messageId: message, clientCommandId: command, bodyText: String(bodyText || ""), ...metadata, ...(attachmentPayload || {}) } }), at, at,
       );
       return { outboxId };
     });
@@ -95,17 +97,18 @@ class CollaborationStore {
     const draft = requireId(draftId, "draft id");
     const row = this.db.get(`SELECT * FROM drafts WHERE account_id = ? AND conversation_id = ? AND id = ?`, this.accountId, conversation, draft);
     if (!row) return null;
-    return { id: row.id, conversationId: row.conversation_id, ...this._decrypt({ scopeId: row.scope_id, recordId: this._draftRecord(conversation, draft), value: row.content_envelope_json }), updatedAt: row.updated_at };
+    const content = this._decrypt({ scopeId: row.scope_id, recordId: this._draftRecord(conversation, draft), value: row.content_envelope_json });
+    return { id: row.id, conversationId: row.conversation_id, ...content, ...messageMetadata(content), updatedAt: row.updated_at };
   }
 
-  saveDraft({ conversationId, text, draftId = "composer" }) {
+  saveDraft({ conversationId, text, replyToMessageId, mentionUserIds, draftId = "composer" }) {
     const conversation = this.getConversation({ conversationId });
     if (!conversation) throw new Error("collaboration store: draft conversation not found");
     const id = requireId(draftId, "draft id");
     this.db.run(`INSERT INTO drafts (account_id, conversation_id, id, scope_id, content_envelope_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET content_envelope_json = excluded.content_envelope_json, updated_at = excluded.updated_at`,
     this.accountId, conversation.id, id, conversation.scopeId,
-    this._encrypt({ scopeId: conversation.scopeId, recordId: this._draftRecord(conversation.id, id), value: { text: String(text || "") } }), this.now());
+    this._encrypt({ scopeId: conversation.scopeId, recordId: this._draftRecord(conversation.id, id), value: { text: String(text || ""), ...messageMetadata({ replyToMessageId, mentionUserIds }) } }), this.now());
   }
 
   getMessage({ conversationId, messageId }) {
@@ -114,7 +117,7 @@ class CollaborationStore {
     const row = this.db.get(`SELECT * FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, this.accountId, conversation, message);
     if (!row) return null;
     const content = this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, message), value: row.body_envelope_json });
-    return { id: row.id, conversationId: row.conversation_id, state: row.state, seq: row.seq, ...content,
+    return { id: row.id, conversationId: row.conversation_id, state: row.state, seq: row.seq, senderUserId: row.sender_user_id, ...content, ...messageMetadata(content), ...messageTimes(content, row),
       ...((row.client_command_id || content.clientCommandId) ? { clientCommandId: row.client_command_id || content.clientCommandId } : {}) };
   }
 
@@ -256,6 +259,7 @@ class CollaborationStore {
             this.accountId, outbox.conversation_id, serverMessageId,
           );
           if (serverExists && serverMessageId !== optimisticId) {
+            adoptOptimisticIdentity(this, { conversationId: outbox.conversation_id, messageId: serverMessageId, clientCommandId, clientCreatedAt: Number(message.created_at) });
             // A previous application has already materialized the authoritative
             // row; discard the stale optimistic alias rather than displaying two.
             this.db.run(`DELETE FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, this.accountId, outbox.conversation_id, optimisticId);
@@ -377,17 +381,7 @@ class CollaborationStore {
       }
       for (const message of historyRows) {
         const conversationId = requireId(message?.conversationId ?? message?.conversation_id, "history conversation id");
-        const messageId = requireId(message?.id, "history message id");
-        const conversation = this.db.get(`SELECT scope_id FROM conversations WHERE account_id = ? AND id = ?`, this.accountId, conversationId);
-        const scopeId = this._scope(message?.scopeId ?? message?.scope_id ?? conversation?.scope_id ?? "personal");
-        const bodyText = message?.bodyText ?? message?.body ?? "";
-        this.db.run(
-          `INSERT INTO messages (account_id, conversation_id, id, scope_id, seq, sender_user_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'persisted', ?, ?, ?)`,
-          this.accountId, conversationId, messageId, scopeId,
-          Number.isSafeInteger(Number(message?.createSeq ?? message?.create_seq ?? message?.seq)) ? Number(message?.createSeq ?? message?.create_seq ?? message?.seq) : null,
-          message?.senderUserId ?? message?.sender_user_id ?? null,
-          this._encrypt({ scopeId, recordId: this._messageRecord(conversationId, messageId), value: { bodyText: String(bodyText) } }), this.now(), this.now(),
-        );
+        hydrateAuthorizedHistory(this, { conversation: conversationId, messages: [{ ...message, conversationId, bodyText: message.bodyText ?? message.body ?? "" }], completeCheckpoint: false });
       }
       for (const { outbox, intent } of confirmingBubbles) {
         if (mutationOutbox.normalizeOutboxIntent(intent).commandType !== "message.create") continue;
@@ -399,9 +393,9 @@ class CollaborationStore {
           this.accountId, outbox.conversation_id, messageId, outbox.scope_id, outbox.client_command_id,
           this._encrypt({ scopeId: outbox.scope_id, recordId: this._messageRecord(outbox.conversation_id, messageId), value: {
             bodyText: String(intent.bodyText || ""), clientCommandId: outbox.client_command_id,
-            ...attached,
+            ...messageMetadata(intent), ...attached,
           } }),
-          this.now(), this.now(),
+          outbox.created_at, this.now(),
         );
       }
       restorePendingHistoryTargets(this, pendingHistoryTargets, rows.map((row) => row.id));
@@ -454,7 +448,7 @@ class CollaborationStore {
       const delivery = clientCommandId ? this.db.get(`SELECT state FROM outbox WHERE account_id = ? AND client_command_id = ?`, this.accountId, clientCommandId) : null;
       return {
         id: row.id, conversationId: row.conversation_id, seq: row.seq == null ? null : Number(row.seq), senderUserId: row.sender_user_id,
-        ...content, ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+        ...content, ...messageMetadata(content), ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, ...messageTimes(content, row),
       };
     }).filter((message) => message.state !== "cancelled");
   }

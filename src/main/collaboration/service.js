@@ -14,6 +14,7 @@ const socialDirectory = require("./social-directory-actions");
 const { createTransferRuntime } = require("./transfer-runtime");
 const { createAttachmentSendCoordinator } = require("./attachment-send");
 const { createReadRecovery } = require("./read-recovery");
+const { messageMetadata, messageIdentifier, validateCreateBody, sameCreateIntent } = require("./message-intent");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -270,7 +271,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       getDraft({ conversationId } = {}) {
         if (stopped) return stoppedResult();
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-        return { ok: true, text: store.getDraft({ conversationId, draftId: "composer" })?.text || "" };
+        const draft = store.getDraft({ conversationId, draftId: "composer" });
+        return { ok: true, text: draft?.text || "", ...messageMetadata(draft || {}) };
       },
       readMessages({ conversationId, messageIds } = {}) {
         if (stopped) return stoppedResult();
@@ -285,10 +287,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           return { ok: true, messages, unavailableMessageIds };
         });
       },
-      saveDraft({ conversationId, text } = {}) {
+      saveDraft({ conversationId, text, replyToMessageId, mentionUserIds } = {}) {
         if (stopped) return stoppedResult();
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-        store.saveDraft({ conversationId, text });
+        store.saveDraft({ conversationId, text, replyToMessageId, mentionUserIds });
         return { ok: true };
       },
       async open({ conversationId, beforeSeq } = {}) {
@@ -313,19 +315,24 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (!client || !deviceId) return unavailableService();
         return bootstrap();
       },
-      async send({ conversationId, clientCommandId, bodyText } = {}) {
+      async send({ conversationId, clientCommandId, bodyText, replyToMessageId, mentionUserIds } = {}) {
         if (stopped) return stoppedResult();
         if (!outbox || typeof store.getConversation !== "function") return unavailableService();
+        let metadata;
+        try { metadata = messageMetadata({ replyToMessageId, mentionUserIds }); validateCreateBody(bodyText);
+          if (!messageIdentifier(conversationId) || !messageIdentifier(clientCommandId)) throw new Error("invalid id");
+        } catch { return { ok: false, code: "COLLABORATION_INVALID_INPUT", retryable: false }; }
         const existing = store.getOutbox?.({ outboxId: clientCommandId });
         if (existing) {
-          if ((existing.commandType || "message.create") !== "message.create" || existing.conversationId !== conversationId || existing.bodyText !== bodyText) return { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false };
+          if (!sameCreateIntent(existing, { conversationId, bodyText, ...metadata })) return { ok: false, code: "IDEMPOTENCY_KEY_REUSED", retryable: false };
           return { ok: true, state: existing.state, clientCommandId: existing.clientCommandId };
         }
         const conversation = store.getConversation({ conversationId });
         if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
+        if (!deviceId) return { ok: false, code: "COLLAB_OUTBOX_DEVICE_REQUIRED", retryable: false };
         const messageId = `optimistic:${clientCommandId}`;
         const persisted = store.persistDraftAndOptimisticMessage({
-          conversationId, draftId: "composer", draftText: "", messageId, clientCommandId, bodyText, scopeId: conversation.scopeId,
+          conversationId, draftId: "composer", draftText: "", messageId, clientCommandId, bodyText, ...metadata, scopeId: conversation.scopeId,
           ...(deviceId ? { originDeviceId: deviceId } : {}),
         });
         const submitted = await outbox.submit(persisted.outboxId);

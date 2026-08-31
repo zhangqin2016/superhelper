@@ -401,6 +401,24 @@ check ((scope_type = 'organization') = (organization_id is not null));
 4. **实际消息交互**：在现有timeline/composer/shell上增加行内编辑、撤回确认、冲突比较、引用条和键盘@候选，不新增第二面板。mutation恢复视图区分原消息发送状态与修改状态，保留未提交编辑稿。收件箱按稳定conversation ID更新，使用持久pin/notification偏好、未读提及和权威最近活动排序，不跨会话比较局部seq。
 5. **可见已读与Electron验收**：窗口聚焦、document/面板/当前会话可见才观察viewport内已持久消息；切换/隐藏/账号/撤权令迟到回调失效。主进程复核可见窗口、授权会话及缓存seq。复用真实timeline/attachments/social-navigation Electron夹具，测试旧detached按钮、失焦、跨会话迟到结果、冲突/撤回及三语言；静态surface检查不算交互E2E。
 
+2026-08-31 3A 完成规格→质量独立审查及复审。引用ID和显式mentions经过preload/严格IPC、加密draft/optimistic/outbox、原device和同UUID重试、历史及SQLite重启保留；同文但引用/@不同的新版草稿不误清，附件意图不能被纯文本同键替换。新建正文32KiB在主进程写盘前和服务端旧receipt分支之后约束，旧64KiB已提交消息仍可恢复和读取。历史mentions来自原创建event，服务端时间与clientCreatedAt分离，history-first确认不丢稳定command ID、不覆盖较新revision。私密joined-seq边界也约束新引用。
+
+审查补齐了五个旧测试的device/字段前置条件，消除了草稿测试假绿和生命周期测试永久等待；质量审查另用真实SQLite/outbox复现“同会话撤回ACK被误当create成功、释放队列且无法恢复”，现生产create ACK必须严格满足revision=1且revoked=false。20种错误响应矩阵验证异常分类、未确认屏障和重启后完整意图恢复，非错会话用例均使用正确会话避免其他校验遮蔽缺陷。
+
+最终代码验证：85个协作Node脚本加architecture/registry共87项通过；13组隔离PostgreSQL集成通过；完整能力门禁172项退出0。新增PG验证真实迁移/签名HTTP/错误200/SQLite重启/receipt/引用可见边界及64KiB升级回放；旧receipt集成改用正式迁移并保留授权、锁等待与撤权断言。门禁仍有bundled OpenCode缺失的shape/usage跳过和121行既有Renderer宿主未注册IPC诊断，不等于全项目零跳过或真实双客户端/私有bucket/生产验收。3B引用快照和候选、完整消息UI及可见已读仍未完成；未合并或部署。
+
+第3项的实施出口（不能用字段接通代替引用体验）：
+
+- [x] 3A：reply ID、显式 mention IDs、完整草稿意图、原设备恢复、创建 ACK 的确切证据；服务端原创建事件的 mention、服务端 createdAt 和 sender 经 history/SQLite/IPC 保留。私密历史边界也必须约束新引用。对应新增 signedHTTP/PG→桌面→错误200→receipt→重启→history 回归，初始已复现引用ID落库为 null，修复后通过。
+- [ ] 3B：发送时有限引用快照必须加密、绑定发送记录且不能由 Renderer 伪造；原文后续编辑不能偷偷改写已经发送的快照，原文撤回/不可读则仅显示占位。接收方不能借新回复读取其加入前不可见原文；本地旧引用缓存也要遵循撤权/撤回。复用现有加密、history 和确定性主进程边界，不把正文放入 event payload。
+- [ ] 3B：沿用授权会话详情获取 @ 候选，public Team 采用现有 activeRecipients 的全体 active Team 成员语义；私密/群聊/direct 不扩大范围。候选数据与管理用 members 分开，避免把公共频道候选误当显式成员；首发 Team 上限1000，候选不能静默截断并声称完整。
+
+3B 按可验证边界顺序实施，不能只交付服务端就勾选上面的完整出口：
+
+1. 服务端引用快照：加性存储迁移；复用现有 envelope crypto、独立用途 AAD 和随机 DEK。快照在创建事务持有授权锁时从原文生成，绑定新消息 ID/会话且不随后续编辑改变；正文上限512个 Unicode code point（最多2048 UTF-8字节），标明是否截断，不复制嵌套引用或附件凭证。命令只传目标ID，不接受客户端快照正文。相同命令 receipt 回放不重建快照；原引用在接收者 joined-seq 边界外、撤回、不可用或回复本身被撤回时，仅返回占位，不解封引用正文。旧记录没有发送时快照则明确缺失，不能以当前原文冒充历史快照。真实PG测试覆盖原文编辑、撤回、新成员边界、错误用途/消息绑定和回放。
+2. 桌面引用读模型：授权 history 取得快照后加密入本地消息缓存，get/list/readMessages/重启一致；显示用快照与不可变发送意图分离。已知原文撤回要在同步事务中屏蔽所有旧引用，包括最近200条之外的缓存；过时 history 不能复活引用。会话/Team撤权、membership epoch、bootstrap重建与账号切换一起清理或重新授权。Renderer只能传目标ID，不能伪造快照。主进程/实际IPC回归先于UI接线。
+3. 授权候选：服务端会话详情与现有 activeRecipients 同源；候选独立于管理成员投影，包含最小安全身份字段和明确完整性。主进程缓存、撤权/目录变化失效和IPC白名单齐备，旧服务器缺字段显示未知而不是擅自拿Team全量成员补齐。超过首发上限明确失败，不能悄悄截取1000项。
+
 **Files:**
 
 - Create: `src/renderer/modules/collaboration-inbox.js`
@@ -569,6 +587,7 @@ check ((scope_type = 'organization') = (organization_id is not null));
 - [ ] 测试孤儿 24 小时清理、retention tombstone、对象与 wrapped DEK 删除、失败补偿重试、账号注销 30 天恢复期和 Team 保留规则。
 - [ ] 幂等 receipt 的清理下限不得短于对应消息保留期和最大离线重试窗；删除前还要确认没有 non-terminal outbox 可能引用该 command id。
 - [ ] 测试消息/object KEK 版本轮换可读旧数据、新写只用当前版本，删除旧 key 前有引用计数硬门槛。
+- [ ] 引用快照同属受保护正文：保留到期/注销擦除不能遗漏其密文和封装密钥，旧 message KEK 的引用检查必须统计快照；撤回/到期读模型在后台清理尚未完成时也不得解封原引用。
 - [ ] 运行测试确认红灯。
 - [ ] 指标至少包含 send commit latency、sync lag、outbox age/retry、WS connection、dispatcher backlog、object bytes/failures、403/429、full resync count；不得以正文作 label。
 - [ ] maintenance 使用可恢复批次和 `SKIP LOCKED`，每批有上限；数据库删除与 Kodo 删除不一致时留在补偿队列。

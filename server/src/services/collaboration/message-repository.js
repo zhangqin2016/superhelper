@@ -5,7 +5,7 @@ export function createKyselyMessageRepository(db) {
   const conversations = createKyselyConversationRepository(db);
   return {
     activeConversationMemberIds: conversations.activeConversationMemberIds,
-    async findReplyTarget(trx, { conversationId, replyToMessageId }) { const row = await trx.selectFrom("messages").selectAll().where("id", "=", replyToMessageId).where("conversation_id", "=", conversationId).executeTakeFirst(); return row && { id: row.id, conversationId: row.conversation_id, revokedAt: row.revoked_at }; },
+    async findReplyTarget(trx, { conversationId, replyToMessageId, visibleAfterSeq }) { const row = await trx.selectFrom("messages").selectAll().where("id", "=", replyToMessageId).where("conversation_id", "=", conversationId).where("create_seq", ">", visibleAfterSeq).executeTakeFirst(); return row && { id: row.id, conversationId: row.conversation_id, revokedAt: row.revoked_at, createSeq: Number(row.create_seq) }; },
     async findAttachments(trx, { attachmentIds }) {
       // No FOR UPDATE here: send preflight is read-only; bindToMessage owns the
       // ordered message -> object locks after the message has been inserted.
@@ -31,7 +31,10 @@ export function createKyselyMessageRepository(db) {
       return trx.updateTable("conversation_members").set({ last_read_seq: sql`greatest(last_read_seq, ${seq})` }).where("conversation_id", "=", conversationId).where("user_id", "=", userId).where("status", "=", "active").returning(["last_read_seq as lastReadSeq"]).executeTakeFirstOrThrow();
     },
     async listHistory(trx, { conversationId, beforeSeq, messageIds, limit, visibleAfterSeq }) {
-      const rows = await trx.selectFrom("messages").selectAll().where("conversation_id", "=", conversationId).where("create_seq", ">", visibleAfterSeq).$if(beforeSeq != null, (q) => q.where("create_seq", "<", beforeSeq)).$if(messageIds != null, (q) => q.where("id", "in", messageIds)).orderBy("create_seq", "desc").limit(limit).execute();
+      const rows = await trx.selectFrom("messages").selectAll()
+        .select(sql`coalesce((select creation.payload -> 'mentionUserIds' from collaboration_events as creation
+          where creation.id = messages.event_id and creation.conversation_id = messages.conversation_id and creation.type = 'message.created'), '[]'::jsonb)`.as("mentionUserIds"))
+        .where("conversation_id", "=", conversationId).where("create_seq", ">", visibleAfterSeq).$if(beforeSeq != null, (q) => q.where("create_seq", "<", beforeSeq)).$if(messageIds != null, (q) => q.where("id", "in", messageIds)).orderBy("create_seq", "desc").limit(limit).execute();
       const attachmentMessageIds = rows.filter((row) => row.kind === "attachment" || row.kind === "workspace_share").map((row) => row.id);
       // The text-only baseline does not depend on object migrations or keys.
       if (!attachmentMessageIds.length) return rows;

@@ -45,10 +45,11 @@ async function validatedRecipients(repository, trx, conversationId) {
   return normalizedMembers(memberIds);
 }
 
-async function validateReplyTarget(repository, trx, { conversationId, replyToMessageId }) {
+async function validateReplyTarget(repository, trx, { conversationId, replyToMessageId, authorization }) {
   if (!replyToMessageId) return null;
-  const reply = await requireRepositoryMethod(repository, "findReplyTarget")(trx, { conversationId, replyToMessageId });
-  if (!reply || reply.conversationId !== conversationId || reply.revokedAt) {
+  const visibleAfterSeq = lockedVisibleAfterSeq(authorization);
+  const reply = await requireRepositoryMethod(repository, "findReplyTarget")(trx, { conversationId, replyToMessageId, visibleAfterSeq });
+  if (!reply || reply.conversationId !== conversationId || reply.revokedAt || !(Number(reply.createSeq ?? reply.create_seq) > visibleAfterSeq)) {
     throw commandError("COLLAB_REPLY_TARGET_INVALID", "The replied-to message is not available in this conversation.");
   }
   return reply.id;
@@ -157,6 +158,7 @@ function historyMessageView(message, messageCrypto) {
     bodyText,
     revision,
     replyToMessageId: message?.replyToMessageId ?? message?.reply_to_message_id ?? null,
+    mentionUserIds: normalizeIdList(message?.mentionUserIds, "History mention user ids"),
     editedAt: message?.editedAt ?? message?.edited_at ?? null,
     revokedAt: message?.revokedAt ?? message?.revoked_at ?? null,
     createdAt: message?.createdAt ?? message?.created_at ?? null,
@@ -273,8 +275,11 @@ export function createCollaborationMessageService({
     });
     return commandRunner(commandOptions({
       account, commandType: "message.create", clientCommandId, input, authorize, database, maxTransactionRetries, commandRunner, resolveInput,
-      project: async ({ trx, account: actor }) => {
-        const replyId = await validateReplyTarget(repository, trx, { conversationId, replyToMessageId });
+      project: async ({ trx, account: actor, authorization }) => {
+        // New admission is 32 KiB, but old 64 KiB durable receipts retain their
+        // original fingerprint/replay contract before this projection runs.
+        if (normalizedText != null && Buffer.byteLength(normalizedText, "utf8") > 32 * 1024) throw commandError("COLLAB_MESSAGE_BODY_TOO_LARGE", "The message body exceeds the maximum size.");
+        const replyId = await validateReplyTarget(repository, trx, { conversationId, replyToMessageId, authorization });
         // Read-only preflight. Message insertion must precede object locking;
         // the final binding performs the authoritative locked CAS recheck.
         if (attachmentIds.length && typeof objectService?.bindToMessage !== "function") {

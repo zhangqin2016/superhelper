@@ -49,6 +49,11 @@ const row = store.getOutbox({ outboxId: "stable-send-id" });
 assert.deepEqual({ bodyText: row.bodyText, attachmentIds: row.attachmentIds, attachmentPurpose: row.attachmentPurpose }, { bodyText: "work", attachmentIds: ["object-a", "object-b"], attachmentPurpose: "attachment" }, "verified attachment references enter the existing text outbox exactly once");
 assert.deepEqual(await coordinator.recover(), { handedOff: 0 });
 assert.equal(persisted, 1); assert.equal(submitted, 1, "restart/replay never creates a second text outbox item");
+const priorAttachment = intents.get('outbox:stable-send-id');
+intents.set('outbox:stable-send-id', { ...priorAttachment, replyToMessageId: 'different-reply', mentionUserIds: ['bob'] });
+assert.equal((await coordinator.sendAttachments({ conversationId: 'c1', transferIds: ['t-a', 't-b'], bodyText: 'work', clientCommandId: 'stable-send-id' })).code,
+  'IDEMPOTENCY_KEY_REUSED', 'attachment handoff cannot reuse a command whose reply/mention semantics differ');
+intents.set('outbox:stable-send-id', priorAttachment);
 
 let healthyWrites = 0;
 const isolatedRecovery = createAttachmentSendCoordinator({

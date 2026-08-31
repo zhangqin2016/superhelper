@@ -1,5 +1,7 @@
 "use strict";
 const { releaseHandledClamp } = require("./read-checkpoint");
+const { messageMetadata } = require("./message-intent");
+const { serverTime } = require("./message-time");
 
 function attachmentIds(message) {
   const ids = message.attachmentIds === undefined ? [] : message.attachmentIds;
@@ -28,19 +30,21 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
       // Different fetches can finish out of order. Never resurrect an old
       // revision or overwrite a revocation with stale authorized history.
       if (prior && (Number(prior.revision || 1) > revision || prior.revokedAt && !message.revokedAt)) continue;
+      const createdAt = serverTime(message.createdAt ?? message.created_at);
       const content = {
         bodyText: message.revokedAt ? "" : String(message.bodyText ?? ""), revision,
-        replyToMessageId: message.replyToMessageId ?? null, revokedAt: message.revokedAt ?? null,
+        ...messageMetadata(message), revokedAt: message.revokedAt ?? null,
         editedAt: message.editedAt ?? null, kind: String(message.kind || "text"),
+        createdAt: prior?.createdAt ?? createdAt, clientCreatedAt: prior?.clientCreatedAt ?? null,
         attachmentIds: normalizedAttachments,
         ...(prior?.clientCommandId ? { clientCommandId: prior.clientCommandId } : {}),
       };
-      const seq = Number(message?.createSeq ?? message?.create_seq ?? message?.seq);
+      const seq = prior?.seq ?? Number(message?.createSeq ?? message?.create_seq ?? message?.seq);
       store.db.run(
         `INSERT INTO messages (account_id, conversation_id, id, scope_id, seq, sender_user_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'persisted', ?, ?, ?)
-         ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET seq = excluded.seq, sender_user_id = excluded.sender_user_id, state = excluded.state, body_envelope_json = excluded.body_envelope_json, updated_at = excluded.updated_at`,
+         ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET seq = excluded.seq, sender_user_id = excluded.sender_user_id, state = excluded.state, body_envelope_json = excluded.body_envelope_json, created_at = excluded.created_at, updated_at = excluded.updated_at`,
         store.accountId, conversation, id, target.scope_id, Number.isSafeInteger(seq) ? seq : null, message?.senderUserId ?? message?.sender_user_id ?? null,
-        store._encrypt({ scopeId: target.scope_id, recordId: store._messageRecord(conversation, id), value: content }), store.now(), store.now(),
+        store._encrypt({ scopeId: target.scope_id, recordId: store._messageRecord(conversation, id), value: content }), content.createdAt ?? 0, store.now(),
       );
       releaseHandledClamp(store, conversation, seq);
       hydrated += 1;
@@ -75,4 +79,12 @@ function backfillMessageCommandIds(store) {
   })();
 }
 
-module.exports = { hydrateAuthorizedHistory, backfillMessageCommandIds, attachmentIds };
+function adoptOptimisticIdentity(store, { conversationId, messageId, clientCommandId, clientCreatedAt }) {
+  const row = store.db.get(`SELECT * FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, store.accountId, conversationId, messageId);
+  const content = store._decrypt({ scopeId: row.scope_id, recordId: store._messageRecord(conversationId, messageId), value: row.body_envelope_json });
+  store.db.run(`UPDATE messages SET client_command_id = ?, body_envelope_json = ? WHERE account_id = ? AND conversation_id = ? AND id = ?`,
+    clientCommandId, store._encrypt({ scopeId: row.scope_id, recordId: store._messageRecord(conversationId, messageId), value: { ...content, clientCommandId, clientCreatedAt } }),
+    store.accountId, conversationId, messageId);
+}
+
+module.exports = { hydrateAuthorizedHistory, backfillMessageCommandIds, attachmentIds, adoptOptimisticIdentity };

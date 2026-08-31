@@ -1,4 +1,5 @@
 "use strict";
+const { sameCreateIntent } = require("./message-intent");
 
 const fail = (code) => ({ ok: false, code, retryable: false });
 const validId = (value) => typeof value === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(value);
@@ -9,8 +10,7 @@ const validId = (value) => typeof value === "string" && /^[A-Za-z0-9_-]{1,200}$/
 // that their server object references are usable.
 function createAttachmentSendCoordinator({ store, transfers, outbox, deviceId = null, assertActive = () => {}, onChange = () => {} } = {}) {
   if (!store || !transfers || !outbox) throw new TypeError("Attachment send dependencies are required.");
-  const identical = (row, intent) => row && row.conversationId === intent.conversationId && row.bodyText === intent.bodyText
-    && row.scopeId === intent.scopeId && JSON.stringify(row.attachmentIds || []) === JSON.stringify(intent.attachmentIds || []) && row.attachmentPurpose === intent.purpose;
+  const identical = (row, intent) => row && row.scopeId === intent.scopeId && sameCreateIntent(row, { ...intent, attachmentPurpose: intent.purpose });
   const handoffs = new Map();
   async function handoffDurably(intent) {
     assertActive();
