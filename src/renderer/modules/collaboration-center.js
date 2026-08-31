@@ -6,6 +6,7 @@ import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
+import { initCollaborationAttachments } from "./collaboration-attachments.js";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -26,6 +27,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const timeline = byId("collaborationTimeline");
   const empty = byId("collaborationConversationEmpty");
   const olderButton = byId("collaborationLoadOlder");
+  let transferPolicy = {};
+  const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
+  const renderTimeline = () => renderCollaborationTimeline(timeline, historyMessages, {
+    onDownload: (input, purpose) => attachments.download(input, purpose),
+    canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
+  });
   let historyMessages = [];
   let nextBeforeSeq = null;
   let hasMore = false;
@@ -69,7 +76,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (activeConversationId !== conversationId || !["COLLAB_ACCESS_REVOKED", "COLLABORATION_NOT_FOUND"].includes(result?.code)) return false;
     activeConversationId = "";
     historyMessages = []; nextBeforeSeq = null; hasMore = false; historyOffline = false;
-    composer.reset?.(); timeline?.replaceChildren(); updateOlderButton();
+    composer.reset?.(); attachments.reset(); timeline?.replaceChildren(); updateOlderButton();
     if (empty) empty.hidden = false;
     if (scopeBadge) scopeBadge.textContent = "";
     if (live) live.textContent = t("collaboration.statusUnavailable");
@@ -100,10 +107,11 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     loadingOlder = false;
     updateOlderButton();
     composer.setConversation(conversationId);
+    attachments.setConversation(opened.conversation, transferPolicy);
     const scope = String(opened.conversation?.scopeId || "");
     if (scopeBadge) scopeBadge.textContent = scope.startsWith("team:")
       ? `${directory?.teams?.find((team) => team.scopeId === scope)?.name || t("collaboration.scopeTeam")} · ${scope}` : t("collaboration.scopePersonal");
-    renderCollaborationTimeline(timeline, historyMessages);
+    renderTimeline();
     if (empty) empty.hidden = historyMessages.length > 0;
     if (live) live.textContent = refreshFailed ? t("collaboration.historyLoadFailed") : String(opened.conversation?.title || t("collaboration.conversation"));
     if (status) status.textContent = t(opened.offline ? "collaboration.offlineCache" : "collaboration.statusAvailable");
@@ -121,7 +129,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (live) live.textContent = t("collaboration.historyLoadFailed");
     } else {
       acceptPage(page);
-      renderCollaborationTimeline(timeline, historyMessages);
+      renderTimeline();
       if (status) status.textContent = t(page.offline ? "collaboration.offlineCache" : "collaboration.statusAvailable");
     }
     updateOlderButton();
@@ -129,7 +137,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   olderButton?.addEventListener("click", loadOlder);
 
   const setActive = (active) => {
-    if (!active) navigationGeneration += 1;
+    if (!active) { navigationGeneration += 1; attachments.dismiss(); }
     shell.classList.toggle("collaboration-active", active);
     panel.hidden = !active;
     nav.setAttribute("aria-current", active ? "page" : "false");
@@ -168,8 +176,11 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   async function refresh() {
     const policy = await Promise.resolve(getPolicy()).catch(() => null);
     const enabled = policy?.collaboration?.enabled === true;
+    transferPolicy = enabled ? policy.collaboration : {};
+    attachments.setPolicy(transferPolicy);
+    renderTimeline();
     nav.hidden = !enabled;
-    if (!enabled) { setActive(false); if (status) status.textContent = t("collaboration.statusUnavailable"); }
+    if (!enabled) { attachments.reset(); setActive(false); if (status) status.textContent = t("collaboration.statusUnavailable"); }
     return enabled;
   }
   const unsubscribe = window.assistantClient?.collaboration?.onStateChange?.((payload) => {
@@ -182,6 +193,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       bootstrapAttempted = false;
       loadGeneration += 1; directory = null; friends.reset(); teams.reset();
       composer.reset?.();
+      attachments.reset();
       timeline?.replaceChildren();
       byId("collaborationInbox")?.replaceChildren();
       if (empty) empty.hidden = false;
@@ -199,5 +211,5 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     });
   });
   void refresh();
-  return { refresh, open: openConversation, loadOlder, show: () => { setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); composer.destroy(); } };
+  return { refresh, open: openConversation, loadOlder, show: () => { setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); attachments.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); composer.destroy(); } };
 }

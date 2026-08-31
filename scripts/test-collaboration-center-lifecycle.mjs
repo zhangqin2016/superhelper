@@ -4,7 +4,7 @@ class Node extends EventTarget {
   children = []; dataset = {}; hidden = false; value = ""; textContent = "";
   clientTop = 0;
   getBoundingClientRect() { return { top: 0, bottom: 0 }; }
-  classList = { toggle() {} }; setAttribute() {} focus() {}
+  classList = { toggle() {} }; setAttribute() {} removeAttribute() {} focus() {}
   append(child) { this.children.push(child); }
   replaceChildren(...children) { this.children = children.flatMap((c) => c.fragment ? c.children : [c]); }
 }

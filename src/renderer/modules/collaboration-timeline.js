@@ -14,7 +14,7 @@ function sequence(message) {
   return message.seq != null && Number.isSafeInteger(value) && value > 0 ? value : Infinity;
 }
 
-export function renderCollaborationTimeline(node, messages = []) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true } = {}) {
   if (!node) return;
   const prior = new Map([...node.children].map((child) => [child.dataset.messageKey, child]));
   const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
@@ -33,6 +33,20 @@ export function renderCollaborationTimeline(node, messages = []) {
     if (!body) { body = document.createElement("p"); body.className = "collaboration-message-body"; row.append(body); }
     const text = message.revokedAt ? t("collaboration.messageRevoked") : String(message.bodyText || "");
     if (body.textContent !== text) body.textContent = text;
+    let attachments = row.querySelector(".collaboration-message-attachments");
+    const purpose = message.kind === "workspace_share" ? "workspace" : "attachment";
+    if (!message.revokedAt && message.attachmentIds?.length && onDownload && canDownload(purpose)) {
+      if (!attachments) { attachments = document.createElement("div"); attachments.className = "collaboration-message-attachments"; row.append(attachments); }
+      const existing = new Map([...attachments.children].map((button) => [button.dataset.objectId, button]));
+      for (const objectId of message.attachmentIds) {
+        const button = existing.get(objectId) || document.createElement("button"); button.type = "button";
+        button.dataset.action = "download-attachment"; button.dataset.objectId = objectId;
+        button.textContent = t("collaboration.transfer.download");
+        button.onclick = () => onDownload({ conversationId: message.conversationId, messageId: message.id, objectId }, purpose);
+        attachments.append(button); existing.delete(objectId);
+      }
+      for (const button of existing.values()) button.remove();
+    } else attachments?.remove();
     const status = deliveryLabel(message);
     let meta = row.querySelector(".collaboration-message-status");
     if (status) {

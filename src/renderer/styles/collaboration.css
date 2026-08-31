@@ -40,6 +40,14 @@
 .collaboration-message-status { display: block; margin-block-start: 5px; color: var(--muted, #98a1b8); }
 .collaboration-composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-block-start: 12px; }
 .collaboration-composer textarea { min-inline-size: 0; resize: vertical; }
+.collaboration-transfer-panel { max-block-size: 32vh; overflow: auto; }
+.collaboration-transfers { display: grid; gap: 8px; }
+.collaboration-transfer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border, #2d3344); border-radius: 8px; overflow-wrap: anywhere; }
+.collaboration-transfer strong { flex-basis: 100%; }
+.collaboration-transfer small { color: var(--muted, #98a1b8); }
+.collaboration-message-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
+.collaboration-confirmation label { display: grid; gap: 6px; margin-block: 8px; }
+.collaboration-confirmation textarea { inline-size: 100%; box-sizing: border-box; resize: vertical; }
 .collaboration-inbox { overflow-y: auto; }
 .collaboration-social-form { display: grid; gap: 8px; margin-block: 12px 20px; }
 .collaboration-social-form label { display: grid; gap: 4px; min-inline-size: 0; }
