@@ -1,4 +1,5 @@
 "use strict";
+const { normalizeMentionCandidates } = require("./collaboration/mention-candidates");
 const { directoryView } = require("./collaboration/directory-view");
 const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/social-command-contract");
 const { attachmentIds } = require("./collaboration/history-cache");
@@ -86,7 +87,7 @@ function rendererOutbox(value = {}) {
   };
 }
 
-function rendererView(method, value) {
+function rendererView(method, value, payload) {
   const transfer = transferResult(method, value);
   if (transfer) return transfer;
   if (["friend", "conversation", "retrySocial", "openFriend"].includes(method)) return {
@@ -99,10 +100,18 @@ function rendererView(method, value) {
     return input && socialIdentifier(row.clientCommandId) ? [{ ...rendererView("retrySocial", row), kind: row.kind, scopeId: safeIdentifier(row.scopeId), input }] : [];
   }) };
   if (method === "getConversationDetails") return { ok: true, conversation: rendererConversation(value?.conversation), canManage: value?.canManage === true,
+    mentionCandidates: normalizeMentionCandidates(value?.mentionCandidates, { allowUnknown: true }),
     visibility: ["public", "private"].includes(value?.visibility) ? value.visibility : null,
     members: (value?.members || []).map((m) => ({ userId: safeIdentifier(m.userId), role: ["owner", "admin", "member"].includes(m.role) ? m.role : "member",
       displayName: typeof m.displayName === "string" ? m.displayName.slice(0, 500) : "", lilyId: safeIdentifier(m.lilyId) })),
   };
+  if (method === "getMentionCandidates") {
+    if (value?.ok !== true || !messageIdentifier(value.conversationId) || value.conversationId !== payload?.conversationId
+      || !Object.hasOwn(value, "mentionCandidates") || value.mentionCandidates === undefined) {
+      return { ok: false, code: "COLLAB_MENTION_CANDIDATES_INVALID", retryable: false };
+    }
+    return { ok: true, conversationId: value.conversationId, mentionCandidates: normalizeMentionCandidates(value.mentionCandidates, { allowUnknown: true }) };
+  }
   if (method === "getDirectory") return { ok: true, ...directoryView(value) };
   if (method === "getState") return { ok: true, cursor: nonNegativeInteger(value?.cursor), watermark: nonNegativeInteger(value?.watermark), outbox: Array.isArray(value?.outbox) ? value.outbox.map(rendererOutbox) : [] };
   if (method === "list") return { ok: true, conversations: Array.isArray(value?.conversations) ? value.conversations.map(rendererConversation) : [] };
@@ -143,7 +152,7 @@ async function invoke(getService, method, payload) {
   try {
     const result = await service[method](payload);
     if (serviceFor(getService) !== service) return { ok: false, code: "COLLAB_ACCOUNT_CHANGED", retryable: false };
-    return rendererView(method, result);
+    return rendererView(method, result, payload);
   } catch (error) {
     return { ok: false, code: String(error?.code || "COLLABORATION_UNAVAILABLE"), retryable: false };
   }
@@ -240,6 +249,7 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
   registerCommand(ipcMain, "collaboration:retry-social", getService, "retrySocial", (p) => hasOnlyKeys(p, new Set(["clientCommandId"])) && socialIdentifier(p.clientCommandId) ? { clientCommandId: p.clientCommandId } : null);
   registerCommand(ipcMain, "collaboration:open-friend", getService, "openFriend", (p) => hasOnlyKeys(p, new Set(["peerUserId"])) && socialIdentifier(p.peerUserId) ? { peerUserId: p.peerUserId } : null);
   registerCommand(ipcMain, "collaboration:get-conversation-details", getService, "getConversationDetails", validOpen);
+  registerCommand(ipcMain, "collaboration:get-mention-candidates", getService, "getMentionCandidates", validOpen);
   registerCommand(ipcMain, "collaboration:retry", getService, "retry", validOutbox);
   registerCommand(ipcMain, "collaboration:cancel", getService, "cancel", validOutbox);
   registerCommand(ipcMain, "collaboration:mark-read", getService, "markRead", validMarkRead);

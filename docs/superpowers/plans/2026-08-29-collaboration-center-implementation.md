@@ -410,8 +410,8 @@ check ((scope_type = 'organization') = (organization_id is not null));
 第3项的实施出口（不能用字段接通代替引用体验）：
 
 - [x] 3A：reply ID、显式 mention IDs、完整草稿意图、原设备恢复、创建 ACK 的确切证据；服务端原创建事件的 mention、服务端 createdAt 和 sender 经 history/SQLite/IPC 保留。私密历史边界也必须约束新引用。对应新增 signedHTTP/PG→桌面→错误200→receipt→重启→history 回归，初始已复现引用ID落库为 null，修复后通过。
-- [ ] 3B：发送时有限引用快照必须加密、绑定发送记录且不能由 Renderer 伪造；原文后续编辑不能偷偷改写已经发送的快照，原文撤回/不可读则仅显示占位。接收方不能借新回复读取其加入前不可见原文；本地旧引用缓存也要遵循撤权/撤回。复用现有加密、history 和确定性主进程边界，不把正文放入 event payload。
-- [ ] 3B：沿用授权会话详情获取 @ 候选，public Team 采用现有 activeRecipients 的全体 active Team 成员语义；私密/群聊/direct 不扩大范围。候选数据与管理用 members 分开，避免把公共频道候选误当显式成员；首发 Team 上限1000，候选不能静默截断并声称完整。
+- [x] 3B 数据基础：发送时有限引用快照加密、绑定发送记录且不能由 Renderer 伪造；原文编辑不改写已经发送的快照，原文撤回/不可读仅显示占位。接收方不能借新回复读取加入前不可见原文；本地旧引用缓存也遵循撤权/撤回。复用现有加密、history 和确定性主进程边界，不把正文放入 event payload。引用实际 UI 仍在第4项单独验收。
+- [x] 3B 数据基础：沿用授权会话详情获取 @ 候选，public Team 采用现有 activeRecipients 的全体 active Team 成员语义；私密/群聊/direct 不扩大范围。候选数据与管理用 members 分开，避免把公共频道候选误当显式成员；首发 Team 上限1000，超限明确失败。键盘选择 UI 仍在第4项单独验收。
 
 3B 按可验证边界顺序实施，不能只交付服务端就勾选上面的完整出口：
 
@@ -422,6 +422,12 @@ check ((scope_type = 'organization') = (organization_id is not null));
 1. 服务端引用快照：加性存储迁移；复用现有 envelope crypto、独立用途 AAD 和随机 DEK。快照在创建事务持有授权锁时从原文生成，绑定新消息 ID/会话且不随后续编辑改变；正文上限512个 Unicode code point（最多2048 UTF-8字节），标明是否截断，不复制嵌套引用或附件凭证。命令只传目标ID，不接受客户端快照正文。相同命令 receipt 回放不重建快照；原引用在接收者 joined-seq 边界外、撤回、不可用或回复本身被撤回时，仅返回占位，不解封引用正文。旧记录没有发送时快照则明确缺失，不能以当前原文冒充历史快照。真实PG测试覆盖原文编辑、撤回、新成员边界、错误用途/消息绑定和回放。
 2. 桌面引用读模型：授权 history 取得快照后加密入本地消息缓存，get/list/readMessages/重启一致；显示用快照与不可变发送意图分离。已知原文撤回要在同步事务中屏蔽所有旧引用，包括最近200条之外的缓存；过时 history 不能复活引用。会话/Team撤权、membership epoch、bootstrap重建与账号切换一起清理或重新授权。Renderer只能传目标ID，不能伪造快照。主进程/实际IPC回归先于UI接线。
 3. 授权候选：服务端会话详情与现有 activeRecipients 同源；候选独立于管理成员投影，包含最小安全身份字段和明确完整性。主进程缓存、撤权/目录变化失效和IPC白名单齐备，旧服务器缺字段显示未知而不是擅自拿Team全量成员补齐。超过首发上限明确失败，不能悄悄截取1000项。
+
+候选边界实施选择：wire为`mentionCandidates:{status:'complete',items:[{userId,lilyId,displayName,avatarObjectId}]}`，旧字段缺失明确unknown；超过1000返回`COLLAB_MENTION_CANDIDATES_LIMIT`（沿用现有统一HTTP边界400，不扩大全局状态映射）。既有管理详情必须每次fresh读取（现有角色变更/撤权测试要求），不能把canManage或members一起缓存。因此只增加窄的主进程只读getMentionCandidates及IPC/preload，cache miss复用已有授权详情接口，不新增服务端route或UI面板；fresh详情可播种候选缓存。候选缓存最多32项/30秒，必须按账号、cursor、会话授权代次、待刷新代次及服务生命周期失效，迟到成功/错误均先验证代次再应用或清理。缓存仅是候选提示，实际发送/@和管理动作仍由服务端重新授权。
+
+2026-08-31 候选基础已完成规格与质量独立审查。父进程94个协作Node/architecture/registry脚本、14组隔离PG集成通过；实际签名接口覆盖public/private/direct/group、缺profile、1000/1001和组织成员停用，主进程及IPC验证fresh详情播种和候选命中。审查实证发现并修复：内部空白/C1候选ID与发送校验不一致，以及新IPC缺失/错会话响应误报成功。现统一复用严格发送ID规则，成功信封绑定请求会话并要求显式候选。最终冻结代码完整能力门禁179项退出0；仍有bundled OpenCode shape/usage缺失跳过和121行既有Renderer宿主IPC诊断。此处不表示整个消息交互、双客户端或生产验收完成，未合并或部署。
+
+第4项先完成引用交互闭环，再接键盘@选择及编辑/撤回：沿用timeline稳定DOM，在消息中展示服务端不可变快照/撤回或不可用占位；输入区引用条只持久化目标ID，预览通过授权缓存取得，不作为发送快照。Composer按text/reply ID/mentions整个意图恢复、重试和清稿，迟到getDraft/readMessages/send不能覆盖新输入、切换后的会话或重置后的账号；旧detached动作也必须失效。新增真实Electron DOM测试及三语言/RTL守卫，不把静态源码检查当成交互验收。
 
 桌面读模型采用无正文的 account/conversation/source 屏蔽元数据和统一 get/list 占位投影，不为单次撤回扫描解密整个会话。源撤回标记与 cursor 同事务；授权 target-history 的明确 unavailable 也屏蔽旧引用，网络失败不得触发此动作。单条 legacy reply 缺快照或 reply 自身撤回不证明其源不可读，不能屏蔽同源其他有效回复。异步 history 需验证发起时会话代次，防 bootstrap/新 membership/撤权后重建被旧响应污染；仍可见会话 bootstrap 不得遗忘已知不可逆源撤回。显示快照始终不进入 draft/outbox/wire identity。
 

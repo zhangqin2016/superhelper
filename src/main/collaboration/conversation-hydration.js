@@ -4,6 +4,7 @@ const activity = require("./conversation-activity");
 const { randomUUID } = require("node:crypto");
 const { confirmRead } = require("./read-checkpoint");
 const { resetHistoryGeneration } = require("./history-fence");
+const { normalizeMentionCandidates } = require("./mention-candidates");
 function invalid() { return Object.assign(new Error("Invalid collaboration conversation projection"), { code: "COLLAB_CONVERSATION_INVALID" }); }
 function id(value) { return typeof value === "string" && value.length > 0 && value.length <= 200 && value.trim() === value && !/[\x00-\x1f\x7f]/.test(value); }
 function queueAuthorizedRefresh(store, conversationId) {
@@ -45,7 +46,9 @@ function normalizeProjection(value, conversationId, accountId) {
   if (c.visibility !== "public" && !self) throw invalid();
   const profiles = value.profiles.map((p) => ({ userId: p.userId ?? p.user_id, lilyId: p.lilyId ?? p.lily_id ?? null, displayName: p.displayName ?? p.display_name ?? null, avatarObjectId: p.avatarObjectId ?? p.avatar_object_id ?? null }));
   if (profiles.some((p) => !id(p.userId) || p.userId !== accountId && !members.some((m) => m.userId === p.userId))) throw invalid();
-  return { id: conversationId, scopeId, kind: c.kind, title: String(c.title || "").slice(0, 200), members, profiles, self };
+  const publicTeam = scopeType === "organization" && c.kind === "channel" && c.visibility === "public";
+  const mentionCandidates = normalizeMentionCandidates(value.mentionCandidates, { memberIds: publicTeam ? null : new Set(members.map((m) => m.userId)) });
+  return { id: conversationId, scopeId, kind: c.kind, title: String(c.title || "").slice(0, 200), members, profiles, self, mentionCandidates };
 }
 
 function applyAuthorizedConversation(store, conversationId, value) {

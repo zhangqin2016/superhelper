@@ -13,6 +13,7 @@ const { CollaborationStore } = require("../../src/main/collaboration/collaborati
 const { LocalCollaborationKeyring } = require("../../src/main/collaboration/local-keyring.js");
 const { createCollaborationClient } = require("../../src/main/collaboration/client.js");
 const { createCollaborationService } = require("../../src/main/collaboration/service.js");
+const { createCollaborationIpc } = require("../../src/main/ipc-collaboration.js");
 
 if (!process.env.DATABASE_URL) { console.log("collaboration conversations HTTP: skipped (DATABASE_URL is not configured)"); process.exit(0); }
 const schema = `collab_conversations_http_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -134,6 +135,37 @@ try {
   const join = await command("member", { action: "member", conversationId: priv, targetUserId: "invited", operation: "add" });
   assert.equal(join.status, 200, JSON.stringify(join.body));
   const afterJoin = await send("member", priv, "after invite");
+  const candidateIds = (projection) => {
+    assert.equal(projection.mentionCandidates?.status, "complete", "authorized projection explicitly declares a complete candidate set");
+    for (const item of projection.mentionCandidates.items) assert.deepEqual(Object.keys(item).sort(), ["userId", "lilyId", "displayName", "avatarObjectId"].sort(), "candidate profiles expose only minimal public identity fields");
+    return projection.mentionCandidates.items.map((item) => item.userId);
+  };
+  const publicProjection = (await get("member", pub)).body.result;
+  assert.deepEqual(candidateIds(publicProjection), ["admin", "invited", "member", "owner"]);
+  assert.ok(!publicProjection.members.some((member) => member.user_id === "member"), "public candidates include recipients with no explicit channel membership");
+  assert.ok(!publicProjection.profiles.some((profile) => profile.user_id === "invited"), "candidate profiles do not expand the management profile projection");
+  assert.deepEqual(candidateIds((await get("member", priv)).body.result), ["invited", "member"], "private candidates are not the full Team roster");
+  assert.deepEqual(candidateIds((await get("owner", direct)).body.result), ["member", "owner"]);
+  assert.deepEqual(candidateIds((await get("owner", group)).body.result), ["member", "owner"]);
+  try {
+    await pool.query("delete from user_profiles where user_id='invited'");
+    const missingProfile = (await get("member", pub)).body.result;
+    assert.deepEqual(candidateIds(missingProfile), ["admin", "invited", "member", "owner"], "missing profile cannot silently remove an authorized recipient");
+  } finally { await pool.query("insert into user_profiles values('invited','lily-invited','invited',null,'contacts')"); }
+  const capacityIds = Array.from({ length: 997 }, (_, i) => `mention-cap-${String(i).padStart(4, "0")}`);
+  try {
+    await pool.query("insert into users select unnest($1::text[])", [capacityIds]);
+    await pool.query("insert into organization_members(organization_id,user_id,role,status) select 'org',unnest($1::text[]),'member','active'", [capacityIds.slice(0, 996)]);
+    assert.equal(candidateIds((await get("member", pub)).body.result).length, 1000, "all 1000 eligible candidates remain complete even without profile rows");
+    await pool.query("insert into organization_members(organization_id,user_id,role,status) values('org',$1,'member','active')", [capacityIds.at(-1)]);
+    const overLimit = await get("member", pub);
+    assert.equal(overLimit.status, 400); assert.equal(overLimit.body.code, "COLLAB_MENTION_CANDIDATES_LIMIT");
+    assert.equal(overLimit.body.result, undefined, "1001 candidates cannot be silently truncated and presented as complete");
+    assert.deepEqual(candidateIds((await get("member", priv)).body.result), ["invited", "member"], "large Team does not broaden private candidates");
+  } finally {
+    await pool.query("delete from organization_members where user_id=any($1::text[])", [capacityIds]);
+    await pool.query("delete from users where id=any($1::text[])", [capacityIds]);
+  }
   // A desktop with no channel projection consumes the actual joined event,
   // calls the signed get/history routes, then ACKs its fully materialized page.
   const joinCursor = Number((await pool.query("select cursor from user_sync_events where user_id='invited' and event_id=$1", [join.body.result.eventId])).rows[0].cursor);
@@ -155,6 +187,19 @@ try {
     assert.equal(local.getConversation({ conversationId: priv }).scopeId, "team:org");
     assert.equal(local.getMessage({ conversationId: priv, messageId: afterJoin.id }).bodyText, "after invite");
     assert.equal(local.getMessage({ conversationId: priv, messageId: beforeJoin.id }), null, "first discovery cannot hydrate pre-membership history");
+    const details = await desktop.getConversationDetails({ conversationId: priv });
+    assert.equal(details.ok, true);
+    assert.deepEqual(candidateIds(details), ["invited", "member"], "real signed projection reaches the main-process candidate view");
+    const handlers = new Map();
+    createCollaborationIpc({ ipcMain: { handle: (name, handler) => handlers.set(name, handler) }, getService: () => desktop });
+    const ipcDetails = await handlers.get("collaboration:get-conversation-details")(null, { conversationId: priv });
+    assert.deepEqual(candidateIds(ipcDetails), ["invited", "member"], "actual IPC preserves only authorized candidate identities");
+    const projectionReads = desktopCalls.filter((endpoint) => endpoint === "conversations/get").length;
+    const ipcCandidates = await handlers.get("collaboration:get-mention-candidates")(null, { conversationId: priv });
+    assert.deepEqual(candidateIds(ipcCandidates), ["invited", "member"]);
+    assert.equal(ipcCandidates.conversationId, priv);
+    assert.equal(ipcCandidates.members, undefined); assert.equal(ipcCandidates.canManage, undefined);
+    assert.equal(desktopCalls.filter((endpoint) => endpoint === "conversations/get").length, projectionReads, "fresh authorized details seed candidate-only cache without caching management affordances");
   } finally { desktop.stop(); fs.rmSync(localDir, { recursive: true, force: true }); }
   const memberView = await bootstrap("invited");
   assert.deepEqual(memberView.conversations.map((row) => row.id).sort(), [pub, priv].sort());
@@ -210,6 +255,7 @@ try {
   assert.ok(!(await bootstrap("owner")).conversations.some((row) => row.id === direct), "Team direct still needs active explicit membership");
   await pool.query("update conversation_members set status='active' where conversation_id=$1 and user_id='owner'", [direct]);
   await pool.query("update organization_members set status='disabled' where user_id='member'");
+  assert.deepEqual(candidateIds((await get("owner", pub)).body.result), ["admin", "invited", "owner"], "disabled Team membership immediately disappears from public candidates");
   const revoked = await bootstrap("member");
   assert.deepEqual(revoked.conversations.map((row) => row.id), [group], "active cm cannot bypass disabled Team member but personal scope remains");
   assert.deepEqual(revoked.teamMembers, []);

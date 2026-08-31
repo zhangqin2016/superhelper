@@ -15,15 +15,18 @@ function openFriend(store, { peerUserId }) {
   });
   return conversation ? { ok: true, conversationId: conversation.id } : { ok: false, code: "COLLABORATION_NOT_FOUND" };
 }
-async function getConversationDetails({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory }) {
+async function getConversationDetails({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory, candidateCache }) {
   if (!client?.getConversationProjection || !deviceId) return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
+  candidateCache?.discard(conversationId);
+  const assertCurrent = candidateCache?.capture(conversationId) || (() => {});
   try {
     const value = await client.getConversationProjection({ deviceId, conversationId });
-    assertActive();
+    assertActive(); assertCurrent();
     const normalized = normalizeProjection(value, conversationId, store.accountId);
     applyAuthorizedConversation(store, conversationId, value);
+    candidateCache?.put(conversationId, normalized.mentionCandidates);
     const visibility = value.conversation.visibility || null;
-    return { ok: true, conversation: { id: normalized.id, scopeId: normalized.scopeId, kind: normalized.kind, title: normalized.title }, visibility,
+    return { ok: true, conversation: { id: normalized.id, scopeId: normalized.scopeId, kind: normalized.kind, title: normalized.title }, visibility, mentionCandidates: normalized.mentionCandidates,
       // UI affordance only. Every mutation is separately server-authorized.
       canManage: normalized.kind !== "direct" && visibility !== "public" && ["owner", "admin"].includes(normalized.self?.role),
       members: normalized.members.map((m) => ({ userId: m.userId, role: m.role,
@@ -31,8 +34,18 @@ async function getConversationDetails({ store, client, deviceId, conversationId,
     };
   } catch (error) {
     assertActive();
+    try { assertCurrent(); } catch { return { ok: false, code: "COLLAB_CONVERSATION_STALE" }; }
     if (recoverDeniedHistory(conversationId, error)) return { ok: false, code: "COLLAB_ACCESS_REVOKED" };
-    return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
+    return { ok: false, code: ["COLLAB_MENTION_CANDIDATES_INVALID", "COLLAB_MENTION_CANDIDATES_LIMIT"].includes(error?.code) ? error.code : "COLLABORATION_UNAVAILABLE" };
   }
 }
-module.exports = { visibleConversations, openFriend, getConversationDetails };
+async function getMentionCandidates(options) {
+  const { conversationId, candidateCache } = options;
+  try {
+    const cached = candidateCache.get(conversationId);
+    if (cached) return { ok: true, conversationId, mentionCandidates: cached };
+  } catch (error) { return { ok: false, code: error.code || "COLLABORATION_UNAVAILABLE" }; }
+  const details = await getConversationDetails(options);
+  return details.ok ? { ok: true, conversationId, mentionCandidates: details.mentionCandidates } : details;
+}
+module.exports = { visibleConversations, openFriend, getConversationDetails, getMentionCandidates };

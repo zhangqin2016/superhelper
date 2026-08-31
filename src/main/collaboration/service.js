@@ -11,6 +11,7 @@ const { recoverConversationHydration, assertHydrationComplete } = require("./con
 const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
 const socialDirectory = require("./social-directory-actions");
+const { createMentionCandidateCache } = require("./mention-candidate-cache");
 const { createTransferRuntime } = require("./transfer-runtime");
 const { createAttachmentSendCoordinator } = require("./attachment-send");
 const { createReadRecovery } = require("./read-recovery");
@@ -44,11 +45,12 @@ function initializeCollaborationService({
 }
 
 /** Build collaboration outside the Electron startup critical path. */
-function createCollaborationService({ openStore = openCollaborationStore, storeOptions, client, transport, deviceId = "", realtimeEnabled = true, realtimeOptions = {}, policy, transferOptions = {} } = {}) {
+function createCollaborationService({ openStore = openCollaborationStore, storeOptions, client, transport, deviceId = "", realtimeEnabled = true, realtimeOptions = {}, policy, transferOptions = {}, mentionCandidateClock } = {}) {
   const opened = openStore(storeOptions);
   if (!opened?.ok) return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
   try {
     const store = opened.store;
+    const candidateCache = createMentionCandidateCache({ store, now: mentionCandidateClock });
     // Direct/test assembly may inject an already-open cache.  Keep the
     // revocation hook and runtime on one root before any service lifecycle
     // recovery; Electron production supplies this before store construction.
@@ -73,12 +75,14 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     const syncEngine = {
       applyPage(page) {
         assertActive();
+        candidateCache.clear();
         try { return engine.applyPage(page); } finally {
           if (page.events?.some((event) => ["scope.revoked", "member.removed", "member.left"].includes(event.type)) && store.getSyncState().cursor >= page.toCursor) emitState("access-revoked");
         }
       },
       applyBootstrap(snapshot) {
         assertActive();
+        candidateCache.clear();
         const previous = store.listConversationIds?.() || [];
         try { return engine.applyBootstrap(snapshot); } finally {
           if (previous.some((conversationId) => !store.getConversation({ conversationId }))) emitState("access-revoked");
@@ -266,7 +270,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       },
       openFriend(command) { return stopped ? stoppedResult() : socialDirectory.openFriend(store, command); },
       getConversationDetails({ conversationId } = {}) {
-        return enqueueSync(() => socialDirectory.getConversationDetails({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory }));
+        return enqueueSync(() => socialDirectory.getConversationDetails({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory, candidateCache }));
+      },
+      getMentionCandidates({ conversationId } = {}) {
+        return enqueueSync(() => socialDirectory.getMentionCandidates({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory, candidateCache }));
       },
       getDraft({ conversationId } = {}) {
         if (stopped) return stoppedResult();
@@ -435,6 +442,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         // Store operations are synchronous. Fence all async continuations
         // before closing SQLite so a hung network request cannot retain it.
         stopped = true;
+        candidateCache.clear();
         stateListeners.clear();
         try { transfers.stop?.(); } catch { /* optional transfer cleanup cannot retain SQLite */ }
         try { client?.stop?.(); } finally {

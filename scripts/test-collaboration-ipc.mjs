@@ -25,7 +25,7 @@ createCollaborationIpc({ ipcMain, getService: () => service });
 assert.deepEqual([...handlers.keys()].sort(), [
   "collaboration:bootstrap", "collaboration:cancel", "collaboration:edit", "collaboration:friend", "collaboration:get-directory", "collaboration:get-draft", "collaboration:get-state", "collaboration:list",
   "collaboration:mark-read", "collaboration:open", "collaboration:read-messages", "collaboration:retry", "collaboration:revoke", "collaboration:save-draft", "collaboration:send", "collaboration:subscribe", "collaboration:unsubscribe",
-  "collaboration:conversation", "collaboration:get-social-commands", "collaboration:retry-social", "collaboration:open-friend", "collaboration:get-conversation-details",
+  "collaboration:conversation", "collaboration:get-social-commands", "collaboration:retry-social", "collaboration:open-friend", "collaboration:get-conversation-details", "collaboration:get-mention-candidates",
   "collaboration:get-transfers", "collaboration:prepare-attachment", "collaboration:enqueue-transfer", "collaboration:pause-transfer", "collaboration:cancel-transfer", "collaboration:prepare-download", "collaboration:save-download", "collaboration:send-attachments",
 ].sort());
 
