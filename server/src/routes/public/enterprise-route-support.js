@@ -1,6 +1,13 @@
 import { db } from "../../db.js";
 import { roleAtLeast } from "../../services/enterprise.js";
 
+export async function enterpriseMutationResponse(reply, operation) {
+  try { return await operation(); } catch (error) {
+    if (error.statusCode >= 400 && error.statusCode < 500 && error.code) return reply.code(error.statusCode).send({ ok: false, code: error.code });
+    throw error;
+  }
+}
+
 export async function orgMembership(organizationId, userId) {
   return db
     .selectFrom("organization_members")

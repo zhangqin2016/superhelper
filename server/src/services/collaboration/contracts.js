@@ -40,6 +40,7 @@ export const COLLABORATION_EVENT_TYPES = Object.freeze([
   "user.unblocked",
   "workspace.shared",
   "scope.revoked",
+  "directory.changed",
   "object.initiated",
   "object.verified",
   "object.rejected",
@@ -50,7 +51,7 @@ export const COLLABORATION_EVENT_TYPES = Object.freeze([
 
 export function collaborationAccountEventScope(type) {
   if (["friend.requested", "friend.accepted", "friend.declined", "friend.removed", "user.blocked", "user.unblocked"].includes(type)) return "relationship";
-  if (type === "scope.revoked") return "organization";
+  if (["scope.revoked", "directory.changed"].includes(type)) return "organization";
   if (["object.initiated", "object.verified", "object.rejected", "object.aborted", "object.revoked", "object.download_authorized"].includes(type)) return "object";
   return null;
 }

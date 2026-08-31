@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, powerMonitor } = require("electron");
+const { app, BrowserWindow, powerMonitor, dialog } = require("electron");
 const path = require("node:path");
 
 const { defaultWorkspacePath } = require("./main/config");
@@ -266,6 +266,11 @@ app.whenReady().then(async () => {
         return collaboration.createCollaborationService({
           storeOptions,
           client,
+          policy,
+          transferOptions: {
+            chooseFile: () => dialog.showOpenDialog(mainWindow, { properties: ["openFile"] }),
+            chooseSaveFile: ({ defaultName }) => dialog.showSaveDialog(mainWindow, { defaultPath: defaultName }),
+          },
           realtimeEnabled: policy?.realtime !== false,
           deviceId,
           transport: {

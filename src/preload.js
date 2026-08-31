@@ -449,6 +449,13 @@ contextBridge.exposeInMainWorld("assistantClient", {
   // Intentionally a closed command set. The renderer never receives bearer
   // credentials, device signatures, encrypted key material, or local paths.
   collaboration: {
+    getTransfers: () => ipcRenderer.invoke("collaboration:get-transfers"),
+    prepareAttachment: (conversationId) => ipcRenderer.invoke("collaboration:prepare-attachment", { conversationId }),
+    enqueueTransfer: (transferId) => ipcRenderer.invoke("collaboration:enqueue-transfer", { transferId }),
+    pauseTransfer: (transferId) => ipcRenderer.invoke("collaboration:pause-transfer", { transferId }),
+    cancelTransfer: (transferId) => ipcRenderer.invoke("collaboration:cancel-transfer", { transferId }),
+    prepareDownload: ({ conversationId, messageId, objectId }) => ipcRenderer.invoke("collaboration:prepare-download", { conversationId, messageId, objectId }),
+    saveDownload: (transferId) => ipcRenderer.invoke("collaboration:save-download", { transferId }),
     getDirectory: () => ipcRenderer.invoke("collaboration:get-directory"),
     getState: () => ipcRenderer.invoke("collaboration:get-state"),
     bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),

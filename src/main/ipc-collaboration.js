@@ -2,6 +2,7 @@
 const { directoryView } = require("./collaboration/directory-view");
 const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/social-command-contract");
 const { attachmentIds } = require("./collaboration/history-cache");
+const { transferResult, registerTransferIpc } = require("./collaboration/transfer-ipc");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
@@ -81,6 +82,8 @@ function rendererOutbox(value = {}) {
 }
 
 function rendererView(method, value) {
+  const transfer = transferResult(method, value);
+  if (transfer) return transfer;
   if (["friend", "conversation", "retrySocial", "openFriend"].includes(method)) return {
     ok: value?.ok === true,
     ...Object.fromEntries(["clientCommandId", "state", "code", "conversationId"].filter((key) => socialIdentifier(value?.[key])).map((key) => [key, value[key]])),
@@ -194,6 +197,7 @@ function registerCommand(ipcMain, channel, getService, method, validate) {
 function createCollaborationIpc({ ipcMain, getService, subscribeState = () => () => {} } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function") throw new TypeError("ipcMain.handle is required");
   const subscriptions = new Map();
+  registerTransferIpc({ ipcMain, invoke: (method, payload) => invoke(getService, method, payload) });
   const emitState = async (sender, change = {}) => {
     if (!sender || sender.isDestroyed?.()) return;
     sender.send("collaboration:state", {

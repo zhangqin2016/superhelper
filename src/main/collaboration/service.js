@@ -11,6 +11,7 @@ const { recoverConversationHydration } = require("./conversation-hydration");
 const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
 const socialDirectory = require("./social-directory-actions");
+const { createTransferRuntime } = require("./transfer-runtime");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -40,7 +41,7 @@ function initializeCollaborationService({
 }
 
 /** Build collaboration outside the Electron startup critical path. */
-function createCollaborationService({ openStore = openCollaborationStore, storeOptions, client, transport, deviceId = "", realtimeEnabled = true, realtimeOptions = {} } = {}) {
+function createCollaborationService({ openStore = openCollaborationStore, storeOptions, client, transport, deviceId = "", realtimeEnabled = true, realtimeOptions = {}, policy, transferOptions = {} } = {}) {
   const opened = openStore(storeOptions);
   if (!opened?.ok) return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
   try {
@@ -59,6 +60,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       }
     };
     const engine = createCollaborationSyncEngine({ store });
+    const transfers = createTransferRuntime({ ...transferOptions, store, client, deviceId, policy, assertActive, onChange: () => emitState("transfer") });
+    const transferCommand = (method, payload) => stopped ? stoppedResult() : transfers.ok ? transfers[method](payload) : unavailableService();
     const syncEngine = {
       applyPage(page) {
         assertActive();
@@ -108,6 +111,12 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     const recoverPendingHistory = async () => {
       assertActive();
       store.flushRevokedKeys?.();
+      // The account event itself is the durable refresh checkpoint. Bootstrap
+      // removes it atomically with the authoritative directory replacement.
+      // A failed request/restart therefore cannot ACK past a stale roster.
+      if (store.db?.get(`SELECT 1 FROM events WHERE account_id = ? AND type = 'directory.changed' LIMIT 1`, store.accountId)) {
+        return bootstrapNow();
+      }
       await recoverConversationHydration({ store, client, deviceId, assertActive, recoverDeniedHistory });
       const pending = typeof store.listPendingHistoryHydration === "function"
         ? store.listPendingHistoryHydration() : [];
@@ -130,7 +139,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         },
         onIncrementalPage: async ({ page, acknowledge }) => {
           const applied = syncEngine.applyPage(page);
-          await recoverPendingHistory();
+          const refreshed = await recoverPendingHistory();
+          if (refreshed) return { ...refreshed, events: page.events || [], historyHydrated: true };
           if (typeof store.listPendingHistoryHydration !== "function") await hydrateAuthorizedHistory(messageConversationIdsFor(page.events));
           assertActive();
           await acknowledge();
@@ -179,16 +189,18 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     // UI/realtime are hints; a failed HTTP sync must never become an unhandled
     // rejection in Electron's main process.
     const synchronizeSafely = () => synchronize().catch(() => undefined);
-    const bootstrap = () => enqueueSync(async () => {
+    const bootstrapNow = async () => {
       const snapshot = await client.bootstrap({ deviceId });
       assertActive();
+      if (Number(snapshot.watermark) < store.getSyncState().cursor) throw Object.assign(new Error("Stale collaboration directory snapshot"), { code: "COLLAB_BOOTSTRAP_STALE" });
       const applied = syncEngine.applyBootstrap({ ...snapshot, history: [], requireHistoryHydration: true });
       await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
       assertActive();
       await client.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });
       assertActive(); emitState("bootstrap");
       return { ok: true, cursor: applied.cursor };
-    });
+    };
+    const bootstrap = () => enqueueSync(bootstrapNow);
     const social = createSocialCommands({ store, client, deviceId, assertActive,
       onChange: () => emitState("relationship"),
       onConfirmed: async () => {
@@ -207,6 +219,13 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       : null;
     return {
       ok: true, store, syncEngine, outbox, realtime,
+      getTransfers() { return transferCommand("list"); },
+      prepareAttachment(command) { return transferCommand("prepareAttachment", command); },
+      enqueueTransfer(command) { return transferCommand("enqueue", command); },
+      pauseTransfer(command) { return transferCommand("pause", command); },
+      cancelTransfer(command) { return transferCommand("cancel", command); },
+      prepareDownload(command) { return transferCommand("prepareDownload", command); },
+      saveDownload(command) { return transferCommand("saveDownload", command); },
       subscribe(listener) {
         if (stopped || typeof listener !== "function") return () => {};
         stateListeners.add(listener);
@@ -354,6 +373,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (stopped) return stoppedResult();
         if (started) return;
         started = true;
+        transfers.start?.();
         const recovered = store.recoverAbandonedSubmittingOutbox?.();
         if (recovered?.recovered) emitState("outbox");
         if (stopped) return stoppedResult();
@@ -373,6 +393,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         // before closing SQLite so a hung network request cannot retain it.
         stopped = true;
         stateListeners.clear();
+        try { transfers.stop?.(); } catch { /* optional transfer cleanup cannot retain SQLite */ }
         try { client?.stop?.(); } finally {
           try { realtime?.stop(); } finally {
             if (httpPollTimer != null) clearInterval(httpPollTimer);
