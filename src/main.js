@@ -3,7 +3,7 @@
 const { app, BrowserWindow, powerMonitor, dialog } = require("electron");
 const path = require("node:path");
 
-const { defaultWorkspacePath } = require("./main/config");
+const { defaultWorkspacePath, collaborationTransferRoot } = require("./main/config");
 const { loadAppIconImage } = require("./main/app-icon");
 const { resolveOpencodeCommand } = require("./main/agent-command");
 const ProjectManager = require("./main/project-manager");
@@ -264,10 +264,11 @@ app.whenReady().then(async () => {
           },
         });
         return collaboration.createCollaborationService({
-          storeOptions,
+          storeOptions: { ...storeOptions, transferRoot: collaborationTransferRoot() },
           client,
           policy,
           transferOptions: {
+            rootPath: collaborationTransferRoot(),
             chooseFile: () => dialog.showOpenDialog(mainWindow, { properties: ["openFile"] }),
             chooseSaveFile: ({ defaultName }) => dialog.showSaveDialog(mainWindow, { defaultPath: defaultName }),
           },
@@ -280,6 +281,7 @@ app.whenReady().then(async () => {
               conversationId: item.conversationId,
               clientCommandId: item.clientCommandId,
               bodyText: item.bodyText,
+              ...(Array.isArray(item.attachmentIds) && item.attachmentIds.length ? { attachmentIds: item.attachmentIds, attachmentPurpose: item.attachmentPurpose } : {}),
             }),
             lookupReceipt: ({ clientCommandId, conversationId }) => client.lookupCommandReceipt({
               deviceId, clientCommandId, conversationId,

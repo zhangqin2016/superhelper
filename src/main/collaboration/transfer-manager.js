@@ -47,7 +47,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
   const deviceChanged = (item) => item.direction === "upload" && (item.checkpoint?.state || item.checkpoint?.content) && item.checkpoint.deviceId !== deviceId;
   function guard(item, allowCancelled = false, checkDevice = true) {
     if (stopped) throw fail("COLLABORATION_STOPPED");
-    const result = assertAuthorized({ accountId: item.accountId, scopeId: item.scopeId, conversationId: item.conversationId, direction: item.direction, purpose: item.purpose });
+    const result = assertAuthorized({ id: item.id, accountId: item.accountId, scopeId: item.scopeId, conversationId: item.conversationId, direction: item.direction, purpose: item.purpose });
     if (result === false || result?.then) throw fail("COLLAB_ACCESS_REVOKED");
     // Server receipts are partitioned by device, not only command ID. Legacy
     // uploads without identity are also ambiguous and must not be adopted.

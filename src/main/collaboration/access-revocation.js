@@ -1,5 +1,6 @@
 "use strict";
 const { removeTeamDirectory, pruneDirectoryProfiles } = require("./directory-projection");
+const { retireScopeTransfers } = require("./transfer-retirement");
 
 function revoked() { return Object.assign(new Error("Collaboration access revoked"), { code: "COLLAB_ACCESS_REVOKED" }); }
 function validId(value) { return typeof value === "string" && value.length > 0 && value.length <= 200 && value.trim() === value; }
@@ -43,6 +44,10 @@ function removeScopeRows(store, scopeId) {
 /** Filesystem work happens only after SQL commit; its durable intent survives a crash. */
 function flushRevokedKeys(store) {
   for (const row of store.db.all(`SELECT scope_id FROM revoked_scopes WHERE account_id = ? AND key_delete_pending = 1`, store.accountId)) {
+    // This must finish before key destruction.  An authenticated Team
+    // transfer is then durably fenced even if a later bootstrap re-enables
+    // the organization and creates a new scope key.
+    retireScopeTransfers({ rootPath: store.transferRoot, accountId: store.accountId, keyring: store.keyring, scopeId: row.scope_id });
     store.keyring.destroyScopeKey({ accountId: store.accountId, scopeId: row.scope_id });
     store.db.run(`UPDATE revoked_scopes SET key_delete_pending = 0 WHERE account_id = ? AND scope_id = ?`, store.accountId, row.scope_id);
   }

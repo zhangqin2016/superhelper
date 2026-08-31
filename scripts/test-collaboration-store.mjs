@@ -17,7 +17,7 @@ process.env.LILY_USER_DATA_DIR = dir;
 const { collaborationDbPath, collaborationTransferRoot, messageDbPath } = require("../src/main/config.js");
 assert.notEqual(collaborationDbPath(), messageDbPath(), "collaboration cache must never share the AI transcript database");
 assert.equal(collaborationDbPath(), path.join(dir, "collaboration.db"));
-assert.equal(collaborationTransferRoot(), path.join(dir, "collaboration-transfers"));
+assert.equal(collaborationTransferRoot(), path.join(dir, "collaboration-transfer"), "store retirement and runtime share one canonical encrypted-transfer root");
 const safeStorage = {
   isEncryptionAvailable: () => true,
   encryptString: (value) => Buffer.from(`protected:${value}`, "utf8"),
@@ -30,6 +30,7 @@ for (const table of ["profiles", "conversations", "conversation_members", "event
   assert.ok(tables.has(table), `isolated collaboration cache includes ${table}`);
 }
 assert.equal([...tables].some((name) => /_fts$/i.test(name)), false, "encrypted message bodies never receive a plaintext FTS index");
+store.replaceProjectionFromBootstrap({ watermark: 0, conversations: [{ id: "conversation-1", kind: "direct" }] });
 
 let networkCalls = 0;
 const queued = store.persistDraftAndOptimisticMessage({
@@ -46,6 +47,13 @@ assert.equal(networkCalls, 1, "network work begins only after the SQLite transac
 assert.equal(store.getDraft({ conversationId: "conversation-1", draftId: "draft-1" }).text, "first draft");
 assert.equal(store.getMessage({ conversationId: "conversation-1", messageId: "message-local-1" }).bodyText, "send this after commit");
 assert.deepEqual(store.listOutbox().map((row) => row.clientCommandId), ["command-1"]);
+store.saveDraft({ conversationId: "conversation-1", text: "ordinary message" });
+store.persistDraftAndOptimisticMessage({
+  conversationId: "conversation-1", draftId: "composer", draftText: "", messageId: "message-normal-clear",
+  clientCommandId: "command-normal-clear", bodyText: "ordinary message",
+});
+assert.equal(store.getDraft({ conversationId: "conversation-1", draftId: "composer" }).text, "",
+  "ordinary text send retains its established behavior of consuming the matching composer draft");
 
 store.applySyncPage({
   fromCursor: 0, toCursor: 1,
@@ -64,6 +72,17 @@ store.persistDraftAndOptimisticMessage({
   scopeId: "team:design",
 });
 assert.equal(store.getOutbox({ outboxId: "team-command-1" }).scopeId, "team:design", "pending commands persist their authorization scope outside the encrypted envelope");
+
+store.persistDraftAndOptimisticMessage({
+  conversationId: "conversation-1", draftId: "attachment-draft", draftText: "", messageId: "attachment-local-1",
+  clientCommandId: "attachment-command-1", bodyText: "design brief", attachmentIds: ["object-a", "object-b"], attachmentPurpose: "attachment",
+});
+assert.deepEqual(store.getMessage({ conversationId: "conversation-1", messageId: "attachment-local-1" }).attachmentIds, ["object-a", "object-b"], "optimistic attachment references are encrypted with the local message");
+assert.equal(store.getMessage({ conversationId: "conversation-1", messageId: "attachment-local-1" }).kind, "attachment");
+assert.throws(() => store.persistDraftAndOptimisticMessage({
+  conversationId: "conversation-1", draftId: "attachment-invalid", draftText: "", messageId: "attachment-invalid",
+  clientCommandId: "attachment-invalid", bodyText: "invalid", attachmentIds: [123], attachmentPurpose: "attachment",
+}), /attachment intent is invalid/, "attachment object identifiers are strict strings; numeric coercion cannot create a divergent local/server command");
 
 assert.equal(fs.readFileSync(dbPath).includes(Buffer.from("send this after commit")), false, "SQLite cache never stores plaintext message bodies");
 assert.equal(fs.readFileSync(dbPath).includes(Buffer.from("first draft")), false, "SQLite cache never stores plaintext drafts");
@@ -92,6 +111,9 @@ assert.equal(reloaded.getMessage({ conversationId: "conversation-1", messageId: 
 assert.deepEqual(reloaded.listPendingHistoryHydration(), ["conversation-1"], "a crash after page commit retains the hydration checkpoint for startup recovery");
 assert.deepEqual(reloaded.completeHistoryHydration({ conversationId: "conversation-1" }), { completed: 1 });
 assert.deepEqual(reloaded.listPendingHistoryHydration(), [], "only a completed authorized history hydration clears the checkpoint");
+reloaded.replaceProjectionFromBootstrap({ watermark: 1, conversations: [{ id: "conversation-1", kind: "direct" }] });
+assert.deepEqual(reloaded.getMessage({ conversationId: "conversation-1", messageId: "attachment-local-1" }).attachmentIds, ["object-a", "object-b"], "bootstrap rebuilding a confirming bubble keeps its attachment references");
+assert.equal(reloaded.getMessage({ conversationId: "conversation-1", messageId: "attachment-local-1" }).kind, "attachment", "bootstrap rebuilding a confirming bubble keeps its kind");
 assert.equal(reloaded.getOutbox({ outboxId: "team-command-1" }).bodyText, "team payload must use its own scope key", "a restart decrypts a pending Team outbox item using its persisted scope");
 reloaded.applySyncPage({
   fromCursor: 1, toCursor: 2,

@@ -46,13 +46,15 @@ function transportSnapshot(item) {
  * Ambiguous responses recover only by receipt or bounded replay of the exact
  * durable command. Unknown delivery remains a conversation ordering barrier.
  */
-function createCollaborationOutbox({ store, transport, onStateChange = () => {}, maxAutoRetries = 3, retryBaseMs = 1_000, retryMaxMs = 30_000, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout } = {}) {
+function createCollaborationOutbox({ store, transport, deviceId = "", onStateChange = () => {}, maxAutoRetries = 3, retryBaseMs = 1_000, retryMaxMs = 30_000, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout } = {}) {
   if (!store || typeof store.getOutbox !== "function" || typeof store.setOutboxState !== "function") throw new TypeError("A collaboration store is required.");
   if (!transport || typeof transport.submit !== "function") throw new TypeError("A collaboration transport is required.");
   const lanes = new Map();
   const retryTimers = new Map();
   let stopped = false;
   const stoppedResult = () => ({ ok: false, code: "COLLABORATION_STOPPED" });
+  const deviceMismatch = (item) => typeof deviceId === "string" && deviceId && typeof item?.originDeviceId === "string" && item.originDeviceId !== deviceId;
+  const deviceResult = (item) => ({ state: item?.state || "missing", clientCommandId: item?.clientCommandId, code: "COLLAB_OUTBOX_DEVICE_CHANGED", recovery: "original_device_required" });
   function scheduleRetry(outboxId, attempt) {
     if (stopped || retryTimers.has(outboxId)) return;
     const exponent = Math.max(0, Number(attempt) - 1);
@@ -79,6 +81,7 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
   async function submitNow(outboxId) {
     const item = store.getOutbox({ outboxId });
     if (!item) return { state: "missing" };
+    if (deviceMismatch(item)) return deviceResult(item);
     if (item.state === "confirming" || item.state === "persisted") return { state: item.state, clientCommandId: item.clientCommandId };
     if (item.deliveryConfirmed) {
       // An ACK can survive a crash before the following state transition. It
@@ -151,6 +154,7 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
   async function reconcileNow(outboxId, automatic = false) {
     const item = store.getOutbox({ outboxId });
     if (!item || !["confirming", "delivery_unknown", "cancellation_requested"].includes(item.state)) return;
+    if (deviceMismatch(item)) return deviceResult(item);
     let receipt;
     try {
       receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, conversationId: item.conversationId });
@@ -242,9 +246,11 @@ function createCollaborationOutbox({ store, transport, onStateChange = () => {},
       if (stopped) return Promise.resolve(stoppedResult());
       const item = store.getOutbox({ outboxId });
       if (!item) return Promise.resolve({ state: "missing" });
+      if (deviceMismatch(item)) return Promise.resolve(deviceResult(item));
       return enqueue(item.conversationId, async () => {
         const current = store.getOutbox({ outboxId: item.id });
         if (!current) return { state: "missing" };
+        if (deviceMismatch(current)) return deviceResult(current);
         if (current.deliveryConfirmed) return { state: current.state, canRevoke: true };
         if (["queued", "paused", "failed"].includes(current.state) && !current.deliveryUncertain) {
           store.setOutboxState({ outboxId: current.id, expectedStates: ["queued", "paused", "failed"], state: "cancelled" });

@@ -40,7 +40,15 @@ function privateDirectory(value) {
 function safeCheckpoint(value) {
   // This closed journal vocabulary is deliberately not a serialized HTTP
   // response. Fresh network capabilities must be reacquired after restart.
-  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext", "deviceId", "schedule"].includes(key))) throw invalid();
+  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext", "deviceId", "schedule", "sendIntent"].includes(key))) throw invalid();
+  if (value.sendIntent !== undefined) {
+    const intent = value.sendIntent;
+    if (!intent || Object.getPrototypeOf(intent) !== Object.prototype || Object.keys(intent).some((key) => !["coordinatorId", "clientCommandId", "conversationId", "scopeId", "purpose", "transferIds", "bodyText", "status"].includes(key))
+      || !UUID.test(intent.coordinatorId) || !UUID.test(intent.clientCommandId) || !validId(intent.conversationId) || !validId(intent.scopeId)
+      || !["attachment", "workspace"].includes(intent.purpose) || !["waiting_attachments", "ready_to_handoff", "handed_off", "cancelled"].includes(intent.status)
+      || !Array.isArray(intent.transferIds) || intent.transferIds.length < 1 || intent.transferIds.length > 20 || new Set(intent.transferIds).size !== intent.transferIds.length || intent.transferIds.some((id) => !UUID.test(id))
+      || typeof intent.bodyText !== "string" || Buffer.byteLength(intent.bodyText, "utf8") > 32 * 1024) throw invalid();
+  }
   if (value.deviceId !== undefined && !validId(value.deviceId)) throw invalid();
   if (value.schedule !== undefined) {
     const s = value.schedule;

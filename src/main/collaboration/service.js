@@ -12,6 +12,7 @@ const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
 const socialDirectory = require("./social-directory-actions");
 const { createTransferRuntime } = require("./transfer-runtime");
+const { createAttachmentSendCoordinator } = require("./attachment-send");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -46,6 +47,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
   if (!opened?.ok) return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
   try {
     const store = opened.store;
+    // Direct/test assembly may inject an already-open cache.  Keep the
+    // revocation hook and runtime on one root before any service lifecycle
+    // recovery; Electron production supplies this before store construction.
+    if (!store.transferRoot && transferOptions.rootPath) store.transferRoot = transferOptions.rootPath;
     let stopped = false;
     let started = false;
     const stoppedResult = () => ({ ok: false, code: "COLLABORATION_STOPPED" });
@@ -60,7 +65,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       }
     };
     const engine = createCollaborationSyncEngine({ store });
-    const transfers = createTransferRuntime({ ...transferOptions, store, client, deviceId, policy, assertActive, onChange: () => emitState("transfer") });
+    let attachmentSend = null;
+    const transfers = createTransferRuntime({ ...transferOptions, store, client, deviceId, policy, assertActive, onChange: () => { emitState("transfer"); void attachmentSend?.recover?.().catch(() => undefined); } });
     const transferCommand = (method, payload) => stopped ? stoppedResult() : transfers.ok ? transfers[method](payload) : unavailableService();
     const syncEngine = {
       applyPage(page) {
@@ -104,7 +110,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         }
       }
     };
-    const outbox = transport ? createCollaborationOutbox({ store, transport, onStateChange: () => emitState("outbox") }) : null;
+    const outbox = transport ? createCollaborationOutbox({ store, transport, deviceId, onStateChange: () => emitState("outbox") }) : null;
+    if (transfers.ok && outbox) attachmentSend = createAttachmentSendCoordinator({ store, transfers, outbox, deviceId: deviceId || null, assertActive, onChange: () => emitState("attachment-send") });
     const messageConversationIdsFor = (events) => (events || [])
       .filter((event) => String(event?.type || "").startsWith("message."))
       .map((event) => event?.conversationId ?? event?.conversation_id);
@@ -226,6 +233,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       cancelTransfer(command) { return transferCommand("cancel", command); },
       prepareDownload(command) { return transferCommand("prepareDownload", command); },
       saveDownload(command) { return transferCommand("saveDownload", command); },
+      sendAttachments(command) { return stopped ? stoppedResult() : attachmentSend ? attachmentSend.sendAttachments(command) : unavailableService(); },
       subscribe(listener) {
         if (stopped || typeof listener !== "function") return () => {};
         stateListeners.add(listener);
@@ -309,6 +317,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         const messageId = `optimistic:${clientCommandId}`;
         const persisted = store.persistDraftAndOptimisticMessage({
           conversationId, draftId: "composer", draftText: "", messageId, clientCommandId, bodyText, scopeId: conversation.scopeId,
+          ...(deviceId ? { originDeviceId: deviceId } : {}),
         });
         const submitted = await outbox.submit(persisted.outboxId);
         if (stopped) return stoppedResult();
@@ -374,6 +383,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (started) return;
         started = true;
         transfers.start?.();
+        void attachmentSend?.recover?.().catch(() => undefined);
         const recovered = store.recoverAbandonedSubmittingOutbox?.();
         if (recovered?.recovered) emitState("outbox");
         if (stopped) return stoppedResult();

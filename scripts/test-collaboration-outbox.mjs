@@ -47,6 +47,21 @@ store.settleOutboxFromSync({ clientCommandId: "command-1", eventId: "event-1", m
 assert.equal(store.getOutbox({ outboxId: "command-1" }).state, "persisted", "durable sync settles the exact optimistic command in place");
 assert.equal(store.getMessage({ conversationId: "conv-1", messageId: "local-message-1" }).state, "persisted");
 
+store.persistDraftAndOptimisticMessage({
+  conversationId: "conv-origin-device", draftId: "draft-origin-device", draftText: "", messageId: "message-origin-device",
+  clientCommandId: "command-origin-device", bodyText: "attachment identity", attachmentIds: ["object-origin"], attachmentPurpose: "attachment", originDeviceId: "device-original",
+});
+let foreignSubmits = 0, foreignReceipts = 0;
+const foreignDevice = createCollaborationOutbox({
+  store, deviceId: "device-replacement",
+  transport: { async submit() { foreignSubmits += 1; }, async lookupReceipt() { foreignReceipts += 1; return null; } },
+});
+assert.deepEqual(await foreignDevice.submit("command-origin-device"), { state: "queued", clientCommandId: "command-origin-device", code: "COLLAB_OUTBOX_DEVICE_CHANGED", recovery: "original_device_required" }, "a replacement device cannot submit an attachment command admitted by another device");
+store.setOutboxState({ outboxId: "command-origin-device", expectedStates: ["queued"], state: "confirming" });
+await foreignDevice.reconcilePending();
+assert.equal(foreignSubmits, 0); assert.equal(foreignReceipts, 0, "new device cannot query/replay the old device's receipt partition");
+foreignDevice.stop();
+
 for (const [id, conversationId] of [["command-2", "conv-lane"], ["command-3", "conv-lane"], ["command-4", "conv-other"]]) {
   store.persistDraftAndOptimisticMessage({
     conversationId, draftId: `draft-${id}`, draftText: "draft", messageId: `message-${id}`,

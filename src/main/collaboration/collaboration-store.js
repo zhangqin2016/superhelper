@@ -8,6 +8,7 @@ const { queueHistoryTarget, listHistoryTargets, completeHistoryHydration } = req
 const access = require("./access-revocation");
 const { queueConversationHydration } = require("./conversation-hydration");
 const directory = require("./directory-projection");
+const { validateAttachmentPayload, optimisticAttachmentProjection, attachmentProjectionFromOutboxIntent } = require("./message-attachment-payload");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -27,12 +28,13 @@ function projectedScopeId(value, fallback = "personal") {
 }
 
 class CollaborationStore {
-  constructor({ dbPath = collaborationDbPath(), accountId, keyring, now = () => Date.now() } = {}) {
+  constructor({ dbPath = collaborationDbPath(), accountId, keyring, transferRoot = null, now = () => Date.now() } = {}) {
     this.accountId = requireId(accountId, "account id");
     if (!keyring || typeof keyring.encrypt !== "function" || typeof keyring.decrypt !== "function") {
       throw new Error("collaboration store: a local keyring is required");
     }
     this.keyring = keyring;
+    this.transferRoot = transferRoot;
     this.now = now;
     this.db = openDatabase(dbPath);
     try {
@@ -54,18 +56,20 @@ class CollaborationStore {
     return JSON.parse(this.keyring.decrypt({ accountId: this.accountId, scopeId, recordId, envelope: parseEnvelope(value) }));
   }
 
-  persistDraftAndOptimisticMessage({ conversationId, draftId, draftText, messageId, clientCommandId, bodyText, scopeId = "personal", afterCommit } = {}) {
+  persistDraftAndOptimisticMessage({ conversationId, draftId, draftText, messageId, clientCommandId, bodyText, scopeId = "personal", attachmentIds = [], attachmentPurpose = null, originDeviceId = null, preserveDraft = false, afterCommit } = {}) {
     const conversation = requireId(conversationId, "conversation id");
     const draft = requireId(draftId, "draft id");
     const message = requireId(messageId, "message id");
     const command = requireId(clientCommandId, "client command id");
     const scope = this._scope(scopeId);
+    const attachmentPayload = validateAttachmentPayload({ attachmentIds, attachmentPurpose, originDeviceId });
     if (access.isConversationRevoked(this, conversation)) throw new Error("collaboration conversation revoked");
     const outboxId = command;
     const at = this.now();
     const create = this.db.transaction(() => {
       const currentDraft = this.getDraft({ conversationId: conversation, draftId: draft });
-      const retainedDraft = currentDraft && currentDraft.text !== String(bodyText || "") ? currentDraft.text : String(draftText || "");
+      const retainedDraft = preserveDraft && currentDraft ? currentDraft.text
+        : currentDraft && currentDraft.text !== String(bodyText || "") ? currentDraft.text : String(draftText || "");
       this.db.run(
         `INSERT INTO drafts (account_id, conversation_id, id, scope_id, content_envelope_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET scope_id = excluded.scope_id, content_envelope_json = excluded.content_envelope_json, updated_at = excluded.updated_at`,
@@ -75,12 +79,13 @@ class CollaborationStore {
       this.db.run(
         `INSERT INTO messages (account_id, conversation_id, id, scope_id, client_command_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'optimistic', ?, ?, ?)`,
         this.accountId, conversation, message, scope, command,
-        this._encrypt({ scopeId: scope, recordId: this._messageRecord(conversation, message), value: { bodyText: String(bodyText || ""), clientCommandId: command } }), at, at,
+        this._encrypt({ scopeId: scope, recordId: this._messageRecord(conversation, message), value: { bodyText: String(bodyText || ""), clientCommandId: command,
+          ...optimisticAttachmentProjection(attachmentPayload) } }), at, at,
       );
       this.db.run(
         `INSERT INTO outbox (account_id, id, conversation_id, client_command_id, scope_id, state, payload_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
         this.accountId, outboxId, conversation, command, scope,
-        this._encrypt({ scopeId: scope, recordId: this._outboxRecord(outboxId), value: { messageId: message, clientCommandId: command, bodyText: String(bodyText || "") } }), at, at,
+        this._encrypt({ scopeId: scope, recordId: this._outboxRecord(outboxId), value: { messageId: message, clientCommandId: command, bodyText: String(bodyText || ""), ...(attachmentPayload || {}) } }), at, at,
       );
       return { outboxId };
     });
@@ -389,10 +394,14 @@ class CollaborationStore {
       for (const { outbox, intent } of confirmingBubbles) {
         const messageId = String(intent.messageId || "");
         if (!messageId) continue;
+        const attached = attachmentProjectionFromOutboxIntent(intent);
         this.db.run(
           `INSERT OR IGNORE INTO messages (account_id, conversation_id, id, scope_id, client_command_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'optimistic', ?, ?, ?)`,
           this.accountId, outbox.conversation_id, messageId, outbox.scope_id, outbox.client_command_id,
-          this._encrypt({ scopeId: outbox.scope_id, recordId: this._messageRecord(outbox.conversation_id, messageId), value: { bodyText: String(intent.bodyText || ""), clientCommandId: outbox.client_command_id } }),
+          this._encrypt({ scopeId: outbox.scope_id, recordId: this._messageRecord(outbox.conversation_id, messageId), value: {
+            bodyText: String(intent.bodyText || ""), clientCommandId: outbox.client_command_id,
+            ...attached,
+          } }),
           this.now(), this.now(),
         );
       }

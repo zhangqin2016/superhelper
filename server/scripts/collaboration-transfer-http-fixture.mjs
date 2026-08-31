@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { verifyAttachmentServiceHttp } from "./collaboration-attachment-send-http-fixture.mjs";
 const require = createRequire(import.meta.url);
 const { createCollaborationClient } = require("../../src/main/collaboration/client");
 const { createTransferManager } = require("../../src/main/collaboration/transfer-manager");
@@ -84,7 +85,7 @@ export async function verifyTransferHttp({ app, keys, createAccessToken, stableS
     const keyring = new LocalCollaborationKeyring({ filePath: path.join(directory, `${userId}-keys`), safeStorage: { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString() } });
     const manifests = createTransferManifestStore({ rootPath: path.join(directory, "collaboration-transfer"), accountId: userId, keyring });
     const manager = () => createTransferManager({ manifests, objectClient: client.objects, multipart: createQiniuMultipartTransport({ fetchImpl }), deviceId, assertAuthorized: () => {}, fetchImpl });
-    return { client, manifests, manager, deviceId };
+    return { client, manifests, manager, deviceId, keyring };
   }
   try {
     const sender = desktop("a"); let sending = sender.manager();
@@ -109,5 +110,6 @@ export async function verifyTransferHttp({ app, keys, createAccessToken, stableS
     assert.deepEqual(downloads.slice(0, 2), [0, 1024]);
     assert.deepEqual(fs.readFileSync(await receiving.verifiedFile(inbound.id)), fs.readFileSync(source));
     sending.stop(); receiving.stop(); sender.client.stop(); recipient.client.stop();
+    await verifyAttachmentServiceHttp({ desktop, directory, source, fetchImpl, conversationId, pool, dropAck });
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }

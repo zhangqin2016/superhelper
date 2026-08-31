@@ -4,7 +4,7 @@ import fs from "node:fs";
 const source = fs.readFileSync(new URL("../src/preload.js", import.meta.url), "utf8");
 const block = source.match(/collaboration:\s*\{([\s\S]*?)\n\s*\},\n\s*onRuntimeEvents/);
 assert.ok(block, "preload exposes a bounded collaboration bridge before event subscriptions");
-for (const name of ["getState", "bootstrap", "list", "open", "send", "retry", "cancel", "markRead"]) {
+for (const name of ["getState", "bootstrap", "list", "open", "send", "sendAttachments", "retry", "cancel", "markRead"]) {
   assert.match(block[1], new RegExp(`\\b${name}\\b`), `preload exposes ${name}`);
 }
 assert.match(block[1], /onStateChange/, "preload exposes a collaboration state subscription");

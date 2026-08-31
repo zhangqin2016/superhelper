@@ -232,7 +232,7 @@ function collaborationDbPath() {
 
 /** Private encrypted transfer staging; never use the general blob root. */
 function collaborationTransferRoot() {
-  return userDataPath("collaboration-transfers");
+  return userDataPath("collaboration-transfer");
 }
 
 function longTaskDbPath() {

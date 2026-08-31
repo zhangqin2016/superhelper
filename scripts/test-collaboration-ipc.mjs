@@ -18,6 +18,7 @@ const service = {
   cancel: ({ outboxId }) => ({ ok: true, outboxId, state: "delivery_unknown", recovery: "retry_or_sync" }),
   markRead: ({ conversationId, seq }) => ({ ok: true, conversationId, seq }),
   bootstrap: () => ({ ok: true, bootstrapCompletionToken: "never-render" }),
+  sendAttachments: (payload) => ({ ok: true, state: "waiting_attachments", clientCommandId: payload.clientCommandId || "stable-send", sourcePath: "/never-render" }),
 };
 
 createCollaborationIpc({ ipcMain, getService: () => service });
@@ -25,7 +26,7 @@ assert.deepEqual([...handlers.keys()].sort(), [
   "collaboration:bootstrap", "collaboration:cancel", "collaboration:edit", "collaboration:friend", "collaboration:get-directory", "collaboration:get-draft", "collaboration:get-state", "collaboration:list",
   "collaboration:mark-read", "collaboration:open", "collaboration:read-messages", "collaboration:retry", "collaboration:revoke", "collaboration:save-draft", "collaboration:send", "collaboration:subscribe", "collaboration:unsubscribe",
   "collaboration:conversation", "collaboration:get-social-commands", "collaboration:retry-social", "collaboration:open-friend", "collaboration:get-conversation-details",
-  "collaboration:get-transfers", "collaboration:prepare-attachment", "collaboration:enqueue-transfer", "collaboration:pause-transfer", "collaboration:cancel-transfer", "collaboration:prepare-download", "collaboration:save-download",
+  "collaboration:get-transfers", "collaboration:prepare-attachment", "collaboration:enqueue-transfer", "collaboration:pause-transfer", "collaboration:cancel-transfer", "collaboration:prepare-download", "collaboration:save-download", "collaboration:send-attachments",
 ].sort());
 
 const publicState = { ok: true, cursor: 2, watermark: 0, outbox: [{ id: "o1", conversationId: "", clientCommandId: "", scopeId: "", state: "queued", attempts: 0, createdAt: 0 }] };
@@ -40,6 +41,15 @@ const sent = await handlers.get("collaboration:send")(null, {
 assert.deepEqual(sent, { ok: true, clientCommandId: "cmd-1" });
 assert.deepEqual(calls, [{ conversationId: "c1", clientCommandId: "cmd-1", bodyText: "Hello" }]);
 assert.deepEqual(await handlers.get("collaboration:cancel")(null, { outboxId: "o1" }), { ok: true, outboxId: "o1", state: "delivery_unknown", recovery: "retry_or_sync" }, "the renderer receives only the explicit delivery-unknown recovery decision");
+assert.deepEqual(await handlers.get("collaboration:send-attachments")(null, {
+  conversationId: "c1", transferIds: ["transfer-a", "transfer-b"], bodyText: "two attachments", clientCommandId: "stable-send",
+}), { ok: true, state: "waiting_attachments", clientCommandId: "stable-send" }, "attachment sending exposes only durable waiting state and command ID");
+for (const payload of [
+  { conversationId: "c1", transferIds: ["transfer-a", "transfer-a"], bodyText: "duplicate" },
+  { conversationId: "c1", transferIds: ["transfer-a"], bodyText: "x".repeat(32 * 1024 + 1) },
+  { conversationId: "c1", transferIds: ["transfer-a"], bodyText: "path", inputPath: "/private/file" },
+  { conversationId: "c1", transferIds: ["transfer-a"], bodyText: "object", objectId: "renderer-object" },
+]) assert.deepEqual(await handlers.get("collaboration:send-attachments")(null, payload), { ok: false, code: "COLLABORATION_INVALID_INPUT", retryable: false });
 
 for (const payload of [
   { conversationId: "c1", clientCommandId: "cmd-2", bodyText: "Hello", accessToken: "secret" },
