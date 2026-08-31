@@ -34,7 +34,7 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
   };
   const activeMemberIds = ["user-a", "user-b", "user-c"];
   const attachments = new Map([
-    ["object-ready", { id: "object-ready", state: "verified", ownerUserId: "user-a" }],
+    ["object-ready", { id: "object-ready", state: "verified", ownerUserId: "user-a", conversationId: "conversation-1", purpose: "attachment", boundMessageId: null, expiresAt: null, orphanExpiresAt: "2026-08-30T12:00:00.000Z" }],
     ["object-pending", { id: "object-pending", state: "uploading", ownerUserId: "user-a" }],
   ]);
   const repository = {
@@ -173,6 +173,13 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
   const service = createCollaborationMessageService({
     commandRunner,
     repository,
+    objectService: { async bindToMessage({ trx, messageId, objectIds }) {
+      assert.ok(state.messages.has(messageId), "the actual message projection must exist before final binding");
+      for (const id of objectIds) {
+        assert.equal(attachments.get(id)?.state, "verified");
+        attachments.set(id, { ...attachments.get(id), state: "bound", boundMessageId: messageId });
+      }
+    } },
     createId: (prefix) => `${prefix}-${++id}`,
     now,
     messageCrypto,

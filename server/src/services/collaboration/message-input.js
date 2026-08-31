@@ -54,13 +54,16 @@ export function createHmacMessageBodyIntentSigner({ key, version = 1, currentKey
   const activeKeyVersion = requiredPositiveInteger(currentKeyVersion, "Active message body intent signer key version");
   if (!keys.has(activeKeyVersion)) throw new TypeError("The active message body intent signer key is unavailable.");
 
-  const normalizeIntent = ({ bodyText, conversationId, actorUserId, commandType, expectedRevision = null }, keyVersion) => JSON.stringify({
+  const normalizeIntent = ({ bodyText, conversationId, actorUserId, commandType, expectedRevision = null, attachmentIds = [], attachmentPurpose = "attachment", replyToMessageId = null, mentionUserIds = [] }, keyVersion) => JSON.stringify({
     version: keyVersion,
-    bodyText: normalizedBodyText(bodyText),
+    bodyText: normalizedBodyText(bodyText, { required: attachmentIds.length === 0 }),
     conversationId: requiredId(conversationId, "Conversation id"),
     actorUserId: requiredId(actorUserId, "Account user id"),
     commandType: requiredId(commandType, "Message command type"),
     expectedRevision: expectedRevision == null ? null : requiredPositiveInteger(expectedRevision, "Expected message revision"),
+    // Preserve existing text-only signatures. Newly supported attachment intent
+    // includes the complete ordered association, including caption-free sends.
+    ...(attachmentIds.length > 0 ? { attachmentIds, attachmentPurpose, replyToMessageId, mentionUserIds } : {}),
   });
   const signForVersion = (values, keyVersion) => {
     const signingKey = keys.get(keyVersion);
@@ -87,7 +90,7 @@ export function createHmacMessageBodyIntentSigner({ key, version = 1, currentKey
 }
 
 export function signedBodyIntent(bodyIntentSigner, values) {
-  if (values.bodyText == null) return null;
+  if (values.bodyText == null && !values.attachmentIds?.length) return null;
   const intent = bodyIntentSigner.sign(values);
   const match = /^hmac-v(\d+):[0-9a-f]{64}$/.exec(String(intent || ""));
   if (!match) {
@@ -106,11 +109,13 @@ function receiptBodyIntentKeyVersion(receipt) {
 }
 
 export function resolveStableBodyIntent({ bodyIntentSigner, originalInput, bodyText, conversationId, actorUserId, commandType, expectedRevision }) {
-  if (bodyText == null) return undefined;
+  if (bodyText == null && !originalInput.attachmentIds?.length) return undefined;
   return ({ receipt }) => {
     const retainedKeyVersion = receiptBodyIntentKeyVersion(receipt);
     const signed = signedBodyIntent(bodyIntentSigner, {
       bodyText, conversationId, actorUserId, commandType, expectedRevision,
+      attachmentIds: originalInput.attachmentIds, attachmentPurpose: originalInput.attachmentPurpose,
+      replyToMessageId: originalInput.replyToMessageId, mentionUserIds: originalInput.mentionUserIds,
       keyVersion: retainedKeyVersion ?? originalInput.bodyIntentKeyVersion,
     });
     return {

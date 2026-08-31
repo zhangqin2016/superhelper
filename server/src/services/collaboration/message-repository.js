@@ -6,7 +6,11 @@ export function createKyselyMessageRepository(db) {
   return {
     activeConversationMemberIds: conversations.activeConversationMemberIds,
     async findReplyTarget(trx, { conversationId, replyToMessageId }) { const row = await trx.selectFrom("messages").selectAll().where("id", "=", replyToMessageId).where("conversation_id", "=", conversationId).executeTakeFirst(); return row && { id: row.id, conversationId: row.conversation_id, revokedAt: row.revoked_at }; },
-    async findAttachments() { return []; },
+    async findAttachments(trx, { attachmentIds }) {
+      // No FOR UPDATE here: send preflight is read-only; bindToMessage owns the
+      // ordered message -> object locks after the message has been inserted.
+      return trx.selectFrom("stored_objects").select(["id", "state", "owner_user_id as ownerUserId", "conversation_id as conversationId", "purpose", "bound_message_id as boundMessageId", "expires_at as expiresAt", "orphan_expires_at as orphanExpiresAt"]).where("id", "in", attachmentIds).execute();
+    },
     async insertMessage(trx, message) { await trx.insertInto("messages").values({ id: message.id, event_id: message.eventId, conversation_id: message.conversationId, create_seq: message.createSeq, sender_user_id: message.senderUserId, kind: message.kind, body_ciphertext: message.bodyCiphertext, body_key_version: message.bodyKeyVersion, revision: message.revision, reply_to_message_id: message.replyToMessageId }).execute(); },
     async findMessageForUpdate(trx, { conversationId, messageId }) { const row = await trx.selectFrom("messages").selectAll().where("id", "=", messageId).where("conversation_id", "=", conversationId).forUpdate().executeTakeFirst(); return row && { id: row.id, conversationId: row.conversation_id, senderUserId: row.sender_user_id, revision: row.revision, revokedAt: row.revoked_at, createdAt: row.created_at }; },
     async compareAndSwapMessage(trx, { conversationId, messageId, expectedRevision, patch }) { return trx.updateTable("messages").set({ body_ciphertext: patch.bodyCiphertext, body_key_version: patch.bodyKeyVersion, revoked_at: patch.revokedAt, edited_at: patch.editedAt, revision: sql`revision + 1` }).where("id", "=", messageId).where("conversation_id", "=", conversationId).where("revision", "=", expectedRevision).returningAll().executeTakeFirst(); },
@@ -26,7 +30,19 @@ export function createKyselyMessageRepository(db) {
       }
       return trx.updateTable("conversation_members").set({ last_read_seq: sql`greatest(last_read_seq, ${seq})` }).where("conversation_id", "=", conversationId).where("user_id", "=", userId).where("status", "=", "active").returning(["last_read_seq as lastReadSeq"]).executeTakeFirstOrThrow();
     },
-    async listHistory(trx, { conversationId, beforeSeq, messageIds, limit, visibleAfterSeq }) { return trx.selectFrom("messages").selectAll().where("conversation_id", "=", conversationId).where("create_seq", ">", visibleAfterSeq).$if(beforeSeq != null, (q) => q.where("create_seq", "<", beforeSeq)).$if(messageIds != null, (q) => q.where("id", "in", messageIds)).orderBy("create_seq", "desc").limit(limit).execute(); },
+    async listHistory(trx, { conversationId, beforeSeq, messageIds, limit, visibleAfterSeq }) {
+      const rows = await trx.selectFrom("messages").selectAll().where("conversation_id", "=", conversationId).where("create_seq", ">", visibleAfterSeq).$if(beforeSeq != null, (q) => q.where("create_seq", "<", beforeSeq)).$if(messageIds != null, (q) => q.where("id", "in", messageIds)).orderBy("create_seq", "desc").limit(limit).execute();
+      const attachmentMessageIds = rows.filter((row) => row.kind === "attachment" || row.kind === "workspace_share").map((row) => row.id);
+      // The text-only baseline does not depend on object migrations or keys.
+      if (!attachmentMessageIds.length) return rows;
+      const attachments = await trx.selectFrom("message_attachments").select(["message_id", "object_id", "sort_order"]).where("message_id", "in", attachmentMessageIds).orderBy("sort_order", "asc").execute();
+      const byMessage = new Map();
+      for (const attachment of attachments) {
+        if (!byMessage.has(attachment.message_id)) byMessage.set(attachment.message_id, []);
+        byMessage.get(attachment.message_id).push(attachment.object_id);
+      }
+      return rows.map((row) => ({ ...row, attachmentIds: byMessage.get(row.id) || [] }));
+    },
   };
 }
 

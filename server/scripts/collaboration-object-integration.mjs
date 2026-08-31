@@ -9,7 +9,8 @@ const [{ default: pg }, { Kysely, PostgresDialect, sql }, { createKyselyObjectRe
 const schema = `collab_obj_it_${crypto.randomUUID().replaceAll("-", "")}`;
 const admin = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}`, application_name: schema });
-const db = new Kysely({ dialect: new PostgresDialect({ pool }) });
+const queries = [];
+const db = new Kysely({ dialect: new PostgresDialect({ pool }), log: (event) => { if (event.level === "query") queries.push(event.query.sql); } });
 const account = (userId) => ({ userId, deviceId: `device-${userId}` });
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 try {
@@ -33,6 +34,8 @@ try {
     head: async ({ objectKey }) => uploaded.get(objectKey),
   };
   const service = createCollaborationObjectService({ repository, keyBroker: broker, objectStore });
+  const messageRepository = createKyselyMessageRepository(db);
+  const messages = createCollaborationMessageService({ repository: messageRepository, objectService: service, messageCrypto: createCollaborationMessageCrypto({ currentKekVersion: 1, kekByVersion: { 1: Buffer.alloc(32, 4) } }), bodyIntentSigner: createHmacMessageBodyIntentSigner({ key: Buffer.alloc(32, 3) }) });
   const dek = Buffer.alloc(32, 9); const hash = "a".repeat(64);
   const metadata = { conversationId: conv.conversationId, purpose: "attachment", ciphertextSize: 100, ciphertextSha256: hash, mimeType: "text/plain", originalName: "notes.txt" };
   const init = (key, overrides = {}, source = service) => source.init({ account: account("a"), clientCommandId: key, ...metadata, dek, ...overrides });
@@ -70,15 +73,46 @@ try {
   const attached = await ready("ready-1");
   await assert.rejects(service.bindToMessage({ trx: db, account: account("a"), conversationId: conv.conversationId, messageId: "missing", objectIds: [attached.objectId] }), (e) => e.code === "COLLAB_OBJECT_TRANSACTION_REQUIRED", "binding cannot accidentally autocommit outside the message transaction");
   await assert.rejects(service.downloadTicket({ account: account("a"), objectId: attached.objectId }), (e) => e.code === "COLLAB_OBJECT_UNAVAILABLE", "unbound owner cannot mint a download capability");
-  const bindMessage = (objectId, commandId, conversationId = conv.conversationId) => runCollaborationCommand({ account: account("a"), clientCommandId: commandId, commandType: "message.create", input: { conversationId, objectId }, database: db, authorize: conversations.authorizeAction,
-    project: async () => { const messageId = `msg-${crypto.randomUUID()}`; return { event: { id: `evt-${crypto.randomUUID()}`, conversationId, type: "message.created", payload: { messageId } }, recipientUserIds: ["a", "b"], response: { messageId }, project: async ({ trx, event }) => {
-      await trx.insertInto("messages").values({ id: messageId, event_id: event.id, conversation_id: conversationId, create_seq: event.seq, sender_user_id: "a", kind: "attachment" }).execute();
-      await service.bindToMessage({ trx, account: account("a"), conversationId, messageId, objectIds: [objectId], purpose: "attachment" });
-    } }; },
-  });
-  await assert.rejects(bindMessage(attached.objectId, "cross-scope", other.conversationId), (e) => e.code === "COLLAB_OBJECT_UNAVAILABLE");
-  const binds = await Promise.allSettled([bindMessage(attached.objectId, "bind-1"), bindMessage(attached.objectId, "bind-2")]);
+  const bindMessage = (objectId, commandId, conversationId = conv.conversationId, extra = {}) => messages.sendMessage({ account: account("a"), clientCommandId: commandId, conversationId, attachmentIds: [objectId], database: db, authorize: conversations.authorizeAction, ...extra });
+  // Actual message service, not a hand-written projection standing in for it.
+  const sent = await bindMessage(attached.objectId, "bind-original", conv.conversationId, { bodyText: "caption" });
+  assert.equal((await getObject(attached.objectId)).bound_message_id, sent.message.id);
+  assert.deepEqual(await bindMessage(attached.objectId, "bind-original", conv.conversationId, { bodyText: "caption" }), sent, "lost ACK replays its original receipt, without rebinding");
+  const history = await db.transaction().execute((trx) => messages.listMessageHistory({ trx, account: account("b"), conversationId: conv.conversationId, authorize: conversations.authorizeAction }));
+  assert.deepEqual(history[0].attachmentIds, [attached.objectId]);
+  assert.equal(history[0].bodyText, "caption");
+  assert.equal(history[0].kind, "attachment", "a caption does not disguise an attachment as a pure text message");
+  const crashObject = await ready("crash-binding");
+  const beforeCrash = (await pool.query("select count(*)::int as n from messages")).rows[0].n;
+  const crashMessages = createCollaborationMessageService({ repository: messageRepository, objectService: { ...service, async bindToMessage(input) { await service.bindToMessage(input); throw new Error("injected failure after binding, before user sync"); } }, messageCrypto: createCollaborationMessageCrypto({ currentKekVersion: 1, kekByVersion: { 1: Buffer.alloc(32, 4) } }), bodyIntentSigner: createHmacMessageBodyIntentSigner({ key: Buffer.alloc(32, 3) }) });
+  const crashingSend = { account: account("a"), clientCommandId: "crash-binding-send", conversationId: conv.conversationId, attachmentIds: [crashObject.objectId], database: db, authorize: conversations.authorizeAction };
+  await assert.rejects(crashMessages.sendMessage(crashingSend), /injected failure/);
+  assert.equal((await getObject(crashObject.objectId)).state, "verified", "a post-binding failure rolls back object CAS too");
+  assert.equal((await pool.query("select count(*)::int as n from message_attachments where object_id=$1", [crashObject.objectId])).rows[0].n, 0);
+  assert.equal((await pool.query("select count(*)::int as n from messages")).rows[0].n, beforeCrash);
+  assert.equal((await pool.query("select count(*)::int as n from command_receipts where client_command_id=$1", [crashingSend.clientCommandId])).rows[0].n, 0);
+  assert.equal((await pool.query("select count(*)::int as n from collaboration_events where client_command_id=$1", [crashingSend.clientCommandId])).rows[0].n, 0);
+  queries.length = 0;
+  await messages.sendMessage(crashingSend);
+  const messageInsert = queries.findIndex((query) => query.startsWith('insert into "messages"'));
+  const objectLock = queries.findIndex((query) => query.includes('from "stored_objects"') && query.includes("for update"));
+  assert.ok(messageInsert >= 0 && objectLock > messageInsert, "real SQL must insert/lock message before taking any object locks");
+  const workspace = await init("workspace-init", { purpose: "workspace" });
+  const workspaceRow = await getObject(workspace.objectId);
+  uploaded.set(workspaceRow.object_key, { objectKey: workspaceRow.object_key, ciphertextSize: 100, ciphertextSha256: hash, mimeType: "application/octet-stream", etag: "etag-a" });
+  await complete(workspace.objectId, "workspace-complete");
+  await assert.rejects(bindMessage(workspace.objectId, "wrong-purpose"), (e) => e.code === "COLLAB_ATTACHMENT_NOT_READY");
+  await bindMessage(workspace.objectId, "workspace-send", conv.conversationId, { attachmentPurpose: "workspace" });
+  assert.equal((await pool.query("select purpose from message_attachments where object_id=$1", [workspace.objectId])).rows[0].purpose, "workspace");
+  const competing = await ready("competing");
+  await assert.rejects(bindMessage(competing.objectId, "bind-original"), (e) => e.code === "IDEMPOTENCY_KEY_REUSED", "attachment-only intent is immutable under the original command");
+  await assert.rejects(bindMessage(competing.objectId, "cross-scope", other.conversationId), (e) => e.code === "COLLAB_ATTACHMENT_NOT_READY");
+  const snapshot = async () => (await pool.query("select (select count(*)::int from messages) messages,(select count(*)::int from collaboration_events where type='message.created') events,(select count(*)::int from command_receipts where command_type='message.create') receipts,(select count(*)::int from user_sync_events) sync")).rows[0];
+  const beforeCompete = await snapshot();
+  const binds = await Promise.allSettled([bindMessage(competing.objectId, "bind-1"), bindMessage(competing.objectId, "bind-2")]);
   assert.equal(binds.filter((r) => r.status === "fulfilled").length, 1);
+  const afterCompete = await snapshot();
+  assert.deepEqual(afterCompete, { messages: beforeCompete.messages + 1, events: beforeCompete.events + 1, receipts: beforeCompete.receipts + 1, sync: beforeCompete.sync + 2 }, "losing command leaves no message, event, receipt or sync projection");
   assert.equal((await pool.query("select count(*)::int as n from message_attachments where object_id=$1", [attached.objectId])).rows[0].n, 1);
   const download = await service.downloadTicket({ account: account("b"), objectId: attached.objectId });
   assert.deepEqual(download.dek, dek); assert.equal(download.ciphertextSha256, hash);
@@ -133,7 +167,6 @@ try {
   const unavailable = createCollaborationObjectService({ repository, keyBroker: null, objectStore });
   await assert.rejects(init("no-kek", {}, unavailable), (e) => e.code === "COLLAB_OBJECT_KEK_UNAVAILABLE");
   // Optional attachment failure does not install any global text-message gate.
-  const messages = createCollaborationMessageService({ repository: { ...createKyselyMessageRepository(db), activeConversationMemberIds: conversations.activeConversationMemberIds }, messageCrypto: createCollaborationMessageCrypto({ currentKekVersion: 1, kekByVersion: { 1: Buffer.alloc(32, 4) } }), bodyIntentSigner: createHmacMessageBodyIntentSigner({ key: Buffer.alloc(32, 3) }) });
   const text = await messages.sendMessage({ account: account("a"), clientCommandId: "text-after-object-kek-failure", conversationId: conv.conversationId, bodyText: "Text remains available", authorize: conversations.authorizeAction, database: db });
   assert.equal((await pool.query("select count(*)::int as n from messages where id=$1", [text.message.id])).rows[0].n, 1);
   console.log("collaboration objects PG: receipt secrecy, real CAS binding, HEAD rejection, cleanup, private authorization and revocation passed");

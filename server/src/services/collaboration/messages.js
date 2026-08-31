@@ -54,13 +54,16 @@ async function validateReplyTarget(repository, trx, { conversationId, replyToMes
   return reply.id;
 }
 
-async function validateAttachments(repository, trx, { attachmentIds, account }) {
+async function validateAttachments(repository, trx, { attachmentIds, account, conversationId, purpose, now }) {
   if (attachmentIds.length === 0) return [];
-  const found = await requireRepositoryMethod(repository, "findAttachments")(trx, { attachmentIds, account });
+  const found = await requireRepositoryMethod(repository, "findAttachments")(trx, { attachmentIds, account, conversationId });
   const byId = new Map((Array.isArray(found) ? found : []).map((attachment) => [attachment?.id, attachment]));
   for (const attachmentId of attachmentIds) {
     const attachment = byId.get(attachmentId);
-    if (!attachment || attachment.state !== "verified" || attachment.ownerUserId !== account.userId) {
+    if (!attachment || attachment.state !== "verified" || attachment.ownerUserId !== account.userId
+        || attachment.conversationId !== conversationId || attachment.purpose !== purpose || attachment.boundMessageId
+        || attachment.expiresAt != null && Date.parse(attachment.expiresAt) <= now().getTime()
+        || !Number.isFinite(Date.parse(attachment.orphanExpiresAt)) || Date.parse(attachment.orphanExpiresAt) <= now().getTime()) {
       throw commandError("COLLAB_ATTACHMENT_NOT_READY", "Every attached object must be verified and owned by the sender before sending.");
     }
   }
@@ -213,6 +216,7 @@ export function createCollaborationMessageService({
   now = () => new Date(),
   messageCrypto,
   bodyIntentSigner,
+  objectService,
 } = {}) {
   if (typeof commandRunner !== "function") throw new TypeError("A collaboration command runner is required.");
   if (typeof createId !== "function") throw new TypeError("A collaboration message id factory is required.");
@@ -232,6 +236,7 @@ export function createCollaborationMessageService({
     bodyIntentKeyVersion,
     replyToMessageId: rawReplyToMessageId,
     attachmentIds: rawAttachmentIds,
+    attachmentPurpose = "attachment",
     mentionUserIds: rawMentionUserIds,
     authorize,
     database,
@@ -243,6 +248,9 @@ export function createCollaborationMessageService({
       throw commandError("COLLAB_MESSAGE_CIPHERTEXT_INPUT_FORBIDDEN", "Message ciphertext is created only by the collaboration message service.");
     }
     const attachmentIds = normalizeIdList(rawAttachmentIds, "Attachment ids");
+    if (attachmentIds.length > 20 || attachmentIds.some((id) => id.length > 200) || !["attachment", "workspace"].includes(attachmentPurpose)) {
+      throw commandError("COLLAB_ATTACHMENT_INPUT_INVALID", "Attachment input is invalid.");
+    }
     const mentionUserIds = normalizeIdList(rawMentionUserIds, "Mention user ids");
     const normalizedText = normalizedBodyText(bodyText, { required: attachmentIds.length === 0 });
     const actorUserId = requiredId(account?.userId ?? account?.user_id ?? account?.id, "Account user id");
@@ -251,12 +259,14 @@ export function createCollaborationMessageService({
     const createdAt = now().toISOString();
     const signedIntent = signedBodyIntent(bodyIntentSigner, {
       bodyText: normalizedText, conversationId, actorUserId, commandType: "message.create", keyVersion: bodyIntentKeyVersion,
+      attachmentIds, attachmentPurpose, replyToMessageId, mentionUserIds,
     });
     const input = {
       conversationId,
       bodyIntent: signedIntent?.value ?? null,
       bodyIntentKeyVersion: signedIntent?.keyVersion ?? null,
       replyToMessageId, attachmentIds, mentionUserIds,
+      ...(attachmentIds.length ? { attachmentPurpose } : {}),
     };
     const resolveInput = resolveStableBodyIntent({
       bodyIntentSigner, originalInput: input, bodyText: normalizedText, conversationId, actorUserId, commandType: "message.create",
@@ -265,13 +275,18 @@ export function createCollaborationMessageService({
       account, commandType: "message.create", clientCommandId, input, authorize, database, maxTransactionRetries, commandRunner, resolveInput,
       project: async ({ trx, account: actor }) => {
         const replyId = await validateReplyTarget(repository, trx, { conversationId, replyToMessageId });
-        const readyAttachmentIds = await validateAttachments(repository, trx, { attachmentIds, account: actor });
+        // Read-only preflight. Message insertion must precede object locking;
+        // the final binding performs the authoritative locked CAS recheck.
+        if (attachmentIds.length && typeof objectService?.bindToMessage !== "function") {
+          throw commandError("COLLAB_OBJECTS_UNAVAILABLE", "Object binding is unavailable.");
+        }
+        const readyAttachmentIds = await validateAttachments(repository, trx, { attachmentIds, account: actor, conversationId, purpose: attachmentPurpose, now });
         const activeMentionUserIds = await validateMentions(repository, trx, { conversationId, mentionUserIds });
         const recipientUserIds = await validatedRecipients(repository, trx, conversationId);
         const encrypted = encryptBody(messageCrypto, normalizedText, { messageId, conversationId, revision: 1 });
         const response = { eventId, bodyIntentKeyVersion: signedIntent?.keyVersion ?? null, message: responseMessage({ id: messageId, conversationId }) };
         return {
-          event: { id: eventId, conversationId, type: "message.created", payload: { messageId, mentionUserIds: activeMentionUserIds } },
+          event: { id: eventId, conversationId, type: "message.created", payload: { messageId, mentionUserIds: activeMentionUserIds, ...(readyAttachmentIds.length ? { attachmentIds: readyAttachmentIds, attachmentPurpose } : {}) } },
           recipientUserIds,
           response,
           project: async ({ trx: projectionTrx, event }) => {
@@ -279,10 +294,14 @@ export function createCollaborationMessageService({
             response.message.seq = event.seq;
             await requireRepositoryMethod(repository, "insertMessage")(projectionTrx, {
               id: messageId, eventId: event.id, conversationId, createSeq: event.seq,
-              senderUserId: actor.userId, kind: readyAttachmentIds.length > 0 && !encrypted.ciphertext ? "attachment" : "text",
+              senderUserId: actor.userId, kind: readyAttachmentIds.length ? attachmentPurpose === "workspace" ? "workspace_share" : "attachment" : "text",
               bodyCiphertext: encrypted.ciphertext, bodyKeyVersion: encrypted.keyVersion, revision: 1,
               replyToMessageId: replyId, attachmentIds: readyAttachmentIds, mentionUserIds: activeMentionUserIds,
               createdAt,
+            });
+            if (readyAttachmentIds.length) await objectService.bindToMessage({
+              trx: projectionTrx, account: actor, conversationId, messageId,
+              objectIds: readyAttachmentIds, purpose: attachmentPurpose,
             });
           },
         };

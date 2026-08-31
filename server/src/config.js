@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { readCollaborationObjectConfig, validateCollaborationObjectConfig } from "./services/collaboration/object-config.js";
 
 dotenv.config();
 
@@ -85,6 +86,7 @@ export const config = {
     .filter(Boolean),
   collaborationMessageKek: process.env.COLLAB_MESSAGE_KEK || "",
   collaborationMessageKekVersion: process.env.COLLAB_MESSAGE_KEK_VERSION || "v1",
+  ...readCollaborationObjectConfig(process.env),
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "",
   anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com",
   openaiApiKey: process.env.OPENAI_API_KEY || "",
@@ -177,6 +179,10 @@ export function assertProductionSecrets(env = process.env, resolvedConfig = conf
   }
   if (resolvedConfig.collaborationEnabled && !resolvedConfig.collaborationMessageKek) {
     offenders.push("COLLAB_MESSAGE_KEK (required when COLLABORATION_ENABLED=true)");
+  }
+  if (resolvedConfig.collaborationEnabled && (resolvedConfig.collaborationAttachmentsEnabled || resolvedConfig.collaborationWorkspaceSharesEnabled)) {
+    try { validateCollaborationObjectConfig(resolvedConfig); }
+    catch { offenders.push("COLLAB_QINIU_* private bucket and COLLAB_OBJECT_KEK(S) (required for object sharing)"); }
   }
   if (offenders.length) {
     throw new Error(
