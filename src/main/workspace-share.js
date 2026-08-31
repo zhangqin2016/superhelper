@@ -6,6 +6,8 @@ const JSZip = require("jszip");
 const exportPlanner = require("./workspace-export-planner");
 const packCompat = require("./workspace-pack-compat");
 const packLimits = require("./workspace-pack-limits");
+const importSelection = require("./workspace-import-selection");
+const { safeJoin } = require("./workspace-import-paths");
 const taskPortability = require("./scheduled-task-portability");
 const portability = require("./character-worlds/workspace-portability");
 
@@ -460,16 +462,6 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
-/** zip-slip guard: a resolved entry path must stay inside the target dir. */
-function safeJoin(targetDir, relPath) {
-  const resolved = path.resolve(targetDir, relPath);
-  const base = path.resolve(targetDir);
-  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
-    throw new Error(`UNSAFE_PATH: ${relPath}`);
-  }
-  return resolved;
-}
-
 async function readPackManifest(zipBuffer) {
   const zip = await JSZip.loadAsync(zipBuffer);
   const hiddenEntry = zip.file(PACK_MANIFEST_ENTRY);
@@ -501,6 +493,22 @@ function manifestWorkspaceSkillIds(manifest) {
     .filter((id) => SKILL_ID_RE.test(id));
 }
 
+function selectImportEntries(zip, layout) {
+  return importSelection.selectImportEntries(zip, {
+    layout, filesPrefix: FILES_PREFIX, packMetaPrefix: PACK_META_PREFIX,
+    manifestName: MANIFEST_NAME, conventionsEntry: CONVENTIONS_ENTRY,
+    skillsPrefix: SKILLS_PREFIX, packSkillsPrefix: PACK_SKILLS_PREFIX,
+  });
+}
+
+function selectImportWorkspaceSkillEntries(zip, manifest) {
+  return importSelection.selectWorkspaceSkillEntries(zip, {
+    skillIds: manifestWorkspaceSkillIds(manifest),
+    skillsPrefix: SKILLS_PREFIX,
+    packSkillsPrefix: PACK_SKILLS_PREFIX,
+  });
+}
+
 async function importWorkspaceSkills(zip, manifest, targetDir) {
   const ids = new Set(manifestWorkspaceSkillIds(manifest));
   const imported = [];
@@ -508,21 +516,7 @@ async function importWorkspaceSkills(zip, manifest, targetDir) {
 
   const root = path.join(targetDir, ".lily-work", "imported-skills");
   const byId = new Map();
-  for (const entry of Object.values(zip.files)) {
-    if (entry.dir) continue;
-    const prefix = entry.name.startsWith(PACK_SKILLS_PREFIX)
-      ? PACK_SKILLS_PREFIX
-      : entry.name.startsWith(SKILLS_PREFIX)
-        ? SKILLS_PREFIX
-        : "";
-    if (!prefix) continue;
-    const rest = entry.name.slice(prefix.length);
-    const slash = rest.indexOf("/");
-    if (slash <= 0) continue;
-    const skillId = rest.slice(0, slash);
-    if (!ids.has(skillId)) continue;
-    const rel = rest.slice(slash + 1);
-    if (!rel) continue;
+  for (const { entry, skillId, rel } of selectImportWorkspaceSkillEntries(zip, manifest)) {
     const dest = safeJoin(path.join(root, skillId), rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, await entry.async("nodebuffer"));
@@ -570,16 +564,7 @@ async function importWorkspacePack(zipBuffer, targetDir, options = {}) {
   packLimits.assertImportArchiveLimits(zip, options);
   fs.mkdirSync(targetDir, { recursive: true });
 
-  const legacyEntries = Object.values(zip.files).filter((e) => !e.dir && e.name.startsWith(FILES_PREFIX));
-  const entries = layout === "legacy"
-    ? legacyEntries.map((entry) => ({ entry, rel: entry.name.slice(FILES_PREFIX.length) }))
-    : Object.values(zip.files)
-      .filter((entry) => !entry.dir)
-      .filter((entry) => !entry.name.startsWith(PACK_META_PREFIX))
-      .filter((entry) => entry.name !== MANIFEST_NAME && entry.name !== CONVENTIONS_ENTRY)
-      .filter((entry) => !packCompat.isLegacyFileMirrorEntry(entry.name, zip, FILES_PREFIX))
-      .filter((entry) => !packCompat.isLegacySkillMirrorEntry(entry.name, zip, SKILLS_PREFIX, PACK_SKILLS_PREFIX))
-      .map((entry) => ({ entry, rel: entry.name }));
+  const entries = selectImportEntries(zip, layout);
   const declaredWorkspaceSkillIds = manifestWorkspaceSkillIds(manifest);
   if (entries.length === 0 && declaredWorkspaceSkillIds.length === 0) {
     throw new Error("WORKSPACE_PACK_EMPTY");
@@ -629,6 +614,8 @@ module.exports = {
   previewExport,
   exportWorkspacePack,
   readPackManifest,
+  selectImportEntries,
+  selectImportWorkspaceSkillEntries,
   assertImportArchiveLimits: packLimits.assertImportArchiveLimits,
   importWorkspacePack,
   safeJoin,

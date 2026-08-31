@@ -34,7 +34,7 @@
 | B | Task 13 好友和消息交互 | 好友操作、持久社交命令和实际Electron交互已双审提交；读取、编辑撤回等完整消息交互仍待接通并验证 |
 | C | Task 14 群/Team/频道 | 领域权限、签名命令/发现、PG撤权竞态、本地缓存清理、目录及操作UI已独立双审；既有企业管理入口撤权也已双审提交f50ceca，尚未做生产迁移与企业管理实机点击验收 |
 | D | Task 15–17 加密对象传输 | 等待交接、Team传输退休和同文本独立草稿保护已双审提交81e8adc，原有容器/对象/调度/Renderer链路保留；真实bucket尚未验收 |
-| E | Task 18–19 工作空间交接和 AI | 仍待现有导入导出适配、接收卡、确定性工具和发送确认 |
+| E | Task 18–19 工作空间交接和 AI | Task18A 本地严格归档预检/隔离导入已独立双审；仍待发送导出适配、加密分享元数据/接收卡、确定性AI工具和发送确认 |
 | F | Task 20–22 运营与发布 | 仍待轮换/清理/故障和容量实测、真实双客户端、能力门禁；尚未合并或部署 |
 
 本轮复核新增必须关闭的回归项：
@@ -67,6 +67,10 @@
 全项目自动发现测试仍未通过：除已修复的协作主题/静态测试类型及便携CLI夹具问题外，独立复跑确认六项依赖缺失或未隔离的基线失败：`test-ensure-session-runner-resume-reset.mjs` 缺CLI；`test-large-document-skill-routing.mjs` 无bundled runtime时强求环境指南；`test-runtime-health.mjs` 和 `test-runtime-pack-installer.mjs` 缺Python；`test-stock-workspace-app-package.mjs` 缺其默认应用源码；`test-web-system-playwright-runtime-loader.mjs` 缺本地Playwright。相关测试和直接实现相对e4501f2未变。不降低生产健康检查、不删除断言、不把它们算作通过；发布前仍需准备环境或隔离测试夹具并重跑。工作空间交接、AI确认工具、完整消息交互、后台运维和真实桶/双客户端仍未完成，尚未合并或部署。
 
 后续验证（81e8adc / e2c22fa）：同文本独立草稿保护已完成规格/质量复审；父进程15项附件/退休/IPC/Store/Outbox测试及真实PG signedHTTP双附件发送-丢ACK-重启-接收保存链路退出0。第二次完整自动发现回归为732/738，失败精确为上一段六项，无协作测试超时或主题回归。其后两处测试夹具隔离修复e2c22fa保留所有原断言、增加无runtime不虚假宣称环境的反向断言，双审及目标测试通过；复用主工作区既有 `LILY_RUNTIME_ROOT` 后，runtime-health、runtime-pack-installer两项也实际通过（未改健康检查）。本地Playwright模块和股票应用默认源码仍缺，不能用四项目标通过改写上次全套732/738结果。新工作空间严格导入切片仍在实现，未纳入这次全套。
+
+继续验证（847fb8f）：真实 client 的已读 HTTP 响应为 `{ok:true,result:{lastReadSeq}}`；已修复请求99/服务端确认5却误报99的问题，仅接受服务端非负安全整数，畸形响应不发布已读确认。新回归、25项生命周期与独立双审通过并提交；这不代表已读操作已经持久恢复。使用主工作区现有真实 Python runtime 运行原注册完整能力门禁退出0（162项）；真实 PostgreSQL signed receipt 与 message integration 重新通过。随后新增已读/严格工作空间导入到门禁注册，注册校验通过，但新的完整164项门禁尚待运行。工作空间严格导入仍在独立审查；下一优先项为既有 outbox 的 typed edit/revoke 恢复，不能把服务端幂等实现等同于桌面端操作已持久化。主分支合并、真实私有bucket及双客户端验收仍未执行。
+
+Task18A 本地切片审查闭环：复用普通导入选择/路径规则，增加原始central/local名称一致性、ZIP64/分卷拒绝、真实流式展开限额/CRC/SHA-256、最终目标NFC/大小写冲突防护、包含技能的实际落地文件数、独占新目录/隔离stage/身份复验与失败清理。`plumless`/`buckeroo` 等长CRC碰撞、hidden/legacy `SKILL.md`/`skill.md`覆盖、伪造解压大小、目标被写入/替换symlink均有持久回归。规格与质量独立审查批准；父进程重新跑strict/share/inspector/skill-import/automation-sharing/character-portability/architecture/registry通过。164项注册门禁退出0（其strict测试执行早于最后的最终路径别名修复，该修复随后单独重跑通过）；新全量自动发现回归正在冻结版本上运行，不用尚未结束的结果声明全部通过。Windows仅分支模拟，未实机验证；没有接通分享网络/UI，也没有注册或运行导入能力。
 
 2026-08-31 验证检查点：早期Node24下35个 `test-collaboration-*.mjs` 全部通过（含1GiB加密测试），当时沙箱外完整 `npm run test:capability-gate` 退出码0；后续曾回归40个协作脚本通过。最新上述提交按专项测试、独立双审与真实Electron验证，不沿用旧检查点声称所有新改动已过全套。已在独立本地PostgreSQL随机schema验证friend/message/realtime/sync，以及signed receipt/history的撤权竞争；仍没有私有bucket和真实双客户端验收，尚未合并或部署。
 
