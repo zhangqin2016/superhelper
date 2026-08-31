@@ -40,7 +40,7 @@ export function createPrivateQiniuObjectStore({ config, fetchImpl = fetch, now =
       const policy = { scope: `${config.bucket}:${validKey(objectKey)}`, deadline: expiry, insertOnly: 1, forceInsertOnly: true, fsizeMin: ciphertextSize, fsizeLimit: ciphertextSize, mimeLimit: "application/octet-stream" };
       const encoded = base64(JSON.stringify(policy));
       const signature = base64(createHmac("sha1", config.secretKey).update(encoded).digest());
-      return { objectKey, token: `${config.accessKey}:${signature}:${encoded}`, uploadUrl, expiresAt: new Date(expiry * 1000).toISOString() };
+      return { bucket: config.bucket, objectKey, token: `${config.accessKey}:${signature}:${encoded}`, uploadUrl, expiresAt: new Date(expiry * 1000).toISOString() };
     },
     createDownloadTicket({ objectKey, ttlSeconds = 300 }) { return signedUrl(objectKey, ttlSeconds); },
     async head({ objectKey }) {
