@@ -40,8 +40,15 @@ function privateDirectory(value) {
 function safeCheckpoint(value) {
   // This closed journal vocabulary is deliberately not a serialized HTTP
   // response. Fresh network capabilities must be reacquired after restart.
-  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext", "deviceId"].includes(key))) throw invalid();
+  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext", "deviceId", "schedule"].includes(key))) throw invalid();
   if (value.deviceId !== undefined && !validId(value.deviceId)) throw invalid();
+  if (value.schedule !== undefined) {
+    const s = value.schedule;
+    if (!s || Object.getPrototypeOf(s) !== Object.prototype || Object.keys(s).some((key) => !["enabled", "attempts", "nextAttemptAt", "code"].includes(key))
+      || typeof s.enabled !== "boolean" || !Number.isSafeInteger(s.attempts) || s.attempts < 0 || s.attempts > 3
+      || !Number.isSafeInteger(s.nextAttemptAt) || s.nextAttemptAt < 0
+      || (s.code !== undefined && (typeof s.code !== "string" || s.code.length > 100 || !/^(COLLAB[A-Z_]*|LILYENC_[A-Z_]+)$/.test(s.code)))) throw invalid();
+  }
   if (value.state !== undefined && !["prepared", "encrypting", "uploading", "uploaded", "verifying", "verified", "bound", "downloading", "decrypting", "ready", "paused", "failed", "cancelled"].includes(value.state)) throw invalid();
   if (value.objectId !== undefined && (typeof value.objectId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(value.objectId))) throw invalid();
   for (const name of ["uploadId", "etag"]) if (value[name] !== undefined && (typeof value[name] !== "string" || !/^[a-zA-Z0-9_=-]{1,200}$/.test(value[name]))) throw invalid();

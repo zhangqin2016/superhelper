@@ -42,6 +42,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
   if (!manifests || !objectClient || !multipart || !deviceId || typeof assertAuthorized !== "function") throw new TypeError("Transfer dependencies are required.");
   const running = new Map();
   const cancelled = new Set();
+  const paused = new Set();
   let stopped = false;
   const deviceChanged = (item) => item.direction === "upload" && (item.checkpoint?.state || item.checkpoint?.content) && item.checkpoint.deviceId !== deviceId;
   function guard(item, allowCancelled = false, checkDevice = true) {
@@ -52,6 +53,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     // uploads without identity are also ambiguous and must not be adopted.
     if (checkDevice && deviceChanged(item)) throw fail("COLLAB_TRANSFER_DEVICE_CHANGED");
     if (!allowCancelled && (cancelled.has(item.id) || item.checkpoint?.state === "cancelled")) throw fail("COLLAB_TRANSFER_CANCELLED");
+    if (!allowCancelled && paused.has(item.id)) throw fail("COLLAB_TRANSFER_PAUSED");
   }
   function save(item, patch) {
     guard(item);
@@ -64,7 +66,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       try { item = save(item, { state: retryable ? "paused" : "failed" }); } catch { /* Revocation/stale revision cannot be overwritten by failure handling. */ }
     }
     const fenced = stopped || ["COLLAB_ACCESS_REVOKED", "COLLAB_ACCOUNT_CHANGED"].includes(code);
-    return { ...(!fenced && item ? view(item) : {}), ok: false, code, retryable, state: code === "COLLAB_TRANSFER_CANCELLED" ? "cancelled" : stopped || retryable || code === "COLLAB_TRANSFER_DEVICE_CHANGED" ? "paused" : "failed" };
+    return { ...(!fenced && item ? view(item) : {}), ok: false, code, retryable, state: code === "COLLAB_TRANSFER_CANCELLED" ? "cancelled" : stopped || retryable || ["COLLAB_TRANSFER_DEVICE_CHANGED", "COLLAB_TRANSFER_PAUSED"].includes(code) ? "paused" : "failed" };
   }
   async function resume(id) {
     let item, file;
@@ -163,10 +165,18 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       return { transfers: scan.transfers.filter((item) => { try { guard(item, true, false); return true; } catch { return false; } })
         .map((item) => deviceChanged(item) ? { ...view(item), state: "paused", code: "COLLAB_TRANSFER_DEVICE_CHANGED", retryable: false } : view(item)), unrecognizedCount: scan.unrecognized.length };
     },
+    pause(id) {
+      let item = manifests.read(id); guard(item, true);
+      if (["verified", "bound", "ready", "cancelled"].includes(item.checkpoint.state)) return view(item);
+      item = manifests.update({ id, expectedRevision: item.revision, checkpoint: { ...item.checkpoint, state: "paused",
+        schedule: { ...(item.checkpoint.schedule || { attempts: 0, nextAttemptAt: 0 }), enabled: false } } });
+      paused.add(id);
+      return view(item);
+    },
     async cancel(id) {
       let item = manifests.read(id); guard(item, true);
       if (item.checkpoint.state === "bound") return { ...view(item), ok: false, code: "COLLAB_TRANSFER_ALREADY_BOUND" };
-      if (item.checkpoint.state !== "cancelled") item = save(item, { state: "cancelled" });
+      if (item.checkpoint.state !== "cancelled") item = manifests.update({ id, expectedRevision: item.revision, checkpoint: { ...item.checkpoint, state: "cancelled" } });
       cancelled.add(id);
       if (item.direction === "upload" && item.checkpoint.objectId) {
         try {
@@ -201,6 +211,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     },
     resumeUpload(id) {
       if (running.has(id)) return running.get(id);
+      paused.delete(id);
       const promise = resume(id).finally(() => { if (running.get(id) === promise) running.delete(id); });
       running.set(id, promise); return promise;
     },
@@ -210,6 +221,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     },
     resumeDownload(id) {
       if (running.has(id)) return running.get(id);
+      paused.delete(id);
       let item;
       const promise = (async () => {
         try {
