@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import pg from "pg";
 import Fastify from "fastify";
+import { verifyTransferHttp } from "./collaboration-transfer-http-fixture.mjs";
 
 if (!process.env.DATABASE_URL) { console.log("collaboration objects signed HTTP: skipped (DATABASE_URL not configured)"); process.exit(0); }
 const schema = `collab_objects_http_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -179,6 +180,7 @@ try {
   assert.ok(page.events.some((event) => event.type === "message.created" && event.payload.attachmentIds?.includes(initial.objectId)));
   const downloadPage = await sync.syncAfterCursor({ userId: "b", deviceId: "device-b", afterCursor: 0 });
   assert.ok(downloadPage.events.some((event) => event.type === "object.download_authorized"));
+  await verifyTransferHttp({ app, keys, createAccessToken, stableStringify, sha256, uploaded, sensitive, conversationId, pool, dropAck: (value) => { dropAckPath = value; } });
   await pool.query("update organization_members set status='disabled' where user_id='b'");
   assert.equal((await command("b", `objects/${initial.objectId}/download-ticket`, {})).status, 403);
   assert.equal(accepted(await command("a", `objects/${initial.objectId}/revoke`, {})).state, "revoked");

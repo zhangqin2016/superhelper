@@ -137,15 +137,17 @@
           <nav class="collaboration-column collaboration-nav" data-i18n-aria-label="collaboration.navLabel" aria-label="协作导航">
             <button id="workbenchNavButton" type="button" data-i18n="collaboration.workbench" data-i18n-aria-label="collaboration.workbench">工作台</button>
             <div class="collaboration-nav-list">
-              <button type="button" data-i18n="collaboration.inbox">收件箱</button>
-              <button type="button" data-i18n="collaboration.people">联系人</button>
-              <button type="button" data-i18n="collaboration.teams">团队</button>
+              <button id="collaborationInboxTab" type="button" data-i18n="collaboration.inbox" aria-controls="collaborationInbox">收件箱</button>
+              <button id="collaborationPeopleTab" type="button" data-i18n="collaboration.people" aria-controls="collaborationFriends">联系人</button>
+              <button id="collaborationTeamsTab" type="button" data-i18n="collaboration.teams" aria-controls="collaborationTeams">团队</button>
             </div>
           </nav>
           <section class="collaboration-column collaboration-inbox" id="collaborationInboxColumn" tabindex="-1" data-i18n-aria-label="collaboration.inbox" aria-label="收件箱">
-            <h2 data-i18n="collaboration.inbox">收件箱</h2>
+            <h2 id="collaborationListTitle" data-i18n="collaboration.inbox">收件箱</h2>
             <p id="collaborationStatus" class="collaboration-status" role="status" data-i18n="collaboration.statusUnavailable">协作暂不可用</p>
             <div id="collaborationInbox"></div>
+            <div id="collaborationFriends" hidden></div>
+            <div id="collaborationTeams" hidden></div>
           </section>
           <section id="collaborationConversation" class="collaboration-column collaboration-conversation" data-i18n-aria-label="collaboration.conversation" aria-label="对话">
             <h2 data-i18n="collaboration.conversation">对话</h2>

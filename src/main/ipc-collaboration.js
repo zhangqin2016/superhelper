@@ -1,5 +1,6 @@
 "use strict";
 const { directoryView } = require("./collaboration/directory-view");
+const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/social-command-contract");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
@@ -78,7 +79,20 @@ function rendererOutbox(value = {}) {
 }
 
 function rendererView(method, value) {
+  if (["friend", "conversation", "retrySocial", "openFriend"].includes(method)) return {
+    ok: value?.ok === true,
+    ...Object.fromEntries(["clientCommandId", "state", "code", "conversationId"].filter((key) => socialIdentifier(value?.[key])).map((key) => [key, value[key]])),
+  };
   if (value?.ok === false) return { ok: false, code: safeIdentifier(value.code) || "COLLABORATION_UNAVAILABLE", retryable: value.retryable === true };
+  if (method === "getSocialCommands") return { ok: true, commands: (value?.commands || []).flatMap((row) => {
+    const input = normalizeSocialCommand(row.kind, row.input);
+    return input && socialIdentifier(row.clientCommandId) ? [{ ...rendererView("retrySocial", row), kind: row.kind, scopeId: safeIdentifier(row.scopeId), input }] : [];
+  }) };
+  if (method === "getConversationDetails") return { ok: true, conversation: rendererConversation(value?.conversation), canManage: value?.canManage === true,
+    visibility: ["public", "private"].includes(value?.visibility) ? value.visibility : null,
+    members: (value?.members || []).map((m) => ({ userId: safeIdentifier(m.userId), role: ["owner", "admin", "member"].includes(m.role) ? m.role : "member",
+      displayName: typeof m.displayName === "string" ? m.displayName.slice(0, 500) : "", lilyId: safeIdentifier(m.lilyId) })),
+  };
   if (method === "getDirectory") return { ok: true, ...directoryView(value) };
   if (method === "getState") return { ok: true, cursor: nonNegativeInteger(value?.cursor), watermark: nonNegativeInteger(value?.watermark), outbox: Array.isArray(value?.outbox) ? value.outbox.map(rendererOutbox) : [] };
   if (method === "list") return { ok: true, conversations: Array.isArray(value?.conversations) ? value.conversations.map(rendererConversation) : [] };
@@ -117,7 +131,9 @@ async function invoke(getService, method, payload) {
   const service = serviceFor(getService);
   if (!service || typeof service[method] !== "function") return unavailable();
   try {
-    return rendererView(method, await service[method](payload));
+    const result = await service[method](payload);
+    if (serviceFor(getService) !== service) return { ok: false, code: "COLLAB_ACCOUNT_CHANGED", retryable: false };
+    return rendererView(method, result);
   } catch (error) {
     return { ok: false, code: String(error?.code || "COLLABORATION_UNAVAILABLE"), retryable: false };
   }
@@ -163,15 +179,7 @@ function validMessageMutation(payload, { bodyRequired }) {
 }
 
 function validFriend(payload) {
-  const allowed = new Set(["action", "clientCommandId", "lilyId", "requestId", "accept", "peerUserId"]);
-  if (!hasOnlyKeys(payload, allowed)) return null;
-  const action = String(payload.action || "");
-  const clientCommandId = safeIdentifier(payload.clientCommandId);
-  if (!clientCommandId || !["request", "respond", "remove", "block", "unblock"].includes(action)) return null;
-  if (action === "request") { const lilyId = safeIdentifier(payload.lilyId); return lilyId ? { action, clientCommandId, lilyId } : null; }
-  if (action === "respond") { const requestId = safeIdentifier(payload.requestId); return requestId && typeof payload.accept === "boolean" ? { action, clientCommandId, requestId, accept: payload.accept } : null; }
-  const peerUserId = safeIdentifier(payload.peerUserId);
-  return peerUserId ? { action, clientCommandId, peerUserId } : null;
+  return normalizeSocialCommand("friend", payload);
 }
 
 function registerCommand(ipcMain, channel, getService, method, validate) {
@@ -216,6 +224,11 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
   registerCommand(ipcMain, "collaboration:edit", getService, "edit", (payload) => validMessageMutation(payload, { bodyRequired: true }));
   registerCommand(ipcMain, "collaboration:revoke", getService, "revoke", (payload) => validMessageMutation(payload, { bodyRequired: false }));
   registerCommand(ipcMain, "collaboration:friend", getService, "friend", validFriend);
+  registerCommand(ipcMain, "collaboration:conversation", getService, "conversation", (p) => normalizeSocialCommand("conversation", p));
+  registerCommand(ipcMain, "collaboration:get-social-commands", getService, "getSocialCommands", (p) => p === undefined || hasOnlyKeys(p, new Set()) ? {} : null);
+  registerCommand(ipcMain, "collaboration:retry-social", getService, "retrySocial", (p) => hasOnlyKeys(p, new Set(["clientCommandId"])) && socialIdentifier(p.clientCommandId) ? { clientCommandId: p.clientCommandId } : null);
+  registerCommand(ipcMain, "collaboration:open-friend", getService, "openFriend", (p) => hasOnlyKeys(p, new Set(["peerUserId"])) && socialIdentifier(p.peerUserId) ? { peerUserId: p.peerUserId } : null);
+  registerCommand(ipcMain, "collaboration:get-conversation-details", getService, "getConversationDetails", validOpen);
   registerCommand(ipcMain, "collaboration:retry", getService, "retry", validOutbox);
   registerCommand(ipcMain, "collaboration:cancel", getService, "cancel", validOutbox);
   registerCommand(ipcMain, "collaboration:mark-read", getService, "markRead", validMarkRead);

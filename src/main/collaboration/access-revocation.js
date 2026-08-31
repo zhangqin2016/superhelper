@@ -15,7 +15,7 @@ function assertScopeWritable(store, scopeId) {
 function removeConversationRows(store, conversationId, scopeId = null) {
   store.db.run(`INSERT OR IGNORE INTO revoked_conversations (account_id, conversation_id, scope_id) VALUES (?, ?, ?)`, store.accountId, conversationId, scopeId);
   let deletedOutbox = 0;
-  for (const table of ["conversation_members", "messages", "drafts", "outbox", "events", "history_hydration", "history_hydration_targets", "conversation_hydration"]) {
+  for (const table of ["conversation_members", "messages", "drafts", "outbox", "events", "history_hydration", "history_hydration_targets", "conversation_hydration", "social_commands"]) {
     const result = store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     if (table === "outbox") deletedOutbox = Number(result.changes);
   }
@@ -34,7 +34,7 @@ function removeScopeRows(store, scopeId) {
   let deletedOutbox = 0;
   for (const row of ids) deletedOutbox += removeConversationRows(store, row.conversation_id, scopeId).deletedOutbox;
   pruneDirectoryProfiles(store);
-  for (const table of ["transfers", "share_mappings"]) store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND scope_id = ?`, store.accountId, scopeId);
+  for (const table of ["transfers", "share_mappings", "social_commands"]) store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND scope_id = ?`, store.accountId, scopeId);
   store.db.run(`INSERT INTO revoked_scopes (account_id, scope_id, key_delete_pending) VALUES (?, ?, 1)
     ON CONFLICT(account_id, scope_id) DO UPDATE SET key_delete_pending = 1`, store.accountId, scopeId);
   return { deletedOutbox };
@@ -104,8 +104,9 @@ function prepareBootstrapAccess(store, conversations, teams, scopeFor) {
     if ([...visibleScopes].some((scope) => scope.startsWith("team:") && !allowed.has(scope))) throw revoked();
     const oldScopes = store.db.all(`SELECT scope_id FROM conversations WHERE account_id = ? UNION SELECT scope_id FROM outbox WHERE account_id = ?
       UNION SELECT scope_id FROM drafts WHERE account_id = ? UNION SELECT scope_id FROM transfers WHERE account_id = ? UNION SELECT scope_id FROM share_mappings WHERE account_id = ?
-      UNION SELECT scope_id FROM revoked_conversations WHERE account_id = ? UNION SELECT scope_id FROM directory_teams WHERE account_id = ?`,
-    store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId);
+      UNION SELECT scope_id FROM revoked_conversations WHERE account_id = ? UNION SELECT scope_id FROM directory_teams WHERE account_id = ?
+      UNION SELECT scope_id FROM social_commands WHERE account_id = ?`,
+    store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId);
     for (const { scope_id: scopeId } of oldScopes) if (scopeId?.startsWith("team:") && !allowed.has(scopeId)) removeScopeRows(store, scopeId);
     for (const scopeId of allowed) visibleScopes.add(scopeId);
   }

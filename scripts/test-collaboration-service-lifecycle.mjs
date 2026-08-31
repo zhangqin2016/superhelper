@@ -265,7 +265,8 @@ for (const method of ["edit", "revoke", "friend", "markRead"]) {
       submitMessage: submit, submitFriend: submit, async syncAndAcknowledge() { syncCalls += 1; },
     } });
     service.subscribe((event) => emissions.push(event));
-    const run = service[method]({ conversationId: "c1", messageId: "m1", clientCommandId: "mutation", seq: 1 });
+    const run = service[method](method === "friend" ? { action: "request", lilyId: "bob-exact", clientCommandId: "mutation" }
+      : { conversationId: "c1", messageId: "m1", clientCommandId: "mutation", seq: 1 });
     await reached.promise;
     service.stop();
     const accessesAtStop = f.log.length;

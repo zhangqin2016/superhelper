@@ -9,7 +9,8 @@ let calls = 0;
 let directory = { ok: true, profile: { userId: 'alice', lilyId: 'alice-id', displayName: 'Alice', phone: 'secret' }, contacts: [
   { userId: 'bob', lilyId: 'bob-id', displayName: 'Bob', relationship: 'friend', ownBlocked: false, requestId: null, email: 'secret', token: 'secret', peerBlocked: true },
 ], teams: [{ id: 'org', scopeId: 'team:org', name: 'Team', role: 'admin', members: [{ userId: 'bob', displayName: 'Bob', role: 'member', localPath: 'secret' }] }] };
-createCollaborationIpc({ ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, getService: () => ({ ok: true, getDirectory: () => { calls++; return directory; } }) });
+const service = { ok: true, getDirectory: () => { calls++; return directory; } };
+createCollaborationIpc({ ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, getService: () => service });
 assert.ok(handlers.has('collaboration:get-directory'), 'strict read-only directory channel exists');
 const invoke = (payload) => handlers.get('collaboration:get-directory')({}, payload);
 const projected = await invoke();

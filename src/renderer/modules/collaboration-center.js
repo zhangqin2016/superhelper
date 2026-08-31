@@ -4,6 +4,8 @@ import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
 import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
+import { initCollaborationFriends } from "./collaboration-friends.js";
+import { initCollaborationTeams } from "./collaboration-teams.js";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -40,10 +42,26 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let viewGeneration = 0;
   let openGeneration = 0;
   let opening = false;
+  let directory = null, loadGeneration = 0, activeSection = "inbox", navigationGeneration = 0;
+  const sectionNodes = { inbox: byId("collaborationInbox"), people: byId("collaborationFriends"), teams: byId("collaborationTeams") };
+  const sectionButtons = { inbox: byId("collaborationInboxTab"), people: byId("collaborationPeopleTab"), teams: byId("collaborationTeamsTab") };
+  function showSection(section) {
+    navigationGeneration += 1;
+    activeSection = section;
+    for (const [name, node] of Object.entries(sectionNodes)) if (node) node.hidden = name !== section;
+    for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
+    const title = byId("collaborationListTitle"); if (title) title.textContent = t(`collaboration.${section}`);
+  }
+  const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
+  const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
+  const sectionHandlers = Object.entries(sectionButtons).map(([section, button]) => {
+    const handler = () => { showSection(section); void load(); }; button?.addEventListener("click", handler); return [button, handler];
+  });
+  showSection("inbox");
   const composer = initCollaborationComposer({
     textarea: byId("collaborationComposer"), sendButton: byId("collaborationSendButton"),
     getConversationId: () => activeConversationId,
-    onSent: (_result, origin) => { if (!opening && activeConversationId && origin?.conversationId === activeConversationId) void openConversation(activeConversationId); },
+    onSent: (_result, origin) => { if (!opening && activeConversationId && origin?.conversationId === activeConversationId) void openConversation(activeConversationId, { userNavigation: false }); },
     onError: () => { if (live) live.textContent = t("collaboration.sendFailed"); },
   });
 
@@ -57,7 +75,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (live) live.textContent = t("collaboration.statusUnavailable");
     return true;
   };
-  const openConversation = async (conversationId) => {
+  const openConversation = async (conversationId, { userNavigation = true } = {}) => {
+    if (userNavigation) navigationGeneration += 1;
     const generation = ++openGeneration;
     const view = viewGeneration;
     opening = true;
@@ -82,7 +101,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     updateOlderButton();
     composer.setConversation(conversationId);
     const scope = String(opened.conversation?.scopeId || "");
-    if (scopeBadge) scopeBadge.textContent = t(scope.startsWith("team:") ? "collaboration.scopeTeam" : "collaboration.scopePersonal");
+    if (scopeBadge) scopeBadge.textContent = scope.startsWith("team:")
+      ? `${directory?.teams?.find((team) => team.scopeId === scope)?.name || t("collaboration.scopeTeam")} · ${scope}` : t("collaboration.scopePersonal");
     renderCollaborationTimeline(timeline, historyMessages);
     if (empty) empty.hidden = historyMessages.length > 0;
     if (live) live.textContent = refreshFailed ? t("collaboration.historyLoadFailed") : String(opened.conversation?.title || t("collaboration.conversation"));
@@ -109,6 +129,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   olderButton?.addEventListener("click", loadOlder);
 
   const setActive = (active) => {
+    if (!active) navigationGeneration += 1;
     shell.classList.toggle("collaboration-active", active);
     panel.hidden = !active;
     nav.setAttribute("aria-current", active ? "page" : "false");
@@ -116,17 +137,28 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   };
   const load = async ({ checkAccess = false } = {}) => {
     const view = viewGeneration;
+    const generation = ++loadGeneration;
     const displayedConversationId = activeConversationId;
     let result = await window.assistantClient?.collaboration?.list?.().catch(() => null);
-    if (view !== viewGeneration) return;
+    if (view !== viewGeneration || generation !== loadGeneration) return;
     if (!bootstrapAttempted && result?.ok === true && Array.isArray(result.conversations) && result.conversations.length === 0) {
       bootstrapAttempted = true;
       await window.assistantClient?.collaboration?.bootstrap?.().catch(() => null);
       result = await window.assistantClient?.collaboration?.list?.().catch(() => result);
     }
-    if (view !== viewGeneration) return;
+    if (view !== viewGeneration || generation !== loadGeneration) return;
+    const api = window.assistantClient?.collaboration;
+    const [socialDirectory, socialCommands] = await Promise.all([
+      Promise.resolve(api?.getDirectory?.()).catch(() => null), Promise.resolve(api?.getSocialCommands?.()).catch(() => null),
+    ]);
+    if (view !== viewGeneration || generation !== loadGeneration) return;
+    if (socialDirectory?.ok) {
+      directory = socialDirectory;
+      const social = { directory, commands: socialCommands?.commands || [], conversations: result?.conversations || [] };
+      friends.update(social); teams.update(social);
+    }
     if (checkAccess && displayedConversationId && activeConversationId === displayedConversationId && result?.ok && Array.isArray(result.conversations) && !result.conversations.some((row) => row.id === displayedConversationId)) clearRevokedSelection({ code: "COLLAB_ACCESS_REVOKED" }, displayedConversationId);
-    renderCollaborationInbox(byId("collaborationInbox"), result?.conversations || result?.rows || [], { onOpen: openConversation });
+    renderCollaborationInbox(byId("collaborationInbox"), result?.conversations || result?.rows || [], { onOpen: openConversation, teams: directory?.teams || [] });
     const available = result?.ok === true;
     if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
   };
@@ -148,6 +180,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       activeConversationId = "";
       historyMessages = []; nextBeforeSeq = null; hasMore = false; loadingOlder = false; historyOffline = false; updateOlderButton();
       bootstrapAttempted = false;
+      loadGeneration += 1; directory = null; friends.reset(); teams.reset();
       composer.reset?.();
       timeline?.replaceChildren();
       byId("collaborationInbox")?.replaceChildren();
@@ -161,10 +194,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
       nav.hidden = !enabled || !available;
       if (!enabled || !available) setActive(false);
-      else if (!panel.hidden || payload?.type === "access-revoked") void load({ checkAccess: true }).then(() => { if (!panel.hidden && !opening && activeConversationId && view === viewGeneration) void openConversation(activeConversationId); });
+      else if (!panel.hidden || payload?.type === "access-revoked") void load({ checkAccess: true }).then(() => { if (!panel.hidden && !opening && activeConversationId && view === viewGeneration) void openConversation(activeConversationId, { userNavigation: false }); });
       if (live) live.textContent = t(available ? "collaboration.statusAvailable" : "collaboration.statusUnavailable");
     });
   });
   void refresh();
-  return { refresh, open: openConversation, loadOlder, show: () => { setActive(true); void load(); }, hide: () => setActive(false), destroy: () => { viewGeneration += 1; openGeneration += 1; olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); composer.destroy(); } };
+  return { refresh, open: openConversation, loadOlder, show: () => { setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); composer.destroy(); } };
 }

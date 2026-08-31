@@ -9,6 +9,8 @@ const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
 const { recoverConversationHydration } = require("./conversation-hydration");
 const { directoryView } = require("./directory-view");
+const { createSocialCommands } = require("./social-commands");
+const socialDirectory = require("./social-directory-actions");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -177,6 +179,25 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     // UI/realtime are hints; a failed HTTP sync must never become an unhandled
     // rejection in Electron's main process.
     const synchronizeSafely = () => synchronize().catch(() => undefined);
+    const bootstrap = () => enqueueSync(async () => {
+      const snapshot = await client.bootstrap({ deviceId });
+      assertActive();
+      const applied = syncEngine.applyBootstrap({ ...snapshot, history: [], requireHistoryHydration: true });
+      await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
+      assertActive();
+      await client.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });
+      assertActive(); emitState("bootstrap");
+      return { ok: true, cursor: applied.cursor };
+    });
+    const social = createSocialCommands({ store, client, deviceId, assertActive,
+      onChange: () => emitState("relationship"),
+      onConfirmed: async () => {
+        // A replay may return an existing relationship/conversation without a
+        // new event. Refresh its authorized snapshot, not an invented local row.
+        if (client?.bootstrap && client?.acknowledgeCursor) await bootstrap();
+        else if (client?.syncAndAcknowledge) await synchronize();
+      },
+    });
     const realtime = client && realtimeEnabled
       ? createCollaborationRealtimeClient({
         ...realtimeOptions,
@@ -204,7 +225,11 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       list() {
         if (stopped) return stoppedResult();
         if (typeof store.listConversations !== "function") return unavailableService();
-        return { ok: true, conversations: store.listConversations() };
+        return { ok: true, conversations: socialDirectory.visibleConversations(store) };
+      },
+      openFriend(command) { return stopped ? stoppedResult() : socialDirectory.openFriend(store, command); },
+      getConversationDetails({ conversationId } = {}) {
+        return enqueueSync(() => socialDirectory.getConversationDetails({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory }));
       },
       getDraft({ conversationId } = {}) {
         if (stopped) return stoppedResult();
@@ -250,19 +275,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       async bootstrap() {
         if (stopped) return stoppedResult();
         if (!client || !deviceId) return unavailableService();
-        return enqueueSync(async () => {
-          const snapshot = await client.bootstrap({ deviceId });
-          // Raw bootstrap history is encrypted at rest on the server. It never
-          // crosses into the desktop projection; authorized history is fetched
-          // through the server's decrypting history endpoint below.
-          const applied = syncEngine.applyBootstrap({ ...snapshot, history: [], requireHistoryHydration: true });
-          await hydrateAuthorizedHistory((snapshot.conversations || []).map((conversation) => conversation?.id));
-          assertActive();
-          await client.acknowledgeCursor({ deviceId, cursor: applied.cursor, bootstrapCompletionToken: snapshot.bootstrapCompletionToken });
-          assertActive();
-          emitState("bootstrap");
-          return { ok: true, cursor: applied.cursor };
-        });
+        return bootstrap();
       },
       async send({ conversationId, clientCommandId, bodyText } = {}) {
         if (stopped) return stoppedResult();
@@ -303,11 +316,17 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       async friend(command = {}) {
         if (stopped) return stoppedResult();
         if (!client || !deviceId || typeof client.submitFriend !== "function") return unavailableService();
-        const result = await client.submitFriend({ ...command, deviceId });
+        try { return await social.submit("friend", command); } catch (error) { if (stopped) return stoppedResult(); throw error; }
+      },
+      async conversation(command = {}) {
         if (stopped) return stoppedResult();
-        void synchronizeSafely();
-        emitState("relationship");
-        return { ok: true, clientCommandId: command.clientCommandId, state: "confirming", ...(result?.status ? { state: String(result.status) } : {}) };
+        if (!client?.submitConversation || !deviceId) return unavailableService();
+        try { return await social.submit("conversation", command); } catch (error) { if (stopped) return stoppedResult(); throw error; }
+      },
+      getSocialCommands() { return stopped ? stoppedResult() : social.list(); },
+      async retrySocial(command) {
+        if (stopped) return stoppedResult();
+        try { return await social.retry(command); } catch (error) { if (stopped) return stoppedResult(); throw error; }
       },
       async retry({ outboxId } = {}) {
         if (stopped) return stoppedResult();

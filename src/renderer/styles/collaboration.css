@@ -40,6 +40,20 @@
 .collaboration-message-status { display: block; margin-block-start: 5px; color: var(--muted, #98a1b8); }
 .collaboration-composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-block-start: 12px; }
 .collaboration-composer textarea { min-inline-size: 0; resize: vertical; }
+.collaboration-inbox { overflow-y: auto; }
+.collaboration-social-form { display: grid; gap: 8px; margin-block: 12px 20px; }
+.collaboration-social-form label { display: grid; gap: 4px; min-inline-size: 0; }
+.collaboration-social-form input, .collaboration-social-form select { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; color: inherit; background: var(--surface-hover, #202636); border: 1px solid var(--border, #2d3344); border-radius: 6px; padding: 8px; }
+.collaboration-social-form select[multiple] { min-block-size: 76px; }
+.collaboration-social-row { padding-block: 10px; border-block-end: 1px solid var(--border, #2d3344); overflow-wrap: anywhere; }
+.collaboration-social-row p { margin-block: 4px 8px; }
+.collaboration-social-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
+.collaboration-team, .collaboration-member-details { margin-block-start: 18px; }
+.collaboration-confirmation:not(:empty) { padding: 12px; border: 1px solid var(--border, #2d3344); border-radius: 8px; margin-block: 12px; }
+.collaboration-confirmation button { margin-inline-end: 8px; }
+.collaboration-center button:focus-visible, .collaboration-center input:focus-visible, .collaboration-center select:focus-visible { outline: 2px solid var(--accent, #809cff); outline-offset: 2px; }
+.collaboration-center button:disabled { opacity: .55; cursor: wait; }
+.collaboration-nav-list button[aria-pressed="true"] { background: var(--surface-hover, #202636); }
 
 @media (max-width: 900px) {
   .collaboration-center { grid-template-columns: 1fr; overflow: auto; }

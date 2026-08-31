@@ -1,4 +1,5 @@
 "use strict";
+const { createObjectClient } = require("./object-client");
 
 function clientError(code, message) {
   const error = new Error(message || code);
@@ -52,6 +53,7 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     throw clientError("COLLAB_SERVICE_UNAUTHORIZED", "Collaboration authorization could not be refreshed.");
   }
   return {
+    objects: createObjectClient({ invoke }),
     // This fences local continuations, not a remote command that may already
     // have committed. The outbox retains the original durable recovery key.
     stop() { stopped = true; },
@@ -70,6 +72,9 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     },
     submitFriend(item) {
       return invoke({ path: "/api/collaboration/v1/friends", body: item, deviceId: item?.deviceId });
+    },
+    submitConversation(item) {
+      return invoke({ path: "/api/collaboration/v1/conversations", body: item, deviceId: item?.deviceId });
     },
     async getConversationProjection({ deviceId, conversationId }) {
       const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });

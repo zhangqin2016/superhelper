@@ -138,6 +138,13 @@ const COLLABORATION_MIGRATIONS = [
       lily_id TEXT, display_name TEXT, avatar_object_id TEXT, role TEXT,
       PRIMARY KEY(account_id,team_id,user_id));
   `),
+  // v12 — social command identity and encrypted intent survive transport uncertainty.
+  (db) => db.exec(`CREATE TABLE social_commands (
+    account_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
+    scope_id TEXT NOT NULL, conversation_id TEXT, state TEXT NOT NULL, code TEXT,
+    uncertain INTEGER NOT NULL DEFAULT 0, payload_envelope_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));
+    CREATE INDEX social_commands_intent ON social_commands(account_id,fingerprint,state);`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

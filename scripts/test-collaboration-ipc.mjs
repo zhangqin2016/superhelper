@@ -24,7 +24,8 @@ createCollaborationIpc({ ipcMain, getService: () => service });
 assert.deepEqual([...handlers.keys()].sort(), [
   "collaboration:bootstrap", "collaboration:cancel", "collaboration:edit", "collaboration:friend", "collaboration:get-directory", "collaboration:get-draft", "collaboration:get-state", "collaboration:list",
   "collaboration:mark-read", "collaboration:open", "collaboration:read-messages", "collaboration:retry", "collaboration:revoke", "collaboration:save-draft", "collaboration:send", "collaboration:subscribe", "collaboration:unsubscribe",
-]);
+  "collaboration:conversation", "collaboration:get-social-commands", "collaboration:retry-social", "collaboration:open-friend", "collaboration:get-conversation-details",
+].sort());
 
 const publicState = { ok: true, cursor: 2, watermark: 0, outbox: [{ id: "o1", conversationId: "", clientCommandId: "", scopeId: "", state: "queued", attempts: 0, createdAt: 0 }] };
 assert.deepEqual(await handlers.get("collaboration:get-state")(), publicState);
