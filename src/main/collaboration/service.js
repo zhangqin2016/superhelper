@@ -375,8 +375,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (!client || !deviceId || !Number.isSafeInteger(Number(seq)) || Number(seq) < 0) return unavailableService();
         const result = await client.submitMessage({ action: "read", deviceId, conversationId, seq: Number(seq), clientCommandId: `read:${conversationId}:${Number(seq)}` });
         if (stopped) return stoppedResult();
+        const lastReadSeq = result?.result?.lastReadSeq;
+        if (result?.ok !== true || !Number.isSafeInteger(lastReadSeq) || lastReadSeq < 0) return { ok: false, code: "COLLAB_READ_ACK_INVALID" };
         emitState("read");
-        return { ok: true, conversationId, seq: Number(result?.lastReadSeq ?? seq) };
+        return { ok: true, conversationId, seq: lastReadSeq };
       },
       start() {
         if (stopped) return stoppedResult();
