@@ -449,6 +449,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   // Intentionally a closed command set. The renderer never receives bearer
   // credentials, device signatures, encrypted key material, or local paths.
   collaboration: {
+    getDirectory: () => ipcRenderer.invoke("collaboration:get-directory"),
     getState: () => ipcRenderer.invoke("collaboration:get-state"),
     bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),
     list: () => ipcRenderer.invoke("collaboration:list"),

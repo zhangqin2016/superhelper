@@ -59,6 +59,15 @@ export function createKyselyRepository(db) {
         .where((eb) => eb.or([eb("user_low_id", "=", userId), eb("user_high_id", "=", userId)]))
         .orderBy("user_low_id", "asc").orderBy("user_high_id", "asc").execute();
     },
+    async listBootstrapFriendRequests(trx, userId) {
+      return trx.selectFrom("friend_requests").select(["id", "sender_user_id", "receiver_user_id", "status"])
+        .where("status", "=", "pending").where((eb) => eb.or([eb("sender_user_id", "=", userId), eb("receiver_user_id", "=", userId)]))
+        .orderBy("id", "asc").execute();
+    },
+    async listBootstrapBlocks(trx, userId) {
+      return trx.selectFrom("user_blocks").select(["blocker_user_id", "blocked_user_id"])
+        .where("blocker_user_id", "=", userId).orderBy("blocked_user_id", "asc").execute();
+    },
     async listBootstrapTeams(trx, userId) {
       return trx.selectFrom("organization_members as member").innerJoin("organizations as organization", "organization.id", "member.organization_id")
         .select(["organization.id", "organization.name", "organization.status", "member.role", "member.joined_at"])
@@ -71,7 +80,7 @@ export function createKyselyRepository(db) {
         .innerJoin("organizations as organization", "organization.id", "viewer.organization_id")
         .innerJoin("organization_members as member", "member.organization_id", "viewer.organization_id")
         .leftJoin("user_profiles as profile", "profile.user_id", "member.user_id")
-        .select(["member.organization_id", "member.user_id", "profile.lily_id", "profile.display_name", "profile.avatar_object_id"])
+        .select(["member.organization_id", "member.user_id", "member.role", "profile.lily_id", "profile.display_name", "profile.avatar_object_id"])
         .where("viewer.user_id", "=", userId).where("viewer.status", "=", "active")
         .where("organization.status", "=", "active").where("member.status", "=", "active")
         .orderBy("member.organization_id", "asc").orderBy("member.user_id", "asc").execute();

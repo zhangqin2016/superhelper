@@ -224,6 +224,8 @@ the guard test must still pass; when you add a new capability, add a row.
 
 ## Enforcement
 
+Social-directory companion guard: `test-collaboration-directory.mjs` + `test-collaboration-directory-ipc.mjs` — account-isolated SQLite projections honor explicit legacy friendship lists while retaining unknown pending/block state; complete versioned snapshots replace the full relationship directory. Malformed directory payloads roll back with their cursor, only caller-owned blocks reach the view, Team revocation removes roster/cache, and read-only IPC/preload allowlists exclude private profile fields and transport credentials. Signed PostgreSQL bootstrap coverage lives in `server/scripts/collaboration-conversations-http-integration.mjs`.
+
 - **AGENTS.md Rule 13** makes this gate binding for every task.
 - Each vector above has an automated guard; the full suite (`npm run test:unit`
   + `test:renderer`/`test:runtime`/`test:service`/`test:skills`) must be green.

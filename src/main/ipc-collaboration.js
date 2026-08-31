@@ -1,4 +1,5 @@
 "use strict";
+const { directoryView } = require("./collaboration/directory-view");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
@@ -78,6 +79,7 @@ function rendererOutbox(value = {}) {
 
 function rendererView(method, value) {
   if (value?.ok === false) return { ok: false, code: safeIdentifier(value.code) || "COLLABORATION_UNAVAILABLE", retryable: value.retryable === true };
+  if (method === "getDirectory") return { ok: true, ...directoryView(value) };
   if (method === "getState") return { ok: true, cursor: nonNegativeInteger(value?.cursor), watermark: nonNegativeInteger(value?.watermark), outbox: Array.isArray(value?.outbox) ? value.outbox.map(rendererOutbox) : [] };
   if (method === "list") return { ok: true, conversations: Array.isArray(value?.conversations) ? value.conversations.map(rendererConversation) : [] };
   if (method === "open") return { ok: true, conversation: rendererConversation(value?.conversation), messages: Array.isArray(value?.messages) ? value.messages.map(rendererMessage) : [],
@@ -191,6 +193,8 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
   };
   ipcMain.handle("collaboration:get-state", () => invoke(getService, "getState"));
   ipcMain.handle("collaboration:list", () => invoke(getService, "list"));
+  registerCommand(ipcMain, "collaboration:get-directory", getService, "getDirectory", (payload) =>
+    payload === undefined || hasOnlyKeys(payload, new Set()) ? {} : null);
   ipcMain.handle("collaboration:bootstrap", () => invoke(getService, "bootstrap"));
   registerCommand(ipcMain, "collaboration:open", getService, "open", (payload) => {
     if (!hasOnlyKeys(payload, new Set(["conversationId", "beforeSeq"]))) return null;

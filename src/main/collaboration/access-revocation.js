@@ -1,4 +1,5 @@
 "use strict";
+const { removeTeamDirectory, pruneDirectoryProfiles } = require("./directory-projection");
 
 function revoked() { return Object.assign(new Error("Collaboration access revoked"), { code: "COLLAB_ACCESS_REVOKED" }); }
 function validId(value) { return typeof value === "string" && value.length > 0 && value.length <= 200 && value.trim() === value; }
@@ -23,6 +24,7 @@ function removeConversationRows(store, conversationId, scopeId = null) {
 }
 
 function removeScopeRows(store, scopeId) {
+  removeTeamDirectory(store, scopeId);
   // Include orphaned pending records, not only conversations in the last bootstrap.
   const ids = store.db.all(`SELECT id AS conversation_id FROM conversations WHERE account_id = ? AND scope_id = ?
     UNION SELECT conversation_id FROM messages WHERE account_id = ? AND scope_id = ?
@@ -31,6 +33,7 @@ function removeScopeRows(store, scopeId) {
   store.accountId, scopeId, store.accountId, scopeId, store.accountId, scopeId, store.accountId, scopeId);
   let deletedOutbox = 0;
   for (const row of ids) deletedOutbox += removeConversationRows(store, row.conversation_id, scopeId).deletedOutbox;
+  pruneDirectoryProfiles(store);
   for (const table of ["transfers", "share_mappings"]) store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND scope_id = ?`, store.accountId, scopeId);
   store.db.run(`INSERT INTO revoked_scopes (account_id, scope_id, key_delete_pending) VALUES (?, ?, 1)
     ON CONFLICT(account_id, scope_id) DO UPDATE SET key_delete_pending = 1`, store.accountId, scopeId);
@@ -101,8 +104,8 @@ function prepareBootstrapAccess(store, conversations, teams, scopeFor) {
     if ([...visibleScopes].some((scope) => scope.startsWith("team:") && !allowed.has(scope))) throw revoked();
     const oldScopes = store.db.all(`SELECT scope_id FROM conversations WHERE account_id = ? UNION SELECT scope_id FROM outbox WHERE account_id = ?
       UNION SELECT scope_id FROM drafts WHERE account_id = ? UNION SELECT scope_id FROM transfers WHERE account_id = ? UNION SELECT scope_id FROM share_mappings WHERE account_id = ?
-      UNION SELECT scope_id FROM revoked_conversations WHERE account_id = ?`,
-    store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId);
+      UNION SELECT scope_id FROM revoked_conversations WHERE account_id = ? UNION SELECT scope_id FROM directory_teams WHERE account_id = ?`,
+    store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId, store.accountId);
     for (const { scope_id: scopeId } of oldScopes) if (scopeId?.startsWith("team:") && !allowed.has(scopeId)) removeScopeRows(store, scopeId);
     for (const scopeId of allowed) visibleScopes.add(scopeId);
   }

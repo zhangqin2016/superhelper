@@ -8,6 +8,7 @@ const { readHistoryPage } = require("./history-page");
 const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
 const { recoverConversationHydration } = require("./conversation-hydration");
+const { directoryView } = require("./directory-view");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -194,6 +195,11 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (stopped) return stoppedResult();
         const sync = store.getSyncState();
         return { ok: true, cursor: sync.cursor, watermark: sync.watermark, outbox: store.listOutbox?.() || [] };
+      },
+      getDirectory() {
+        if (stopped) return stoppedResult();
+        if (typeof store.getDirectory !== "function") return unavailableService();
+        return { ok: true, ...directoryView(store.getDirectory()) };
       },
       list() {
         if (stopped) return stoppedResult();

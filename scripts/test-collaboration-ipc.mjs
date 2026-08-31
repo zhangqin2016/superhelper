@@ -22,7 +22,7 @@ const service = {
 
 createCollaborationIpc({ ipcMain, getService: () => service });
 assert.deepEqual([...handlers.keys()].sort(), [
-  "collaboration:bootstrap", "collaboration:cancel", "collaboration:edit", "collaboration:friend", "collaboration:get-draft", "collaboration:get-state", "collaboration:list",
+  "collaboration:bootstrap", "collaboration:cancel", "collaboration:edit", "collaboration:friend", "collaboration:get-directory", "collaboration:get-draft", "collaboration:get-state", "collaboration:list",
   "collaboration:mark-read", "collaboration:open", "collaboration:read-messages", "collaboration:retry", "collaboration:revoke", "collaboration:save-draft", "collaboration:send", "collaboration:subscribe", "collaboration:unsubscribe",
 ]);
 

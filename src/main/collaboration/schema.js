@@ -126,6 +126,18 @@ const COLLABORATION_MIGRATIONS = [
       SELECT h.account_id, h.conversation_id, h.created_at FROM history_hydration h
       WHERE NOT EXISTS (SELECT 1 FROM conversations c WHERE c.account_id = h.account_id AND c.id = h.conversation_id)
         AND NOT EXISTS (SELECT 1 FROM revoked_conversations r WHERE r.account_id = h.account_id AND r.conversation_id = h.conversation_id);`),
+  // v11 — account-isolated, server-rebuildable social directory. Organizations
+  // and organization_members on the server remain the only Team authority.
+  (db) => db.exec(`
+    CREATE TABLE directory_contacts (account_id TEXT NOT NULL, user_id TEXT NOT NULL,
+      relationship TEXT, request_id TEXT, own_blocked INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(account_id,user_id));
+    CREATE TABLE directory_teams (account_id TEXT NOT NULL, id TEXT NOT NULL, scope_id TEXT NOT NULL,
+      name TEXT NOT NULL, role TEXT, PRIMARY KEY(account_id,id));
+    CREATE TABLE directory_team_members (account_id TEXT NOT NULL, team_id TEXT NOT NULL, user_id TEXT NOT NULL,
+      lily_id TEXT, display_name TEXT, avatar_object_id TEXT, role TEXT,
+      PRIMARY KEY(account_id,team_id,user_id));
+  `),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

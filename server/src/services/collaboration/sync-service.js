@@ -180,7 +180,7 @@ export function applyDurableSyncPage(state = {}, page = {}, applyEvent = () => {
   return { ...state, cursor, appliedEventIds: [...seen], ignoredEventIds };
 }
 
-export function buildBootstrapSnapshot({ profile = null, relationships = [], teams = [], teamMembers = [], conversations = [], members = [], profiles = [], history = [], historyHydration = null, watermark = 0 } = {}) {
+export function buildBootstrapSnapshot({ profile = null, relationships = [], friendRequests = [], blocks = [], teams = [], teamMembers = [], conversations = [], members = [], profiles = [], history = [], historyHydration = null, watermark = 0 } = {}) {
   const normalizedWatermark = nonNegativeCursor(watermark, "Collaboration bootstrap watermark");
   const normalizedProfile = profile ? {
     userId: String(profile.userId ?? profile.user_id ?? ""),
@@ -191,7 +191,10 @@ export function buildBootstrapSnapshot({ profile = null, relationships = [], tea
   } : null;
   return {
     profile: normalizedProfile,
+    directorySchemaVersion: 1,
     relationships: Array.isArray(relationships) ? relationships : [],
+    friendRequests: Array.isArray(friendRequests) ? friendRequests : [],
+    blocks: Array.isArray(blocks) ? blocks : [],
     teams: Array.isArray(teams) ? teams : [],
     teamMembers: Array.isArray(teamMembers) ? teamMembers : [],
     // This is the server-to-desktop projection contract. Raw database scope
@@ -329,6 +332,8 @@ export function createCollaborationSyncService({
         if (!isActiveBoundDevice(device)) throw collaborationError("COLLAB_DEVICE_REVOKED", "The collaboration device is no longer active.");
         const profile = await repository.getBootstrapProfile(trx, accountId);
         const relationships = await repository.listBootstrapRelationships(trx, accountId);
+        const friendRequests = typeof repository.listBootstrapFriendRequests === "function" ? await repository.listBootstrapFriendRequests(trx, accountId) : [];
+        const blocks = typeof repository.listBootstrapBlocks === "function" ? await repository.listBootstrapBlocks(trx, accountId) : [];
         const teams = await repository.listBootstrapTeams(trx, accountId);
         const teamMembers = typeof repository.listBootstrapTeamMembers === "function"
           ? await repository.listBootstrapTeamMembers(trx, accountId) : [];
@@ -336,7 +341,10 @@ export function createCollaborationSyncService({
         const conversationIds = conversations.map((conversation) => String(conversation.id || "")).filter(Boolean).sort();
         const members = typeof repository.listBootstrapConversationMembers === "function"
           ? await repository.listBootstrapConversationMembers(trx, conversationIds) : [];
-        const profileUserIds = [...new Set([accountId, ...members.map((member) => String(member.user_id ?? member.userId ?? "")).filter(Boolean)])].sort();
+        const profileUserIds = [...new Set([accountId, ...members.map((member) => member.user_id ?? member.userId),
+          ...relationships.flatMap((row) => [row.user_low_id ?? row.userLowId, row.user_high_id ?? row.userHighId]),
+          ...friendRequests.flatMap((row) => [row.sender_user_id ?? row.senderUserId, row.receiver_user_id ?? row.receiverUserId]),
+          ...blocks.map((row) => row.blocked_user_id ?? row.blockedUserId)].filter(Boolean).map(String))].sort();
         const profiles = typeof repository.listBootstrapProfiles === "function"
           ? await repository.listBootstrapProfiles(trx, profileUserIds) : [];
         const historyRows = typeof repository.listBootstrapHistory === "function"
@@ -346,7 +354,7 @@ export function createCollaborationSyncService({
         });
         const state = await readState(trx, accountId);
         return buildBootstrapSnapshot({
-          profile, relationships, teams, teamMembers, conversations, members, profiles, history: boundedHistory.history,
+          profile, relationships, friendRequests, blocks, teams, teamMembers, conversations, members, profiles, history: boundedHistory.history,
           historyHydration: boundedHistory.hydration, watermark: state.watermark,
         });
       });

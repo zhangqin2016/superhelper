@@ -36,7 +36,7 @@ const [{ createCollaborationConversationProjectionService }, { createLockedMessa
 let projectionBarrier = null, bootstrapInjection = null;
 const authorize = createLockedMessageAuthorizer();
 const syncRepository = createKyselyRepository(db);
-const boundaries = ["getDeviceState", "getBootstrapProfile", "listBootstrapRelationships", "listBootstrapTeams", "listBootstrapTeamMembers", "listBootstrapConversations", "listBootstrapConversationMembers", "listBootstrapProfiles", "listBootstrapHistory", "getSyncState"];
+const boundaries = ["getDeviceState", "getBootstrapProfile", "listBootstrapRelationships", "listBootstrapFriendRequests", "listBootstrapBlocks", "listBootstrapTeams", "listBootstrapTeamMembers", "listBootstrapConversations", "listBootstrapConversationMembers", "listBootstrapProfiles", "listBootstrapHistory", "getSyncState"];
 const snapshotRepository = { ...syncRepository, ...Object.fromEntries(boundaries.map((method) => [method, async (...args) => {
   const result = await syncRepository[method](...args);
   if (bootstrapInjection) await bootstrapInjection(method);
@@ -90,6 +90,28 @@ try {
     if (projectionBarrier) { projectionBarrier.entered.resolve(); await projectionBarrier.release.promise; }
     return result;
   } }) });
+  await pool.query(`insert into friendships(user_low_id,user_high_id,status) values('admin','owner','active');
+    insert into friend_requests(id,sender_user_id,receiver_user_id,status) values('incoming','outsider','owner','pending'),('outgoing','owner','disabled','pending'),('foreign','admin','member','pending');
+    insert into user_blocks(blocker_user_id,blocked_user_id) values('owner','admin'),('outsider','owner');`);
+  const social = await bootstrap('owner');
+  assert.equal(social.directorySchemaVersion, 1, 'new bootstrap explicitly versions the complete social directory contract');
+  assert.ok(Array.isArray(social.friendRequests), 'signed bootstrap includes the pending directory');
+  assert.deepEqual(social.friendRequests.map((r) => r.id).sort(), ['incoming', 'outgoing']);
+  assert.deepEqual(social.blocks.map((r) => r.blocked_user_id), ['admin'], 'bootstrap exposes ONLY caller-owned blocks');
+  assert.ok(['owner','admin','outsider','disabled'].every((id) => social.profiles.some((p) => p.user_id === id)), 'friends, pending requests and own blocks have safe public profiles even without conversations');
+  assert.equal(social.teamMembers.find((m) => m.user_id === 'admin').role, 'admin');
+  const directoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-http-directory-'));
+  const directoryKeyring = new LocalCollaborationKeyring({ filePath: path.join(directoryDir, 'keys'), safeStorage: { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString() } });
+  const directoryStore = new CollaborationStore({ dbPath: path.join(directoryDir, 'cache.db'), accountId: 'owner', keyring: directoryKeyring });
+  try {
+    directoryStore.replaceProjectionFromBootstrap(social);
+    const directoryService = createCollaborationService({ openStore: () => ({ ok: true, store: directoryStore }) });
+    const directory = await directoryService.getDirectory();
+    assert.equal(directory.ok, true);
+    assert.deepEqual(directory.contacts.map((p) => [p.userId,p.relationship,p.ownBlocked]), [['admin','friend',true],['disabled','outgoing',false],['outsider','incoming',false]]);
+    assert.deepEqual(directory.teams.map((t) => t.id), ['org']);
+    assert.deepEqual(directory.teams[0].members.map((m) => m.userId), ['admin','invited','member','owner']);
+  } finally { directoryStore.close(); fs.rmSync(directoryDir, { recursive: true, force: true }); }
   const groupInput = { action: "create", scopeType: "personal", kind: "group", title: "Group", memberUserIds: ["member"] };
   const first = await command("owner", { ...groupInput, clientCommandId: "create-group" });
   assert.equal(first.status, 200, "the real signed HTTP route must create via the command kernel");
@@ -142,7 +164,7 @@ try {
   assert.ok(memberView.history.some((row) => row.id === afterJoin.id));
   assert.ok(!memberView.history.some((row) => row.id === beforeJoin.id), "private membership starts at the invitation sequence");
   assert.deepEqual(memberView.teamMembers.map((row) => row.user_id).sort(), ["admin", "invited", "member", "owner"]);
-  for (const row of memberView.teamMembers) assert.deepEqual(Object.keys(row).sort(), ["organization_id", "user_id", "lily_id", "display_name", "avatar_object_id"].sort(), "Team directory exposes public profile fields only");
+  for (const row of memberView.teamMembers) assert.deepEqual(Object.keys(row).sort(), ["organization_id", "user_id", "lily_id", "display_name", "avatar_object_id", "role"].sort(), "Team directory exposes public profile fields and role only");
   assert.deepEqual((await bootstrap("disabled")).conversations, []);
   assert.deepEqual((await bootstrap("disabled")).teamMembers, []);
   assert.deepEqual((await bootstrap("outsider")).teamMembers, []);

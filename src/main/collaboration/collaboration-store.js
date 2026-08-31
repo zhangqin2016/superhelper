@@ -7,6 +7,7 @@ const { hydrateAuthorizedHistory, backfillMessageCommandIds } = require("./histo
 const { queueHistoryTarget, listHistoryTargets, completeHistoryHydration } = require("./history-hydration");
 const access = require("./access-revocation");
 const { queueConversationHydration } = require("./conversation-hydration");
+const directory = require("./directory-projection");
 
 function requireId(value, label) {
   const id = String(value || "").trim();
@@ -331,7 +332,8 @@ class CollaborationStore {
 
   listHistoryTargets({ conversationId }) { return listHistoryTargets(this, conversationId); }
 
-  replaceProjectionFromBootstrap({ watermark = 0, profile = null, profiles = [], conversations, members = [], teams, history = [], requireHistoryHydration = false } = {}) {
+  replaceProjectionFromBootstrap(snapshot = {}) {
+    const { watermark = 0, conversations, members = [], teams, history = [], requireHistoryHydration = false } = snapshot;
     const cursor = Number(watermark);
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("collaboration store: bootstrap watermark is invalid");
     const rows = access.visibleBootstrapConversations(conversations, teams, projectedScopeId);
@@ -349,7 +351,7 @@ class CollaborationStore {
       }));
       // Only server-rebuildable projection tables for this account are reset.
       // Drafts and the encrypted outbox are intentionally outside this list.
-      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "profiles", "history_hydration", "history_hydration_targets", "conversation_hydration"]) {
+      for (const table of ["conversation_members", "conversations", "events", "messages", "applied_events", "history_hydration", "history_hydration_targets", "conversation_hydration"]) {
         this.db.run(`DELETE FROM ${table} WHERE account_id = ?`, this.accountId);
       }
       for (const conversation of rows) {
@@ -361,16 +363,7 @@ class CollaborationStore {
           conversation.title == null ? null : String(conversation.title), this.now(),
         );
       }
-      const profileRows = [...(profile ? [profile] : []), ...(Array.isArray(profiles) ? profiles : [])];
-      for (const value of profileRows) {
-        const userId = requireId(value?.userId ?? value?.user_id, "profile user id");
-        this.db.run(
-          `INSERT INTO profiles (account_id, user_id, lily_id, display_name, avatar_object_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(account_id, user_id) DO UPDATE SET lily_id = excluded.lily_id, display_name = excluded.display_name, avatar_object_id = excluded.avatar_object_id, updated_at = excluded.updated_at`,
-          this.accountId, userId, value.lilyId ?? value.lily_id ?? null, value.displayName ?? value.display_name ?? null,
-          value.avatarObjectId ?? value.avatar_object_id ?? null, this.now(),
-        );
-      }
+      directory.replaceDirectory(this, snapshot);
       for (const member of memberRows) {
         const conversationId = requireId(member?.conversationId ?? member?.conversation_id, "member conversation id");
         this.db.run(
@@ -473,6 +466,7 @@ class CollaborationStore {
   }
 
   revokeScope({ scopeId }) { return access.revokeScope(this, this._scope(scopeId)); }
+  getDirectory() { return directory.getDirectory(this); }
   flushRevokedKeys() { access.flushRevokedKeys(this); }
 
   close() { this.db.close(); }

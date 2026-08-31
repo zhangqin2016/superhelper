@@ -34,6 +34,8 @@ async function executeSchema() {
     create table user_devices (user_id text not null, device_id text not null, first_seen_at timestamptz not null default now(), last_seen_at timestamptz not null default now(), status text not null default 'active', primary key (user_id, device_id));
     create table user_profiles (user_id text primary key, lily_id text not null, display_name text not null default '', avatar_object_id text, discoverability text);
     create table friendships (user_low_id text, user_high_id text, status text);
+    create table friend_requests (id text, sender_user_id text, receiver_user_id text, status text);
+    create table user_blocks (blocker_user_id text, blocked_user_id text);
     create table organizations (id text primary key, name text, status text);
     create table organization_members (organization_id text, user_id text, role text, status text, joined_at timestamptz default now());
     create table conversations (id text primary key, scope_type text, organization_id text, kind text, title text, status text, next_seq bigint, visibility text);
