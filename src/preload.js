@@ -464,6 +464,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     open: (conversationId, beforeSeq) => ipcRenderer.invoke("collaboration:open", { conversationId, ...(beforeSeq == null ? {} : { beforeSeq }) }),
     getDraft: (conversationId) => ipcRenderer.invoke("collaboration:get-draft", { conversationId }),
     readMessages: ({ conversationId, messageIds }) => ipcRenderer.invoke("collaboration:read-messages", { conversationId, messageIds }),
+    readMessageOperations: ({ conversationId, outboxIds }) => ipcRenderer.invoke("collaboration:read-message-operations", { conversationId, outboxIds }),
     saveDraft: ({ conversationId, text, replyToMessageId, mentionUserIds }) => ipcRenderer.invoke("collaboration:save-draft", { conversationId, text, replyToMessageId, mentionUserIds }),
     send: ({ conversationId, clientCommandId, bodyText, replyToMessageId, mentionUserIds }) => ipcRenderer.invoke("collaboration:send", {
       conversationId, clientCommandId, bodyText, replyToMessageId, mentionUserIds,
@@ -483,6 +484,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     getMentionCandidates: (conversationId) => ipcRenderer.invoke("collaboration:get-mention-candidates", { conversationId }),
     retry: (outboxId) => ipcRenderer.invoke("collaboration:retry", { outboxId }),
     cancel: (outboxId) => ipcRenderer.invoke("collaboration:cancel", { outboxId }),
+    skip: (outboxId) => ipcRenderer.invoke("collaboration:skip", { outboxId }),
     markRead: (conversationId, seq) => ipcRenderer.invoke("collaboration:mark-read", { conversationId, seq }),
     onStateChange: (callback) => {
       if (typeof callback !== "function") return () => {};

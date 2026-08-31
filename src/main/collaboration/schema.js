@@ -167,6 +167,8 @@ const COLLABORATION_MIGRATIONS = [
       UPDATE conversations SET history_generation = lower(hex(randomblob(16)))
         WHERE account_id = NEW.account_id AND id = NEW.id;
     END;`),
+  // v15 — bounded recovery reasons only; legacy NULL means no known reason.
+  (db) => db.exec(`ALTER TABLE outbox ADD COLUMN error_code TEXT;`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

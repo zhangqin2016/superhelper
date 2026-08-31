@@ -17,6 +17,9 @@ const activity = require("./conversation-activity");
 const { messageMetadata, validateCreateBody, retainedComposerDraft } = require("./message-intent");
 const { messageTimes } = require("./message-time");
 const { replySnapshotView } = require("./reply-snapshot");
+const { safeOperationErrorCode } = require("./message-operation-view");
+const { readMessageOperations } = require("./message-operation-read");
+const { recordOutboxRetry } = require("./outbox-retry");
 function requireId(value, label) {
   const id = String(value || "").trim();
   if (!id || id.length > 512) throw new Error(`collaboration store: ${label} is required`);
@@ -126,6 +129,8 @@ class CollaborationStore {
       .map((row) => ({ id: row.id, conversationId: row.conversation_id, clientCommandId: row.client_command_id, scopeId: row.scope_id, state: row.state, attempts: Number(row.attempts), createdAt: row.created_at }));
   }
 
+  readMessageOperations(input) { return readMessageOperations(this, input); }
+
   /** A process can exit between network dispatch and durable confirmation. */
   recoverAbandonedSubmittingOutbox() {
     const recovered = this.db.run(
@@ -151,10 +156,11 @@ class CollaborationStore {
       deliveryConfirmed: Boolean(row.delivery_confirmed),
       deliveryUncertain: Boolean(row.delivery_uncertain),
       ...mutationOutbox.normalizeOutboxIntent(this._decrypt({ scopeId: row.scope_id, recordId: this._outboxRecord(id), value: row.payload_envelope_json })),
+      ...(row.error_code == null ? {} : { errorCode: safeOperationErrorCode(row.error_code) }),
     };
   }
 
-  setOutboxState({ outboxId, expectedStates, state, deliveryUncertain }) {
+  setOutboxState({ outboxId, expectedStates, state, deliveryUncertain, errorCode }) {
     const id = requireId(outboxId, "outbox id");
     const next = requireId(state, "outbox state");
     const expected = Array.isArray(expectedStates) ? expectedStates.map((value) => requireId(value, "outbox state")) : [];
@@ -164,32 +170,19 @@ class CollaborationStore {
       : ["submitting", "confirming", "cancellation_requested", "delivery_unknown"].includes(next) ? 1 : null;
     const result = this.db.run(
       `UPDATE outbox SET state = ?, delivery_uncertain = CASE WHEN delivery_confirmed = 1 THEN 0 ELSE COALESCE(?, delivery_uncertain) END,
-        delivery_confirmed = CASE WHEN ? = 'persisted' THEN 1 ELSE delivery_confirmed END, updated_at = ?
+        delivery_confirmed = CASE WHEN ? = 'persisted' THEN 1 ELSE delivery_confirmed END,
+        error_code = CASE WHEN ? = 'persisted' OR delivery_confirmed = 1 THEN NULL WHEN ? THEN ? ELSE error_code END, updated_at = ?
         WHERE account_id = ? AND id = ? AND state IN (${placeholders})
         AND (? != 'cancelled' OR (delivery_uncertain = 0 AND delivery_confirmed = 0))`,
-      next, uncertainty, next, this.now(), this.accountId, id, ...expected, next,
+      next, uncertainty, next, next, Number(errorCode !== undefined), safeOperationErrorCode(errorCode), this.now(), this.accountId, id, ...expected, next,
     );
     return result.changes === 1;
   }
 
-  recordOutboxRetry({ outboxId, maxAttempts, uncertainDelivery = false }) {
-    const id = requireId(outboxId, "outbox id");
-    const max = Number(maxAttempts);
-    if (!Number.isSafeInteger(max) || max < 1) throw new Error("collaboration store: retry limit is invalid");
-    const expectedState = uncertainDelivery ? "confirming" : "submitting";
-    const retry = this.db.transaction(() => {
-      const row = this.db.get(`SELECT attempts FROM outbox WHERE account_id = ? AND id = ? AND state = ?`, this.accountId, id, expectedState);
-      if (!row) return null;
-      const attempts = Number(row.attempts) + 1;
-      const state = uncertainDelivery ? (attempts >= max ? "delivery_unknown" : "confirming") : (attempts >= max ? "paused" : "queued");
-      this.db.run(`UPDATE outbox SET attempts = ?, state = ?, delivery_uncertain = ?, updated_at = ? WHERE account_id = ? AND id = ? AND state = ?`, attempts, state, Number(uncertainDelivery), this.now(), this.accountId, id, expectedState);
-      return { state, attempts };
-    });
-    return retry();
-  }
+  recordOutboxRetry(input) { return recordOutboxRetry(this, { ...input, outboxId: requireId(input.outboxId, "outbox id") }); }
 
   confirmOutboxDelivery({ outboxId }) {
-    this.db.run(`UPDATE outbox SET delivery_confirmed = 1, delivery_uncertain = 0 WHERE account_id = ? AND id = ?`, this.accountId, requireId(outboxId, "outbox id"));
+    this.db.run(`UPDATE outbox SET delivery_confirmed = 1, delivery_uncertain = 0, error_code = NULL WHERE account_id = ? AND id = ?`, this.accountId, requireId(outboxId, "outbox id"));
   }
 
   findOutboxPredecessor({ outboxId }) {
@@ -273,7 +266,7 @@ class CollaborationStore {
           }
         }
       }
-      this.db.run(`UPDATE outbox SET state = 'persisted', delivery_confirmed = 1, delivery_uncertain = 0, updated_at = ? WHERE account_id = ? AND id = ?`, this.now(), this.accountId, outbox.id);
+      this.db.run(`UPDATE outbox SET state = 'persisted', delivery_confirmed = 1, delivery_uncertain = 0, error_code = NULL, updated_at = ? WHERE account_id = ? AND id = ?`, this.now(), this.accountId, outbox.id);
     }
   }
 

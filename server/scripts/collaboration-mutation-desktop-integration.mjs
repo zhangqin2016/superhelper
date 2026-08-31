@@ -24,6 +24,8 @@ const { createCollaborationOutbox } = require("../../src/main/collaboration/outb
 const { createCollaborationClient } = require("../../src/main/collaboration/client.js");
 const { createCollaborationOutboxTransport } = require("../../src/main/collaboration/message-outbox-transport.js");
 const { hydratePendingConversation } = require("../../src/main/collaboration/history-hydration.js");
+const { createCollaborationService } = require("../../src/main/collaboration/service.js");
+const { createCollaborationIpc } = require("../../src/main/ipc-collaboration.js");
 const [{ db, pool, closeDb }, { registerCollaborationRoutes }, { createAccessToken }, { stableStringify, sha256 }, { createCollaborationMessageService, createHmacMessageBodyIntentSigner }, { createCollaborationMessageCrypto }, { createKyselyMessageRepository, createLockedMessageAuthorizer }] = await Promise.all([
   import("../src/db.js"), import("../src/routes/public/collaboration.js"), import("../src/services/account-auth.js"), import("../src/services/security.js"),
   import("../src/services/collaboration/messages.js"), import("../src/services/collaboration/message-crypto.js"), import("../src/services/collaboration/message-repository.js"),
@@ -35,6 +37,7 @@ const token = createAccessToken({ userId: accountId, deviceId, sessionId: "sessi
 const app = Fastify({ logger: false });
 const localDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-collab-mutation-pg-"));
 const safeStorage = { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value), decryptString: (value) => Buffer.from(value).toString() };
+let desktop = null, store = null;
 
 function openStore() {
   return new CollaborationStore({ dbPath: path.join(localDir, "collaboration.db"), accountId, keyring: new LocalCollaborationKeyring({ filePath: path.join(localDir, "keys.json"), safeStorage }) });
@@ -87,7 +90,7 @@ try {
   const serverMessage = sent.result.message;
   assert.equal(typeof serverMessage.id, "string", "server chooses the immutable message id");
 
-  let store = openStore();
+  store = openStore();
   store.db.run("INSERT INTO conversations(account_id,id,scope_id,kind,updated_at) VALUES(?,?,?,?,?)", accountId, conversationId, "personal", "direct", 1);
   store.hydrateAuthorizedHistory({ conversationId, messages: [{ id: serverMessage.id, conversationId, bodyText: "before", revision: 1, createSeq: serverMessage.seq }] });
   const editId = "desktop-edit";
@@ -96,10 +99,12 @@ try {
   const lostEditAck = createCollaborationOutbox({ store, deviceId, transport: { ...transport, async submit(item) { await transport.submit(item); throw Object.assign(new Error("drop desktop edit ACK"), { code: "COLLAB_RESPONSE_UNKNOWN" }); } } });
   await lostEditAck.submit(editId);
   assert.equal(store.getOutbox({ outboxId: editId }).state, "confirming", "desktop stores the edit before the dropped ACK");
+  assert.equal(store.getOutbox({ outboxId: editId }).errorCode, "COLLAB_RESPONSE_UNKNOWN", "ambiguous edit status has a durable bounded reason, never a permanent failure");
   lostEditAck.stop(); store.close(); store = openStore();
   const recoveredEdit = createCollaborationOutbox({ store, deviceId, transport });
   await recoveredEdit.reconcilePending();
   assert.equal(store.getOutbox({ outboxId: editId }).state, "persisted", "typed receipt settles the exact edit after SQLite reopen without replay");
+  assert.equal(store.getOutbox({ outboxId: editId }).errorCode ?? null, null, "real receipt settlement clears the obsolete ambiguous-delivery reason");
   await hydratePendingConversation({ store, client, deviceId, conversationId, assertActive() {} });
   const edited = store.getMessage({ conversationId, messageId: serverMessage.id });
   assert.deepEqual({ bodyText: edited.bodyText, revision: edited.revision, seq: edited.seq }, { bodyText: "after", revision: 2, seq: serverMessage.seq }, "authorized history applies edit revision without changing create sequence");
@@ -121,8 +126,64 @@ try {
   assert.deepEqual(persistedMessage.rows, [{ event_id: sent.result.eventId, create_seq: String(serverMessage.seq), revision: 3 }],
     "both mutations preserve the original creation event and its sequence under actual foreign keys");
   recoveredRevoke.stop(); store.close();
+
+  // The operation view must expose a real server conflict after restart, not
+  // just a renderer fixture's guessed failed state. The original edit remains
+  // an immutable command; skipping it may release an already-queued create.
+  let operationsClient = signedClient();
+  const fresh = await operationsClient.submitMessage({ action: "send", deviceId, conversationId, clientCommandId: "operation-seed", bodyText: "original operation body" });
+  const target = fresh.result.message;
+  store = openStore();
+  store.hydrateAuthorizedHistory({ conversationId, messages: [{ id: target.id, conversationId, senderUserId: accountId, bodyText: "original operation body", revision: 1, createSeq: target.seq }] });
+  // A separate signed request advances the server while the local cache is
+  // still revision 1; this fixture does not claim two full desktop clients.
+  await operationsClient.submitMessage({ action: "edit", deviceId, conversationId, messageId: target.id, clientCommandId: "external-version", expectedRevision: 1, bodyText: "new server version" });
+  const handlers = new Map();
+  createCollaborationIpc({ ipcMain: { handle(name, handler) { handlers.set(name, handler); } }, getService: () => desktop });
+  const bootDesktop = (transportOverride = {}) => {
+    const realTransport = createCollaborationOutboxTransport({ client: operationsClient, deviceId });
+    desktop = createCollaborationService({ openStore: () => ({ ok: true, store }), client: operationsClient, transport: { ...realTransport, ...transportOverride }, deviceId, realtimeEnabled: false });
+    assert.equal(desktop.ok, true);
+  };
+  bootDesktop();
+  const editIntent = { conversationId, messageId: target.id, clientCommandId: "operation-conflict", expectedRevision: 1, bodyText: "my preserved edit" };
+  const conflict = await handlers.get("collaboration:edit")(null, editIntent);
+  assert.equal(conflict.code, "MESSAGE_REVISION_CONFLICT", "the actual signed endpoint rejects a stale revision");
+  const readOperations = (outboxIds) => handlers.get("collaboration:read-message-operations")(null, { conversationId, outboxIds });
+  let view = await readOperations([editIntent.clientCommandId, "missing-operation"]);
+  assert.equal(view.ok, true); assert.equal(view.conversationId, conversationId);
+  assert.deepEqual(view.unavailableOutboxIds, ["missing-operation"]);
+  assert.equal(view.operations.length, 1);
+  const expectedConflict = { commandType: "message.edit", messageId: target.id, expectedRevision: 1, bodyText: "my preserved edit", state: "failed", errorCode: "MESSAGE_REVISION_CONFLICT", deliveryUncertain: false, originalDeviceRequired: false };
+  const conflictFields = (row) => Object.fromEntries(Object.keys(expectedConflict).map((key) => [key, row[key]]));
+  assert.deepEqual(conflictFields(view.operations[0]), expectedConflict);
+  assert.doesNotMatch(JSON.stringify(view), /originDeviceId|payload_envelope|authorization|signature|stack/, "the actual IPC only returns the operation's safe view");
+  desktop.stop(); desktop = null; store = openStore(); operationsClient = signedClient();
+  let committedNext;
+  const nextCommit = new Promise((resolve) => { committedNext = resolve; });
+  const nextTransport = createCollaborationOutboxTransport({ client: operationsClient, deviceId });
+  bootDesktop({ async submit(item) { const result = await nextTransport.submit(item); if (item.clientCommandId === "operation-after-conflict") committedNext(); return result; } });
+  view = await readOperations([editIntent.clientCommandId]);
+  assert.deepEqual(conflictFields(view.operations[0]), expectedConflict, "SQLite reopen preserves failed reason and exact original editing intent");
+  const queued = await handlers.get("collaboration:send")(null, { conversationId, clientCommandId: "operation-after-conflict", bodyText: "queued after conflict" });
+  assert.equal(queued.state, "queued", "the permanent conflict still blocks later same-conversation work");
+  const queuedView = (await readOperations(["operation-after-conflict"])).operations[0];
+  assert.equal(queuedView.commandType, "message.create"); assert.equal(queuedView.blockedBy, editIntent.clientCommandId);
+  assert.equal(Object.hasOwn(queuedView, "bodyText"), false, "operation summaries do not duplicate create bodies");
+  const skipped = await handlers.get("collaboration:skip")(null, { outboxId: editIntent.clientCommandId });
+  assert.equal(skipped.state, "cancelled", "only explicit user skip releases a definitely-uncommitted failed edit");
+  let deadline;
+  try { await Promise.race([nextCommit, new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("explicit skip did not drain the queued create")), 10_000); })]); }
+  finally { clearTimeout(deadline); }
+  assert.deepEqual((await pool.query("select client_command_id,count(*)::int as count from collaboration_events where client_command_id=any($1) group by client_command_id", [[editIntent.clientCommandId, "operation-after-conflict"]])).rows,
+    [{ client_command_id: "operation-after-conflict", count: 1 }], "skip never resubmits the rejected edit and sends the queued command exactly once");
+  assert.equal((await pool.query("select revision from messages where id=$1", [target.id])).rows[0].revision, 2, "the preserved draft cannot overwrite the conflicting server version");
+  desktop.stop(); desktop = null;
   console.log("collaboration mutation desktop integration: real PG HTTP + SQLite ACK-loss recovery passed");
+  console.log("collaboration operation views: signed conflict, encrypted restart, safe IPC and explicit skip/drain passed");
 } finally {
+  desktop?.stop();
+  try { store?.close(); } catch { /* an already-stopped desktop closed its store */ }
   await app.close(); await closeDb(); await admin.query(`drop schema if exists ${schema} cascade`); await admin.end();
   try { fs.rmSync(localDir, { recursive: true, force: true }); } catch {}
 }

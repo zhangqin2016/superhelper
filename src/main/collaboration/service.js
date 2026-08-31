@@ -16,6 +16,7 @@ const { createTransferRuntime } = require("./transfer-runtime");
 const { createAttachmentSendCoordinator } = require("./attachment-send");
 const { createReadRecovery } = require("./read-recovery");
 const { messageMetadata, messageIdentifier, validateCreateBody, sameCreateIntent } = require("./message-intent");
+const { validOperationRequest } = require("./message-operation-view");
 
 function unavailableService() {
   return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
@@ -294,6 +295,25 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           return { ok: true, messages, unavailableMessageIds };
         });
       },
+      readMessageOperations(input = {}) {
+        if (stopped) return stoppedResult();
+        const request = validOperationRequest(input);
+        if (!request) return { ok: false, code: "COLLABORATION_INVALID_INPUT" };
+        const accountId = store.accountId;
+        return enqueueSync(() => {
+          const accessFailure = () => {
+            assertActive();
+            if (store.accountId !== accountId) return { ok: false, code: "COLLAB_ACCOUNT_CHANGED" };
+            if (isConversationRevoked(store, request.conversationId)) return { ok: false, code: "COLLAB_ACCESS_REVOKED" };
+            if (!store.getConversation?.({ conversationId: request.conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND" };
+            return null;
+          };
+          const beforeRead = accessFailure();
+          if (beforeRead) return beforeRead;
+          const result = store.readMessageOperations({ ...request, deviceId });
+          return accessFailure() || result;
+        });
+      },
       saveDraft({ conversationId, text, replyToMessageId, mentionUserIds } = {}) {
         if (stopped) return stoppedResult();
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
@@ -410,7 +430,19 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (stopped) return stoppedResult();
         if (!outbox) return unavailableService();
         const result = { ok: true, ...(await outbox.cancel(outboxId)) };
+        if (stopped) return stoppedResult();
+        if (result.state === "cancelled") await outbox.drainQueued();
+        if (stopped) return stoppedResult();
         if (result.requiresSync) void synchronizeSafely();
+        return result;
+      },
+      async skip({ outboxId } = {}) {
+        if (stopped) return stoppedResult();
+        if (!outbox) return unavailableService();
+        const result = { ok: true, ...(await outbox.skip(outboxId)) };
+        if (stopped) return stoppedResult();
+        if (result.state === "cancelled") await outbox.drainQueued();
+        if (stopped) return stoppedResult();
         return result;
       },
       async markRead({ conversationId, seq } = {}) {

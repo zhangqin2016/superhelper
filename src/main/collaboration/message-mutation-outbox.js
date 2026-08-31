@@ -77,7 +77,7 @@ function settleMutationReceipt(store, { clientCommandId, eventId, commandType, c
     error.code = "COLLAB_OUTBOX_RECEIPT_INVALID";
     throw error;
   }
-  store.db.run(`UPDATE outbox SET state = 'persisted', delivery_confirmed = 1, delivery_uncertain = 0, updated_at = ? WHERE account_id = ? AND id = ?`, store.now(), store.accountId, settledIntent.id);
+  store.db.run(`UPDATE outbox SET state = 'persisted', delivery_confirmed = 1, delivery_uncertain = 0, error_code = NULL, updated_at = ? WHERE account_id = ? AND id = ?`, store.now(), store.accountId, settledIntent.id);
   store.db.run(`INSERT INTO history_hydration (account_id, conversation_id, created_at) VALUES (?, ?, ?)
     ON CONFLICT(account_id, conversation_id) DO NOTHING`, store.accountId, settledConversation, store.now());
   store.db.run(`INSERT INTO history_hydration_targets (account_id, conversation_id, message_id, revision) VALUES (?, ?, ?, ?)

@@ -165,7 +165,7 @@ test('populated v13 cache upgrades durably without rewriting encrypted data or r
 
   const reopen = () => store = new CollaborationStore({ dbPath, accountId: 'alice', keyring });
   reopen(); db = store.db;
-  assert.equal(db.pragma('user_version'), 14);
+  assert.equal(db.pragma('user_version'), COLLABORATION_MIGRATIONS.length);
   assert.equal(get(store).bodyText, oldBody);
   assert.deepEqual(get(store).replySnapshot, { status: 'unavailable', reason: 'legacy' });
   assert.equal(store.getDraft({ conversationId: 'c', draftId: 'composer' }).text, 'retained draft');
@@ -186,7 +186,7 @@ test('populated v13 cache upgrades durably without rewriting encrypted data or r
     ON CONFLICT(account_id,id) DO UPDATE SET title=excluded.title, updated_at=excluded.updated_at`);
   assert.equal(db.get("SELECT history_generation FROM conversations WHERE account_id='alice' AND id='new'").history_generation, inserted);
   const stable = generations();
-  assert.equal(db.migrate(COLLABORATION_MIGRATIONS), 14);
+  assert.equal(db.migrate(COLLABORATION_MIGRATIONS), COLLABORATION_MIGRATIONS.length);
   assert.deepEqual(generations(), stable, 'repeated migration is a no-op for existing authorizations');
   store.close(); reopen(); db = store.db;
   assert.deepEqual(generations(), stable, 'opening the persisted upgraded cache does not rotate generations');

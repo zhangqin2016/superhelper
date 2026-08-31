@@ -6,6 +6,7 @@ const { attachmentIds } = require("./collaboration/history-cache");
 const { transferResult, registerTransferIpc } = require("./collaboration/transfer-ipc");
 const { messageMetadata, messageIdentifier, MAX_CREATE_BYTES } = require("./collaboration/message-intent");
 const { normalizeReplySnapshot } = require("./collaboration/reply-snapshot");
+const { validOperationRequest, operationResult } = require("./collaboration/message-operation-view");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
@@ -95,6 +96,8 @@ function rendererView(method, value, payload) {
     ...Object.fromEntries(["clientCommandId", "state", "code", "conversationId"].filter((key) => socialIdentifier(value?.[key])).map((key) => [key, value[key]])),
   };
   if (value?.ok === false) return { ok: false, code: safeIdentifier(value.code) || "COLLABORATION_UNAVAILABLE", retryable: value.retryable === true };
+  if (method === "readMessageOperations") return operationResult(value, payload);
+  if (["retry", "skip", "cancel"].includes(method) && value?.ok !== true) return unavailable();
   if (method === "getSocialCommands") return { ok: true, commands: (value?.commands || []).flatMap((row) => {
     const input = normalizeSocialCommand(row.kind, row.input);
     return input && socialIdentifier(row.clientCommandId) ? [{ ...rendererView("retrySocial", row), kind: row.kind, scopeId: safeIdentifier(row.scopeId), input }] : [];
@@ -121,7 +124,7 @@ function rendererView(method, value, payload) {
   if (method === "getDraft") return { ok: true, text: typeof value?.text === "string" ? value.text.slice(0, MAX_TEXT_BYTES) : "", ...messageMetadata(value || {}) };
   if (method === "saveDraft") return { ok: true };
   if (method === "readMessages") return { ok: true, messages: (value?.messages || []).map(rendererMessage), unavailableMessageIds: (value?.unavailableMessageIds || []).map(safeIdentifier).filter(Boolean) };
-  if (["send", "edit", "revoke", "friend", "retry", "cancel", "markRead"].includes(method)) {
+  if (["send", "edit", "revoke", "friend", "retry", "skip", "cancel", "markRead"].includes(method)) {
     return {
       ok: value?.ok !== false,
       ...(safeIdentifier(value?.code) ? { code: safeIdentifier(value.code) } : {}),
@@ -131,6 +134,8 @@ function rendererView(method, value, payload) {
       ...(safeIdentifier(value?.outboxId) ? { outboxId: safeIdentifier(value.outboxId) } : {}),
       ...(safeIdentifier(value?.conversationId) ? { conversationId: safeIdentifier(value.conversationId) } : {}),
       ...(safeIdentifier(value?.recovery) ? { recovery: safeIdentifier(value.recovery) } : {}),
+      ...(typeof value?.canRevoke === "boolean" ? { canRevoke: value.canRevoke } : {}),
+      ...(typeof value?.requiresSync === "boolean" ? { requiresSync: value.requiresSync } : {}),
       ...(optionalInteger(value?.seq) != null ? { seq: optionalInteger(value.seq) } : {}),
     };
   }
@@ -236,6 +241,7 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
       || payload.messageIds.length < 1 || payload.messageIds.length > 200 || payload.messageIds.some((id) => !safeIdentifier(id)) || new Set(payload.messageIds).size !== payload.messageIds.length) return null;
     return { conversationId: safeIdentifier(payload.conversationId), messageIds: payload.messageIds.map(safeIdentifier) };
   });
+  registerCommand(ipcMain, "collaboration:read-message-operations", getService, "readMessageOperations", validOperationRequest);
   registerCommand(ipcMain, "collaboration:save-draft", getService, "saveDraft", (payload) => {
     if (!hasOnlyKeys(payload, new Set(["conversationId", "text", "replyToMessageId", "mentionUserIds"])) || !safeIdentifier(payload.conversationId) || typeof payload.text !== "string" || bytes(payload.text) > MAX_TEXT_BYTES) return null;
     try { return { conversationId: safeIdentifier(payload.conversationId), text: payload.text, ...messageMetadata(payload) }; } catch { return null; }
@@ -252,6 +258,7 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
   registerCommand(ipcMain, "collaboration:get-mention-candidates", getService, "getMentionCandidates", validOpen);
   registerCommand(ipcMain, "collaboration:retry", getService, "retry", validOutbox);
   registerCommand(ipcMain, "collaboration:cancel", getService, "cancel", validOutbox);
+  registerCommand(ipcMain, "collaboration:skip", getService, "skip", validOutbox);
   registerCommand(ipcMain, "collaboration:mark-read", getService, "markRead", validMarkRead);
   ipcMain.handle("collaboration:subscribe", async (event) => {
     const sender = event?.sender;

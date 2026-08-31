@@ -1,4 +1,5 @@
 "use strict";
+const { safeOperationErrorCode } = require("./message-operation-view");
 
 function errorCode(error) { return String(error?.code || ""); }
 
@@ -146,7 +147,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         // original key confirming until a strict response or typed receipt
         // binds type/conversation/target/revision to this durable intent.
         if (settleMutationAcknowledgement(item, acknowledgement)) return { state: "persisted", clientCommandId: item.clientCommandId };
-        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming", errorCode: "COLLAB_RESPONSE_UNKNOWN" });
         if (typeof transport.lookupReceipt === "function") scheduleRetry(item.id, item.attempts + 1);
         onStateChange({ outboxId: item.id, state: "confirming" });
         return { state: "confirming", clientCommandId: item.clientCommandId };
@@ -157,8 +158,9 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
       return { state: "confirming", clientCommandId: item.clientCommandId };
     } catch (error) {
       if (stopped) return stoppedResult();
+      const failureCode = safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED");
       if (isAmbiguousCommit(error)) {
-        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming", errorCode: failureCode });
         onStateChange({ outboxId: item.id, state: "confirming" });
         if (typeof transport.lookupReceipt === "function") scheduleRetry(item.id, item.attempts + 1);
         return { state: "confirming", clientCommandId: item.clientCommandId };
@@ -166,24 +168,24 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
       if (item.deliveryUncertain) {
         // A definitive rejection of this replay says nothing about an earlier
         // dispatch. Preserve its uncertainty even after manual continuation.
-        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming", errorCode: failureCode });
         if (isRetryable(error)) {
-          const retry = store.recordOutboxRetry({ outboxId: item.id, maxAttempts: maxAutoRetries, uncertainDelivery: true });
+          const retry = store.recordOutboxRetry({ outboxId: item.id, maxAttempts: maxAutoRetries, uncertainDelivery: true, errorCode: failureCode });
           if (retry) onStateChange({ outboxId: item.id, state: retry.state });
           if (retry?.state === "confirming") scheduleRetry(item.id, retry.attempts + 1);
         } else {
-          store.setOutboxState({ outboxId: item.id, expectedStates: ["confirming"], state: "delivery_unknown" });
+          store.setOutboxState({ outboxId: item.id, expectedStates: ["confirming"], state: "delivery_unknown", errorCode: failureCode });
           onStateChange({ outboxId: item.id, state: "delivery_unknown" });
         }
         throw error;
       }
       if (isRetryable(error)) {
-        const retry = store.recordOutboxRetry({ outboxId: item.id, maxAttempts: maxAutoRetries });
+        const retry = store.recordOutboxRetry({ outboxId: item.id, maxAttempts: maxAutoRetries, errorCode: failureCode });
         if (retry) onStateChange({ outboxId: item.id, state: retry.state });
         if (retry?.state === "queued") scheduleRetry(item.id, retry.attempts);
       }
       else {
-        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "failed", deliveryUncertain: false });
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "failed", deliveryUncertain: false, errorCode: failureCode });
         onStateChange({ outboxId: item.id, state: "failed" });
       }
       throw error;
@@ -202,7 +204,9 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     let receipt;
     try {
       receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, commandType: item.commandType, conversationId: item.conversationId, messageId: item.messageId, expectedRevision: item.expectedRevision });
-    } catch {
+    } catch (error) {
+      if (stopped) return stoppedResult();
+      store.setOutboxState({ outboxId: item.id, expectedStates: [item.state], state: item.state, errorCode: safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED") });
       // Receipt failure leaves no positive evidence and cannot authorize replay.
     }
     if (stopped) return stoppedResult();
@@ -248,6 +252,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
           // A malformed/negative replay response is not a commit proof. Keep
           // the exact durable key confirming and let the next receipt-first
           // pass decide whether replay remains authorized.
+          store.setOutboxState({ outboxId, expectedStates: ["confirming"], state: "confirming", errorCode: "COLLAB_RESPONSE_UNKNOWN" });
           scheduleRetry(outboxId, retry.attempts + 1);
           return;
         }
@@ -256,11 +261,13 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         return;
       } catch (error) {
         if (stopped) return stoppedResult();
+        const failureCode = safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED");
         if (!isAmbiguousCommit(error) && !isRetryable(error)) {
-          store.setOutboxState({ outboxId, expectedStates: ["confirming"], state: "delivery_unknown" });
+          store.setOutboxState({ outboxId, expectedStates: ["confirming"], state: "delivery_unknown", errorCode: failureCode });
           onStateChange({ outboxId, state: "delivery_unknown" });
           return;
         }
+        store.setOutboxState({ outboxId, expectedStates: ["confirming"], state: "confirming", errorCode: failureCode });
       }
     }
     scheduleRetry(outboxId, retry.attempts + 1);
@@ -271,8 +278,9 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     let receipt;
     try {
       receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, commandType: item.commandType, conversationId: item.conversationId, messageId: item.messageId, expectedRevision: item.expectedRevision });
-    } catch {
+    } catch (error) {
       if (stopped) return stoppedResult();
+      store.setOutboxState({ outboxId: item.id, expectedStates: [item.state], state: item.state, errorCode: safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED") });
       return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" };
     }
     if (stopped) return stoppedResult();
@@ -301,6 +309,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     continue(outboxId) {
       if (stopped) return stoppedResult();
       const item = store.getOutbox({ outboxId });
+      if (item && deviceMismatch(item)) return deviceResult(item);
       if (item && (item.commandType === "message.edit" || item.commandType === "message.revoke") && item.deliveryUncertain) {
         return enqueue(item.conversationId, () => continueUncertainMutation(item));
       }
@@ -310,6 +319,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     skip(outboxId) {
       if (stopped) return stoppedResult();
       const item = store.getOutbox({ outboxId });
+      if (item && deviceMismatch(item)) return deviceResult(item);
       if (item?.deliveryConfirmed) return { state: item.state, canRevoke: true };
       if (item?.deliveryUncertain) {
         if (store.setOutboxState({ outboxId: item.id, expectedStates: ["queued", "paused", "failed"], state: "delivery_unknown" })) {
@@ -319,6 +329,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         return { state: item.state };
       }
       if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["queued", "paused", "failed"], state: "cancelled" })) return { state: item?.state || "missing" };
+      onStateChange({ outboxId: item.id, state: "cancelled" });
       return { state: "cancelled" };
     },
     cancel(outboxId) {
@@ -332,7 +343,8 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         if (deviceMismatch(current)) return deviceResult(current);
         if (current.deliveryConfirmed) return { state: current.state, canRevoke: true };
         if (["queued", "paused", "failed"].includes(current.state) && !current.deliveryUncertain) {
-          store.setOutboxState({ outboxId: current.id, expectedStates: ["queued", "paused", "failed"], state: "cancelled" });
+          if (!store.setOutboxState({ outboxId: current.id, expectedStates: ["queued", "paused", "failed"], state: "cancelled" })) return { state: store.getOutbox({ outboxId: current.id })?.state || "missing" };
+          onStateChange({ outboxId: current.id, state: "cancelled" });
           return { state: "cancelled" };
         }
         const cancellableStates = ["submitting", "confirming", ...(current.deliveryUncertain ? ["queued", "paused", "failed"] : [])];
@@ -349,11 +361,11 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         let receipt;
         try {
           receipt = await transport.lookupReceipt({ clientCommandId: current.clientCommandId, commandType: current.commandType, conversationId: current.conversationId, messageId: current.messageId, expectedRevision: current.expectedRevision });
-        } catch {
+        } catch (error) {
           if (stopped) return stoppedResult();
           // Receipt retrieval has the same ambiguity as the original send.
           // Never strand the durable row in cancellation_requested.
-          store.setOutboxState({ outboxId: current.id, expectedStates: ["cancellation_requested"], state: "delivery_unknown" });
+          store.setOutboxState({ outboxId: current.id, expectedStates: ["cancellation_requested"], state: "delivery_unknown", errorCode: safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED") });
           onStateChange({ outboxId: current.id, state: "delivery_unknown" });
           return { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true };
         }
@@ -363,6 +375,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
           try {
             store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
               commandType: current.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+            onStateChange({ outboxId: current.id, state: "persisted" });
             return { state: "persisted", canRevoke: true };
           } catch {
             // A local projection failure must also leave an explicit recovery
