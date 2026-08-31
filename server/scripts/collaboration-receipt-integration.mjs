@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import pg from "pg";
+import Fastify from "fastify";
+
+if (!process.env.DATABASE_URL) { console.log("collaboration receipt integration: skipped (DATABASE_URL is not configured)"); process.exit(0); }
+const connectionString = process.env.DATABASE_URL;
+const schema = `collab_receipt_it_${crypto.randomUUID().replaceAll("-", "")}`;
+const admin = new pg.Pool({ connectionString });
+const scoped = new URL(connectionString); scoped.searchParams.set("options", `-c search_path=${schema}`);
+process.env.DATABASE_URL = scoped.href;
+process.env.SESSION_SECRET = crypto.randomBytes(32).toString("hex");
+process.env.COLLABORATION_ENABLED = "true";
+process.env.COLLABORATION_KILL_SWITCH = "false";
+process.env.COLLABORATION_ROLLOUT_ORGANIZATIONS = "";
+process.env.COLLAB_MESSAGE_KEK = crypto.randomBytes(32).toString("hex");
+const [{ db, pool, closeDb }, { registerCollaborationRoutes }, { createAccessToken }, { stableStringify, sha256 }] = await Promise.all([
+  import("../src/db.js"), import("../src/routes/public/collaboration.js"), import("../src/services/account-auth.js"), import("../src/services/security.js"),
+]);
+const app = Fastify({ logger: false });
+const key = crypto.generateKeyPairSync("ed25519");
+const pathname = "/api/collaboration/v1/command-receipt";
+const accountToken = (userId, deviceId = "device") => createAccessToken({ userId, deviceId, sessionId: `session-${userId}` });
+async function receipt(userId, changes = {}, { validSignature = true, token = accountToken(userId) } = {}) {
+  const body = { deviceId: "device", clientCommandId: "send", commandType: "message.create", expectedConversationId: "conv", ...changes };
+  const timestamp = new Date().toISOString(), nonce = crypto.randomUUID(), bodyHash = sha256(stableStringify(body));
+  const signature = crypto.sign(null, Buffer.from(stableStringify({ method: "POST", pathname, timestamp, nonce, bodyHash })), key.privateKey).toString("base64url");
+  const result = await app.inject({ method: "POST", url: pathname, payload: body, headers: {
+    authorization: `Bearer ${token}`, "x-lily-device-id": body.deviceId, "x-lily-timestamp": timestamp,
+    "x-lily-nonce": nonce, "x-lily-body-sha256": bodyHash, "x-lily-signature": validSignature ? signature : "invalid",
+  } });
+  return { status: result.statusCode, body: result.json() };
+}
+try {
+  await admin.query(`create schema ${schema}`);
+  await pool.query(`
+    create table device_public_keys(device_id text primary key,public_key text);
+    create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
+    create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);
+    create table user_devices(user_id text,device_id text,status text,primary key(user_id,device_id));
+    create table command_receipts(actor_device_id text,command_type text,client_command_id text,state text,result_event_id text,response_payload jsonb);
+    create table collaboration_events(id text primary key,conversation_id text,actor_user_id text);
+    create table conversations(id text primary key,scope_type text,kind text,direct_user_low_id text,direct_user_high_id text,organization_id text);
+    create table conversation_members(conversation_id text,user_id text,status text,role text,joined_seq bigint default 0);
+    create table friendships(user_low_id text,user_high_id text,status text);
+    create table user_blocks(blocker_user_id text,blocked_user_id text);
+    insert into user_sessions values('session-alice','alice','device',null,now()+interval '1 hour'),('session-bob','bob','device',null,now()+interval '1 hour');
+    insert into user_devices values('alice','device','active'),('bob','device','active');
+    insert into conversations values('conv','personal','direct','alice','bob',null);
+    insert into conversation_members values('conv','alice','active','member',0),('conv','bob','active','member',0);
+    insert into friendships values('alice','bob','active');
+    insert into collaboration_events values('evt','conv','alice');
+    insert into command_receipts values('device','message.create','send','completed','evt','{"message":{"id":"message","seq":1},"eventId":"evt"}');
+  `);
+  await pool.query("insert into device_public_keys values($1,$2)", ["device", key.publicKey.export({ type: "spki", format: "pem" })]);
+  registerCollaborationRoutes(app, { database: db });
+  const own = await receipt("alice");
+  assert.equal(own.status, 200); assert.equal(own.body.committed, true); assert.equal(own.body.messageId, "message");
+  assert.equal((await receipt("bob")).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED", "same physical device/new account cannot read old actor receipt");
+  assert.equal((await receipt("alice", { expectedConversationId: "different" })).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED");
+  assert.equal((await receipt("alice", {}, { validSignature: false })).status, 401);
+  await pool.query("update user_sessions set revoked_at=now() where user_id='alice'");
+  const revoked = await receipt("alice");
+  assert.equal(revoked.body.code, "SESSION_EXPIRED", "revoked login rejects a still-cryptographically-valid bearer token");
+  assert.equal(revoked.body.retryable, false); assert.equal(typeof revoked.body.requestId, "string", "shared guard preserves collaboration's error envelope");
+  await pool.query("update user_sessions set revoked_at=null where user_id='alice'; update user_devices set status='revoked' where user_id='alice'");
+  assert.equal((await receipt("alice")).body.code, "COLLAB_DEVICE_REVOKED");
+  await pool.query("update user_devices set status='active'; update conversation_members set status='removed' where user_id='alice'");
+  const removed = await receipt("alice");
+  assert.equal(removed.status, 403, `receipt access reauthorizes current conversation membership: ${JSON.stringify(removed.body)}`);
+  console.log("collaboration receipt integration: signed HTTP and real PostgreSQL passed");
+} finally { await app.close(); await closeDb(); await admin.query(`drop schema if exists ${schema} cascade`); await admin.end(); }

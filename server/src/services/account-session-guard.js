@@ -53,10 +53,10 @@ export function accountSessionFailure(decision) {
  * { userId, sessionId, deviceId }. `input.deviceId` is the client-declared
  * device the token must be bound to.
  */
-export async function requireAccountSession(request, reply, input) {
+export async function requireAccountSession(request, reply, input, database = db) {
   const verified = verifyAccessToken(bearerToken(request));
   const session = verified?.ok
-    ? await db.selectFrom("user_sessions").selectAll().where("id", "=", verified.sessionId).executeTakeFirst()
+    ? await database.selectFrom("user_sessions").selectAll().where("id", "=", verified.sessionId).executeTakeFirst()
     : null;
   const decision = evaluateAccountSession({ verified, deviceId: input?.deviceId, session });
   if (!decision.ok) {

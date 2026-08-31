@@ -8,7 +8,7 @@ for (const path of ["/api/collaboration/v1/bootstrap", "/api/collaboration/v1/sy
   assert.ok(source.includes(path), `versioned collaboration API must expose ${path}`);
 }
 assert.match(source, /verifySignedDeviceRequest/);
-assert.match(source, /verifyAccessToken/);
+assert.match(source, /requireAccountSession/, "collaboration must reuse the live-session guard, not verify bearer claims alone");
 assert.match(source, /clientCommandId/);
 assert.match(source, /requestId/);
 assert.match(source, /retryable/);
