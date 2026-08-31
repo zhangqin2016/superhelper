@@ -66,7 +66,7 @@ try {
     create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
     create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);
     create table audit_logs(actor text,action text,target_type text,target_id text,ip text,user_agent text,metadata jsonb);`);
-  for (const file of ['033_collaboration_core.sql', '035_collaboration_bootstrap_completion.sql', '037_collaboration_relationship_events.sql', '038_collaboration_conversations.sql', '039_collaboration_objects.sql', '040_collaboration_trusted_actors.sql']) {
+  for (const file of ['033_collaboration_core.sql', '035_collaboration_bootstrap_completion.sql', '037_collaboration_relationship_events.sql', '038_collaboration_conversations.sql', '039_collaboration_objects.sql', '040_collaboration_trusted_actors.sql', '041_collaboration_reply_snapshots.sql']) {
     const url = new URL(`../migrations/${file}`, import.meta.url);
     if (fs.existsSync(url)) await pool.query(fs.readFileSync(url, 'utf8'));
   }

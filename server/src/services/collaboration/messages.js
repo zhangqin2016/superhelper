@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { runCollaborationCommand } from "./command-runner.js";
+import { createEncryptedReplySnapshot, historyReplySnapshots } from "./reply-snapshot.js";
 import {
   commandError, requiredId, requiredPositiveInteger, normalizeIdList,
   normalizedBodyText, signedBodyIntent, resolveStableBodyIntent,
@@ -43,16 +44,6 @@ function requireRepositoryMethod(repository, method) {
 async function validatedRecipients(repository, trx, conversationId) {
   const memberIds = await requireRepositoryMethod(repository, "activeConversationMemberIds")(trx, { conversationId });
   return normalizedMembers(memberIds);
-}
-
-async function validateReplyTarget(repository, trx, { conversationId, replyToMessageId, authorization }) {
-  if (!replyToMessageId) return null;
-  const visibleAfterSeq = lockedVisibleAfterSeq(authorization);
-  const reply = await requireRepositoryMethod(repository, "findReplyTarget")(trx, { conversationId, replyToMessageId, visibleAfterSeq });
-  if (!reply || reply.conversationId !== conversationId || reply.revokedAt || !(Number(reply.createSeq ?? reply.create_seq) > visibleAfterSeq)) {
-    throw commandError("COLLAB_REPLY_TARGET_INVALID", "The replied-to message is not available in this conversation.");
-  }
-  return reply.id;
 }
 
 async function validateAttachments(repository, trx, { attachmentIds, account, conversationId, purpose, now }) {
@@ -236,6 +227,7 @@ export function createCollaborationMessageService({
     bodyCiphertext,
     bodyKeyVersion,
     bodyIntentKeyVersion,
+    replySnapshot, replySnapshotCiphertext, replySnapshotKeyVersion,
     replyToMessageId: rawReplyToMessageId,
     attachmentIds: rawAttachmentIds,
     attachmentPurpose = "attachment",
@@ -246,6 +238,9 @@ export function createCollaborationMessageService({
   } = {}) {
     const conversationId = requiredId(rawConversationId, "Conversation id");
     const replyToMessageId = rawReplyToMessageId == null ? null : requiredId(rawReplyToMessageId, "Reply-to message id");
+    if (replySnapshot !== undefined || replySnapshotCiphertext !== undefined || replySnapshotKeyVersion !== undefined) {
+      throw commandError("COLLAB_REPLY_SNAPSHOT_INPUT_FORBIDDEN", "Reply snapshots are created only by the collaboration message service.");
+    }
     if (bodyCiphertext != null || bodyKeyVersion != null) {
       throw commandError("COLLAB_MESSAGE_CIPHERTEXT_INPUT_FORBIDDEN", "Message ciphertext is created only by the collaboration message service.");
     }
@@ -279,7 +274,8 @@ export function createCollaborationMessageService({
         // New admission is 32 KiB, but old 64 KiB durable receipts retain their
         // original fingerprint/replay contract before this projection runs.
         if (normalizedText != null && Buffer.byteLength(normalizedText, "utf8") > 32 * 1024) throw commandError("COLLAB_MESSAGE_BODY_TOO_LARGE", "The message body exceeds the maximum size.");
-        const replyId = await validateReplyTarget(repository, trx, { conversationId, replyToMessageId, authorization });
+        const replySnapshot = await createEncryptedReplySnapshot({ repository, trx, messageCrypto,
+          conversationId, messageId, replyToMessageId, visibleAfterSeq: replyToMessageId ? lockedVisibleAfterSeq(authorization) : 0 });
         // Read-only preflight. Message insertion must precede object locking;
         // the final binding performs the authoritative locked CAS recheck.
         if (attachmentIds.length && typeof objectService?.bindToMessage !== "function") {
@@ -301,7 +297,8 @@ export function createCollaborationMessageService({
               id: messageId, eventId: event.id, conversationId, createSeq: event.seq,
               senderUserId: actor.userId, kind: readyAttachmentIds.length ? attachmentPurpose === "workspace" ? "workspace_share" : "attachment" : "text",
               bodyCiphertext: encrypted.ciphertext, bodyKeyVersion: encrypted.keyVersion, revision: 1,
-              replyToMessageId: replyId, attachmentIds: readyAttachmentIds, mentionUserIds: activeMentionUserIds,
+              replyToMessageId, replySnapshotCiphertext: replySnapshot.ciphertext, replySnapshotKeyVersion: replySnapshot.keyVersion,
+              attachmentIds: readyAttachmentIds, mentionUserIds: activeMentionUserIds,
               createdAt,
             });
             if (readyAttachmentIds.length) await objectService.bindToMessage({
@@ -408,7 +405,7 @@ export function createCollaborationMessageService({
           project: async ({ trx: projectionTrx, event }) => {
             const revoked = await requireRepositoryMethod(repository, "compareAndSwapMessage")(projectionTrx, {
               conversationId, messageId, expectedRevision: revision,
-              patch: { bodyCiphertext: null, bodyKeyVersion: null, revokedAt: now().toISOString() },
+              patch: { bodyCiphertext: null, bodyKeyVersion: null, replySnapshotCiphertext: null, replySnapshotKeyVersion: null, revokedAt: now().toISOString() },
             });
             if (!revoked) {
               const latest = await requireRepositoryMethod(repository, "findMessageForUpdate")(projectionTrx, { conversationId, messageId });
@@ -483,10 +480,11 @@ export function createCollaborationMessageService({
       conversationId, beforeSeq: normalizedBeforeSeq, messageIds, limit: normalizedLimit, visibleAfterSeq,
       account: { ...account, userId: actorUserId }, authorization,
     });
-    return (Array.isArray(rows) ? rows : [])
+    const visibleRows = (Array.isArray(rows) ? rows : [])
       .filter((message) => Number(message?.createSeq ?? message?.create_seq) > visibleAfterSeq)
-      .filter((message) => messageIds == null || messageIds.includes(message.id))
-      .map((message) => historyMessageView(message, messageCrypto));
+      .filter((message) => messageIds == null || messageIds.includes(message.id));
+    const snapshots = await historyReplySnapshots({ repository, trx, rows: visibleRows, messageCrypto, conversationId, visibleAfterSeq });
+    return visibleRows.map((message) => ({ ...historyMessageView(message, messageCrypto), replySnapshot: snapshots.get(message.id) }));
   }
 
   return Object.freeze({ sendMessage, editMessage, revokeMessage, markConversationRead, listMessageHistory });

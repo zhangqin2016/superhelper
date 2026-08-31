@@ -123,15 +123,15 @@ export function createCollaborationMessageCrypto({ currentKekVersion, kekByVersi
     throw cryptoError("COLLAB_MESSAGE_KEK_UNAVAILABLE", "The active message KEK is unavailable.");
   }
 
-  function encrypt({ plaintext, messageId, conversationId, revision }) {
+  function encryptEnvelope({ plaintext, messageId, conversationId, revision }, purpose = "message") {
     if (!Buffer.isBuffer(plaintext) && !(plaintext instanceof Uint8Array)) {
       throw new TypeError("Message plaintext must be bytes.");
     }
     const context = { messageId, conversationId, revision };
     const dek = Buffer.from(randomBytes(DEK_BYTES));
     if (dek.length !== DEK_BYTES) throw new Error("Message crypto random source returned an invalid DEK.");
-    const body = encryptAesGcm({ key: dek, plaintext: Buffer.from(plaintext), aad: aadFor(context, "message-body"), randomBytes });
-    const wrappedDek = encryptAesGcm({ key: keys.get(version), plaintext: dek, aad: aadFor(context, `message-dek:${version}`), randomBytes });
+    const body = encryptAesGcm({ key: dek, plaintext: Buffer.from(plaintext), aad: aadFor(context, `${purpose}-body`), randomBytes });
+    const wrappedDek = encryptAesGcm({ key: keys.get(version), plaintext: dek, aad: aadFor(context, `${purpose}-dek:${version}`), randomBytes });
     const ciphertext = Buffer.from(JSON.stringify({
       version: ENVELOPE_VERSION,
       algorithm: ALGORITHM,
@@ -142,7 +142,7 @@ export function createCollaborationMessageCrypto({ currentKekVersion, kekByVersi
     return { ciphertext, keyVersion: version };
   }
 
-  function decrypt({ ciphertext, keyVersion, messageId, conversationId, revision }) {
+  function decryptEnvelope({ ciphertext, keyVersion, messageId, conversationId, revision }, purpose = "message") {
     if (!Buffer.isBuffer(ciphertext) && !(ciphertext instanceof Uint8Array)) {
       throw cryptoError("COLLAB_MESSAGE_CIPHERTEXT_INVALID", "Message ciphertext must be bytes.");
     }
@@ -157,15 +157,22 @@ export function createCollaborationMessageCrypto({ currentKekVersion, kekByVersi
     assertAesPart(envelope.wrappedDek, "wrapped DEK");
     const context = { messageId, conversationId, revision };
     try {
-      const dek = decryptAesGcm({ key: kek, ...envelope.wrappedDek, aad: aadFor(context, `message-dek:${envelope.keyVersion}`) });
+      const dek = decryptAesGcm({ key: kek, ...envelope.wrappedDek, aad: aadFor(context, `${purpose}-dek:${envelope.keyVersion}`) });
       if (dek.length !== DEK_BYTES) throw new Error("invalid DEK length");
-      return decryptAesGcm({ key: dek, ...envelope.body, aad: aadFor(context, "message-body") });
+      return decryptAesGcm({ key: dek, ...envelope.body, aad: aadFor(context, `${purpose}-body`) });
     } catch {
       throw cryptoError("COLLAB_MESSAGE_CIPHERTEXT_INVALID", "Message ciphertext authentication failed.");
     }
   }
 
-  return Object.freeze({ encrypt, decrypt });
+  // Purpose is closed over here, never caller-controlled. Body AAD remains
+  // byte-identical; snapshots bind to the reply's immutable creation revision.
+  return Object.freeze({
+    encrypt: (input) => encryptEnvelope(input),
+    decrypt: (input) => decryptEnvelope(input),
+    encryptReplySnapshot: (input) => encryptEnvelope({ ...input, revision: 1 }, "reply-snapshot"),
+    decryptReplySnapshot: (input) => decryptEnvelope({ ...input, revision: 1 }, "reply-snapshot"),
+  });
 }
 
 /** Return only observability-safe envelope metadata; never return secret bytes. */

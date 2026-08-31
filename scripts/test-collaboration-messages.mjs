@@ -26,7 +26,7 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
   });
   const cryptoCalls = { decrypt: 0 };
   const messageCrypto = {
-    encrypt: baseMessageCrypto.encrypt,
+    ...baseMessageCrypto,
     decrypt(args) {
       cryptoCalls.decrypt += 1;
       return baseMessageCrypto.decrypt(args);
@@ -38,6 +38,9 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
     ["object-pending", { id: "object-pending", state: "uploading", ownerUserId: "user-a" }],
   ]);
   const repository = {
+    async findReplySources(_trx, { conversationId, messageIds }) {
+      return messageIds.map((id) => state.messages.get(id)).filter((message) => message?.conversationId === conversationId);
+    },
     async findReplyTarget(_trx, { conversationId, replyToMessageId }) {
       const message = state.messages.get(replyToMessageId);
       return message && message.conversationId === conversationId ? structuredClone(message) : null;

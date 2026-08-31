@@ -78,7 +78,7 @@ try {
     create table device_public_keys(device_id text primary key,public_key text);
     create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
     create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);`);
-  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql", "041_collaboration_reply_snapshots.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   for (const user of ["a", "b", "outsider"]) {
     const pair = crypto.generateKeyPairSync("ed25519"); keys.set(user, pair);
     await pool.query("insert into users values($1)", [user]);

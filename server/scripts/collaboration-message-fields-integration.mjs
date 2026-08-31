@@ -79,7 +79,7 @@ try {
     insert into users values('alice'),('bob');
     insert into user_profiles values('alice','alice','Alice',null,'contacts'),('bob','bob','Bob',null,'contacts');
   `);
-  for (const migration of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql"]) {
+  for (const migration of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql", "041_collaboration_reply_snapshots.sql"]) {
     await pool.query(fs.readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
   }
   for (const userId of ["alice", "bob"]) {

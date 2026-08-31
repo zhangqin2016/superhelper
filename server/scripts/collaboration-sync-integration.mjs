@@ -37,7 +37,7 @@ async function executeSchema() {
     create table organizations (id text primary key, name text, status text);
     create table organization_members (organization_id text, user_id text, role text, status text, joined_at timestamptz default now());
   `);
-  for (const migration of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql"]) {
+  for (const migration of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql", "041_collaboration_reply_snapshots.sql"]) {
     await writer.query(fs.readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
   }
   await writer.query("insert into users values ($1)", [userId]);

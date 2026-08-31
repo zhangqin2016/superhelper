@@ -65,7 +65,7 @@ try {
   `);
   // Only account prerequisites are fixtures. Exercise the shipped collaboration
   // constraints and columns so a hand-written schema cannot hide SQL drift.
-  for (const migration of ["033_collaboration_core.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql"]) {
+  for (const migration of ["033_collaboration_core.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql", "041_collaboration_reply_snapshots.sql"]) {
     await pool.query(fs.readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
   }
   await pool.query(`

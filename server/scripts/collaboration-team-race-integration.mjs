@@ -31,7 +31,7 @@ try {
     create table organizations(id text primary key,status text not null check(status in ('active','disabled')));
     create table organization_members(organization_id text references organizations(id),user_id text references users(id),role text not null check(role in ('owner','admin','member')),status text not null check(status in ('active','disabled')),primary key(organization_id,user_id));
   `);
-  for (const migration of ["033_collaboration_core.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql"]) {
+  for (const migration of ["033_collaboration_core.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "041_collaboration_reply_snapshots.sql"]) {
     await pool.query(await readFile(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
   }
   for (const id of ["a", "b", "c", "d", "outsider"]) {

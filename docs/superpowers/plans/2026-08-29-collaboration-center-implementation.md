@@ -415,6 +415,10 @@ check ((scope_type = 'organization') = (organization_id is not null));
 
 3B 按可验证边界顺序实施，不能只交付服务端就勾选上面的完整出口：
 
+2026-08-31 服务端快照检查点：加性041、独立用途信封、事务内发送时截取、批量按接收人授权后解密、明确占位和客户端保留字段拒绝已实现。87个协作Node守卫加architecture/registry共89项通过；14组隔离PostgreSQL集成通过；完整能力门禁174项退出0。真实PG包括签名HTTP、source/reply编辑、receipt不重建、跨消息/会话/用途错绑、加入前隔离、插入故障全事务回滚、source硬删除和reply撤回清密文。门禁仍有bundled OpenCode shape/usage缺失跳过及121行既有Renderer宿主IPC诊断；不是全项目零跳过、真实双客户端或私有bucket验收。桌面缓存/IPC快照消费、撤回屏蔽、@候选仍待后续切片；尚未合并或部署。
+
+服务端边界补充：原文硬删除沿用既有 FK `ON DELETE SET NULL`，遗留引用密文返回 unavailable 且不解密；随后引用消息自身也撤回时清除该密文/封装密钥，源ID与引用密文均不存在的记录返回 null（自身仍为撤回 tombstone）。不为这一已无内容的组合增加额外历史身份字段。
+
 1. 服务端引用快照：加性存储迁移；复用现有 envelope crypto、独立用途 AAD 和随机 DEK。快照在创建事务持有授权锁时从原文生成，绑定新消息 ID/会话且不随后续编辑改变；正文上限512个 Unicode code point（最多2048 UTF-8字节），标明是否截断，不复制嵌套引用或附件凭证。命令只传目标ID，不接受客户端快照正文。相同命令 receipt 回放不重建快照；原引用在接收者 joined-seq 边界外、撤回、不可用或回复本身被撤回时，仅返回占位，不解封引用正文。旧记录没有发送时快照则明确缺失，不能以当前原文冒充历史快照。真实PG测试覆盖原文编辑、撤回、新成员边界、错误用途/消息绑定和回放。
 2. 桌面引用读模型：授权 history 取得快照后加密入本地消息缓存，get/list/readMessages/重启一致；显示用快照与不可变发送意图分离。已知原文撤回要在同步事务中屏蔽所有旧引用，包括最近200条之外的缓存；过时 history 不能复活引用。会话/Team撤权、membership epoch、bootstrap重建与账号切换一起清理或重新授权。Renderer只能传目标ID，不能伪造快照。主进程/实际IPC回归先于UI接线。
 3. 授权候选：服务端会话详情与现有 activeRecipients 同源；候选独立于管理成员投影，包含最小安全身份字段和明确完整性。主进程缓存、撤权/目录变化失效和IPC白名单齐备，旧服务器缺字段显示未知而不是擅自拿Team全量成员补齐。超过首发上限明确失败，不能悄悄截取1000项。
@@ -607,6 +611,7 @@ check ((scope_type = 'organization') = (organization_id is not null));
 - [ ] 故障矩阵至少覆盖：请求发送前崩溃、数据库 commit 前/后崩溃、ACK 丢失、WS 通知丢失/重复/乱序、sync 本地事务前/后崩溃、cursor ACK 丢失、dispatcher/NOTIFY 关闭、睡眠恢复、对象 complete ACK 丢失。
 - [ ] 每个场景断言最终可见消息数、server seq、client command id、outbox terminal state、两个设备 cursor 和未读数；任何静默缺口或重复气泡使脚本非零退出。
 - [ ] 并发场景覆盖同会话 100 个发送者、交叉会话 fanout、成员撤权竞态、好友并发接受和双设备编辑 CAS。
+- [ ] 引用捕获与原文编辑/撤回使用真实数据库锁屏障验证并发序列化；本阶段单独报告，不将现有顺序执行的快照回归当作该并发验收。
 - [ ] 负载脚本输出 p50/p95/p99、DB lock wait、sync lag、realtime backlog；设置首发硬门槛：正常负载 p95 send commit < 500 ms、p95 sync catch-up < 2 s、零序号冲突、零永久丢失。
 - [ ] runbook 写明开关、指标、告警、dispatcher 排障、full resync、KEK 轮换、对象补偿、回滚和“不要手工改 cursor/seq”的禁令。
 - [ ] 在隔离测试数据库和私有测试 bucket 运行；保存机器规格、数据量和结果，不用 mock 结果替代真实报告。

@@ -50,7 +50,7 @@ try {
     insert into user_sessions values('session-alice','alice','device',null,now()+interval '1 hour'),('session-bob','bob','device',null,now()+interval '1 hour');
     insert into user_devices values('alice','device','active'),('bob','device','active');
   `);
-  for (const migration of ["033_collaboration_core.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql"]) {
+  for (const migration of ["033_collaboration_core.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql", "041_collaboration_reply_snapshots.sql"]) {
     await pool.query(fs.readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
   }
   await pool.query(`
