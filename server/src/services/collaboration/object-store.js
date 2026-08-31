@@ -43,11 +43,17 @@ export function createPrivateQiniuObjectStore({ config, fetchImpl = fetch, now =
       return { bucket: config.bucket, objectKey, token: `${config.accessKey}:${signature}:${encoded}`, uploadUrl, expiresAt: new Date(expiry * 1000).toISOString() };
     },
     createDownloadTicket({ objectKey, ttlSeconds = 300 }) { return signedUrl(objectKey, ttlSeconds); },
-    async head({ objectKey }) {
+    async head(input) {
+      const result = await this.probe(input);
+      if (!result) throw fail();
+      return result;
+    },
+    async probe({ objectKey }) {
       validKey(objectKey);
       try {
         const options = { redirect: "error", signal: AbortSignal.timeout(5000) };
         const head = await fetchImpl(signedUrl(objectKey, 60).url, { ...options, method: "HEAD" });
+        if (head.status === 404) return null;
         if (!head.ok) throw fail();
         const hashResponse = await fetchImpl(signedUrl(objectKey, 60, "qhash/sha256").url, { ...options, method: "GET" });
         if (!hashResponse.ok) throw fail();

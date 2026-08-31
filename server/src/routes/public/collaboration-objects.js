@@ -82,6 +82,7 @@ export function registerCollaborationObjectRoutes({ post, accountFor, database, 
   }, objectRouteOptions);
   route("init", objectInitBody, "init");
   route(":id/complete", objectCompleteBody, "complete");
+  route(":id/status", objectCommandBody, "status");
   route(":id/abort", objectCommandBody, "abort");
   route(":id/revoke", objectCommandBody, "revoke");
   route(":id/download-ticket", objectCommandBody, "downloadTicket");

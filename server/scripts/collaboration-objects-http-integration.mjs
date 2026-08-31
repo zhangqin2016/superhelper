@@ -44,7 +44,9 @@ app.addHook("onSend", async (request, reply, payload) => {
   return payload;
 });
 const uploaded = new Map();
+let providerUnavailable = false;
 const objectService = createConfiguredCollaborationObjectService({ database: db, config, fetchImpl: async (url, options) => {
+  if (providerUnavailable) return new Response(null, { status: 503 });
   const target = new URL(url), row = uploaded.get(target.pathname.slice(1));
   if (!row) return new Response(null, { status: 404 });
   if (options.method === "HEAD") return new Response(null, { headers: { "content-length": String(row.size), etag: "fake-etag", "content-type": "application/octet-stream" } });
@@ -111,7 +113,24 @@ try {
   assert.equal((await command("a", "objects/init", metadata, { tokenDeviceId: "device-b" })).status, 403);
   assert.equal((await command("a", "objects/init", { ...metadata, ownerUserId: "b" })).status, 400);
   assert.equal((await command("a", "objects/init", { ...metadata, ciphertextSize: 1024 ** 3 + 1 })).status, 400);
+  const pendingStatus = accepted(await command("a", `objects/${initial.objectId}/status`, {}));
+  assert.equal(pendingStatus.state, "uploading");
+  assert.equal(pendingStatus.provider.state, "missing");
+  assert.equal(pendingStatus.upload.objectKey, initial.upload.objectKey);
+  providerUnavailable = true;
+  const unknownStatus = await command("a", `objects/${initial.objectId}/status`, {});
+  assert.equal(unknownStatus.status, 503);
+  assert.equal(unknownStatus.body.retryable, true, "unreachable storage never becomes proof of missing ciphertext");
+  providerUnavailable = false;
+  assert.equal((await command("b", `objects/${initial.objectId}/status`, {})).status, 403, "a member is not the upload owner");
+  assert.equal((await command("outsider", `objects/${initial.objectId}/status`, {})).status, 403);
   uploaded.set(initial.upload.objectKey, { size: 100, hash: metadata.ciphertextSha256 });
+  uploaded.set(initial.upload.objectKey, { size: 99, hash: metadata.ciphertextSha256 });
+  assert.equal((await command("a", `objects/${initial.objectId}/status`, {})).body.code, "COLLAB_OBJECT_VERIFICATION_FAILED");
+  uploaded.set(initial.upload.objectKey, { size: 100, hash: metadata.ciphertextSha256 });
+  const uploadedStatus = accepted(await command("a", `objects/${initial.objectId}/status`, {}));
+  assert.equal(uploadedStatus.state, "uploading", "recovery inspection never commits completion implicitly");
+  assert.deepEqual(uploadedStatus.provider, { state: "present", etag: "fake-etag" });
   const complete = { clientCommandId: "complete-original", etag: "fake-etag", ciphertextSize: 100, ciphertextSha256: metadata.ciphertextSha256 };
   const blocker = await pool.connect();
   try {
@@ -132,6 +151,10 @@ try {
   const completed = accepted(await command("a", `objects/${initial.objectId}/complete`, complete));
   assert.deepEqual(completed, committedAck);
   assert.equal(completed.state, "verified");
+  const verifiedStatus = accepted(await command("a", `objects/${initial.objectId}/status`, {}));
+  assert.equal(verifiedStatus.state, "verified");
+  assert.equal(verifiedStatus.etag, "fake-etag");
+  assert.equal(verifiedStatus.upload, undefined, "verified objects cannot issue new upload credentials");
   assert.deepEqual(accepted(await command("a", `objects/${initial.objectId}/complete`, complete)), completed);
   const send = { action: "send", conversationId, attachmentIds: [initial.objectId], attachmentPurpose: "attachment", clientCommandId: "send-original" };
   dropAckPath = "/api/collaboration/v1/messages";
@@ -159,6 +182,7 @@ try {
   await pool.query("update organization_members set status='disabled' where user_id='b'");
   assert.equal((await command("b", `objects/${initial.objectId}/download-ticket`, {})).status, 403);
   assert.equal(accepted(await command("a", `objects/${initial.objectId}/revoke`, {})).state, "revoked");
+  assert.equal((await command("a", `objects/${initial.objectId}/status`, {})).status, 403);
   assert.equal((await command("a", `objects/${initial.objectId}/download-ticket`, {})).status, 403);
   const orphan = accepted(await command("a", "objects/init", metadata));
   assert.equal(accepted(await command("a", `objects/${orphan.objectId}/abort`, {})).state, "aborted");

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { runCollaborationCommand } from "./command-runner.js";
+import { inspectObjectRecovery } from "./object-recovery.js";
 
 const error = (code, retryable = false) => Object.assign(new Error(code), { code, retryable });
 const unavailable = () => error("COLLAB_OBJECT_UNAVAILABLE");
@@ -69,6 +70,9 @@ export function createCollaborationObjectService({ repository, keyBroker, object
     });
   }
   return Object.freeze({
+    status({ account, objectId } = {}) {
+      return inspectObjectRecovery({ repository, objectStore, account: identity(account), objectId: requiredId(objectId), now });
+    },
     async init({ account: rawAccount, clientCommandId, dek, ...raw } = {}) {
       requireKeys(); requireStore();
       const account = identity(rawAccount); const metadata = normalizeObjectInput(raw);
