@@ -4,7 +4,7 @@ const keys = ["attach", "attachment", "sendSelected", "select", "confirmSend", "
 for (const language of ["zh-CN", "en", "ar"]) {
   const values = JSON.parse(fs.readFileSync(new URL(`../src/renderer/i18n/locales/${language}.json`, import.meta.url), "utf8"));
   for (const key of keys) assert.ok(values[`collaboration.transfer.${key}`], `${language}: missing transfer.${key}`);
-  for (const key of ["ready_to_handoff", "submitting", "delivery_unknown"]) assert.ok(values[`collaboration.transfer.${key}`], `${language}: missing IPC send state ${key}`);
+  for (const key of ["ready_to_handoff", "submitting", "delivery_unknown", "message_failed", "message_paused", "cancellation_requested", "recoveryBlocked"]) assert.ok(values[`collaboration.transfer.${key}`], `${language}: missing IPC send state ${key}`);
 }
 const source = fs.readFileSync(new URL("../src/renderer/modules/collaboration-attachments.js", import.meta.url), "utf8");
 assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML/);

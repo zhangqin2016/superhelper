@@ -1,4 +1,8 @@
 {
+  "collaboration.transfer.recoveryBlocked": "部分附件的本地恢复记录缺失或无法验证，恢复已受阻；未因此重新发送消息。请检查原记录或联系支持，文字聊天不受影响。",
+  "collaboration.transfer.message_failed": "消息发送失败，请在消息中检查或重试；附件验证不代表已送达",
+  "collaboration.transfer.message_paused": "消息发送已暂停，请在消息中继续或取消",
+  "collaboration.transfer.cancellation_requested": "正在确认消息是否可以取消，尚未确认取消",
   "collaboration.transfer.ready_to_handoff": "附件就绪，正在写入消息队列",
   "collaboration.transfer.submitting": "正在提交消息，尚未确认送达",
   "collaboration.transfer.delivery_unknown": "送达结果未知，正在保留原消息身份等待确认",

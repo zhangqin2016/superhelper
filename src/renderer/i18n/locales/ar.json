@@ -1,4 +1,8 @@
 {
+  "collaboration.transfer.recoveryBlocked": "بعض سجلات استعادة المرفقات المحلية مفقودة أو يتعذر التحقق منها. تعذرت الاستعادة ولم تُعَد إرسال أي رسالة بسبب ذلك. افحص السجلات الأصلية أو تواصل مع الدعم. المحادثة النصية لا تتأثر.",
+  "collaboration.transfer.message_failed": "فشل إرسال الرسالة. افحص الرسالة الأصلية أو أعد المحاولة؛ التحقق من الملف لا يعني التسليم.",
+  "collaboration.transfer.message_paused": "إرسال الرسالة متوقف مؤقتًا. تابع أو ألغِ من الرسالة.",
+  "collaboration.transfer.cancellation_requested": "جارٍ التحقق من إمكانية إلغاء الرسالة؛ لم يتم تأكيد الإلغاء بعد.",
   "collaboration.transfer.ready_to_handoff": "المرفقات جاهزة، جارٍ إضافتها إلى قائمة الرسائل",
   "collaboration.transfer.submitting": "جارٍ إرسال الرسالة؛ لم يتم تأكيد التسليم بعد",
   "collaboration.transfer.delivery_unknown": "نتيجة التسليم غير معروفة؛ تم الاحتفاظ بهوية الرسالة الأصلية للتأكيد",

@@ -12,10 +12,11 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   let transfers = [], selected = new Set(), confirmationIds = null, confirmationOpener = null;
   const busy = new Set();
   const status = node("p", "", "collaboration-status"); status.setAttribute("role", "status");
+  const recoveryStatus = node("p", "", "collaboration-status"); recoveryStatus.setAttribute("role", "status"); recoveryStatus.hidden = true;
   const list = node("div", "", "collaboration-transfers");
   const confirmation = node("div", "", "collaboration-confirmation");
   const sendButton = node("button", label("sendSelected")); sendButton.type = "button"; sendButton.dataset.action = "send-selected";
-  root.append(status, list, sendButton, confirmation);
+  root.append(status, recoveryStatus, list, sendButton, confirmation);
   const current = (generation) => !disposed && epoch === generation && Boolean(conversation);
   const errorLabel = (result) => result?.code === "COLLAB_MESSAGE_CANCELLATION_REQUIRED" ? "messageCancellation"
     : result?.code === "COLLAB_TRANSFER_DESTINATION_EXISTS" ? "destinationExists"
@@ -48,7 +49,7 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
       const row = node("article", "", "collaboration-transfer"); row.dataset.transferId = item.id;
       const name = item.originalName || label("attachment");
       row.append(node("strong", name), node("small", label(item.state)));
-      if (item.sendState) row.append(node("small", label(item.sendState)));
+      if (item.sendState) row.append(node("small", label(["failed", "paused"].includes(item.sendState) ? `message_${item.sendState}` : item.sendState)));
       if (Number.isSafeInteger(item.totalBytes)) row.append(node("small", `${item.totalBytes.toLocaleString()} ${label("bytes")}`));
       if (item.completedParts > 0) row.append(node("small", `${label("completedParts")}: ${item.completedParts}`));
       if (selectable(item)) {
@@ -75,6 +76,8 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     const generation = epoch, version = ++refreshVersion;
     let result; try { result = await api?.getTransfers?.(); } catch { result = null; }
     if (!current(generation) || version !== refreshVersion) return;
+    const recoveryBlocked = Boolean((policy.attachments || policy.workspaceShares) && result?.ok && (result.recoveryFailureCount > 0 || result.unrecognizedCount > 0));
+    recoveryStatus.textContent = recoveryBlocked ? label("recoveryBlocked") : ""; recoveryStatus.hidden = !recoveryBlocked;
     if (!result?.ok) { transfers = []; selected.clear(); clearConfirmation(); render(); status.textContent = label("unavailable"); return; }
     transfers = (result.transfers || []).filter((item) => item.conversationId === conversation.id
       && (item.purpose === "attachment" ? policy.attachments : policy.workspaceShares));
@@ -133,7 +136,7 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   confirmation.addEventListener("keydown", escape);
   attachButton.addEventListener("click", pick); sendButton.addEventListener("click", confirmSend);
   function reset() {
-    epoch += 1; refreshVersion += 1; conversation = null; transfers = []; selected.clear(); busy.clear(); clearConfirmation(false); status.textContent = ""; render();
+    epoch += 1; refreshVersion += 1; conversation = null; transfers = []; selected.clear(); busy.clear(); clearConfirmation(false); status.textContent = ""; recoveryStatus.textContent = ""; recoveryStatus.hidden = true; render();
   }
   controls();
   return {

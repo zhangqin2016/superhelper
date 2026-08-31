@@ -24,9 +24,9 @@ app.whenReady().then(async () => {
     const {initCollaborationAttachments} = await import(${JSON.stringify(pathToFileURL(filename).href)});
     const {renderCollaborationTimeline} = await import(${JSON.stringify(pathToFileURL(path.join(__dirname, "../src/renderer/modules/collaboration-timeline.js")).href)});
     const root=document.getElementById('attachments'),button=document.getElementById('attach'),timeline=document.getElementById('timeline');
-    const calls=[];let list=[],releasePick,late=false,denied=false;
+    const calls=[];let list=[],releasePick,late=false,denied=false,recoveryFailureCount=0,unrecognizedCount=0;
     const upload={ok:true,id:'upload',conversationId:'conversation',direction:'upload',purpose:'attachment',state:'prepared',originalName:'<img src=x>.txt',totalBytes:120};
-    const api={getTransfers:async()=>({ok:true,transfers:list}),prepareAttachment:async(id)=>{calls.push(['pick',id]);if(late)return new Promise(r=>releasePick=r);list=[upload];return upload;},
+    const api={getTransfers:async()=>({ok:true,transfers:list,recoveryFailureCount,unrecognizedCount}),prepareAttachment:async(id)=>{calls.push(['pick',id]);if(late)return new Promise(r=>releasePick=r);list=[upload];return upload;},
       enqueueTransfer:async(id)=>{calls.push(['enqueue',id]);return {ok:true,state:'queued'};},pauseTransfer:async(id)=>{calls.push(['pause',id]);return {ok:true};},
       cancelTransfer:async(id)=>{calls.push(['cancel',id]);return {ok:false,code:'COLLAB_MESSAGE_CANCELLATION_REQUIRED'};},
       sendAttachments:async(input)=>{calls.push(['send',input]);list=[{...upload,sendState:'waiting_attachments',clientCommandId:'command'}];return {ok:true,state:'waiting_attachments',clientCommandId:'command'};},
@@ -48,6 +48,10 @@ app.whenReady().then(async () => {
     list=[{...list[0],state:'uploading'}];await controller.refresh();const separateProgress=root.textContent.includes('uploading')&&root.textContent.includes('waiting_attachments');
     root.querySelector('[data-action="cancel-transfer"]').click();await settle();
     const cancellation=root.querySelector('[role="status"]').textContent;
+    const deliveryStates=[];
+    for(const sendState of ['failed','paused','cancellation_requested']) {
+      list=[{...upload,state:'verified',sendState}];await controller.refresh();deliveryStates.push(root.querySelector('article').textContent);
+    }
     const message={id:'message',conversationId:'conversation',seq:1,bodyText:'file',kind:'attachment',attachmentIds:['object']};
     renderCollaborationTimeline(timeline,[message],{onDownload:input=>controller.download(input)});
     timeline.querySelector('[data-action="download-attachment"]').click();await settle();
@@ -57,6 +61,9 @@ app.whenReady().then(async () => {
     denied=true;root.querySelector('[data-action="save-download"]').click();await settle();const rejected=root.querySelector('[role="status"]').textContent;
     renderCollaborationTimeline(timeline,[{...message,revokedAt:'now',attachmentIds:[]}],{onDownload:input=>controller.download(input)});
     const revokedCleared=!timeline.querySelector('[data-action="download-attachment"]');
+    list=[];recoveryFailureCount=1;await controller.refresh();const recoveryWarning=root.textContent.includes('recoveryBlocked');
+    recoveryFailureCount=0;unrecognizedCount=1;await controller.refresh();const unknownWarning=root.textContent.includes('recoveryBlocked');
+    unrecognizedCount=0;await controller.refresh();const clearedRecoveryWarning=!root.textContent.includes('recoveryBlocked');
     late=true;button.click();await settle();controller.reset();releasePick(upload);await settle();
     const resetSafe=button.disabled&&!root.textContent.includes('<img src=x>');
     controller.setConversation({id:'conversation',scopeId:'personal'}, {attachments:false});await settle();const disabled=button.hidden;
@@ -83,12 +90,18 @@ app.whenReady().then(async () => {
     late=true;document.getElementById('collaborationAttachButton').click();await settle();center.hide();releasePick(upload);await settle();
     const lateHidden=!document.getElementById('collaborationTransfers').textContent.includes('<img src=x>.txt');late=false;
     publish({type:'availability',state:{ok:false}});await settle();const shellReset=!document.getElementById('collaborationTransfers').textContent.includes('<img src=x>.txt');center.destroy();
-    return {picked,noAutoUpload,safe,noSendBeforeConfirm,confirmation,sends,waiting,cancellation,download,enqueued,saved,rejected,revokedCleared,resetSafe,disabled,wired,shellReset,separateProgress,downloadCancel,policyFenced,lateHidden,downloadPolicyFenced,escapeFocus};
+    return {picked,noAutoUpload,safe,noSendBeforeConfirm,confirmation,sends,waiting,cancellation,deliveryStates,recoveryWarning,unknownWarning,clearedRecoveryWarning,download,enqueued,saved,rejected,revokedCleared,resetSafe,disabled,wired,shellReset,separateProgress,downloadCancel,policyFenced,lateHidden,downloadPolicyFenced,escapeFocus};
   })()`);
   assert.deepEqual(result.picked,["pick","conversation"]);assert.equal(result.noAutoUpload,true);assert.equal(result.safe,true);
   assert.equal(result.noSendBeforeConfirm,true);assert.match(result.confirmation,/Exact recipient/);assert.match(result.confirmation,/team:org/);
   assert.equal(result.sends.length,1);assert.deepEqual(result.sends[0][1],{conversationId:"conversation",transferIds:["upload"],bodyText:"caption"});
   assert.equal(result.waiting,true);assert.match(result.cancellation,/messageCancellation/);
+  assert.match(result.deliveryStates[0],/message_failed/,"verified file is not a delivered message when its outbox failed");
+  assert.match(result.deliveryStates[1],/message_paused/,"message pause must not be mistaken for upload pause");
+  assert.match(result.deliveryStates[2],/cancellation_requested/,"pending message cancellation is not a cancelled transfer");
+  assert.equal(result.recoveryWarning,true,"missing linked manifest cannot become silent waiting with an empty list");
+  assert.equal(result.unknownWarning,true,"unrecognized journals show a generic warning without exposing files or other scopes");
+  assert.equal(result.clearedRecoveryWarning,true,"repaired journals clear the recovery warning");
   assert.deepEqual(result.download,["download",{conversationId:"conversation",messageId:"message",objectId:"object"}]);assert.deepEqual(result.enqueued,["enqueue","download"]);
   assert.match(result.saved,/saved/);assert.match(result.rejected,/permissionDenied/);assert.equal(result.revokedCleared,true);assert.equal(result.resetSafe,true);assert.equal(result.disabled,true);
   assert.equal(result.wired,true,"real HTML and center controller connect picker and message download");assert.equal(result.shellReset,true,"account reset clears attachment metadata in the shell");

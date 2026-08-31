@@ -1,4 +1,8 @@
 {
+  "collaboration.transfer.recoveryBlocked": "Some local attachment recovery records are missing or cannot be verified. Recovery is blocked; no message was resent because of this. Check the original records or contact support. Text chat is unaffected.",
+  "collaboration.transfer.message_failed": "Message send failed. Check or retry the original message; file verification is not delivery.",
+  "collaboration.transfer.message_paused": "Message delivery paused. Continue or cancel from the message.",
+  "collaboration.transfer.cancellation_requested": "Checking whether the message can be cancelled; cancellation is not yet confirmed.",
   "collaboration.transfer.ready_to_handoff": "Attachments ready, adding to message queue",
   "collaboration.transfer.submitting": "Submitting message; delivery not yet confirmed",
   "collaboration.transfer.delivery_unknown": "Delivery unknown; original message identity retained for confirmation",
