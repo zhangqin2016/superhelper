@@ -58,6 +58,7 @@ try {
     insert into command_receipts values('device','message.create','send','completed','evt','{"message":{"id":"message","seq":1},"eventId":"evt"}');
   `);
   await pool.query("insert into device_public_keys values($1,$2)", ["device", key.publicKey.export({ type: "spki", format: "pem" })]);
+  await pool.query("create table users(id text primary key); insert into users values('alice'),('bob'); alter table conversations add column status text default 'active'; alter table conversations add column visibility text");
   registerCollaborationRoutes(app, { database: db, authorizeMessage: async (input) => {
     const decision = await authorize(input);
     if (historyBarrier) { historyBarrier.entered.resolve(); await historyBarrier.release.promise; }

@@ -65,6 +65,9 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
     async insertMessageRevision(_trx, revision) {
       state.revisions.push(structuredClone(revision));
     },
+    async resolveLastReadSeq(_trx, { conversationId, userId, submittedSeq }) {
+      return Math.max(state.reads.get(`${conversationId}:${userId}`) || 0, Math.min(submittedSeq, state.nextSeq - 1));
+    },
     async advanceLastReadSeq(_trx, { conversationId, userId, submittedSeq }) {
       const key = `${conversationId}:${userId}`;
       const previous = state.reads.get(key) || 0;
@@ -410,6 +413,7 @@ const authorized = async () => ({ ok: true, visibleAfterSeq: 0 });
 
 {
   const { state, service } = createHarness();
+  state.nextSeq = 11;
   const first = await service.markConversationRead({
     account, clientCommandId: "read-10", conversationId: "conversation-1", submittedSeq: 10, authorize: authorized,
   });
@@ -419,6 +423,13 @@ const authorized = async () => ({ ok: true, visibleAfterSeq: 0 });
   assert.equal(first.lastReadSeq, 10);
   assert.equal(stale.lastReadSeq, 10, "a stale device acknowledgement cannot move the read pointer backwards");
   assert.equal(state.reads.get("conversation-1:user-a"), 10);
+}
+
+{
+  const read = applyMessageActivityProjection({}, { id: "huge-read", type: "conversation.read", actorUserId: "user-a", seq: 4, payload: { lastReadSeq: Number.MAX_SAFE_INTEGER } }, "user-a");
+  assert.equal(read.lastReadSeq, 3, "historical malformed read events cannot acknowledge future messages");
+  const next = applyMessageActivityProjection(read, { id: "after-huge-read", type: "message.created", actorUserId: "user-b", seq: 5, payload: {} }, "user-a");
+  assert.equal(next.unreadCount, 1, "future messages remain unread after an excessive read event");
 }
 
 {

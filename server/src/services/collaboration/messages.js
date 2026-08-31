@@ -121,7 +121,9 @@ export function applyMessageActivityProjection(state = {}, event = {}, userId) {
     if (!Number.isSafeInteger(submittedSeq) || actorUserId !== String(userId || "")) {
       return activityState(lastReadSeq, unreadActivities, nextAppliedEventIds);
     }
-    const nextLastReadSeq = Math.max(lastReadSeq, submittedSeq);
+    const eventSeq = Number(event.seq);
+    const boundedSeq = Number.isSafeInteger(eventSeq) && eventSeq > 0 ? Math.min(submittedSeq, eventSeq - 1) : submittedSeq;
+    const nextLastReadSeq = Math.max(lastReadSeq, boundedSeq);
     return activityState(nextLastReadSeq, unreadActivities.filter((activity) => activity.seq > nextLastReadSeq), nextAppliedEventIds);
   }
   const seq = Number(event?.seq);
@@ -409,15 +411,21 @@ export function createCollaborationMessageService({
       account, commandType: "conversation.read", clientCommandId, input, authorize, database, maxTransactionRetries, commandRunner,
       project: async ({ trx, account: actor }) => {
         const recipientUserIds = await validatedRecipients(repository, trx, conversationId);
-        const response = { eventId, lastReadSeq: readSeq };
+        // Authorization retains the conversation lock. Resolve before allocating
+        // the read event, while keeping the actual write after the durable event.
+        const effectiveReadSeq = await requireRepositoryMethod(repository, "resolveLastReadSeq")(trx, {
+          conversationId, userId: actor.userId, submittedSeq: readSeq,
+        });
+        const response = { eventId, lastReadSeq: effectiveReadSeq };
         return {
-          event: { id: eventId, conversationId, type: "conversation.read", payload: { lastReadSeq: readSeq } },
+          event: { id: eventId, conversationId, type: "conversation.read", payload: { lastReadSeq: effectiveReadSeq } },
           recipientUserIds,
           response,
           project: async ({ trx: projectionTrx, event }) => {
             const result = await requireRepositoryMethod(repository, "advanceLastReadSeq")(projectionTrx, {
-              conversationId, userId: actor.userId, submittedSeq: readSeq,
+              conversationId, userId: actor.userId, submittedSeq: effectiveReadSeq,
             });
+            if (Number(result?.lastReadSeq) !== effectiveReadSeq) throw new Error("Collaboration read projection diverged from its event.");
             response.eventId = event.id;
             response.lastReadSeq = Number(result?.lastReadSeq);
           },
