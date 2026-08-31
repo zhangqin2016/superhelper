@@ -49,7 +49,7 @@ function resetMembershipReadState(store, conversationId, members) {
   const prior = store.listConversationMembers({ conversationId }).find((m) => m.userId === store.accountId);
   const current = members.find((m) => (m.userId ?? m.user_id) === store.accountId && (m.conversationId ?? m.conversation_id ?? conversationId) === conversationId);
   if (prior && Number(current?.joinedSeq ?? current?.joined_seq) > prior.joinedSeq) {
-    for (const table of ["read_checkpoints", "conversation_activity"]) store.db.run(`DELETE FROM ${table} WHERE account_id=? AND conversation_id=?`, store.accountId, conversationId);
+    for (const table of ["read_checkpoints", "conversation_activity", "reply_source_masks"]) store.db.run(`DELETE FROM ${table} WHERE account_id=? AND conversation_id=?`, store.accountId, conversationId);
   }
 }
 module.exports = { normalizeActivity, activityView, applyActivitySnapshot, projectMessageActivity, resetMembershipReadState };

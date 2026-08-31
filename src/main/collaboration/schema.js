@@ -154,6 +154,19 @@ const COLLABORATION_MIGRATIONS = [
       account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, projection_seq INTEGER NOT NULL,
       last_read_seq INTEGER NOT NULL, unread_count INTEGER NOT NULL, mention_count INTEGER NOT NULL,
       PRIMARY KEY(account_id,conversation_id));`),
+  // v14 — quote plaintext stays in the existing encrypted message envelope.
+  // Masks are source metadata, independent of the bounded visible message page.
+  (db) => db.exec(`CREATE TABLE reply_source_masks (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('revoked','unavailable')),
+    PRIMARY KEY(account_id,conversation_id,message_id));
+    ALTER TABLE conversations ADD COLUMN history_generation TEXT NOT NULL DEFAULT '';
+    UPDATE conversations SET history_generation = lower(hex(randomblob(16)));
+    CREATE TRIGGER conversations_history_generation AFTER INSERT ON conversations
+      WHEN NEW.history_generation = '' BEGIN
+      UPDATE conversations SET history_generation = lower(hex(randomblob(16)))
+        WHERE account_id = NEW.account_id AND id = NEW.id;
+    END;`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

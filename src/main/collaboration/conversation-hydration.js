@@ -3,6 +3,7 @@ const { flushRevokedKeys, isConversationRevoked } = require("./access-revocation
 const activity = require("./conversation-activity");
 const { randomUUID } = require("node:crypto");
 const { confirmRead } = require("./read-checkpoint");
+const { resetHistoryGeneration } = require("./history-fence");
 function invalid() { return Object.assign(new Error("Invalid collaboration conversation projection"), { code: "COLLAB_CONVERSATION_INVALID" }); }
 function id(value) { return typeof value === "string" && value.length > 0 && value.length <= 200 && value.trim() === value && !/[\x00-\x1f\x7f]/.test(value); }
 function queueAuthorizedRefresh(store, conversationId) {
@@ -23,6 +24,7 @@ function queueConversationHydration(store, event) {
   if (!discovery && !unknownMessage && !ownRead) return;
   if (!id(conversationId)) throw invalid();
   if (ownRead) confirmRead(store, conversationId, event.payload?.lastReadSeq, null, true);
+  if (discovery && event.payload?.userId === store.accountId) resetHistoryGeneration(store, conversationId);
   queueAuthorizedRefresh(store, conversationId);
 }
 
@@ -63,6 +65,7 @@ function applyAuthorizedConversation(store, conversationId, value) {
     store.db.run(`DELETE FROM revoked_conversations WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     store.db.run(`INSERT INTO conversations (account_id, id, scope_id, kind, title, updated_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(account_id, id) DO UPDATE SET kind=excluded.kind, title=excluded.title, updated_at=excluded.updated_at`, store.accountId, conversationId, normalized.scopeId, normalized.kind, normalized.title, store.now());
+    if (!previous || priorSelf && normalized.self?.joinedSeq > priorSelf.joinedSeq) resetHistoryGeneration(store, conversationId);
     store.db.run(`DELETE FROM conversation_members WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     for (const m of normalized.members) store.db.run(`INSERT INTO conversation_members (account_id,conversation_id,user_id,status,role,joined_seq) VALUES (?, ?, ?, ?, ?, ?)`, store.accountId, conversationId, m.userId, m.status, m.role, m.joinedSeq);
     for (const p of normalized.profiles) store.db.run(`INSERT INTO profiles (account_id,user_id,lily_id,display_name,avatar_object_id,updated_at) VALUES (?, ?, ?, ?, ?, ?)

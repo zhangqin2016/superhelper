@@ -21,6 +21,8 @@
         "scripts/test-collaboration-create-ack.mjs",
         "scripts/test-collaboration-reply-snapshot.mjs",
         "scripts/test-collaboration-reply-snapshot-input.mjs",
+        "scripts/test-collaboration-reply-cache.mjs",
+        "scripts/test-collaboration-reply-cache-service.mjs",
         "scripts/test-collaboration-message-time.mjs",
         "scripts/test-collaboration-workspace-package.mjs",
         "scripts/test-collaboration-unknown-recovery.mjs",

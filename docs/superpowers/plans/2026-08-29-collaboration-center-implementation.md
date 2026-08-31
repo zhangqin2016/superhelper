@@ -423,6 +423,14 @@ check ((scope_type = 'organization') = (organization_id is not null));
 2. 桌面引用读模型：授权 history 取得快照后加密入本地消息缓存，get/list/readMessages/重启一致；显示用快照与不可变发送意图分离。已知原文撤回要在同步事务中屏蔽所有旧引用，包括最近200条之外的缓存；过时 history 不能复活引用。会话/Team撤权、membership epoch、bootstrap重建与账号切换一起清理或重新授权。Renderer只能传目标ID，不能伪造快照。主进程/实际IPC回归先于UI接线。
 3. 授权候选：服务端会话详情与现有 activeRecipients 同源；候选独立于管理成员投影，包含最小安全身份字段和明确完整性。主进程缓存、撤权/目录变化失效和IPC白名单齐备，旧服务器缺字段显示未知而不是擅自拿Team全量成员补齐。超过首发上限明确失败，不能悄悄截取1000项。
 
+桌面读模型采用无正文的 account/conversation/source 屏蔽元数据和统一 get/list 占位投影，不为单次撤回扫描解密整个会话。源撤回标记与 cursor 同事务；授权 target-history 的明确 unavailable 也屏蔽旧引用，网络失败不得触发此动作。单条 legacy reply 缺快照或 reply 自身撤回不证明其源不可读，不能屏蔽同源其他有效回复。异步 history 需验证发起时会话代次，防 bootstrap/新 membership/撤权后重建被旧响应污染；仍可见会话 bootstrap 不得遗忘已知不可逆源撤回。显示快照始终不进入 draft/outbox/wire identity。
+
+桌面切片双审无阻断问题；质量审查建议已固化为5项额外回归。两份新guard共37/37通过：有数据的磁盘v13→v14升级保留密文/草稿/cursor，generation回填、INSERT、普通upsert与重复迁移符合预期；page/target两条服务路径的迟到授权拒绝/网络错误跨bootstrap不得清理新代次、改变mask/cursor或ACK。
+
+2026-08-31 桌面引用验证检查点：v14 source masks 与新会话 generation 插入 trigger、加密 history/get/list/readMessages/IPC、不可见优先、授权代际 fence 已实现。父独立91个脚本（89协作Node+architecture/registry）通过；14组真实PG集成通过；完整能力门禁176项退出0。新PG链路从正式bootstrap、授权history持久化、completion ACK进入sync，覆盖重启后的quote/真实IPC/源撤回即时屏蔽/同revision迟到history和新成员隐私；好友accepted创建/删除重建漏fence已实际RED→GREEN。能力门禁仍有bundled OpenCode shape/usage缺失跳过与121行既有Renderer宿主IPC诊断。尚无引用UI、@候选、真实双应用交互或Task20物理擦除验收，不据此关闭Task13整体。
+
+- [ ] 近期补强：生产 receipt transport 与 create ACK 使用一致的不可矛盾提交证据。2026-08-31实际SQLite+生产transport/outbox注入 completed create receipt（revision=3、revoked=true）后，错误进入persisted/deliveryConfirmed=true并采用sequence=9。不是正常服务端已返回此数据的证据，而是客户端确实缺少防御；桌面引用切片后立即修复。覆盖缺失/错类型/错会话/错revision/revoked/两sequence矛盾、显式unknown兼容、cancel/reconcile/重启与原UUID/device保持。不得把不完整回执当成未知重发证明；服务器receipt视图只在revoked=true时携带该字段，正常create省略false须兼容。
+
 **Files:**
 
 - Create: `src/renderer/modules/collaboration-inbox.js`
@@ -592,6 +600,7 @@ check ((scope_type = 'organization') = (organization_id is not null));
 - [ ] 幂等 receipt 的清理下限不得短于对应消息保留期和最大离线重试窗；删除前还要确认没有 non-terminal outbox 可能引用该 command id。
 - [ ] 测试消息/object KEK 版本轮换可读旧数据、新写只用当前版本，删除旧 key 前有引用计数硬门槛。
 - [ ] 引用快照同属受保护正文：保留到期/注销擦除不能遗漏其密文和封装密钥，旧 message KEK 的引用检查必须统计快照；撤回/到期读模型在后台清理尚未完成时也不得解封原引用。
+- [ ] 本地 reply_source_masks 不按时间盲目过期：只有对应会话/授权代次清理且旧引用和迟到响应已被隔离时才可删除；否则删除屏蔽元数据会使仍缓存的旧引用重新可见。正文物理清理与显示屏蔽分开验证。
 - [ ] 运行测试确认红灯。
 - [ ] 指标至少包含 send commit latency、sync lag、outbox age/retry、WS connection、dispatcher backlog、object bytes/failures、403/429、full resync count；不得以正文作 label。
 - [ ] maintenance 使用可恢复批次和 `SKIP LOCKED`，每批有上限；数据库删除与 Kodo 删除不一致时留在补偿队列。

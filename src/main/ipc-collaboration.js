@@ -4,6 +4,7 @@ const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/so
 const { attachmentIds } = require("./collaboration/history-cache");
 const { transferResult, registerTransferIpc } = require("./collaboration/transfer-ipc");
 const { messageMetadata, messageIdentifier, MAX_CREATE_BYTES } = require("./collaboration/message-intent");
+const { normalizeReplySnapshot } = require("./collaboration/reply-snapshot");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
@@ -72,6 +73,7 @@ function rendererMessage(value = {}) {
     ...(safeIdentifier(value.clientCommandId) ? { clientCommandId: safeIdentifier(value.clientCommandId) } : {}),
     ...(optionalInteger(value.revision) != null ? { revision: optionalInteger(value.revision) } : {}),
     ...messageMetadata(value),
+    replySnapshot: normalizeReplySnapshot(value),
     ...(typeof value.revokedAt === "string" ? { revokedAt: value.revokedAt.slice(0, 40) } : {}),
     ...(typeof value.editedAt === "string" ? { editedAt: value.editedAt.slice(0, 40) } : {}),
   };

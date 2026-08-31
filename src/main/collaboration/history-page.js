@@ -1,4 +1,5 @@
 "use strict";
+const { captureHistoryFence } = require("./history-fence");
 
 const PAGE_SIZE = 200;
 const OFFLINE_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_RESPONSE_UNKNOWN"]);
@@ -16,9 +17,11 @@ async function readHistoryPage({ store, client, deviceId, conversationId, before
   let messages;
   let hasMore;
   if (!offline) {
+    const assertHistoryCurrent = captureHistoryFence(store, conversationId);
     try {
-      const response = await client.listMessageHistory({ deviceId, conversationId, beforeSeq, limit: PAGE_SIZE });
-      assertActive();
+      let response;
+      try { response = await client.listMessageHistory({ deviceId, conversationId, beforeSeq, limit: PAGE_SIZE }); }
+      finally { assertActive(); assertHistoryCurrent(); }
       const rows = Array.isArray(response) ? response : response?.messages ?? response?.items;
       if (!Array.isArray(rows) || rows.length > PAGE_SIZE) throw invalidHistory();
       const ids = new Set(), seqs = new Set();

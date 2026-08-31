@@ -1,4 +1,6 @@
 "use strict";
+const { maskReplySource } = require("./reply-snapshot");
+const { captureHistoryFence } = require("./history-fence");
 
 function invalidHistory() { return Object.assign(new Error("Invalid collaboration history target"), { code: "COLLAB_HISTORY_INVALID" }); }
 
@@ -12,6 +14,7 @@ function queueHistoryTarget(store, event) {
   const revision = Number(event.payload?.revision ?? (mutation ? NaN : 1));
   if (typeof messageId !== "string" || !messageId.trim() || messageId.length > 200 || !Number.isSafeInteger(revision) || revision < 1) throw invalidHistory();
   if (mutation && revision < 2) throw invalidHistory();
+  if (event.type === "message.revoked") maskReplySource(store, conversationId, messageId, "revoked");
   store.db.run(`INSERT INTO history_hydration_targets (account_id, conversation_id, message_id, revision) VALUES (?, ?, ?, ?)
     ON CONFLICT(account_id, conversation_id, message_id) DO UPDATE SET revision = MAX(revision, excluded.revision)`, store.accountId, conversationId, messageId, revision);
 }
@@ -57,8 +60,10 @@ async function hydratePendingConversation({ store, client, deviceId, conversatio
   const targets = listHistoryTargets(store, conversationId);
   const batches = targets.length ? Array.from({ length: Math.ceil(targets.length / 200) }, (_, i) => targets.slice(i * 200, (i + 1) * 200)) : [null];
   for (const batch of batches) {
-    const response = await client.listMessageHistory({ deviceId, conversationId, ...(batch ? { messageIds: batch.map((row) => row.messageId) } : {}) });
-    assertActive();
+    const assertHistoryCurrent = captureHistoryFence(store, conversationId);
+    let response;
+    try { response = await client.listMessageHistory({ deviceId, conversationId, ...(batch ? { messageIds: batch.map((row) => row.messageId) } : {}) }); }
+    finally { assertActive(); assertHistoryCurrent(); }
     const messages = Array.isArray(response) ? response : response?.messages ?? response?.items;
     const unavailable = response?.unavailableMessageIds ?? [];
     if (!Array.isArray(messages) || messages.length > 200) throw invalidHistory();
@@ -80,7 +85,10 @@ async function hydratePendingConversation({ store, client, deviceId, conversatio
       store.hydrateAuthorizedHistory({ conversationId, messages, completeCheckpoint: false });
       // A signed, freshly authorized target response explicitly proves these
       // IDs are not visible (or no longer exist). A merely missing row does not.
-      if (batch) for (const id of unavailable) store.db.run(`DELETE FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, store.accountId, conversationId, id);
+      if (batch) for (const id of unavailable) {
+        maskReplySource(store, conversationId, id, "unavailable");
+        store.db.run(`DELETE FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, store.accountId, conversationId, id);
+      }
     })();
   }
   // Completion is generation-conditional: a newer receipt can arrive while a

@@ -16,7 +16,7 @@ const { settleCreatedSyncEvent } = require("./outbox-sync-settlement");
 const activity = require("./conversation-activity");
 const { messageMetadata, validateCreateBody, retainedComposerDraft } = require("./message-intent");
 const { messageTimes } = require("./message-time");
-
+const { replySnapshotView } = require("./reply-snapshot");
 function requireId(value, label) {
   const id = String(value || "").trim();
   if (!id || id.length > 512) throw new Error(`collaboration store: ${label} is required`);
@@ -118,7 +118,7 @@ class CollaborationStore {
     if (!row) return null;
     const content = this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, message), value: row.body_envelope_json });
     return { id: row.id, conversationId: row.conversation_id, state: row.state, seq: row.seq, senderUserId: row.sender_user_id, ...content, ...messageMetadata(content), ...messageTimes(content, row),
-      ...((row.client_command_id || content.clientCommandId) ? { clientCommandId: row.client_command_id || content.clientCommandId } : {}) };
+      replySnapshot: replySnapshotView(this, conversation, content), ...((row.client_command_id || content.clientCommandId) ? { clientCommandId: row.client_command_id || content.clientCommandId } : {}) };
   }
 
   listOutbox() {
@@ -335,7 +335,6 @@ class CollaborationStore {
   }
 
   listHistoryTargets({ conversationId }) { return listHistoryTargets(this, conversationId); }
-
   replaceProjectionFromBootstrap(snapshot = {}) {
     const { watermark = 0, conversations, members = [], teams, history = [], requireHistoryHydration = false } = snapshot;
     const cursor = Number(watermark);
@@ -398,6 +397,7 @@ class CollaborationStore {
           outbox.created_at, this.now(),
         );
       }
+      this.db.run(`DELETE FROM reply_source_masks WHERE account_id = ? AND conversation_id NOT IN (SELECT id FROM conversations WHERE account_id = ?)`, this.accountId, this.accountId);
       restorePendingHistoryTargets(this, pendingHistoryTargets, rows.map((row) => row.id));
       this.db.run(
         `INSERT INTO sync_state (account_id, cursor, watermark, updated_at) VALUES (?, ?, ?, ?)
@@ -448,7 +448,7 @@ class CollaborationStore {
       const delivery = clientCommandId ? this.db.get(`SELECT state FROM outbox WHERE account_id = ? AND client_command_id = ?`, this.accountId, clientCommandId) : null;
       return {
         id: row.id, conversationId: row.conversation_id, seq: row.seq == null ? null : Number(row.seq), senderUserId: row.sender_user_id,
-        ...content, ...messageMetadata(content), ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, ...messageTimes(content, row),
+        ...content, ...messageMetadata(content), replySnapshot: replySnapshotView(this, conversation, content), ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, ...messageTimes(content, row),
       };
     }).filter((message) => message.state !== "cancelled");
   }

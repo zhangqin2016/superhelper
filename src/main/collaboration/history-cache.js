@@ -2,6 +2,7 @@
 const { releaseHandledClamp } = require("./read-checkpoint");
 const { messageMetadata } = require("./message-intent");
 const { serverTime } = require("./message-time");
+const { normalizeReplySnapshot, replySnapshotView, recordHistoryReplyMasks } = require("./reply-snapshot");
 
 function attachmentIds(message) {
   const ids = message.attachmentIds === undefined ? [] : message.attachmentIds;
@@ -26,10 +27,12 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
       const revision = Number(message.revision ?? 1);
       if (!Number.isSafeInteger(revision) || revision < 1) throw new Error("collaboration store: invalid history revision");
       const normalizedAttachments = attachmentIds(message);
+      const snapshot = normalizeReplySnapshot(message);
       const prior = store.getMessage({ conversationId: conversation, messageId: id });
       // Different fetches can finish out of order. Never resurrect an old
       // revision or overwrite a revocation with stale authorized history.
       if (prior && (Number(prior.revision || 1) > revision || prior.revokedAt && !message.revokedAt)) continue;
+      recordHistoryReplyMasks(store, conversation, message, snapshot, prior);
       const createdAt = serverTime(message.createdAt ?? message.created_at);
       const content = {
         bodyText: message.revokedAt ? "" : String(message.bodyText ?? ""), revision,
@@ -37,6 +40,7 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
         editedAt: message.editedAt ?? null, kind: String(message.kind || "text"),
         createdAt: prior?.createdAt ?? createdAt, clientCreatedAt: prior?.clientCreatedAt ?? null,
         attachmentIds: normalizedAttachments,
+        replySnapshot: replySnapshotView(store, conversation, { ...message, replySnapshot: snapshot }),
         ...(prior?.clientCommandId ? { clientCommandId: prior.clientCommandId } : {}),
       };
       const seq = prior?.seq ?? Number(message?.createSeq ?? message?.create_seq ?? message?.seq);

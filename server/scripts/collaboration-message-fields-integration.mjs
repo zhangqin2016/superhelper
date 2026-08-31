@@ -33,6 +33,7 @@ const { createCollaborationOutbox } = require("../../src/main/collaboration/outb
 const { createCollaborationService } = require("../../src/main/collaboration/service.js");
 const { hydratePendingConversation } = require("../../src/main/collaboration/history-hydration.js");
 const { createCollaborationIpc } = require("../../src/main/ipc-collaboration.js");
+const { createCollaborationSyncEngine } = require("../../src/main/collaboration/sync-engine.js");
 const app = Fastify({ logger: false });
 installDocOnlyCompilers(app);
 const identities = new Map();
@@ -127,6 +128,12 @@ try {
   await hydratePendingConversation({ store, client: fresh, deviceId: "device-alice", conversationId: "group", assertActive() {} });
   const message = store.getMessage({ conversationId: "group", messageId: stored.id });
   assert.equal(message.replyToMessageId, source.id);
+  const expectedQuote = { status: "available", messageId: source.id, revision: 1, senderUserId: "bob", createSeq: source.seq,
+    kind: "text", bodyText: "source message", truncated: false };
+  assert.deepEqual(message.replySnapshot, expectedQuote, "signed server quote survives authorized hydration into the desktop cache");
+  assert.equal(store.db.get("select body_envelope_json from messages where account_id=? and id=?", "alice", stored.id).body_envelope_json.includes("source message"), false,
+    "desktop quote plaintext is not persisted outside the local envelope");
+  assert.equal(sentCommands.some((c) => Object.hasOwn(c, "replySnapshot")), false, "display snapshots never become part of retry wire intent");
   assert.deepEqual(message.mentionUserIds, ["bob"]);
   assert.equal(message.senderUserId, "alice");
   assert.equal(message.createdAt, serverDate.getTime());
@@ -134,6 +141,7 @@ try {
   const reopened = store.listMessages({ conversationId: "group" }).find((m) => m.id === stored.id);
   assert.equal(reopened.createdAt, serverDate.getTime(), "authoritative message age survives SQLite reopen");
   assert.deepEqual(reopened.mentionUserIds, ["bob"]);
+  assert.deepEqual(reopened.replySnapshot, expectedQuote, "quote view survives SQLite reopen");
   service = createCollaborationService({ openStore: () => ({ ok: true, store }) });
   const handlers = new Map();
   createCollaborationIpc({ ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, getService: () => service });
@@ -141,6 +149,7 @@ try {
   assert.equal(view.messages[0].createdAt, serverDate.getTime());
   assert.equal(view.messages[0].senderUserId, "alice");
   assert.deepEqual(view.messages[0].mentionUserIds, ["bob"]);
+  assert.deepEqual(view.messages[0].replySnapshot, expectedQuote, "the actual read-messages IPC exposes only the authorized quote view");
 
   // Upgrade fixture: retain a real completed command/event, then populate its
   // encrypted body and fingerprint as an already-existing 64 KiB-era message.
@@ -174,6 +183,26 @@ try {
   await assert.rejects(() => fresh.submitMessage({ ...intent, action: "send", deviceId: "device-alice", clientCommandId: "hidden-source" }),
     (error) => error.code === "COLLAB_REPLY_TARGET_INVALID", "a pre-join source cannot be referenced by a new reply");
   assert.equal((await pool.query("select count(*)::int as n from messages where conversation_id='group'")).rows[0].n, 3);
+  await pool.query("update conversation_members set joined_seq=0 where conversation_id='group' and user_id='alice'");
+  const bootstrap = await fresh.bootstrap({ deviceId: "device-alice" });
+  store.replaceProjectionFromBootstrap({ ...bootstrap, history: [], requireHistoryHydration: true });
+  await hydratePendingConversation({ store, client: fresh, deviceId: "device-alice", conversationId: "group", assertActive() {} });
+  await fresh.acknowledgeCursor({ deviceId: "device-alice", cursor: bootstrap.watermark, bootstrapCompletionToken: bootstrap.bootstrapCompletionToken });
+  const staleReply = (await fresh.listMessageHistory({ deviceId: "device-alice", conversationId: "group", messageIds: [stored.id] })).messages[0];
+  await bob.submitMessage({ action: "revoke", deviceId: "device-bob", conversationId: "group", clientCommandId: "revoke-source", messageId: source.id, expectedRevision: 1 });
+  const page = await fresh.syncAfterCursor({ deviceId: "device-alice", afterCursor: store.getSyncState().cursor });
+  assert.equal(page.status, "OK");
+  assert.equal(page.events.some((e) => e.type === "message.revoked" && e.payload.messageId === source.id), true);
+  createCollaborationSyncEngine({ store }).applyPage(page);
+  assert.deepEqual(store.getMessage({ conversationId: "group", messageId: stored.id }).replySnapshot, { status: "revoked" },
+    "the signed revoke event masks cached quotes in the same SQLite cursor transaction, before a history network response");
+  store.hydrateAuthorizedHistory({ conversationId: "group", messages: [staleReply], completeCheckpoint: false });
+  assert.deepEqual((await handlers.get("collaboration:read-messages")(null, { conversationId: "group", messageIds: [stored.id] })).messages[0].replySnapshot, { status: "revoked" },
+    "a same-revision delayed history response cannot resurrect the quoted body through IPC");
+  service.stop(); service = null; store = new CollaborationStore(options);
+  assert.equal(store.getSyncState().cursor, page.toCursor);
+  assert.deepEqual(store.listMessages({ conversationId: "group" }).find((row) => row.id === stored.id).replySnapshot, { status: "revoked" },
+    "reopening after committed sync cannot expose the old quote again");
   console.log("collaboration message fields integration: signed desktop reply/mention, malformed ACK, receipt restart, authoritative cache age and visibility passed");
 } finally {
   recovering?.stop(); if (service) service.stop(); else try { store?.close(); } catch {}

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
 import pg from "pg";
 import Fastify from "fastify";
 
@@ -25,6 +28,12 @@ const [{ db, pool, closeDb }, { registerCollaborationRoutes }, { createAccessTok
 const app = Fastify({ logger: false });
 installDocOnlyCompilers(app);
 const identities = new Map();
+const require = createRequire(import.meta.url);
+const { CollaborationStore } = require("../../src/main/collaboration/collaboration-store.js");
+const { LocalCollaborationKeyring } = require("../../src/main/collaboration/local-keyring.js");
+const { createCollaborationSyncEngine } = require("../../src/main/collaboration/sync-engine.js");
+const localDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-quote-membership-pg-"));
+let lateStore;
 async function request(userId, input, pathname = "/api/collaboration/v1/messages") {
   const deviceId = `device-${userId}`, key = identities.get(userId);
   const body = { deviceId, conversationId: "group", ...input };
@@ -99,6 +108,18 @@ try {
   await command("bob", { action: "member", clientCommandId: "join-late", targetUserId: "late", operation: "add" }, "/api/collaboration/v1/conversations");
   const newReply = (await command("alice", { ...replyInput, clientCommandId: "reply-after-join" })).message;
   assert.deepEqual((await history("late", newReply.id)).replySnapshot, { status: "unavailable" }, "a new reply cannot reveal a pre-join source to a new member");
+  lateStore = new CollaborationStore({ dbPath: path.join(localDir, "cache.db"), accountId: "late",
+    keyring: new LocalCollaborationKeyring({ filePath: path.join(localDir, "keys"), safeStorage: {
+      isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString(),
+    } }),
+  });
+  const lateBootstrap = await request("late", {}, "/api/collaboration/v1/bootstrap");
+  assert.equal(lateBootstrap.status, 200);
+  lateStore.replaceProjectionFromBootstrap({ ...lateBootstrap.body, history: [], requireHistoryHydration: true });
+  lateStore.hydrateAuthorizedHistory({ conversationId: "group", messages: [await history("late", newReply.id)] });
+  assert.deepEqual(lateStore.getMessage({ conversationId: "group", messageId: newReply.id }).replySnapshot, { status: "unavailable" });
+  assert.equal((await request("late", { clientCommandId: "late-bootstrap-ack", cursor: lateBootstrap.body.watermark,
+    bootstrapCompletionToken: lateBootstrap.body.bootstrapCompletionToken }, "/api/collaboration/v1/ack")).status, 200);
   assert.equal((await history("bob", newReply.id)).replySnapshot.bodyText, "changed original body", "authorized recipients receive the later send's own snapshot");
   const laterCipher = await snapshotRow(newReply.id);
   await pool.query("update messages set reply_snapshot_ciphertext=$1 where id=$2", [originalCipher.reply_snapshot_ciphertext, newReply.id]);
@@ -132,6 +153,13 @@ try {
   await command("bob", { action: "revoke", clientCommandId: "revoke-source", messageId: source.id, expectedRevision: 2 });
   assert.deepEqual((await history("alice", sent.message.id)).replySnapshot, { status: "revoked" }, "source revocation masks earlier encrypted quotes");
   assert.deepEqual((await history("late", newReply.id)).replySnapshot, { status: "unavailable" }, "invisible source metadata is not disclosed after revocation either");
+  const latePage = await request("late", { afterCursor: lateStore.getSyncState().cursor }, "/api/collaboration/v1/sync");
+  assert.equal(latePage.status, 200);
+  assert.equal(latePage.body.status, "OK");
+  assert.equal(latePage.body.events.some((event) => event.type === "message.revoked" && event.payload.messageId === source.id), true);
+  createCollaborationSyncEngine({ store: lateStore }).applyPage(latePage.body);
+  assert.deepEqual(lateStore.getMessage({ conversationId: "group", messageId: newReply.id }).replySnapshot, { status: "unavailable" },
+    "a real revoke sync event cannot upgrade a pre-join unavailable quote to a more revealing revoked status");
   await command("alice", { action: "revoke", clientCommandId: "revoke-reply", messageId: sent.message.id, expectedRevision: 2 });
   assert.deepEqual(await snapshotRow(sent.message.id), { reply_snapshot_ciphertext: null, reply_snapshot_key_version: null }, "revoking the reply clears its quote envelope as well as its body");
   assert.deepEqual((await history("bob", sent.message.id)).replySnapshot, { status: "unavailable" });
@@ -147,5 +175,7 @@ try {
   assert.deepEqual(await snapshotRow(orphanReply.id), { reply_snapshot_ciphertext: null, reply_snapshot_key_version: null });
   console.log("collaboration reply snapshot integration: signed immutable quotes, receipt replay, body edits and per-recipient visibility passed");
 } finally {
+  lateStore?.close();
   await app.close(); await closeDb(); await admin.query(`drop schema if exists ${schema} cascade`); await admin.end();
+  fs.rmSync(localDir, { recursive: true, force: true });
 }
