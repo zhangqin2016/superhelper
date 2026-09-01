@@ -23,4 +23,19 @@ assert.deepEqual(cancelled.messages.map((row) => row.id), ["m1"], "latest pendin
 const revoked = { id: "m1", seq: 1, revision: 3, bodyText: "", revokedAt: "2026-08-31" };
 const merged = applyCollaborationHistoryPage({ messages: [revoked] }, { messages: [{ ...revoked, revision: 2, bodyText: "old", revokedAt: null }], hasMore: false });
 assert.equal(merged.messages[0].bodyText, "", "late old page cannot resurrect newer tombstone");
+const optimistic = { id: "optimistic:send-1", clientCommandId: "send-1", seq: null, revision: 1, state: "confirming", bodyText: "hello" };
+const authoritative = { id: "server-1", clientCommandId: "send-1", seq: 7, revision: 1, state: "persisted", bodyText: "hello" };
+for (const messages of [[optimistic, authoritative], [authoritative, optimistic]]) {
+  const result = applyCollaborationHistoryPage({}, { messages, hasMore: false }, { latest: true });
+  assert.equal(result.messages.length, 1, "one command renders one bubble even when history and optimistic state race");
+  assert.equal(result.messages[0].id, "server-1", "the sequenced server message wins over an equal-revision optimistic alias");
+}
+const preexistingRace = applyCollaborationHistoryPage({ messages: [authoritative, { ...optimistic, revision: 9 }] }, { messages: [], hasMore: true });
+assert.equal(preexistingRace.messages.length, 1, "a preexisting duplicate pair is healed on the next merge");
+assert.equal(preexistingRace.messages[0].id, "server-1", "authority outranks a misleading optimistic revision");
+const repeatedText = applyCollaborationHistoryPage({}, { messages: [
+  { ...authoritative, id: "server-2", clientCommandId: "send-2", seq: 8 },
+  { ...authoritative, id: "server-3", clientCommandId: "send-3", seq: 9 },
+], hasMore: false }, { latest: true });
+assert.equal(repeatedText.messages.length, 2, "equal text from distinct commands remains two legitimate messages");
 console.log("collaboration history view passed");

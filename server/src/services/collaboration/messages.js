@@ -131,7 +131,7 @@ export function applyMessageActivityProjection(state = {}, event = {}, userId) {
   return activityState(lastReadSeq, nextActivities, nextAppliedEventIds);
 }
 
-function historyMessageView(message, messageCrypto) {
+function historyMessageView(message, messageCrypto, actorUserId) {
   const id = String(message?.id || "");
   const conversationId = String(message?.conversationId ?? message?.conversation_id ?? "");
   const revision = Number(message?.revision || 1);
@@ -140,11 +140,15 @@ function historyMessageView(message, messageCrypto) {
   const bodyText = ciphertext == null ? null : messageCrypto.decrypt({
     ciphertext, keyVersion, messageId: id, conversationId, revision,
   }).toString("utf8");
+  const senderUserId = String(message?.senderUserId ?? message?.sender_user_id ?? "");
+  const ownClientCommandId = senderUserId === actorUserId && message?.clientCommandId != null
+    ? requiredId(message.clientCommandId, "History client command id") : "";
   return {
     id,
     conversationId,
     createSeq: Number(message?.createSeq ?? message?.create_seq),
-    senderUserId: String(message?.senderUserId ?? message?.sender_user_id ?? ""),
+    senderUserId,
+    ...(ownClientCommandId ? { clientCommandId: ownClientCommandId } : {}),
     kind: String(message?.kind || "text"),
     bodyText,
     revision,
@@ -484,7 +488,7 @@ export function createCollaborationMessageService({
       .filter((message) => Number(message?.createSeq ?? message?.create_seq) > visibleAfterSeq)
       .filter((message) => messageIds == null || messageIds.includes(message.id));
     const snapshots = await historyReplySnapshots({ repository, trx, rows: visibleRows, messageCrypto, conversationId, visibleAfterSeq });
-    return visibleRows.map((message) => ({ ...historyMessageView(message, messageCrypto), replySnapshot: snapshots.get(message.id) }));
+    return visibleRows.map((message) => ({ ...historyMessageView(message, messageCrypto, actorUserId), replySnapshot: snapshots.get(message.id) }));
   }
 
   return Object.freeze({ sendMessage, editMessage, revokeMessage, markConversationRead, listMessageHistory });

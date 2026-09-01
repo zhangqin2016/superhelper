@@ -34,6 +34,9 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
       if (prior && (Number(prior.revision || 1) > revision || prior.revokedAt && !message.revokedAt)) continue;
       recordHistoryReplyMasks(store, conversation, message, snapshot, prior);
       const createdAt = serverTime(message.createdAt ?? message.created_at);
+      const senderUserId = String(message?.senderUserId ?? message?.sender_user_id ?? "");
+      const ownClientCommandId = senderUserId === store.accountId ? String(message?.clientCommandId || "").trim() : "";
+      if (ownClientCommandId.length > 512) throw new Error("collaboration store: invalid history client command id");
       const content = {
         bodyText: message.revokedAt ? "" : String(message.bodyText ?? ""), revision,
         ...messageMetadata(message), revokedAt: message.revokedAt ?? null,
@@ -41,13 +44,13 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
         createdAt: prior?.createdAt ?? createdAt, clientCreatedAt: prior?.clientCreatedAt ?? null,
         attachmentIds: normalizedAttachments,
         replySnapshot: replySnapshotView(store, conversation, { ...message, replySnapshot: snapshot }),
-        ...(prior?.clientCommandId ? { clientCommandId: prior.clientCommandId } : {}),
+        ...(prior?.clientCommandId ? { clientCommandId: prior.clientCommandId } : ownClientCommandId ? { clientCommandId: ownClientCommandId } : {}),
       };
       const seq = prior?.seq ?? Number(message?.createSeq ?? message?.create_seq ?? message?.seq);
       store.db.run(
         `INSERT INTO messages (account_id, conversation_id, id, scope_id, seq, sender_user_id, state, body_envelope_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'persisted', ?, ?, ?)
          ON CONFLICT(account_id, conversation_id, id) DO UPDATE SET seq = excluded.seq, sender_user_id = excluded.sender_user_id, state = excluded.state, body_envelope_json = excluded.body_envelope_json, created_at = excluded.created_at, updated_at = excluded.updated_at`,
-        store.accountId, conversation, id, target.scope_id, Number.isSafeInteger(seq) ? seq : null, message?.senderUserId ?? message?.sender_user_id ?? null,
+        store.accountId, conversation, id, target.scope_id, Number.isSafeInteger(seq) ? seq : null, senderUserId || null,
         store._encrypt({ scopeId: target.scope_id, recordId: store._messageRecord(conversation, id), value: content }), content.createdAt ?? 0, store.now(),
       );
       releaseHandledClamp(store, conversation, seq);

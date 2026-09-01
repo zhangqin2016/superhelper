@@ -38,11 +38,14 @@ try {
   store.hydrateAuthorizedHistory({ conversationId: 'c', messages: [{ ...original, id: 'server-pending', createSeq: 10 }] });
   const settled = store.getMessage({ conversationId: 'c', messageId: 'server-pending' }); check(settled); assert.equal(settled.clientCommandId, 'cmd'); assert.equal(settled.seq, 10);
   store.persistDraftAndOptimisticMessage({ conversationId: 'c', draftId: 'composer', draftText: '', messageId: 'race-local', clientCommandId: 'race-cmd', bodyText: 'optimistic' });
-  store.hydrateAuthorizedHistory({ conversationId: 'c', messages: [{ ...original, id: 'race-server', createSeq: 11, revision: 2, bodyText: 'newer' }] });
+  store.hydrateAuthorizedHistory({ conversationId: 'c', messages: [{ ...original, id: 'race-server', senderUserId: 'alice', clientCommandId: 'race-cmd', createSeq: 11, revision: 2, bodyText: 'newer' }] });
+  assert.equal(store.getMessage({ conversationId: 'c', messageId: 'race-server' }).clientCommandId, 'race-cmd', 'authorized own history preserves the identity before the sync ACK arrives');
+  store.hydrateAuthorizedHistory({ conversationId: 'c', messages: [{ ...original, id: 'foreign', senderUserId: 'bob', clientCommandId: 'untrusted-command', createSeq: 12 }] });
+  assert.equal(store.getMessage({ conversationId: 'c', messageId: 'foreign' }).clientCommandId, undefined, 'history cannot inject another sender\'s private command identity');
   store.settleOutboxFromSync({ clientCommandId: 'race-cmd', eventId: 'race-evt', messageId: 'race-server', sequence: 11 });
   const raced = store.getMessage({ conversationId: 'c', messageId: 'race-server' });
   assert.equal(raced.clientCommandId, 'race-cmd', 'history-first settlement preserves the stable renderer command identity');
-  assert.equal(raced.bodyText, 'newer'); check(raced); assert.equal(raced.revision, 2);
+  assert.equal(raced.bodyText, 'newer'); assert.equal(raced.createdAt, ms); assert.equal(raced.senderUserId, 'alice'); assert.equal(raced.revision, 2);
   store.replaceProjectionFromBootstrap({ conversations: [{ id: 'c', kind: 'direct' }], history: [original] });
   check(store.getMessage({ conversationId: 'c', messageId: 'm' }));
   console.log('collaboration authoritative message time: ok');

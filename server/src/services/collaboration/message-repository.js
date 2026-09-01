@@ -41,6 +41,8 @@ export function createKyselyMessageRepository(db) {
       const rows = await trx.selectFrom("messages").selectAll()
         .select(sql`coalesce((select creation.payload -> 'mentionUserIds' from collaboration_events as creation
           where creation.id = messages.event_id and creation.conversation_id = messages.conversation_id and creation.type = 'message.created'), '[]'::jsonb)`.as("mentionUserIds"))
+        .select(sql`(select creation.client_command_id from collaboration_events as creation
+          where creation.id = messages.event_id and creation.conversation_id = messages.conversation_id and creation.type = 'message.created')`.as("clientCommandId"))
         .where("conversation_id", "=", conversationId).where("create_seq", ">", visibleAfterSeq).$if(beforeSeq != null, (q) => q.where("create_seq", "<", beforeSeq)).$if(messageIds != null, (q) => q.where("id", "in", messageIds)).orderBy("create_seq", "desc").limit(limit).execute();
       const attachmentMessageIds = rows.filter((row) => row.kind === "attachment" || row.kind === "workspace_share").map((row) => row.id);
       // The text-only baseline does not depend on object migrations or keys.

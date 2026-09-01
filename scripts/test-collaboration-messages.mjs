@@ -18,6 +18,7 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
     reads: new Map(),
     commandReceipts: new Map(),
     commandInputs: [],
+    eventCommandIds: new Map(),
     nextSeq: 1,
   };
   const baseMessageCrypto = createCollaborationMessageCrypto({
@@ -87,6 +88,7 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
         .sort((left, right) => right.createSeq - left.createSeq);
       return values.slice(0, args.limit).map((message) => ({
         ...structuredClone(message),
+        clientCommandId: state.eventCommandIds.get(message.eventId),
         accessToken: "must-not-leave-message-repository",
         wrappedDek: "must-not-leave-message-repository",
         localPath: "/private/local-only",
@@ -113,6 +115,7 @@ function createHarness({ now = () => new Date("2026-08-29T12:00:00.000Z"), bodyI
     }
     const plan = await command.project({ trx: {}, account: command.account, input: effectiveInput, authorization });
     const event = { ...plan.event, seq: state.nextSeq++, conversationId: plan.event.conversationId };
+    state.eventCommandIds.set(event.id, command.clientCommandId);
     await plan.project({ trx: {}, event, account: command.account, input: effectiveInput, authorization });
     const response = {
       ...plan.response,
@@ -497,6 +500,7 @@ const authorized = async () => ({ ok: true, visibleAfterSeq: 0 });
   assert.equal(page.length, 1);
   assert.equal(page[0].createSeq, 1, "history uses beforeSeq keyset pagination rather than client timestamps");
   assert.equal(page[0].bodyText, "one", "an authorized history response decrypts into the controlled text view");
+  assert.equal(page[0].clientCommandId, "history-1", "the sender receives its durable command identity so optimistic and authoritative bubbles can merge");
   assert.equal(page[0].bodyCiphertext, undefined, "history never returns raw ciphertext envelopes to its caller");
   assert.equal(page[0].accessToken, undefined, "history omits credentials and internal repository fields");
   const joinedLater = await service.listMessageHistory({
@@ -505,6 +509,7 @@ const authorized = async () => ({ ok: true, visibleAfterSeq: 0 });
     }),
   });
   assert.deepEqual(joinedLater.map((message) => message.createSeq), [2], "a new member receives only messages strictly after its locked joined sequence");
+  assert.equal(joinedLater[0].clientCommandId, undefined, "another member never receives the sender's private command identity");
   const targeted = await service.listMessageHistory({ account, conversationId: "conversation-1", messageIds: [page[0].id], authorize: authorized });
   assert.deepEqual(targeted.map((message) => message.id), [page[0].id], "target hydration retrieves an old message independent of the newest window");
   const invisibleTarget = await service.listMessageHistory({ account, conversationId: "conversation-1", messageIds: [page[0].id], authorize: async () => ({ ok: true, visibleAfterSeq: 1 }) });

@@ -1,10 +1,12 @@
 /** Merge by durable command identity; older pages cannot undo a new revision. */
 export function mergeCollaborationHistory(existing = [], incoming = []) {
-  const rows = new Map(existing.map((message) => [String(message.clientCommandId || message.id), message]));
-  for (const message of incoming) {
+  const rows = new Map();
+  for (const message of [...existing, ...incoming]) {
     const key = String(message.clientCommandId || message.id);
     const prior = rows.get(key);
-    if (!prior || Number(message.revision || 1) >= Number(prior.revision || 1)) rows.set(key, message);
+    const revision = Number(message.revision || 1), priorRevision = Number(prior?.revision || 1);
+    const authoritative = message.seq != null, priorAuthoritative = prior?.seq != null;
+    if (!prior || (authoritative !== priorAuthoritative ? authoritative : revision >= priorRevision)) rows.set(key, message);
   }
   return [...rows.values()];
 }
