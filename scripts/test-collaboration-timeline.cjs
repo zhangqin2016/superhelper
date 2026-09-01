@@ -27,7 +27,7 @@ app.whenReady().then(async () => {
     const initialOrder = [...root.children].map(n => n.dataset.messageKey);
     const row = root.querySelector('[data-message-key="cmd"]');
     const body = row.querySelector('.collaboration-message-body');
-    render(root, [{...first,senderUserId:'alice',createdAt:1788250000000},{...pending,senderUserId:'delayed-profile',isOwn:true,createdAt:1788250001000}], { currentUserId:'me', resolveSender:(id)=>id==='alice'?'Alice':id });
+    render(root, [{...first,senderUserId:'me',isOwn:false,createdAt:1788250000000},{...pending,senderUserId:'delayed-profile',isOwn:true,createdAt:1788250001000}], { currentUserId:'me', resolveSender:(id)=>id==='me'?'Alice':id });
     const visualContract = {
       incomingAuthor: root.querySelector('[data-message-key="one"] .collaboration-message-author')?.textContent,
       outgoing: root.querySelector('[data-message-key="cmd"]')?.classList.contains('is-outgoing'),
@@ -36,6 +36,18 @@ app.whenReady().then(async () => {
       actions: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-actions')),
       sparseTime: !root.querySelector('[data-message-key="cmd"] time'),
       ownIdentityHidden: !root.querySelector('[data-message-key="cmd"] .collaboration-message-author'),
+    };
+    const groupedRoot=document.createElement('div');document.body.append(groupedRoot);
+    render(groupedRoot,[
+      {id:'g1',seq:1,senderUserId:'usr_internal',isOwn:false,bodyText:'a',createdAt:1788250000000},
+      {id:'g2',seq:2,senderUserId:'usr_internal',isOwn:false,bodyText:'b',createdAt:1788250001000},
+      {id:'g3',seq:3,senderUserId:'usr_internal',isOwn:false,bodyText:'c',createdAt:1788250301000},
+    ],{currentUserId:'usr_internal',showSenderNames:false});
+    const groupingContract={
+      authoritativeFalse:!groupedRoot.querySelector('[data-message-key="g1"]').classList.contains('is-outgoing'),
+      grouped:groupedRoot.querySelector('[data-message-key="g2"]').classList.contains('is-grouped'),
+      fiveMinuteTime:Boolean(groupedRoot.querySelector('[data-message-key="g3"] time')),
+      directIdentityHidden:!groupedRoot.querySelector('.collaboration-message-author')&&!groupedRoot.textContent.includes('usr_internal'),
     };
     render(root, [first, { ...pending, id: 'server', seq: 2, state: 'persisted' }]);
     const sameRow = row === root.querySelector('[data-message-key="cmd"]');
@@ -78,10 +90,11 @@ app.whenReady().then(async () => {
     const revokedView = { rows:document.getElementById('collaborationTimeline').children.length, draft:document.getElementById('collaborationComposer').value,
       disabled:document.getElementById('collaborationSendButton').disabled, scope:document.getElementById('collaborationScopeBadge').textContent };
     center.destroy();
-    return { initialOrder, visualContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
+    return { initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
   assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true, sparseTime: true, ownIdentityHidden: true }, "timeline uses reliable own-message alignment and a quiet messenger hierarchy");
+  assert.deepEqual(result.groupingContract, { authoritativeFalse:true, grouped:true, fiveMinuteTime:true, directIdentityHidden:true }, "authoritative direction, grouping, five-minute timestamps and direct-chat identity stay deterministic");
   assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
   assert.equal(result.sameBody, true, "unchanged content is not removed/re-announced on ACK");
   assert.equal(result.safeText, true, "untrusted message markup remains text");

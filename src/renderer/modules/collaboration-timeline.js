@@ -30,11 +30,12 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     if (!key) continue;
     const row = prior.get(key) || document.createElement("article");
     row.className = "collaboration-message";
-    const outgoing = message.isOwn === true || Boolean(currentUserId && message.senderUserId === currentUserId);
+    const outgoing = typeof message.isOwn === "boolean" ? message.isOwn : Boolean(currentUserId && message.senderUserId === currentUserId);
     row.classList.toggle("is-outgoing", outgoing);
     const createdAt = Number(message.createdAt || message.clientCreatedAt || 0);
     const previousAt = Number(previous?.createdAt || previous?.clientCreatedAt || 0);
-    const grouped = Boolean(previous && (previous.isOwn === true || Boolean(currentUserId && previous.senderUserId === currentUserId)) === outgoing
+    const previousOutgoing = typeof previous?.isOwn === "boolean" ? previous.isOwn : Boolean(currentUserId && previous?.senderUserId === currentUserId);
+    const grouped = Boolean(previous && previousOutgoing === outgoing
       && (outgoing || previous.senderUserId === message.senderUserId) && createdAt > 0 && previousAt > 0 && createdAt - previousAt < 5 * 60 * 1000);
     row.classList.toggle("is-grouped", grouped);
     row.dataset.messageKey = key;

@@ -68,7 +68,7 @@ function rendererConversation(value = {}) {
 function rendererMessage(value = {}) {
   return {
     id: safeIdentifier(value.id) || "", conversationId: safeIdentifier(value.conversationId) || "", seq: optionalInteger(value.seq),
-    senderUserId: safeIdentifier(value.senderUserId) || "", ...(value.isOwn === true ? { isOwn: true } : {}), state: safeIdentifier(value.state) || "",
+    senderUserId: safeIdentifier(value.senderUserId) || "", isOwn: value.isOwn === true, state: safeIdentifier(value.state) || "",
     bodyText: typeof value.bodyText === "string" ? value.bodyText.slice(0, MAX_TEXT_BYTES) : "",
     kind: ["text", "attachment", "workspace_share"].includes(value.kind) ? value.kind : "text", attachmentIds: attachmentIds(value),
     createdAt: optionalInteger(value.createdAt), clientCreatedAt: optionalInteger(value.clientCreatedAt), updatedAt: nonNegativeInteger(value.updatedAt),
