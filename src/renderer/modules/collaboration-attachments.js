@@ -35,6 +35,7 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     attachButton.disabled = !conversation || busy.has("pick");
     sendButton.hidden = !policy.attachments || !transfers.some(selectable);
     sendButton.disabled = selected.size === 0 || selected.size > 20 || busy.has("send");
+    root.hidden = !policy.attachments && !policy.workspaceShares;
   }
   function action(row, name, key, operation) {
     const button = node("button", label(key)); button.type = "button"; button.dataset.action = name;
@@ -73,6 +74,9 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   }
   async function refresh() {
     if (!conversation || disposed) return;
+    if (!policy.attachments && !policy.workspaceShares) {
+      transfers = []; selected.clear(); clearConfirmation(false); status.textContent = ""; recoveryStatus.textContent = ""; recoveryStatus.hidden = true; render(); return;
+    }
     const generation = epoch, version = ++refreshVersion;
     let result; try { result = await api?.getTransfers?.(); } catch { result = null; }
     if (!current(generation) || version !== refreshVersion) return;

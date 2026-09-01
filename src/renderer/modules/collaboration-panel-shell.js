@@ -38,6 +38,7 @@ export function initCollaborationPanelShell({
   const openPanel = () => { open = true; apply(); requestAnimationFrame(() => panel.querySelector("button, [tabindex='-1']")?.focus?.()); };
   const closePanel = () => { if (!open) return; open = false; apply(); toggle.focus?.(); };
   const setConversationOpen = (value) => {
+    panel.classList.toggle("is-conversation-open", Boolean(value));
     if (home) home.hidden = Boolean(value);
     if (conversation) conversation.hidden = !value;
     if (value) requestAnimationFrame(() => backButton?.focus?.());

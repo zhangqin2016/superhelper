@@ -96,6 +96,7 @@
 
 /* Compact desktop IM presentation. Keep management controls out of the scan path. */
 .collaboration-center {
+  position: relative;
   background: color-mix(in srgb, var(--bg-right) 98%, var(--accent) 2%);
   box-shadow: -12px 0 36px rgb(15 23 42 / .08);
   font-size: 14px;
@@ -192,15 +193,23 @@
 
 /* Conversation view: compact identity header, readable bubbles, quiet actions. */
 .collaboration-conversation-header {
-  min-height: 54px; padding: 8px 12px; gap: 9px; background: color-mix(in srgb, var(--bg-right) 98%, transparent);
+  min-height: 56px; padding: 8px 52px 8px 12px; gap: 9px; background: color-mix(in srgb, var(--bg-right) 98%, transparent);
 }
+.collaboration-center.is-conversation-open .collaboration-panel-header { position: absolute; z-index: 3; inset-block-start: 0; inset-inline-end: 0; inline-size: 48px; min-height: 56px; padding: 8px 10px 8px 0; border: 0; background: transparent; }
+.collaboration-center.is-conversation-open .collaboration-panel-title { display: none; }
+.collaboration-center.is-conversation-open .collaboration-scope-badge { display: none; }
+.collaboration-center.is-conversation-open .collaboration-conversation-title { justify-content: center; }
 .collaboration-conversation-title { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .collaboration-conversation-header h2 { overflow: hidden; margin: 0; font-size: 14px; line-height: 18px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .collaboration-scope-badge { align-self: flex-start; padding: 0; border-radius: 0; background: transparent; font-size: 11px; line-height: 14px; }
-.collaboration-timeline { gap: 5px; padding: 18px 14px 22px; background: color-mix(in srgb, var(--bg-right) 98%, var(--bg-surface-hover) 2%); }
+.collaboration-timeline { gap: 8px; padding: 16px 14px 22px; background: var(--bg-right); }
 .collaboration-message {
   position: relative; display: flex; align-items: flex-end; gap: 7px; max-width: 86%; padding: 0; border-radius: 0; background: transparent;
 }
+.collaboration-message.is-grouped { margin-top: -5px; }
+.collaboration-message.is-grouped .collaboration-message-avatar { visibility: hidden; }
+.collaboration-message-time { position: absolute; inset-block-start: -2px; inset-inline-start: 50%; translate: -50% -100%; color: var(--muted); font-size: 10px; line-height: 16px; white-space: nowrap; }
+.collaboration-message:has(> .collaboration-message-time) { margin-top: 18px; }
 .collaboration-message.is-outgoing { align-self: flex-end; flex-direction: row-reverse; }
 .collaboration-message-avatar {
   display: grid; place-items: center; inline-size: 26px; block-size: 26px; flex: 0 0 26px; border-radius: 50%;
@@ -208,12 +217,11 @@
 }
 .collaboration-message.is-outgoing .collaboration-message-avatar { display: none; }
 .collaboration-message-bubble {
-  min-width: 34px; padding: 7px 10px 6px; border: 1px solid color-mix(in srgb, var(--border-subtle) 76%, transparent);
-  border-radius: 12px 12px 12px 4px; background: var(--bg-surface); box-shadow: 0 1px 1px rgb(15 23 42 / .025);
+  min-width: 24px; padding: 7px 10px; border: 0;
+  border-radius: 10px 10px 10px 3px; background: var(--bg-surface-hover); box-shadow: none;
 }
 .collaboration-message.is-outgoing .collaboration-message-bubble {
-  border-color: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 12px 12px 4px 12px;
-  background: color-mix(in srgb, var(--accent) 11%, var(--bg-surface));
+  border-radius: 10px 10px 3px 10px; background: color-mix(in srgb, #95ec69 72%, var(--bg-surface));
 }
 .collaboration-message-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
 .collaboration-message-author { overflow: hidden; color: var(--text-secondary); font-size: 10.5px; line-height: 14px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
@@ -246,7 +254,7 @@
   display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 5px 4px 8px; border: 1px solid var(--border-subtle); border-top: 0;
   border-radius: 0 0 11px 11px; background: var(--bg-input);
 }
-.collaboration-composer-hint { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.collaboration-composer-spacer { min-width: 0; flex: 1; }
 #collaborationAttachButton, #collaborationSendButton { display: grid; place-items: center; inline-size: 28px; block-size: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
 #collaborationAttachButton:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 #collaborationSendButton { background: var(--accent); color: var(--text-inverse); }
@@ -256,3 +264,4 @@
 #collaborationMentionStatus:empty { display: none; }
 .collaboration-mentions small { font-size: 10.5px; line-height: 15px; }
 .collaboration-reply-preview { width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 6px 8px; border-left-width: 2px; border-radius: 7px; background: var(--bg-surface-hover); font-size: 11px; }
+.collaboration-mention-manual-entry, .collaboration-mention-permanent-hint { display: none !important; }

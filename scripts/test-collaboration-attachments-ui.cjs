@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
     unrecognizedCount=0;await controller.refresh();const clearedRecoveryWarning=!root.textContent.includes('recoveryBlocked');
     late=true;button.click();await settle();controller.reset();releasePick(upload);await settle();
     const resetSafe=button.disabled&&!root.textContent.includes('<img src=x>');
-    controller.setConversation({id:'conversation',scopeId:'personal'}, {attachments:false});await settle();const disabled=button.hidden;
+    controller.setConversation({id:'conversation',scopeId:'personal'}, {attachments:false});await settle();const disabled=button.hidden,unavailableHidden=root.hidden&&!root.textContent.includes('unavailable');
     controller.destroy();
     const {initCollaborationCenter}=await import(${JSON.stringify(pathToFileURL(path.join(__dirname, "../src/renderer/modules/collaboration-center.js")).href)});
     const parsed=new DOMParser().parseFromString(${JSON.stringify(html)},'text/html');
@@ -90,7 +90,7 @@ app.whenReady().then(async () => {
     late=true;document.getElementById('collaborationAttachButton').click();await settle();center.hide();releasePick(upload);await settle();
     const lateHidden=!document.getElementById('collaborationTransfers').textContent.includes('<img src=x>.txt');late=false;
     publish({type:'availability',state:{ok:false}});await settle();const shellReset=!document.getElementById('collaborationTransfers').textContent.includes('<img src=x>.txt');center.destroy();
-    return {picked,noAutoUpload,safe,noSendBeforeConfirm,confirmation,sends,waiting,cancellation,deliveryStates,recoveryWarning,unknownWarning,clearedRecoveryWarning,download,enqueued,saved,rejected,revokedCleared,resetSafe,disabled,wired,shellReset,separateProgress,downloadCancel,policyFenced,lateHidden,downloadPolicyFenced,escapeFocus};
+    return {picked,noAutoUpload,safe,noSendBeforeConfirm,confirmation,sends,waiting,cancellation,deliveryStates,recoveryWarning,unknownWarning,clearedRecoveryWarning,download,enqueued,saved,rejected,revokedCleared,resetSafe,disabled,unavailableHidden,wired,shellReset,separateProgress,downloadCancel,policyFenced,lateHidden,downloadPolicyFenced,escapeFocus};
   })()`);
   assert.deepEqual(result.picked,["pick","conversation"]);assert.equal(result.noAutoUpload,true);assert.equal(result.safe,true);
   assert.equal(result.noSendBeforeConfirm,true);assert.match(result.confirmation,/Exact recipient/);assert.match(result.confirmation,/team:org/);
@@ -103,7 +103,7 @@ app.whenReady().then(async () => {
   assert.equal(result.unknownWarning,true,"unrecognized journals show a generic warning without exposing files or other scopes");
   assert.equal(result.clearedRecoveryWarning,true,"repaired journals clear the recovery warning");
   assert.deepEqual(result.download,["download",{conversationId:"conversation",messageId:"message",objectId:"object"}]);assert.deepEqual(result.enqueued,["enqueue","download"]);
-  assert.match(result.saved,/saved/);assert.match(result.rejected,/permissionDenied/);assert.equal(result.revokedCleared,true);assert.equal(result.resetSafe,true);assert.equal(result.disabled,true);
+  assert.match(result.saved,/saved/);assert.match(result.rejected,/permissionDenied/);assert.equal(result.revokedCleared,true);assert.equal(result.resetSafe,true);assert.equal(result.disabled,true);assert.equal(result.unavailableHidden,true,"disabled attachments do not leave a permanent unavailable banner in chat");
   assert.equal(result.wired,true,"real HTML and center controller connect picker and message download");assert.equal(result.shellReset,true,"account reset clears attachment metadata in the shell");
   assert.equal(result.policyFenced,true,"policy change invalidates even detached old confirmation controls");assert.equal(result.lateHidden,true,"late native picker cannot refill a hidden view");
   assert.equal(result.separateProgress,true,"message wait and upload progress remain independently visible");assert.equal(result.downloadCancel,true,"download has its own cancel control");

@@ -38,7 +38,7 @@ assert.equal(store.getOutbox({ outboxId: "confirm-command" }).state, "persisted"
 assert.equal(store.getMessage({ conversationId: "conv-confirm", messageId: "local-confirm-message" }), null, "sync confirmation replaces the optimistic identifier instead of rendering a second message");
 assert.deepEqual(store.getMessage({ conversationId: "conv-confirm", messageId: "server-message-9" }), {
   id: "server-message-9", conversationId: "conv-confirm", state: "persisted", seq: 9, bodyText: "keep one local bubble", clientCommandId: "confirm-command",
-  senderUserId: null, replyToMessageId: null, mentionUserIds: [], replySnapshot: null, createdAt: null, clientCreatedAt, updatedAt: localNow,
+  senderUserId: null, isOwn: true, replyToMessageId: null, mentionUserIds: [], replySnapshot: null, createdAt: null, clientCreatedAt, updatedAt: localNow,
 }, "confirmation carries authoritative server id/seq while retaining the encrypted local body");
 assert.equal(store.getMessage({ conversationId: "conv-confirm", messageId: "server-message-9" }).createdAt, null,
   "sync confirmation without authorized creation time cannot turn the client's admission clock into server edit-window authority");

@@ -79,6 +79,7 @@ try {
   store.setOutboxState({ outboxId: "pending", expectedStates: ["queued"], state: "confirming" });
   const pendingView = await handlers.get("collaboration:open")(null, { conversationId: "c1" });
   assert.equal(pendingView.messages.at(-1).clientCommandId, "pending");
+  assert.equal(pendingView.messages.at(-1).isOwn, true, "message projection explicitly identifies the local sender so UI never guesses from a delayed directory");
   assert.equal(pendingView.messages.at(-1).seq, null, "optimistic sequence is unknown, never fabricated zero");
   assert.equal(pendingView.messages.at(-1).state, "confirming", "timeline sees durable delivery state, not perpetual optimistic");
   console.log("collaboration real history roundtrip passed");

@@ -69,6 +69,7 @@ async function exercise(moduleUrl) {
   const type=value=>{textarea.value=value;textarea.setSelectionRange(value.length,value.length);textarea.dispatchEvent(new Event('input'));};
   const key=(key,opts={})=>{const event=new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...opts});textarea.dispatchEvent(event);return event;};
   check(entry()?.tagName==='BUTTON','inline reminder entry exists as native button');
+  check(getComputedStyle(entry()).display==='none' && getComputedStyle(document.getElementById('collaborationMentionHint')).display==='none','manual reminder entry and permanent explanation stay out of the default composer');
   entry().focus();entry().click();await tick();check(document.activeElement===textarea,'entry opens a usable textarea keyboard selection path');key('Escape');
   type('hello @Sa'); await tick();
   check(!picker().hidden && picker().querySelectorAll('[data-action="select-mention"]').length===2,'@ query filters authorized candidates');
@@ -164,15 +165,13 @@ app.whenReady().then(async()=>{
     Object.defineProperty(event,state.imeFlag,{value:state.imeFlag==='isComposing'?true:229});
   },true)`);
   const imeFailures=[];
-  for(const flag of ['isComposing','keyCode'])for(const key of ['Enter','Space'])for(const control of ['entry','option','remove','close']){
+  for(const flag of ['isComposing','keyCode'])for(const key of ['Enter','Space'])for(const control of ['option','remove','close']){
     await win.webContents.executeJavaScript('window.nativeMentions.composer.destroy()');
     await win.webContents.executeJavaScript(`(${prepareNativeKeyboard.toString()})(${JSON.stringify(url)})`);
     await win.webContents.executeJavaScript(`(async()=>{
-      if(${JSON.stringify(control)}!=='entry'){
-        document.getElementById('collaborationMentionButton').click();await new Promise(resolve=>setTimeout(resolve,0));
-      }
+      document.getElementById('collaborationMentionButton').click();await new Promise(resolve=>setTimeout(resolve,0));
       if(${JSON.stringify(control)}==='remove')document.querySelector('[data-action="select-mention"]').click();
-      const selectors={entry:'#collaborationMentionButton',option:'[data-action="select-mention"]',remove:'[data-action="remove-mention"]',close:'[data-action="close-mentions"]'};
+      const selectors={option:'[data-action="select-mention"]',remove:'[data-action="remove-mention"]',close:'[data-action="close-mentions"]'};
       document.querySelector(selectors[${JSON.stringify(control)}]).focus();
       window.nativeMentions.writes=[];window.nativeMentions.imeFlag=${JSON.stringify(flag)};
     })()`);
@@ -184,8 +183,9 @@ app.whenReady().then(async()=>{
   await win.webContents.executeJavaScript('window.nativeMentions.imeFlag=""');
   await win.webContents.executeJavaScript('document.querySelector("[data-action=close-mentions]").click()');
   for(const key of ['Enter','Space']){
-    await win.webContents.executeJavaScript("document.getElementById('collaborationMentionButton').focus()");await press(key);
-    const open=await win.webContents.executeJavaScript("!document.getElementById('collaborationMentionPicker').hidden && document.activeElement.tagName==='TEXTAREA'");if(!open)throw new Error('native entry '+key+' opens keyboard selection');
+    await win.webContents.executeJavaScript(`(()=>{const area=document.querySelector('textarea');area.value='@';area.focus();area.setSelectionRange(1,1);area.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'@'}));})()`);
+    await new Promise(resolve=>setTimeout(resolve,25));
+    const open=await win.webContents.executeJavaScript("!document.getElementById('collaborationMentionPicker').hidden && document.activeElement.tagName==='TEXTAREA'");if(!open)throw new Error('typing @ opens keyboard selection');
     await win.webContents.executeJavaScript("document.querySelector('[data-action=\"select-mention\"]').focus()");
     await press(key);
     const selected=await win.webContents.executeJavaScript("window.nativeMentions.writes.at(-1)?.mentionUserIds.includes('self')");if(!selected)throw new Error('native option '+key+' chooses self');

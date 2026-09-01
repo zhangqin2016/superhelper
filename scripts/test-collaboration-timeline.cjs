@@ -27,13 +27,15 @@ app.whenReady().then(async () => {
     const initialOrder = [...root.children].map(n => n.dataset.messageKey);
     const row = root.querySelector('[data-message-key="cmd"]');
     const body = row.querySelector('.collaboration-message-body');
-    render(root, [{...first,senderUserId:'alice',createdAt:1788250000000},{...pending,senderUserId:'me',createdAt:1788250001000}], { currentUserId:'me', resolveSender:(id)=>id==='alice'?'Alice':id });
+    render(root, [{...first,senderUserId:'alice',createdAt:1788250000000},{...pending,senderUserId:'delayed-profile',isOwn:true,createdAt:1788250001000}], { currentUserId:'me', resolveSender:(id)=>id==='alice'?'Alice':id });
     const visualContract = {
       incomingAuthor: root.querySelector('[data-message-key="one"] .collaboration-message-author')?.textContent,
       outgoing: root.querySelector('[data-message-key="cmd"]')?.classList.contains('is-outgoing'),
       avatar: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-avatar')),
       time: Boolean(root.querySelector('[data-message-key="one"] time')),
       actions: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-actions')),
+      sparseTime: !root.querySelector('[data-message-key="cmd"] time'),
+      ownIdentityHidden: !root.querySelector('[data-message-key="cmd"] .collaboration-message-author'),
     };
     render(root, [first, { ...pending, id: 'server', seq: 2, state: 'persisted' }]);
     const sameRow = row === root.querySelector('[data-message-key="cmd"]');
@@ -79,7 +81,7 @@ app.whenReady().then(async () => {
     return { initialOrder, visualContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
-  assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true }, "timeline exposes a complete desktop IM message hierarchy");
+  assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true, sparseTime: true, ownIdentityHidden: true }, "timeline uses reliable own-message alignment and a quiet messenger hierarchy");
   assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
   assert.equal(result.sameBody, true, "unchanged content is not removed/re-announced on ACK");
   assert.equal(result.safeText, true, "untrusted message markup remains text");

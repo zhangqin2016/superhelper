@@ -31,11 +31,13 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const empty = byId("collaborationConversationEmpty");
   const olderButton = byId("collaborationLoadOlder");
   let transferPolicy = {};
+  let activeConversationKind = "";
   let disposed = false, policyEnabled = false;
   const replySourceMasks = createReplySourceMaskView();
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
   const renderTimeline = () => renderCollaborationTimeline(timeline, historyMessages, {
     currentUserId: directory?.profile?.userId || "",
+    showSenderNames: activeConversationKind === "group" || activeConversationKind === "channel",
     resolveSender: (userId) => {
       if (userId === directory?.profile?.userId) return directory?.profile?.displayName || directory?.profile?.lilyId || userId;
       const person = directory?.contacts?.find((contact) => contact.userId === userId)
@@ -105,6 +107,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (activeConversationId !== conversationId) return false;
     if (!opening || openingConversationId === conversationId) invalidateOpen();
     activeConversationId = "";
+    activeConversationKind = "";
     historyMessages = []; nextBeforeSeq = null; hasMore = false; historyOffline = false;
     attachments.reset(); timeline?.replaceChildren(); updateOlderButton();
     if (empty) empty.hidden = false;
@@ -154,6 +157,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!opened?.ok) { clearRevokedSelection(opened, conversationId); composer.setActive?.(!panel.hidden && policyEnabled); renderTimeline(); return; }
     const sameConversation = activeConversationId === conversationId;
     activeConversationId = conversationId;
+    activeConversationKind = String(opened.conversation?.kind || "");
     acceptPage(opened, { latest: true, reset: !sameConversation });
     loadingOlder = false;
     updateOlderButton();
@@ -273,6 +277,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       navigating = false;
       openingConversationId = "";
       activeConversationId = "";
+      activeConversationKind = "";
       historyMessages = []; nextBeforeSeq = null; hasMore = false; loadingOlder = false; historyOffline = false; updateOlderButton();
       bootstrapAttempted = false;
       loadGeneration += 1; directory = null; friends.reset(); teams.reset();

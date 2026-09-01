@@ -125,7 +125,10 @@ class CollaborationStore {
     const row = this.db.get(`SELECT * FROM messages WHERE account_id = ? AND conversation_id = ? AND id = ?`, this.accountId, conversation, message);
     if (!row) return null;
     const content = this._decrypt({ scopeId: row.scope_id, recordId: this._messageRecord(conversation, message), value: row.body_envelope_json });
-    return { id: row.id, conversationId: row.conversation_id, state: row.state, seq: row.seq, senderUserId: row.sender_user_id, ...content, ...messageMetadata(content), ...messageTimes(content, row),
+    const clientCommandId = row.client_command_id || content.clientCommandId;
+    const localDelivery = clientCommandId ? this.db.get(`SELECT 1 AS present FROM outbox WHERE account_id = ? AND client_command_id = ?`, this.accountId, clientCommandId) : null;
+    return { id: row.id, conversationId: row.conversation_id, state: row.state, seq: row.seq, senderUserId: row.sender_user_id,
+      isOwn: row.sender_user_id === this.accountId || Boolean(localDelivery), ...content, ...messageMetadata(content), ...messageTimes(content, row),
       replySnapshot: replySnapshotView(this, conversation, content), ...((row.client_command_id || content.clientCommandId) ? { clientCommandId: row.client_command_id || content.clientCommandId } : {}) };
   }
 
@@ -446,7 +449,7 @@ class CollaborationStore {
       const delivery = clientCommandId ? this.db.get(`SELECT state FROM outbox WHERE account_id = ? AND client_command_id = ?`, this.accountId, clientCommandId) : null;
       return {
         id: row.id, conversationId: row.conversation_id, seq: row.seq == null ? null : Number(row.seq), senderUserId: row.sender_user_id,
-        ...content, ...messageMetadata(content), replySnapshot: replySnapshotView(this, conversation, content), ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, ...messageTimes(content, row),
+        isOwn: row.sender_user_id === this.accountId || Boolean(delivery), ...content, ...messageMetadata(content), replySnapshot: replySnapshotView(this, conversation, content), ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, ...messageTimes(content, row),
       };
     }).filter((message) => message.state !== "cancelled");
   }

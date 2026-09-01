@@ -15,7 +15,7 @@ function sequence(message) {
   return message.seq != null && Number.isSafeInteger(value) && value > 0 ? value : Infinity;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, currentUserId = "", resolveSender = (id) => id } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true } = {}) {
   if (!node) return;
   const prior = new Map([...node.children].map((child) => [child.dataset.messageKey, child]));
   const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
@@ -23,31 +23,43 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
   const anchor = [...node.children].find((child) => child.getBoundingClientRect().bottom > viewportTop);
   const anchorOffset = anchor ? anchor.getBoundingClientRect().top - viewportTop : 0;
   let index = 0;
-  for (const message of [...messages].sort((a, b) => sequence(a) - sequence(b) || Number(a.createdAt || 0) - Number(b.createdAt || 0))) {
+  const ordered = [...messages].sort((a, b) => sequence(a) - sequence(b) || Number(a.createdAt || 0) - Number(b.createdAt || 0));
+  let previous = null;
+  for (const message of ordered) {
     const key = messageKey(message);
     if (!key) continue;
     const row = prior.get(key) || document.createElement("article");
     row.className = "collaboration-message";
-    const outgoing = Boolean(currentUserId && message.senderUserId === currentUserId);
+    const outgoing = message.isOwn === true || Boolean(currentUserId && message.senderUserId === currentUserId);
     row.classList.toggle("is-outgoing", outgoing);
+    const createdAt = Number(message.createdAt || message.clientCreatedAt || 0);
+    const previousAt = Number(previous?.createdAt || previous?.clientCreatedAt || 0);
+    const grouped = Boolean(previous && (previous.isOwn === true || Boolean(currentUserId && previous.senderUserId === currentUserId)) === outgoing
+      && (outgoing || previous.senderUserId === message.senderUserId) && createdAt > 0 && previousAt > 0 && createdAt - previousAt < 5 * 60 * 1000);
+    row.classList.toggle("is-grouped", grouped);
     row.dataset.messageKey = key;
     row.dataset.clientCommandId = String(message.clientCommandId || "");
-    const senderName = String(resolveSender(message.senderUserId || "") || message.senderUserId || "");
+    const resolvedSender = String(resolveSender(message.senderUserId || "") || "");
+    const senderName = /^usr_[a-z0-9]+$/i.test(resolvedSender) ? "" : resolvedSender;
     let avatar = row.querySelector(".collaboration-message-avatar");
     if (!avatar) { avatar = document.createElement("span"); avatar.className = "collaboration-message-avatar"; avatar.setAttribute("aria-hidden", "true"); row.prepend(avatar); }
-    avatar.textContent = senderName.trim().slice(0, 1).toUpperCase() || "L";
+    avatar.textContent = senderName.trim().slice(0, 1).toUpperCase() || "·";
     let bubble = row.querySelector(".collaboration-message-bubble");
     if (!bubble) { bubble = document.createElement("div"); bubble.className = "collaboration-message-bubble"; row.append(bubble); }
     let header = bubble.querySelector(".collaboration-message-header");
-    if (!header) { header = document.createElement("header"); header.className = "collaboration-message-header"; bubble.prepend(header); }
-    let author = header.querySelector(".collaboration-message-author");
-    if (!author) { author = document.createElement("strong"); author.className = "collaboration-message-author"; header.append(author); }
-    author.textContent = senderName;
-    let time = header.querySelector("time");
-    if (!time) { time = document.createElement("time"); header.append(time); }
-    const createdAt = Number(message.createdAt || 0);
-    time.dateTime = createdAt > 0 ? new Date(createdAt).toISOString() : "";
-    time.textContent = createdAt > 0 ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(createdAt) : "";
+    if (!outgoing && showSenderNames && senderName) {
+      if (!header) { header = document.createElement("header"); header.className = "collaboration-message-header"; bubble.prepend(header); }
+      let author = header.querySelector(".collaboration-message-author");
+      if (!author) { author = document.createElement("strong"); author.className = "collaboration-message-author"; header.append(author); }
+      author.textContent = senderName;
+    } else header?.remove();
+    let time = row.querySelector(":scope > time.collaboration-message-time");
+    const showTime = createdAt > 0 && (!previous || previousAt <= 0 || createdAt - previousAt >= 5 * 60 * 1000);
+    if (showTime) {
+      if (!time) { time = document.createElement("time"); time.className = "collaboration-message-time"; row.prepend(time); }
+      time.dateTime = new Date(createdAt).toISOString();
+      time.textContent = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(createdAt);
+    } else time?.remove();
     let body = row.querySelector(".collaboration-message-body");
     if (!body) { body = document.createElement("p"); body.className = "collaboration-message-body"; bubble.append(body); }
     const hiddenSource = message.revokedAt || message.visibilityMask;
@@ -100,6 +112,7 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     if (node.children[index] !== row) node.insertBefore(row, node.children[index] || null);
     index += 1;
     prior.delete(key);
+    previous = message;
   }
   for (const child of prior.values()) child.remove();
   if (atBottom) node.scrollTop = node.scrollHeight;

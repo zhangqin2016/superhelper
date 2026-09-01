@@ -102,8 +102,10 @@ export function initCollaborationMentions({ textarea, getIds, onChange }) {
     root.replaceChildren();
     const make = (tag, id, parent = root) => { const node = document.createElement(tag); if (id) node.id = id; parent.append(node); return node; };
     button = make("button", "collaborationMentionButton"); button.type = "button"; button.setAttribute("aria-controls", "collaborationMentionPicker");
+    button.className = "collaboration-mention-manual-entry";
     tags = make("div", "collaborationMentionTags");
     hint = make("small", "collaborationMentionHint");
+    hint.className = "collaboration-mention-permanent-hint";
     picker = make("div", "collaborationMentionPicker");
     closeButton = make("button", "", picker); closeButton.type = "button"; closeButton.dataset.action = "close-mentions";
     notice = make("div", "collaborationMentionStatus", picker); notice.setAttribute("role", "status");
