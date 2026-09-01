@@ -73,6 +73,15 @@
       ]
     },
     {
+      "id": "collaboration-right-panel",
+      "protects": "Collaboration cannot replace or crush the primary workbench, start open unexpectedly, or regress to the legacy three-column canvas.",
+      "baseline": "The AI workbench remains fully visible and Collaboration is available from a separate default-collapsed right-side entry.",
+      "failureFallback": "Keep the panel closed with zero reserved width and preserve the ordinary workbench when collaboration presentation is unavailable.",
+      "tests": [
+        "scripts/test-collaboration-right-panel.cjs"
+      ]
+    },
+    {
       "id": "task-intelligence-baseline",
       "protects": "Local task classification and verification cannot be disabled by remote configuration.",
       "baseline": "The bundled deterministic task registry remains active.",

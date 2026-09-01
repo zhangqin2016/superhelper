@@ -4,7 +4,7 @@
 
 .app-shell {
   display: grid;
-  grid-template-columns: var(--left-w) 4px minmax(0, 1fr);
+  grid-template-columns: var(--left-w) 4px minmax(0, 1fr) 0;
   height: 100vh;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg-body) 92%, var(--bg-surface) 8%), var(--bg-body) 260px),
@@ -15,8 +15,15 @@
 .left-panel { grid-column: 1; }
 #leftResizeHandle { grid-column: 2; }
 .center-panel { grid-column: 3; }
+.collaboration-center { grid-column: 4; }
 
-.app-shell.left-collapsed { grid-template-columns: 0px 0px minmax(0, 1fr); }
+.app-shell.left-collapsed { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+.app-shell.collaboration-panel-open[data-collaboration-mode="docked"] {
+  grid-template-columns: var(--left-w) 4px minmax(560px, 1fr) var(--collaboration-panel-w, 420px);
+}
+.app-shell.left-collapsed.collaboration-panel-open[data-collaboration-mode="docked"] {
+  grid-template-columns: 0 0 minmax(560px, 1fr) var(--collaboration-panel-w, 420px);
+}
 
 /* =========================================================================
    Resize Handler

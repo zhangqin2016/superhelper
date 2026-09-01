@@ -8,6 +8,7 @@ import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
+import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -17,11 +18,12 @@ function byId(id) { return document.getElementById(id); }
  * without destroying a running turn or composer state.
  */
 export function initCollaborationCenter({ getPolicy = () => window.assistantClient?.getAppPolicy?.() } = {}) {
-  const nav = byId("collaborationNavButton");
-  const back = byId("workbenchNavButton");
-  const shell = byId("centerPanel");
+  const nav = byId("collaborationPanelToggle") || byId("collaborationNavButton");
+  const back = byId("collaborationConversationBack") || byId("workbenchNavButton");
+  const shell = byId("appShell") || byId("centerPanel");
   const panel = byId("collaborationCenter");
-  if (!nav || !back || !shell || !panel) return { refresh: async () => false };
+  if (!nav || !shell || !panel) return { refresh: async () => false };
+  const panelShell = byId("collaborationPanelToggle") ? initCollaborationPanelShell({ shell, panel, toggle: nav, backButton: back }) : null;
   const status = byId("collaborationStatus");
   const live = byId("collaborationLive");
   const scopeBadge = byId("collaborationScopeBadge");
@@ -72,6 +74,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     for (const [name, node] of Object.entries(sectionNodes)) if (node) node.hidden = name !== section;
     for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
     const title = byId("collaborationListTitle"); if (title) title.textContent = t(`collaboration.${section}`);
+    panelShell?.setConversationOpen(false);
   }
   const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
   const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
@@ -149,6 +152,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     loadingOlder = false;
     updateOlderButton();
     composer.setConversation(conversationId);
+    panelShell?.setConversationOpen(true);
     composer.setActive?.(!panel.hidden && policyEnabled);
     composer.refreshReply?.(historyMessages);
     attachments.setConversation(opened.conversation, transferPolicy);
@@ -185,8 +189,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const setActive = (active) => {
     if (disposed) return;
     if (!active) { navigationGeneration += 1; invalidateOpen(); attachments.dismiss(); }
-    shell.classList.toggle("collaboration-active", active);
-    panel.hidden = !active;
+    if (panelShell) active ? panelShell.openPanel() : panelShell.closePanel();
+    else { shell.classList.toggle("collaboration-active", active); panel.hidden = !active; }
     nav.setAttribute("aria-current", active ? "page" : "false");
     composer.setActive?.(active && policyEnabled && !navigating);
     renderTimeline();
@@ -230,10 +234,13 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     const available = result?.ok === true;
     if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
   };
-  const navClick = () => { setActive(true); void load(); };
-  const backClick = () => setActive(false);
+  const navClick = () => {
+    if (!panelShell) setActive(true);
+    queueMicrotask(() => { composer.setActive?.(!panel.hidden && policyEnabled && !navigating); if (!panel.hidden) void load(); });
+  };
+  const backClick = () => panelShell ? panelShell.setConversationOpen(false) : setActive(false);
   nav.addEventListener("click", navClick);
-  back.addEventListener("click", backClick);
+  back?.addEventListener("click", backClick);
 
   async function refresh() {
     const view = viewGeneration;
@@ -281,5 +288,5 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     });
   });
   void refresh();
-  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); attachments.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back.removeEventListener("click", backClick); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
+  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); attachments.destroy(); panelShell?.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back?.removeEventListener("click", backClick); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
 }

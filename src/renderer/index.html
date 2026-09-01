@@ -76,10 +76,6 @@
             </button>
           </div>
         </div>
-        <button id="collaborationNavButton" class="collaboration-entry" type="button" hidden data-i18n="collaboration.nav">
-          协作中心
-        </button>
-
         <div class="left-section left-section-grow">
           <div class="left-section-header">
             <span data-i18n="sidebar.myChats">我的对话</span>
@@ -133,38 +129,6 @@
       <div class="resize-handle resize-handle-left" id="leftResizeHandle"></div>
 
       <section class="center-panel" id="centerPanel">
-        <section id="collaborationCenter" class="collaboration-center" hidden data-i18n-aria-label="collaboration.ariaLabel" aria-label="协作中心">
-          <nav class="collaboration-column collaboration-nav" data-i18n-aria-label="collaboration.navLabel" aria-label="协作导航">
-            <button id="workbenchNavButton" type="button" data-i18n="collaboration.workbench" data-i18n-aria-label="collaboration.workbench">工作台</button>
-            <div class="collaboration-nav-list">
-              <button id="collaborationInboxTab" type="button" data-i18n="collaboration.inbox" aria-controls="collaborationInbox">收件箱</button>
-              <button id="collaborationPeopleTab" type="button" data-i18n="collaboration.people" aria-controls="collaborationFriends">联系人</button>
-              <button id="collaborationTeamsTab" type="button" data-i18n="collaboration.teams" aria-controls="collaborationTeams">团队</button>
-            </div>
-          </nav>
-          <section class="collaboration-column collaboration-inbox" id="collaborationInboxColumn" tabindex="-1" data-i18n-aria-label="collaboration.inbox" aria-label="收件箱">
-            <h2 id="collaborationListTitle" data-i18n="collaboration.inbox">收件箱</h2>
-            <p id="collaborationStatus" class="collaboration-status" role="status" data-i18n="collaboration.statusUnavailable">协作暂不可用</p>
-            <div id="collaborationInbox"></div>
-            <div id="collaborationFriends" hidden></div>
-            <div id="collaborationTeams" hidden></div>
-          </section>
-          <section id="collaborationConversation" class="collaboration-column collaboration-conversation" data-i18n-aria-label="collaboration.conversation" aria-label="对话">
-            <h2 data-i18n="collaboration.conversation">对话</h2>
-            <span id="collaborationScopeBadge" class="collaboration-scope-badge" data-i18n="collaboration.scopePersonal">个人</span>
-            <button id="collaborationLoadOlder" type="button" hidden data-i18n="collaboration.loadOlder">加载更早消息</button>
-            <div id="collaborationTimeline" class="collaboration-timeline" role="log" aria-live="polite" aria-relevant="additions text"></div>
-            <p id="collaborationConversationEmpty" class="collaboration-empty" data-i18n="collaboration.empty">选择一个对话开始协作</p>
-            <button id="collaborationAttachButton" type="button" hidden disabled data-i18n="collaboration.transfer.attach">添加附件</button>
-            <div id="collaborationTransfers" class="collaboration-transfer-panel"></div>
-            <div class="collaboration-composer">
-              <div id="collaborationReplyPreview" class="collaboration-reply-preview" aria-live="polite" hidden></div>
-              <label class="character-sr-only" for="collaborationComposer" data-i18n="collaboration.messageLabel">消息</label>
-              <textarea id="collaborationComposer" rows="3" dir="auto" data-i18n-placeholder="collaboration.messagePlaceholder" placeholder="输入消息"></textarea>
-              <button id="collaborationSendButton" type="button" data-i18n="collaboration.send">发送</button>
-            </div>
-          </section>
-        </section>
         <div id="collaborationLive" class="character-sr-only" aria-live="polite"></div>
 
         <header class="topbar collaboration-workbench-surface">
@@ -205,6 +169,10 @@
             </div>
             <button id="interruptBtn" class="topbar-btn topbar-btn-stop" data-i18n-title="topbar.stopTitle" title="停止当前回复" hidden><span data-i18n="topbar.stop">停止</span></button>
             <button id="newChatBtn" class="topbar-btn" data-i18n-title="topbar.newChatTitle" title="开始新对话"><span data-i18n="topbar.newChat">新对话</span></button>
+            <button id="collaborationPanelToggle" class="topbar-btn collaboration-panel-toggle" type="button" hidden aria-expanded="false" aria-controls="collaborationCenter" data-i18n-title="collaboration.nav" title="协作中心">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></svg>
+              <span data-i18n="collaboration.nav">协作</span><span id="collaborationUnreadBadge" class="collaboration-unread-badge" hidden></span>
+            </button>
           </div>
         </header>
 
@@ -398,6 +366,36 @@
           <div id="characterControlLive" class="character-sr-only" aria-live="polite"></div>
         </form>
       </section>
+
+      <button id="collaborationPanelScrim" class="collaboration-panel-scrim" type="button" hidden aria-label="关闭协作面板"></button>
+      <div id="collaborationResizeHandle" class="collaboration-resize-handle" hidden></div>
+      <button id="collaborationNavButton" type="button" hidden aria-hidden="true" tabindex="-1"></button>
+      <aside id="collaborationCenter" class="collaboration-center" hidden role="complementary" aria-label="协作中心">
+        <header class="collaboration-panel-header">
+          <div><strong data-i18n="collaboration.nav">协作</strong><p id="collaborationStatus" class="collaboration-status" role="status" data-i18n="collaboration.statusUnavailable">协作暂不可用</p></div>
+          <button id="collaborationPanelClose" class="collaboration-icon-button" type="button" aria-label="关闭协作面板">×</button>
+        </header>
+        <section id="collaborationHome" class="collaboration-home">
+          <nav class="collaboration-nav-list" aria-label="协作导航">
+            <button id="collaborationInboxTab" type="button" data-i18n="collaboration.inbox" aria-controls="collaborationInbox">消息</button>
+            <button id="collaborationPeopleTab" type="button" data-i18n="collaboration.people" aria-controls="collaborationFriends">联系人</button>
+            <button id="collaborationTeamsTab" type="button" data-i18n="collaboration.teams" aria-controls="collaborationTeams">团队</button>
+          </nav>
+          <section class="collaboration-inbox" id="collaborationInboxColumn" tabindex="-1">
+            <h2 id="collaborationListTitle" data-i18n="collaboration.inbox">消息</h2>
+            <div id="collaborationInbox"></div><div id="collaborationFriends" hidden></div><div id="collaborationTeams" hidden></div>
+          </section>
+        </section>
+        <section id="collaborationConversation" class="collaboration-conversation" hidden aria-label="对话">
+          <header class="collaboration-conversation-header"><button id="collaborationConversationBack" class="collaboration-icon-button" type="button" aria-label="返回">←</button><div><h2 data-i18n="collaboration.conversation">对话</h2><span id="collaborationScopeBadge" class="collaboration-scope-badge"></span></div></header>
+          <button id="collaborationLoadOlder" type="button" hidden data-i18n="collaboration.loadOlder">加载更早消息</button>
+          <div id="collaborationTimeline" class="collaboration-timeline" role="log" aria-live="polite" aria-relevant="additions text"></div>
+          <p id="collaborationConversationEmpty" class="collaboration-empty" data-i18n="collaboration.empty">选择一个对话开始协作</p>
+          <button id="collaborationAttachButton" type="button" hidden disabled data-i18n="collaboration.transfer.attach">添加附件</button>
+          <div id="collaborationTransfers" class="collaboration-transfer-panel"></div>
+          <div class="collaboration-composer"><div id="collaborationReplyPreview" class="collaboration-reply-preview" aria-live="polite" hidden></div><label class="character-sr-only" for="collaborationComposer" data-i18n="collaboration.messageLabel">消息</label><textarea id="collaborationComposer" rows="3" dir="auto" data-i18n-placeholder="collaboration.messagePlaceholder" placeholder="输入消息"></textarea><button id="collaborationSendButton" type="button" data-i18n="collaboration.send">发送</button></div>
+        </section>
+      </aside>
 
     </main>
 
