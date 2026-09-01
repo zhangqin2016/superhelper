@@ -651,7 +651,7 @@ assert.match(
 );
 assert.match(
   publicClientConfigRouteSource,
-  /resolveEffectiveConfig\(input,\s*\{\s*baselineEffectiveConfig\s*\}\)/,
+  /resolveEffectiveConfig\(input,\s*\{[\s\S]*baselineEffectiveConfig/,
   "public client config must pass the server provider baseline into profile resolution",
 );
 

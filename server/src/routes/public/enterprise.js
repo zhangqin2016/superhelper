@@ -11,7 +11,8 @@ import { publicId } from "../../services/ids.js";
 import { verifyAccessToken, verifyWebSessionToken } from "../../services/account-auth.js";
 import { fetchOrgGrants } from "../../services/wallet.js";
 import { registerPublicEnterpriseMemberRoutes } from "./enterprise-members.js";
-import { requireOrgRole } from "./enterprise-route-support.js";
+import { enterpriseMutationResponse, requireOrgRole } from "./enterprise-route-support.js";
+import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
 
 const orgIdSchema = z.object({ id: z.string().min(3).max(120) });
 const createOrgSchema = z.object({
@@ -75,6 +76,7 @@ async function orgUsage(organizationId, days = 30) {
 }
 
 export function registerPublicEnterpriseRoutes(app) {
+  const mutations = createEnterpriseMutationService(db);
   // All enterprise endpoints require a logged-in web user. Two auth surfaces:
   // 1. web session cookie (lily_user_session) — browser admin pages;
   // 2. Bearer account access token — desktop client.
@@ -222,25 +224,8 @@ export function registerPublicEnterpriseRoutes(app) {
       },
     },
     async (request, reply) => {
-      const membership = await requireOrgRole(request, reply, request.params.id, "admin");
-      if (!membership) return;
       const input = patchOrgSchema.parse(request.body);
-      const org = await findOrg(request.params.id);
-      if (!org) {
-        reply.code(404).send({ ok: false, code: "ORG_NOT_FOUND" });
-        return;
-      }
-      const updated = await db
-        .updateTable("organizations")
-        .set({
-          ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(input.status !== undefined ? { status: input.status } : {}),
-          updated_at: new Date().toISOString(),
-        })
-        .where("id", "=", request.params.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      return { ok: true, organization: updated };
+      return enterpriseMutationResponse(reply, () => mutations.changeOrganization({ organizationId: request.params.id, account: request.user }, input));
     },
   );
 

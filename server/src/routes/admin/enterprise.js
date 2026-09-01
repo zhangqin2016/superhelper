@@ -7,6 +7,9 @@ import { z } from "zod";
 import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { publicId } from "../../services/ids.js";
+import { config } from "../../config.js";
+import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
+import { enterpriseMutationResponse } from "../public/enterprise-route-support.js";
 
 const orgIdSchema = z.object({ id: z.string().min(3).max(120) });
 const adjustGrantsSchema = z.object({
@@ -59,7 +62,8 @@ async function orgUsage(organizationId, days = 30) {
   return { days, byMember, byModel };
 }
 
-export function registerAdminEnterpriseRoutes(app, { audit }) {
+export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
+  const mutations = createEnterpriseMutationService(db);
   // GET /api/admin/enterprise/organizations — all orgs with summaries
   app.get(
     "/api/admin/enterprise/organizations",
@@ -113,19 +117,13 @@ export function registerAdminEnterpriseRoutes(app, { audit }) {
     },
     async (request, reply) => {
       const input = patchOrgSchema.parse(request.body);
-      const org = await db.selectFrom("organizations").selectAll().where("id", "=", request.params.id).executeTakeFirst();
-      if (!org) {
-        reply.code(404).send({ ok: false, code: "ORG_NOT_FOUND" });
-        return;
-      }
-      const updated = await db
-        .updateTable("organizations")
-        .set({ status: input.status, updated_at: new Date() })
-        .where("id", "=", request.params.id)
-        .returningAll()
-        .executeTakeFirst();
+      const result = await enterpriseMutationResponse(reply, () => mutations.changeOrganization({
+        organizationId: request.params.id, adminActor: config.adminEmail || "admin",
+        authorizeAdmin: () => assertAdmin(request, reply),
+      }, input));
+      if (!result?.ok) return result;
       await audit(request, "enterprise_org_status", "organization", request.params.id, { status: input.status });
-      return { ok: true, organization: updated };
+      return result;
     },
   );
 

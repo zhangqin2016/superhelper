@@ -117,5 +117,5 @@ export async function adminRoutes(app) {
   registerAdminConfigProfileRoutes(app, { audit });
   registerAdminAuditRoutes(app);
   registerAdminBillingRoutes(app, { audit });
-  registerAdminEnterpriseRoutes(app, { audit });
+  registerAdminEnterpriseRoutes(app, { audit, assertAdmin });
 }

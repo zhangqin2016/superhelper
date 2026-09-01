@@ -26,7 +26,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260722-overhaul" />
+    <link rel="stylesheet" href="./styles.css?v=20260831-collaboration-theme" />
   </head>
   <body>
     <div id="dropOverlay" class="drop-overlay" hidden>
@@ -76,6 +76,9 @@
             </button>
           </div>
         </div>
+        <button id="collaborationNavButton" class="collaboration-entry" type="button" hidden data-i18n="collaboration.nav">
+          协作中心
+        </button>
 
         <div class="left-section left-section-grow">
           <div class="left-section-header">
@@ -130,7 +133,41 @@
       <div class="resize-handle resize-handle-left" id="leftResizeHandle"></div>
 
       <section class="center-panel" id="centerPanel">
-        <header class="topbar">
+        <section id="collaborationCenter" class="collaboration-center" hidden data-i18n-aria-label="collaboration.ariaLabel" aria-label="协作中心">
+          <nav class="collaboration-column collaboration-nav" data-i18n-aria-label="collaboration.navLabel" aria-label="协作导航">
+            <button id="workbenchNavButton" type="button" data-i18n="collaboration.workbench" data-i18n-aria-label="collaboration.workbench">工作台</button>
+            <div class="collaboration-nav-list">
+              <button id="collaborationInboxTab" type="button" data-i18n="collaboration.inbox" aria-controls="collaborationInbox">收件箱</button>
+              <button id="collaborationPeopleTab" type="button" data-i18n="collaboration.people" aria-controls="collaborationFriends">联系人</button>
+              <button id="collaborationTeamsTab" type="button" data-i18n="collaboration.teams" aria-controls="collaborationTeams">团队</button>
+            </div>
+          </nav>
+          <section class="collaboration-column collaboration-inbox" id="collaborationInboxColumn" tabindex="-1" data-i18n-aria-label="collaboration.inbox" aria-label="收件箱">
+            <h2 id="collaborationListTitle" data-i18n="collaboration.inbox">收件箱</h2>
+            <p id="collaborationStatus" class="collaboration-status" role="status" data-i18n="collaboration.statusUnavailable">协作暂不可用</p>
+            <div id="collaborationInbox"></div>
+            <div id="collaborationFriends" hidden></div>
+            <div id="collaborationTeams" hidden></div>
+          </section>
+          <section id="collaborationConversation" class="collaboration-column collaboration-conversation" data-i18n-aria-label="collaboration.conversation" aria-label="对话">
+            <h2 data-i18n="collaboration.conversation">对话</h2>
+            <span id="collaborationScopeBadge" class="collaboration-scope-badge" data-i18n="collaboration.scopePersonal">个人</span>
+            <button id="collaborationLoadOlder" type="button" hidden data-i18n="collaboration.loadOlder">加载更早消息</button>
+            <div id="collaborationTimeline" class="collaboration-timeline" role="log" aria-live="polite" aria-relevant="additions text"></div>
+            <p id="collaborationConversationEmpty" class="collaboration-empty" data-i18n="collaboration.empty">选择一个对话开始协作</p>
+            <button id="collaborationAttachButton" type="button" hidden disabled data-i18n="collaboration.transfer.attach">添加附件</button>
+            <div id="collaborationTransfers" class="collaboration-transfer-panel"></div>
+            <div class="collaboration-composer">
+              <div id="collaborationReplyPreview" class="collaboration-reply-preview" aria-live="polite" hidden></div>
+              <label class="character-sr-only" for="collaborationComposer" data-i18n="collaboration.messageLabel">消息</label>
+              <textarea id="collaborationComposer" rows="3" dir="auto" data-i18n-placeholder="collaboration.messagePlaceholder" placeholder="输入消息"></textarea>
+              <button id="collaborationSendButton" type="button" data-i18n="collaboration.send">发送</button>
+            </div>
+          </section>
+        </section>
+        <div id="collaborationLive" class="character-sr-only" aria-live="polite"></div>
+
+        <header class="topbar collaboration-workbench-surface">
           <div class="topbar-left">
             <button id="leftToggleBtn" class="panel-toggle" data-i18n-title="topbar.toggleSidebar" data-i18n-aria-label="topbar.toggleSidebar" title="显示/隐藏侧边栏" aria-label="显示/隐藏侧边栏">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -171,7 +208,7 @@
           </div>
         </header>
 
-        <section id="taskCenterDock" class="task-center-dock" hidden aria-live="polite">
+        <section id="taskCenterDock" class="task-center-dock collaboration-workbench-surface" hidden aria-live="polite">
           <button id="taskCenterToggle" class="task-center-toggle" type="button" aria-expanded="false">
             <span class="task-center-dot"></span>
             <span id="taskCenterSummary" class="task-center-summary"></span>
@@ -180,7 +217,7 @@
           <div id="taskCenterPanel" class="task-center-panel" hidden></div>
         </section>
 
-        <section id="messagesContainer" class="messages-container">
+        <section id="messagesContainer" class="messages-container collaboration-workbench-surface">
           <div id="sessionMessagesStack" class="session-messages-stack" aria-live="polite">
             <div id="characterPreviewBanner" hidden></div>
           </div>
@@ -192,7 +229,7 @@
           </button>
         </section>
 
-        <section id="diffPanel" class="diff-panel" hidden>
+        <section id="diffPanel" class="diff-panel collaboration-workbench-surface" hidden>
           <div class="diff-header">
             <h3 data-i18n="diff.title">文件变更</h3>
             <div class="diff-actions">
@@ -204,7 +241,7 @@
           <div id="diffList" class="diff-list"></div>
         </section>
 
-        <form id="composer" class="composer">
+        <form id="composer" class="composer collaboration-workbench-surface">
           <div id="liveTaskStrip" class="live-task-strip" hidden>
             <button type="button" id="liveTaskStripHeader" class="live-task-strip-header" aria-expanded="true">
               <span class="live-task-strip-caret">▾</span>

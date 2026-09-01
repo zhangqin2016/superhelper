@@ -1,0 +1,223 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import pg from "pg";
+import Fastify from "fastify";
+
+if (!process.env.DATABASE_URL) { console.log("collaboration receipt integration: skipped (DATABASE_URL is not configured)"); process.exit(0); }
+const connectionString = process.env.DATABASE_URL;
+const schema = `collab_receipt_it_${crypto.randomUUID().replaceAll("-", "")}`;
+const admin = new pg.Pool({ connectionString });
+const scoped = new URL(connectionString); scoped.searchParams.set("options", `-c search_path=${schema}`);
+process.env.DATABASE_URL = scoped.href;
+process.env.SESSION_SECRET = crypto.randomBytes(32).toString("hex");
+process.env.COLLABORATION_ENABLED = "true";
+process.env.COLLABORATION_KILL_SWITCH = "false";
+process.env.COLLABORATION_ROLLOUT_ORGANIZATIONS = "";
+process.env.COLLAB_MESSAGE_KEK = crypto.randomBytes(32).toString("hex");
+const [{ db, pool, closeDb }, { registerCollaborationRoutes }, { createAccessToken }, { stableStringify, sha256 }] = await Promise.all([
+  import("../src/db.js"), import("../src/routes/public/collaboration.js"), import("../src/services/account-auth.js"), import("../src/services/security.js"),
+]);
+const app = Fastify({ logger: false });
+const { createLockedMessageAuthorizer } = await import("../src/services/collaboration/message-repository.js");
+const authorize = createLockedMessageAuthorizer();
+let historyBarrier = null;
+const key = crypto.generateKeyPairSync("ed25519");
+const pathname = "/api/collaboration/v1/command-receipt";
+const accountToken = (userId, deviceId = "device") => createAccessToken({ userId, deviceId, sessionId: `session-${userId}` });
+const require = createRequire(import.meta.url);
+const { CollaborationStore } = require("../../src/main/collaboration/collaboration-store.js");
+const { LocalCollaborationKeyring } = require("../../src/main/collaboration/local-keyring.js");
+const { createCollaborationClient } = require("../../src/main/collaboration/client.js");
+const { createCollaborationOutboxTransport } = require("../../src/main/collaboration/message-outbox-transport.js");
+const { createCollaborationOutbox } = require("../../src/main/collaboration/outbox.js");
+const localDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-receipt-proof-"));
+let localStore, localOutbox;
+async function receipt(userId, changes = {}, { validSignature = true, token = accountToken(userId), route = pathname } = {}) {
+  const body = { deviceId: "device", clientCommandId: "send", commandType: "message.create", expectedConversationId: "conv", ...changes };
+  const timestamp = new Date().toISOString(), nonce = crypto.randomUUID(), bodyHash = sha256(stableStringify(body));
+  const signature = crypto.sign(null, Buffer.from(stableStringify({ method: "POST", pathname: route, timestamp, nonce, bodyHash })), key.privateKey).toString("base64url");
+  const result = await app.inject({ method: "POST", url: route, payload: body, headers: {
+    authorization: `Bearer ${token}`, "x-lily-device-id": body.deviceId, "x-lily-timestamp": timestamp,
+    "x-lily-nonce": nonce, "x-lily-body-sha256": bodyHash, "x-lily-signature": validSignature ? signature : "invalid",
+  } });
+  return { status: result.statusCode, body: result.json() };
+}
+try {
+  await admin.query(`create schema ${schema}`);
+  await pool.query(`
+    create table users(id text primary key);
+    create table devices(id text primary key);
+    create table organizations(id text primary key);
+    create table device_public_keys(device_id text primary key,public_key text);
+    create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
+    create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);
+    create table user_devices(user_id text,device_id text,status text,primary key(user_id,device_id));
+    insert into users values('alice'),('bob');
+    insert into devices values('device');
+    insert into user_sessions values('session-alice','alice','device',null,now()+interval '1 hour'),('session-bob','bob','device',null,now()+interval '1 hour');
+    insert into user_devices values('alice','device','active'),('bob','device','active');
+  `);
+  for (const migration of ["033_collaboration_core.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "040_collaboration_trusted_actors.sql", "041_collaboration_reply_snapshots.sql"]) {
+    await pool.query(fs.readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
+  }
+  await pool.query(`
+    insert into conversations(id,scope_type,kind,direct_pair_key,direct_user_low_id,direct_user_high_id,created_by,next_seq)
+      values('conv','personal','direct','alice:bob','alice','bob','alice',6);
+    insert into conversation_members(conversation_id,user_id) values('conv','alice'),('conv','bob');
+    insert into friendships(user_low_id,user_high_id) values('alice','bob');
+    insert into collaboration_events(id,conversation_id,actor_user_id,actor_device_id,payload,seq,type,client_command_id) values
+      ('old-evt','conv','alice','device','{"messageId":"old"}',1,'message.created','old-history'),
+      ('new-evt','conv','alice','device','{"messageId":"new"}',2,'message.created','new-history'),
+      ('evt','conv','alice','device','{"messageId":"message"}',3,'message.created','send'),
+      ('evt-edit','conv','alice','device','{"messageId":"message","revision":2}',4,'message.edited','edit'),
+      ('evt-revoke','conv','alice','device','{"messageId":"message","revision":3}',5,'message.revoked','revoke');
+    insert into messages(id,event_id,conversation_id,create_seq,sender_user_id,revision,revoked_at) values
+      ('old','old-evt','conv',1,'alice',2,now()),('new','new-evt','conv',2,'alice',2,now()),('message','evt','conv',3,'alice',3,now());
+    insert into command_receipts(actor_device_id,command_type,client_command_id,request_fingerprint,state,result_event_id,response_code,response_payload,completed_at) values
+      ('device','message.create','send',repeat('a',64),'completed','evt','OK','{"message":{"id":"message","seq":3},"eventId":"evt"}',now()),
+      ('device','message.edit','edit',repeat('b',64),'completed','evt-edit','OK','{"result":{"message":{"id":"message","conversationId":"conv","seq":3,"revision":2}},"eventId":"evt-edit"}',now()),
+      ('device','message.revoke','revoke',repeat('c',64),'completed','evt-revoke','OK','{"result":{"message":{"id":"message","conversationId":"conv","seq":3,"revision":3,"revoked":true}},"eventId":"evt-revoke"}',now());
+  `);
+  await pool.query("insert into device_public_keys values($1,$2)", ["device", key.publicKey.export({ type: "spki", format: "pem" })]);
+  registerCollaborationRoutes(app, { database: db, authorizeMessage: async (input) => {
+    const decision = await authorize(input);
+    if (historyBarrier) { historyBarrier.entered.resolve(); await historyBarrier.release.promise; }
+    return decision;
+  } });
+  const own = await receipt("alice");
+  assert.equal(own.status, 200); assert.equal(own.body.committed, true); assert.equal(own.body.messageId, "message");
+  assert.equal(own.body.revision, 1, "a legacy creation receipt derives revision one from its original created event, never the current revoked revision three");
+  assert.equal(own.body.eventId, "evt");
+  assert.equal(own.body.eventSequence, 3); assert.equal(own.body.sequence, 3);
+  assert.notEqual(own.body.revoked, true);
+  const absent = await receipt("alice", { clientCommandId: "never-submitted" });
+  assert.equal(absent.status, 200);
+  const { requestId: absentRequestId, ...absentProof } = absent.body;
+  assert.equal(typeof absentRequestId, "string");
+  assert.deepEqual(absentProof, { ok: true, state: "unknown", committed: false, deliveryUnknown: true }, "only absent evidence preserves the explicit original-key replay contract");
+  const legacyPayload = { message: { id: "message", seq: 3 }, eventId: "evt" };
+  const validPayload = { message: { id: "message", conversationId: "conv", seq: 3, revision: 1, revoked: false }, eventId: "evt" };
+  const corruptPayloads = [
+    { ...validPayload, message: { ...validPayload.message, revision: 3 } },
+    { ...validPayload, message: { ...validPayload.message, revoked: true } },
+    { ...validPayload, message: { ...validPayload.message, id: "new" } },
+    { ...validPayload, message: { ...validPayload.message, conversationId: "different" } },
+    { ...validPayload, message: { ...validPayload.message, seq: 99 } },
+    { ...validPayload, eventId: "new-evt" },
+    { result: validPayload, eventId: "new-evt" },
+  ];
+  try {
+    for (const payload of corruptPayloads) {
+      await pool.query("update command_receipts set response_payload=$1 where client_command_id='send'", [JSON.stringify(payload)]);
+      const invalid = await receipt("alice");
+      assert.ok(invalid.status >= 400, `contradictory stored receipt is not commit evidence: ${JSON.stringify(payload)}`);
+      assert.notEqual(invalid.body.committed, true); assert.notEqual(invalid.body.deliveryUnknown, true);
+    }
+  } finally {
+    await pool.query("update command_receipts set response_payload=$1 where client_command_id='send'", [JSON.stringify(legacyPayload)]);
+  }
+  try {
+    await pool.query("update command_receipts set result_event_id=null where client_command_id='send'");
+    const incomplete = await receipt("alice");
+    assert.ok(incomplete.status >= 400);
+    assert.notEqual(incomplete.body.deliveryUnknown, true, "completed evidence with a missing link cannot authorize replay");
+  } finally { await pool.query("update command_receipts set result_event_id='evt' where client_command_id='send'"); }
+  for (const [column, corrupt, original] of [["type", "message.edited", "message.created"], ["client_command_id", "another-command", "send"]]) {
+    try {
+      await pool.query(`update collaboration_events set ${column}=$1 where id='evt'`, [corrupt]);
+      const invalid = await receipt("alice");
+      assert.ok(invalid.status >= 400, `receipt event ${column} must match its immutable command identity`);
+      assert.notEqual(invalid.body.committed, true); assert.notEqual(invalid.body.deliveryUnknown, true);
+    } finally { await pool.query(`update collaboration_events set ${column}=$1 where id='evt'`, [original]); }
+  }
+  assert.equal((await receipt("alice")).body.revision, 1, "restored legacy evidence remains recoverable");
+  const options = { accountId: "alice", dbPath: path.join(localDir, "cache.db"), keyring: new LocalCollaborationKeyring({ filePath: path.join(localDir, "keys.json"), safeStorage: {
+    isEncryptionAvailable: () => true, encryptString: (v) => Buffer.from(v), decryptString: (v) => Buffer.from(v).toString(),
+  } }) };
+  localStore = new CollaborationStore(options);
+  localStore.replaceProjectionFromBootstrap({ conversations: [{ id: "conv", kind: "direct" }] });
+  localStore.persistDraftAndOptimisticMessage({ conversationId: "conv", draftId: "composer", messageId: "pending:send", clientCommandId: "send", bodyText: "original body", originDeviceId: "device" });
+  localStore.setOutboxState({ outboxId: "send", expectedStates: ["queued"], state: "submitting" });
+  localStore.setOutboxState({ outboxId: "send", expectedStates: ["submitting"], state: "confirming" });
+  localStore.close(); localStore = new CollaborationStore(options);
+  const requests = [];
+  const desktopClient = createCollaborationClient({
+    accountManager: { async accessTokenForService() { return { ok: true, accessToken: accountToken("alice") }; } },
+    async signDeviceRequest({ path: route, method, body, deviceId }) {
+      const timestamp = new Date().toISOString(), nonce = crypto.randomUUID(), bodyHash = sha256(stableStringify(body));
+      return { "x-lily-device-id": deviceId, "x-lily-timestamp": timestamp, "x-lily-nonce": nonce, "x-lily-body-sha256": bodyHash,
+        "x-lily-signature": crypto.sign(null, Buffer.from(stableStringify({ method, pathname: route, timestamp, nonce, bodyHash })), key.privateKey).toString("base64url") };
+    },
+    async request({ path: route, method, body, headers }) {
+      requests.push({ route, body });
+      const response = await app.inject({ method, url: route, payload: body, headers });
+      return { status: response.statusCode, ok: response.statusCode >= 200 && response.statusCode < 300, json: response.json() };
+    },
+  });
+  localOutbox = createCollaborationOutbox({ store: localStore, deviceId: "device", transport: createCollaborationOutboxTransport({ client: desktopClient, deviceId: "device" }) });
+  await localOutbox.reconcilePending();
+  assert.equal(localStore.getOutbox({ outboxId: "send" }).state, "persisted", "real signed legacy receipt settles the restarted production desktop transport");
+  assert.equal(localStore.getOutbox({ outboxId: "send" }).deliveryConfirmed, true);
+  assert.equal(localStore.getMessage({ conversationId: "conv", messageId: "message" }).seq, 3);
+  assert.deepEqual(requests.map(({ route, body }) => [route, body.clientCommandId, body.deviceId]), [[pathname, "send", "device"]], "recovery looks up the original identity without resending");
+  localOutbox.stop(); localStore.close(); localStore = new CollaborationStore(options);
+  assert.equal(localStore.getOutbox({ outboxId: "send" }).deliveryConfirmed, true, "commit proof survives another restart");
+  const edit = await receipt("alice", { clientCommandId: "edit", commandType: "message.edit", expectedMessageId: "message", expectedRevision: 1 });
+  assert.deepEqual({ type: edit.body.commandType, messageId: edit.body.messageId, revision: edit.body.revision, eventSequence: edit.body.eventSequence }, { type: "message.edit", messageId: "message", revision: 2, eventSequence: 4 }, "typed edit receipt binds the mutation target and revision to its device event, not creation seq 3");
+  const revoke = await receipt("alice", { clientCommandId: "revoke", commandType: "message.revoke", expectedMessageId: "message", expectedRevision: 2 });
+  assert.equal(revoke.body.revoked, true, "typed revoke receipt carries positive tombstone evidence");
+  assert.equal(revoke.body.eventSequence, 5, "revoke event order is distinct from the immutable creation seq");
+  assert.equal((await receipt("alice", { clientCommandId: "edit", commandType: "message.edit", expectedMessageId: "new", expectedRevision: 1 })).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED", "a target mismatch is never exposed as a usable mutation receipt");
+  assert.equal((await receipt("bob")).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED", "same physical device/new account cannot read old actor receipt");
+  assert.equal((await receipt("alice", { expectedConversationId: "different" })).body.code, "COLLAB_RECEIPT_IDENTITY_DENIED");
+  assert.equal((await receipt("alice", {}, { validSignature: false })).status, 401);
+  const history = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  assert.equal(history.status, 200, JSON.stringify(history.body));
+  assert.deepEqual(history.body.result.messages.map((row) => row.id), ["old"], "signed HTTP schema passes targeted IDs to the SQL history filter");
+  assert.deepEqual(history.body.result.unavailableMessageIds, []);
+  assert.equal(history.body.result.messages[0].bodyText, null); assert.equal(history.body.result.messages[0].revision, 2);
+  await pool.query("update conversation_members set joined_seq=1 where user_id='alice'");
+  const invisible = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  assert.deepEqual(invisible.body.result, { messages: [], unavailableMessageIds: ["old"] }, "authorized nonvisibility has explicit proof, never a silent missing body");
+  await pool.query("update conversation_members set joined_seq=0 where user_id='alice'");
+  const invalidHistory = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"], beforeSeq: 2 }, { route: "/api/collaboration/v1/messages" });
+  assert.equal(invalidHistory.status, 400, "targeted lookup cannot also paginate");
+  historyBarrier = { entered: Promise.withResolvers(), release: Promise.withResolvers() };
+  const ongoing = receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  await historyBarrier.entered.promise;
+  const remover = await pool.connect();
+  let removal;
+  try {
+    await remover.query("set lock_timeout='5s'");
+    const { rows: [{ pid }] } = await remover.query("select pg_backend_pid() AS pid");
+    removal = remover.query("update conversation_members set status='removed' where user_id='alice'");
+    let waiting = false;
+    for (let i = 0; i < 100 && !waiting; i++) {
+      const probe = await pool.query("select wait_event_type from pg_stat_activity where pid=$1", [pid]);
+      waiting = probe.rows[0]?.wait_event_type === "Lock";
+    }
+    assert.equal(waiting, true, "membership revoke waits while authorized history holds the same transaction locks");
+  } finally {
+    historyBarrier.release.resolve(); historyBarrier = null;
+    await removal; remover.release();
+  }
+  assert.equal((await ongoing).status, 200, "in-flight history linearizes before the waiting revocation");
+  const deniedHistory = await receipt("alice", { action: "history", conversationId: "conv", messageIds: ["old"] }, { route: "/api/collaboration/v1/messages" });
+  assert.equal(deniedHistory.status >= 400, true, "after revoke commits, history returns no body");
+  assert.equal(deniedHistory.body.result, undefined);
+  await pool.query("update conversation_members set status='active' where user_id='alice'");
+  await pool.query("update user_sessions set revoked_at=now() where user_id='alice'");
+  const revoked = await receipt("alice");
+  assert.equal(revoked.body.code, "SESSION_EXPIRED", "revoked login rejects a still-cryptographically-valid bearer token");
+  assert.equal(revoked.body.retryable, false); assert.equal(typeof revoked.body.requestId, "string", "shared guard preserves collaboration's error envelope");
+  await pool.query("update user_sessions set revoked_at=null where user_id='alice'; update user_devices set status='revoked' where user_id='alice'");
+  assert.equal((await receipt("alice")).body.code, "COLLAB_DEVICE_REVOKED");
+  await pool.query("update user_devices set status='active'; update conversation_members set status='removed' where user_id='alice'");
+  const removed = await receipt("alice");
+  assert.equal(removed.status, 403, `receipt access reauthorizes current conversation membership: ${JSON.stringify(removed.body)}`);
+  console.log("collaboration receipt integration: signed HTTP and real PostgreSQL passed");
+} finally { localOutbox?.stop(); localStore?.close(); fs.rmSync(localDir, { recursive: true, force: true }); await app.close(); await closeDb(); await admin.query(`drop schema if exists ${schema} cascade`); await admin.end(); }

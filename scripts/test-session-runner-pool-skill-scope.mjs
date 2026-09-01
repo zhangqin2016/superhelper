@@ -16,7 +16,8 @@ const oldBase = process.env.LILY_API_BASE_URL;
 const oldKey = process.env.LILY_API_KEY;
 const oldUserData = process.env.LILY_USER_DATA_DIR;
 
-process.env.OPENCODE_BIN = process.platform === "win32" ? process.execPath : "/bin/true";
+// This lazy config-only fixture never launches the engine.
+process.env.OPENCODE_BIN = process.execPath;
 process.env.LILY_MODEL = "test-model";
 process.env.LILY_API_BASE_URL = "https://example.invalid/v1";
 process.env.LILY_API_KEY = "test-key";

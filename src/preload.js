@@ -2,6 +2,8 @@
 
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
+let collaborationStateSubscriberCount = 0;
+
 contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
   getAppVersion: () => ipcRenderer.invoke("app:get-version"),
@@ -443,6 +445,65 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:open", { filePath, sessionId }),
   localMediaStatus: (filePath) =>
     ipcRenderer.invoke("files:local-media-status", { filePath }),
+
+  // Intentionally a closed command set. The renderer never receives bearer
+  // credentials, device signatures, encrypted key material, or local paths.
+  collaboration: {
+    getTransfers: () => ipcRenderer.invoke("collaboration:get-transfers"),
+    prepareAttachment: (conversationId) => ipcRenderer.invoke("collaboration:prepare-attachment", { conversationId }),
+    enqueueTransfer: (transferId) => ipcRenderer.invoke("collaboration:enqueue-transfer", { transferId }),
+    pauseTransfer: (transferId) => ipcRenderer.invoke("collaboration:pause-transfer", { transferId }),
+    cancelTransfer: (transferId) => ipcRenderer.invoke("collaboration:cancel-transfer", { transferId }),
+    prepareDownload: ({ conversationId, messageId, objectId }) => ipcRenderer.invoke("collaboration:prepare-download", { conversationId, messageId, objectId }),
+    saveDownload: (transferId) => ipcRenderer.invoke("collaboration:save-download", { transferId }),
+    sendAttachments: ({ conversationId, transferIds, bodyText, clientCommandId } = {}) => ipcRenderer.invoke("collaboration:send-attachments", { conversationId, transferIds, bodyText, ...(clientCommandId == null ? {} : { clientCommandId }) }),
+    getDirectory: () => ipcRenderer.invoke("collaboration:get-directory"),
+    getState: () => ipcRenderer.invoke("collaboration:get-state"),
+    bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),
+    list: () => ipcRenderer.invoke("collaboration:list"),
+    open: (conversationId, beforeSeq) => ipcRenderer.invoke("collaboration:open", { conversationId, ...(beforeSeq == null ? {} : { beforeSeq }) }),
+    getDraft: (conversationId) => ipcRenderer.invoke("collaboration:get-draft", { conversationId }),
+    getEditDraft: ({ conversationId, messageId } = {}) => ipcRenderer.invoke("collaboration:get-edit-draft", { conversationId, messageId }),
+    saveEditDraft: ({ conversationId, messageId, bodyText, baseRevision, expectedGeneration } = {}) => ipcRenderer.invoke("collaboration:save-edit-draft", { conversationId, messageId, bodyText, baseRevision, expectedGeneration }),
+    clearEditDraft: ({ conversationId, messageId, expectedGeneration } = {}) => ipcRenderer.invoke("collaboration:clear-edit-draft", { conversationId, messageId, expectedGeneration }),
+    readMessages: ({ conversationId, messageIds }) => ipcRenderer.invoke("collaboration:read-messages", { conversationId, messageIds }),
+    readMessageOperations: ({ conversationId, outboxIds }) => ipcRenderer.invoke("collaboration:read-message-operations", { conversationId, outboxIds }),
+    saveDraft: ({ conversationId, text, replyToMessageId, mentionUserIds }) => ipcRenderer.invoke("collaboration:save-draft", { conversationId, text, replyToMessageId, mentionUserIds }),
+    send: ({ conversationId, clientCommandId, bodyText, replyToMessageId, mentionUserIds }) => ipcRenderer.invoke("collaboration:send", {
+      conversationId, clientCommandId, bodyText, replyToMessageId, mentionUserIds,
+    }),
+    edit: ({ conversationId, messageId, clientCommandId, expectedRevision, bodyText }) => ipcRenderer.invoke("collaboration:edit", {
+      conversationId, messageId, clientCommandId, expectedRevision, bodyText,
+    }),
+    revoke: ({ conversationId, messageId, clientCommandId, expectedRevision }) => ipcRenderer.invoke("collaboration:revoke", {
+      conversationId, messageId, clientCommandId, expectedRevision,
+    }),
+    friend: (command) => ipcRenderer.invoke("collaboration:friend", command),
+    conversation: (command) => ipcRenderer.invoke("collaboration:conversation", command),
+    getSocialCommands: () => ipcRenderer.invoke("collaboration:get-social-commands"),
+    retrySocial: (clientCommandId) => ipcRenderer.invoke("collaboration:retry-social", { clientCommandId }),
+    openFriend: (peerUserId) => ipcRenderer.invoke("collaboration:open-friend", { peerUserId }),
+    getConversationDetails: (conversationId) => ipcRenderer.invoke("collaboration:get-conversation-details", { conversationId }),
+    getMentionCandidates: (conversationId) => ipcRenderer.invoke("collaboration:get-mention-candidates", { conversationId }),
+    retry: (outboxId) => ipcRenderer.invoke("collaboration:retry", { outboxId }),
+    cancel: (outboxId) => ipcRenderer.invoke("collaboration:cancel", { outboxId }),
+    skip: (outboxId) => ipcRenderer.invoke("collaboration:skip", { outboxId }),
+    markRead: (conversationId, seq) => ipcRenderer.invoke("collaboration:mark-read", { conversationId, seq }),
+    onStateChange: (callback) => {
+      if (typeof callback !== "function") return () => {};
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on("collaboration:state", handler);
+      collaborationStateSubscriberCount += 1;
+      if (collaborationStateSubscriberCount === 1) {
+        void ipcRenderer.invoke("collaboration:subscribe").then((state) => callback({ type: "initial", state })).catch(() => callback({ type: "initial", state: { ok: false, code: "COLLABORATION_UNAVAILABLE" } }));
+      }
+      return () => {
+        ipcRenderer.removeListener("collaboration:state", handler);
+        collaborationStateSubscriberCount = Math.max(0, collaborationStateSubscriberCount - 1);
+        if (collaborationStateSubscriberCount === 0) void ipcRenderer.invoke("collaboration:unsubscribe");
+      };
+    },
+  },
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

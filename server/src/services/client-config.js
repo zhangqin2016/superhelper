@@ -16,6 +16,7 @@ import {
   applyCharacterWorldsClientGate,
   appVersionAtLeast,
 } from "./character-worlds-policy.js";
+import { DEFAULT_COLLABORATION_POLICY, resolveServerCollaborationPolicy } from "./collaboration/policy.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
   schemaVersion: 1,
@@ -36,6 +37,7 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
     env: {},
   },
   characterWorlds: CHARACTER_WORLDS_DEFAULT_POLICY,
+  collaboration: DEFAULT_COLLABORATION_POLICY,
   taskIntelligence: {
     schemaVersion: 1,
     enabled: true,
@@ -508,10 +510,15 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
       minAppVersion: "",
     },
     characterWorlds: resolveCharacterWorldsPolicy(serverConfig),
+    collaboration: resolveServerCollaborationPolicy(serverConfig),
     ...(Object.keys(runtimeEnv).length ? { runtime: { env: runtimeEnv } } : {}),
   };
 
-  const hasContent = Boolean(modelPresets.length || Object.keys(runtimeEnv).length);
+  const hasContent = Boolean(
+    modelPresets.length
+      || Object.keys(runtimeEnv).length
+      || effectiveConfig.collaboration?.enabled,
+  );
   return hasContent ? effectiveConfig : null;
 }
 

@@ -46,8 +46,19 @@ assert.match(query, /page|sheet|row|column|页|行|列/i, "document query must p
 assert.match(query, /Unsupported Document/, "document query fallback must not stop at generic Read PDF failure");
 
 const { buildAgentGuideContent } = require("../src/main/skill-manager.js");
-const globalGuide = buildAgentGuideContent([], "zh-CN");
-assert.match(globalGuide, /Unsupported Document/, "global guide must teach agents that Read can fail on PDFs");
-assert.match(globalGuide, /pdfplumber|PyMuPDF/i, "global guide must route PDF fallback to installed Python capabilities");
+const runtimePython = require("../src/main/runtime-python.js");
+const originalRuntimeRoot = runtimePython.resolveBundledRuntimeRoot;
+try {
+  // This is a guide-content test, not a bundled-runtime installation check.
+  runtimePython.resolveBundledRuntimeRoot = () => "";
+  assert.doesNotMatch(buildAgentGuideContent([], "zh-CN"), /Unsupported Document/,
+    "runtime-less development must not claim the bundled document environment exists");
+  runtimePython.resolveBundledRuntimeRoot = () => path.join(ROOT, "fixture-runtime-not-executed");
+  const globalGuide = buildAgentGuideContent([], "zh-CN");
+  assert.match(globalGuide, /Unsupported Document/, "global guide must teach agents that Read can fail on PDFs");
+  assert.match(globalGuide, /pdfplumber|PyMuPDF/i, "global guide must route PDF fallback to installed Python capabilities");
+} finally {
+  runtimePython.resolveBundledRuntimeRoot = originalRuntimeRoot;
+}
 
 console.log("large-document-skill-routing: ok");

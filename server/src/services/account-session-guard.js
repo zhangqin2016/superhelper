@@ -39,20 +39,29 @@ export function evaluateAccountSession({ verified, deviceId, session, now = Date
   };
 }
 
+/** A single response mapping for every device-bound account route. */
+export function accountSessionFailure(decision) {
+  return {
+    status: decision?.status || 401,
+    body: { ok: false, code: decision?.code || "ACCESS_TOKEN_INVALID" },
+  };
+}
+
 /**
  * Request wrapper: verifies the bearer access token, loads the session row, and
  * on failure sends the mapped status/code and returns null. On success returns
  * { userId, sessionId, deviceId }. `input.deviceId` is the client-declared
  * device the token must be bound to.
  */
-export async function requireAccountSession(request, reply, input) {
+export async function requireAccountSession(request, reply, input, database = db) {
   const verified = verifyAccessToken(bearerToken(request));
   const session = verified?.ok
-    ? await db.selectFrom("user_sessions").selectAll().where("id", "=", verified.sessionId).executeTakeFirst()
+    ? await database.selectFrom("user_sessions").selectAll().where("id", "=", verified.sessionId).executeTakeFirst()
     : null;
   const decision = evaluateAccountSession({ verified, deviceId: input?.deviceId, session });
   if (!decision.ok) {
-    reply.code(decision.status || 401).send({ ok: false, code: decision.code });
+    const failure = accountSessionFailure(decision);
+    reply.code(failure.status).send(failure.body);
     return null;
   }
   return decision.account;

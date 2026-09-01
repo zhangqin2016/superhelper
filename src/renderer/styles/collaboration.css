@@ -1,0 +1,92 @@
+.collaboration-entry {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.collaboration-entry:hover { background: var(--bg-surface-hover); }
+.center-panel.collaboration-active > .collaboration-workbench-surface { display: none; }
+
+.collaboration-center {
+  display: grid;
+  grid-template-columns: minmax(150px, .7fr) minmax(210px, 1fr) minmax(330px, 2fr);
+  min-height: 0;
+  flex: 1;
+  background: var(--bg-center);
+}
+
+.collaboration-column { min-width: 0; padding: 18px; border-inline-end: 1px solid var(--border); }
+.collaboration-conversation { border-inline-end: 0; }
+.collaboration-nav-list { display: grid; gap: 6px; margin-top: 18px; }
+.collaboration-nav-list button, .collaboration-inbox-item {
+  width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; color: inherit; background: transparent; text-align: start;
+}
+.collaboration-nav-list button:hover, .collaboration-inbox-item:hover { background: var(--bg-surface-hover); }
+.collaboration-empty { color: var(--muted); }
+.collaboration-status { color: var(--muted); font-size: .85rem; }
+.collaboration-status.is-available { color: var(--success-text); }
+.collaboration-scope-badge { display: inline-flex; padding: 3px 7px; border-radius: 999px; background: var(--bg-surface-hover); color: var(--muted); font-size: .75rem; }
+.collaboration-timeline { display: grid; gap: 10px; min-block-size: 160px; max-block-size: 48vh; overflow: auto; margin-block: 16px; }
+.collaboration-message { padding: 9px 11px; border-radius: 10px; background: var(--bg-surface-hover); }
+.collaboration-message-body { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.collaboration-message-status { display: block; margin-block-start: 5px; color: var(--muted); }
+.collaboration-composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-block-start: 12px; }
+.collaboration-composer textarea { min-inline-size: 0; resize: vertical; }
+.collaboration-mentions { grid-column: 1 / -1; min-inline-size: 0; display: grid; gap: 6px; }
+.collaboration-mentions[hidden], .collaboration-mentions [hidden] { display: none; }
+.collaboration-mentions > button { justify-self: start; }
+.collaboration-mentions small, #collaborationMentionStatus { color: var(--muted); overflow-wrap: anywhere; }
+#collaborationMentionTags { display: flex; flex-wrap: wrap; gap: 6px; min-inline-size: 0; max-block-size: 128px; overflow-y: auto; padding: 3px; }
+.collaboration-mention-tag { display: inline-flex; align-items: center; gap: 4px; min-inline-size: 0; max-inline-size: 100%; border: 1px solid var(--border); border-radius: 8px; padding-inline: 6px; }
+.collaboration-mention-tag span { min-inline-size: 0; overflow-wrap: anywhere; }
+.collaboration-mention-tag button { flex-shrink: 0; }
+#collaborationMentionPicker { min-inline-size: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+#collaborationMentionList { display: grid; min-inline-size: 0; max-block-size: 220px; overflow-y: auto; margin-block-start: 6px; }
+#collaborationMentionList button { min-inline-size: 0; text-align: start; overflow-wrap: anywhere; white-space: normal; }
+#collaborationMentionList [aria-selected="true"] { background: var(--bg-surface-hover); outline: 1px solid var(--accent); outline-offset: -1px; }
+.collaboration-mentions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.collaboration-message-mentions { display: block; margin-block-start: 5px; color: var(--muted); }
+.collaboration-reply-quote, .collaboration-reply-preview { border-inline-start: 3px solid var(--border); padding-inline-start: 10px; margin-inline: 0; text-align: start; overflow-wrap: anywhere; white-space: pre-wrap; }
+.collaboration-reply-quote { margin-block: 0 8px; color: var(--muted); font-size: .9em; }
+.collaboration-reply-preview { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+.collaboration-reply-preview[hidden] { display: none; }
+.collaboration-reply-label { grid-column: 1; color: var(--muted); }
+.collaboration-reply-content { grid-column: 1; }
+.collaboration-reply-preview [data-action="clear-reply"] { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+.collaboration-message [data-action="reply-message"] { margin-block-start: 6px; }
+.collaboration-composer textarea:focus-visible, .collaboration-reply-preview button:focus-visible, .collaboration-message [data-action="reply-message"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.collaboration-transfer-panel { max-block-size: 32vh; overflow: auto; }
+.collaboration-transfers { display: grid; gap: 8px; }
+.collaboration-transfer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.collaboration-transfer strong { flex-basis: 100%; }
+.collaboration-transfer small { color: var(--muted); }
+.collaboration-message-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
+.collaboration-confirmation label { display: grid; gap: 6px; margin-block: 8px; }
+.collaboration-confirmation textarea { inline-size: 100%; box-sizing: border-box; resize: vertical; }
+.collaboration-inbox { overflow-y: auto; }
+.collaboration-social-form { display: grid; gap: 8px; margin-block: 12px 20px; }
+.collaboration-social-form label { display: grid; gap: 4px; min-inline-size: 0; }
+.collaboration-social-form input, .collaboration-social-form select { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; color: inherit; background: var(--bg-surface-hover); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.collaboration-social-form select[multiple] { min-block-size: 76px; }
+.collaboration-social-row { padding-block: 10px; border-block-end: 1px solid var(--border); overflow-wrap: anywhere; }
+.collaboration-social-row p { margin-block: 4px 8px; }
+.collaboration-social-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
+.collaboration-team, .collaboration-member-details { margin-block-start: 18px; }
+.collaboration-confirmation:not(:empty) { padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-block: 12px; }
+.collaboration-confirmation button { margin-inline-end: 8px; }
+.collaboration-center button:focus-visible, .collaboration-center input:focus-visible, .collaboration-center select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.collaboration-center button:disabled { opacity: .55; cursor: wait; }
+.collaboration-nav-list button[aria-pressed="true"] { background: var(--bg-surface-hover); }
+
+@media (max-width: 900px) {
+  .collaboration-center { grid-template-columns: 1fr; overflow: auto; }
+  .collaboration-column { border-inline-end: 0; border-bottom: 1px solid var(--border); }
+}

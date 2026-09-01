@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 process.env.SESSION_SECRET ||= "test-session-secret-abcdefghijklmnop";
 process.env.DATABASE_URL ||= "postgres://localhost:5432/test";
 
-const { evaluateAccountSession, bearerToken } = await import("../server/src/services/account-session-guard.js");
+const { evaluateAccountSession, bearerToken, accountSessionFailure } = await import("../server/src/services/account-session-guard.js");
 
 const NOW = Date.parse("2026-07-12T12:00:00.000Z");
 const freshSession = { user_id: "u1", device_id: "dev1", revoked_at: null, expires_at: "2026-07-12T13:00:00.000Z" };
@@ -18,6 +18,10 @@ const okVerified = { ok: true, userId: "u1", sessionId: "sess1", deviceId: "dev1
 assert.equal(bearerToken({ headers: { authorization: "Bearer abc.def" } }), "abc.def");
 assert.equal(bearerToken({ headers: { authorization: "bearer x" } }), "x", "case-insensitive scheme");
 assert.equal(bearerToken({ headers: {} }), "", "no header → empty");
+assert.deepEqual(accountSessionFailure({ status: 403, code: "DEVICE_MISMATCH" }), {
+  status: 403,
+  body: { ok: false, code: "DEVICE_MISMATCH" },
+});
 
 // happy path
 {

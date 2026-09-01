@@ -1,0 +1,181 @@
+"use strict";
+
+// This database is intentionally distinct from store/schema.js. Collaboration
+// state is server-rebuildable; an upgrade or corruption here must not touch the
+// AI transcript database or workspace metadata.
+const COLLABORATION_MIGRATIONS = [
+  (db) => db.exec(`
+    CREATE TABLE profiles (
+      account_id TEXT NOT NULL, user_id TEXT NOT NULL, lily_id TEXT, display_name TEXT,
+      avatar_object_id TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (account_id, user_id)
+    );
+    CREATE TABLE conversations (
+      account_id TEXT NOT NULL, id TEXT NOT NULL, scope_id TEXT NOT NULL, kind TEXT NOT NULL,
+      title TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (account_id, id)
+    );
+    CREATE TABLE conversation_members (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, user_id TEXT NOT NULL,
+      role TEXT, status TEXT NOT NULL, joined_seq INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (account_id, conversation_id, user_id)
+    );
+    CREATE TABLE events (
+      account_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT, seq INTEGER,
+      type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, id)
+    );
+    CREATE TABLE messages (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, id TEXT NOT NULL,
+      scope_id TEXT NOT NULL, seq INTEGER, sender_user_id TEXT, state TEXT NOT NULL,
+      body_envelope_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, conversation_id, id)
+    );
+    CREATE INDEX messages_conversation_seq_idx ON messages(account_id, conversation_id, seq);
+    CREATE TABLE applied_events (
+      account_id TEXT NOT NULL, event_id TEXT NOT NULL, applied_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, event_id)
+    );
+    CREATE TABLE sync_state (
+      account_id TEXT PRIMARY KEY, cursor INTEGER NOT NULL DEFAULT 0, watermark INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE outbox (
+      account_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+      client_command_id TEXT NOT NULL, state TEXT NOT NULL, payload_envelope_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, id), UNIQUE (account_id, client_command_id)
+    );
+    CREATE INDEX outbox_pending_idx ON outbox(account_id, state, created_at);
+    CREATE TABLE drafts (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, id TEXT NOT NULL, scope_id TEXT NOT NULL,
+      content_envelope_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, conversation_id, id)
+    );
+    CREATE TABLE transfers (
+      account_id TEXT NOT NULL, id TEXT NOT NULL, scope_id TEXT NOT NULL, state TEXT NOT NULL,
+      object_id TEXT, encrypted_path TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, id)
+    );
+    CREATE TABLE share_mappings (
+      account_id TEXT NOT NULL, id TEXT NOT NULL, source_path TEXT, object_id TEXT,
+      scope_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (account_id, id)
+    );
+  `),
+  // v2 — scope is metadata needed to authorize/decrypt a queued command after
+  // restart, and to remove that command when a Team grant is revoked.
+  (db) => db.exec(`
+    ALTER TABLE outbox ADD COLUMN scope_id TEXT NOT NULL DEFAULT 'personal';
+    CREATE INDEX outbox_scope_idx ON outbox(account_id, scope_id, state);
+  `),
+  // v3 — retry decisions survive restart; an exhausted command must wait for a
+  // person rather than retrying forever with a possibly side-effecting intent.
+  (db) => db.exec(`ALTER TABLE outbox ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;`),
+  // v4 — a cursor page that contains message activity cannot be ACKed until
+  // its server-authorized plaintext history has been persisted locally. This
+  // checkpoint survives a crash between SQLite page application and history
+  // hydration, so startup can finish hydration before acknowledging later.
+  (db) => db.exec(`
+    CREATE TABLE history_hydration (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, conversation_id)
+    );
+  `),
+  // v5 — distinguish a server ACK from a transport timeout. Both await the
+  // projected history, but only an ACK can release the same-conversation lane.
+  (db) => db.exec(`ALTER TABLE outbox ADD COLUMN delivery_confirmed INTEGER NOT NULL DEFAULT 0;`),
+  // v6 — command identity is non-secret metadata. Joining it before LIMIT
+  // keeps cancelled optimistic aliases out of the visible history window.
+  (db) => db.exec(`ALTER TABLE messages ADD COLUMN client_command_id TEXT;
+    CREATE INDEX messages_command_idx ON messages(account_id, client_command_id);`),
+  // v7 — queue state is not evidence of non-delivery: manual continuation and
+  // retries may return previously dispatched work to queued. Legacy
+  // unresolved rows cannot prove they were never dispatched, so migrate them
+  // conservatively; newly admitted, never-dispatched work keeps the zero default.
+  (db) => db.exec(`
+    ALTER TABLE outbox ADD COLUMN delivery_uncertain INTEGER NOT NULL DEFAULT 0;
+    UPDATE outbox SET delivery_uncertain = 1
+      WHERE delivery_confirmed = 0 AND state NOT IN ('persisted', 'cancelled');
+  `),
+  // v8 — edits/revokes can target history older than the newest 200 messages.
+  // Recover existing pending pages from durable metadata, never message bodies.
+  (db) => db.exec(`
+    CREATE TABLE history_hydration_targets (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+      revision INTEGER NOT NULL, PRIMARY KEY (account_id, conversation_id, message_id)
+    );
+    INSERT OR IGNORE INTO history_hydration_targets
+      SELECT e.account_id, e.conversation_id, json_extract(e.payload_json, '$.messageId'),
+        MAX(COALESCE(json_extract(e.payload_json, '$.revision'), 1))
+      FROM events e JOIN history_hydration h ON h.account_id = e.account_id AND h.conversation_id = e.conversation_id
+      WHERE e.type LIKE 'message.%' AND json_type(e.payload_json, '$.messageId') = 'text'
+      GROUP BY e.account_id, e.conversation_id, json_extract(e.payload_json, '$.messageId');
+  `),
+  // v9 — permissions disappear transactionally; key destruction is retried
+  // after commit and on restart without risking keys for rolled-back pages.
+  (db) => db.exec(`
+    CREATE TABLE revoked_scopes (account_id TEXT NOT NULL, scope_id TEXT NOT NULL,
+      key_delete_pending INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(account_id, scope_id));
+    CREATE TABLE revoked_conversations (account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+      scope_id TEXT, PRIMARY KEY(account_id, conversation_id));
+  `),
+  // v10 — a v9 crash may leave history for a not-yet-discovered conversation.
+  // Preserve its checkpoint and fetch current authorized metadata before ACK.
+  (db) => db.exec(`CREATE TABLE conversation_hydration (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,conversation_id));
+    INSERT INTO conversation_hydration (account_id, conversation_id, created_at)
+      SELECT h.account_id, h.conversation_id, h.created_at FROM history_hydration h
+      WHERE NOT EXISTS (SELECT 1 FROM conversations c WHERE c.account_id = h.account_id AND c.id = h.conversation_id)
+        AND NOT EXISTS (SELECT 1 FROM revoked_conversations r WHERE r.account_id = h.account_id AND r.conversation_id = h.conversation_id);`),
+  // v11 — account-isolated, server-rebuildable social directory. Organizations
+  // and organization_members on the server remain the only Team authority.
+  (db) => db.exec(`
+    CREATE TABLE directory_contacts (account_id TEXT NOT NULL, user_id TEXT NOT NULL,
+      relationship TEXT, request_id TEXT, own_blocked INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(account_id,user_id));
+    CREATE TABLE directory_teams (account_id TEXT NOT NULL, id TEXT NOT NULL, scope_id TEXT NOT NULL,
+      name TEXT NOT NULL, role TEXT, PRIMARY KEY(account_id,id));
+    CREATE TABLE directory_team_members (account_id TEXT NOT NULL, team_id TEXT NOT NULL, user_id TEXT NOT NULL,
+      lily_id TEXT, display_name TEXT, avatar_object_id TEXT, role TEXT,
+      PRIMARY KEY(account_id,team_id,user_id));
+  `),
+  // v12 — social command identity and encrypted intent survive transport uncertainty.
+  (db) => db.exec(`CREATE TABLE social_commands (
+    account_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
+    scope_id TEXT NOT NULL, conversation_id TEXT, state TEXT NOT NULL, code TEXT,
+    uncertain INTEGER NOT NULL DEFAULT 0, payload_envelope_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));
+    CREATE INDEX social_commands_intent ON social_commands(account_id,fingerprint,state);`),
+  // v13 — read watermarks are independent of message delivery barriers.
+  (db) => db.exec(`ALTER TABLE conversation_hydration ADD COLUMN generation TEXT NOT NULL DEFAULT '';
+    CREATE TABLE read_checkpoints (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, scope_id TEXT NOT NULL,
+    payload_envelope_json TEXT NOT NULL, PRIMARY KEY(account_id,conversation_id));
+    CREATE TABLE conversation_activity (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, projection_seq INTEGER NOT NULL,
+      last_read_seq INTEGER NOT NULL, unread_count INTEGER NOT NULL, mention_count INTEGER NOT NULL,
+      PRIMARY KEY(account_id,conversation_id));`),
+  // v14 — quote plaintext stays in the existing encrypted message envelope.
+  // Masks are source metadata, independent of the bounded visible message page.
+  (db) => db.exec(`CREATE TABLE reply_source_masks (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('revoked','unavailable')),
+    PRIMARY KEY(account_id,conversation_id,message_id));
+    ALTER TABLE conversations ADD COLUMN history_generation TEXT NOT NULL DEFAULT '';
+    UPDATE conversations SET history_generation = lower(hex(randomblob(16)));
+    CREATE TRIGGER conversations_history_generation AFTER INSERT ON conversations
+      WHEN NEW.history_generation = '' BEGIN
+      UPDATE conversations SET history_generation = lower(hex(randomblob(16)))
+        WHERE account_id = NEW.account_id AND id = NEW.id;
+    END;`),
+  // v15 — bounded recovery reasons only; legacy NULL means no known reason.
+  (db) => db.exec(`ALTER TABLE outbox ADD COLUMN error_code TEXT;`),
+  // v16 — unsent message edits are separate from the composer and encrypted
+  // with their conversation scope. Generation supplies cross-window CAS.
+  (db) => db.exec(`CREATE TABLE edit_drafts (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+    scope_id TEXT NOT NULL, generation INTEGER NOT NULL,
+    content_envelope_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,conversation_id,message_id));`),
+];
+
+module.exports = { COLLABORATION_MIGRATIONS };

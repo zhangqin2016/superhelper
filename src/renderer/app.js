@@ -42,6 +42,7 @@ import { $ } from "./modules/dom.js";
 import store from "./modules/state.js";
 import { initWorkspaceOrder } from "./modules/workspace-order.js";
 import { initWorkspaceSwitcher } from "./modules/workspace-switcher.js";
+import { initCollaborationCenter } from "./modules/collaboration-center.js";
 
 function initPanelToggles() {
   const shell = $("appShell");
@@ -262,6 +263,7 @@ async function init() {
   }
 
   initWorkspaceSwitcher();
+  initCollaborationCenter();
   initWorkspaceOrder({
     getTree: () => $("projectTree"),
     getProjects: () => store.get("projects") || [],

@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
+if (!process.env.DATABASE_URL) { console.log("collaboration message integration: skipped (DATABASE_URL is not configured)"); process.exit(0); }
+// This integration is intentionally isolated: a temporary schema is created by
+// the CI PG harness before invoking it, so message ciphertext/authorization is
+// tested without touching application data. The complete schema is supplied by
+// the collaboration migration suite in that harness.
+const [{ Kysely, PostgresDialect }, { default: pg }, { createCollaborationMessageService, createHmacMessageBodyIntentSigner }, { createCollaborationMessageCrypto }, { createKyselyMessageRepository, createLockedMessageAuthorizer }] = await Promise.all([import("kysely"), import("pg"), import("../src/services/collaboration/messages.js"), import("../src/services/collaboration/message-crypto.js"), import("../src/services/collaboration/message-repository.js")]);
+const schema = `collab_message_it_${crypto.randomUUID().replaceAll("-", "")}`;
+const admin = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}` }); const db = new Kysely({ dialect: new PostgresDialect({ pool }) });
+try {
+  await admin.query(`create schema ${schema}`);
+  await pool.query(`create table users(id text primary key); create table devices(id text primary key); create table user_devices(user_id text,device_id text,status text,primary key(user_id,device_id)); create table organizations(id text primary key,status text); create table organization_members(organization_id text,user_id text,status text,role text); create table friendships(user_low_id text,user_high_id text,status text,primary key(user_low_id,user_high_id)); create table user_blocks(blocker_user_id text,blocked_user_id text,primary key(blocker_user_id,blocked_user_id)); create table conversations(id text primary key,scope_type text,kind text,direct_user_low_id text,direct_user_high_id text,organization_id text,next_seq bigint default 1,updated_at timestamptz default now()); create table conversation_members(conversation_id text,user_id text,status text,role text,joined_seq bigint default 0,last_read_seq bigint default 0,primary key(conversation_id,user_id)); create table collaboration_events(id text primary key,conversation_id text,seq bigint,type text,actor_user_id text,actor_device_id text,client_command_id text,payload jsonb,created_at timestamptz default now(),unique(conversation_id,seq)); create table messages(id text primary key,event_id text,conversation_id text,create_seq bigint,sender_user_id text,kind text,body_ciphertext bytea,body_key_version int,revision int,reply_to_message_id text,edited_at timestamptz,revoked_at timestamptz,created_at timestamptz default now()); create table message_revisions(id text primary key,message_id text,event_id text,conversation_id text,event_seq bigint,body_ciphertext bytea,key_version int); create table command_receipts(actor_device_id text,command_type text,client_command_id text,request_fingerprint text,state text,result_event_id text,response_code text,response_payload jsonb,completed_at timestamptz,primary key(actor_device_id,command_type,client_command_id)); create table user_sync_state(user_id text primary key,next_cursor bigint default 1,compacted_before_cursor bigint default 0,updated_at timestamptz default now()); create table user_sync_events(user_id text,cursor bigint,event_id text,conversation_id text,primary key(user_id,cursor)); create table collaboration_realtime_outbox(id bigserial primary key,user_id text,max_cursor bigint,state text default 'pending',available_at timestamptz default now(),attempts int default 0);`);
+  await pool.query("insert into users values('user-a'),('user-b'); insert into devices values('device-a'); insert into user_devices values('user-a','device-a','active'); insert into organizations values('org-1','active'); insert into organization_members values('org-1','user-a','active','member'),('org-1','user-b','active','member'); insert into friendships values('user-a','user-b','active'); insert into conversations(id,scope_type,kind,direct_user_low_id,direct_user_high_id) values('conv-1','personal','direct','user-a','user-b'); insert into conversation_members(conversation_id,user_id,status,role) values('conv-1','user-a','active','member'),('conv-1','user-b','active','member')");
+  await pool.query("alter table conversations add column status text default 'active'; alter table conversations add column visibility text");
+  await pool.query(await readFile(new URL("../migrations/041_collaboration_reply_snapshots.sql", import.meta.url), "utf8"));
+  const key = Buffer.alloc(32, 7); const service = createCollaborationMessageService({ repository: createKyselyMessageRepository(db), messageCrypto: createCollaborationMessageCrypto({ currentKekVersion: 1, kekByVersion: { 1: key } }), bodyIntentSigner: createHmacMessageBodyIntentSigner({ key: Buffer.alloc(32, 8) }) });
+  // Harness seeds user-a/device-a and an authorized personal direct conv-1.
+  const sent = await service.sendMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "pg-send-1", conversationId: "conv-1", bodyText: "private-pg-body", authorize: createLockedMessageAuthorizer(), database: db });
+  const row = await db.selectFrom("messages").select(["body_ciphertext"]).where("id", "=", sent.message.id).executeTakeFirst();
+  assert.equal(Buffer.from(row.body_ciphertext).includes(Buffer.from("private-pg-body")), false, "plaintext is never persisted");
+  const history = await service.listMessageHistory({ account: { userId: "user-a", deviceId: "device-a" }, conversationId: "conv-1", authorize: createLockedMessageAuthorizer(), trx: db });
+  assert.equal(history[0].bodyText, "private-pg-body");
+  for (let i = 0; i < 201; i++) {
+    await service.sendMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: `pg-fill-${i}`, conversationId: "conv-1", bodyText: `later-${i}`, authorize: createLockedMessageAuthorizer(), database: db });
+  }
+  const latest = await service.listMessageHistory({ account: { userId: "user-a", deviceId: "device-a" }, conversationId: "conv-1", limit: 200, authorize: createLockedMessageAuthorizer(), trx: db });
+  assert.equal(latest.some((message) => message.id === sent.message.id), false, "old message is outside newest history window");
+  const lookup = () => service.listMessageHistory({ account: { userId: "user-a", deviceId: "device-a" }, conversationId: "conv-1", messageIds: [sent.message.id], authorize: createLockedMessageAuthorizer(), trx: db });
+  assert.equal((await lookup())[0].bodyText, "private-pg-body", "target hydration reaches old history through real SQL");
+  await service.editMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "edit-old", conversationId: "conv-1", messageId: sent.message.id, expectedRevision: 1, bodyText: "edited-old-body", authorize: createLockedMessageAuthorizer(), database: db });
+  assert.equal((await lookup())[0].bodyText, "edited-old-body");
+  await service.revokeMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "revoke-old", conversationId: "conv-1", messageId: sent.message.id, expectedRevision: 2, authorize: createLockedMessageAuthorizer(), database: db });
+  assert.equal((await lookup())[0].bodyText, null, "revoked ciphertext is absent, not decrypted"); assert.equal((await lookup())[0].revision, 3);
+  await pool.query("update conversation_members set joined_seq=1 where conversation_id='conv-1' and user_id='user-a'");
+  assert.deepEqual(await lookup(), [], "targeted history cannot bypass joined-sequence authorization");
+  await pool.query("update conversation_members set joined_seq=0 where conversation_id='conv-1' and user_id='user-a'");
+  await pool.query("insert into user_blocks values('user-b','user-a')");
+  await assert.rejects(() => service.sendMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "pg-blocked", conversationId: "conv-1", bodyText: "blocked", authorize: createLockedMessageAuthorizer(), database: db }), (error) => error?.code === "COLLAB_BLOCKED");
+  await pool.query("delete from user_blocks; update user_devices set status='revoked' where user_id='user-a'");
+  await assert.rejects(() => service.sendMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "pg-revoked", conversationId: "conv-1", bodyText: "revoked", authorize: createLockedMessageAuthorizer(), database: db }), (error) => error?.code === "COLLAB_DEVICE_REVOKED");
+  await pool.query("update user_devices set status='active'; insert into conversations(id,scope_type,kind,organization_id,direct_user_low_id,direct_user_high_id) values('conv-team','organization','direct','org-1','user-a','user-b'); insert into conversation_members(conversation_id,user_id,status,role) values('conv-team','user-a','active','member'),('conv-team','user-b','active','member'); update organization_members set status='removed' where organization_id='org-1' and user_id='user-a'");
+  await assert.rejects(() => service.sendMessage({ account: { userId: "user-a", deviceId: "device-a" }, clientCommandId: "pg-org-removed", conversationId: "conv-team", bodyText: "removed", authorize: createLockedMessageAuthorizer(), database: db }), (error) => error?.code === "COLLAB_ORGANIZATION_ACCESS_REVOKED");
+  console.log("collaboration message integration: ok");
+} finally { await db.destroy(); await admin.query(`drop schema if exists ${schema} cascade`); await admin.end(); }

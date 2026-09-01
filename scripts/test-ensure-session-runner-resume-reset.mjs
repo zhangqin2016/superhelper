@@ -15,8 +15,12 @@ const original = {
   resolveSessionSkillIds: skillManager.resolveSessionSkillIds,
   getDisallowedTools: skillManager.getDisallowedTools,
 };
+const previousEnginePath = process.env.OPENCODE_BIN;
 
 try {
+  // The runner pool below is a test double: this existing executable only
+  // satisfies engine discovery, and is never launched as an assistant engine.
+  process.env.OPENCODE_BIN = process.execPath;
   skillManager.writeSessionAgentGuide = () => process.cwd();
   skillManager.resolveSessionSkillIds = () => ["lily-media-generation"];
   skillManager.getDisallowedTools = () => [];
@@ -89,6 +93,8 @@ try {
   assert.equal(session.agentResumeId, undefined);
 } finally {
   Object.assign(skillManager, original);
+  if (previousEnginePath === undefined) delete process.env.OPENCODE_BIN;
+  else process.env.OPENCODE_BIN = previousEnginePath;
 }
 
 console.log("ensure session runner resume reset tests passed");

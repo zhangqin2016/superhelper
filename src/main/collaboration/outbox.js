@@ -1,0 +1,409 @@
+"use strict";
+const { safeOperationErrorCode } = require("./message-operation-view");
+
+function errorCode(error) { return String(error?.code || ""); }
+
+function isAmbiguousCommit(error) {
+  return errorCode(error) === "COLLAB_RESPONSE_UNKNOWN";
+}
+
+function isRetryable(error) {
+  const code = errorCode(error);
+  return code === "COLLAB_TRANSACTION_RETRY" || code === "COLLAB_NETWORK_UNAVAILABLE" || code === "COLLAB_RATE_LIMITED";
+}
+
+function isStorageId(value) {
+  return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 512;
+}
+
+function isCompleteReceipt(receipt, item) {
+  const commandType = item?.commandType || "message.create";
+  const eventSequence = receipt?.eventSequence ?? receipt?.sequence;
+  const identity = commandType === "message.create"
+    ? (receipt?.commandType == null || receipt.commandType === commandType) && (receipt?.conversationId == null || receipt.conversationId === item?.conversationId)
+    : receipt?.commandType === commandType && receipt?.conversationId === item?.conversationId;
+  const common = receipt?.committed === true
+    && (receipt.state == null || receipt.state === "completed") && receipt.ok !== false
+    && identity
+    && isStorageId(receipt.eventId) && isStorageId(receipt.messageId)
+    && isStorageId(item?.clientCommandId) && isStorageId(item?.conversationId)
+    && Number.isSafeInteger(eventSequence) && eventSequence > 0;
+  if (!common) return false;
+  if (commandType === "message.create") {
+    return isStorageId(`message:${item.conversationId}:${receipt.messageId}`) && Number.isSafeInteger(receipt.sequence) && receipt.sequence > 0;
+  }
+  const matchedMutation = (commandType === "message.edit" || commandType === "message.revoke")
+    && receipt.messageId === item.messageId && Number.isSafeInteger(receipt.revision) && Number.isSafeInteger(item.expectedRevision)
+    && receipt.revision === item.expectedRevision + 1;
+  return matchedMutation && (commandType !== "message.revoke" || receipt.revoked === true)
+    && (commandType !== "message.edit" || receipt.revoked !== true);
+}
+
+function isUnknownReceipt(receipt) {
+  // Only the server's explicit unknown contract allows same-key replay. A
+  // missing, partial, or contradictory receipt is not a replay instruction.
+  return receipt?.state === "unknown" && receipt.committed === false && receipt.deliveryUnknown === true
+    && receipt.pending !== true && receipt.ok !== false
+    && receipt.eventId == null && receipt.messageId == null && receipt.sequence == null && receipt.eventSequence == null
+    && receipt.commandType == null && receipt.conversationId == null && receipt.revision == null && receipt.revoked == null;
+}
+
+// Stores may legally return a live object. A transport is asynchronous, so it
+// must receive a command snapshot rather than an object whose state machine
+// transition can be observed retroactively after the request resolves.
+function transportSnapshot(item) {
+  if (typeof structuredClone === "function") return structuredClone(item);
+  return JSON.parse(JSON.stringify(item));
+}
+
+/**
+ * The persistent outbox has no permission to invent a new idempotency key.
+ * Ambiguous responses recover only by receipt or bounded replay of the exact
+ * durable command. Unknown delivery remains a conversation ordering barrier.
+ */
+function createCollaborationOutbox({ store, transport, deviceId = "", onStateChange = () => {}, maxAutoRetries = 3, retryBaseMs = 1_000, retryMaxMs = 30_000, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout } = {}) {
+  if (!store || typeof store.getOutbox !== "function" || typeof store.setOutboxState !== "function") throw new TypeError("A collaboration store is required.");
+  if (!transport || typeof transport.submit !== "function") throw new TypeError("A collaboration transport is required.");
+  const lanes = new Map();
+  const retryTimers = new Map();
+  let stopped = false;
+  const stoppedResult = () => ({ ok: false, code: "COLLABORATION_STOPPED" });
+  const deviceMismatch = (item) => {
+    const mutation = item?.commandType === "message.edit" || item?.commandType === "message.revoke";
+    if (mutation && (!isStorageId(item?.originDeviceId) || !isStorageId(deviceId))) return true;
+    return typeof deviceId === "string" && deviceId && typeof item?.originDeviceId === "string" && item.originDeviceId !== deviceId;
+  };
+  const deviceResult = (item) => ({ state: item?.state || "missing", clientCommandId: item?.clientCommandId, code: "COLLAB_OUTBOX_DEVICE_CHANGED", recovery: "original_device_required" });
+  function settleMutationAcknowledgement(item, acknowledgement) {
+    if (!isCompleteReceipt(acknowledgement, item)) return false;
+    try {
+      store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: acknowledgement.eventId, messageId: acknowledgement.messageId,
+        commandType: item.commandType, conversationId: acknowledgement.conversationId, revision: acknowledgement.revision });
+      onStateChange({ outboxId: item.id, state: "persisted" });
+      return true;
+    } catch { return false; }
+  }
+  function scheduleRetry(outboxId, attempt) {
+    if (stopped || retryTimers.has(outboxId)) return;
+    const exponent = Math.max(0, Number(attempt) - 1);
+    const delay = Math.min(Math.max(1, Number(retryMaxMs) || 30_000), Math.max(1, Number(retryBaseMs) || 1_000) * (2 ** exponent));
+    const timer = setTimeoutFn(() => {
+      retryTimers.delete(outboxId);
+      if (stopped) return Promise.resolve(stoppedResult());
+      const item = store.getOutbox({ outboxId });
+      if (item?.state === "confirming") return enqueue(item.conversationId, () => reconcileNow(outboxId, true)).catch(() => undefined);
+      return submit(outboxId).catch(() => undefined);
+    }, delay);
+    retryTimers.set(outboxId, timer);
+  }
+  function enqueue(conversationId, operation) {
+    const prior = lanes.get(conversationId) || Promise.resolve();
+    const task = prior.catch(() => undefined).then(() => stopped ? stoppedResult() : operation());
+    const tail = task.catch(() => undefined);
+    lanes.set(conversationId, tail);
+    tail.finally(() => {
+      if (lanes.get(conversationId) === tail) lanes.delete(conversationId);
+    });
+    return task;
+  }
+  async function submitNow(outboxId, { unknownReceiptProof = false } = {}) {
+    const item = store.getOutbox({ outboxId });
+    if (!item) return { state: "missing" };
+    // A queued drain can have captured this ID while an earlier user action is
+    // changing it. Automatic dispatch owns only a row that is still queued:
+    // confirming/persisted rows never replay, while skip/cancel state changes
+    // cannot be overridden by a stale drain into receipt-first continuation.
+    if (item.state !== "queued") return { state: item.state, clientCommandId: item.clientCommandId };
+    if (deviceMismatch(item)) return deviceResult(item);
+    if (!unknownReceiptProof && (item.commandType === "message.edit" || item.commandType === "message.revoke") && item.deliveryUncertain) {
+      return continueUncertainMutation(item);
+    }
+    if (item.deliveryConfirmed) {
+      // An ACK can survive a crash before the following state transition. It
+      // outranks a stale queued/submitting label at the final send boundary.
+      store.setOutboxState({ outboxId: item.id, expectedStates: [item.state], state: "confirming" });
+      onStateChange({ outboxId: item.id, state: "confirming" });
+      return { state: "confirming", clientCommandId: item.clientCommandId };
+    }
+    const earlier = [];
+    for (const queued of store.listOutbox?.() || []) {
+      if (queued.id === item.id) break;
+      if (queued.conversationId === item.conversationId) earlier.push(queued);
+    }
+    const barrierId = typeof store.findOutboxPredecessor === "function" ? store.findOutboxPredecessor({ outboxId: item.id })
+      : earlier.find((queued) => ["queued", "submitting", "paused", "failed", "delivery_unknown", "cancellation_requested"].includes(queued.state)
+        || (queued.state === "confirming" && !queued.deliveryConfirmed))?.id;
+    if (barrierId) return { state: item.state, clientCommandId: item.clientCommandId, blockedBy: barrierId };
+    if (!store.setOutboxState({ outboxId: item.id, expectedStates: ["queued"], state: "submitting" })) {
+      return { state: store.getOutbox({ outboxId: item.id })?.state || "missing", clientCommandId: item.clientCommandId };
+    }
+    try {
+      const acknowledgement = await transport.submit(transportSnapshot(item));
+      // Shutdown is not proof of delivery or cancellation. Leave submitting
+      // durable so the next service can recover this exact idempotency key.
+      if (stopped) return stoppedResult();
+      if (item.commandType === "message.edit" || item.commandType === "message.revoke") {
+        // A mutation cannot use a bare HTTP 200 as commit evidence. Keep its
+        // original key confirming until a strict response or typed receipt
+        // binds type/conversation/target/revision to this durable intent.
+        if (settleMutationAcknowledgement(item, acknowledgement)) return { state: "persisted", clientCommandId: item.clientCommandId };
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming", errorCode: "COLLAB_RESPONSE_UNKNOWN" });
+        if (typeof transport.lookupReceipt === "function") scheduleRetry(item.id, item.attempts + 1);
+        onStateChange({ outboxId: item.id, state: "confirming" });
+        return { state: "confirming", clientCommandId: item.clientCommandId };
+      }
+      store.confirmOutboxDelivery?.({ outboxId: item.id });
+      store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming" });
+      onStateChange({ outboxId: item.id, state: "confirming" });
+      return { state: "confirming", clientCommandId: item.clientCommandId };
+    } catch (error) {
+      if (stopped) return stoppedResult();
+      const failureCode = safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED");
+      if (isAmbiguousCommit(error)) {
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming", errorCode: failureCode });
+        onStateChange({ outboxId: item.id, state: "confirming" });
+        if (typeof transport.lookupReceipt === "function") scheduleRetry(item.id, item.attempts + 1);
+        return { state: "confirming", clientCommandId: item.clientCommandId };
+      }
+      if (item.deliveryUncertain) {
+        // A definitive rejection of this replay says nothing about an earlier
+        // dispatch. Preserve its uncertainty even after manual continuation.
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "confirming", errorCode: failureCode });
+        if (isRetryable(error)) {
+          const retry = store.recordOutboxRetry({ outboxId: item.id, maxAttempts: maxAutoRetries, uncertainDelivery: true, errorCode: failureCode });
+          if (retry) onStateChange({ outboxId: item.id, state: retry.state });
+          if (retry?.state === "confirming") scheduleRetry(item.id, retry.attempts + 1);
+        } else {
+          store.setOutboxState({ outboxId: item.id, expectedStates: ["confirming"], state: "delivery_unknown", errorCode: failureCode });
+          onStateChange({ outboxId: item.id, state: "delivery_unknown" });
+        }
+        throw error;
+      }
+      if (isRetryable(error)) {
+        const retry = store.recordOutboxRetry({ outboxId: item.id, maxAttempts: maxAutoRetries, errorCode: failureCode });
+        if (retry) onStateChange({ outboxId: item.id, state: retry.state });
+        if (retry?.state === "queued") scheduleRetry(item.id, retry.attempts);
+      }
+      else {
+        store.setOutboxState({ outboxId: item.id, expectedStates: ["submitting"], state: "failed", deliveryUncertain: false, errorCode: failureCode });
+        onStateChange({ outboxId: item.id, state: "failed" });
+      }
+      throw error;
+    }
+  }
+  function submit(outboxId) {
+      if (stopped) return Promise.resolve(stoppedResult());
+      const item = store.getOutbox({ outboxId });
+      if (!item) return Promise.resolve({ state: "missing" });
+      return enqueue(item.conversationId, () => submitNow(outboxId));
+  }
+  async function reconcileNow(outboxId, automatic = false) {
+    const item = store.getOutbox({ outboxId });
+    if (!item || !["confirming", "delivery_unknown", "cancellation_requested"].includes(item.state)) return;
+    if (deviceMismatch(item)) return deviceResult(item);
+    let receipt;
+    try {
+      receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, commandType: item.commandType, conversationId: item.conversationId, messageId: item.messageId, expectedRevision: item.expectedRevision });
+    } catch (error) {
+      if (stopped) return stoppedResult();
+      store.setOutboxState({ outboxId: item.id, expectedStates: [item.state], state: item.state, errorCode: safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED") });
+      // Receipt failure leaves no positive evidence and cannot authorize replay.
+    }
+    if (stopped) return stoppedResult();
+    let projectionFailed = false;
+    if (isCompleteReceipt(receipt, item)) {
+      // Commit evidence must survive even if encrypting the display projection
+      // fails. A later stale/unknown receipt can never authorize replay again.
+      if (item.commandType === "message.create") store.confirmOutboxDelivery?.({ outboxId: item.id });
+      try {
+        store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
+          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+      } catch {
+        projectionFailed = true; // SQLite retained the original command; retry its receipt, never its send.
+      }
+      if (!projectionFailed) {
+        onStateChange({ outboxId: item.id, state: "persisted" });
+        return;
+      }
+    }
+    const current = store.getOutbox({ outboxId });
+    // Cancelled/paused unknown delivery is receipt-only until explicit retry.
+    // A successful ACK is already positive evidence and needs no replay.
+    if (current?.state !== "confirming") return;
+    if (current.deliveryConfirmed) {
+      if (projectionFailed) scheduleRetry(outboxId, current.attempts + 1);
+      return;
+    }
+    if (!automatic) { scheduleRetry(outboxId, current.attempts + 1); return; }
+    const retry = store.recordOutboxRetry({ outboxId, maxAttempts: maxAutoRetries, uncertainDelivery: true });
+    if (!retry) return;
+    if (retry.state === "delivery_unknown") {
+      onStateChange({ outboxId, state: retry.state });
+      return;
+    }
+    if (isUnknownReceipt(receipt)) {
+      try {
+        // Keep confirming DURABLY throughout replay. A crash, network error,
+        // or cancellation must never turn unknown delivery into "not sent".
+        const acknowledgement = await transport.submit(transportSnapshot(current));
+        if (stopped) return stoppedResult();
+        if (current.commandType === "message.edit" || current.commandType === "message.revoke") {
+          if (settleMutationAcknowledgement(current, acknowledgement)) return;
+          // A malformed/negative replay response is not a commit proof. Keep
+          // the exact durable key confirming and let the next receipt-first
+          // pass decide whether replay remains authorized.
+          store.setOutboxState({ outboxId, expectedStates: ["confirming"], state: "confirming", errorCode: "COLLAB_RESPONSE_UNKNOWN" });
+          scheduleRetry(outboxId, retry.attempts + 1);
+          return;
+        }
+        store.confirmOutboxDelivery?.({ outboxId });
+        onStateChange({ outboxId, state: "confirming" });
+        return;
+      } catch (error) {
+        if (stopped) return stoppedResult();
+        const failureCode = safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED");
+        if (!isAmbiguousCommit(error) && !isRetryable(error)) {
+          store.setOutboxState({ outboxId, expectedStates: ["confirming"], state: "delivery_unknown", errorCode: failureCode });
+          onStateChange({ outboxId, state: "delivery_unknown" });
+          return;
+        }
+        store.setOutboxState({ outboxId, expectedStates: ["confirming"], state: "confirming", errorCode: failureCode });
+      }
+    }
+    scheduleRetry(outboxId, retry.attempts + 1);
+  }
+  async function continueUncertainMutation(item) {
+    if (deviceMismatch(item)) return deviceResult(item);
+    if (typeof transport.lookupReceipt !== "function") return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" };
+    let receipt;
+    try {
+      receipt = await transport.lookupReceipt({ clientCommandId: item.clientCommandId, commandType: item.commandType, conversationId: item.conversationId, messageId: item.messageId, expectedRevision: item.expectedRevision });
+    } catch (error) {
+      if (stopped) return stoppedResult();
+      store.setOutboxState({ outboxId: item.id, expectedStates: [item.state], state: item.state, errorCode: safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED") });
+      return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" };
+    }
+    if (stopped) return stoppedResult();
+    if (isCompleteReceipt(receipt, item)) {
+      try {
+        store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
+          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+        onStateChange({ outboxId: item.id, state: "persisted" });
+        return { state: "persisted", clientCommandId: item.clientCommandId };
+      } catch { return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" }; }
+    }
+    if (!isUnknownReceipt(receipt)) return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" };
+    if (!store.setOutboxState({ outboxId: item.id, expectedStates: [item.state], state: "queued" })) return { state: store.getOutbox({ outboxId: item.id })?.state || "missing" };
+    return submitNow(item.id, { unknownReceiptProof: true });
+  }
+  return {
+    submit,
+    async reconcilePending() {
+      if (stopped) return stoppedResult();
+      if (typeof transport.lookupReceipt !== "function") return;
+      for (const item of store.listOutbox().filter((row) => ["confirming", "delivery_unknown", "cancellation_requested"].includes(row.state))) {
+        await enqueue(item.conversationId, () => reconcileNow(item.id)).catch(() => undefined);
+        if (stopped) return stoppedResult();
+      }
+    },
+    continue(outboxId) {
+      if (stopped) return stoppedResult();
+      const item = store.getOutbox({ outboxId });
+      if (item && deviceMismatch(item)) return deviceResult(item);
+      if (item && (item.commandType === "message.edit" || item.commandType === "message.revoke") && item.deliveryUncertain) {
+        return enqueue(item.conversationId, () => continueUncertainMutation(item));
+      }
+      if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["paused", "delivery_unknown"], state: "queued" })) return { state: item?.state || "missing" };
+      return { state: "queued", clientCommandId: item.clientCommandId };
+    },
+    skip(outboxId) {
+      if (stopped) return stoppedResult();
+      const item = store.getOutbox({ outboxId });
+      if (item && deviceMismatch(item)) return deviceResult(item);
+      if (item?.deliveryConfirmed) return { state: item.state, canRevoke: true };
+      if (item?.deliveryUncertain) {
+        if (store.setOutboxState({ outboxId: item.id, expectedStates: ["queued", "paused", "failed"], state: "delivery_unknown" })) {
+          onStateChange({ outboxId: item.id, state: "delivery_unknown" });
+          return { state: "delivery_unknown" };
+        }
+        return { state: item.state };
+      }
+      if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["queued", "paused", "failed"], state: "cancelled" })) return { state: item?.state || "missing" };
+      onStateChange({ outboxId: item.id, state: "cancelled" });
+      return { state: "cancelled" };
+    },
+    cancel(outboxId) {
+      if (stopped) return Promise.resolve(stoppedResult());
+      const item = store.getOutbox({ outboxId });
+      if (!item) return Promise.resolve({ state: "missing" });
+      if (deviceMismatch(item)) return Promise.resolve(deviceResult(item));
+      return enqueue(item.conversationId, async () => {
+        const current = store.getOutbox({ outboxId: item.id });
+        if (!current) return { state: "missing" };
+        if (deviceMismatch(current)) return deviceResult(current);
+        if (current.deliveryConfirmed) return { state: current.state, canRevoke: true };
+        if (["queued", "paused", "failed"].includes(current.state) && !current.deliveryUncertain) {
+          if (!store.setOutboxState({ outboxId: current.id, expectedStates: ["queued", "paused", "failed"], state: "cancelled" })) return { state: store.getOutbox({ outboxId: current.id })?.state || "missing" };
+          onStateChange({ outboxId: current.id, state: "cancelled" });
+          return { state: "cancelled" };
+        }
+        const cancellableStates = ["submitting", "confirming", ...(current.deliveryUncertain ? ["queued", "paused", "failed"] : [])];
+        if (!cancellableStates.includes(current.state)) return { state: current.state, ...(current.state === "persisted" ? { canRevoke: true } : {}) };
+        if (!store.setOutboxState({ outboxId: current.id, expectedStates: cancellableStates, state: "cancellation_requested" })) return { state: store.getOutbox({ outboxId: current.id })?.state || "missing" };
+        if (typeof transport.lookupReceipt !== "function") {
+          // A local cancellation request cannot prove the server did not
+          // commit. Do not display it as cancellation: retain the original
+          // idempotency key and give the user an explicit recovery decision.
+          store.setOutboxState({ outboxId: current.id, expectedStates: ["cancellation_requested"], state: "delivery_unknown" });
+          onStateChange({ outboxId: current.id, state: "delivery_unknown" });
+          return { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true };
+        }
+        let receipt;
+        try {
+          receipt = await transport.lookupReceipt({ clientCommandId: current.clientCommandId, commandType: current.commandType, conversationId: current.conversationId, messageId: current.messageId, expectedRevision: current.expectedRevision });
+        } catch (error) {
+          if (stopped) return stoppedResult();
+          // Receipt retrieval has the same ambiguity as the original send.
+          // Never strand the durable row in cancellation_requested.
+          store.setOutboxState({ outboxId: current.id, expectedStates: ["cancellation_requested"], state: "delivery_unknown", errorCode: safeOperationErrorCode(error?.code ?? "COLLAB_OPERATION_FAILED") });
+          onStateChange({ outboxId: current.id, state: "delivery_unknown" });
+          return { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true };
+        }
+        if (stopped) return stoppedResult();
+        if (isCompleteReceipt(receipt, current)) {
+          if (current.commandType === "message.create") store.confirmOutboxDelivery?.({ outboxId: current.id });
+          try {
+            store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
+              commandType: current.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+            onStateChange({ outboxId: current.id, state: "persisted" });
+            return { state: "persisted", canRevoke: true };
+          } catch {
+            // A local projection failure must also leave an explicit recovery
+            // state rather than a rejected cancel stuck in cancellation_requested.
+          }
+        }
+        // A receipt query is a point-in-time observation. An absent/running
+        // row cannot prove that a timed-out command will never commit, so it
+        // must not falsely cancel an optimistic message.
+        store.setOutboxState({ outboxId: current.id, expectedStates: ["cancellation_requested"], state: "delivery_unknown" });
+        onStateChange({ outboxId: current.id, state: "delivery_unknown" });
+        return { state: "delivery_unknown", recovery: "retry_or_sync", requiresSync: true };
+      });
+    },
+    async drainQueued() {
+      if (stopped) return stoppedResult();
+      const rows = store.listOutbox().filter((item) => item.state === "queued");
+      await Promise.all(rows.map((item) => submit(item.id).catch(() => undefined)));
+      if (stopped) return stoppedResult();
+      return { drained: rows.length };
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      for (const timer of retryTimers.values()) clearTimeoutFn(timer);
+      retryTimers.clear();
+    },
+  };
+}
+
+module.exports = { createCollaborationOutbox, isAmbiguousCommit, isRetryable, transportSnapshot };

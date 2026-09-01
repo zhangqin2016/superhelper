@@ -221,6 +221,20 @@ function messageDbPath() {
   return userDataPath("messages.db");
 }
 
+/**
+ * Dedicated collaboration cache. It must never share a database or recovery
+ * path with the AI transcript store: collaboration corruption is recoverable
+ * from the server, while messages.db is not owned by collaboration.
+ */
+function collaborationDbPath() {
+  return userDataPath("collaboration.db");
+}
+
+/** Private encrypted transfer staging; never use the general blob root. */
+function collaborationTransferRoot() {
+  return userDataPath("collaboration-transfer");
+}
+
 function longTaskDbPath() {
   return userDataPath("long-tasks.db");
 }
@@ -368,6 +382,8 @@ module.exports = {
   sessionsIndexPath,
   sessionMessagesDir,
   messageDbPath,
+  collaborationDbPath,
+  collaborationTransferRoot,
   longTaskDbPath,
   longTaskSecretPath,
   blobStoreDir,

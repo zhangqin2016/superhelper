@@ -29,7 +29,9 @@ for (const key of [
 ]) {
   savedEnv[key] = process.env[key];
 }
-process.env.OPENCODE_BIN = process.platform === "win32" ? process.execPath : "/bin/true";
+// These lazy/stubbed runner checks need an existing path, not a real engine.
+// process.execPath exists on every host; /bin/true is absent on macOS.
+process.env.OPENCODE_BIN = process.execPath;
 process.env.LILY_USER_DATA_DIR = tmp;
 process.env.LILY_HOME = os.homedir();
 process.env.LILY_DOCUMENTS_DIR = tmp;

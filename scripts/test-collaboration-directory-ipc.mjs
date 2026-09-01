@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { createCollaborationIpc } = require('../src/main/ipc-collaboration.js');
+const handlers = new Map();
+let calls = 0;
+let directory = { ok: true, profile: { userId: 'alice', lilyId: 'alice-id', displayName: 'Alice', phone: 'secret' }, contacts: [
+  { userId: 'bob', lilyId: 'bob-id', displayName: 'Bob', relationship: 'friend', ownBlocked: false, requestId: null, email: 'secret', token: 'secret', peerBlocked: true },
+], teams: [{ id: 'org', scopeId: 'team:org', name: 'Team', role: 'admin', members: [{ userId: 'bob', displayName: 'Bob', role: 'member', localPath: 'secret' }] }] };
+const service = { ok: true, getDirectory: () => { calls++; return directory; } };
+createCollaborationIpc({ ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, getService: () => service });
+assert.ok(handlers.has('collaboration:get-directory'), 'strict read-only directory channel exists');
+const invoke = (payload) => handlers.get('collaboration:get-directory')({}, payload);
+const projected = await invoke();
+assert.equal(projected.ok, true);
+assert.doesNotMatch(JSON.stringify(projected), /secret|email|phone|token|localPath|peerBlocked/);
+assert.deepEqual(Object.keys(projected).sort(), ['contacts', 'ok', 'profile', 'teams']);
+assert.equal((await invoke({ accountId: 'other' })).code, 'COLLABORATION_INVALID_INPUT');
+assert.equal(calls, 1, 'renderer cannot select account or send directory writes');
+directory = { ...directory, contacts: {} };
+assert.equal((await invoke()).ok, false, 'malformed arrays fail closed');
+directory = { ...directory, contacts: [{ userId: {}, relationship: 'friend' }] };
+assert.equal((await invoke()).ok, false, 'malformed canonical IDs fail closed');
+const source = fs.readFileSync(new URL('../src/preload.js', import.meta.url), 'utf8');
+const block = source.match(/collaboration:\s*\{([\s\S]*?)\n\s*\},\n\s*onRuntimeEvents/)[1];
+const ipcCalls = [];
+const bridge = vm.runInNewContext(`({${block}})`, { ipcRenderer: { invoke: (...args) => { ipcCalls.push(args); return Promise.resolve(projected); } } });
+assert.equal(typeof bridge.getDirectory, 'function');
+await bridge.getDirectory({ accountId: 'other', token: 'secret' });
+assert.deepEqual(ipcCalls, [['collaboration:get-directory']], 'preload takes no renderer authority or transport details');
+console.log('collaboration directory IPC/preload passed');

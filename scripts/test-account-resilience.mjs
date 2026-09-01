@@ -131,4 +131,36 @@ function writeAccountState(state) {
   assert.equal(accountManager.accountStatus().loggedIn, true);
 }
 
+// A service's 401 can invalidate an otherwise fresh cached access token.
+{
+  let refreshes = 0;
+  serviceMock.refreshAccountAccessToken = async () => {
+    refreshes += 1;
+    return { ok: true, json: { accessToken: "at_forced", expiresIn: 900 } };
+  };
+  const result = await accountManager.accessTokenForService({ forceRefresh: true });
+  assert.equal(result.accessToken, "at_forced");
+  assert.equal(refreshes, 1);
+  assert.equal((await accountManager.accessTokenForService()).accessToken, "at_forced");
+  assert.equal(refreshes, 1, "ordinary callers retain the existing cached-token behavior");
+}
 console.log("account-resilience: ok");
+// A late refresh result or rejection belongs only to the session that began it.
+for (const lateResult of [
+  { ok: true, json: { accessToken: "alice-late-token", expiresIn: 900 } },
+  { ok: false, status: 401, error: "REFRESH_TOKEN_INVALID" },
+]) {
+  accountManager.clearAccount();
+  writeAccountState({ user: { id: "alice" } });
+  let finishRefresh;
+  serviceMock.refreshAccountAccessToken = () => new Promise((resolve) => { finishRefresh = resolve; });
+  const refreshing = accountManager.accessTokenForService({ forceRefresh: true });
+  accountManager.clearAccount();
+  serviceMock.loginWithSms = async () => ({ ok: true, json: { user: { id: "bob" }, accessToken: "bob-token", refreshToken: "bob-refresh", expiresIn: 900 } });
+  await accountManager.loginWithSms({ phone: "test", code: "test" });
+  finishRefresh(lateResult);
+  assert.equal((await refreshing).ok, false, "stale refresh never installs a token or signs out the new account");
+  assert.equal(accountManager.accountStatus().user.id, "bob");
+  assert.equal((await accountManager.accessTokenForService()).accessToken, "bob-token");
+}
+console.log("account refresh generation isolation: ok");
