@@ -25,3 +25,5 @@ assert.match(panelCss, /data-collaboration-mode="overlay"/, "narrow windows use 
 assert.doesNotMatch(panelCss, /grid-template-columns:\s*260px\s+minmax\(300px,\s*420px\)\s+minmax\(420px,\s*1fr\)/, "legacy three-column collaboration canvas is gone");
 
 console.log("collaboration right panel structural contract passed");
+const electron = require("electron");
+if (electron && typeof electron !== "string" && electron.app?.quit) electron.app.quit();
