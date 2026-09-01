@@ -6,6 +6,18 @@ export function socialNode(tag, text = "", className = "") {
 export function socialButton(action, label, handler) {
   const node = socialNode("button", t(`collaboration.social.${label}`)); node.type = "button"; node.dataset.action = action; node.addEventListener("click", handler); return node;
 }
+export function socialAvatar(label = "", kind = "person") {
+  const avatar = socialNode("span", String(label).trim().slice(0, 1).toUpperCase() || "L", `collaboration-row-avatar is-${kind}`);
+  avatar.setAttribute("aria-hidden", "true");
+  return avatar;
+}
+export function socialDisclosure(label, form, { primary = false } = {}) {
+  const disclosure = socialNode("details", "", "collaboration-disclosure");
+  const summary = socialNode("summary", label, primary ? "collaboration-disclosure-trigger is-primary" : "collaboration-disclosure-trigger");
+  disclosure.append(summary, form);
+  form.classList.add("collaboration-disclosure-body");
+  return disclosure;
+}
 export function socialField(form, name, label, { multiple = false, options = null } = {}) {
   const wrapper = socialNode("label", t(`collaboration.social.${label}`));
   const input = document.createElement(options ? "select" : "input"); input.name = name;

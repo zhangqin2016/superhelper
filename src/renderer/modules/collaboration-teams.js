@@ -1,18 +1,17 @@
 import { t } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialField, socialPerson, selectedIds } from "./collaboration-social-ui.js";
+import { createSocialUi, socialNode, socialButton, socialField, socialPerson, selectedIds, socialAvatar, socialDisclosure } from "./collaboration-social-ui.js";
 
 export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {}, showConversation: async () => {} };
   root.replaceChildren();
-  root.append(socialNode("p", t("collaboration.social.cachedDirectory"), "collaboration-status"));
   let directory = { contacts: [], teams: [] }, conversations = [], detailsGeneration = 0, detailsConversation = null, pendingDetailsId = "";
   const groupForm = socialNode("form", "", "collaboration-social-form"); groupForm.dataset.form = "group";
   groupForm.append(socialNode("h3", `${t("collaboration.social.createGroup")} · ${t("collaboration.scopePersonal")}`));
   const groupTitle = socialField(groupForm, "title", "name"); groupTitle.required = true;
   const groupMembers = socialField(groupForm, "members", "members", { multiple: true, options: [] });
-  const createGroup = socialNode("button", t("collaboration.social.createGroup")); createGroup.type = "submit"; groupForm.append(createGroup);
+  const createGroup = socialNode("button", t("collaboration.social.createGroup"), "collaboration-social-primary"); createGroup.type = "submit"; groupForm.append(createGroup);
   const list = socialNode("div"), personal = socialNode("div"), details = socialNode("div", "", "collaboration-member-details");
-  root.append(groupForm, personal, list, details);
+  root.append(socialDisclosure(`＋ ${t("collaboration.social.createGroup")}`, groupForm, { primary: true }), personal, list, details);
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
   const optionsFor = (people) => people.map((p) => [p.userId, socialPerson(p)]);
   const teamLabel = (team) => `${team.name} · ${team.scopeId}`;
@@ -26,8 +25,9 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   });
   function conversationRow(conversation) {
     const row = socialNode("div", "", "collaboration-social-row");
-    row.append(socialNode("p", `${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`));
-    row.append(socialButton("open-conversation", "chat", () => onOpen(conversation.id)));
+    const title = conversation.title || conversation.id;
+    const copy = socialNode("div", "", "collaboration-row-content"); copy.append(socialNode("strong", title), socialNode("small", scopeLabel(conversation.scopeId)));
+    row.append(socialAvatar(title, "chat"), copy, socialButton("open-conversation", "chat", () => onOpen(conversation.id)));
     if (conversation.kind !== "direct") row.append(socialButton("members", "members", () => controller.showConversation(conversation.id)));
     return row;
   }
@@ -38,7 +38,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       ...(["owner", "admin"].includes(team.role) ? [["public", t("collaboration.social.public")]] : [])] });
     const members = socialField(form, "members", "members", { multiple: true, options: optionsFor(team.members.filter((m) => m.userId !== directory.profile?.userId)) });
     visibility.addEventListener("change", () => { members.disabled = visibility.value === "public"; });
-    const submit = socialNode("button", t("collaboration.social.createChannel")); submit.type = "submit"; form.append(submit);
+    const submit = socialNode("button", t("collaboration.social.createChannel"), "collaboration-social-primary"); submit.type = "submit"; form.append(submit);
     form.addEventListener("submit", (event) => {
       event.preventDefault(); const value = title.value.trim(); if (!value) return;
       const kind = visibility.value;
@@ -49,7 +49,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         if (result.conversationId && origin.isCurrentNavigation()) await onOpen(result.conversationId);
       });
     });
-    return form;
+    return socialDisclosure(`＋ ${t("collaboration.social.createChannel")}`, form);
   }
   async function memberChange(conversation, target, operation, role) {
     const generation = ui.current();
@@ -104,9 +104,11 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       if (!directory.teams.length) list.append(socialNode("p", t("collaboration.social.noTeams"), "collaboration-empty"));
       for (const team of directory.teams) {
         const section = socialNode("section", "", "collaboration-team"); section.dataset.teamId = team.id;
-        section.append(socialNode("h3", teamLabel(team)));
+        const teamHeading = socialNode("header", "", "collaboration-team-header"); teamHeading.append(socialAvatar(team.name, "team"), socialNode("div", "", "collaboration-row-content"));
+        teamHeading.lastChild.append(socialNode("strong", team.name), socialNode("small", `${team.members.length} ${t("collaboration.social.members")} · ${team.scopeId}`)); section.append(teamHeading);
         for (const member of team.members) {
-          const row = socialNode("div", socialPerson(member), "collaboration-social-row");
+          const row = socialNode("div", "", "collaboration-social-row is-compact");
+          const name = member.displayName || member.lilyId || member.userId; const copy = socialNode("div", "", "collaboration-row-content"); copy.append(socialNode("strong", name), socialNode("small", member.lilyId || member.userId)); row.append(socialAvatar(name), copy);
           if (member.userId !== directory.profile?.userId) row.append(socialButton("team-chat", "teamChat", () => ui.run(() => api.conversation({ action: "create", scopeType: "organization", organizationId: team.id, kind: "direct", memberUserIds: [member.userId] }), (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); })));
           section.append(row);
         }

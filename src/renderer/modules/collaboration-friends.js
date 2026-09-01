@@ -1,5 +1,5 @@
 import { t } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialField, socialPerson } from "./collaboration-social-ui.js";
+import { createSocialUi, socialNode, socialButton, socialField, socialPerson, socialAvatar, socialDisclosure } from "./collaboration-social-ui.js";
 
 export function renderCollaborationFriends(node, relationships = []) {
   if (!node) return;
@@ -12,11 +12,10 @@ export function renderCollaborationFriends(node, relationships = []) {
 export function initCollaborationFriends(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {} };
   root.replaceChildren();
-  const profile = socialNode("p"); root.append(profile);
-  root.append(socialNode("p", t("collaboration.social.cachedDirectory"), "collaboration-status"));
+  const profile = socialNode("p", "", "collaboration-profile-id"); root.append(profile);
   const form = socialNode("form", "", "collaboration-social-form");
   const lilyId = socialField(form, "lilyId", "exactLilyId"); lilyId.required = true; lilyId.maxLength = 64;
-  const submit = socialNode("button", t("collaboration.social.request")); submit.type = "submit"; form.append(submit); root.append(form);
+  const submit = socialNode("button", t("collaboration.social.request"), "collaboration-social-primary"); submit.type = "submit"; form.append(submit); root.append(socialDisclosure(`＋ ${t("collaboration.social.request")}`, form, { primary: true }));
   const contacts = socialNode("div"); root.append(contacts);
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
   form.addEventListener("submit", (event) => {
@@ -40,8 +39,9 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
       if (!rows.length) contacts.append(socialNode("p", t("collaboration.noFriends"), "collaboration-empty"));
       for (const contact of rows) {
         const row = socialNode("section", "", "collaboration-social-row"); row.dataset.userId = contact.userId;
-        row.append(socialNode("p", socialPerson(contact)));
-        row.append(socialNode("small", t(`collaboration.social.${contact.ownBlocked ? "blocked" : contact.relationship || "contact"}`)));
+        const name = contact.displayName || contact.lilyId || contact.userId;
+        const copy = socialNode("div", "", "collaboration-row-content"); copy.append(socialNode("strong", name), socialNode("small", `${contact.lilyId || contact.userId} · ${t(`collaboration.social.${contact.ownBlocked ? "blocked" : contact.relationship || "contact"}`)}`));
+        row.append(socialAvatar(name), copy);
         const controls = socialNode("div", "", "collaboration-social-actions");
         if (contact.ownBlocked) controls.append(socialButton("unblock", "unblock", () => change("unblock", contact)));
         else {

@@ -93,3 +93,99 @@
 .app-shell[data-collaboration-mode="overlay"] .collaboration-panel-scrim:not([hidden]) { display: block; position: fixed; z-index: 59; inset: 0; border: 0; background: rgb(10 15 25 / .24); backdrop-filter: blur(2px); }
 .collaboration-center[hidden], .collaboration-home[hidden], .collaboration-conversation[hidden] { display: none; }
 @media (prefers-reduced-motion: no-preference) { .collaboration-center { transition: transform 190ms ease, opacity 190ms ease; } }
+
+/* Compact desktop IM presentation. Keep management controls out of the scan path. */
+.collaboration-center {
+  background: color-mix(in srgb, var(--bg-right) 98%, var(--accent) 2%);
+  box-shadow: -12px 0 36px rgb(15 23 42 / .08);
+  font-size: 14px;
+}
+.collaboration-panel-header {
+  min-height: 56px;
+  padding: 9px 12px 9px 14px;
+  gap: 10px;
+}
+.collaboration-panel-title { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.collaboration-panel-title strong { display: block; font-size: 14px; line-height: 18px; letter-spacing: -.01em; }
+.collaboration-brand-mark {
+  display: grid; place-items: center; inline-size: 30px; block-size: 30px; flex: 0 0 auto;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); border-radius: 9px;
+}
+.collaboration-panel-header p { margin: 1px 0 0; font-size: 11px; line-height: 14px; }
+.collaboration-icon-button {
+  inline-size: 30px; block-size: 30px; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); transition: background-color 120ms ease, color 120ms ease;
+}
+.collaboration-icon-button:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.collaboration-nav-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; margin: 10px 12px 4px; padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent); border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 72%, transparent);
+}
+.collaboration-nav-list button {
+  min-height: 32px; padding: 6px 8px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--muted); font: inherit; font-size: 13px; font-weight: 560; cursor: pointer;
+}
+.collaboration-nav-list button:hover { background: color-mix(in srgb, var(--bg-surface) 70%, transparent); color: var(--text-primary); }
+.collaboration-nav-list button[aria-pressed="true"] {
+  background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgb(15 23 42 / .08), 0 0 0 1px rgb(15 23 42 / .03);
+}
+.collaboration-inbox { padding: 8px 10px 18px; }
+.collaboration-inbox > h2 { margin: 6px 6px 8px; font-size: 11px; line-height: 16px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.collaboration-inbox-item,
+.collaboration-social-row {
+  box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px;
+  margin: 0 0 2px; padding: 7px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary);
+}
+.collaboration-inbox-item { text-align: start; cursor: pointer; }
+.collaboration-inbox-item:hover, .collaboration-social-row:hover { background: color-mix(in srgb, var(--bg-surface-hover) 78%, transparent); }
+.collaboration-row-avatar {
+  display: grid; place-items: center; inline-size: 36px; block-size: 36px; flex: 0 0 36px; overflow: hidden;
+  border-radius: 11px; color: #fff; background: linear-gradient(145deg, #7877f5, #5b5bd6); font-size: 13px; font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .16);
+}
+.collaboration-row-avatar.is-person { border-radius: 50%; background: linear-gradient(145deg, #5da8a3, #3b7f7a); }
+.collaboration-row-avatar.is-team { background: linear-gradient(145deg, #71717a, #3f3f46); }
+.collaboration-row-avatar.is-chat { background: linear-gradient(145deg, #7c83f8, #5b5bd6); }
+.collaboration-row-content { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.collaboration-row-content strong { overflow: hidden; font-size: 13.5px; line-height: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.collaboration-row-content small { overflow: hidden; color: var(--muted); font-size: 11.5px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.collaboration-row-unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--text-inverse); font-size: 10px; line-height: 18px; text-align: center; }
+.collaboration-profile-id { margin: 4px 6px 10px; padding: 8px 10px; border-radius: 9px; background: var(--bg-surface-hover); color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.collaboration-disclosure { margin: 4px 2px 10px; }
+.collaboration-disclosure > summary { list-style: none; }
+.collaboration-disclosure > summary::-webkit-details-marker { display: none; }
+.collaboration-disclosure-trigger {
+  display: flex; align-items: center; min-height: 30px; padding: 5px 8px; border-radius: 8px;
+  color: var(--muted); font-size: 12px; font-weight: 560; cursor: pointer; user-select: none;
+}
+.collaboration-disclosure-trigger:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.collaboration-disclosure-trigger.is-primary { color: var(--accent); }
+.collaboration-disclosure[open] { padding: 4px; border: 1px solid var(--border-subtle); border-radius: 11px; background: var(--bg-surface); }
+.collaboration-disclosure[open] > .collaboration-disclosure-trigger { margin-bottom: 2px; }
+.collaboration-social-form, .collaboration-disclosure-body { gap: 8px; margin: 0; padding: 8px; }
+.collaboration-social-form h3 { margin: 0 0 2px; font-size: 13px; }
+.collaboration-social-form label { gap: 5px; color: var(--muted); font-size: 11.5px; }
+.collaboration-social-form input, .collaboration-social-form select {
+  min-height: 34px; padding: 7px 9px; border: 1px solid var(--border-subtle); border-radius: 8px;
+  background: var(--bg-input); color: var(--text-primary); font: inherit; font-size: 13px; outline: none;
+}
+.collaboration-social-form select[multiple] { min-height: 88px; }
+.collaboration-social-form input:focus, .collaboration-social-form select:focus { border-color: color-mix(in srgb, var(--accent) 70%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.collaboration-center button, .collaboration-social-primary {
+  appearance: none; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 12px; cursor: pointer;
+}
+.collaboration-social-primary { min-height: 34px; padding: 7px 12px; border-color: var(--accent); background: var(--accent); color: var(--text-inverse); font-weight: 600; }
+.collaboration-social-actions { flex: 0 0 auto; gap: 4px; margin: 0; opacity: 0; transition: opacity 120ms ease; }
+.collaboration-social-row:hover .collaboration-social-actions, .collaboration-social-row:focus-within .collaboration-social-actions { opacity: 1; }
+.collaboration-social-actions button, .collaboration-social-row > button { min-height: 28px; padding: 4px 7px; color: var(--muted); background: transparent; }
+.collaboration-social-actions button:hover, .collaboration-social-row > button:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.collaboration-social-row.is-compact { min-height: 48px; padding-block: 5px; }
+.collaboration-social-row.is-compact .collaboration-row-avatar { inline-size: 30px; block-size: 30px; flex-basis: 30px; font-size: 11px; }
+.collaboration-team { margin: 10px 0 14px; padding-top: 0; border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; }
+.collaboration-team-header { display: flex; align-items: center; gap: 10px; padding: 10px; background: color-mix(in srgb, var(--bg-surface-hover) 58%, transparent); }
+.collaboration-team > .collaboration-social-row { margin-inline: 4px; width: calc(100% - 8px); }
+.collaboration-team > .collaboration-disclosure { margin: 4px; border-top: 1px solid var(--border-subtle); border-radius: 0; padding-top: 4px; }
+.collaboration-member-details { margin-top: 12px; }
+.collaboration-empty { margin: 28px 12px; color: var(--muted); font-size: 12px; line-height: 18px; text-align: center; }
+.collaboration-confirmation:not(:empty) { margin: 8px 2px; padding: 10px; border-color: var(--border-subtle); border-radius: 10px; background: var(--bg-surface); }
