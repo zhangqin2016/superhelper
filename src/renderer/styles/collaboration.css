@@ -243,13 +243,14 @@
 .collaboration-empty { align-self: center; margin: auto; }
 .collaboration-transfer-panel:empty { display: none; }
 .collaboration-composer {
-  display: flex; flex-direction: column; gap: 0; margin: 0; padding: 10px 12px 12px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);
+  display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 0; padding: 10px 12px 12px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);
 }
 .collaboration-composer textarea {
   box-sizing: border-box; width: 100%; min-height: 38px; max-height: 116px; padding: 9px 10px 5px; border: 1px solid var(--border-subtle); border-bottom: 0;
   border-radius: 11px 11px 0 0; background: var(--bg-input); font: inherit; font-size: 13.5px; line-height: 20px; outline: none;
 }
-.collaboration-composer textarea:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle)); box-shadow: 0 -2px 0 1px color-mix(in srgb, var(--accent) 8%, transparent); }
+.collaboration-composer textarea:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle)); box-shadow: none; }
+.collaboration-composer textarea:focus-visible { outline: none; }
 .collaboration-composer-toolbar {
   display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 5px 4px 8px; border: 1px solid var(--border-subtle); border-top: 0;
   border-radius: 0 0 11px 11px; background: var(--bg-input);
