@@ -48,5 +48,12 @@ try {
   composer.destroy();
   textarea.value = "must not send"; button.dispatchEvent(new Event("click"));
   assert.equal(requests.length, 3, "destroy removes the click handler as well as keyboard handlers");
+  const sharedTextarea = new Control(), sharedButton = new Control();
+  const firstOwner = initCollaborationComposer({ textarea: sharedTextarea, sendButton: sharedButton }); firstOwner.setConversation("a");
+  const currentOwner = initCollaborationComposer({ textarea: sharedTextarea, sendButton: sharedButton }); currentOwner.setConversation("a"); await settle();
+  sharedTextarea.value = "one physical action"; sharedTextarea.dispatchEvent(new Event("input"));
+  const beforeSharedClick = requests.length; sharedButton.dispatchEvent(new Event("click"));
+  assert.equal(requests.length - beforeSharedClick, 1, "one composer DOM surface has exactly one active send controller after reinitialization");
+  firstOwner.destroy(); currentOwner.destroy();
   console.log("collaboration composer behavior passed");
 } finally { composer.destroy(); delete globalThis.window; }

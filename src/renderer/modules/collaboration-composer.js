@@ -5,9 +5,11 @@ import { initCollaborationMentions } from "./collaboration-mentions.js";
 function commandId() { return globalThis.crypto?.randomUUID?.() || `collab-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function draftIntent(value = {}) { return { text: String(value.text || ""), replyToMessageId: value.replyToMessageId || null, mentionUserIds: [...new Set(value.mentionUserIds || [])].sort() }; }
 function sameIntent(a, b) { return Boolean(a && b) && a.text === b.text && a.replyToMessageId === b.replyToMessageId && JSON.stringify(a.mentionUserIds) === JSON.stringify(b.mentionUserIds); }
+const activeComposerByTextarea = new WeakMap();
 
 export function initCollaborationComposer({ textarea, sendButton, getConversationId, getReplySourceStatus = () => null, onSent = () => {}, onError = () => {} } = {}) {
   if (!textarea || !sendButton) return { setConversation: () => {}, destroy: () => {} };
+  activeComposerByTextarea.get(textarea)?.destroy?.();
   let conversationId = "";
   const drafts = new Map(), sending = new Map(), intents = new Map();
   let disposed = false, active = true, editVersion = 0, generation = 0, selectionVersion = 0, previewVersion = 0;
@@ -127,7 +129,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   sendButton.addEventListener("click", click); textarea.addEventListener("input", input); textarea.addEventListener("keydown", keydown);
   const unsubscribeLocale = onLocaleChange(() => { textarea.placeholder = t("collaboration.messagePlaceholder"); paintPreview(); });
   paintPreview(); updateButton();
-  return {
+  const controller = {
     setConversation(nextId) {
       const id = String(nextId ?? getConversationId?.() ?? "");
       if (disposed || id === conversationId) return;
@@ -147,6 +149,8 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     forgetConversation,
     retainConversations(ids) { const allowed = new Set(ids); for (const id of new Set([...drafts.keys(), ...intents.keys(), ...sending.keys(), conversationId])) if (id && !allowed.has(id)) forgetConversation(id); },
     reset() { generation += 1; selectionVersion += 1; editVersion += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); conversationId = ""; textarea.value = ""; mentions.reset(); updateButton(); paintPreview(); },
-    destroy() { disposed = true; generation += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); mentions.destroy(); preview?.replaceChildren(); if (preview) preview.hidden = true; unsubscribeLocale(); sendButton.removeEventListener("click", click); textarea.removeEventListener("input", input); textarea.removeEventListener("keydown", keydown); },
+    destroy() { disposed = true; generation += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); mentions.destroy(); preview?.replaceChildren(); if (preview) preview.hidden = true; unsubscribeLocale(); sendButton.removeEventListener("click", click); textarea.removeEventListener("input", input); textarea.removeEventListener("keydown", keydown); if (activeComposerByTextarea.get(textarea) === controller) activeComposerByTextarea.delete(textarea); },
   };
+  activeComposerByTextarea.set(textarea, controller);
+  return controller;
 }
