@@ -23,10 +23,18 @@ app.whenReady().then(async () => {
     const root = document.getElementById('timeline');
     const first = { id: 'one', seq: 1, bodyText: '<img src=x onerror=alert(1)>' };
     const pending = { id: 'local', clientCommandId: 'cmd', seq: null, state: 'confirming', bodyText: 'draft' };
-    render(root, [first, pending]);
+    render(root, [first, pending], { currentUserId: 'me', resolveSender: (id) => id === 'alice' ? 'Alice' : id });
     const initialOrder = [...root.children].map(n => n.dataset.messageKey);
     const row = root.querySelector('[data-message-key="cmd"]');
     const body = row.querySelector('.collaboration-message-body');
+    render(root, [{...first,senderUserId:'alice',createdAt:1788250000000},{...pending,senderUserId:'me',createdAt:1788250001000}], { currentUserId:'me', resolveSender:(id)=>id==='alice'?'Alice':id });
+    const visualContract = {
+      incomingAuthor: root.querySelector('[data-message-key="one"] .collaboration-message-author')?.textContent,
+      outgoing: root.querySelector('[data-message-key="cmd"]')?.classList.contains('is-outgoing'),
+      avatar: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-avatar')),
+      time: Boolean(root.querySelector('[data-message-key="one"] time')),
+      actions: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-actions')),
+    };
     render(root, [first, { ...pending, id: 'server', seq: 2, state: 'persisted' }]);
     const sameRow = row === root.querySelector('[data-message-key="cmd"]');
     const sameBody = body === row.querySelector('.collaboration-message-body');
@@ -68,15 +76,16 @@ app.whenReady().then(async () => {
     const revokedView = { rows:document.getElementById('collaborationTimeline').children.length, draft:document.getElementById('collaborationComposer').value,
       disabled:document.getElementById('collaborationSendButton').disabled, scope:document.getElementById('collaborationScopeBadge').textContent };
     center.destroy();
-    return { initialOrder, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
+    return { initialOrder, visualContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
+  assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true }, "timeline exposes a complete desktop IM message hierarchy");
   assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
   assert.equal(result.sameBody, true, "unchanged content is not removed/re-announced on ACK");
   assert.equal(result.safeText, true, "untrusted message markup remains text");
   assert.equal(result.tombstone, "collaboration.messageRevoked", "revoked message has an explicit tombstone");
   assert.equal(result.anchorDelta, 0, "offscreen edits preserve the visible anchor even when the scroller has a page offset");
-  assert.equal(result.bottomGap, 0, "new messages follow only when already at the bottom");
+  assert.ok(result.bottomGap <= 1, "new messages follow only when already at the bottom, allowing subpixel layout rounding");
   assert.deepEqual(result.pagedOrder, ["page1", "page2", "page3", "page4"], "older history remains after a newest-window refresh");
   assert.equal(result.olderHidden, true, "exhausted history hides the load-more action");
   assert.deepEqual(result.calls, [null, 3, null], "actual UI passes the exclusive cursor to preload");

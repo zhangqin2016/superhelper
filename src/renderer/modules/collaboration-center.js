@@ -36,6 +36,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
   const renderTimeline = () => renderCollaborationTimeline(timeline, historyMessages, {
     currentUserId: directory?.profile?.userId || "",
+    resolveSender: (userId) => {
+      if (userId === directory?.profile?.userId) return directory?.profile?.displayName || directory?.profile?.lilyId || userId;
+      const person = directory?.contacts?.find((contact) => contact.userId === userId)
+        || directory?.teams?.flatMap((team) => team.members || []).find((member) => member.userId === userId);
+      return person?.displayName || person?.lilyId || userId;
+    },
     onDownload: (input, purpose) => attachments.download(input, purpose),
     canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
     canReply: (message) => !disposed && policyEnabled && !panel.hidden && !navigating && Boolean(activeConversationId) && historyMessages.includes(message),
@@ -158,6 +164,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     attachments.setConversation(opened.conversation, transferPolicy);
     composer.refreshMentionCandidates?.();
     const scope = String(opened.conversation?.scopeId || "");
+    const conversationTitle = byId("collaborationConversationTitle");
+    if (conversationTitle) conversationTitle.textContent = String(opened.conversation?.title || t("collaboration.conversation"));
     if (scopeBadge) scopeBadge.textContent = scope.startsWith("team:")
       ? `${directory?.teams?.find((team) => team.scopeId === scope)?.name || t("collaboration.scopeTeam")} · ${scope}` : t("collaboration.scopePersonal");
     renderTimeline();
