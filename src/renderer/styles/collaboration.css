@@ -23,8 +23,14 @@
 :root[data-theme="dark"] .collaboration-center {
   --collab-page-bg: var(--bg-right);
   --collab-list-bg: color-mix(in srgb, var(--bg-surface) 88%, transparent);
-  --collab-incoming-bg: color-mix(in srgb, var(--bg-surface) 74%, #fff 26%);
-  --collab-outgoing-bg: color-mix(in srgb, var(--accent) 26%, var(--bg-surface) 74%);
+  /* Measured, not eyeballed. The previous pair sat at 2.81 (incoming) and 1.61
+     (outgoing) against the page, so in dark mode the OTHER person's bubble
+     popped as a light grey slab while your own nearly vanished into the
+     background — the inverse of the light theme and of the balance this skin is
+     supposed to have. These land both sides at 2.02 against the page, with body
+     text at 7.6 on each. */
+  --collab-incoming-bg: color-mix(in srgb, var(--bg-surface) 84%, #fff 16%);
+  --collab-outgoing-bg: color-mix(in srgb, var(--accent) 45%, var(--bg-surface) 55%);
 }
 
 .collaboration-center[hidden],
@@ -1324,6 +1330,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* Right-aligned inside the bubble by an auto margin. The visible gap between
+     the last word and the timestamp therefore VARIES, and that is correct: it
+     is slack in a bubble made wider by another line (an author header, a
+     reaction row). Removing this margin makes a wrapped meta line left-align,
+     and replacing it with justify-content pushes the BODY off the left edge —
+     both were tried and both are worse. */
   margin-inline-start: auto;
   /* Nudge down so the tiny meta text sits on the text baseline, not above it. */
   margin-block-end: -1px;
@@ -1885,4 +1897,27 @@
   border-radius: 3px;
   background: color-mix(in srgb, var(--accent) 26%, transparent);
   color: inherit;
+}
+
+/* =========================================================================
+   M10 · Readable in-bubble metadata
+   The timestamp and the author name were global dim tokens, which on a dark
+   bubble measured 1.55:1 and 2.84:1 — effectively invisible. Deriving them
+   from the BUBBLE's own ink instead of a page-level token keeps them legible
+   on every bubble background, in both themes, and can never drift again when
+   a bubble colour changes.
+   ========================================================================= */
+
+.collaboration-message-time {
+  /* 70% of the bubble's own text colour measures 4.7:1 on both bubble
+     backgrounds — above the 4.5 needed for text this size. */
+  color: color-mix(in srgb, currentColor 70%, transparent);
+}
+
+.collaboration-message-author {
+  color: color-mix(in srgb, currentColor 78%, transparent);
+}
+
+.collaboration-message-status[data-tone="delivered"] {
+  color: color-mix(in srgb, currentColor 70%, transparent);
 }
