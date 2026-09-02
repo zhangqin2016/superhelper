@@ -539,6 +539,17 @@
         "scripts/test-collaboration-attachment-metadata.mjs",
         "scripts/test-collaboration-timeline.cjs"
       ]
+    },
+    {
+      "id": "im-address-book",
+      "protects": "Contacts and Teams read as an address book: 56px rows, A–Z pinyin sections, pending requests behind one counted entry, destructive actions off the row, one search box, and no internal scope id ever printed to a person.",
+      "baseline": "Presentation and information architecture only. Every command still goes through the same friend/conversation APIs with the same confirmations and permission checks; the pinyin sectioning is derived from the display name and touches no identity or authorization value.",
+      "failureFallback": "Sectioning degrades, never breaks: a build without ICU's pinyin collation falls back to a locale collator so Latin names still section and Han names land in one bucket together, and malformed input yields an empty list rather than a throw (this runs on every keystroke). A contact with no name still gets a row. Actions are visible without hover where there is no pointer.",
+      "tests": [
+        "scripts/test-collaboration-address-book.mjs",
+        "scripts/test-collaboration-social-ui.cjs",
+        "scripts/test-collaboration-social-navigation.cjs"
+      ]
     }
   ]
 }

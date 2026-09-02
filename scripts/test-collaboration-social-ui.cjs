@@ -40,12 +40,15 @@ app.whenReady().then(async () => {
     const input=root.querySelector('[name="lilyId"]'); input.value='Exact-ID';
     root.querySelector('form').requestSubmit(); await settle();
     const request=calls.at(-1);
+    // Incoming requests moved behind one "new friends" entry with a count, so
+    // a pending request is an errand rather than a row to be spotted.
+    root.querySelector('[data-action="new-friends"]').click(); await settle();
     root.querySelector('[data-action="accept"]').click(); await settle(); const accept=calls.at(-1);
-    root.querySelector('[data-action="chat"]').click(); await settle();
-    const before=calls.length; root.querySelector('[data-action="block"]').click(); await settle();
+    root.querySelector('[data-user-id="peer"] [data-action="chat"]').click(); await settle();
+    const before=calls.length; root.querySelector('[data-user-id="peer"] [data-action="block"]').click(); await settle();
     const notBeforeConfirm=calls.length===before;
     root.querySelector('[data-action="confirm"]').click(); await settle(); const block=calls.at(-1);
-    root.querySelector('[data-action="unblock"]').click(); await settle(); root.querySelector('[data-action="confirm"]').click(); await settle(); const unblock=calls.at(-1);
+    root.querySelector('[data-user-id="blocked"] [data-action="unblock"]').click(); await settle(); root.querySelector('[data-action="confirm"]').click(); await settle(); const unblock=calls.at(-1);
     root.querySelector('[data-action="retry"]').click(); await settle(); const retry=calls.at(-1);
     input.value='keep-id'; mode='confirming'; root.querySelector('form').requestSubmit(); await settle();
     const retained=input.value, confirming=root.querySelector('[role="status"]').textContent;
@@ -54,9 +57,16 @@ app.whenReady().then(async () => {
     const fenced=root.textContent.includes('my-exact-id')===false && input.value==='';
     mode='completed'; const teams=initCollaborationTeams(teamsRoot,{api,onChanged:async()=>{},onOpen:id=>opened.push(id)});
     teams.update({directory,conversations:[{id:'private',scopeId:'team:org',kind:'channel',title:'Private'}],commands:[{kind:'conversation',scopeId:'team:org',state:'confirming',clientCommandId:'team-pending',input:{action:'create',scopeType:'organization',organizationId:'org',kind:'channel',visibility:'private',title:'Pending'}}]});
-    const pendingScopeLabel=teamsRoot.querySelector('.collaboration-pending').textContent.includes('Exact Team · team:org');
-    const scopeLabel=teamsRoot.textContent.includes('Exact Team')&&teamsRoot.textContent.includes('team:org');
+    const pendingText=teamsRoot.querySelector('.collaboration-pending').textContent;
+    const pendingScopeLabel=pendingText.includes('Exact Team') && !/team:org/.test(pendingText);
+    // The scope id team:org is an internal addressing string. This used to
+    // assert it was
+    // PRINTED to the user, on team headers and on every channel subtitle; the
+    // expectation is inverted because showing it was the defect.
+    const scopeLabel=teamsRoot.textContent.includes('Exact Team')&&!/team:org/.test(teamsRoot.textContent);
     const publicUnavailable=!teamsRoot.querySelector('[data-team-id="org"] option[value="public"]');
+    // The roster is behind the team header now, not inline in the list.
+    teamsRoot.querySelector('[data-action="open-team"]').click(); await settle();
     teamsRoot.querySelector('[data-action="team-chat"]').click(); await settle(); const direct=calls.at(-1);
     const groupForm=teamsRoot.querySelector('[data-form="group"]'); groupForm.querySelector('[name="title"]').value='Personal group'; groupForm.requestSubmit(); await settle(); const group=calls.at(-1);
     const channelForm=teamsRoot.querySelector('[data-form="channel"]'); channelForm.querySelector('[name="title"]').value='Private channel'; channelForm.requestSubmit(); await settle(); const channel=calls.at(-1);
@@ -90,7 +100,9 @@ app.whenReady().then(async () => {
     document.getElementById('collaborationPeopleTab').click();await settle();
     const shellPeople=!document.getElementById('collaborationFriends').hidden&&document.getElementById('collaborationFriends').textContent.includes('my-exact-id');
     document.getElementById('collaborationTeamsTab').click();await settle();
-    const shellTeams=!document.getElementById('collaborationTeams').hidden&&document.getElementById('collaborationTeams').textContent.includes('team:org');
+    // Same inversion: reaching the Team view is proven by its NAME being on
+    // screen, not by the raw scope id that should never be printed.
+    const shellTeams=!document.getElementById('collaborationTeams').hidden&&document.getElementById('collaborationTeams').textContent.includes('Exact Team')&&!/team:org/.test(document.getElementById('collaborationTeams').textContent);
     publish({type:'availability',state:{ok:false}});await settle();
     const unavailablePreservesWorkbench=document.getElementById('collaborationCenter').hidden&&!document.getElementById('centerPanel').classList.contains('collaboration-active')&&!document.getElementById('collaborationFriends').textContent.includes('my-exact-id');
     center.destroy();
@@ -102,7 +114,7 @@ app.whenReady().then(async () => {
   assert.ok(result.opened.includes('canonical')); assert.equal(result.notBeforeConfirm, true);
   assert.deepEqual(result.block, { action: 'block', peerUserId: 'peer' }); assert.deepEqual(result.unblock, { action: 'unblock', peerUserId: 'blocked' });
   assert.deepEqual(result.retry, { retry: 'restarted' }); assert.equal(result.retained, 'keep-id'); assert.match(result.confirming, /confirming/);
-  assert.equal(result.fenced, true); assert.equal(result.scopeLabel, true); assert.equal(result.publicUnavailable, true);
+  assert.equal(result.fenced, true); assert.equal(result.scopeLabel, true, 'the Team is named, and its raw scope id is never shown'); assert.equal(result.publicUnavailable, true);
   assert.deepEqual(result.direct, { action:'create',scopeType:'organization',organizationId:'org',kind:'direct',memberUserIds:['peer'] });
   assert.equal(result.group.scopeType, 'personal'); assert.equal(result.group.kind, 'group');
   assert.equal(result.channel.organizationId, 'org'); assert.equal(result.channel.visibility, 'private');
@@ -110,7 +122,7 @@ app.whenReady().then(async () => {
   assert.match(result.permission, /permissionDenied/);
   assert.equal(result.revokedMembersCleared,true,'revoked Team clears cached member controls');assert.equal(result.confirmedDraftCleared,true,'snapshot refresh cannot revive a confirmed creation form');assert.equal(result.duplicateSuppressed,true,'refresh window remains single-intent busy');
   assert.equal(result.lateRevokedMembersCleared,true,'late authorized detail response cannot recreate removed Team controls');
-  assert.equal(result.pendingScopeLabel,true,'pending recovery shows both Team name and scope');
-  assert.equal(result.shellPeople,true,'friends navigation reaches actual controls');assert.equal(result.shellTeams,true,'Team navigation reaches current scope');assert.equal(result.unavailablePreservesWorkbench,true,'unavailable clears account data and restores workbench');
+  assert.equal(result.pendingScopeLabel,true,'pending recovery names the Team without leaking its raw scope id');
+  assert.equal(result.shellPeople,true,'friends navigation reaches actual controls');assert.equal(result.shellTeams,true,'Team navigation reaches the named Team without leaking its scope id');assert.equal(result.unavailablePreservesWorkbench,true,'unavailable clears account data and restores workbench');
   console.log('collaboration social actual Electron DOM passed');
 }).then(()=>finish(0)).catch(error=>{console.error(error);finish(1);});

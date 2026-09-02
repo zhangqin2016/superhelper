@@ -62,6 +62,73 @@ export function socialPerson(person) {
   return lilyId && lilyId !== name ? `${name} · ${lilyId}` : name;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Line icons, drawn rather than emoji: glyph coverage for the picture/person
+ *  emoji differs per platform, and an address book full of emoji reads cheap. */
+const ICON_PATHS = Object.freeze({
+  chat: ["M20 12a8 8 0 0 1-11.6 7.1L4 20l.9-4.4A8 8 0 1 1 20 12z"],
+  remove: ["M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M2.5 20a6.5 6.5 0 0 1 13 0", "M17 12h5"],
+  block: ["M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z", "M6 6l12 12"],
+  people: ["M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M2 20a6.5 6.5 0 0 1 13 0", "M16 4.5a3.5 3.5 0 0 1 0 7", "M17 14.5a6.5 6.5 0 0 1 5 5.5"],
+  plus: ["M12 5v14", "M5 12h14"],
+  channel: ["M4 9h16", "M4 15h16", "M10 4l-1.5 16", "M16 4l-1.5 16"],
+  chevron: ["M9 5l7 7-7 7"],
+  request: ["M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z", "M4 21a8 8 0 0 1 12-6.9", "M17 17h5", "M19.5 14.5v5"],
+});
+
+export function socialIcon(name, size = 18) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of ICON_PATHS[name] || ICON_PATHS.chevron) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/** An action reduced to its icon. The label survives as the accessible name and
+ *  the tooltip, so nothing is lost by taking the words off a 56px row. */
+export function socialIconButton(action, label, icon, handler, { tone = "" } = {}) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "collaboration-icon-action";
+  node.dataset.action = action;
+  if (tone) node.dataset.tone = tone;
+  const text = t(`collaboration.social.${label}`);
+  node.setAttribute("aria-label", text);
+  node.title = text;
+  node.append(socialIcon(icon));
+  node.addEventListener("click", handler);
+  return node;
+}
+
+/** Rows are 56px and clickable as a whole; the primary action is the row body,
+ *  so it is a real button rather than a div with a click handler. */
+export function socialRowButton(label, handler, { icon = null, avatar = null, subtitle = "", trailing = "" } = {}) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "collaboration-row-open";
+  if (avatar) node.append(avatar);
+  else if (icon) { const wrap = socialNode("span", "", "collaboration-row-glyph"); wrap.append(socialIcon(icon, 20)); node.append(wrap); }
+  const content = socialNode("div", "", "collaboration-row-content");
+  content.append(socialNode("strong", label));
+  if (subtitle) content.append(socialNode("small", subtitle));
+  node.append(content);
+  if (trailing) node.append(socialNode("span", trailing, "collaboration-row-trailing"));
+  if (handler) node.addEventListener("click", handler);
+  return node;
+}
+
 /** Resolve a person object for a user id across profile, contacts, and team
  *  members. Falls back to a bare `{ userId }` so `identityName` can still
  *  render a friendly placeholder instead of a raw opaque id. */

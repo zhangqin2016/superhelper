@@ -137,7 +137,16 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     navigationGeneration += 1;
     activeSection = section;
     for (const [name, node] of Object.entries(sectionNodes)) if (node) node.hidden = name !== section;
-    if (inboxSearch) inboxSearch.hidden = section !== "inbox";
+    // One search box, always in the same place, retargeted at the list on
+    // screen. It used to be hidden outside the inbox, which is why the contacts
+    // view had grown a second search input of its own — below the list.
+    if (inboxSearch) {
+      inboxSearch.hidden = section === "teams";
+      const placeholder = t(section === "people" ? "collaboration.social.searchContacts" : "collaboration.search.placeholder");
+      inboxSearch.placeholder = placeholder;
+      inboxSearch.setAttribute("aria-label", placeholder);
+      if (inboxSearch.value) { inboxSearch.value = ""; inboxFilter = ""; friends?.setFilter(""); }
+    }
     for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
     const title = byId("collaborationListTitle");
     if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = section === "inbox"; }
@@ -337,7 +346,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   nav.addEventListener("click", navClick);
   back?.addEventListener("click", backClick);
   const searchInput = () => {
-    inboxFilter = inboxSearch?.value || "";
+    const value = inboxSearch?.value || "";
+    // The same box filters whichever list is on screen.
+    if (activeSection === "people") { friends.setFilter(value); return; }
+    inboxFilter = value;
     renderCollaborationInbox(byId("collaborationInbox"), lastConversations, { onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
       resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
       currentUserId: directory?.profile?.userId || "" });

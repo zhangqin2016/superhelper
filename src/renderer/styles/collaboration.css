@@ -1066,11 +1066,166 @@
   font-weight: 600;
 }
 
+/* The single most expensive bug in this panel: this rule had NO `display`, so
+   a row was a block and its avatar, text and buttons stacked — ~220px per
+   contact where an address book gets ~56px. `.collaboration-row-content` and
+   `.collaboration-social-actions` were already written for a flex row (a
+   column child and a `flex: 0 0 auto` sibling), so the intent was always this;
+   only the parent was missing. */
 .collaboration-social-row {
   box-sizing: border-box;
-  padding-block: 10px;
-  border-block-end: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding-inline: 4px;
+  /* An inset divider that starts past the avatar, so the column of avatars
+     reads as one rail instead of being cut by full-width lines. */
+  border-block-end: 1px solid transparent;
+  background-image: linear-gradient(to right, transparent 0 52px, var(--border-subtle) 52px 100%);
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+  background-position: bottom;
   overflow-wrap: anywhere;
+}
+
+.collaboration-social-row:last-child {
+  background-image: none;
+}
+
+/* The row body IS the primary action, so it is a real button filling the row
+   rather than a div with a click handler. */
+.collaboration-row-open {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+}
+
+.collaboration-row-open:disabled {
+  cursor: default;
+}
+
+.collaboration-row-open .collaboration-row-content strong,
+.collaboration-row-open .collaboration-row-content small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Explicit, not inherited: the row inherits a dimmed ink from the column, so
+   a contact's name measured 4.85:1 instead of the 15.37:1 it reads at now. */
+.collaboration-row-open .collaboration-row-content strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.collaboration-row-open .collaboration-row-content small {
+  font-size: 11px;
+  color: color-mix(in srgb, currentColor 62%, transparent);
+}
+
+/* An entry row (new friends, add contact) gets a drawn mark in the avatar slot
+   so it lines up with the avatar column instead of starting at the text. */
+.collaboration-row-glyph {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: color-mix(in srgb, var(--accent) 90%, var(--text-primary));
+}
+
+.collaboration-row-trailing {
+  flex: 0 0 auto;
+  min-inline-size: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--danger-text);
+  color: var(--accent-on);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Destructive actions get no words on a 56px row, and do not sit there
+   shouting either: icon-only, revealed on hover or keyboard focus, with the
+   label kept as the accessible name and the tooltip. */
+.collaboration-icon-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in srgb, var(--text-primary) 72%, transparent);
+  cursor: pointer;
+}
+
+.collaboration-icon-action:hover {
+  background: color-mix(in srgb, var(--bg-surface-hover) 90%, transparent);
+  border-color: color-mix(in srgb, var(--border-subtle) 90%, transparent);
+  color: var(--text-primary);
+}
+
+.collaboration-icon-action[data-tone="danger"]:hover {
+  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--danger-text) 45%, transparent);
+}
+
+/* Sticky letter headings: the reason a long address book stays navigable. */
+.collaboration-section-letter {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+  color: color-mix(in srgb, var(--text-primary) 58%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.collaboration-social-row.is-profile {
+  min-height: 64px;
+  margin-block-end: 4px;
+  background-image: none;
+}
+
+.collaboration-social-row.is-profile .collaboration-row-open .collaboration-row-content strong {
+  font-size: 15px;
+}
+
+.collaboration-contact-entries,
+.collaboration-request-panel,
+.collaboration-team-channels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Channels are the team's contents, so they are indented under its header
+   rather than sitting at the same level as the team itself. */
+.collaboration-team-channels {
+  padding-inline-start: 14px;
+  border-inline-start: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  margin-inline-start: 20px;
 }
 
 .collaboration-social-row p {
@@ -1089,14 +1244,20 @@
   font-size: 11px;
 }
 
+/* Hover/focus-revealed. The space stays reserved so the row does not reflow
+   under the pointer — only the ink appears. */
 .collaboration-social-actions {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
   margin: 0;
-  opacity: 1;
+  opacity: 0;
   transition: opacity 120ms ease;
+}
+
+@media (hover: none) {
+  /* With no pointer there is no hover to reveal them with. */
+  .collaboration-social-actions { opacity: 1; }
 }
 
 .collaboration-social-row:hover .collaboration-social-actions,

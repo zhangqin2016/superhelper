@@ -27,7 +27,7 @@ app.whenReady().then(async () => {
     }};
     const tick=()=>new Promise(r=>setTimeout(r,25));const center=initCollaborationCenter({getPolicy:async()=>({collaboration:{enabled:true}})});
     center.show();await tick();
-    async function start(kind='direct'){document.getElementById('collaborationTeamsTab').click();await tick();if(kind==='direct')document.querySelector('[data-action="team-chat"]').click();else{const form=document.querySelector('[data-form="'+kind+'"]');form.querySelector('[name="title"]').value='Pending '+kind;form.requestSubmit();}await tick();}
+    async function start(kind='direct'){document.getElementById('collaborationTeamsTab').click();await tick();if(kind==='direct'){/* The roster moved out of the list: a team of any size made the channels unreachable. Open it first. */document.querySelector('[data-action="open-team"]').click();await tick();document.querySelector('[data-action="team-chat"]').click();}else{const form=document.querySelector('[data-form="'+kind+'"]');form.querySelector('[name="title"]').value='Pending '+kind;form.requestSubmit();}await tick();}
     await start();await center.open('B');await tick();resolve({ok:true,state:'completed',conversationId:'A-manual'});await tick();
     const manual=[...opened],draft=document.getElementById('collaborationComposer').value;
     await start('group');center.hide();resolve({ok:true,state:'completed',conversationId:'A-hidden'});await tick();const hidden=[...opened],workbench=document.getElementById('collaborationCenter').hidden;

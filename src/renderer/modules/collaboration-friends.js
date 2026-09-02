@@ -1,5 +1,6 @@
 import { t } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
+import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
+import { groupByLetter } from "./contact-sections.js";
 
 export function renderCollaborationFriends(node, relationships = []) {
   if (!node) return;
@@ -9,22 +10,54 @@ export function renderCollaborationFriends(node, relationships = []) {
   for (const relationship of rows) { const row = document.createElement("p"); row.textContent = identityName({ ...relationship, userId: relationship.peerUserId || relationship.userId }); node.append(row); }
 }
 
+/**
+ * The address book, shaped like one.
+ *
+ * What it replaced, and why each part moved:
+ *   - the view had its own search box, placed BELOW the list it filtered, while
+ *     the panel's own search box was hidden in this view. There is now one
+ *     search box, in the header, retargeted at whichever list is on screen
+ *   - every contact carried three always-visible text buttons, two of them
+ *     destructive, which cost ~220px per person. The row is now 56px, the
+ *     primary action IS the row, and remove/block are icon actions that appear
+ *     on hover or keyboard focus
+ *   - incoming friend requests were interleaved with friends, so a pending
+ *     request was something you had to notice. They now live behind one
+ *     "new friends" entry that carries a count
+ *   - the list was flat; it is now sectioned A–Z by pinyin, so a name can be
+ *     found by its first letter instead of by scrolling
+ *   - "my Lily ID" was a bare paragraph styled like a disabled input; it is a
+ *     profile row with the avatar and the id
+ */
 export function initCollaborationFriends(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
-  if (!root?.querySelectorAll) return { update() {}, reset() {} };
+  if (!root?.querySelectorAll) return { update() {}, reset() {}, setFilter() {} };
   root.replaceChildren();
-  const profile = socialNode("p", "", "collaboration-profile-id"); root.append(profile);
-  const form = socialNode("form", "", "collaboration-social-form");
-  const lilyId = socialField(form, "lilyId", "exactLilyId"); lilyId.required = true; lilyId.maxLength = 64;
-  const submit = socialNode("button", t("collaboration.social.request"), "collaboration-social-primary"); submit.type = "submit"; form.append(submit); root.append(socialDisclosure(`＋ ${t("collaboration.social.request")}`, form, { primary: true }));
-  const contacts = socialNode("div"); root.append(contacts);
-  const search = document.createElement("input"); search.type = "search"; search.className = "collaboration-search"; search.placeholder = t("collaboration.search.placeholder"); search.autocomplete = "off"; root.append(search);
-  let filter = "";
-  search.addEventListener("input", () => { filter = search.value; paintContacts(); });
+
+  const profileRow = socialNode("div", "", "collaboration-social-row is-profile");
+  const entries = socialNode("div", "", "collaboration-contact-entries");
+  const requestsPanel = socialNode("div", "", "collaboration-request-panel"); requestsPanel.hidden = true;
+
+  const addForm = socialNode("form", "", "collaboration-social-form");
+  const lilyId = socialField(addForm, "lilyId", "exactLilyId"); lilyId.required = true; lilyId.maxLength = 64;
+  const submit = socialNode("button", t("collaboration.social.request"), "collaboration-social-primary"); submit.type = "submit"; addForm.append(submit);
+  const addDisclosure = socialDisclosure(t("collaboration.social.addContact"), addForm, { primary: true });
+  addDisclosure.classList.add("is-row");
+
+  const contacts = socialNode("div", "", "collaboration-contact-list");
+  // No search input of its own: the panel header owns the one search box and
+  // drives this view through `setFilter`. A second box, below the list it
+  // filtered, was the previous shape.
+  root.append(profileRow, entries, addDisclosure, requestsPanel, contacts);
+
+  let filter = "", requestsOpen = false;
+  let directoryCache = { contacts: [] };
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
-  form.addEventListener("submit", (event) => {
+
+  addForm.addEventListener("submit", (event) => {
     event.preventDefault(); const value = lilyId.value.trim(); if (!value) return;
     void ui.run(() => api.friend({ action: "request", lilyId: value }), () => { if (lilyId.value.trim() === value) lilyId.value = ""; });
   });
+
   async function change(action, contact, extra = {}) {
     const generation = ui.current();
     if (["remove", "block", "unblock", "decline"].includes(action)
@@ -34,43 +67,119 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
       : { action, peerUserId: contact.userId, ...extra };
     await ui.run(() => api.friend(command));
   }
-  let directoryCache = { contacts: [] };
-  function paintContacts() {
-    contacts.replaceChildren();
-    const needle = filter.trim().toLocaleLowerCase();
-    const rows = (directoryCache.contacts || []).filter((contact) => {
-      if (!needle) return true;
-      return [contact.displayName, contact.lilyId, contact.userId].some((value) => String(value || "").toLocaleLowerCase().includes(needle));
-    });
-    if (!rows.length) contacts.append(socialNode("p", t("collaboration.noFriends"), "collaboration-empty"));
-    for (const contact of rows) {
-      const row = socialNode("section", "", "collaboration-social-row"); row.dataset.userId = contact.userId;
-      const name = identityName(contact);
-      const relationship = t(`collaboration.social.${contact.ownBlocked ? "blocked" : contact.relationship || "contact"}`);
-      const subtitle = contact.lilyId ? `${contact.lilyId} · ${relationship}` : relationship;
-      const copy = socialNode("div", "", "collaboration-row-content"); copy.append(socialNode("strong", name), socialNode("small", subtitle));
-      row.append(socialAvatar(name), copy);
+
+  const openChat = (contact) => ui.run(() => api.openFriend(contact.userId), (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); });
+
+  /** One 56px row: avatar, name, and actions that stay out of the way. */
+  function contactRow(contact, { actions = [] } = {}) {
+    const row = socialNode("div", "", "collaboration-social-row"); row.dataset.userId = contact.userId;
+    const name = identityName(contact);
+    // The subtitle is the Lily ID alone. The relationship used to be printed
+    // here too, but "friend" on every row in the friends list is noise.
+    row.append(socialRowButton(name, contact.relationship === "friend" && !contact.ownBlocked ? () => openChat(contact) : null,
+      { avatar: socialAvatar(name), subtitle: contact.lilyId || "" }));
+    if (actions.length) {
       const controls = socialNode("div", "", "collaboration-social-actions");
-      if (contact.ownBlocked) controls.append(socialButton("unblock", "unblock", () => change("unblock", contact)));
-      else {
-        if (contact.relationship === "incoming") for (const action of ["accept", "decline"]) controls.append(socialButton(action, action, () => change(action, contact)));
-        if (contact.relationship === "friend") {
-          controls.append(socialButton("chat", "chat", () => ui.run(() => api.openFriend(contact.userId), (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); })));
-          controls.append(socialButton("remove", "remove", () => change("remove", contact)));
-        }
-        controls.append(socialButton("block", "block", () => change("block", contact)));
-      }
-      row.append(controls); contacts.append(row);
+      for (const control of actions) controls.append(control);
+      row.append(controls);
+    }
+    return row;
+  }
+
+  function paintProfile(profile) {
+    profileRow.replaceChildren();
+    const name = identityName(profile || {});
+    // Not a button: there is nothing to click here, and a disabled button
+    // greys its own text — which made the reader's own name look inactive.
+    const body = socialNode("div", "", "collaboration-row-open is-static");
+    body.append(socialAvatar(name));
+    const content = socialNode("div", "", "collaboration-row-content");
+    content.append(socialNode("strong", name),
+      socialNode("small", profile?.lilyId ? `${t("collaboration.social.myLilyId")}: ${profile.lilyId}` : t("collaboration.social.unavailable")));
+    body.append(content);
+    profileRow.append(body);
+  }
+
+  function paintEntries(incoming) {
+    entries.replaceChildren();
+    // WeChat's "new friends" entry: pending requests are an errand with a
+    // count, not rows to be spotted inside the contact list.
+    const requestRow = socialNode("div", "", "collaboration-social-row is-entry");
+    const button = socialRowButton(t("collaboration.social.newFriends"), () => { requestsOpen = !requestsOpen; paint(); },
+      { icon: "request", trailing: incoming.length ? String(incoming.length) : "" });
+    button.dataset.action = "new-friends";
+    button.setAttribute("aria-expanded", String(requestsOpen));
+    if (incoming.length) button.dataset.badge = "1";
+    requestRow.append(button);
+    entries.append(requestRow);
+  }
+
+  function paintRequests(incoming) {
+    requestsPanel.replaceChildren();
+    requestsPanel.hidden = !requestsOpen;
+    if (!requestsOpen) return;
+    if (!incoming.length) { requestsPanel.append(socialNode("p", t("collaboration.social.noRequests"), "collaboration-empty")); return; }
+    // Accept/decline stay as words here: this is the one screen where deciding
+    // is the whole purpose, so the actions should not hide behind hover.
+    for (const contact of incoming) {
+      requestsPanel.append(contactRow(contact, { actions: [
+        socialButton("accept", "accept", () => change("accept", contact)),
+        socialButton("decline", "decline", () => change("decline", contact)),
+      ] }));
     }
   }
+
+  function matches(contact, needle) {
+    if (!needle) return true;
+    return [contact.displayName, contact.lilyId, contact.userId].some((value) => String(value || "").toLocaleLowerCase().includes(needle));
+  }
+
+  function paint() {
+    const needle = filter.trim().toLocaleLowerCase();
+    const all = Array.isArray(directoryCache.contacts) ? directoryCache.contacts : [];
+    const incoming = all.filter((contact) => contact.relationship === "incoming" && !contact.ownBlocked);
+    paintProfile(directoryCache.profile);
+    paintEntries(incoming);
+    paintRequests(incoming.filter((contact) => matches(contact, needle)));
+
+    contacts.replaceChildren();
+    const friends = all.filter((contact) => !contact.ownBlocked && contact.relationship !== "incoming" && matches(contact, needle));
+    const blocked = all.filter((contact) => contact.ownBlocked && matches(contact, needle));
+    if (!friends.length && !blocked.length) { contacts.append(socialNode("p", t("collaboration.noFriends"), "collaboration-empty")); return; }
+
+    for (const section of groupByLetter(friends, (contact) => identityName(contact))) {
+      const heading = socialNode("div", section.letter, "collaboration-section-letter");
+      heading.dataset.letter = section.letter;
+      contacts.append(heading);
+      for (const contact of section.people) {
+        contacts.append(contactRow(contact, { actions: [
+          socialIconButton("chat", "chat", "chat", () => openChat(contact)),
+          socialIconButton("remove", "remove", "remove", () => change("remove", contact), { tone: "danger" }),
+          socialIconButton("block", "block", "block", () => change("block", contact), { tone: "danger" }),
+        ] }));
+      }
+    }
+    if (blocked.length) {
+      const heading = socialNode("div", t("collaboration.social.blockedSection"), "collaboration-section-letter");
+      heading.dataset.letter = "blocked";
+      contacts.append(heading);
+      for (const contact of blocked) {
+        contacts.append(contactRow(contact, { actions: [socialButton("unblock", "unblock", () => change("unblock", contact))] }));
+      }
+    }
+  }
+
   return {
     update({ directory, commands = [] } = {}) {
-      profile.textContent = `${t("collaboration.social.myLilyId")}: ${directory?.profile?.lilyId || t("collaboration.social.unavailable")}`;
       directoryCache = directory || { contacts: [] };
-      paintContacts();
+      paint();
       ui.renderPending(commands, "friend", api);
     },
-    setFilter(value) { filter = String(value || ""); search.value = filter; paintContacts(); },
-    reset() { ui.reset(); lilyId.value = ""; profile.textContent = ""; filter = ""; search.value = ""; directoryCache = { contacts: [] }; contacts.replaceChildren(); },
+    setFilter(value) { filter = String(value || ""); paint(); },
+    reset() {
+      ui.reset(); lilyId.value = ""; filter = ""; requestsOpen = false;
+      directoryCache = { contacts: [] };
+      profileRow.replaceChildren(); entries.replaceChildren(); requestsPanel.replaceChildren(); requestsPanel.hidden = true; contacts.replaceChildren();
+    },
   };
 }
