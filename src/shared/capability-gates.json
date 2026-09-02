@@ -529,6 +529,16 @@
       "tests": [
         "scripts/test-collaboration-legibility.mjs"
       ]
+    },
+    {
+      "id": "im-attachment-metadata",
+      "protects": "A message attachment shows its name, size and type — and a thumbnail once its bytes are local — instead of N identical Download buttons. The record of WHERE that metadata lives survives: the server already had original_name/mime_type from object init, so only the history projection was missing; it is NOT an end-to-end payload problem, because history is the server's authorized plaintext view and a sender-side encrypted payload would never reach the recipient.",
+      "baseline": "Strictly additive. `attachmentIds` is unchanged in content and order, so addressing, authorization, download, revocation and reply snapshots behave exactly as before; an older server sends no metadata and every card falls back to the plain download action that shipped previously.",
+      "failureFallback": "Metadata is descriptive and never an input to access: it is re-derived at the IPC boundary against the ids actually projected, withheld entirely for a revoked message on BOTH sides, dropped (never sanitized) when a name carries path parts, bounded at 20 rows, and the server join is a LEFT join so a missing object row cannot shorten the id list. A thumbnail is only attempted for an image type and only from a finished download; an unresolved preview leaves the drawn glyph and the download action.",
+      "tests": [
+        "scripts/test-collaboration-attachment-metadata.mjs",
+        "scripts/test-collaboration-timeline.cjs"
+      ]
     }
   ]
 }

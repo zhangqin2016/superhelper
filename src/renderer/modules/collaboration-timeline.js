@@ -1,4 +1,5 @@
 import { t } from "../i18n/index.js";
+import { formatBytes } from "./format-bytes.js";
 import { replyDisplay } from "./collaboration-reply-view.js";
 import { avatarHue } from "./collaboration-social-ui.js";
 
@@ -112,7 +113,36 @@ function sequence(message) {
   return message.seq != null && Number.isSafeInteger(value) && value > 0 ? value : Infinity;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "" } = {}) {
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** A file or picture mark, drawn so it is the same on macOS and Windows. */
+function attachmentGlyph(isImage) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = (d) => { const node = document.createElementNS(SVG_NS, "path"); node.setAttribute("d", d); svg.append(node); };
+  if (isImage) {
+    path("M4 5.5h16v13H4z");
+    // A horizon and a sun: reads as a picture at 18px, where a detailed mark does not.
+    path("M4 15l4.5-4 3.5 3 3-2.5L20 15.5");
+    const sun = document.createElementNS(SVG_NS, "circle");
+    sun.setAttribute("cx", "9"); sun.setAttribute("cy", "9.5"); sun.setAttribute("r", "1.6");
+    svg.append(sun);
+  } else {
+    path("M6 3.5h7l5 5v12H6z");
+    path("M13 3.5v5h5");
+  }
+  return svg;
+}
+
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "", resolveAttachmentPreview = null, onPreview = null } = {}) {
   if (!node) return;
   node.querySelectorAll(":scope > .collaboration-date-separator").forEach((el) => el.remove());
   const prior = indexTimelineRows([...node.children]);
@@ -281,12 +311,63 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     if (!hiddenSource && message.attachmentIds?.length && onDownload && canDownload(purpose)) {
       if (!attachments) { attachments = document.createElement("div"); attachments.className = "collaboration-message-attachments"; bubble.append(attachments); }
       const existing = new Map([...attachments.children].map((button) => [button.dataset.objectId, button]));
+      // Metadata is keyed by objectId and is OPTIONAL — an older server, or a
+      // revoked message, simply yields none, and the card degrades to the bare
+      // download action this used to be.
+      const meta = new Map((Array.isArray(message.attachments) ? message.attachments : [])
+        .map((entry) => [entry?.objectId, entry]).filter(([key]) => typeof key === "string"));
       for (const objectId of message.attachmentIds) {
-        const button = existing.get(objectId) || document.createElement("button"); button.type = "button";
-        button.dataset.action = "download-attachment"; button.dataset.objectId = objectId;
-        button.textContent = t("collaboration.transfer.download");
-        button.onclick = () => onDownload({ conversationId: message.conversationId, messageId: message.id, objectId }, purpose);
-        attachments.append(button); existing.delete(objectId);
+        const info = meta.get(objectId) || {};
+        const card = existing.get(objectId) || document.createElement("button"); card.type = "button";
+        card.className = "collaboration-attachment";
+        card.dataset.action = "download-attachment"; card.dataset.objectId = objectId;
+        const name = typeof info.originalName === "string" && info.originalName ? info.originalName : "";
+        const mimeType = typeof info.mimeType === "string" ? info.mimeType : "";
+        const isImage = mimeType.startsWith("image/");
+        let thumb = card.querySelector(".collaboration-attachment-thumb");
+        if (!thumb) { thumb = document.createElement("span"); thumb.className = "collaboration-attachment-thumb"; card.append(thumb); }
+        let text = card.querySelector(".collaboration-attachment-text");
+        if (!text) { text = document.createElement("span"); text.className = "collaboration-attachment-text"; card.append(text); }
+        let title = text.querySelector("strong");
+        if (!title) { title = document.createElement("strong"); text.append(title); }
+        let detail = text.querySelector("small");
+        if (!detail) { detail = document.createElement("small"); text.append(detail); }
+        const titleText = name || t("collaboration.transfer.attachment");
+        if (title.textContent !== titleText) title.textContent = titleText;
+        // Size and type are the two things that decide whether a person wants
+        // the download at all, so they are the subtitle rather than a tooltip.
+        const detailText = [Number.isSafeInteger(info.sizeBytes) ? formatBytes(info.sizeBytes) : "",
+          isImage ? t("collaboration.transfer.image") : mimeType].filter(Boolean).join(" · ")
+          || t("collaboration.transfer.download");
+        if (detail.textContent !== detailText) detail.textContent = detailText;
+        card.dataset.kind = isImage ? "image" : "file";
+        // Drawn, not an emoji: U+1F5BB rendered as a thin bar here, and glyph
+        // coverage for the picture/document emoji is worse still on Windows.
+        // An inline SVG is identical on every platform and inherits currentColor.
+        if (!thumb.querySelector("img") && thumb.dataset.glyph !== card.dataset.kind) {
+          thumb.replaceChildren(attachmentGlyph(isImage));
+          thumb.dataset.glyph = card.dataset.kind;
+        }
+        card.onclick = () => {
+          // A resolved thumbnail means the bytes are already local: open the
+          // viewer instead of starting a download that would only re-fetch.
+          if (card.dataset.previewed === "1" && onPreview) { void onPreview(objectId); return; }
+          onDownload({ conversationId: message.conversationId, messageId: message.id, objectId }, purpose);
+        };
+        attachments.append(card); existing.delete(objectId);
+        if (isImage && resolveAttachmentPreview && card.dataset.previewPending !== "1" && card.dataset.previewed !== "1") {
+          card.dataset.previewPending = "1";
+          void Promise.resolve(resolveAttachmentPreview(objectId)).then((preview) => {
+            card.dataset.previewPending = "";
+            // The row may have been re-rendered, reused for another message, or
+            // detached while the main process was resolving the path.
+            if (!preview?.url || !card.isConnected || card.dataset.objectId !== objectId) return;
+            let image = thumb.querySelector("img");
+            if (!image) { image = document.createElement("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async"; thumb.replaceChildren(image); }
+            if (image.getAttribute("src") !== preview.url) image.setAttribute("src", preview.url);
+            card.dataset.previewed = "1";
+          }).catch(() => { card.dataset.previewPending = ""; });
+        }
       }
       for (const button of existing.values()) button.remove();
     } else attachments?.remove();

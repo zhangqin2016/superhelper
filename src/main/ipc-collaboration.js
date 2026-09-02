@@ -2,7 +2,7 @@
 const { normalizeMentionCandidates } = require("./collaboration/mention-candidates");
 const { directoryView } = require("./collaboration/directory-view");
 const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/social-command-contract");
-const { attachmentIds } = require("./collaboration/history-cache");
+const { attachmentIds, attachmentMetadata } = require("./collaboration/history-cache");
 const { transferResult, registerTransferIpc } = require("./collaboration/transfer-ipc");
 const { messageMetadata, messageIdentifier, MAX_CREATE_BYTES } = require("./collaboration/message-intent");
 const { normalizeReplySnapshot } = require("./collaboration/reply-snapshot");
@@ -80,6 +80,10 @@ function rendererMessage(value = {}) {
     senderUserId: safeIdentifier(value.senderUserId) || "", isOwn: value.isOwn === true, state: safeIdentifier(value.state) || "",
     bodyText: typeof value.bodyText === "string" ? value.bodyText.slice(0, MAX_TEXT_BYTES) : "",
     kind: ["text", "attachment", "workspace_share"].includes(value.kind) ? value.kind : "text", attachmentIds: attachmentIds(value),
+    // Re-derived at the boundary against the projected id list, not trusted
+    // from the record: the renderer must never see metadata for an object it
+    // was not also given the id of.
+    ...(() => { const meta = attachmentMetadata(value, attachmentIds(value)); return meta.length ? { attachments: meta } : {}; })(),
     ...(Array.isArray(value.reactions) && value.reactions.length ? { reactions: value.reactions.slice(0, 24).flatMap((entry) => {
       const emoji = typeof entry?.emoji === "string" ? entry.emoji.trim() : "";
       const count = Number(entry?.count);

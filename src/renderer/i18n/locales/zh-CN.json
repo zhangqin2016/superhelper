@@ -35,6 +35,7 @@
   "collaboration.transfer.delivery_unknown": "送达结果未知，正在保留原消息身份等待确认",
   "collaboration.transfer.attach": "添加附件",
   "collaboration.transfer.attachment": "附件",
+  "collaboration.transfer.image": "图片",
   "collaboration.transfer.sendSelected": "发送选中附件",
   "collaboration.transfer.select": "选择",
   "collaboration.transfer.confirmSend": "确认收件人与附件并发送",

@@ -88,6 +88,43 @@ app.whenReady().then(async () => {
       // Exactly one timestamp per message — never one in the row and one in the bubble.
       singleMeta: reactRoot.querySelectorAll('[data-message-key="react"] .collaboration-message-meta').length,
     };
+    // Attachments: a card carries the name/size/type that decide whether
+    // someone wants the file, and degrades to a plain download action when the
+    // server sent no metadata (older server, or a revoked message).
+    const attachRoot=document.createElement('div');document.body.append(attachRoot);
+    let previewAsked=[];
+    render(attachRoot,[
+      {id:'att',seq:1,senderUserId:'alice',isOwn:false,kind:'attachment',bodyText:'here',createdAt:1788250000000,
+       conversationId:'c1',attachmentIds:['o1','o2','o3'],
+       attachments:[{objectId:'o1',originalName:'plan.png',mimeType:'image/png',sizeBytes:2097152},
+                    {objectId:'o2',originalName:'notes.pdf',mimeType:'application/pdf',sizeBytes:4096}]},
+    ],{currentUserId:'me',resolveSender:(id)=>id,onDownload:()=>{},canDownload:()=>true,
+       resolveAttachmentPreview:(objectId)=>{previewAsked.push(objectId);
+         return Promise.resolve(objectId==='o1'?{url:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7',mimeType:'image/gif'}:null);},
+       onPreview:()=>{}});
+    await new Promise((resolve)=>setTimeout(resolve,250));
+    const attachmentContract={
+      // One card per id, in id order, whether or not metadata exists.
+      cards:[...attachRoot.querySelectorAll('.collaboration-attachment')].map((c)=>c.dataset.objectId).join(','),
+      // The two things that decide whether to download are on the surface.
+      firstTitle:attachRoot.querySelector('[data-object-id="o1"] strong')?.textContent,
+      firstDetail:attachRoot.querySelector('[data-object-id="o1"] small')?.textContent,
+      secondDetail:attachRoot.querySelector('[data-object-id="o2"] small')?.textContent,
+      // An id the server described nothing about still renders an actionable
+      // card — the pre-metadata behaviour, not an empty box.
+      bareTitle:attachRoot.querySelector('[data-object-id="o3"] strong')?.textContent,
+      bareAction:attachRoot.querySelector('[data-object-id="o3"]')?.dataset.action,
+      // Thumbnails are asked for images only; a pdf must not cause a preview call.
+      previewAsked:previewAsked.join(','),
+      // The resolved thumbnail replaces the drawn glyph, and only for that card.
+      imageHasImg:Boolean(attachRoot.querySelector('[data-object-id="o1"] .collaboration-attachment-thumb img')),
+      fileHasSvg:Boolean(attachRoot.querySelector('[data-object-id="o2"] .collaboration-attachment-thumb svg')),
+      // Icons are drawn, not emoji: emoji coverage differs per platform.
+      noEmojiGlyph:!/[\u{1F300}-\u{1FAFF}]/u.test(attachRoot.textContent||''),
+      // A resolved thumbnail means the bytes are local, so the card opens the
+      // viewer instead of starting a download that would only re-fetch.
+      previewedFlag:attachRoot.querySelector('[data-object-id="o1"]')?.dataset.previewed,
+    };
     const groupedRoot=document.createElement('div');document.body.append(groupedRoot);
     render(groupedRoot,[
       {id:'g1',seq:1,senderUserId:'usr_internal',isOwn:false,bodyText:'a',createdAt:1788250000000},
@@ -141,9 +178,14 @@ app.whenReady().then(async () => {
     const revokedView = { rows:document.getElementById('collaborationTimeline').children.length, draft:document.getElementById('collaborationComposer').value,
       disabled:document.getElementById('collaborationSendButton').disabled, scope:document.getElementById('collaborationScopeBadge').textContent };
     center.destroy();
-    return { threadNavContract, reactionContract, initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
+    return { threadNavContract, reactionContract, attachmentContract, initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
+  assert.deepEqual(result.attachmentContract, { cards: "o1,o2,o3", firstTitle: "plan.png", firstDetail: "2.0 MB \u00b7 collaboration.transfer.image",
+    secondDetail: "4.0 KB \u00b7 application/pdf", bareTitle: "collaboration.transfer.attachment", bareAction: "download-attachment",
+    previewAsked: "o1", imageHasImg: true, fileHasSvg: true, noEmojiGlyph: true, previewedFlag: "1" },
+    "an attachment renders as a card with name/size/type, thumbnails images, and still works with no metadata"
+    + " (raw i18n keys: this harness imports the module without a locale, so a key here proves the label is translated, not hardcoded)");
   assert.deepEqual(result.reactionContract, { metaEndsChipRow: true, chipsComeFirst: true, singleMeta: 1 },
     "a reacted bubble puts chips and the time on ONE footer row, not the time on a third line");
   assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true, everyBubbleHasTime: true, metaInsideBubble: true, noFloatingRowTime: true, metaIsLastInBubble: true, ownIdentityHidden: true }, "timeline uses reliable own-message alignment and one in-bubble meta line (time + tick) per Telegram, not a floating row timestamp");

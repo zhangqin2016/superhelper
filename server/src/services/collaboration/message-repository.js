@@ -73,13 +73,31 @@ export function createKyselyMessageRepository(db) {
       const attachmentMessageIds = rows.filter((row) => row.kind === "attachment" || row.kind === "workspace_share").map((row) => row.id);
       // The text-only baseline does not depend on object migrations or keys.
       if (!attachmentMessageIds.length) return rows;
-      const attachments = await trx.selectFrom("message_attachments").select(["message_id", "object_id", "sort_order"]).where("message_id", "in", attachmentMessageIds).orderBy("sort_order", "asc").execute();
+      // LEFT join, deliberately: the object row carries only DESCRIPTIVE data
+      // (name, type, size). An inner join would drop an attachment whose object
+      // row is missing, silently shortening `attachmentIds` — and that list is
+      // what authorizes and addresses a download. Metadata is additive; the id
+      // list must be exactly what it was before this join existed.
+      const attachments = await trx.selectFrom("message_attachments")
+        .leftJoin("stored_objects", "stored_objects.id", "message_attachments.object_id")
+        .select(["message_attachments.message_id", "message_attachments.object_id", "message_attachments.sort_order",
+          "stored_objects.original_name as originalName", "stored_objects.mime_type as mimeType",
+          "stored_objects.ciphertext_size as sizeBytes"])
+        .where("message_attachments.message_id", "in", attachmentMessageIds).orderBy("message_attachments.sort_order", "asc").execute();
       const byMessage = new Map();
+      const metaByMessage = new Map();
       for (const attachment of attachments) {
-        if (!byMessage.has(attachment.message_id)) byMessage.set(attachment.message_id, []);
+        if (!byMessage.has(attachment.message_id)) { byMessage.set(attachment.message_id, []); metaByMessage.set(attachment.message_id, []); }
         byMessage.get(attachment.message_id).push(attachment.object_id);
+        if (attachment.originalName == null && attachment.mimeType == null && attachment.sizeBytes == null) continue;
+        metaByMessage.get(attachment.message_id).push({
+          objectId: attachment.object_id,
+          ...(attachment.originalName == null ? {} : { originalName: String(attachment.originalName) }),
+          ...(attachment.mimeType == null ? {} : { mimeType: String(attachment.mimeType) }),
+          ...(attachment.sizeBytes == null ? {} : { sizeBytes: Number(attachment.sizeBytes) }),
+        });
       }
-      return rows.map((row) => ({ ...row, attachmentIds: byMessage.get(row.id) || [] }));
+      return rows.map((row) => ({ ...row, attachmentIds: byMessage.get(row.id) || [], attachments: metaByMessage.get(row.id) || [] }));
     },
   };
 }

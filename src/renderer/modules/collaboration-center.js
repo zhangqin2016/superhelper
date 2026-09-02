@@ -62,6 +62,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     highlight: searchQuery.trim(),
     resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
     onDownload: (input, purpose) => attachments.download(input, purpose),
+    // Thumbnails resolve only for attachments already downloaded; the panel
+    // owns the transfer list, so it answers by objectId and caches the URL.
+    resolveAttachmentPreview: (objectId) => attachments.resolvePreview(objectId),
+    onPreview: (objectId) => attachments.openPreview(objectId),
     canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
     canReply: (message) => !disposed && policyEnabled && !panel.hidden && !navigating && Boolean(activeConversationId) && historyMessages.includes(message),
     onReply: (message) => {

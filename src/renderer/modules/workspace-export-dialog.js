@@ -1,11 +1,5 @@
 import { t } from "../i18n/index.js";
-
-function formatBytes(bytes) {
-  const value = Number(bytes || 0);
-  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${value} B`;
-}
+import { formatBytes } from "./format-bytes.js";
 
 function workspaceSkillRiskLabel(warning) {
   const value = warning?.value ? `: ${warning.value}` : "";

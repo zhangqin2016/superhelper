@@ -35,6 +35,7 @@
   "collaboration.transfer.delivery_unknown": "نتيجة التسليم غير معروفة؛ تم الاحتفاظ بهوية الرسالة الأصلية للتأكيد",
   "collaboration.transfer.attach": "إضافة مرفق",
   "collaboration.transfer.attachment": "مرفق",
+  "collaboration.transfer.image": "صورة",
   "collaboration.transfer.sendSelected": "إرسال المرفقات المحددة",
   "collaboration.transfer.select": "تحديد",
   "collaboration.transfer.confirmSend": "تأكيد المستلم والإرسال",

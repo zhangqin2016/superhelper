@@ -1,4 +1,5 @@
 import { t } from "../i18n/index.js";
+import { formatBytes } from "./format-bytes.js";
 import { runtimePackLabel } from "./runtime-pack-preflight-ui.js";
 import { openSettingsPage } from "./settings-panel.js";
 
@@ -73,19 +74,6 @@ function ensureElement() {
   }
 }
 
-function formatBytes(bytes) {
-  const value = Number(bytes || 0);
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let size = value;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit += 1;
-  }
-  const digits = size >= 10 || unit === 0 ? 0 : 1;
-  return `${size.toFixed(digits)} ${units[unit]}`;
-}
 
 function progressPercent(progress) {
   if (progress?.phase === "extracting" && progress?.totalEntries) {

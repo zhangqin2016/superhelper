@@ -35,6 +35,7 @@
   "collaboration.transfer.delivery_unknown": "Delivery unknown; original message identity retained for confirmation",
   "collaboration.transfer.attach": "Add attachment",
   "collaboration.transfer.attachment": "Attachment",
+  "collaboration.transfer.image": "Image",
   "collaboration.transfer.sendSelected": "Send selected attachments",
   "collaboration.transfer.select": "Select",
   "collaboration.transfer.confirmSend": "Confirm recipient and send",

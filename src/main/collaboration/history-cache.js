@@ -13,6 +13,35 @@ function attachmentIds(message) {
   return message.revokedAt ? [] : [...ids];
 }
 
+/** Descriptive only. A malformed or unknown entry costs a filename, never
+ *  access: `attachmentIds` above stays the sole addressing/authorization list,
+ *  so this never throws the way invalid ids do — it drops what it cannot trust.
+ *  A revoked message keeps nothing, because a filename is content too. */
+function attachmentMetadata(message, ids) {
+  if (message.revokedAt || !ids.length || !Array.isArray(message.attachments)) return [];
+  const allowed = new Set(ids);
+  const seen = new Set();
+  const view = [];
+  for (const row of message.attachments) {
+    if (!row || typeof row !== "object") continue;
+    const objectId = typeof row.objectId === "string" ? row.objectId : "";
+    if (!allowed.has(objectId) || seen.has(objectId)) continue;
+    const originalName = typeof row.originalName === "string" && row.originalName
+      && Buffer.byteLength(row.originalName, "utf8") <= 255
+      && !/[\\/\x00-\x1f\x7f]/.test(row.originalName) && ![".", ".."].includes(row.originalName)
+      ? row.originalName : null;
+    const mimeType = typeof row.mimeType === "string" && row.mimeType.length <= 100
+      && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(row.mimeType) ? row.mimeType.toLowerCase() : null;
+    const sizeBytes = Number.isSafeInteger(row.sizeBytes) && row.sizeBytes >= 0 ? row.sizeBytes : null;
+    if (originalName == null && mimeType == null && sizeBytes == null) continue;
+    seen.add(objectId);
+    view.push({ objectId, ...(originalName == null ? {} : { originalName }),
+      ...(mimeType == null ? {} : { mimeType }), ...(sizeBytes == null ? {} : { sizeBytes }) });
+    if (view.length >= 20) break;
+  }
+  return view;
+}
+
 /** Persist only the server's authorized plaintext history view, encrypted locally. */
 function hydrateAuthorizedHistory(store, { conversation, messages = [], completeCheckpoint = true }) {
   const target = store.db.get(`SELECT scope_id FROM conversations WHERE account_id = ? AND id = ?`, store.accountId, conversation);
@@ -43,6 +72,7 @@ function hydrateAuthorizedHistory(store, { conversation, messages = [], complete
         editedAt: message.editedAt ?? null, kind: String(message.kind || "text"),
         createdAt: prior?.createdAt ?? createdAt, clientCreatedAt: prior?.clientCreatedAt ?? null,
         attachmentIds: normalizedAttachments,
+        attachments: attachmentMetadata(message, normalizedAttachments),
         replySnapshot: replySnapshotView(store, conversation, { ...message, replySnapshot: snapshot }),
         ...(prior?.clientCommandId ? { clientCommandId: prior.clientCommandId } : ownClientCommandId ? { clientCommandId: ownClientCommandId } : {}),
       };
@@ -94,4 +124,4 @@ function adoptOptimisticIdentity(store, { conversationId, messageId, clientComma
     store.accountId, conversationId, messageId);
 }
 
-module.exports = { hydrateAuthorizedHistory, backfillMessageCommandIds, attachmentIds, adoptOptimisticIdentity };
+module.exports = { hydrateAuthorizedHistory, backfillMessageCommandIds, attachmentIds, attachmentMetadata, adoptOptimisticIdentity };

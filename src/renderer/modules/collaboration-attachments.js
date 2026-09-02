@@ -47,6 +47,28 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     button.addEventListener("click", () => { void openPreview(transferId); });
     row.append(button);
   }
+  // Thumbnails in message bubbles ask by objectId, which is what a message
+  // carries; only a FINISHED download exposes plaintext, so this returns null
+  // until then and the bubble shows its name/size chip instead.
+  const previewCache = new Map();
+  function readyDownload(objectId) {
+    return transfers.find((item) => item.objectId === objectId && item.direction === "download" && item.state === "ready") || null;
+  }
+  async function resolvePreviewByObject(objectId) {
+    if (!objectId || !policy.attachments || disposed) return null;
+    if (previewCache.has(objectId)) return previewCache.get(objectId);
+    const transfer = readyDownload(objectId);
+    // Deliberately NOT cached: the download may finish later, and a cached
+    // null here would keep the thumbnail missing for the rest of the session.
+    if (!transfer) return null;
+    let resolved; try { resolved = await api?.resolveTransferPreview?.(transfer.id); } catch { resolved = null; }
+    const value = resolved?.ok === true && typeof resolved.url === "string" && resolved.url
+      && String(resolved.mimeType || "").startsWith("image/")
+      ? { url: resolved.url, mimeType: String(resolved.mimeType), originalName: String(resolved.originalName || "") }
+      : null;
+    previewCache.set(objectId, value);
+    return value;
+  }
   async function openPreview(transferId) {
     let resolved; try { resolved = await api?.resolveTransferPreview?.(transferId); } catch { resolved = null; }
     if (resolved?.ok !== true || !resolved.url) return;
@@ -156,7 +178,11 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   confirmation.addEventListener("keydown", escape);
   attachButton.addEventListener("click", pick); sendButton.addEventListener("click", confirmSend);
   function reset() {
-    epoch += 1; refreshVersion += 1; conversation = null; transfers = []; selected.clear(); busy.clear(); clearConfirmation(false); status.textContent = ""; recoveryStatus.textContent = ""; recoveryStatus.hidden = true; render();
+    epoch += 1; refreshVersion += 1; conversation = null; transfers = []; selected.clear(); busy.clear(); clearConfirmation(false); status.textContent = ""; recoveryStatus.textContent = ""; recoveryStatus.hidden = true;
+    // Preview URLs are scoped to a conversation's transfers: keeping them
+    // across a switch would point a bubble at another conversation's file.
+    previewCache.clear();
+    render();
   }
   controls();
   return {
@@ -171,6 +197,11 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
       if (disposed) return;
       if (conversation?.id !== value?.id || conversation?.scopeId !== value?.scopeId || policy.attachments !== nextPolicy.attachments || policy.workspaceShares !== nextPolicy.workspaceShares) reset();
       conversation = value || null; policy = nextPolicy; controls(); void refresh();
+    },
+    resolvePreview(objectId) { return resolvePreviewByObject(objectId); },
+    openPreview(objectId) {
+      const transfer = readyDownload(objectId);
+      return transfer ? openPreview(transfer.id) : Promise.resolve();
     },
     download(input, purpose = "attachment") {
       if (!conversation || input?.conversationId !== conversation.id || !(purpose === "attachment" ? policy.attachments : purpose === "workspace" && policy.workspaceShares)) return Promise.resolve();

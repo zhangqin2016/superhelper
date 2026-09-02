@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { runCollaborationCommand } from "./command-runner.js";
 import { createReactToMessage } from "./message-reaction-command.js";
 import { createEncryptedReplySnapshot, historyReplySnapshots } from "./reply-snapshot.js";
+import { historyMessageView } from "./message-history-view.js";
 import {
   commandError, requiredId, requiredPositiveInteger, normalizeIdList,
   normalizedBodyText, signedBodyIntent, resolveStableBodyIntent,
@@ -130,36 +131,6 @@ export function applyMessageActivityProjection(state = {}, event = {}, userId) {
     ? [...unreadActivities, { eventId, seq, mentioned: mentions.includes(String(userId || "")) }]
     : unreadActivities;
   return activityState(lastReadSeq, nextActivities, nextAppliedEventIds);
-}
-
-function historyMessageView(message, messageCrypto, actorUserId) {
-  const id = String(message?.id || "");
-  const conversationId = String(message?.conversationId ?? message?.conversation_id ?? "");
-  const revision = Number(message?.revision || 1);
-  const ciphertext = message?.bodyCiphertext ?? message?.body_ciphertext ?? null;
-  const keyVersion = message?.bodyKeyVersion ?? message?.body_key_version ?? null;
-  const bodyText = ciphertext == null ? null : messageCrypto.decrypt({
-    ciphertext, keyVersion, messageId: id, conversationId, revision,
-  }).toString("utf8");
-  const senderUserId = String(message?.senderUserId ?? message?.sender_user_id ?? "");
-  const ownClientCommandId = senderUserId === actorUserId && message?.clientCommandId != null
-    ? requiredId(message.clientCommandId, "History client command id") : "";
-  return {
-    id,
-    conversationId,
-    createSeq: Number(message?.createSeq ?? message?.create_seq),
-    senderUserId,
-    ...(ownClientCommandId ? { clientCommandId: ownClientCommandId } : {}),
-    kind: String(message?.kind || "text"),
-    bodyText,
-    revision,
-    replyToMessageId: message?.replyToMessageId ?? message?.reply_to_message_id ?? null,
-    mentionUserIds: normalizeIdList(message?.mentionUserIds, "History mention user ids"),
-    editedAt: message?.editedAt ?? message?.edited_at ?? null,
-    revokedAt: message?.revokedAt ?? message?.revoked_at ?? null,
-    createdAt: message?.createdAt ?? message?.created_at ?? null,
-    attachmentIds: Array.isArray(message?.attachmentIds) ? [...message.attachmentIds] : [],
-  };
 }
 
 function lockedVisibleAfterSeq(authorization) {

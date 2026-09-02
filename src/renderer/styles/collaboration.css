@@ -30,7 +30,21 @@
      supposed to have. These land both sides at 2.02 against the page, with body
      text at 7.6 on each. */
   --collab-incoming-bg: color-mix(in srgb, var(--bg-surface) 84%, #fff 16%);
-  --collab-outgoing-bg: color-mix(in srgb, var(--accent) 45%, var(--bg-surface) 55%);
+  /* Own bubbles are balanced against incoming by MEASUREMENT, in two steps.
+     First an accent tint over the surface: 45% is not a taste call, it is the
+     fraction whose OKLab lightness lands on the incoming bubble's (0.422 vs
+     0.415). The surface is darker than incoming, which is what cancels the
+     accent's own higher lightness — so reducing this fraction to calm the
+     colour would instead make own bubbles DARKER than incoming, trading a
+     solved problem for a new one. */
+  --collab-outgoing-tint: color-mix(in srgb, var(--accent) 45%, var(--bg-surface) 55%);
+  /* Then pull the colourfulness down toward incoming. Because the two now
+     share a lightness, mixing them in OKLab drops chroma ~30% (0.110 -> 0.076)
+     while the lightness gap gets slightly SMALLER (0.0067 -> 0.0044). Light
+     theme is deliberately not desaturated: its own bubble is already at 0.026
+     chroma against a white incoming, and calming it further would stop reading
+     as mine. */
+  --collab-outgoing-bg: color-mix(in oklab, var(--collab-outgoing-tint) 66%, var(--collab-incoming-bg));
 }
 
 .collaboration-center[hidden],
@@ -675,14 +689,74 @@
   margin-block-start: 8px;
 }
 
-.collaboration-message-attachments button {
-  min-height: 24px;
-  padding: 4px 10px;
-  border: 1px dashed color-mix(in srgb, var(--border-subtle) 80%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-surface-hover) 72%, transparent);
+/* An attachment is a CARD, not a pill saying "Download": the name, the size
+   and the type are what decide whether someone wants the file, so they are on
+   the surface. A dashed pill was the old shape and it made N attachments look
+   like N identical buttons. */
+.collaboration-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  inline-size: 100%;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 60%, transparent);
   color: var(--text-primary);
+  text-align: start;
+  cursor: pointer;
+}
+
+.collaboration-attachment:hover {
+  background: color-mix(in srgb, var(--bg-surface-hover) 92%, transparent);
+  border-color: color-mix(in srgb, var(--border-subtle) 100%, transparent);
+}
+
+/* Fixed square so a card does not resize when its thumbnail arrives — the
+   glyph placeholder and the image occupy exactly the same box. */
+.collaboration-attachment-thumb {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.collaboration-attachment-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.collaboration-attachment-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.collaboration-attachment-text strong {
+  font-size: 12px;
+  font-weight: 550;
+  /* A long filename must not widen the bubble; the extension matters most, but
+     truncating in the middle is worse than an ellipsis for scanning a list. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-attachment-text small {
   font-size: 11px;
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 
 .collaboration-composer {
