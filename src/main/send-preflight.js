@@ -124,7 +124,20 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
     return { ok: true, text, files: withoutVisionFiles(files) };
   }
 
-  notify({ code: "visionPreparing", level: "progress", panel: true, replace: true });
+  // The bridge is a full model call per image and used to run behind a bare
+  // "preparing" chip, so the user waited ~24s with no idea why. Name the reason
+  // (the active model cannot read images), the cost, and the way out.
+  notify({
+    code: "visionPreparing",
+    level: "progress",
+    panel: true,
+    replace: true,
+    detail: [
+      `当前模型不能直接读图，正在用视觉桥把 ${visionFiles.length} 张图片转成文字`,
+      "这会多花一些时间，图中未被描述到的细节可能丢失",
+      "换用支持看图的模型即可直接读原图",
+    ].join(" · "),
+  });
 
   const result = await translateImages(files, {
     userText: text,
@@ -219,9 +232,16 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
         `${failedFiles.length} attached image(s) could not be recognized by the vision bridge.`,
       )
     : "";
+  // The images do NOT reach the answering model on this path (a non-vision model
+  // rejects image parts outright — AI_UnsupportedFunctionalityError before the
+  // gateway), so `withoutVisionFiles` below strips them. Say that in one line:
+  // otherwise the description reads as the model's own observation and it will
+  // confidently answer follow-ups about detail it never saw. The layer intro
+  // already frames this as evidence, so keep it to the one fact it omits.
+  const bridgeProvenance = "You did NOT see these images — the text below came from a separate image-recognition model. Do not claim to have viewed them; if the user asks about detail the description omits, say so instead of guessing.";
   const enrichedText = buildEnrichedUserText(
     text,
-    [result.text, partialFailureContext].filter(Boolean).join("\n\n"),
+    [bridgeProvenance, result.text, partialFailureContext].filter(Boolean).join("\n\n"),
   );
   const outboundFiles = result.keepOriginal || failedFiles.length
     ? files

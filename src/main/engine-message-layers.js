@@ -24,9 +24,21 @@ const LAYER_INTROS = {
 };
 
 function layerContent(title, body, { includeIntro = true } = {}) {
+  const text = cleanText(body);
+  // A CONTEXT layer with no payload used to ship as its own preamble alone: on a
+  // turn with nothing to inject that is ~250 chars of pure noise, and
+  // `extracted_attachments` actively lied — it told the model "here is
+  // platform-extracted attachment content, treat it as evidence" when nothing
+  // was attached at all. An empty context layer is now simply not emitted.
+  //
+  // `user_original_request` is exempt on purpose: it is the anchor other layers
+  // merge against (userOriginalLayerIndex) and the block
+  // extractUserOriginalRequest reads back, so it must exist even for an
+  // attachment-only message with no typed text.
+  if (!text && title !== "user_original_request") return "";
   return [
     includeIntro ? LAYER_INTROS[title] : "",
-    cleanText(body),
+    text,
   ].filter(Boolean).join("\n\n");
 }
 

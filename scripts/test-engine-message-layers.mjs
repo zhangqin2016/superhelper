@@ -61,4 +61,38 @@ const diagnostics = promptEnvelopeDiagnostics({ execution_constraints: hugeConst
 assert(diagnostics.layers.find((item) => item.title === "execution_constraints")?.truncated === true, "diagnostics expose truncation");
 assert(diagnostics.layers.find((item) => item.title === "user_original_request")?.truncated === false, "user layer is unbounded");
 
+// An empty CONTEXT layer must not ship as its own preamble. It used to cost ~250
+// chars of pure noise per turn, and `extracted_attachments` actively lied: it
+// told the model "here is platform-extracted attachment content, treat it as
+// evidence" on every turn that had no attachment at all.
+{
+  const bare = buildLayeredEngineText({ userText: "为啥是cst" });
+  assert(!bare.includes('title="extracted_attachments"'), "no attachment layer when nothing is attached");
+  assert(!bare.includes('title="execution_constraints"'), "no constraints layer when there are none");
+  assert(!bare.includes('title="platform_context"'), "no platform layer when there is no context");
+  assert(bare.includes("为啥是cst"), "the user's question survives");
+  assert(bare.length < 300, `envelope must not dwarf a short question: ${bare.length} chars`);
+
+  // Layers WITH payload are untouched.
+  const full = buildLayeredEngineText({
+    platformContext: "Current date/time: 2026-09-02",
+    extractedContext: "[Image recognition result: a cat]",
+    executionConstraints: "Be brief",
+    userText: "看图",
+  });
+  for (const title of ["platform_context", "extracted_attachments", "execution_constraints", "user_original_request"]) {
+    assert(full.includes(`title="${title}"`), `payload-bearing ${title} layer must still ship`);
+  }
+  assert(full.includes("a cat") && full.includes("Be brief"), "payloads survive");
+
+  // user_original_request is exempt: it anchors merges (userOriginalLayerIndex)
+  // and is what extractUserOriginalRequest reads back, so an attachment-only
+  // message with no typed text must still carry it.
+  const imageOnly = buildLayeredEngineText({ extractedContext: "desc", userText: "" });
+  assert(imageOnly.includes('title="user_original_request"'), "anchor layer survives an empty user text");
+  assert(extractUserOriginalRequest(imageOnly) === "", "anchor layer stays extractable when empty");
+  const merged = addLayersToEngineText(imageOnly, { platformContext: "later ctx" });
+  assert(merged.includes("later ctx") && merged.includes("desc"), "later merges still land against the anchor");
+}
+
 console.log("PASS: test-engine-message-layers");

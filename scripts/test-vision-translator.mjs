@@ -2,6 +2,7 @@
 /**
  * Vision config resolution (mock Electron, no network).
  */
+import assert from "node:assert/strict";
 import module from "node:module";
 import fs from "node:fs";
 import os from "node:os";
@@ -67,6 +68,7 @@ const {
   normalizeVisionContent,
   translateImages,
 } = require("../src/main/vision-translator.js");
+const { bridgeImagesConcurrently } = require("../src/main/vision-bridge-runner.js");
 
 const normalizedParts = normalizeVisionContent([
   { type: "text", text: "第一段" },
@@ -202,6 +204,47 @@ if (largePayloadBytes >= fs.statSync(largeImage).size) {
 }
 
 (async () => {
+
+// --- the bridge runs images CONCURRENTLY, in order, with failures isolated ----
+// Serial bridging was the measured cause of image questions averaging 30s and
+// reaching 71s (one full model call per image, one after another).
+async function bridgeGuards() {
+  const files = Array.from({ length: 6 }, (_, i) => ({ name: `p${i}.png`, path: `/tmp/p${i}.png` }));
+  let inFlight = 0;
+  let peak = 0;
+  const out = await bridgeImagesConcurrently(files, {
+    concurrency: 3,
+    translate: async (file) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight -= 1;
+      if (file.name === "p2.png") throw new Error("boom");
+      return `desc ${file.name}`;
+    },
+  });
+  assert(peak > 1, `bridge must overlap image calls, peak=${peak}`);
+  assert(peak <= 3, `bridge must respect the concurrency cap, peak=${peak}`);
+  assert(out.length === 6, "every image yields a slot");
+  // Order must match the input regardless of completion order — the answering
+  // model's evidence order has to stay deterministic.
+  out.forEach((slot, i) => assert(slot.label === `p${i}.png`, `slot ${i} out of order: ${slot.label}`));
+  assert(out[2].ok === false && out[2].detail === "boom", "a failed image is isolated, not fatal");
+  assert(out[2].text === "[Image: p2.png]", "a failed image still leaves a placeholder");
+  assert(out.filter((s) => s.ok).length === 5, "the other five still recognized");
+  assert(out[0].text.startsWith('[Image recognition result: "p0.png"]'), "recognized text keeps its label");
+
+  // A blank description is a failure, not a silent empty answer.
+  const blank = await bridgeImagesConcurrently([files[0]], { concurrency: 1, translate: async () => "   " });
+  assert(blank[0].ok === false, "an empty recognition result must count as failed");
+
+  // Degenerate inputs must never throw.
+  assert((await bridgeImagesConcurrently([], { translate: async () => "x" })).length === 0, "no images → no slots");
+  const clamped = await bridgeImagesConcurrently([files[0]], { concurrency: 0, translate: async () => "d" });
+  assert(clamped.length === 1 && clamped[0].ok, "a bad concurrency value clamps to a working lane");
+}
+
+  await bridgeGuards();
   const noImages = await translateImages([]);
   if (noImages !== null) {
     throw new Error("expected null when no images");

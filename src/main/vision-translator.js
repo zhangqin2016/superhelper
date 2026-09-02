@@ -14,6 +14,7 @@ const path = require("node:path");
 const https = require("node:https");
 const http = require("node:http");
 const { resolveSettingsEnvValue } = require("./agent-settings");
+const { bridgeConcurrency, bridgeImagesConcurrently } = require("./vision-bridge-runner");
 const { withLiveFilePath } = require("./live-file-source");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -480,47 +481,21 @@ async function translateImages(files, options = {}) {
   }
   const mode = options.mode || inferVisionMode(options.userText, imageFiles);
   const prompt = buildVisionPrompt({ userText: options.userText, mode });
-  for (const [index, f] of imageFiles.entries()) {
-    try {
-      onProgress?.({
-        phase: "image-started",
-        label: f.name || path.basename(f.path),
-        total: imageFiles.length,
-        processed: index,
-      });
-    } catch { /* progress is observability only */ }
-    try {
-      const desc = await translateImage(f.path, prompt);
-      if (!normalizeVisionContent(desc)) {
-        throw new Error("Vision API returned no readable image content");
-      }
-      const label = f.name || path.basename(f.path);
-      results.push(`[Image recognition result: "${label}"]\n${desc}`);
+  const bridged = await bridgeImagesConcurrently(imageFiles, {
+    translate: (file) => translateImage(file.path, prompt),
+    onProgress,
+    isReadable: normalizeVisionContent,
+    concurrency: bridgeConcurrency(resolveSettingsEnvValue("VISION_CONCURRENCY")),
+  });
+  for (const slot of bridged) {
+    results.push(slot.text);
+    if (slot.ok) {
       recognized += 1;
-      try {
-        onProgress?.({
-          phase: "image-recognized",
-          label,
-          total: imageFiles.length,
-          processed: index + 1,
-        });
-      } catch { /* progress is observability only */ }
-    } catch (err) {
-      failed += 1;
-      failedFiles.push(f);
-      failureDetails.push(String(err?.message || "VISION_FAILED").slice(0, 240));
-      console.warn(`Vision translation failed for ${f.name || f.path}:`, err.message);
-      results.push(`[Image: ${f.name || path.basename(f.path)}]`);
-      try {
-        onProgress?.({
-          phase: "image-failed",
-          label: f.name || path.basename(f.path),
-          total: imageFiles.length,
-          processed: index + 1,
-          error: String(err?.message || "VISION_FAILED").slice(0, 240),
-        });
-      } catch { /* progress is observability only */ }
+      continue;
     }
+    failed += 1;
+    failedFiles.push(slot.file);
+    failureDetails.push(slot.detail);
   }
 
   if (recognized === 0) {

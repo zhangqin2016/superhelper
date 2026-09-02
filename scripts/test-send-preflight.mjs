@@ -127,7 +127,11 @@ assert(r.visionEvidence?.status === "available" && r.visionEvidence?.method === 
 visionMock._next = { ok: true, text: "a cat", keepOriginal: false };
 notices = [];
 r = await runVisionPreflight("look", [img, txtFile], { emitNotice: (n) => notices.push(n.code) });
-assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includes("[img:a cat]"), "vision success enriches text in extraction layer");
+assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includes("a cat"), "vision success enriches text in extraction layer");
+// The answering model never sees the image on the bridge path, so the extracted
+// layer must say so — without it the description reads as first-hand observation
+// and follow-ups about undescribed detail get confidently invented.
+assert(r.text.includes("You did NOT see these images"), "bridged descriptions must be marked second-hand");
 assert(r.text.includes('title="user_original_request"') && r.text.includes("look"), "vision success preserves original request layer");
 assert(!r.files.some((f) => f.isImage), "image pruned from outbound files on success");
 assert(notices.includes("visionReady"), "emits ready on success");

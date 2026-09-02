@@ -479,6 +479,26 @@
       "tests": [
         "scripts/test-serve-diagnostics.mjs"
       ]
+    },
+    {
+      "id": "ask-path-hygiene",
+      "protects": "A plain question reaches the model without payload-free prompt layers padding it or a false scheduled-task classification inserting an extra blocking model call first.",
+      "baseline": "Every layer that has real payload still ships unchanged, the user_original_request anchor always exists, and genuine scheduled-task phrasing is still recognized.",
+      "failureFallback": "A missed scheduled-task classification routes the message down the ordinary agent path; layer suppression only ever removes blocks whose body is empty.",
+      "tests": [
+        "scripts/test-engine-message-layers.mjs",
+        "scripts/test-scheduled-tasks.mjs"
+      ]
+    },
+    {
+      "id": "image-question-path",
+      "protects": "An image question is bridged concurrently rather than one model call per image, and the answering model is told it never saw the images so it cannot invent detail the description omits.",
+      "baseline": "Recognition order is identical to the serial bridge, payload and evidence accounting are unchanged, and native-vision models still receive the real image untouched.",
+      "failureFallback": "A blank recognition counts as failed, an invalid concurrency value clamps to one lane, and any bridge failure keeps the original image for a native-vision retry.",
+      "tests": [
+        "scripts/test-vision-translator.mjs",
+        "scripts/test-send-preflight.mjs"
+      ]
     }
   ]
 }
