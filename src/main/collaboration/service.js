@@ -249,6 +249,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       cancelTransfer(command) { return transferCommand("cancel", command); },
       prepareDownload(command) { return transferCommand("prepareDownload", command); },
       saveDownload(command) { return transferCommand("saveDownload", command); },
+      resolveTransferPreview(command) { return transferCommand("previewDownload", command); },
       sendAttachments(command) { return stopped ? stoppedResult() : attachmentSend ? attachmentSend.sendAttachments(command) : unavailableService(); },
       subscribe(listener) {
         if (stopped || typeof listener !== "function") return () => {};

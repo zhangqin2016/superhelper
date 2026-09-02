@@ -1,4 +1,5 @@
 import { t, onLocaleChange } from "../i18n/index.js";
+import { identityName, resolvePerson } from "./collaboration-social-ui.js";
 import { renderCollaborationInbox } from "./collaboration-inbox.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
@@ -11,6 +12,8 @@ import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
 
 function byId(id) { return document.getElementById(id); }
+
+function collabCommandId() { return globalThis.crypto?.randomUUID?.() || `collab-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
 /**
  * A deliberately thin shell: normal workbench DOM remains mounted and is only
@@ -27,23 +30,25 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const status = byId("collaborationStatus");
   const live = byId("collaborationLive");
   const scopeBadge = byId("collaborationScopeBadge");
+  const unreadBadge = byId("collaborationUnreadBadge");
+  const inboxSearch = byId("collaborationInboxSearch");
+  const conversationSearch = byId("collaborationConversationSearch");
   const timeline = byId("collaborationTimeline");
   const empty = byId("collaborationConversationEmpty");
   const olderButton = byId("collaborationLoadOlder");
   let transferPolicy = {};
   let activeConversationKind = "";
   let disposed = false, policyEnabled = false;
+  let searchQuery = "";
   const replySourceMasks = createReplySourceMaskView();
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
-  const renderTimeline = () => renderCollaborationTimeline(timeline, historyMessages, {
+  const renderTimeline = () => {
+    const needle = searchQuery.trim().toLocaleLowerCase();
+    const visibleMessages = needle ? historyMessages.filter((message) => String(message.bodyText || "").toLocaleLowerCase().includes(needle)) : historyMessages;
+    renderCollaborationTimeline(timeline, visibleMessages, {
     currentUserId: directory?.profile?.userId || "",
     showSenderNames: activeConversationKind === "group" || activeConversationKind === "channel",
-    resolveSender: (userId) => {
-      if (userId === directory?.profile?.userId) return directory?.profile?.displayName || directory?.profile?.lilyId || userId;
-      const person = directory?.contacts?.find((contact) => contact.userId === userId)
-        || directory?.teams?.flatMap((team) => team.members || []).find((member) => member.userId === userId);
-      return person?.displayName || person?.lilyId || userId;
-    },
+    resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
     onDownload: (input, purpose) => attachments.download(input, purpose),
     canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
     canReply: (message) => !disposed && policyEnabled && !panel.hidden && !navigating && Boolean(activeConversationId) && historyMessages.includes(message),
@@ -52,12 +57,28 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       composer.setReply?.({ messageId: message.id });
       byId("collaborationComposer")?.focus();
     },
+    canEdit: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
+    onEdit: (message) => {
+      if (disposed || !policyEnabled || panel.hidden || navigating || !activeConversationId || !message.id) return;
+      composer.beginEdit?.({ conversationId: activeConversationId, messageId: message.id, baseRevision: Number(message.revision) || 1, bodyText: message.bodyText || "" });
+      byId("collaborationComposer")?.focus();
+    },
+    canRevoke: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
+    onRevoke: async (message) => {
+      if (disposed || !policyEnabled || !activeConversationId || !message.id) return;
+      if (!window.confirm?.(t("collaboration.revoke.confirm"))) return;
+      const result = await window.assistantClient?.collaboration?.revoke?.({ conversationId: activeConversationId, messageId: message.id, clientCommandId: collabCommandId(), expectedRevision: Number(message.revision) || 1 }).catch(() => null);
+      if (result?.ok) void load();
+    },
   });
+  };
   let historyMessages = [];
   let nextBeforeSeq = null;
   let hasMore = false;
   let loadingOlder = false;
   let historyOffline = false;
+  let inboxFilter = "";
+  let lastConversations = [];
   const acceptPage = (page, { latest = false, reset = false } = {}) => {
     replySourceMasks.observe(activeConversationId, page.messages || []);
     const previous = reset ? {} : { messages: historyMessages, nextBeforeSeq, hasMore, offline: historyOffline };
@@ -80,8 +101,13 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     navigationGeneration += 1;
     activeSection = section;
     for (const [name, node] of Object.entries(sectionNodes)) if (node) node.hidden = name !== section;
+    if (inboxSearch) inboxSearch.hidden = section !== "inbox";
     for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
-    const title = byId("collaborationListTitle"); if (title) title.textContent = t(`collaboration.${section}`);
+    const title = byId("collaborationListTitle");
+    if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = section === "inbox"; }
+    // The nav lives in a header <details> popover now; a picked destination must
+    // dismiss it, otherwise it stays open over the list it just switched to.
+    const navMenu = byId("collaborationNavMenu"); if (navMenu) navMenu.open = false;
     panelShell?.setConversationOpen(false);
   }
   const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
@@ -163,6 +189,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     updateOlderButton();
     composer.setConversation(conversationId);
     panelShell?.setConversationOpen(true);
+    if (conversationSearch) conversationSearch.hidden = false;
     composer.setActive?.(!panel.hidden && policyEnabled);
     composer.refreshReply?.(historyMessages);
     attachments.setConversation(opened.conversation, transferPolicy);
@@ -208,6 +235,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     renderTimeline();
     if (active) byId("collaborationInboxColumn")?.focus?.();
   };
+  const updateUnreadBadge = (conversations = []) => {
+    if (!unreadBadge) return;
+    const total = (Array.isArray(conversations) ? conversations : []).reduce((sum, row) => sum + (Number(row.unreadCount) > 0 ? Number(row.unreadCount) : 0), 0);
+    unreadBadge.hidden = total <= 0;
+    unreadBadge.textContent = total > 99 ? "99+" : String(total);
+  };
   const load = async ({ checkAccess = false } = {}) => {
     if (disposed) return;
     const view = viewGeneration;
@@ -242,7 +275,15 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       friends.update(social); teams.update(social);
       renderTimeline();
     }
-    renderCollaborationInbox(byId("collaborationInbox"), result?.conversations || result?.rows || [], { onOpen: openConversation, teams: directory?.teams || [] });
+    renderCollaborationInbox(
+      byId("collaborationInbox"),
+      result?.conversations || result?.rows || [],
+      { onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
+        resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
+        currentUserId: directory?.profile?.userId || "" },
+    );
+    lastConversations = result?.conversations || result?.rows || [];
+    updateUnreadBadge(result?.conversations);
     const available = result?.ok === true;
     if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
   };
@@ -250,9 +291,17 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!panelShell) setActive(true);
     queueMicrotask(() => { composer.setActive?.(!panel.hidden && policyEnabled && !navigating); if (!panel.hidden) void load(); });
   };
-  const backClick = () => panelShell ? panelShell.setConversationOpen(false) : setActive(false);
+  const backClick = () => { if (conversationSearch) { conversationSearch.hidden = true; conversationSearch.value = ""; searchQuery = ""; } panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
   nav.addEventListener("click", navClick);
   back?.addEventListener("click", backClick);
+  const searchInput = () => {
+    inboxFilter = inboxSearch?.value || "";
+    renderCollaborationInbox(byId("collaborationInbox"), lastConversations, { onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
+      resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
+      currentUserId: directory?.profile?.userId || "" });
+  };
+  inboxSearch?.addEventListener("input", searchInput);
+  conversationSearch?.addEventListener("input", () => { searchQuery = conversationSearch.value || ""; renderTimeline(); });
 
   async function refresh() {
     const view = viewGeneration;
@@ -286,6 +335,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       attachments.reset();
       timeline?.replaceChildren();
       byId("collaborationInbox")?.replaceChildren();
+      updateUnreadBadge([]);
       if (empty) empty.hidden = false;
       if (scopeBadge) scopeBadge.textContent = "";
     }

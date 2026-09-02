@@ -283,6 +283,12 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
           expectedSize: item.checkpoint.plaintext.size, expectedSha256: item.checkpoint.plaintext.sha256,
           assertAuthorized: () => authorize(item), beforePublish: () => verifiedFile(transferId) });
       }); },
+      previewDownload(command) { return perform(() => {
+        const { transferId } = input(command, ["transferId"]);
+        const result = manager.plaintextFile(transferId);
+        if (result?.ok !== true) throw fail("COLLAB_TRANSFER_NOT_READY");
+        return result;
+      }); },
       // Main-process save/import brokers only. Never expose this through IPC.
       verifiedFile,
       // Private coordinator capability; service uses it to hand off into the

@@ -18,7 +18,7 @@ app.whenReady().then(async () => {
   const page = path.join(dir, "index.html");
   fs.writeFileSync(page, `<!doctype html><html data-theme="light"><head><link rel="stylesheet" href="${css}"></head><body>
     <aside class="collaboration-center" style="width:420px;height:500px">
-      <div class="collaboration-composer"><textarea id="composer" placeholder="输入消息"></textarea><div class="collaboration-composer-toolbar"><span class="collaboration-composer-spacer"></span><button id="collaborationSendButton">发送</button></div></div>
+      <div class="collaboration-composer"><textarea id="composer" rows="1" placeholder="输入消息"></textarea><div class="collaboration-composer-toolbar"><button id="collaborationAttachButton">+</button><span class="collaboration-composer-spacer"></span><button id="collaborationSendButton">发送</button></div></div>
     </aside></body></html>`);
   win = new BrowserWindow({ show: false, width: 600, height: 700, webPreferences: { sandbox: true, contextIsolation: true } });
   await win.loadFile(page);
@@ -28,9 +28,19 @@ app.whenReady().then(async () => {
   const result = await win.webContents.executeJavaScript(`(()=>{
     const composer=document.querySelector('.collaboration-composer'), textarea=document.getElementById('composer'), toolbar=document.querySelector('.collaboration-composer-toolbar');
     const c=getComputedStyle(composer), t=getComputedStyle(textarea), tr=textarea.getBoundingClientRect(), br=toolbar.getBoundingClientRect();
-    return {display:c.display,direction:c.flexDirection,align:c.alignItems,outline:t.outlineStyle,shadow:t.boxShadow,widthDelta:Math.abs(tr.width-br.width),leftDelta:Math.abs(tr.left-br.left),seam:Math.abs(tr.bottom-br.top)};
+    return {display:c.display,direction:c.flexDirection,align:c.alignItems,outline:t.outlineStyle,shadow:t.boxShadow,
+      bottomAligned:Math.abs(tr.bottom-br.bottom)<8,
+      buttonsTrail:br.left>=tr.right-1,
+      inputTakesRow:tr.width>br.width*2,
+      dockHeight:Math.round(composer.getBoundingClientRect().height)<70};
   })()`);
-  assert.deepEqual(result, { display: "flex", direction: "column", align: "stretch", outline: "none", shadow: "none", widthDelta: 0, leftDelta: 0, seam: 0 },
-    "collaboration composer must render as one full-width focused control, never a detached toolbar");
-  console.log("collaboration composer layout: unified focus ring and full-width toolbar passed");
+  // A single-row dock: input, then the action buttons on the trailing edge —
+  // the shape Telegram/WhatsApp/WeChat all ship. This replaces an earlier
+  // two-row contract (textarea above a full-width toolbar) that was pinned to
+  // stop the toolbar reading as detached; one row satisfies that intent better
+  // and stops a one-line message dock eating ~90px of the panel.
+  assert.deepEqual(result, { display: "flex", direction: "row", align: "flex-end", outline: "none", shadow: "none",
+    bottomAligned: true, buttonsTrail: true, inputTakesRow: true, dockHeight: true },
+    "collaboration composer must render as one row: input plus trailing actions, one focus ring, no detached toolbar");
+  console.log("collaboration composer layout: single-row dock with trailing actions passed");
 }).then(() => finish(0)).catch((error) => { console.error(error); finish(1); });

@@ -14,6 +14,7 @@ const { projectedScopeId } = require("./projection-scope");
 const { parseEncryptedPayload } = require("./encrypted-payload");
 const { settleCreatedSyncEvent } = require("./outbox-sync-settlement");
 const activity = require("./conversation-activity");
+const preview = require("./conversation-preview");
 const { messageMetadata, validateCreateBody, retainedComposerDraft } = require("./message-intent");
 const { messageTimes } = require("./message-time");
 const { replySnapshotView } = require("./reply-snapshot");
@@ -423,7 +424,7 @@ class CollaborationStore {
        GROUP BY c.id, c.scope_id, c.kind, c.title, c.updated_at
        ORDER BY MAX(m.seq) DESC, c.updated_at DESC, c.id ASC`,
       this.accountId,
-    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq), ...activity.activityView(this, row.id) }));
+    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq), lastMessage: preview.conversationPreview(this, row.id), ...activity.activityView(this, row.id) }));
   }
 
   getConversation({ conversationId }) {

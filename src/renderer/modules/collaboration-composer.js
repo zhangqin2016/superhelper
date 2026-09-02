@@ -13,6 +13,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   let conversationId = "";
   const drafts = new Map(), sending = new Map(), intents = new Map();
   let disposed = false, active = true, editVersion = 0, generation = 0, selectionVersion = 0, previewVersion = 0;
+  let editTarget = null;
   let previewValue = { status: "unavailable" };
   let preview = textarea.parentElement?.querySelector("#collaborationReplyPreview");
   if (!preview && textarea.ownerDocument && textarea.before) { preview = textarea.ownerDocument.createElement("div"); preview.id = "collaborationReplyPreview"; textarea.before(preview); }
@@ -100,10 +101,14 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     const intent = sameIntent(prior?.value, value) ? prior : { value, clientCommandId: commandId() };
     intents.set(id, intent); sending.set(id, intent); updateButton();
     try {
-      const result = await api()?.send?.({ conversationId: id, clientCommandId: intent.clientCommandId, bodyText: value.text, replyToMessageId: value.replyToMessageId, mentionUserIds: [...value.mentionUserIds] });
+      const editing = editTarget && editTarget.conversationId === id && editTarget.messageId ? editTarget : null;
+      const result = editing
+        ? await api()?.edit?.({ conversationId: id, messageId: editing.messageId, clientCommandId: intent.clientCommandId, expectedRevision: editing.baseRevision, bodyText: value.text })
+        : await api()?.send?.({ conversationId: id, clientCommandId: intent.clientCommandId, bodyText: value.text, replyToMessageId: value.replyToMessageId, mentionUserIds: [...value.mentionUserIds] });
       if (!result?.ok) throw new Error(result?.code || "COLLABORATION_UNAVAILABLE");
       if (disposed || epoch !== generation || intents.get(id) !== intent) return;
       intents.delete(id);
+      if (editing && editTarget === editing) editTarget = null;
       // Main clears only the complete submitted intent. A newer draft belongs
       // to the user, even when its body is identical and only its reply changed.
       const visibleMatches = conversationId === id && sameIntent(currentIntent(), value);
@@ -134,12 +139,20 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       const id = String(nextId ?? getConversationId?.() ?? "");
       if (disposed || id === conversationId) return;
       if (conversationId && (drafts.has(conversationId) || textarea.value)) drafts.set(conversationId, currentIntent());
-      conversationId = id; selectionVersion += 1; editVersion += 1; previewVersion += 1;
+      conversationId = id; selectionVersion += 1; editVersion += 1; previewVersion += 1; editTarget = null;
       textarea.value = drafts.get(id)?.text || ""; previewValue = { status: "unavailable" };
       mentions.setContext(id, active);
       textarea.placeholder = t("collaboration.messagePlaceholder"); updateButton(); paintPreview(); restoreDraft();
     },
     setReply, refreshReply, refreshMentionCandidates: () => mentions.refresh(),
+    beginEdit({ conversationId: cid, messageId, baseRevision, bodyText } = {}) {
+      if (disposed || !cid || !messageId) return;
+      conversationId = String(cid); selectionVersion += 1; editVersion += 1; previewVersion += 1;
+      textarea.value = String(bodyText || ""); textarea.placeholder = t("collaboration.edit.placeholder");
+      editTarget = { conversationId: String(cid), messageId, baseRevision: Number(baseRevision) || 1 };
+      mentions.setContext(conversationId, active); updateButton(); paintPreview(); textarea.focus?.();
+    },
+    clearEdit() { if (!editTarget) return; editTarget = null; textarea.placeholder = t("collaboration.messagePlaceholder"); },
     setActive(value) {
       if (disposed || active === Boolean(value)) return;
       active = Boolean(value); selectionVersion += 1; editVersion += 1; previewVersion += 1;
@@ -148,7 +161,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     },
     forgetConversation,
     retainConversations(ids) { const allowed = new Set(ids); for (const id of new Set([...drafts.keys(), ...intents.keys(), ...sending.keys(), conversationId])) if (id && !allowed.has(id)) forgetConversation(id); },
-    reset() { generation += 1; selectionVersion += 1; editVersion += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); conversationId = ""; textarea.value = ""; mentions.reset(); updateButton(); paintPreview(); },
+    reset() { generation += 1; selectionVersion += 1; editVersion += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); conversationId = ""; editTarget = null; textarea.value = ""; textarea.placeholder = t("collaboration.messagePlaceholder"); mentions.reset(); updateButton(); paintPreview(); },
     destroy() { disposed = true; generation += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); mentions.destroy(); preview?.replaceChildren(); if (preview) preview.hidden = true; unsubscribeLocale(); sendButton.removeEventListener("click", click); textarea.removeEventListener("input", input); textarea.removeEventListener("keydown", keydown); if (activeComposerByTextarea.get(textarea) === controller) activeComposerByTextarea.delete(textarea); },
   };
   activeComposerByTextarea.set(textarea, controller);

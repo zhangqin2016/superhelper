@@ -8,6 +8,7 @@ const commands = Object.freeze({
   "cancel-transfer": ["cancelTransfer", ["transferId"]],
   "prepare-download": ["prepareDownload", ["conversationId", "messageId", "objectId"]],
   "save-download": ["saveDownload", ["transferId"]],
+  "resolve-preview": ["previewDownload", ["transferId"]],
   "send-attachments": ["sendAttachments", ["conversationId", "transferIds", "bodyText", "clientCommandId"]],
 });
 const methods = new Set(Object.values(commands).map(([method]) => method));
@@ -30,11 +31,19 @@ function transferView(value = {}) {
   return result;
 }
 
-function transferResult(method, value) {
+function transferResult(method, value, { toPreviewUrl } = {}) {
   if (!methods.has(method)) return null;
   if (method === "getTransfers" && value?.ok === true) return { ok: true, transfers: (Array.isArray(value.transfers) ? value.transfers : []).map((transfer) => transferView({ ok: true, ...transfer })),
     unrecognizedCount: number(value.unrecognizedCount) ? value.unrecognizedCount : 0,
     recoveryFailureCount: number(value.recoveryFailureCount) ? value.recoveryFailureCount : 0 };
+  if (method === "previewDownload" && value?.ok === true && typeof value.path === "string") {
+    const url = typeof toPreviewUrl === "function" ? toPreviewUrl(value.path) : "";
+    const result = { ok: true };
+    if (typeof value.mimeType === "string" && value.mimeType.length <= 100) result.mimeType = value.mimeType;
+    if (typeof value.originalName === "string" && value.originalName.length <= 255) result.originalName = value.originalName;
+    if (url) result.url = url;
+    return result;
+  }
   return transferView(value);
 }
 

@@ -1,268 +1,1697 @@
+/*
+ * Collaboration Center — premium, IM-like visual language.
+ * Keep tokens from base.css: do not introduce new color/systemic variables.
+ */
+
 .collaboration-center {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  background: color-mix(in srgb, var(--bg-right) 94%, var(--bg-surface-raised) 6%);
+  --collab-page-bg: color-mix(in srgb, var(--bg-right) 82%, var(--bg-surface-muted) 18%);
+  --collab-list-bg: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+  --collab-outgoing-bg: color-mix(in srgb, var(--accent) 14%, #ffffff 86%);
+  --collab-incoming-bg: color-mix(in srgb, #ffffff 82%, var(--bg-surface) 18%);
+  --collab-send-btn: var(--accent);
+  background: var(--collab-page-bg);
   border-inline-start: 1px solid var(--border-subtle);
-  box-shadow: -18px 0 48px color-mix(in srgb, #000 9%, transparent);
   overflow: hidden;
-}
-.collaboration-panel-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border-block-end: 1px solid var(--border-subtle); }
-.collaboration-panel-header strong { font-size: 16px; }
-.collaboration-panel-header p { margin: 3px 0 0; }
-.collaboration-icon-button { inline-size: 34px; block-size: 34px; display: grid; place-items: center; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; }
-.collaboration-home, .collaboration-conversation { min-block-size: 0; flex: 1; display: flex; flex-direction: column; }
-.collaboration-nav-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 12px 14px 6px; padding: 4px; border-radius: 12px; background: var(--bg-surface-hover); }
-.collaboration-nav-list button, .collaboration-inbox-item {
-  width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; color: inherit; background: transparent; text-align: start;
-}
-.collaboration-nav-list button { text-align: center; font-weight: 600; }
-.collaboration-nav-list button[aria-pressed="true"] { background: var(--bg-surface); box-shadow: var(--shadow-sm); }
-.collaboration-nav-list button:hover, .collaboration-inbox-item:hover { background: var(--bg-surface-hover); }
-.collaboration-inbox { min-block-size: 0; flex: 1; overflow-y: auto; padding: 8px 12px 20px; }
-.collaboration-inbox h2 { margin: 8px 4px 10px; font-size: 13px; color: var(--text-secondary); }
-.collaboration-inbox-item { min-block-size: 58px; margin-block-end: 4px; padding: 10px 12px; }
-.collaboration-empty { color: var(--muted); }
-.collaboration-status { color: var(--muted); font-size: .85rem; }
-.collaboration-status.is-available { color: var(--success-text); }
-.collaboration-scope-badge { display: inline-flex; padding: 3px 7px; border-radius: 999px; background: var(--bg-surface-hover); color: var(--muted); font-size: .75rem; }
-.collaboration-conversation-header { display: flex; align-items: center; gap: 10px; min-block-size: 62px; padding: 10px 14px; border-block-end: 1px solid var(--border-subtle); }
-.collaboration-conversation-header h2 { margin: 0 0 4px; font-size: 15px; }
-.collaboration-timeline { display: flex; flex-direction: column; gap: 10px; min-block-size: 160px; flex: 1; overflow: auto; margin: 0; padding: 16px 14px; }
-.collaboration-message { padding: 9px 11px; border-radius: 10px; background: var(--bg-surface-hover); }
-.collaboration-message-body { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.collaboration-message-status { display: block; margin-block-start: 5px; color: var(--muted); }
-.collaboration-composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin: 0; padding: 12px 14px 14px; border-block-start: 1px solid var(--border-subtle); background: var(--bg-surface); }
-.collaboration-composer textarea { min-inline-size: 0; max-block-size: 132px; resize: none; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 10px 12px; background: var(--bg-input); color: var(--text-primary); }
-.collaboration-mentions { grid-column: 1 / -1; min-inline-size: 0; display: grid; gap: 6px; }
-.collaboration-mentions[hidden], .collaboration-mentions [hidden] { display: none; }
-.collaboration-mentions > button { justify-self: start; }
-.collaboration-mentions small, #collaborationMentionStatus { color: var(--muted); overflow-wrap: anywhere; }
-#collaborationMentionTags { display: flex; flex-wrap: wrap; gap: 6px; min-inline-size: 0; max-block-size: 128px; overflow-y: auto; padding: 3px; }
-.collaboration-mention-tag { display: inline-flex; align-items: center; gap: 4px; min-inline-size: 0; max-inline-size: 100%; border: 1px solid var(--border); border-radius: 8px; padding-inline: 6px; }
-.collaboration-mention-tag span { min-inline-size: 0; overflow-wrap: anywhere; }
-.collaboration-mention-tag button { flex-shrink: 0; }
-#collaborationMentionPicker { min-inline-size: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
-#collaborationMentionList { display: grid; min-inline-size: 0; max-block-size: 220px; overflow-y: auto; margin-block-start: 6px; }
-#collaborationMentionList button { min-inline-size: 0; text-align: start; overflow-wrap: anywhere; white-space: normal; }
-#collaborationMentionList [aria-selected="true"] { background: var(--bg-surface-hover); outline: 1px solid var(--accent); outline-offset: -1px; }
-.collaboration-mentions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.collaboration-message-mentions { display: block; margin-block-start: 5px; color: var(--muted); }
-.collaboration-reply-quote, .collaboration-reply-preview { border-inline-start: 3px solid var(--border); padding-inline-start: 10px; margin-inline: 0; text-align: start; overflow-wrap: anywhere; white-space: pre-wrap; }
-.collaboration-reply-quote { margin-block: 0 8px; color: var(--muted); font-size: .9em; }
-.collaboration-reply-preview { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
-.collaboration-reply-preview[hidden] { display: none; }
-.collaboration-reply-label { grid-column: 1; color: var(--muted); }
-.collaboration-reply-content { grid-column: 1; }
-.collaboration-reply-preview [data-action="clear-reply"] { grid-column: 2; grid-row: 1 / 3; align-self: center; }
-.collaboration-message [data-action="reply-message"] { margin-block-start: 6px; }
-.collaboration-composer textarea:focus-visible, .collaboration-reply-preview button:focus-visible, .collaboration-message [data-action="reply-message"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.collaboration-transfer-panel { max-block-size: 32vh; overflow: auto; }
-.collaboration-transfers { display: grid; gap: 8px; }
-.collaboration-transfer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
-.collaboration-transfer strong { flex-basis: 100%; }
-.collaboration-transfer small { color: var(--muted); }
-.collaboration-message-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
-.collaboration-confirmation label { display: grid; gap: 6px; margin-block: 8px; }
-.collaboration-confirmation textarea { inline-size: 100%; box-sizing: border-box; resize: vertical; }
-.collaboration-inbox { overflow-y: auto; }
-.collaboration-social-form { display: grid; gap: 8px; margin-block: 12px 20px; }
-.collaboration-social-form label { display: grid; gap: 4px; min-inline-size: 0; }
-.collaboration-social-form input, .collaboration-social-form select { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; color: inherit; background: var(--bg-surface-hover); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
-.collaboration-social-form select[multiple] { min-block-size: 76px; }
-.collaboration-social-row { padding-block: 10px; border-block-end: 1px solid var(--border); overflow-wrap: anywhere; }
-.collaboration-social-row p { margin-block: 4px 8px; }
-.collaboration-social-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
-.collaboration-team, .collaboration-member-details { margin-block-start: 18px; }
-.collaboration-confirmation:not(:empty) { padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-block: 12px; }
-.collaboration-confirmation button { margin-inline-end: 8px; }
-.collaboration-center button:focus-visible, .collaboration-center input:focus-visible, .collaboration-center select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.collaboration-center button:disabled { opacity: .55; cursor: wait; }
-.collaboration-nav-list button[aria-pressed="true"] { background: var(--bg-surface-hover); }
-
-@media (max-width: 900px) {
-  .collaboration-center { inline-size: min(420px, 100vw); }
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
 }
 
-.collaboration-panel-toggle { gap: 7px; }
-.collaboration-unread-badge { min-inline-size: 18px; block-size: 18px; padding-inline: 5px; border-radius: 999px; background: var(--accent); color: var(--text-inverse); font-size: 10px; line-height: 18px; }
-.collaboration-panel-scrim { display: none; }
-.collaboration-resize-handle { position: fixed; z-index: 61; inset-block: 0; inset-inline-end: var(--collaboration-panel-w, 420px); inline-size: 6px; border: 0; background: transparent; cursor: col-resize; }
-.app-shell[data-collaboration-mode="overlay"] .collaboration-center { position: fixed; z-index: 60; inset-block: 0; inset-inline-end: 0; inline-size: min(420px, 100vw); }
-.app-shell[data-collaboration-mode="overlay"] .collaboration-panel-scrim:not([hidden]) { display: block; position: fixed; z-index: 59; inset: 0; border: 0; background: rgb(10 15 25 / .24); backdrop-filter: blur(2px); }
-.collaboration-center[hidden], .collaboration-home[hidden], .collaboration-conversation[hidden] { display: none; }
-@media (prefers-reduced-motion: no-preference) { .collaboration-center { transition: transform 190ms ease, opacity 190ms ease; } }
-
-/* Compact desktop IM presentation. Keep management controls out of the scan path. */
-.collaboration-center {
-  position: relative;
-  background: color-mix(in srgb, var(--bg-right) 98%, var(--accent) 2%);
-  box-shadow: -12px 0 36px rgb(15 23 42 / .08);
-  font-size: 14px;
+:root[data-theme="dark"] .collaboration-center {
+  --collab-page-bg: var(--bg-right);
+  --collab-list-bg: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  --collab-incoming-bg: color-mix(in srgb, var(--bg-surface) 74%, #fff 26%);
+  --collab-outgoing-bg: color-mix(in srgb, var(--accent) 26%, var(--bg-surface) 74%);
 }
+
+.collaboration-center[hidden],
+.collaboration-home[hidden],
+.collaboration-conversation[hidden] {
+  display: none;
+}
+
 .collaboration-panel-header {
-  min-height: 56px;
-  padding: 9px 12px 9px 14px;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-block-end: 1px solid var(--border-subtle);
+  background: linear-gradient(to right, color-mix(in srgb, var(--bg-surface-hover) 78%, transparent) 15%, color-mix(in srgb, var(--bg-surface-hover) 52%, transparent));
+  flex-shrink: 0;
+  box-shadow: var(--top-highlight);
+}
+
+.collaboration-panel-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   gap: 10px;
 }
-.collaboration-panel-title { display: flex; align-items: center; min-width: 0; gap: 10px; }
-.collaboration-panel-title strong { display: block; font-size: 14px; line-height: 18px; letter-spacing: -.01em; }
-.collaboration-brand-mark {
-  display: grid; place-items: center; inline-size: 30px; block-size: 30px; flex: 0 0 auto;
-  color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); border-radius: 9px;
-}
-.collaboration-panel-header p { margin: 1px 0 0; font-size: 11px; line-height: 14px; }
-.collaboration-icon-button {
-  inline-size: 30px; block-size: 30px; padding: 0; border: 0; border-radius: 8px;
-  background: transparent; color: var(--muted); transition: background-color 120ms ease, color 120ms ease;
-}
-.collaboration-icon-button:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-.collaboration-nav-list {
-  grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; margin: 10px 12px 4px; padding: 3px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent); border-radius: 10px;
-  background: color-mix(in srgb, var(--bg-surface-hover) 72%, transparent);
-}
-.collaboration-nav-list button {
-  min-height: 32px; padding: 6px 8px; border: 0; border-radius: 7px; background: transparent;
-  color: var(--muted); font: inherit; font-size: 13px; font-weight: 560; cursor: pointer;
-}
-.collaboration-nav-list button:hover { background: color-mix(in srgb, var(--bg-surface) 70%, transparent); color: var(--text-primary); }
-.collaboration-nav-list button[aria-pressed="true"] {
-  background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgb(15 23 42 / .08), 0 0 0 1px rgb(15 23 42 / .03);
-}
-.collaboration-inbox { padding: 8px 10px 18px; }
-.collaboration-inbox > h2 { margin: 6px 6px 8px; font-size: 11px; line-height: 16px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.collaboration-inbox-item,
-.collaboration-social-row {
-  box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px;
-  margin: 0 0 2px; padding: 7px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary);
-}
-.collaboration-inbox-item { text-align: start; cursor: pointer; }
-.collaboration-inbox-item:hover, .collaboration-social-row:hover { background: color-mix(in srgb, var(--bg-surface-hover) 78%, transparent); }
-.collaboration-row-avatar {
-  display: grid; place-items: center; inline-size: 36px; block-size: 36px; flex: 0 0 36px; overflow: hidden;
-  border-radius: 11px; color: #fff; background: linear-gradient(145deg, #7877f5, #5b5bd6); font-size: 13px; font-weight: 700;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .16);
-}
-.collaboration-row-avatar.is-person { border-radius: 50%; background: linear-gradient(145deg, #5da8a3, #3b7f7a); }
-.collaboration-row-avatar.is-team { background: linear-gradient(145deg, #71717a, #3f3f46); }
-.collaboration-row-avatar.is-chat { background: linear-gradient(145deg, #7c83f8, #5b5bd6); }
-.collaboration-row-content { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.collaboration-row-content strong { overflow: hidden; font-size: 13.5px; line-height: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.collaboration-row-content small { overflow: hidden; color: var(--muted); font-size: 11.5px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.collaboration-row-unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--text-inverse); font-size: 10px; line-height: 18px; text-align: center; }
-.collaboration-profile-id { margin: 4px 6px 10px; padding: 8px 10px; border-radius: 9px; background: var(--bg-surface-hover); color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.collaboration-disclosure { margin: 4px 2px 10px; }
-.collaboration-disclosure > summary { list-style: none; }
-.collaboration-disclosure > summary::-webkit-details-marker { display: none; }
-.collaboration-disclosure-trigger {
-  display: flex; align-items: center; min-height: 30px; padding: 5px 8px; border-radius: 8px;
-  color: var(--muted); font-size: 12px; font-weight: 560; cursor: pointer; user-select: none;
-}
-.collaboration-disclosure-trigger:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-.collaboration-disclosure-trigger.is-primary { color: var(--accent); }
-.collaboration-disclosure[open] { padding: 4px; border: 1px solid var(--border-subtle); border-radius: 11px; background: var(--bg-surface); }
-.collaboration-disclosure[open] > .collaboration-disclosure-trigger { margin-bottom: 2px; }
-.collaboration-social-form, .collaboration-disclosure-body { gap: 8px; margin: 0; padding: 8px; }
-.collaboration-social-form h3 { margin: 0 0 2px; font-size: 13px; }
-.collaboration-social-form label { gap: 5px; color: var(--muted); font-size: 11.5px; }
-.collaboration-social-form input, .collaboration-social-form select {
-  min-height: 34px; padding: 7px 9px; border: 1px solid var(--border-subtle); border-radius: 8px;
-  background: var(--bg-input); color: var(--text-primary); font: inherit; font-size: 13px; outline: none;
-}
-.collaboration-social-form select[multiple] { min-height: 88px; }
-.collaboration-social-form input:focus, .collaboration-social-form select:focus { border-color: color-mix(in srgb, var(--accent) 70%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
-.collaboration-center button, .collaboration-social-primary {
-  appearance: none; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 12px; cursor: pointer;
-}
-.collaboration-social-primary { min-height: 34px; padding: 7px 12px; border-color: var(--accent); background: var(--accent); color: var(--text-inverse); font-weight: 600; }
-.collaboration-social-actions { flex: 0 0 auto; gap: 4px; margin: 0; opacity: 0; transition: opacity 120ms ease; }
-.collaboration-social-row:hover .collaboration-social-actions, .collaboration-social-row:focus-within .collaboration-social-actions { opacity: 1; }
-.collaboration-social-actions button, .collaboration-social-row > button { min-height: 28px; padding: 4px 7px; color: var(--muted); background: transparent; }
-.collaboration-social-actions button:hover, .collaboration-social-row > button:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-.collaboration-social-row.is-compact { min-height: 48px; padding-block: 5px; }
-.collaboration-social-row.is-compact .collaboration-row-avatar { inline-size: 30px; block-size: 30px; flex-basis: 30px; font-size: 11px; }
-.collaboration-team { margin: 10px 0 14px; padding-top: 0; border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; }
-.collaboration-team-header { display: flex; align-items: center; gap: 10px; padding: 10px; background: color-mix(in srgb, var(--bg-surface-hover) 58%, transparent); }
-.collaboration-team > .collaboration-social-row { margin-inline: 4px; width: calc(100% - 8px); }
-.collaboration-team > .collaboration-disclosure { margin: 4px; border-top: 1px solid var(--border-subtle); border-radius: 0; padding-top: 4px; }
-.collaboration-member-details { margin-top: 12px; }
-.collaboration-empty { margin: 28px 12px; color: var(--muted); font-size: 12px; line-height: 18px; text-align: center; }
-.collaboration-confirmation:not(:empty) { margin: 8px 2px; padding: 10px; border-color: var(--border-subtle); border-radius: 10px; background: var(--bg-surface); }
 
-/* Conversation view: compact identity header, readable bubbles, quiet actions. */
+.collaboration-brand-mark {
+  display: grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 10px;
+  flex: 0 0 auto;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.collaboration-panel-title strong {
+  display: block;
+  font-size: 14px;
+  line-height: 18px;
+  letter-spacing: -.01em;
+}
+
+.collaboration-panel-header p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--muted);
+}
+
+.collaboration-icon-button {
+  inline-size: 30px;
+  block-size: 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-surface-hover) 68%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.collaboration-icon-button:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, transparent);
+  border-color: color-mix(in srgb, var(--border-subtle) 55%, transparent);
+}
+
+.collaboration-home,
+.collaboration-conversation {
+  min-block-size: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.collaboration-nav,
+.collaboration-nav-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 10px 12px 7px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 76%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--collab-list-bg) 92%, transparent);
+}
+
+.collaboration-nav button,
+.collaboration-nav-list button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 8px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.collaboration-nav button:hover,
+.collaboration-nav-list button:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.collaboration-nav button[aria-pressed="true"],
+.collaboration-nav-list button[aria-pressed="true"] {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.collaboration-inbox {
+  min-block-size: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 7px 10px 18px;
+}
+
+.collaboration-inbox > h2,
+.collaboration-empty {
+  margin: 5px 6px 10px;
+}
+
+.collaboration-inbox > h2 {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  line-height: 16px;
+}
+
+.collaboration-inbox-item {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface) 68%, transparent);
+  color: var(--text-primary);
+  margin: 0 0 4px;
+  text-align: start;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.collaboration-inbox-item:hover,
+.collaboration-social-row:hover {
+  background: color-mix(in srgb, var(--bg-surface-hover) 82%, transparent);
+  border-color: color-mix(in srgb, var(--border-subtle) 92%, transparent);
+}
+
+.collaboration-inbox-item.is-active {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, color-mix(in srgb, var(--bg-surface) 88%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.collaboration-inbox-item:active {
+  transform: scale(0.996);
+}
+
+.collaboration-row-avatar {
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  flex: 0 0 36px;
+  border-radius: 11px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+.collaboration-row-avatar.is-person {
+  border-radius: 50%;
+  background: hsl(var(--avatar-hue, 175) 32% 48%);
+}
+
+.collaboration-row-avatar.is-team {
+  background: var(--bg-surface-hover);
+}
+
+.collaboration-row-avatar.is-chat {
+  background: hsl(var(--avatar-hue, 238) 46% 56%);
+}
+
+.collaboration-row-content {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.collaboration-row-content strong {
+  overflow: hidden;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 18px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-row-content small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-row-meta {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.collaboration-row-time {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.collaboration-row-unread {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.collaboration-profile-id {
+  margin: 4px 8px 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 75%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.collaboration-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.collaboration-status.is-available {
+  color: var(--success-text);
+}
+
+.collaboration-empty {
+  color: var(--muted);
+  line-height: 18px;
+  text-align: center;
+  margin-top: 24px;
+}
+
+.collaboration-scope-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--bg-surface-hover);
+  color: var(--muted);
+  font-size: .74rem;
+}
+
+.collaboration-team,
+.collaboration-member-details {
+  margin-top: 14px;
+}
+
+.collaboration-team {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.collaboration-team > .collaboration-social-row {
+  margin-inline: 4px;
+  width: calc(100% - 8px);
+}
+
+.collaboration-team-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 62%, transparent);
+}
+
+.collaboration-disclosure {
+  margin: 4px 2px 10px;
+}
+
+.collaboration-disclosure > summary {
+  list-style: none;
+}
+
+.collaboration-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collaboration-disclosure-trigger {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 560;
+  cursor: pointer;
+  user-select: none;
+}
+
+.collaboration-disclosure-trigger:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.collaboration-disclosure[open] {
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 11px;
+  background: var(--bg-surface);
+}
+
+.collaboration-disclosure[open] > .collaboration-disclosure-trigger {
+  margin-bottom: 2px;
+}
+
 .collaboration-conversation-header {
-  min-height: 56px; padding: 8px 52px 8px 12px; gap: 9px; background: color-mix(in srgb, var(--bg-right) 98%, transparent);
+  min-height: 56px;
+  padding: 9px 12px 9px 12px;
+  gap: 10px;
+  display: flex;
+  align-items: center;
+  border-block-end: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-right) 96%, transparent);
 }
-.collaboration-center.is-conversation-open .collaboration-panel-header { position: absolute; z-index: 3; inset-block-start: 0; inset-inline-end: 0; inline-size: 48px; min-height: 56px; padding: 8px 10px 8px 0; border: 0; background: transparent; }
-.collaboration-center.is-conversation-open .collaboration-panel-title { display: none; }
-.collaboration-center.is-conversation-open .collaboration-scope-badge { display: none; }
-.collaboration-center.is-conversation-open .collaboration-conversation-title { justify-content: center; }
-.collaboration-conversation-title { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.collaboration-conversation-header h2 { overflow: hidden; margin: 0; font-size: 14px; line-height: 18px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.collaboration-scope-badge { align-self: flex-start; padding: 0; border-radius: 0; background: transparent; font-size: 11px; line-height: 14px; }
-.collaboration-timeline { gap: 8px; padding: 16px 14px 22px; background: var(--bg-right); }
+
+.collaboration-conversation-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.collaboration-conversation-title h2,
+.collaboration-conversation-header h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.collaboration-conversation h2 {
+  font-weight: 650;
+}
+
+.collaboration-scope-badge {
+  align-self: flex-start;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.collaboration-center.is-conversation-open .collaboration-panel-header {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: 46px;
+  min-height: 56px;
+  padding: 8px 10px 8px 0;
+  border: 0;
+  background: transparent;
+}
+
+.collaboration-center.is-conversation-open .collaboration-panel-title,
+.collaboration-center.is-conversation-open .collaboration-scope-badge {
+  display: none;
+}
+
+.collaboration-center.is-conversation-open .collaboration-conversation-title {
+  justify-content: center;
+}
+
+.collaboration-timeline {
+  min-block-size: 160px;
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 12px 16px;
+  background:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg-surface) 86%, transparent) 100%),
+    var(--collab-page-bg);
+  background-attachment: local;
+}
+
+.collaboration-timeline:empty {
+  justify-content: flex-end;
+}
+
 .collaboration-message {
-  position: relative; display: flex; align-items: flex-end; gap: 7px; max-width: 86%; padding: 0; border-radius: 0; background: transparent;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  align-self: flex-start;
+  gap: 7px;
+  max-width: 86%;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
 }
-.collaboration-message.is-grouped { margin-top: -5px; }
-.collaboration-message.is-grouped .collaboration-message-avatar { visibility: hidden; }
-.collaboration-message-time { position: absolute; inset-block-start: -2px; inset-inline-start: 50%; translate: -50% -100%; color: var(--muted); font-size: 10px; line-height: 16px; white-space: nowrap; }
-.collaboration-message:has(> .collaboration-message-time) { margin-top: 18px; }
-.collaboration-message.is-outgoing { align-self: flex-end; flex-direction: row-reverse; }
+
+.collaboration-message-time {
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.collaboration-message:has(> .collaboration-message-time) {
+  margin-top: 2px;
+}
+
+.collaboration-message.is-grouped {
+  margin-top: -5px;
+}
+
+.collaboration-message.is-grouped .collaboration-message-avatar {
+  visibility: hidden;
+}
+
+.collaboration-message.is-outgoing {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
 .collaboration-message-avatar {
-  display: grid; place-items: center; inline-size: 26px; block-size: 26px; flex: 0 0 26px; border-radius: 50%;
-  color: #fff; background: linear-gradient(145deg, #7777ef, #5656c8); font-size: 10px; font-weight: 700;
+  display: grid;
+  place-items: center;
+  inline-size: 26px;
+  block-size: 26px;
+  flex: 0 0 26px;
+  border-radius: 50%;
+  color: #fff;
+  background: hsl(var(--avatar-hue, 243) 48% 54%);
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
 }
-.collaboration-message.is-outgoing .collaboration-message-avatar { display: none; }
+
+.collaboration-message.is-outgoing .collaboration-message-avatar {
+  display: none;
+}
+
 .collaboration-message-bubble {
-  min-width: 24px; padding: 7px 10px; border: 0;
-  border-radius: 10px 10px 10px 3px; background: var(--bg-surface-hover); box-shadow: none;
+  min-width: 24px;
+  padding: 9px 11px;
+  border-radius: 11px 11px 11px 4px;
+  background: var(--collab-incoming-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 75%, transparent);
+  word-break: break-word;
 }
+
 .collaboration-message.is-outgoing .collaboration-message-bubble {
-  border-radius: 10px 10px 3px 10px; background: color-mix(in srgb, #95ec69 72%, var(--bg-surface));
+  border-radius: 11px 11px 4px 11px;
+  background: var(--collab-outgoing-bg);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-primary);
 }
-.collaboration-message-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
-.collaboration-message-author { overflow: hidden; color: var(--text-secondary); font-size: 10.5px; line-height: 14px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
-.collaboration-message-header time { color: var(--muted); font-size: 9.5px; line-height: 12px; }
-.collaboration-message.is-outgoing .collaboration-message-author { display: none; }
-.collaboration-message.is-outgoing .collaboration-message-header { justify-content: flex-end; margin-bottom: 1px; }
-.collaboration-message-body { margin: 0; color: var(--text-primary); font-size: 13.5px; line-height: 19px; }
+
+.collaboration-message-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.collaboration-message-header time,
+.collaboration-message-status {
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 12px;
+}
+
+.collaboration-message-author {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  line-height: 14px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-message.is-outgoing .collaboration-message-author {
+  display: none;
+}
+
+.collaboration-message-body {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.collaboration-message-mentions {
+  display: block;
+}
+
+.collaboration-message-mentions {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.collaboration-reply-quote,
+.collaboration-message [data-action="reply-message"] {
+  margin-block-start: 5px;
+}
+
+.collaboration-message-mentions {
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.collaboration-reply-quote,
+.collaboration-reply-preview {
+  border-inline-start: 3px solid var(--border-subtle);
+  padding-inline-start: 10px;
+  margin-inline: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.collaboration-reply-quote {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: .9em;
+}
+
 .collaboration-message-actions {
-  position: absolute; z-index: 2; inset-block-start: -12px; inset-inline-end: -4px; display: flex; opacity: 0; transform: translateY(2px);
+  position: absolute;
+  z-index: 2;
+  inset-block-start: auto;
+  inset-block-end: calc(100% - 2px);
+  inset-inline-end: 0;
+  display: flex;
+  opacity: 0; /* desktop: revealed on hover/focus only — no ghost buttons over the thread */
+  transform: translateY(3px) scale(0.98);
+  pointer-events: none;
   transition: opacity 100ms ease, transform 100ms ease;
 }
-.collaboration-message.is-outgoing .collaboration-message-actions { inset-inline-start: -4px; inset-inline-end: auto; }
-.collaboration-message:hover .collaboration-message-actions, .collaboration-message:focus-within .collaboration-message-actions { opacity: 1; transform: translateY(0); }
+
+.collaboration-message.is-outgoing .collaboration-message-actions {
+  inset-inline-start: 0;
+  inset-inline-end: auto;
+}
+
+.collaboration-message:hover .collaboration-message-actions,
+.collaboration-message:focus-within .collaboration-message-actions {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+/* Touch-first devices have no hover to reveal the action chip; keep it fully
+   visible and tappable instead of a faint floating ghost. */
+@media (hover: none) {
+  .collaboration-message-actions {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
 .collaboration-message-actions button {
-  min-height: 24px; padding: 3px 7px; border-color: var(--border-subtle); border-radius: 7px; background: var(--bg-surface-raised); color: var(--muted); font-size: 10.5px; box-shadow: var(--shadow-sm);
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg-surface-raised);
+  color: var(--muted);
+  font-size: 10.5px;
+  box-shadow: var(--shadow-sm);
 }
-.collaboration-message [data-action="reply-message"] { margin: 0; }
-.collaboration-message-status { margin-top: 3px; color: var(--muted); font-size: 9.5px; text-align: end; }
-.collaboration-empty { align-self: center; margin: auto; }
-.collaboration-transfer-panel:empty { display: none; }
+
+.collaboration-message [data-action="reply-message"] {
+  margin: 0;
+}
+
+.collaboration-message-status {
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 9.5px;
+  text-align: end;
+}
+
+.collaboration-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 8px;
+}
+
+.collaboration-message-attachments button {
+  min-height: 24px;
+  padding: 4px 10px;
+  border: 1px dashed color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 72%, transparent);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
 .collaboration-composer {
-  display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 0; padding: 10px 12px 12px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);
+  margin: 0;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 6px;
+  box-shadow: none;
 }
+
+/* The reply preview is a banner above the input row, so it spans the dock. */
+.collaboration-composer > .collaboration-reply-preview {
+  flex: 1 1 100%;
+}
+
+.collaboration-search {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 30px;
+  margin: 8px 0;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  border-radius: 999px;
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.collaboration-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.collaboration-reply-preview {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 7px 9px;
+  border-left-width: 2px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 72%, transparent);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.collaboration-reply-label {
+  color: var(--muted);
+}
+
+.collaboration-reply-content {
+  color: var(--text-primary);
+}
+
+.collaboration-reply-preview [data-action="clear-reply"] {
+  min-height: 24px;
+  margin-inline-start: auto;
+}
+
 .collaboration-composer textarea {
-  box-sizing: border-box; width: 100%; min-height: 38px; max-height: 116px; padding: 9px 10px 5px; border: 1px solid var(--border-subtle); border-bottom: 0;
-  border-radius: 11px 11px 0 0; background: var(--bg-input); font: inherit; font-size: 13.5px; line-height: 20px; outline: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  max-height: 116px;
+  padding: 8px 12px 6px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 86%, transparent);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 20px;
+  outline: none;
+  box-shadow: var(--top-highlight);
 }
-.collaboration-composer textarea:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle)); box-shadow: none; }
-.collaboration-composer textarea:focus-visible { outline: none; }
+
+.collaboration-composer textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: none;
+}
+
+.collaboration-composer textarea:focus-visible {
+  outline: none;
+}
+
 .collaboration-composer-toolbar {
-  display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 5px 4px 8px; border: 1px solid var(--border-subtle); border-top: 0;
-  border-radius: 0 0 11px 11px; background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 3px 8px 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: var(--bg-input);
 }
-.collaboration-composer-spacer { min-width: 0; flex: 1; }
-#collaborationAttachButton, #collaborationSendButton { display: grid; place-items: center; inline-size: 28px; block-size: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
-#collaborationAttachButton:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-#collaborationSendButton { background: var(--accent); color: var(--text-inverse); }
-#collaborationSendButton:disabled { background: var(--bg-surface-hover); color: var(--muted); opacity: .72; cursor: default; }
-.collaboration-mentions { gap: 4px; margin-bottom: 6px; }
-.collaboration-mentions > button { min-height: 27px; padding: 4px 8px; color: var(--muted); background: transparent; }
-#collaborationMentionStatus:empty { display: none; }
-.collaboration-mentions small { font-size: 10.5px; line-height: 15px; }
-.collaboration-reply-preview { width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 6px 8px; border-left-width: 2px; border-radius: 7px; background: var(--bg-surface-hover); font-size: 11px; }
-.collaboration-mention-manual-entry, .collaboration-mention-permanent-hint { display: none !important; }
+
+.collaboration-composer-spacer {
+  min-width: 0;
+  flex: 1;
+}
+
+#collaborationAttachButton,
+#collaborationSendButton {
+  display: grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+#collaborationAttachButton:hover {
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, transparent);
+  color: var(--text-primary);
+}
+
+#collaborationSendButton {
+  color: #fff;
+  border-radius: 9px;
+  background: var(--collab-send-btn);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+#collaborationSendButton:disabled {
+  background: color-mix(in srgb, var(--bg-surface-hover) 82%, transparent);
+  color: var(--muted);
+  opacity: .72;
+  cursor: default;
+}
+
+#collaborationSendButton:hover:not(:disabled) {
+  transform: none;
+  box-shadow: 0 10px 18px color-mix(in srgb, var(--collab-send-btn) 28%, transparent);
+}
+
+.collaboration-mentions {
+  margin: 0 0 4px;
+  display: grid;
+  gap: 4px;
+}
+
+.collaboration-mentions[hidden],
+.collaboration-mentions [hidden] {
+  display: none;
+}
+
+.collaboration-mentions > button {
+  justify-self: start;
+  min-height: 27px;
+  padding: 4px 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.collaboration-mentions > button:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+#collaborationMentionStatus:empty {
+  display: none;
+}
+
+.collaboration-mentions small {
+  font-size: 10.5px;
+  line-height: 15px;
+}
+
+#collaborationMentionTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-inline-size: 0;
+  max-block-size: 128px;
+  overflow-y: auto;
+  padding: 3px;
+}
+
+.collaboration-mention-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding-inline: 6px;
+}
+
+.collaboration-mention-tag span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.collaboration-mention-tag button {
+  flex-shrink: 0;
+}
+
+#collaborationMentionPicker {
+  min-inline-size: 0;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+#collaborationMentionList {
+  display: grid;
+  min-inline-size: 0;
+  max-block-size: 220px;
+  overflow-y: auto;
+  margin-block-start: 6px;
+}
+
+#collaborationMentionList button {
+  min-inline-size: 0;
+  text-align: start;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+#collaborationMentionList [aria-selected="true"] {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.collaboration-confirmation {
+  margin: 0 2px;
+}
+
+.collaboration-confirmation:not(:empty) {
+  margin-block: 8px;
+  padding: 10px;
+  border-color: var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+
+.collaboration-confirmation button {
+  margin-inline-end: 8px;
+}
+
+.collaboration-social-form {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 20px;
+}
+
+.collaboration-social-form h3 {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.collaboration-social-form label {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.collaboration-social-form input,
+.collaboration-social-form select {
+  inline-size: 100%;
+  min-inline-size: 0;
+  box-sizing: border-box;
+  color: inherit;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.collaboration-social-form select[multiple] {
+  min-height: 88px;
+}
+
+.collaboration-social-form input:focus,
+.collaboration-social-form select:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.collaboration-social-primary {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-weight: 600;
+}
+
+.collaboration-social-row {
+  box-sizing: border-box;
+  padding-block: 10px;
+  border-block-end: 1px solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+
+.collaboration-social-row p {
+  margin-block: 4px 8px;
+}
+
+.collaboration-social-row.is-compact {
+  min-height: 48px;
+  padding-block: 5px;
+}
+
+.collaboration-social-row.is-compact .collaboration-row-avatar {
+  inline-size: 30px;
+  block-size: 30px;
+  flex-basis: 30px;
+  font-size: 11px;
+}
+
+.collaboration-social-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  opacity: 1;
+  transition: opacity 120ms ease;
+}
+
+.collaboration-social-row:hover .collaboration-social-actions,
+.collaboration-social-row:focus-within .collaboration-social-actions {
+  opacity: 1;
+}
+
+.collaboration-social-actions button,
+.collaboration-social-row > button {
+  min-height: 28px;
+  padding: 4px 7px;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+}
+
+.collaboration-social-actions button:hover,
+.collaboration-social-row > button:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.collaboration-transfer-panel {
+  max-block-size: 32vh;
+  overflow: auto;
+  padding: 0 10px 8px;
+}
+
+.collaboration-transfer-panel:empty {
+  display: none;
+}
+
+.collaboration-transfer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--bg-surface-hover) 72%, transparent);
+}
+
+.collaboration-transfer strong {
+  flex-basis: 100%;
+}
+
+.collaboration-transfer small {
+  color: var(--muted);
+}
+
+.collaboration-transfers {
+  display: grid;
+  gap: 8px;
+}
+
+.collaboration-message-attachment,
+.collaboration-transfer button,
+.collaboration-social-row > button {
+  cursor: pointer;
+}
+
+.collaboration-panel-toggle {
+  gap: 7px;
+}
+
+.collaboration-unread-badge {
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.collaboration-panel-scrim {
+  display: none;
+}
+
+.app-shell[data-collaboration-mode="overlay"] .collaboration-center {
+  position: fixed;
+  z-index: 60;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: min(420px, 100vw);
+}
+
+.app-shell[data-collaboration-mode="overlay"] .collaboration-panel-scrim:not([hidden]) {
+  display: block;
+  position: fixed;
+  z-index: 59;
+  inset: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--bg-body) 6%, transparent);
+}
+
+.collaboration-resize-handle {
+  position: fixed;
+  z-index: 61;
+  inset-block: 0;
+  inset-inline-end: var(--collaboration-panel-w, 420px);
+  inline-size: 6px;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.collaboration-mention-manual-entry,
+.collaboration-mention-permanent-hint {
+  display: none !important;
+}
+
+.collaboration-center button:focus-visible,
+.collaboration-center input:focus-visible,
+.collaboration-center select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.collaboration-mentions button:focus-visible,
+.collaboration-message-actions button:focus-visible,
+[data-action="reply-message"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.collaboration-center button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.collaboration-load-more,
+#collaborationLoadOlder {
+  min-height: 30px;
+  margin: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.collaboration-load-more:hover,
+#collaborationLoadOlder:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+@media (max-width: 900px) {
+  .collaboration-center {
+    inline-size: min(420px, 100vw);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .collaboration-center {
+    transition: transform 190ms ease, opacity 190ms ease;
+  }
+}
+
+/* =========================================================================
+   M1 · Telegram/Discord-grade timeline refinements
+   Date separators, delivery ticks, grouped-bubble continuity.
+   ========================================================================= */
+
+.collaboration-date-separator {
+  display: flex;
+  justify-content: center;
+  align-self: center;
+  margin-block: 10px 2px;
+}
+
+.collaboration-date-separator time {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+/* Delivery state chip: text stays in the DOM for assistive tech and
+   localization; icons are drawn with pseudo-elements so glyphs never leak
+   into translated text content. */
+.collaboration-message-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 9.5px;
+  line-height: 1.6;
+  text-align: end;
+}
+
+.collaboration-message-status::before {
+  content: "";
+  display: inline-block;
+  inline-size: 11px;
+  block-size: 11px;
+  flex: 0 0 11px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.collaboration-message-status[data-tone="delivered"] {
+  color: color-mix(in srgb, var(--text-dim) 88%, transparent);
+}
+
+.collaboration-message-status[data-tone="delivered"]::before {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5 6.5 12 13 4.5' fill='none' stroke='%236b7280' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.collaboration-message-status[data-tone="pending"] {
+  color: color-mix(in srgb, var(--accent) 82%, var(--text-dim) 18%);
+}
+
+.collaboration-message-status[data-tone="pending"]::before {
+  inline-size: 9px;
+  block-size: 9px;
+  flex-basis: 9px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-top-color: var(--accent);
+  animation: collaboration-status-spin 700ms linear infinite;
+}
+
+.collaboration-message-status[data-tone="error"] {
+  color: var(--danger-text);
+}
+
+.collaboration-message-status[data-tone="error"]::before {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 3.5v6' stroke='%23ef4444' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='12.4' r='1' fill='%23ef4444'/%3E%3C/svg%3E");
+}
+
+.collaboration-message-status[data-tone="warn"] {
+  color: var(--warning-text);
+}
+
+.collaboration-message-status[data-tone="warn"]::before {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 3.2 13.8 13H2.2Z' fill='none' stroke='%23d97706' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M8 7v3' stroke='%23d97706' stroke-width='1.4' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='12' r='.9' fill='%23d97706'/%3E%3C/svg%3E");
+}
+
+@keyframes collaboration-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collaboration-message-status[data-tone="pending"]::before {
+    animation: none;
+  }
+}
+
+/* Grouped continuity: a message marked .is-grouped sits under an earlier
+   bubble from the same sender, so the seam (its top edge) gets a small
+   radius while the tail corner stays as authored (incoming: bottom-start,
+   outgoing: bottom-end). Mirrors Telegram's stacked bubbles. */
+.collaboration-message.is-grouped .collaboration-message-bubble,
+.collaboration-message.is-grouped.is-outgoing .collaboration-message-bubble {
+  border-start-start-radius: 5px;
+  border-start-end-radius: 5px;
+}
+
+.collaboration-message.is-grouped + .collaboration-message.is-grouped {
+  margin-top: 2px;
+}
+
+/* Telegram meta line: the bubble is a wrapping flex row, so a short message
+   keeps its time/tick on the same line as the text and a long one lets them
+   wrap to the bottom-right corner. No chrome, no extra row. */
+.collaboration-message-bubble {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  column-gap: 8px;
+  row-gap: 0;
+}
+
+.collaboration-message-header,
+.collaboration-message-mentions,
+.collaboration-message-attachments,
+.collaboration-reply-quote {
+  flex: 1 1 100%;
+}
+
+.collaboration-message-body {
+  flex: 0 1 auto;
+}
+
+.collaboration-message-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+  /* Nudge down so the tiny meta text sits on the text baseline, not above it. */
+  margin-block-end: -1px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.collaboration-message-time {
+  color: var(--text-dim);
+  font-size: 9.5px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.collaboration-message-status {
+  margin-top: 0;
+  line-height: 14px;
+}
+
+/* =========================================================================
+   M6 · Telegram-restrained skin
+   This block previously ADDED decoration — an indigo gradient plus an accent
+   glow on own messages, a gloss inset on every bubble, triple-ringed avatars
+   with drop shadows, bubbles that lifted under the cursor and a send button
+   that scaled and glowed. Stacked together they read as noise, which is what
+   made the thread look cheap. Telegram's calm comes from SUBTRACTION: flat
+   surfaces, one weak accent, no shadows on bubbles, weight balanced between
+   the two sides so alignment (not colour) says who spoke.
+   Pure CSS overrides — DOM/behaviour contracts intact.
+   ========================================================================= */
+
+/* Timeline breathing: tighter gutters let bubbles read as a real IM thread. */
+.collaboration-timeline {
+  gap: 7px;
+  padding: 16px 12px 18px;
+}
+
+.collaboration-message {
+  max-width: 82%;
+}
+
+/* Avatar ring lifts the sender mark off the thread surface (Discord style).
+   Inner ring matches the page so the circle feels punched out; the outer
+   hairline stays visible in both light and dark themes. */
+.collaboration-message-avatar {
+  inline-size: 30px;
+  block-size: 30px;
+  flex-basis: 30px;
+  font-size: 11px;
+  box-shadow: none;
+}
+
+/* Bubble layer: bigger radii, tail stays authored, outgoing gets a richer
+   indigo gradient so the user's own messages read instantly as "mine". */
+.collaboration-message-bubble {
+  padding: 7px 10px 5px;
+  border-radius: 13px 13px 13px 5px;
+  overflow-wrap: anywhere;
+  box-shadow: none;
+}
+
+.collaboration-message.is-outgoing .collaboration-message-bubble {
+  border-radius: 13px 13px 5px 13px;
+  background: var(--collab-outgoing-bg);
+  box-shadow: none;
+}
+
+.collaboration-message.is-grouped .collaboration-message-bubble,
+.collaboration-message.is-grouped.is-outgoing .collaboration-message-bubble {
+  border-start-start-radius: 6px;
+  border-start-end-radius: 6px;
+}
+
+/* Own messages are a light tint now, not indigo, so the delivery tick keeps
+   the ordinary muted ink and the accent only tints the tick itself. */
+.collaboration-message.is-outgoing .collaboration-message-status[data-tone="delivered"] {
+  color: color-mix(in srgb, var(--accent) 72%, var(--text-dim) 28%);
+}
+
+/* Conversation list rows: drop the card chrome for Discord-like seam-free
+   rows; the active one gets a leading accent bar instead of a box outline. */
+.collaboration-inbox-item {
+  min-height: 60px;
+  padding: 8px 10px;
+  border-color: transparent;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  margin: 0 0 2px;
+  transition: background-color 110ms ease, transform 110ms ease;
+}
+
+.collaboration-inbox-item:hover,
+.collaboration-social-row:hover {
+  background: color-mix(in srgb, var(--bg-surface-hover) 74%, transparent);
+  border-color: transparent;
+  transform: none;
+}
+
+.collaboration-inbox-item.is-active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 13%, color-mix(in srgb, var(--bg-surface-hover) 55%, transparent));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.collaboration-inbox-item.is-active:hover {
+  background: color-mix(in srgb, var(--accent) 16%, color-mix(in srgb, var(--bg-surface-hover) 55%, transparent));
+}
+
+/* Row avatar: square-ish for teams/chats keeps Discord geometry, rings keep
+   the mark separated from the row hover tint. */
+.collaboration-row-avatar {
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--text-dim) 45%, transparent),
+    var(--shadow-sm);
+}
+
+.collaboration-row-avatar.is-person {
+  border-radius: 50%;
+}
+
+/* Composer: one continuous rounded input dock; focus ring wraps the whole
+   dock (textarea + toolbar) instead of leaving a seam between the two. */
+.collaboration-composer textarea {
+  border-radius: 18px;
+}
+
+
+
+.collaboration-composer:focus-within textarea {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+}
+
+.collaboration-composer textarea:focus {
+  box-shadow: none;
+}
+
+#collaborationSendButton {
+  box-shadow: none;
+}
+
+#collaborationSendButton:hover {
+  transform: none;
+  background: var(--accent-hover);
+}
+
+/* Slim scrollbars for the thread and the list (Discord density). */
+.collaboration-timeline::-webkit-scrollbar,
+.collaboration-inbox::-webkit-scrollbar {
+  inline-size: 8px;
+}
+
+.collaboration-timeline::-webkit-scrollbar-thumb,
+.collaboration-inbox::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-dim) 26%, transparent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.collaboration-timeline::-webkit-scrollbar-thumb:hover,
+.collaboration-inbox::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-dim) 48%, transparent);
+  background-clip: padding-box;
+}
+
+/* =========================================================================
+   M7 · Chat-list-first information architecture
+   The landing view is ONE conversation list, as in Telegram. Contacts and
+   teams used to sit in a permanent horizontal tab strip above the list —
+   three big segmented buttons plus a section heading, all competing with the
+   list for the top of a narrow panel, and the strip repeated the heading
+   verbatim. They are now secondary destinations behind a header menu; the
+   list owns the panel.
+   ========================================================================= */
+
+.collaboration-nav-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.collaboration-nav-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.collaboration-nav-menu > summary::-webkit-details-marker,
+.collaboration-nav-menu > summary::marker {
+  display: none;
+  content: "";
+}
+
+/* The menu is a popover, so it must not stretch the header or push the close
+   button around when it opens. */
+.collaboration-nav-menu[open] > .collaboration-nav {
+  position: absolute;
+  z-index: 20;
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + 6px);
+  min-inline-size: 168px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-floating);
+}
+
+.collaboration-nav-menu:not([open]) > .collaboration-nav {
+  display: none;
+}
+
+.collaboration-nav-menu > .collaboration-nav {
+  /* The base nav is a 3-column GRID (a segmented strip), which inside a narrow
+     popover wrapped "联系人" mid-word. One destination per row here. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.collaboration-nav-menu > .collaboration-nav button {
+  justify-content: flex-start;
+  inline-size: 100%;
+  min-height: 34px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12.5px;
+  text-align: start;
+}
+
+.collaboration-nav-menu > .collaboration-nav button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* The list column now owns the panel: one section label, the search field, and
+   the rows — no strip above them. */
+.collaboration-inbox > h2 {
+  margin: 0 0 8px;
+  padding-inline: 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 650;
+}
+
+/* Row second line carries the last message, so it must never wrap the row open. */
+.collaboration-row-content small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Telegram shows a TICK, not the words "delivered" — the label is redundant next
+   to the timestamp and doubles the width of every own-message meta line. The
+   text stays in the DOM (this file's own delivery-chip comment says it is there
+   for assistive tech and localization); only the successful state is visually
+   collapsed to its icon. error / warn / pending keep their words because those
+   actually need explaining. */
+.collaboration-message-status[data-tone="delivered"] {
+  gap: 0;
+  overflow: hidden;
+  inline-size: 11px;
+  white-space: nowrap;
+}
+
+/* =========================================================================
+   M8 · Production messenger polish
+   Single-row composer dock, unread rows that read as unread, and a list
+   rhythm sized for scanning rather than for filling space.
+   ========================================================================= */
+
+.collaboration-composer textarea {
+  /* basis 0, not auto: the base rule sets width:100%, which as a flex-basis
+     claimed the whole line and wrapped the buttons onto a second row. */
+  flex: 1 1 0;
+  inline-size: auto;
+  min-inline-size: 0;
+  min-height: 36px;
+  max-height: 132px;
+  border-radius: 18px;
+  padding: 8px 14px;
+}
+
+.collaboration-composer-toolbar {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 4px;
+}
+
+/* The spacer existed to push send to the far edge of a full-width toolbar row;
+   in a single-row dock the buttons are already at the trailing edge. */
+.collaboration-composer-spacer {
+  display: none;
+}
+
+.collaboration-composer:focus-within textarea {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+}
+
+#collaborationAttachButton,
+#collaborationSendButton {
+  inline-size: 34px;
+  block-size: 34px;
+  border-radius: 50%;
+}
+
+/* Unread rows: the badge alone is not enough — the name and the preview carry
+   the weight, which is how every messenger makes an unread chat findable. */
+.collaboration-inbox-item.is-unread .collaboration-row-content strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.collaboration-inbox-item.is-unread .collaboration-row-content small {
+  color: var(--text-secondary);
+}
+
+/* Active row: a leading accent bar plus a whisper of tint, not a filled block
+   that competes with the unread badge for attention. */
+.collaboration-inbox-item.is-active {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.collaboration-inbox-item.is-active:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* List rhythm: a bigger mark and a tighter row scan faster than a short row
+   with a small mark and generous padding. */
+.collaboration-row-avatar {
+  inline-size: 42px;
+  block-size: 42px;
+  flex-basis: 42px;
+  font-size: 15px;
+}
+
+.collaboration-inbox-item {
+  min-height: 58px;
+  gap: 10px;
+}
+
+.collaboration-row-content strong {
+  font-size: 13.5px;
+  line-height: 19px;
+}
+
+.collaboration-row-content small {
+  font-size: 12px;
+  line-height: 17px;
+}
+
+/* Search: a field, not a grey slab. */
+.collaboration-search {
+  min-height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 62%, transparent);
+}

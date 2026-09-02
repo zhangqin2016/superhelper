@@ -32,9 +32,15 @@ app.whenReady().then(async () => {
       incomingAuthor: root.querySelector('[data-message-key="one"] .collaboration-message-author')?.textContent,
       outgoing: root.querySelector('[data-message-key="cmd"]')?.classList.contains('is-outgoing'),
       avatar: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-avatar')),
-      time: Boolean(root.querySelector('[data-message-key="one"] time')),
+      time: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-meta > time')),
       actions: Boolean(root.querySelector('[data-message-key="one"] .collaboration-message-actions')),
-      sparseTime: !root.querySelector('[data-message-key="cmd"] time'),
+      everyBubbleHasTime: Boolean(root.querySelector('[data-message-key="cmd"] .collaboration-message-meta > time')),
+      metaInsideBubble: Boolean(root.querySelector('[data-message-key="cmd"] .collaboration-message-bubble > .collaboration-message-meta')),
+      noFloatingRowTime: !root.querySelector('[data-message-key="cmd"] > time'),
+      // The meta line owns the timestamp so it is built early, but it must END
+      // the bubble: appending it before the body existed once put the delivery
+      // tick to the LEFT of the message text.
+      metaIsLastInBubble: root.querySelector('[data-message-key="cmd"] .collaboration-message-bubble')?.lastElementChild?.classList.contains('collaboration-message-meta') === true,
       ownIdentityHidden: !root.querySelector('[data-message-key="cmd"] .collaboration-message-author'),
     };
     const groupedRoot=document.createElement('div');document.body.append(groupedRoot);
@@ -46,7 +52,7 @@ app.whenReady().then(async () => {
     const groupingContract={
       authoritativeFalse:!groupedRoot.querySelector('[data-message-key="g1"]').classList.contains('is-outgoing'),
       grouped:groupedRoot.querySelector('[data-message-key="g2"]').classList.contains('is-grouped'),
-      fiveMinuteTime:Boolean(groupedRoot.querySelector('[data-message-key="g3"] time')),
+      fiveMinuteTime:Boolean(groupedRoot.querySelector('[data-message-key="g3"] .collaboration-message-meta > time')),
       directIdentityHidden:!groupedRoot.querySelector('.collaboration-message-author')&&!groupedRoot.textContent.includes('usr_internal'),
     };
     render(root, [first, { ...pending, id: 'server', seq: 2, state: 'persisted' }]);
@@ -93,7 +99,7 @@ app.whenReady().then(async () => {
     return { initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
-  assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true, sparseTime: true, ownIdentityHidden: true }, "timeline uses reliable own-message alignment and a quiet messenger hierarchy");
+  assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true, everyBubbleHasTime: true, metaInsideBubble: true, noFloatingRowTime: true, metaIsLastInBubble: true, ownIdentityHidden: true }, "timeline uses reliable own-message alignment and one in-bubble meta line (time + tick) per Telegram, not a floating row timestamp");
   assert.deepEqual(result.groupingContract, { authoritativeFalse:true, grouped:true, fiveMinuteTime:true, directIdentityHidden:true }, "authoritative direction, grouping, five-minute timestamps and direct-chat identity stay deterministic");
   assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
   assert.equal(result.sameBody, true, "unchanged content is not removed/re-announced on ACK");

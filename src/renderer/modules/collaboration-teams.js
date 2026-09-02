@@ -1,5 +1,5 @@
 import { t } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialField, socialPerson, selectedIds, socialAvatar, socialDisclosure } from "./collaboration-social-ui.js";
+import { createSocialUi, socialNode, socialButton, socialField, socialPerson, selectedIds, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 
 export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {}, showConversation: async () => {} };
@@ -108,7 +108,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         teamHeading.lastChild.append(socialNode("strong", team.name), socialNode("small", `${team.members.length} ${t("collaboration.social.members")} · ${team.scopeId}`)); section.append(teamHeading);
         for (const member of team.members) {
           const row = socialNode("div", "", "collaboration-social-row is-compact");
-          const name = member.displayName || member.lilyId || member.userId; const copy = socialNode("div", "", "collaboration-row-content"); copy.append(socialNode("strong", name), socialNode("small", member.lilyId || member.userId)); row.append(socialAvatar(name), copy);
+          const name = identityName(member); const role = t(`collaboration.social.role.${member.role || "member"}`); const copy = socialNode("div", "", "collaboration-row-content"); copy.append(socialNode("strong", name), socialNode("small", member.lilyId ? `${member.lilyId} · ${role}` : role)); row.append(socialAvatar(name), copy);
           if (member.userId !== directory.profile?.userId) row.append(socialButton("team-chat", "teamChat", () => ui.run(() => api.conversation({ action: "create", scopeType: "organization", organizationId: team.id, kind: "direct", memberUserIds: [member.userId] }), (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); })));
           section.append(row);
         }

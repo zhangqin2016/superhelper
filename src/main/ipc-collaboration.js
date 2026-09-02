@@ -61,6 +61,15 @@ function rendererConversation(value = {}) {
   return {
     id: safeIdentifier(value.id) || "", scopeId: safeIdentifier(value.scopeId) || "", kind: safeIdentifier(value.kind) || "",
     title: typeof value.title === "string" ? value.title.slice(0, 500) : "", updatedAt: nonNegativeInteger(value.updatedAt), lastSeq: optionalInteger(value.lastSeq),
+    // Last-message preview for the list row. Bounded and re-sanitized here like
+    // any other rendered text: only a sender id and a short single-line snippet
+    // cross, never the envelope, paths or delivery internals.
+    ...(value.lastMessage && typeof value.lastMessage.text === "string" && value.lastMessage.text.trim()
+      ? { lastMessage: {
+          senderUserId: safeIdentifier(value.lastMessage.senderUserId) || "",
+          text: value.lastMessage.text.replace(/\s+/g, " ").trim().slice(0, 160),
+        } }
+      : {}),
     ...(value.activityKnown == null ? {} : known ? { activityKnown: true, ...Object.fromEntries(fields.map((key) => [key, value[key]])) } : { activityKnown: false }),
   };
 }
@@ -88,8 +97,8 @@ function rendererOutbox(value = {}) {
   };
 }
 
-function rendererView(method, value, payload) {
-  const transfer = transferResult(method, value);
+function rendererView(method, value, payload, options = {}) {
+  const transfer = transferResult(method, value, options);
   if (transfer) return transfer;
   if (["friend", "conversation", "retrySocial", "openFriend"].includes(method)) return {
     ok: value?.ok === true,
@@ -170,13 +179,13 @@ function serviceFor(getService) {
   }
 }
 
-async function invoke(getService, method, payload) {
+async function invoke(getService, method, payload, options = {}) {
   const service = serviceFor(getService);
   if (!service || typeof service[method] !== "function") return unavailable();
   try {
     const result = await service[method](payload);
     if (serviceFor(getService) !== service) return { ok: false, code: "COLLAB_ACCOUNT_CHANGED", retryable: false };
-    return rendererView(method, result, payload);
+    return rendererView(method, result, payload, options);
   } catch (error) {
     return { ok: false, code: String(error?.code || "COLLABORATION_UNAVAILABLE"), retryable: false };
   }
@@ -255,10 +264,11 @@ function registerCommand(ipcMain, channel, getService, method, validate) {
   });
 }
 
-function createCollaborationIpc({ ipcMain, getService, subscribeState = () => () => {} } = {}) {
+function createCollaborationIpc({ ipcMain, getService, subscribeState = () => () => {}, toPreviewUrl } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function") throw new TypeError("ipcMain.handle is required");
   const subscriptions = new Map();
-  registerTransferIpc({ ipcMain, invoke: (method, payload) => invoke(getService, method, payload) });
+  const transferOptions = { ...(typeof toPreviewUrl === "function" ? { toPreviewUrl } : {}) };
+  registerTransferIpc({ ipcMain, invoke: (method, payload) => invoke(getService, method, payload, transferOptions) });
   const emitState = async (sender, change = {}) => {
     if (!sender || sender.isDestroyed?.()) return;
     sender.send("collaboration:state", {

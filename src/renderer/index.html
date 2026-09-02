@@ -26,7 +26,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260831-collaboration-theme" />
+    <link rel="stylesheet" href="./styles.css?v=20260902-collab-chatlist-first" />
   </head>
   <body>
     <div id="dropOverlay" class="drop-overlay" hidden>
@@ -373,21 +373,26 @@
       <aside id="collaborationCenter" class="collaboration-center" hidden role="complementary" aria-label="协作中心">
         <header class="collaboration-panel-header">
           <div class="collaboration-panel-title"><span class="collaboration-brand-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg></span><div><strong data-i18n="collaboration.nav">协作</strong><p id="collaborationStatus" class="collaboration-status" role="status" data-i18n="collaboration.statusUnavailable">协作暂不可用</p></div></div>
+          <details id="collaborationNavMenu" class="collaboration-nav-menu">
+            <summary class="collaboration-icon-button" data-i18n-aria-label="collaboration.nav" aria-label="协作导航"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary>
+            <nav class="collaboration-column collaboration-nav" aria-label="协作导航">
+              <button id="collaborationInboxTab" type="button" data-i18n="collaboration.inbox" aria-controls="collaborationInbox">消息</button>
+              <button id="collaborationPeopleTab" type="button" data-i18n="collaboration.people" aria-controls="collaborationFriends">联系人</button>
+              <button id="collaborationTeamsTab" type="button" data-i18n="collaboration.teams" aria-controls="collaborationTeams">团队</button>
+            </nav>
+          </details>
           <button id="collaborationPanelClose" class="collaboration-icon-button" type="button" aria-label="关闭协作面板"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </header>
-        <section id="collaborationHome" class="collaboration-home">
-          <nav class="collaboration-nav-list" aria-label="协作导航">
-            <button id="collaborationInboxTab" type="button" data-i18n="collaboration.inbox" aria-controls="collaborationInbox">消息</button>
-            <button id="collaborationPeopleTab" type="button" data-i18n="collaboration.people" aria-controls="collaborationFriends">联系人</button>
-            <button id="collaborationTeamsTab" type="button" data-i18n="collaboration.teams" aria-controls="collaborationTeams">团队</button>
-          </nav>
-          <section class="collaboration-inbox" id="collaborationInboxColumn" tabindex="-1">
+        <section id="collaborationHome" class="collaboration-home collaboration-column">
+          <section class="collaboration-column collaboration-inbox" id="collaborationInboxColumn" tabindex="-1">
             <h2 id="collaborationListTitle" data-i18n="collaboration.inbox">消息</h2>
+            <input id="collaborationInboxSearch" class="collaboration-search" type="search" placeholder="搜索" data-i18n-placeholder="collaboration.search.placeholder" data-i18n-aria-label="collaboration.search.placeholder" autocomplete="off" />
             <div id="collaborationInbox"></div><div id="collaborationFriends" hidden></div><div id="collaborationTeams" hidden></div>
           </section>
         </section>
-        <section id="collaborationConversation" class="collaboration-conversation" hidden aria-label="对话">
+        <section id="collaborationConversation" class="collaboration-column collaboration-conversation" hidden aria-label="对话">
           <header class="collaboration-conversation-header"><button id="collaborationConversationBack" class="collaboration-icon-button" type="button" aria-label="返回"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button><div class="collaboration-conversation-title"><h2 id="collaborationConversationTitle" data-i18n="collaboration.conversation">对话</h2><span id="collaborationScopeBadge" class="collaboration-scope-badge"></span></div></header>
+          <input id="collaborationConversationSearch" class="collaboration-search" type="search" placeholder="搜索" data-i18n-placeholder="collaboration.search.inConversation" data-i18n-aria-label="collaboration.search.inConversation" autocomplete="off" hidden />
           <button id="collaborationLoadOlder" type="button" hidden data-i18n="collaboration.loadOlder">加载更早消息</button>
           <div id="collaborationTimeline" class="collaboration-timeline" role="log" aria-live="polite" aria-relevant="additions text"></div>
           <p id="collaborationConversationEmpty" class="collaboration-empty" data-i18n="collaboration.empty">选择一个对话开始协作</p>
@@ -743,26 +748,31 @@
             </section>
             <section id="settingsPageModel" class="settings-page" data-settings-page="model" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.model">模型</h3>
-              <p class="settings-section-desc" data-i18n="settings.modelDesc">选择当前模型，或从常用供应商添加一个（填入你自己的密钥即可）。更复杂的接口可在「高级」里手动填写。</p>
-              <label class="settings-field-label" for="modelPresetSelect" data-i18n="settings.modelCurrent">当前模型</label>
-              <div class="model-current-row">
-                <select id="modelPresetSelect" class="settings-select" data-i18n-aria-label="settings.modelSelect" aria-label="选择模型"></select>
-                <button
-                  id="modelDiagnoseRestoreBtn"
-                  class="ui-icon-btn model-restore-icon-btn"
-                  type="button"
-                  title="诊断并恢复 Lily 默认模型"
-                  aria-label="诊断并恢复 Lily 默认模型"
-                  data-i18n-title="settings.modelDiagnoseRestore"
-                  data-i18n-aria-label="settings.modelDiagnoseRestore"
-                >
-                  <svg class="model-restore-icon" data-icon="model-repair" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.6-3.6a6 6 0 0 1-7.8 7.8l-6.8 6.8a2.1 2.1 0 0 1-3-3l6.8-6.8a6 6 0 0 1 7.8-7.8z" />
-                  </svg>
-                </button>
+              <p class="settings-section-desc" data-i18n="settings.modelDesc">这里管理可用模型和连接。实际使用的模型请在每个会话输入框旁选择。</p>
+              <div class="model-library-heading">
+                <div>
+                  <h4 class="settings-subsection-title" data-i18n="settings.modelLibraryTitle">可用模型</h4>
+                  <p class="settings-section-desc" data-i18n="settings.modelLibraryDesc">模型会出现在会话旁的 Auto 和手动选择中。</p>
+                </div>
+                <div class="model-library-actions">
+                  <span class="model-library-note" data-i18n="settings.modelLibrarySessionOnly">按会话使用</span>
+                  <button
+                    id="modelDiagnoseRestoreBtn"
+                    class="ui-icon-btn model-restore-icon-btn"
+                    type="button"
+                    title="诊断并恢复 Lily 默认模型配置"
+                    aria-label="诊断并恢复 Lily 默认模型配置"
+                    data-i18n-title="settings.modelDiagnoseRestore"
+                    data-i18n-aria-label="settings.modelDiagnoseRestore"
+                  >
+                    <svg class="model-restore-icon" data-icon="model-repair" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a2 2 0 0 0 1.4 0l3.6-3.6a6 6 0 0 1-7.8 7.8l-6.8 6.8a2.1 2.1 0 0 1-3-3l6.8-6.8a6 6 0 0 1 7.8-7.8z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <p id="modelDiagnoseRestoreStatus" class="settings-form-status model-diagnose-restore-status" hidden></p>
-              <div id="modelCustomList" class="model-custom-list"></div>
+              <div id="modelLibraryList" class="model-custom-list"></div>
               <div id="modelCatalogBlock" class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.modelAddTitle">添加模型</h4>
                 <p class="settings-section-desc" data-i18n="settings.modelAddDesc">从常用供应商里选一个，挑好模型，填入你自己的 API 密钥即可。</p>
@@ -848,44 +858,6 @@
                       <small data-i18n="settings.modelTlsSkipVerifyDesc">仅用于内网自签名模型服务；不修改 API 地址。</small>
                     </span>
                   </label>
-                  <details id="modelApiOverrideBlock" class="settings-advanced settings-field settings-field--divider">
-                    <summary class="settings-subsection-title" data-i18n="settings.modelApiOverrideAdvanced">覆盖当前模型连接</summary>
-                    <p class="settings-section-desc" data-i18n="settings.modelApiDesc">默认使用当前模型自带的连接。只有在需要把当前模型改接到自己的兼容接口时，才填写这里。</p>
-                    <div id="modelApiCustomFields" class="model-api-custom-fields">
-                      <label class="settings-field-label model-custom-id-label" for="modelApiBaseUrl" data-i18n="settings.modelApiBaseUrl">API 地址</label>
-                      <input
-                        id="modelApiBaseUrl"
-                        class="skills-registry-input"
-                        type="url"
-                        maxlength="512"
-                        data-i18n-placeholder="settings.modelApiBaseUrlPlaceholder"
-                        placeholder="https://api.example.com/v1"
-                        spellcheck="false"
-                        autocomplete="off"
-                      />
-                      <label class="settings-field-label model-custom-id-label" for="modelApiProtocol" data-i18n="settings.modelApiProtocol">API 类型</label>
-                      <select id="modelApiProtocol" class="settings-select" data-i18n-aria-label="settings.modelApiProtocol" aria-label="API 类型">
-                        <option value="openai" data-i18n="settings.modelProtocolOpenAI">OpenAI-compatible</option>
-                        <option value="anthropic" data-i18n="settings.modelProtocolAnthropic">Anthropic-compatible</option>
-                      </select>
-                      <label class="settings-field-label model-custom-id-label" for="modelApiKey" data-i18n="settings.modelApiKey">API 密钥</label>
-                      <input
-                        id="modelApiKey"
-                        class="skills-registry-input"
-                        type="password"
-                        maxlength="512"
-                        data-i18n-placeholder="settings.modelApiKeyPlaceholder"
-                        placeholder="sk-..."
-                        spellcheck="false"
-                        autocomplete="off"
-                      />
-                      <p id="modelApiKeyHint" class="skills-registry-hint" hidden></p>
-                      <div class="settings-actions settings-form-actions">
-                        <button id="modelApiSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiSave">保存连接</button>
-                        <button id="modelApiResetBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiReset">清除自定义连接</button>
-                      </div>
-                    </div>
-                  </details>
                 </div>
               </details>
             </section>

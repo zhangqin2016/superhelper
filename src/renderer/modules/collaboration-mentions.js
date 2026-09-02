@@ -1,4 +1,5 @@
 import { t, onLocaleChange } from "../i18n/index.js";
+import { identityName } from "./collaboration-social-ui.js";
 
 // Text is only a search aid. The composer owns explicit, stable recipient IDs.
 function queryAtCaret(textarea) {
@@ -19,8 +20,8 @@ export function initCollaborationMentions({ textarea, getIds, onChange }) {
   let opened = false, query = null, queryMode = false, items = [], status = "unknown", selected = 0;
   let button, picker, tags, notice, list, retry, closeButton, hint;
   const visible = () => !disposed && active && Boolean(conversationId) && root.isConnected && !root.closest("[hidden]");
-  const identity = (item) => item.lilyId || item.userId;
-  const label = (item) => item.displayName ? `${item.displayName} · ${identity(item)}` : identity(item);
+  const identity = (item) => (typeof item?.lilyId === "string" && item.lilyId.trim()) ? item.lilyId.trim() : "";
+  const label = (item) => { const name = identityName(item); const lilyId = identity(item); return lilyId && lilyId !== name ? `${name} · ${lilyId}` : name; };
   const filtered = () => {
     const needle = (query?.query || "").toLocaleLowerCase();
     return items.filter((item) => [item.displayName, item.lilyId, item.userId].some((value) => String(value || "").toLocaleLowerCase().includes(needle)));

@@ -42,6 +42,19 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     button.disabled = busy.has(row.dataset.transferId);
     button.addEventListener("click", () => { void run(row.dataset.transferId, operation); }); row.append(button);
   }
+  function previewAction(row, transferId) {
+    const button = node("button", label("preview")); button.type = "button"; button.dataset.action = "preview-download";
+    button.addEventListener("click", () => { void openPreview(transferId); });
+    row.append(button);
+  }
+  async function openPreview(transferId) {
+    let resolved; try { resolved = await api?.resolveTransferPreview?.(transferId); } catch { resolved = null; }
+    if (resolved?.ok !== true || !resolved.url) return;
+    const mime = String(resolved.mimeType || "");
+    if (!mime.startsWith("image/")) return;
+    const viewer = await import("./image-viewer.js");
+    viewer.openImageViewer?.(resolved.url, resolved.originalName || t("collaboration.transfer.preview"));
+  }
   function render() {
     const focused = document.activeElement;
     const focusId = focused?.closest?.("[data-transfer-id]")?.dataset.transferId, focusAction = focused?.dataset.action;
@@ -65,7 +78,10 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
         else action(row, "resume-transfer", "resume", () => api.enqueueTransfer(item.id));
       }
       if (item.state !== "cancelled") action(row, "cancel-transfer", "cancel", () => api.cancelTransfer(item.id));
-      if (item.direction === "download" && item.state === "ready") action(row, "save-download", "save", () => api.saveDownload(item.id));
+      if (item.direction === "download" && item.state === "ready") {
+        action(row, "save-download", "save", () => api.saveDownload(item.id));
+        previewAction(row, item.id);
+      }
       if (item.code) row.append(node("small", label(errorLabel(item))));
       list.append(row);
     }

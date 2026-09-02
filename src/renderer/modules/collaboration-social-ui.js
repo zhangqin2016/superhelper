@@ -6,8 +6,23 @@ export function socialNode(tag, text = "", className = "") {
 export function socialButton(action, label, handler) {
   const node = socialNode("button", t(`collaboration.social.${label}`)); node.type = "button"; node.dataset.action = action; node.addEventListener("click", handler); return node;
 }
+export function avatarHue(label = "") {
+  const source = String(label || "L");
+  let hash = 0;
+  for (let i = 0; i < source.length; i += 1) hash = (hash * 31 + source.charCodeAt(i)) >>> 0;
+  return hash % 360;
+}
+
+function avatarInitial(label = "") {
+  const source = String(label || "").trim();
+  if (!source) return "L";
+  const first = [...source][0];
+  return first ? first.toUpperCase() : "L";
+}
+
 export function socialAvatar(label = "", kind = "person") {
-  const avatar = socialNode("span", String(label).trim().slice(0, 1).toUpperCase() || "L", `collaboration-row-avatar is-${kind}`);
+  const avatar = socialNode("span", avatarInitial(label), `collaboration-row-avatar is-${kind}`);
+  avatar.style.setProperty("--avatar-hue", String(avatarHue(label)));
   avatar.setAttribute("aria-hidden", "true");
   return avatar;
 }
@@ -26,7 +41,38 @@ export function socialField(form, name, label, { multiple = false, options = nul
   wrapper.append(input); form.append(wrapper); return input;
 }
 export function selectedIds(select) { return [...select.selectedOptions].map((o) => o.value).filter(Boolean); }
-export function socialPerson(person) { return `${person.displayName || person.lilyId || person.userId} · ${person.lilyId || person.userId}`; }
+
+/** Human-facing identity: never expose a raw opaque `usr_…` id to the user. */
+export function identityName(person) {
+  const displayName = typeof person?.displayName === "string" ? person.displayName.trim() : "";
+  const lilyId = typeof person?.lilyId === "string" ? person.lilyId.trim() : "";
+  const userId = typeof person?.userId === "string" ? person.userId : "";
+  if (displayName) return displayName;
+  if (lilyId) return lilyId;
+  if (userId) {
+    const tail = userId.length > 6 ? userId.slice(-6) : userId;
+    return `${t("collaboration.social.unnamedUser")} ${tail}`;
+  }
+  return t("collaboration.social.unknownUser");
+}
+
+export function socialPerson(person) {
+  const name = identityName(person);
+  const lilyId = typeof person?.lilyId === "string" ? person.lilyId.trim() : "";
+  return lilyId && lilyId !== name ? `${name} · ${lilyId}` : name;
+}
+
+/** Resolve a person object for a user id across profile, contacts, and team
+ *  members. Falls back to a bare `{ userId }` so `identityName` can still
+ *  render a friendly placeholder instead of a raw opaque id. */
+export function resolvePerson(directory, userId) {
+  const id = String(userId || "");
+  if (!id) return { userId: id };
+  if (directory?.profile?.userId === id) return directory.profile;
+  return directory?.contacts?.find((contact) => contact.userId === id)
+    || directory?.teams?.flatMap((team) => team.members || []).find((member) => member.userId === id)
+    || { userId: id };
+}
 
 /** Shared presentation lifecycle, not a command retry engine. IDs live in main. */
 export function createSocialUi(root, { onChanged = async () => {}, getNavigationGeneration = () => 0 } = {}) {
@@ -80,7 +126,8 @@ export function createSocialUi(root, { onChanged = async () => {}, getNavigation
       for (const command of commands.filter((c) => c.kind === kind)) {
         const row = socialNode("div", "", "collaboration-social-row");
         const input = command.input || {};
-        row.append(socialNode("p", `${t("collaboration.social.confirming")} · ${t(`collaboration.social.action.${input.action}`)} · ${input.lilyId || input.peerUserId || input.requestId || input.title || input.conversationId || ""} · ${scopeLabel(command.scopeId)}`));
+        const target = input.lilyId || input.title || "";
+        row.append(socialNode("p", `${t("collaboration.social.confirming")} · ${t(`collaboration.social.action.${input.action}`)}${target ? ` · ${target}` : ""} · ${scopeLabel(command.scopeId)}`));
         row.append(socialButton("retry", "retry", () => this.run(() => api.retrySocial(command.clientCommandId)))); pending.append(row);
       }
     },

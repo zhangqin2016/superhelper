@@ -233,6 +233,29 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       running.set(id, promise); return promise;
     },
     async verifiedFile(id) { return verifiedDownloadFile({ manifests, item: manifests.read(id), guard }); },
+    /**
+     * Resolve a completed download to its decrypted plaintext on disk so the
+     * owning account can preview it locally. Authorization mirrors every other
+     * transfer command (guard/assertAuthorized) and only a download that has
+     * finished decrypting (`ready`) is eligible — pending/failed/cancelled
+     * transfers never expose a plaintext path.
+     */
+    plaintextFile(id) {
+      const item = manifests.read(id);
+      guard(item);
+      const checkpoint = item.checkpoint || {};
+      if (item.direction !== "download" || checkpoint.state !== "ready") throw fail("COLLAB_TRANSFER_NOT_READY", true);
+      const originalName = checkpoint.plaintext?.originalName || checkpoint.content?.originalName || "";
+      const extension = path.extname(originalName || "").toLowerCase();
+      const byExtension = extension === ".png" ? "image/png"
+        : extension === ".jpg" || extension === ".jpeg" ? "image/jpeg"
+        : extension === ".webp" ? "image/webp"
+        : extension === ".gif" ? "image/gif"
+        : extension === ".bmp" ? "image/bmp"
+        : extension === ".svg" ? "image/svg+xml" : "";
+      return { ok: true, path: path.join(manifests.directory(item.id), "plaintext.verified"),
+        mimeType: byExtension || checkpoint.content?.mimeType || "application/octet-stream", originalName };
+    },
   });
 }
 

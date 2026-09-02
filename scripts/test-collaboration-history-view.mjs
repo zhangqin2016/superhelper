@@ -38,4 +38,11 @@ const repeatedText = applyCollaborationHistoryPage({}, { messages: [
   { ...authoritative, id: "server-3", clientCommandId: "send-3", seq: 9 },
 ], hasMore: false }, { latest: true });
 assert.equal(repeatedText.messages.length, 2, "equal text from distinct commands remains two legitimate messages");
+
+const fallback = applyCollaborationHistoryPage({}, { messages: [
+  { conversationId: "c", senderUserId: "me", bodyText: "drift", createdAt: 1000, seq: null, state: "confirming", revision: 1 },
+  { conversationId: "c", senderUserId: "me", bodyText: "drift", createdAt: 1550, seq: 22, state: "persisted", revision: 1 },
+], hasMore: false }, { latest: true });
+assert.equal(fallback.messages.length, 1, "durable identity fallback reconciles a drifted optimistic bubble");
+
 console.log("collaboration history view passed");

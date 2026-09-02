@@ -456,6 +456,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     cancelTransfer: (transferId) => ipcRenderer.invoke("collaboration:cancel-transfer", { transferId }),
     prepareDownload: ({ conversationId, messageId, objectId }) => ipcRenderer.invoke("collaboration:prepare-download", { conversationId, messageId, objectId }),
     saveDownload: (transferId) => ipcRenderer.invoke("collaboration:save-download", { transferId }),
+    resolveTransferPreview: (transferId) => ipcRenderer.invoke("collaboration:resolve-preview", { transferId }),
     sendAttachments: ({ conversationId, transferIds, bodyText, clientCommandId } = {}) => ipcRenderer.invoke("collaboration:send-attachments", { conversationId, transferIds, bodyText, ...(clientCommandId == null ? {} : { clientCommandId }) }),
     getDirectory: () => ipcRenderer.invoke("collaboration:get-directory"),
     getState: () => ipcRenderer.invoke("collaboration:get-state"),
