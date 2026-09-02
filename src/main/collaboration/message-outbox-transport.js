@@ -3,6 +3,7 @@
 const CREATE = "message.create";
 const EDIT = "message.edit";
 const REVOKE = "message.revoke";
+const REACTION = "message.reaction";
 const { messageMetadata, messageIdentifier } = require("./message-intent");
 
 function unsupportedCommand() {
@@ -24,12 +25,26 @@ function commandFor(item, deviceId) {
   }
   if (item.commandType === EDIT) return { action: "edit", ...base, messageId: item.messageId, expectedRevision: item.expectedRevision, bodyText: item.bodyText };
   if (item.commandType === REVOKE) return { action: "revoke", ...base, messageId: item.messageId, expectedRevision: item.expectedRevision };
+  // A reaction carries no expectedRevision on purpose: it must not look like an
+  // edit to the revision-conflict machinery.
+  if (item.commandType === REACTION) return { action: "react", ...base, messageId: item.messageId, emoji: item.emoji, active: item.active !== false };
   throw unsupportedCommand();
 }
 
 function committedView(item, response) {
   const commandType = item?.commandType || CREATE;
   const result = response?.result, message = result?.message;
+  // A reaction does not revise the message, so its receipt has no message
+  // projection to match. Its commit evidence is the durable event id plus the
+  // server echoing back the exact (message, emoji, direction) it applied —
+  // matching a create/edit receipt shape here would be inventing evidence.
+  if (commandType === REACTION) {
+    if (response?.ok !== true || !nonEmpty(result?.eventId) || !messageIdentifier(result.eventId)
+      || result.messageId !== item.messageId || result.emoji !== item.emoji
+      || Boolean(result.active) !== (item.active !== false)) return null;
+    return { committed: true, state: "completed", commandType, eventId: result.eventId,
+      conversationId: item.conversationId, messageId: item.messageId, emoji: item.emoji, active: item.active !== false };
+  }
   if (response?.ok !== true || !nonEmpty(result?.eventId) || !nonEmpty(message?.id) || !nonEmpty(message?.conversationId) || !strictInteger(message?.seq)) return null;
   // A create receipt is the immutable original creation result, never a
   // current edit/revoke projection that happens to share this conversation.

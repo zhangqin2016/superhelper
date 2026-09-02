@@ -56,7 +56,9 @@
     "src/main/character-worlds/repository.js": 557,
     "src/main/ipc-character-worlds.js": 551,
     "src/main/character-worlds/authoring-service.js": 514,
-    "src/main/character-worlds/service.js": 502
+    "src/main/character-worlds/service.js": 502,
+    "src/main/collaboration/service.js": 515,
+    "src/main/collaboration/collaboration-store.js": 500
   },
   "forbiddenImports": [
     {

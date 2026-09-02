@@ -37,6 +37,32 @@ export function createKyselyMessageRepository(db) {
       }
       return trx.updateTable("conversation_members").set({ last_read_seq: sql`greatest(last_read_seq, ${seq})` }).where("conversation_id", "=", conversationId).where("user_id", "=", userId).where("status", "=", "active").returning(["last_read_seq as lastReadSeq"]).executeTakeFirstOrThrow();
     },
+    /**
+     * Toggle one (message, user, emoji) reaction. Returns the resulting state so
+     * the caller can put it in the event without a second read.
+     *
+     * A per-row insert/delete rather than a read-modify-write on an aggregate:
+     * two devices reacting at the same instant cannot clobber each other, and a
+     * replayed command is idempotent for its own direction.
+     */
+    async setMessageReaction(trx, { conversationId, messageId, userId, emoji, active }) {
+      if (active) {
+        await trx.insertInto("collaboration_message_reactions")
+          .values({ message_id: messageId, conversation_id: conversationId, user_id: userId, emoji })
+          .onConflict((c) => c.columns(["message_id", "user_id", "emoji"]).doNothing())
+          .execute();
+      } else {
+        await trx.deleteFrom("collaboration_message_reactions")
+          .where("message_id", "=", messageId).where("user_id", "=", userId).where("emoji", "=", emoji)
+          .execute();
+      }
+      const rows = await trx.selectFrom("collaboration_message_reactions")
+        .select(["emoji", "user_id as userId"])
+        .where("message_id", "=", messageId)
+        .orderBy("emoji").orderBy("user_id")
+        .execute();
+      return rows.map((row) => ({ emoji: row.emoji, userId: row.userId }));
+    },
     async listHistory(trx, { conversationId, beforeSeq, messageIds, limit, visibleAfterSeq }) {
       const rows = await trx.selectFrom("messages").selectAll()
         .select(sql`coalesce((select creation.payload -> 'mentionUserIds' from collaboration_events as creation

@@ -32,6 +32,7 @@ export const COLLABORATION_EVENT_TYPES = Object.freeze([
   "message.edited",
   "message.revoked",
   "conversation.read",
+  "message.reaction",
   "friend.requested",
   "friend.accepted",
   "friend.declined",

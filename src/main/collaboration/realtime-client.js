@@ -5,7 +5,7 @@ const FOREGROUND_POLL_MS = 15_000;
 const BACKGROUND_POLL_MS = 60_000;
 
 /** Realtime is a hint channel only; every trigger invokes durable cursor sync. */
-function createCollaborationRealtimeClient({ sync, onReconnect = () => {}, createSocket = null, setIntervalFn = setInterval, clearIntervalFn = clearInterval, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout, random = Math.random, onWake = () => {}, onFocus = () => {} } = {}) {
+function createCollaborationRealtimeClient({ sync, onReconnect = () => {}, onEphemeral = () => {}, createSocket = null, setIntervalFn = setInterval, clearIntervalFn = clearInterval, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout, random = Math.random, onWake = () => {}, onFocus = () => {} } = {}) {
   if (typeof sync !== "function") throw new TypeError("A durable sync function is required.");
   let socket = null;
   let pollTimer = null;
@@ -40,7 +40,11 @@ function createCollaborationRealtimeClient({ sync, onReconnect = () => {}, creat
       attach(socket, "message", (raw) => {
         try {
           const frame = typeof messageData(raw) === "string" ? JSON.parse(messageData(raw)) : messageData(raw);
-          if (frame?.type === "sync.available" && Number(frame.schemaVersion) === 1) triggerSync();
+          if (Number(frame?.schemaVersion) !== 1) return;
+          if (frame.type === "sync.available") { triggerSync(); return; }
+          // Ephemeral hints (typing/presence) are relayed, never persisted. They
+          // are handed up as-is; the consumer bounds and expires them.
+          if (frame.type === "typing" || frame.type === "presence") onEphemeral(frame);
         } catch { /* malformed ephemeral frame is ignored; polling is durable */ }
       });
       attach(socket, "open", () => { reconnectAttempt = 0; Promise.resolve(onReconnect()).catch(() => undefined); });
@@ -57,6 +61,13 @@ function createCollaborationRealtimeClient({ sync, onReconnect = () => {}, creat
       if (socket?.send) heartbeatTimer = setIntervalFn(() => { try { socket.send(JSON.stringify({ type: "realtime.heartbeat", schemaVersion: 1 })); } catch { /* poll remains authoritative */ } }, HEARTBEAT_MS);
       onWake(triggerSync);
       onFocus(triggerSync);
+    },
+    /** Publish an ephemeral hint. Best effort by contract: a closed socket is
+     *  not an error, because durable state never depends on these frames. */
+    sendEphemeral(frame) {
+      if (stopped || !frame || socket?.readyState !== 1 || typeof socket.send !== "function") return false;
+      try { socket.send(JSON.stringify({ schemaVersion: 1, ...frame })); return true; }
+      catch { return false; }
     },
     setBackground(next) { background = Boolean(next); if (!stopped) startPoll(); },
     notifyAvailable() { return triggerSync(); },

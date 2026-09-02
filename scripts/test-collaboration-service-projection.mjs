@@ -10,7 +10,10 @@ const store = {
   listMessages: ({ conversationId }) => conversationId === "c1" ? [{ id: "m1", seq: 1, bodyText: "hello" }] : [],
 };
 const service = createCollaborationService({ openStore: () => ({ ok: true, store }) });
-assert.deepEqual(service.getState(), { ok: true, cursor: 8, watermark: 5, outbox: [{ id: "queued-1", state: "queued" }] });
+// State now carries the live typing hints alongside the durable cursor/outbox.
+// It is empty until a relayed frame arrives and self-expires back to empty, so
+// a missed frame degrades to "nobody is typing".
+assert.deepEqual(service.getState(), { ok: true, cursor: 8, watermark: 5, outbox: [{ id: "queued-1", state: "queued" }], typing: {} });
 assert.deepEqual(service.list(), { ok: true, conversations: [{ id: "c1", title: "Project", kind: "team" }] });
 assert.deepEqual(await service.open({ conversationId: "c1" }), { ok: true, conversation: { id: "c1", title: "Project" }, messages: [{ id: "m1", seq: 1, bodyText: "hello" }], hasMore: false, nextBeforeSeq: 1, offline: true });
 assert.deepEqual(await service.open({ conversationId: "missing" }), { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false });

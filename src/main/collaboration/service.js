@@ -4,6 +4,8 @@ const { openCollaborationStore } = require("./collaboration-store");
 const { createCollaborationSyncEngine } = require("./sync-engine");
 const { createCollaborationOutbox } = require("./outbox");
 const { createCollaborationRealtimeClient } = require("./realtime-client");
+const { createEphemeralPresence, createTypingCommand } = require("./ephemeral-presence");
+const { createReactionCommand } = require("./reaction-command");
 const { readHistoryPage } = require("./history-page");
 const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
@@ -70,6 +72,12 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         try { listener({ type }); } catch { /* view observers never affect durable state */ }
       }
     };
+    const presence = createEphemeralPresence();
+    const reactionCommand = createReactionCommand({
+      store, deviceId, getOutbox: () => outbox, isStopped: () => stopped, stoppedResult,
+      onChanged: () => emitState("message"),
+    });
+    const typingCommand = createTypingCommand({ store, getRealtime: () => realtime, isStopped: () => stopped, stoppedResult });
     const engine = createCollaborationSyncEngine({ store });
     let attachmentSend = null;
     const transfers = createTransferRuntime({ ...transferOptions, store, client, deviceId, policy, assertActive, onChange: () => { emitState("transfer"); void attachmentSend?.recover?.().catch(() => undefined); } });
@@ -237,6 +245,9 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       ? createCollaborationRealtimeClient({
         ...realtimeOptions,
         onReconnect: () => outbox?.drainQueued?.(),
+        // Typing is a hint, so it only reaches the UI when the live set actually
+        // changes — a peer re-sending every keystroke must not re-render.
+        onEphemeral: (frame) => { if (presence.note(frame)) emitState("typing"); },
         sync: synchronize,
       })
       : null;
@@ -259,8 +270,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       getState() {
         if (stopped) return stoppedResult();
         const sync = store.getSyncState();
-        return { ok: true, cursor: sync.cursor, watermark: sync.watermark, outbox: store.listOutbox?.() || [] };
+        return { ok: true, cursor: sync.cursor, watermark: sync.watermark, outbox: store.listOutbox?.() || [],
+          typing: presence.snapshot() };
       },
+      typing: typingCommand,
       getDirectory() {
         if (stopped) return stoppedResult();
         if (typeof store.getDirectory !== "function") return unavailableService();
@@ -405,6 +418,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         emitState("message");
         return { ok: true, ...result };
       },
+      react: reactionCommand,
       async friend(command = {}) {
         if (stopped) return stoppedResult();
         if (!client || !deviceId || typeof client.submitFriend !== "function") return unavailableService();
@@ -478,6 +492,9 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         // before closing SQLite so a hung network request cannot retain it.
         stopped = true;
         candidateCache.clear();
+        // Typing hints are per-session state: a stopped panel must show nobody
+        // typing rather than whoever was typing when it closed.
+        presence.forget();
         stateListeners.clear();
         try { transfers.stop?.(); } catch { /* optional transfer cleanup cannot retain SQLite */ }
         try { client?.stop?.(); } finally {

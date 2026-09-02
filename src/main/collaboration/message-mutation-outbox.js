@@ -3,7 +3,8 @@
 const access = require("./access-revocation");
 
 const CREATE = "message.create";
-const MUTATIONS = new Set(["message.edit", "message.revoke"]);
+const REACTION = "message.reaction";
+const MUTATIONS = new Set(["message.edit", "message.revoke", REACTION]);
 const id = (value, label) => {
   const text = String(value || "").trim();
   if (!text || text.length > 512) throw new Error(`collaboration mutation: ${label} is required`);
@@ -28,6 +29,23 @@ function normalizeOutboxIntent(value = {}) {
     const error = new Error("Unsupported collaboration outbox command");
     error.code = "COLLAB_OUTBOX_COMMAND_UNSUPPORTED";
     throw error;
+  }
+  // A reaction has no expectedRevision: it must not participate in the
+  // revision-conflict path that edit/revoke use, or every reaction would read
+  // as an edit to reply snapshots and conflict detection.
+  if (commandType === REACTION) {
+    const emoji = String(value.emoji ?? "");
+    if (!emoji || [...emoji].length > 8 || emoji.length > 32 || /\s/.test(emoji)) {
+      throw new Error("collaboration mutation: reaction emoji is invalid");
+    }
+    return {
+      commandType,
+      messageId: id(value.messageId, "message id"),
+      clientCommandId: id(value.clientCommandId, "client command id"),
+      emoji,
+      active: value.active !== false,
+      originDeviceId: requiredOriginDevice(value.originDeviceId),
+    };
   }
   const result = {
     commandType,

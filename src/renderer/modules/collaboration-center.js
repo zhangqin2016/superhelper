@@ -38,6 +38,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const olderButton = byId("collaborationLoadOlder");
   let transferPolicy = {};
   let activeConversationKind = "";
+  let activePeerReadSeq = 0;
   let disposed = false, policyEnabled = false;
   let searchQuery = "";
   const replySourceMasks = createReplySourceMaskView();
@@ -48,6 +49,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     renderCollaborationTimeline(timeline, visibleMessages, {
     currentUserId: directory?.profile?.userId || "",
     showSenderNames: activeConversationKind === "group" || activeConversationKind === "channel",
+    peerReadSeq: activePeerReadSeq,
     resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
     onDownload: (input, purpose) => attachments.download(input, purpose),
     canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
@@ -56,6 +58,25 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (disposed || !policyEnabled || panel.hidden || navigating || !activeConversationId || !historyMessages.includes(message) || message.revokedAt || message.visibilityMask || !message.id || !(Number(message.seq) > 0)) return;
       composer.setReply?.({ messageId: message.id });
       byId("collaborationComposer")?.focus();
+    },
+    // Anyone in the conversation may react to any live message — unlike edit and
+    // revoke, which are author-only.
+    canReact: (message) => !disposed && policyEnabled && !panel.hidden && !navigating
+      && Boolean(activeConversationId) && historyMessages.includes(message)
+      && !message.revokedAt && !message.visibilityMask && Boolean(message.id) && Number(message.seq) > 0,
+    onReact: (message, emoji, active) => {
+      if (disposed || !policyEnabled || panel.hidden || navigating || !activeConversationId) return;
+      if (!message?.id || !(Number(message.seq) > 0) || message.revokedAt || message.visibilityMask) return;
+      const conversationId = activeConversationId;
+      const clientCommandId = `rct_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+      void Promise.resolve(window.assistantClient?.collaboration?.react?.({
+        conversationId, messageId: message.id, clientCommandId, emoji, active,
+      })).then((result) => {
+        // The optimistic flip lives in the main-process projection, so a refresh
+        // is what reveals it — and also what corrects it if the command failed.
+        if (!disposed && conversationId === activeConversationId) void openConversation(conversationId, { userNavigation: false });
+        return result;
+      }).catch(() => undefined);
     },
     canEdit: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
     onEdit: (message) => {
@@ -184,6 +205,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     const sameConversation = activeConversationId === conversationId;
     activeConversationId = conversationId;
     activeConversationKind = String(opened.conversation?.kind || "");
+    activePeerReadSeq = Number(opened.conversation?.peerReadSeq) || 0;
     acceptPage(opened, { latest: true, reset: !sameConversation });
     loadingOlder = false;
     updateOlderButton();
@@ -317,7 +339,20 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!enabled) { attachments.reset(); setActive(false); if (status) status.textContent = t("collaboration.statusUnavailable"); }
     return enabled;
   }
+  function renderTypingHint(state) {
+    const node = byId("collaborationTyping");
+    if (!node) return;
+    const ids = (activeConversationId && state?.typing?.[activeConversationId]) || [];
+    const others = ids.filter((userId) => userId && userId !== (directory?.profile?.userId || ""));
+    if (!others.length) { node.hidden = true; node.textContent = ""; return; }
+    const named = others.map((userId) => identityName(resolvePerson(directory, userId))).filter((name) => name && !/^usr_[a-z0-9]+$/i.test(name));
+    node.textContent = others.length > 1
+      ? t("collaboration.typing.many", { count: others.length })
+      : (named[0] ? t("collaboration.typing.one", { name: named[0] }) : t("collaboration.typing.someone"));
+    node.hidden = false;
+  }
   const unsubscribe = window.assistantClient?.collaboration?.onStateChange?.((payload) => {
+    if (payload?.state?.ok === true) renderTypingHint(payload.state);
     if (payload?.state?.ok === true && ["sync", "access-revoked", "bootstrap", "relationship"].includes(payload.type)) composer.refreshMentionCandidates?.();
     if (payload?.type === "availability" || payload?.state?.ok !== true) {
       viewGeneration += 1;

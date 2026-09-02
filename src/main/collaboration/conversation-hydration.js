@@ -3,6 +3,8 @@ const { flushRevokedKeys, isConversationRevoked } = require("./access-revocation
 const activity = require("./conversation-activity");
 const { randomUUID } = require("node:crypto");
 const { confirmRead } = require("./read-checkpoint");
+const { notePeerRead } = require("./peer-reads");
+const { applyReaction } = require("./message-reactions");
 const { resetHistoryGeneration } = require("./history-fence");
 const { normalizeMentionCandidates } = require("./mention-candidates");
 function invalid() { return Object.assign(new Error("Invalid collaboration conversation projection"), { code: "COLLAB_CONVERSATION_INVALID" }); }
@@ -21,10 +23,35 @@ function queueConversationHydration(store, event) {
   if (["member.removed", "member.left"].includes(event.type) && event.payload?.userId === store.accountId) return;
   const discovery = event.type === "conversation.created" || String(event.type).startsWith("member.");
   const unknownMessage = String(event.type).startsWith("message.") && !store.getConversation({ conversationId }) && !isConversationRevoked(store, conversationId);
-  const ownRead = event.type === "conversation.read" && (event.actorUserId ?? event.actor_user_id) === store.accountId && !isConversationRevoked(store, conversationId);
-  if (!discovery && !unknownMessage && !ownRead) return;
+  const actorUserId = event.actorUserId ?? event.actor_user_id;
+  const ownRead = event.type === "conversation.read" && actorUserId === store.accountId && !isConversationRevoked(store, conversationId);
+  // Another member's read event is what makes the double tick possible. It was
+  // dropped here, which is why an own message could never show as read.
+  const peerRead = event.type === "conversation.read" && actorUserId && actorUserId !== store.accountId
+    && !isConversationRevoked(store, conversationId);
+  const reaction = event.type === "message.reaction";
+  if (!discovery && !unknownMessage && !ownRead && !peerRead && !reaction) return;
   if (!id(conversationId)) throw invalid();
   if (ownRead) confirmRead(store, conversationId, event.payload?.lastReadSeq, null, true);
+  // A reaction changes no message revision and needs no authorized refresh, so
+  // it is applied straight to the local projection.
+  if (event.type === "message.reaction" && !isConversationRevoked(store, conversationId)) {
+    if (!id(conversationId)) throw invalid();
+    applyReaction(store, {
+      conversationId,
+      messageId: event.payload?.messageId,
+      userId: event.payload?.userId ?? actorUserId,
+      emoji: event.payload?.emoji,
+      active: event.payload?.active,
+    });
+    return;
+  }
+  if (peerRead) {
+    notePeerRead(store, { conversationId, userId: actorUserId, lastReadSeq: event.payload?.lastReadSeq });
+    // A peer read changes only the tick, so it must not queue an authorized
+    // refresh: that would turn every read receipt into a network round trip.
+    return;
+  }
   if (discovery && event.payload?.userId === store.accountId) resetHistoryGeneration(store, conversationId);
   queueAuthorizedRefresh(store, conversationId);
 }

@@ -80,6 +80,9 @@ function dayLabel(epoch) {
   return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", day: "numeric" }).format(at);
 }
 
+// A small fixed set, like every mainstream messenger's default row.
+const QUICK_REACTIONS = Object.freeze(["👍", "❤️", "😂", "🎉", "🙏"]);
+
 const isDelivered = (message) => Boolean(message.id) && Number.isSafeInteger(Number(message.seq)) && Number(message.seq) > 0;
 
 function sequence(message) {
@@ -87,7 +90,7 @@ function sequence(message) {
   return message.seq != null && Number.isSafeInteger(value) && value > 0 ? value : Infinity;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true } = {}) {
   if (!node) return;
   node.querySelectorAll(":scope > .collaboration-date-separator").forEach((el) => el.remove());
   const prior = indexTimelineRows([...node.children]);
@@ -171,8 +174,36 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
       if (quote.textContent !== quoteText) quote.textContent = quoteText;
     } else quote?.remove();
     let replyButton = row.querySelector('[data-action="reply-message"]');
+    const reactionList = Array.isArray(message.reactions) ? message.reactions : [];
     let actions = row.querySelector(".collaboration-message-actions");
     if (!actions) { actions = document.createElement("div"); actions.className = "collaboration-message-actions"; row.append(actions); }
+    let reactPicker = row.querySelector(".collaboration-reaction-picker");
+    if (onReact && message.id && sequence(message) !== Infinity && !hiddenSource && canReact(message)) {
+      if (!reactPicker) {
+        reactPicker = document.createElement("div");
+        reactPicker.className = "collaboration-reaction-picker";
+        for (const emoji of QUICK_REACTIONS) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.action = "add-reaction";
+          button.dataset.emoji = emoji;
+          button.textContent = emoji;
+          button.setAttribute("aria-label", emoji);
+          reactPicker.append(button);
+        }
+        actions.prepend(reactPicker);
+      }
+      for (const button of reactPicker.querySelectorAll("[data-emoji]")) {
+        const emoji = button.dataset.emoji;
+        const mine = reactionList.some((entry) => entry?.emoji === emoji && entry.mine === true);
+        button.classList.toggle("is-mine", mine);
+        button.onclick = () => {
+          if (!node.isConnected || node.closest("[hidden]") || row.parentElement !== node) return;
+          if (button.closest(".collaboration-message") !== row || !canReact(message)) return;
+          onReact(message, emoji, !mine);
+        };
+      }
+    } else reactPicker?.remove();
     if (onReply && message.id && sequence(message) !== Infinity && !hiddenSource && canReply(message)) {
       if (!replyButton) { replyButton = document.createElement("button"); replyButton.type = "button"; replyButton.dataset.action = "reply-message"; actions.append(replyButton); }
       replyButton.textContent = t("collaboration.reply.action");
@@ -212,17 +243,58 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     } else attachments?.remove();
     const status = deliveryLabel(message);
     const delivered = outgoing && isDelivered(message) && !hiddenSource;
+    // Double tick means read BY EVERYONE expected to read it: the watermark is
+    // the slowest peer, so a group never claims "read" from its fastest member.
+    const readByPeers = delivered && Number(peerReadSeq) > 0 && Number(message.seq) <= Number(peerReadSeq);
     // The meta line is built early (it owns the timestamp) but must END the
     // bubble: appending it before the body existed put the tick to the LEFT of
     // the text. `append` on an existing child moves it, so this is idempotent.
+    // Reaction chips: one per emoji with its count, "mine" highlighted. They sit
+    // under the body and before the meta line so the time/tick stay last.
+    let reactionRow = bubble.querySelector(".collaboration-message-reactions");
+    if (reactionList.length) {
+      if (!reactionRow) { reactionRow = document.createElement("div"); reactionRow.className = "collaboration-message-reactions"; bubble.append(reactionRow); }
+      const seen = new Set();
+      for (const entry of reactionList) {
+        const emoji = String(entry?.emoji || "");
+        if (!emoji) continue;
+        seen.add(emoji);
+        let chip = reactionRow.querySelector(`[data-emoji="${CSS.escape(emoji)}"]`);
+        if (!chip) {
+          chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "collaboration-reaction-chip";
+          chip.dataset.action = "toggle-reaction";
+          chip.dataset.emoji = emoji;
+          reactionRow.append(chip);
+        }
+        chip.dataset.messageId = String(message.id || "");
+        chip.classList.toggle("is-mine", entry?.mine === true);
+        chip.setAttribute("aria-pressed", String(entry?.mine === true));
+        const label = `${emoji} ${Number(entry?.count) || 0}`;
+        if (chip.textContent !== label) chip.textContent = label;
+        chip.disabled = !onReact || !canReact(message);
+        chip.onclick = () => {
+          if (!onReact || !node.isConnected || node.closest("[hidden]") || row.parentElement !== node) return;
+          if (chip.closest(".collaboration-message") !== row || !canReact(message)) return;
+          // Toggle: my own chip turns the reaction off, anyone else's adds mine.
+          onReact(message, emoji, !(entry?.mine === true));
+        };
+      }
+      for (const chip of [...reactionRow.querySelectorAll("[data-emoji]")]) {
+        if (!seen.has(chip.dataset.emoji)) chip.remove();
+      }
+    } else reactionRow?.remove();
     const metaLine = bubble.querySelector(":scope > .collaboration-message-meta");
     if (metaLine && metaLine !== bubble.lastElementChild) bubble.append(metaLine);
     let statusChip = bubble.querySelector(".collaboration-message-status");
     if (status || delivered) {
-      const metaText = status ? status.text : t("collaboration.delivered");
+      const metaText = status ? status.text : t(readByPeers ? "collaboration.read" : "collaboration.delivered");
       if (!statusChip) { statusChip = document.createElement("small"); statusChip.className = "collaboration-message-status"; }
       if (statusChip.parentElement !== metaLine) metaLine?.append(statusChip);
-      statusChip.dataset.tone = delivered && !status ? "delivered" : (status?.tone || "delivered");
+      statusChip.dataset.tone = delivered && !status
+        ? (readByPeers ? "read" : "delivered")
+        : (status?.tone || "delivered");
       if (statusChip.textContent !== metaText) statusChip.textContent = metaText;
       statusChip.setAttribute("aria-live", "polite");
     } else {

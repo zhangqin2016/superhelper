@@ -509,6 +509,17 @@
         "scripts/test-vision-model-advice.mjs",
         "scripts/test-send-preflight.mjs"
       ]
+    },
+    {
+      "id": "im-live-signals",
+      "protects": "Typing hints, read receipts and reactions work end to end, and the record of WHICH layer was actually missing survives so the transport is not re-implemented.",
+      "baseline": "All three are additive: durable sync, unread counts, edit/revoke conflict detection and reply snapshots behave exactly as before, and an older client skips the new reaction event while still advancing its cursor.",
+      "failureFallback": "A missed typing frame degrades to nobody typing; unknown membership or absent reports yield no double tick; a reaction that fails to commit is corrected by the next sync; every reader fails open rather than throwing.",
+      "tests": [
+        "scripts/test-collaboration-typing.mjs",
+        "scripts/test-collaboration-peer-reads.mjs",
+        "scripts/test-collaboration-reactions.mjs"
+      ]
     }
   ]
 }

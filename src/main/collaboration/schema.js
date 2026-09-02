@@ -176,6 +176,22 @@ const COLLABORATION_MIGRATIONS = [
     scope_id TEXT NOT NULL, generation INTEGER NOT NULL,
     content_envelope_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
     PRIMARY KEY(account_id,conversation_id,message_id));`),
+  // v17 — how far each OTHER member has read, so an own message can show the
+  // double tick. Only a sequence number is stored: no bodies, no timestamps
+  // that would leak reading habits beyond what the read event already carries.
+  // Ephemeral by nature but persisted so a restart does not lose the ticks.
+  (db) => db.exec(`CREATE TABLE conversation_peer_reads (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    last_read_seq INTEGER NOT NULL,
+    PRIMARY KEY(account_id,conversation_id,user_id));`),
+  // v18 — reactions mirror the server projection: one row per (message, user,
+  // emoji) so a toggle is an insert/delete and two devices cannot clobber each
+  // other. Deliberately NOT a column on messages: a reaction must never bump a
+  // message revision or disturb reply snapshots and edit/revoke conflicts.
+  (db) => db.exec(`CREATE TABLE message_reactions (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
+    user_id TEXT NOT NULL, emoji TEXT NOT NULL,
+    PRIMARY KEY(account_id,message_id,user_id,emoji));`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

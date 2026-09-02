@@ -1695,3 +1695,105 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--bg-surface-hover) 62%, transparent);
 }
+
+/* Typing hint: a quiet line under the thread, never a layout jump. It sits
+   between the timeline and the composer and disappears with [hidden]. */
+.collaboration-typing {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 2px 14px 4px;
+  min-height: 18px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.collaboration-typing[hidden] {
+  display: none;
+}
+
+/* Read receipt: the double tick. Same 11px slot as the single tick so a message
+   never reflows when it flips from delivered to read — only the glyph changes.
+   The label is collapsed to the icon like the delivered state; the word stays in
+   the DOM for assistive tech. */
+.collaboration-message-status[data-tone="read"] {
+  gap: 0;
+  overflow: hidden;
+  inline-size: 14px;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--accent) 88%, var(--text-dim) 12%);
+}
+
+.collaboration-message-status[data-tone="read"]::before {
+  inline-size: 14px;
+  block-size: 11px;
+  flex-basis: 14px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 16'%3E%3Cpath d='M1 8.5 4.5 12 11 4.5' fill='none' stroke='%236366f1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8 8.5 11.5 12 18 4.5' fill='none' stroke='%236366f1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Reactions: a chip row under the body, before the meta line so time and tick
+   stay last. Full-width in the wrapping bubble so chips never share a line
+   with the text. */
+.collaboration-message-reactions {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block-start: 5px;
+}
+
+.collaboration-reaction-chip {
+  min-height: 22px;
+  padding: 1px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-surface-hover) 60%, transparent);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.collaboration-reaction-chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-surface-hover) 92%, transparent);
+}
+
+/* My own reaction reads as pressed — the same accent tint the active list row
+   uses, so "mine" means one thing across the panel. */
+.collaboration-reaction-chip.is-mine {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.collaboration-reaction-chip:disabled {
+  cursor: default;
+  opacity: .6;
+}
+
+/* Quick picker: lives in the hover action bar, so it inherits the same
+   reveal-on-hover behaviour and never floats over a resting thread. */
+.collaboration-reaction-picker {
+  display: flex;
+  gap: 2px;
+  margin-inline-end: 4px;
+}
+
+.collaboration-reaction-picker button {
+  min-height: 24px;
+  min-inline-size: 24px;
+  padding: 0 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg-surface-raised);
+  font-size: 13px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.collaboration-reaction-picker button:hover,
+.collaboration-reaction-picker button.is-mine {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

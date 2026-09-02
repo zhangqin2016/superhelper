@@ -7,6 +7,8 @@ function draftIntent(value = {}) { return { text: String(value.text || ""), repl
 function sameIntent(a, b) { return Boolean(a && b) && a.text === b.text && a.replyToMessageId === b.replyToMessageId && JSON.stringify(a.mentionUserIds) === JSON.stringify(b.mentionUserIds); }
 const activeComposerByTextarea = new WeakMap();
 
+const TYPING_THROTTLE_MS = 3_000;
+
 export function initCollaborationComposer({ textarea, sendButton, getConversationId, getReplySourceStatus = () => null, onSent = () => {}, onError = () => {} } = {}) {
   if (!textarea || !sendButton) return { setConversation: () => {}, destroy: () => {} };
   activeComposerByTextarea.get(textarea)?.destroy?.();
@@ -120,7 +122,24 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     } catch (error) { if (!disposed && active && epoch === generation && conversationId === id && selection === selectionVersion) onError(error); }
     finally { if (epoch === generation && sending.get(id) === intent) { sending.delete(id); if (!disposed) updateButton(); } }
   };
-  const input = () => { if (disposed || !active) return; editVersion += 1; saveDraft(conversationId, currentIntent()); refreshReply(); mentions.input(); };
+  // Typing is a hint, so it is throttled to one frame per TYPING_THROTTLE_MS
+  // rather than one per keystroke, and never awaited: a failed publish must not
+  // affect the draft or the send path.
+  let lastTypingAt = 0;
+  const publishTyping = () => {
+    const id = String(conversationId || "");
+    if (!id) return;
+    const at = Date.now();
+    if (at - lastTypingAt < TYPING_THROTTLE_MS) return;
+    lastTypingAt = at;
+    try { void window.assistantClient?.collaboration?.typing?.(id)?.catch?.(() => {}); }
+    catch { /* hint channel only */ }
+  };
+  const input = () => {
+    if (disposed || !active) return;
+    editVersion += 1; saveDraft(conversationId, currentIntent()); refreshReply(); mentions.input();
+    if (textarea.value.trim()) publishTyping();
+  };
   const keydown = (event) => {
     if (mentions.handleKeydown(event)) return;
     if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;

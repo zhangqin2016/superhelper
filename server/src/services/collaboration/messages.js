@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { runCollaborationCommand } from "./command-runner.js";
+import { createReactToMessage } from "./message-reaction-command.js";
 import { createEncryptedReplySnapshot, historyReplySnapshots } from "./reply-snapshot.js";
 import {
   commandError, requiredId, requiredPositiveInteger, normalizeIdList,
@@ -491,5 +492,8 @@ export function createCollaborationMessageService({
     return visibleRows.map((message) => ({ ...historyMessageView(message, messageCrypto, actorUserId), replySnapshot: snapshots.get(message.id) }));
   }
 
-  return Object.freeze({ sendMessage, editMessage, revokeMessage, markConversationRead, listMessageHistory });
+  const reactToMessage = createReactToMessage({
+    repository, commandRunner, commandOptions, commandError, validatedRecipients, requiredId, createId, requireRepositoryMethod,
+  });
+  return Object.freeze({ sendMessage, editMessage, revokeMessage, reactToMessage, markConversationRead, listMessageHistory });
 }

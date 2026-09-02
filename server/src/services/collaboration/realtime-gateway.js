@@ -77,7 +77,11 @@ export function registerCollaborationRealtimeGateway(app, { ticketService, resol
         send(connectionId, { type: "realtime.error", schemaVersion: COLLABORATION_REALTIME_SCHEMA_VERSION, code: "REALTIME_NOT_AUTHORIZED" });
         return;
       }
-      const outbound = { ...frame, expiresAt: new Date(Date.now() + frame.ttlMs).toISOString() };
+      // Name the origin. Without it a recipient only learns that SOMEONE in the
+      // conversation is typing, which is enough for a 1:1 but not for a group
+      // where the UI has to say who. The id is the authenticated identity, never
+      // anything the client put in the frame.
+      const outbound = { ...frame, userId: identity.userId, expiresAt: new Date(Date.now() + frame.ttlMs).toISOString() };
       for (const { connectionId: target } of registry.ephemeralRecipients({ originConnectionId: connectionId, recipientUserIds })) send(target, outbound);
     });
     socket.on("close", () => { sockets.delete(connectionId); registry.remove(connectionId); });

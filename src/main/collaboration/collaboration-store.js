@@ -15,6 +15,7 @@ const { parseEncryptedPayload } = require("./encrypted-payload");
 const { settleCreatedSyncEvent } = require("./outbox-sync-settlement");
 const activity = require("./conversation-activity");
 const preview = require("./conversation-preview");
+const peerReads = require("./peer-reads"), reactions = require("./message-reactions");
 const { messageMetadata, validateCreateBody, retainedComposerDraft } = require("./message-intent");
 const { messageTimes } = require("./message-time");
 const { replySnapshotView } = require("./reply-snapshot");
@@ -424,19 +425,20 @@ class CollaborationStore {
        GROUP BY c.id, c.scope_id, c.kind, c.title, c.updated_at
        ORDER BY MAX(m.seq) DESC, c.updated_at DESC, c.id ASC`,
       this.accountId,
-    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq), lastMessage: preview.conversationPreview(this, row.id), ...activity.activityView(this, row.id) }));
+    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq), lastMessage: preview.conversationPreview(this, row.id), peerReadSeq: peerReads.peerReadWatermark(this, row.id), ...activity.activityView(this, row.id) }));
   }
 
   getConversation({ conversationId }) {
     const row = this.db.get(`SELECT id, scope_id, kind, title, updated_at FROM conversations WHERE account_id = ? AND id = ?`, this.accountId, requireId(conversationId, "conversation id"));
-    return row ? { id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), ...activity.activityView(this, row.id) } : null;
+    return row ? { id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at),
+      peerReadSeq: peerReads.peerReadWatermark(this, row.id), ...activity.activityView(this, row.id) } : null;
   }
 
   listMessages({ conversationId, beforeSeq, limit = 200, includePending = true } = {}) {
     const conversation = requireId(conversationId, "conversation id");
     if (beforeSeq != null && (!Number.isSafeInteger(beforeSeq) || beforeSeq < 1)) throw new Error("collaboration history cursor is invalid");
     const cappedLimit = Math.min(200, Math.max(1, Number.isSafeInteger(Number(limit)) ? Number(limit) : 200));
-    return this.db.all(
+    const page = this.db.all(
       `SELECT m.* FROM messages m LEFT JOIN outbox o
         ON o.account_id = m.account_id AND o.client_command_id = m.client_command_id
        WHERE m.account_id = ? AND m.conversation_id = ? AND COALESCE(o.state, '') <> 'cancelled'
@@ -453,6 +455,8 @@ class CollaborationStore {
         isOwn: row.sender_user_id === this.accountId || Boolean(delivery), ...content, ...messageMetadata(content), replySnapshot: replySnapshotView(this, conversation, content), ...(clientCommandId ? { clientCommandId } : {}), state: delivery?.state ?? row.state, ...messageTimes(content, row),
       };
     }).filter((message) => message.state !== "cancelled");
+    // Reactions ride along with the page so the renderer needs no second call.
+    return reactions.attachReactions(this, page);
   }
 
   hydrateAuthorizedHistory({ conversationId, messages = [], completeCheckpoint = true } = {}) {

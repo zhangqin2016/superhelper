@@ -490,6 +490,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
     cancel: (outboxId) => ipcRenderer.invoke("collaboration:cancel", { outboxId }),
     skip: (outboxId) => ipcRenderer.invoke("collaboration:skip", { outboxId }),
     markRead: (conversationId, seq) => ipcRenderer.invoke("collaboration:mark-read", { conversationId, seq }),
+    typing: (conversationId) => ipcRenderer.invoke("collaboration:typing", { conversationId }),
+    react: ({ conversationId, messageId, clientCommandId, emoji, active } = {}) =>
+      ipcRenderer.invoke("collaboration:react", { conversationId, messageId, clientCommandId, emoji, active }),
     onStateChange: (callback) => {
       if (typeof callback !== "function") return () => {};
       const handler = (_event, payload) => callback(payload);

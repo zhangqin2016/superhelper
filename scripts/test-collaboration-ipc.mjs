@@ -28,17 +28,17 @@ assert.deepEqual([...handlers.keys()].sort(), [
   "collaboration:conversation", "collaboration:get-social-commands", "collaboration:retry-social", "collaboration:open-friend", "collaboration:get-conversation-details", "collaboration:get-mention-candidates",
   "collaboration:get-transfers", "collaboration:prepare-attachment", "collaboration:enqueue-transfer", "collaboration:pause-transfer", "collaboration:cancel-transfer", "collaboration:prepare-download", "collaboration:save-download", "collaboration:send-attachments",
   "collaboration:read-message-operations", "collaboration:save-edit-draft", "collaboration:clear-edit-draft", "collaboration:skip",
-  "collaboration:resolve-preview",
+  "collaboration:resolve-preview", "collaboration:typing", "collaboration:react",
 ].sort());
 
 const publicState = { ok: true, cursor: 2, watermark: 0, outbox: [{ id: "o1", conversationId: "", clientCommandId: "", scopeId: "", state: "queued", attempts: 0, createdAt: 0 }] };
 assert.deepEqual(await handlers.get("collaboration:get-state")(), publicState);
-assert.deepEqual(await handlers.get("collaboration:list")(), { ok: true, conversations: [{ id: "c1", scopeId: "team:t", kind: "team", title: "Safe", updatedAt: 0, lastSeq: null }] });
-assert.deepEqual(await handlers.get("collaboration:open")(null, { conversationId: "c1" }), { ok: true, conversation: { id: "c1", scopeId: "", kind: "", title: "Safe", updatedAt: 0, lastSeq: null }, messages: [{ id: "m1", conversationId: "c1", seq: null, senderUserId: "", isOwn: false, state: "", bodyText: "hi", kind: "text", attachmentIds: [], createdAt: null, clientCreatedAt: null, updatedAt: 0, replyToMessageId: null, mentionUserIds: [], replySnapshot: null }], hasMore: false, nextBeforeSeq: null, offline: false });
+assert.deepEqual(await handlers.get("collaboration:list")(), { ok: true, conversations: [{ id: "c1", scopeId: "team:t", kind: "team", title: "Safe", updatedAt: 0, lastSeq: null, peerReadSeq: 0 }] });
+assert.deepEqual(await handlers.get("collaboration:open")(null, { conversationId: "c1" }), { ok: true, conversation: { id: "c1", scopeId: "", kind: "", title: "Safe", updatedAt: 0, lastSeq: null, peerReadSeq: 0 }, messages: [{ id: "m1", conversationId: "c1", seq: null, senderUserId: "", isOwn: false, state: "", bodyText: "hi", kind: "text", attachmentIds: [], createdAt: null, clientCreatedAt: null, updatedAt: 0, replyToMessageId: null, mentionUserIds: [], replySnapshot: null }], hasMore: false, nextBeforeSeq: null, offline: false });
 assert.deepEqual(await handlers.get("collaboration:bootstrap")(), { ok: true, cursor: 0 });
 const oldList = service.list;
 service.list = () => ({ ok: true, conversations: [{ id: "c", activityKnown: true, projectionSeq: 600, lastReadSeq: 100, unreadCount: 500, mentionCount: 31, secret: "never" }] });
-assert.deepEqual((await handlers.get("collaboration:list")()).conversations[0], { id: "c", scopeId: "", kind: "", title: "", updatedAt: 0, lastSeq: null, activityKnown: true, projectionSeq: 600, lastReadSeq: 100, unreadCount: 500, mentionCount: 31 }, "authoritative stats cross only the existing safe conversation allowlist");
+assert.deepEqual((await handlers.get("collaboration:list")()).conversations[0], { id: "c", scopeId: "", kind: "", title: "", updatedAt: 0, lastSeq: null, peerReadSeq: 0, activityKnown: true, projectionSeq: 600, lastReadSeq: 100, unreadCount: 500, mentionCount: 31 }, "authoritative stats cross only the existing safe conversation allowlist");
 service.list = oldList;
 
 const sent = await handlers.get("collaboration:send")(null, {

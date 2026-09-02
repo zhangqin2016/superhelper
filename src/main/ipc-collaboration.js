@@ -60,7 +60,7 @@ function rendererConversation(value = {}) {
     && value.lastReadSeq <= value.projectionSeq && value.mentionCount <= value.unreadCount;
   return {
     id: safeIdentifier(value.id) || "", scopeId: safeIdentifier(value.scopeId) || "", kind: safeIdentifier(value.kind) || "",
-    title: typeof value.title === "string" ? value.title.slice(0, 500) : "", updatedAt: nonNegativeInteger(value.updatedAt), lastSeq: optionalInteger(value.lastSeq),
+    title: typeof value.title === "string" ? value.title.slice(0, 500) : "", updatedAt: nonNegativeInteger(value.updatedAt), lastSeq: optionalInteger(value.lastSeq), peerReadSeq: nonNegativeInteger(value.peerReadSeq),
     // Last-message preview for the list row. Bounded and re-sanitized here like
     // any other rendered text: only a sender id and a short single-line snippet
     // cross, never the envelope, paths or delivery internals.
@@ -80,6 +80,12 @@ function rendererMessage(value = {}) {
     senderUserId: safeIdentifier(value.senderUserId) || "", isOwn: value.isOwn === true, state: safeIdentifier(value.state) || "",
     bodyText: typeof value.bodyText === "string" ? value.bodyText.slice(0, MAX_TEXT_BYTES) : "",
     kind: ["text", "attachment", "workspace_share"].includes(value.kind) ? value.kind : "text", attachmentIds: attachmentIds(value),
+    ...(Array.isArray(value.reactions) && value.reactions.length ? { reactions: value.reactions.slice(0, 24).flatMap((entry) => {
+      const emoji = typeof entry?.emoji === "string" ? entry.emoji.trim() : "";
+      const count = Number(entry?.count);
+      return emoji && emoji.length <= 32 && [...emoji].length <= 8 && Number.isSafeInteger(count) && count > 0
+        ? [{ emoji, count, mine: entry.mine === true }] : [];
+    }) } : {}),
     createdAt: optionalInteger(value.createdAt), clientCreatedAt: optionalInteger(value.clientCreatedAt), updatedAt: nonNegativeInteger(value.updatedAt),
     ...(safeIdentifier(value.clientCommandId) ? { clientCommandId: safeIdentifier(value.clientCommandId) } : {}),
     ...(optionalInteger(value.revision) != null ? { revision: optionalInteger(value.revision) } : {}),
@@ -277,6 +283,22 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
     });
   };
   ipcMain.handle("collaboration:get-state", () => invoke(getService, "getState"));
+  registerCommand(ipcMain, "collaboration:react", getService, "react", (payload) => {
+    if (!hasOnlyKeys(payload, new Set(["conversationId", "messageId", "clientCommandId", "emoji", "active"]))) return null;
+    const conversationId = safeIdentifier(payload.conversationId);
+    const messageId = safeIdentifier(payload.messageId);
+    const clientCommandId = safeIdentifier(payload.clientCommandId);
+    const emoji = typeof payload.emoji === "string" ? payload.emoji.trim() : "";
+    if (!conversationId || !messageId || !clientCommandId) return null;
+    if (!emoji || emoji.length > 32 || [...emoji].length > 8 || /\s/.test(emoji)) return null;
+    if (payload.active !== undefined && typeof payload.active !== "boolean") return null;
+    return { conversationId, messageId, clientCommandId, emoji, active: payload.active !== false };
+  });
+  registerCommand(ipcMain, "collaboration:typing", getService, "typing", (payload) => {
+    if (!hasOnlyKeys(payload, new Set(["conversationId"]))) return null;
+    const conversationId = safeIdentifier(payload.conversationId);
+    return conversationId ? { conversationId } : null;
+  });
   ipcMain.handle("collaboration:list", () => invoke(getService, "list"));
   registerCommand(ipcMain, "collaboration:get-directory", getService, "getDirectory", (payload) =>
     payload === undefined || hasOnlyKeys(payload, new Set()) ? {} : null);
