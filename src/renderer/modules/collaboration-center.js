@@ -39,17 +39,27 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let transferPolicy = {};
   let activeConversationKind = "";
   let activePeerReadSeq = 0;
+  // Captured when the conversation OPENS, so the divider does not jump away the
+  // moment the read checkpoint advances past it.
+  let activeUnreadFromSeq = 0;
   let disposed = false, policyEnabled = false;
   let searchQuery = "";
   const replySourceMasks = createReplySourceMaskView();
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
+  let lastRenderedCount = 0;
   const renderTimeline = () => {
+    const wasAway = Boolean(activeConversationId) && timeline && !atThreadBottom();
+    const grew = historyMessages.length - lastRenderedCount;
+    if (wasAway && grew > 0) unseenBelow += grew;
+    lastRenderedCount = historyMessages.length;
     const needle = searchQuery.trim().toLocaleLowerCase();
     const visibleMessages = needle ? historyMessages.filter((message) => String(message.bodyText || "").toLocaleLowerCase().includes(needle)) : historyMessages;
     renderCollaborationTimeline(timeline, visibleMessages, {
     currentUserId: directory?.profile?.userId || "",
     showSenderNames: activeConversationKind === "group" || activeConversationKind === "channel",
     peerReadSeq: activePeerReadSeq,
+    unreadFromSeq: activeUnreadFromSeq,
+    highlight: searchQuery.trim(),
     resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
     onDownload: (input, purpose) => attachments.download(input, purpose),
     canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
@@ -92,6 +102,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (result?.ok) void load();
     },
   });
+    refreshScrollLatest();
   };
   let historyMessages = [];
   let nextBeforeSeq = null;
@@ -206,6 +217,11 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     activeConversationId = conversationId;
     activeConversationKind = String(opened.conversation?.kind || "");
     activePeerReadSeq = Number(opened.conversation?.peerReadSeq) || 0;
+    if (userNavigation !== false) {
+      const lastRead = Number(opened.conversation?.lastReadSeq) || 0;
+      const projection = Number(opened.conversation?.projectionSeq) || 0;
+      activeUnreadFromSeq = opened.conversation?.activityKnown === true && projection > lastRead ? lastRead : 0;
+    }
     acceptPage(opened, { latest: true, reset: !sameConversation });
     loadingOlder = false;
     updateOlderButton();
@@ -324,6 +340,33 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   };
   inboxSearch?.addEventListener("input", searchInput);
   conversationSearch?.addEventListener("input", () => { searchQuery = conversationSearch.value || ""; renderTimeline(); });
+
+  // Scroll-to-latest: a thread scrolled away from the bottom must offer a way
+  // back, and must say how many messages arrived while you were reading up.
+  // Without it, "new messages arrived" is invisible unless you happen to be at
+  // the bottom already, which is where the timeline auto-scrolls only when you
+  // ALREADY were.
+  const scrollLatest = byId("collaborationScrollLatest");
+  const scrollLatestCount = byId("collaborationScrollLatestCount");
+  let unseenBelow = 0;
+  const atThreadBottom = () => !timeline || timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 40;
+  function refreshScrollLatest() {
+    if (!scrollLatest) return;
+    const away = Boolean(activeConversationId) && !atThreadBottom();
+    if (!away) unseenBelow = 0;
+    scrollLatest.hidden = !away;
+    if (scrollLatestCount) {
+      scrollLatestCount.hidden = unseenBelow < 1;
+      scrollLatestCount.textContent = unseenBelow > 99 ? "99+" : String(unseenBelow);
+    }
+  }
+  timeline?.addEventListener("scroll", refreshScrollLatest, { passive: true });
+  scrollLatest?.addEventListener("click", () => {
+    if (!timeline) return;
+    timeline.scrollTop = timeline.scrollHeight;
+    unseenBelow = 0;
+    refreshScrollLatest();
+  });
 
   async function refresh() {
     const view = viewGeneration;

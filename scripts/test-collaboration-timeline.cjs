@@ -43,6 +43,33 @@ app.whenReady().then(async () => {
       metaIsLastInBubble: root.querySelector('[data-message-key="cmd"] .collaboration-message-bubble')?.lastElementChild?.classList.contains('collaboration-message-meta') === true,
       ownIdentityHidden: !root.querySelector('[data-message-key="cmd"] .collaboration-message-author'),
     };
+    // Unread divider + search highlight. The divider is anchored to a seq
+    // captured when the conversation opened, so it marks where reading stopped
+    // instead of sliding away as the checkpoint advances. Highlighting is built
+    // from text nodes and <mark>, never innerHTML, so a needle typed into the
+    // search box can never inject markup into a message body.
+    const navRoot=document.createElement('div');document.body.append(navRoot);
+    render(navRoot,[
+      {id:'n1',seq:1,senderUserId:'other',bodyText:'alpha layout note',createdAt:1788250000000},
+      {id:'n2',seq:2,senderUserId:'other',bodyText:'beta',createdAt:1788250600000},
+      {id:'n3',seq:3,senderUserId:'other',bodyText:'gamma',createdAt:1788251200000},
+    ],{currentUserId:'me',showSenderNames:false,unreadFromSeq:1,highlight:'<img src=x onerror=alert(1)>layout'});
+    const dividers=[...navRoot.querySelectorAll('.collaboration-unread-divider')];
+    const afterDivider=dividers[0]?.nextElementSibling?.dataset?.messageKey;
+    render(navRoot,[
+      {id:'n1',seq:1,senderUserId:'other',bodyText:'alpha layout note',createdAt:1788250000000},
+      {id:'n2',seq:2,senderUserId:'other',bodyText:'beta',createdAt:1788250600000},
+      {id:'n3',seq:3,senderUserId:'other',bodyText:'gamma',createdAt:1788251200000},
+    ],{currentUserId:'me',showSenderNames:false,unreadFromSeq:0,highlight:'layout'});
+    const threadNavContract={
+      oneDivider:dividers.length===1,
+      dividerBeforeFirstUnread:afterDivider==='n2',
+      dividerGoneWithoutAnchor:navRoot.querySelectorAll('.collaboration-unread-divider').length===0,
+      highlightMarksNeedle:navRoot.querySelector('[data-message-key="n1"] mark.collaboration-search-hit')?.textContent==='layout',
+      highlightInjectsNoMarkup:navRoot.querySelector('[data-message-key="n1"] img')===null,
+      bodyTextIntact:navRoot.querySelector('[data-message-key="n1"] .collaboration-message-body')?.textContent==='alpha layout note',
+      noHighlightNoMark:navRoot.querySelector('[data-message-key="n2"] mark')===null,
+    };
     const groupedRoot=document.createElement('div');document.body.append(groupedRoot);
     render(groupedRoot,[
       {id:'g1',seq:1,senderUserId:'usr_internal',isOwn:false,bodyText:'a',createdAt:1788250000000},
@@ -96,10 +123,14 @@ app.whenReady().then(async () => {
     const revokedView = { rows:document.getElementById('collaborationTimeline').children.length, draft:document.getElementById('collaborationComposer').value,
       disabled:document.getElementById('collaborationSendButton').disabled, scope:document.getElementById('collaborationScopeBadge').textContent };
     center.destroy();
-    return { initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
+    return { threadNavContract, initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
   assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true, everyBubbleHasTime: true, metaInsideBubble: true, noFloatingRowTime: true, metaIsLastInBubble: true, ownIdentityHidden: true }, "timeline uses reliable own-message alignment and one in-bubble meta line (time + tick) per Telegram, not a floating row timestamp");
+  assert.deepEqual(result.threadNavContract, {
+    oneDivider: true, dividerBeforeFirstUnread: true, dividerGoneWithoutAnchor: true,
+    highlightMarksNeedle: true, highlightInjectsNoMarkup: true, bodyTextIntact: true, noHighlightNoMark: true,
+  }, "the unread divider anchors to the captured seq and search highlighting can never inject markup");
   assert.deepEqual(result.groupingContract, { authoritativeFalse:true, grouped:true, fiveMinuteTime:true, directIdentityHidden:true }, "authoritative direction, grouping, five-minute timestamps and direct-chat identity stay deterministic");
   assert.equal(result.sameRow, true, "ACK keeps the optimistic DOM identity");
   assert.equal(result.sameBody, true, "unchanged content is not removed/re-announced on ACK");

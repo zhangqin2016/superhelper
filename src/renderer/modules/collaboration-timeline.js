@@ -81,6 +81,28 @@ function dayLabel(epoch) {
 }
 
 // A small fixed set, like every mainstream messenger's default row.
+/** Split `text` around every case-insensitive literal occurrence of `needle`. */
+function highlightRuns(text, needle) {
+  const haystack = String(text);
+  const lowerHay = haystack.toLocaleLowerCase();
+  const lowerNeedle = needle.toLocaleLowerCase();
+  if (!lowerNeedle || !lowerHay.includes(lowerNeedle)) return null;
+  const nodes = [];
+  let cursor = 0;
+  for (;;) {
+    const hit = lowerHay.indexOf(lowerNeedle, cursor);
+    if (hit < 0 || nodes.length > 200) break;
+    if (hit > cursor) nodes.push(document.createTextNode(haystack.slice(cursor, hit)));
+    const mark = document.createElement("mark");
+    mark.className = "collaboration-search-hit";
+    mark.textContent = haystack.slice(hit, hit + lowerNeedle.length);
+    nodes.push(mark);
+    cursor = hit + lowerNeedle.length;
+  }
+  if (cursor < haystack.length) nodes.push(document.createTextNode(haystack.slice(cursor)));
+  return nodes;
+}
+
 const QUICK_REACTIONS = Object.freeze(["👍", "❤️", "😂", "🎉", "🙏"]);
 
 const isDelivered = (message) => Boolean(message.id) && Number.isSafeInteger(Number(message.seq)) && Number(message.seq) > 0;
@@ -90,7 +112,7 @@ function sequence(message) {
   return message.seq != null && Number.isSafeInteger(value) && value > 0 ? value : Infinity;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "" } = {}) {
   if (!node) return;
   node.querySelectorAll(":scope > .collaboration-date-separator").forEach((el) => el.remove());
   const prior = indexTimelineRows([...node.children]);
@@ -106,6 +128,18 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     if (!keyList.length) continue;
     const createdAt = Number(message.createdAt || message.clientCreatedAt || 0);
     const previousAt = Number(previous?.createdAt || previous?.clientCreatedAt || 0);
+    const seq = Number(message.seq);
+    const crossesUnread = Number(unreadFromSeq) > 0 && Number.isSafeInteger(seq) && seq > 0
+      && seq > Number(unreadFromSeq)
+      && !(Number.isSafeInteger(Number(previous?.seq)) && Number(previous?.seq) > Number(unreadFromSeq));
+    if (crossesUnread) {
+      const marker = document.createElement("div");
+      marker.className = "collaboration-unread-divider";
+      marker.setAttribute("role", "separator");
+      marker.textContent = t("collaboration.unreadDivider");
+      node.insertBefore(marker, node.children[index] || null);
+      index += 1;
+    }
     if (createdAt > 0 && previousAt > 0 && dayKey(createdAt) !== dayKey(previousAt)) {
       const separator = document.createElement("div");
       separator.className = "collaboration-date-separator";
@@ -159,7 +193,22 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     if (!body) { body = document.createElement("p"); body.className = "collaboration-message-body"; bubble.append(body); }
     const hiddenSource = message.revokedAt || message.visibilityMask;
     const text = message.visibilityMask === "unavailable" ? t("collaboration.messageUnavailable") : hiddenSource ? t("collaboration.messageRevoked") : String(message.bodyText || "");
-    if (body.textContent !== text) body.textContent = text;
+    // Search HIGHLIGHT, not just filtering: the list already hides non-matches,
+    // but without marking the run the user cannot see why a message matched.
+    // Built from text nodes plus <mark> elements only — no markup parsing at
+    // all (the locale guard greps this file for such APIs) — so a body cannot
+    // inject markup through the search box.
+    const needle = String(highlight || "").trim();
+    const marks = needle ? highlightRuns(text, needle) : null;
+    if (marks) {
+      if (body.dataset.highlighted !== `${needle}\u0000${text}`) {
+        body.replaceChildren(...marks);
+        body.dataset.highlighted = `${needle}\u0000${text}`;
+      }
+    } else {
+      delete body.dataset.highlighted;
+      if (body.textContent !== text) body.textContent = text;
+    }
     const mentionIds = Array.isArray(message.mentionUserIds) ? [...new Set(message.mentionUserIds.filter((id) => typeof id === "string" && id))] : [];
     let mentions = row.querySelector(".collaboration-message-mentions");
     if (!hiddenSource && mentionIds.length) {

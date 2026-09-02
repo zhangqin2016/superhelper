@@ -1920,6 +1920,7 @@
   "collaboration.workbench": "مساحة العمل",
   "collaboration.inbox": "المحادثات",
   "collaboration.selfPrefix": "أنت",
+  "collaboration.unreadDivider": "رسائل جديدة",
   "collaboration.typing.one": "{name} يكتب…",
   "collaboration.typing.many": "{count} أشخاص يكتبون…",
   "collaboration.typing.someone": "يكتب…",

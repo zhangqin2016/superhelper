@@ -1920,6 +1920,7 @@
   "collaboration.workbench": "Workbench",
   "collaboration.inbox": "Chats",
   "collaboration.selfPrefix": "You",
+  "collaboration.unreadDivider": "New messages",
   "collaboration.typing.one": "{name} is typing…",
   "collaboration.typing.many": "{count} people are typing…",
   "collaboration.typing.someone": "typing…",

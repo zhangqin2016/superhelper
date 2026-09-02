@@ -1797,3 +1797,92 @@
   border-color: color-mix(in srgb, var(--accent) 48%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+
+/* =========================================================================
+   M9 · Thread navigation and search feedback
+   ========================================================================= */
+
+/* Scroll-to-latest: floats over the thread's trailing edge, above the typing
+   line and the dock, and only while the reader is away from the bottom. */
+.collaboration-scroll-latest {
+  position: absolute;
+  z-index: 3;
+  inset-inline-end: 14px;
+  inset-block-end: 96px;
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background: var(--bg-surface-raised);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.collaboration-scroll-latest:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.collaboration-scroll-latest[hidden] {
+  display: none;
+}
+
+/* The count rides the button, like an unread badge on a chat row. */
+.collaboration-scroll-latest-count {
+  position: absolute;
+  inset-block-start: -5px;
+  inset-inline-end: -5px;
+  min-inline-size: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.collaboration-scroll-latest-count[hidden] {
+  display: none;
+}
+
+/* The conversation column anchors the floating control. */
+.collaboration-conversation {
+  position: relative;
+}
+
+/* Unread divider: a centred hairline with its label, marking where reading
+   stopped. Anchored to the sequence captured when the conversation opened, so
+   it does not slide away as the checkpoint advances. */
+.collaboration-unread-divider {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 6px 2px;
+  color: color-mix(in srgb, var(--accent) 78%, var(--text-dim) 22%);
+  font-size: 10.5px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.collaboration-unread-divider::before,
+.collaboration-unread-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  block-size: 1px;
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+/* Search hit: the list already filters, this says WHY a message matched. */
+.collaboration-search-hit {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: inherit;
+}

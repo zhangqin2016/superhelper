@@ -1920,6 +1920,7 @@
   "collaboration.workbench": "工作台",
   "collaboration.inbox": "消息",
   "collaboration.selfPrefix": "你",
+  "collaboration.unreadDivider": "以下是新消息",
   "collaboration.typing.one": "{name} 正在输入…",
   "collaboration.typing.many": "{count} 人正在输入…",
   "collaboration.typing.someone": "正在输入…",
