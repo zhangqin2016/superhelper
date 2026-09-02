@@ -212,7 +212,7 @@
   block-size: 36px;
   flex: 0 0 36px;
   border-radius: 11px;
-  color: #fff;
+  color: var(--accent-on);
   font-size: 13px;
   font-weight: 700;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 12%, transparent);
@@ -269,7 +269,7 @@
 
 .collaboration-row-time {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 14px;
   white-space: nowrap;
 }
@@ -482,7 +482,7 @@
 
 .collaboration-message-time {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 16px;
   white-space: nowrap;
 }
@@ -511,7 +511,7 @@
   block-size: 26px;
   flex: 0 0 26px;
   border-radius: 50%;
-  color: #fff;
+  color: var(--accent-on);
   background: hsl(var(--avatar-hue, 243) 48% 54%);
   font-size: 10px;
   font-weight: 700;
@@ -550,14 +550,14 @@
 .collaboration-message-header time,
 .collaboration-message-status {
   color: var(--muted);
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 12px;
 }
 
 .collaboration-message-author {
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 10.5px;
+  font-size: 11.5px;
   line-height: 14px;
   font-weight: 620;
   text-overflow: ellipsis;
@@ -647,13 +647,13 @@
 }
 
 .collaboration-message-actions button {
-  min-height: 24px;
+  min-height: 26px;
   padding: 3px 7px;
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
   background: var(--bg-surface-raised);
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 11.5px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -664,7 +664,7 @@
 .collaboration-message-status {
   margin-top: 3px;
   color: var(--text-dim);
-  font-size: 9.5px;
+  font-size: 11px;
   text-align: end;
 }
 
@@ -811,7 +811,7 @@
 }
 
 #collaborationSendButton {
-  color: #fff;
+  color: var(--accent-on);
   border-radius: 9px;
   background: var(--collab-send-btn);
   border-color: transparent;
@@ -861,7 +861,7 @@
 }
 
 .collaboration-mentions small {
-  font-size: 10.5px;
+  font-size: 11.5px;
   line-height: 15px;
 }
 
@@ -1211,7 +1211,7 @@
   border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
   box-shadow: var(--shadow-sm);
   color: var(--text-dim);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 16px;
   letter-spacing: 0.02em;
   user-select: none;
@@ -1226,7 +1226,7 @@
   gap: 4px;
   margin-top: 3px;
   color: var(--text-dim);
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1.6;
   text-align: end;
 }
@@ -1345,7 +1345,7 @@
 
 .collaboration-message-time {
   color: var(--text-dim);
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 14px;
   font-variant-numeric: tabular-nums;
 }
@@ -1743,20 +1743,24 @@
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 16'%3E%3Cpath d='M1 8.5 4.5 12 11 4.5' fill='none' stroke='%236366f1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8 8.5 11.5 12 18 4.5' fill='none' stroke='%236366f1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
-/* Reactions: a chip row under the body, before the meta line so time and tick
-   stay last. Full-width in the wrapping bubble so chips never share a line
-   with the text. */
+/* Reactions: a chip row under the body. Full-width in the wrapping bubble so
+   chips never share a line with the text — but the meta line is MOVED inside
+   this row (see collaboration-timeline.js), because a full-width chip row with
+   the meta left outside forced the time onto a third line. So this row is the
+   bubble's footer: chips from the start, time and tick pushed to the end. */
 .collaboration-message-reactions {
   flex: 1 1 100%;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   margin-block-start: 5px;
 }
 
 .collaboration-reaction-chip {
-  min-height: 22px;
-  padding: 1px 7px;
+  /* >=24px so the chip is a real tap target; it measured 39x22. */
+  min-height: 24px;
+  padding: 2px 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-surface-hover) 60%, transparent);
@@ -1793,8 +1797,8 @@
 }
 
 .collaboration-reaction-picker button {
-  min-height: 24px;
-  min-inline-size: 24px;
+  min-height: 26px;
+  min-inline-size: 26px;
   padding: 0 3px;
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
@@ -1851,7 +1855,7 @@
   padding: 0 4px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   font-size: 10px;
   line-height: 17px;
   font-variant-numeric: tabular-nums;
@@ -1877,7 +1881,7 @@
   gap: 8px;
   margin-block: 6px 2px;
   color: color-mix(in srgb, var(--accent) 78%, var(--text-dim) 22%);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 16px;
   letter-spacing: 0.02em;
   user-select: none;

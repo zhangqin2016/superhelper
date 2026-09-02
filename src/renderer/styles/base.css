@@ -28,6 +28,7 @@
   --accent-strong-border: rgba(99, 102, 241, 0.72);
   --accent-strong-bg: rgba(99, 102, 241, 0.22);
   --accent-ring: rgba(99, 102, 241, 0.40);
+  --accent-on: #fff; /* text/icon colour on an accent-filled surface */
 
   /* Surface ladder: neutral graphite, layered by lightness (not borders). */
   --bg-body: #121418;
@@ -210,6 +211,7 @@
   --accent-strong-border: rgba(99, 102, 241, 0.55);
   --accent-strong-bg: rgba(99, 102, 241, 0.14);
   --accent-ring: rgba(99, 102, 241, 0.18);
+  --accent-on: #fff; /* text/icon colour on an accent-filled surface */
 
   /* Neutral daylight ladder: clean workbench surfaces, never warm paper. */
   --bg-body: #f8f9fb;

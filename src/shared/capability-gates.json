@@ -520,6 +520,15 @@
         "scripts/test-collaboration-peer-reads.mjs",
         "scripts/test-collaboration-reactions.mjs"
       ]
+    },
+    {
+      "id": "im-legibility-floor",
+      "protects": "The collaboration panel stays readable and clickable: metadata never shrinks below 11px, interactive chips never below 24px, and every colour comes from a theme token so contrast follows the theme.",
+      "baseline": "Purely presentational. No message, sync, unread or reaction behaviour depends on these values; a violation is a legibility regression, never a loss of function.",
+      "failureFallback": "The check reads declared values from the stylesheet, so it holds for panel states no fixture renders. A deliberate exception is allowed only by naming the selector and its reason in the test's exemption map, which itself fails once the selector disappears.",
+      "tests": [
+        "scripts/test-collaboration-legibility.mjs"
+      ]
     }
   ]
 }

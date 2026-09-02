@@ -334,8 +334,15 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
         if (!seen.has(chip.dataset.emoji)) chip.remove();
       }
     } else reactionRow?.remove();
-    const metaLine = bubble.querySelector(":scope > .collaboration-message-meta");
-    if (metaLine && metaLine !== bubble.lastElementChild) bubble.append(metaLine);
+    // Where the meta line lives depends on whether there are reactions. With
+    // none it stays a direct child so the time/tick sit INLINE at the end of a
+    // short message (the Telegram trait). With reactions it moves INTO the chip
+    // row: the row is full-width, so leaving the meta outside pushed it onto a
+    // third line and left an L-shaped void beside the chips. Chips left, time
+    // right, one row — the meta's auto inline-start margin does the pushing.
+    const metaHost = reactionList.length && reactionRow ? reactionRow : bubble;
+    const metaLine = bubble.querySelector(".collaboration-message-meta");
+    if (metaLine && metaLine !== metaHost.lastElementChild) metaHost.append(metaLine);
     let statusChip = bubble.querySelector(".collaboration-message-status");
     if (status || delivered) {
       const metaText = status ? status.text : t(readByPeers ? "collaboration.read" : "collaboration.delivered");

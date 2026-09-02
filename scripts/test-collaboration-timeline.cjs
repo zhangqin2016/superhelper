@@ -70,6 +70,24 @@ app.whenReady().then(async () => {
       bodyTextIntact:navRoot.querySelector('[data-message-key="n1"] .collaboration-message-body')?.textContent==='alpha layout note',
       noHighlightNoMark:navRoot.querySelector('[data-message-key="n2"] mark')===null,
     };
+    // Reactions make the chip row full-width, so this is the case where the
+    // meta line must move INTO that row rather than onto a third line.
+    const reactRoot=document.createElement('div');document.body.append(reactRoot);
+    render(reactRoot,[
+      {id:'react',seq:1,senderUserId:'alice',isOwn:false,bodyText:'shipped',createdAt:1788250000000,
+       reactions:[{emoji:'\u{1F44D}',count:2,mine:true},{emoji:'\u{1F389}',count:1,mine:false}]},
+    ],{currentUserId:'me',resolveSender:(id)=>id,onReact:()=>{},canReact:()=>true});
+    const reactionContract = {
+      // The chip row is full-width, so a meta line left OUTSIDE it lands on a
+      // third line with a void beside the chips. It moves in and ends the row:
+      // chips from the start, time and tick pushed to the end by an auto margin.
+      metaEndsChipRow: reactRoot.querySelector('[data-message-key="react"] .collaboration-message-reactions')
+        ?.lastElementChild?.classList.contains('collaboration-message-meta') === true,
+      chipsComeFirst: reactRoot.querySelector('[data-message-key="react"] .collaboration-message-reactions')
+        ?.firstElementChild?.classList.contains('collaboration-reaction-chip') === true,
+      // Exactly one timestamp per message — never one in the row and one in the bubble.
+      singleMeta: reactRoot.querySelectorAll('[data-message-key="react"] .collaboration-message-meta').length,
+    };
     const groupedRoot=document.createElement('div');document.body.append(groupedRoot);
     render(groupedRoot,[
       {id:'g1',seq:1,senderUserId:'usr_internal',isOwn:false,bodyText:'a',createdAt:1788250000000},
@@ -123,9 +141,11 @@ app.whenReady().then(async () => {
     const revokedView = { rows:document.getElementById('collaborationTimeline').children.length, draft:document.getElementById('collaborationComposer').value,
       disabled:document.getElementById('collaborationSendButton').disabled, scope:document.getElementById('collaborationScopeBadge').textContent };
     center.destroy();
-    return { threadNavContract, initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
+    return { threadNavContract, reactionContract, initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
+  assert.deepEqual(result.reactionContract, { metaEndsChipRow: true, chipsComeFirst: true, singleMeta: 1 },
+    "a reacted bubble puts chips and the time on ONE footer row, not the time on a third line");
   assert.deepEqual(result.visualContract, { incomingAuthor: "Alice", outgoing: true, avatar: true, time: true, actions: true, everyBubbleHasTime: true, metaInsideBubble: true, noFloatingRowTime: true, metaIsLastInBubble: true, ownIdentityHidden: true }, "timeline uses reliable own-message alignment and one in-bubble meta line (time + tick) per Telegram, not a floating row timestamp");
   assert.deepEqual(result.threadNavContract, {
     oneDivider: true, dividerBeforeFirstUnread: true, dividerGoneWithoutAnchor: true,
