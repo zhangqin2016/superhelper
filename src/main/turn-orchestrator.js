@@ -1678,9 +1678,12 @@ class TurnOrchestrator {
         ...terminalMeta,
       });
     } else if (stalled) {
+      const stalledText = normalized.text || state.assistantText;
       finalizeDone = this._finalize(sessionId, "turn.stalled", {
         stalled: true,
-        assistant: appendIncompleteTurnSummary(normalized.text || state.assistantText, state, payload),
+        assistant: appendIncompleteTurnSummary(stalledText, state, payload, {
+          hasAnswer: Boolean(String(stalledText || "").trim()),
+        }),
         ...terminalMeta,
       });
     } else if (failed) {
@@ -1713,12 +1716,14 @@ class TurnOrchestrator {
       });
     } else if (blockingProcessJobs.length) {
       const notice = runningProcessJobNotice(blockingProcessJobs);
+      const blockedText = normalized.text || state.assistantText;
       finalizeDone = this._finalize(sessionId, "turn.stalled", {
         stalled: true,
         assistant: appendIncompleteTurnSummary(
-          [normalized.text || state.assistantText, notice].filter(Boolean).join("\n\n"),
+          [blockedText, notice].filter(Boolean).join("\n\n"),
           state,
           { ...payload, blockingProcessJobs },
+          { hasAnswer: Boolean(String(blockedText || "").trim()) },
         ),
         blockingProcessJobs,
         ...terminalMeta,

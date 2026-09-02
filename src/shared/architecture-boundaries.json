@@ -19,7 +19,7 @@
     "src/main/mcp/tool-broker-registry.js": 591,
     "src/main/model-compatibility-probe.js": 720,
     "src/main/model-presets.js": 1364,
-    "src/main/opencode-agent-session.js": 1997,
+    "src/main/opencode-agent-session.js": 1994,
     "src/main/opencode-conversation-source.js": 585,
     "src/main/runtime/opencode-message-parts.js": 605,
     "src/main/runtime/opencode-runtime-reducer.js": 843,

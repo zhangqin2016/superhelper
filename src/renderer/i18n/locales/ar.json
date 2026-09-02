@@ -1738,6 +1738,7 @@
   "timeline.queuedTitle": "{count} في الانتظار",
   "timeline.thinkingGroup": "عملية التفكير · {count} مقاطع",
   "timeline.thinkingGroupTimed": "عملية التفكير · {count} مقاطع · {seconds} ث",
+  "timeline.toolAwaitingYou": "في انتظارك {duration}",
   "tool.summaryBar": "اكتملت {count} خطوات",
   "tool.expand": "توسيع",
   "tool.collapse": "طي",

@@ -24,6 +24,30 @@ function safeJsonClone(value) {
   }
 }
 
+const LEAF_OBJECT_MAX_KEYS = 8;
+const LEAF_OBJECT_STRING_LIMIT = 300;
+
+/** Scalar-only projection of an object that sits at the compaction depth cap. */
+function compactLeafObject(value) {
+  const out = {};
+  let kept = 0;
+  for (const [key, val] of Object.entries(value)) {
+    if (kept >= LEAF_OBJECT_MAX_KEYS) break;
+    const type = typeof val;
+    if (type === "string") {
+      if (/thumbnail|dataUrl|dataURL|base64/i.test(key)) continue;
+      out[key] = truncateString(val, LEAF_OBJECT_STRING_LIMIT);
+    } else if (type === "number" || type === "boolean") {
+      out[key] = val;
+    } else {
+      continue;
+    }
+    kept += 1;
+  }
+  // Nothing legible to keep (all-nested/empty) — behave as before.
+  return kept ? out : "[object]";
+}
+
 function compactValue(value, limit = DEFAULT_STRING_LIMIT, depth = 0) {
   if (value == null) return value;
   if (typeof value === "string") return truncateString(value, limit);
@@ -32,7 +56,14 @@ function compactValue(value, limit = DEFAULT_STRING_LIMIT, depth = 0) {
     return value.slice(0, 20).map((item) => compactValue(item, limit, depth + 1));
   }
   if (typeof value !== "object") return null;
-  if (depth >= 3) return "[object]";
+  // At the depth cap, keep the object's SCALAR LEAVES instead of erasing it.
+  // Returning the literal "[object]" threw away exactly the parts a human or a
+  // replay needs: a question card's `{label, description}` options sit at depth 4
+  // under input.questions[].options[], so every persisted question event stored
+  // `options: ["[object]","[object]","[object]"]` and reopening/replaying the
+  // conversation lost the choices the user was actually offered. Bounded (few
+  // short keys) so the depth cap still does its job of capping payload size.
+  if (depth >= 3) return compactLeafObject(value);
   const out = {};
   for (const [key, val] of Object.entries(value).slice(0, 30)) {
     if (/thumbnail|dataUrl|dataURL|base64/i.test(key) && typeof val === "string") {

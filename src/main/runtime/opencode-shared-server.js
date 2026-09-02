@@ -19,6 +19,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { getLogger } = require("../logger");
 const { killProcessTree } = require("../process-tree-kill");
+const { parseServeDiagnostics } = require("./opencode-serve-diagnostics");
 
 const log = getLogger("opencode-shared-server");
 
@@ -204,7 +205,13 @@ class OpencodeSharedServer extends EventEmitter {
         // --log-level ERROR flag), so volume is low and the full text carries the
         // real cause of failures like session.summarize 500s.
         const text = c.toString().trim();
-        if (text) log.warn("serve stderr: %s", text.slice(0, 4000));
+        if (!text) return;
+        log.warn("serve stderr: %s", text.slice(0, 4000));
+        // Transient provider trouble here means the engine is RETRYING, which the
+        // user otherwise experiences as unexplained silence. Publish it on the
+        // diagnostic channel; ServerManager routes it to the one session the
+        // serve named. Unparseable lines yield nothing — log-only, as before.
+        for (const info of parseServeDiagnostics(text)) this.emit("diagnostic", info);
       });
       child.on("exit", (code) => {
         this._baseClient = null;

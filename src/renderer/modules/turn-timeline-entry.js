@@ -23,7 +23,7 @@ function renderToolRowFromEntry(entry, sealed = false, ctx = {}, deps = {}) {
     renderRow = renderToolRow,
   } = deps;
   const tool = toRenderTool(entry);
-  return renderRow(tool, rowPreview(entry), sealed, durationSuffix(entry), ctx);
+  return renderRow(tool, rowPreview(entry), sealed, durationSuffix(entry, Date.now(), t), ctx);
 }
 
 export function renderToolWithChildren(entry, sealed, childTools, ctx = {}, deps = {}) {

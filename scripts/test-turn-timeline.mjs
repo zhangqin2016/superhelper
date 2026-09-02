@@ -94,6 +94,32 @@ if (
 ) {
   throw new Error(`task completion should replace progress: ${JSON.stringify(progressState.timeline)}`);
 }
+// A replaceable notice is ONE LIVE SLOT: it keeps the position AND timestamp of
+// where it first appeared, recording the refresh in `updatedAt`. Writing the new
+// ts back at the old index made the persisted timeline non-monotonic in time
+// (a heartbeat first seen at 13:40 sat at index 1 stamped 13:57), which misleads
+// replay, projections and the compaction index.
+if (progressState.timeline[0].ts !== 900 || progressState.timeline[0].updatedAt !== 902) {
+  throw new Error(`a replaced notice must keep its anchor ts: ${JSON.stringify(progressState.timeline)}`);
+}
+{
+  const ordered = { timeline: [] };
+  upsertTimelineThinking(ordered, "think", 1000);
+  appendTimelineNotice(ordered, { code: "beat", level: "progress", panel: true, replace: true }, 1001);
+  upsertTimelineTool(ordered, { id: "t1", name: "read", status: "running" }, 1002);
+  // 10 heartbeat refreshes long after the tool started.
+  for (let i = 0; i < 10; i += 1) {
+    appendTimelineNotice(ordered, { code: "beat", level: "progress", panel: true, replace: true }, 5000 + i);
+  }
+  // `ts` on a streaming block is its LAST update, so it is not globally
+  // monotonic by design. The property that must hold is CREATION order:
+  // entries appear in the array in the order they first happened. A replaced
+  // notice used to break it by adopting the newest refresh time (here it would
+  // read 5009, landing "after" a tool created at 1002 while sitting before it).
+  const created = ordered.timeline.map((entry) => Number(entry.startTs ?? entry.ts));
+  const monotonic = created.every((ts, index) => index === 0 || ts >= created[index - 1]);
+  if (!monotonic) throw new Error(`timeline must stay monotonic in creation time: ${JSON.stringify(created)}`);
+}
 
 const state = { timeline: [], activityLabel: null, tools: new Map() };
 setActivityLabel(state, "Reading recent chapters");

@@ -1737,6 +1737,7 @@
   "timeline.queuedTitle": "待发送 {count} 条",
   "timeline.thinkingGroup": "思考过程 · {count} 段",
   "timeline.thinkingGroupTimed": "思考过程 · {count} 段 · {seconds} 秒",
+  "timeline.toolAwaitingYou": "等你 {duration}",
   "tool.summaryBar": "已完成 {count} 个步骤",
   "tool.expand": "展开",
   "tool.collapse": "收起",

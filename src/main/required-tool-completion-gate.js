@@ -7,6 +7,7 @@ const {
   noteRequiredToolDraft,
   successfulRequiredToolResults,
 } = require("./required-tool-completion");
+const { claimContinuation } = require("./turn-continuation-budget");
 
 const log = getLogger("required-tool-completion-gate");
 const states = new WeakMap();
@@ -31,7 +32,12 @@ function continueBeforeCompletion(session, payload) {
     || !session._server || session._pendingPermissions.size || session._pendingQuestions.size
   ) return false;
 
-  if (state.attempts >= 2) {
+  // Running out of the SHARED turn re-entry budget stops the RE-PROMPTING, never
+  // the check: this gate exists so a turn cannot claim "role saved" when the
+  // persistence tool never confirmed. Degrading to silent success would be worse
+  // than today, so budget exhaustion takes the same honest-failure path as
+  // exhausting the correction attempts.
+  if (state.attempts >= 2 || !claimContinuation(session._turnGates, "requiredTool")) {
     const message = "\n\n角色没有保存到角色库：持久化工具未成功执行，因此 Lily 没有把 Markdown 或普通文件当作角色。请重试创建；若问题持续，请检查 Character Worlds 与工具服务。";
     // Replace unverified assistant prose instead of appending a contradictory
     // failure notice after a claim that the entity was already saved.

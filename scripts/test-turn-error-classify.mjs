@@ -273,6 +273,41 @@ assert(incomplete.includes("timeout after 90s"), "incomplete summary preserves f
 const appended = ec.appendIncompleteTurnSummary("你说得对，之前偏向了 cst。", toolState, {});
 assert(appended.includes("你说得对") && appended.includes("本轮没有形成完整最终回答"), "partial text receives stalled summary");
 
+// hasAnswer: never contradict a real answer, and never dump the successful-tool
+// log under it (a 278-tool turn appended 272 reads below its finished delivery).
+const answered = ec.buildIncompleteTurnSummary(toolState, {}, { hasAnswer: true });
+assert(!answered.includes("本轮没有形成完整最终回答"), "an answered turn is never told it produced no answer");
+assert(answered.includes("上面的回答已经生成"), "an answered turn gets the soft unfinished note");
+assert(!answered.includes("原因：有子任务或工具未完成/失败"), "no failure framing under a real answer");
+assert(answered.includes("Explore sdk-msg-delivery"), "still names what is genuinely unfinished");
+assert(!answered.includes("已完成的子任务和已保留结果"), "no successful-tool dump under a real answer");
+assert(!answered.includes("found message flow"), "no successful-tool output dump under a real answer");
+assert(
+  ec.buildIncompleteTurnSummary({}, {}, { hasAnswer: true }) === "",
+  "an answered turn with no tool/failure signal gets no appended banner at all",
+);
+assert(
+  ec.appendIncompleteTurnSummary("完整答案。", {}, {}, { hasAnswer: true }) === "完整答案。",
+  "an empty summary must not glue a stray separator onto the answer",
+);
+
+// A failure the turn RECOVERED from is not evidence the turn is incomplete: the
+// field case blamed a guard rejection that happened 28 minutes before the end,
+// after which the same tool ran fine dozens of times.
+const recoveredState = {
+  tools: new Map([
+    ["edit_1", { id: "edit_1", name: "edit", input: { path: "zh-CN.json" }, status: "failed", result: "LILY_LIVE_FILE_READ_REQUIRED" }],
+    ["edit_2", { id: "edit_2", name: "edit", input: { path: "zh-CN.json" }, status: "done" }],
+    ["bash_1", { id: "bash_1", name: "bash", input: { command: "npm test" }, status: "failed", result: "exit 1" }],
+  ]),
+};
+const recoveredSnapshot = ec.collectToolCompletionSnapshot(recoveredState);
+assert(recoveredSnapshot.recovered.length === 1, "a failure followed by a same-tool success is recovered");
+assert(recoveredSnapshot.failed.length === 1 && recoveredSnapshot.failed[0].name === "bash", "unrecovered failures still surface");
+const recoveredSummary = ec.buildIncompleteTurnSummary(recoveredState, {});
+assert(!recoveredSummary.includes("LILY_LIVE_FILE_READ_REQUIRED"), "recovered mid-turn failures are not listed as reasons");
+assert(recoveredSummary.includes("npm test"), "the unrecovered failure is still reported");
+
 // Stalled while a permission card / question was still open: the summary must
 // say so plainly instead of blaming an unfinished tool (2026-07-22 field case:
 // an unattended rm -rf permission card hung until the watchdog killed the turn).

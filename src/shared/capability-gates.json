@@ -142,7 +142,9 @@
       "protects": "Internal prompt layers cannot crowd out the original user request.",
       "baseline": "Normal-size prompt layers and the full visible user message remain byte-identical.",
       "failureFallback": "Bound only oversized internal layers and preserve explicit truncation diagnostics.",
-      "tests": ["scripts/test-engine-message-layers.mjs"]
+      "tests": [
+        "scripts/test-engine-message-layers.mjs"
+      ]
     },
     {
       "id": "external-claim-evidence",
@@ -426,6 +428,56 @@
         "scripts/test-executable-paths.mjs",
         "scripts/test-spawn-env-software-discovery.mjs",
         "scripts/test-spawn-env-allowlist.mjs"
+      ]
+    },
+    {
+      "id": "turn-completion-honesty",
+      "protects": "A long task that finished is reported as finished: the unfinished-todo gate cannot push a blocked model back into the same turn indefinitely, and a turn that produced a real answer is never labelled stalled or contradicted by a 'no final answer' banner.",
+      "baseline": "A model that quits with work genuinely left is still nudged to continue, and a turn that produced no answer at all still gets the stalled terminal with its salvageable tool results.",
+      "failureFallback": "LILY_DISABLE_TODO_COMPLETION_GATE=1 disables the gate entirely; a snapshot without todos skips it, and the summary builder degrades to plain assistant text.",
+      "tests": [
+        "scripts/test-opencode-agent-session.mjs",
+        "scripts/test-opencode-session-policies.mjs",
+        "scripts/test-turn-error-classify.mjs",
+        "scripts/test-turn-orchestrator.mjs"
+      ]
+    },
+    {
+      "id": "turn-continuation-budget",
+      "protects": "A cleanly ended turn cannot be re-entered by completion gates round after round: every gate that pushes a finished turn back into the model draws on one shared per-turn budget.",
+      "baseline": "Each gate keeps its own no-progress logic and still gets to correct a genuinely unfinished turn; the required-tool persistence check still fails loudly instead of passing silently.",
+      "failureFallback": "LILY_TURN_CONTINUATION_BUDGET=0 removes the shared cap and restores per-gate-only bounds; malformed overrides fail open to the default and a missing gate state never blocks a turn.",
+      "tests": [
+        "scripts/test-opencode-agent-session.mjs",
+        "scripts/test-opencode-session-policies.mjs"
+      ]
+    },
+    {
+      "id": "user-wait-attribution",
+      "protects": "Time a turn spends blocked on the user (a permission or question card) is attributed to the user, never reported as the assistant's own latency, and the progress heartbeat names waiting as waiting instead of claiming to be working.",
+      "baseline": "Ordinary tools still show their real elapsed compute time, and the heartbeat still reports genuine tool progress once no card is open.",
+      "failureFallback": "A missed begin/end hook, absent/negative/oversized waitMs, or a missing translate all degrade to today's plain elapsed time; wait time is never shown as compute.",
+      "tests": [
+        "scripts/test-turn-user-wait.mjs",
+        "scripts/test-turn-timeline.mjs"
+      ]
+    },
+    {
+      "id": "persisted-event-fidelity",
+      "protects": "Compacting a runtime event for persistence bounds its size without erasing the fields a human or a replay needs — notably the option labels of a question card.",
+      "baseline": "The depth cap still bounds payload size: nesting below a kept leaf is dropped and an object with no legible scalar fields keeps the previous marker.",
+      "failureFallback": "Objects with nothing legible to keep fall back to the original \"[object]\" marker, and thumbnail/base64 fields remain stripped.",
+      "tests": [
+        "scripts/test-runtime-event-compaction-index.mjs"
+      ]
+    },
+    {
+      "id": "engine-retry-visibility",
+      "protects": "A transient provider failure that the engine is retrying is narrated to the user (model service, reason, attempt count) instead of appearing as unexplained silence.",
+      "baseline": "Only the transient family is narrated as a retry; genuine configuration errors still reach the normal terminal-failure classification unchanged, and the full stderr line still lands in the log.",
+      "failureFallback": "An unparseable or chunk-split line, a non-ERROR level, or a missing/foreign session id yields no notice at all — log-only, exactly as before.",
+      "tests": [
+        "scripts/test-serve-diagnostics.mjs"
       ]
     }
   ]

@@ -146,10 +146,19 @@ function compactToolResultPreview(result, limit = 900) {
 
 function collectToolCompletionSnapshot(state = {}) {
   const tools = Array.from(state.tools?.values?.() || []);
+  // A failure the turn RECOVERED from is not a reason the turn is incomplete.
+  // Listing every mid-turn error made a 278-tool turn look broken because of a
+  // single guard rejection 28 minutes before the end. A failed call counts as
+  // recovered once a LATER call of the same tool succeeded.
+  const lastDoneIndex = new Map();
+  tools.forEach((tool, index) => {
+    if (isDoneToolStatus(tool?.status)) lastDoneIndex.set(String(tool?.name || ""), index);
+  });
   const done = [];
   const failed = [];
   const running = [];
-  for (const tool of tools) {
+  const recovered = [];
+  for (const [index, tool] of tools.entries()) {
     const item = {
       id: tool.id || "",
       name: tool.name || "",
@@ -158,10 +167,13 @@ function collectToolCompletionSnapshot(state = {}) {
       resultPreview: compactToolResultPreview(tool.result, isDoneToolStatus(tool.status) ? 1200 : 420),
     };
     if (isDoneToolStatus(tool.status)) done.push(item);
-    else if (isFailedToolStatus(tool.status)) failed.push(item);
-    else running.push(item);
+    else if (isFailedToolStatus(tool.status)) {
+      const recoveredAt = lastDoneIndex.get(String(tool?.name || ""));
+      if (Number.isInteger(recoveredAt) && recoveredAt > index) recovered.push(item);
+      else failed.push(item);
+    } else running.push(item);
   }
-  return { done, failed, running, count: tools.length };
+  return { done, failed, running, recovered, count: tools.length };
 }
 
 function isEmptyAssistantCompletion(payload = {}, normalized = {}, state = {}) {
@@ -193,7 +205,7 @@ function indentPreview(text) {
   return lines.map((line) => `  ${line}`).join("\n");
 }
 
-function buildIncompleteTurnSummary(state = {}, payload = {}) {
+function buildIncompleteTurnSummary(state = {}, payload = {}, { hasAnswer = false } = {}) {
   const snapshot = collectToolCompletionSnapshot(state);
   const hasToolSignal = snapshot.count > 0;
   const failureText = compactFailureDetail(
@@ -204,11 +216,17 @@ function buildIncompleteTurnSummary(state = {}, payload = {}) {
     || "",
   );
   if (!hasToolSignal && !failureText) {
+    if (hasAnswer) return "";
     return "当前模型没有返回任何可用内容，所以本轮没有形成回答。常见原因：模型网关对本次请求返回了错误页（内容不是模型输出，多见于自建/代理网关处理不了携带工具的请求）、模型名称/API 地址/密钥/兼容参数不正确。可在模型设置里重新保存该模型触发兼容性检测；如果刚修改过模型配置，请重新发起一次。";
   }
 
+  // Never tell the user "本轮没有形成完整最终回答" directly underneath a real
+  // answer — that self-contradiction made a complete delivery read as a failure.
+  // With an answer present the honest signal is "有回答，但还有没收尾的部分".
   const parts = [
-    "本轮没有形成完整最终回答。系统已停止继续等待，避免会话一直卡在处理中。",
+    hasAnswer
+      ? "上面的回答已经生成，但本轮还有没有收尾的部分。"
+      : "本轮没有形成完整最终回答。系统已停止继续等待，避免会话一直卡在处理中。",
   ];
   // Honesty first: a stall while a permission/question card is still open is
   // not "the model hung" — the turn died waiting for the user (the 2026-07-22
@@ -216,28 +234,40 @@ function buildIncompleteTurnSummary(state = {}, payload = {}) {
   if (Number(state?.pendingPermissions?.size || 0) > 0 || Number(state?.pendingQuestions?.size || 0) > 0) {
     parts.push("本轮中止时仍在等待你确认授权或回复：有操作需要你点击允许才能继续。重新发送任务，并在弹出确认卡片时及时处理（或切换到全自主模式自动允许）。");
   }
-  if (snapshot.failed.length || snapshot.running.length) {
-    parts.push("原因：有子任务或工具未完成/失败，父任务没有进入最终回答阶段。");
-  } else if (snapshot.done.length) {
-    parts.push("原因：子任务已有执行结果，但父任务没有完成最终汇总。");
+  if (!hasAnswer) {
+    if (snapshot.failed.length || snapshot.running.length) {
+      parts.push("原因：有子任务或工具未完成/失败，父任务没有进入最终回答阶段。");
+    } else if (snapshot.done.length) {
+      parts.push("原因：子任务已有执行结果，但父任务没有完成最终汇总。");
+    }
   }
   if (failureText) parts.push(`最后错误/提示：${failureText}`);
   const failed = listToolLabels("未完成或失败的子任务", [...snapshot.failed, ...snapshot.running], 6, {
     includeResult: true,
   });
   if (failed) parts.push(failed);
-  const done = listToolLabels("已完成的子任务和已保留结果", snapshot.done, 4, {
-    includeResult: true,
-  });
-  if (done) parts.push(done);
-  parts.push("可以直接继续提问，我会基于上面的已完成结果补齐汇总，并优先只重跑未完成/失败的部分。");
+  // The "已完成的子任务和已保留结果" dump exists so a turn WITHOUT an answer still
+  // leaves the user something to salvage. When the answer is already there it is
+  // pure noise — a 278-tool turn appended 272 successful reads under its delivery.
+  if (!hasAnswer) {
+    const done = listToolLabels("已完成的子任务和已保留结果", snapshot.done, 4, {
+      includeResult: true,
+    });
+    if (done) parts.push(done);
+  }
+  parts.push(
+    hasAnswer
+      ? "可以直接继续提问，我会接着把剩下的部分做完。"
+      : "可以直接继续提问，我会基于上面的已完成结果补齐汇总，并优先只重跑未完成/失败的部分。",
+  );
   return parts.join("\n\n");
 }
 
-function appendIncompleteTurnSummary(assistantText, state = {}, payload = {}) {
+function appendIncompleteTurnSummary(assistantText, state = {}, payload = {}, options = {}) {
   const existing = String(assistantText || "").trim();
-  const summary = buildIncompleteTurnSummary(state, payload);
+  const summary = buildIncompleteTurnSummary(state, payload, options);
   if (!existing) return summary;
+  if (!summary) return existing;
   if (existing.includes("本轮没有形成完整最终回答") || existing.includes("本轮没有形成最终回答")) {
     return existing;
   }

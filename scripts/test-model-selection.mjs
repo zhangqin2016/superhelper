@@ -191,7 +191,8 @@ test("manual selection survives insertions and internal continuations on the sam
     busy: true, _turnSettled: false, _server: server, _pendingPromptPayload: { model: selected }, spawnOptions: {},
     _armResponseTimer() {}, _armProgressNoticeTimer() {},
     _pendingPermissions: new Map(), _pendingQuestions: new Map(),
-    _latestTodos: [{ content: "finish", status: "pending" }], _todoCompletionGateAttempts: 0,
+    _latestTodos: [{ content: "finish", status: "pending" }],
+    _turnGates: require("../src/main/turn-continuation-budget.js").createTurnGateState(),
   };
   await OpencodeAgentSession.prototype.steer.call(session, { text: "insert" });
   OpencodeAgentSession.prototype._continueUnfinishedTodosBeforeCompletion.call(session, { code: 0 });

@@ -236,7 +236,7 @@ async function newSession() {
   assert(orch.calls.done.length === 0, "idle with unfinished todos keeps the turn open");
   assert(fake.prompts.length === 2, "unfinished todo gate sends one internal continuation prompt");
   assert(/unfinished todo/i.test(fake.prompts[1].text), "continuation prompt names unfinished todos");
-  assert(/Continuation attempt: 1\/3/.test(fake.prompts[1].text), "unfinished todo gate must be bounded");
+  assert(/Continuation attempt: 1\/2/.test(fake.prompts[1].text), "unfinished todo gate must be bounded");
 
   fake.emitEvent({
     type: "todo.updated",
@@ -255,6 +255,37 @@ async function newSession() {
   await tick();
   assert(orch.calls.done.length === 1, "idle settles once todos are completed");
   assert(/Done and verified/.test(orch.calls.done[0].output), "final output is preserved after todo continuation");
+  session.terminate();
+}
+
+// --- a model blocked on a user decision must not be nudged forever, and its
+// --- real answer must not be labelled "stalled" (2026-09-02 field case: 7
+// --- continuation prompts / 13 minutes burned re-asking for 2 parked items,
+// --- then a complete 11-item delivery buried under "本轮没有形成完整最终回答").
+{
+  const { fake, session, orch } = await newSession();
+  const plan = (total, done) => Array.from({ length: total }, (_, index) => ({
+    // Re-planned titles on every round: this is what refilled the old budget.
+    content: `round-${total} item ${index + 1}`,
+    status: index < done ? "completed" : "pending",
+  }));
+  session.sendUserMessage({ text: "全部实施。不要中断" });
+  await tick();
+  // The unfinished count never moves (2), but the list keeps being re-planned.
+  for (const [total, done] of [[11, 9], [12, 10], [13, 11]]) {
+    fake.emitEvent({ type: "todo.updated", properties: { sessionID: "s", todos: plan(total, done) } });
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "剩余两项需要你拍板。" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    await tick();
+  }
+  assert(fake.prompts.length === 3, `re-planning must not refill the nudge budget (sent ${fake.prompts.length} prompts)`);
+  assert(orch.calls.done.length === 1, "the gate settles the turn instead of nudging forever");
+  const settled = orch.calls.done[0];
+  assert(!settled.stalled, "a turn that produced a real answer must never be marked stalled");
+  assert(settled.unfinishedTodoCount === 2, "the settled turn reports how many todos are still open");
+  assert(/剩余两项需要你拍板/.test(settled.output), "the model's answer survives the gate");
+  assert(/本轮还有 2 项待办没有标记完成/.test(settled.output), "the answer carries one honest unfinished-todo line");
   session.terminate();
 }
 
@@ -2381,6 +2412,57 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   await tick();
   assert(orch.calls.done.length === 1, "successful persistent draft tool permits completion");
   session.terminate();
+}
+
+// Every completion gate that pushes a cleanly-ended turn back into the model
+// draws on ONE shared per-turn budget. Each gate was individually bounded but
+// nothing bounded their sum, so gates could hand off to each other for rounds.
+// Here the todo gate keeps EARNING nudges (its unfinished set shrinks every
+// round, which refills its own budget) — only the shared cap stops it.
+{
+  const saved = process.env.LILY_TURN_CONTINUATION_BUDGET;
+  const shrinkingRounds = async (budget) => {
+    process.env.LILY_TURN_CONTINUATION_BUDGET = budget;
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "长任务" });
+    await tick();
+    for (const unfinished of [5, 4, 3]) {
+      fake.emitEvent({
+        type: "todo.updated",
+        properties: {
+          sessionID: "s",
+          todos: Array.from({ length: 6 }, (_, index) => ({
+            content: `item ${index + 1}`,
+            status: index < 6 - unfinished ? "completed" : "pending",
+          })),
+        },
+      });
+      fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "进展中。" } });
+      fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+      await waitIdleSettle();
+      await tick();
+    }
+    const result = { prompts: fake.prompts.length, done: orch.calls.done };
+    session.terminate();
+    return result;
+  };
+  try {
+    const capped = await shrinkingRounds("2");
+    assert(capped.prompts === 3, `shared budget caps total re-entries (sent ${capped.prompts} prompts)`);
+    assert(capped.done.length === 1, "the turn settles once the shared budget is spent");
+    assert(!capped.done[0].stalled, "spending the shared budget is not a stall");
+    assert(/进展中/.test(capped.done[0].output), "the model's own text survives the shared cap");
+    assert(/本轮还有 3 项待办没有标记完成/.test(capped.done[0].output), "the settled turn still says what is open");
+
+    // Kill switch restores the previous per-gate-only behaviour (fail open to
+    // today's baseline): the third round is nudged instead of settled.
+    const unbounded = await shrinkingRounds("0");
+    assert(unbounded.prompts === 4, `LILY_TURN_CONTINUATION_BUDGET=0 removes the shared cap (sent ${unbounded.prompts})`);
+    assert(unbounded.done.length === 0, "without the shared cap the per-gate bounds alone keep the turn open");
+  } finally {
+    if (saved === undefined) delete process.env.LILY_TURN_CONTINUATION_BUDGET;
+    else process.env.LILY_TURN_CONTINUATION_BUDGET = saved;
+  }
 }
 
 // A failed authoring workflow must not preserve a contradictory success claim

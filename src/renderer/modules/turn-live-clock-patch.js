@@ -24,7 +24,7 @@ export function patchLiveToolClocks(article, liveTurn, { now = Date.now(), trans
     if (!entry) continue;
     const status = row.querySelector?.(".assistant-tool-status");
     if (!status) continue;
-    const text = buildToolStatusLabel(entry, translate) + buildToolDurationSuffix(entry, now);
+    const text = buildToolStatusLabel(entry, translate) + buildToolDurationSuffix(entry, now, translate);
     if (status.textContent !== text) {
       status.textContent = text;
       patched += 1;

@@ -26,7 +26,7 @@ export function patchLiveProcessDom(root, liveTurn, ctx, {
   rowPreview = toolRowPreview,
   toRenderTool = toolEntryToRenderTool,
   toolStatus = (tool) => buildToolStatusLabel(tool, translate),
-  toolDuration = buildToolDurationSuffix,
+  toolDuration = (entry) => buildToolDurationSuffix(entry, Date.now(), translate),
   thinkingSummary = (entry, live) => buildThinkingSummaryLabel(entry, live, translate),
 } = {}) {
   const { sealed = Boolean(liveTurn.final) } = ctx;

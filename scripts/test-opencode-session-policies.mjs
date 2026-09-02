@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const failurePolicy = require("../src/main/opencode-session-failure-policy.js");
 const todoPolicy = require("../src/main/opencode-todo-completion-policy.js");
+const continuationBudget = require("../src/main/turn-continuation-budget.js");
 const { createOpencodeHistoryRecovery, withTimeout } = require("../src/main/opencode-history-recovery.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-policies-"));
@@ -53,6 +54,68 @@ try {
     unfinished: [{ title: "Verify", status: "in_progress" }],
   });
   assert.match(todoPolicy.buildTodoContinuationPrompt(todos, 2, 3), /Continuation attempt: 2\/3/);
+
+  // The gate bounds CONFIRMED no-progress, not effort (CAPABILITY-GATE rule 3).
+  const finished = { total: 2, completed: 2, unfinished: [] };
+  assert.equal(todoPolicy.todoContinuationDecision(finished, 0, 0), "skip");
+  assert.equal(todoPolicy.todoContinuationDecision({}, 0, 0), "skip");
+  assert.equal(todoPolicy.todoContinuationDecision(todos, 0, 0), "nudge");
+  assert.equal(
+    todoPolicy.todoContinuationDecision(todos, todoPolicy.TODO_COMPLETION_GATE_MAX_ATTEMPTS, 0),
+    "settle",
+    "consecutive nudges that changed nothing must stop",
+  );
+  assert.equal(
+    todoPolicy.todoContinuationDecision(todos, 0, todoPolicy.TODO_COMPLETION_GATE_MAX_TOTAL_ATTEMPTS),
+    "settle",
+    "a model that keeps re-planning still hits an absolute per-turn ceiling",
+  );
+
+  // Giving up on an ANSWERED turn must not fabricate a stalled terminal — that
+  // buried a complete delivery under a "no final answer" banner.
+  const answered = todoPolicy.buildTodoGiveUpPayload({ code: 0, output: "交付完成。" }, todos, "");
+  assert.equal(answered.stalled, undefined, "an answered turn is not stalled");
+  assert.equal(answered.unfinishedTodoCount, 1);
+  assert.match(answered.output, /^交付完成。/);
+  assert.match(answered.output, /本轮还有 1 项待办没有标记完成：Verify/);
+  // Falls back to the streamed output when the payload carries none.
+  assert.match(todoPolicy.buildTodoGiveUpPayload({ code: 0 }, todos, "streamed").output, /^streamed/);
+  // No answer at all is the ONLY case that still deserves the stalled terminal.
+  const answerless = todoPolicy.buildTodoGiveUpPayload({ code: 0, output: "  " }, todos, "");
+  assert.equal(answerless.stalled, true, "an answerless turn keeps the stalled terminal");
+  assert.equal(answerless.output, "");
+  assert.equal(todoPolicy.buildUnfinishedTodoNotice({ unfinished: [] }), "");
+
+  // One shared budget across every gate that re-enters a cleanly-ended turn.
+  const savedBudget = process.env.LILY_TURN_CONTINUATION_BUDGET;
+  try {
+    delete process.env.LILY_TURN_CONTINUATION_BUDGET;
+    assert.equal(continuationBudget.maxTurnContinuations(), continuationBudget.DEFAULT_MAX_TURN_CONTINUATIONS);
+    const state = continuationBudget.createTurnGateState();
+    assert.deepEqual(state.todo, { attempts: 0, total: 0, best: Infinity });
+    assert.equal(state.deliverableGated, false);
+    for (let i = 0; i < continuationBudget.DEFAULT_MAX_TURN_CONTINUATIONS; i += 1) {
+      assert.equal(continuationBudget.claimContinuation(state, i % 2 ? "todo" : "deliverable"), true);
+    }
+    assert.equal(continuationBudget.claimContinuation(state, "requiredTool"), false, "the shared budget runs out");
+    assert.equal(state.continuations, continuationBudget.DEFAULT_MAX_TURN_CONTINUATIONS);
+    assert.deepEqual(state.byGate, { deliverable: 2, todo: 2 }, "the budget records which gate spent it");
+
+    // Kill switch: 0 removes the shared cap and restores per-gate-only bounds.
+    process.env.LILY_TURN_CONTINUATION_BUDGET = "0";
+    const unbounded = continuationBudget.createTurnGateState();
+    for (let i = 0; i < 25; i += 1) assert.equal(continuationBudget.claimContinuation(unbounded, "todo"), true);
+    // A malformed override must fail open to the default, never to unbounded.
+    process.env.LILY_TURN_CONTINUATION_BUDGET = "not-a-number";
+    assert.equal(continuationBudget.maxTurnContinuations(), continuationBudget.DEFAULT_MAX_TURN_CONTINUATIONS);
+    process.env.LILY_TURN_CONTINUATION_BUDGET = "-3";
+    assert.equal(continuationBudget.maxTurnContinuations(), continuationBudget.DEFAULT_MAX_TURN_CONTINUATIONS);
+    // A gate wired before the state exists must not crash a turn.
+    assert.equal(continuationBudget.claimContinuation(undefined, "todo"), true);
+  } finally {
+    if (savedBudget === undefined) delete process.env.LILY_TURN_CONTINUATION_BUDGET;
+    else process.env.LILY_TURN_CONTINUATION_BUDGET = savedBudget;
+  }
   assert.equal(todoPolicy.detectIncompleteDeliverable(`Saved ${completedPath}`), null);
   assert.equal(todoPolicy.detectIncompleteDeliverable(`Saved ${path.join(tmp, "missing.pdf")}`)?.reason, "does not exist");
   assert.equal(todoPolicy.detectIncompleteDeliverable("Saved relative/output.pdf"), null);

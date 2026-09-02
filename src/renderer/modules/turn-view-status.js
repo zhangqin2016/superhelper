@@ -92,12 +92,40 @@ export function progressPercent(progress = null) {
   return null;
 }
 
-export function buildToolDurationSuffix(entry = {}, now = Date.now()) {
+export function formatWaitDuration(ms) {
+  // Floor, matching formatDuration in opencode-turn-liveness.js: the live panel
+  // and the sealed card must not disagree by a second, and elapsed time should
+  // never be rounded UP into time that has not passed.
+  const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
+/**
+ * A tool's duration is COMPUTE time. Time the turn spent suspended on a
+ * permission/question card belongs to the user, so it is subtracted and, when
+ * meaningful, labelled as waiting instead. Billing it as latency made an
+ * 8m27s question card read as "已完成 · 507.8s" of Lily being slow.
+ *
+ * `waitMs` is stamped in the main process (turn-user-wait.js). Absent or
+ * unusable, this degrades to the plain elapsed time — today's behaviour — and a
+ * missing `translate` drops only the wait annotation, never showing wait time
+ * as compute.
+ */
+export function buildToolDurationSuffix(entry = {}, now = Date.now(), translate = null) {
   if (!["done", "failed", "running"].includes(entry.status)) return "";
   const start = Number(entry.startTs);
   const end = entry.status === "running" ? Number(now) : Number(entry.ts);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 100) return "";
-  return ` · ${((end - start) / 1000).toFixed(1)}s`;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "";
+  const elapsed = end - start;
+  if (elapsed < 0) return "";
+  const waitMs = Math.min(Math.max(0, Number(entry.waitMs) || 0), elapsed);
+  const activeMs = elapsed - waitMs;
+  const active = activeMs >= 100 ? ` · ${(activeMs / 1000).toFixed(1)}s` : "";
+  if (waitMs < 1000 || typeof translate !== "function") return active;
+  return `${active} · ${translate("timeline.toolAwaitingYou", { duration: formatWaitDuration(waitMs) })}`;
 }
 
 export function buildToolStatusLabel(toolOrStatus, translate) {

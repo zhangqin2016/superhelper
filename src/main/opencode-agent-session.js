@@ -49,9 +49,11 @@ const {
 } = require("./opencode-session-failure-policy");
 const {
   TODO_COMPLETION_GATE_MAX_ATTEMPTS, buildTodoContinuationPrompt,
-  detectIncompleteDeliverable, nativeTodoSnapshot,
-  normalizeTodoStatus, todoTitle,
+  buildTodoGiveUpPayload, detectIncompleteDeliverable,
+  nativeTodoSnapshot, todoContinuationDecision,
 } = require("./opencode-todo-completion-policy");
+const { claimContinuation, createTurnGateState } = require("./turn-continuation-budget");
+const { earliestPendingRequestAt } = require("./turn-user-wait");
 const requiredToolCompletion = require("./required-tool-completion-gate");
 const { characterApplicationForTrace } = require("./character-worlds/application-receipt");
 const log = getLogger("opencode-agent-session");
@@ -135,10 +137,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTools = new Map();
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
-    this._gatedThisTurn = false;
     this._latestTodos = [];
-    this._latestTodosSignature = "";
-    this._todoCompletionGateAttempts = 0;
+    this._turnGates = createTurnGateState();
     requiredToolCompletion.reset(this);
     /** @type {Map<string, { rawRequestId: string, sessionID: string }>} pending permission request ids awaiting a host reply. */
     this._pendingPermissions = new Map();
@@ -169,6 +169,7 @@ class OpencodeAgentSession extends EventEmitter {
         turnSettled: this._turnSettled,
         collectedOutput: this.collectedOutput,
         pendingUserInput: Boolean(this._pendingPermissions.size || this._pendingQuestions.size),
+        pendingUserInputSince: earliestPendingRequestAt(this._pendingPermissions, this._pendingQuestions),
       }),
       getConfig: () => ({
         responseTimeoutMs: OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS,
@@ -360,6 +361,7 @@ class OpencodeAgentSession extends EventEmitter {
         configContent: spawnOptions.opencodeConfig || "",
       });
       server.on("event", (ev) => this._handleEvent(ev));
+      server.on("diagnostic", (info) => this._turnLiveness.noteEngineRetry(info));
       server.on("exit", ({ code }) => this._onServerExit(code));
       server.on("error", (err) => this._onServerError(err));
       await server.start();
@@ -484,10 +486,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._toolReplaySafe.clear();
     this._activeTools.clear();
     this._turnLiveness.resetProgressNotice();
-    this._gatedThisTurn = false;
     this._latestTodos = [];
-    this._latestTodosSignature = "";
-    this._todoCompletionGateAttempts = 0;
+    this._turnGates = createTurnGateState();
     requiredToolCompletion.reset(this, typeof payload === "object" ? payload?.requiredSuccessfulTools : []);
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
@@ -873,18 +873,14 @@ class OpencodeAgentSession extends EventEmitter {
 
   _rememberLatestTodos(todos) {
     const next = Array.isArray(todos) ? todos : [];
-    let signature = "";
-    try {
-      signature = JSON.stringify(next.map((todo, index) => ({
-        title: todoTitle(todo, index),
-        status: normalizeTodoStatus(todo?.status),
-      })));
-    } catch {
-      signature = "";
-    }
-    if (signature !== this._latestTodosSignature) {
-      this._latestTodosSignature = signature;
-      this._todoCompletionGateAttempts = 0;
+    // CAPABILITY-GATE rule 3: bound CONFIRMED no-progress, not effort. Only a
+    // SHRINKING unfinished set refills the continuation budget — refilling on any
+    // list change let a model that renamed/split its todos be pushed back into the
+    // same turn forever while the unfinished count never actually moved.
+    const unfinished = nativeTodoSnapshot(next).unfinished.length;
+    if (unfinished < this._turnGates.todo.best) {
+      this._turnGates.todo.best = unfinished;
+      this._turnGates.todo.attempts = 0;
     }
     this._latestTodos = next;
   }
@@ -972,6 +968,7 @@ class OpencodeAgentSession extends EventEmitter {
         this._pendingPermissions.set(effect.requestId, {
           rawRequestId: effect.requestId,
           sessionID: opts.sessionID || this._server?.sessionID || "",
+          requestedAt: Date.now(),
         });
         this._ingest([{
           type: "permission.requested",
@@ -996,6 +993,7 @@ class OpencodeAgentSession extends EventEmitter {
           questions,
           rawRequestId: effect.requestId,
           sessionID: opts.sessionID || this._server?.sessionID || "",
+          requestedAt: Date.now(),
         });
         this._ingest([{
           type: "user_question.requested",
@@ -1547,19 +1545,22 @@ class OpencodeAgentSession extends EventEmitter {
     // Pillar 3-B completion gate: on a clean turn end, if the assistant claimed a
     // file deliverable that is actually missing/empty, inject ONE corrective
     // follow-up so the turn doesn't settle on a broken/hallucinated result. Fires
-    // at most once per turn (_gatedThisTurn) so it can never loop, and only on a
-    // success exit — never on errors/interrupts.
+    // at most once per turn (deliverableGated) so it can never loop, and only on
+    // a success exit — never on errors/interrupts.
     if (
       !payload?.interrupted &&
       !payload?.stalled &&
       payload?.code === 0 &&
-      !this._gatedThisTurn &&
+      !this._turnGates.deliverableGated &&
       this._server &&
       process.env.LILY_DISABLE_COMPLETION_GATE !== "1"
     ) {
       const violation = detectIncompleteDeliverable(payload.output);
-      if (violation) {
-        this._gatedThisTurn = true;
+      // Out of shared turn re-entries: settle on the answer we have rather than
+      // spend a round the other gates may need. The claim itself is never wrong,
+      // only late — the deliverable warning is advisory, not a correctness check.
+      if (violation && claimContinuation(this._turnGates, "deliverable")) {
+        this._turnGates.deliverableGated = true;
         this._armResponseTimer();
         this._armProgressNoticeTimer();
         const note =
@@ -1595,26 +1596,29 @@ class OpencodeAgentSession extends EventEmitter {
       return false;
     }
     const snapshot = nativeTodoSnapshot(this._latestTodos);
-    if (!snapshot.total || !snapshot.unfinished.length) return false;
-    const maxAttempts = TODO_COMPLETION_GATE_MAX_ATTEMPTS;
-    if (this._todoCompletionGateAttempts >= maxAttempts) {
-      log.warn("unfinished todo completion gate reached max attempts", {
+    const gate = this._turnGates.todo;
+    const decision = todoContinuationDecision(snapshot, gate.attempts, gate.total);
+    if (decision === "skip") return false;
+    // Settling is this gate's graceful exit, so exhausting the SHARED turn
+    // re-entry budget takes exactly the same path as exhausting its own.
+    if (decision === "settle" || !claimContinuation(this._turnGates, "todo")) {
+      const settlePayload = buildTodoGiveUpPayload(payload, snapshot, this.collectedOutput);
+      log.warn("unfinished todo completion gate giving up", {
         sessionId: this.sessionId,
         unfinished: snapshot.unfinished.length,
-        total: snapshot.total,
-        attempts: this._todoCompletionGateAttempts,
+        attempts: gate.attempts,
+        totalAttempts: gate.total,
+        turnContinuations: this._turnGates.continuations,
+        hasAnswer: !settlePayload.stalled,
       });
-      this._settleTurn({
-        ...payload,
-        stalled: true,
-        output: String(payload?.output || this.collectedOutput || "").trim(),
-      });
+      this._settleTurn(settlePayload);
       return true;
     }
-    this._todoCompletionGateAttempts += 1;
+    gate.attempts += 1;
+    gate.total += 1;
     this._armResponseTimer();
     this._armProgressNoticeTimer();
-    const note = buildTodoContinuationPrompt(snapshot, this._todoCompletionGateAttempts, maxAttempts);
+    const note = buildTodoContinuationPrompt(snapshot, gate.attempts, TODO_COMPLETION_GATE_MAX_ATTEMPTS);
     (async () => {
       try {
         await this._server.sendPrompt({ text: note, files: [] });
@@ -1657,8 +1661,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     this._latestTodos = [];
-    this._latestTodosSignature = "";
-    this._todoCompletionGateAttempts = 0;
+    this._turnGates = createTurnGateState();
     requiredToolCompletion.finish(this, payload);
     // Carry the turn's rewind anchor (engine message id) so the orchestrator can
     // record it on the turn — that's what session:rewind reverts to later.
@@ -1747,8 +1750,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     this._latestTodos = [];
-    this._latestTodosSignature = "";
-    this._todoCompletionGateAttempts = 0;
+    this._turnGates = createTurnGateState();
     this._orchestrator?.notifyRunnerError(this.sessionId, enrichPermissionFailureMessage({ message, cause, workspacePath: this.cwd || "" }));
     return false;
   }

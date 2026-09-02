@@ -1,6 +1,7 @@
 "use strict";
 
 const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
+const { creditFinishedToolWait } = require("./turn-user-wait");
 
 const GENERIC_STATUS = new Set(["requesting", ""]);
 const INTERNAL_ACTIVITY_LABELS = new Set([
@@ -237,6 +238,12 @@ function upsertTimelineTool(target, tool, ts = Date.now()) {
   if (tool.name) entry.name = tool.name;
   if (tool.input) entry.input = tool.input;
   if (tool.partialJson) entry.partialJson = tool.partialJson;
+  // A tool that reaches a terminal status while a permission/question card is
+  // still open must be credited its share of the user's wait here: once its
+  // status is no longer "running", the pending endUserWait() cannot find it.
+  if (tool.status && entry.status === "running" && tool.status !== "running") {
+    creditFinishedToolWait(target, entry, ts);
+  }
   if (tool.status) entry.status = tool.status;
   if (tool.result !== undefined) entry.result = tool.result;
   entry.preview = entry.input && Object.keys(entry.input).length > 0
@@ -272,7 +279,13 @@ function appendTimelineNotice(target, notice, ts = Date.now()) {
         existingCode === entry.code ||
         existingReplaceCode === replaceCode
       ) {
-        timeline[index] = { ...existing, ...entry };
+        // A replaceable notice is ONE LIVE SLOT, not a new event: it keeps the
+        // position AND the timestamp of where it first appeared, and records the
+        // refresh separately. Writing the new `ts` back at the old index made the
+        // persisted timeline non-monotonic in time (a heartbeat first seen at
+        // 13:40 sat at index 1 stamped 13:57), which misleads every consumer
+        // that reasons about time: replay, projections, the compaction index.
+        timeline[index] = { ...existing, ...entry, ts: existing.ts, updatedAt: entry.ts };
         return;
       }
     }

@@ -12,6 +12,7 @@ const {
   upsertTimelineThinking,
   upsertTimelineTool,
 } = require("./turn-timeline");
+const { beginUserWait, endUserWait } = require("./turn-user-wait");
 const { getLogger } = require("./logger");
 const { applyToolTurnContractRefinement } = require("./model-turn-contract-refinement");
 const { buildTaskToolEvidence } = require("./task-run-state");
@@ -283,12 +284,14 @@ function createTurnRuntimeEventRouter(options = {}) {
         }
         case "permission.requested":
           state.phase = "awaiting_user";
+          beginUserWait(state, now());
           state.pendingPermissions.set(payload.requestId, payload);
           taskRunRuntime?.markAwaitingUser?.(sessionId, "permission_requested", "Waiting for permission");
           emit(sessionId, "permission.requested", payload);
           break;
         case "user_question.requested":
           state.phase = "awaiting_user";
+          beginUserWait(state, now());
           state.pendingQuestions.set(payload.requestId, payload);
           taskRunRuntime?.markAwaitingUser?.(sessionId, "user_question_requested", "Waiting for user answer");
           emit(sessionId, "user_question.requested", payload);
@@ -296,22 +299,26 @@ function createTurnRuntimeEventRouter(options = {}) {
         case "permission.resolved":
           state.pendingPermissions.delete(payload.requestId);
           state.pendingQuestions.delete(payload.requestId);
+          if (!hasPendingUserBlocks(state)) endUserWait(state, now());
           if (state.phase === "awaiting_user" && !hasPendingUserBlocks(state)) state.phase = "streaming";
           emit(sessionId, "permission.resolved", payload);
           break;
         case "user_question.resolved":
           state.pendingQuestions.delete(payload.requestId);
+          if (!hasPendingUserBlocks(state)) endUserWait(state, now());
           if (state.phase === "awaiting_user" && !hasPendingUserBlocks(state)) state.phase = "streaming";
           emit(sessionId, "user_question.resolved", payload);
           break;
         case "hook.requested":
           state.phase = "awaiting_user";
+          beginUserWait(state, now());
           state.pendingHooks.set(payload.requestId, payload);
           taskRunRuntime?.markAwaitingUser?.(sessionId, "hook_requested", "Waiting for hook decision");
           emit(sessionId, "hook.requested", payload);
           break;
         case "hook.resolved":
           state.pendingHooks.delete(payload.requestId);
+          if (!hasPendingUserBlocks(state)) endUserWait(state, now());
           if (state.phase === "awaiting_user" && !hasPendingUserBlocks(state)) state.phase = "streaming";
           emit(sessionId, "hook.resolved", payload);
           break;

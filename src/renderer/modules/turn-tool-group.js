@@ -27,7 +27,7 @@ export function renderToolGroup(entry, sealed, ctx = {}, {
   cmd.textContent = translate("timeline.readGroup", { count: tools.length });
   const status = document.createElement("span");
   status.className = "assistant-tool-status";
-  status.textContent = statusLabel(entry.status || "done") + durationSuffix(entry);
+  status.textContent = statusLabel(entry.status || "done") + durationSuffix(entry, Date.now(), translate);
   head.append(cmd, status);
   summary.appendChild(head);
   row.appendChild(summary);

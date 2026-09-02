@@ -2,6 +2,7 @@
 
 const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 const { getLogger } = require("./logger");
+const { buildRetryNoticeDetail } = require("./runtime/opencode-serve-diagnostics");
 
 const log = getLogger("opencode-turn-liveness");
 const TOOL_PROGRESS_STALE_MS = 10_000;
@@ -44,6 +45,7 @@ function createOpencodeTurnLiveness(options = {}) {
   let healthTimer = null;
   let healthFails = 0;
   let lastGenericToolProgressNotice = "";
+  let engineRetryCount = 0;
 
   function isRunning() {
     const state = getState() || {};
@@ -91,6 +93,18 @@ function createOpencodeTurnLiveness(options = {}) {
     return hasLease;
   }
 
+  // The ball is with the USER, so the heartbeat must say so. Reporting the
+  // suspended tool's stopwatch instead told a user reading an 8-minute question
+  // card "question 正在运行 · 已运行 8m 29s · 最近活动 8m 23s 前" — the app
+  // blaming itself for the user's own thinking time, and reading like a hang.
+  function awaitingUserDetail() {
+    const state = getState() || {};
+    if (!state.pendingUserInput) return "";
+    const since = Number(state.pendingUserInputSince) || 0;
+    const waited = since ? formatDuration(Math.max(0, now() - since)) : "";
+    return waited ? `等待你确认或回答 · 已等待 ${waited}` : "等待你确认或回答";
+  }
+
   function genericToolProgressDetail() {
     const config = getConfig();
     const leaseMs = Number(config.activeToolLeaseMs || 0);
@@ -116,7 +130,8 @@ function createOpencodeTurnLiveness(options = {}) {
   }
 
   function emitGenericToolProgressNotice() {
-    const detail = genericToolProgressDetail();
+    const awaiting = awaitingUserDetail();
+    const detail = awaiting || genericToolProgressDetail();
     if (!detail) return false;
     if (detail === lastGenericToolProgressNotice) return true;
     lastGenericToolProgressNotice = detail;
@@ -124,7 +139,37 @@ function createOpencodeTurnLiveness(options = {}) {
       type: "engine.notice",
       payload: {
         notice: {
-          code: "toolProgress",
+          // A distinct code so the panel can style "waiting on you" differently
+          // from "working", and so telemetry can tell the two apart. Both share
+          // one replace slot, so they swap in place instead of stacking.
+          code: awaiting ? "awaitingUser" : "toolProgress",
+          level: "progress",
+          panel: true,
+          replace: true,
+          replacesCode: "genericToolProgress",
+          detail,
+        },
+      },
+    }]);
+    return true;
+  }
+
+  /**
+   * The engine hit transient provider trouble and is retrying. Narrate it in the
+   * same progress slot the heartbeat uses, so it self-clears on the next real
+   * progress instead of leaving a stale "retrying" line behind. Silence here was
+   * the reason a 4s/7s backoff felt like an unexplained hang.
+   */
+  function noteEngineRetry(info = {}) {
+    if (!isRunning()) return false;
+    engineRetryCount += 1;
+    const detail = buildRetryNoticeDetail(info, engineRetryCount);
+    lastGenericToolProgressNotice = detail;
+    ingest([{
+      type: "engine.notice",
+      payload: {
+        notice: {
+          code: "engineRetry",
           level: "progress",
           panel: true,
           replace: true,
@@ -157,7 +202,9 @@ function createOpencodeTurnLiveness(options = {}) {
   function emitLongWaitNotice() {
     progressNoticeTimer = null;
     if (!isRunning()) return;
-    if (hasKnownSubagents()) {
+    // "Waiting on you" outranks the subagent skip: when a card is open it is the
+    // single most useful thing to say, and staying silent reads as a hang.
+    if (hasKnownSubagents() && !hasPendingUserInput()) {
       armProgressNoticeTimer({ reset: true });
       return;
     }
@@ -287,12 +334,14 @@ function createOpencodeTurnLiveness(options = {}) {
       progressNotice: Boolean(progressNoticeTimer),
       health: Boolean(healthTimer),
     }),
+    awaitingUserDetail,
     emitGenericToolProgressNotice,
     emitLongWaitNotice,
     forceEndTurn,
+    noteEngineRetry,
     genericToolProgressDetail,
     hasActiveToolLease,
-    resetProgressNotice: () => { lastGenericToolProgressNotice = ""; },
+    resetProgressNotice: () => { lastGenericToolProgressNotice = ""; engineRetryCount = 0; },
   };
 }
 

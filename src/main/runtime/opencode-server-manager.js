@@ -22,6 +22,7 @@ const { getLogger } = require("../logger");
 const { getSharedServer } = require("./opencode-shared-server");
 const { buildOpencodePromptBody, characterApplicationOf, characterBuildFailureApplication } = require("./opencode-message-parts");
 const { createOpencodeSdkSession } = require("./opencode-sdk-session");
+const { diagnosticBelongsToSession } = require("./opencode-serve-diagnostics");
 const { classifyOpencodeEventOwnership } = require("./opencode-event-ownership");
 const { createOpencodeSessionWork } = require("./opencode-session-work");
 
@@ -109,8 +110,17 @@ class OpencodeServerManager extends EventEmitter {
     this._onSharedError = (err) => {
       if (!this._terminated) this.emit("error", err);
     };
+    // Engine diagnostics (transient provider trouble → the serve is retrying) are
+    // NOT turn content, so they get their own channel instead of riding the turn
+    // event stream. A shared serve hosts many sessions, so route strictly by the
+    // session id the serve itself reported: no match, no notice.
+    this._onSharedDiagnostic = (info) => {
+      if (this._terminated || !diagnosticBelongsToSession(info, this.sessionID)) return;
+      this.emit("diagnostic", info);
+    };
     shared.on("exit", this._onSharedExit);
     shared.on("error", this._onSharedError);
+    shared.on("diagnostic", this._onSharedDiagnostic);
 
     try {
       await shared.ensureStarted({ timeoutMs });
@@ -437,6 +447,7 @@ class OpencodeServerManager extends EventEmitter {
       try {
         if (this._onSharedExit) this._shared.off("exit", this._onSharedExit);
         if (this._onSharedError) this._shared.off("error", this._onSharedError);
+        if (this._onSharedDiagnostic) this._shared.off("diagnostic", this._onSharedDiagnostic);
       } catch { /* best effort */ }
     }
     this._shared = null;

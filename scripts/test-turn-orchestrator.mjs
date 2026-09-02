@@ -1788,10 +1788,15 @@ const stalledPartialTerminal = allEvents.find((event) => (
   event.turnId === stalledPartialTurn.turnId
   && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
 ));
+// A stalled turn that DID produce text must never be told "本轮没有形成完整最终回答"
+// right underneath that text — the self-contradiction made a complete delivery
+// read as a failure. It keeps the text, says what is still open, and names the
+// unfinished tool.
 if (
   stalledPartialTerminal?.type !== "turn.stalled" ||
   !stalledPartialTerminal.payload?.assistant?.includes("你说得对") ||
-  !stalledPartialTerminal.payload?.assistant?.includes("本轮没有形成完整最终回答") ||
+  stalledPartialTerminal.payload?.assistant?.includes("本轮没有形成完整最终回答") ||
+  !stalledPartialTerminal.payload?.assistant?.includes("上面的回答已经生成") ||
   !stalledPartialTerminal.payload?.assistant?.includes("Explore sdk-msg-delivery")
 ) {
   throw new Error(`partial stalled turn should keep partial text and append summary: ${JSON.stringify(stalledPartialTerminal)}`);
