@@ -499,6 +499,16 @@
         "scripts/test-vision-translator.mjs",
         "scripts/test-send-preflight.mjs"
       ]
+    },
+    {
+      "id": "pinned-model-vision-advice",
+      "protects": "A user pinned to a text-only model learns why an image question is slow and which model they own would read the image directly, instead of silently paying for the vision bridge.",
+      "baseline": "Auto selection still routes image turns to a vision-capable model on its own, and a manual model pick is never overridden.",
+      "failureFallback": "No catalog, no alternative, already on the only vision model, or any lookup error drops the advice clause; the bridge behaves exactly as before.",
+      "tests": [
+        "scripts/test-vision-model-advice.mjs",
+        "scripts/test-send-preflight.mjs"
+      ]
     }
   ]
 }

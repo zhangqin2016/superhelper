@@ -94,7 +94,7 @@ function buildDocumentFailureContext(files = [], detail = "") {
   ].filter(Boolean).join("\n");
 }
 
-async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}) {
+async function runVisionPreflight(text, files, { emitNotice, nativeVision, activeModelLabel = "", sessionId = "" } = {}) {
   const {
     buildEnrichedUserText,
     hasVisionInputFiles,
@@ -126,17 +126,26 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
 
   // The bridge is a full model call per image and used to run behind a bare
   // "preparing" chip, so the user waited ~24s with no idea why. Name the reason
-  // (the active model cannot read images), the cost, and the way out.
+  // (this model cannot read images), the cost, and the concrete way out — the
+  // models they actually have that would read the image directly. Advice is
+  // fail-open: no catalog, no alternatives, or any lookup error simply drops the
+  // clause rather than promising a model the user does not have.
+  let visionAdvice = "";
+  try {
+    visionAdvice = require("./vision-model-advice").buildVisionFallbackAdvice({ sessionId });
+  } catch { /* advice is optional; never block a turn on it */ }
   notify({
     code: "visionPreparing",
     level: "progress",
     panel: true,
     replace: true,
     detail: [
-      `当前模型不能直接读图，正在用视觉桥把 ${visionFiles.length} 张图片转成文字`,
+      activeModelLabel
+        ? `当前模型（${activeModelLabel}）不能直接读图，正在用视觉桥把 ${visionFiles.length} 张图片转成文字`
+        : `当前模型不能直接读图，正在用视觉桥把 ${visionFiles.length} 张图片转成文字`,
       "这会多花一些时间，图中未被描述到的细节可能丢失",
-      "换用支持看图的模型即可直接读原图",
-    ].join(" · "),
+      visionAdvice,
+    ].filter(Boolean).join(" · "),
   });
 
   const result = await translateImages(files, {

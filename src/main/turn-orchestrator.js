@@ -1007,6 +1007,8 @@ class TurnOrchestrator {
       const vision = await runVisionPreflight(text, files, {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
         nativeVision: allowImageFileParts,
+        activeModelLabel: modelRoute?.model?.label || "",
+        sessionId: session.id,
       });
       if (!isCurrentStart()) return staleStartResult();
       if (vision.visionEvidence) state.evidenceLedger?.recordVisionObservation?.(vision.visionEvidence);

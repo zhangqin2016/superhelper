@@ -135,6 +135,28 @@ assert(r.text.includes("You did NOT see these images"), "bridged descriptions mu
 assert(r.text.includes('title="user_original_request"') && r.text.includes("look"), "vision success preserves original request layer");
 assert(!r.files.some((f) => f.isImage), "image pruned from outbound files on success");
 assert(notices.includes("visionReady"), "emits ready on success");
+// The bridge notice must name the model that cannot read images, the cost, and
+// the way out — it used to be a bare "preparing" chip shown for ~24s.
+{
+  let detailed = [];
+  visionMock._next = { ok: true, text: "a cat", keepOriginal: false };
+  await runVisionPreflight("look", [img], {
+    emitNotice: (n) => detailed.push(n),
+    activeModelLabel: "DeepSeek V4 Flash",
+  });
+  const preparing = detailed.find((n) => n.code === "visionPreparing");
+  assert(preparing, "bridge emits a preparing notice");
+  assert(preparing.detail.includes("DeepSeek V4 Flash"), "names the model that cannot read images");
+  assert(preparing.detail.includes("不能直接读图"), "says why the bridge is running");
+  assert(preparing.detail.includes("细节可能丢失"), "warns that detail can be lost");
+  // No label available (steer before a route is stored) must still be coherent.
+  detailed = [];
+  visionMock._next = { ok: true, text: "a cat", keepOriginal: false };
+  await runVisionPreflight("look", [img], { emitNotice: (n) => detailed.push(n) });
+  const bare = detailed.find((n) => n.code === "visionPreparing");
+  assert(bare.detail.includes("当前模型不能直接读图"), `unlabelled notice must stay readable: ${bare.detail}`);
+  assert(!bare.detail.includes("（）"), "no empty parenthesis when the label is unknown");
+}
 assert(notices.includes("workProgress"), "vision preflight emits progress while recognizing images");
 assert(r.visionEvidence?.status === "complete" && r.visionEvidence?.observedCount === 1, "vision bridge success should record complete source evidence");
 

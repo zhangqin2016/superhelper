@@ -46,9 +46,29 @@ observed cases. Do not re-file it as a latency fix.
 
 **The only lever that helps single-image latency is not using the bridge** —
 i.e. a vision-capable main model. `allowImageFileParts` = the active model's
-`capabilities.vision`, defaulting to false when presets can't resolve. The next
-real win is defaulting to / suggesting a vision model when the user attaches an
-image, not micro-optimising the bridge.
+`capabilities.vision`, defaulting to false when presets can't resolve.
+
+### Follow-up: vision routing already existed, only manual mode was blind
+
+`model-selection.js` ALREADY prefers a vision-capable model for image turns and
+deliberately keeps the reasoning baseline first ("Vision-to-text remains
+available for a stronger text-only model"), and `files` really does reach
+`resolveTurnModel`, so **auto mode was never broken**. The gap was that
+`mode === "manual" || pinnedModelId` returns EARLY, before any of it — and this
+install pins a model, so it always bridged. `requirements.nativeVision` in that
+same function has NO caller; it is dead. Left in place (removing it is churn),
+but do not assume it does anything.
+
+Fix: `vision-model-advice.js` makes the bridge notice name the pinned model that
+cannot read images, the cost, and the vision-capable models the user actually
+has (capped, active excluded, "等 N 个" for the rest).
+
+**It ADVISES, it never switches** — pinned by a test that also greps the module
+for `setModelSelectionPreference`/`writeStoredSelection`. A manual pick is an
+explicit user choice and a vision model can be weaker at reasoning, so silent
+rerouting would both override the user and risk a capability downgrade
+(CAPABILITY-GATE rule 2). If someone later wants auto-switching, it needs to be
+an explicit opt-in, not a default.
 
 ## Also confirmed while tracing (don't re-derive)
 
@@ -62,4 +82,5 @@ image, not micro-optimising the bridge.
   message is echoed — a candidate for the admission tail (p90 2 s, max 69 s),
   not yet investigated.
 
-Guards: `[gate: ask-path-hygiene]`, `[gate: image-question-path]`.
+Guards: `[gate: ask-path-hygiene]`, `[gate: image-question-path]`,
+`[gate: pinned-model-vision-advice]`.

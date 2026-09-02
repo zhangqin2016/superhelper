@@ -59,6 +59,10 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
         const vision = await runVisionPreflight(text, files, {
           emitNotice,
           nativeVision: allowImageFileParts,
+          // `modelRoute`/`session` do not exist in this scope — steer only has
+          // `sessionId` and the turn state, which already carries the route trace.
+          activeModelLabel: state.turnModelRoute?.label || "",
+          sessionId,
         });
         if (!claimStillActive()) return { ok: false };
         if (vision.visionEvidence) state.evidenceLedger?.recordVisionObservation?.(vision.visionEvidence);
