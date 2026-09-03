@@ -598,6 +598,15 @@
       "tests": [
         "scripts/test-collaboration-one-screen.mjs"
       ]
+    },
+    {
+      "id": "im-css-no-dead-rules",
+      "protects": "The collaboration stylesheet has no declarations that can never take effect, and the number of selectors styled in more than one block cannot quietly grow.",
+      "baseline": "Verified as a no-op by a rendered fingerprint — the computed style of every element in the panel across eight states and both themes — which is byte-identical before and after. Nothing about the rendering changed.",
+      "failureFallback": "The check is deliberately narrow so it cannot be wrong: dead means the SAME selector text declares the SAME property again later at TOP LEVEL, with neither marked !important. Identical selector text means an identical match set, so the later declaration always wins. Rules inside @media are excluded on both sides, since one of those does not unconditionally override anything. Shorthands are compared as written, not expanded.",
+      "tests": [
+        "scripts/test-collaboration-css-no-dead-rules.mjs"
+      ]
     }
   ]
 }
