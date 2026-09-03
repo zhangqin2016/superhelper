@@ -16,6 +16,7 @@ const { settleCreatedSyncEvent } = require("./outbox-sync-settlement");
 const activity = require("./conversation-activity");
 const preview = require("./conversation-preview");
 const peerReads = require("./peer-reads"), reactions = require("./message-reactions");
+const rosters_ = require("./conversation-rosters");
 const { messageMetadata, validateCreateBody, retainedComposerDraft } = require("./message-intent");
 const { messageTimes } = require("./message-time");
 const { replySnapshotView } = require("./reply-snapshot");
@@ -417,21 +418,11 @@ class CollaborationStore {
   }
 
   listConversations() {
-    return this.db.all(
-      `SELECT c.id, c.scope_id, c.kind, c.title, c.updated_at, MAX(m.seq) AS last_seq
-       FROM conversations c
-       LEFT JOIN messages m ON m.account_id = c.account_id AND m.conversation_id = c.id
-       WHERE c.account_id = ?
-       GROUP BY c.id, c.scope_id, c.kind, c.title, c.updated_at
-       ORDER BY MAX(m.seq) DESC, c.updated_at DESC, c.id ASC`,
-      this.accountId,
-    ).map((row) => ({ id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at), lastSeq: row.last_seq == null ? null : Number(row.last_seq), lastMessage: preview.conversationPreview(this, row.id), peerReadSeq: peerReads.peerReadWatermark(this, row.id), ...activity.activityView(this, row.id) }));
+    return rosters_.listConversationsView(this, { preview, peerReads, activity });
   }
 
   getConversation({ conversationId }) {
-    const row = this.db.get(`SELECT id, scope_id, kind, title, updated_at FROM conversations WHERE account_id = ? AND id = ?`, this.accountId, requireId(conversationId, "conversation id"));
-    return row ? { id: row.id, scopeId: row.scope_id, kind: row.kind, title: row.title, updatedAt: Number(row.updated_at),
-      peerReadSeq: peerReads.peerReadWatermark(this, row.id), ...activity.activityView(this, row.id) } : null;
+    return rosters_.getConversationView(this, requireId(conversationId, "conversation id"), { peerReads, activity });
   }
 
   listMessages({ conversationId, beforeSeq, limit = 200, includePending = true } = {}) {

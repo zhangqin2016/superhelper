@@ -31,6 +31,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const live = byId("collaborationLive");
   const scopeBadge = byId("collaborationScopeBadge");
   const unreadBadge = byId("collaborationUnreadBadge");
+  const railUnread = byId("collaborationRailUnread");
   const inboxSearch = byId("collaborationInboxSearch");
   const conversationSearch = byId("collaborationConversationSearch");
   const timeline = byId("collaborationTimeline");
@@ -149,10 +150,9 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     }
     for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
     const title = byId("collaborationListTitle");
-    if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = section === "inbox"; }
-    // The nav lives in a header <details> popover now; a picked destination must
-    // dismiss it, otherwise it stays open over the list it just switched to.
-    const navMenu = byId("collaborationNavMenu"); if (navMenu) navMenu.open = false;
+    // Always shown now: the rail is icon-only, so this heading is what names
+    // the destination you are on. It used to be hidden for the inbox.
+    if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = false; }
     panelShell?.setConversationOpen(false);
   }
   const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
@@ -287,8 +287,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (active) byId("collaborationInboxColumn")?.focus?.();
   };
   const updateUnreadBadge = (conversations = []) => {
-    if (!unreadBadge) return;
     const total = (Array.isArray(conversations) ? conversations : []).reduce((sum, row) => sum + (Number(row.unreadCount) > 0 ? Number(row.unreadCount) : 0), 0);
+    // A dot on the rail's inbox tile; the exact count stays on the panel toggle.
+    if (railUnread) railUnread.hidden = total <= 0;
+    if (!unreadBadge) return;
     unreadBadge.hidden = total <= 0;
     unreadBadge.textContent = total > 99 ? "99+" : String(total);
   };

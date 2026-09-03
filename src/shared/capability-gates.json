@@ -550,6 +550,16 @@
         "scripts/test-collaboration-social-ui.cjs",
         "scripts/test-collaboration-social-navigation.cjs"
       ]
+    },
+    {
+      "id": "im-rail-and-group-tiles",
+      "protects": "The three destinations are a persistent icon rail instead of a hamburger popover, and a group's avatar is composed from its members instead of the first character of its title.",
+      "baseline": "Presentation only. The rail reuses the same three tab buttons, ids and aria-controls that the popover held, so section switching, navigation generations and every load path are unchanged; the roster is a new read on an existing local table and no server call or permission decision depends on it.",
+      "failureFallback": "The roster is a drawing input and fails open at every step: a failed read yields no rosters rather than throwing inside the conversation list, malformed rows are skipped, the list is capped at 9 per conversation, ids are re-validated and re-bounded at the IPC boundary, and fewer than two resolved names falls back to exactly the single-initial tile that shipped before — never an empty square. A direct chat is excluded by kind.",
+      "tests": [
+        "scripts/test-collaboration-rail-and-mosaic.mjs",
+        "scripts/test-collaboration-shell-surface.mjs"
+      ]
     }
   ]
 }

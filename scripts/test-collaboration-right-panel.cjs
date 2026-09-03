@@ -26,7 +26,13 @@ assert.match(layout, /--collaboration-panel-w/, "docked width is a bounded custo
 assert.match(panelCss, /data-collaboration-mode="overlay"/, "narrow windows use overlay presentation");
 assert.doesNotMatch(panelCss, /grid-template-columns:\s*260px\s+minmax\(300px,\s*420px\)\s+minmax\(420px,\s*1fr\)/, "legacy three-column collaboration canvas is gone");
 assert.match(teamsJs, /socialDisclosure\(/, "team creation is hidden behind a compact disclosure");
-assert.match(inboxJs, /collaboration-row-avatar/, "conversation rows have an IM-style visual identity");
+// The avatar moved into `mosaicAvatar`, which composes a group's tile from its
+// members instead of using the first character of the title. The intent of this
+// check is unchanged: a row must carry a visual identity, not just text.
+assert.match(inboxJs, /mosaicAvatar\(/, "conversation rows have an IM-style visual identity");
+assert.match(
+  fs.readFileSync(path.join(root, "src/renderer/modules/collaboration-social-ui.js"), "utf8"),
+  /collaboration-row-avatar/, "the avatar builder still produces the row-avatar tile");
 assert.match(panelCss, /\.collaboration-social-primary/, "panel owns polished primary-action styling");
 assert.match(panelCss, /\.collaboration-disclosure/, "disclosed management forms have a dedicated compact treatment");
 assert.match(panelCss, /\.collaboration-row-avatar/, "list avatars are styled consistently");

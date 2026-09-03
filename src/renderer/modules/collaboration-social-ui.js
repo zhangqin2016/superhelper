@@ -26,6 +26,37 @@ export function socialAvatar(label = "", kind = "person") {
   avatar.setAttribute("aria-hidden", "true");
   return avatar;
 }
+/**
+ * A group's avatar composed from its members, the way desktop chat clients do
+ * it. A single initial taken from the title gives every group whose name starts
+ * with the same character an identical tile, which is exactly the case in a
+ * workspace full of "设计…" and "周会…".
+ *
+ * Falls back to the title initial whenever there is nothing better: one member,
+ * no roster, or a roster whose names have not resolved yet. So this can only
+ * improve on the previous tile, never replace it with something blank.
+ */
+export function mosaicAvatar(title, names = [], kind = "chat") {
+  const labels = (Array.isArray(names) ? names : [])
+    .map((name) => String(name ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 9);
+  if (labels.length < 2) return socialAvatar(title, kind);
+  const tile = socialNode("span", "", `collaboration-row-avatar is-${kind} is-mosaic`);
+  tile.setAttribute("aria-hidden", "true");
+  // 2x2 up to four members, 3x3 beyond: the same thresholds those clients use,
+  // because a 3x3 of five cells reads as a broken grid.
+  const columns = labels.length <= 4 ? 2 : 3;
+  const cells = Math.min(labels.length, columns * columns);
+  tile.style.setProperty("--mosaic-columns", String(columns));
+  for (const label of labels.slice(0, cells)) {
+    const cell = socialNode("span", avatarInitial(label), "collaboration-mosaic-cell");
+    cell.style.setProperty("--avatar-hue", String(avatarHue(label)));
+    tile.append(cell);
+  }
+  return tile;
+}
+
 export function socialDisclosure(label, form, { primary = false } = {}) {
   const disclosure = socialNode("details", "", "collaboration-disclosure");
   const summary = socialNode("summary", label, primary ? "collaboration-disclosure-trigger is-primary" : "collaboration-disclosure-trigger");

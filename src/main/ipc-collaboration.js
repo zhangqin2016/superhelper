@@ -61,6 +61,14 @@ function rendererConversation(value = {}) {
   return {
     id: safeIdentifier(value.id) || "", scopeId: safeIdentifier(value.scopeId) || "", kind: safeIdentifier(value.kind) || "",
     title: typeof value.title === "string" ? value.title.slice(0, 500) : "", updatedAt: nonNegativeInteger(value.updatedAt), lastSeq: optionalInteger(value.lastSeq), peerReadSeq: nonNegativeInteger(value.peerReadSeq),
+    // Member ids for a composed group avatar. Bounded and re-validated here;
+    // it is a drawing input, never a membership or permission signal.
+    // Deliberately NOT `safeIdentifier`: that allows any non-whitespace string
+    // up to 200 chars because it governs server-assigned message ids, so
+    // "../escape" passes it. This field only needs the account-id shape the
+    // rest of the collaboration code uses for user and attachment ids.
+    memberUserIds: (Array.isArray(value.memberUserIds) ? value.memberUserIds : [])
+      .filter((userId) => typeof userId === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(userId)).slice(0, 9),
     // Last-message preview for the list row. Bounded and re-sanitized here like
     // any other rendered text: only a sender id and a short single-line snippet
     // cross, never the envelope, paths or delivery internals.

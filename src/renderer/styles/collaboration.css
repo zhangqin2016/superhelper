@@ -118,12 +118,81 @@
   border-color: color-mix(in srgb, var(--border-subtle) 55%, transparent);
 }
 
-.collaboration-home,
+/* The home view is now rail | list, side by side. The destinations used to be
+   a segmented control inside a header <details> popover: a hamburger over a
+   list of three places you switch between constantly, which also meant the
+   current destination was invisible until you opened it. */
+.collaboration-home {
+  min-block-size: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+}
+
 .collaboration-conversation {
   min-block-size: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+/* Icon-only, like the desktop clients this follows: the name lives in the
+   tooltip and the accessible name. A visible caption here would have to be
+   below the 11px floor to fit, and that floor is not negotiable. */
+/* Compound selector on purpose: `.collaboration-nav` sets `display: grid` and
+   is declared LATER in this file, so a single-class rule here loses on order.
+   Written this way the rail does not depend on where it sits in the sheet. */
+.collaboration-nav.collaboration-rail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  inline-size: 56px;
+  grid-template-columns: none;
+  margin: 0;
+  padding: 10px 8px;
+  border: 0;
+  border-inline-end: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--collab-list-bg) 60%, transparent);
+}
+
+.collaboration-rail .collaboration-rail-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 40px;
+  block-size: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 11px;
+}
+
+/* The active destination is a filled tile, not a faint tint: on a rail of
+   three it is the only thing telling you where you are. */
+.collaboration-rail .collaboration-rail-tab[aria-pressed="true"] {
+  color: var(--accent-on);
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.collaboration-rail .collaboration-rail-tab[aria-pressed="true"]:hover {
+  background: var(--accent-hover);
+  color: var(--accent-on);
+}
+
+/* A dot, not a count: the exact number already lives on the panel toggle, and
+   a numeral on a 40px tile would land under the readable floor. */
+.collaboration-rail-dot {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--danger-text);
+  box-shadow: 0 0 0 2px var(--bg-surface);
 }
 
 .collaboration-nav,
@@ -1188,6 +1257,35 @@
 .collaboration-icon-action[data-tone="danger"]:hover {
   color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger-text) 45%, transparent);
+}
+
+/* A composed group tile: the members' initials in a 2x2 or 3x3 grid, so two
+   groups whose names begin with the same character are still distinguishable.
+   The cells carry the colour, so the tile itself must not paint over them. */
+.collaboration-row-avatar.is-mosaic {
+  display: grid;
+  grid-template-columns: repeat(var(--mosaic-columns, 2), 1fr);
+  gap: 1px;
+  padding: 1px;
+  background: color-mix(in srgb, var(--border-subtle) 60%, transparent);
+  overflow: hidden;
+}
+
+.collaboration-mosaic-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 0;
+  min-block-size: 0;
+  background: hsl(var(--avatar-hue, 240) 42% 46%);
+  color: var(--accent-on);
+  /* A cell is ~13px wide in a 2x2 and ~9px in a 3x3: the initial is a colour
+     cue at that size, not text, which is why it is not held to the text floor
+     and why it is inside an aria-hidden tile with the name in the row. */
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  overflow: hidden;
 }
 
 /* Sticky letter headings: the reason a long address book stays navigable. */

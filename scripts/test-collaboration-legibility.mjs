@@ -32,6 +32,7 @@ const BADGE_EXEMPT = new Map([
   [".collaboration-unread-badge", "unread count pill — digits only"],
   [".collaboration-scroll-latest-count", "unread count pill — digits only"],
   [".collaboration-message-avatar", "avatar initial, sized to the circle"],
+  [".collaboration-mosaic-cell", "one cell of a composed group tile: a ~9px colour cue inside an aria-hidden avatar, with the real name on the row"],
 ]);
 
 /** Walk declarations, tracking the innermost selector each one belongs to. */

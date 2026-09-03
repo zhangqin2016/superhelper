@@ -1,5 +1,5 @@
 import { t } from "../i18n/index.js";
-import { avatarHue } from "./collaboration-social-ui.js";
+import { avatarHue, mosaicAvatar } from "./collaboration-social-ui.js";
 
 function clear(node) { node?.replaceChildren(); }
 
@@ -45,7 +45,16 @@ export function renderCollaborationInbox(node, conversations = [], { onOpen = ()
     const scopeId = String(conversation.scopeId || "personal");
     const scope = scopeId.startsWith("team:") ? (teams.find((team) => team.scopeId === scopeId)?.name || t("collaboration.scopeTeam")) : t("collaboration.scopePersonal");
     const title = String(conversation.title || conversationId || "");
-    const avatar = document.createElement("span"); avatar.className = `collaboration-row-avatar is-${scopeId.startsWith("team:") ? "team" : "chat"}`; avatar.textContent = title.trim().slice(0, 1).toUpperCase() || "L"; avatar.setAttribute("aria-hidden", "true"); avatar.style.setProperty("--avatar-hue", String(avatarHue(title)));
+    // A group's tile is composed from its members. A single title initial gave
+    // every "设计…" conversation the same avatar, which is the common case in a
+    // workspace; a direct chat keeps the single initial, as it should.
+    const avatarKind = scopeId.startsWith("team:") ? "team" : "chat";
+    const memberNames = conversation.kind === "direct" ? []
+      : (Array.isArray(conversation.memberUserIds) ? conversation.memberUserIds : [])
+        .filter((userId) => userId !== currentUserId)
+        .map((userId) => String(resolveSender?.(userId) || "").trim())
+        .filter(Boolean);
+    const avatar = mosaicAvatar(title, memberNames, avatarKind);
     const content = document.createElement("span"); content.className = "collaboration-row-content";
     const heading = document.createElement("strong"); heading.textContent = title;
     heading.title = title;

@@ -373,17 +373,14 @@
       <aside id="collaborationCenter" class="collaboration-center" hidden role="complementary" aria-label="协作中心">
         <header class="collaboration-panel-header">
           <div class="collaboration-panel-title"><span class="collaboration-brand-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg></span><div><strong data-i18n="collaboration.nav">协作</strong><p id="collaborationStatus" class="collaboration-status" role="status" data-i18n="collaboration.statusUnavailable">协作暂不可用</p></div></div>
-          <details id="collaborationNavMenu" class="collaboration-nav-menu">
-            <summary class="collaboration-icon-button" data-i18n-aria-label="collaboration.nav" aria-label="协作导航"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary>
-            <nav class="collaboration-column collaboration-nav" aria-label="协作导航">
-              <button id="collaborationInboxTab" type="button" data-i18n="collaboration.inbox" aria-controls="collaborationInbox">消息</button>
-              <button id="collaborationPeopleTab" type="button" data-i18n="collaboration.people" aria-controls="collaborationFriends">联系人</button>
-              <button id="collaborationTeamsTab" type="button" data-i18n="collaboration.teams" aria-controls="collaborationTeams">团队</button>
-            </nav>
-          </details>
           <button id="collaborationPanelClose" class="collaboration-icon-button" type="button" aria-label="关闭协作面板"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </header>
         <section id="collaborationHome" class="collaboration-home collaboration-column">
+          <nav id="collaborationRail" class="collaboration-column collaboration-nav collaboration-rail" data-i18n-aria-label="collaboration.nav" aria-label="协作导航">
+            <button id="collaborationInboxTab" type="button" class="collaboration-rail-tab" data-i18n-title="collaboration.inbox" data-i18n-aria-label="collaboration.inbox" title="消息" aria-label="消息" aria-controls="collaborationInbox"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg><span id="collaborationRailUnread" class="collaboration-rail-dot" hidden aria-hidden="true"></span></button>
+            <button id="collaborationPeopleTab" type="button" class="collaboration-rail-tab" data-i18n-title="collaboration.people" data-i18n-aria-label="collaboration.people" title="联系人" aria-label="联系人" aria-controls="collaborationFriends"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M2 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M17 14.5a6.5 6.5 0 0 1 5 5.5"/></svg></button>
+            <button id="collaborationTeamsTab" type="button" class="collaboration-rail-tab" data-i18n-title="collaboration.teams" data-i18n-aria-label="collaboration.teams" title="团队" aria-label="团队" aria-controls="collaborationTeams"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"/><path d="M14 21V10h5a1 1 0 0 1 1 1v10"/><path d="M7.5 8h3M7.5 12h3M7.5 16h3"/></svg></button>
+          </nav>
           <section class="collaboration-column collaboration-inbox" id="collaborationInboxColumn" tabindex="-1">
             <h2 id="collaborationListTitle" data-i18n="collaboration.inbox">消息</h2>
             <input id="collaborationInboxSearch" class="collaboration-search" type="search" placeholder="搜索" data-i18n-placeholder="collaboration.search.placeholder" data-i18n-aria-label="collaboration.search.placeholder" autocomplete="off" />

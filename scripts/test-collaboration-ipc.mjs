@@ -33,12 +33,28 @@ assert.deepEqual([...handlers.keys()].sort(), [
 
 const publicState = { ok: true, cursor: 2, watermark: 0, outbox: [{ id: "o1", conversationId: "", clientCommandId: "", scopeId: "", state: "queued", attempts: 0, createdAt: 0 }] };
 assert.deepEqual(await handlers.get("collaboration:get-state")(), publicState);
-assert.deepEqual(await handlers.get("collaboration:list")(), { ok: true, conversations: [{ id: "c1", scopeId: "team:t", kind: "team", title: "Safe", updatedAt: 0, lastSeq: null, peerReadSeq: 0 }] });
-assert.deepEqual(await handlers.get("collaboration:open")(null, { conversationId: "c1" }), { ok: true, conversation: { id: "c1", scopeId: "", kind: "", title: "Safe", updatedAt: 0, lastSeq: null, peerReadSeq: 0 }, messages: [{ id: "m1", conversationId: "c1", seq: null, senderUserId: "", isOwn: false, state: "", bodyText: "hi", kind: "text", attachmentIds: [], createdAt: null, clientCreatedAt: null, updatedAt: 0, replyToMessageId: null, mentionUserIds: [], replySnapshot: null }], hasMore: false, nextBeforeSeq: null, offline: false });
+assert.deepEqual(await handlers.get("collaboration:list")(), { ok: true, conversations: [{ id: "c1", scopeId: "team:t", kind: "team", title: "Safe", updatedAt: 0, lastSeq: null, peerReadSeq: 0, memberUserIds: [] }] });
+assert.deepEqual(await handlers.get("collaboration:open")(null, { conversationId: "c1" }), { ok: true, conversation: { id: "c1", scopeId: "", kind: "", title: "Safe", updatedAt: 0, lastSeq: null, peerReadSeq: 0, memberUserIds: [] }, messages: [{ id: "m1", conversationId: "c1", seq: null, senderUserId: "", isOwn: false, state: "", bodyText: "hi", kind: "text", attachmentIds: [], createdAt: null, clientCreatedAt: null, updatedAt: 0, replyToMessageId: null, mentionUserIds: [], replySnapshot: null }], hasMore: false, nextBeforeSeq: null, offline: false });
 assert.deepEqual(await handlers.get("collaboration:bootstrap")(), { ok: true, cursor: 0 });
+{
+  // The group-avatar roster crosses this boundary. It must arrive re-validated
+  // and bounded no matter what the record holds.
+  const restore = service.list;
+  service.list = () => ({ ok: true, conversations: [{ id: "c1", memberUserIds: [
+    "ok_1", "bad id", "", null, 7, { userId: "x" }, "../escape", "a".repeat(300),
+    ...Array.from({ length: 40 }, (_, index) => `u${index}`),
+  ] }] });
+  const projected = (await handlers.get("collaboration:list")()).conversations[0].memberUserIds;
+  assert.ok(projected.length <= 9, "the roster is bounded at the boundary");
+  assert.ok(projected.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(id)),
+    `every projected member id is a validated identifier: ${JSON.stringify(projected)}`);
+  assert.deepEqual(projected.slice(0, 2), ["ok_1", "u0"], "invalid entries are dropped, valid ones keep their order");
+  service.list = restore;
+}
+
 const oldList = service.list;
 service.list = () => ({ ok: true, conversations: [{ id: "c", activityKnown: true, projectionSeq: 600, lastReadSeq: 100, unreadCount: 500, mentionCount: 31, secret: "never" }] });
-assert.deepEqual((await handlers.get("collaboration:list")()).conversations[0], { id: "c", scopeId: "", kind: "", title: "", updatedAt: 0, lastSeq: null, peerReadSeq: 0, activityKnown: true, projectionSeq: 600, lastReadSeq: 100, unreadCount: 500, mentionCount: 31 }, "authoritative stats cross only the existing safe conversation allowlist");
+assert.deepEqual((await handlers.get("collaboration:list")()).conversations[0], { id: "c", scopeId: "", kind: "", title: "", updatedAt: 0, lastSeq: null, peerReadSeq: 0, memberUserIds: [], activityKnown: true, projectionSeq: 600, lastReadSeq: 100, unreadCount: 500, mentionCount: 31 }, "authoritative stats cross only the existing safe conversation allowlist");
 service.list = oldList;
 
 const sent = await handlers.get("collaboration:send")(null, {

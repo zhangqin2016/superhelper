@@ -11,7 +11,16 @@ const center = fs.readFileSync(path.join(root, "src/renderer/modules/collaborati
 for (const id of ["collaborationNavButton", "collaborationCenter", "collaborationInbox", "collaborationConversation", "collaborationStatus", "collaborationLive"]) {
   assert.match(html, new RegExp(`id="${id}"`), `shell includes ${id}`);
 }
-assert.match(html, /class="collaboration-column collaboration-nav"/, "shell has a navigation column");
+assert.match(html, /class="collaboration-column collaboration-nav collaboration-rail"/, "shell has a persistent navigation rail");
+// The destinations must not go back behind a popover: three places you switch
+// between constantly, with the current one invisible until the menu is opened.
+assert.doesNotMatch(html, /collaborationNavMenu/, "the navigation rail is not inside a <details> popover");
+for (const id of ["collaborationInboxTab", "collaborationPeopleTab", "collaborationTeamsTab"]) {
+  assert.match(html, new RegExp(`id="${id}"[^>]*aria-controls=`), `${id} still names the view it controls`);
+}
+// Icon-only tabs: the name has to survive as the accessible name, or the rail
+// is three unlabelled glyphs.
+assert.match(html, /id="collaborationPeopleTab"[^>]*data-i18n-aria-label="collaboration.people"/, "rail tabs carry a translated accessible name");
 assert.match(html, /class="collaboration-column collaboration-inbox"/, "shell has an inbox column");
 assert.match(html, /class="collaboration-column collaboration-conversation"/, "shell has a conversation column");
 assert.match(app, /initCollaborationCenter\(/, "application initializes collaboration entry gating");
