@@ -238,7 +238,11 @@ app.whenReady().then(async () => {
     check(textarea.value === 'edited' && observedIntent().replyToMessageId === 'other', 'late ACK cannot clear same-text new reply');
     const crossAck=defer(); sendReply=()=>crossAck.promise; sendButton.click(); await tick(); selectConversation('b'); await tick(); type('new b draft'); crossAck.resolve({ok:true}); await tick();
     check(textarea.value === 'new b draft', 'cross-conversation ACK preserves current body');
-    selectConversation('a'); check(!sendButton.disabled, 'switching does not strand sending set');
+    // Text first: the button is also disabled with an empty box now (send()
+    // refuses a blank message), and this check is about the sending set not
+    // being stranded, not about having something to send.
+    selectConversation('a'); type('back in a'); await tick();
+    check(!sendButton.disabled, 'switching does not strand sending set');
 
     const lateDraft=defer(); draftRead=()=>lateDraft.promise; selectConversation('late'); await tick(); type('typed first');
     lateDraft.resolve({ok:true,text:'OLD',replyToMessageId:'old',mentionUserIds:['old']}); await tick();

@@ -26,10 +26,25 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   const mentions = initCollaborationMentions({ textarea, getIds: () => currentIntent().mentionUserIds, onChange: ({ text, mentionUserIds }) => {
     if (disposed || !active || !conversationId) return;
     const value = { ...currentIntent(), text, mentionUserIds };
-    textarea.value = text; editVersion += 1; saveDraft(conversationId, value); mentions.update(); refreshReply();
+    textarea.value = text; autoGrow(); updateButton(); editVersion += 1; saveDraft(conversationId, value); mentions.update(); refreshReply();
   } });
   const current = (id, epoch, selection, version) => !disposed && active && conversationId === id && generation === epoch && selectionVersion === selection && editVersion === version;
-  const updateButton = () => { sendButton.disabled = !active || !conversationId || sending.has(conversationId); };
+  /** Height follows the content, clamped by the stylesheet's `max-height`;
+   *  past that the textarea scrolls. Reset to `auto` first, or the box can
+   *  only ever grow — clearing the draft would leave it tall. */
+  const autoGrow = () => {
+    // A stubbed textarea (the controller tests use one) has no style object;
+    // growing is presentation, so its absence must not break the composer.
+    if (!textarea?.style) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+  // Empty means nothing to send: `send()` already refuses a blank message, so
+  // an enabled button here was one that looked live and did nothing.
+  const updateButton = () => {
+    sendButton.disabled = !active || !conversationId || sending.has(conversationId)
+      || !String(textarea?.value || "").trim();
+  };
   const paintPreview = () => {
     if (!preview) return;
     const replyId = currentIntent().replyToMessageId;
@@ -91,7 +106,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     catch (error) { if (current(id, epoch, selection, version)) onError(error); return; }
     void Promise.resolve(result).then((result) => {
       if (!current(id, epoch, selection, version) || !result?.ok) return;
-      const intent = draftIntent(result); drafts.set(id, intent); textarea.value = intent.text; mentions.update(); mentions.refresh(); refreshReply();
+      const intent = draftIntent(result); drafts.set(id, intent); textarea.value = intent.text; autoGrow(); updateButton(); mentions.update(); mentions.refresh(); refreshReply();
     }).catch((error) => { if (current(id, epoch, selection, version)) onError(error); });
   };
   const send = async () => {
@@ -116,7 +131,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       const visibleMatches = conversationId === id && sameIntent(currentIntent(), value);
       if (sameIntent(drafts.get(id), value)) drafts.set(id, draftIntent());
       if (visibleMatches) {
-        textarea.value = ""; drafts.set(id, draftIntent()); editVersion += 1; mentions.update(); refreshReply();
+        textarea.value = ""; autoGrow(); drafts.set(id, draftIntent()); editVersion += 1; mentions.update(); refreshReply();
       }
       if (active && conversationId === id && selection === selectionVersion) onSent(result, { conversationId: id });
     } catch (error) { if (!disposed && active && epoch === generation && conversationId === id && selection === selectionVersion) onError(error); }
@@ -137,6 +152,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   };
   const input = () => {
     if (disposed || !active) return;
+    autoGrow(); updateButton();
     editVersion += 1; saveDraft(conversationId, currentIntent()); refreshReply(); mentions.input();
     if (textarea.value.trim()) publishTyping();
   };
@@ -148,7 +164,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   const click = () => void send();
   const forgetConversation = (id) => {
     drafts.delete(id); intents.delete(id); sending.delete(id);
-    if (id === conversationId) { conversationId = ""; textarea.value = ""; selectionVersion += 1; editVersion += 1; previewVersion += 1; mentions.setContext("", active); updateButton(); paintPreview(); }
+    if (id === conversationId) { conversationId = ""; textarea.value = ""; autoGrow(); selectionVersion += 1; editVersion += 1; previewVersion += 1; mentions.setContext("", active); updateButton(); paintPreview(); }
   };
   sendButton.addEventListener("click", click); textarea.addEventListener("input", input); textarea.addEventListener("keydown", keydown);
   const unsubscribeLocale = onLocaleChange(() => { textarea.placeholder = t("collaboration.messagePlaceholder"); paintPreview(); });
@@ -159,7 +175,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       if (disposed || id === conversationId) return;
       if (conversationId && (drafts.has(conversationId) || textarea.value)) drafts.set(conversationId, currentIntent());
       conversationId = id; selectionVersion += 1; editVersion += 1; previewVersion += 1; editTarget = null;
-      textarea.value = drafts.get(id)?.text || ""; previewValue = { status: "unavailable" };
+      textarea.value = drafts.get(id)?.text || ""; autoGrow(); previewValue = { status: "unavailable" };
       mentions.setContext(id, active);
       textarea.placeholder = t("collaboration.messagePlaceholder"); updateButton(); paintPreview(); restoreDraft();
     },
@@ -167,7 +183,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     beginEdit({ conversationId: cid, messageId, baseRevision, bodyText } = {}) {
       if (disposed || !cid || !messageId) return;
       conversationId = String(cid); selectionVersion += 1; editVersion += 1; previewVersion += 1;
-      textarea.value = String(bodyText || ""); textarea.placeholder = t("collaboration.edit.placeholder");
+      textarea.value = String(bodyText || ""); autoGrow(); textarea.placeholder = t("collaboration.edit.placeholder");
       editTarget = { conversationId: String(cid), messageId, baseRevision: Number(baseRevision) || 1 };
       mentions.setContext(conversationId, active); updateButton(); paintPreview(); textarea.focus?.();
     },
@@ -180,7 +196,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     },
     forgetConversation,
     retainConversations(ids) { const allowed = new Set(ids); for (const id of new Set([...drafts.keys(), ...intents.keys(), ...sending.keys(), conversationId])) if (id && !allowed.has(id)) forgetConversation(id); },
-    reset() { generation += 1; selectionVersion += 1; editVersion += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); conversationId = ""; editTarget = null; textarea.value = ""; textarea.placeholder = t("collaboration.messagePlaceholder"); mentions.reset(); updateButton(); paintPreview(); },
+    reset() { generation += 1; selectionVersion += 1; editVersion += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); conversationId = ""; editTarget = null; textarea.value = ""; autoGrow(); textarea.placeholder = t("collaboration.messagePlaceholder"); mentions.reset(); updateButton(); paintPreview(); },
     destroy() { disposed = true; generation += 1; previewVersion += 1; drafts.clear(); intents.clear(); sending.clear(); mentions.destroy(); preview?.replaceChildren(); if (preview) preview.hidden = true; unsubscribeLocale(); sendButton.removeEventListener("click", click); textarea.removeEventListener("input", input); textarea.removeEventListener("keydown", keydown); if (activeComposerByTextarea.get(textarea) === controller) activeComposerByTextarea.delete(textarea); },
   };
   activeComposerByTextarea.set(textarea, controller);
