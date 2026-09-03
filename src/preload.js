@@ -484,6 +484,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     getSocialCommands: () => ipcRenderer.invoke("collaboration:get-social-commands"),
     retrySocial: (clientCommandId) => ipcRenderer.invoke("collaboration:retry-social", { clientCommandId }),
     openFriend: (peerUserId) => ipcRenderer.invoke("collaboration:open-friend", { peerUserId }),
+    lookupFriend: (lilyId) => ipcRenderer.invoke("collaboration:lookup-friend", { lilyId }),
     getConversationDetails: (conversationId) => ipcRenderer.invoke("collaboration:get-conversation-details", { conversationId }),
     getMentionCandidates: (conversationId) => ipcRenderer.invoke("collaboration:get-mention-candidates", { conversationId }),
     retry: (outboxId) => ipcRenderer.invoke("collaboration:retry", { outboxId }),

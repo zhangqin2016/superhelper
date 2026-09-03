@@ -1458,6 +1458,41 @@
   .collaboration-social-actions { opacity: 1; }
 }
 
+/* Some actions are the point of their row rather than a secondary option —
+   copying your own Lily ID is the only thing that row is for — so they are
+   not hidden until hover. */
+.collaboration-social-actions.is-persistent {
+  opacity: 1;
+}
+
+.collaboration-icon-action[data-copied="1"] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* A plain single-line text field inside a form — the greeting on a contact
+   request. Shares the search box's shape without claiming to be one. */
+.collaboration-text-input {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-surface) 70%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+/* What the lookup found, before the request is sent. */
+.collaboration-lookup-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin-block-start: 4px;
+}
+
 .collaboration-social-row:hover .collaboration-social-actions,
 .collaboration-social-row:focus-within .collaboration-social-actions {
   opacity: 1;

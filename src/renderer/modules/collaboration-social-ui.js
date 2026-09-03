@@ -106,6 +106,7 @@ const ICON_PATHS = Object.freeze({
   channel: ["M4 9h16", "M4 15h16", "M10 4l-1.5 16", "M16 4l-1.5 16"],
   chevron: ["M9 5l7 7-7 7"],
   request: ["M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z", "M4 21a8 8 0 0 1 12-6.9", "M17 17h5", "M19.5 14.5v5"],
+  copy: ["M9 9h10v11H9z", "M15 9V4H5v11h4"],
 });
 
 export function socialIcon(name, size = 18) {

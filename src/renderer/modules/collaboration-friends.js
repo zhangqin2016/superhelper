@@ -37,9 +37,17 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   const entries = socialNode("div", "", "collaboration-contact-entries");
   const requestsPanel = socialNode("div", "", "collaboration-request-panel"); requestsPanel.hidden = true;
 
+  // Adding a contact used to be blind: type an exact Lily ID, submit, and find
+  // out from a generic failure afterwards whether that person exists. The
+  // server has always had a rate-limited lookup; it simply had no route.
   const addForm = socialNode("form", "", "collaboration-social-form");
   const lilyId = socialField(addForm, "lilyId", "exactLilyId"); lilyId.required = true; lilyId.maxLength = 64;
-  const submit = socialNode("button", t("collaboration.social.request"), "collaboration-social-primary"); submit.type = "submit"; addForm.append(submit);
+  const findButton = socialNode("button", t("collaboration.social.findContact"), "collaboration-social-primary");
+  findButton.type = "submit"; findButton.dataset.action = "find-contact"; addForm.append(findButton);
+  // What the lookup found: a real row, so you see who you are about to add.
+  const foundBox = socialNode("div", "", "collaboration-lookup-result"); foundBox.hidden = true; addForm.append(foundBox);
+  const lookupNote = socialNode("p", "", "collaboration-form-note"); lookupNote.hidden = true;
+  lookupNote.setAttribute("role", "status"); addForm.append(lookupNote);
   const addDisclosure = socialDisclosure(t("collaboration.social.addContact"), addForm, { primary: true });
   addDisclosure.classList.add("is-row");
 
@@ -53,9 +61,76 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   let directoryCache = { contacts: [] };
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
 
-  addForm.addEventListener("submit", (event) => {
-    event.preventDefault(); const value = lilyId.value.trim(); if (!value) return;
-    void ui.run(() => api.friend({ action: "request", lilyId: value }), () => { if (lilyId.value.trim() === value) lilyId.value = ""; });
+  let found = null;
+  let lookupGeneration = 0;
+  function clearLookup() {
+    lookupGeneration += 1;
+    found = null; foundBox.hidden = true; foundBox.replaceChildren();
+    lookupNote.hidden = true; lookupNote.textContent = "";
+    findButton.disabled = false;
+  }
+  lilyId.addEventListener("input", clearLookup);
+
+  /** Show the person, then let the request be sent — with an optional greeting.
+   *  The failure is deliberately unexplained: the server answers the same way
+   *  for "no such id", "that is you", "hidden" and "blocked", because telling
+   *  them apart would let anyone probe which Lily IDs exist. */
+  function paintLookup(profile) {
+    found = profile;
+    foundBox.replaceChildren();
+    foundBox.hidden = false;
+    const name = identityName(profile);
+    const row = socialNode("div", "", "collaboration-social-row");
+    row.dataset.userId = profile.userId;
+    row.append(socialRowButton(name, null, { avatar: socialAvatar(name), subtitle: profile.lilyId || "" }));
+    row.firstChild.classList.add("is-static");
+    foundBox.append(row);
+    const greeting = document.createElement("input");
+    // Its own class, not the search box's: a greeting is not a search, and
+    // borrowing that class also tripped the guard that keeps this view from
+    // growing a second search input.
+    greeting.type = "text"; greeting.className = "collaboration-text-input"; greeting.maxLength = 500;
+    greeting.placeholder = t("collaboration.social.greeting");
+    greeting.setAttribute("aria-label", t("collaboration.social.greeting"));
+    greeting.dataset.field = "greeting";
+    const send = socialNode("button", t("collaboration.social.sendRequest"), "collaboration-social-primary");
+    send.type = "button"; send.dataset.action = "send-request";
+    send.addEventListener("click", () => {
+      const target = found?.lilyId;
+      if (!target) return;
+      const message = greeting.value.trim();
+      void ui.run(() => api.friend({ action: "request", lilyId: target, ...(message ? { message } : {}) }), () => {
+        if (lilyId.value.trim().toLowerCase() === target) lilyId.value = "";
+        clearLookup();
+      });
+    });
+    foundBox.append(greeting, send);
+  }
+
+  addForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const value = lilyId.value.trim();
+    if (!value) return;
+    clearLookup();
+    // Deliberately NOT through `ui.run`: that is the command path, and it
+    // would leave a receipt-shaped status and trigger a full directory reload
+    // for what is a read. It also owns the shared status line, which the
+    // lookup should not take over.
+    const generation = ++lookupGeneration;
+    findButton.disabled = true;
+    lookupNote.hidden = false;
+    lookupNote.textContent = t("collaboration.social.searching");
+    let result;
+    try { result = await api.lookupFriend?.(value); } catch { result = null; }
+    // A later lookup, a reset, or a switched account must win.
+    if (generation !== lookupGeneration) return;
+    findButton.disabled = false;
+    if (result?.ok === true && result.profile?.userId) {
+      lookupNote.hidden = true;
+      paintLookup(result.profile);
+      return;
+    }
+    lookupNote.textContent = t("collaboration.social.notFound");
   });
 
   async function change(action, contact, extra = {}) {
@@ -98,6 +173,27 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
       socialNode("small", profile?.lilyId ? `${t("collaboration.social.myLilyId")}: ${profile.lilyId}` : t("collaboration.social.unavailable")));
     body.append(content);
     profileRow.append(body);
+    // Your own Lily ID is how anyone adds you, so it has to be shareable. It
+    // was plain text with no way to copy it.
+    if (profile?.lilyId) {
+      const actions = socialNode("div", "", "collaboration-social-actions is-persistent");
+      const copy = socialIconButton("copy-lily-id", "copyId", "copy", async () => {
+        try { await navigator.clipboard?.writeText(profile.lilyId); } catch { return; }
+        const label = copy.getAttribute("aria-label");
+        copy.dataset.copied = "1";
+        copy.setAttribute("aria-label", t("collaboration.social.copied"));
+        copy.title = t("collaboration.social.copied");
+        // Restore the label so the button does not read "Copied" forever.
+        setTimeout(() => {
+          if (!copy.isConnected) return;
+          copy.dataset.copied = "";
+          copy.setAttribute("aria-label", label || "");
+          copy.title = label || "";
+        }, 1500);
+      });
+      actions.append(copy);
+      profileRow.append(actions);
+    }
   }
 
   function paintEntries(incoming) {
@@ -177,7 +273,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     },
     setFilter(value) { filter = String(value || ""); paint(); },
     reset() {
-      ui.reset(); lilyId.value = ""; filter = ""; requestsOpen = false;
+      ui.reset(); lilyId.value = ""; clearLookup(); filter = ""; requestsOpen = false;
       directoryCache = { contacts: [] };
       profileRow.replaceChildren(); entries.replaceChildren(); requestsPanel.replaceChildren(); requestsPanel.hidden = true; contacts.replaceChildren();
     },

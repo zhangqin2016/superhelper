@@ -25,6 +25,9 @@ app.whenReady().then(async () => {
     const calls = [], opened = [];
     let mode = 'completed', resolveLate;
     const api = { friend: async (input) => { calls.push(input); if (mode === 'late') return new Promise(r=>resolveLate=r); return {ok:mode!=='failed',state:mode,clientCommandId:'durable',code:mode==='failed'?'COLLAB_INVITE_FORBIDDEN':undefined}; },
+      // The form looks a contact up before it can send anything, so this has
+      // to answer before any request is dispatched.
+      lookupFriend: async (lilyId) => ({ok:true,profile:{userId:'looked-up',lilyId:String(lilyId).toLowerCase(),displayName:'Looked Up'}}),
       retrySocial: async (id) => { calls.push({retry:id}); return {ok:true,state:'completed'}; },
       openFriend: async (id) => { calls.push({peer:id}); return {ok:true,conversationId:'canonical'}; },
       conversation: async (input) => { calls.push(input); return mode==='failed'?{ok:false,state:'failed',code:'COLLAB_INVITE_FORBIDDEN'}:{ok:true,state:'completed',conversationId:'created'}; },
@@ -37,8 +40,19 @@ app.whenReady().then(async () => {
     const friends=initCollaborationFriends(root,{api,onChanged:async()=>{},onOpen:id=>opened.push(id)});
     friends.update({directory,commands:[{kind:'friend',clientCommandId:'restarted',state:'confirming',input:{action:'request',lilyId:'restored-id'}}]});
     const ownId=root.textContent.includes('my-exact-id'), safe=!root.querySelector('img');
-    const input=root.querySelector('[name="lilyId"]'); input.value='Exact-ID';
-    root.querySelector('form').requestSubmit(); await settle();
+    // Two steps now: the submit looks the contact up, and only the
+    // confirmation it renders can dispatch the request. That is the point —
+    // the request used to be sent blind.
+    const sendRequest = async (value) => {
+      const field=root.querySelector('[name="lilyId"]'); field.value=value;
+      root.querySelector('.collaboration-social-form').requestSubmit(); await settle();
+      const confirm=root.querySelector('[data-action="send-request"]');
+      if (confirm) { confirm.click(); await settle(); }
+      return confirm;
+    };
+    const input=root.querySelector('[name="lilyId"]');
+    const blindSendImpossible=(() => { input.value='Exact-ID'; return !root.querySelector('[data-action="send-request"]'); })();
+    await sendRequest('Exact-ID');
     const request=calls.at(-1);
     // Incoming requests moved behind one "new friends" entry with a count, so
     // a pending request is an errand rather than a row to be spotted.
@@ -50,9 +64,9 @@ app.whenReady().then(async () => {
     root.querySelector('[data-action="confirm"]').click(); await settle(); const block=calls.at(-1);
     root.querySelector('[data-user-id="blocked"] [data-action="unblock"]').click(); await settle(); root.querySelector('[data-action="confirm"]').click(); await settle(); const unblock=calls.at(-1);
     root.querySelector('[data-action="retry"]').click(); await settle(); const retry=calls.at(-1);
-    input.value='keep-id'; mode='confirming'; root.querySelector('form').requestSubmit(); await settle();
-    const retained=input.value, confirming=root.querySelector('[role="status"]').textContent;
-    mode='late'; input.value='old-account'; root.querySelector('form').requestSubmit(); await settle(); friends.reset();
+    mode='confirming'; await sendRequest('keep-id');
+    const retained=input.value, confirming=root.querySelector('.collaboration-status[role="status"]').textContent;
+    mode='late'; await sendRequest('old-account'); friends.reset();
     resolveLate({ok:true,state:'completed',conversationId:'foreign'}); await settle();
     const fenced=root.textContent.includes('my-exact-id')===false && input.value==='';
     mode='completed'; const teams=initCollaborationTeams(teamsRoot,{api,onChanged:async()=>{},onOpen:id=>opened.push(id)});
@@ -116,10 +130,12 @@ app.whenReady().then(async () => {
     publish({type:'availability',state:{ok:false}});await settle();
     const unavailablePreservesWorkbench=document.getElementById('collaborationCenter').hidden&&!document.getElementById('centerPanel').classList.contains('collaboration-active')&&!document.getElementById('collaborationFriends').textContent.includes('my-exact-id');
     center.destroy();
-    return { emptyGroupRefused, groupSubmitBlocked, groupSubmitEnabled,ownId,safe,request,accept,opened,notBeforeConfirm,block,unblock,retry,retained,confirming,fenced,scopeLabel,publicUnavailable,direct,group,channel,ownerImmutable,remove,permission,shellPeople,shellTeams,unavailablePreservesWorkbench,revokedMembersCleared,confirmedDraftCleared,duplicateSuppressed,lateRevokedMembersCleared,pendingScopeLabel};
+    return { blindSendImpossible, emptyGroupRefused, groupSubmitBlocked, groupSubmitEnabled,ownId,safe,request,accept,opened,notBeforeConfirm,block,unblock,retry,retained,confirming,fenced,scopeLabel,publicUnavailable,direct,group,channel,ownerImmutable,remove,permission,shellPeople,shellTeams,unavailablePreservesWorkbench,revokedMembersCleared,confirmedDraftCleared,duplicateSuppressed,lateRevokedMembersCleared,pendingScopeLabel};
   })()`);
   assert.equal(result.ownId, true); assert.equal(result.safe, true);
-  assert.deepEqual(result.request, { action: 'request', lilyId: 'Exact-ID' });
+  assert.equal(result.blindSendImpossible, true, 'typing an id cannot send a request: the person must be looked up and shown first');
+  assert.deepEqual(result.request, { action: 'request', lilyId: 'exact-id' },
+    'the request is addressed to the looked-up id, normalized the way the server stores it');
   assert.deepEqual(result.accept, { action: 'respond', requestId: 'req', accept: true });
   assert.ok(result.opened.includes('canonical')); assert.equal(result.notBeforeConfirm, true);
   assert.deepEqual(result.block, { action: 'block', peerUserId: 'peer' }); assert.deepEqual(result.unblock, { action: 'unblock', peerUserId: 'blocked' });

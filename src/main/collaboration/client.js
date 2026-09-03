@@ -73,6 +73,12 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     submitFriend(item) {
       return invoke({ path: "/api/collaboration/v1/friends", body: item, deviceId: item?.deviceId });
     },
+    /** A read, not a queued command: looking someone up must never leave an
+     *  outbox row or a receipt behind. Failure is the caller's to interpret. */
+    async lookupFriend({ deviceId, lilyId } = {}) {
+      const response = await invoke({ path: "/api/collaboration/v1/friends/lookup", body: { deviceId, lilyId }, deviceId });
+      return response?.result;
+    },
     submitConversation(item) {
       return invoke({ path: "/api/collaboration/v1/conversations", body: item, deviceId: item?.deviceId });
     },

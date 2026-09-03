@@ -122,6 +122,17 @@ function rendererView(method, value, payload, options = {}) {
     ok: value?.ok === true,
     ...Object.fromEntries(["clientCommandId", "state", "code", "conversationId"].filter((key) => socialIdentifier(value?.[key])).map((key) => [key, value[key]])),
   };
+  // A looked-up profile: only the three public identity fields cross. Notably
+  // NOT `discoverability` (an internal policy value) and not the avatar object
+  // id, which the renderer has no authorized way to fetch here.
+  if (method === "lookupFriend") {
+    if (value?.ok !== true) return { ok: false, code: safeIdentifier(value?.code) || "COLLAB_TARGET_UNAVAILABLE", retryable: value?.retryable === true };
+    const profile = value.profile || {};
+    const userId = socialIdentifier(profile.userId) ? profile.userId : "";
+    const lilyId = typeof profile.lilyId === "string" && /^[a-z0-9][a-z0-9_-]{2,63}$/.test(profile.lilyId) ? profile.lilyId : "";
+    if (!userId || !lilyId) return { ok: false, code: "COLLAB_TARGET_UNAVAILABLE", retryable: false };
+    return { ok: true, profile: { userId, lilyId, displayName: typeof profile.displayName === "string" ? profile.displayName.slice(0, 500) : "" } };
+  }
   if (value?.ok === false) return { ok: false, code: safeIdentifier(value.code) || "COLLABORATION_UNAVAILABLE", retryable: value.retryable === true };
   if (method === "readMessageOperations") return operationResult(value, payload);
   if (["retry", "skip", "cancel"].includes(method) && value?.ok !== true) return unavailable();
@@ -343,6 +354,8 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
   registerCommand(ipcMain, "collaboration:get-social-commands", getService, "getSocialCommands", (p) => p === undefined || hasOnlyKeys(p, new Set()) ? {} : null);
   registerCommand(ipcMain, "collaboration:retry-social", getService, "retrySocial", (p) => hasOnlyKeys(p, new Set(["clientCommandId"])) && socialIdentifier(p.clientCommandId) ? { clientCommandId: p.clientCommandId } : null);
   registerCommand(ipcMain, "collaboration:open-friend", getService, "openFriend", (p) => hasOnlyKeys(p, new Set(["peerUserId"])) && socialIdentifier(p.peerUserId) ? { peerUserId: p.peerUserId } : null);
+  registerCommand(ipcMain, "collaboration:lookup-friend", getService, "lookupFriend", (p) => hasOnlyKeys(p, new Set(["lilyId"]))
+    && typeof p.lilyId === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/.test(p.lilyId.trim()) ? { lilyId: p.lilyId.trim().toLowerCase() } : null);
   registerCommand(ipcMain, "collaboration:get-conversation-details", getService, "getConversationDetails", validOpen);
   registerCommand(ipcMain, "collaboration:get-mention-candidates", getService, "getMentionCandidates", validOpen);
   registerCommand(ipcMain, "collaboration:retry", getService, "retry", validOutbox);

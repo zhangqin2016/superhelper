@@ -8,7 +8,14 @@ function normalizeSocialCommand(kind, value) {
   const { action } = value;
   if (kind === "friend") {
     const common = ["action", "clientCommandId"];
-    if (action === "request" && only(value, [...common, "lilyId"]) && typeof value.lilyId === "string" && /^[a-z0-9][a-z0-9_-]{2,63}$/.test(value.lilyId.trim().toLowerCase())) return { action, ...identity, lilyId: value.lilyId.trim().toLowerCase() };
+    if (action === "request" && only(value, [...common, "lilyId", "message"]) && typeof value.lilyId === "string" && /^[a-z0-9][a-z0-9_-]{2,63}$/.test(value.lilyId.trim().toLowerCase())
+      && (value.message == null || typeof value.message === "string" && value.message.length <= 500)) {
+      // A greeting travels with the request so the recipient sees who is
+      // asking. The server already accepted and truncated it; only the client
+      // never sent one.
+      const message = typeof value.message === "string" ? value.message.trim().slice(0, 500) : "";
+      return { action, ...identity, lilyId: value.lilyId.trim().toLowerCase(), ...(message ? { message } : {}) };
+    }
     if (action === "respond" && only(value, [...common, "requestId", "accept"]) && id(value.requestId) && typeof value.accept === "boolean") return { action, ...identity, requestId: value.requestId, accept: value.accept };
     if (["remove", "block", "unblock"].includes(action) && only(value, [...common, "peerUserId"]) && id(value.peerUserId)) return { action, ...identity, peerUserId: value.peerUserId };
     return null;

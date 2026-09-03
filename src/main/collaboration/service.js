@@ -17,6 +17,7 @@ const { createMentionCandidateCache } = require("./mention-candidate-cache");
 const { createTransferRuntime } = require("./transfer-runtime");
 const { createAttachmentSendCoordinator } = require("./attachment-send");
 const { createReadRecovery } = require("./read-recovery");
+const { createFriendLookup, createDirectoryReads } = require("./friend-lookup");
 const { messageMetadata, messageIdentifier, validateCreateBody, sameCreateIntent } = require("./message-intent");
 const { validOperationRequest } = require("./message-operation-view");
 const { createEditDraftService } = require("./edit-draft-service");
@@ -274,17 +275,9 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           typing: presence.snapshot() };
       },
       typing: typingCommand,
-      getDirectory() {
-        if (stopped) return stoppedResult();
-        if (typeof store.getDirectory !== "function") return unavailableService();
-        return { ok: true, ...directoryView(store.getDirectory()) };
-      },
-      list() {
-        if (stopped) return stoppedResult();
-        if (typeof store.listConversations !== "function") return unavailableService();
-        return { ok: true, conversations: socialDirectory.visibleConversations(store) };
-      },
+      ...createDirectoryReads({ store, socialDirectory, directoryView, isStopped: () => stopped, stoppedResult, unavailableService }),
       openFriend(command) { return stopped ? stoppedResult() : socialDirectory.openFriend(store, command); },
+      lookupFriend: createFriendLookup({ client, deviceId, assertActive, isStopped: () => stopped, stoppedResult, unavailableService }),
       getConversationDetails({ conversationId } = {}) {
         return enqueueSync(() => socialDirectory.getConversationDetails({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory, candidateCache }));
       },

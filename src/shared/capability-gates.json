@@ -571,6 +571,15 @@
         "scripts/test-collaboration-social-ui.cjs",
         "scripts/test-collaboration-center-lifecycle.mjs"
       ]
+    },
+    {
+      "id": "im-add-contact",
+      "protects": "Adding a contact shows you WHO you are about to add before anything is sent, lets you send a greeting with the request, and lets you copy your own Lily ID — the only handle by which anyone can add you.",
+      "baseline": "Additive. The request command is unchanged apart from an optional greeting the server already accepted; the lookup is a new READ that persists nothing, so no outbox row, receipt or retry path is involved. A build whose server lacks the lookup route degrades to the previous behaviour: the form reports the id as unavailable rather than breaking.",
+      "failureFallback": "The lookup fails closed at every step: a malformed id is refused locally so it never spends a server rate-limit slot, an empty or partial profile is 'unavailable' rather than a half-rendered person, a transport refusal (including the rate limit) reaches the caller intact, a switched account aborts instead of answering with the previous account's result, and a superseded lookup cannot paint over a newer one. Editing the id invalidates the confirmation, so a request can never be addressed to someone other than the person shown.",
+      "tests": [
+        "scripts/test-collaboration-add-contact.mjs"
+      ]
     }
   ]
 }
