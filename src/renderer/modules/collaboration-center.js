@@ -48,6 +48,14 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const replySourceMasks = createReplySourceMaskView();
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
   let lastRenderedCount = 0;
+  // The most recent social payload, plus which hidden list still needs it.
+  let lastSocial = null;
+  const socialDirty = { people: true, teams: true };
+  const flushSocial = (section) => {
+    if (!lastSocial) return;
+    if (section === "people" && socialDirty.people) { socialDirty.people = false; friends.update(lastSocial); }
+    if (section === "teams" && socialDirty.teams) { socialDirty.teams = false; teams.update(lastSocial); }
+  };
   const renderTimeline = () => {
     const wasAway = Boolean(activeConversationId) && timeline && !atThreadBottom();
     const grew = historyMessages.length - lastRenderedCount;
@@ -153,6 +161,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     // Always shown now: the rail is icon-only, so this heading is what names
     // the destination you are on. It used to be hidden for the inbox.
     if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = false; }
+    // Render the destination now if it fell behind while it was hidden.
+    flushSocial(section);
     panelShell?.setConversationOpen(false);
   }
   const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
@@ -300,7 +310,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     const generation = ++loadGeneration;
     const accessGeneration = openGeneration;
     const displayedConversationId = activeConversationId;
-    let result = await window.assistantClient?.collaboration?.list?.().catch(() => null);
+    const client = window.assistantClient?.collaboration;
+    // `list`, `getDirectory` and `getSocialCommands` are independent reads.
+    // They used to cost two serial round trips: list, and only then the pair.
+    const directoryPromise = Promise.resolve(client?.getDirectory?.()).catch(() => null);
+    const commandsPromise = Promise.resolve(client?.getSocialCommands?.()).catch(() => null);
+    let result = await Promise.resolve(client?.list?.()).catch(() => null);
     if (view !== viewGeneration || generation !== loadGeneration) return;
     if (!bootstrapAttempted && result?.ok === true && Array.isArray(result.conversations) && result.conversations.length === 0) {
       bootstrapAttempted = true;
@@ -317,16 +332,20 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (opening && !allowed.includes(openingConversationId)) { invalidateOpen(); composer.setActive?.(!panel.hidden && policyEnabled); renderTimeline(); }
       if (displayedConversationId && activeConversationId === displayedConversationId && !allowed.includes(displayedConversationId)) clearRevokedSelection({ code: "COLLAB_ACCESS_REVOKED" }, displayedConversationId);
     }
-    const api = window.assistantClient?.collaboration;
-    const [socialDirectory, socialCommands] = await Promise.all([
-      Promise.resolve(api?.getDirectory?.()).catch(() => null), Promise.resolve(api?.getSocialCommands?.()).catch(() => null),
-    ]);
+    const [socialDirectory, socialCommands] = await Promise.all([directoryPromise, commandsPromise]);
     if (view !== viewGeneration || generation !== loadGeneration) return;
     if (socialDirectory?.ok) {
       directory = socialDirectory;
-      const social = { directory, commands: socialCommands?.commands || [], conversations: result?.conversations || [] };
-      friends.update(social); teams.update(social);
-      renderTimeline();
+      lastSocial = { directory, commands: socialCommands?.commands || [], conversations: result?.conversations || [] };
+      // The hidden lists keep their last render and are marked stale; showing
+      // one flushes it. Rebuilding all of them on every load is most of what
+      // made switching views feel slow.
+      socialDirty.people = true;
+      socialDirty.teams = true;
+      flushSocial(activeSection);
+      // The timeline is only worth rebuilding when a conversation is actually
+      // on screen; it is the most expensive surface here.
+      if (activeConversationId) renderTimeline();
     }
     renderCollaborationInbox(
       byId("collaborationInbox"),
@@ -425,7 +444,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       activeConversationKind = "";
       historyMessages = []; nextBeforeSeq = null; hasMore = false; loadingOlder = false; historyOffline = false; updateOlderButton();
       bootstrapAttempted = false;
-      loadGeneration += 1; directory = null; friends.reset(); teams.reset();
+      loadGeneration += 1; directory = null; friends.reset(); teams.reset(); lastSocial = null; socialDirty.people = true; socialDirty.teams = true;
       composer.reset?.();
       replySourceMasks.clear();
       attachments.reset();
@@ -447,5 +466,5 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     });
   });
   void refresh();
-  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); attachments.destroy(); panelShell?.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back?.removeEventListener("click", backClick); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
+  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); lastSocial = null; socialDirty.people = true; socialDirty.teams = true; attachments.destroy(); panelShell?.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back?.removeEventListener("click", backClick); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
 }

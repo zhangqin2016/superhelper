@@ -117,8 +117,15 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     const conversation = result.conversation;
     details.append(socialNode("h3", `${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`));
     for (const member of result.members) {
-      const row = socialNode("div", "", "collaboration-social-row"); row.dataset.userId = member.userId;
-      row.append(socialNode("p", `${socialPerson(member)} · ${t(`collaboration.social.role.${member.role}`)}`));
+      const row = socialNode("div", "", "collaboration-social-row is-compact"); row.dataset.userId = member.userId;
+      const memberName = identityName(member);
+      const memberBody = socialRowButton(memberName, null, {
+        avatar: socialAvatar(memberName),
+        subtitle: member.lilyId ? `${member.lilyId} · ${t(`collaboration.social.role.${member.role}`)}` : t(`collaboration.social.role.${member.role}`),
+      });
+      memberBody.classList.add("is-static");
+      memberBody.disabled = false;
+      row.append(memberBody);
       if (result.canManage && member.role !== "owner") {
         row.append(socialButton("remove-member", "removeMember", () => memberChange(conversation, member, "remove")));
         row.append(socialButton("role-member", member.role === "admin" ? "makeMember" : "makeAdmin", () => memberChange(conversation, member, "role", member.role === "admin" ? "member" : "admin")));
@@ -181,6 +188,12 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         personal.append(heading);
       }
       for (const conversation of personalGroups) personal.append(conversationRow(conversation, { showScope: false }));
+      // A heading for the teams block, matching the personal one. Without it
+      // the "no teams yet" message sat directly under the personal groups and
+      // read as if it described that list.
+      const teamsHeading = socialNode("div", t("collaboration.teams"), "collaboration-section-letter");
+      teamsHeading.dataset.letter = "teams";
+      list.append(teamsHeading);
       if (!directory.teams.length) list.append(socialNode("p", t("collaboration.social.noTeams"), "collaboration-empty"));
       for (const team of directory.teams) {
         const section = socialNode("section", "", "collaboration-team"); section.dataset.teamId = team.id;

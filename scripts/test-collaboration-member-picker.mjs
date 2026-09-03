@@ -93,8 +93,11 @@ for (const shape of [undefined, null, "nope", 7, [null, "", "   "]]) {
 // ---- The row is a real 56px row, and a label ---------------------------
 {
   const css = read("src/renderer/styles/collaboration.css");
-  const pick = /\.collaboration-social-row\.is-pick \{([^}]*)\}/.exec(css);
-  assert.ok(pick, "the pick row has its own rule");
+  // There is more than one `.is-pick` rule now (layout, and a containment
+  // opt-out), so check across all of them rather than whichever comes first.
+  const pickBlocks = [...css.matchAll(/\.collaboration-social-row\.is-pick \{([^}]*)\}/g)].map((match) => match[1]);
+  assert.ok(pickBlocks.length, "the pick row has its own rule");
+  const pick = [null, pickBlocks.join("\n")];
   // `.collaboration-social-form label` sets `display: grid` and, being
   // class+element, outranks the single-class row rule — which stacked the
   // checkbox above the name and measured 77px instead of 56px.
