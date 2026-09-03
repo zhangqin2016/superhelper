@@ -212,6 +212,23 @@ function initRendererHeartbeat() {
 
 async function init() {
   await initI18n();
+  // Detached collaboration window: it presents only the panel, so it must not
+  // build the workbench behind it. Loading the same entry with a flag keeps
+  // ONE panel implementation, but the rest of this function starts pollers,
+  // model lists, mail accounts and session UI that a second window would
+  // duplicate for nothing.
+  const standaloneCollaboration = (() => {
+    try { return new URLSearchParams(window.location?.search || "").get("view") === "collaboration"; }
+    catch { return false; }
+  })();
+  if (standaloneCollaboration) {
+    initRendererHeartbeat();
+    wireLocaleRefresh();
+    initMessageUi();
+    initCustomSelects();
+    initCollaborationCenter();
+    return;
+  }
   initRendererHeartbeat();
   await updateAboutVersion();
   wireLocaleRefresh();

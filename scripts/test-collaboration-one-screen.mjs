@@ -54,10 +54,13 @@ const html = read("src/renderer/index.html");
   const listColumn = home.slice(listAt, detailAt);
   assert.doesNotMatch(listColumn, /collaborationDetailBody/, "the detail body is not nested in the list column");
 
-  const center = read("src/renderer/modules/collaboration-center.js");
-  assert.match(center, /listColumn\.hidden = true;\s*\n\s*detailView\.hidden = false;/,
+  // The surface itself moved into its own module; the centre wires it.
+  const surfaces = read("src/renderer/modules/collaboration-panel-surfaces.js");
+  assert.match(surfaces, /listColumn\.hidden = true;\s*\n\s*view\.hidden = false;/,
     "opening a detail hides the list, so only one of the two is on screen");
-  assert.match(center, /detailBack\?\.addEventListener\("click", closeDetail\)/, "back leaves the detail");
+  assert.match(surfaces, /back\?\.addEventListener\("click", close\)/, "back leaves the detail");
+  const center = read("src/renderer/modules/collaboration-center.js");
+  assert.match(center, /createDetailSurface\(\{/, "the centre wires that surface rather than building its own");
   // Switching destination must not leave someone else's roster on screen.
   assert.match(center, /closeDetail\(\);\s*\n\s*\/\/ Render the destination now/,
     "changing destination closes any open detail");

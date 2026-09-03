@@ -7,6 +7,7 @@ import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
+import { createDetailSurface, createDetachControl } from "./collaboration-panel-surfaces.js";
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
@@ -32,29 +33,18 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const scopeBadge = byId("collaborationScopeBadge");
   const unreadBadge = byId("collaborationUnreadBadge");
   const railUnread = byId("collaborationRailUnread");
-  // A detail view (a roster, pending requests) is its own screen beside the
-  // list, reached and left the same way a conversation is. It used to render
-  // into the list's own scrolling column, so one screen showed the list, its
-  // create action, its sections AND somebody's member list at once.
-  const listColumn = byId("collaborationInboxColumn");
-  const detailView = byId("collaborationDetail");
-  const detailTitle = byId("collaborationDetailTitle");
-  const detailBody = byId("collaborationDetailBody");
-  const detailBack = byId("collaborationDetailBack");
-  const closeDetail = () => {
-    if (detailView) detailView.hidden = true;
-    if (listColumn) listColumn.hidden = false;
-    if (detailBody) detailBody.replaceChildren();
-    if (detailTitle) detailTitle.textContent = "";
-  };
-  const openDetail = (title) => {
-    if (!detailView || !detailBody) return null;
-    if (detailTitle) detailTitle.textContent = String(title || "");
-    if (listColumn) listColumn.hidden = true;
-    detailView.hidden = false;
-    return detailBody;
-  };
-  detailBack?.addEventListener("click", closeDetail);
+  // Where the panel is showing, as opposed to what: a detail screen beside the
+  // list, and detaching into a window of its own. Both extracted together,
+  // since both answer that question and this file was at its line ceiling.
+  const detail = createDetailSurface({
+    listColumn: byId("collaborationInboxColumn"),
+    view: byId("collaborationDetail"),
+    title: byId("collaborationDetailTitle"),
+    body: byId("collaborationDetailBody"),
+    back: byId("collaborationDetailBack"),
+  });
+  const openDetail = detail.open;
+  const closeDetail = detail.close;
   const inboxSearch = byId("collaborationInboxSearch");
   const conversationSearch = byId("collaborationConversationSearch");
   const timeline = byId("collaborationTimeline");
@@ -198,6 +188,11 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface });
   const sectionHandlers = Object.entries(sectionButtons).map(([section, button]) => {
     const handler = () => { showSection(section); void load(); }; button?.addEventListener("click", handler); return [button, handler];
+  });
+  const detach = createDetachControl({
+    button: byId("collaborationPanelDetach"),
+    onDetached: () => { panelShell ? panelShell.closePanel() : setActive(false); },
+    isDisposed: () => disposed,
   });
   showSection("inbox");
   const composer = initCollaborationComposer({
@@ -495,5 +490,5 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     });
   });
   void refresh();
-  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); lastSocial = null; socialDirty.people = true; socialDirty.teams = true; attachments.destroy(); panelShell?.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back?.removeEventListener("click", backClick); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
+  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); lastSocial = null; socialDirty.people = true; socialDirty.teams = true; attachments.destroy(); panelShell?.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back?.removeEventListener("click", backClick); detach.destroy(); detail.destroy(); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
 }

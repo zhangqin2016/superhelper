@@ -30,7 +30,40 @@ export function initCollaborationPanelShell({
   resizeHandle = document.getElementById("collaborationResizeHandle"),
   storage = window.localStorage,
 } = {}) {
-  if (!shell || !panel || !toggle) return null;
+  if (!shell || !panel) return null;
+  // Detached: this renderer was opened with `?view=collaboration`, so the panel
+  // IS the window. No docking, no overlay, no resize handle, no close button —
+  // the window's own chrome does all of that.
+  // A missing `location` (the controller tests stub `window`) means docked,
+  // which is the right default: standalone has to be asked for explicitly.
+  const standalone = (() => {
+    try { return new URLSearchParams(window.location?.search || "").get("view") === "collaboration"; }
+    catch { return false; }
+  })();
+  if (standalone) {
+    shell.dataset.appView = "collaboration";
+    panel.hidden = false;
+    panel.dataset.collaborationPanes = "two";
+    if (resizeHandle) resizeHandle.hidden = true;
+    if (scrim) scrim.hidden = true;
+    if (closeButton) closeButton.hidden = true;
+    const detachButton = document.getElementById("collaborationPanelDetach");
+    if (detachButton) detachButton.hidden = true;
+    if (backButton) backButton.hidden = true;
+    if (home) home.hidden = false;
+    return Object.freeze({
+      openPanel() {}, closePanel() {}, isOpen: () => true,
+      // A conversation opens beside the list, exactly as in the wide docked
+      // panel; there is nothing to go back to because the list never left.
+      setConversationOpen(value) {
+        panel.classList.toggle("is-conversation-open", Boolean(value));
+        if (conversation) conversation.hidden = !value;
+        if (home) home.hidden = false;
+      },
+      destroy() {},
+    });
+  }
+  if (!toggle) return null;
   let open = false;
   let dragging = false;
   let width = clampWidth(storage?.getItem?.(STORAGE_KEY));

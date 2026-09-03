@@ -1938,6 +1938,7 @@
   "character.preview.exit": "Exit preview",
   "character.preview.actionFailed": "Action failed. State refreshed; try again.",
   "collaboration.nav": "Collaboration",
+  "collaboration.detach": "Open in its own window",
   "collaboration.workbench": "Workbench",
   "collaboration.inbox": "Chats",
   "collaboration.selfPrefix": "You",

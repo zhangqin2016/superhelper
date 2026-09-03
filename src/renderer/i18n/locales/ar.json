@@ -1938,6 +1938,7 @@
   "character.preview.activate": "استخدام",
   "character.preview.exit": "إنهاء المعاينة",
   "collaboration.nav": "مركز التعاون",
+  "collaboration.detach": "فتح في نافذة خاصة",
   "collaboration.workbench": "مساحة العمل",
   "collaboration.inbox": "المحادثات",
   "collaboration.selfPrefix": "أنت",

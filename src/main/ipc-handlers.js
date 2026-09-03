@@ -18,6 +18,7 @@ const { registerRuntimePackHandlers } = require("./ipc-runtime-packs");
 const { registerCharacterWorldsHandlers } = require("./ipc-character-worlds");
 const { registerCharacterAuthoringHandlers } = require("./ipc-character-authoring");
 const { createCollaborationIpc } = require("./ipc-collaboration");
+const { canonicalMediaUrl } = require("./local-media-protocol");
 const { RuntimeEventBus } = require("./runtime-event-bus");
 const { TranscriptStore } = require("./transcript-store");
 const { TurnArchive } = require("./turn-archive");
@@ -361,7 +362,33 @@ function registerAll(ctx) {
     ipcMain,
     getService: () => ctx.collaborationService,
     subscribeState: (listener) => ctx.onCollaborationStateChange?.(listener) || (() => {}),
+    toPreviewUrl: (absolutePath) => { try { return canonicalMediaUrl(absolutePath); } catch { return ""; } },
   });
+
+  // Detaching the collaboration panel into its own window. The window loads the
+  // same renderer with `?view=collaboration`, so there is one panel
+  // implementation; the state subscription is already per-webContents, so the
+  // detached window receives its own events with no service change.
+  {
+    const { createCollaborationWindowManager, boundsStore } = require("./collaboration-window");
+    const store = boundsStore();
+    const manager = createCollaborationWindowManager({
+      readBounds: () => store.read(),
+      writeBounds: (bounds) => store.write(bounds),
+      // Tell the main window so its docked panel can come back.
+      onClosed: () => { try { ctx.mainWindow?.webContents?.send?.("collaboration:window-state", { detached: false }); } catch { /* window may be gone */ } },
+    });
+    ctx.collaborationWindow = manager;
+    ipcMain.handle("collaboration:detach", () => {
+      manager.open();
+      return { ok: true, detached: true };
+    });
+    ipcMain.handle("collaboration:attach", () => {
+      const closed = manager.close();
+      return { ok: true, detached: false, closed };
+    });
+    ipcMain.handle("collaboration:window-status", () => ({ ok: true, detached: manager.isOpen() }));
+  }
 
   ipcMain.handle("usage:get-summary", async () => require("./usage-settings").getUsageSettingsPublic());
 

@@ -1938,6 +1938,7 @@
   "character.preview.exit": "退出预览",
   "character.preview.actionFailed": "操作失败，状态已刷新，请重试",
   "collaboration.nav": "协作中心",
+  "collaboration.detach": "独立窗口",
   "collaboration.workbench": "工作台",
   "collaboration.inbox": "消息",
   "collaboration.selfPrefix": "你",

@@ -51,6 +51,29 @@
    UA `display: none` — so each one has to opt back in. The detail view was
    added without this line and kept occupying 192px of the panel while marked
    hidden, which is why two columns appeared. */
+/* Detached: the panel is the whole window, so the workbench around it is not
+   rendered and the panel loses the chrome that only makes sense docked — no
+   inset border, no floating shadow, no width variable. */
+[data-app-view="collaboration"] > *:not(.collaboration-center):not(.collaboration-panel-scrim) {
+  display: none !important;
+}
+
+[data-app-view="collaboration"] {
+  display: block;
+  inline-size: 100vw;
+  block-size: 100vh;
+}
+
+[data-app-view="collaboration"] .collaboration-center {
+  position: static;
+  inline-size: 100%;
+  max-inline-size: none;
+  block-size: 100vh;
+  border-inline-start: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 /* Two panes, when the panel has been dragged wide enough for them: the rail
    and list on one side, the thread on the other, both on screen at once. Below
    the threshold the panel holds one column at a time and a conversation

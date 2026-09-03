@@ -618,6 +618,15 @@
         "scripts/test-collaboration-two-pane.cjs",
         "scripts/test-collaboration-hidden-views.cjs"
       ]
+    },
+    {
+      "id": "im-detached-window",
+      "protects": "The collaboration panel can be opened in a window of its own, presenting only the panel, without a second copy of its markup and without building the workbench behind it.",
+      "baseline": "Purely additive. The docked panel is unchanged; the detached window reuses the same renderer entry, the same modules and the same IPC. No service change was needed: `collaboration:subscribe` already keyed its subscriptions by `sender` and handed each one its own unsubscribe, so a second window subscribes independently.",
+      "failureFallback": "One window at a time — opening again focuses the existing one rather than making a second view of the same list. A remembered position is only reused when part of the window would still be reachable on a display that exists; that predicate is exported and tested directly, because macOS clamps an off-screen window by itself and a test that reads bounds back could not tell whether the check ran. Bounds failing to persist costs a remembered position, never an error. The detached window skips the workbench boot rather than hiding it, so a second window does not duplicate its pollers, model lists and session UI.",
+      "tests": [
+        "scripts/test-collaboration-detached-window.cjs"
+      ]
     }
   ]
 }

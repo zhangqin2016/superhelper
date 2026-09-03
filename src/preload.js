@@ -485,6 +485,15 @@ contextBridge.exposeInMainWorld("assistantClient", {
     retrySocial: (clientCommandId) => ipcRenderer.invoke("collaboration:retry-social", { clientCommandId }),
     openFriend: (peerUserId) => ipcRenderer.invoke("collaboration:open-friend", { peerUserId }),
     lookupFriend: (lilyId) => ipcRenderer.invoke("collaboration:lookup-friend", { lilyId }),
+    detachWindow: () => ipcRenderer.invoke("collaboration:detach"),
+    attachWindow: () => ipcRenderer.invoke("collaboration:attach"),
+    windowStatus: () => ipcRenderer.invoke("collaboration:window-status"),
+    onWindowState: (handler) => {
+      if (typeof handler !== "function") return () => {};
+      const listener = (_event, payload) => { try { handler(payload || {}); } catch { /* renderer decides */ } };
+      ipcRenderer.on("collaboration:window-state", listener);
+      return () => ipcRenderer.removeListener("collaboration:window-state", listener);
+    },
     getConversationDetails: (conversationId) => ipcRenderer.invoke("collaboration:get-conversation-details", { conversationId }),
     getMentionCandidates: (conversationId) => ipcRenderer.invoke("collaboration:get-mention-candidates", { conversationId }),
     retry: (outboxId) => ipcRenderer.invoke("collaboration:retry", { outboxId }),
