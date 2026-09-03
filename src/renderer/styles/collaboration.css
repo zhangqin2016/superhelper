@@ -358,8 +358,10 @@
   cursor: pointer;
 }
 
-.collaboration-inbox-item:hover,
-
+/* The row avatar tile. (A stray `.collaboration-inbox-item:hover` was glued to
+   the front of this selector by an earlier edit, so hovering a row applied the
+   avatar's grid/centre/white-text/bold to the whole row — that was the row
+   collapsing into a centred stack with an unreadable title on hover.) */
 .collaboration-row-avatar {
   display: grid;
   place-items: center;

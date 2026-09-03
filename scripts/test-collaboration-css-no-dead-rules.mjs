@@ -139,6 +139,19 @@ for (const file of FILES) {
 {
   const css = fs.readFileSync(path.join(ROOT, "src/renderer/styles/collaboration.css"), "utf8");
   const rowRules = [...css.matchAll(/\.collaboration-(?:inbox-item|social-row)[^{}]*\{([^{}]*)\}/g)];
+  // A hovered row must never be given `display: grid` — that is the avatar
+  // tile's layout, and an earlier edit glued `.collaboration-inbox-item:hover`
+  // onto the avatar rule, collapsing the whole row into a centred stack with
+  // white bold text on hover. So no selector list that includes a row :hover
+  // may set display:grid.
+  const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const m of cssNoComments.matchAll(/([^{}]*:hover[^{}]*)\{([^{}]*)\}/g)) {
+    const [, selector, body] = m;
+    if (/collaboration-(?:inbox-item|social-row):hover/.test(selector) && /display\s*:\s*grid/.test(body)) {
+      assert.fail("a row :hover selector must not set display:grid — that collapses the row (see the avatar-rule glue bug)");
+    }
+  }
+
   for (const [, body] of rowRules) {
     assert.ok(!/content-visibility\s*:\s*auto/.test(body),
       "conversation/contact rows must not use content-visibility:auto — it collapses not-yet-settled rows");
