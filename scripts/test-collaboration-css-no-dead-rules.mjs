@@ -129,4 +129,20 @@ for (const file of FILES) {
     `${file}: ${duplicated} selectors are styled in more than one block (ratchet 28). Add to an existing block rather than appending a new one.`);
 }
 
+// A conversation/contact row must never carry `content-visibility: auto`.
+// It forces `contain: size` on both axes, and before a row's size is first
+// remembered the width falls back to `contain-intrinsic-size` (~56px), so a
+// freshly opened or detached panel laid not-yet-settled rows out in a narrow
+// box and the flex row collapsed into a vertical stack with an unreadable
+// title. See collaboration.css. Virtualisation is the right tool if the
+// lists ever need it.
+{
+  const css = fs.readFileSync(path.join(ROOT, "src/renderer/styles/collaboration.css"), "utf8");
+  const rowRules = [...css.matchAll(/\.collaboration-(?:inbox-item|social-row)[^{}]*\{([^{}]*)\}/g)];
+  for (const [, body] of rowRules) {
+    assert.ok(!/content-visibility\s*:\s*auto/.test(body),
+      "conversation/contact rows must not use content-visibility:auto — it collapses not-yet-settled rows");
+  }
+}
+
 console.log("collaboration-css-no-dead-rules: ok");

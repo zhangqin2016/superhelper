@@ -1278,23 +1278,14 @@
   }
 }
 
-/* Long lists: let the browser skip layout and paint for rows that are off
-   screen. Measured on a cold scroll of 150 conversations, this took the p90
-   frame from 15.4ms to 8.4ms and the worst frame from 53.9ms to 22.8ms.
-   `contain-intrinsic-size` is the row height, so the scrollbar does not jump
-   as rows are skipped and restored. */
-.collaboration-social-row,
-.collaboration-inbox-item {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 56px;
-}
-
-/* Not applied to a pick row: the group form measures nothing, but a skipped
-   row inside a 260px scroller gains nothing either, and `content-visibility`
-   hides content from find-in-page. */
-.collaboration-social-row.is-pick {
-  content-visibility: visible;
-}
+/* `content-visibility: auto` was tried here for long lists (a 150-row cold
+   scroll went from 15.4ms to 8.4ms p90) but removed: it forces `contain: size`
+   on BOTH axes, and until a row's size is first remembered the width falls back
+   to `contain-intrinsic-size`, so a freshly opened or detached panel — whose
+   rows have not yet passed the async relevance check — laid every not-yet-
+   settled row out in a ~56px-wide box, collapsing the flex row into a vertical
+   stack with the title unreadable. Correctness wins over a frame on a list this
+   size; virtualisation is the right tool if these lists ever grow. */
 
 /* The row body IS the primary action, so it is a real button filling the row
    rather than a div with a click handler. */
