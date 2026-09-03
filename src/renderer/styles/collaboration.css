@@ -1788,6 +1788,17 @@
   outline-offset: 2px;
 }
 
+/* Full-width list rows are the exception: a 2px offset outline draws a
+   floating blue box around the whole row, which reads as a heavy selection
+   rather than a keyboard-focus cue. A row gets a crisp inset ring that hugs
+   its rounded shape instead; its selected state is the fill, not this. */
+.collaboration-center .collaboration-inbox-item:focus-visible,
+.collaboration-center .collaboration-social-row:focus-visible,
+.collaboration-center .collaboration-row-open:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent-strong-border);
+}
+
 .collaboration-mentions button:focus-visible,
 .collaboration-message-actions button:focus-visible,
 [data-action="reply-message"]:focus-visible {
