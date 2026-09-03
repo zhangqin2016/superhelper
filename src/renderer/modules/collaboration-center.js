@@ -32,6 +32,29 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const scopeBadge = byId("collaborationScopeBadge");
   const unreadBadge = byId("collaborationUnreadBadge");
   const railUnread = byId("collaborationRailUnread");
+  // A detail view (a roster, pending requests) is its own screen beside the
+  // list, reached and left the same way a conversation is. It used to render
+  // into the list's own scrolling column, so one screen showed the list, its
+  // create action, its sections AND somebody's member list at once.
+  const listColumn = byId("collaborationInboxColumn");
+  const detailView = byId("collaborationDetail");
+  const detailTitle = byId("collaborationDetailTitle");
+  const detailBody = byId("collaborationDetailBody");
+  const detailBack = byId("collaborationDetailBack");
+  const closeDetail = () => {
+    if (detailView) detailView.hidden = true;
+    if (listColumn) listColumn.hidden = false;
+    if (detailBody) detailBody.replaceChildren();
+    if (detailTitle) detailTitle.textContent = "";
+  };
+  const openDetail = (title) => {
+    if (!detailView || !detailBody) return null;
+    if (detailTitle) detailTitle.textContent = String(title || "");
+    if (listColumn) listColumn.hidden = true;
+    detailView.hidden = false;
+    return detailBody;
+  };
+  detailBack?.addEventListener("click", closeDetail);
   const inboxSearch = byId("collaborationInboxSearch");
   const conversationSearch = byId("collaborationConversationSearch");
   const timeline = byId("collaborationTimeline");
@@ -157,16 +180,22 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (inboxSearch.value) { inboxSearch.value = ""; inboxFilter = ""; friends?.setFilter(""); }
     }
     for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
+    // The rail is icon-only, so the header names where you are. This used to
+    // be a second heading inside the list, competing with the panel's own.
+    const panelTitle = byId("collaborationPanelTitle");
+    if (panelTitle) panelTitle.textContent = t(`collaboration.${section}`);
     const title = byId("collaborationListTitle");
-    // Always shown now: the rail is icon-only, so this heading is what names
-    // the destination you are on. It used to be hidden for the inbox.
     if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = false; }
+    // Changing destination leaves any detail behind: it belonged to the list
+    // you just left.
+    closeDetail();
     // Render the destination now if it fell behind while it was hidden.
     flushSocial(section);
     panelShell?.setConversationOpen(false);
   }
-  const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
-  const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration });
+  const detailSurface = { open: openDetail, close: closeDetail };
+  const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface });
+  const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface });
   const sectionHandlers = Object.entries(sectionButtons).map(([section, button]) => {
     const handler = () => { showSection(section); void load(); }; button?.addEventListener("click", handler); return [button, handler];
   });

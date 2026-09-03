@@ -589,6 +589,15 @@
       "tests": [
         "scripts/test-collaboration-thread-overflow.cjs"
       ]
+    },
+    {
+      "id": "im-one-screen-one-thing",
+      "protects": "One screen shows one thing: exactly one title names where you are, and a roster or a pending-request list is its own screen with a back button rather than content appended into the list it came from.",
+      "baseline": "Structure only. Every destination, roster and request is still reachable by the same actions and the same commands; only where they draw changed.",
+      "failureFallback": "The detail surface is optional: each view falls back to the inline container it always used when no detail view is supplied, which is how these modules render standalone in the DOM tests. Changing destination closes any open detail, so a roster from one list can never be left over on another.",
+      "tests": [
+        "scripts/test-collaboration-one-screen.mjs"
+      ]
     }
   ]
 }

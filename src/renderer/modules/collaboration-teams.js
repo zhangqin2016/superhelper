@@ -2,7 +2,7 @@ import { t } from "../i18n/index.js";
 import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
 
-export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
+export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0, detail = null } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {}, showConversation: async () => {} };
   root.replaceChildren();
   let directory = { contacts: [], teams: [] }, conversations = [], detailsGeneration = 0, detailsConversation = null, pendingDetailsId = "";
@@ -32,7 +32,16 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   }
   refreshGroupSubmit();
   const list = socialNode("div"), personal = socialNode("div"), details = socialNode("div", "", "collaboration-member-details");
-  root.append(socialDisclosure(`＋ ${t("collaboration.social.createGroup")}`, groupForm, { primary: true }), personal, list, details);
+  /** Where a roster is drawn. With a detail view it is its own screen beside
+   *  the list; without one (this module rendered standalone, as the DOM tests
+   *  do) it falls back to the inline container it always used. */
+  const detailSurface = (title) => detail?.open?.(title) || details;
+  const closeDetailSurface = () => { detail?.close?.(); details.replaceChildren(); };
+  // The create entry lines up with the avatar column, like the other entries,
+  // instead of floating above the section headings as a text link.
+  const createGroupEntry = socialDisclosure(t("collaboration.social.createGroup"), groupForm, { primary: true });
+  createGroupEntry.classList.add("is-row", "is-entry-row");
+  root.append(createGroupEntry, personal, list, details);
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
   // `team:t_abc` is an internal addressing string. It used to be printed on
   // team headers and on every channel subtitle; a person has no use for it.
@@ -113,9 +122,12 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     await ui.run(() => api.conversation({ action: "member", conversationId: conversation.id, targetUserId: target.userId, operation, ...(role ? { role } : {}) }), (_result, origin) => { if (origin.isCurrentNavigation()) return controller.showConversation(conversation.id); });
   }
   function renderDetails(result) {
-    details.replaceChildren();
     const conversation = result.conversation;
-    details.append(socialNode("h3", `${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`));
+    // The detail view's own header names it; an <h3> here was a third title
+    // stacked inside the list.
+    const surface = detailSurface(`${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`);
+    surface.replaceChildren();
+    if (surface === details) details.append(socialNode("h3", `${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`));
     for (const member of result.members) {
       const row = socialNode("div", "", "collaboration-social-row is-compact"); row.dataset.userId = member.userId;
       const memberName = identityName(member);
@@ -130,7 +142,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         row.append(socialButton("remove-member", "removeMember", () => memberChange(conversation, member, "remove")));
         row.append(socialButton("role-member", member.role === "admin" ? "makeMember" : "makeAdmin", () => memberChange(conversation, member, "role", member.role === "admin" ? "member" : "admin")));
       }
-      details.append(row);
+      surface.append(row);
     }
     if (result.canManage) {
       const available = conversation.scopeId === "personal" ? directory.contacts.filter((c) => c.relationship === "friend" && !c.ownBlocked)
@@ -154,16 +166,16 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
           const person = candidates.find((p) => p.userId === userId);
           if (person) void memberChange(conversation, person, "add");
         });
-        details.append(form);
+        surface.append(form);
       }
-    } else details.append(socialNode("p", t(result.visibility === "public" ? "collaboration.social.publicMembership" : "collaboration.social.readOnlyMembers")));
+    } else surface.append(socialNode("p", t(result.visibility === "public" ? "collaboration.social.publicMembership" : "collaboration.social.readOnlyMembers")));
   }
   const controller = {
     update({ directory: nextDirectory, conversations: nextConversations = [], commands = [] } = {}) {
       directory = nextDirectory || { contacts: [], teams: [] }; conversations = nextConversations;
       if (pendingDetailsId && !conversations.some((c) => c.id === pendingDetailsId) || detailsConversation && (!conversations.some((c) => c.id === detailsConversation.id)
         || detailsConversation.scopeId.startsWith("team:") && !directory.teams.some((team) => team.scopeId === detailsConversation.scopeId))) {
-        detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; details.replaceChildren(); ui.reset();
+        detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; closeDetailSurface(); ui.reset();
       }
       // The picker keeps its own selection across a roster refresh, dropping
       // only people who are no longer selectable. A blocked or removed contact
@@ -235,9 +247,10 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     showTeam(teamId) {
       detailsGeneration += 1; detailsConversation = null; pendingDetailsId = "";
       const team = directory.teams.find((entry) => entry.id === teamId);
-      details.replaceChildren();
-      if (!team) return;
-      details.append(socialNode("h3", `${team.name} · ${t("collaboration.social.memberCount", { count: team.members.length })}`));
+      if (!team) { closeDetailSurface(); return; }
+      const surface = detailSurface(`${team.name} · ${t("collaboration.social.memberCount", { count: team.members.length })}`);
+      surface.replaceChildren();
+      if (surface === details) details.append(socialNode("h3", `${team.name} · ${t("collaboration.social.memberCount", { count: team.members.length })}`));
       for (const member of team.members) {
         const row = socialNode("div", "", "collaboration-social-row is-compact"); row.dataset.userId = member.userId;
         const name = identityName(member);
@@ -252,21 +265,21 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
             (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); })));
           row.append(controls);
         }
-        details.append(row);
+        surface.append(row);
       }
     },
     async showConversation(conversationId) {
       const generation = ++detailsGeneration, epoch = ui.current();
       pendingDetailsId = conversationId;
-      details.replaceChildren(socialNode("p", t("collaboration.social.loading")));
+      detailSurface(t("collaboration.social.loading")).replaceChildren(socialNode("p", t("collaboration.social.loading")));
       const result = await Promise.resolve(api.getConversationDetails(conversationId)).catch(() => null);
       if (generation !== detailsGeneration || epoch !== ui.current()) return;
       pendingDetailsId = "";
-      if (!result?.ok) { details.replaceChildren(socialNode("p", t("collaboration.social.permissionUnavailable"))); return; }
+      if (!result?.ok) { detailSurface(t("collaboration.social.permissionUnavailable")).replaceChildren(socialNode("p", t("collaboration.social.permissionUnavailable"))); return; }
       detailsConversation = result.conversation;
       renderDetails(result);
     },
-    reset() { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); details.replaceChildren(); },
+    reset() { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); closeDetailSurface(); },
   };
   return controller;
 }

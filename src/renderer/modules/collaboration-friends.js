@@ -29,7 +29,7 @@ export function renderCollaborationFriends(node, relationships = []) {
  *   - "my Lily ID" was a bare paragraph styled like a disabled input; it is a
  *     profile row with the avatar and the id
  */
-export function initCollaborationFriends(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
+export function initCollaborationFriends(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0, detail = null } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {}, setFilter() {} };
   root.replaceChildren();
 
@@ -49,7 +49,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   const lookupNote = socialNode("p", "", "collaboration-form-note"); lookupNote.hidden = true;
   lookupNote.setAttribute("role", "status"); addForm.append(lookupNote);
   const addDisclosure = socialDisclosure(t("collaboration.social.addContact"), addForm, { primary: true });
-  addDisclosure.classList.add("is-row");
+  addDisclosure.classList.add("is-row", "is-entry-row");
 
   const contacts = socialNode("div", "", "collaboration-contact-list");
   // No search input of its own: the panel header owns the one search box and
@@ -212,13 +212,17 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
 
   function paintRequests(incoming) {
     requestsPanel.replaceChildren();
-    requestsPanel.hidden = !requestsOpen;
-    if (!requestsOpen) return;
-    if (!incoming.length) { requestsPanel.append(socialNode("p", t("collaboration.social.noRequests"), "collaboration-empty")); return; }
+    // With a detail view the requests are their own screen; without one (this
+    // module rendered standalone, as the DOM tests do) they expand in place.
+    const surface = requestsOpen && detail?.open ? detail.open(t("collaboration.social.newFriends")) : requestsPanel;
+    requestsPanel.hidden = !requestsOpen || surface !== requestsPanel;
+    if (!requestsOpen) { detail?.close?.(); return; }
+    surface.replaceChildren();
+    if (!incoming.length) { surface.append(socialNode("p", t("collaboration.social.noRequests"), "collaboration-empty")); return; }
     // Accept/decline stay as words here: this is the one screen where deciding
     // is the whole purpose, so the actions should not hide behind hover.
     for (const contact of incoming) {
-      requestsPanel.append(contactRow(contact, { actions: [
+      surface.append(contactRow(contact, { actions: [
         socialButton("accept", "accept", () => change("accept", contact)),
         socialButton("decline", "decline", () => change("decline", contact)),
       ] }));
@@ -273,7 +277,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     },
     setFilter(value) { filter = String(value || ""); paint(); },
     reset() {
-      ui.reset(); lilyId.value = ""; clearLookup(); filter = ""; requestsOpen = false;
+      ui.reset(); lilyId.value = ""; clearLookup(); filter = ""; requestsOpen = false; detail?.close?.();
       directoryCache = { contacts: [] };
       profileRow.replaceChildren(); entries.replaceChildren(); requestsPanel.replaceChildren(); requestsPanel.hidden = true; contacts.replaceChildren();
     },
