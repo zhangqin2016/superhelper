@@ -51,11 +51,48 @@
    UA `display: none` — so each one has to opt back in. The detail view was
    added without this line and kept occupying 192px of the panel while marked
    hidden, which is why two columns appeared. */
+/* Two panes, when the panel has been dragged wide enough for them: the rail
+   and list on one side, the thread on the other, both on screen at once. Below
+   the threshold the panel holds one column at a time and a conversation
+   replaces the list, which is the only thing that fits at 420px. */
+.collaboration-center[data-collaboration-panes="two"] {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.collaboration-center[data-collaboration-panes="two"] > .collaboration-panel-header {
+  flex: 1 0 100%;
+}
+
+.collaboration-center[data-collaboration-panes="two"] > .collaboration-home {
+  /* The list keeps a fixed, comfortable width and the thread takes the rest,
+     so widening the panel grows the thread rather than stretching the rows. */
+  flex: 0 0 380px;
+  max-inline-size: 380px;
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+.collaboration-center[data-collaboration-panes="two"] > .collaboration-conversation {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+/* The selected row has to stay legible while its thread is open beside it —
+   in one pane the list is not even visible, so this only matters here. */
+.collaboration-center[data-collaboration-panes="two"] .collaboration-inbox-item.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, color-mix(in srgb, var(--bg-surface) 84%, transparent));
+}
+
+/* `hidden` means "not rendered", and no layout rule in this panel may outrank
+   it. Almost every component here sets its own `display`, which beats the UA's
+   `[hidden] { display: none }` — that is how the detail view kept occupying
+   192px while marked hidden, and how the thread's back button stayed on screen
+   after being hidden for the two-pane layout. Per-view guards were added twice
+   and missed the third case, so this covers the panel as a whole; `!important`
+   is right here because nothing should ever want a hidden element laid out. */
 .collaboration-center[hidden],
-.collaboration-home[hidden],
-.collaboration-detail[hidden],
-.collaboration-conversation[hidden] {
-  display: none;
+.collaboration-center [hidden] {
+  display: none !important;
 }
 
 .collaboration-panel-header {

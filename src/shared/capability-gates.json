@@ -608,6 +608,16 @@
       "tests": [
         "scripts/test-collaboration-css-no-dead-rules.mjs"
       ]
+    },
+    {
+      "id": "im-two-pane-when-wide",
+      "protects": "The panel can be dragged wide enough for the desktop-chat shape — rail, list and thread all on screen — and then keeps the list beside the thread instead of replacing it. Below the threshold it stays one column, which is the only thing that fits at 420px.",
+      "baseline": "The narrow behaviour is unchanged: one column, a conversation replaces the list, and the back button returns to it. Nothing about messaging, loading or permissions is involved — only how many columns the panel lays out.",
+      "failureFallback": "Two panes are docked-only, since an overlay panel covers the workbench and splitting it there would leave both halves narrow. The width ceiling always reserves space for the workbench beside the panel, so the panel cannot eat the window; the reserve is verified in a window narrow enough for it to bind rather than one where the absolute cap is the smaller of the two. Crossing the threshold in either direction re-lays out an already-open conversation, and the back button comes back with the one-column layout.",
+      "tests": [
+        "scripts/test-collaboration-two-pane.cjs",
+        "scripts/test-collaboration-hidden-views.cjs"
+      ]
     }
   ]
 }

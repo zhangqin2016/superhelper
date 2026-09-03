@@ -68,6 +68,25 @@ app.whenReady().then(async () => {
         height: Math.round(box.height), display: getComputedStyle(node).display };
     }
 
+    // Elements the code hides at RUNTIME rather than in the markup. A static
+    // scan cannot see these, and they are where the guard was missed twice:
+    // the thread's back button (hidden for the two-pane layout) and the attach
+    // button (hidden by policy) both carry classes that set their own display.
+    const runtimeHidden = {};
+    for (const id of ['collaborationConversationBack', 'collaborationAttachButton', 'collaborationScrollLatest', 'collaborationTyping']) {
+      const node = document.getElementById(id);
+      if (!node) { runtimeHidden[id] = 'missing'; continue; }
+      for (let up = node.parentElement; up && up !== document.body; up = up.parentElement) up.hidden = false;
+      node.hidden = false;
+      void document.body.offsetHeight;
+      const shown = Math.round(node.getBoundingClientRect().width);
+      node.hidden = true;
+      void document.body.offsetHeight;
+      const box = node.getBoundingClientRect();
+      runtimeHidden[id] = { shownWidth: shown, width: Math.round(box.width), height: Math.round(box.height),
+        display: getComputedStyle(node).display };
+    }
+
     // The reader's own row, with no profile loaded.
     const friends = await import(${JSON.stringify(friendsUrl)});
     const root = document.getElementById('collaborationFriends');
@@ -87,7 +106,7 @@ app.whenReady().then(async () => {
     const backToNone = profileState({ contacts: [], teams: [] });
     controller.reset();
 
-    return JSON.stringify({ boxes, noProfile, emptyProfile, realProfile, backToNone });
+    return JSON.stringify({ boxes, runtimeHidden, noProfile, emptyProfile, realProfile, backToNone });
   } catch (error) { return JSON.stringify({ error: String(error && error.stack || error) }); } })()`);
 
   const result = JSON.parse(raw);
@@ -99,6 +118,13 @@ app.whenReady().then(async () => {
     // by measuring zero in both states.
     assert.ok(box.shownWidth > 0, `${id} occupies space when shown (${box.shownWidth}px)`);
     assert.equal(box.width, 0, `${id} must occupy no width while hidden; its own display: ${box.display} outranks the UA rule`);
+    assert.equal(box.height, 0, `${id} must occupy no height while hidden`);
+  }
+
+  for (const [id, box] of Object.entries(result.runtimeHidden)) {
+    assert.notEqual(box, "missing", `${id} exists in the panel`);
+    assert.ok(box.shownWidth > 0, `${id} occupies space when shown (${box.shownWidth}px)`);
+    assert.equal(box.width, 0, `${id} is hidden at runtime and must then occupy nothing; its display: ${box.display} outranks the UA rule`);
     assert.equal(box.height, 0, `${id} must occupy no height while hidden`);
   }
 

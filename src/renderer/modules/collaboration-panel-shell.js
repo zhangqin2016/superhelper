@@ -1,9 +1,22 @@
 const MIN_WIDTH = 360;
-const MAX_WIDTH = 560;
 const DEFAULT_WIDTH = 420;
+/** Below this the panel holds one column at a time; at or above it the list and
+ *  the thread sit side by side, the shape a desktop chat client has. A 380px
+ *  list plus a thread that can still show a full bubble needs about this much. */
+const TWO_PANE_WIDTH = 760;
+/** The old cap was 560px, which made a side-by-side layout impossible to reach
+ *  by dragging. The panel may now take most of the window, but never so much
+ *  that the workbench beside it stops being usable. */
+const MAX_WIDTH = 1240;
+const WORKBENCH_MIN = 520;
 const STORAGE_KEY = "lily.collaboration.panelWidth";
 
-const clampWidth = (value) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Number(value) || DEFAULT_WIDTH));
+const widthCeiling = () => {
+  const available = Number(window.innerWidth) || 0;
+  if (!available) return MAX_WIDTH;
+  return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, available - WORKBENCH_MIN));
+};
+const clampWidth = (value) => Math.min(widthCeiling(), Math.max(MIN_WIDTH, Number(value) || DEFAULT_WIDTH));
 
 export function initCollaborationPanelShell({
   shell = document.getElementById("appShell"),
@@ -23,9 +36,25 @@ export function initCollaborationPanelShell({
   let width = clampWidth(storage?.getItem?.(STORAGE_KEY));
 
   const mode = () => window.innerWidth >= 1120 ? "docked" : "overlay";
+  // Docked only: an overlay panel covers the workbench, and splitting it in two
+  // there would leave both halves narrow for no gain.
+  const panes = () => (mode() === "docked" && width >= TWO_PANE_WIDTH ? "two" : "one");
+  let conversationOpen = false;
+  const applyPanes = () => {
+    const sideBySide = panes() === "two";
+    // In two panes the list stays: a conversation is opened BESIDE it, so the
+    // selected row keeps its context and there is nothing to go back from.
+    if (home) home.hidden = conversationOpen && !sideBySide;
+    if (conversation) conversation.hidden = !conversationOpen;
+    if (backButton) backButton.hidden = sideBySide;
+  };
   const apply = () => {
     const nextMode = mode();
     shell.dataset.collaborationMode = nextMode;
+    // A resize can cross the threshold, so the pane count is re-derived here
+    // rather than only when a conversation opens.
+    panel.dataset.collaborationPanes = panes();
+    applyPanes();
     shell.style.setProperty("--collaboration-panel-w", `${width}px`);
     shell.classList.toggle("collaboration-panel-open", open);
     panel.hidden = !open;
@@ -38,10 +67,10 @@ export function initCollaborationPanelShell({
   const openPanel = () => { open = true; apply(); requestAnimationFrame(() => panel.querySelector("button, [tabindex='-1']")?.focus?.()); };
   const closePanel = () => { if (!open) return; open = false; apply(); toggle.focus?.(); };
   const setConversationOpen = (value) => {
-    panel.classList.toggle("is-conversation-open", Boolean(value));
-    if (home) home.hidden = Boolean(value);
-    if (conversation) conversation.hidden = !value;
-    if (value) requestAnimationFrame(() => backButton?.focus?.());
+    conversationOpen = Boolean(value);
+    panel.classList.toggle("is-conversation-open", conversationOpen);
+    applyPanes();
+    if (conversationOpen && panes() === "one") requestAnimationFrame(() => backButton?.focus?.());
   };
   const togglePanel = () => open ? closePanel() : openPanel();
   const keydown = (event) => { if (open && event.key === "Escape") { event.preventDefault(); closePanel(); } };
