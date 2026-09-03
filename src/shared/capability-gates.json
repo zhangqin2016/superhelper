@@ -563,12 +563,13 @@
     },
     {
       "id": "im-group-creation",
-      "protects": "Creating a group is a real member picker: search, avatars, A–Z sections, a visible selection with a count, an optional name that defaults to the members' names, and a refusal to create a group with nobody in it.",
+      "protects": "Every people-picker in the collaboration panel is a real picker — group creation, team channel creation and adding a member — with search, avatars, A–Z sections and a visible selection; a group refuses to be created with nobody in it, and its name is optional.",
       "baseline": "The command is unchanged — same conversation.create action, scope, kind and permission checks. Only the control that gathers members and the title default changed, and both were already permitted by the server (empty title accepted, no minimum member count).",
-      "failureFallback": "The picker holds selection outside the DOM, so filtering or a roster refresh cannot silently drop a chosen person; a contact who becomes unselectable is removed from the selection rather than submitted invisibly. A blank name derives from the member names WITHOUT going through i18n, because `t()` returns its key when no locale has loaded and the key would become the group's name; the derived title is cut to the server's 200-character cap. The empty-selection rule is enforced in the submit handler as well as on the button, since a disabled button is bypassed by requestSubmit().",
+      "failureFallback": "The picker holds selection outside the DOM, so filtering or a roster refresh cannot silently drop a chosen person; a contact who becomes unselectable is removed from the selection rather than submitted invisibly. A blank name derives from the member names WITHOUT going through i18n, because `t()` returns its key when no locale has loaded and the key would become the group's name; the derived title is cut to the server's 200-character cap. The empty-selection rule is enforced in the submit handler as well as on the button, since a disabled button is bypassed by requestSubmit(). A channel has no minimum (it may start with only its creator) and a PUBLIC channel hides the picker entirely, because its membership is the whole team. Adding a member is single-select, since the command takes one target per call and a partly applied batch has no story in this UI. Unfinished channel forms survive a background sync: the picked members are snapshotted and restored separately from the text fields, and no picker input carries a `name`, so a name-matched draft restore can never target one.",
       "tests": [
         "scripts/test-collaboration-member-picker.mjs",
-        "scripts/test-collaboration-social-ui.cjs"
+        "scripts/test-collaboration-social-ui.cjs",
+        "scripts/test-collaboration-center-lifecycle.mjs"
       ]
     }
   ]

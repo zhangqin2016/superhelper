@@ -1259,6 +1259,18 @@
   border-color: color-mix(in srgb, var(--danger-text) 45%, transparent);
 }
 
+/* Shown in place of the picker for a public channel, where membership is the
+   whole team and there is nothing to choose. */
+.collaboration-form-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  border-radius: 9px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
 /* The member picker. It replaced a 96px `<select multiple>`; the list needs
    real height to be worth scrolling, but not so much that the name field and
    the submit button fall off the bottom of the form. */

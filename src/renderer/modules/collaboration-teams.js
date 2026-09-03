@@ -1,11 +1,15 @@
 import { t } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, selectedIds, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
+import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
 
 export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {}, showConversation: async () => {} };
   root.replaceChildren();
   let directory = { contacts: [], teams: [] }, conversations = [], detailsGeneration = 0, detailsConversation = null, pendingDetailsId = "";
+  // Live channel-member pickers by team id. The team sections are rebuilt on
+  // every sync, so an unfinished selection has to be snapshotted and restored
+  // the same way the text fields already are.
+  const channelPickers = new Map();
   const groupForm = socialNode("form", "", "collaboration-social-form"); groupForm.dataset.form = "group";
   // No heading: the disclosure that opens this form already carries the same
   // words, and printing them twice is the redundancy removed elsewhere here.
@@ -30,7 +34,6 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   const list = socialNode("div"), personal = socialNode("div"), details = socialNode("div", "", "collaboration-member-details");
   root.append(socialDisclosure(`＋ ${t("collaboration.social.createGroup")}`, groupForm, { primary: true }), personal, list, details);
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
-  const optionsFor = (people) => people.map((p) => [p.userId, socialPerson(p)]);
   // `team:t_abc` is an internal addressing string. It used to be printed on
   // team headers and on every channel subtitle; a person has no use for it.
   const teamLabel = (team) => team.name;
@@ -72,15 +75,31 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     const title = socialField(form, "title", "name"); title.required = true;
     const visibility = socialField(form, "visibility", "visibility", { options: [["private", t("collaboration.social.private")],
       ...(["owner", "admin"].includes(team.role) ? [["public", t("collaboration.social.public")]] : [])] });
-    const members = socialField(form, "members", "members", { multiple: true, options: optionsFor(team.members.filter((m) => m.userId !== directory.profile?.userId)) });
-    visibility.addEventListener("change", () => { members.disabled = visibility.value === "public"; });
+    // A channel may legitimately start with nobody but its creator, so unlike
+    // a personal group there is no minimum here.
+    const members = createMemberPicker({ minimum: 0 });
+    members.setPeople(team.members.filter((m) => m.userId !== directory.profile?.userId));
+    form.append(members.node);
+    channelPickers.set(team.id, members);
+    // A public channel's membership IS the team, so the picker is HIDDEN rather
+    // than disabled: a greyed-out list of names you cannot act on is noise, and
+    // it implied the choice still mattered.
+    const syncVisibility = () => {
+      const isPublic = visibility.value === "public";
+      members.node.hidden = isPublic;
+      publicNote.hidden = !isPublic;
+    };
+    const publicNote = socialNode("p", t("collaboration.social.publicMembership"), "collaboration-form-note");
+    form.append(publicNote);
+    visibility.addEventListener("change", syncVisibility);
+    syncVisibility();
     const submit = socialNode("button", t("collaboration.social.createChannel"), "collaboration-social-primary"); submit.type = "submit"; form.append(submit);
     form.addEventListener("submit", (event) => {
       event.preventDefault(); const value = title.value.trim(); if (!value) return;
       const kind = visibility.value;
       void ui.run(() => api.conversation({ action: "create", scopeType: "organization", organizationId: team.id, kind: "channel", visibility: kind, title: value,
-        memberUserIds: kind === "public" ? [] : selectedIds(members) }), async (result, origin) => {
-        const current = [...list.querySelectorAll("[data-team-id]")].find((node) => node.dataset.teamId === team.id)?.querySelector('[name="title"]');
+        memberUserIds: kind === "public" ? [] : members.selectedIds() }), async (result, origin) => {
+        const current = [...list.querySelectorAll("section.collaboration-team[data-team-id]")].find((node) => node.dataset.teamId === team.id)?.querySelector('[name="title"]');
         if (current?.value.trim() === value) current.value = "";
         if (result.conversationId && origin.isCurrentNavigation()) await onOpen(result.conversationId);
       });
@@ -112,9 +131,22 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       const candidates = available.filter((p) => !result.members.some((m) => m.userId === p.userId));
       if (candidates.length) {
         const form = socialNode("form", "", "collaboration-social-form");
-        const target = socialField(form, "targetUserId", "members", { options: optionsFor(candidates) });
-        const add = socialNode("button", t("collaboration.social.addMember")); add.type = "submit"; form.append(add);
-        form.addEventListener("submit", (event) => { event.preventDefault(); const person = candidates.find((p) => p.userId === target.value); if (person) void memberChange(conversation, person, "add"); });
+        // Single-select on purpose: `conversation.member` takes ONE target per
+        // call, so a multi-select would promise a batch the command layer
+        // cannot deliver — and a partly-applied batch (three added, then
+        // denied) has no story here. Searchable and with avatars either way,
+        // which a bare <select> of names was not.
+        const target = createMemberPicker({ minimum: 1, single: true, onChange: () => { add.disabled = !target.satisfied(); } });
+        target.setPeople(candidates);
+        form.append(target.node);
+        const add = socialNode("button", t("collaboration.social.addMember"), "collaboration-social-primary"); add.type = "submit"; form.append(add);
+        add.disabled = true;
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const [userId] = target.selectedIds();
+          const person = candidates.find((p) => p.userId === userId);
+          if (person) void memberChange(conversation, person, "add");
+        });
         details.append(form);
       }
     } else details.append(socialNode("p", t(result.visibility === "public" ? "collaboration.social.publicMembership" : "collaboration.social.readOnlyMembers")));
@@ -132,8 +164,15 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       groupMembers.setPeople(directory.contacts.filter((c) => c.relationship === "friend" && !c.ownBlocked));
       // Normal sync must not erase unfinished channel forms. Retain exact IDs,
       // and restore selections only if they still exist in the current roster.
-      const drafts = new Map([...list.querySelectorAll("[data-team-id]")].map((node) => [node.dataset.teamId,
-        [...node.querySelectorAll("input,select")].map((field) => ({ name: field.name, value: field.value, selected: field.multiple ? selectedIds(field) : null }))]));
+      const drafts = new Map([...list.querySelectorAll("section.collaboration-team[data-team-id]")].map((node) => [node.dataset.teamId,
+        // The picker's own search box and checkboxes are excluded: they are not
+        // named form fields, and restoring `value` onto a checkbox would tick
+        // the wrong people. The picker's selection is snapshotted separately.
+        [...node.querySelectorAll("input,select")]
+          .filter((field) => field.name && !field.closest(".collaboration-member-picker"))
+          .map((field) => ({ name: field.name, value: field.value }))]));
+      const channelSelections = new Map([...channelPickers].map(([teamId, picker]) => [teamId, picker.snapshot()]));
+      channelPickers.clear();
       list.replaceChildren(); personal.replaceChildren();
       const personalGroups = conversations.filter((c) => c.scopeId === "personal" && c.kind === "group");
       if (personalGroups.length) {
@@ -165,11 +204,15 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         section.append(channelList);
         section.append(channelForm(team)); list.append(section);
         for (const field of section.querySelectorAll("input,select")) {
+          if (!field.name || field.closest(".collaboration-member-picker")) continue;
           const draft = drafts.get(team.id)?.find((entry) => entry.name === field.name); if (!draft) continue;
-          if (field.multiple) for (const option of field.options) option.selected = draft.selected?.includes(option.value);
-          else if (field.tagName !== "SELECT" || [...field.options].some((o) => o.value === draft.value)) field.value = draft.value;
+          if (field.tagName !== "SELECT" || [...field.options].some((o) => o.value === draft.value)) field.value = draft.value;
         }
-        const visibility = section.querySelector('[name="visibility"]'); section.querySelector('[name="members"]').disabled = visibility.value === "public";
+        // Restore the picked members, then re-apply the public/private state —
+        // in that order, because a restored "public" visibility has to hide the
+        // picker again after its selection has been put back.
+        channelPickers.get(team.id)?.restore(channelSelections.get(team.id));
+        section.querySelector('[name="visibility"]')?.dispatchEvent(new Event("change"));
       }
       ui.renderPending(commands, "conversation", api, scopeLabel);
     },

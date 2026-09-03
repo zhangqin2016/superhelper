@@ -2,20 +2,56 @@ import assert from "node:assert/strict";
 import { initCollaborationCenter } from "../src/renderer/modules/collaboration-center.js";
 class Node extends EventTarget {
   children = []; dataset = {}; hidden = false; value = ""; textContent = "";
-  clientTop = 0;
-  getBoundingClientRect() { return { top: 0, bottom: 0 }; }
-  classList = { toggle() {} }; setAttribute() {} removeAttribute() {} focus() {}
-  append(child) { this.children.push(child); }
+  clientTop = 0; disabled = false; title = ""; placeholder = "";
+  // The panel shell writes a CSS custom property for its dragged width and
+  // toggles classes on the shell; the nav rail reads aria-pressed back.
+  style = { setProperty() {}, removeProperty() {} };
+  attributes = new Map();
+  get childNodes() { return this.children; }
+  classList = { toggle() {}, add() {}, remove() {}, contains: () => false };
+  getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
+  removeAttribute(name) { this.attributes.delete(name); }
+  focus() {}
+  closest() { return null; }
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
+  append(...kids) { for (const child of kids) this.children.push(child); }
   replaceChildren(...children) { this.children = children.flatMap((c) => c.fragment ? c.children : [c]); }
+  remove() {}
 }
+// The shell defers a focus move to the next frame after opening a conversation.
+globalThis.requestAnimationFrame = globalThis.requestAnimationFrame || ((cb) => setImmediate(() => cb(0)));
+globalThis.cancelAnimationFrame = globalThis.cancelAnimationFrame || (() => {});
 const nodes = new Map();
-globalThis.document = { getElementById: (id) => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); }, createElement: () => new Node(), createDocumentFragment: () => Object.assign(new Node(), { fragment: true }) };
+globalThis.document = {
+  getElementById: (id) => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); },
+  createElement: () => new Node(),
+  createElementNS: () => new Node(),
+  createDocumentFragment: () => Object.assign(new Node(), { fragment: true }),
+  querySelectorAll: () => [],
+  // The panel shell binds a keydown handler and reads the document direction
+  // to decide which edge a drag-resize grows from.
+  addEventListener() {}, removeEventListener() {},
+  documentElement: { dir: "ltr", dataset: {}, style: { setProperty() {} } },
+};
 let publish;
 const opens = [];
 // list() is the full authorized local projection, not a paged inbox. Successful
 // open/getDraft fixtures must be listed until a modeled access revocation.
 let visibleConversationIds = ["a", "b", "c", "offline", "new-selection", "paging", "hidden-revoked", "revoked-a", "missing-b"];
-globalThis.window = { assistantClient: { collaboration: {
+// The panel shell listens on `window` for pointermove/pointerup/resize and
+// reads innerWidth and localStorage to pick docked vs overlay. This stub was
+// written before that existed, so every run of this file threw
+// "window.addEventListener is not a function" before reaching an assertion.
+const windowListeners = new Map();
+globalThis.window = {
+  innerWidth: 1400,
+  localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  addEventListener: (type, handler) => { windowListeners.set(`${type}:${String(handler)}`, handler); },
+  removeEventListener: (type, handler) => { windowListeners.delete(`${type}:${String(handler)}`); },
+  assistantClient: { collaboration: {
   onStateChange: (cb) => { publish = cb; return () => {}; }, list: async () => ({ ok: true, conversations: visibleConversationIds.map((id) => ({ id })) }),
   open: (id, beforeSeq) => new Promise((resolve) => opens.push({ id, beforeSeq, resolve })), getDraft: async () => ({ ok: true, text: "private draft" }), saveDraft: async () => ({ ok: true }),
 } } };
@@ -34,7 +70,12 @@ try {
   opens[2].resolve({ ok: true, conversation: { id: "c", title: "Selected C" }, messages: [] }); await navigation;
   await settle();
   const textarea = nodes.get("collaborationComposer");
-  assert.equal(textarea.value, "private draft");
+  // The composer is gated on the policy being KNOWN — it stays inert until
+  // then, which is why the calls above (the notification path, deliberately
+  // taken before any panel open) leave it inactive and its draft unread. Load
+  // the policy the way a real session does before asserting on the draft.
+  center.show(); await settle(); await settle();
+  assert.equal(textarea.value, "private draft", "an open panel restores the conversation's private draft");
   publish({ type: "availability", state: { ok: true } }); await settle();
   assert.equal(textarea.value, "", "account/service replacement clears renderer-only private draft state");
   assert.equal(nodes.get("collaborationTimeline").children.length, 0);

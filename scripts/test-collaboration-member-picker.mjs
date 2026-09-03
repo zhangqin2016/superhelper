@@ -105,4 +105,76 @@ for (const shape of [undefined, null, "nope", 7, [null, "", "   "]]) {
     "a pick row is a <label>, so the whole row is the checkbox's hit area and accessible name");
 }
 
+// ---- The channel form and the add-member form use it too ---------------
+{
+  const teams = read("src/renderer/modules/collaboration-teams.js");
+  assert.doesNotMatch(teams, /multiple:\s*true/,
+    "no <select multiple> people pickers are left in this view");
+  // The helper that reads a <select>'s selectedOptions is no longer imported.
+  // (The pickers' own `selectedIds()` method shares the name, so this checks
+  // the import line rather than every call site.)
+  const teamsImports = teams.split("\n").find((line) => line.includes("collaboration-social-ui.js")) || "";
+  assert.doesNotMatch(teamsImports, /\bselectedIds\b/, "the <select>-reading helper is no longer imported");
+
+  const channel = teams.slice(teams.indexOf("function channelForm"), teams.indexOf("async function memberChange"));
+  // A channel may legitimately start with only its creator, unlike a group.
+  assert.match(channel, /createMemberPicker\(\{ minimum: 0 \}\)/, "a channel has no minimum member count");
+  // A public channel's membership IS the team. The picker is HIDDEN, not
+  // disabled: a greyed list of names you cannot act on implies the choice
+  // still matters.
+  assert.match(channel, /members\.node\.hidden = isPublic/, "a public channel hides the picker");
+  assert.match(channel, /publicNote\.hidden = !isPublic/, "and says why instead of showing a dead control");
+  assert.doesNotMatch(channel, /members\.disabled/, "the picker is hidden rather than disabled");
+
+  const addMember = teams.slice(teams.indexOf("if (candidates.length)"), teams.indexOf("} else details.append"));
+  // `conversation.member` takes ONE target per call, so multi-select would
+  // promise a batch the command layer cannot deliver — and a partly applied
+  // batch has no story in this UI.
+  assert.match(addMember, /single: true/, "adding a member is single-select because the command takes one target");
+  assert.match(addMember, /add\.disabled = true/, "the add button starts disabled");
+}
+
+// ---- Drafts survive a background sync ----------------------------------
+{
+  const teams = read("src/renderer/modules/collaboration-teams.js");
+  // The team HEADER button also carries data-team-id (added for the nav rail),
+  // so a bare [data-team-id] query matches two nodes per team; the button holds
+  // no fields and won the Map, which silently wiped the typed channel title on
+  // every sync. Both queries must be scoped to the section.
+  assert.doesNotMatch(teams, /list\.querySelectorAll\("\[data-team-id\]"\)/,
+    "a bare [data-team-id] query also matches the team header button and loses the draft");
+  assert.match(teams, /list\.querySelectorAll\("section\.collaboration-team\[data-team-id\]"\)/,
+    "draft queries are scoped to the team section");
+
+  // Two things keep a restore from writing a draft `value` onto a checkbox.
+  // The load-bearing one is that no picker input carries a `name`, so the
+  // name-matched restore can never find a draft for it — assert the property
+  // itself rather than the guard that also enforces it.
+  const pickerSource = read("src/renderer/modules/member-picker.js");
+  const inputCreation = pickerSource.match(/document\.createElement\("input"\)[\s\S]{0,240}/g) || [];
+  assert.ok(inputCreation.length >= 2, "the picker builds a search box and checkboxes");
+  for (const block of inputCreation) {
+    assert.doesNotMatch(block, /\.name\s*=/, "a picker input must never be given a name, or a draft restore can target it");
+  }
+  // And the guard, in both the snapshot and the restore, as defense in depth.
+  assert.match(teams, /\.filter\(\(field\) => field\.name && !field\.closest\("\.collaboration-member-picker"\)\)/,
+    "picker internals are excluded from the field snapshot");
+  assert.match(teams, /if \(!field\.name \|\| field\.closest\("\.collaboration-member-picker"\)\) continue;/,
+    "picker internals are excluded from the field restore");
+  assert.match(teams, /channelPickers\.get\(team\.id\)\?\.restore\(channelSelections\.get\(team\.id\)\)/,
+    "the picker's selection is snapshotted and restored on its own");
+  // Restoring a "public" visibility has to hide the picker again afterwards.
+  assert.ok(teams.indexOf("channelPickers.get(team.id)?.restore") < teams.indexOf('[name="visibility"]\')?.dispatchEvent'),
+    "visibility is re-applied AFTER the selection is restored");
+}
+
+// ---- Single mode is radio semantics -----------------------------------
+{
+  const picker = read("src/renderer/modules/member-picker.js");
+  assert.match(picker, /if \(single\) selected\.clear\(\);/, "picking someone in single mode clears the previous choice");
+  assert.match(picker, /for \(const other of list\.querySelectorAll\('\.is-pick input\[type="checkbox"\]'\)\)/,
+    "the other boxes are unticked in place, without rebuilding the list under the pointer");
+  assert.match(picker, /if \(single && selected\.size\) break;/, "a restored snapshot cannot smuggle two people into single mode");
+}
+
 console.log("collaboration-member-picker: ok");

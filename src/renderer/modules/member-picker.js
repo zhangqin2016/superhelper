@@ -30,7 +30,14 @@ export function derivedGroupTitle(names, { maxNames = 3, maxLength = 200 } = {})
   return title.length > maxLength ? title.slice(0, maxLength) : title;
 }
 
-export function createMemberPicker({ minimum = 1, onChange = () => {} } = {}) {
+/**
+ * @param minimum how many people must be chosen for `satisfied()` to hold
+ * @param single  radio semantics: choosing someone clears the previous choice.
+ *                Used where the command takes ONE target per call, so offering
+ *                multi-select would promise a batch the command layer cannot
+ *                deliver.
+ */
+export function createMemberPicker({ minimum = 1, single = false, onChange = () => {} } = {}) {
   const root = socialNode("div", "", "collaboration-member-picker");
 
   const search = document.createElement("input");
@@ -97,9 +104,19 @@ export function createMemberPicker({ minimum = 1, onChange = () => {} } = {}) {
         box.type = "checkbox";
         box.checked = selected.has(person.userId);
         box.addEventListener("change", () => {
-          if (box.checked) selected.add(person.userId); else selected.delete(person.userId);
+          if (box.checked) {
+            if (single) selected.clear();
+            selected.add(person.userId);
+          } else selected.delete(person.userId);
           // Repaint the strip and the count, but NOT the list: rebuilding it
-          // here would move the row out from under the pointer mid-click.
+          // here would move the row out from under the pointer mid-click. In
+          // single mode the other boxes still have to be cleared, so only
+          // their `checked` is touched — the rows themselves stay put.
+          if (single) {
+            for (const other of list.querySelectorAll('.is-pick input[type="checkbox"]')) {
+              if (other !== box) other.checked = false;
+            }
+          }
           paintStrip();
           onChange(controller);
         });
@@ -134,6 +151,19 @@ export function createMemberPicker({ minimum = 1, onChange = () => {} } = {}) {
     count() { return selectedPeople().length; },
     satisfied() { return selectedPeople().length >= minimum; },
     minimum,
+    /** Selection as plain ids, for carrying across a rebuild of the form. */
+    snapshot() { return [...selected]; },
+    /** Restore a snapshot, keeping only people who are still selectable. */
+    restore(ids) {
+      selected.clear();
+      const present = new Set(people.map((person) => person.userId));
+      for (const userId of Array.isArray(ids) ? ids : []) {
+        if (typeof userId !== "string" || !present.has(userId)) continue;
+        if (single && selected.size) break;
+        selected.add(userId);
+      }
+      paint();
+    },
     reset() { selected.clear(); filter = ""; search.value = ""; paint(); },
   };
   return controller;
