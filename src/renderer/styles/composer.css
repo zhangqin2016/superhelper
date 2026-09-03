@@ -656,7 +656,21 @@
   gap: 6px;
   align-items: center;
   min-width: 0;
-  flex-wrap: wrap;
+  /* One row, always. When the column is narrow the long triggers (permission,
+     model) truncate with an ellipsis rather than pushing the send button down. */
+  flex-wrap: nowrap;
+}
+.composer-toolbar .permission-mode-wrap,
+.composer-toolbar .composer-model-btn {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.composer-toolbar .permission-mode-button,
+.composer-toolbar .composer-model-btn .composer-model-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .composer-toolbar .composer-icon-btn {
   width: 30px;

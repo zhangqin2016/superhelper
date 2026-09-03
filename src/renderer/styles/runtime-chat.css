@@ -508,7 +508,12 @@
 .assistant-turn-narrative.markdown-body table,
 .assistant-turn-narrative-text.markdown-body table,
 .assistant-turn-final.markdown-body table {
-  width: 100%;
+  /* A wide table scrolls sideways as a unit instead of squeezing its columns
+     until a path wraps one character per line and every row is 150px tall. */
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--text-base);
@@ -516,9 +521,16 @@
   table-layout: auto;
   background: color-mix(in srgb, var(--bg-surface-raised) 96%, var(--bg-surface) 4%);
   border-radius: var(--radius-lg);
-  overflow: hidden;
   border: 1px solid var(--border-light);
   box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 1px var(--border-subtle);
+}
+
+.assistant-turn-narrative.markdown-body td code,
+.assistant-turn-narrative.markdown-body th code,
+.assistant-turn-final.markdown-body td code,
+.assistant-turn-final.markdown-body th code {
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .assistant-turn-narrative.markdown-body code,

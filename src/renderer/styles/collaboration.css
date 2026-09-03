@@ -369,7 +369,7 @@
 }
 
 .collaboration-row-avatar.is-person {
-  background: hsl(var(--avatar-hue, 175) 32% 48%);
+  background: hsl(var(--avatar-hue, 175) 30% 46%);
 }
 
 .collaboration-row-avatar.is-team {
@@ -377,7 +377,7 @@
 }
 
 .collaboration-row-avatar.is-chat {
-  background: hsl(var(--avatar-hue, 238) 46% 56%);
+  background: hsl(var(--avatar-hue, 238) 30% 46%);
 }
 
 .collaboration-row-content {
@@ -639,7 +639,7 @@
   flex: 0 0 26px;
   border-radius: 50%;
   color: var(--accent-on);
-  background: hsl(var(--avatar-hue, 243) 48% 54%);
+  background: hsl(var(--avatar-hue, 243) 30% 46%);
   font-weight: 700;
 }
 
@@ -1544,7 +1544,7 @@
   justify-content: center;
   min-inline-size: 0;
   min-block-size: 0;
-  background: hsl(var(--avatar-hue, 240) 42% 46%);
+  background: hsl(var(--avatar-hue, 240) 30% 46%);
   color: var(--accent-on);
   /* A cell is ~13px wide in a 2x2 and ~9px in a 3x3: the initial is a colour
      cue at that size, not text, which is why it is not held to the text floor
@@ -1780,6 +1780,12 @@
 .collaboration-mention-manual-entry,
 .collaboration-mention-permanent-hint {
   display: none !important;
+}
+
+/* The panel takes focus when it opens (see openPanel); a container needs no ring. */
+.collaboration-center:focus,
+.collaboration-center:focus-visible {
+  outline: none;
 }
 
 .collaboration-center button:focus-visible,

@@ -97,7 +97,10 @@ export function initCollaborationPanelShell({
     if (scrim) scrim.hidden = !open || nextMode !== "overlay";
     if (resizeHandle) resizeHandle.hidden = !open || nextMode !== "docked";
   };
-  const openPanel = () => { open = true; apply(); requestAnimationFrame(() => panel.querySelector("button, [tabindex='-1']")?.focus?.()); };
+  // Focus moves INTO the panel (for Escape and screen readers) but onto the
+  // panel itself, not its first button: that button is "detach", and a focus
+  // ring on it was the first thing you saw every time the panel opened.
+  const openPanel = () => { open = true; apply(); if (panel.tabIndex == null || panel.tabIndex < 0) panel.tabIndex = -1; requestAnimationFrame(() => panel.focus?.({ preventScroll: true })); };
   const closePanel = () => { if (!open) return; open = false; apply(); toggle.focus?.(); };
   const setConversationOpen = (value) => {
     conversationOpen = Boolean(value);

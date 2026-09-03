@@ -75,7 +75,10 @@ function syncSessionPermissionMenu() {
   const { select, button, menu } = sessionPermissionElements();
   if (!select || !button || !menu) return;
   const label = selectedSessionPermissionLabel(select) || t("settings.sessionPermissionSelect");
-  button.textContent = label;
+  // The trigger shows the effective mode ("全自主"); the full "inherits the
+  // global default (…)" wording stays in the menu and the tooltip, so the
+  // toolbar does not carry a sentence.
+  button.textContent = select.selectedOptions?.[0]?.dataset?.shortLabel || label;
   button.title = select.title || label;
   button.disabled = select.disabled;
   button.setAttribute("aria-disabled", select.disabled ? "true" : "false");
@@ -190,9 +193,9 @@ export async function refreshSessionPermissionSelect() {
   const inherit = document.createElement("option");
   inherit.value = "inherit";
   const global = (data.modes || []).find((mode) => mode.id === data.globalModeId);
-  inherit.textContent = t("settings.sessionPermissionInheritOption", {
-    label: tPermission(global) || data.globalModeId,
-  });
+  const globalLabel = tPermission(global) || data.globalModeId;
+  inherit.textContent = t("settings.sessionPermissionInheritOption", { label: globalLabel });
+  inherit.dataset.shortLabel = globalLabel;
   inherit.selected = data.inherited;
   select.appendChild(inherit);
   addModeOptions(select, data.modes || [], data.modeId);

@@ -183,8 +183,9 @@
   pointer-events: auto;
   transition: opacity 0.12s;
 }
-.workspace-version-entry.is-protected,
-.workspace-version-entry.is-warning,
+/* Quiet at rest in every state: "files not yet snapshotted" is the normal
+   working state of an active workspace, and painting it as a warning put an
+   orange ring on every row. Hover or focus reveals the state and its colour. */
 .project-header:hover .workspace-version-entry,
 .project-header:focus-within .workspace-version-entry {
   opacity: 0.86;
