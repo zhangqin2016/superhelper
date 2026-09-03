@@ -699,8 +699,26 @@
   z-index: 2;
   inset-block-start: auto;
   inset-block-end: calc(100% - 2px);
-  inset-inline-end: 0;
+  /* Anchored to the side of the row that HAS room. A row is only as wide as
+     its bubble, and this overlay is wider than a short bubble, so anchoring it
+     to the row's outer edge pushes it off the thread: an own message sits at
+     the right, and anchoring these to its left edge made them run 52px past
+     the timeline, which is what produced a horizontal scrollbar on a
+     conversation containing one word. Incoming rows sit at the left, so they
+     anchor left and grow right; outgoing rows anchor right and grow left.
+     Both then grow into the empty middle. */
+  inset-inline-start: 0;
+  inset-inline-end: auto;
   display: flex;
+  /* The overlay can hold reply + edit + revoke + five quick reactions, which
+     measured 607px in a 460px panel — wider than the thread itself, so NO
+     anchoring could keep it inside. `flex-wrap` is what fixes that: an
+     absolutely positioned box shrink-to-fits inside its containing block (the
+     row), so once its content is allowed to wrap it can no longer exceed it.
+     A `max-inline-size` was tried here too and a mutation showed it changes
+     nothing — the row already bounds the width — so it is not kept. */
+  flex-wrap: wrap;
+  justify-content: inherit;
   opacity: 0; /* desktop: revealed on hover/focus only — no ghost buttons over the thread */
   transform: translateY(3px) scale(0.98);
   pointer-events: none;
@@ -708,8 +726,8 @@
 }
 
 .collaboration-message.is-outgoing .collaboration-message-actions {
-  inset-inline-start: 0;
-  inset-inline-end: auto;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
 }
 
 .collaboration-message:hover .collaboration-message-actions,

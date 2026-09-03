@@ -580,6 +580,15 @@
       "tests": [
         "scripts/test-collaboration-add-contact.mjs"
       ]
+    },
+    {
+      "id": "im-thread-no-sideways-scroll",
+      "protects": "A conversation never scrolls sideways, and the hover action overlay stays inside the thread in both directions no matter how many actions a message offers.",
+      "baseline": "Geometry only. Every action still exists and is still reachable; the overlay wraps instead of extending past the thread.",
+      "failureFallback": "The overlay is absolutely positioned, so it shrink-to-fits inside its row: once its content may wrap it cannot exceed that box, whatever the action count or panel width. Anchoring is to the side of the row that has room — incoming rows grow right, outgoing rows grow left — so neither edge is crossed. A long unbroken URL wraps rather than widening the thread.",
+      "tests": [
+        "scripts/test-collaboration-thread-overflow.cjs"
+      ]
     }
   ]
 }
