@@ -20,14 +20,14 @@
   --color-scheme: dark;
 
   /* Accent: single vivid periwinkle-violet — actions & focus only */
-  --accent: #6366f1;
-  --accent-hover: #7a7cf5;
-  --accent-dim: rgba(99, 102, 241, 0.14);
-  --accent-subtle: rgba(99, 102, 241, 0.08);
-  --accent-border: rgba(99, 102, 241, 0.35);
-  --accent-strong-border: rgba(99, 102, 241, 0.72);
-  --accent-strong-bg: rgba(99, 102, 241, 0.22);
-  --accent-ring: rgba(99, 102, 241, 0.40);
+  --accent: #4a90e8;
+  --accent-hover: #6aa5ee;
+  --accent-dim: rgba(74, 144, 232, 0.14);
+  --accent-subtle: rgba(74, 144, 232, 0.08);
+  --accent-border: rgba(74, 144, 232, 0.35);
+  --accent-strong-border: rgba(74, 144, 232, 0.72);
+  --accent-strong-bg: rgba(74, 144, 232, 0.22);
+  --accent-ring: rgba(74, 144, 232, 0.40);
   --accent-on: #fff; /* text/icon colour on an accent-filled surface */
 
   /* Surface ladder: neutral graphite, layered by lightness (not borders). */
@@ -57,7 +57,7 @@
   --bg-tool-detail-strong: rgba(0, 0, 0, 0.22);
   --bg-media: rgba(16, 20, 25, 0.76);
   --bg-choice-backdrop: rgba(0, 0, 0, 0.28);
-  --bg-pdf-active: rgba(99, 102, 241, 0.10);
+  --bg-pdf-active: rgba(74, 144, 232, 0.10);
   --bg-pdf-viewport-sheen: rgba(220, 227, 236, 0.04);
   --bg-user-chip: rgba(255, 255, 255, 0.15);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.1);
@@ -73,7 +73,7 @@
   --text-inverse: #ffffff;
   --text-strong: #f7f9fb;
   --text-code: #f2b06e;
-  --link: #9a9df7;
+  --link: #7fb2f0;
 
   /* Hairlines stay neutral so the dark shell never reads brown. */
   --border: rgba(220, 227, 236, 0.09);
@@ -122,7 +122,7 @@
   --diff-add-text: #62d48b;
   --diff-del-bg: rgba(239, 68, 68, 0.12);
   --diff-del-text: #ff7b7b;
-  --diff-hunk-bg: rgba(99, 102, 241, 0.12);
+  --diff-hunk-bg: rgba(74, 144, 232, 0.12);
   --diff-hunk-text: #aeb8ff;
   --diff-meta-bg: rgba(148, 163, 184, 0.08);
   --diff-meta-text: #93a0b8;
@@ -203,14 +203,14 @@
   --color-scheme: light;
 
   /* Accent: brand violet, softened for daylight surfaces */
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-dim: rgba(99, 102, 241, 0.12);
-  --accent-subtle: rgba(99, 102, 241, 0.07);
-  --accent-border: rgba(99, 102, 241, 0.30);
-  --accent-strong-border: rgba(99, 102, 241, 0.55);
-  --accent-strong-bg: rgba(99, 102, 241, 0.14);
-  --accent-ring: rgba(99, 102, 241, 0.18);
+  --accent: #2f7de1;
+  --accent-hover: #2568c0;
+  --accent-dim: rgba(47, 125, 225, 0.12);
+  --accent-subtle: rgba(47, 125, 225, 0.07);
+  --accent-border: rgba(47, 125, 225, 0.30);
+  --accent-strong-border: rgba(47, 125, 225, 0.55);
+  --accent-strong-bg: rgba(47, 125, 225, 0.14);
+  --accent-ring: rgba(47, 125, 225, 0.18);
   --accent-on: #fff; /* text/icon colour on an accent-filled surface */
 
   /* Neutral daylight ladder: clean workbench surfaces, never warm paper. */
@@ -237,7 +237,7 @@
   --bg-tool-detail-strong: rgba(28, 39, 54, 0.06);
   --bg-media: rgba(249, 250, 252, 0.97);
   --bg-choice-backdrop: rgba(18, 28, 42, 0.28);
-  --bg-pdf-active: rgba(99, 102, 241, 0.08);
+  --bg-pdf-active: rgba(47, 125, 225, 0.08);
   --bg-pdf-viewport-sheen: rgba(28, 39, 54, 0.035);
   --bg-user-chip: rgba(255, 255, 255, 0.22);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
@@ -254,7 +254,7 @@
   --text-inverse: #ffffff;
   --text-strong: #131d2a;
   --text-code: #9a4a0e;
-  --link: #4f46e5;
+  --link: #2568c0;
 
   /* Neutral graphite hairlines */
   --border: rgba(28, 39, 54, 0.10);
@@ -303,8 +303,8 @@
   --diff-add-text: #15803d;
   --diff-del-bg: rgba(220, 38, 38, 0.1);
   --diff-del-text: #dc2626;
-  --diff-hunk-bg: rgba(99, 102, 241, 0.10);
-  --diff-hunk-text: #4f46e5;
+  --diff-hunk-bg: rgba(47, 125, 225, 0.10);
+  --diff-hunk-text: #2568c0;
   --diff-meta-bg: rgba(100, 116, 139, 0.1);
   --diff-meta-text: #64748b;
 

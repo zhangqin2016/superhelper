@@ -760,7 +760,9 @@
   background: var(--bg-surface-raised);
   color: var(--muted);
   font-size: 11.5px;
-  box-shadow: var(--shadow-sm);
+  /* Flat. Seventeen hover chips each floating on a 14px blur read as "cards
+     everywhere"; a chip is a control, not a surface. */
+  box-shadow: none;
 }
 
 .collaboration-message [data-action="reply-message"] {
@@ -1814,7 +1816,8 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-surface-hover) 78%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
-  box-shadow: var(--shadow-sm);
+  /* A date label is a label. It had an elevation shadow. */
+  box-shadow: none;
   color: var(--text-dim);
   font-size: 11px;
   line-height: 16px;
@@ -2319,7 +2322,18 @@
   inline-size: 14px;
   block-size: 11px;
   flex-basis: 14px;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 16'%3E%3Cpath d='M1 8.5 4.5 12 11 4.5' fill='none' stroke='%236366f1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8 8.5 11.5 12 18 4.5' fill='none' stroke='%236366f1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* The colour is the element's currentColor, so it follows --accent; a
+     data URL cannot read a custom property. */
+  background-image: none;
+  background-color: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 16'%3E%3Cpath d='M1 8.5 4.5 12 11 4.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8 8.5 11.5 12 18 4.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 16'%3E%3Cpath d='M1 8.5 4.5 12 11 4.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8 8.5 11.5 12 18 4.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
 
 /* Reactions: a chip row under the body. Full-width in the wrapping bubble so

@@ -53,11 +53,16 @@ assert.ok(lightBlock.includes("--bg-surface-hover: #f0f2f5;"), "light theme hove
 assert.ok(lightBlock.includes("--border: rgba(28, 39, 54, 0.10);"), "light theme borders should use neutral graphite, not warm brown");
 assert.ok(!lightBlock.includes("#f7f7f5"), "light theme must not restore the warm-paper body tone");
 assert.ok(!lightBlock.includes("rgba(31, 27, 20"), "light theme must not use warm-brown overlays or shadows");
-assert.ok(lightBlock.includes("--accent: #6366f1;"), "light theme accent should be brand violet #6366f1");
+// The accent is the product's own blue, not a CSS framework default. #6366f1 is
+// Tailwind indigo-500 verbatim, the single most recognisable "generated UI"
+// colour; it was replaced on 2026-09-03 and must not come back in either theme.
+assert.ok(lightBlock.includes("--accent: #2f7de1;"), "light theme accent should be the brand blue #2f7de1");
+assert.ok(!/6366f1|99, ?102, ?241/i.test(base), "base.css must not reintroduce Tailwind indigo-500 (#6366f1) anywhere");
 
 // 4) Component CSS must consume tokens, not raw colors
-//    (rgba()/rgb() banned outright; hex only for the brand gradient + white).
-const HEX_ALLOW = new Set(["#fff", "#ffffff", "#6366f1", "#8b5cf6"]);
+//    (rgba()/rgb() banned outright; hex only for white — the brand gradient
+//    that once justified two more literals is gone).
+const HEX_ALLOW = new Set(["#fff", "#ffffff"]);
 for (const file of readdirSync(stylesDir)) {
   if (!file.endsWith(".css") || file === "base.css") continue;
   const css = readFileSync(join(stylesDir, file), "utf8");
