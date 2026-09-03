@@ -88,14 +88,21 @@ const html = read("src/renderer/index.html");
 // ---- Entries line up with the avatar column ----------------------------
 {
   const css = read("src/renderer/styles/collaboration.css");
-  assert.match(css, /\.collaboration-disclosure\.is-entry-row > \.collaboration-disclosure-trigger \{[^}]*padding-inline-start: 56px/s,
-    "an entry that opens something lines up with the avatar column");
-  for (const [file, label] of [
-    ["src/renderer/modules/collaboration-friends.js", "add a contact"],
-    ["src/renderer/modules/collaboration-teams.js", "create a group"],
+  assert.match(css, /\.collaboration-disclosure\.is-entry-row > \.collaboration-disclosure-trigger \{[^}]*gap: 10px/s,
+    "an entry that opens something is a glyph tile plus label, like the rows around it");
+  assert.doesNotMatch(css, /\.is-entry-row > \.collaboration-disclosure-trigger \{[^}]*padding-inline-start: 56px/s,
+    "the label is no longer indented on its own — that read as a heading that had drifted");
+  const socialUi = read("src/renderer/modules/collaboration-social-ui.js");
+  assert.match(socialUi, /if \(icon\) \{ const wrap = socialNode\("span", "", "collaboration-row-glyph"\)/,
+    "a disclosure can carry a glyph tile in the avatar column");
+  for (const [file, label, icon] of [
+    ["src/renderer/modules/collaboration-friends.js", "add a contact", "plus"],
+    ["src/renderer/modules/collaboration-teams.js", "create a group", "people"],
   ]) {
     assert.match(read(file), /classList\.add\("is-row", "is-entry-row"\)/,
       `the ${label} entry is a row, not a text link floating above the section headings`);
+    assert.match(read(file), new RegExp(`\\{ primary: true, icon: "${icon}" \\}`),
+      `the ${label} entry has its glyph`);
   }
 }
 

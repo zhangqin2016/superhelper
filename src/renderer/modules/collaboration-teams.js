@@ -39,7 +39,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   const closeDetailSurface = () => { detail?.close?.(); details.replaceChildren(); };
   // The create entry lines up with the avatar column, like the other entries,
   // instead of floating above the section headings as a text link.
-  const createGroupEntry = socialDisclosure(t("collaboration.social.createGroup"), groupForm, { primary: true });
+  const createGroupEntry = socialDisclosure(t("collaboration.social.createGroup"), groupForm, { primary: true, icon: "people" });
   createGroupEntry.classList.add("is-row", "is-entry-row");
   root.append(createGroupEntry, personal, list, details);
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });

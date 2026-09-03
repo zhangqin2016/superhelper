@@ -77,27 +77,59 @@
 /* Two panes, when the panel has been dragged wide enough for them: the rail
    and list on one side, the thread on the other, both on screen at once. Below
    the threshold the panel holds one column at a time and a conversation
-   replaces the list, which is the only thing that fits at 420px. */
+   replaces the list, which is the only thing that fits at 420px.
+
+   A grid, not a wrapping flex row. The wrapping version put the header on one
+   flex line and the columns on another, and when no thread was open the second
+   line held only the 380px list — so `align-content: stretch` split the
+   panel's height between the two lines and the header came out 356px tall. */
 .collaboration-center[data-collaboration-panes="two"] {
-  flex-direction: row;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .collaboration-center[data-collaboration-panes="two"] > .collaboration-panel-header {
-  flex: 1 0 100%;
+  grid-column: 1 / -1;
 }
 
 .collaboration-center[data-collaboration-panes="two"] > .collaboration-home {
   /* The list keeps a fixed, comfortable width and the thread takes the rest,
      so widening the panel grows the thread rather than stretching the rows. */
-  flex: 0 0 380px;
-  max-inline-size: 380px;
+  grid-row: 2;
+  grid-column: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
   border-inline-end: 1px solid var(--border-subtle);
 }
 
 .collaboration-center[data-collaboration-panes="two"] > .collaboration-conversation {
-  flex: 1 1 0;
+  grid-row: 2;
+  grid-column: 2;
   min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/* The thread column with nothing in it. A pseudo-element is the grid item, so
+   no markup and no script: it appears in exactly the state where the second
+   column would otherwise be a blank field with a hairline down its left side.
+   The glyph is painted through a mask so its colour is a theme token. */
+.collaboration-center[data-collaboration-panes="two"]:not(.is-conversation-open)::after {
+  content: "";
+  grid-row: 2;
+  grid-column: 2;
+  align-self: center;
+  justify-self: center;
+  inline-size: 44px;
+  block-size: 44px;
+  background-color: color-mix(in srgb, var(--text-dim) 38%, transparent);
+  -webkit-mask-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  pointer-events: none;
 }
 
 /* The selected row has to stay legible while its thread is open beside it —
@@ -1380,14 +1412,19 @@
   padding: 4px 10px 18px;
 }
 
-/* An entry that opens something else lines up with the avatar column, so the
-   list reads as one column of rows rather than a text link floating above
-   section headings. */
+/* An entry that opens something else is a row like its neighbours: a glyph
+   tile in the avatar column, the label in the name column. The previous shape
+   was the label alone, indented 56px, so it read as a heading that had drifted. */
 .collaboration-disclosure.is-entry-row > .collaboration-disclosure-trigger {
   min-height: 56px;
-  padding-inline-start: 56px;
+  padding: 6px 10px;
+  gap: 10px;
   display: flex;
   align-items: center;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 550;
 }
 
 /* Shown in place of the picker for a public channel, where membership is the

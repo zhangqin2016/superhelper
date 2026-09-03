@@ -72,6 +72,9 @@ app.whenReady().then(async () => {
       panel: rect(panel),
       viewport: { width: window.innerWidth, height: window.innerHeight },
       panes: panel.dataset.collaborationPanes,
+      // No conversation is open here, so this is the state where a wrapping
+      // flex layout once stretched the header to 356px.
+      headerHeight: Math.round(panel.querySelector('.collaboration-panel-header').getBoundingClientRect().height),
       strays,
       // The docked-only controls have no meaning in a window of its own.
       closeHidden: document.getElementById('collaborationPanelClose').hidden,
@@ -91,6 +94,8 @@ app.whenReady().then(async () => {
   assert.equal(result.view, "collaboration", "and the shell records it");
   assert.equal(result.panelHidden, false, "the panel is open without anyone toggling it");
   assert.equal(result.panes, "two", "a window of its own is always wide enough for two panes");
+  assert.ok(result.headerHeight <= 64,
+    `the header keeps its own height with no thread open (${result.headerHeight}px); it was 356px when the columns were a wrapped flex line`);
   assert.ok(result.panel.width >= result.viewport.width - 1 && result.panel.height >= result.viewport.height - 1,
     `the panel fills the window (${result.panel.width}x${result.panel.height} of ${result.viewport.width}x${result.viewport.height})`);
   assert.deepEqual(result.strays, [], "nothing but the panel is laid out; the workbench markup is present but not shown");

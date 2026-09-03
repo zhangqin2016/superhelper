@@ -48,7 +48,15 @@ app.whenReady().then(async () => {
     const conversation = document.getElementById('collaborationConversation');
     const back = document.getElementById('collaborationConversationBack');
     const rect = (node) => { const r = node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left) }; };
+    // With the thread closed again, the header must keep its own height: a
+    // wrapped flex layout once split the panel's height between header and list.
+    window.__shell.setConversationOpen(false);
+    void document.body.offsetHeight;
+    const headerHeightClosed = Math.round(panel.querySelector('.collaboration-panel-header').getBoundingClientRect().height);
+    window.__shell.setConversationOpen(true);
+    void document.body.offsetHeight;
     return JSON.stringify({
+      headerHeightClosed,
       panes: panel.dataset.collaborationPanes,
       panelWidth: rect(panel).width,
       home: rect(home), conversation: rect(conversation),
@@ -69,6 +77,8 @@ app.whenReady().then(async () => {
   const wide = JSON.parse(await at(1100));
   assert.ok(!wide.error, `wide: ${wide.error || ""}`);
   assert.equal(wide.panes, "two", "a 1100px panel holds two");
+  assert.ok(wide.headerHeightClosed <= 64,
+    `two panes with no thread open keep the header at its own height (${wide.headerHeightClosed}px), not half the panel`);
   assert.equal(wide.sideBySide, true, "the list and the thread are both laid out, thread beside list");
   assert.equal(wide.homeHidden, false, "the list stays, so the selected row keeps its context");
   assert.equal(wide.backHidden, true, "and there is nothing to go back from, so no back button");

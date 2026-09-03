@@ -33,7 +33,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   if (!root?.querySelectorAll) return { update() {}, reset() {}, setFilter() {} };
   root.replaceChildren();
 
-  const profileRow = socialNode("div", "", "collaboration-social-row is-profile");
+  const profileRow = socialNode("div", "", "collaboration-social-row is-profile"); profileRow.hidden = true; // shown once a profile is known
   const entries = socialNode("div", "", "collaboration-contact-entries");
   const requestsPanel = socialNode("div", "", "collaboration-request-panel"); requestsPanel.hidden = true;
 
@@ -48,7 +48,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   const foundBox = socialNode("div", "", "collaboration-lookup-result"); foundBox.hidden = true; addForm.append(foundBox);
   const lookupNote = socialNode("p", "", "collaboration-form-note"); lookupNote.hidden = true;
   lookupNote.setAttribute("role", "status"); addForm.append(lookupNote);
-  const addDisclosure = socialDisclosure(t("collaboration.social.addContact"), addForm, { primary: true });
+  const addDisclosure = socialDisclosure(t("collaboration.social.addContact"), addForm, { primary: true, icon: "plus" });
   addDisclosure.classList.add("is-row", "is-entry-row");
 
   const contacts = socialNode("div", "", "collaboration-contact-list");
@@ -287,7 +287,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     reset() {
       ui.reset(); lilyId.value = ""; clearLookup(); filter = ""; requestsOpen = false; detail?.close?.();
       directoryCache = { contacts: [] };
-      profileRow.replaceChildren(); entries.replaceChildren(); requestsPanel.replaceChildren(); requestsPanel.hidden = true; contacts.replaceChildren();
+      profileRow.replaceChildren(); profileRow.hidden = true; entries.replaceChildren(); requestsPanel.replaceChildren(); requestsPanel.hidden = true; contacts.replaceChildren();
     },
   };
 }

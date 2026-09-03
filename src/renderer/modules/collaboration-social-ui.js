@@ -57,9 +57,12 @@ export function mosaicAvatar(title, names = [], kind = "chat") {
   return tile;
 }
 
-export function socialDisclosure(label, form, { primary = false } = {}) {
+export function socialDisclosure(label, form, { primary = false, icon = null } = {}) {
   const disclosure = socialNode("details", "", "collaboration-disclosure");
   const summary = socialNode("summary", label, primary ? "collaboration-disclosure-trigger is-primary" : "collaboration-disclosure-trigger");
+  // An entry row carries a glyph tile so it lines up with the avatar rows
+  // around it; the tile goes first, the label stays a text node.
+  if (icon) { const wrap = socialNode("span", "", "collaboration-row-glyph"); wrap.append(socialIcon(icon, 20)); summary.textContent = ""; summary.append(wrap, label); }
   disclosure.append(summary, form);
   form.classList.add("collaboration-disclosure-body");
   return disclosure;
