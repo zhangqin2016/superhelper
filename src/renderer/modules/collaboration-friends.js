@@ -163,7 +163,15 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
 
   function paintProfile(profile) {
     profileRow.replaceChildren();
-    const name = identityName(profile || {});
+    // No profile yet (a fresh account, or the directory has not arrived) means
+    // there is nothing true to say about the reader. `identityName` falls back
+    // to "unknown user", which is a reasonable placeholder for SOMEONE ELSE
+    // and nonsense for yourself — so the row is simply absent until the real
+    // identity is known.
+    const known = Boolean(profile && (profile.displayName || profile.lilyId || profile.userId));
+    profileRow.hidden = !known;
+    if (!known) return;
+    const name = identityName(profile);
     // Not a button: there is nothing to click here, and a disabled button
     // greys its own text — which made the reader's own name look inactive.
     const body = socialNode("div", "", "collaboration-row-open is-static");

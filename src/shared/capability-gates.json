@@ -592,11 +592,12 @@
     },
     {
       "id": "im-one-screen-one-thing",
-      "protects": "One screen shows one thing: exactly one title names where you are, and a roster or a pending-request list is its own screen with a back button rather than content appended into the list it came from.",
+      "protects": "One screen shows one thing: exactly one title names where you are, and a roster or a pending-request list is its own screen with a back button rather than content appended into the list it came from. A hidden view occupies nothing, and the reader is never shown an invented identity.",
       "baseline": "Structure only. Every destination, roster and request is still reachable by the same actions and the same commands; only where they draw changed.",
-      "failureFallback": "The detail surface is optional: each view falls back to the inline container it always used when no detail view is supplied, which is how these modules render standalone in the DOM tests. Changing destination closes any open detail, so a roster from one list can never be left over on another.",
+      "failureFallback": "The detail surface is optional: each view falls back to the inline container it always used when no detail view is supplied, which is how these modules render standalone in the DOM tests. Changing destination closes any open detail, so a roster from one list can never be left over on another. Each panel view sets its own `display`, which outranks the hidden attribute's UA rule, so every one of them opts back in explicitly — and that is checked by MEASURING the rendered box, shown and hidden, rather than by grepping for the rule. With no profile loaded there is no identity row at all: `identityName`'s fallback names an unknown user, which is a fair placeholder for someone else and nonsense for yourself.",
       "tests": [
-        "scripts/test-collaboration-one-screen.mjs"
+        "scripts/test-collaboration-one-screen.mjs",
+        "scripts/test-collaboration-hidden-views.cjs"
       ]
     },
     {

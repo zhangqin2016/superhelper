@@ -47,8 +47,13 @@
   --collab-outgoing-bg: color-mix(in oklab, var(--collab-outgoing-tint) 66%, var(--collab-incoming-bg));
 }
 
+/* Any of these sets its own `display`, which outranks the `hidden` attribute's
+   UA `display: none` — so each one has to opt back in. The detail view was
+   added without this line and kept occupying 192px of the panel while marked
+   hidden, which is why two columns appeared. */
 .collaboration-center[hidden],
 .collaboration-home[hidden],
+.collaboration-detail[hidden],
 .collaboration-conversation[hidden] {
   display: none;
 }
