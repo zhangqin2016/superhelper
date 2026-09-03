@@ -22,11 +22,11 @@
   height: 36px;
   padding: 0 14px 0 12px;
   border: 1px solid var(--border-light);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg-floating) 92%, var(--bg-surface) 8%), var(--bg-floating));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--shadow-floating), var(--top-highlight), 0 0 0 1px var(--border-subtle);
@@ -95,9 +95,13 @@
   align-items: stretch;
   justify-content: flex-start;
   min-height: min(420px, calc(100vh - 280px));
-  max-width: min(620px, var(--chat-col));
+  /* The same column as the composer card below and the thread above, so the
+     heading, the example cards and the input share one left edge. A narrower
+     block here read as off-centre against both. */
+  width: min(100%, var(--chat-col));
+  max-width: var(--chat-col);
   margin: 0 auto;
-  padding: clamp(42px, 10vh, 92px) 4px 48px;
+  padding: clamp(42px, 10vh, 92px) 0 48px;
   text-align: left;
 }
 
@@ -145,7 +149,7 @@
   min-height: 38px;
   padding: 8px 11px;
   border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-surface-raised) 72%, transparent);
   color: var(--text-primary);
   font-size: var(--text-sm);

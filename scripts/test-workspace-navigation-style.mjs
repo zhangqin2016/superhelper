@@ -145,17 +145,17 @@ assert.match(
 );
 assert.match(
   navigationCss,
-  /\.workspace-switcher-card-meta,\s*\.workspace-switcher-session-meta\s*\{[^}]*color:\s*var\(--text-secondary\)[^}]*font-size:\s*11px/s,
+  /\.workspace-switcher-card-meta,\s*\.workspace-switcher-session-meta\s*\{[^}]*color:\s*var\(--text-secondary\)[^}]*font-size:\s*(?:11px|var\(--text-xs\))/s,
   "workspace and session metadata remain readable",
 );
 assert.match(
   navigationCss,
-  /\.workspace-switcher-card-time,\s*\.workspace-switcher-session-time\s*\{[^}]*color:\s*var\(--text-secondary\)[^}]*font-size:\s*11px/s,
+  /\.workspace-switcher-card-time,\s*\.workspace-switcher-session-time\s*\{[^}]*color:\s*var\(--text-secondary\)[^}]*font-size:\s*(?:11px|var\(--text-xs\))/s,
   "workspace and session timestamps remain readable",
 );
 assert.match(
   navigationCss,
-  /\.workspace-switcher-session-status\.is-idle,[^{}]*\{[^}]*color:\s*var\(--text-secondary\)[^}]*font-size:\s*11px/s,
+  /\.workspace-switcher-session-status\.is-idle,[^{}]*\{[^}]*color:\s*var\(--text-secondary\)[^}]*font-size:\s*(?:11px|var\(--text-xs\))/s,
   "idle runtime status uses readable secondary text",
 );
 for (const [status, token] of [

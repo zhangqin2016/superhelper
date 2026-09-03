@@ -21,6 +21,23 @@ const definitionRe = /--([A-Za-z0-9_-]+)\s*:/g;
 const usageRe = /var\(\s*(--[A-Za-z0-9_-]+)/g;
 const negativeLetterSpacingRe = /letter-spacing\s*:\s*-[^;]+;/g;
 const defined = new Set();
+// Custom properties the renderer sets at runtime (style.setProperty("--x", …),
+// or "--x: …" inside a style string) are definitions too: --collaboration-panel-w,
+// --avatar-hue and --mosaic-columns only ever exist that way.
+function walkJsFiles(dir) {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walkJsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith(".js")) files.push(full);
+  }
+  return files;
+}
+const runtimeDefinitionRe = /setProperty\(\s*["'`](--[A-Za-z0-9_-]+)["'`]|["'`](--[A-Za-z0-9_-]+)\s*:/g;
+for (const file of [...walkJsFiles(path.join(ROOT, "src/renderer/modules")), path.join(ROOT, "src/renderer/app.js")]) {
+  const js = fs.readFileSync(file, "utf8");
+  for (const match of js.matchAll(runtimeDefinitionRe)) defined.add(match[1] || match[2]);
+}
 const usages = [];
 const negativeLetterSpacing = [];
 

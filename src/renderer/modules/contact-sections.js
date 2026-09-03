@@ -13,10 +13,10 @@
  */
 
 const PINYIN_BOUNDARIES = Object.freeze([
-  ["A", "阿"], ["B", "八"], ["C", "擦"], ["D", "搭"], ["E", "蛾"], ["F", "发"],
-  ["G", "噶"], ["H", "哈"], ["J", "击"], ["K", "喀"], ["L", "垃"], ["M", "妈"],
-  ["N", "拿"], ["O", "哦"], ["P", "啪"], ["Q", "期"], ["R", "然"], ["S", "撒"],
-  ["T", "塌"], ["W", "挖"], ["X", "昔"], ["Y", "压"], ["Z", "匝"],
+  ["A", "阿"], ["B", "八"], ["C", "擦"], ["D", "搭"], ["E", "蛾"], ["F", "发"], // i18n-exempt: pinyin collation boundary characters, never displayed
+  ["G", "噶"], ["H", "哈"], ["J", "击"], ["K", "喀"], ["L", "垃"], ["M", "妈"], // i18n-exempt: pinyin collation boundary characters, never displayed
+  ["N", "拿"], ["O", "哦"], ["P", "啪"], ["Q", "期"], ["R", "然"], ["S", "撒"], // i18n-exempt: pinyin collation boundary characters, never displayed
+  ["T", "塌"], ["W", "挖"], ["X", "昔"], ["Y", "压"], ["Z", "匝"], // i18n-exempt: pinyin collation boundary characters, never displayed
 ]);
 
 /** Anything with no letter section — digits, symbols, emoji — sorts last. */

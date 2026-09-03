@@ -83,7 +83,9 @@ for (const locale of ["en", "ar"]) {
 // connector-settings.js / migration-progress.js.
 function stripComments(src) {
   return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // Block comments become the same number of newlines, so the line numbers
+    // reported (and the exemption marker looked up by line) stay accurate.
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ""))
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
@@ -102,8 +104,14 @@ function walkJsFiles(dir) {
 }
 for (const file of walkJsFiles(path.join(ROOT, "src/renderer"))) {
   const rel = path.relative(ROOT, file);
-  const code = stripComments(fs.readFileSync(file, "utf8"));
+  const raw = fs.readFileSync(file, "utf8");
+  const rawLines = raw.split("\n");
+  const code = stripComments(raw);
   code.split("\n").forEach((line, index) => {
+    // Data that happens to be Han — a pinyin collation boundary table — is
+    // marked on its line with a reason; the marker is a comment, so it is
+    // read from the raw source before comments are stripped.
+    if (/\/\/\s*i18n-exempt:\s*\S/.test(rawLines[index] || "")) return;
     const literals = line.match(STRING_LITERAL_RE) || [];
     if (literals.some((lit) => HAN_RE.test(lit))) {
       rendererJsLeaks.push(`${rel}:${index + 1}: ${line.trim().slice(0, 90)}`);

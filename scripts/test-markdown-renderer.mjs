@@ -9,6 +9,13 @@ const segmentsSource = fs
 const streamBlocksSource = fs
   .readFileSync(new URL("../src/renderer/modules/markdown-stream-blocks.js", import.meta.url), "utf8")
   .replaceAll("export function", "function");
+const codeCollapseSource = fs
+  .readFileSync(new URL("../src/renderer/modules/markdown-code-collapse.js", import.meta.url), "utf8")
+  .replaceAll("export const", "const")
+  .replaceAll("export function", "function");
+const inlineCodeSource = fs
+  .readFileSync(new URL("../src/renderer/modules/markdown-inline-code.js", import.meta.url), "utf8")
+  .replaceAll("export function", "function");
 
 const source = fs
   .readFileSync(new URL("../src/renderer/modules/markdown.js", import.meta.url), "utf8")
@@ -18,6 +25,8 @@ const source = fs
   .replace('import { t } from "../i18n/index.js";', "")
   .replace('import { mapPlainSegments } from "./markdown-math-segments.js";', "")
   .replace('import { renderStreamBlocks } from "./markdown-stream-blocks.js";', "")
+  .replace('import { markLongInlineCode } from "./markdown-inline-code.js";', "")
+  .replace('import { CODE_COLLAPSE_MIN_LINES, countCodeLines, wireCodeCollapse } from "./markdown-code-collapse.js";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
@@ -87,7 +96,7 @@ const context = {
   },
 };
 vm.createContext(context);
-vm.runInContext(`${segmentsSource}\n${streamBlocksSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
+vm.runInContext(`${segmentsSource}\n${streamBlocksSource}\n${codeCollapseSource}\n${inlineCodeSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
 
 function fakeElement() {
   const classes = new Set();

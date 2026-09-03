@@ -243,7 +243,7 @@ if (!composerRowRule.includes("overflow: visible")) {
   throw new Error("composer-row must not clip the session permission menu");
 }
 const permissionMenuRule = composerText.match(/\.permission-mode-menu\s*\{[^}]*\}/s)?.[0] || "";
-for (const required of ["width: min(230px", "border-radius: 10px", "box-shadow: 0 14px 34px"]) {
+for (const required of ["width: min(230px", "border-radius: var(--radius)", "box-shadow: 0 14px 34px"]) {
   if (!permissionMenuRule.includes(required)) {
     throw new Error(`permission-mode-menu must stay compact and polished: missing ${required}`);
   }

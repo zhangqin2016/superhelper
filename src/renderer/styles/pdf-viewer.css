@@ -46,7 +46,7 @@
 .pdf-viewer-title span,
 .pdf-viewer-search span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
@@ -162,7 +162,7 @@
 }
 
 .pdf-viewer-thumb span {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .pdf-viewer-thumb.is-active {
@@ -211,7 +211,7 @@
 .pdf-viewer-page figcaption {
   margin-top: 10px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .pdf-viewer-page-placeholder {
@@ -220,7 +220,7 @@
   left: 50%;
   transform: translateX(-50%);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
   pointer-events: none;
 }
 

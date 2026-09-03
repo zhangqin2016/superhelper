@@ -24,7 +24,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -34,10 +34,10 @@
 .right-section-btn {
   height: 22px; padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--text-xs);
   cursor: pointer;
 }
 .right-section-btn:hover { background: var(--bg-surface-hover); color: var(--text-secondary); }
@@ -54,7 +54,7 @@
   text-align: center;
   padding: 20px;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .task-card {
@@ -63,7 +63,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-surface);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .task-card-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -75,7 +75,7 @@
 .task-card-status.done { background: var(--success-bg); color: var(--success-text); }
 .task-card-status.failed { background: var(--danger-bg); color: var(--danger-text); }
 .task-card-status.pending { background: var(--warning-bg); color: var(--warning-text); }
-.task-card-meta { color: var(--text-dim); font-size: 11px; }
+.task-card-meta { color: var(--text-dim); font-size: var(--text-xs); }
 
 /* Changes Summary */
 
@@ -88,14 +88,14 @@
 .change-item {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 8px;
-  font-family: var(--font-mono); font-size: 12px;
+  font-family: var(--font-mono); font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
 .change-stat {
   display: flex; gap: 12px;
   padding: 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-dim);
 }
 .change-stat .added { color: var(--success-text); }

@@ -68,7 +68,7 @@
 .diff-file-header:hover { background: color-mix(in srgb, var(--bg-input) 85%, var(--accent-subtle) 15%); }
 
 .diff-file-name { color: var(--text-primary); }
-.diff-file-status { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
+.diff-file-status { font-size: var(--text-xs); padding: 1px 6px; border-radius: 3px; }
 .diff-file-status.added { background: var(--success-bg); color: var(--success-text); }
 .diff-file-status.modified { background: var(--info-bg); color: var(--info-text); }
 .diff-file-status.deleted { background: var(--danger-bg); color: var(--danger-text); }
@@ -77,7 +77,7 @@
 .diff-file-actions button {
   height: 24px; padding: 0 8px;
   border-radius: var(--radius-sm);
-  font-size: 11px; cursor: pointer;
+  font-size: var(--text-xs); cursor: pointer;
   border: 1px solid;
 }
 .diff-accept-btn { background: transparent; border-color: var(--success-border); color: var(--success-text); }

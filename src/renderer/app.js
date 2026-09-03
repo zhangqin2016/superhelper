@@ -150,15 +150,20 @@ async function updateAboutVersion() {
 
 async function bindAppIcons() {
   try {
+    const logos = document.querySelectorAll(".app-logo, .settings-about-logo, .assistant-turn-logo");
     const url = await window.assistantClient?.getAppIconUrl?.();
     if (!url) {
       console.warn("[app-icon] no runtime icon URL");
+      // No image to show: the word mark beside it stands alone rather than
+      // next to an empty or broken image box.
+      for (const img of logos) img.hidden = true;
       return;
     }
-    for (const img of document.querySelectorAll(".app-logo, .settings-about-logo, .assistant-turn-logo")) {
+    for (const img of logos) {
       img.src = url;
       img.addEventListener("error", () => {
         console.warn("[app-icon] failed to render logo");
+        img.hidden = true;
       }, { once: true });
     }
     const favicon = document.querySelector('link[rel="icon"]');

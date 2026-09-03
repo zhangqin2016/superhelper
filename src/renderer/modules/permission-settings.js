@@ -172,8 +172,20 @@ export async function refreshSessionPermissionSelect() {
     return;
   }
 
-  const data = await window.assistantClient.getSessionPermission(session.id);
-  if (!data?.ok) return;
+  let data = null;
+  try { data = await window.assistantClient.getSessionPermission(session.id); } catch { data = null; }
+  if (!data?.ok) {
+    // The session exists; only the modes could not be read. Say that, rather
+    // than leaving whatever option was rendered before (possibly "select a
+    // session first") in place.
+    const option = document.createElement("option");
+    option.value = "inherit";
+    option.textContent = t("settings.sessionPermissionTitle");
+    select.appendChild(option);
+    select.disabled = true;
+    syncSessionPermissionMenu();
+    return;
+  }
 
   const inherit = document.createElement("option");
   inherit.value = "inherit";

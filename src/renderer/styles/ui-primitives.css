@@ -157,10 +157,10 @@
   height: 36px;
   padding: 0 18px;
   border: 1px solid var(--border-light);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;

@@ -627,6 +627,15 @@
       "tests": [
         "scripts/test-collaboration-detached-window.cjs"
       ]
+    },
+    {
+      "id": "ui-style-scale",
+      "protects": "The workbench keeps one type scale and one radius scale. Sizes that ARE scale values (11/12/13/15px, 4/6/10/14/999px) must be written as the token, so the text-size setting reaches them and a scale change is one edit; off-scale literals, sub-11px text, odd font weights, literal shadows and magic z-index are counted per stylesheet and may only decrease.",
+      "baseline": "Purely presentational. No behaviour reads these values; a violation is a consistency regression, never a loss of function. At default text size a token and its literal render identically (verified by computed-style fingerprint across every settings page, 950 elements, 2026-09-03).",
+      "failureFallback": "Static: reads declared values from every stylesheet, so it holds for screens no fixture renders. The ratchet baseline can only be lowered by regenerating it on purpose (--write-baseline); a count that rises fails with the file and property named.",
+      "tests": [
+        "scripts/test-ui-style-scale.mjs"
+      ]
     }
   ]
 }

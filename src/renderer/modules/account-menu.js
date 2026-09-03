@@ -38,14 +38,17 @@ function formatExpiry(value) {
   }
 }
 
-// Signed-in → accent-filled monogram tile; member adds an accent ring; signed
-// out / gated → the neutral outline person. Idempotent across refreshes.
+// Signed-in → neutral tile; member adds an accent ring; signed out / gated →
+// the outline person on the accent-tinted tile. A monogram is shown only when
+// it is letters: the phone tail's two digits in a circle read as a badge count,
+// not as a person, so a numeric monogram falls back to the glyph. Idempotent.
 function setAvatar({ signedIn = false, member = false, monogram = "" } = {}) {
   const avatar = el("accountMenuAvatar");
   if (!avatar) return;
   avatar.classList.toggle("is-signed-in", signedIn && !!monogram);
   avatar.classList.toggle("is-member", member);
-  avatar.innerHTML = signedIn && monogram
+  const lettered = signedIn && monogram && !/^\d+$/.test(monogram);
+  avatar.innerHTML = lettered
     ? `<span class="account-avatar-monogram">${monogram}</span>`
     : PERSON_SVG;
 }

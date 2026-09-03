@@ -7,6 +7,8 @@ import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitiz
 import { t } from "../i18n/index.js";
 import { mapPlainSegments } from "./markdown-math-segments.js";
 import { renderStreamBlocks } from "./markdown-stream-blocks.js";
+import { markLongInlineCode } from "./markdown-inline-code.js";
+import { CODE_COLLAPSE_MIN_LINES, countCodeLines, wireCodeCollapse } from "./markdown-code-collapse.js";
 import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
 
 let hljsReady = false;
@@ -337,29 +339,6 @@ function sanitizeMarkdownHtml(html = "") {
 // Long code blocks render collapsed: a compact header (language · line count ·
 // first-line snippet) that expands on demand. Model behavior is untouched —
 // this is a pure display rule, so it can never make any model dumber.
-const CODE_COLLAPSE_MIN_LINES = 16;
-const CODE_COLLAPSE_EXPANDED_LIMIT = 200;
-/** Content hashes the user expanded — survives innerHTML re-renders and caches. */
-const expandedCodeBlocks = new Set();
-
-function rememberExpandedCodeBlock(key, open) {
-  if (!key) return;
-  if (!open) {
-    expandedCodeBlocks.delete(key);
-    return;
-  }
-  expandedCodeBlocks.add(key);
-  if (expandedCodeBlocks.size > CODE_COLLAPSE_EXPANDED_LIMIT) {
-    expandedCodeBlocks.delete(expandedCodeBlocks.values().next().value);
-  }
-}
-
-function countCodeLines(text = "") {
-  const lines = String(text).split("\n");
-  if (lines.length && lines[lines.length - 1] === "") lines.pop();
-  return lines.length;
-}
-
 function wrapCollapsibleCodeBlock(html, text, lang = "") {
   const lineCount = countCodeLines(text);
   if (lineCount < CODE_COLLAPSE_MIN_LINES) return html;
@@ -378,20 +357,6 @@ function wrapCollapsibleCodeBlock(html, text, lang = "") {
   ].join("");
 }
 
-/** Re-apply the user's expand choices after any re-render (streaming updates
- *  and cached renders both rebuild innerHTML), and track new toggles. */
-function wireCodeCollapse(element) {
-  if (!element?.querySelectorAll) return;
-  for (const details of element.querySelectorAll("details.markdown-code-collapse")) {
-    const key = details.dataset?.codeKey || "";
-    if (key && expandedCodeBlocks.has(key)) details.open = true;
-    if (details.dataset?.collapseWired === "1") continue;
-    if (details.dataset) details.dataset.collapseWired = "1";
-    details.addEventListener?.("toggle", () => {
-      rememberExpandedCodeBlock(details.dataset?.codeKey || "", details.open);
-    });
-  }
-}
 
 function renderRichCodeBlock(text = "", lang = "") {
   if (DIFF_LANGUAGES.has(lang)) return renderDiffBlock(text);
@@ -653,6 +618,7 @@ function enhanceRenderedMarkdown(element, { interactive = false } = {}) {
   wireMarkdownLocalFileLinks(element);
   normalizeTaskLists(element);
   wireCodeCollapse(element);
+  markLongInlineCode(element);
   if (interactive) wireCodeCopyButtons(element);
 }
 
