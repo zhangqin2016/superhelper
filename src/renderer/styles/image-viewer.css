@@ -51,7 +51,7 @@
   border-radius: 50%;
   background: var(--image-control-bg);
   color: var(--text-inverse);
-  font-size: 22px;
+  font-size: var(--text-xl);
   cursor: pointer;
   transition: background 0.15s;
 }

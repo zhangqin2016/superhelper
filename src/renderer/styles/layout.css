@@ -40,7 +40,7 @@
 .resize-handle:hover,
 .resize-handle.active {
   background: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-subtle), 0 0 18px var(--accent-subtle);
+  box-shadow: 0 0 0 1px var(--accent-subtle);
 }
 .resize-handle::after {
   content: "";
@@ -59,7 +59,7 @@
   background: var(--bg-left);
   overflow: hidden;
   border-right: 1px solid var(--border-subtle);
-  box-shadow: 10px 0 34px color-mix(in srgb, var(--bg-body) 10%, transparent);
+  box-shadow: var(--shadow-floating);
 }
 
 .app-shell.left-collapsed .left-panel,
@@ -272,7 +272,7 @@
   left: 12px;
   right: 12px;
   bottom: calc(100% - 4px);
-  z-index: 40;
+  z-index: var(--z-popover);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -438,7 +438,7 @@
    single highlight; the workspace is where it lives. */
 
 .project-collapse-icon {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
   flex-shrink: 0;
   width: 14px;
@@ -463,7 +463,7 @@
 }
 
 .project-path {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
   font-family: var(--font-mono);
   overflow: hidden;
@@ -489,7 +489,7 @@
   border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--text-md);
   cursor: pointer;
   line-height: 1;
 }
@@ -578,7 +578,7 @@
 }
 
 .session-meta {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: color-mix(in srgb, var(--text-secondary) 84%, transparent);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
@@ -646,7 +646,7 @@
 .file-tree-item:hover { background: var(--bg-surface); }
 .file-tree-item .ft-icon { flex-shrink: 0; width: 16px; text-align: center; font-size: var(--text-xs); }
 .file-tree-item .ft-name { overflow: hidden; text-overflow: ellipsis; }
-.file-tree-item .ft-status { margin-left: auto; font-size: 10px; flex-shrink: 0; }
+.file-tree-item .ft-status { margin-left: auto; font-size: var(--text-xs); flex-shrink: 0; }
 
 .ft-modified { color: var(--info-text); }
 .ft-added { color: var(--success-text); }

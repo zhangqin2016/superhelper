@@ -40,7 +40,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .pdf-viewer-title span,
@@ -62,7 +62,7 @@
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
@@ -86,7 +86,7 @@
 .pdf-viewer-close {
   height: 34px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
@@ -118,7 +118,7 @@
 }
 
 .pdf-viewer-close {
-  font-size: 20px;
+  font-size: var(--text-xl);
   line-height: 1;
 }
 
@@ -145,7 +145,7 @@
   margin: 0 0 10px;
   padding: 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -204,7 +204,7 @@
 .pdf-viewer-page canvas {
   max-width: 100%;
   background: white;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   box-shadow: var(--shadow-pdf-page);
 }
 

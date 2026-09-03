@@ -83,6 +83,7 @@
   --border-strong: rgba(220, 227, 236, 0.17);
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.46), 0 16px 42px rgba(0, 0, 0, 0.28);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px rgba(0, 0, 0, 0.18);
   --shadow-floating: 0 16px 44px rgba(0, 0, 0, 0.34);
   --shadow-panel: -10px 0 36px rgba(0, 0, 0, 0.34);
@@ -142,8 +143,9 @@
   --radius-xs: 4px;
   --radius: 10px;
   --radius-sm: 6px;
-  --radius-md: var(--radius);
+  --radius-md: 8px;
   --radius-lg: 14px;
+  --radius-xl: 20px;
   --radius-pill: 999px;
 
   /* "Lit from above" hairline + soft elevation, used in place of hard borders */
@@ -159,6 +161,11 @@
   --dur-slow: 240ms;
 
   /* Overlay stack. Keep these centralized so nested flows can open dialogs safely. */
+  /* In-page layers, below the topbar: raised chrome (composer, docks), then any
+     popover or menu, then the collaboration overlay panel and its scrim. */
+  --z-raised: 20;
+  --z-popover: 45;
+  --z-overlay-panel: 60;
   --z-topbar: 80;
   --z-topbar-popover: 90;
   --z-settings-panel: 10000;
@@ -182,6 +189,8 @@
   --text-sm: 12px;
   --text-base: 13px;
   --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
 
   --font: "InterVariable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -264,6 +273,7 @@
 
   /* Cool graphite shadows give structure without a beige cast. */
   --shadow: 0 1px 2px rgba(18, 28, 42, 0.05), 0 12px 32px rgba(18, 28, 42, 0.07);
+  --shadow-xs: 0 1px 2px rgba(18, 28, 42, 0.07);
   --shadow-sm: 0 1px 2px rgba(18, 28, 42, 0.05), 0 4px 14px rgba(18, 28, 42, 0.045);
   --shadow-floating: 0 16px 40px rgba(18, 28, 42, 0.11);
   --shadow-panel: -14px 0 42px rgba(18, 28, 42, 0.09);
@@ -330,6 +340,8 @@
   --text-sm: 14px;
   --text-base: 16px;
   --text-md: 18px;
+  --text-lg: 21px;
+  --text-xl: 26px;
   --chat-answer-size: 18px;
 }
 

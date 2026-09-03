@@ -181,7 +181,7 @@
 .markdown-code-collapse {
   margin: 0 0 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -223,7 +223,7 @@
 .markdown-code-collapse-lang {
   flex: none;
   padding: 1px 7px;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border-subtle);
   color: var(--pre-text);
   font-family: var(--font-mono, ui-monospace, monospace);

@@ -159,7 +159,7 @@ if (!primitiveText.includes(".dialog-btn")) {
     throw new Error("workspace app open button must carry a stable class for its disabled neutral style");
   }
   const workspaceAppActionStyle = settingsText.match(/\.workspace-app-open,\s*\.workspace-app-download\s*\{[^}]*\}/s)?.[0] || "";
-  if (!workspaceAppActionStyle.includes("color: var(--accent)") || !workspaceAppActionStyle.includes("font-weight: 650")) {
+  if (!workspaceAppActionStyle.includes("color: var(--accent)") || !workspaceAppActionStyle.includes("font-weight: 600")) {
     throw new Error("workspace app primary row actions must share the dedicated readable outline style");
   }
   const mediaSaveStyle = settingsText.match(/\.media-save-btn\s*\{[^}]*\}/s)?.[0] || "";
@@ -243,7 +243,7 @@ if (!composerRowRule.includes("overflow: visible")) {
   throw new Error("composer-row must not clip the session permission menu");
 }
 const permissionMenuRule = composerText.match(/\.permission-mode-menu\s*\{[^}]*\}/s)?.[0] || "";
-for (const required of ["width: min(230px", "border-radius: var(--radius)", "box-shadow: 0 14px 34px"]) {
+for (const required of ["width: min(230px", "border-radius: var(--radius)", "box-shadow: var(--shadow-floating)"]) {
   if (!permissionMenuRule.includes(required)) {
     throw new Error(`permission-mode-menu must stay compact and polished: missing ${required}`);
   }

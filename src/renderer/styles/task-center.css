@@ -1,6 +1,6 @@
 .task-center-dock {
   position: relative;
-  z-index: 18;
+  z-index: var(--z-raised);
   padding: 8px 16px 0;
   background: var(--bg-center);
 }

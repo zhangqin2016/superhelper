@@ -27,8 +27,8 @@ const STYLES = path.join(ROOT, "src/renderer/styles");
 const BASELINE = path.join(ROOT, "scripts/ui-style-scale-baseline.json");
 const writeBaseline = process.argv.includes("--write-baseline");
 
-const TEXT_TOKENS = { "11px": "--text-xs", "12px": "--text-sm", "13px": "--text-base", "15px": "--text-md" };
-const RADIUS_TOKENS = { "4px": "--radius-xs", "6px": "--radius-sm", "10px": "--radius", "14px": "--radius-lg", "999px": "--radius-pill" };
+const TEXT_TOKENS = { "11px": "--text-xs", "12px": "--text-sm", "13px": "--text-base", "15px": "--text-md", "18px": "--text-lg", "22px": "--text-xl" };
+const RADIUS_TOKENS = { "4px": "--radius-xs", "6px": "--radius-sm", "8px": "--radius-md", "10px": "--radius", "14px": "--radius-lg", "20px": "--radius-xl", "999px": "--radius-pill" };
 const WEIGHTS = new Set(["400", "500", "600", "700", "normal", "bold", "inherit"]);
 const Z_PLAIN = new Set(["0", "1", "2", "3", "-1", "auto"]);
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -58,8 +58,18 @@ for (const file of fs.readdirSync(STYLES).filter((f) => f.endsWith(".css") && f 
     }
   }
   for (const m of css.matchAll(/font-weight:\s*([^;{}]+);/g)) { if (!WEIGHTS.has(m[1].trim()) && !m[1].includes("var(")) c.weightOffScale += 1; }
-  for (const m of css.matchAll(/box-shadow:\s*([^;{}]+);/g)) { const v = m[1].trim(); if (v !== "none" && !v.startsWith("var(")) c.shadowLiteral += 1; }
-  for (const m of css.matchAll(/z-index:\s*([^;{}]+);/g)) { const v = m[1].trim(); if (!Z_PLAIN.has(v) && !v.startsWith("var(")) c.zIndexLiteral += 1; }
+  // A shadow with blur is elevation and must be a token; rings (0 0 0 Npx) and
+  // inset bars are flat geometry with token colours and stay literal.
+  for (const m of css.matchAll(/box-shadow:\s*([^;{}]+);/g)) {
+    for (const layer of m[1].split(/,(?![^()]*\))/)) {
+      const v = layer.trim(); if (v === "none" || v.startsWith("var(") || v.startsWith("inset")) continue;
+      const lengths = v.match(/(?:^|\s)(-?\d+(?:\.\d+)?)px/g) || [];
+      if (lengths.length >= 3 && parseFloat(lengths[2]) > 0) c.shadowLiteral += 1;
+    }
+  }
+  // Local stacking inside a component (<= 10) is fine; anything higher is a layer
+  // and has to name one of the --z-* tokens.
+  for (const m of css.matchAll(/z-index:\s*([^;{}]+);/g)) { const v = m[1].trim(); if (!Z_PLAIN.has(v) && !/^(calc\()?var\(--z-/.test(v) && !(Number.isFinite(Number(v)) && Math.abs(Number(v)) <= 10)) c.zIndexLiteral += 1; }
   counts[file] = c;
 }
 

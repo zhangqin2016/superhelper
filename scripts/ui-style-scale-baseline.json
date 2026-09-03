@@ -1,46 +1,46 @@
 {
   "character-library.css": {
-    "fontSizeOffScale": 11,
-    "fontSizeBelow11": 2,
-    "radiusOffScale": 8,
-    "weightOffScale": 5,
-    "shadowLiteral": 3,
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "character-worlds.css": {
-    "fontSizeOffScale": 11,
-    "fontSizeBelow11": 4,
-    "radiusOffScale": 6,
-    "weightOffScale": 4,
-    "shadowLiteral": 3,
-    "zIndexLiteral": 1
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
+    "zIndexLiteral": 0
   },
   "collaboration.css": {
-    "fontSizeOffScale": 16,
-    "fontSizeBelow11": 4,
-    "radiusOffScale": 38,
-    "weightOffScale": 8,
-    "shadowLiteral": 6,
-    "zIndexLiteral": 4
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
+    "zIndexLiteral": 0
   },
   "composer.css": {
-    "fontSizeOffScale": 9,
-    "fontSizeBelow11": 1,
-    "radiusOffScale": 13,
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
     "weightOffScale": 0,
-    "shadowLiteral": 14,
-    "zIndexLiteral": 5
+    "shadowLiteral": 0,
+    "zIndexLiteral": 0
   },
   "diff-panel.css": {
     "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
-    "radiusOffScale": 1,
+    "radiusOffScale": 0,
     "weightOffScale": 0,
     "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "image-viewer.css": {
-    "fontSizeOffScale": 1,
+    "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
     "radiusOffScale": 0,
     "weightOffScale": 0,
@@ -48,83 +48,83 @@
     "zIndexLiteral": 0
   },
   "layout.css": {
-    "fontSizeOffScale": 5,
-    "fontSizeBelow11": 4,
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
     "radiusOffScale": 0,
     "weightOffScale": 0,
-    "shadowLiteral": 7,
-    "zIndexLiteral": 2
+    "shadowLiteral": 0,
+    "zIndexLiteral": 0
   },
   "markdown-rich.css": {
     "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
-    "radiusOffScale": 2,
+    "radiusOffScale": 0,
     "weightOffScale": 0,
     "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "messages.css": {
-    "fontSizeOffScale": 2,
+    "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
-    "radiusOffScale": 1,
+    "radiusOffScale": 0,
     "weightOffScale": 0,
     "shadowLiteral": 0,
-    "zIndexLiteral": 1
+    "zIndexLiteral": 0
   },
   "overlays.css": {
-    "fontSizeOffScale": 15,
-    "fontSizeBelow11": 2,
-    "radiusOffScale": 2,
-    "weightOffScale": 1,
-    "shadowLiteral": 5,
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "pdf-viewer.css": {
-    "fontSizeOffScale": 2,
+    "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
-    "radiusOffScale": 4,
+    "radiusOffScale": 0,
     "weightOffScale": 0,
-    "shadowLiteral": 1,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "right-panel.css": {
-    "fontSizeOffScale": 1,
-    "fontSizeBelow11": 1,
-    "radiusOffScale": 1,
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
     "weightOffScale": 0,
     "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "runtime-chat.css": {
-    "fontSizeOffScale": 13,
-    "fontSizeBelow11": 4,
-    "radiusOffScale": 15,
-    "weightOffScale": 3,
-    "shadowLiteral": 1,
-    "zIndexLiteral": 3
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
+    "zIndexLiteral": 0
   },
   "settings.css": {
-    "fontSizeOffScale": 15,
-    "fontSizeBelow11": 3,
-    "radiusOffScale": 6,
-    "weightOffScale": 7,
-    "shadowLiteral": 9,
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
+    "radiusOffScale": 0,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "skills-tree.css": {
-    "fontSizeOffScale": 2,
-    "fontSizeBelow11": 2,
+    "fontSizeOffScale": 0,
+    "fontSizeBelow11": 0,
     "radiusOffScale": 0,
     "weightOffScale": 0,
-    "shadowLiteral": 2,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "system.css": {
     "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
-    "radiusOffScale": 1,
+    "radiusOffScale": 0,
     "weightOffScale": 0,
-    "shadowLiteral": 2,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "task-center.css": {
@@ -133,14 +133,14 @@
     "radiusOffScale": 0,
     "weightOffScale": 0,
     "shadowLiteral": 0,
-    "zIndexLiteral": 1
+    "zIndexLiteral": 0
   },
   "topbar.css": {
     "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
     "radiusOffScale": 0,
-    "weightOffScale": 1,
-    "shadowLiteral": 5,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "ui-primitives.css": {
@@ -148,15 +148,15 @@
     "fontSizeBelow11": 0,
     "radiusOffScale": 0,
     "weightOffScale": 0,
-    "shadowLiteral": 3,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   },
   "workspace-navigation.css": {
-    "fontSizeOffScale": 1,
+    "fontSizeOffScale": 0,
     "fontSizeBelow11": 0,
-    "radiusOffScale": 1,
-    "weightOffScale": 3,
-    "shadowLiteral": 5,
+    "radiusOffScale": 0,
+    "weightOffScale": 0,
+    "shadowLiteral": 0,
     "zIndexLiteral": 0
   }
 }

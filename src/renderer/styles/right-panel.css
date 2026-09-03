@@ -70,7 +70,7 @@
   margin-bottom: 4px;
 }
 .task-card-title { font-weight: 600; }
-.task-card-status { font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+.task-card-status { font-size: var(--text-xs); padding: 1px 6px; border-radius: var(--radius-xs); }
 .task-card-status.running { background: var(--info-bg); color: var(--info-text); }
 .task-card-status.done { background: var(--success-bg); color: var(--success-text); }
 .task-card-status.failed { background: var(--danger-bg); color: var(--danger-text); }

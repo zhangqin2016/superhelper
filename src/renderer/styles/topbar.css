@@ -47,7 +47,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--bg-body) 8%, transparent), var(--top-highlight);
+  box-shadow: var(--shadow-xs), var(--top-highlight);
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
@@ -100,7 +100,7 @@
   font-weight: 500;
   line-height: 1.5;
   border: 1px solid transparent;
-  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 14%, transparent);
+  box-shadow: var(--top-highlight), var(--shadow-xs);
 }
 .session-status-pill::before {
   content: "";
@@ -183,7 +183,7 @@
   background: var(--accent-subtle);
   color: var(--text-primary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
   box-shadow: var(--top-highlight);
 }
@@ -326,7 +326,7 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-input) 90%, var(--bg-surface) 10%);
-  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 10%, transparent);
+  box-shadow: var(--top-highlight), var(--shadow-xs);
   overflow: hidden;
 }
 
@@ -370,7 +370,7 @@
   background: var(--bg-surface-hover);
   border-color: var(--border-light);
   color: var(--text-primary);
-  box-shadow: var(--top-highlight), 0 6px 16px color-mix(in srgb, var(--bg-body) 10%, transparent);
+  box-shadow: var(--top-highlight), var(--shadow-sm);
 }
 .topbar-btn-stop {
   color: var(--danger-text);

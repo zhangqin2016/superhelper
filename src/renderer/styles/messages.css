@@ -15,7 +15,7 @@
   position: absolute;
   left: 50%;
   bottom: 16px;
-  z-index: 20;
+  z-index: var(--z-raised);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -112,17 +112,17 @@
   height: 28px;
   margin-bottom: 12px;
   border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-surface-raised) 86%, transparent);
   color: var(--accent);
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1;
   box-shadow: var(--top-highlight);
 }
 
 .workbench-empty-title {
   margin: 0 0 8px;
-  font-size: 18px;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: 0;

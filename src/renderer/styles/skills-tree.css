@@ -207,7 +207,7 @@
   flex-shrink: 0;
   padding: 1px 6px;
   border-radius: var(--radius-pill);
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
   background: color-mix(in srgb, var(--bg-topbar) 82%, var(--border) 18%);
   border: 1px solid var(--border-light);
@@ -248,7 +248,7 @@
 
 .skills-tree-row-chip {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--text-xs);
   padding: 1px 6px;
   border-radius: var(--radius-pill);
   background: var(--accent-subtle);
