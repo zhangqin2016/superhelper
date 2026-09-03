@@ -18,7 +18,7 @@ app.whenReady().then(async () => {
   const result = await win.webContents.executeJavaScript(`(async () => {
     const {initCollaborationCenter}=await import(${JSON.stringify(moduleUrl)});
     for(const id of ['collaborationNavButton','workbenchNavButton','centerPanel','collaborationCenter','collaborationInboxColumn','collaborationInbox','collaborationFriends','collaborationTeams','collaborationInboxTab','collaborationPeopleTab','collaborationTeamsTab','collaborationListTitle','collaborationStatus','collaborationLive','collaborationScopeBadge','collaborationTimeline','collaborationConversationEmpty','collaborationComposer','collaborationSendButton']){const n=document.createElement(id==='collaborationComposer'?'textarea':id.endsWith('Tab')||id.endsWith('Button')?'button':'div');n.id=id;document.body.append(n);}
-    const directory={ok:true,profile:{userId:'self',lilyId:'self-id'},contacts:[],teams:[{id:'org',scopeId:'team:org',name:'Team',role:'member',members:[{userId:'self'},{userId:'peer'}]}]};
+    const directory={ok:true,profile:{userId:'self',lilyId:'self-id'},contacts:[{userId:'peer',lilyId:'peer-id',displayName:'Peer',relationship:'friend',ownBlocked:false}],teams:[{id:'org',scopeId:'team:org',name:'Team',role:'member',members:[{userId:'self'},{userId:'peer'}]}]};
     const opened=[],commands=[];let resolve;
     window.assistantClient={collaboration:{getDirectory:async()=>directory,getSocialCommands:async()=>({ok:true,commands:[]}),list:async()=>({ok:true,conversations:[{id:'B',scopeId:'personal',kind:'group'}]}),
       onStateChange:()=>()=>{},getDraft:async()=>({ok:true,text:'B draft'}),saveDraft:async()=>({ok:true}),
@@ -27,7 +27,10 @@ app.whenReady().then(async () => {
     }};
     const tick=()=>new Promise(r=>setTimeout(r,25));const center=initCollaborationCenter({getPolicy:async()=>({collaboration:{enabled:true}})});
     center.show();await tick();
-    async function start(kind='direct'){document.getElementById('collaborationTeamsTab').click();await tick();if(kind==='direct'){/* The roster moved out of the list: a team of any size made the channels unreachable. Open it first. */document.querySelector('[data-action="open-team"]').click();await tick();document.querySelector('[data-action="team-chat"]').click();}else{const form=document.querySelector('[data-form="'+kind+'"]');form.querySelector('[name="title"]').value='Pending '+kind;form.requestSubmit();}await tick();}
+    async function start(kind='direct'){document.getElementById('collaborationTeamsTab').click();await tick();if(kind==='direct'){/* The roster moved out of the list: a team of any size made the channels unreachable. Open it first. */document.querySelector('[data-action="open-team"]').click();await tick();document.querySelector('[data-action="team-chat"]').click();}else{const form=document.querySelector('[data-form="'+kind+'"]');form.querySelector('[name="title"]').value='Pending '+kind;
+      // A group needs someone in it now; the submit is refused otherwise.
+      const pick=form.querySelector('.is-pick input[type=checkbox]'); if(pick&&!pick.checked){pick.click();await tick();}
+      form.requestSubmit();}await tick();}
     await start();await center.open('B');await tick();resolve({ok:true,state:'completed',conversationId:'A-manual'});await tick();
     const manual=[...opened],draft=document.getElementById('collaborationComposer').value;
     await start('group');center.hide();resolve({ok:true,state:'completed',conversationId:'A-hidden'});await tick();const hidden=[...opened],workbench=document.getElementById('collaborationCenter').hidden;

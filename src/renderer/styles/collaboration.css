@@ -1259,6 +1259,94 @@
   border-color: color-mix(in srgb, var(--danger-text) 45%, transparent);
 }
 
+/* The member picker. It replaced a 96px `<select multiple>`; the list needs
+   real height to be worth scrolling, but not so much that the name field and
+   the submit button fall off the bottom of the form. */
+.collaboration-member-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.collaboration-picker-list {
+  max-block-size: 260px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  border-radius: 10px;
+  padding: 2px 6px;
+}
+
+/* Chosen people, above the list: who is in, and how many, without counting
+   highlighted rows. Each chip is the control that removes that person. */
+.collaboration-picker-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.collaboration-picker-count {
+  margin-inline-end: 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.collaboration-picker-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 2px 8px 2px 3px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.collaboration-picker-chip:hover {
+  border-color: color-mix(in srgb, var(--danger-text) 45%, transparent);
+  color: var(--danger-text);
+}
+
+.collaboration-picker-chip .collaboration-row-avatar {
+  inline-size: 22px;
+  block-size: 22px;
+  flex-basis: 22px;
+  /* 11px in a 22px circle, rather than spending one of the legibility gate's
+     few named exemptions on a case that does not need one. */
+  font-size: 11px;
+}
+
+/* A pick row is a <label>, so the whole 56px row is the checkbox's hit area.
+   `display` is repeated here on purpose: `.collaboration-social-form label`
+   sets `display: grid` and, being class+element, outranks the single-class row
+   rule — which stacked the checkbox above the name and made the row 77px.
+   Two classes here outrank it back. */
+.collaboration-social-row.is-pick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 2px;
+  cursor: pointer;
+}
+
+.collaboration-social-row.is-pick input[type="checkbox"] {
+  flex: 0 0 auto;
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 0 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.collaboration-row-open.is-static {
+  cursor: inherit;
+}
+
 /* A composed group tile: the members' initials in a 2x2 or 3x3 grid, so two
    groups whose names begin with the same character are still distinguishable.
    The cells carry the colour, so the tile itself must not paint over them. */

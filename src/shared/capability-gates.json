@@ -560,6 +560,16 @@
         "scripts/test-collaboration-rail-and-mosaic.mjs",
         "scripts/test-collaboration-shell-surface.mjs"
       ]
+    },
+    {
+      "id": "im-group-creation",
+      "protects": "Creating a group is a real member picker: search, avatars, A–Z sections, a visible selection with a count, an optional name that defaults to the members' names, and a refusal to create a group with nobody in it.",
+      "baseline": "The command is unchanged — same conversation.create action, scope, kind and permission checks. Only the control that gathers members and the title default changed, and both were already permitted by the server (empty title accepted, no minimum member count).",
+      "failureFallback": "The picker holds selection outside the DOM, so filtering or a roster refresh cannot silently drop a chosen person; a contact who becomes unselectable is removed from the selection rather than submitted invisibly. A blank name derives from the member names WITHOUT going through i18n, because `t()` returns its key when no locale has loaded and the key would become the group's name; the derived title is cut to the server's 200-character cap. The empty-selection rule is enforced in the submit handler as well as on the button, since a disabled button is bypassed by requestSubmit().",
+      "tests": [
+        "scripts/test-collaboration-member-picker.mjs",
+        "scripts/test-collaboration-social-ui.cjs"
+      ]
     }
   ]
 }

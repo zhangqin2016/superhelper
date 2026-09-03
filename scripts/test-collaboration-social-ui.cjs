@@ -68,7 +68,17 @@ app.whenReady().then(async () => {
     // The roster is behind the team header now, not inline in the list.
     teamsRoot.querySelector('[data-action="open-team"]').click(); await settle();
     teamsRoot.querySelector('[data-action="team-chat"]').click(); await settle(); const direct=calls.at(-1);
-    const groupForm=teamsRoot.querySelector('[data-form="group"]'); groupForm.querySelector('[name="title"]').value='Personal group'; groupForm.requestSubmit(); await settle(); const group=calls.at(-1);
+    const groupForm=teamsRoot.querySelector('[data-form="group"]');
+    // A "group" with nobody in it is not a group, and a one-to-one chat is
+    // already the direct kind. Submitting with no one picked dispatches nothing.
+    const beforeEmptyGroup=calls.length;
+    groupForm.querySelector('[name="title"]').value='Personal group'; groupForm.requestSubmit(); await settle();
+    const emptyGroupRefused=calls.length===beforeEmptyGroup;
+    const groupPick=groupForm.querySelector('.is-pick input[type=checkbox]');
+    const groupSubmitBlocked=groupForm.querySelector('button[type=submit]').disabled;
+    groupPick.click(); await settle();
+    const groupSubmitEnabled=!groupForm.querySelector('button[type=submit]').disabled;
+    groupForm.requestSubmit(); await settle(); const group=calls.at(-1);
     const channelForm=teamsRoot.querySelector('[data-form="channel"]'); channelForm.querySelector('[name="title"]').value='Private channel'; channelForm.requestSubmit(); await settle(); const channel=calls.at(-1);
     await teams.showConversation('private');
     const ownerImmutable=!teamsRoot.querySelector('[data-user-id="self"] [data-action="remove-member"]');
@@ -106,7 +116,7 @@ app.whenReady().then(async () => {
     publish({type:'availability',state:{ok:false}});await settle();
     const unavailablePreservesWorkbench=document.getElementById('collaborationCenter').hidden&&!document.getElementById('centerPanel').classList.contains('collaboration-active')&&!document.getElementById('collaborationFriends').textContent.includes('my-exact-id');
     center.destroy();
-    return {ownId,safe,request,accept,opened,notBeforeConfirm,block,unblock,retry,retained,confirming,fenced,scopeLabel,publicUnavailable,direct,group,channel,ownerImmutable,remove,permission,shellPeople,shellTeams,unavailablePreservesWorkbench,revokedMembersCleared,confirmedDraftCleared,duplicateSuppressed,lateRevokedMembersCleared,pendingScopeLabel};
+    return { emptyGroupRefused, groupSubmitBlocked, groupSubmitEnabled,ownId,safe,request,accept,opened,notBeforeConfirm,block,unblock,retry,retained,confirming,fenced,scopeLabel,publicUnavailable,direct,group,channel,ownerImmutable,remove,permission,shellPeople,shellTeams,unavailablePreservesWorkbench,revokedMembersCleared,confirmedDraftCleared,duplicateSuppressed,lateRevokedMembersCleared,pendingScopeLabel};
   })()`);
   assert.equal(result.ownId, true); assert.equal(result.safe, true);
   assert.deepEqual(result.request, { action: 'request', lilyId: 'Exact-ID' });
@@ -116,6 +126,9 @@ app.whenReady().then(async () => {
   assert.deepEqual(result.retry, { retry: 'restarted' }); assert.equal(result.retained, 'keep-id'); assert.match(result.confirming, /confirming/);
   assert.equal(result.fenced, true); assert.equal(result.scopeLabel, true, 'the Team is named, and its raw scope id is never shown'); assert.equal(result.publicUnavailable, true);
   assert.deepEqual(result.direct, { action:'create',scopeType:'organization',organizationId:'org',kind:'direct',memberUserIds:['peer'] });
+  assert.equal(result.emptyGroupRefused, true, 'a group with no members dispatches nothing');
+  assert.equal(result.groupSubmitBlocked, true, 'the submit is disabled until someone is picked');
+  assert.equal(result.groupSubmitEnabled, true, 'picking one contact enables it');
   assert.equal(result.group.scopeType, 'personal'); assert.equal(result.group.kind, 'group');
   assert.equal(result.channel.organizationId, 'org'); assert.equal(result.channel.visibility, 'private');
   assert.equal(result.ownerImmutable, true); assert.deepEqual(result.remove,{action:'member',conversationId:'private',targetUserId:'peer',operation:'remove'});

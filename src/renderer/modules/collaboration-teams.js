@@ -1,15 +1,32 @@
 import { t } from "../i18n/index.js";
 import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, selectedIds, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
+import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
 
 export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0 } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {}, showConversation: async () => {} };
   root.replaceChildren();
   let directory = { contacts: [], teams: [] }, conversations = [], detailsGeneration = 0, detailsConversation = null, pendingDetailsId = "";
   const groupForm = socialNode("form", "", "collaboration-social-form"); groupForm.dataset.form = "group";
-  groupForm.append(socialNode("h3", `${t("collaboration.social.createGroup")} · ${t("collaboration.scopePersonal")}`));
-  const groupTitle = socialField(groupForm, "title", "name"); groupTitle.required = true;
-  const groupMembers = socialField(groupForm, "members", "members", { multiple: true, options: [] });
-  const createGroup = socialNode("button", t("collaboration.social.createGroup"), "collaboration-social-primary"); createGroup.type = "submit"; groupForm.append(createGroup);
+  // No heading: the disclosure that opens this form already carries the same
+  // words, and printing them twice is the redundancy removed elsewhere here.
+  // Members first, name second and optional. It was the other way round, with
+  // the name REQUIRED, so a group had to be named before anyone was chosen —
+  // and the server never required a title in the first place.
+  const groupMembers = createMemberPicker({ minimum: 1, onChange: () => refreshGroupSubmit() });
+  groupForm.append(groupMembers.node);
+  const groupTitle = socialField(groupForm, "title", "groupNameHint");
+  groupTitle.maxLength = 200;
+  const createGroup = socialNode("button", t("collaboration.social.done"), "collaboration-social-primary"); createGroup.type = "submit"; groupForm.append(createGroup);
+  // A "group" containing nobody but yourself is not a group, and a one-to-one
+  // conversation is already `direct`. The server imposes no minimum, so this is
+  // the client saying what the word means.
+  function refreshGroupSubmit() {
+    const count = groupMembers.count();
+    createGroup.textContent = count ? `${t("collaboration.social.done")} (${count})` : t("collaboration.social.done");
+    createGroup.disabled = !groupMembers.satisfied();
+    createGroup.title = groupMembers.satisfied() ? "" : t("collaboration.social.needMembers");
+  }
+  refreshGroupSubmit();
   const list = socialNode("div"), personal = socialNode("div"), details = socialNode("div", "", "collaboration-member-details");
   root.append(socialDisclosure(`＋ ${t("collaboration.social.createGroup")}`, groupForm, { primary: true }), personal, list, details);
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
@@ -19,9 +36,15 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   const teamLabel = (team) => team.name;
   const scopeLabel = (scopeId) => scopeId === "personal" ? t("collaboration.scopePersonal") : teamLabel(directory.teams.find((team) => team.scopeId === scopeId) || { name: t("collaboration.scopeTeam"), scopeId });
   groupForm.addEventListener("submit", (event) => {
-    event.preventDefault(); const title = groupTitle.value.trim(); if (!title) return;
-    void ui.run(() => api.conversation({ action: "create", scopeType: "personal", kind: "group", title, memberUserIds: selectedIds(groupMembers) }), async (result, origin) => {
+    event.preventDefault();
+    if (!groupMembers.satisfied()) return;
+    const memberUserIds = groupMembers.selectedIds();
+    // Blank means "name it after the people in it", the way every chat client
+    // does; the previous form refused to submit without a typed name.
+    const title = groupTitle.value.trim() || derivedGroupTitle(groupMembers.selectedNames());
+    void ui.run(() => api.conversation({ action: "create", scopeType: "personal", kind: "group", title, memberUserIds }), async (result, origin) => {
       if (groupTitle.value.trim() === title) groupTitle.value = "";
+      groupMembers.reset();
       if (result.conversationId && origin.isCurrentNavigation()) await onOpen(result.conversationId);
     });
   });
@@ -103,11 +126,10 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         || detailsConversation.scopeId.startsWith("team:") && !directory.teams.some((team) => team.scopeId === detailsConversation.scopeId))) {
         detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; details.replaceChildren(); ui.reset();
       }
-      const selected = new Set(selectedIds(groupMembers));
-      groupMembers.replaceChildren();
-      for (const [value, label] of optionsFor(directory.contacts.filter((c) => c.relationship === "friend" && !c.ownBlocked))) {
-        const option = socialNode("option", label); option.value = value; option.selected = selected.has(value); groupMembers.append(option);
-      }
+      // The picker keeps its own selection across a roster refresh, dropping
+      // only people who are no longer selectable. A blocked or removed contact
+      // therefore cannot stay silently selected.
+      groupMembers.setPeople(directory.contacts.filter((c) => c.relationship === "friend" && !c.ownBlocked));
       // Normal sync must not erase unfinished channel forms. Retain exact IDs,
       // and restore selections only if they still exist in the current roster.
       const drafts = new Map([...list.querySelectorAll("[data-team-id]")].map((node) => [node.dataset.teamId,
@@ -188,7 +210,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       detailsConversation = result.conversation;
       renderDetails(result);
     },
-    reset() { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.replaceChildren(); list.replaceChildren(); personal.replaceChildren(); details.replaceChildren(); },
+    reset() { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); details.replaceChildren(); },
   };
   return controller;
 }
