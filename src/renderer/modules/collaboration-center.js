@@ -2,6 +2,8 @@ import { t, onLocaleChange } from "../i18n/index.js";
 import { identityName, resolvePerson } from "./collaboration-social-ui.js";
 import { renderCollaborationInbox, setActiveConversation } from "./collaboration-inbox.js";
 import { createConversationPrefs } from "./collaboration-conversation-prefs.js";
+import { createForwardAction } from "./collaboration-forward.js";
+import { createUnreadBadge } from "./collaboration-unread-badge.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
 import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
@@ -121,6 +123,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       composer.beginEdit?.({ conversationId: activeConversationId, messageId: message.id, baseRevision: Number(message.revision) || 1, bodyText: message.bodyText || "" });
       byId("collaborationComposer")?.focus();
     },
+    onForward: forwardMessage,
     canRevoke: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
     onRevoke: async (message) => {
       if (disposed || !policyEnabled || !activeConversationId || !message.id) return;
@@ -323,16 +326,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     renderTimeline();
     if (active) byId("collaborationInboxColumn")?.focus?.();
   };
-  const updateUnreadBadge = (conversations = []) => {
-    const total = (Array.isArray(conversations) ? conversations : []).reduce((sum, row) => sum + (Number(row.unreadCount) > 0 ? Number(row.unreadCount) : 0), 0);
-    // A dot on the rail's inbox tile; the exact count stays on the panel toggle.
-    if (railUnread) railUnread.hidden = total <= 0;
-    if (!unreadBadge) return;
-    unreadBadge.hidden = total <= 0;
-    unreadBadge.textContent = total > 99 ? "99+" : String(total);
-  };
+  const updateUnreadBadge = createUnreadBadge({ railUnread, unreadBadge, isMuted: (id) => inboxPrefs().isMuted(id) });
   let convPrefs = null, convPrefsAccount = null;
   const inboxPrefs = () => { const acct = directory?.profile?.userId || ""; if (!convPrefs || convPrefsAccount !== acct) { convPrefs = createConversationPrefs(acct); convPrefsAccount = acct; } return convPrefs; };
+  const forwardMessage = createForwardAction({ getConversations: () => inboxPrefs().apply(lastConversations), getActiveConversationId: () => activeConversationId, getCurrentUserId: () => directory?.profile?.userId || "", resolveSender: (userId) => identityName(resolvePerson(directory, userId)), isEnabled: () => !disposed && policyEnabled && !panel.hidden && Boolean(activeConversationId), send: ({ conversationId, bodyText }) => window.assistantClient?.collaboration?.send?.({ conversationId, clientCommandId: collabCommandId(), bodyText }) });
   const paintInbox = (conversations) => renderCollaborationInbox(byId("collaborationInbox"), conversations || [], {
     onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
     resolveSender: (userId) => identityName(resolvePerson(directory, userId)), currentUserId: directory?.profile?.userId || "",

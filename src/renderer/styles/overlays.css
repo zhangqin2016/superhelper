@@ -975,3 +975,104 @@
   margin: 3px 6px;
   background: var(--border-light);
 }
+
+/* 转发 picker: a small modal over the panel — search, the chat list, cancel. */
+.collab-forward-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-body) 42%, transparent);
+}
+
+.collab-forward-panel {
+  inline-size: min(360px, 92vw);
+  max-block-size: min(70vh, 560px);
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collab-forward-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.collab-forward-search {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-base);
+}
+
+.collab-forward-list {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.collab-forward-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  text-align: start;
+  cursor: pointer;
+}
+
+.collab-forward-row:hover,
+.collab-forward-row:focus-visible {
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, transparent);
+  outline: none;
+}
+
+.collab-forward-row-title {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.collab-forward-empty {
+  margin: 12px 4px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.collab-forward-cancel {
+  align-self: stretch;
+  min-height: 34px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.collab-forward-cancel:hover { background: color-mix(in srgb, var(--bg-surface-hover) 82%, transparent); }

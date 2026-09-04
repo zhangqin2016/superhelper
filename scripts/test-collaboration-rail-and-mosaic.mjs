@@ -51,7 +51,10 @@ const { conversationRosters, MAX_MEMBERS_PER_CONVERSATION } = require("../src/ma
   assert.match(css, /^\.collaboration-home\s*\{[^}]*flex-direction:\s*row/ms, "the home view is rail | list");
 
   const center = read("src/renderer/modules/collaboration-center.js");
-  assert.match(center, /railUnread\.hidden = total <= 0/, "the rail dot follows the same unread total as the panel badge");
+  // The badge/dot pair moved into its own module; the centre wires both to it.
+  assert.match(read("src/renderer/modules/collaboration-unread-badge.js"), /railUnread\.hidden = total <= 0/,
+    "the rail dot follows the same unread total as the panel badge");
+  assert.match(center, /createUnreadBadge\(\{ railUnread, unreadBadge/, "the centre wires the rail dot and the panel badge together");
   assert.match(center, /title\.hidden = false/, "the list heading always names the destination; the rail is icon-only");
 }
 

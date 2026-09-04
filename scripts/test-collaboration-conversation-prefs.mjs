@@ -53,4 +53,16 @@ assert.equal(other.isPinned("a"), false, "prefs are per-account");
 const bad = { getItem: () => "{not json", setItem: () => {} };
 assert.deepEqual(createConversationPrefs("x", bad).apply(convs).map((c) => c.id), ["b", "c", "a"], "corrupt storage falls back to defaults");
 
+// The global unread badge must skip muted conversations (WeChat's rule): the
+// list still shows their own dot, but they never raise the count.
+{
+  const fs = await import("node:fs");
+  const badge = fs.readFileSync(new URL("../src/renderer/modules/collaboration-unread-badge.js", import.meta.url), "utf8");
+  assert.match(badge, /Number\(row\?\.unreadCount\) > 0 && !isMuted\(row\.id\)/,
+    "the unread badge total excludes muted conversations");
+  const center = fs.readFileSync(new URL("../src/renderer/modules/collaboration-center.js", import.meta.url), "utf8");
+  assert.match(center, /isMuted: \(id\) => inboxPrefs\(\)\.isMuted\(id\)/,
+    "the centre feeds the badge the live mute state");
+}
+
 console.log("collaboration conversation prefs: pin floats, mute annotates, delete hides then resurfaces, per-account persistence");
