@@ -175,6 +175,42 @@ async function loginWithSms({ phone, code } = {}) {
   };
 }
 
+/** Same session handling as SMS login; only the credential differs. */
+async function loginWithPassword({ loginName, password } = {}) {
+  const generation = ++accountGeneration;
+  const result = await serviceClient.loginWithPassword({ loginName, password });
+  if (generation !== accountGeneration) return { ok: false, error: "ACCOUNT_SESSION_CHANGED" };
+  if (!result.ok) return result;
+  const refreshToken = result.json?.refreshToken || "";
+  accessToken = result.json?.accessToken || "";
+  accessUserId = String(result.json?.user?.id || "");
+  accessExpiresAt = Date.now() + Number(result.json?.expiresIn || 0) * 1000;
+  writeState({
+    user: result.json?.user || null,
+    entitlements: result.json?.entitlements || null,
+    refreshToken: protectText(refreshToken),
+    loggedInAt: new Date().toISOString(),
+    entitlementsRefreshedAt: new Date().toISOString(),
+  });
+  return {
+    ok: true,
+    user: result.json?.user || null,
+    entitlements: result.json?.entitlements || null,
+    passwordMustChange: Boolean(result.json?.user?.passwordMustChange),
+  };
+}
+
+async function changePassword({ currentPassword, newPassword } = {}) {
+  const token = await ensureAccessToken();
+  if (!token.ok) return token;
+  const result = await serviceClient.changeAccountPassword({ accessToken: token.accessToken, currentPassword, newPassword });
+  if (!result.ok) return result;
+  // The forced-change flag lives on the stored user; clear it so the UI stops asking.
+  const state = readState();
+  if (state.user) writeState({ ...state, user: { ...state.user, passwordMustChange: false } });
+  return { ok: true };
+}
+
 async function fetchOrganizations() {
   const token = await ensureAccessToken();
   if (!token.ok) return token;
@@ -253,6 +289,8 @@ module.exports = {
   isTransientRefreshFailure,
   sendSmsCode,
   loginWithSms,
+  loginWithPassword,
+  changePassword,
   refreshEntitlements,
   fetchOrganizations,
   getCurrentOrganizationId,

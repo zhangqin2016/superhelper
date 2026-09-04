@@ -561,46 +561,14 @@ async function activateLicenseKey(licenseKey) {
   });
 }
 
-async function sendSmsCode(phone) {
-  return serviceFetch("/api/auth/sms/send", {
-    method: "POST",
-    body: JSON.stringify({
-      phone: String(phone || "").trim(),
-      purpose: "login",
-      deviceId: getDeviceId(),
-    }),
-  });
-}
-
-async function loginWithSms({ phone, code } = {}) {
-  return serviceFetch("/api/auth/sms/login", {
-    method: "POST",
-    body: JSON.stringify({
-      ...devicePayload(),
-      phone: String(phone || "").trim(),
-      code: String(code || "").trim(),
-    }),
-  });
-}
-
-async function refreshAccountAccessToken(refreshToken) {
-  return serviceFetch("/api/auth/session/refresh", {
-    method: "POST",
-    body: JSON.stringify({
-      ...devicePayload(),
-      refreshToken: String(refreshToken || "").trim(),
-    }),
-  });
-}
-
-async function logoutAccount(refreshToken) {
-  return serviceFetch("/api/auth/session/logout", {
-    method: "POST",
-    body: JSON.stringify({
-      refreshToken: String(refreshToken || "").trim(),
-    }),
-  });
-}
+// Session acquisition and release live in service-client-account-auth.js; the
+// transport and device identity are injected so that file knows neither.
+const accountAuth = require("./service-client-account-auth").createAccountAuthClient({
+  serviceFetch: (...args) => serviceFetch(...args),
+  devicePayload: () => devicePayload(),
+  getDeviceId: () => getDeviceId(),
+});
+const { sendSmsCode, loginWithSms, loginWithPassword, changeAccountPassword, refreshAccountAccessToken, logoutAccount } = accountAuth;
 
 async function fetchAccountEntitlements(accessToken) {
   return serviceFetch("/api/account/entitlements", {
@@ -852,6 +820,8 @@ module.exports = {
   devicePayload,
   sendSmsCode,
   loginWithSms,
+  loginWithPassword,
+  changeAccountPassword,
   refreshAccountAccessToken,
   logoutAccount,
   configuredServiceApiBaseUrl, fetchAccountEntitlements,

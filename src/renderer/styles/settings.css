@@ -1989,6 +1989,49 @@
 /* Capacity line: how close the enabled skills are to the model instruction
    budget. Warning tone by default, danger once entries are actually being
    dropped, because at that point the model has stopped seeing those skills. */
+/* Two ways to sign in: a personal phone, or an account the company issued.
+   A segmented control rather than tabs — there are exactly two and they are
+   peers. Uses the same tokens as the settings action buttons so a token change
+   is one edit. */
+.account-login-modes {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.account-login-mode {
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.account-login-mode.is-active {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.account-password-change {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  background: var(--warning-bg-soft);
+}
+
+.account-password-change .skills-subsection-title {
+  margin-top: 0;
+}
+
 .skills-capacity-notice {
   margin: 0 0 12px;
   padding: 8px 10px;

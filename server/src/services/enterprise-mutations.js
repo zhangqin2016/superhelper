@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import { canChangeMemberRole, canManageMember, normalizeQuota, roleAtLeast } from "./enterprise.js";
 import { addMemberTarget, createInvitation } from "./enterprise-invitations.js";
+import { provisionAccounts, resetIssuedPassword, ownedAccountStatusAfterMembership } from "./enterprise-accounts.js";
 import { createKyselyConversationRepository } from "./collaboration/conversation-repository.js";
 import { writeEnterpriseEvents } from "./collaboration/enterprise-events.js";
 
@@ -78,6 +79,41 @@ export function createEnterpriseMutationService(database) {
         return { ok: true, member };
       });
     },
+    /**
+     * Issue dedicated accounts for staff. Returns each initial password ONCE.
+     * Same lock and admin gate as every other membership mutation.
+     */
+    provisionAccounts(options, input) {
+      return mutate(options, async (context) => {
+        const { trx, organizationId, organization, organizationMembers, membership } = context;
+        if (organization.status !== "active") fail("ORG_DISABLED");
+        const requests = Array.isArray(input?.accounts) ? input.accounts : [];
+        if (!requests.length) fail("ACCOUNTS_REQUIRED", 400);
+        for (const request of requests) {
+          // An admin may issue member or admin accounts, never owner — and only
+          // roles they could assign by hand.
+          if (request?.role === "owner") fail("INVITE_ROLE_UNSUPPORTED", 400);
+          requireAllowed(canChangeMemberRole("member", request?.role || "member", membership.role));
+        }
+        const issued = await provisionAccounts(trx, {
+          organizationId,
+          organizationName: organization.name,
+          requests,
+          provisionedBy: options.account?.userId || null,
+        });
+        await notify(context, { directory: [...activeIds(organizationMembers), ...issued.map((row) => row.userId)] });
+        return { ok: true, accounts: issued };
+      });
+    },
+    /** New one-time password for an issued account; the old one dies now. */
+    resetIssuedPassword(options, targetUserId) {
+      return mutate(options, async (context) => {
+        const { trx, organizationId, organizationMembers } = context;
+        const target = organizationMembers.find((member) => member.user_id === targetUserId);
+        if (!target) fail("MEMBER_NOT_FOUND", 404);
+        return { ok: true, ...(await resetIssuedPassword(trx, { organizationId, userId: targetUserId })) };
+      });
+    },
     /** Withdraw an open seat invitation. Same lock and role gate as members. */
     revokeInvitation(options, invitationId) {
       return mutate(options, async (context) => {
@@ -114,6 +150,17 @@ export function createEnterpriseMutationService(database) {
         const lostAccess = organization.status === "active" && target.status === "active" && nextStatus !== "active";
         const changed = remove || nextStatus !== target.status || input.role !== undefined && input.role !== target.role;
         let member;
+        // An account the company issued belongs to the company. Taking it out
+        // of the org, or disabling it there, must also lock the login itself —
+        // otherwise a removed employee keeps a working account with nothing
+        // attached to it. A phone user who merely joined keeps their own.
+        const targetUser = await trx.selectFrom("users").select(["id", "provisioned_organization_id"]).where("id", "=", targetUserId).executeTakeFirst();
+        const ownedStatus = ownedAccountStatusAfterMembership({
+          provisionedOrganizationId: targetUser?.provisioned_organization_id || null,
+          organizationId,
+          memberStatus: remove ? "removed" : nextStatus,
+        });
+        if (ownedStatus) await trx.updateTable("users").set({ status: ownedStatus }).where("id", "=", targetUserId).execute();
         if (remove) await trx.deleteFrom("organization_members").where("organization_id", "=", organizationId).where("user_id", "=", targetUserId).execute();
         else member = await trx.updateTable("organization_members").set({
           ...(input.role !== undefined ? { role: input.role } : {}), ...(input.status !== undefined ? { status: input.status } : {}),

@@ -2003,5 +2003,22 @@
   "collaboration.historyLoadFailed": "تعذر تحميل الرسائل السابقة. حاول مجددًا.",
   "skills.capacityNear": "يستخدم فهرس المهارات {percent}% من ميزانية تعليمات النموذج، ويتبقى مكان لنحو {count} مهارة. بعد ذلك لن تظهر المهارة الجديدة في الفهرس الذي يراه النموذج.",
   "skills.capacityFull": "ميزانية التعليمات ممتلئة: {count} مهارة غير موجودة في الفهرس الذي يراه النموذج، لذا لا يعرف بوجودها. تعطيل بعض المهارات يعيدها.",
-  "skills.capacityUndescribed": "{count} مهارة بلا وصف، لذا لا تظهر أبدًا في الفهرس الذي يراه النموذج."
+  "skills.capacityUndescribed": "{count} مهارة بلا وصف، لذا لا تظهر أبدًا في الفهرس الذي يراه النموذج.",
+  "settings.accountLoginModeSms": "رمز الهاتف",
+  "settings.accountLoginModePassword": "حساب الشركة",
+  "settings.accountLoginName": "اسم الدخول",
+  "settings.accountPassword": "كلمة المرور",
+  "settings.accountPasswordRequired": "أدخل اسم الدخول وكلمة المرور",
+  "settings.accountLoggedInName": "تم تسجيل الدخول: {name}",
+  "settings.accountPasswordChangeTitle": "أول تسجيل دخول — عيّن كلمة مرور جديدة",
+  "settings.accountPasswordChangeHint": "أصدرت شركتك كلمة مرور أولية لمرة واحدة. عيّن كلمتك قبل المتابعة: 8 أحرف على الأقل تتضمن حروفاً وأرقاماً.",
+  "settings.accountCurrentPassword": "كلمة المرور الحالية",
+  "settings.accountNewPassword": "كلمة المرور الجديدة",
+  "settings.accountNewPasswordConfirm": "تأكيد كلمة المرور الجديدة",
+  "settings.accountPasswordChange": "تعيين كلمة المرور",
+  "settings.accountPasswordMismatch": "كلمتا المرور الجديدتان غير متطابقتين",
+  "settings.accountPasswordChanged": "تم تحديث كلمة المرور",
+  "settings.accountPasswordChangeFailed": "تعذّر تغيير كلمة المرور",
+  "settings.accountLoginTitlePassword": "تسجيل الدخول بحساب الشركة",
+  "settings.accountLoginHintPassword": "استخدم اسم الدخول وكلمة المرور اللذين أصدرهما مسؤول شركتك. ستعيّن كلمة مرور جديدة عند أول تسجيل دخول."
 }

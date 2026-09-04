@@ -2003,5 +2003,22 @@
   "collaboration.historyLoadFailed": "更早消息加载失败，请重试。",
   "skills.capacityNear": "技能目录已占用模型指令预算的 {percent}%，大约还能再添加 {count} 个技能。超出后新技能不会出现在模型可见的目录里。",
   "skills.capacityFull": "指令预算已满：{count} 个技能没有进入模型可见的目录，模型不会知道它们存在。停用一些技能可以让它们回来。",
-  "skills.capacityUndescribed": "{count} 个技能没有写描述，因此不会出现在模型可见的目录里。"
+  "skills.capacityUndescribed": "{count} 个技能没有写描述，因此不会出现在模型可见的目录里。",
+  "settings.accountLoginModeSms": "手机验证码",
+  "settings.accountLoginModePassword": "企业账号",
+  "settings.accountLoginName": "登录名",
+  "settings.accountPassword": "密码",
+  "settings.accountPasswordRequired": "请输入登录名和密码",
+  "settings.accountLoggedInName": "已登录：{name}",
+  "settings.accountPasswordChangeTitle": "首次登录，请设置新密码",
+  "settings.accountPasswordChangeHint": "企业发给你的是一次性初始密码，设置新密码后才能继续。至少 8 位，包含字母和数字。",
+  "settings.accountCurrentPassword": "当前密码",
+  "settings.accountNewPassword": "新密码",
+  "settings.accountNewPasswordConfirm": "确认新密码",
+  "settings.accountPasswordChange": "设置新密码",
+  "settings.accountPasswordMismatch": "两次输入的新密码不一致",
+  "settings.accountPasswordChanged": "密码已更新",
+  "settings.accountPasswordChangeFailed": "密码修改失败",
+  "settings.accountLoginTitlePassword": "企业账号登录",
+  "settings.accountLoginHintPassword": "使用企业管理员发给你的登录名和密码。首次登录需要设置新密码。"
 }

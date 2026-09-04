@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { userApiGet } from "../../../../../lib/user-api";
-import { addMemberAction, patchMemberAction, removeMemberAction, revokeInvitationAction } from "../../actions";
+import { addMemberAction, patchMemberAction, removeMemberAction, revokeInvitationAction, provisionAccountsAction, resetAccountPasswordAction } from "../../actions";
+import IssuedCredentials from "./IssuedCredentials";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,9 @@ export default async function OrgMembersPage({ params }) {
   // until they log in, so they are listed separately rather than mixed in.
   const invitationData = await userApiGet(`/api/enterprise/organizations/${id}/invitations`, { invitations: [] });
   const invitations = Array.isArray(invitationData?.invitations) ? invitationData.invitations : [];
+  // Accounts the company itself issued (login name + password, no phone).
+  const issuedData = await userApiGet(`/api/enterprise/organizations/${id}/accounts`, { accounts: [] });
+  const issued = Array.isArray(issuedData?.accounts) ? issuedData.accounts : [];
   if (!org?.id) notFound();
   const roleLabel = { owner: "所有者", admin: "管理员", member: "成员" };
   const canManage = org.role === "owner" || org.role === "admin";
@@ -24,6 +28,26 @@ export default async function OrgMembersPage({ params }) {
         <h1 className="mt-1 text-2xl font-semibold">成员管理</h1>
         <p className="mt-1 text-sm text-slate-500">{org.name}</p>
       </div>
+
+      <IssuedCredentials />
+
+      {canManage && (
+        <form action={provisionAccountsAction.bind(null, id)} className="space-y-3 rounded-lg border border-slate-200 bg-white p-6">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">生成企业专属账户</h2>
+            <p className="mt-1 text-xs text-slate-500">企业直接为员工创建账号，员工不需要手机号。每个账户附一次性初始密码，首次登录必须修改。账户归企业所有：移出企业即无法登录。</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <textarea name="loginNames" rows={2} placeholder="登录名，每行或逗号分隔（如 zhangsan, lisi）；留空则按数量自动生成" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <input name="count" type="number" min="1" max="100" placeholder="或数量" className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <select name="role" defaultValue="member" className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <option value="member">成员</option>
+              <option value="admin">管理员</option>
+            </select>
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">生成账户</button>
+          </div>
+        </form>
+      )}
 
       {canManage && (
         <form action={addMemberAction.bind(null, id)} className="space-y-3 rounded-lg border border-slate-200 bg-white p-6">
@@ -68,6 +92,31 @@ export default async function OrgMembersPage({ params }) {
           ))}
         </ul>
       </section>
+
+      {canManage && issued.length > 0 && (
+        <section className="rounded-lg border border-slate-200 bg-white">
+          <header className="border-b border-slate-200 px-6 py-3">
+            <h2 className="text-sm font-medium text-slate-900">企业专属账户（{issued.length}）</h2>
+            <p className="mt-0.5 text-xs text-slate-500">企业签发的账号。重置密码会生成新的一次性初始密码，旧密码立即失效。</p>
+          </header>
+          <ul className="divide-y divide-slate-100">
+            {issued.map((a) => (
+              <li key={a.userId} className="flex flex-wrap items-center gap-3 px-6 py-4">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-sm font-medium text-slate-900">{a.loginName}{a.displayName ? <span className="ml-2 font-sans font-normal text-slate-500">{a.displayName}</span> : null}</p>
+                  <p className="text-xs text-slate-500">
+                    {roleLabel[a.role] || a.role} · {a.status === "active" ? "正常" : "已停用"}
+                    {a.passwordMustChange ? " · 尚未首次登录" : a.lastLoginAt ? ` · 最近登录 ${new Date(a.lastLoginAt).toLocaleDateString("zh-CN")}` : ""}
+                  </p>
+                </div>
+                <form action={resetAccountPasswordAction.bind(null, id, a.userId)}>
+                  <button type="submit" className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">重置密码</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {canManage && invitations.length > 0 && (
         <section className="rounded-lg border border-amber-200 bg-amber-50/40">

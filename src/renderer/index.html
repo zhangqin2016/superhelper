@@ -598,6 +598,10 @@
                     </div>
                   </div>
 
+                  <div id="accountLoginModes" class="account-login-modes" role="tablist" aria-label="登录方式">
+                    <button id="accountModeSmsBtn" type="button" class="account-login-mode is-active" role="tab" aria-selected="true" data-i18n="settings.accountLoginModeSms">手机验证码</button>
+                    <button id="accountModePasswordBtn" type="button" class="account-login-mode" role="tab" aria-selected="false" data-i18n="settings.accountLoginModePassword">企业账号</button>
+                  </div>
                   <div id="accountLoginContent" class="account-login-grid">
                     <label class="settings-field account-phone-field">
                       <span class="settings-field-label" data-i18n="settings.accountPhone">手机号</span>
@@ -610,6 +614,36 @@
                       <input id="accountCodeInput" class="settings-input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="8" />
                     </label>
                     <button id="accountLoginBtn" class="settings-action-btn settings-action-btn--primary account-inline-btn" type="submit" data-i18n="settings.accountLogin">登录</button>
+                  </div>
+                  <div id="accountPasswordContent" class="account-login-grid" hidden>
+                    <label class="settings-field account-phone-field">
+                      <span class="settings-field-label" data-i18n="settings.accountLoginName">登录名</span>
+                      <input id="accountLoginNameInput" class="settings-input" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="40" />
+                    </label>
+                    <label class="settings-field account-code-field">
+                      <span class="settings-field-label" data-i18n="settings.accountPassword">密码</span>
+                      <input id="accountPasswordInput" class="settings-input" type="password" autocomplete="current-password" maxlength="128" />
+                    </label>
+                    <button id="accountPasswordLoginBtn" class="settings-action-btn settings-action-btn--primary account-inline-btn" type="button" data-i18n="settings.accountLogin">登录</button>
+                  </div>
+                  <div id="accountPasswordChange" class="account-password-change" hidden>
+                    <h4 class="skills-subsection-title" data-i18n="settings.accountPasswordChangeTitle">首次登录，请设置新密码</h4>
+                    <p class="settings-section-desc" data-i18n="settings.accountPasswordChangeHint">企业发给你的是一次性初始密码，设置新密码后才能继续。</p>
+                    <div class="account-login-grid">
+                      <label class="settings-field account-phone-field">
+                        <span class="settings-field-label" data-i18n="settings.accountCurrentPassword">当前密码</span>
+                        <input id="accountCurrentPasswordInput" class="settings-input" type="password" autocomplete="current-password" maxlength="128" />
+                      </label>
+                      <label class="settings-field account-phone-field">
+                        <span class="settings-field-label" data-i18n="settings.accountNewPassword">新密码</span>
+                        <input id="accountNewPasswordInput" class="settings-input" type="password" autocomplete="new-password" maxlength="128" />
+                      </label>
+                      <label class="settings-field account-code-field">
+                        <span class="settings-field-label" data-i18n="settings.accountNewPasswordConfirm">确认新密码</span>
+                        <input id="accountNewPasswordConfirmInput" class="settings-input" type="password" autocomplete="new-password" maxlength="128" />
+                      </label>
+                      <button id="accountPasswordChangeBtn" class="settings-action-btn settings-action-btn--primary account-inline-btn" type="button" data-i18n="settings.accountPasswordChange">设置新密码</button>
+                    </div>
                   </div>
 
                   <p id="accountFormStatus" class="settings-form-status account-form-status" hidden></p>

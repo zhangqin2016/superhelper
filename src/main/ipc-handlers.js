@@ -257,6 +257,19 @@ function registerAll(ctx) {
     accountDisabled() ? { ok: true, loggedIn: false, disabled: true } : require("./account-manager").accountStatus());
   ipcMain.handle("account:sms-send", async (_event, payload) =>
     accountDisabled() ? disabledAccountResult() : require("./account-manager").sendSmsCode(payload?.phone || payload));
+  ipcMain.handle("account:password-login", async (_event, payload) => {
+    if (accountDisabled()) return disabledAccountResult();
+    const result = await require("./account-manager").loginWithPassword(payload || {});
+    if (!result?.ok) return result;
+    ctx.scheduledTaskManager?.handlePrincipalChange?.();
+    ctx.turnOrchestrator?.handlePrincipalChange?.();
+    ctx.refreshCollaborationService?.();
+    return result;
+  });
+  ipcMain.handle("account:password-change", async (_event, payload) => {
+    if (accountDisabled()) return disabledAccountResult();
+    return require("./account-manager").changePassword(payload || {});
+  });
   ipcMain.handle("account:sms-login", async (_event, payload) => {
     if (accountDisabled()) return disabledAccountResult();
     const result = await require("./account-manager").loginWithSms(payload || {});

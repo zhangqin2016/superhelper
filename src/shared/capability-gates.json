@@ -720,6 +720,15 @@
       "tests": [
         "scripts/test-enterprise-invitations.mjs"
       ]
+    },
+    {
+      "id": "enterprise-issued-accounts",
+      "protects": "A company can generate dedicated accounts for staff — login name plus a one-time password — and those accounts are never a weaker door than a phone. Identity was phone-only (users.phone_e164 NOT NULL UNIQUE, SMS-only login), so 'the company creates the account' was impossible. Issued accounts are owned by the organization: removing or disabling the membership locks the login, while a phone user who merely joined keeps their own account.",
+      "baseline": "Additive: phone_e164 becomes nullable but every existing row has one, a CHECK keeps every user reachable by some identity, and the login-name unique index is partial so phone-only users are untouched. Password login mirrors the SMS route's device handling and session shape so the client treats both identically. The 5-strike lock matches the SMS path, and the lock rejects even a CORRECT password until it expires. An unknown login name returns the same code as a wrong password, and the decision is computed before the existence check, so names cannot be probed by response or timing.",
+      "failureFallback": "scrypt with a per-user random salt (Node built-in, no dependency); a malformed stored hash verifies false rather than throwing on the login path; initial passwords use an alphabet with no 0/O/1/l/I and are returned once — the gate counts BOTH write sites (provision and reset) go through hashPassword, because a regex matching either site let plaintext at one slip through. Changing a password requires the current one, so a stolen session alone cannot take over the account. Owner can never be issued. service-client.js was at its ratchet, so the six account-auth calls were extracted to service-client-account-auth.js with transport and device identity injected. Mutation-verified 2026-09-05, seven ways: honouring a correct password while locked, a fixed salt, not locking an issued account on removal, a distinct unknown-user error code, skipping the current-password check on change, storing the initial password as-is at the reset site, and allowing an owner to be issued — each fails by name.",
+      "tests": [
+        "scripts/test-enterprise-accounts.mjs"
+      ]
     }
   ]
 }

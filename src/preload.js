@@ -348,6 +348,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   getAccountStatus: () => ipcRenderer.invoke("account:status"),
   sendAccountSmsCode: (phone) => ipcRenderer.invoke("account:sms-send", { phone }),
+  loginAccountWithPassword: (payload) => ipcRenderer.invoke("account:password-login", payload || {}),
+  changeAccountPassword: (payload) => ipcRenderer.invoke("account:password-change", payload || {}),
   loginAccountWithSms: (phoneOrPayload, code) => {
     const payload = phoneOrPayload && typeof phoneOrPayload === "object"
       ? phoneOrPayload

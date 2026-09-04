@@ -5,6 +5,8 @@ import { config } from "../../config.js";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { redeemInvitationsForPhone } from "../../services/enterprise-invitations.js";
+import { verifyPassword, hashPassword, validateNewPassword, normalizeLoginName, passwordLoginDecision } from "../../services/enterprise-accounts.js";
+import { requireAccountSession } from "../../services/account-session-guard.js";
 import {
   createAccessToken,
   createRefreshToken,
@@ -33,6 +35,15 @@ const sendSmsSchema = z.object({
 const loginSchema = registerDeviceSchema.extend({
   phone: z.string().min(3).max(40),
   code: z.string().regex(/^\d{6}$/),
+});
+
+const passwordLoginSchema = registerDeviceSchema.extend({
+  loginName: z.string().min(3).max(40),
+  password: z.string().min(1).max(128),
+});
+const passwordChangeSchema = registerDeviceSchema.extend({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(1).max(128),
 });
 
 const refreshSchema = registerDeviceSchema.extend({
@@ -256,6 +267,107 @@ export function registerPublicAuthRoutes(app) {
         },
         entitlements,
       });
+    },
+  );
+
+  // Login with a company-issued account. Same device handling and session
+  // shape as SMS login, so the client treats both identically afterwards; the
+  // only differences are the credential check and that a phone may be absent.
+  app.post(
+    "/api/auth/password/login",
+    {
+      schema: {
+        tags: ["public:auth"],
+        summary: "Login with an enterprise-issued login name and password",
+        body: zodBody(passwordLoginSchema),
+        response: { 200: okResponse({ accessToken: { type: "string" }, refreshToken: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
+      const input = passwordLoginSchema.parse(request.body);
+      const loginName = normalizeLoginName(input.loginName);
+      if (!loginName) return reply.code(400).send({ ok: false, code: "INVALID_LOGIN_NAME" });
+      if (!clientFeatureEnabled(request, "accountLogin")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
+      await upsertDevice(input);
+      await upsertDevicePublicKey(input);
+
+      const user = await db.selectFrom("users").selectAll().where("login_name", "=", loginName).executeTakeFirst();
+      // Same response for "no such account" and "wrong password", so a login
+      // name cannot be probed. The decision is still computed to keep timing
+      // uniform.
+      const decision = passwordLoginDecision({
+        userStatus: user?.status || "active",
+        passwordOk: Boolean(user && verifyPassword(input.password, user.password_hash)),
+        failedCount: user?.password_failed_count || 0,
+        lockedUntil: user?.password_locked_until || null,
+        mustChange: user?.password_must_change || false,
+      });
+      if (!user) return reply.code(401).send({ ok: false, code: "INVALID_CREDENTIALS" });
+      if (!decision.ok) {
+        await db.updateTable("users").set({
+          password_failed_count: decision.failedCount,
+          password_locked_until: decision.lockedUntil ? new Date(decision.lockedUntil) : null,
+        }).where("id", "=", user.id).execute();
+        const status = decision.code === "PASSWORD_LOCKED" ? 429 : decision.code === "USER_DISABLED" ? 403 : 401;
+        return reply.code(status).send({ ok: false, code: decision.code });
+      }
+
+      const result = await db.transaction().execute(async (trx) => {
+        await trx.updateTable("users").set({ last_login_at: new Date(), password_failed_count: 0, password_locked_until: null }).where("id", "=", user.id).execute();
+        await trx
+          .insertInto("user_devices")
+          .values({ user_id: user.id, device_id: input.deviceId })
+          .onConflict((oc) => oc.columns(["user_id", "device_id"]).doUpdateSet({ last_seen_at: new Date(), status: "active" }))
+          .execute();
+        return { session: await createSession({ userId: user.id, deviceId: input.deviceId, trx }) };
+      });
+      const entitlements = await fetchEntitlementSummary(user.id);
+      return reply.send({
+        ok: true,
+        ...result.session,
+        webSessionToken: createWebSessionToken({ userId: user.id, sessionId: result.session.sessionId }),
+        user: {
+          id: user.id,
+          loginName: user.login_name,
+          displayName: user.display_name || null,
+          // Kept for clients that render a phone; an issued account has none.
+          phoneMasked: user.phone_e164 ? `${user.phone_e164.slice(3, 6)}****${user.phone_e164.slice(-4)}` : null,
+          passwordMustChange: decision.mustChange,
+        },
+        entitlements,
+      });
+    },
+  );
+
+  app.post(
+    "/api/auth/password/change",
+    {
+      schema: {
+        tags: ["public:auth"],
+        summary: "Change the password of the signed-in account",
+        body: zodBody(passwordChangeSchema),
+        response: { 200: okResponse({ changed: { type: "boolean" } }) },
+      },
+    },
+    async (request, reply) => {
+      const input = passwordChangeSchema.parse(request.body);
+      const account = await requireAccountSession(request, reply, input);
+      if (!account) return;
+      const policy = validateNewPassword(input.newPassword);
+      if (!policy.ok) return reply.code(400).send({ ok: false, code: policy.code });
+      const user = await db.selectFrom("users").selectAll().where("id", "=", account.userId).executeTakeFirst();
+      if (!user || !user.password_hash) return reply.code(400).send({ ok: false, code: "PASSWORD_LOGIN_UNAVAILABLE" });
+      if (!verifyPassword(input.currentPassword, user.password_hash)) return reply.code(401).send({ ok: false, code: "INVALID_CREDENTIALS" });
+      if (input.currentPassword === input.newPassword) return reply.code(400).send({ ok: false, code: "PASSWORD_UNCHANGED" });
+      await db.updateTable("users").set({
+        password_hash: hashPassword(input.newPassword),
+        password_must_change: false,
+        password_failed_count: 0,
+        password_locked_until: null,
+      }).where("id", "=", user.id).execute();
+      return reply.send({ ok: true, changed: true });
     },
   );
 

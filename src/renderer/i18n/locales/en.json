@@ -2003,5 +2003,22 @@
   "collaboration.historyLoadFailed": "Could not load earlier messages. Try again.",
   "skills.capacityNear": "The skill index uses {percent}% of the model instruction budget; about {count} more skills fit. Beyond that, a new skill will not appear in the catalog the model can see.",
   "skills.capacityFull": "The instruction budget is full: {count} skill(s) are missing from the catalog the model can see, so it does not know they exist. Disabling some skills brings them back.",
-  "skills.capacityUndescribed": "{count} skill(s) have no description, so they never appear in the catalog the model can see."
+  "skills.capacityUndescribed": "{count} skill(s) have no description, so they never appear in the catalog the model can see.",
+  "settings.accountLoginModeSms": "Phone code",
+  "settings.accountLoginModePassword": "Company account",
+  "settings.accountLoginName": "Login name",
+  "settings.accountPassword": "Password",
+  "settings.accountPasswordRequired": "Enter your login name and password",
+  "settings.accountLoggedInName": "Signed in: {name}",
+  "settings.accountPasswordChangeTitle": "First sign-in — set a new password",
+  "settings.accountPasswordChangeHint": "Your company issued a one-time initial password. Set your own before continuing: at least 8 characters with letters and digits.",
+  "settings.accountCurrentPassword": "Current password",
+  "settings.accountNewPassword": "New password",
+  "settings.accountNewPasswordConfirm": "Confirm new password",
+  "settings.accountPasswordChange": "Set new password",
+  "settings.accountPasswordMismatch": "The new passwords do not match",
+  "settings.accountPasswordChanged": "Password updated",
+  "settings.accountPasswordChangeFailed": "Could not change the password",
+  "settings.accountLoginTitlePassword": "Company account sign-in",
+  "settings.accountLoginHintPassword": "Use the login name and password your company administrator issued. You will set a new password on first sign-in."
 }

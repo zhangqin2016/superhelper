@@ -11,6 +11,9 @@ let entitlementsRefreshing = false;
 let billingOpening = false;
 let accountLoggingOut = false;
 let currentAccountPhone = "";
+let currentAccountLoginName = "";
+let loginMode = "sms";
+let passwordChanging = false;
 
 function setStatus(text, kind = "") {
   const el = $("accountFormStatus");
@@ -51,6 +54,42 @@ function updateLoginButton() {
   const code = $("accountCodeInput")?.value?.trim() || "";
   btn.disabled = accountLoggedIn || accountLoggingIn || !phone || code.length < 4;
   btn.textContent = accountLoggingIn ? t("settings.accountLoggingIn") : t("settings.accountLogin");
+  const pwBtn = $("accountPasswordLoginBtn");
+  if (pwBtn) {
+    const name = $("accountLoginNameInput")?.value?.trim() || "";
+    const pw = $("accountPasswordInput")?.value || "";
+    pwBtn.disabled = accountLoggedIn || accountLoggingIn || !name || !pw;
+    pwBtn.textContent = accountLoggingIn ? t("settings.accountLoggingIn") : t("settings.accountLogin");
+  }
+}
+
+/** Two ways in: a personal phone, or an account the company issued. */
+function setLoginMode(mode) {
+  loginMode = mode === "password" ? "password" : "sms";
+  const sms = $("accountLoginContent");
+  const pw = $("accountPasswordContent");
+  if (sms) sms.hidden = accountLoggedIn || loginMode !== "sms";
+  if (pw) pw.hidden = accountLoggedIn || loginMode !== "password";
+  for (const [id, active] of [["accountModeSmsBtn", loginMode === "sms"], ["accountModePasswordBtn", loginMode === "password"]]) {
+    const node = $(id);
+    if (!node) continue;
+    node.classList.toggle("is-active", active);
+    node.setAttribute("aria-selected", active ? "true" : "false");
+  }
+  const title = $("accountAccessTitle");
+  const hint = $("accountAccessHint");
+  if (!accountLoggedIn) {
+    if (title) title.textContent = t(loginMode === "password" ? "settings.accountLoginTitlePassword" : "settings.accountLoginTitle");
+    if (hint) hint.textContent = t(loginMode === "password" ? "settings.accountLoginHintPassword" : "settings.accountLoginHint");
+  }
+  updateLoginButton();
+}
+
+function showPasswordChange(visible) {
+  const panel = $("accountPasswordChange");
+  if (panel) panel.hidden = !visible;
+  const modes = $("accountLoginModes");
+  if (modes) modes.hidden = visible || accountLoggedIn;
 }
 
 function updateAccountButtons() {
@@ -117,12 +156,25 @@ function setLoggedInUi(loggedIn) {
   const title = $("accountAccessTitle");
   const hint = $("accountAccessHint");
   const signedInPhone = $("accountSignedInPhone");
-  if (loginContent) loginContent.hidden = accountLoggedIn;
+  if (loginContent) loginContent.hidden = accountLoggedIn || loginMode !== "sms";
+  const passwordContent = $("accountPasswordContent");
+  if (passwordContent) passwordContent.hidden = accountLoggedIn || loginMode !== "password";
+  const modes = $("accountLoginModes");
+  if (modes) modes.hidden = accountLoggedIn;
   if (signedInPanel) signedInPanel.hidden = !accountLoggedIn;
   if (actions) actions.hidden = !accountLoggedIn;
-  if (title) title.textContent = accountLoggedIn ? t("settings.accountSignedInTitle") : t("settings.accountLoginTitle");
-  if (hint) hint.textContent = accountLoggedIn ? t("settings.accountSignedInHint") : t("settings.accountLoginHint");
-  if (signedInPhone) signedInPhone.textContent = currentAccountPhone ? t("settings.accountLoggedIn", { phone: currentAccountPhone }) : "";
+  // The card's heading describes the door being used; the SMS wording is wrong
+  // for someone signing in with a company-issued account.
+  const passwordMode = loginMode === "password";
+  if (title) title.textContent = accountLoggedIn ? t("settings.accountSignedInTitle") : t(passwordMode ? "settings.accountLoginTitlePassword" : "settings.accountLoginTitle");
+  if (hint) hint.textContent = accountLoggedIn ? t("settings.accountSignedInHint") : t(passwordMode ? "settings.accountLoginHintPassword" : "settings.accountLoginHint");
+  if (signedInPhone) {
+    signedInPhone.textContent = currentAccountPhone
+      ? t("settings.accountLoggedIn", { phone: currentAccountPhone })
+      : currentAccountLoginName
+        ? t("settings.accountLoggedInName", { name: currentAccountLoginName })
+        : "";
+  }
   updateAccountButtons();
   $("accountRefreshBtn") && ($("accountRefreshBtn").disabled = !loggedIn || entitlementsRefreshing);
   $("accountBillingBtn") && ($("accountBillingBtn").disabled = !loggedIn || billingOpening);
@@ -143,6 +195,7 @@ export async function refreshAccountSettings() {
   }
   if (!status?.loggedIn) {
     currentAccountPhone = "";
+    currentAccountLoginName = "";
     statusEl.textContent = t("settings.accountLoggedOut");
     renderEntitlements(null);
     setLoggedInUi(false);
@@ -151,6 +204,7 @@ export async function refreshAccountSettings() {
     return;
   }
   currentAccountPhone = status.user?.phoneE164 || status.user?.phone_e164 || "";
+  currentAccountLoginName = status.user?.loginName || status.user?.login_name || status.user?.displayName || "";
   statusEl.textContent = t("settings.accountLoggedIn", {
     phone: currentAccountPhone,
   });
@@ -215,6 +269,74 @@ async function loginWithSms(event) {
   } finally {
     accountLoggingIn = false;
     updateLoginButton();
+  }
+}
+
+async function loginWithPassword() {
+  if (accountLoggingIn || accountLoggedIn) return;
+  const loginName = $("accountLoginNameInput")?.value?.trim() || "";
+  const password = $("accountPasswordInput")?.value || "";
+  if (!loginName || !password) {
+    setStatus(t("settings.accountPasswordRequired"), "error");
+    updateLoginButton();
+    return;
+  }
+  accountLoggingIn = true;
+  updateLoginButton();
+  setStatus(t("settings.accountLoggingIn"));
+  try {
+    const result = await window.assistantClient.loginAccountWithPassword({ loginName, password });
+    if (!result?.ok) {
+      setStatus(accountErrorMessage(result, "settings.accountLoginFailed"), "error");
+      return;
+    }
+    // A company-issued initial password is single-use: the person must set
+    // their own before the account is treated as fully signed in.
+    if (result.passwordMustChange) {
+      const current = $("accountCurrentPasswordInput");
+      if (current) current.value = password;
+      showPasswordChange(true);
+      setStatus(t("settings.accountPasswordChangeTitle"));
+      return;
+    }
+    setStatus(t("settings.accountLoginDone"), "success");
+    await refreshAccountSettings();
+    showToast(t("settings.accountLoginDone"), "success");
+  } finally {
+    accountLoggingIn = false;
+    updateLoginButton();
+  }
+}
+
+async function changePassword() {
+  if (passwordChanging) return;
+  const currentPassword = $("accountCurrentPasswordInput")?.value || "";
+  const newPassword = $("accountNewPasswordInput")?.value || "";
+  const confirm = $("accountNewPasswordConfirmInput")?.value || "";
+  if (newPassword !== confirm) {
+    setStatus(t("settings.accountPasswordMismatch"), "error");
+    return;
+  }
+  passwordChanging = true;
+  const btn = $("accountPasswordChangeBtn");
+  if (btn) btn.disabled = true;
+  try {
+    const result = await window.assistantClient.changeAccountPassword({ currentPassword, newPassword });
+    if (!result?.ok) {
+      setStatus(accountErrorMessage(result, "settings.accountPasswordChangeFailed"), "error");
+      return;
+    }
+    for (const id of ["accountCurrentPasswordInput", "accountNewPasswordInput", "accountNewPasswordConfirmInput", "accountPasswordInput"]) {
+      const node = $(id);
+      if (node) node.value = "";
+    }
+    showPasswordChange(false);
+    setStatus(t("settings.accountPasswordChanged"), "success");
+    await refreshAccountSettings();
+    showToast(t("settings.accountPasswordChanged"), "success");
+  } finally {
+    passwordChanging = false;
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -321,6 +443,15 @@ export function initAccountSettings() {
   updateAccountButtons();
   $("accountSendSmsBtn")?.addEventListener("click", () => void sendSmsCode());
   $("accountLoginForm")?.addEventListener("submit", (event) => void loginWithSms(event));
+  $("accountModeSmsBtn")?.addEventListener("click", () => setLoginMode("sms"));
+  $("accountModePasswordBtn")?.addEventListener("click", () => setLoginMode("password"));
+  $("accountPasswordLoginBtn")?.addEventListener("click", () => void loginWithPassword());
+  $("accountPasswordChangeBtn")?.addEventListener("click", () => void changePassword());
+  for (const id of ["accountLoginNameInput", "accountPasswordInput"]) {
+    $(id)?.addEventListener("input", updateLoginButton);
+    $(id)?.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); void loginWithPassword(); } });
+  }
+  setLoginMode("sms");
   $("accountRefreshBtn")?.addEventListener("click", () => void refreshEntitlements());
   $("accountBillingBtn")?.addEventListener("click", () => void openBilling());
   $("accountLogoutBtn")?.addEventListener("click", () => void logout());

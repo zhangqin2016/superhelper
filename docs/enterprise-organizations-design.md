@@ -336,3 +336,38 @@ create index if not exists usage_events_org_idx on usage_events (organization_id
 + 接线断言（行锁、登录后置、部分唯一索引、owner 拒绝、迁移只新增不改表）。
 六个变异验证：已注册手机走邀请、停用即烧掉邀请、转正不加锁、允许邀请 owner、
 转正放进登录事务、唯一索引改成全表 —— 各自按名字失败。
+
+## 12. 企业专属账户（2026-09-05 增补）
+
+§11 的邀请仍以员工自己的手机 + 短信为身份。用户追问"企业能不能**直接生成**账户"—— 即 HR 点一下拿到登录名和初始密码发给员工，员工不需要手机。
+现有身份模型做不到：`users.phone_e164 NOT NULL UNIQUE`，登录只有 `/api/auth/sms/*`，一个用户行不可能在没有本人手机的情况下存在。
+这是**新增一种身份类型**，不是小修。服务端 58 处、9 个文件假定用户有手机号（`auth.js` 占 22 处）；没有任何用户级密码设施（admin 密码是环境变量明文比对）。
+
+**数据（Migration 044）**：`phone_e164` 改可空；新增 `login_name`（部分唯一索引）、`password_hash`、`password_must_change`、
+`password_failed_count` / `password_locked_until`、`provisioned_organization_id`（企业所有权）、`display_name`。
+`check (phone_e164 is not null or login_name is not null)` 保证任何用户至少有一种身份。存量行全部带手机，行为不变。
+
+**密码**：`crypto.scrypt`（N=16384,r=8,p=1，Node 内置零依赖），每用户随机盐，格式 `scrypt$N$r$p$salt$hash`，常量时间比对，坏哈希返回 false 不抛。
+初始密码 12 位，字母表剔除 0/O/1/l/I（会从屏幕或纸上抄），**只在签发响应里出现一次，从不入库**（provision 与 reset 两处写入都走 hashPassword，门禁按次数断言）。
+
+**登录 `POST /api/auth/password/login`**：与短信登录共用设备处理和会话形状（客户端后续视同一体）。
+`passwordLoginDecision` 纯函数：5 次失败锁 15 分钟（与短信路径同阈值）；**锁定期内正确密码也拒绝**（否则锁对"最终猜对的人"无效）；
+未知登录名与错误密码返回同一个 `INVALID_CREDENTIALS`，且判定在存在性检查之前计算，响应码和时序都不可探测账号。
+响应 `user.passwordMustChange=true` 时客户端强制改密后才算登录完成。
+
+**改密 `POST /api/auth/password/change`**：需要已登录会话 **且** 当前密码 —— 仅凭偷到的会话不能接管账户。策略：≥8 位、含字母和数字。
+
+**所有权语义**：`ownedAccountStatusAfterMembership` —— 企业签发的账户被移出/停用该企业 → `users.status='disabled'`，重新启用 → 恢复；
+手机用户加入企业再被移出 → 不动（账户不属于企业）；在别的企业被移出 → 不动。
+
+**端点**（owner/admin）：`GET/POST /organizations/:id/accounts`（签发，批量 ≤100，登录名可指定或按企业名自动生成）、
+`POST /organizations/:id/accounts/:userId/reset-password`。签发 owner 显式拒绝 `INVITE_ROLE_UNSUPPORTED`；企业停用不能签发。
+
+**客户端**：设置→账户新增"手机验证码 / 企业账号"分段切换、账号密码表单、首次登录强制改密面板；已登录展示对无手机的账户回落到登录名。
+`service-client.js` 到棘轮，六个账户认证调用抽到 `service-client-account-auth.js`（transport 与设备身份注入）。
+
+**web**：成员页新增"生成企业专属账户"（登录名列表或数量 + 角色）、"企业专属账户"列表（重置密码）；
+初始密码经 URL hash 传到页面（不经服务器），客户端组件渲染一次后清掉 —— 刷新即消失。
+
+**验证门**：`scripts/test-enterprise-accounts.mjs`。七个变异各自按名字失败：锁定期放行正确密码、固定盐、移出不锁账户、未知登录名独立错误码、改密不校验当前密码、reset 处明文存密码、允许签发 owner。
+其中第六个一开始漏过 —— 断言正则匹配任一写入点，另一处明文照样通过；已改为按次数断言两处。

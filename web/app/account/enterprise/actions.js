@@ -85,3 +85,37 @@ export async function revokeInvitationAction(organizationId, invitationId) {
     return { ok: false, message: String(error?.message || "撤销失败") };
   }
 }
+
+/**
+ * Issue dedicated accounts. The initial passwords come back exactly once and
+ * are never stored, so they are carried to the page through the URL hash
+ * rather than the server: reloading forgets them, which is the point.
+ */
+export async function provisionAccountsAction(organizationId, formData) {
+  const raw = String(formData.get("loginNames") || "").trim();
+  const count = Math.max(0, Math.min(100, Number(formData.get("count") || 0)));
+  const role = String(formData.get("role") || "member").trim() === "admin" ? "admin" : "member";
+  const named = raw.split(/[\n,，;；\s]+/).map((v) => v.trim()).filter(Boolean).map((loginName) => ({ loginName, role }));
+  const accounts = named.length ? named : Array.from({ length: count }, () => ({ role }));
+  if (!accounts.length) return { ok: false, message: "请填写登录名或数量" };
+  try {
+    const result = await userApiPost(`/api/enterprise/organizations/${organizationId}/accounts`, { accounts });
+    revalidatePath(`/account/enterprise/${organizationId}/members`);
+    const issued = Array.isArray(result?.accounts) ? result.accounts : [];
+    const payload = Buffer.from(JSON.stringify(issued.map((a) => ({ l: a.loginName, p: a.initialPassword }))), "utf8").toString("base64url");
+    redirect(`/account/enterprise/${organizationId}/members#issued=${payload}`);
+  } catch (error) {
+    return { ok: false, message: String(error?.message || "生成失败") };
+  }
+}
+
+export async function resetAccountPasswordAction(organizationId, userId) {
+  try {
+    const result = await userApiPost(`/api/enterprise/organizations/${organizationId}/accounts/${userId}/reset-password`, {});
+    revalidatePath(`/account/enterprise/${organizationId}/members`);
+    const payload = Buffer.from(JSON.stringify([{ l: result?.loginName, p: result?.initialPassword }]), "utf8").toString("base64url");
+    redirect(`/account/enterprise/${organizationId}/members#issued=${payload}`);
+  } catch (error) {
+    return { ok: false, message: String(error?.message || "重置失败") };
+  }
+}

@@ -11,6 +11,7 @@ import { publicId } from "../../services/ids.js";
 import { verifyAccessToken, verifyWebSessionToken } from "../../services/account-auth.js";
 import { fetchOrgGrants } from "../../services/wallet.js";
 import { registerPublicEnterpriseMemberRoutes } from "./enterprise-members.js";
+import { registerPublicEnterpriseAccountRoutes } from "./enterprise-accounts.js";
 import { enterpriseMutationResponse, requireOrgRole } from "./enterprise-route-support.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
 
@@ -105,6 +106,7 @@ export function registerPublicEnterpriseRoutes(app) {
     request.user = { userId: verified.userId, sessionId: verified.sessionId };
   });
   registerPublicEnterpriseMemberRoutes(app);
+  registerPublicEnterpriseAccountRoutes(app);
 
   // GET /api/enterprise/organizations — my orgs
   app.get(
