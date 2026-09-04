@@ -693,6 +693,15 @@
       "tests": [
         "scripts/test-runtime-event-retention.mjs"
       ]
+    },
+    {
+      "id": "orphan-serve-reaper",
+      "protects": "Engine serves left by an ungraceful exit are reaped at startup, and a LIVE serve is never touched. before-quit already reaps the shared serve, but it only runs on a graceful quit — Ctrl-C on the dev launcher, a crash, or a force quit skips it and the serve survives reparented to init, holding userData files and a port. Nothing ever looked for what a previous run left behind.",
+      "baseline": "Measured on a real dev machine 2026-09-04: 7 orphaned serves, the oldest 40 days old, dragging 24 stale Electron children, 587 MB resident, with 19 processes holding files under userData at once — the same class of problem as the Windows updater's \"could not be closed\". After a manual sweep, 40 processes became 9 and orphans went to 0; the live app was unaffected and every stale process exited on SIGTERM without needing SIGKILL.",
+      "failureFallback": "The value is in what it REFUSES. All three conditions must hold: the command starts with exactly this install's bundled binary AND ends at a word boundary, the parent is gone (ppid 1), and the pid is neither ours nor our parent's. A live instance's serve is parented to that instance, so it can never match — and the call sits after the single-instance lock, which is what proves a parentless serve is an orphan rather than a concurrently starting instance. An absent or relative binary path selects nothing rather than guessing. win32 is a deliberate no-op because a dead parent's pid is not rewritten to 1 there, so the safety condition cannot be evaluated. Fail-open: any error returns 0 and logs, and one un-killable pid does not stop the rest. Kill switch LILY_REAP_ORPHAN_SERVES=0. Mutation-verified 2026-09-04, six ways: dropping the ppid check, a bare startsWith (which reaped \".../opencode-old serve\"), dropping the serve check, accepting a relative path, removing the win32 no-op, and a broken kill switch each fail by name. Two of those found real defects in the implementation and in the gate's own fixture.",
+      "tests": [
+        "scripts/test-orphan-serve-reaper.mjs"
+      ]
     }
   ]
 }

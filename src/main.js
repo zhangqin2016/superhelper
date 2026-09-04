@@ -132,6 +132,15 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // Reap engine serves a previous ungraceful exit left behind. before-quit
+  // reaps ours, but Ctrl-C in dev, a crash, or a force quit skips it and the
+  // serve survives reparented to init, holding userData files and a port. We
+  // hold the single-instance lock here, so any serve of THIS install whose
+  // parent is gone is definitively an orphan. Fail-open by construction.
+  try {
+    require("./main/runtime/opencode-orphan-reaper").reapOrphanEngineServes();
+  } catch { /* startup must never depend on maintenance */ }
+
   installBlobProtocol();
   installLocalMediaProtocol();
   const appIcon = loadAppIconImage();
