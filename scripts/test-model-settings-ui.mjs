@@ -13,15 +13,14 @@ function read(rel) {
 const html = read("src/renderer/index.html");
 const advancedStart = html.indexOf('id="modelAdvancedBlock"');
 const customTitle = html.indexOf('data-i18n="settings.modelCustomTitle"', advancedStart);
-const overrideBlock = html.indexOf('id="modelApiOverrideBlock"', advancedStart);
-const overrideFields = html.indexOf('id="modelApiCustomFields"', advancedStart);
 
 assert(advancedStart > 0, "model settings must keep a manual advanced section");
 assert(customTitle > advancedStart, "advanced section should expose the custom model form first");
-assert(overrideBlock > customTitle, "current-model API override must be behind the custom model form");
-assert(overrideFields > overrideBlock, "current-model API fields must live inside the override details block");
+assert.equal(html.includes('id="modelApiOverrideBlock"'), false, "settings must not expose a global current-model connection override");
 assert(html.includes('id="modelDiagnoseRestoreBtn"'), "model settings should expose diagnose restore action");
 assert(html.includes('id="modelDiagnoseRestoreStatus"'), "diagnose restore action should have an inline status area");
+assert(html.includes('id="modelLibraryList"'), "model settings should expose one library for official and custom models");
+assert.equal(html.includes('id="modelCustomList"'), false, "available models must not be represented as a custom-only list");
 assert(
   /id="modelDiagnoseRestoreBtn"[\s\S]*class="[^"]*\bmodel-restore-icon-btn\b/.test(html),
   "diagnose restore action should be an icon button, not a large text button",
@@ -42,6 +41,22 @@ assert(
 
 const modelSettingsSource = read("src/renderer/modules/model-settings.js");
 assert(
+  /const availablePresets = Array\.isArray\(presets\) \? presets : \[\]/.test(modelSettingsSource),
+  "available model rendering must preserve official and custom presets",
+);
+assert(
+  !/\.filter\(\(p\) => p\.custom\)/.test(modelSettingsSource),
+  "available model rendering must not filter official presets out",
+);
+assert(
+  /preset\.custom[\s\S]*settings\.modelLibraryCustom[\s\S]*settings\.modelLibraryOfficial/.test(modelSettingsSource),
+  "available model rows should identify custom and official sources",
+);
+assert(
+  /if \(preset\.custom\) \{[\s\S]*model-custom-actions/.test(modelSettingsSource),
+  "only custom models should expose edit and delete actions",
+);
+assert(
   /setDiagnoseRestoreStatus\([^)]*"settings\.modelDiagnoseRestoreRunning"/.test(modelSettingsSource),
   "diagnose restore should show an immediate running status before the slow IPC returns",
 );
@@ -56,11 +71,6 @@ assert(
 
 for (const locale of ["zh-CN", "en", "ar"]) {
   const messages = JSON.parse(read(`src/renderer/i18n/locales/${locale}.json`));
-  assert.equal(
-    typeof messages["settings.modelApiOverrideAdvanced"],
-    "string",
-    `${locale} missing model API override label`,
-  );
   for (const key of [
     "settings.modelDiagnoseRestore",
     "settings.modelDiagnoseRestoreRunning",
@@ -68,6 +78,9 @@ for (const locale of ["zh-CN", "en", "ar"]) {
     "settings.modelDiagnoseRestoreFixedGateway",
     "settings.modelDiagnoseRestoreReady",
     "settings.modelDiagnoseRestorePending",
+    "settings.modelLibraryOfficial",
+    "settings.modelLibraryCustom",
+    "settings.modelLibraryEmpty",
   ]) {
     assert.equal(typeof messages[key], "string", `${locale} missing ${key}`);
   }

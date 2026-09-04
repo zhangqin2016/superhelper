@@ -37,75 +37,60 @@ function apiErrorMessage(error) {
   return t("toast.modelApiSaveFailed");
 }
 
-function updateApiCustomFields(gateway) {
-  const hint = $("modelApiKeyHint");
-  if (hint) {
-    if (gateway?.apiKeySet && gateway?.apiKeyHint) {
-      hint.hidden = false;
-      hint.textContent = t("settings.modelApiKeyHint", { hint: gateway.apiKeyHint });
-    } else {
-      hint.hidden = true;
-      hint.textContent = "";
-    }
-  }
-}
-
 function normalizeProtocolValue(value) {
   return value === "anthropic" ? "anthropic" : "openai";
 }
 
-function renderApiGateway(gateway) {
-  const baseUrlInput = $("modelApiBaseUrl");
-  const protocolSelect = $("modelApiProtocol");
-  const keyInput = $("modelApiKey");
-  if (!gateway) return;
-
-  if (baseUrlInput) {
-    baseUrlInput.value = gateway.baseUrl || "";
-    if (!baseUrlInput.value && gateway.defaultBaseUrl) {
-      baseUrlInput.placeholder = gateway.defaultBaseUrl;
-    }
-  }
-  if (protocolSelect) protocolSelect.value = normalizeProtocolValue(gateway.protocol);
-  if (keyInput) keyInput.value = "";
-
-  updateApiCustomFields(gateway);
-}
-
-function renderCustomList(presets, activePresetId) {
-  const list = $("modelCustomList");
+function renderModelLibraryList(presets) {
+  const list = $("modelLibraryList");
   if (!list) return;
 
-  const customPresets = (presets || []).filter((p) => p.custom);
+  const availablePresets = Array.isArray(presets) ? presets : [];
   list.replaceChildren();
 
-  if (!customPresets.length) {
+  if (!availablePresets.length) {
     const empty = document.createElement("p");
     empty.className = "model-custom-empty";
-    empty.textContent = t("settings.modelCustomEmpty");
+    empty.textContent = t("settings.modelLibraryEmpty");
     list.appendChild(empty);
     return;
   }
 
-  for (const preset of customPresets) {
+  for (const preset of availablePresets) {
     const row = document.createElement("div");
     row.className = "model-custom-row";
 
     const meta = document.createElement("div");
     meta.className = "model-custom-meta";
 
+    const title = document.createElement("div");
+    title.className = "model-library-title";
+
     const name = document.createElement("span");
     name.className = "model-custom-name";
     name.textContent = tModel(preset);
+
+    const badge = document.createElement("span");
+    badge.className = `model-library-badge${preset.custom ? " is-custom" : ""}`;
+    badge.textContent = t(preset.custom ? "settings.modelLibraryCustom" : "settings.modelLibraryOfficial");
+    title.append(name, badge);
 
     const model = document.createElement("span");
     model.className = "model-custom-id";
     model.textContent = preset.model || "";
 
-    meta.appendChild(name);
+    meta.appendChild(title);
     meta.appendChild(model);
 
-    if (preset.baseUrl || preset.apiKeySet) {
+    const descriptionText = tModelDesc(preset);
+    if (descriptionText) {
+      const description = document.createElement("span");
+      description.className = "model-custom-api";
+      description.textContent = descriptionText;
+      meta.appendChild(description);
+    }
+
+    if (preset.custom && (preset.baseUrl || preset.apiKeySet)) {
       const api = document.createElement("span");
       api.className = "model-custom-api";
       if (preset.baseUrl) {
@@ -115,69 +100,48 @@ function renderCustomList(presets, activePresetId) {
       }
       meta.appendChild(api);
     }
-    if (preset.tlsSkipVerify) {
+    if (preset.custom && preset.tlsSkipVerify) {
       const tls = document.createElement("span");
       tls.className = "model-custom-api";
       tls.textContent = t("settings.modelTlsSkipVerify");
       meta.appendChild(tls);
     }
 
-    const actions = document.createElement("div");
-    actions.className = "model-custom-actions";
-
-    const useBtn = document.createElement("button");
-    useBtn.type = "button";
-    useBtn.className = "settings-action-btn settings-action-btn--compact";
-    useBtn.textContent = t("settings.modelCustomUse");
-    useBtn.disabled = preset.id === activePresetId;
-    useBtn.addEventListener("click", async () => {
-      if (isBusy()) {
-        showToast(t("toast.modelBusy"), "error");
-        return;
-      }
-      const result = await window.assistantClient.setActiveModel(preset.id);
-      if (!result.ok) {
-        showToast(t("toast.modelSwitchFailed"), "error");
-        await refreshModelSelect();
-        return;
-      }
-      const active = (result.presets || []).find((p) => p.id === result.activePresetId);
-      showToast(t("toast.modelSwitched", { label: tModel(active) || preset.label }), "success");
-      await refreshModelSelect();
-    });
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "settings-action-btn settings-action-btn--compact";
-    editBtn.textContent = t("settings.modelCustomEdit");
-    editBtn.addEventListener("click", () => {
-      setCustomEditMode(preset);
-    });
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
-    deleteBtn.textContent = t("settings.modelCustomDelete");
-    deleteBtn.addEventListener("click", async () => {
-      if (isBusy()) {
-        showToast(t("toast.modelBusy"), "error");
-        return;
-      }
-      const result = await window.assistantClient.deleteCustomModel(preset.id);
-      if (!result.ok) {
-        showToast(t("toast.modelCustomDeleteFailed"), "error");
-        return;
-      }
-      if (editingCustomPresetId === preset.id) setCustomEditMode(null);
-      showToast(t("toast.modelCustomDeleted"), "success");
-      await refreshModelSelect();
-    });
-
-    actions.appendChild(useBtn);
-    actions.appendChild(editBtn);
-    actions.appendChild(deleteBtn);
     row.appendChild(meta);
-    row.appendChild(actions);
+    if (preset.custom) {
+      const actions = document.createElement("div");
+      actions.className = "model-custom-actions";
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "settings-action-btn settings-action-btn--compact";
+      editBtn.textContent = t("settings.modelCustomEdit");
+      editBtn.addEventListener("click", () => {
+        setCustomEditMode(preset);
+      });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
+      deleteBtn.textContent = t("settings.modelCustomDelete");
+      deleteBtn.addEventListener("click", async () => {
+        if (isBusy()) {
+          showToast(t("toast.modelBusy"), "error");
+          return;
+        }
+        const result = await window.assistantClient.deleteCustomModel(preset.id);
+        if (!result.ok) {
+          showToast(t("toast.modelCustomDeleteFailed"), "error");
+          return;
+        }
+        if (editingCustomPresetId === preset.id) setCustomEditMode(null);
+        showToast(t("toast.modelCustomDeleted"), "success");
+        await refreshModelSelect();
+      });
+
+      actions.append(editBtn, deleteBtn);
+      row.appendChild(actions);
+    }
     list.appendChild(row);
   }
 }
@@ -281,54 +245,11 @@ function renderCatalog(catalog) {
 // The engine still resolves server/env-side (LILY_ENGINE); it's just not a UI choice.
 
 export async function refreshModelSelect() {
-  const select = $("modelPresetSelect");
-  if (!select) return;
-
   const data = await window.assistantClient.listModels();
   if (!data?.ok) return;
 
-  select.replaceChildren();
-  for (const preset of data.presets || []) {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    const label = tModel(preset);
-    option.textContent = preset.model ? `${label} · ${preset.model}` : label;
-    const desc = tModelDesc(preset);
-    if (desc) option.title = desc;
-    if (preset.id === data.activePresetId) option.selected = true;
-    select.appendChild(option);
-  }
-
-  renderApiGateway(data.apiGateway);
-  renderCustomList(data.presets, data.activePresetId);
+  renderModelLibraryList(data.presets);
   renderCatalog(data.catalog);
-}
-
-async function saveApiGateway(mode) {
-  if (isBusy()) {
-    showToast(t("toast.modelBusy"), "error");
-    return;
-  }
-
-  const payload = {
-    mode,
-    baseUrl: $("modelApiBaseUrl")?.value?.trim() || "",
-    protocol: normalizeProtocolValue($("modelApiProtocol")?.value),
-    apiKey: $("modelApiKey")?.value?.trim() || "",
-  };
-  const result = await window.assistantClient.setModelApiGateway(payload);
-  if (!result.ok) {
-    showToast(apiErrorMessage(result.error), "error");
-    await refreshModelSelect();
-    return;
-  }
-
-  if ($("modelApiKey")) $("modelApiKey").value = "";
-  showToast(
-    mode === "custom" ? t("toast.modelApiSaved") : t("toast.modelApiReset"),
-    "success",
-  );
-  await refreshModelSelect();
 }
 
 function setDiagnoseRestoreStatus(messageKey, kind = "info", params = {}) {
@@ -408,26 +329,6 @@ async function diagnoseAndRestoreDefaultModel() {
 export async function initModelSettings() {
   await refreshModelSelect();
 
-  $("modelPresetSelect")?.addEventListener("change", async () => {
-    if (isBusy()) {
-      showToast(t("toast.modelBusy"), "error");
-      await refreshModelSelect();
-      return;
-    }
-    const presetId = $("modelPresetSelect").value;
-    const result = await window.assistantClient.setActiveModel(presetId);
-    if (!result.ok) {
-      showToast(t("toast.modelSwitchFailed"), "error");
-      await refreshModelSelect();
-      return;
-    }
-    const active = (result.presets || []).find((p) => p.id === result.activePresetId);
-    showToast(t("toast.modelSwitched", { label: tModel(active) || t("settings.model") }), "success");
-    await refreshModelSelect();
-  });
-
-  $("modelApiSaveBtn")?.addEventListener("click", () => saveApiGateway("custom"));
-  $("modelApiResetBtn")?.addEventListener("click", () => saveApiGateway("builtin"));
   $("modelDiagnoseRestoreBtn")?.addEventListener("click", () => void diagnoseAndRestoreDefaultModel());
 
   // Catalog "add model": pick provider -> models repopulate.
@@ -478,13 +379,6 @@ export async function initModelSettings() {
         result.probeDeferred ? "warning" : "success",
       );
       await refreshModelSelect();
-      if (result.preset?.id) {
-        const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
-        if (switchResult.ok) {
-          await refreshModelSelect();
-          showToast(t("toast.modelSwitched", { label: tModel(result.preset) || result.preset.label }), "success");
-        }
-      }
     } finally {
       if (catalogBtn) {
         catalogBtn.disabled = false;
@@ -528,17 +422,6 @@ export async function initModelSettings() {
         result.probeDeferred ? "warning" : "success",
       );
       await refreshModelSelect();
-
-      if (!wasEditing && result.preset?.id) {
-        const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
-        if (switchResult.ok) {
-          await refreshModelSelect();
-          showToast(
-            t("toast.modelSwitched", { label: tModel(result.preset) || result.preset.label }),
-            "success",
-          );
-        }
-      }
     } finally {
       if (customBtn) {
         customBtn.disabled = false;

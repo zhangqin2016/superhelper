@@ -65,11 +65,15 @@ function catalogState() {
   const models = [];
   const runtimeModels = [];
   for (const preset of publicState.presets) {
-    if (!preset.model || (active?.custom ? preset.id !== activeId : preset.custom)) continue;
+    if (!preset.model) continue;
     const raw = rawPresets.find(item => item.id === preset.id);
     if (!preset.custom && status === "ready" && (!raw || raw.enabled === false)) continue;
-    if (preset.id !== activeId && !raw?.env) continue;
-    const env = preset.id === activeId ? { ...activeEnv } : { ...baseEnv, ...normalizeToLilyEnv(raw.env) };
+    if (!preset.custom && preset.id !== activeId && !raw?.env) continue;
+    const env = preset.id === activeId
+      ? { ...activeEnv }
+      : preset.custom
+        ? { ...baseEnv, ...api.getPresetRuntimeEnv(preset.id) }
+        : { ...baseEnv, ...normalizeToLilyEnv(raw.env) };
     const id = canonicalModelId(preset.id, preset.model);
     env.LILY_OPENCODE_PROVIDER_ID = connectionProviderId(id, env);
     const config = resolveOpencodeModelConfig(env);
@@ -86,14 +90,16 @@ function catalogState() {
     models.push(option);
     runtimeModels.push({ modelID: option.modelID, providerID: option.providerID, env });
   }
-  return { models, runtimeModels, activeId: canonicalModelId(activeId, active?.model), status, aliases };
+  const legacyActiveId = canonicalModelId(activeId, active?.model);
+  const fallbackModelId = models.find(model => model.managed)?.id || models[0]?.id || "";
+  return { models, runtimeModels, activeId: legacyActiveId, fallbackModelId, status, aliases };
 }
 
 function listModelSelectionPublic(sessionId = "") {
-  const { models, activeId, aliases, status } = catalogState();
+  const { models, activeId, fallbackModelId, aliases, status } = catalogState();
   return {
     models, catalogStatus: status, selection: normalizeSelection(migrateSelection(readStoredSelection(sessionId), aliases), models, activeId),
-    recommendedModelIds: models.map(model => model.id), fallbackModelId: activeId,
+    recommendedModelIds: models.map(model => model.id), fallbackModelId,
   };
 }
 
@@ -121,7 +127,7 @@ function resolveTurnModel(input = {}) {
     const route = routeTurn({
       ...input, selection,
       pinnedModelId: state.aliases[input.pinnedModelId]?.id || input.pinnedModelId,
-      options: state.models, fallbackId: state.activeId,
+      options: state.models, fallbackId: state.fallbackModelId,
     });
     if (route.ok && route.model) {
       const runtime = state.runtimeModels.find(item => item.modelID === route.model.modelID && item.providerID === route.model.providerID);

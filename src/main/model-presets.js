@@ -5,6 +5,7 @@ const path = require("node:path");
 const { userDataPath } = require("./config");
 const { normalizeToLilyEnv, pickModelId } = require("./agent-env");
 const remoteConfig = require("./remote-config");
+const { buildCustomPresetEnv } = require("./model-preset-runtime");
 
 /** @type {{ activePresetId: string, presets: Array<{id:string,label:string,description?:string,env:Record<string,string>}> } | null} */
 let cachedCatalog = null;
@@ -659,15 +660,7 @@ function getUserApiEnv() {
   if (preset?.custom) {
     const entry = (user.customPresets || []).find((p) => p.id === preset.id);
     if (entry) {
-      const env = {};
-      const baseUrl = String(entry.baseUrl || "").trim();
-      const apiKey = String(entry.apiKey || "").trim();
-      const protocol = normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl);
-      if (baseUrl) env.LILY_API_BASE_URL = baseUrl;
-      if (apiKey) env.LILY_API_KEY = apiKey;
-      if (protocol) env.LILY_OPENCODE_PROTOCOL = protocol;
-      if (entry.tlsSkipVerify && baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
-      Object.assign(env, buildCompatibilityProfileRuntimeEnv(entry.compatibilityProfile, entry.requestBodyOverlay));
+      const env = buildCustomPresetEnv(entry, {}, buildCompatibilityProfileRuntimeEnv);
       if (Object.keys(env).length) return env;
     }
   }
@@ -684,6 +677,15 @@ function getUserApiEnv() {
   if (protocol) env.LILY_OPENCODE_PROTOCOL = protocol;
   if (gateway.tlsSkipVerify && gateway.baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
   return env;
+}
+
+function getPresetRuntimeEnv(presetId) {
+  const preset = findPresetById(presetId);
+  if (!preset) return {};
+  if (!preset.custom) return normalizeToLilyEnv(preset.env || {});
+  const entry = (loadUserChoice().customPresets || []).find((item) => item.id === preset.id);
+  if (!entry) return normalizeToLilyEnv(preset.env || {});
+  return buildCustomPresetEnv(entry, preset.env, buildCompatibilityProfileRuntimeEnv);
 }
 
 function getActiveModelConnectionStatus(lilyEnv = null) {
@@ -909,7 +911,9 @@ function saveCustomPreset({
     protocol: normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl),
   };
   const customPresets = [...(user.customPresets || []), entry];
-  persistUserChoice({ ...user, customPresets, activePresetId: id });
+  // Adding a connection must not change the model of existing or new chats.
+  // The conversation picker is the only execution-level model selector.
+  persistUserChoice({ ...user, customPresets });
   return { ok: true, preset: customPresetRecord(entry), ...listPresetsPublic() };
 }
 
@@ -1341,6 +1345,7 @@ module.exports = {
   activePresetSupportsVision,
   activePresetFilePartMimes,
   getActivePresetEnv,
+  getPresetRuntimeEnv,
   getUserApiEnv,
   getActiveModelConnectionStatus,
   getActivePresetId,

@@ -159,6 +159,12 @@ test("model preferences are isolated by conversation and preserve legacy default
   assert.equal(catalog.listModelSelectionPublic().selection.manualModelId, "fast");
   assert.equal(catalog.resolveTurnModel({ sessionId: "s1" }).model.id, "quality");
 });
+test("conversation catalog keeps managed models visible when a legacy global custom model is active", () => {
+  const catalog = catalogFixture({ custom: true });
+  const state = catalog.listModelSelectionPublic("conversation");
+  assert.equal(state.models.map(model => model.id).sort().join(","), "fast,quality");
+  assert.equal(state.fallbackModelId, "quality");
+});
 test("custom Anthropic refs use the actual resolved runtime connection", () => {
   const route = catalogFixture({ custom: true }).resolveTurnModel({ selection: { mode: "manual", manualModelId: "fast" } });
   assert.match(route.model.providerID, /^lily-model-/);
