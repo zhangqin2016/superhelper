@@ -24,6 +24,7 @@ const { BlobStore } = require("./blob-store");
 const { MIGRATIONS } = require("./schema");
 const { externalize, collectRefs } = require("./record-blobs");
 const { compactRuntimeEventForPersistence } = require("./runtime-event-persistence");
+const runtimeEventRetention = require("./runtime-event-retention");
 const { listSessionSummaries } = require("./message-store-session-inventory");
 const {
   DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
@@ -305,75 +306,6 @@ class MessageStore {
       "SELECT MAX(seq) AS seq FROM runtime_events WHERE session_id=?",
       String(sessionId || ""),
     )?.seq || 0);
-  }
-
-  compactRuntimeEventPayloads({ limit = 200, minBytes = 20_000 } = {}) {
-    const lim = Math.max(1, Math.min(Number(limit) || 200, 1000));
-    const threshold = Math.max(1_000, Number(minBytes) || 20_000);
-    const rows = this.db.all(
-      `SELECT session_id, seq, id, turn_id, type, source, ts, payload_json
-       FROM runtime_events
-       WHERE length(payload_json) > ?
-         AND payload_json NOT LIKE '%"persistenceCompact":true%'
-         AND type IN (
-           'process.event',
-           'subagent.event',
-           'tool.started',
-           'tool.input.done',
-           'tool.done',
-           'user.committed',
-           'assistant.final',
-           'turn.completed',
-           'turn.failed',
-           'turn.interrupted',
-           'turn.stalled'
-         )
-       ORDER BY length(payload_json) DESC
-       LIMIT ?`,
-      threshold,
-      lim,
-    );
-    if (!rows.length) return { scanned: 0, compacted: 0, beforeBytes: 0, afterBytes: 0 };
-    return this.db.transaction(() => {
-      let compacted = 0;
-      let beforeBytes = 0;
-      let afterBytes = 0;
-      for (const row of rows) {
-        const payload = parseJson(row.payload_json, null);
-        if (!payload || typeof payload !== "object") continue;
-        const before = String(row.payload_json || "");
-        const event = {
-          id: row.id,
-          type: row.type,
-          sessionId: row.session_id,
-          turnId: row.turn_id || null,
-          seq: row.seq,
-          ts: row.ts,
-          source: row.source,
-          payload,
-        };
-        const persistedEvent = compactRuntimeEventForPersistence(event);
-        const nextPayload = persistedEvent.payload && typeof persistedEvent.payload === "object"
-          ? persistedEvent.payload
-          : {};
-        const after = stringifyJson(nextPayload, {});
-        if (after.length >= before.length) continue;
-        this.db.run(
-          `UPDATE runtime_events
-           SET payload_json = ?, original_type = ?, original_event_id = ?
-           WHERE session_id = ? AND seq = ?`,
-          after,
-          nextPayload.rawType || nextPayload.event?.type || null,
-          nextPayload.event?.id || null,
-          row.session_id,
-          row.seq,
-        );
-        compacted += 1;
-        beforeBytes += before.length;
-        afterBytes += after.length;
-      }
-      return { scanned: rows.length, compacted, beforeBytes, afterBytes };
-    })();
   }
 
   getTurnProjection(sessionId, turnId) {
@@ -937,13 +869,39 @@ class MessageStore {
     })();
   }
 
-  /** Delete every message for a session and release its blobs. */
+  /** Delete every message for a session, release its blobs, and drop its
+   *  runtime events.
+   *
+   *  Runtime events were INSERTed and UPDATEd but never DELETEd anywhere in the
+   *  repo, and clearing a session removed only its messages — so every deleted
+   *  conversation left its whole event stream behind forever. Measured on a real
+   *  install 2026-09-04: 3,917,891 events across 155 sessions while only 29
+   *  sessions still had messages, 2,542,720 of them (64.9%) orphaned from 135
+   *  deleted sessions, in a 12 GB database holding 1,156 messages. Almost all of
+   *  it is per-token streaming telemetry (process.event, task.step.progress,
+   *  assistant.thinking.delta) that has no consumer once the turn is over. */
   clear(sessionId) {
     return this.db.transaction(() => {
       const ids = this.db.all(`SELECT id FROM messages WHERE session_id = ?`, sessionId);
       for (const { id } of ids) this._unlinkMessageBlobs(id);
       this.db.run(`DELETE FROM messages WHERE session_id = ?`, sessionId);
+      this.db.run(`DELETE FROM runtime_events WHERE session_id = ?`, sessionId);
     })();
+  }
+
+  /** Shrink oversized event payloads in place. See runtime-event-retention. */
+  compactRuntimeEventPayloads(options = {}) {
+    return runtimeEventRetention.compactRuntimeEventPayloads(this.db, options);
+  }
+
+  /** Drop events whose session has no messages left, bounded per call. */
+  pruneOrphanRuntimeEvents(options = {}) {
+    return runtimeEventRetention.pruneOrphanRuntimeEvents(this.db, options);
+  }
+
+  /** How many events belong to sessions that no longer have messages. */
+  countOrphanRuntimeEvents() {
+    return runtimeEventRetention.countOrphanRuntimeEvents(this.db);
   }
 
   /** Full-text search over previews. Returns lightweight hits, newest first. */

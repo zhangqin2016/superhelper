@@ -684,6 +684,15 @@
       "tests": [
         "scripts/test-tool-call-continuation.mjs"
       ]
+    },
+    {
+      "id": "runtime-event-retention",
+      "protects": "Deleting a conversation must delete its runtime events, and the orphan backlog must drain. Runtime events were INSERTed and UPDATEd but never DELETEd anywhere in the repo, and clearing a session removed only its messages — so every deleted conversation left its whole event stream behind permanently, on the main-process database every turn writes to.",
+      "baseline": "Measured on a real install 2026-09-04: messages.db was 12 GB holding 1,156 messages and 3,917,891 runtime events across 155 sessions, while only 29 sessions still had messages — 2,542,720 events (64.9%) orphaned from 135 deleted conversations. The top types are per-token streaming telemetry with no consumer once a turn ends: process.event 1,457,033, task.step.progress 1,158,734, assistant.thinking.delta 936,587. The pre-existing maintenance only compacted oversized payloads; it never removed a row.",
+      "failureFallback": "Safe by construction: the only reader, getRuntimeEvents, is always scoped to a session id, so events belonging to a session that no longer exists cannot affect anything live, and the prune deletes only rows with no surviving message. Bounded per call (default 20,000, hard-capped) so a large backlog is worked off across rounds and startups instead of blocking one, and wrapped so a failure logs and leaves startup alone. Retention and the maintenance loop were extracted to src/main/store/runtime-event-retention.js and runtime-event-maintenance.js because message-store.js and session-manager.js were at their line ratchets; the loop takes its store and scheduler by injection, so the gate drives it directly and asserts orphans are pruned BEFORE payloads are compacted and that the first round is deferred. Mutation-verified 2026-09-04, seven ways: clear no longer dropping events, an unbounded prune, a prune that ignores whether messages survive, a clear that wipes other sessions' events, removing the scheduling so the method is never called, reversing the job order, and a first round with no delay each fail by name.",
+      "tests": [
+        "scripts/test-runtime-event-retention.mjs"
+      ]
     }
   ]
 }

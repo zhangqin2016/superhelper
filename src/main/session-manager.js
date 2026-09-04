@@ -25,6 +25,7 @@ const {
   backfillMessageArtifacts,
 } = require("./session-artifact-backfill");
 const { MessageStore } = require("./store/message-store");
+const { startRuntimeEventMaintenance } = require("./store/runtime-event-maintenance");
 const legacyImport = require("./store/legacy-import");
 const {
   resolveCharacterOwnerScope,
@@ -302,29 +303,10 @@ class SessionManager {
   }
 
   _startRuntimeEventMaintenance() {
-    const BATCH_SIZE = 200;
-    const MIN_BYTES = 20_000;
-    const MAX_ROUNDS = 50;
-    let rounds = 0;
-    const step = () => {
-      rounds += 1;
-      try {
-        const result = this._store().compactRuntimeEventPayloads({
-          limit: BATCH_SIZE,
-          minBytes: MIN_BYTES,
-        });
-        if (result?.compacted > 0) {
-          const saved = Math.max(0, Number(result.beforeBytes || 0) - Number(result.afterBytes || 0));
-          console.info(`[sessions] compacted ${result.compacted} runtime event payload(s), saved ${saved} byte(s)`);
-        }
-        if (result?.compacted > 0 && rounds < MAX_ROUNDS) {
-          this._setTimer(step, 1000);
-        }
-      } catch (err) {
-        console.warn("[sessions] runtime event maintenance failed:", err?.message || err);
-      }
-    };
-    this._setTimer(step, 12000);
+    startRuntimeEventMaintenance({
+      store: () => this._store(),
+      schedule: (fn, delay) => this._setTimer(fn, delay),
+    });
   }
 
   _enrichmentFlag(sessionId) {
