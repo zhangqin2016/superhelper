@@ -68,6 +68,12 @@ function dayKey(epoch) {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 
+function timeLabel(epoch) {
+  const at = new Date(Number(epoch) || 0);
+  if (Number.isNaN(at.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(at);
+}
+
 function dayLabel(epoch) {
   const at = new Date(Number(epoch) || 0);
   if (Number.isNaN(at.getTime())) return "";
@@ -162,23 +168,28 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     const crossesUnread = Number(unreadFromSeq) > 0 && Number.isSafeInteger(seq) && seq > 0
       && seq > Number(unreadFromSeq)
       && !(Number.isSafeInteger(Number(previous?.seq)) && Number(previous?.seq) > Number(unreadFromSeq));
+    // A separator carries the time context, WeChat-style, so the bubbles do not
+    // each repeat it: the day when the day changes, otherwise a bare HH:MM when
+    // more than five minutes have passed since the previous message.
+    const dayChanged = createdAt > 0 && previousAt > 0 && dayKey(createdAt) !== dayKey(previousAt);
+    const bigGap = createdAt > 0 && previousAt > 0 && !dayChanged && createdAt - previousAt >= 5 * 60 * 1000;
+    if (dayChanged || bigGap) {
+      const separator = document.createElement("div");
+      separator.className = "collaboration-date-separator";
+      separator.setAttribute("role", "separator");
+      const label = document.createElement("time");
+      label.dateTime = new Date(createdAt).toISOString();
+      label.textContent = dayChanged ? dayLabel(createdAt) : timeLabel(createdAt);
+      separator.append(label);
+      node.insertBefore(separator, node.children[index] || null);
+      index += 1;
+    }
     if (crossesUnread) {
       const marker = document.createElement("div");
       marker.className = "collaboration-unread-divider";
       marker.setAttribute("role", "separator");
       marker.textContent = t("collaboration.unreadDivider");
       node.insertBefore(marker, node.children[index] || null);
-      index += 1;
-    }
-    if (createdAt > 0 && previousAt > 0 && dayKey(createdAt) !== dayKey(previousAt)) {
-      const separator = document.createElement("div");
-      separator.className = "collaboration-date-separator";
-      separator.setAttribute("role", "separator");
-      const label = document.createElement("time");
-      label.dateTime = new Date(createdAt).toISOString();
-      label.textContent = dayLabel(createdAt);
-      separator.append(label);
-      node.insertBefore(separator, node.children[index] || null);
       index += 1;
     }
     const row = resolveTimelineRow(prior, message) || document.createElement("article");
