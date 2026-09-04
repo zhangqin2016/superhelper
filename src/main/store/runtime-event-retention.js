@@ -209,6 +209,115 @@ function pruneFinishedTurnEvents(db, sessionId, turnId) {
   return Number(result?.changes || 0);
 }
 
+const HISTORY_CURSOR_KEY = "runtimeEventHistoryPrune:v1";
+const HISTORY_DONE = "done";
+const DEFAULT_SEQ_WINDOW = 20_000;
+
+function readMeta(db, key) {
+  try {
+    const row = db.get(`SELECT value FROM schema_meta WHERE key = ?`, key);
+    return row ? String(row.value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMeta(db, key, value) {
+  db.run(
+    `INSERT INTO schema_meta (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    key,
+    String(value),
+  );
+}
+
+/**
+ * Drain the ephemeral events a pre-retention install already accumulated,
+ * in chunks small enough that nobody notices.
+ *
+ * The obvious query — DELETE ... WHERE type IN (...) — is a full table SCAN,
+ * because nothing indexes `type`. Measured on a real 12 GB install that is a
+ * single 19.8-second block, and node:sqlite is synchronous on the main
+ * process, so it can never go on a startup or idle path.
+ *
+ * Bounding the work by the PRIMARY KEY instead turns it into an index range
+ * scan: `session_id = ? AND seq BETWEEN ? AND ?` measured 30 ms for a 20,000-
+ * seq window that matched 19,726 rows. The whole 2.9 M rows come to roughly
+ * 150 such windows — about 4.5 seconds of work, delivered 30 ms at a time.
+ *
+ * A cursor in schema_meta records how far it got, so it resumes across
+ * restarts and, once finished, never looks again. This also supersedes the
+ * orphan scan: a deleted conversation's rows are the same ephemeral types, so
+ * they are drained here without any NOT EXISTS discovery.
+ *
+ * Kill switch: LILY_PRUNE_EVENT_HISTORY=0.
+ *
+ * @returns {{ done: boolean, removed: number, chunks: number }}
+ */
+function pruneHistoricalEphemeralEvents(db, { maxChunks = 4, seqWindow = DEFAULT_SEQ_WINDOW } = {}) {
+  if (process.env.LILY_PRUNE_EVENT_HISTORY === "0") return { done: true, removed: 0, chunks: 0 };
+  const cursorRaw = readMeta(db, HISTORY_CURSOR_KEY);
+  if (cursorRaw === HISTORY_DONE) return { done: true, removed: 0, chunks: 0 };
+
+  const placeholders = EPHEMERAL_EVENT_TYPES.map(() => "?").join(",");
+  const chunkLimit = Math.max(1, Math.min(Number(maxChunks) || 4, 64));
+  const windowSize = Math.max(1_000, Math.min(Number(seqWindow) || DEFAULT_SEQ_WINDOW, 200_000));
+
+  let cursor = null;
+  try {
+    cursor = cursorRaw ? JSON.parse(cursorRaw) : null;
+  } catch {
+    cursor = null;
+  }
+  let sessionId = cursor && typeof cursor.sessionId === "string" ? cursor.sessionId : "";
+  let nextSeq = Number.isFinite(cursor?.nextSeq) ? Number(cursor.nextSeq) : 0;
+
+  let removed = 0;
+  let chunks = 0;
+  while (chunks < chunkLimit) {
+    // Sessions are walked in id order so the cursor is a single scalar. The
+    // list comes from the primary key's leading column, so this is an index
+    // scan rather than a table scan.
+    if (!sessionId) {
+      const next = db.get(
+        `SELECT session_id FROM runtime_events WHERE session_id > ? ORDER BY session_id LIMIT 1`,
+        String(cursor?.lastSession || ""),
+      );
+      if (!next) {
+        writeMeta(db, HISTORY_CURSOR_KEY, HISTORY_DONE);
+        return { done: true, removed, chunks };
+      }
+      sessionId = String(next.session_id);
+      nextSeq = 0;
+    }
+
+    const maxSeqRow = db.get(`SELECT MAX(seq) AS hi FROM runtime_events WHERE session_id = ?`, sessionId);
+    const hi = Number(maxSeqRow?.hi || 0);
+    if (!hi || nextSeq > hi) {
+      // Finished this session; remember it so the next lookup steps past it.
+      writeMeta(db, HISTORY_CURSOR_KEY, JSON.stringify({ lastSession: sessionId, sessionId: "", nextSeq: 0 }));
+      cursor = { lastSession: sessionId };
+      sessionId = "";
+      continue;
+    }
+
+    const upper = nextSeq + windowSize;
+    const result = db.run(
+      `DELETE FROM runtime_events
+        WHERE session_id = ? AND seq >= ? AND seq < ? AND type IN (${placeholders})`,
+      sessionId,
+      nextSeq,
+      upper,
+      ...EPHEMERAL_EVENT_TYPES,
+    );
+    removed += Number(result?.changes || 0);
+    nextSeq = upper;
+    chunks += 1;
+    writeMeta(db, HISTORY_CURSOR_KEY, JSON.stringify({ lastSession: cursor?.lastSession || "", sessionId, nextSeq }));
+  }
+  return { done: false, removed, chunks };
+}
+
 function countOrphanRuntimeEvents(db) {
   return Number(db.get(
     `SELECT COUNT(*) AS n FROM runtime_events e
@@ -218,6 +327,8 @@ function countOrphanRuntimeEvents(db) {
 
 module.exports = {
   EPHEMERAL_EVENT_TYPES,
+  HISTORY_CURSOR_KEY,
+  pruneHistoricalEphemeralEvents,
   pruneFinishedTurnEvents,
   compactRuntimeEventPayloads,
   pruneOrphanRuntimeEvents,

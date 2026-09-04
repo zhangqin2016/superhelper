@@ -21,6 +21,7 @@ function startRuntimeEventMaintenance({ store, schedule }) {
   const BATCH_SIZE = 200;
   const ORPHAN_BATCH_SIZE = 20_000;
   const ORPHAN_SESSION_BATCH = 4;
+  const HISTORY_CHUNKS_PER_ROUND = 4;
   const MIN_BYTES = 20_000;
   const MAX_ROUNDS = 50;
   let rounds = 0;
@@ -33,20 +34,33 @@ function startRuntimeEventMaintenance({ store, schedule }) {
       // measured 2,542,720 orphans (64.9% of all events) in a 12 GB database
       // holding 1,156 messages. Bounded per round, so a large backlog is
       // worked off across rounds and startups instead of blocking one.
+      // Drain the ephemeral events a pre-retention install accumulated.
+      //
+      // Chunked and bounded by the PRIMARY KEY, so each chunk is an index range
+      // scan: 30 ms for a 20,000-seq window on a real 12 GB install, against
+      // 19.8 s for the single full-table DELETE the obvious `type IN (...)`
+      // query produces. A cursor in schema_meta resumes across restarts and
+      // stops looking once finished, so a clean install pays nothing.
+      //
+      // This SUPERSEDES the orphan scan below: a deleted conversation's rows
+      // are the same ephemeral types, so they drain here without the 3-second
+      // NOT EXISTS discovery that made the orphan path unusable on this thread.
+      let prunedHistory = 0;
+      try {
+        const history = store().pruneHistoricalEphemeralEvents({ maxChunks: HISTORY_CHUNKS_PER_ROUND });
+        prunedHistory = Number(history?.removed || 0);
+        if (prunedHistory > 0) {
+          console.info("[sessions] pruned " + prunedHistory + " historical runtime event(s)");
+        }
+      } catch (historyErr) {
+        console.warn("[sessions] historical runtime event prune failed:", historyErr?.message || historyErr);
+      }
+
+      // Superseded by the drain above, and OFF by default: finding orphans
+      // needs a full-table NOT EXISTS scan (2.8-3.1 s measured), which is not
+      // something to run here. Kept only as an explicit escape hatch.
       let prunedOrphans = 0;
       try {
-        // OFF BY DEFAULT, and that is the point.
-        //
-        // Going forward no orphans are created at all: clear() now deletes a
-        // conversation's events along with its messages. This only drains a
-        // backlog from before that fix, and draining it cannot be made cheap
-        // here — finding orphans means scanning the whole event table, measured
-        // at 2.8-3.1 s on a real 12 GB install however the query is written, and
-        // node:sqlite is synchronous on the main process. The first version
-        // froze the UI for two minutes after startup doing exactly this.
-        //
-        // Opt in with LILY_PRUNE_ORPHAN_EVENTS=1. Deleting is cheap (one
-        // statement per session, ~0 ms); only discovery is not.
         if (process.env.LILY_PRUNE_ORPHAN_EVENTS === "1") {
           prunedOrphans = store().pruneOrphanRuntimeEvents({
             limit: ORPHAN_BATCH_SIZE,
@@ -57,9 +71,9 @@ function startRuntimeEventMaintenance({ store, schedule }) {
           console.info("[sessions] pruned " + prunedOrphans + " runtime event(s) from deleted conversations");
         }
       } catch (pruneErr) {
-        // Fail open: pruning is maintenance, never a reason to break startup.
         console.warn("[sessions] orphan runtime event prune failed:", pruneErr?.message || pruneErr);
       }
+
       const result = store().compactRuntimeEventPayloads({
         limit: BATCH_SIZE,
         minBytes: MIN_BYTES,
@@ -68,7 +82,7 @@ function startRuntimeEventMaintenance({ store, schedule }) {
         const saved = Math.max(0, Number(result.beforeBytes || 0) - Number(result.afterBytes || 0));
         console.info(`[sessions] compacted ${result.compacted} runtime event payload(s), saved ${saved} byte(s)`);
       }
-      if ((result?.compacted > 0 || prunedOrphans > 0) && rounds < MAX_ROUNDS) {
+      if ((result?.compacted > 0 || prunedOrphans > 0 || prunedHistory > 0) && rounds < MAX_ROUNDS) {
         schedule(step, 1000);
       }
     } catch (err) {

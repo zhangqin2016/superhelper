@@ -117,7 +117,8 @@ assert.equal(
 const ROOT_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
 const maintenance = fs.readFileSync(path.join(ROOT_DIR, "src/main/store/runtime-event-maintenance.js"), "utf8");
 assert.match(maintenance, /pruneOrphanRuntimeEvents\(\{[\s\S]{0,120}maxSessions: ORPHAN_SESSION_BATCH/, "the prune must actually be scheduled, bounded by session");
-assert.match(maintenance, /prunedOrphans > 0\) && rounds < MAX_ROUNDS/, "maintenance must keep going while there is still a backlog to work off");
+assert.match(maintenance, /rounds < MAX_ROUNDS/, "maintenance must keep going while there is still a backlog to work off, and stop at a bound");
+assert.match(maintenance, /prunedHistory > 0\) && rounds < MAX_ROUNDS/, "an unfinished historical drain must schedule another round");
 const wiring = maintenance.slice(maintenance.indexOf("pruneOrphanRuntimeEvents"));
 assert.match(wiring.slice(0, 500), /catch \(pruneErr\)/, "pruning must be fail-open — maintenance must never break startup");
 
@@ -133,6 +134,7 @@ assert.match(manager, /require\("\.\/store\/runtime-event-maintenance"\)/, "and 
   let pending = [];
   startRuntimeEventMaintenance({
     store: () => ({
+      pruneHistoricalEphemeralEvents: () => ({ done: true, removed: 0, chunks: 0 }),
       pruneOrphanRuntimeEvents: ({ limit, maxSessions }) => { calls.push(`prune:${limit}/${maxSessions}`); return 0; },
       compactRuntimeEventPayloads: () => { calls.push("compact"); return { compacted: 0 }; },
     }),
@@ -262,6 +264,130 @@ assert.match(manager, /require\("\.\/store\/runtime-event-maintenance"\)/, "and 
       `${terminal} is JOINed by getProjectedConversation; putting it in the ephemeral allowlist would empty past turns`,
     );
   }
+}
+
+// --- the historical backlog drains silently ------------------------------
+// The obvious DELETE ... WHERE type IN (...) is a full table SCAN (nothing
+// indexes `type`): a single 19.8-second block on a real 12 GB install, on a
+// synchronous main-process connection. Bounding by the PRIMARY KEY makes each
+// chunk an index range scan — 30 ms per 20,000-seq window measured — so the
+// same work lands 30 ms at a time.
+{
+  const { HISTORY_CURSOR_KEY } = require("../src/main/store/runtime-event-retention.js");
+  const sessions = ["h-a", "h-b", "h-c"];
+  for (const id of sessions) {
+    store.append(id, { role: "user", content: "x", turnId: "T" });
+    // Ephemeral rows plus structural ones that must survive, interleaved.
+    const rows = [];
+    for (let i = 1; i <= 60; i += 1) {
+      rows.push({
+        id: `${id}-${i}`, seq: i, turnId: "T",
+        type: i % 5 === 0 ? "tool.done" : "assistant.thinking.delta",
+        source: "engine", ts: Date.now(), payload: { i },
+      });
+    }
+    store.appendRuntimeEvents(id, rows);
+  }
+  // Also an orphan session: the drain must cover it WITHOUT any NOT EXISTS scan.
+  store.appendRuntimeEvents("h-orphan", Array.from({ length: 30 }, (_, i) => ({
+    id: `ho-${i}`, seq: i + 1, turnId: "T", type: "process.event",
+    source: "engine", ts: Date.now(), payload: {},
+  })));
+
+  const totalBefore = sessions.reduce((n, id) => n + store.getRuntimeEvents(id, { limit: 500 }).length, 0)
+    + store.getRuntimeEvents("h-orphan", { limit: 500 }).length;
+  assert.equal(totalBefore, 3 * 60 + 30, "fixture must be fully seeded");
+
+  // One bounded round must NOT finish everything — that is what keeps it silent.
+  const first = store.pruneHistoricalEphemeralEvents({ maxChunks: 1, seqWindow: 1_000 });
+  assert.ok(first.removed > 0, "a round must make progress");
+  assert.equal(first.done, false, "one bounded round must not claim completion");
+  assert.equal(first.chunks, 1, "maxChunks must bound the round");
+
+  // Resumes from the cursor across calls (and therefore across restarts).
+  const cursorAfterFirst = store.meta(HISTORY_CURSOR_KEY);
+  assert.ok(cursorAfterFirst && cursorAfterFirst !== "done", "progress must be persisted, not restarted each time");
+
+  let guard = 0;
+  let result = first;
+  while (!result.done && guard < 200) {
+    result = store.pruneHistoricalEphemeralEvents({ maxChunks: 2, seqWindow: 1_000 });
+    guard += 1;
+  }
+  assert.equal(result.done, true, `the drain must finish; stopped after ${guard} rounds`);
+  assert.equal(store.meta(HISTORY_CURSOR_KEY), "done", "completion must be recorded");
+
+  // Only the allowlist went. Structural rows and the orphan's non-ephemeral
+  // rows are untouched.
+  for (const id of sessions) {
+    const left = store.getRuntimeEvents(id, { limit: 500 });
+    assert.equal(left.length, 12, `${id}: the 12 tool.done rows must survive`);
+    assert.ok(left.every((e) => e.type === "tool.done"), `${id}: only structural rows may remain`);
+  }
+  assert.equal(
+    store.getRuntimeEvents("h-orphan", { limit: 500 }).length,
+    0,
+    "an orphaned session's ephemerals drain here too — no NOT EXISTS scan needed",
+  );
+
+  // Finished means finished: no further work, and no re-scanning forever.
+  const after = store.pruneHistoricalEphemeralEvents({ maxChunks: 8 });
+  assert.deepEqual(after, { done: true, removed: 0, chunks: 0 }, "a finished drain must become a no-op");
+
+  // The whole design is the QUERY SHAPE, and behaviour alone cannot see it: a
+  // full-table `type IN (...)` delete removes the same rows, just in one
+  // 19.8-second block. Assert the delete is bounded by the primary key, and
+  // verify with the planner that this really is an index range scan.
+  {
+    const source = fs.readFileSync(
+      path.join(path.dirname(new URL(import.meta.url).pathname), "..", "src/main/store/runtime-event-retention.js"),
+      "utf8",
+    );
+    const fn = source.slice(source.indexOf("function pruneHistoricalEphemeralEvents"), source.indexOf("function countOrphanRuntimeEvents"));
+    assert.match(
+      fn,
+      /DELETE FROM runtime_events\s*\n\s*WHERE session_id = \? AND seq >= \? AND seq < \? AND type IN/,
+      "the drain must bound each chunk by session_id and a seq range — a type-only DELETE is a full table scan",
+    );
+    const plan = store.explainRuntimeEventChunkPlan?.();
+    if (plan) {
+      assert.match(plan, /USING INDEX/, `each chunk must use an index, got: ${plan}`);
+      assert.doesNotMatch(plan, /^SCAN runtime_events$/m, "a full table SCAN is the thing this design exists to avoid");
+    }
+  }
+
+  // Kill switch.
+  store.setMeta(HISTORY_CURSOR_KEY, "");
+  process.env.LILY_PRUNE_EVENT_HISTORY = "0";
+  assert.deepEqual(
+    store.pruneHistoricalEphemeralEvents({ maxChunks: 4 }),
+    { done: true, removed: 0, chunks: 0 },
+    "the kill switch must stop the drain",
+  );
+  delete process.env.LILY_PRUNE_EVENT_HISTORY;
+}
+
+// --- the maintenance loop drains history BEFORE anything else ------------
+{
+  const { startRuntimeEventMaintenance } = require("../src/main/store/runtime-event-maintenance.js");
+  const calls = [];
+  const pending = [];
+  startRuntimeEventMaintenance({
+    store: () => ({
+      pruneHistoricalEphemeralEvents: ({ maxChunks }) => { calls.push(`history:${maxChunks}`); return { done: false, removed: 0, chunks: 0 }; },
+      pruneOrphanRuntimeEvents: () => { calls.push("orphan"); return 0; },
+      compactRuntimeEventPayloads: () => { calls.push("compact"); return { compacted: 0 }; },
+    }),
+    schedule: (fn, delay) => pending.push([fn, delay]),
+  });
+  const [fn] = pending.pop();
+  delete process.env.LILY_PRUNE_ORPHAN_EVENTS;
+  fn();
+  assert.deepEqual(
+    calls,
+    ["history:4", "compact"],
+    "the default round drains history then compacts payloads, and never runs the superseded orphan scan",
+  );
 }
 
 console.log("runtime event retention: ok");

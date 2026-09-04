@@ -925,6 +925,22 @@ class MessageStore {
     return runtimeEventRetention.pruneOrphanRuntimeEvents(this.db, options);
   }
 
+  /** Drain a pre-retention install's ephemeral events in index-bounded chunks. */
+  pruneHistoricalEphemeralEvents(options = {}) {
+    return runtimeEventRetention.pruneHistoricalEphemeralEvents(this.db, options);
+  }
+
+  /** The planner's view of one drain chunk, so a gate can prove it is an index
+   *  range scan rather than the full table scan a type-only DELETE produces. */
+  explainRuntimeEventChunkPlan() {
+    const types = runtimeEventRetention.EPHEMERAL_EVENT_TYPES.map(() => "?").join(",");
+    return this.db.all(
+      `EXPLAIN QUERY PLAN SELECT 1 FROM runtime_events
+        WHERE session_id = ? AND seq >= ? AND seq < ? AND type IN (${types})`,
+      "probe", 0, 1000, ...runtimeEventRetention.EPHEMERAL_EVENT_TYPES,
+    ).map((row) => String(row.detail || "")).join("\n");
+  }
+
   /** How many events belong to sessions that no longer have messages. */
   countOrphanRuntimeEvents() {
     return runtimeEventRetention.countOrphanRuntimeEvents(this.db);
