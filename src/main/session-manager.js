@@ -163,6 +163,15 @@ class SessionManager {
   /** Lazily-opened SQLite-backed message store for Lily metadata + legacy/fallback transcript. */
   _store() {
     if (!this._messageStore) {
+      // Reclaim disk BEFORE the first open, which is the only moment the file
+      // can be renamed without racing a reader. Deleting rows returns pages to
+      // SQLite's freelist but never shrinks the file, so an install that once
+      // bloated stays bloated; VACUUM INTO writes a compacted copy without
+      // write-locking anything and the swap is a rename. Fail-open: any doubt
+      // and the original is left exactly as it was.
+      try {
+        require("./store/message-db-compaction").compactMessageDatabase(messageDbPath());
+      } catch { /* the store must open even if maintenance cannot run */ }
       this._messageStore = new MessageStore(messageDbPath(), blobStoreDir());
     }
     return this._messageStore;

@@ -25,6 +25,17 @@ const { MIGRATIONS } = require("./schema");
 const { externalize, collectRefs } = require("./record-blobs");
 const { compactRuntimeEventForPersistence } = require("./runtime-event-persistence");
 const runtimeEventRetention = require("./runtime-event-retention");
+
+// The types getProjectedConversation LEFT JOINs to rebuild a turn's assistant
+// text. Reaching one of these means the turn is over.
+const TERMINAL_TURN_EVENT_TYPES = new Set([
+  "turn.completed",
+  "turn.failed",
+  "turn.interrupted",
+  "turn.stalled",
+  "turn.dispatch_outcome_unknown",
+  "turn.dispatch_blocked",
+]);
 const { listSessionSummaries } = require("./message-store-session-inventory");
 const {
   DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
@@ -269,6 +280,21 @@ class MessageStore {
           if (inserted.changes > 0) {
             this._projectRuntimeEvent(sid, event);
             stored.push(persistedEvent);
+            // A turn that just reached a terminal state no longer needs the
+            // events that only painted it while it ran. Deleting them here,
+            // one turn at a time on a path already inside a transaction, is
+            // what keeps this table from growing without bound — the
+            // alternative is the multi-million-row backlog that needed a full
+            // scan to find and a VACUUM to reclaim. The terminal event itself
+            // is NOT in the ephemeral allowlist: the history query rebuilds
+            // assistant text from its payload.
+            if (TERMINAL_TURN_EVENT_TYPES.has(event.type) && event.turnId) {
+              try {
+                runtimeEventRetention.pruneFinishedTurnEvents(this.db, sid, event.turnId);
+              } catch {
+                // Retention is maintenance; never fail a turn over it.
+              }
+            }
           }
         } catch {
           // A malformed runtime diagnostic should not break the user turn.

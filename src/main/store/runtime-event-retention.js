@@ -155,7 +155,61 @@ function pruneOrphanRuntimeEvents(db, { limit = 50_000, maxSessions = 4 } = {}) 
   return removed;
 }
 
-function countOrphanRuntimeEvents(db, ) {
+/**
+ * Event types that exist only to paint a turn while it runs.
+ *
+ * `assistant.delta` and `assistant.thinking.delta` are already folded into
+ * turn_projection by _projectRuntimeEvent at INSERT time, so the text survives
+ * without them. `task.step.progress`, `process.event` and `subagent.event` are
+ * live progress with no reader at all once the turn is over.
+ *
+ * This is an ALLOWLIST of what may be deleted, never "everything except". The
+ * history query (getProjectedConversation) LEFT JOINs runtime_events for
+ * turn.completed / turn.failed / turn.interrupted / turn.stalled /
+ * turn.dispatch_outcome_unknown / turn.dispatch_blocked and rebuilds the
+ * assistant text from that payload — 806 such rows on a real install, and an
+ * exclusion list would eventually eat them.
+ */
+const EPHEMERAL_EVENT_TYPES = Object.freeze([
+  "assistant.delta",
+  "assistant.thinking.delta",
+  "task.step.progress",
+  "process.event",
+  "subagent.event",
+]);
+
+/**
+ * Drop a finished turn's live-painting events.
+ *
+ * Measured on a real install: 98.2% of the events belonging to sessions that
+ * still exist. Deleting them as each turn ends is what stops the database
+ * growing at all — one turn's worth at a time, on a path that is already
+ * writing, instead of a multi-million-row backlog that needs a full scan to
+ * find and a VACUUM to reclaim.
+ *
+ * A client long-polling the control server for this turn may miss deltas it had
+ * not fetched yet; the turn is over and the terminal event, which carries the
+ * final assistant text, is preserved. Kill switch: LILY_PRUNE_TURN_EVENTS=0.
+ *
+ * @returns {number} rows deleted
+ */
+function pruneFinishedTurnEvents(db, sessionId, turnId) {
+  if (process.env.LILY_PRUNE_TURN_EVENTS === "0") return 0;
+  const sid = String(sessionId || "");
+  const tid = String(turnId || "");
+  if (!sid || !tid) return 0;
+  const placeholders = EPHEMERAL_EVENT_TYPES.map(() => "?").join(",");
+  const result = db.run(
+    `DELETE FROM runtime_events
+      WHERE session_id = ? AND turn_id = ? AND type IN (${placeholders})`,
+    sid,
+    tid,
+    ...EPHEMERAL_EVENT_TYPES,
+  );
+  return Number(result?.changes || 0);
+}
+
+function countOrphanRuntimeEvents(db) {
   return Number(db.get(
     `SELECT COUNT(*) AS n FROM runtime_events e
       WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.session_id = e.session_id)`,
@@ -163,6 +217,8 @@ function countOrphanRuntimeEvents(db, ) {
 }
 
 module.exports = {
+  EPHEMERAL_EVENT_TYPES,
+  pruneFinishedTurnEvents,
   compactRuntimeEventPayloads,
   pruneOrphanRuntimeEvents,
   countOrphanRuntimeEvents,

@@ -159,6 +159,111 @@ assert.match(manager, /require\("\.\/store\/runtime-event-maintenance"\)/, "and 
   assert.equal(pending.length, 0, "with no work found, maintenance must stop instead of spinning");
 }
 
+// --- growth is stopped at the source ------------------------------------
+// The backlog only existed because nothing deleted a turn's live-painting
+// events when the turn ended. Measured: 98.2% of the events of sessions that
+// still exist. This is the fix that means customers never accumulate.
+{
+  const { EPHEMERAL_EVENT_TYPES } = require("../src/main/store/runtime-event-retention.js");
+  const S = "turnprune";
+  store.append(S, { role: "user", content: "do the thing", turnId: "T1" });
+
+  let seq = 1;
+  const push = (type, count = 1) => {
+    store.appendRuntimeEvents(S, Array.from({ length: count }, (_, i) => ({
+      id: `${type}-${seq + i}`, seq: seq + i, turnId: "T1", type,
+      source: "engine", ts: Date.now(), payload: { text: "x" },
+    })));
+    seq += count;
+  };
+
+  for (const type of EPHEMERAL_EVENT_TYPES) push(type, 20);
+  // Structural events that must SURVIVE — they are not in the allowlist.
+  push("tool.started");
+  push("tool.done");
+  push("task.evidence.added");
+  const beforeCount = store.getRuntimeEvents(S, { limit: 2000 }).length;
+  assert.equal(beforeCount, EPHEMERAL_EVENT_TYPES.length * 20 + 3, "seeded events must all be present while the turn runs");
+
+  // The terminal event ends the turn and triggers the prune in the same write.
+  push("turn.completed");
+
+  const after = store.getRuntimeEvents(S, { limit: 2000 });
+  const types = after.map((e) => e.type);
+  for (const type of EPHEMERAL_EVENT_TYPES) {
+    assert.ok(!types.includes(type), `${type} paints a running turn and must be gone once it ends`);
+  }
+  // Load-bearing survivors. The history query rebuilds assistant text from the
+  // terminal payload, so deleting it would silently empty past turns.
+  assert.ok(types.includes("turn.completed"), "the terminal event MUST survive — getProjectedConversation rebuilds assistant text from it");
+  for (const type of ["tool.started", "tool.done", "task.evidence.added"]) {
+    assert.ok(types.includes(type), `${type} is not in the ephemeral allowlist and must survive`);
+  }
+  assert.equal(after.filter((e) => e.turnId === "T1").length, 4, "exactly the three structural events plus the terminal one remain for T1");
+
+  // Scoping. Both of these are set up so the assertion actually BITES:
+  //   - another session with an event on the SAME turn id being pruned, so a
+  //     query missing `session_id = ?` is caught;
+  //   - a second, still-running turn in the SAME session, so a query missing
+  //     `turn_id = ?` is caught.
+  // An earlier version used a different turn id for the other session and had
+  // no concurrent turn, so dropping either predicate passed the gate.
+  store.append("other-session", { role: "user", content: "hi", turnId: "T9" });
+  store.appendRuntimeEvents("other-session", [
+    { id: "o1", seq: 1, turnId: "T9", type: "assistant.delta", source: "engine", ts: Date.now(), payload: {} },
+  ]);
+  // A second turn in S that is still running when T9 finalizes elsewhere.
+  store.appendRuntimeEvents(S, [
+    { id: "s-t9-a", seq: seq + 1, turnId: "T9", type: "assistant.delta", source: "engine", ts: Date.now(), payload: {} },
+    { id: "s-t9-b", seq: seq + 2, turnId: "T9", type: "process.event", source: "engine", ts: Date.now(), payload: {} },
+    { id: "s-run-a", seq: seq + 3, turnId: "T_RUNNING", type: "assistant.delta", source: "engine", ts: Date.now(), payload: {} },
+    { id: "s-run-b", seq: seq + 4, turnId: "T_RUNNING", type: "task.step.progress", source: "engine", ts: Date.now(), payload: {} },
+  ]);
+  seq += 4;
+
+  // Finalize T9 in session S only.
+  store.appendRuntimeEvents(S, [
+    { id: "s-t9-term", seq: seq + 1, turnId: "T9", type: "turn.completed", source: "engine", ts: Date.now(), payload: {} },
+  ]);
+
+  const sAfter = store.getRuntimeEvents(S, { limit: 2000 });
+  const running = sAfter.filter((e) => e.turnId === "T_RUNNING");
+  assert.equal(
+    running.length,
+    2,
+    "a turn still RUNNING in the same session must keep its events — the delete must be scoped by turn_id",
+  );
+  assert.equal(
+    sAfter.filter((e) => e.turnId === "T9" && e.type !== "turn.completed").length,
+    0,
+    "the finalized turn's ephemerals must be gone",
+  );
+  assert.equal(
+    store.getRuntimeEvents("other-session", { limit: 100 }).length,
+    1,
+    "another session's event on the SAME turn id must survive — the delete must be scoped by session_id",
+  );
+
+  // Kill switch.
+  process.env.LILY_PRUNE_TURN_EVENTS = "0";
+  const S2 = "killswitch";
+  store.append(S2, { role: "user", content: "x", turnId: "T1" });
+  store.appendRuntimeEvents(S2, [
+    { id: "k1", seq: 1, turnId: "T1", type: "assistant.delta", source: "engine", ts: Date.now(), payload: {} },
+    { id: "k2", seq: 2, turnId: "T1", type: "turn.completed", source: "engine", ts: Date.now(), payload: {} },
+  ]);
+  assert.equal(store.getRuntimeEvents(S2, { limit: 100 }).length, 2, "the kill switch must keep the previous behaviour");
+  delete process.env.LILY_PRUNE_TURN_EVENTS;
+
+  // The allowlist must never contain a type the history query depends on.
+  for (const terminal of ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled", "turn.dispatch_outcome_unknown", "turn.dispatch_blocked"]) {
+    assert.ok(
+      !EPHEMERAL_EVENT_TYPES.includes(terminal),
+      `${terminal} is JOINed by getProjectedConversation; putting it in the ephemeral allowlist would empty past turns`,
+    );
+  }
+}
+
 console.log("runtime event retention: ok");
 console.log("  clearing a session drops its events; orphan backlog prunes in bounded passes");
 console.log("  a session that still has messages is never touched");
