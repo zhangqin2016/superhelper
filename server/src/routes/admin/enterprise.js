@@ -9,6 +9,8 @@ import { zodBody, okResponse } from "../../openapi.js";
 import { publicId } from "../../services/ids.js";
 import { config } from "../../config.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
+import { provisionAccounts } from "../../services/enterprise-accounts.js";
+import { normalizePhoneE164 } from "../../services/account-auth.js";
 import { enterpriseMutationResponse } from "../public/enterprise-route-support.js";
 
 const orgIdSchema = z.object({ id: z.string().min(3).max(120) });
@@ -62,8 +64,74 @@ async function orgUsage(organizationId, days = 30) {
   return { days, byMember, byModel };
 }
 
+const createOrgSchema = z.object({
+  name: z.string().min(1).max(120),
+  plan: z.string().min(1).max(40).default("standard"),
+  // Exactly one way to name the first owner: a registered phone, or an account
+  // the platform issues on the spot (login name + one-time password).
+  owner: z.union([
+    z.object({ phoneE164: z.string().min(5).max(32) }),
+    z.object({ loginName: z.string().min(3).max(40).optional(), displayName: z.string().max(80).optional(), issue: z.literal(true) }),
+  ]),
+});
+
 export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
   const mutations = createEnterpriseMutationService(db);
+
+  // POST /api/admin/enterprise/organizations — create an organization FOR a
+  // customer and hand it to its first owner. This is the one moment the platform
+  // admin acts inside an organization; after the handoff the §7.1 boundary holds
+  // and members are the owner's business alone. The initial password, when an
+  // owner account is issued, is returned once and never stored.
+  app.post(
+    "/api/admin/enterprise/organizations",
+    {
+      schema: {
+        tags: ["admin:enterprise"],
+        summary: "Create an organization and designate its first owner",
+        body: zodBody(createOrgSchema),
+        response: { 200: okResponse({ organization: { type: "object" }, owner: { type: "object" } }) },
+      },
+    },
+    async (request, reply) => {
+      if (!await assertAdmin(request, reply)) return;
+      const input = createOrgSchema.parse(request.body);
+      const organizationId = publicId("org");
+      let owner;
+      try {
+        owner = await db.transaction().execute(async (trx) => {
+          await trx.insertInto("organizations").values({ id: organizationId, name: input.name, status: "active", plan: input.plan }).execute();
+          if ("phoneE164" in input.owner) {
+            const phone = normalizePhoneE164(input.owner.phoneE164);
+            const user = phone
+              ? await trx.selectFrom("users").select(["id", "phone_e164"]).where("phone_e164", "=", phone).executeTakeFirst()
+              : null;
+            // An unregistered phone cannot own anything yet. Say so plainly and
+            // point at the path that does work, rather than inventing a seat.
+            if (!user) { const err = new Error("OWNER_NOT_REGISTERED"); err.code = "OWNER_NOT_REGISTERED"; err.statusCode = 404; throw err; }
+            await trx.insertInto("organization_members").values({ organization_id: organizationId, user_id: user.id, role: "owner", status: "active", quota: null }).execute();
+            return { userId: user.id, phoneE164: user.phone_e164, issued: false };
+          }
+          const [issued] = await provisionAccounts(trx, {
+            organizationId,
+            organizationName: input.name,
+            requests: [{ loginName: input.owner.loginName, displayName: input.owner.displayName, role: "owner" }],
+            provisionedBy: null,
+            allowOwner: true,
+          });
+          return { userId: issued.userId, loginName: issued.loginName, initialPassword: issued.initialPassword, issued: true };
+        });
+      } catch (error) {
+        const status = Number(error?.statusCode) || 400;
+        return reply.code(status).send({ ok: false, code: error?.code || "ORG_CREATE_FAILED" });
+      }
+      await audit(request, "enterprise_org_create", "organization", organizationId, {
+        name: input.name, plan: input.plan, ownerUserId: owner.userId, ownerIssued: owner.issued,
+      });
+      const organization = await db.selectFrom("organizations").selectAll().where("id", "=", organizationId).executeTakeFirst();
+      return { ok: true, organization, owner };
+    },
+  );
   // GET /api/admin/enterprise/organizations — all orgs with summaries
   app.get(
     "/api/admin/enterprise/organizations",

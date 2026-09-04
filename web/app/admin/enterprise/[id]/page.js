@@ -1,4 +1,5 @@
 import Link from "next/link";
+import IssuedCredentials from "../../../../components/issued-credentials";
 import { AdminShell } from "../../../../components/admin-shell";
 import { safeApiGet } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
@@ -14,7 +15,8 @@ export default async function AdminOrgDetailPage({ params }) {
   const { id } = await params;
   const { t } = await getI18n();
   const org = await safeApiGet(`/api/admin/enterprise/organizations/${id}`, null);
-  if (!org?.id) return <AdminShell title="Enterprise"><p className="text-sm text-slate-500">Organization not found.</p></AdminShell>;
+  if (!org?.id) return <AdminShell title="Enterprise">
+      <IssuedCredentials /><p className="text-sm text-slate-500">Organization not found.</p></AdminShell>;
   const usage = await safeApiGet(`/api/admin/enterprise/organizations/${id}/usage?days=30`, { usage: { byMember: [], byModel: [] } });
   const byMember = usage?.usage?.byMember || [];
   return (

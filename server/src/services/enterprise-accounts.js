@@ -190,7 +190,7 @@ const MAX_BATCH = 100;
  *
  * @param {Array<{ loginName?: string, displayName?: string, role?: "admin"|"member" }>} requests
  */
-export async function provisionAccounts(trx, { organizationId, organizationName, requests, pattern, provisionedBy }) {
+export async function provisionAccounts(trx, { organizationId, organizationName, requests, pattern, provisionedBy, allowOwner = false }) {
   let list = Array.isArray(requests) ? requests.slice(0, MAX_BATCH) : [];
   // `MAX` + 20 -> max_0001..max_0020, continuing after the last batch. Resolved
   // here, under the organization lock the caller already holds, so two admins
@@ -209,7 +209,9 @@ export async function provisionAccounts(trx, { organizationId, organizationName,
   }
   const issued = [];
   for (const request of list) {
-    const role = request?.role === "admin" ? "admin" : "member";
+    // Owner is only issuable by the platform admin at the moment it creates the
+    // organization (the initial handoff). Every other caller gets member/admin.
+    const role = request?.role === "owner" && allowOwner ? "owner" : request?.role === "admin" ? "admin" : "member";
     let loginName = normalizeLoginName(request?.loginName);
     if (request?.loginName && !loginName) {
       const error = new Error("INVALID_LOGIN_NAME");

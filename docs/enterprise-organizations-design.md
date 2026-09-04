@@ -166,6 +166,19 @@ create index if not exists usage_events_org_idx on usage_events (organization_id
 - 调拨写 `wallet_ledger`，`source_type='admin_adjustment'`（与个人钱包 admin 调拨同语义），并写 `audit_logs`（actor=adminId, action=enterprise_grant_adjust）。
 - 新增 `server/src/routes/admin/enterprise.js`，在 `admin.js` 注册；OpenAPI tag：`admin:enterprise`。
 
+### 7.1.1 修订（2026-09-05）：admin 可以建企业并指定首任 owner
+
+原边界"admin 不进入企业内政"针对的是**成员管理**，不是**创建**。它在实际销售流程里挡住了运营：签下客户后无法替其开企业，必须等客户方某人自己注册、自己建、自己成 owner。
+
+新增 `POST /api/admin/enterprise/organizations` `{name, plan?, owner}`，`owner` 二选一：
+- `{phoneE164}` —— 已注册手机号，直接建 owner 成员；未注册返回 `OWNER_NOT_REGISTERED`（不转邀请，邀请不能携带 owner）
+- `{issue: true, loginName?, displayName?}` —— 平台当场签发一个 owner 账号（登录名 + 一次性初始密码，只在响应里出现一次）。
+  这是 `provisionAccounts` 的 `allowOwner` **唯一**调用点；企业侧 provisioning 永不传它，企业管理员不能铸造 owner。
+
+**边界保持**：建完即交接。admin 面仍然没有任何 `/members` 端点，成员增删改归 owner/admin。审计 `enterprise_org_create` 记录 owner 是否由平台签发。
+web admin 企业页加"新建企业"表单；签发的 owner 凭据经 URL hash 传到详情页、渲染一次即清（与员工账户同一组件 `components/issued-credentials.js`）。
+真闭环脚本：`server/scripts/admin-enterprise-create-integration.mjs`（真 Postgres、真迁移、admin 建企业 → owner 密码登录 → 强制改密 → 列表可见）。
+
 ## 7.2 企业管理工作台（web 版）页面设计
 
 企业管理员（owner/admin）的**管理入口**：web 站点 `/account/enterprise/*`，复用现有账号区（`web/app/account/`）登录态（`lily_user_session` cookie）+ `lib/user-api.js` 封装（与 `account/billing` 同模式）。**不做**独立的登录体系——企业管理员就是平台的 web 用户，登录后进入组织管理。

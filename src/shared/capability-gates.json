@@ -729,6 +729,16 @@
       "tests": [
         "scripts/test-enterprise-accounts.mjs"
       ]
+    },
+    {
+      "id": "admin-enterprise-create",
+      "protects": "The platform admin can create an organization for a customer and hand it to its first owner, without the §7.1 boundary eroding. Before, creation was self-serve only — an operator who had signed a customer could not open the enterprise; someone at the customer had to register, create, and become owner themselves. The owner is named exactly one of two ways: a registered phone, or an account the platform issues on the spot.",
+      "baseline": "Additive: one admin POST, one web form, one shared reveal component. The admin surface still has NO member endpoints — after the handoff, members are the owner's business alone, which is the part of §7.1 that mattered. Owner issuance is a narrow opening (allowOwner) that only this route passes; the enterprise-side provisioning path never does, so a company admin cannot mint owners. An unregistered owner phone is refused with OWNER_NOT_REGISTERED rather than turned into an invitation (which cannot carry owner) or a silently invented seat.",
+      "failureFallback": "test-admin-enterprise-create.mjs asserts the opening is off by default and passed only by the admin route, that the route is behind assertAdmin, audited (including whether the owner was issued), never persists the initial password, and that no member endpoint exists on the admin surface. The closed loop is admin-enterprise-create-integration.mjs against a real Postgres with the real migrations: admin creates -> issued owner logs in with the one-time password -> is forced to change it -> the organization appears in the owner's list and the admin's list. The integration ran green first time against PostgreSQL 16 with all 44 migrations (11 steps); it skips cleanly where DATABASE_URL is absent, so listing it here never fails a DB-less run.",
+      "tests": [
+        "scripts/test-admin-enterprise-create.mjs",
+        "server/scripts/admin-enterprise-create-integration.mjs"
+      ]
     }
   ]
 }

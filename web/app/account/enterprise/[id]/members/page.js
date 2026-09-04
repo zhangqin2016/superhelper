@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { userApiGet } from "../../../../../lib/user-api";
 import { addMemberAction, patchMemberAction, removeMemberAction, revokeInvitationAction, provisionAccountsAction, resetAccountPasswordAction } from "../../actions";
-import IssuedCredentials from "./IssuedCredentials";
+import IssuedCredentials from "../../../../../components/issued-credentials";
 
 export const dynamic = "force-dynamic";
 
