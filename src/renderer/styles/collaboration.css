@@ -564,7 +564,11 @@
   line-height: 14px;
 }
 
-.collaboration-center.is-conversation-open .collaboration-panel-header {
+/* One pane only: when a conversation replaces the list, the panel header
+   shrinks to a corner and the conversation header takes over the title. In two
+   panes the list stays beside the thread, so the header stays full and spanning
+   — otherwise the title bar vanished on the Chats tab but not on People/Teams. */
+.collaboration-center.is-conversation-open:not([data-collaboration-panes="two"]) .collaboration-panel-header {
   position: absolute;
   z-index: 3;
   inset-block-start: 0;
@@ -576,12 +580,12 @@
   background: transparent;
 }
 
-.collaboration-center.is-conversation-open .collaboration-panel-title,
-.collaboration-center.is-conversation-open .collaboration-scope-badge {
+.collaboration-center.is-conversation-open:not([data-collaboration-panes="two"]) .collaboration-panel-title,
+.collaboration-center.is-conversation-open:not([data-collaboration-panes="two"]) .collaboration-scope-badge {
   display: none;
 }
 
-.collaboration-center.is-conversation-open .collaboration-conversation-title {
+.collaboration-center.is-conversation-open:not([data-collaboration-panes="two"]) .collaboration-conversation-title {
   justify-content: center;
 }
 

@@ -55,7 +55,12 @@ app.whenReady().then(async () => {
     const headerHeightClosed = Math.round(panel.querySelector('.collaboration-panel-header').getBoundingClientRect().height);
     window.__shell.setConversationOpen(true);
     void document.body.offsetHeight;
+    const headerEl = panel.querySelector('.collaboration-panel-header');
+    const titleEl = document.getElementById('collaborationPanelTitle');
+    const headerOpen = { position: getComputedStyle(headerEl).position, width: Math.round(headerEl.getBoundingClientRect().width),
+      titleShown: titleEl ? getComputedStyle(titleEl).display !== 'none' : false };
     return JSON.stringify({
+      headerOpen,
       headerHeightClosed,
       panes: panel.dataset.collaborationPanes,
       panelWidth: rect(panel).width,
@@ -79,6 +84,17 @@ app.whenReady().then(async () => {
   assert.equal(wide.panes, "two", "a 1100px panel holds two");
   assert.ok(wide.headerHeightClosed <= 64,
     `two panes with no thread open keep the header at its own height (${wide.headerHeightClosed}px), not half the panel`);
+
+  // With a thread OPEN in two panes the header must stay full and spanning, not
+  // collapse to a corner button — that is the one-pane behaviour, and letting it
+  // fire in two panes made the title bar present on People/Teams but gone on
+  // Chats. It stays in flow (not absolute), spans the panel, and keeps its title.
+  assert.equal(wide.headerOpen.position, "static",
+    "two-pane header stays in flow with a conversation open, not collapsed to an absolute corner");
+  assert.ok(wide.headerOpen.width >= wide.panelWidth - 2,
+    `two-pane header spans the panel with a conversation open (${wide.headerOpen.width} of ${wide.panelWidth})`);
+  assert.equal(wide.headerOpen.titleShown, true,
+    "two-pane header keeps its destination title with a conversation open (consistent across tabs)");
   assert.equal(wide.sideBySide, true, "the list and the thread are both laid out, thread beside list");
   assert.equal(wide.homeHidden, false, "the list stays, so the selected row keeps its context");
   assert.equal(wide.backHidden, true, "and there is nothing to go back from, so no back button");
