@@ -1,0 +1,70 @@
+{
+  "model": "deepseek-v4-pro",
+  "locale": "zh-CN",
+  "updatedAt": "2026-09-04T13:59:01.147Z",
+  "results": {
+    "guide-canary-catalog-path": {
+      "pass": true,
+      "kind": "canary",
+      "runs": 3,
+      "successes": 3,
+      "sample": "/Users/zhangqin/aicode/ceshitermianl/resources/skills/lily-diagrams/SKILL.md"
+    },
+    "rule-identity": {
+      "pass": true,
+      "kind": "rule",
+      "runs": 3,
+      "successes": 3,
+      "sample": "我是智能工作台（Lily Workbench）助手，背后对接的是用户配置的模型/API 网关，与 Claude 无关。"
+    },
+    "rule-no-flat-deny": {
+      "pass": true,
+      "kind": "rule",
+      "runs": 3,
+      "successes": 3,
+      "sample": "能。\n\n设置位置：输入框下方的「自动执行」按钮。你也可以直接告诉我整理任务的具体内容，我会在当前对话里生成一张「自动执行」确认卡，绑定本对话和工作区，到点（每天早上九点）自动执行。\n\n（补充：具体整理什么、处理哪些文件，需要你先把任务内容说清楚，我才能配置。）"
+    },
+    "rule-anti-hallucination": {
+      "pass": true,
+      "kind": "rule",
+      "runs": 3,
+      "successes": 3,
+      "sample": "该文件里没有 `port` 字段。文件只包含 `host`、`tls`、`logLevel` 三个字段，未配置 `port`。"
+    },
+    "rule-response-language": {
+      "pass": true,
+      "kind": "rule",
+      "runs": 3,
+      "successes": 3,
+      "sample": "2 plus 3 equals 5."
+    },
+    "rule-native-skill-boundary": {
+      "pass": true,
+      "kind": "rule",
+      "runs": 3,
+      "successes": 3,
+      "sample": "我已经读完了 `lily-diagrams` 的能力指南，下面说明我会怎么用它（不会真的执行）。\n\n## 核心原则\n\n这是一个**结构性图表**能力，用来画关系、流程、系统、数据类图示。它的第一条规则是：**能用 Mermaid 就用 Mermaid，只有 Mermaid 表达不了时才用 SVG**，绝不使用位图工具来"
+    },
+    "discover-diagrams": {
+      "pass": true,
+      "kind": "discovery",
+      "runs": 3,
+      "successes": 3,
+      "sample": "lily-diagrams"
+    },
+    "discover-speech": {
+      "pass": true,
+      "kind": "discovery",
+      "runs": 3,
+      "successes": 3,
+      "sample": "`lily-speech-generation`"
+    },
+    "discover-external-fact": {
+      "pass": true,
+      "kind": "discovery",
+      "runs": 3,
+      "successes": 3,
+      "sample": "`websearch`"
+    }
+  }
+}

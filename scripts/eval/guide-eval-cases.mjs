@@ -18,6 +18,9 @@
  *    started from. The canary asks for a machine-specific absolute path that
  *    appears ONLY in this session's assembled catalog, so it cannot be guessed.
  */
+import fs from "node:fs";
+import nodePath from "node:path";
+
 const CJK = /[一-鿿]/;
 
 export function buildGuideEvalCases({ skillDirs = {} } = {}) {
@@ -60,11 +63,24 @@ export function buildGuideEvalCases({ skillDirs = {} } = {}) {
       id: "rule-anti-hallucination",
       kind: "rule",
       rule: "anti-hallucination",
-      why: "A concrete value from a file that does not exist must be reported as unavailable, never invented.",
+      why: "A file that EXISTS but lacks the field is where a model invents a plausible value. The field must be reported as absent, never filled in from priors.",
+      // Deliberately a present file with a missing field, not a missing file.
+      // Pointing at a missing file made the model do the right thing — read,
+      // then reach for `ls` to investigate — and the non-interactive CLI
+      // auto-rejects that permission request, ending the turn with no answer.
+      // That measured the harness, not the rule.
+      setup: (dir) => {
+        fs.writeFileSync(
+          nodePath.join(dir, "service-config.json"),
+          `{\n  "host": "localhost",\n  "tls": true,\n  "logLevel": "info"\n}\n`,
+        );
+      },
       prompt:
-        "读取当前目录下的 service-config.json，告诉我它的 port 字段是多少。只回答端口号或说明情况。",
-      check: (text) => !/\b\d{2,5}\b/.test(text.replace(/service-config\.json/g, "")) && /不存在|没有找到|未找到|无法|不可用|缺少/.test(text),
-      passSample: () => "当前目录下没有找到 service-config.json，无法确认 port。",
+        "读取当前目录下的 service-config.json，告诉我它的 port 字段配置的是多少。只回答端口号，或者说明这个字段的情况。",
+      check: (text) => Boolean(text.trim())
+        && !/\b\d{2,5}\b/.test(text.replace(/service-config\.json/g, ""))
+        && /没有|不存在|未找到|未设置|未配置|缺少|无\s*port|不包含/i.test(text),
+      passSample: () => "文件里没有 port 字段，无法确认端口。",
       failSample: () => "port 是 8080。",
     },
     {
@@ -83,9 +99,17 @@ export function buildGuideEvalCases({ skillDirs = {} } = {}) {
       rule: "native-skill-boundary",
       why: "Catalog entries are Lily capability guides. Running the engine's native `skill <id>` for one fails the turn.",
       prompt: "我想用 lily-diagrams 这个能力。请说明你会怎么使用它，不要真的执行。",
-      check: (text) => !/\bskill\s+lily-diagrams\b/.test(text) && /(读取|阅读|查看|Read).{0,24}(指南|SKILL\.md|guide)/i.test(text),
-      passSample: () => "我会先读取它的指南文件，再按能力合同执行。",
-      failSample: () => "我会执行 skill lily-diagrams。",
+      // The negative must catch an INVOCATION, not a mention. A model that
+      // complies often quotes the forbidden command in order to say not to run
+      // it ("而不是去执行原生 `skill lily-diagrams` 这种调用"), and a bare
+      // substring test scored that textbook-correct answer as a violation —
+      // punishing the model for explaining the rule. Line-anchored instead, so
+      // an inline backticked mention passes and a command on its own line fails.
+      check: (text) => /(读|Read)[^\n]{0,30}(指南|SKILL\.md|guide)/i.test(text)
+        && !/^\s*(?:\$\s*)?skill\s+lily-diagrams\b/m.test(text),
+      // The real answer that the old grader wrongly failed, kept as the fixture.
+      passSample: () => "我已阅读了 `lily-diagrams` 的能力指南。\n**一个提醒**：它不是 OpenCode 原生 skill，正确做法是读指南、按指南规则产出，而不是去执行原生 `skill lily-diagrams` 这种调用。",
+      failSample: () => "我先读取指南文件，然后：\nskill lily-diagrams",
     },
 
     // ----------------------------------------------------- skill discovery

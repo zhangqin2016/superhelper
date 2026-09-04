@@ -32,12 +32,21 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { evaluateModelEval, parseModelEvalArgs } from "./model-eval-policy.mjs";
-import { buildEvalPlatformConfig } from "./model-eval-runtime.mjs";
 import { buildGuideEvalCases } from "./guide-eval-cases.mjs";
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
+
+// Must be set BEFORE the runtime module loads skill-manager, hence the dynamic
+// import: the guide's placeholders resolve real runtime paths under userData.
+if (!process.env.LILY_USER_DATA_DIR) {
+  const evalUserData = path.join(os.tmpdir(), "lily-guide-eval-userdata");
+  fs.mkdirSync(evalUserData, { recursive: true });
+  process.env.LILY_USER_DATA_DIR = evalUserData;
+}
+process.env.LILY_HOME ||= process.env.LILY_USER_DATA_DIR;
+const { buildEvalPlatformConfig } = await import("./model-eval-runtime.mjs");
 
 function argValue(flag, fallback) {
   const index = process.argv.indexOf(flag);
@@ -46,6 +55,13 @@ function argValue(flag, fallback) {
   return value && !value.startsWith("-") ? value : fallback;
 }
 const locale = argValue("--locale", "zh-CN");
+// The model is not deterministic. Measured on deepseek-v4-pro: a single run
+// scored 9/9, 8/9, 9/9 on the same unchanged code, so a boolean single-run
+// baseline reports a FALSE REGRESSION roughly one run in three. Repeating each
+// case and taking the majority turns that variance into a signal the gate can
+// trust; the recorded successes/runs also make a drifting rate visible before
+// it crosses the majority line.
+const repeat = Math.max(1, Math.min(9, Number.parseInt(argValue("--repeat", "1"), 10) || 1));
 
 // The guide must be assembled from the REAL skill directories, or the skill
 // index the discovery cases depend on would be fictional.
@@ -151,23 +167,48 @@ const configPath = path.join(work, "opencode-guide-eval-config.json");
 fs.writeFileSync(configPath, configContent);
 
 console.log(`model: ${model}`);
-console.log(`locale: ${locale}   system prompt with guide: ${guideBytes}B   skills indexed: ${skills.length}`);
+console.log(`locale: ${locale}   system prompt with guide: ${guideBytes}B   skills indexed: ${skills.length}   repeat: ${repeat}`);
 console.log(`profile: overlay=${Boolean(profile?.requestBodyOverlay)} toolShapeCompat=${Boolean(profile?.toolShapeCompat)} grade=${runtimeEnv.LILY_MODEL_CAPABILITY_GRADE || "standard"}\n`);
 
 const results = {};
 for (const c of CASES) {
   if (onlyCase && c.id !== onlyCase) continue;
-  const dir = fs.mkdtempSync(path.join(work, `${c.id}-`));
-  try {
-    if (c.setup) c.setup(dir);
-    const text = runEngineTurn(configPath, dir, c.prompt, runtimeEnv);
-    const pass = Boolean(c.check(text));
-    results[c.id] = { pass, kind: c.kind, sample: text.slice(0, 160) };
-    console.log(`${pass ? "PASS" : "FAIL"}  ${c.kind.padEnd(9)} ${c.id}${pass ? "" : `\n      output: ${JSON.stringify(text.slice(0, 220))}`}`);
-  } catch (err) {
-    results[c.id] = { pass: false, kind: c.kind, error: String(err?.message || err).slice(0, 200) };
-    console.log(`FAIL  ${c.kind.padEnd(9)} ${c.id} (error: ${String(err?.message || err).slice(0, 120)})`);
+  let successes = 0;
+  let lastFailure = "";
+  let lastError = "";
+  let sample = "";
+  for (let attempt = 0; attempt < repeat; attempt += 1) {
+    const dir = fs.mkdtempSync(path.join(work, `${c.id}-${attempt}-`));
+    try {
+      if (c.setup) c.setup(dir);
+      const text = runEngineTurn(configPath, dir, c.prompt, runtimeEnv);
+      if (c.check(text)) {
+        successes += 1;
+        if (!sample) sample = text.slice(0, 160);
+      } else {
+        lastFailure = text.slice(0, 220);
+      }
+    } catch (err) {
+      lastError = String(err?.message || err).slice(0, 200);
+    }
   }
+  // Majority, so one unlucky sample neither fails a healthy case nor hides a
+  // broken one.
+  const pass = successes >= Math.ceil(repeat / 2);
+  results[c.id] = {
+    pass,
+    kind: c.kind,
+    runs: repeat,
+    successes,
+    sample: sample || lastFailure.slice(0, 160),
+    ...(lastError ? { error: lastError } : {}),
+  };
+  const rate = repeat > 1 ? ` (${successes}/${repeat})` : "";
+  console.log(
+    `${pass ? "PASS" : "FAIL"}  ${c.kind.padEnd(9)} ${c.id}${rate}` +
+    `${pass || !lastFailure ? "" : `\n      output: ${JSON.stringify(lastFailure)}`}` +
+    `${lastError ? `\n      error: ${lastError}` : ""}`,
+  );
 }
 fs.rmSync(work, { recursive: true, force: true });
 
@@ -209,6 +250,14 @@ for (const [id, value] of Object.entries(results)) {
   void id;
 }
 console.log(`\n${passCount}/${Object.keys(results).length} passed  (${Object.entries(byKind).map(([k, v]) => `${k} ${v.pass}/${v.total}`).join(", ")})`);
+if (repeat > 1) {
+  const unstable = Object.entries(results)
+    .filter(([, v]) => Number.isFinite(v.successes) && v.successes > 0 && v.successes < v.runs)
+    .map(([id, v]) => `${id} ${v.successes}/${v.runs}`);
+  if (unstable.length) {
+    console.log(`unstable (will flip a future run, tighten the prompt or the check): ${unstable.join(", ")}`);
+  }
+}
 if (outcome.missingBaseline) {
   console.error(`baseline missing: ${path.relative(repoRoot, baselinePath)} (run with --update-baseline after reviewing live results)`);
 }

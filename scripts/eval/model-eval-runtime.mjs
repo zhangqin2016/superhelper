@@ -54,11 +54,23 @@ export function buildEvalPlatformConfig({
     basePrompt = `${basePrompt}\n\n${guideText}`;
   }
   const liteGrade = runtimeEnv.LILY_MODEL_CAPABILITY_GRADE === "lite";
-  const config = buildSharedBaseConfig({
+  let config = buildSharedBaseConfig({
     lilyEnv: runtimeEnv,
     basePrompt,
     disallowedTools: liteGrade ? ["task"] : [],
   });
+  if (agentGuide) {
+    // Production leaves external_directory on "ask" because a human answers it,
+    // and reading a skill guide is exactly what the guide tells the model to do.
+    // Non-interactively "ask" becomes auto-reject, which killed the turn partway
+    // and made cases flap between a text answer and an empty one — the harness
+    // measuring itself. edit/write/bash stay gated, so an eval still cannot
+    // mutate anything.
+    const parsed = JSON.parse(config.configContent);
+    parsed.permission = { ...(parsed.permission || {}), external_directory: "allow" };
+    config = { ...config, configContent: JSON.stringify(parsed, null, 2) };
+  }
+
   return {
     ...config,
     runtimeEnv,
