@@ -880,15 +880,18 @@
 }
 
 .collaboration-composer {
+  /* WeChat-desktop shape: a flat input zone under a hairline divider, with a
+     row of actions flush at the bottom. No pill, no boxed input — the divider
+     is the only separation from the thread, and the toolbar sits inside the
+     same flat zone so it never reads as a detached strip. */
   margin: 0;
-  padding: 8px 10px 10px;
+  padding: 6px 12px 8px;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-surface);
   display: flex;
-  flex-wrap: wrap;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   box-shadow: none;
 }
 
@@ -940,19 +943,15 @@
 .collaboration-composer textarea {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 86%, transparent);
-  border-bottom: 0;
-  background: var(--bg-input);
+  border: 0;
+  background: transparent;
   color: var(--text-primary);
   font: inherit;
   font-size: var(--text-base);
   line-height: 20px;
   outline: none;
-  box-shadow: var(--top-highlight);
-}
-
-.collaboration-composer textarea:focus {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: none;
+  resize: none;
 }
 
 .collaboration-composer textarea:focus-visible {
@@ -970,16 +969,15 @@
   flex: 1;
 }
 
-#collaborationAttachButton,
-#collaborationSendButton {
+#collaborationAttachButton {
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
+  border: 0;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+  transition: color 120ms ease, background-color 120ms ease, transform 120ms ease;
 }
 
 #collaborationAttachButton:hover {
@@ -987,23 +985,26 @@
   color: var(--text-primary);
 }
 
+/* The send action: a quiet text button that fills with the brand colour once
+   there is something to send, muted while the box is empty. WeChat's "发送". */
 #collaborationSendButton {
+  border: 0;
   color: var(--accent-on);
-  border-radius: var(--radius-md);
   background: var(--collab-send-btn);
-  border-color: transparent;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 #collaborationSendButton:disabled {
   background: color-mix(in srgb, var(--bg-surface-hover) 82%, transparent);
   color: var(--muted);
-  opacity: .72;
   cursor: default;
 }
 
 #collaborationSendButton:hover:not(:disabled) {
-  transform: none;
-  box-shadow: none;
+  background: var(--accent-hover);
 }
 
 .collaboration-mentions {
@@ -2244,44 +2245,44 @@
    ========================================================================= */
 
 .collaboration-composer textarea {
-  /* basis 0, not auto: the base rule sets width:100%, which as a flex-basis
-     claimed the whole line and wrapped the buttons onto a second row. */
-  flex: 1 1 0;
-  inline-size: auto;
+  /* A roomy flat field, full width, growing with the text up to a cap. */
+  inline-size: 100%;
   min-inline-size: 0;
-  min-height: 36px;
-  max-height: 132px;
-  border-radius: var(--radius-xl);
-  padding: 8px 14px;
+  min-height: 52px;
+  max-height: 150px;
+  border-radius: 0;
+  padding: 6px 4px 2px;
 }
 
 .collaboration-composer-toolbar {
   flex: 0 0 auto;
   min-height: 0;
   margin: 0;
-  padding: 0;
+  padding-top: 2px;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  gap: 4px;
+  gap: 6px;
 }
 
-/* The spacer existed to push send to the far edge of a full-width toolbar row;
-   in a single-row dock the buttons are already at the trailing edge. */
+/* Base sets flex/min-width; here it just needs to stop being display:none so
+   it can push the send button to the trailing edge of the bottom row. */
 .collaboration-composer-spacer {
-  display: none;
+  display: block;
 }
 
-.collaboration-composer:focus-within textarea {
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+#collaborationAttachButton {
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--radius-md);
 }
 
-#collaborationAttachButton,
 #collaborationSendButton {
-  inline-size: 34px;
-  block-size: 34px;
-  border-radius: 50%;
+  inline-size: auto;
+  min-height: 30px;
+  padding: 5px 18px;
+  border-radius: var(--radius-md);
 }
 
 /* Unread rows: the badge alone is not enough — the name and the preview carry

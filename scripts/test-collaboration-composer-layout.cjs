@@ -27,21 +27,25 @@ app.whenReady().then(async () => {
   win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
   const result = await win.webContents.executeJavaScript(`(()=>{
     const composer=document.querySelector('.collaboration-composer'), textarea=document.getElementById('composer'), toolbar=document.querySelector('.collaboration-composer-toolbar');
-    const c=getComputedStyle(composer), t=getComputedStyle(textarea), tr=textarea.getBoundingClientRect(), br=toolbar.getBoundingClientRect();
-    return {display:c.display,direction:c.flexDirection,align:c.alignItems,outline:t.outlineStyle,shadow:t.boxShadow,
-      bottomAligned:Math.abs(tr.bottom-br.bottom)<8,
-      buttonsTrail:br.left>=tr.right-1,
-      inputTakesRow:tr.width>br.width*2,
-      dockHeight:Math.round(composer.getBoundingClientRect().height)<70};
+    const send=document.getElementById('collaborationSendButton');
+    const c=getComputedStyle(composer), t=getComputedStyle(textarea), tr=textarea.getBoundingClientRect(), br=toolbar.getBoundingClientRect(), sr=send.getBoundingClientRect();
+    return {display:c.display,direction:c.flexDirection,outline:t.outlineStyle,shadow:t.boxShadow,
+      inputBorder:t.borderTopWidth,
+      // The two zones stack: the input sits above the toolbar row.
+      inputAboveToolbar:tr.bottom<=br.top+1,
+      toolbarFullWidth:Math.abs(br.width-tr.width)<2,
+      // The send button trails on the bottom row and is a text button, not an icon square.
+      sendTrails:sr.right>=br.right-13 && sr.left>tr.left+tr.width*0.4,
+      sendIsText:sr.width>44};
   })()`);
-  // A single-row dock: input, then the action buttons on the trailing edge —
-  // the shape Telegram/WhatsApp/WeChat all ship. This replaces an earlier
-  // two-row contract (textarea above a full-width toolbar) that was pinned to
-  // stop the toolbar reading as detached; one row satisfies that intent better
-  // and stops a one-line message dock eating ~90px of the panel.
-  assert.deepEqual(result, { display: "flex", direction: "row", align: "flex-end", outline: "none", shadow: "none",
-    bottomAligned: true, buttonsTrail: true, inputTakesRow: true, dockHeight: true },
-    "collaboration composer must render as one row: input plus trailing actions, one focus ring, no detached toolbar");
+  // WeChat-desktop shape: a flat input zone above a bottom toolbar row, no pill,
+  // the send action a text button trailing on that row. This supersedes the
+  // earlier single-row dock; the toolbar no longer reads as detached because it
+  // is flush inside the same flat, border-top-only zone rather than a separate
+  // bordered strip — which was the whole reason the one-row shape was chosen.
+  assert.deepEqual(result, { display: "flex", direction: "column", outline: "none", shadow: "none",
+    inputBorder: "0px", inputAboveToolbar: true, toolbarFullWidth: true, sendTrails: true, sendIsText: true },
+    "collaboration composer must be the flat two-zone dock: borderless input above a full-width toolbar, send trailing as a text button");
   // ---- The input grows with the text, and the button tells the truth -----
   // Both were missing: the stylesheet has `max-height: 132px`, which only
   // makes sense for a box that grows, but nothing ever set the height — six
@@ -87,7 +91,7 @@ app.whenReady().then(async () => {
   assert.equal(grown.oneLine.disabled, false, "typing enables send");
   assert.ok(grown.many.height > grown.oneLine.height + 20,
     `the input grows with the text: ${grown.oneLine.height}px -> ${grown.many.height}px`);
-  assert.ok(grown.many.height <= 140, `growth is capped by the stylesheet, not unbounded: ${grown.many.height}px`);
+  assert.ok(grown.many.height <= 160, `growth is capped by the stylesheet (max-height 150px), not unbounded: ${grown.many.height}px`);
   assert.equal(grown.many.scrolls, true, "past the cap the input scrolls instead of growing");
   assert.equal(grown.cleared.height, grown.empty.height,
     `clearing shrinks the input back to one line: ${grown.cleared.height}px vs ${grown.empty.height}px`);
