@@ -35,11 +35,12 @@ export default async function OrgMembersPage({ params }) {
         <form action={provisionAccountsAction.bind(null, id)} className="space-y-3 rounded-lg border border-slate-200 bg-white p-6">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">生成企业专属账户</h2>
-            <p className="mt-1 text-xs text-slate-500">企业直接为员工创建账号，员工不需要手机号。每个账户附一次性初始密码，首次登录必须修改。账户归企业所有：移出企业即无法登录。</p>
+            <p className="mt-1 text-xs text-slate-500">企业直接为员工创建账号，员工不需要手机号。填前缀+数量按序号批量生成（如 MAX + 20 → max_0001 ～ max_0020，下一批自动接着编号；登录名统一小写）。每个账户附一次性初始密码，首次登录必须修改。账户归企业所有：移出企业即无法登录。</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <textarea name="loginNames" rows={2} placeholder="登录名，每行或逗号分隔（如 zhangsan, lisi）；留空则按数量自动生成" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-            <input name="count" type="number" min="1" max="100" placeholder="或数量" className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <input name="prefix" placeholder="前缀（如 MAX → max_0001…）" className="w-44 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <input name="count" type="number" min="1" max="100" placeholder="数量" className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <textarea name="loginNames" rows={1} placeholder="或直接列出登录名（逗号/换行分隔）" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
             <select name="role" defaultValue="member" className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <option value="member">成员</option>
               <option value="admin">管理员</option>

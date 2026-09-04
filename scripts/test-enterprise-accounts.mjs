@@ -62,6 +62,40 @@ for (const bad of ["ab", "-leading", "has space", "太长了".repeat(20), "emoji
   assert.match(generateLoginName(""), /^org-[a-z2-9]{6}$/, "no org name still yields a valid login name");
 }
 
+// ---------- sequential batches: MAX + 20 -> max_0001..max_0020 ----------
+const { normalizeLoginPrefix, sequentialLoginNames } = m;
+assert.equal(normalizeLoginPrefix(" MAX_ "), "max", "prefix is lowercased and a trailing separator is dropped — the sequence adds its own");
+for (const bad of ["-x", "has space", "😀", "", "a".repeat(21)]) {
+  assert.equal(normalizeLoginPrefix(bad), "", `${JSON.stringify(bad.slice(0, 10))} cannot head a login name`);
+}
+assert.deepEqual(
+  sequentialLoginNames("max", 3, []),
+  ["max_0001", "max_0002", "max_0003"],
+  "a first batch starts at 0001, four digits wide",
+);
+assert.deepEqual(
+  sequentialLoginNames("max", 3, [18, 19, 20]),
+  ["max_0021", "max_0022", "max_0023"],
+  "the next batch continues after the highest number already issued — it must not restart at 0001 and collide",
+);
+assert.deepEqual(
+  sequentialLoginNames("max", 3, [1, 2, 3, 7]),
+  ["max_0008", "max_0009", "max_0010"],
+  "a gap left by a hand-named account is not reused; the sequence resumes after the highest",
+);
+assert.deepEqual(
+  sequentialLoginNames("max", 3, [9998]),
+  ["max_09999", "max_10000", "max_10001"],
+  "width grows when the sequence crosses 9999 rather than truncating or colliding",
+);
+assert.equal(sequentialLoginNames("max", 0, []).length, 0, "zero requested yields nothing");
+assert.equal(sequentialLoginNames("max", 500, []).length, ENTERPRISE_ACCOUNT_LIMITS.MAX_BATCH, "a batch is capped, not unbounded");
+{
+  const names = sequentialLoginNames("max", 5, []);
+  assert.equal(new Set(names).size, names.length, "a batch never contains duplicates");
+  for (const n of names) assert.ok(normalizeLoginName(n), `${n} must itself be a valid login name`);
+}
+
 // ---------- the login decision ----------
 const now = 1_700_000_000_000;
 assert.deepEqual(
@@ -139,8 +173,17 @@ assert.match(auth, /const account = await requireAccountSession\(request, reply,
 assert.match(auth, /if \(!verifyPassword\(input\.currentPassword, user\.password_hash\)\)/, "changing a password requires the CURRENT one — a stolen session alone must not be enough to take over the account");
 assert.match(auth, /password_must_change: false/, "a successful change clears the forced-change flag");
 
+const routesForPattern = read("../server/src/routes/public/enterprise-accounts.js");
+assert.match(routesForPattern, /pattern: z\.object\(\{\s*prefix:/, "the API accepts a prefix pattern");
+assert.match(routesForPattern, /accounts or pattern required/, "but still requires one of the two");
+const serviceForPattern = read("../server/src/services/enterprise-accounts.js");
+assert.match(serviceForPattern, /const taken = await takenSequenceNumbers\(trx, \{ organizationId, prefix \}\)/, "numbering must be resolved server-side under the org lock, so two admins cannot both take 0001");
+assert.match(serviceForPattern, /where\("provisioned_organization_id", "=", organizationId\)/, "taken numbers are scoped to THIS organization — another company's max_0001 is not ours");
+
 const mutations = read("../server/src/services/enterprise-mutations.js");
 assert.match(mutations, /if \(request\?\.role === "owner"\) fail\("INVITE_ROLE_UNSUPPORTED", 400\)/, "an issued account can never be an owner");
+assert.match(mutations, /if \(pattern\?\.role === "owner"\) fail\("INVITE_ROLE_UNSUPPORTED", 400\)/, "nor can a sequential batch be owners");
+assert.match(mutations, /if \(pattern\) requireAllowed\(canChangeMemberRole\("member", pattern\.role \|\| "member", membership\.role\)\)/, "a batch's role is gated by what the issuer may assign");
 assert.match(mutations, /if \(organization\.status !== "active"\) fail\("ORG_DISABLED"\)/, "a disabled org cannot issue accounts");
 assert.match(mutations, /ownedAccountStatusAfterMembership\(/, "membership changes must consult the ownership rule");
 assert.match(mutations, /if \(ownedStatus\) await trx\.updateTable\("users"\)\.set\(\{ status: ownedStatus \}\)/, "and apply it to the login itself");

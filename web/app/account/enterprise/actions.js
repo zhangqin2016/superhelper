@@ -93,13 +93,19 @@ export async function revokeInvitationAction(organizationId, invitationId) {
  */
 export async function provisionAccountsAction(organizationId, formData) {
   const raw = String(formData.get("loginNames") || "").trim();
+  const prefix = String(formData.get("prefix") || "").trim();
   const count = Math.max(0, Math.min(100, Number(formData.get("count") || 0)));
   const role = String(formData.get("role") || "member").trim() === "admin" ? "admin" : "member";
   const named = raw.split(/[\n,，;；\s]+/).map((v) => v.trim()).filter(Boolean).map((loginName) => ({ loginName, role }));
-  const accounts = named.length ? named : Array.from({ length: count }, () => ({ role }));
-  if (!accounts.length) return { ok: false, message: "请填写登录名或数量" };
+  // Three ways to name a batch, most specific first: an explicit list; a
+  // prefix the server numbers (MAX -> max_0001..); or a count of random names.
+  let body;
+  if (named.length) body = { accounts: named };
+  else if (prefix && count) body = { pattern: { prefix, count, role } };
+  else if (count) body = { accounts: Array.from({ length: count }, () => ({ role })) };
+  else return { ok: false, message: "请填写登录名列表，或前缀+数量，或数量" };
   try {
-    const result = await userApiPost(`/api/enterprise/organizations/${organizationId}/accounts`, { accounts });
+    const result = await userApiPost(`/api/enterprise/organizations/${organizationId}/accounts`, body);
     revalidatePath(`/account/enterprise/${organizationId}/members`);
     const issued = Array.isArray(result?.accounts) ? result.accounts : [];
     const payload = Buffer.from(JSON.stringify(issued.map((a) => ({ l: a.loginName, p: a.initialPassword }))), "utf8").toString("base64url");

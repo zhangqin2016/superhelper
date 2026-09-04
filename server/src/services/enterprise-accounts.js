@@ -81,6 +81,58 @@ export function generateLoginName(prefix) {
   return `${base}-${tail}`;
 }
 
+// ---------------------------------------------------------------- sequential batches
+
+const PREFIX_RE = /^[a-z0-9][a-z0-9._-]{0,19}$/;
+const SEQUENCE_MIN_WIDTH = 4;
+
+/** Lowercased prefix, or "" when it cannot head a login name. */
+export function normalizeLoginPrefix(value) {
+  const prefix = String(value || "").trim().toLowerCase().replace(/[_-]+$/, "");
+  return PREFIX_RE.test(prefix) ? prefix : "";
+}
+
+/**
+ * `MAX` + 20 -> max_0001 .. max_0020, continuing from where the last batch
+ * stopped. Pure: the caller supplies the numbers already in use.
+ *
+ * Width is at least 4 digits and grows if the sequence needs it, so a batch
+ * never produces max_0999 followed by max_1000 with a different shape. Numbers
+ * already taken (someone named an account max_0007 by hand) are skipped rather
+ * than failed — a sequential fill should be robust, not brittle.
+ *
+ * @param {string} prefix       already normalised
+ * @param {number} count        1..MAX_BATCH
+ * @param {Iterable<number>} taken numbers already used under this prefix
+ */
+export function sequentialLoginNames(prefix, count, taken = []) {
+  const used = new Set([...taken].map(Number).filter((n) => Number.isInteger(n) && n > 0));
+  const start = used.size ? Math.max(...used) + 1 : 1;
+  const wanted = Math.max(0, Math.min(Number(count) || 0, MAX_BATCH));
+  const width = Math.max(SEQUENCE_MIN_WIDTH, String(start + wanted).length);
+  const names = [];
+  for (let n = start; names.length < wanted; n += 1) {
+    if (used.has(n)) continue;
+    names.push(`${prefix}_${String(n).padStart(width, "0")}`);
+  }
+  return names;
+}
+
+/** The sequence numbers already issued under a prefix in this organization. */
+export async function takenSequenceNumbers(trx, { organizationId, prefix }) {
+  const rows = await trx
+    .selectFrom("users")
+    .select("login_name")
+    .where("provisioned_organization_id", "=", organizationId)
+    .where("login_name", "like", `${prefix}\_%`)
+    .execute();
+  const re = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_(\\d+)$`);
+  return rows
+    .map((row) => re.exec(String(row.login_name || ""))?.[1])
+    .filter(Boolean)
+    .map(Number);
+}
+
 // ---------------------------------------------------------------- login decision
 
 const LOCK_AFTER_FAILURES = 5;
@@ -138,8 +190,23 @@ const MAX_BATCH = 100;
  *
  * @param {Array<{ loginName?: string, displayName?: string, role?: "admin"|"member" }>} requests
  */
-export async function provisionAccounts(trx, { organizationId, organizationName, requests, provisionedBy }) {
-  const list = Array.isArray(requests) ? requests.slice(0, MAX_BATCH) : [];
+export async function provisionAccounts(trx, { organizationId, organizationName, requests, pattern, provisionedBy }) {
+  let list = Array.isArray(requests) ? requests.slice(0, MAX_BATCH) : [];
+  // `MAX` + 20 -> max_0001..max_0020, continuing after the last batch. Resolved
+  // here, under the organization lock the caller already holds, so two admins
+  // issuing at once cannot both take max_0001.
+  if (pattern && pattern.prefix) {
+    const prefix = normalizeLoginPrefix(pattern.prefix);
+    if (!prefix) {
+      const error = new Error("INVALID_LOGIN_PREFIX");
+      error.code = "INVALID_LOGIN_PREFIX";
+      error.statusCode = 400;
+      throw error;
+    }
+    const taken = await takenSequenceNumbers(trx, { organizationId, prefix });
+    const role = pattern.role === "admin" ? "admin" : "member";
+    list = sequentialLoginNames(prefix, pattern.count, taken).map((loginName) => ({ loginName, role }));
+  }
   const issued = [];
   for (const request of list) {
     const role = request?.role === "admin" ? "admin" : "member";

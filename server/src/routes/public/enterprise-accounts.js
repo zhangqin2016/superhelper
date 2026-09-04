@@ -16,13 +16,21 @@ import { enterpriseMutationResponse, requireOrgRole } from "./enterprise-route-s
 
 const orgIdSchema = z.object({ id: z.string().min(3).max(120) });
 const accountParamsSchema = z.object({ id: z.string().min(3).max(120), userId: z.string().min(3).max(120) });
+// Either an explicit list, or a prefix + count that the server numbers
+// sequentially (MAX + 20 -> max_0001..max_0020, continuing after the last
+// batch). The server does the numbering so two admins cannot both take 0001.
 const provisionSchema = z.object({
   accounts: z.array(z.object({
     loginName: z.string().min(3).max(40).optional(),
     displayName: z.string().max(80).optional(),
     role: z.enum(["admin", "member"]).default("member"),
-  })).min(1).max(ENTERPRISE_ACCOUNT_LIMITS.MAX_BATCH),
-});
+  })).max(ENTERPRISE_ACCOUNT_LIMITS.MAX_BATCH).optional(),
+  pattern: z.object({
+    prefix: z.string().min(1).max(20),
+    count: z.number().int().min(1).max(ENTERPRISE_ACCOUNT_LIMITS.MAX_BATCH),
+    role: z.enum(["admin", "member"]).default("member"),
+  }).optional(),
+}).refine((value) => (value.accounts && value.accounts.length > 0) || value.pattern, { message: "accounts or pattern required" });
 
 export function registerPublicEnterpriseAccountRoutes(app) {
   const mutations = createEnterpriseMutationService(db);
@@ -67,7 +75,7 @@ export function registerPublicEnterpriseAccountRoutes(app) {
     {
       schema: {
         tags: ["public:enterprise"],
-        summary: "Issue dedicated accounts (initial passwords returned once)",
+        summary: "Issue dedicated accounts — explicit list or prefix+count sequence (initial passwords returned once)",
         params: orgIdSchema,
         body: zodBody(provisionSchema),
         response: { 200: okResponse({ accounts: { type: "array" } }) },

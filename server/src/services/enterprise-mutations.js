@@ -88,7 +88,10 @@ export function createEnterpriseMutationService(database) {
         const { trx, organizationId, organization, organizationMembers, membership } = context;
         if (organization.status !== "active") fail("ORG_DISABLED");
         const requests = Array.isArray(input?.accounts) ? input.accounts : [];
-        if (!requests.length) fail("ACCOUNTS_REQUIRED", 400);
+        const pattern = input?.pattern && input.pattern.prefix ? input.pattern : null;
+        if (!requests.length && !pattern) fail("ACCOUNTS_REQUIRED", 400);
+        if (pattern?.role === "owner") fail("INVITE_ROLE_UNSUPPORTED", 400);
+        if (pattern) requireAllowed(canChangeMemberRole("member", pattern.role || "member", membership.role));
         for (const request of requests) {
           // An admin may issue member or admin accounts, never owner — and only
           // roles they could assign by hand.
@@ -99,6 +102,7 @@ export function createEnterpriseMutationService(database) {
           organizationId,
           organizationName: organization.name,
           requests,
+          pattern,
           provisionedBy: options.account?.userId || null,
         });
         await notify(context, { directory: [...activeIds(organizationMembers), ...issued.map((row) => row.userId)] });

@@ -371,3 +371,9 @@ create index if not exists usage_events_org_idx on usage_events (organization_id
 
 **验证门**：`scripts/test-enterprise-accounts.mjs`。七个变异各自按名字失败：锁定期放行正确密码、固定盐、移出不锁账户、未知登录名独立错误码、改密不校验当前密码、reset 处明文存密码、允许签发 owner。
 其中第六个一开始漏过 —— 断言正则匹配任一写入点，另一处明文照样通过；已改为按次数断言两处。
+
+**按前缀顺序批量（同日增补）**：`POST accounts` 另接受 `pattern: {prefix, count, role}`。`MAX` + 20 → `max_0001 … max_0020`；
+编号在**服务端、组织锁内**解析（两个管理员同时签发不会都拿到 0001），**从该企业该前缀已发的最大号接着编**（下一批不会从 0001 重来撞号），
+手工占用的号跳过不复用，宽度至少 4 位、越过 9999 自动加宽。编号按 `provisioned_organization_id` 隔离，别家的 `max_0001` 不算我们的。
+登录名统一小写（登录亦按小写匹配），所以填 `MAX` 得到 `max_0001`。web 表单：前缀 + 数量为主，显式列表为辅。
+五个变异按名字失败：下一批从 0001 重来、编号不按企业隔离、宽度固定截断、批量无上限、序列批签发 owner。
