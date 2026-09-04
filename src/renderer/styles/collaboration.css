@@ -1741,6 +1741,13 @@
   background: var(--bg-surface);
 }
 
+/* Own messages lay out row-reverse, so the checkbox pseudo-element would sit on
+   the RIGHT. A higher order in a reversed row puts it back on the leading edge,
+   so both directions carry it on the same side, as WeChat does. */
+.collaboration-message.is-outgoing.is-selectable::before {
+  order: 1;
+}
+
 .collaboration-message.is-selected::before {
   border-color: var(--accent);
   background: var(--accent);

@@ -14,8 +14,11 @@ export function createMessageMultiSelect({ container = null, onForward = () => {
   const bar = document.createElement("div");
   bar.className = "collaboration-select-bar";
   bar.hidden = true;
+  bar.setAttribute("role", "toolbar");
   const count = document.createElement("span");
   count.className = "collaboration-select-count";
+  count.setAttribute("role", "status");
+  count.setAttribute("aria-live", "polite");
   const forward = button("forward-selected", "collaboration.forward", () => {
     const ids = [...chosen];
     if (ids.length) onForward(ids);
@@ -26,7 +29,11 @@ export function createMessageMultiSelect({ container = null, onForward = () => {
   }, true);
   const cancel = button("cancel-select", "collaboration.forwardCancel", () => api.exit());
   bar.append(count, forward, remove, cancel);
-  container?.append?.(bar);
+  // Above the composer: appended to the end it landed BELOW the input and was
+  // clipped, which made the whole batch mode unusable.
+  const composer = container?.querySelector?.(".collaboration-composer");
+  if (composer && container?.insertBefore) container.insertBefore(bar, composer);
+  else container?.append?.(bar);
 
   function button(action, key, onClick, danger = false) {
     const node = document.createElement("button");
