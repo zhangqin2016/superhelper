@@ -26,7 +26,7 @@ const u = (p) => require("url").pathToFileURL(path.join(ROOT, p)).href;
   assert.match(surfaces, /setKind\(kind\) \{ if \(infoButton\) infoButton\.hidden = !kind \|\| kind === "direct"; \}/,
     "the group-info header button is shown only for a group/channel");
   const center = fs.readFileSync(path.join(ROOT, "src/renderer/modules/collaboration-center.js"), "utf8");
-  assert.match(center, /onInfo: \(\) => \{ if \(activeConversationId\) void teams\.showConversation\(activeConversationId\); \}/,
+  assert.match(center, /onInfo: \(\) => \{[^}]*void teams\.showConversation\(activeConversationId\);/,
     "the header info button opens the active conversation's roster");
 }
 
@@ -39,6 +39,7 @@ app.whenReady().then(async () => {
     const teamsMod = await import(${JSON.stringify(u("src/renderer/modules/collaboration-teams.js"))});
     const calls = [];
     const details = (selfRole) => ({ ok: true, conversation: { id: 'c1', scopeId: 'personal', kind: 'group', title: 'G' }, visibility: 'private', canManage: selfRole !== 'member',
+      self: { userId: 'me', role: selfRole },
       members: [{ userId: 'me', role: selfRole, displayName: '我', lilyId: 'me' }, { userId: 'k', role: 'member', displayName: 'K', lilyId: 'k' }] });
     const run = async (selfRole) => {
       calls.length = 0;

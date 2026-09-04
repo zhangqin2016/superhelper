@@ -181,13 +181,14 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       }
     } else surface.append(socialNode("p", t(result.visibility === "public" ? "collaboration.social.publicMembership" : "collaboration.social.readOnlyMembers")));
     // WeChat-style bottom action: the owner dissolves the group, everyone else
-    // leaves it. Direct chats and public channels have neither.
-    const me = result.members.find((m) => m.userId === directory.profile?.userId);
-    if (me && conversation.kind !== "direct" && result.visibility !== "public") {
+    // leaves it. `result.self` is authoritative (it always includes my role),
+    // so this does not depend on the Teams tab having loaded my profile.
+    const self = result.self;
+    if (self && conversation.kind !== "direct" && result.visibility !== "public") {
       const danger = socialNode("div", "", "collaboration-member-danger");
-      danger.append(me.role === "owner"
+      danger.append(self.role === "owner"
         ? socialButton("dissolve-group", "dissolveGroup", () => dissolveGroup(conversation))
-        : socialButton("leave-group", "leaveGroup", () => leaveGroup(conversation, me.userId)));
+        : socialButton("leave-group", "leaveGroup", () => leaveGroup(conversation, self.userId)));
       surface.append(danger);
     }
   }

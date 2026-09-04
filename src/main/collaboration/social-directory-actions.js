@@ -29,6 +29,9 @@ async function getConversationDetails({ store, client, deviceId, conversationId,
     return { ok: true, conversation: { id: normalized.id, scopeId: normalized.scopeId, kind: normalized.kind, title: normalized.title }, visibility, mentionCandidates: normalized.mentionCandidates,
       // UI affordance only. Every mutation is separately server-authorized.
       canManage: normalized.kind !== "direct" && visibility !== "public" && ["owner", "admin"].includes(normalized.self?.role),
+      // My own membership, so the roster can offer leave (member/admin) or
+      // dissolve (owner) without guessing my id from a possibly-stale directory.
+      self: normalized.self ? { userId: normalized.self.userId, role: normalized.self.role } : null,
       members: normalized.members.map((m) => ({ userId: m.userId, role: m.role,
         displayName: normalized.profiles.find((p) => p.userId === m.userId)?.displayName || "", lilyId: normalized.profiles.find((p) => p.userId === m.userId)?.lilyId || "" })),
     };

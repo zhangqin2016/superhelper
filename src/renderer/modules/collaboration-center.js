@@ -405,7 +405,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   // Header-icon controls: search (toggle, not a persistent bar) and group info.
   const conversationHeaderControl = wireConversationHeader({ input: conversationSearch, toggle: byId("collaborationConversationSearchToggle"), infoButton: byId("collaborationConversationInfo"),
     onChange: (value) => { searchQuery = value; renderTimeline(); },
-    onInfo: () => { if (activeConversationId) void teams.showConversation(activeConversationId); } });
+    onInfo: () => { if (!activeConversationId) return; if (lastSocial) teams.update(lastSocial); void teams.showConversation(activeConversationId); } });
 
   // Scroll-to-latest: a thread scrolled away from the bottom must offer a way
   // back, and must say how many messages arrived while you were reading up.
