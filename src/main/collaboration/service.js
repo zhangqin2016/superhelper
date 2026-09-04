@@ -88,7 +88,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         assertActive();
         candidateCache.clear();
         try { return engine.applyPage(page); } finally {
-          if (page.events?.some((event) => ["scope.revoked", "member.removed", "member.left"].includes(event.type)) && store.getSyncState().cursor >= page.toCursor) emitState("access-revoked");
+          if (page.events?.some((event) => ["scope.revoked", "member.removed", "member.left", "conversation.dissolved"].includes(event.type)) && store.getSyncState().cursor >= page.toCursor) emitState("access-revoked");
         }
       },
       applyBootstrap(snapshot) {

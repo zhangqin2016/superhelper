@@ -14,6 +14,7 @@ export const conversationCommandBody = z.union([
   z.object({ ...create, scopeType: z.literal("organization"), organizationId: id, kind: z.literal("channel"), visibility: z.literal("private"), memberUserIds: z.array(id).max(500).optional() }).strict(),
   z.object({ ...command, action: z.literal("member"), conversationId: id, targetUserId: id, operation: z.enum(["add", "remove"]) }).strict(),
   z.object({ ...command, action: z.literal("member"), conversationId: id, targetUserId: id, operation: z.literal("role"), role: z.enum(["admin", "member"]) }).strict(),
+  z.object({ ...command, action: z.literal("dissolve"), conversationId: id }).strict(),
 ]);
 export const conversationGetBody = z.object({ deviceId: id.max(120), conversationId: id }).strict();
 
@@ -23,7 +24,9 @@ export function registerCollaborationConversationRoutes({ post, accountFor, data
     const input = conversationCommandBody.parse(request.body);
     const account = await accountFor(request, reply, input, database); if (!account) return;
     const { deviceId, action, ...commandInput } = input;
-    const result = action === "create" ? await conversationService.createConversation({ account, ...commandInput }) : await conversationService.mutateMember({ account, ...commandInput });
+    const result = action === "create" ? await conversationService.createConversation({ account, ...commandInput })
+      : action === "dissolve" ? await conversationService.dissolveConversation({ account, ...commandInput })
+      : await conversationService.mutateMember({ account, ...commandInput });
     return reply.send({ ok: true, requestId: account.requestId, result });
   });
   post("/api/collaboration/v1/conversations/get", conversationGetBody, async (request, reply) => {

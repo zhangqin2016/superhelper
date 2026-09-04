@@ -1561,6 +1561,42 @@
   overflow: hidden;
 }
 
+/* Group leave / dissolve: a bottom action set apart from the member rows, the
+   way WeChat puts "退出/解散" below the roster. Dissolve is destructive, so it
+   carries the danger colour; leaving is quiet. */
+.collaboration-member-danger {
+  margin-block-start: 12px;
+  padding-block-start: 10px;
+  border-block-start: 1px solid var(--border-light);
+  display: flex;
+}
+
+.collaboration-member-danger button {
+  flex: 1;
+  min-height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.collaboration-member-danger button:hover {
+  background: color-mix(in srgb, var(--bg-surface-hover) 82%, transparent);
+}
+
+.collaboration-member-danger button[data-action="dissolve-group"] {
+  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--danger-text) 30%, transparent);
+}
+
+.collaboration-member-danger button[data-action="dissolve-group"]:hover {
+  background: color-mix(in srgb, var(--danger-text) 10%, transparent);
+}
+
 /* Sticky letter headings: the reason a long address book stays navigable. */
 .collaboration-section-letter {
   position: sticky;

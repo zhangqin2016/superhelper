@@ -22,6 +22,14 @@ assert.equal(authorizeConversationMemberMutation(memberChange({ targetMembership
 assert.equal(authorizeConversationMemberMutation(memberChange({ operation: "role", role: "owner" })).ok, false, "owner transfer is not silently implemented as promotion");
 assert.equal(authorizeConversationMemberMutation(memberChange({ conversation: { scopeType: "personal", kind: "direct" } })).ok, false);
 assert.equal(authorizeConversationMemberMutation(memberChange({ operation: "add", activeMemberCount: 200, targetMembership: null })).ok, false);
+// Leaving: a member may always remove THEMSELVES without invite rights; an
+// owner may not silently leave (must transfer or dissolve).
+const selfLeave = (overrides = {}) => memberChange({ actorUserId: "b", targetUserId: "b", authorization: { conversationMembership: { user_id: "b", role: "member", status: "active" } }, targetMembership: { user_id: "b", role: "member", status: "active" }, ...overrides });
+assert.equal(authorizeConversationMemberMutation(selfLeave()).ok, true, "a plain member can leave (remove self) without invite rights");
+assert.equal(authorizeConversationMemberMutation(selfLeave({ targetMembership: { user_id: "b", role: "owner", status: "active" } })).ok, false, "an owner cannot silently leave");
+assert.equal(authorizeConversationMemberMutation(selfLeave({ targetMembership: { user_id: "b", role: "owner", status: "active" } })).code, "COLLAB_OWNER_MUST_TRANSFER", "owner leave is rejected with a transfer-required code");
+assert.equal(authorizeConversationMemberMutation(memberChange({ actorUserId: "c", targetUserId: "b", authorization: { conversationMembership: { user_id: "c", role: "member", status: "active" } } })).ok, false, "a plain member still cannot remove someone else without invite rights");
+
 assert.equal(authorizeConversationMemberMutation(memberChange({ operation: "add", targetUserId: "b", targetMembership: { user_id: "b", status: "active", role: "owner" } })).ok, true, "repeat add is a no-op, never resets existing role");
 assert.equal(authorizeTeamMemberRevocation({ actorUserId: "a", targetUserId: "b", organization: { status: "active" }, organizationMembers: [{ ...actor, role: "admin" }, { user_id: "b", status: "active", role: "owner" }] }).ok, false);
 assert.equal(authorizeTeamMemberRevocation({ actorUserId: "a", targetUserId: "b", organization: { status: "active" }, organizationMembers: [{ ...actor, role: "owner" }, { user_id: "b", status: "active", role: "member" }] }).ok, true);

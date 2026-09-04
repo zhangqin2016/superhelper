@@ -28,10 +28,17 @@ export function authorizeConversationCreation({ actorUserId, scopeType, kind, vi
 }
 
 export function authorizeConversationMemberMutation(context = {}) {
-  const { conversation, operation, role, targetMembership, targetOrganizationMembership, activeMemberCount = 0 } = context;
+  const { conversation, operation, role, targetMembership, targetOrganizationMembership, activeMemberCount = 0, actorUserId, targetUserId } = context;
   if (!["add", "remove", "role"].includes(operation)) return denied("COLLAB_MEMBER_OPERATION_INVALID");
   if (conversation?.kind === "direct" || conversation?.visibility === "public") return denied("COLLAB_ACTION_NOT_AVAILABLE");
   if (conversation?.status && conversation.status !== "active") return denied("COLLAB_CONVERSATION_UNAVAILABLE");
+  // A member may always leave (remove themselves) — no invite right needed. An
+  // owner cannot silently leave; they must transfer ownership or dissolve.
+  if (operation === "remove" && actorUserId && targetUserId && actorUserId === targetUserId) {
+    if (!active(targetMembership)) return allowed();
+    if (targetMembership.role === "owner") return denied("COLLAB_OWNER_MUST_TRANSFER");
+    return allowed();
+  }
   const permission = authorizeCollaborationAction(context, "invite");
   if (!permission.ok) return permission;
   if (operation === "add") {

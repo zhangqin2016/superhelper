@@ -6,7 +6,7 @@ const command = { deviceId: "device", clientCommandId: "command" };
 const group = { ...command, action: "create", scopeType: "personal", kind: "group", title: "Group", memberUserIds: ["peer"] };
 const channel = { ...command, action: "create", scopeType: "organization", organizationId: "org", kind: "channel", visibility: "private", memberUserIds: ["peer"] };
 const member = { ...command, action: "member", conversationId: "conversation", targetUserId: "peer", operation: "add" };
-for (const input of [group, channel, { ...channel, visibility: "public", memberUserIds: [] }, { ...command, action: "create", scopeType: "organization", organizationId: "org", kind: "direct", memberUserIds: ["peer"] }, member, { ...member, operation: "remove" }, { ...member, operation: "role", role: "admin" }, { ...member, operation: "role", role: "member" }]) {
+for (const input of [group, channel, { ...channel, visibility: "public", memberUserIds: [] }, { ...command, action: "create", scopeType: "organization", organizationId: "org", kind: "direct", memberUserIds: ["peer"] }, member, { ...member, operation: "remove" }, { ...member, operation: "role", role: "admin" }, { ...member, operation: "role", role: "member" }, { ...command, action: "dissolve", conversationId: "conversation" }]) {
   assert.deepEqual(conversationCommandBody.parse(input), input);
 }
 for (const input of [
@@ -16,6 +16,7 @@ for (const input of [
   { ...channel, memberUserIds: Array(501).fill("peer") }, { ...channel, visibility: "public", memberUserIds: ["peer"] },
   { ...member, operation: "role" }, { ...member, operation: "role", role: "owner" }, { ...member, role: "admin" },
   { ...member, operation: "transfer" }, { ...member, targetUserId: "" }, { ...group, deviceId: "x".repeat(121) },
+  { ...command, action: "dissolve" }, { ...command, action: "dissolve", conversationId: "c", targetUserId: "x" }, { ...command, action: "dissolve", conversationId: "" },
   { ...group, clientCommandId: "x".repeat(201) }, { ...group, memberUserIds: ["unsafe\nidentifier"] },
 ]) assert.equal(conversationCommandBody.safeParse(input).success, false, JSON.stringify(input));
 assert.equal(conversationGetBody.safeParse({ deviceId: "device", conversationId: "private", role: "owner" }).success, false);

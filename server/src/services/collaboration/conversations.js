@@ -67,14 +67,17 @@ export function createCollaborationConversationService({ repository, createId = 
           const context = await repository.lockConversationContext(trx, { actorUserId: actor.userId, conversationId: input.conversationId });
           if (context.decision) return context.decision;
           const targetMembership = context.members.find((row) => row.user_id === input.targetUserId);
-          const permission = authorizeConversationMemberMutation({ ...context, ...input, targetMembership, targetOrganizationMembership: context.organizationMembers?.find((row) => row.user_id === input.targetUserId), activeMemberCount: context.members.filter((row) => row.status === "active").length });
+          const permission = authorizeConversationMemberMutation({ ...context, ...input, actorUserId: actor.userId, targetMembership, targetOrganizationMembership: context.organizationMembers?.find((row) => row.user_id === input.targetUserId), activeMemberCount: context.members.filter((row) => row.status === "active").length });
           if (!permission.ok) return permission;
           if (operation === "add" && (await repository.findUsers(trx, [input.targetUserId])).length !== 1) return denied("COLLAB_TARGET_UNAVAILABLE");
           return { ...permission, context, targetMembership };
         },
         project: async ({ trx, authorization }) => {
           const current = authorization.targetMembership;
-          const response = { conversationId: input.conversationId, userId: input.targetUserId, status: operation === "remove" ? "removed" : "active" };
+          // Self-removal is a "leave": a distinct event/status so the member's
+          // own devices drop the channel and others see them leave, not kicked.
+          const selfLeave = operation === "remove" && input.targetUserId === id(account?.userId);
+          const response = { conversationId: input.conversationId, userId: input.targetUserId, status: operation === "remove" ? (selfLeave ? "left" : "removed") : "active" };
           const noop = operation === "add" && current?.status === "active" || operation === "remove" && current?.status !== "active" || operation === "role" && current?.role === role;
           if (noop) return { noEvent: true, event: {}, response, project: async () => {} };
           const recipients = await repository.activeConversationMemberIds(trx, input.conversationId);
@@ -82,11 +85,41 @@ export function createCollaborationConversationService({ repository, createId = 
           // this is not scope.revoked, which would remove all Team content.
           const recipientUserIds = uniqueSorted([...recipients, input.targetUserId]);
           const eventId = id(createId("evt")); response.eventId = eventId;
-          const type = { add: "member.joined", remove: "member.removed", role: "member.role_changed" }[operation];
+          const type = operation === "remove" ? (selfLeave ? "member.left" : "member.removed") : { add: "member.joined", role: "member.role_changed" }[operation];
           return { event: { id: eventId, conversationId: input.conversationId, type, payload: { userId: input.targetUserId, role: operation === "role" ? role : operation === "add" ? "member" : current?.role || "member" } }, recipientUserIds, response,
             project: async ({ trx: projectionTrx, event }) => {
               if (operation === "add") await repository.addMember(projectionTrx, { conversationId: input.conversationId, userId: input.targetUserId, joinedSeq: event.seq });
-              else await repository.changeMember(projectionTrx, { conversationId: input.conversationId, userId: input.targetUserId, operation, role });
+              else await repository.changeMember(projectionTrx, { conversationId: input.conversationId, userId: input.targetUserId, operation, role, status: selfLeave ? "left" : "removed" });
+            },
+          };
+        },
+      });
+    },
+    async dissolveConversation({ account, clientCommandId, conversationId } = {}) {
+      const input = { conversationId: id(conversationId) };
+      return runCollaborationCommand({ account, clientCommandId, input, commandType: "conversation.dissolve", database: repository.database,
+        authorize: async ({ trx, account: actor }) => {
+          const device = await repository.lockDevice(trx, actor);
+          if (!device.ok) return device;
+          const context = await repository.lockConversationContext(trx, { actorUserId: actor.userId, conversationId: input.conversationId });
+          if (context.decision) return context.decision;
+          // Only a personal group / private channel can be dissolved, and only
+          // by its owner. Direct chats and public channels have no owner to act.
+          if (context.conversation?.kind === "direct" || context.conversation?.visibility === "public") return denied("COLLAB_ACTION_NOT_AVAILABLE");
+          const membership = context.members.find((row) => row.user_id === actor.userId);
+          if (!membership || membership.status !== "active" || membership.role !== "owner") return denied("COLLAB_NOT_OWNER");
+          return { ok: true, context };
+        },
+        project: async ({ trx }) => {
+          // Recipients captured while still active, so every member's devices
+          // receive the dissolve and drop the channel.
+          const recipientUserIds = uniqueSorted(await repository.activeConversationMemberIds(trx, input.conversationId));
+          const eventId = id(createId("evt"));
+          const response = { conversationId: input.conversationId, status: "dissolved", eventId };
+          return { event: { id: eventId, conversationId: input.conversationId, type: "conversation.dissolved", payload: { conversationId: input.conversationId } }, recipientUserIds, response,
+            project: async ({ trx: projectionTrx }) => {
+              await repository.removeAllMembers(projectionTrx, input.conversationId);
+              await repository.archiveConversation(projectionTrx, input.conversationId);
             },
           };
         },

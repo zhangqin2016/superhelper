@@ -59,9 +59,8 @@ export function createDetachControl({ button, api = () => window.assistantClient
 /** In-conversation search, WeChat-style: hidden behind a header icon rather
  *  than a persistent full-width bar. Returns `{ reset }` to close it on leave.
  *  `onChange` receives the current query (empty string when cleared/closed). */
-export function wireConversationSearch({ input, toggle, onChange } = {}) {
-  if (!input) return { reset() {} };
-  input.addEventListener("input", () => onChange(input.value || ""));
+export function wireConversationHeader({ input, toggle, infoButton, onChange, onInfo } = {}) {
+  input?.addEventListener("input", () => onChange(input.value || ""));
   toggle?.addEventListener("click", () => {
     const show = input.hidden;
     input.hidden = !show;
@@ -69,7 +68,10 @@ export function wireConversationSearch({ input, toggle, onChange } = {}) {
     if (show) input.focus?.();
     else { input.value = ""; onChange(""); }
   });
+  infoButton?.addEventListener("click", () => onInfo?.());
   return {
-    reset() { input.hidden = true; input.value = ""; toggle?.setAttribute("aria-expanded", "false"); },
+    // Group info is only meaningful for a group or channel, never a 1:1.
+    setKind(kind) { if (infoButton) infoButton.hidden = !kind || kind === "direct"; },
+    reset() { if (input) { input.hidden = true; input.value = ""; } toggle?.setAttribute("aria-expanded", "false"); if (infoButton) infoButton.hidden = true; },
   };
 }

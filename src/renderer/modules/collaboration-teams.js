@@ -121,6 +121,17 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     if (generation !== ui.current()) return;
     await ui.run(() => api.conversation({ action: "member", conversationId: conversation.id, targetUserId: target.userId, operation, ...(role ? { role } : {}) }), (_result, origin) => { if (origin.isCurrentNavigation()) return controller.showConversation(conversation.id); });
   }
+  // Leaving removes yourself; dissolving (owner only) removes the group for
+  // everyone. Both drop the conversation locally once projected, so the detail
+  // surface closes and the lists reload rather than showing a dead roster.
+  async function leaveGroup(conversation, selfUserId) {
+    if (!await ui.confirm("confirmLeaveGroup", conversation.title || conversation.id)) return;
+    await ui.run(() => api.conversation({ action: "member", conversationId: conversation.id, targetUserId: selfUserId, operation: "remove" }), (_result, origin) => { if (origin.isCurrentNavigation()) closeDetailSurface(); });
+  }
+  async function dissolveGroup(conversation) {
+    if (!await ui.confirm("confirmDissolveGroup", conversation.title || conversation.id)) return;
+    await ui.run(() => api.conversation({ action: "dissolve", conversationId: conversation.id }), (_result, origin) => { if (origin.isCurrentNavigation()) closeDetailSurface(); });
+  }
   function renderDetails(result) {
     const conversation = result.conversation;
     // The detail view's own header names it; an <h3> here was a third title
@@ -169,6 +180,16 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         surface.append(form);
       }
     } else surface.append(socialNode("p", t(result.visibility === "public" ? "collaboration.social.publicMembership" : "collaboration.social.readOnlyMembers")));
+    // WeChat-style bottom action: the owner dissolves the group, everyone else
+    // leaves it. Direct chats and public channels have neither.
+    const me = result.members.find((m) => m.userId === directory.profile?.userId);
+    if (me && conversation.kind !== "direct" && result.visibility !== "public") {
+      const danger = socialNode("div", "", "collaboration-member-danger");
+      danger.append(me.role === "owner"
+        ? socialButton("dissolve-group", "dissolveGroup", () => dissolveGroup(conversation))
+        : socialButton("leave-group", "leaveGroup", () => leaveGroup(conversation, me.userId)));
+      surface.append(danger);
+    }
   }
   const controller = {
     update({ directory: nextDirectory, conversations: nextConversations = [], commands = [] } = {}) {

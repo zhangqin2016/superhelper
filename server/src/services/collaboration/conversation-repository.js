@@ -86,9 +86,15 @@ export function createKyselyConversationRepository(database) {
       await trx.insertInto("conversation_members").values({ conversation_id: conversationId, user_id: userId, role, status: "active", joined_seq: joinedSeq })
         .onConflict((conflict) => conflict.columns(["conversation_id", "user_id"]).doUpdateSet({ status: "active", role, joined_seq: joinedSeq, joined_at: sql`now()`, left_at: null })).execute();
     },
-    async changeMember(trx, { conversationId, userId, operation, role }) {
-      const patch = operation === "remove" ? { status: "removed", left_at: sql`now()` } : { role };
+    async changeMember(trx, { conversationId, userId, operation, role, status }) {
+      const patch = operation === "remove" ? { status: status || "removed", left_at: sql`now()` } : { role };
       await trx.updateTable("conversation_members").set(patch).where("conversation_id", "=", conversationId).where("user_id", "=", userId).execute();
+    },
+    async archiveConversation(trx, conversationId) {
+      await trx.updateTable("conversations").set({ status: "archived" }).where("id", "=", conversationId).execute();
+    },
+    async removeAllMembers(trx, conversationId) {
+      await trx.updateTable("conversation_members").set({ status: "removed", left_at: sql`now()` }).where("conversation_id", "=", conversationId).where("status", "=", "active").execute();
     },
     async disableTeamMember(trx, organizationId, userId) {
       await trx.updateTable("organization_members").set({ status: "disabled" }).where("organization_id", "=", organizationId).where("user_id", "=", userId).execute();

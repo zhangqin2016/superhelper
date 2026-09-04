@@ -26,6 +26,10 @@ function normalizeSocialCommand(kind, value) {
     if (!only(value, keys) || !id(value.conversationId) || !id(value.targetUserId) || !["add", "remove", "role"].includes(value.operation) || value.operation === "role" && !["admin", "member"].includes(value.role)) return null;
     return { action, ...identity, conversationId: value.conversationId, targetUserId: value.targetUserId, operation: value.operation, ...(value.operation === "role" ? { role: value.role } : {}) };
   }
+  if (action === "dissolve") {
+    if (!only(value, ["action", "clientCommandId", "conversationId"]) || !id(value.conversationId)) return null;
+    return { action, ...identity, conversationId: value.conversationId };
+  }
   const personal = value.scopeType === "personal" && value.kind === "group";
   const team = value.scopeType === "organization" && id(value.organizationId);
   const channel = team && value.kind === "channel" && ["public", "private"].includes(value.visibility);

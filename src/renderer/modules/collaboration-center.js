@@ -7,7 +7,7 @@ import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
-import { createDetailSurface, createDetachControl, wireConversationSearch } from "./collaboration-panel-surfaces.js";
+import { createDetailSurface, createDetachControl, wireConversationHeader } from "./collaboration-panel-surfaces.js";
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
@@ -47,7 +47,6 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const closeDetail = detail.close;
   const inboxSearch = byId("collaborationInboxSearch");
   const conversationSearch = byId("collaborationConversationSearch");
-  const conversationSearchToggle = byId("collaborationConversationSearchToggle");
   const timeline = byId("collaborationTimeline");
   const empty = byId("collaborationConversationEmpty");
   const olderButton = byId("collaborationLoadOlder");
@@ -265,6 +264,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     activeConversationId = conversationId;
     setActiveConversation(byId("collaborationInbox"), conversationId);
     activeConversationKind = String(opened.conversation?.kind || "");
+    conversationHeaderControl.setKind(activeConversationKind);
     activePeerReadSeq = Number(opened.conversation?.peerReadSeq) || 0;
     if (userNavigation !== false) {
       const lastRead = Number(opened.conversation?.lastReadSeq) || 0;
@@ -389,7 +389,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!panelShell) setActive(true);
     queueMicrotask(() => { composer.setActive?.(!panel.hidden && policyEnabled && !navigating); if (!panel.hidden) void load(); });
   };
-  const backClick = () => { conversationSearchControl?.reset(); searchQuery = ""; panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
+  const backClick = () => { conversationHeaderControl?.reset(); searchQuery = ""; panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
   nav.addEventListener("click", navClick);
   back?.addEventListener("click", backClick);
   const searchInput = () => {
@@ -402,9 +402,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       currentUserId: directory?.profile?.userId || "" });
   };
   inboxSearch?.addEventListener("input", searchInput);
-  // Header-icon toggle, not a persistent bar (see wireConversationSearch).
-  const conversationSearchControl = wireConversationSearch({ input: conversationSearch, toggle: conversationSearchToggle,
-    onChange: (value) => { searchQuery = value; renderTimeline(); } });
+  // Header-icon controls: search (toggle, not a persistent bar) and group info.
+  const conversationHeaderControl = wireConversationHeader({ input: conversationSearch, toggle: byId("collaborationConversationSearchToggle"), infoButton: byId("collaborationConversationInfo"),
+    onChange: (value) => { searchQuery = value; renderTimeline(); },
+    onInfo: () => { if (activeConversationId) void teams.showConversation(activeConversationId); } });
 
   // Scroll-to-latest: a thread scrolled away from the bottom must offer a way
   // back, and must say how many messages arrived while you were reading up.

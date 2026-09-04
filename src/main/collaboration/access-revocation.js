@@ -69,6 +69,12 @@ function projectAccessRevocation(store, event) {
     const id = event.conversationId ?? event.conversation_id;
     if (!validId(id)) throw revoked();
     removeConversationRows(store, id, store.getConversation({ conversationId: id })?.scopeId);
+  } else if (event.type === "conversation.dissolved") {
+    // The owner dissolved the group: every member drops it, so there is no
+    // per-user guard here (unlike a member being removed).
+    const id = event.conversationId ?? event.conversation_id;
+    if (!validId(id)) throw revoked();
+    removeConversationRows(store, id, store.getConversation({ conversationId: id })?.scopeId);
   }
 }
 

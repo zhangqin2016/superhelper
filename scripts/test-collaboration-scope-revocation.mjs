@@ -163,5 +163,27 @@ try {
     assert.ok(notifications.includes("access-revoked"), `${entry} must notify committed cache removal despite key failure`);
     service.stop();
   }
+  {
+    // Dissolve: the owner's dissolve drops the conversation for EVERY member,
+    // so there is no per-user guard — a conversation.dissolved event removes it
+    // regardless of whose id the payload carries.
+    const { store, engine } = fixture();
+    assert.ok(store.getConversation({ conversationId: "p" }), "precondition: p is cached");
+    engine.applyPage(page([{ id: "dis", cursor: 1, type: "conversation.dissolved", conversationId: "p", payload: { conversationId: "p" } }]));
+    assert.equal(store.getConversation({ conversationId: "p" }), null, "a dissolve drops the conversation for every member");
+    assert.equal(store.countMessages({ conversationId: "p" }), 0, "and its cached messages");
+    store.close();
+  }
+  {
+    // Leaving: my own member.left drops my copy; someone else leaving does not.
+    const mine = fixture();
+    mine.engine.applyPage(page([{ id: "lv", cursor: 1, type: "member.left", conversationId: "p", payload: { userId: "alice" } }]));
+    assert.equal(mine.store.getConversation({ conversationId: "p" }), null, "leaving a group drops the leaver's own copy");
+    mine.store.close();
+    const other = fixture();
+    other.engine.applyPage(page([{ id: "lv2", cursor: 1, type: "member.left", conversationId: "p", payload: { userId: "bob" } }]));
+    assert.ok(other.store.getConversation({ conversationId: "p" }), "another member leaving does not drop my copy");
+    other.store.close();
+  }
   console.log("collaboration scope revocation: cache isolation, transactional key cleanup, restart and checkpoint recovery passed");
 } finally { fs.rmSync(dir, { recursive: true, force: true }); }

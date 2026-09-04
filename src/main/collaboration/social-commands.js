@@ -8,7 +8,8 @@ const permanent = (code) => /^(COLLAB_(?:FRIEND_TARGET_UNAVAILABLE|TARGET_UNAVAI
 function completeReceipt(row, result) {
   if (!result || result.ok === false || result.responseCode != null && result.responseCode !== "OK") return false;
   if (row.kind === "conversation") return socialIdentifier(result.conversationId) && (row.input.action === "create"
-    || result.conversationId === row.input.conversationId && result.userId === row.input.targetUserId && ["active", "removed"].includes(result.status));
+    || row.input.action === "dissolve" && result.conversationId === row.input.conversationId && result.status === "dissolved"
+    || row.input.action === "member" && result.conversationId === row.input.conversationId && result.userId === row.input.targetUserId && ["active", "removed", "left"].includes(result.status));
   const statuses = { request: ["pending", "active"], respond: ["active", "declined"], remove: ["removed"], block: ["blocked"], unblock: ["unblocked"] };
   return statuses[row.input.action]?.includes(result.status)
     && (result.status !== "active" || socialIdentifier(result.conversationId))
@@ -110,8 +111,8 @@ function createSocialCommands({ store, client, deviceId, assertActive, onConfirm
         if (existing) return existing.fingerprint === fingerprint ? existing.id : null;
         const pending = store.db.get("SELECT id FROM social_commands WHERE account_id = ? AND fingerprint = ? AND state NOT IN ('completed','failed')", store.accountId, fingerprint);
         if (pending) return pending.id;
-        const conversation = input.action === "member" ? store.getConversation({ conversationId: input.conversationId }) : null;
-        if (input.action === "member" && !conversation) throw Object.assign(new Error("Not found"), { code: "COLLABORATION_NOT_FOUND" });
+        const conversation = ["member", "dissolve"].includes(input.action) ? store.getConversation({ conversationId: input.conversationId }) : null;
+        if (["member", "dissolve"].includes(input.action) && !conversation) throw Object.assign(new Error("Not found"), { code: "COLLABORATION_NOT_FOUND" });
         const scopeId = conversation?.scopeId || (input.scopeType === "organization" ? `team:${input.organizationId}` : "personal");
         assertScopeWritable(store, scopeId);
         if (scopeId.startsWith("team:") && !store.getDirectory().teams.some((team) => team.scopeId === scopeId)) throw Object.assign(new Error("Access revoked"), { code: "COLLAB_ACCESS_REVOKED" });

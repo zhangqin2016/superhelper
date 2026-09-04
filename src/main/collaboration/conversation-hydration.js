@@ -21,6 +21,7 @@ function queueConversationHydration(store, event) {
   const conversationId = event.conversationId ?? event.conversation_id;
   if (!conversationId) return;
   if (["member.removed", "member.left"].includes(event.type) && event.payload?.userId === store.accountId) return;
+  if (event.type === "conversation.dissolved") return;
   const discovery = event.type === "conversation.created" || String(event.type).startsWith("member.");
   const unknownMessage = String(event.type).startsWith("message.") && !store.getConversation({ conversationId }) && !isConversationRevoked(store, conversationId);
   const actorUserId = event.actorUserId ?? event.actor_user_id;

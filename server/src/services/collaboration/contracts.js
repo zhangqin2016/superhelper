@@ -24,6 +24,7 @@ export const COLLABORATION_MEMBER_ROLES = Object.freeze([
 export const COLLABORATION_EVENT_TYPES = Object.freeze([
   "conversation.created",
   "conversation.archived",
+  "conversation.dissolved",
   "member.joined",
   "member.left",
   "member.removed",
