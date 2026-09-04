@@ -526,7 +526,7 @@
 
 .collaboration-conversation-header {
   min-height: 56px;
-  padding: 9px 12px 9px 12px;
+  padding: 9px 20px;
   gap: 10px;
   display: flex;
   align-items: center;
@@ -897,7 +897,7 @@
      is the only separation from the thread, and the toolbar sits inside the
      same flat zone so it never reads as a detached strip. */
   margin: 0;
-  padding: 6px 12px 8px;
+  padding: 6px 20px 8px;
   border-top: 1px solid var(--border-light);
   background: var(--bg-surface);
   display: flex;
@@ -2026,7 +2026,7 @@
 /* Timeline breathing: tighter gutters let bubbles read as a real IM thread. */
 .collaboration-timeline {
   gap: 7px;
-  padding: 16px 12px 18px;
+  padding: 16px 20px 18px;
 }
 
 .collaboration-message {
@@ -2263,7 +2263,7 @@
   min-height: 52px;
   max-height: 150px;
   border-radius: 0;
-  padding: 6px 4px 2px;
+  padding: 6px 0 2px;
 }
 
 .collaboration-composer-toolbar {
