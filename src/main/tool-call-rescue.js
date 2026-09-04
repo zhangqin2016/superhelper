@@ -68,6 +68,53 @@ function correctiveHintFor(recipes = {}) {
   return recipes?.instructionLanguage === "zh" ? CORRECTIVE_HINT_ZH : CORRECTIVE_HINT;
 }
 
+// CONTINUATION, not replay. The corrective hints above ride a REPLAY of the
+// user's request, which is only safe when every tool that ran was replay-safe —
+// so a long turn that had already edited files got no rescue at all and the
+// user saw the raw failure. That is the reported case: 148 tool calls in, files
+// already written, and the turn died because the model wrote its next call as
+// text.
+//
+// Continuing the same engine session instead re-does nothing: the history and
+// the files on disk are still there, and only the next action is asked for. The
+// instruction to not redo completed work is explicit, because the alternative —
+// the user resending the whole request by hand — redoes far more.
+const CONTINUATION_HINT = [
+  "[system correction] Your previous reply wrote a tool call as plain text (e.g. <tool_call>, <function=...>, <invoke name=...>, <parameter ...>, or a special-token form). Text like that is NOT executed — that step did not run.",
+  "This is a CONTINUATION of the same task, not a restart. Follow these rules:",
+  "1. Do NOT redo work you already completed. Files you already wrote are still written; steps you already finished are still finished.",
+  "2. Take stock of where the task actually stands, then perform ONLY the next action that is still missing.",
+  "3. To use a tool, emit a NATIVE structured tool/function call. Never write tool-call markup, XML, or raw JSON in your text reply.",
+  "4. If nothing further needs a tool, just give the user the final answer or summary in plain text.",
+].join("\n");
+
+const CONTINUATION_HINT_ZH = [
+  "[系统纠正] 你上一条回复把工具调用写成了纯文本（例如 <tool_call>、<function=...>、<invoke name=...>、<parameter ...>，或 ｜｜…｜｜ 之类的特殊 token 形式）。这类文本不会被执行——那一步没有真正发生。",
+  "这是同一个任务的**继续**，不是重新开始。严格遵守：",
+  "1. 不要重做你已经完成的工作。已经写好的文件仍然存在，已经完成的步骤仍然有效。",
+  "2. 先确认任务当前的真实进度，然后只做还缺的那一步。",
+  "3. 需要用工具时，必须通过工具调用接口发起原生的结构化调用，绝不要在文本里写工具调用标记、XML 或 JSON。",
+  "4. 如果剩下的事不需要工具，就直接用纯文本给出最终答案或汇总。",
+].join("\n");
+
+function continuationHintFor(recipes = {}) {
+  return recipes?.instructionLanguage === "zh" ? CONTINUATION_HINT_ZH : CONTINUATION_HINT;
+}
+
+/**
+ * Should a leaked-tool-call failure be continued rather than replayed?
+ *
+ * Replay stays the default when it is safe, because replaying reproduces the
+ * turn cleanly. Continuation exists for the case replay must refuse: a turn
+ * that already had side effects. Kill switch: LILY_TOOL_CALL_CONTINUATION=0
+ * restores the previous behaviour, where such a turn simply failed.
+ */
+function shouldContinueInsteadOfReplay(code, tools = []) {
+  if (process.env.LILY_TOOL_CALL_CONTINUATION === "0") return false;
+  if (String(code || "") !== "MALFORMED_TOOL_CALL_TEXT") return false;
+  return !isSideEffectFreeToolRun(tools);
+}
+
 function evidenceVerifyHintFor(recipes = {}, context = {}) {
   const language = recipes?.instructionLanguage === "zh" ? "zh" : "en";
   return buildEvidenceRecoveryHint({ language, ...context });
@@ -255,7 +302,11 @@ function resetRescueStateForTests() {
 module.exports = {
   CORRECTIVE_HINT,
   CORRECTIVE_HINT_ZH,
+  CONTINUATION_HINT,
+  CONTINUATION_HINT_ZH,
   correctiveHintFor,
+  continuationHintFor,
+  shouldContinueInsteadOfReplay,
   evidenceVerifyHintFor,
   rescueStrategyFor,
   isRescuableFailureCode,

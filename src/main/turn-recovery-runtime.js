@@ -133,11 +133,25 @@ function createTurnRecoveryRuntime(options = {}) {
         ? prepareDocumentDeliveryRecovery(failure)
         : null;
       if (strategy.kind === "document_verify_retry" && !documentRecovery) return false;
-      if (!documentRecovery && !rescue.isSideEffectFreeToolRun([...(state.tools?.values?.() || [])])) return false;
-      const lastUser = documentRecovery ? null : ctx.sessionManager?.getLastUserMessage?.(sessionId);
-      if (!documentRecovery && !lastUser) return false;
+      const ranTools = [...(state.tools?.values?.() || [])];
+      // A leaked tool call on a turn that already had side effects used to get
+      // no rescue at all: replay would re-run the edits, so the guard refused
+      // and the user saw the raw failure. Continue the same session instead —
+      // nothing is re-done, only the missing next action is asked for.
+      const continueInstead = !documentRecovery
+        && rescue.shouldContinueInsteadOfReplay(failure?.code, ranTools);
+      if (!documentRecovery && !continueInstead && !rescue.isSideEffectFreeToolRun(ranTools)) return false;
+      const lastUser = documentRecovery || continueInstead
+        ? null
+        : ctx.sessionManager?.getLastUserMessage?.(sessionId);
+      if (!documentRecovery && !continueInstead && !lastUser) return false;
       rescue.markRescueAttempt(sessionId, failure.code);
-      log.info("turn rescue retry: session=%s kind=%s", sessionId, strategy.kind);
+      log.info(
+        "turn rescue retry: session=%s kind=%s mode=%s",
+        sessionId,
+        strategy.kind,
+        continueInstead ? "continuation" : "replay",
+      );
       emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code, kind: strategy.kind });
       if (strategy.kind === "model_connection_retry") {
         // Hot-refresh the model env (managed config, active preset, keys)
@@ -162,7 +176,9 @@ function createTurnRecoveryRuntime(options = {}) {
       if (!deferAssistantRemoval) transcriptStore?.removeLastAssistantMessage?.(sessionId);
       const content = documentRecovery
         ? documentRecovery.content
-        : String(lastUser.content || "").trim();
+        : continueInstead
+          ? rescue.continuationHintFor(modelRecipes())
+          : String(lastUser.content || "").trim();
       const sourceTurnId = failure?.supersedesTurnId
         || lastUser?.turnId
         || lastUser?.record?.turnId
@@ -171,7 +187,9 @@ function createTurnRecoveryRuntime(options = {}) {
         ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, sourceTurnId)
         : null;
       const recipes = modelRecipes();
-      const hint = strategy.kind === "tool_call_rescue"
+      const hint = continueInstead
+        ? rescue.continuationHintFor(recipes)
+        : strategy.kind === "tool_call_rescue"
         ? rescue.correctiveHintFor(recipes)
         : strategy.kind === "evidence_verify_retry"
           ? rescue.evidenceVerifyHintFor(recipes, {
@@ -184,7 +202,7 @@ function createTurnRecoveryRuntime(options = {}) {
       const retried = await sendUserMessage(
         sessionId,
         content,
-        documentRecovery ? [] : (lastUser.files || []),
+          documentRecovery || continueInstead ? [] : (lastUser.files || []),
         {
           recordUser: false,
           spawnEngine: true,
@@ -196,6 +214,7 @@ function createTurnRecoveryRuntime(options = {}) {
           sourceTaskCore: sourceTurn?.taskCore || null,
           recovery: {
             kind: strategy.kind,
+            mode: continueInstead ? "continuation" : "replay",
             guidance: hint || "",
             evidenceContext: strategy.kind === "evidence_verify_retry"
               ? failure?.evidenceRecoveryContext || null

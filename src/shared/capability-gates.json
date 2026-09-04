@@ -675,6 +675,15 @@
         "scripts/test-agent-autonomy-guidance.mjs",
         "scripts/test-agent-guide-rule-contract.mjs"
       ]
+    },
+    {
+      "id": "tool-call-continuation",
+      "protects": "A leaked tool call must not kill a turn that already did work. The rescue for MALFORMED_TOOL_CALL_TEXT replays the user's request, which is only safe when every tool that ran was replay-safe, so a long turn that had already edited files got no rescue at all. Continuing the same engine session re-does nothing — history and files remain — and asks only for the missing next action.",
+      "baseline": "Reported from the field 2026-09-04: 148 tool calls into a turn, files already edited, the model wrote its next tool call as plain text and the turn died with no output. Replay would have re-run the edits, so the side-effect guard refusing was correct; failing was not the only alternative. Strictly additive — such turns previously received no rescue whatsoever, so the worst case is the behaviour they already had.",
+      "failureFallback": "Continuation is narrow by construction: only MALFORMED_TOOL_CALL_TEXT, only when the run was NOT side-effect free (read-only turns keep the cleaner replay), and never for the other healable codes. Kill switch LILY_TOOL_CALL_CONTINUATION=0 restores the previous failure. The side-effect guard still refuses every REPLAY. Mutation-verified 2026-09-04: continuing read-only turns, dropping the do-not-redo instruction, moving the decision after the guard so it becomes unreachable, sending the user's original message as the continuation content, and a broken kill switch each fail by name.",
+      "tests": [
+        "scripts/test-tool-call-continuation.mjs"
+      ]
     }
   ]
 }
