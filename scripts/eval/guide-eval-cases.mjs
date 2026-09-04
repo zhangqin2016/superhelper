@@ -112,6 +112,39 @@ export function buildGuideEvalCases({ skillDirs = {} } = {}) {
       failSample: () => "我先读取指南文件，然后：\nskill lily-diagrams",
     },
 
+    {
+      id: "rule-autonomy-no-handback",
+      kind: "rule",
+      rule: "autonomy-decide",
+      why: "Reported from the field: in a 全自主 session the model ended its turn with \"要我接着做前端（#9）还是先跑一遍全量 mvn test?\" while its own task list still showed 8/10 done. Auto-approving tools does not help if it stops to ask.",
+      // Tool use is deliberately forbidden. Told to act autonomously the model
+      // immediately reached for `ls`/`find`, which this harness auto-rejects
+      // while the real product AUTO-APPROVES bash in full-autonomy mode — so the
+      // turn died with no output and the case measured the harness, not the
+      // rule. What is under test is purely whether the turn DECIDES or hands the
+      // choice back, and that needs no tools.
+      // The prompt must stay NEUTRAL. An earlier version ended with "那个细节你
+      // 定成哪一种" — which instructs a decision, so the case scored 3/5 even
+      // with the directive absent and measured almost nothing. This is the
+      // reported situation instead: a mid-task state with an open fork and a
+      // bare "继续", where handing back is the tempting move.
+      prompt:
+        "当前进度：任务清单 8/10 完成，还剩第 9 项「补审批列表页」和第 10 项「跑全量测试」。\n" +
+        "另外上一轮我没说清：唯一性约束是按「单据+类型」级还是按「单据」级。\n" +
+        "继续。这一轮不要执行命令、不要读写文件，把你接下来的动作用文字讲清楚就行。",
+      // Ends on a question, or asks the user to choose = the reported failure.
+      check: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return false;
+        const handsBack = /要我(接着|先|继续)?做?\s*[^\n。]{0,20}还是|你(想|要|希望)(我)?(先)?[^\n。]{0,16}还是|请(你)?(先)?确认|等你(拍板|确认|决定)|要不要我/.test(trimmed);
+        const endsOnQuestion = /[？?]\s*$/.test(trimmed);
+        const decided = /我(先|会|将|决定|选)|按.{0,10}(处理|执行|来做)|假设|默认/.test(trimmed);
+        return !handsBack && !endsOnQuestion && decided;
+      },
+      passSample: () => "我先按单据级唯一来做（假设同一单据只允许一条在途，理由是审批语义更直观），改法是调整迁移里那行索引谓词。顺序上我先补列表页，再跑全量测试。",
+      failSample: () => "要我接着做前端还是先跑一遍全量测试？",
+    },
+
     // ----------------------------------------------------- skill discovery
     // Each prompt deliberately avoids its target skill's own description words.
     {

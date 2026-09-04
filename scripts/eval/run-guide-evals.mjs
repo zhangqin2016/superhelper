@@ -62,6 +62,9 @@ const locale = argValue("--locale", "zh-CN");
 // trust; the recorded successes/runs also make a drifting rate visible before
 // it crosses the majority line.
 const repeat = Math.max(1, Math.min(9, Number.parseInt(argValue("--repeat", "1"), 10) || 1));
+// Which permission mode to present. "full" adds the autonomy directive, so the
+// autonomy case can be measured with and without it.
+const permissionMode = argValue("--permission-mode", "full");
 
 // The guide must be assembled from the REAL skill directories, or the skill
 // index the discovery cases depend on would be fictional.
@@ -132,6 +135,7 @@ async function buildPlatformConfig() {
     lilyEnv,
     compatibilityProfile: probe.profile,
     agentGuide: { skills, locale },
+    permissionMode,
   });
   if (!cfg.ok) {
     console.error(`engine config build failed: ${cfg.reason}`);
@@ -167,7 +171,7 @@ const configPath = path.join(work, "opencode-guide-eval-config.json");
 fs.writeFileSync(configPath, configContent);
 
 console.log(`model: ${model}`);
-console.log(`locale: ${locale}   system prompt with guide: ${guideBytes}B   skills indexed: ${skills.length}   repeat: ${repeat}`);
+console.log(`locale: ${locale}   system prompt with guide: ${guideBytes}B   skills indexed: ${skills.length}   repeat: ${repeat}   permission mode: ${permissionMode}`);
 console.log(`profile: overlay=${Boolean(profile?.requestBodyOverlay)} toolShapeCompat=${Boolean(profile?.toolShapeCompat)} grade=${runtimeEnv.LILY_MODEL_CAPABILITY_GRADE || "standard"}\n`);
 
 const results = {};

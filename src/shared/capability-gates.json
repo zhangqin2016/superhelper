@@ -665,6 +665,16 @@
         "scripts/test-agent-guide-rule-contract.mjs",
         "scripts/test-guide-eval-cases.mjs"
       ]
+    },
+    {
+      "id": "agent-autonomy-mode",
+      "protects": "The permission mode the user chose must reach the model. permissionMode drove tool auto-approval and runtime identity only and never appeared in the prompt, so a session the user explicitly set to 全自主 still ended turns by handing the decision back. Only \"full\" adds a directive; \"ask\" and \"plan\" describe sessions where the user wants to be consulted and get nothing added, so they are byte-identical to before, and an unknown mode gets nothing rather than inheriting autonomy instructions.",
+      "baseline": "Reported from the field 2026-09-04: a 全自主 session closed with \"要我接着做前端（#9）还是先跑一遍全量 mvn test?\" while the model's own task list still showed 8/10 done. Live A/B on deepseek-v4-pro, 5 runs per arm with a deliberately neutral prompt: without the directive the turn decided and carried on 2 of 5 times, with it 5 of 5. An earlier version of the case scored 3/5 vs 4/5 because its prompt itself said \"那个细节你定成哪一种\" and therefore instructed the decision it was meant to measure.",
+      "failureFallback": "Additive and fail-open: the wiring is wrapped so any failure leaves the per-prompt guidance exactly as before rather than breaking the turn, and non-full modes receive nothing. test-agent-autonomy-guidance.mjs asserts only \"full\" produces a block, that stray whitespace does not silently downgrade the user's choice, that unlisted locales fall back to English and never to Chinese, and that the wiring passes the session's real mode and stays inside a catch. The rule is registered in agent-guide-rule-contract.json with source \"autonomy-guidance\", so test-agent-guide-rule-contract.mjs checks it against its real carrier across all three modes: required in full, absent in ask and plan.",
+      "tests": [
+        "scripts/test-agent-autonomy-guidance.mjs",
+        "scripts/test-agent-guide-rule-contract.mjs"
+      ]
     }
   ]
 }

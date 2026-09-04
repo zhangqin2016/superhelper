@@ -4,6 +4,7 @@ const require = createRequire(import.meta.url);
 const { buildCompatibilityProfileRuntimeEnv } = require("../../src/main/model-presets.js");
 const { buildSharedBaseConfig } = require("../../src/main/runtime/opencode-config-builder.js");
 const { buildAgentBasePersona, buildAgentGuideContent } = require("../../src/main/skill-manager.js");
+const { buildAutonomyGuidance } = require("../../src/main/agent-autonomy-guidance.js");
 const { SessionRunnerPool } = require("../../src/main/session-runner-pool.js");
 
 /**
@@ -26,6 +27,7 @@ export function buildEvalPlatformConfig({
   lilyEnv = {},
   compatibilityProfile = null,
   agentGuide = null,
+  permissionMode = "",
 } = {}) {
   const runtimeEnv = {
     ...lilyEnv,
@@ -53,6 +55,10 @@ export function buildEvalPlatformConfig({
     }
     basePrompt = `${basePrompt}\n\n${guideText}`;
   }
+  // The runner appends this per prompt for full-autonomy sessions; an eval that
+  // measures autonomy behaviour has to carry it too.
+  const autonomy = buildAutonomyGuidance(permissionMode, agentGuide?.locale || "zh-CN");
+  if (autonomy) basePrompt = `${basePrompt}\n\n${autonomy}`;
   const liteGrade = runtimeEnv.LILY_MODEL_CAPABILITY_GRADE === "lite";
   let config = buildSharedBaseConfig({
     lilyEnv: runtimeEnv,

@@ -141,6 +141,18 @@ class SessionRunnerPool {
         : { ...lilyEnv, LILY_MODEL_CAPABILITY_GRADE: capabilityGrade },
     );
     if (extra.processJobGuidance) guidance += `\n\n${extra.processJobGuidance}`;
+    // The user's permission mode was invisible to the model: it drove tool
+    // auto-approval only. A 全自主 session still got turns that ended by asking
+    // the user to choose, sometimes with the model's own task list unfinished.
+    // Fail-open: any problem here leaves the guidance exactly as before.
+    try {
+      const { buildAutonomyGuidance } = require("./agent-autonomy-guidance");
+      const locale = require("./locale-settings").getLocale();
+      const autonomy = buildAutonomyGuidance(permissionMode, locale);
+      if (autonomy) guidance += `\n\n${autonomy}`;
+    } catch {
+      /* guidance without the autonomy block is the previous behaviour */
+    }
     // Reuse Lily's full engine env so skill SCRIPTS run identically under OpenCode
     // (DASHSCOPE_*/VISION_*/ALIYUN_BAILIAN_* for media skills, the curated PATH
     // with bundled node/python, connector-bridge for mail). OpenCode ignores the

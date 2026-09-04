@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contract = JSON.parse(fs.readFileSync(path.join(ROOT, "src/shared/agent-guide-rule-contract.json"), "utf8"));
+const { buildAutonomyGuidance } = require("../src/main/agent-autonomy-guidance.js");
 
 const userData = path.join(os.tmpdir(), "lily-rule-contract-fixed");
 fs.mkdirSync(userData, { recursive: true });
@@ -48,6 +49,10 @@ assert.equal(new Set(ids).size, ids.length, "rule ids must be unique");
 for (const rule of contract.rules) {
   assert.ok(rule.id, "every rule needs an id");
   assert.ok(String(rule.why || "").trim(), `${rule.id}: a rule needs to say what breaks without it`);
+  assert.ok(
+    rule.source === "guide" || rule.source === "autonomy-guidance",
+    `${rule.id}: needs a known \`source\` so it is checked against its real carrier, got ${JSON.stringify(rule.source)}`,
+  );
   for (const locale of LOCALES) {
     assert.ok(
       String(rule.anchors?.[locale] || "").trim(),
@@ -90,6 +95,30 @@ function conditionMatches(condition, platform) {
   return false;
 }
 
+/**
+ * Rules carried by the per-prompt autonomy block instead of the assembled
+ * guide. Checked against their real carrier across every permission mode, so
+ * "required in full" and "absent in ask/plan" are both enforced.
+ */
+function checkAutonomyRule(rule, failures, anchorSeen) {
+  for (const locale of LOCALES) {
+    const anchor = rule.anchors[locale];
+    for (const mode of ["full", "ask", "plan"]) {
+      const block = buildAutonomyGuidance(mode, locale);
+      const present = block.includes(anchor);
+      if (present) anchorSeen.set(rule.id, anchorSeen.get(rule.id) + 1);
+      const required = Array.isArray(rule.requiredWhen?.permissionMode) && rule.requiredWhen.permissionMode.includes(mode);
+      const forbidden = Array.isArray(rule.forbiddenWhen?.permissionMode) && rule.forbiddenWhen.permissionMode.includes(mode);
+      if (required && !present) {
+        failures.push(`${rule.id}: MISSING from the ${locale} autonomy block in "${mode}" mode (anchor ${JSON.stringify(anchor)}) — ${rule.why}`);
+      }
+      if (forbidden && present) {
+        failures.push(`${rule.id}: must NOT reach "${mode}" mode but does (${locale}) — that would change sessions where the user asked to be consulted`);
+      }
+    }
+  }
+}
+
 // --- required present, forbidden absent -----------------------------------
 
 const failures = [];
@@ -97,6 +126,10 @@ const anchorSeen = new Map(ids.map((id) => [id, 0]));
 const knownGaps = [];
 
 for (const rule of contract.rules) {
+  if (rule.source === "autonomy-guidance") {
+    checkAutonomyRule(rule, failures, anchorSeen);
+    continue;
+  }
   const skipLocales = new Set(rule.localesKnownMissing || []);
   for (const platform of PLATFORMS) {
     for (const locale of LOCALES) {
@@ -137,9 +170,14 @@ for (const [id, hits] of anchorSeen) {
 // --- report ---------------------------------------------------------------
 
 const width = Math.max(...ids.map((id) => id.length));
-console.log(`rule contract: ${contract.rules.length} rules x ${LOCALES.length} locales x ${PLATFORMS.length} platforms\n`);
+const autonomyCount = contract.rules.filter((rule) => rule.source === "autonomy-guidance").length;
+console.log(`rule contract: ${contract.rules.length} rules (${contract.rules.length - autonomyCount} in the guide x ${LOCALES.length} locales x ${PLATFORMS.length} platforms, ${autonomyCount} in the autonomy block x 3 modes)\n`);
 for (const rule of contract.rules) {
-  const scope = rule.requiredWhen === "always" ? "always" : `platform ${(rule.requiredWhen.platform || []).join("/")}`;
+  const scope = rule.requiredWhen === "always"
+    ? "always"
+    : rule.requiredWhen.platform
+      ? `platform ${rule.requiredWhen.platform.join("/")}`
+      : `mode ${(rule.requiredWhen.permissionMode || []).join("/")}`;
   console.log(`  ${rule.id.padEnd(width)}  ${String(anchorSeen.get(rule.id)).padStart(2)}/9 present   required: ${scope}`);
 }
 if (knownGaps.length) {

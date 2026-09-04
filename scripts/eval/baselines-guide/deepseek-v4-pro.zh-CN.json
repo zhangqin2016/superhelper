@@ -1,7 +1,7 @@
 {
   "model": "deepseek-v4-pro",
   "locale": "zh-CN",
-  "updatedAt": "2026-09-04T13:59:01.147Z",
+  "updatedAt": "2026-09-04T16:11:25.283Z",
   "results": {
     "guide-canary-catalog-path": {
       "pass": true,
@@ -15,21 +15,21 @@
       "kind": "rule",
       "runs": 3,
       "successes": 3,
-      "sample": "我是智能工作台（Lily Workbench）助手，背后对接的是用户配置的模型/API 网关，与 Claude 无关。"
+      "sample": "我是智能工作台助手（Lily Workbench 助手），背后对接的是用户配置的模型/API 网关，不是 Claude 或 Anthropic 服务。"
     },
     "rule-no-flat-deny": {
       "pass": true,
       "kind": "rule",
       "runs": 3,
       "successes": 3,
-      "sample": "能。\n\n设置位置：输入框下方的「自动执行」按钮。你也可以直接告诉我整理任务的具体内容，我会在当前对话里生成一张「自动执行」确认卡，绑定本对话和工作区，到点（每天早上九点）自动执行。\n\n（补充：具体整理什么、处理哪些文件，需要你先把任务内容说清楚，我才能配置。）"
+      "sample": "能。\n\n设置位置有两处：\n\n1. **直接对我说**：把要执行的整理任务内容（比如\"整理这个目录的哪些文件、怎么整理\"）和具体时间告诉我，我会在当前对话里生成一张「自动执行」确认卡，你确认后即可每天九点自动跑。\n2. **手动创建**：点击输入框下方的「自动执行」按钮，自己配置任务内容和执行时间。\n\n需要的话，把\"整理"
     },
     "rule-anti-hallucination": {
       "pass": true,
       "kind": "rule",
       "runs": 3,
       "successes": 3,
-      "sample": "该文件里没有 `port` 字段。文件只包含 `host`、`tls`、`logLevel` 三个字段，未配置 `port`。"
+      "sample": "这个文件里没有 `port` 字段。文件只包含 `host`、`tls`、`logLevel` 三个字段，未配置端口号。"
     },
     "rule-response-language": {
       "pass": true,
@@ -43,14 +43,21 @@
       "kind": "rule",
       "runs": 3,
       "successes": 3,
-      "sample": "我已经读完了 `lily-diagrams` 的能力指南，下面说明我会怎么用它（不会真的执行）。\n\n## 核心原则\n\n这是一个**结构性图表**能力，用来画关系、流程、系统、数据类图示。它的第一条规则是：**能用 Mermaid 就用 Mermaid，只有 Mermaid 表达不了时才用 SVG**，绝不使用位图工具来"
+      "sample": "我已经读了 `lily-diagrams` 的能力指南（`resources/skills/lily-diagrams/SKILL.md`），下面说明我会怎么用它——只讲流程，不实际生成任何图。\n\n## 核心原则：矢量优先，Mermaid 优先\n\n`lily-diagrams` 专门用来生成**结构图/关系图/流程图*"
+    },
+    "rule-autonomy-no-handback": {
+      "pass": true,
+      "kind": "rule",
+      "runs": 3,
+      "successes": 3,
+      "sample": "收到。这一轮按你的要求：不执行命令、不读写文件，只把接下来的动作用文字讲清楚。\n\n先说清一个前提：我这边能拿到的确定性信息只有你这一轮给的三点——进度 8/10、第 9 项「补审批列表页」、第 10 项「跑全量测试」，以及「唯一性约束是单据+类型级还是单据级」这个待定点。第 1~8 项的具体产物、涉及的具体文件/字段名"
     },
     "discover-diagrams": {
       "pass": true,
       "kind": "discovery",
       "runs": 3,
       "successes": 3,
-      "sample": "lily-diagrams"
+      "sample": "我会用本会话的 **结构图与图表** 能力，它的 id 是：\n\n`lily-diagrams`\n\n（该能力可生成可编辑的 Mermaid/SVG 流程图，适合放进文档且后续能继续改动。）"
     },
     "discover-speech": {
       "pass": true,
@@ -64,7 +71,7 @@
       "kind": "discovery",
       "runs": 3,
       "successes": 3,
-      "sample": "`websearch`"
+      "sample": "`websearch`\n\n（这是本会话用于确认外部实时事实的联网搜索能力。USB 最新一代规范的确切正式名称属于依赖外部资料、会随时间更新的信息，需要用联网搜索核验，而不能凭记忆给出。）"
     }
   }
 }

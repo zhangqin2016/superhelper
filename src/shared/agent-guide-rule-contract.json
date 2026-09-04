@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "note": "Rules the assembled agent guide MUST still carry. The guide is the only channel that pushes a rule to the model, and a rule the model was never shown is a rule it violates. Every entry is anchored on a distinctive phrase from the shipped text, per locale, so a rule that is reworded, moved behind a condition, pruned by environment, or squeezed out by the byte budget fails scripts/test-agent-guide-rule-contract.mjs by name. Anchors are deliberately short and distinctive: long ones break on harmless copy edits, generic ones stop measuring anything.",
+  "note": "Rules the assembled agent guide MUST still carry. The guide is the only channel that pushes a rule to the model, and a rule the model was never shown is a rule it violates. Every entry is anchored on a distinctive phrase from the shipped text, per locale, so a rule that is reworded, moved behind a condition, pruned by environment, or squeezed out by the byte budget fails scripts/test-agent-guide-rule-contract.mjs by name. Anchors are deliberately short and distinctive: long ones break on harmless copy edits, generic ones stop measuring anything. A rule's `source` says WHERE it lives, so each is checked against its real carrier: \"guide\" means the assembled AGENT.md, \"autonomy-guidance\" means the per-prompt block that only full-autonomy sessions receive.",
   "rules": [
     {
       "id": "anti-hallucination",
@@ -10,7 +10,8 @@
         "zh-CN": "抗幻觉硬门槛",
         "en": "Anti-hallucination gate",
         "ar": "بوابة مكافحة الهلوسة"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "response-language",
@@ -20,7 +21,8 @@
         "zh-CN": "回复语言必须跟随用户最新一条消息",
         "en": "Reply in the primary language of the user",
         "ar": "استخدم اللغة الأساسية في آخر رسالة"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "gateway-identity",
@@ -30,7 +32,8 @@
         "zh-CN": "不使用 Claude/Anthropic 服务",
         "en": "NOT Claude/Anthropic services",
         "ar": "وليس خدمات Claude/Anthropic"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "native-skill-boundary",
@@ -40,7 +43,8 @@
         "zh-CN": "禁止对这些平台能力执行原生",
         "en": "Do not run native `skill <id>`",
         "ar": "لا تشغّل `skill <id>` الأصلي"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "source-provenance",
@@ -50,7 +54,8 @@
         "zh-CN": "没有证据就说无法确认",
         "en": "say it cannot be confirmed",
         "ar": "فقل إن الأمر غير مؤكد"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "external-fact-routing",
@@ -60,7 +65,8 @@
         "zh-CN": "外部事实分流是语义驱动的",
         "en": "External fact routing is semantic",
         "ar": "توجيه الحقائق الخارجية دلالي"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "platform-facts-no-deny",
@@ -70,7 +76,8 @@
         "zh-CN": "不要断然否认",
         "en": "do not flatly deny",
         "ar": "لا تنفِ بشكل قاطع"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "verification-gate",
@@ -80,7 +87,8 @@
         "zh-CN": "验证门",
         "en": "Verification gate",
         "ar": "التحقق من الإكمال يجب أن يكون حلقة مغلقة"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "skill-catalog",
@@ -90,19 +98,53 @@
         "zh-CN": "Lily 平台能力目录",
         "en": "Lily Platform Capability Catalog",
         "ar": "فهرس قدرات منصة Lily"
-      }
+      },
+      "source": "guide"
     },
     {
       "id": "windows-shell",
       "why": "Windows PowerShell rules. Environment-conditional by design (agent-guide-blocks): required on win32, and pruned everywhere else because they cannot apply there.",
-      "requiredWhen": { "platform": ["win32"] },
-      "forbiddenWhen": { "platform": ["darwin", "linux"] },
-      "localesKnownMissing": ["ar"],
+      "requiredWhen": {
+        "platform": [
+          "win32"
+        ]
+      },
+      "forbiddenWhen": {
+        "platform": [
+          "darwin",
+          "linux"
+        ]
+      },
+      "localesKnownMissing": [
+        "ar"
+      ],
       "localesKnownMissingWhy": "The Arabic guide body never contained a Windows section, so an Arabic user on Windows does not receive these shell rules. Recorded rather than silently tolerated; fixing it means authoring Arabic prose, not a code change.",
       "anchors": {
         "zh-CN": "UseBasicParsing",
         "en": "UseBasicParsing",
         "ar": "UseBasicParsing"
+      },
+      "source": "guide"
+    },
+    {
+      "id": "autonomy-decide",
+      "source": "autonomy-guidance",
+      "why": "Reported from the field 2026-09-04: in a 全自主 session the model ended its turn asking the user to choose (\"要我接着做前端还是先跑全量 mvn test?\") while its own task list still showed 8/10 done. permissionMode drove tool auto-approval only and never reached the prompt, so the model never knew the user had opted into autonomy.",
+      "requiredWhen": {
+        "permissionMode": [
+          "full"
+        ]
+      },
+      "forbiddenWhen": {
+        "permissionMode": [
+          "ask",
+          "plan"
+        ]
+      },
+      "anchors": {
+        "zh-CN": "不要把选择权交回给用户",
+        "en": "do not hand the choice back",
+        "ar": "لا تُعِد الاختيار إلى المستخدم"
       }
     }
   ]
