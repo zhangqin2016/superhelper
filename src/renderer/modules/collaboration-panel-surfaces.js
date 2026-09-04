@@ -55,3 +55,21 @@ export function createDetachControl({ button, api = () => window.assistantClient
     destroy() { button?.removeEventListener("click", click); unsubscribe(); },
   };
 }
+
+/** In-conversation search, WeChat-style: hidden behind a header icon rather
+ *  than a persistent full-width bar. Returns `{ reset }` to close it on leave.
+ *  `onChange` receives the current query (empty string when cleared/closed). */
+export function wireConversationSearch({ input, toggle, onChange } = {}) {
+  if (!input) return { reset() {} };
+  input.addEventListener("input", () => onChange(input.value || ""));
+  toggle?.addEventListener("click", () => {
+    const show = input.hidden;
+    input.hidden = !show;
+    toggle.setAttribute("aria-expanded", String(show));
+    if (show) input.focus?.();
+    else { input.value = ""; onChange(""); }
+  });
+  return {
+    reset() { input.hidden = true; input.value = ""; toggle?.setAttribute("aria-expanded", "false"); },
+  };
+}

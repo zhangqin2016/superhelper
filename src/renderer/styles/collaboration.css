@@ -100,7 +100,7 @@
   grid-column: 1;
   min-inline-size: 0;
   min-block-size: 0;
-  border-inline-end: 1px solid var(--border-subtle);
+  border-inline-end: 1px solid var(--border-light);
 }
 
 .collaboration-center[data-collaboration-panes="two"] > .collaboration-conversation {
@@ -157,7 +157,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: 1px solid var(--border-light);
   background: linear-gradient(to right, color-mix(in srgb, var(--bg-surface-hover) 78%, transparent) 15%, color-mix(in srgb, var(--bg-surface-hover) 52%, transparent));
   flex-shrink: 0;
   box-shadow: var(--top-highlight);
@@ -530,7 +530,7 @@
   gap: 10px;
   display: flex;
   align-items: center;
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: 1px solid var(--border-light);
   background: color-mix(in srgb, var(--bg-right) 96%, transparent);
 }
 
@@ -539,6 +539,13 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+
+/* The in-conversation search hides behind this header icon (WeChat keeps the
+   header a clean title bar), so it is not a persistent full-width bar. */
+.collaboration-conversation-search-toggle {
+  margin-inline-start: auto;
+  flex: 0 0 auto;
 }
 
 .collaboration-conversation-title h2,
@@ -891,7 +898,7 @@
      same flat zone so it never reads as a detached strip. */
   margin: 0;
   padding: 6px 12px 8px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-light);
   background: var(--bg-surface);
   display: flex;
   flex-direction: column;

@@ -7,7 +7,7 @@ import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
-import { createDetailSurface, createDetachControl } from "./collaboration-panel-surfaces.js";
+import { createDetailSurface, createDetachControl, wireConversationSearch } from "./collaboration-panel-surfaces.js";
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
@@ -47,6 +47,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const closeDetail = detail.close;
   const inboxSearch = byId("collaborationInboxSearch");
   const conversationSearch = byId("collaborationConversationSearch");
+  const conversationSearchToggle = byId("collaborationConversationSearchToggle");
   const timeline = byId("collaborationTimeline");
   const empty = byId("collaborationConversationEmpty");
   const olderButton = byId("collaborationLoadOlder");
@@ -274,7 +275,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     updateOlderButton();
     composer.setConversation(conversationId);
     panelShell?.setConversationOpen(true);
-    if (conversationSearch) conversationSearch.hidden = false;
+    // The search bar stays hidden until the header's search icon asks for it.
     composer.setActive?.(!panel.hidden && policyEnabled);
     composer.refreshReply?.(historyMessages);
     attachments.setConversation(opened.conversation, transferPolicy);
@@ -387,7 +388,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!panelShell) setActive(true);
     queueMicrotask(() => { composer.setActive?.(!panel.hidden && policyEnabled && !navigating); if (!panel.hidden) void load(); });
   };
-  const backClick = () => { if (conversationSearch) { conversationSearch.hidden = true; conversationSearch.value = ""; searchQuery = ""; } panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
+  const backClick = () => { conversationSearchControl?.reset(); searchQuery = ""; panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
   nav.addEventListener("click", navClick);
   back?.addEventListener("click", backClick);
   const searchInput = () => {
@@ -400,7 +401,9 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       currentUserId: directory?.profile?.userId || "" });
   };
   inboxSearch?.addEventListener("input", searchInput);
-  conversationSearch?.addEventListener("input", () => { searchQuery = conversationSearch.value || ""; renderTimeline(); });
+  // Header-icon toggle, not a persistent bar (see wireConversationSearch).
+  const conversationSearchControl = wireConversationSearch({ input: conversationSearch, toggle: conversationSearchToggle,
+    onChange: (value) => { searchQuery = value; renderTimeline(); } });
 
   // Scroll-to-latest: a thread scrolled away from the bottom must offer a way
   // back, and must say how many messages arrived while you were reading up.
