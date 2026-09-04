@@ -32,7 +32,8 @@ app.whenReady().then(async () => {
     ], { currentUserId: 'me', showSenderNames: true, resolveSender: (id) => id === 'me' ? '我' : 'K', peerReadSeq: 1,
        onReply: (m) => calls.push(['reply', m.id]), canReply: () => true,
        onRevoke: (m) => calls.push(['revoke', m.id]), canRevoke: (m) => m.isOwn === true,
-       onEdit: (m) => calls.push(['edit', m.id]), canEdit: (m) => m.isOwn === true });
+       onEdit: (m) => calls.push(['edit', m.id]), canEdit: (m) => m.isOwn === true,
+       onDeleteLocal: (m) => calls.push(['deleteLocal', m.id]) });
     const menuFor = async (key) => {
       node.querySelector('[data-message-key="' + key + '"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 80, clientY: 80 }));
       await new Promise(r => setTimeout(r, 25));
@@ -46,19 +47,23 @@ app.whenReady().then(async () => {
     const other = await menuFor('m1');
     const otherCount = other.count, otherDanger = other.danger;
     document.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));  // close
-    // A revoked message has no body -> copy is not offered; with no handlers it opens nothing.
+    // A revoked message has no body, so copy/reply/edit/recall are all withheld;
+    // only the local delete remains, which is how you clear the placeholder.
     node.querySelector('[data-message-key="m3"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 80, clientY: 80 }));
     await new Promise(r => setTimeout(r, 25));
-    const revokedMenu = document.querySelectorAll('.app-context-menu-item').length;
-    return JSON.stringify({ ownCount, ownDanger, otherCount, otherDanger, calls, revokedMenu });
+    const revokedItems = [...document.querySelectorAll('.app-context-menu-item')].map(b => b.textContent);
+    const revokedMenu = revokedItems.length;
+    return JSON.stringify({ ownCount, ownDanger, otherCount, otherDanger, calls, revokedMenu, revokedItems, deleteLabel: i18n.t('collaboration.deleteMessage') });
   })()`);
   const r = JSON.parse(out);
-  assert.equal(r.ownCount, 4, "own message: copy, reply, edit, recall");
-  assert.equal(r.ownDanger, 1, "recall is the one destructive item");
+  const i18nDeleteLabel = r.deleteLabel;
+  assert.equal(r.ownCount, 5, "own message: copy, reply, edit, recall, delete");
+  assert.equal(r.ownDanger, 2, "recall and delete are the destructive items");
   assert.deepEqual(r.calls, [["revoke", "m2"]], "clicking recall calls the guarded revoke handler");
-  assert.equal(r.otherCount, 2, "someone else's message: copy and reply only");
-  assert.equal(r.otherDanger, 0, "no recall on another's message");
-  assert.equal(r.revokedMenu, 0, "a revoked message offers no actions, so no menu opens");
+  assert.equal(r.otherCount, 3, "someone else's message: copy, reply and delete (delete is local, so it applies to any message)");
+  assert.equal(r.otherDanger, 1, "only delete is destructive on another's message — never recall");
+  assert.equal(r.revokedMenu, 1, `a revoked message offers only the local delete (${JSON.stringify(r.revokedItems)})`);
+  assert.equal(r.revokedItems[0], i18nDeleteLabel, "and that one action is delete, never copy/reply/edit/recall");
   win.destroy(); fs.rmSync(dir, { recursive: true, force: true });
   console.log("collaboration message context menu: copy/quote/edit/recall, ownership-gated");
   app.exit(0);

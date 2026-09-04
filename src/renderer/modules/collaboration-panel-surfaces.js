@@ -80,9 +80,17 @@ export function wireConversationHeader({ input, toggle, infoButton, onChange, on
  *  detail surface, but it slides in over the thread's trailing edge instead of
  *  replacing the list — WeChat opens group info beside the conversation. */
 export function createDrawerSurface({ view, title, body, close: closeButton }) {
-  const close = () => { if (view) view.hidden = true; if (body) body.replaceChildren(); if (title) title.textContent = ""; };
+  let returnFocusTo = null;
+  const close = () => {
+    if (view) view.hidden = true;
+    if (body) body.replaceChildren();
+    if (title) title.textContent = "";
+    const target = returnFocusTo; returnFocusTo = null;
+    if (target && document.contains(target)) target.focus?.({ preventScroll: true });
+  };
   const open = (label) => {
     if (!view || !body) return null;
+    if (!returnFocusTo && document.activeElement instanceof HTMLElement) returnFocusTo = document.activeElement;
     if (title) title.textContent = String(label || "");
     view.hidden = false;
     return body;

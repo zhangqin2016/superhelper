@@ -1786,6 +1786,31 @@
 .collaboration-select-action:disabled { color: var(--text-dim); cursor: default; }
 .collaboration-select-action.is-danger { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger-text) 30%, transparent); }
 
+/* The grid's add tile: a dashed square that reads as "one more slot", the way
+   WeChat ends a member grid with a ＋. */
+.collaboration-row-avatar.is-add {
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--text-dim) 55%, transparent);
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.collaboration-social-row.is-add-tile {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.collaboration-group-drawer-body > .collaboration-social-row.is-add-tile small {
+  display: block;
+  max-inline-size: 62px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Sticky letter headings: the reason a long address book stays navigable. */
 .collaboration-section-letter {
   position: sticky;

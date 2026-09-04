@@ -7,21 +7,24 @@
  * because `send` takes one conversation per call.
  */
 import { t } from "../i18n/index.js";
+import { showToast } from "./toast.js";
 import { mosaicAvatar } from "./collaboration-social-ui.js";
 
 let openPicker = null;
 
 function close() {
   if (!openPicker) return;
-  const { scrim, onKey } = openPicker;
+  const { scrim, onKey, returnFocusTo } = openPicker;
   openPicker = null;
   document.removeEventListener("keydown", onKey, true);
   scrim.remove();
+  if (returnFocusTo && document.contains(returnFocusTo)) returnFocusTo.focus?.({ preventScroll: true });
 }
 
 export function closeForwardPicker() { close(); }
 
 export function openForwardPicker({ conversations = [], resolveSender = () => "", currentUserId = "", excludeId = "", onPick } = {}) {
+  const returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   close();
   const targets = (Array.isArray(conversations) ? conversations : []).filter((c) => c && c.id && c.id !== excludeId);
 
@@ -98,7 +101,7 @@ export function openForwardPicker({ conversations = [], resolveSender = () => ""
   scrim.append(panel);
   document.body.append(scrim);
   paint();
-  openPicker = { scrim, onKey };
+  openPicker = { scrim, onKey, returnFocusTo };
   requestAnimationFrame(() => search.focus?.());
 }
 
@@ -112,7 +115,12 @@ export function createForwardAction({ getConversations = () => [], getActiveConv
     openForwardPicker({
       conversations: getConversations(), excludeId: getActiveConversationId(),
       currentUserId: getCurrentUserId(), resolveSender,
-      onPick: (target) => { void Promise.resolve(send({ conversationId: target.id, bodyText })).catch(() => null); },
+      onPick: (target) => {
+        // Say it landed and where. A silent forward leaves you unsure it sent.
+        void Promise.resolve(send({ conversationId: target.id, bodyText }))
+          .then(() => showToast(t("collaboration.forwardDone", { name: target.title || target.id }), "success", 2600))
+          .catch(() => null);
+      },
     });
   };
 }
@@ -125,6 +133,10 @@ export function createBatchForwardAction({ getConversations = () => [], getActiv
     const texts = (getMessages() || []).filter((m) => wanted.has(String(m?.id || ""))).map((m) => String(m?.bodyText || "").trim()).filter(Boolean);
     if (!texts.length) return;
     openForwardPicker({ conversations: getConversations(), excludeId: getActiveConversationId(), currentUserId: getCurrentUserId(), resolveSender,
-      onPick: (target) => { for (const bodyText of texts) void Promise.resolve(send({ conversationId: target.id, bodyText })).catch(() => null); onDone(); } });
+      onPick: (target) => {
+        void Promise.all(texts.map((bodyText) => Promise.resolve(send({ conversationId: target.id, bodyText })).catch(() => null)))
+          .then(() => showToast(t("collaboration.forwardDone", { name: target.title || target.id }), "success", 2600));
+        onDone();
+      } });
   };
 }

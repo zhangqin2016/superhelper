@@ -140,7 +140,8 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     const conversation = result.conversation;
     // The detail view's own header names it; an <h3> here was a third title
     // stacked inside the list.
-    const surface = detailSurface(`${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`);
+    const heading = conversation.title || conversation.id;
+    const surface = detailSurface(rosterSurface === "drawer" ? heading : `${heading} · ${scopeLabel(conversation.scopeId)}`);
     surface.replaceChildren();
     if (surface === details) details.append(socialNode("h3", `${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`));
     for (const member of result.members) {
@@ -170,11 +171,26 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         // cannot deliver — and a partly-applied batch (three added, then
         // denied) has no story here. Searchable and with avatars either way,
         // which a bare <select> of names was not.
+        // The submit button is created FIRST: `setPeople` paints synchronously
+        // and that calls onChange, which touches `add` — declared after the
+        // picker it crashed on a temporal-dead-zone error, so the add form
+        // never rendered whenever there was anyone to add.
+        const add = socialNode("button", t("collaboration.social.addMember"), "collaboration-social-primary"); add.type = "submit";
+        add.disabled = true;
         const target = createMemberPicker({ minimum: 1, single: true, onChange: () => { add.disabled = !target.satisfied(); } });
         target.setPeople(candidates);
-        form.append(target.node);
-        const add = socialNode("button", t("collaboration.social.addMember"), "collaboration-social-primary"); add.type = "submit"; form.append(add);
-        add.disabled = true;
+        form.append(target.node, add);
+        // WeChat puts an add tile in the grid itself; this one reveals the form
+        // below and puts the cursor in its search box.
+        const addTile = socialNode("button", "", "collaboration-social-row is-add-tile");
+        addTile.type = "button";
+        addTile.dataset.action = "add-member-tile";
+        addTile.setAttribute("aria-label", t("collaboration.addMemberTile"));
+        const plus = socialNode("span", "＋", "collaboration-row-avatar is-add");
+        plus.setAttribute("aria-hidden", "true");
+        addTile.append(plus, socialNode("small", t("collaboration.addMemberTile")));
+        addTile.addEventListener("click", () => { form.scrollIntoView?.({ block: "nearest" }); form.querySelector("input,select")?.focus?.(); });
+        surface.append(addTile);
         form.addEventListener("submit", (event) => {
           event.preventDefault();
           const [userId] = target.selectedIds();

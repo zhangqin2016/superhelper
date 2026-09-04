@@ -6,6 +6,7 @@
  * timeline turns each message into a checkbox target instead of a normal row.
  */
 import { t } from "../i18n/index.js";
+import { confirmDialog } from "./confirm-dialog.js";
 
 export function createMessageMultiSelect({ container = null, onForward = () => {}, onDelete = () => {}, onChange = () => {} } = {}) {
   let active = false;
@@ -23,9 +24,13 @@ export function createMessageMultiSelect({ container = null, onForward = () => {
     const ids = [...chosen];
     if (ids.length) onForward(ids);
   });
-  const remove = button("delete-selected", "collaboration.deleteSelected", () => {
+  const remove = button("delete-selected", "collaboration.deleteSelected", async () => {
     const ids = [...chosen];
-    if (ids.length) onDelete(ids);
+    if (!ids.length) return;
+    // Destructive, so it asks — and says plainly that this is not a recall.
+    const ok = await confirmDialog({ title: t("collaboration.deleteSelected"),
+      message: t("collaboration.confirmDeleteMessages", { count: String(ids.length) }), danger: true });
+    if (ok && chosen.size) onDelete([...chosen]);
   }, true);
   const cancel = button("cancel-select", "collaboration.forwardCancel", () => api.exit());
   bar.append(count, forward, remove, cancel);
@@ -86,4 +91,18 @@ export function createMessageMultiSelect({ container = null, onForward = () => {
   };
   paint();
   return api;
+}
+
+/** 删除 on a single message: confirm, then hide it on THIS device only. Kept
+ *  beside the batch action so both say the same thing about what delete means. */
+export function createLocalDeleteAction({ hideMessages = () => {}, onDone = () => {} } = {}) {
+  return async (message) => {
+    const id = message?.id;
+    if (!id) return;
+    const ok = await confirmDialog({ title: t("collaboration.deleteMessage"),
+      message: t("collaboration.confirmDeleteMessages", { count: "1" }), danger: true });
+    if (!ok) return;
+    hideMessages([id]);
+    onDone();
+  };
 }

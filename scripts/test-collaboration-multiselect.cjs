@@ -57,10 +57,13 @@ app.whenReady().then(async () => {
     node.querySelector('[data-message-key="m1"]').click(); await new Promise(r => setTimeout(r, 25));
     document.querySelector('[data-action="forward-selected"]').click(); await new Promise(r => setTimeout(r, 25));
     // Delete the set: they leave this view and stay gone across a re-render.
-    document.querySelector('[data-action="delete-selected"]').click(); await new Promise(r => setTimeout(r, 30));
+    // Delete now asks first (it is destructive, even though only local).
+    document.querySelector('[data-action="delete-selected"]').click(); await new Promise(r => setTimeout(r, 40));
+    const confirmShown = Boolean(document.querySelector('.confirm-dialog-confirm'));
+    document.querySelector('.confirm-dialog-confirm')?.click(); await new Promise(r => setTimeout(r, 60));
     const remaining = [...node.querySelectorAll('.collaboration-message')].map(el => el.dataset.messageKey);
     const barAfterDelete = document.querySelector('.collaboration-select-bar').hidden;
-    return JSON.stringify({ barHiddenBefore, hasMultiItem, afterEnter, two, backToOne, forwarded, deleted, remaining, barAfterDelete });
+    return JSON.stringify({ barHiddenBefore, hasMultiItem, afterEnter, two, backToOne, forwarded, deleted, remaining, barAfterDelete, confirmShown });
   })()`);
   const r = JSON.parse(out);
   assert.equal(r.barHiddenBefore, true, "the batch bar starts hidden");
@@ -74,6 +77,7 @@ app.whenReady().then(async () => {
   assert.deepEqual([...r.forwarded].sort(), ["m1", "m2"], "forward acts on the whole set");
   assert.deepEqual([...r.deleted].sort(), ["m1", "m2"], "delete acts on the whole set");
   assert.deepEqual(r.remaining, ["m3"], "deleted messages leave this view only");
+  assert.equal(r.confirmShown, true, "batch delete asks before removing anything");
   assert.equal(r.barAfterDelete, true, "the batch ends after acting");
   win.destroy(); fs.rmSync(dir, { recursive: true, force: true });
   console.log("collaboration multiselect: enter from the menu, toggle rows, batch forward and local delete");

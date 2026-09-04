@@ -149,7 +149,7 @@ function attachmentGlyph(isImage) {
   return svg;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "", resolveAttachmentPreview = null, onPreview = null, onForward = null, selection = null } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "", resolveAttachmentPreview = null, onPreview = null, onForward = null, selection = null, onDeleteLocal = null } = {}) {
   if (!node) return;
   node.classList.toggle("is-selecting", Boolean(selection?.isActive?.()));
   node.querySelectorAll(":scope > .collaboration-date-separator").forEach((el) => el.remove());
@@ -331,12 +331,16 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     row.oncontextmenu = (event) => {
       const bodyText = message.visibilityMask === "unavailable" || hiddenSource ? "" : String(message.bodyText || "");
       const menu = [];
+      // WeChat's order: read actions first, destructive last, 多选 at the end.
       if (bodyText) menu.push({ label: t("collaboration.copy"), onSelect: () => { navigator.clipboard?.writeText?.(bodyText).catch(() => {}); } });
       if (onReply && message.id && sequence(message) !== Infinity && !hiddenSource && canReply(message)) menu.push({ label: t("collaboration.reply.action"), onSelect: () => { if (canReply(message)) onReply(message); } });
       if (onForward && bodyText && message.id && sequence(message) !== Infinity) menu.push({ label: t("collaboration.forward"), onSelect: () => onForward(message) });
-      if (selection && message.id && sequence(message) !== Infinity) menu.push({ label: t("collaboration.multiSelect"), onSelect: () => selection.enter(message.id) });
       if (onEdit && mutable && canEdit(message)) menu.push({ label: t("collaboration.edit.action"), onSelect: () => { if (canEdit(message)) onEdit(message); } });
       if (onRevoke && mutable && canRevoke(message)) menu.push({ label: t("collaboration.revoke.action"), danger: true, onSelect: () => { if (canRevoke(message)) onRevoke(message); } });
+      // 删除 removes it from THIS device only — a recall is the action above,
+      // and only for your own message.
+      if (onDeleteLocal && message.id) menu.push({ label: t("collaboration.deleteMessage"), danger: true, onSelect: () => onDeleteLocal(message) });
+      if (selection && message.id && sequence(message) !== Infinity) menu.push({ label: t("collaboration.multiSelect"), onSelect: () => selection.enter(message.id) });
       if (!menu.length) return;
       event.preventDefault();
       openContextMenu({ x: event.clientX, y: event.clientY, items: menu });

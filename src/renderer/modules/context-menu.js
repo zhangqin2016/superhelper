@@ -12,13 +12,17 @@ let openMenu = null;
 
 function closeOpenMenu() {
   if (!openMenu) return;
-  const { node, cleanup } = openMenu;
+  const { node, cleanup, returnFocusTo } = openMenu;
   openMenu = null;
   cleanup();
   node.remove();
+  // Focus goes back where it came from: a menu that swallows focus leaves
+  // keyboard users stranded at the top of the document.
+  if (returnFocusTo && document.contains(returnFocusTo)) returnFocusTo.focus?.({ preventScroll: true });
 }
 
 export function openContextMenu({ x, y, items = [] } = {}) {
+  const returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   closeOpenMenu();
   const actionable = items.filter((item) => item === "separator" || (item && item.label));
   if (!actionable.some((item) => item !== "separator")) return;
@@ -85,7 +89,7 @@ export function openContextMenu({ x, y, items = [] } = {}) {
   window.addEventListener("blur", closeOpenMenu, true);
   document.addEventListener("scroll", closeOpenMenu, true);
 
-  openMenu = { node: menu, cleanup };
+  openMenu = { node: menu, cleanup, returnFocusTo };
   requestAnimationFrame(() => buttons.find((b) => !b.disabled)?.focus?.());
 }
 

@@ -58,6 +58,8 @@ app.whenReady().then(async () => {
       // The role line is hidden in a tile; it would make a grid of faces unreadable.
       roleHidden: tiles[0] ? getComputedStyle(tiles[0].querySelector('.collaboration-row-content small')).display === 'none' : null,
       hasLeave: Boolean(leave), leaveSpans: leaveCs?.gridColumn,
+      // The drawer names the group; the scope suffix belongs to the list-column detail.
+      title: document.getElementById('collaborationGroupDrawerTitle').textContent,
     };
     // Closing the drawer empties it and hides it again.
     document.getElementById('collaborationGroupDrawerClose').click();
@@ -75,6 +77,7 @@ app.whenReady().then(async () => {
   assert.equal(r.roleHidden, true, "the role line is hidden inside a tile");
   assert.equal(r.hasLeave, true, "the leave action is in the drawer");
   assert.match(String(r.leaveSpans), /1 \/ -1|1 \/ 4|span/, `the leave action spans the grid (${r.leaveSpans})`);
+  assert.equal(r.title, "G", "the drawer names the group without a scope suffix");
   assert.equal(r.closed, true, "closing hides and empties the drawer");
   win.destroy(); fs.rmSync(dir, { recursive: true, force: true });
   console.log("collaboration group drawer: right-side surface, member grid, leave action, closes clean");
