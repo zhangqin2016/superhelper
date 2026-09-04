@@ -1,6 +1,6 @@
 import { t, onLocaleChange } from "../i18n/index.js";
 import { identityName, resolvePerson } from "./collaboration-social-ui.js";
-import { renderCollaborationInbox } from "./collaboration-inbox.js";
+import { renderCollaborationInbox, setActiveConversation } from "./collaboration-inbox.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
 import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
@@ -263,6 +263,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!opened?.ok) { clearRevokedSelection(opened, conversationId); composer.setActive?.(!panel.hidden && policyEnabled); renderTimeline(); return; }
     const sameConversation = activeConversationId === conversationId;
     activeConversationId = conversationId;
+    setActiveConversation(byId("collaborationInbox"), conversationId);
     activeConversationKind = String(opened.conversation?.kind || "");
     activePeerReadSeq = Number(opened.conversation?.peerReadSeq) || 0;
     if (userNavigation !== false) {

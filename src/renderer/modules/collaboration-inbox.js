@@ -90,3 +90,17 @@ export function renderCollaborationInbox(node, conversations = [], { onOpen = ()
     node.append(item);
   }
 }
+
+/** Move the active-row highlight to a conversation without rebuilding the list.
+ *  Opening a conversation switches the thread immediately, but the list is only
+ *  re-rendered on a later state event, so without this the highlight lagged
+ *  behind — the row appeared to switch only after the next sync (e.g. a send). */
+export function setActiveConversation(node, conversationId) {
+  if (!node?.querySelectorAll) return;
+  const id = String(conversationId || "");
+  for (const item of node.querySelectorAll(".collaboration-inbox-item")) {
+    const on = item.dataset.conversationId === id;
+    item.classList.toggle("is-active", on);
+    item.setAttribute("aria-current", on ? "page" : "false");
+  }
+}
