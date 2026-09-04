@@ -17,6 +17,7 @@
   "collaboration.mentions.count": "提及 {count} 人",
   "collaboration.messageUnavailable": "消息不可用",
   "collaboration.reply.action": "回复",
+  "collaboration.copy": "复制",
   "collaboration.reply.clear": "清除引用",
   "collaboration.reply.preview": "回复对象 · 当前预览",
   "collaboration.reply.revoked": "引用的消息已撤回",

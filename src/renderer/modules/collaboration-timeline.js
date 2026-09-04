@@ -1,4 +1,5 @@
 import { t } from "../i18n/index.js";
+import { openContextMenu } from "./context-menu.js";
 import { formatBytes } from "./format-bytes.js";
 import { replyDisplay } from "./collaboration-reply-view.js";
 import { avatarHue } from "./collaboration-social-ui.js";
@@ -317,6 +318,20 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
       editButton.setAttribute("aria-label", t("collaboration.edit.action"));
       editButton.onclick = () => { if (node.isConnected && row.parentElement === node && editButton.closest(".collaboration-message") === row && canEdit(message)) onEdit(message); };
     } else editButton?.remove();
+    // Right-click a message for WeChat's action menu: copy / quote / edit /
+    // recall. It surfaces the very same guarded handlers as the hover chips, so
+    // nothing here can act where a chip could not.
+    row.oncontextmenu = (event) => {
+      const bodyText = message.visibilityMask === "unavailable" || hiddenSource ? "" : String(message.bodyText || "");
+      const menu = [];
+      if (bodyText) menu.push({ label: t("collaboration.copy"), onSelect: () => { navigator.clipboard?.writeText?.(bodyText).catch(() => {}); } });
+      if (onReply && message.id && sequence(message) !== Infinity && !hiddenSource && canReply(message)) menu.push({ label: t("collaboration.reply.action"), onSelect: () => { if (canReply(message)) onReply(message); } });
+      if (onEdit && mutable && canEdit(message)) menu.push({ label: t("collaboration.edit.action"), onSelect: () => { if (canEdit(message)) onEdit(message); } });
+      if (onRevoke && mutable && canRevoke(message)) menu.push({ label: t("collaboration.revoke.action"), danger: true, onSelect: () => { if (canRevoke(message)) onRevoke(message); } });
+      if (!menu.length) return;
+      event.preventDefault();
+      openContextMenu({ x: event.clientX, y: event.clientY, items: menu });
+    };
     let attachments = row.querySelector(".collaboration-message-attachments");
     const purpose = message.kind === "workspace_share" ? "workspace" : "attachment";
     if (!hiddenSource && message.attachmentIds?.length && onDownload && canDownload(purpose)) {

@@ -17,6 +17,7 @@
   "collaboration.mentions.count": "Mentioned {count} people",
   "collaboration.messageUnavailable": "Message unavailable",
   "collaboration.reply.action": "Reply",
+  "collaboration.copy": "Copy",
   "collaboration.reply.clear": "Clear reply",
   "collaboration.reply.preview": "Replying to · current preview",
   "collaboration.reply.revoked": "Quoted message was revoked",

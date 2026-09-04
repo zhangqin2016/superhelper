@@ -17,6 +17,7 @@
   "collaboration.mentions.count": "تمت الإشارة إلى {count} أشخاص",
   "collaboration.messageUnavailable": "الرسالة غير متاحة",
   "collaboration.reply.action": "رد",
+  "collaboration.copy": "نسخ",
   "collaboration.reply.clear": "إلغاء الاقتباس",
   "collaboration.reply.preview": "الرد على · المعاينة الحالية",
   "collaboration.reply.revoked": "تم سحب الرسالة المقتبسة",
