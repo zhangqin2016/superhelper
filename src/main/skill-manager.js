@@ -12,9 +12,18 @@ const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 const learnedContext = require("./learned-context");
 const { buildCrystallizationSection } = require("./learned-skills");
 const { ensureBundledPresent, installSkillFromSource } = require("./bundled-skill-sync");
-const { getLogger } = require("./logger");
-
-const guideLog = getLogger("agent-guide");
+const {
+  AGENT_GUIDE_MAX_BYTES,
+  AGENT_GUIDE_WATERMARK,
+  SKILL_INDEX_I18N,
+  utf8Bytes,
+  trimUtf8ToBytes,
+  buildSkillIndexSection,
+  createIndexReport,
+  reportAgentGuideBudget,
+  getLastAgentGuideBudget,
+  summarizeGuideBudget,
+} = require("./agent-guide-index");
 
 const {
   BUNDLED_SKILL_IDS,
@@ -474,122 +483,6 @@ function mediaSkillIndexDescription(skillId, loc) {
       : `No ${names[modality]} provider is currently available; do not assume DashScope or any other vendor. Explain direct generation is unavailable and suggest enabling the service, configuring a key, or choosing another workable option.`;
 }
 
-const SKILL_INDEX_I18N = {
-  "zh-CN": {
-    title: "Lily 平台能力目录（使用前先读取对应指南）",
-    intro:
-      "以下是本会话可用的 Lily 平台能力指南，不是 OpenCode 原生 skill。对每个用户请求：先按“适用场景”匹配能力（可多选并组合成能力链），在动手前用 Read 工具读取对应指南文件以获得完整步骤，再通过 Lily MCP 工具、脚本或普通工具执行。禁止对这些平台能力执行原生 `skill <id>`，包括 `lily-*` 和内置 `anthropics-*`。",
-    guideLabel: "指南",
-    truncated: "技能目录已截断以保护提示词预算；如需更多能力，请通过设置里的技能目录或按任务关键词搜索/启用对应技能。",
-  },
-  en: {
-    title: "Lily Platform Capability Catalog (read the guide before using a capability)",
-    intro:
-      "These are Lily platform capability guides available in this session, not OpenCode native skills. For each user request: match capabilities by their \"use when\" description (you may pick several and compose a capability chain), then READ the guide file with the Read tool before acting, and execute through Lily MCP tools, scripts, or ordinary tools. Do not run native `skill <id>` for these platform capabilities, including `lily-*` and built-in `anthropics-*` entries.",
-    guideLabel: "Guide",
-    truncated: "Skill index was truncated to protect the prompt budget; search or enable additional skills by task keyword when needed.",
-  },
-  ar: {
-    title: "فهرس قدرات منصة Lily (اقرأ الدليل قبل استخدام القدرة)",
-    intro:
-      "هذه أدلة قدرات منصة Lily المتاحة في هذه الجلسة، وليست مهارات OpenCode أصلية. لكل طلب: طابِق القدرات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة قدرات وتركيبها)، ثم اقرأ ملف الدليل بأداة Read قبل التنفيذ، ونفّذ عبر أدوات Lily MCP أو السكربتات أو الأدوات العادية. لا تشغّل `skill <id>` الأصلي لهذه القدرات، بما في ذلك `lily-*` و`anthropics-*` المدمجة.",
-    guideLabel: "الدليل",
-    truncated: "تم اختصار فهرس المهارات لحماية ميزانية التعليمات؛ ابحث عن مهارات إضافية أو فعّلها حسب كلمات المهمة عند الحاجة.",
-  },
-};
-
-function utf8Bytes(text) {
-  return Buffer.byteLength(String(text || ""), "utf8");
-}
-
-function appendWithinByteBudget(lines, nextLine, maxBytes) {
-  if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
-    lines.push(nextLine);
-    return true;
-  }
-  const candidate = [...lines, nextLine].join("\n");
-  if (utf8Bytes(candidate) > maxBytes) return false;
-  lines.push(nextLine);
-  return true;
-}
-
-function trimUtf8ToBytes(text, maxBytes) {
-  const value = String(text || "");
-  if (utf8Bytes(value) <= maxBytes) return value;
-  let lo = 0;
-  let hi = value.length;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (utf8Bytes(value.slice(0, mid)) <= maxBytes) lo = mid;
-    else hi = mid - 1;
-  }
-  return value.slice(0, lo);
-}
-
-/** Shorten a skill description to its leading trigger phrase. Lily's platform
- *  guide lists capability pointers and guide paths; agents read the full
- *  SKILL.md only for matched capabilities. Duplicating the whole description
- *  here dilutes every turn and tempts models to treat the entry as a native
- *  OpenCode `skill` command. */
-function shortIndexDesc(desc, cap = 180) {
-  const s = String(desc || "").replace(/\s+/g, " ").trim();
-  if (s.length <= cap) return s;
-  const slice = s.slice(0, cap);
-  // Cut on a word boundary for space-delimited text; CJK (no spaces) hard-caps.
-  const trimmed = slice.replace(/\s+\S*$/, "");
-  return `${(trimmed.length >= cap * 0.6 ? trimmed : slice).trim()}…`;
-}
-
-/** Build the progressive-disclosure skill index: every enabled skill listed with
- *  a SHORT when-to-use trigger and the path to its full guide, read on demand
- *  through normal file tools. Keep entries terse so the guide remains a router,
- *  not a second copy of each skill. */
-function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity, report = null) {
-  const head = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
-  const lines = [`## ${head.title}`, "", head.intro, ""];
-  let omitted = 0;
-  for (const skill of enabledSkills) {
-    const e = skillIndexEntry(skill, loc);
-    // A skill with no description is silently absent from the index, so the
-    // model never learns it exists. Record it: at any scale this is a
-    // discovery hole, and it is invisible in the produced text.
-    if (!e.desc) {
-      if (report) report.undescribedIds.push(e.id);
-      continue;
-    }
-    // FULL-WIDTH parentheses, deliberately: gateway WAFs pattern-match code
-    // injection as ASCII `eval (` — and a skill id ending in "-eval" followed
-    // by " (Name)" tripped one in the field, killing EVERY request that
-    // carried the guide (HTTP 200 + empty body, shown as empty completions).
-    // Full-width （） reads identically to the model and misses the WAF regex.
-    // LILY_GUIDE_ASCII_PARENS=1 restores the ASCII format (escape hatch for
-    // debugging; default behavior is the WAF-safe full-width form).
-    const asciiParens = process.env.LILY_GUIDE_ASCII_PARENS === "1";
-    const guide = e.hasGuide
-      ? (asciiParens ? ` (${head.guideLabel}: ${e.guidePath})` : ` （${head.guideLabel}: ${e.guidePath}）`)
-      : "";
-    const label = e.name && e.name !== e.id
-      ? (asciiParens ? `${e.id} (${e.name})` : `${e.id}（${e.name}）`)
-      : e.id;
-    if (!appendWithinByteBudget(lines, `- **${label}** — ${shortIndexDesc(e.desc)}${guide}`, maxBytes)) {
-      omitted += 1;
-      if (report) report.omittedIds.push(e.id);
-    } else if (report) {
-      report.indexedIds.push(e.id);
-    }
-  }
-  if (lines.length <= 4) return "";
-  if (omitted > 0) {
-    const notice = `- ${head.truncated} (${omitted} omitted)`;
-    if (!appendWithinByteBudget(lines, notice, maxBytes)) {
-      lines.pop();
-      if (report && report.indexedIds.length) report.omittedIds.push(report.indexedIds.pop());
-      appendWithinByteBudget(lines, notice, maxBytes);
-    }
-  }
-  return lines.join("\n");
-}
-
 function configuredProviderContextSignature() {
   const media = currentMediaProviderContext();
   const availableMedia = currentAvailableMediaProviderContext();
@@ -843,8 +736,8 @@ function buildAgentGuideContent(enabledSkills, locale) {
   const prefix = `${sections.join("\n").trim()}\n`;
   const prefixBytes = utf8Bytes(prefix);
   const indexBudget = Math.max(0, AGENT_GUIDE_MAX_BYTES - prefixBytes - 512);
-  const report = { indexedIds: [], omittedIds: [], undescribedIds: [] };
-  const index = buildSkillIndexSection(enabledSkills, loc, indexBudget, report);
+  const report = createIndexReport();
+  const index = buildSkillIndexSection(enabledSkills, loc, indexBudget, report, skillIndexEntry);
   if (index) sections.push(index, "");
 
   const generated = sections.join("\n").trim() + "\n";
@@ -865,51 +758,13 @@ function buildAgentGuideContent(enabledSkills, locale) {
   return `${trimUtf8ToBytes(generated, allowed).trimEnd()}${notice}`;
 }
 
-/** Last measured guide budget, for diagnostics and the headroom gate. Written
- *  on every build so support can answer "is this install near the wall?". */
-let lastAgentGuideBudget = null;
-
-function namedIdList(ids, limit = 12) {
-  if (ids.length <= limit) return ids.join(", ");
-  return `${ids.slice(0, limit).join(", ")} … and ${ids.length - limit} more`;
-}
-
-function reportAgentGuideBudget(generated, prefixBytes, indexBudget, report, loc) {
-  const totalBytes = utf8Bytes(generated);
-  lastAgentGuideBudget = {
-    locale: loc,
-    totalBytes,
-    maxBytes: AGENT_GUIDE_MAX_BYTES,
-    prefixBytes,
-    indexBudget,
-    indexed: report.indexedIds.length,
-    indexedIds: [...report.indexedIds],
-    omittedIds: [...report.omittedIds],
-    undescribedIds: [...report.undescribedIds],
-    measuredAt: Date.now(),
-  };
-  if (report.omittedIds.length) {
-    guideLog.warn(
-      "skill index dropped %d of %d skills for budget (locale=%s, prefix=%dB, index budget=%dB): %s",
-      report.omittedIds.length,
-      report.omittedIds.length + report.indexedIds.length,
-      loc,
-      prefixBytes,
-      indexBudget,
-      namedIdList(report.omittedIds),
-    );
-  }
-  if (report.undescribedIds.length) {
-    guideLog.warn(
-      "skills missing a description are absent from the index and undiscoverable: %s",
-      namedIdList(report.undescribedIds),
-    );
-  }
-}
-
-/** @returns {null | {totalBytes:number,maxBytes:number,prefixBytes:number,indexed:number,indexedIds:string[],omittedIds:string[],undescribedIds:string[]}} */
-function getLastAgentGuideBudget() {
-  return lastAgentGuideBudget ? { ...lastAgentGuideBudget } : null;
+/**
+ * Measure the guide for the skills that are actually enabled right now. Builds
+ * in memory only — writes nothing — so it is safe to call from an IPC handler.
+ */
+function measureAgentGuideBudget() {
+  buildAgentGuideContent(getEnabledInstalledSkills(), getActiveLocale());
+  return summarizeGuideBudget(getLastAgentGuideBudget());
 }
 
 function managedAgentGuideBlock(generatedContent) {
@@ -981,7 +836,6 @@ function buildAgentSubagentPersona(locale) {
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
 const AGENT_GUIDE_STATIC_VERSION = 23;
-const AGENT_GUIDE_MAX_BYTES = 48 * 1024;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -1989,6 +1843,8 @@ module.exports = {
   applyPlaceholders,
   buildAgentGuideContent,
   getLastAgentGuideBudget,
+  measureAgentGuideBudget,
+  AGENT_GUIDE_WATERMARK,
   mergeManagedAgentGuide,
   buildAgentBasePersona,
   buildAgentSubagentPersona,

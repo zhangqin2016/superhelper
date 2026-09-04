@@ -592,6 +592,34 @@
   color: var(--text-primary);
 }
 
+.model-library-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.model-library-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.model-library-badge.is-custom {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-light));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+  color: var(--accent);
+}
+
 .model-custom-id {
   font-size: var(--text-xs);
   color: var(--text-dim);
@@ -1958,6 +1986,30 @@
 
 .search-searxng-row[hidden],
 .search-provider-row[hidden],
+/* Capacity line: how close the enabled skills are to the model instruction
+   budget. Warning tone by default, danger once entries are actually being
+   dropped, because at that point the model has stopped seeing those skills. */
+.skills-capacity-notice {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg-soft);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--warning-text);
+}
+
+.skills-capacity-notice.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-dot-ring);
+  color: var(--danger-text);
+}
+
+.skills-capacity-notice[hidden] {
+  display: none;
+}
+
 .skills-registry-hint[hidden] {
   display: none;
 }
@@ -2911,4 +2963,13 @@ body.settings-open {
 .mobile-pair-pending-device {
   color: var(--text-secondary);
   font-size: var(--text-base);
+}
+.model-library-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 18px 0 10px; }
+.model-library-heading .settings-section-desc { margin: 4px 0 0; }
+.model-library-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.model-library-note { color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; }
+@media (max-width: 560px) {
+  .model-library-heading { align-items: flex-start; }
+  .model-library-actions { flex-direction: column-reverse; align-items: flex-end; gap: 6px; }
+  .model-library-note { white-space: normal; text-align: right; }
 }

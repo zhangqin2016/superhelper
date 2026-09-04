@@ -79,23 +79,6 @@ const CONFIGS = [
   { key: "all", skills: [...installed, ...catalog] },
 ];
 
-/** Marginal bytes one average catalog-style skill adds to the index, measured
- *  rather than assumed, so reported headroom is in real skills. */
-function marginalIndexBytes(skills, locale) {
-  const probes = Array.from({ length: 10 }, (_, index) => ({
-    id: `headroom-probe-${index}`,
-    skillDir: path.join(ROOT, "resources", "skills-catalog", `headroom-probe-${index}`),
-    manifest: {
-      id: `headroom-probe-${index}`,
-      name: `Headroom Probe ${index}`,
-      description: "Use when the user needs the probe capability. This entry approximates a typical catalog description length.",
-    },
-  }));
-  const base = bytesOf(skillManager.buildAgentGuideContent(skills, locale));
-  const grown = bytesOf(skillManager.buildAgentGuideContent([...skills, ...probes], locale));
-  return Math.max(1, Math.round((grown - base) / probes.length));
-}
-
 const baseline = WRITE || !fs.existsSync(BASELINE_PATH)
   ? { note: "Regenerate on purpose with: node scripts/test-agent-guide-headroom.mjs --write-baseline", configs: {} }
   : JSON.parse(fs.readFileSync(BASELINE_PATH, "utf8"));
@@ -142,7 +125,9 @@ for (const locale of LOCALES) {
       );
     }
 
-    const marginal = marginalIndexBytes(config.skills, locale);
+    // Exact: the bytes the real per-skill index lines cost, excluding the
+    // section's fixed title and intro, straight from the builder.
+    const marginal = Math.max(1, Math.round(report.indexLineBytes / Math.max(1, report.indexed)));
     const headroomSkills = Math.floor((MAX * WATERMARK - total) / marginal);
     measured[key] = { totalBytes: total, prefixBytes: report.prefixBytes, indexed: report.indexedIds.length };
     rows.push({ key, total, share, prefix: report.prefixBytes, indexed: report.indexedIds.length, marginal, headroomSkills });
@@ -151,10 +136,10 @@ for (const locale of LOCALES) {
 
 const width = Math.max(...rows.map((row) => row.key.length));
 console.log(`agent guide budget = ${MAX}B, watermark ${(WATERMARK * 100).toFixed(0)}% = ${Math.floor(MAX * WATERMARK)}B\n`);
-console.log(`${"config".padEnd(width)}   bytes   share   prefix  indexed  +skills`);
+console.log(`${"config".padEnd(width)}   bytes   share   prefix  indexed  B/skill  +skills`);
 for (const row of rows) {
   console.log(
-    `${row.key.padEnd(width)}  ${String(row.total).padStart(6)}  ${(row.share * 100).toFixed(1).padStart(5)}%  ${String(row.prefix).padStart(6)}  ${String(row.indexed).padStart(7)}  ${String(row.headroomSkills).padStart(7)}`,
+    `${row.key.padEnd(width)}  ${String(row.total).padStart(6)}  ${(row.share * 100).toFixed(1).padStart(5)}%  ${String(row.prefix).padStart(6)}  ${String(row.indexed).padStart(7)}  ${String(row.marginal).padStart(7)}  ${String(row.headroomSkills).padStart(7)}`,
   );
 }
 

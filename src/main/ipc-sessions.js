@@ -271,12 +271,40 @@ function registerSessionHandlers(ctx) {
   });
 }
 
+/** Trim the guide measurement to what the settings UI needs: no absolute
+ *  paths, and id lists capped so a pathological config cannot bloat the IPC
+ *  payload. Returns null rather than throwing. */
+function publicGuideBudget() {
+  try {
+    const measured = skillManager.measureAgentGuideBudget();
+    return {
+      totalBytes: measured.totalBytes,
+      maxBytes: measured.maxBytes,
+      share: measured.share,
+      indexed: measured.indexed,
+      headroomSkills: measured.headroomSkills,
+      atRisk: measured.atRisk,
+      omittedIds: measured.omittedIds.slice(0, 20),
+      omittedCount: measured.omittedIds.length,
+      undescribedIds: measured.undescribedIds.slice(0, 20),
+      undescribedCount: measured.undescribedIds.length,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function registerSkillHandlers(ctx) {
   const { runnerPool } = ctx;
 
   ipcMain.handle("skills:list", () => ({
     ok: true,
     skills: skillManager.listSkillsPublic(),
+    // How close this install is to the guide budget. The skill index is what
+    // tells the model which skills exist, and past the budget entries are
+    // dropped silently, so the number belongs where skills are managed.
+    // Strictly informational: a measurement failure must not break the list.
+    guideBudget: publicGuideBudget(),
   }));
 
   ipcMain.handle("skills:set-enabled", (_event, payload) => {

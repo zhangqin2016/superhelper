@@ -4,13 +4,14 @@
 
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
-import { t, skillErrorMessage, getLocale, tSkillName, tSkillDesc } from "../i18n/index.js";
+import { t, skillErrorMessage, tSkillName, tSkillDesc } from "../i18n/index.js";
 import {
   renderSkillTree,
   syncAllSkillTreeGroupSelects,
   syncSkillTreeGroupSelect,
 } from "./skills-tree-ui.js";
 import { anySessionRunning } from "./session-runtime-store.js";
+import { renderSkillCapacityNotice, updateRegistryHint } from "./skill-capacity-notice.js";
 
 /** @type {{ available: object[], categories?: object[], remoteIndexes?: object[], featuredSkillIds?: string[] } | null} */
 let lastCatalog = null;
@@ -461,53 +462,12 @@ export function handlePresetApplyResult(result) {
   }
 }
 
-function updateRegistryHint(catalog) {
-  const hint = $("skillsRegistryHint");
-  if (!hint) return;
-
-  if (catalog?.bundledCatalog) {
-    const parts = [t("skills.registryHintBundled")];
-    if (catalog.publisher) parts.push(catalog.publisher);
-    if (catalog.fetchedAt) {
-      parts.push(
-        t("skills.registryChecked", {
-          time: new Date(catalog.fetchedAt).toLocaleString(getLocale()),
-        }),
-      );
-    }
-    if (catalog.updatesCount > 0) {
-      parts.push(t("skills.registryUpdates", { count: catalog.updatesCount }));
-    }
-    if (catalog.available?.length) {
-      parts.push(t("skills.registryAvailable", { count: catalog.available.length }));
-    }
-    hint.textContent = parts.join(" · ");
-    return;
-  }
-
-  const parts = [];
-  if (catalog.publisher) parts.push(catalog.publisher);
-  if (catalog.fetchedAt) {
-    parts.push(
-      t("skills.registryChecked", {
-        time: new Date(catalog.fetchedAt).toLocaleString(getLocale()),
-      }),
-    );
-  }
-  if (catalog.updatesCount > 0) {
-    parts.push(t("skills.registryUpdates", { count: catalog.updatesCount }));
-  }
-  if (catalog.available?.length) {
-    parts.push(t("skills.registryAvailable", { count: catalog.available.length }));
-  }
-  hint.textContent = parts.join(" · ") || t("skills.registryConfigured");
-}
-
 export async function refreshSkillsList() {
   const data = await window.assistantClient.listSkills();
   if (!data?.ok) return;
 
   renderInstalledList(data.skills || []);
+  renderSkillCapacityNotice($("skillsCapacityNotice"), data.guideBudget);
 
   if (lastCatalog?.available) {
     renderAvailableList(lastCatalog.available);

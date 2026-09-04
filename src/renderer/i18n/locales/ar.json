@@ -2000,5 +2000,8 @@
   "collaboration.search.inConversation": "البحث داخل المحادثة",
   "collaboration.loadOlder": "تحميل الرسائل السابقة",
   "collaboration.offlineCache": "غير متصل — عرض الرسائل المحفوظة محليًا",
-  "collaboration.historyLoadFailed": "تعذر تحميل الرسائل السابقة. حاول مجددًا."
+  "collaboration.historyLoadFailed": "تعذر تحميل الرسائل السابقة. حاول مجددًا.",
+  "skills.capacityNear": "يستخدم فهرس المهارات {percent}% من ميزانية تعليمات النموذج، ويتبقى مكان لنحو {count} مهارة. بعد ذلك لن تظهر المهارة الجديدة في الفهرس الذي يراه النموذج.",
+  "skills.capacityFull": "ميزانية التعليمات ممتلئة: {count} مهارة غير موجودة في الفهرس الذي يراه النموذج، لذا لا يعرف بوجودها. تعطيل بعض المهارات يعيدها.",
+  "skills.capacityUndescribed": "{count} مهارة بلا وصف، لذا لا تظهر أبدًا في الفهرس الذي يراه النموذج."
 }
