@@ -33,6 +33,9 @@ async function findOrg(organizationId) {
 }
 
 async function orgSummaries(rows) {
+  // A user with no organizations must get an empty list, not a 500: an empty
+  // `in ()` is a Postgres syntax error (seen ~14x/day in production logs).
+  if (!rows.length) return [];
   const orgIds = rows.map((r) => r.id);
   const memberCounts = await db
     .selectFrom("organization_members")

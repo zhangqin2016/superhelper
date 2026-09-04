@@ -17,9 +17,10 @@ if (!databaseUrl) {
 }
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
+const client = await pool.connect();
 
 try {
-  await pool.query(`
+  await client.query(`
     create table if not exists schema_migrations (
       id text primary key,
       applied_at timestamptz not null default now()
@@ -28,26 +29,28 @@ try {
 
   const files = fs
     .readdirSync(migrationsDir)
-    .filter((name) => name.endsWith(".sql"))
+    .filter((name) => /^\d{3}_[a-z0-9_]+\.sql$/.test(name))
     .sort();
 
   for (const file of files) {
-    const exists = await pool.query("select 1 from schema_migrations where id = $1", [file]);
+    const exists = await client.query("select 1 from schema_migrations where id = $1", [file]);
     if (exists.rowCount) continue;
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
-    await pool.query("begin");
+    console.log(`[migrate] applying ${file}`);
+    await client.query("begin");
     try {
-      await pool.query(sql);
-      await pool.query("insert into schema_migrations (id) values ($1)", [file]);
-      await pool.query("commit");
+      await client.query(sql);
+      await client.query("insert into schema_migrations (id) values ($1)", [file]);
+      await client.query("commit");
       console.log(`[migrate] applied ${file}`);
     } catch (error) {
-      await pool.query("rollback");
+      await client.query("rollback");
       throw error;
     }
   }
 
   console.log("[migrate] done");
 } finally {
+  client.release();
   await pool.end();
 }
