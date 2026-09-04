@@ -1,5 +1,6 @@
 import { t } from "../i18n/index.js";
 import { avatarHue, mosaicAvatar } from "./collaboration-social-ui.js";
+import { openContextMenu } from "./context-menu.js";
 
 function clear(node) { node?.replaceChildren(); }
 
@@ -19,13 +20,18 @@ function formatInboxTime(value) {
   return new Intl.DateTimeFormat(undefined, { month: "2-digit", day: "2-digit" }).format(at);
 }
 
-export function renderCollaborationInbox(node, conversations = [], { onOpen = () => {}, teams = [], activeConversationId = "", filterText = "", resolveSender = () => "", currentUserId = "" } = {}) {
+export function renderCollaborationInbox(node, conversations = [], options = {}) {
+  const { onOpen = () => {}, teams = [], activeConversationId = "", filterText = "", resolveSender = () => "", currentUserId = "", prefs = null, onPrefsChange = () => {} } = options;
   if (!node) return;
   clear(node);
+  // Pinned float to the top, muted are dimmed, deleted are hidden — applied
+  // here so every render (load, search, pref change) stays consistent.
+  const source = conversations;
+  conversations = prefs ? prefs.apply(conversations) : conversations;
   const needle = String(filterText || "").trim().toLocaleLowerCase();
   const rows = [...conversations]
     .filter((conversation) => !needle || String(conversation.title || "").toLocaleLowerCase().includes(needle))
-    .sort((a, b) => Number(b.lastSeq || 0) - Number(a.lastSeq || 0) || Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || Number(b.lastSeq || 0) - Number(a.lastSeq || 0) || Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
   const activeId = String(activeConversationId || "");
   if (rows.length === 0) {
     const empty = document.createElement("p");
@@ -42,6 +48,18 @@ export function renderCollaborationInbox(node, conversations = [], { onOpen = ()
       + (Number(conversation.unreadCount || 0) > 0 ? " is-unread" : "");
     item.dataset.conversationId = conversationId;
     item.setAttribute("aria-current", conversationId === activeId ? "page" : "false");
+    if (conversation.pinned) item.classList.add("is-pinned");
+    if (conversation.muted) item.classList.add("is-muted");
+    if (prefs) item.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      const repaint = () => renderCollaborationInbox(node, source, options);
+      openContextMenu({ x: event.clientX, y: event.clientY, items: [
+        { label: t(prefs.isPinned(conversationId) ? "collaboration.unpinChat" : "collaboration.pinChat"), onSelect: () => { prefs.togglePin(conversationId); repaint(); onPrefsChange({ action: "pin", conversationId }); } },
+        { label: t(prefs.isMuted(conversationId) ? "collaboration.unmuteChat" : "collaboration.muteChat"), onSelect: () => { prefs.toggleMute(conversationId); repaint(); onPrefsChange({ action: "mute", conversationId }); } },
+        "separator",
+        { label: t("collaboration.deleteChat"), danger: true, onSelect: () => { prefs.hide(conversationId, conversation.updatedAt); repaint(); onPrefsChange({ action: "delete", conversationId }); } },
+      ] });
+    });
     const scopeId = String(conversation.scopeId || "personal");
     const scope = scopeId.startsWith("team:") ? (teams.find((team) => team.scopeId === scopeId)?.name || t("collaboration.scopeTeam")) : t("collaboration.scopePersonal");
     const title = String(conversation.title || conversationId || "");
@@ -85,7 +103,7 @@ export function renderCollaborationInbox(node, conversations = [], { onOpen = ()
       meta.append(timeNode);
     }
     if (meta.childNodes.length) item.append(meta);
-    if (unread > 0) { const badge = document.createElement("span"); badge.className = "collaboration-row-unread"; badge.textContent = unread > 99 ? "99+" : String(unread); meta.append(badge); }
+    if (unread > 0) { const badge = document.createElement("span"); badge.className = "collaboration-row-unread" + (conversation.muted ? " is-dot" : ""); badge.textContent = conversation.muted ? "" : (unread > 99 ? "99+" : String(unread)); badge.setAttribute("aria-label", String(unread)); meta.append(badge); }
     item.addEventListener("click", () => onOpen(conversationId));
     node.append(item);
   }

@@ -928,3 +928,50 @@
   from { opacity: 0; transform: translateY(16px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* Right-click context menu (conversation rows, messages) — WeChat's small
+   floating action list. Tokens only, so it follows the theme. */
+.app-context-menu {
+  position: fixed;
+  z-index: var(--z-menu);
+  min-inline-size: 160px;
+  max-inline-size: 260px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.app-context-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  text-align: start;
+  cursor: pointer;
+}
+
+.app-context-menu-item:hover:not(:disabled),
+.app-context-menu-item:focus-visible {
+  background: color-mix(in srgb, var(--bg-surface-hover) 88%, transparent);
+  outline: none;
+}
+
+.app-context-menu-item:disabled { color: var(--text-dim); cursor: default; }
+.app-context-menu-item.is-danger { color: var(--danger-text); }
+.app-context-menu-item.is-danger:hover { background: color-mix(in srgb, var(--danger-text) 10%, transparent); }
+
+.app-context-menu-separator {
+  height: 1px;
+  margin: 3px 6px;
+  background: var(--border-light);
+}

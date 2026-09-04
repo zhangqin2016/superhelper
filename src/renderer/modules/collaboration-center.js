@@ -1,6 +1,7 @@
 import { t, onLocaleChange } from "../i18n/index.js";
 import { identityName, resolvePerson } from "./collaboration-social-ui.js";
 import { renderCollaborationInbox, setActiveConversation } from "./collaboration-inbox.js";
+import { createConversationPrefs } from "./collaboration-conversation-prefs.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
 import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
@@ -330,6 +331,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     unreadBadge.hidden = total <= 0;
     unreadBadge.textContent = total > 99 ? "99+" : String(total);
   };
+  let convPrefs = null, convPrefsAccount = null;
+  const inboxPrefs = () => { const acct = directory?.profile?.userId || ""; if (!convPrefs || convPrefsAccount !== acct) { convPrefs = createConversationPrefs(acct); convPrefsAccount = acct; } return convPrefs; };
+  const paintInbox = (conversations) => renderCollaborationInbox(byId("collaborationInbox"), conversations || [], {
+    onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
+    resolveSender: (userId) => identityName(resolvePerson(directory, userId)), currentUserId: directory?.profile?.userId || "",
+    prefs: inboxPrefs(), onPrefsChange: ({ action, conversationId }) => { if (action === "delete" && conversationId === activeConversationId) backClick(); } });
   const load = async ({ checkAccess = false } = {}) => {
     if (disposed) return;
     const view = viewGeneration;
@@ -373,14 +380,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       // on screen; it is the most expensive surface here.
       if (activeConversationId) renderTimeline();
     }
-    renderCollaborationInbox(
-      byId("collaborationInbox"),
-      result?.conversations || result?.rows || [],
-      { onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
-        resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
-        currentUserId: directory?.profile?.userId || "" },
-    );
     lastConversations = result?.conversations || result?.rows || [];
+    paintInbox(lastConversations);
     updateUnreadBadge(result?.conversations);
     const available = result?.ok === true;
     if (status) { status.textContent = t(available ? (historyOffline ? "collaboration.offlineCache" : "collaboration.statusAvailable") : "collaboration.statusUnavailable"); status.classList.toggle("is-available", available); }
@@ -397,9 +398,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     // The same box filters whichever list is on screen.
     if (activeSection === "people") { friends.setFilter(value); return; }
     inboxFilter = value;
-    renderCollaborationInbox(byId("collaborationInbox"), lastConversations, { onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
-      resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
-      currentUserId: directory?.profile?.userId || "" });
+    paintInbox(lastConversations);
   };
   inboxSearch?.addEventListener("input", searchInput);
   // Header-icon controls: search (toggle, not a persistent bar) and group info.

@@ -1597,6 +1597,30 @@
   background: color-mix(in srgb, var(--danger-text) 10%, transparent);
 }
 
+/* Pinned conversations sit on a faint raised ground so the pinned cluster at
+   the top reads as stuck, the way WeChat greys its 置顶 chats. Muted ones dim,
+   and their unread badge becomes a bare dot rather than a count. */
+.collaboration-inbox-item.is-pinned {
+  background: color-mix(in srgb, var(--bg-surface-hover) 55%, transparent);
+}
+
+.collaboration-inbox-item.is-pinned.is-active {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.collaboration-inbox-item.is-muted .collaboration-row-content strong,
+.collaboration-inbox-item.is-muted .collaboration-row-content small {
+  color: var(--text-dim);
+}
+
+.collaboration-row-unread.is-dot {
+  min-inline-size: 8px;
+  inline-size: 8px;
+  block-size: 8px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+}
+
 /* Sticky letter headings: the reason a long address book stays navigable. */
 .collaboration-section-letter {
   position: sticky;
