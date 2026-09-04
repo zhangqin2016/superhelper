@@ -21,7 +21,8 @@ if [ "${SKIP_DEPLOY_PREFLIGHT:-0}" != "1" ]; then
   npm run deploy:preflight
 fi
 
-tar \
+COPYFILE_DISABLE=1 tar \
+  --exclude "._*" \
   --exclude ".DS_Store" \
   --exclude "server/.env" \
   --exclude "server/node_modules" \

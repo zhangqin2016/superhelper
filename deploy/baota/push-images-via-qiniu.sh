@@ -46,7 +46,8 @@ if [ "${SKIP_DEPLOY_PREFLIGHT:-0}" != "1" ]; then
   npm run deploy:preflight
 fi
 
-tar \
+COPYFILE_DISABLE=1 tar \
+  --exclude "._*" \
   --exclude ".DS_Store" \
   --exclude "deploy/baota/.env" \
   -czf "$DEPLOY_ARCHIVE" \
@@ -123,7 +124,8 @@ if [ "$BUILD_LOCATION" = "local" ]; then
   echo "  ${WEB_URL}"
 elif [ "$BUILD_LOCATION" = "remote" ]; then
   echo "Local Docker buildx is unavailable; building ${API_IMAGE} and ${WEB_IMAGE} on ${SSH_HOST}."
-  tar \
+  COPYFILE_DISABLE=1 tar \
+    --exclude "._*" \
     --exclude ".DS_Store" \
     --exclude "server/.env" \
     --exclude "server/node_modules" \
