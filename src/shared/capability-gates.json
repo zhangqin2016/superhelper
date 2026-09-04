@@ -646,6 +646,15 @@
         "scripts/test-agent-guide-headroom.mjs",
         "scripts/test-skill-capacity-notice.mjs"
       ]
+    },
+    {
+      "id": "agent-guide-blocks",
+      "protects": "The mandatory guide bodies ride every prompt, and rules are pushed rather than pulled — a rule the model was never shown is a rule it violates. A manifest may split its guide into addressable blocks with an `appliesTo` condition so a block that provably cannot apply here stops shipping, but pruning may never happen on a guess: an unknown condition key, a section that would prune to nothing, or a manifest with no blocks all keep the full body.",
+      "baseline": "Value-preserving where it prunes. Windows PowerShell rules were hardcoded inside one monolithic body string and shipped in every prompt on macOS and Linux, where they cannot apply. Verified 2026-09-04 across zh-CN/en/ar: a win32 install gets a byte-for-byte identical guide, and a darwin install differs by exactly the Windows section (480B zh, 455B en, 0B ar, which never had one). Arabic keeps `body` with no blocks, proving the unconverted path is unchanged.",
+      "failureFallback": "Static and deterministic, no model and no network. `body` stays in the manifest as the authoritative text AND the fallback for every uncertain path, and the gate asserts blocks rejoin to it byte-for-byte, so blocks cannot drift into shipping different rules. Mutation-verified 2026-09-04: making an unknown condition prune, removing the prune-to-nothing fallback, inverting the platform match, drifting a block from its body, and letting the Windows block swallow the trailing skill-directory paragraph each fail with the cause named.",
+      "tests": [
+        "scripts/test-agent-guide-blocks.mjs"
+      ]
     }
   ]
 }

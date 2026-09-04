@@ -25,6 +25,9 @@ const {
   summarizeGuideBudget,
 } = require("./agent-guide-index");
 
+const { resolveGuideBody, prunedBlockIds } = require("./agent-guide-blocks");
+const guideLog = require("./logger").getLogger("agent-guide");
+
 const {
   BUNDLED_SKILL_IDS,
   MANDATORY_PLATFORM_SKILL_IDS,
@@ -711,13 +714,19 @@ function buildAgentGuideContent(enabledSkills, locale) {
   if (providerSection) sections.push(providerSection, "");
 
   let lastTitle = null;
+  const prunedGuideBlocks = [];
 
   for (const skill of enabledSkills) {
     if (!INLINE_GUIDE_SKILL_IDS.has(skill.id)) continue;
     const guide = manifestGuide(skill.manifest, loc);
-    const bodyTemplate = guide?.body;
+    // A manifest may split its guide into blocks that declare where they
+    // apply, so Windows shell rules stop riding every prompt on macOS. With no
+    // blocks this is the whole body, exactly as before.
+    const bodyTemplate = resolveGuideBody(guide);
     const title = guide?.title;
     if (!bodyTemplate || !title) continue;
+    const pruned = prunedBlockIds(guide);
+    if (pruned.length) prunedGuideBlocks.push(`${skill.id}:${pruned.join("+")}`);
 
     const replacements = buildReplacements(skill.skillDir, skill.manifest);
     let body = applyPlaceholders(bodyTemplate, replacements);
@@ -736,6 +745,9 @@ function buildAgentGuideContent(enabledSkills, locale) {
   const prefix = `${sections.join("\n").trim()}\n`;
   const prefixBytes = utf8Bytes(prefix);
   const indexBudget = Math.max(0, AGENT_GUIDE_MAX_BYTES - prefixBytes - 512);
+  if (prunedGuideBlocks.length) {
+    guideLog.debug("guide blocks pruned for this environment: %s", prunedGuideBlocks.join(", "));
+  }
   const report = createIndexReport();
   const index = buildSkillIndexSection(enabledSkills, loc, indexBudget, report, skillIndexEntry);
   if (index) sections.push(index, "");
