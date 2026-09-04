@@ -149,8 +149,9 @@ function attachmentGlyph(isImage) {
   return svg;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "", resolveAttachmentPreview = null, onPreview = null, onForward = null } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "", resolveAttachmentPreview = null, onPreview = null, onForward = null, selection = null } = {}) {
   if (!node) return;
+  node.classList.toggle("is-selecting", Boolean(selection?.isActive?.()));
   node.querySelectorAll(":scope > .collaboration-date-separator").forEach((el) => el.remove());
   const prior = indexTimelineRows([...node.children]);
   const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
@@ -201,6 +202,12 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     const grouped = Boolean(previous && previousOutgoing === outgoing
       && (outgoing || previous.senderUserId === message.senderUserId) && createdAt > 0 && previousAt > 0 && createdAt - previousAt < 5 * 60 * 1000);
     row.classList.toggle("is-grouped", grouped);
+    // 多选: while selecting, a row is a checkbox target and its own actions
+    // stand down, so a click cannot both select and reply.
+    const selecting = Boolean(selection?.isActive?.());
+    row.classList.toggle("is-selectable", selecting);
+    row.classList.toggle("is-selected", selecting && Boolean(message.id) && selection.has(message.id));
+    row.onclick = selecting && message.id ? (event) => { event.preventDefault(); selection.toggle(message.id); } : null;
     row.dataset.messageKey = String(message.clientCommandId || message.id || keyList[0] || "");
     row.dataset.messageKeys = keyList.join(" ");
     row.dataset.clientCommandId = String(message.clientCommandId || "");
@@ -327,6 +334,7 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
       if (bodyText) menu.push({ label: t("collaboration.copy"), onSelect: () => { navigator.clipboard?.writeText?.(bodyText).catch(() => {}); } });
       if (onReply && message.id && sequence(message) !== Infinity && !hiddenSource && canReply(message)) menu.push({ label: t("collaboration.reply.action"), onSelect: () => { if (canReply(message)) onReply(message); } });
       if (onForward && bodyText && message.id && sequence(message) !== Infinity) menu.push({ label: t("collaboration.forward"), onSelect: () => onForward(message) });
+      if (selection && message.id && sequence(message) !== Infinity) menu.push({ label: t("collaboration.multiSelect"), onSelect: () => selection.enter(message.id) });
       if (onEdit && mutable && canEdit(message)) menu.push({ label: t("collaboration.edit.action"), onSelect: () => { if (canEdit(message)) onEdit(message); } });
       if (onRevoke && mutable && canRevoke(message)) menu.push({ label: t("collaboration.revoke.action"), danger: true, onSelect: () => { if (canRevoke(message)) onRevoke(message); } });
       if (!menu.length) return;

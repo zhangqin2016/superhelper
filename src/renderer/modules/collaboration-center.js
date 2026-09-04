@@ -2,7 +2,8 @@ import { t, onLocaleChange } from "../i18n/index.js";
 import { identityName, resolvePerson } from "./collaboration-social-ui.js";
 import { renderCollaborationInbox, setActiveConversation } from "./collaboration-inbox.js";
 import { createConversationPrefs } from "./collaboration-conversation-prefs.js";
-import { createForwardAction } from "./collaboration-forward.js";
+import { createForwardAction, createBatchForwardAction } from "./collaboration-forward.js";
+import { createMessageMultiSelect } from "./collaboration-multiselect.js";
 import { createUnreadBadge } from "./collaboration-unread-badge.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
@@ -78,7 +79,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (wasAway && grew > 0) unseenBelow += grew;
     lastRenderedCount = historyMessages.length;
     const needle = searchQuery.trim().toLocaleLowerCase();
-    const visibleMessages = needle ? historyMessages.filter((message) => String(message.bodyText || "").toLocaleLowerCase().includes(needle)) : historyMessages;
+    const kept = inboxPrefs().applyMessages(historyMessages);
+    const visibleMessages = needle ? kept.filter((message) => String(message.bodyText || "").toLocaleLowerCase().includes(needle)) : kept;
     renderCollaborationTimeline(timeline, visibleMessages, {
     currentUserId: directory?.profile?.userId || "",
     showSenderNames: activeConversationKind === "group" || activeConversationKind === "channel",
@@ -123,7 +125,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       composer.beginEdit?.({ conversationId: activeConversationId, messageId: message.id, baseRevision: Number(message.revision) || 1, bodyText: message.bodyText || "" });
       byId("collaborationComposer")?.focus();
     },
-    onForward: forwardMessage,
+    onForward: forwardMessage, selection: multiSelect,
     canRevoke: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
     onRevoke: async (message) => {
       if (disposed || !policyEnabled || !activeConversationId || !message.id) return;
@@ -331,6 +333,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let convPrefs = null, convPrefsAccount = null;
   const inboxPrefs = () => { const acct = directory?.profile?.userId || ""; if (!convPrefs || convPrefsAccount !== acct) { convPrefs = createConversationPrefs(acct); convPrefsAccount = acct; } return convPrefs; };
   const forwardMessage = createForwardAction({ getConversations: () => inboxPrefs().apply(lastConversations), getActiveConversationId: () => activeConversationId, getCurrentUserId: () => directory?.profile?.userId || "", resolveSender: (userId) => identityName(resolvePerson(directory, userId)), isEnabled: () => !disposed && policyEnabled && !panel.hidden && Boolean(activeConversationId), send: ({ conversationId, bodyText }) => window.assistantClient?.collaboration?.send?.({ conversationId, clientCommandId: collabCommandId(), bodyText }) });
+  let multiSelect; const batchForward = createBatchForwardAction({ getConversations: () => inboxPrefs().apply(lastConversations), getActiveConversationId: () => activeConversationId, getCurrentUserId: () => directory?.profile?.userId || "", resolveSender: (userId) => identityName(resolvePerson(directory, userId)), getMessages: () => historyMessages, onDone: () => multiSelect?.exit(), send: ({ conversationId, bodyText }) => window.assistantClient?.collaboration?.send?.({ conversationId, clientCommandId: collabCommandId(), bodyText }) });
+  multiSelect = createMessageMultiSelect({ container: byId("collaborationConversation"), onChange: () => renderTimeline(), onForward: batchForward, onDelete: (ids) => { inboxPrefs().hideMessages(ids); multiSelect.exit(); } });
   const paintInbox = (conversations) => renderCollaborationInbox(byId("collaborationInbox"), conversations || [], {
     onOpen: openConversation, teams: directory?.teams || [], activeConversationId, filterText: inboxFilter,
     resolveSender: (userId) => identityName(resolvePerson(directory, userId)), currentUserId: directory?.profile?.userId || "",

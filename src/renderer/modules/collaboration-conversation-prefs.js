@@ -18,9 +18,9 @@ export function createConversationPrefs(accountId, storage = safeStorage()) {
       const raw = storage?.getItem?.(KEY(accountId));
       const parsed = raw ? JSON.parse(raw) : null;
       return {
-        pinned: obj(parsed?.pinned), muted: obj(parsed?.muted), hidden: obj(parsed?.hidden),
+        pinned: obj(parsed?.pinned), muted: obj(parsed?.muted), hidden: obj(parsed?.hidden), hiddenMessages: obj(parsed?.hiddenMessages),
       };
-    } catch { return { pinned: {}, muted: {}, hidden: {} }; }
+    } catch { return { pinned: {}, muted: {}, hidden: {}, hiddenMessages: {} }; }
   }
   function persist() {
     try { storage?.setItem?.(KEY(accountId), JSON.stringify(state)); } catch { /* private mode / quota: prefs stay in memory */ }
@@ -46,6 +46,18 @@ export function createConversationPrefs(accountId, storage = safeStorage()) {
       });
       const decorated = rows.map((c) => ({ ...c, pinned: isPinned(c.id), muted: isMuted(c.id) }));
       return decorated.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+    },
+    /** Messages deleted locally (WeChat's 删除 removes them from YOUR view
+     *  only — it is not a recall, so nobody else is affected). */
+    isMessageHidden(messageId) { return Boolean(state.hiddenMessages[messageId]); },
+    hideMessages(ids = []) {
+      for (const id of ids) { if (id) state.hiddenMessages[String(id)] = 1; }
+      persist();
+    },
+    applyMessages(messages = []) {
+      const hidden = state.hiddenMessages;
+      if (!Object.keys(hidden).length) return messages;
+      return (Array.isArray(messages) ? messages : []).filter((m) => !hidden[String(m?.id || "")]);
     },
     reload() { state = load(); },
   };

@@ -116,3 +116,15 @@ export function createForwardAction({ getConversations = () => [], getActiveConv
     });
   };
 }
+
+/** 多选 → 转发: one picker, then every selected message's text is sent to the
+ *  chosen chat. Selection is cleared once the batch has been dispatched. */
+export function createBatchForwardAction({ getConversations = () => [], getActiveConversationId = () => "", getCurrentUserId = () => "", resolveSender = () => "", getMessages = () => [], send = async () => null, onDone = () => {} } = {}) {
+  return (ids = []) => {
+    const wanted = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id)));
+    const texts = (getMessages() || []).filter((m) => wanted.has(String(m?.id || ""))).map((m) => String(m?.bodyText || "").trim()).filter(Boolean);
+    if (!texts.length) return;
+    openForwardPicker({ conversations: getConversations(), excludeId: getActiveConversationId(), currentUserId: getCurrentUserId(), resolveSender,
+      onPick: (target) => { for (const bodyText of texts) void Promise.resolve(send({ conversationId: target.id, bodyText })).catch(() => null); onDone(); } });
+  };
+}
