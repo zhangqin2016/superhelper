@@ -67,15 +67,42 @@ assert.equal(store.countOrphanRuntimeEvents(), 0, "clear must not leave its own 
 // --- the existing backlog can be worked off ------------------------------
 // Events with no message at all: exactly the shape 135 deleted sessions left.
 store.appendRuntimeEvents("never-had-messages", events("never-had-messages", 25, "task.step.progress"));
-assert.equal(store.countOrphanRuntimeEvents(), 25, "events for a session with no messages must count as orphans");
+store.appendRuntimeEvents("also-orphaned", events("also-orphaned", 12, "process.event"));
+assert.equal(store.countOrphanRuntimeEvents(), 37, "events for sessions with no messages must count as orphans");
 
-const firstPass = store.pruneOrphanRuntimeEvents({ limit: 10 });
-assert.equal(firstPass, 10, "pruning must respect its bound so a huge backlog cannot block a startup");
-assert.equal(store.countOrphanRuntimeEvents(), 15, "a bounded pass must leave the rest for the next one");
-const rest = store.pruneOrphanRuntimeEvents({ limit: 1000 });
-assert.equal(rest, 15, "a later pass must finish the backlog");
+// Bounded BY SESSION, because orphans always belong to whole deleted
+// conversations. The first version deleted row by row: 20,000 synchronous
+// statements per round on the main process froze the UI for two minutes after
+// startup on a real 12 GB install. Whole-session deletes do the same work in a
+// handful of statements.
+const firstPass = store.pruneOrphanRuntimeEvents({ maxSessions: 1 });
+assert.ok(firstPass > 0, "a pass must remove something when there is a backlog");
+assert.equal(
+  store.countOrphanRuntimeEvents(),
+  37 - firstPass,
+  "one round must clear exactly the sessions it took and leave the rest for the next",
+);
+assert.ok(
+  store.countOrphanRuntimeEvents() > 0,
+  "maxSessions must bound a round, so a large backlog spreads across rounds instead of blocking one",
+);
+const rest = store.pruneOrphanRuntimeEvents({ maxSessions: 10 });
+assert.equal(rest, 37 - firstPass, "a later pass must finish the backlog");
 assert.equal(store.countOrphanRuntimeEvents(), 0, "the backlog must reach zero");
-assert.equal(store.pruneOrphanRuntimeEvents({ limit: 1000 }), 0, "pruning an empty backlog must be a no-op, not an error");
+assert.equal(store.pruneOrphanRuntimeEvents({ maxSessions: 10 }), 0, "pruning an empty backlog must be a no-op, not an error");
+
+// The regression that caused the freeze must not come back: no per-row delete.
+const retention = fs.readFileSync(
+  path.join(path.dirname(new URL(import.meta.url).pathname), "..", "src/main/store/runtime-event-retention.js"),
+  "utf8",
+);
+const pruneSource = retention.slice(retention.indexOf("function pruneOrphanRuntimeEvents"), retention.indexOf("function countOrphanRuntimeEvents"));
+assert.doesNotMatch(
+  pruneSource,
+  /DELETE FROM runtime_events WHERE session_id = \? AND seq = \?/,
+  "pruning must delete whole sessions, never row by row — node:sqlite is synchronous on the main process",
+);
+assert.match(pruneSource, /DELETE FROM runtime_events WHERE session_id = \?`/, "the prune must issue one statement per session");
 
 // --- a live session is never touched ------------------------------------
 assert.equal(
@@ -89,7 +116,7 @@ assert.equal(
 // so assert the whole chain: the loop schedules it, and something starts the loop.
 const ROOT_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
 const maintenance = fs.readFileSync(path.join(ROOT_DIR, "src/main/store/runtime-event-maintenance.js"), "utf8");
-assert.match(maintenance, /pruneOrphanRuntimeEvents\(\{ limit: ORPHAN_BATCH_SIZE \}\)/, "the prune must actually be scheduled, with a bound");
+assert.match(maintenance, /pruneOrphanRuntimeEvents\(\{[\s\S]{0,120}maxSessions: ORPHAN_SESSION_BATCH/, "the prune must actually be scheduled, bounded by session");
 assert.match(maintenance, /prunedOrphans > 0\) && rounds < MAX_ROUNDS/, "maintenance must keep going while there is still a backlog to work off");
 const wiring = maintenance.slice(maintenance.indexOf("pruneOrphanRuntimeEvents"));
 assert.match(wiring.slice(0, 500), /catch \(pruneErr\)/, "pruning must be fail-open — maintenance must never break startup");
@@ -106,7 +133,7 @@ assert.match(manager, /require\("\.\/store\/runtime-event-maintenance"\)/, "and 
   let pending = [];
   startRuntimeEventMaintenance({
     store: () => ({
-      pruneOrphanRuntimeEvents: ({ limit }) => { calls.push(`prune:${limit}`); return 0; },
+      pruneOrphanRuntimeEvents: ({ limit, maxSessions }) => { calls.push(`prune:${limit}/${maxSessions}`); return 0; },
       compactRuntimeEventPayloads: () => { calls.push("compact"); return { compacted: 0 }; },
     }),
     schedule: (fn, delay) => { pending.push([fn, delay]); },
@@ -114,8 +141,21 @@ assert.match(manager, /require\("\.\/store\/runtime-event-maintenance"\)/, "and 
   assert.equal(pending.length, 1, "starting maintenance must schedule exactly one first round");
   const [firstFn, firstDelay] = pending.pop();
   assert.ok(firstDelay >= 1000, "the first round must be deferred so it never competes with startup");
+
+  // Default: the backlog prune must NOT run. Discovering orphans costs a full
+  // scan of the event table (2.8-3.1 s measured on a real 12 GB install) and
+  // node:sqlite is synchronous on the main process — doing that at startup is
+  // what froze the UI for two minutes.
+  delete process.env.LILY_PRUNE_ORPHAN_EVENTS;
   firstFn();
-  assert.deepEqual(calls, ["prune:20000", "compact"], "orphans must be pruned BEFORE payloads are compacted, with the bound applied");
+  assert.deepEqual(calls, ["compact"], "by default a startup must only compact payloads, never scan for orphans");
+
+  // Opt-in: both bounds applied, and orphans before payloads.
+  calls.length = 0;
+  process.env.LILY_PRUNE_ORPHAN_EVENTS = "1";
+  firstFn();
+  assert.deepEqual(calls, ["prune:20000/4", "compact"], "when opted in, orphans must be pruned BEFORE payloads, with both bounds applied");
+  delete process.env.LILY_PRUNE_ORPHAN_EVENTS;
   assert.equal(pending.length, 0, "with no work found, maintenance must stop instead of spinning");
 }
 

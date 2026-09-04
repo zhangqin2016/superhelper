@@ -20,6 +20,7 @@
 function startRuntimeEventMaintenance({ store, schedule }) {
   const BATCH_SIZE = 200;
   const ORPHAN_BATCH_SIZE = 20_000;
+  const ORPHAN_SESSION_BATCH = 4;
   const MIN_BYTES = 20_000;
   const MAX_ROUNDS = 50;
   let rounds = 0;
@@ -34,7 +35,24 @@ function startRuntimeEventMaintenance({ store, schedule }) {
       // worked off across rounds and startups instead of blocking one.
       let prunedOrphans = 0;
       try {
-        prunedOrphans = store().pruneOrphanRuntimeEvents({ limit: ORPHAN_BATCH_SIZE });
+        // OFF BY DEFAULT, and that is the point.
+        //
+        // Going forward no orphans are created at all: clear() now deletes a
+        // conversation's events along with its messages. This only drains a
+        // backlog from before that fix, and draining it cannot be made cheap
+        // here — finding orphans means scanning the whole event table, measured
+        // at 2.8-3.1 s on a real 12 GB install however the query is written, and
+        // node:sqlite is synchronous on the main process. The first version
+        // froze the UI for two minutes after startup doing exactly this.
+        //
+        // Opt in with LILY_PRUNE_ORPHAN_EVENTS=1. Deleting is cheap (one
+        // statement per session, ~0 ms); only discovery is not.
+        if (process.env.LILY_PRUNE_ORPHAN_EVENTS === "1") {
+          prunedOrphans = store().pruneOrphanRuntimeEvents({
+            limit: ORPHAN_BATCH_SIZE,
+            maxSessions: ORPHAN_SESSION_BATCH,
+          });
+        }
         if (prunedOrphans > 0) {
           console.info("[sessions] pruned " + prunedOrphans + " runtime event(s) from deleted conversations");
         }
