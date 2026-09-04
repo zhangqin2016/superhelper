@@ -220,40 +220,48 @@ create index if not exists usage_events_org_idx on usage_events (organization_id
 
 ## 9. 实施计划（分阶段，每阶段有验证门）
 
+> **状态（2026-09-05 核实）**：Phase 1-5 均已交付，复选框此前一直是未勾选状态，与代码不符，已按实际情况更正。
+> 逐项核实：migration 028、`services/enterprise.js`、`services/enterprise-mutations.js`、`services/organization-context.js`、
+> `wallet.js` 的 `fetchOrgGrants` / `resolveOrgForConsumption`、`routes/public/enterprise.js` + `enterprise-members.js`、
+> `routes/admin/enterprise.js`（在 `admin.js` 注册）、客户端 `account-manager.js` 组织拉取与选择 + `x-lily-organization-id` 注入、
+> `web/app/account/enterprise/*` 与 `web/app/admin/enterprise/*`、门禁 `scripts/test-enterprise-orgs.mjs` 通过。
+
+> **本期新增（§11）**：席位邀请。原设计未覆盖"给还没注册的员工发席位"，`POST members` 对未注册手机号返回 `USER_NOT_FOUND`，企业买了座位也必须等员工逐个注册。
+
 **Phase 1 — 数据 + 纯逻辑（不依赖 DB 运行即可验证）**
-- [ ] `server/migrations/028_enterprise_organizations.sql`
-- [ ] `services/enterprise.js`：角色常量、成员状态机、`requireOrgRole` 判定纯函数
-- [ ] `services/wallet.js`：
-  - [ ] `fetchUserGrants` 加 `organization_id IS NULL` 过滤（回归：现有个体查询逐字节不变）
-  - [ ] `consumeEntitlement` 组织池补充（可选的 `organizationId`：个人不足整单转组织池；组织/成员状态过滤；成员配额 `organization_members.quota` 单次上限）
+- [x] `server/migrations/028_enterprise_organizations.sql`
+- [x] `services/enterprise.js`：角色常量、成员状态机、`requireOrgRole` 判定纯函数
+- [x] `services/wallet.js`：
+  - [x] `fetchUserGrants` 加 `organization_id IS NULL` 过滤（回归：现有个体查询逐字节不变）
+  - [x] `consumeEntitlement` 组织池补充（可选的 `organizationId`：个人不足整单转组织池；组织/成员状态过滤；成员配额 `organization_members.quota` 单次上限）
 - 验证门：`scripts/test-enterprise-orgs.mjs` —— 纯函数单测（成员状态机、配额选择逻辑、组织池补充、**fetchUserGrants 过滤回归**、成员配额、现有个人路径回归）。
 
 **Phase 2 — API 层**
-- [ ] `routes/enterprise.js` + `public.js` 注册 + OpenAPI tag
-- [ ] `routes/admin/enterprise.js` + `admin.js` 注册（§7.1 治理端点）
-- [ ] `db.js` 相关查询（组织/成员/用量汇总）
-- [ ] `services/model-gateway.js` / `services/media-gateway.js`：读取 `x-lily-organization-id`，校验成员+组织 active（`403 ORG_FORBIDDEN`），透传 `consumeEntitlement({ organizationId })`；无 header 走原路径（回归）
-- [ ] `services/wallet.js`：新增 `resolveOrgForConsumption(userId, organizationId)` 查询辅助（成员+组织状态校验纯逻辑）
+- [x] `routes/enterprise.js` + `public.js` 注册 + OpenAPI tag
+- [x] `routes/admin/enterprise.js` + `admin.js` 注册（§7.1 治理端点）
+- [x] `db.js` 相关查询（组织/成员/用量汇总）
+- [x] `services/model-gateway.js` / `services/media-gateway.js`：读取 `x-lily-organization-id`，校验成员+组织 active（`403 ORG_FORBIDDEN`），透传 `consumeEntitlement({ organizationId })`；无 header 走原路径（回归）
+- [x] `services/wallet.js`：新增 `resolveOrgForConsumption(userId, organizationId)` 查询辅助（成员+组织状态校验纯逻辑）
 - 验证门：server 起本地 Postgres（`server/scripts/integration.mjs` 模式）跑接口冒烟；无 DB 时至少 `node --check` + OpenAPI 枚举测试（`registerRoutes` 不需要 DB 的 `buildDocApp` 路径）。gateway 改动用单测覆盖"有 header 无效组织 403 / 无 header 原路径"。
 
 **Phase 3 — 客户端（Electron）接入**
-- [ ] `src/main/service-client.js`：`fetchOrganizations`
-- [ ] `src/main/account-manager.js`：`currentOrganizationId` 状态 + 持久化 + 登出清空
-- [ ] `src/main/runtime/opencode-model-config.js`：请求头注入 `x-lily-organization-id`（空则不带，回归：无组织行为与今天一致）
-- [ ] `src/renderer/modules/account-settings.js`：组织下拉 UI + 403 自动清空回退
+- [x] `src/main/service-client.js`：`fetchOrganizations`
+- [x] `src/main/account-manager.js`：`currentOrganizationId` 状态 + 持久化 + 登出清空
+- [x] `src/main/runtime/opencode-model-config.js`：请求头注入 `x-lily-organization-id`（空则不带，回归：无组织行为与今天一致）
+- [x] `src/renderer/modules/account-settings.js`：组织下拉 UI + 403 自动清空回退
 - 验证门：`npm run test:unit`（客户端套件不回退）；手工验证——登录→选组织→请求带 header→改组织→清空→回个人；无组织用户看不到下拉。
 
 **Phase 4 — web 企业管理工作台（§7.2）**
-- [ ] `web/app/account/enterprise/`：组织列表 + 概览 + 成员管理 + 额度配置 + 用量报表页面（`lib/user-api.js` 模式）
-- [ ] `web/app/account/layout.js`：导航加"企业"入口（owner/admin 登录后显示）
-- [ ] `web/app/admin/enterprise/`：平台 admin 治理页面（`AdminShell` + `safeApiGet` 模式）
-- [ ] i18n 文案（`web/lib/i18n.mjs` 现有结构）
+- [x] `web/app/account/enterprise/`：组织列表 + 概览 + 成员管理 + 额度配置 + 用量报表页面（`lib/user-api.js` 模式）
+- [x] `web/app/account/layout.js`：导航加"企业"入口（owner/admin 登录后显示）
+- [x] `web/app/admin/enterprise/`：平台 admin 治理页面（`AdminShell` + `safeApiGet` 模式）
+- [x] i18n 文案（`web/lib/i18n.mjs` 现有结构）
 - 验证门：`npm run web:dev` 起站 + 浏览器实测——owner/admin 登录后进入管理页、成员增删改、配额查看、用量报表；member 看不到管理按钮；非成员 403 提示。
 
 **Phase 5 — 回归 + 交付**
-- [ ] `npm run test:unit`（客户端套件不回退）
-- [ ] migration 在 `deploy/baota` 部署路径执行（`server/scripts/migrate.mjs`）
-- [ ] 客户端 + 服务端 + web 联调：选组织→扣企业池全链路 + 管理页操作闭环
+- [x] `npm run test:unit`（客户端套件不回退）
+- [x] migration 在 `deploy/baota` 部署路径执行（`server/scripts/migrate.mjs`）
+- [x] 客户端 + 服务端 + web 联调：选组织→扣企业池全链路 + 管理页操作闭环
 - 验证门：全部测试通过；文档更新 `memory/`（新笔记：enterprise-organizations）。
 
 ## 10. 风险与开放问题
@@ -282,3 +290,49 @@ create index if not exists usage_events_org_idx on usage_events (organization_id
 - Claude Code 官方成本/团队管理：https://code.claude.com/docs/zh-CN/costs
 - Claude Code 文档索引（gateway spend limits）：https://code.claude.com/docs/llms.txt
 - 阿里云百炼 Token Plan 团队管理（角色模型对标）：https://help.aliyun.com/document_detail/3029021.html
+
+## 11. 席位邀请（2026-09-05 增补）
+
+原设计的 §7 成员端点只接受 `{userId 或 phoneE164}`，而 `organization_members` 外键指向 `users(id)`，
+所以未注册手机号只能返回 `USER_NOT_FOUND (404)`。文档全文没有"邀请 / 预置 / 开号"字样 —— 这是设计遗漏，
+不是实现偏差。企业采购通常期望"HR 先把手机号发下去，员工首次登录自动入企"。
+
+**数据模型（Migration 043）**：新增 `organization_invitations`
+（`organization_id`、`phone_e164`、`role`、`status`、`invited_by`、`accepted_user_id`）。
+纯新增表，`organization_members` 一列未改，从不创建邀请的安装行为逐字节不变。
+
+- 唯一索引是**部分索引**（`where status = 'pending'`）：accepted / revoked 行留作审计，不阻塞再次邀请。
+- `invited_by` 用 `on delete set null`：邀请必须活得比发它的管理员久，级联会静默丢掉已付费的席位。
+- 表级 `check (role in ('admin','member'))`：所有权永不通过邀请转移。
+
+**行为**
+
+| 传入 | 结果 |
+|---|---|
+| `userId` | 直接建成员（原行为） |
+| `phoneE164`，**已注册** | 直接建成员（不让对方白等一次登录） |
+| `phoneE164`，**未注册** | 记一条待接受邀请 |
+| `role: owner` + 未注册 | `INVITE_ROLE_UNSUPPORTED (400)`，显式拒绝而非静默降级 |
+
+**转正**：在登录事务**提交之后**、独立 try 中执行（`routes/public/auth.js`）。
+登录绝不因为席位没发成而失败；转正失败的邀请保持 pending，下次登录重试。
+每条邀请在自己的事务里 `FOR UPDATE` 重读，两台设备同时登录不会重复发席位；
+写成员用 `onConflict doNothing` 保证幂等。
+
+`redemptionDecision` 三态：组织 active 且非成员 → **grant**；已是成员 → **consume**（不与既有行冲突）；
+组织已停用或不存在 → **defer**（席位是付过钱的，留着等组织重新启用，而不是烧掉）。
+
+**新端点**
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/enterprise/organizations/:id/invitations` | owner/admin | 待接受席位列表 |
+| DELETE | `/api/enterprise/organizations/:id/invitations/:invitationId` | owner/admin | 撤销待接受席位 |
+
+**界面**：`web/app/account/enterprise/[id]/members` 的添加表单补上手机号输入
+（此前只有用户 ID，连已有的 `phoneE164` 能力都没暴露），并新增"待接受席位"区块与撤销按钮。
+
+**验证门**：`scripts/test-enterprise-invitations.mjs` —— 纯逻辑（目标判定、转正三态、幂等）
++ 接线断言（行锁、登录后置、部分唯一索引、owner 拒绝、迁移只新增不改表）。
+六个变异验证：已注册手机走邀请、停用即烧掉邀请、转正不加锁、允许邀请 owner、
+转正放进登录事务、唯一索引改成全表 —— 各自按名字失败。

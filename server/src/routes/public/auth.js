@@ -4,6 +4,7 @@ import { zodBody, okResponse } from "../../openapi.js";
 import { config } from "../../config.js";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
+import { redeemInvitationsForPhone } from "../../services/enterprise-invitations.js";
 import {
   createAccessToken,
   createRefreshToken,
@@ -232,6 +233,15 @@ export function registerPublicAuthRoutes(app) {
         return { user, session };
       });
       if (result.disabled) return reply.code(403).send({ ok: false, code: "USER_DISABLED" });
+      // Grant any enterprise seats waiting for this phone. Deliberately AFTER
+      // the login transaction commits and in its own try: a login must never
+      // fail because a seat could not be granted, and an invitation left
+      // pending is simply retried at the next login.
+      try {
+        await redeemInvitationsForPhone(db, { userId: result.user.id, phoneE164 });
+      } catch (invitationError) {
+        request.log?.warn?.({ err: invitationError }, "enterprise invitation redemption failed");
+      }
       const entitlements = await fetchEntitlementSummary(result.user.id);
       return reply.send({
         ok: true,

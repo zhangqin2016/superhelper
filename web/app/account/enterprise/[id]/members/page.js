@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { userApiGet } from "../../../../../lib/user-api";
-import { addMemberAction, patchMemberAction, removeMemberAction } from "../../actions";
+import { addMemberAction, patchMemberAction, removeMemberAction, revokeInvitationAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,10 @@ export default async function OrgMembersPage({ params }) {
   const data = await userApiGet(`/api/enterprise/organizations/${id}/members`, { members: [] });
   const members = Array.isArray(data?.members) ? data.members : [];
   const org = await userApiGet(`/api/enterprise/organizations/${id}`, null);
+  // Seats handed to staff who have no account yet. They are not members
+  // until they log in, so they are listed separately rather than mixed in.
+  const invitationData = await userApiGet(`/api/enterprise/organizations/${id}/invitations`, { invitations: [] });
+  const invitations = Array.isArray(invitationData?.invitations) ? invitationData.invitations : [];
   if (!org?.id) notFound();
   const roleLabel = { owner: "所有者", admin: "管理员", member: "成员" };
   const canManage = org.role === "owner" || org.role === "admin";
@@ -22,10 +26,17 @@ export default async function OrgMembersPage({ params }) {
       </div>
 
       {canManage && (
-        <form action={addMemberAction.bind(null, id)} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-6 sm:flex-row">
-          <input name="userId" placeholder="用户 ID（usr_…）" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-          <input name="role" placeholder="角色（owner/admin/member）" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-          <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">添加成员</button>
+        <form action={addMemberAction.bind(null, id)} className="space-y-3 rounded-lg border border-slate-200 bg-white p-6">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input name="phoneE164" placeholder="手机号（+8613…）" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <input name="userId" placeholder="或用户 ID（usr_…）" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <select name="role" defaultValue="member" className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <option value="member">成员</option>
+              <option value="admin">管理员</option>
+            </select>
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">添加</button>
+          </div>
+          <p className="text-xs text-slate-500">手机号还没注册也可以添加：席位会先记为待接受，对方首次登录时自动加入。</p>
         </form>
       )}
 
@@ -57,6 +68,28 @@ export default async function OrgMembersPage({ params }) {
           ))}
         </ul>
       </section>
+
+      {canManage && invitations.length > 0 && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50/40">
+          <header className="border-b border-amber-200 px-6 py-3">
+            <h2 className="text-sm font-medium text-slate-900">待接受席位（{invitations.length}）</h2>
+            <p className="mt-0.5 text-xs text-slate-500">这些手机号还没有账号，首次登录后自动成为成员。</p>
+          </header>
+          <ul className="divide-y divide-amber-100">
+            {invitations.map((invitation) => (
+              <li key={invitation.id} className="flex flex-wrap items-center gap-3 px-6 py-4">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-900">{invitation.phone_e164}</p>
+                  <p className="text-xs text-slate-500">{roleLabel[invitation.role] || invitation.role} · 待接受</p>
+                </div>
+                <form action={revokeInvitationAction.bind(null, id, invitation.id)}>
+                  <button type="submit" className="rounded-lg bg-white px-3 py-1.5 text-sm text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100">撤销</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

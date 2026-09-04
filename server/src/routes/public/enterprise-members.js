@@ -3,10 +3,12 @@ import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { ORG_ROLES } from "../../services/enterprise.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
+import { listInvitations } from "../../services/enterprise-invitations.js";
 import { enterpriseMutationResponse, requireOrgRole } from "./enterprise-route-support.js";
 
 const orgIdSchema = z.object({ id: z.string().min(3).max(120) });
 const memberParamsSchema = z.object({ id: z.string().min(3).max(120), userId: z.string().min(3).max(120) });
+const invitationParamsSchema = z.object({ id: z.string().min(3).max(120), invitationId: z.string().min(3).max(120) });
 const addMemberSchema = z.object({
   userId: z.string().min(3).max(120).optional(),
   phoneE164: z.string().min(5).max(32).optional(),
@@ -57,6 +59,39 @@ export function registerPublicEnterpriseMemberRoutes(app) {
     async (request, reply) => {
       const input = addMemberSchema.parse(request.body);
       return enterpriseMutationResponse(reply, () => mutations.addMember(scope(request), input));
+    },
+  );
+
+  // Seats handed to staff who have no account yet. They are not members until
+  // they log in, so they live beside the member list rather than inside it.
+  app.get(
+    "/api/enterprise/organizations/:id/invitations",
+    {
+      schema: {
+        tags: ["public:enterprise"],
+        summary: "List pending seat invitations",
+        params: orgIdSchema,
+        response: { 200: okResponse({ invitations: { type: "array" } }) },
+      },
+    },
+    async (request, reply) => {
+      if (!await requireOrgRole(request, reply, request.params.id, "admin")) return;
+      return { ok: true, invitations: await listInvitations(db, request.params.id) };
+    },
+  );
+
+  app.delete(
+    "/api/enterprise/organizations/:id/invitations/:invitationId",
+    {
+      schema: {
+        tags: ["public:enterprise"],
+        summary: "Revoke a pending seat invitation",
+        params: invitationParamsSchema,
+        response: { 200: okResponse({ revoked: { type: "boolean" } }) },
+      },
+    },
+    async (request, reply) => {
+      return enterpriseMutationResponse(reply, () => mutations.revokeInvitation(scope(request), request.params.invitationId));
     },
   );
 

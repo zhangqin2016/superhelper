@@ -74,3 +74,14 @@ export async function removeMemberAction(organizationId, userId) {
     return { ok: false, message: String(error?.message || "移除失败") };
   }
 }
+
+/** Withdraw a seat handed to someone who has not signed up yet. */
+export async function revokeInvitationAction(organizationId, invitationId) {
+  try {
+    await userApiDelete(`/api/enterprise/organizations/${organizationId}/invitations/${invitationId}`);
+    revalidatePath(`/account/enterprise/${organizationId}/members`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: String(error?.message || "撤销失败") };
+  }
+}

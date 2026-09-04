@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { canChangeMemberRole, canManageMember, normalizeQuota, roleAtLeast } from "./enterprise.js";
+import { addMemberTarget, createInvitation } from "./enterprise-invitations.js";
 import { createKyselyConversationRepository } from "./collaboration/conversation-repository.js";
 import { writeEnterpriseEvents } from "./collaboration/enterprise-events.js";
 
@@ -43,10 +44,31 @@ export function createEnterpriseMutationService(database) {
       return mutate(options, async (context) => {
         const { trx, organizationId, organization, organizationMembers, membership } = context;
         let targetUserId = input.userId;
+        let existingUserId = "";
         if (!targetUserId && input.phoneE164) {
           const user = await trx.selectFrom("users").select("id").where("phone_e164", "=", input.phoneE164).executeTakeFirst();
-          if (!user) fail("USER_NOT_FOUND", 404);
-          targetUserId = user.id;
+          existingUserId = user?.id || "";
+          targetUserId = existingUserId;
+        }
+        // An unregistered phone used to be a dead end (USER_NOT_FOUND), so a
+        // company could not hand out the seats it had paid for until every
+        // employee had signed up. Record the intent instead and grant the seat
+        // at that person's next login.
+        const target = addMemberTarget({ userId: input.userId, phoneE164: input.phoneE164, existingUserId });
+        if (target.kind === "error") fail(target.code, 400);
+        if (target.kind === "invite") {
+          // Ownership cannot be handed to someone who has no account yet.
+          // Without this the role would be silently normalised to "member",
+          // which is a downgrade the caller never asked for.
+          if (input.role === "owner") fail("INVITE_ROLE_UNSUPPORTED", 400);
+          requireAllowed(canChangeMemberRole("member", input.role, membership.role));
+          const invitation = await createInvitation(trx, {
+            organizationId,
+            phoneE164: input.phoneE164,
+            role: input.role,
+            invitedBy: options.account?.userId || null,
+          });
+          return { ok: true, invitation };
         }
         if (!targetUserId) fail("MEMBER_TARGET_REQUIRED", 400);
         if (organizationMembers.some((member) => member.user_id === targetUserId)) fail("MEMBER_ALREADY_EXISTS", 409);
@@ -54,6 +76,27 @@ export function createEnterpriseMutationService(database) {
         const member = await trx.insertInto("organization_members").values({ organization_id: organizationId, user_id: targetUserId, role: input.role, status: "active", quota: null }).returningAll().executeTakeFirstOrThrow();
         if (organization.status === "active") await notify(context, { directory: [...activeIds(organizationMembers), targetUserId] });
         return { ok: true, member };
+      });
+    },
+    /** Withdraw an open seat invitation. Same lock and role gate as members. */
+    revokeInvitation(options, invitationId) {
+      return mutate(options, async (context) => {
+        const { trx, organizationId } = context;
+        const invitation = await trx
+          .selectFrom("organization_invitations")
+          .selectAll()
+          .where("id", "=", invitationId)
+          .where("organization_id", "=", organizationId)
+          .where("status", "=", "pending")
+          .forUpdate()
+          .executeTakeFirst();
+        if (!invitation) fail("INVITATION_NOT_FOUND", 404);
+        await trx
+          .updateTable("organization_invitations")
+          .set({ status: "revoked" })
+          .where("id", "=", invitation.id)
+          .execute();
+        return { ok: true, revoked: true };
       });
     },
     changeMember(options, targetUserId, input, remove = false) {

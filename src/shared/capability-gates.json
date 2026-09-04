@@ -711,6 +711,15 @@
       "tests": [
         "scripts/test-message-db-compaction.mjs"
       ]
+    },
+    {
+      "id": "enterprise-seat-invitations",
+      "protects": "An enterprise can hand a seat to staff who have no account yet, and a seat is never granted or lost by accident. POST members accepted {userId | phoneE164} but organization_members references users(id), so an unregistered phone was a dead end (USER_NOT_FOUND 404) and a company that bought seats had to wait for every employee to sign up and add them one at a time. An invitation records the intent; the seat is granted at that person's next successful login.",
+      "baseline": "Purely additive. One new table (migration 043); organization_members is untouched, so every existing membership path behaves exactly as before and an install that never creates an invitation is unchanged. A registered phone still becomes a membership immediately rather than being made to wait for a login it does not need. The design doc never covered this case — no mention of invite/provisioning anywhere in its 284 lines — so this is a design gap being closed, not an implementation drift.",
+      "failureFallback": "Login never depends on it: redemption runs AFTER the login transaction commits, inside its own try, so a seat that cannot be granted leaves the invitation pending for the next login instead of failing the login. Each invitation redeems in its own transaction with a FOR UPDATE re-read, so two devices logging in at once cannot both grant the same seat, and the membership insert is onConflict-doNothing idempotent. A disabled organization DEFERS rather than consuming — the seat was paid for and the org may be re-enabled. Ownership is refused explicitly (INVITE_ROLE_UNSUPPORTED) rather than silently normalised down to member, and the table's own CHECK forbids it. Uniqueness is a PARTIAL index on pending only, so accepted/revoked rows stay for audit without blocking a re-invite, and invited_by is ON DELETE SET NULL so an invitation outlives the admin who sent it. Mutation-verified 2026-09-05, six ways: routing a registered phone through an invitation, consuming instead of deferring on a disabled org, dropping the row lock, allowing an owner invitation, moving redemption inside the login transaction, and making the unique index non-partial each fail by name.",
+      "tests": [
+        "scripts/test-enterprise-invitations.mjs"
+      ]
     }
   ]
 }
