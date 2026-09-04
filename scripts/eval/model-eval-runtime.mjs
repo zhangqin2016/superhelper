@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { buildCompatibilityProfileRuntimeEnv } = require("../../src/main/model-presets.js");
 const { buildSharedBaseConfig } = require("../../src/main/runtime/opencode-config-builder.js");
-const { buildAgentBasePersona } = require("../../src/main/skill-manager.js");
+const { buildAgentBasePersona, buildAgentGuideContent } = require("../../src/main/skill-manager.js");
 const { SessionRunnerPool } = require("../../src/main/session-runner-pool.js");
 
 /**
@@ -13,7 +13,20 @@ const { SessionRunnerPool } = require("../../src/main/session-runner-pool.js");
  * recipe/lite guidance. Session MCP routing and per-turn orchestration require
  * the Electron host and are intentionally outside this live eval.
  */
-export function buildEvalPlatformConfig({ lilyEnv = {}, compatibilityProfile = null } = {}) {
+/**
+ * The full per-turn guide, for evals that measure the guide itself.
+ *
+ * Production puts this text on `body.system` every turn (see
+ * session-runner-pool). The standalone CLI cannot set `body.system`, so it
+ * rides the agent prompt instead: a different channel, the same text in the
+ * same role. Callers that do NOT ask for it get exactly the previous behaviour,
+ * so existing model-eval baselines keep their meaning.
+ */
+export function buildEvalPlatformConfig({
+  lilyEnv = {},
+  compatibilityProfile = null,
+  agentGuide = null,
+} = {}) {
   const runtimeEnv = {
     ...lilyEnv,
     ...buildCompatibilityProfileRuntimeEnv(compatibilityProfile),
@@ -32,7 +45,14 @@ export function buildEvalPlatformConfig({ lilyEnv = {}, compatibilityProfile = n
   // Reuse the runner's production guidance shaper instead of maintaining an
   // eval-only interpretation of capability recipes or lite support.
   const runnerPool = new SessionRunnerPool();
-  const basePrompt = runnerPool._appendModelRecipeHints(basePersona, runtimeEnv);
+  let basePrompt = runnerPool._appendModelRecipeHints(basePersona, runtimeEnv);
+  if (agentGuide && Array.isArray(agentGuide.skills)) {
+    const guideText = buildAgentGuideContent(agentGuide.skills, agentGuide.locale || "zh-CN");
+    if (!String(guideText || "").trim()) {
+      return { ok: false, reason: "LILY_AGENT_GUIDE_UNAVAILABLE", model: null, configContent: null, runtimeEnv };
+    }
+    basePrompt = `${basePrompt}\n\n${guideText}`;
+  }
   const liteGrade = runtimeEnv.LILY_MODEL_CAPABILITY_GRADE === "lite";
   const config = buildSharedBaseConfig({
     lilyEnv: runtimeEnv,
@@ -43,5 +63,6 @@ export function buildEvalPlatformConfig({ lilyEnv = {}, compatibilityProfile = n
     ...config,
     runtimeEnv,
     basePrompt,
+    guideBytes: Buffer.byteLength(basePrompt, "utf8"),
   };
 }

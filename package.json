@@ -66,7 +66,8 @@
     "purge:macos-junk": "node scripts/purge-macos-junk.mjs",
     "build:runtime:win": "node scripts/build-runtime-bundle.mjs --platform win32-x64",
     "dist:all": "npm run dist:mac && npm run dist:win",
-    "test:bench": "npx electron scripts/bench-replay-renderer.cjs"
+    "test:bench": "npx electron scripts/bench-replay-renderer.cjs",
+    "eval:guide": "node scripts/eval/run-guide-evals.mjs"
   },
   "build": {
     "appId": "cn.lilywb.workbench",

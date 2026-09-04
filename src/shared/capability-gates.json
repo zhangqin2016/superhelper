@@ -655,6 +655,16 @@
       "tests": [
         "scripts/test-agent-guide-blocks.mjs"
       ]
+    },
+    {
+      "id": "agent-guide-rule-adherence",
+      "protects": "The ruler for whether a guide change made the model dumber. Rules are pushed, not pulled, so the precondition for the model obeying a rule is that the rule is still in the assembled guide: agent-guide-rule-contract.json anchors ten non-negotiable rules on distinctive shipped phrases and the guide is rebuilt across three locales and three platforms to prove each required rule is present and each environment-conditional one is absent where it cannot apply. A separate live suite measures whether the model then obeys, and this gate keeps that suite honest offline.",
+      "baseline": "Deterministic and credential-free, so it runs on every change rather than only on release. Measured 2026-09-04: nine of ten rules present in all 9 locale x platform builds; windows-shell present in 2 of 9 (win32 zh-CN and en) exactly as agent-guide-blocks intends. It also surfaced a real gap now recorded in the contract rather than tolerated silently: the Arabic guide never contained a Windows section, so an Arabic user on Windows receives no PowerShell shell rules.",
+      "failureFallback": "Static: reads the real skill directories and rebuilds the real guide, no model and no network. Guards itself against becoming vacuous — an anchor matching in NO configuration fails as a dead contract entry, an unanchored locale fails as an unmeasured locale, every live-eval grader must score its own pass/fail fixtures and reject empty output, every discovery prompt must share no wording with its target skill's description, and every rule case must point at a tracked rule. Mutation-verified 2026-09-04: deleting a rule from the guide, making the Windows block unconditional, pointing an anchor at absent text, dropping a locale anchor, a grader that always passes, a discovery prompt that echoes its target description, an untracked rule reference, and removing the canary each fail by name.",
+      "tests": [
+        "scripts/test-agent-guide-rule-contract.mjs",
+        "scripts/test-guide-eval-cases.mjs"
+      ]
     }
   ]
 }

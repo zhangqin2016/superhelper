@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "note": "Rules the assembled agent guide MUST still carry. The guide is the only channel that pushes a rule to the model, and a rule the model was never shown is a rule it violates. Every entry is anchored on a distinctive phrase from the shipped text, per locale, so a rule that is reworded, moved behind a condition, pruned by environment, or squeezed out by the byte budget fails scripts/test-agent-guide-rule-contract.mjs by name. Anchors are deliberately short and distinctive: long ones break on harmless copy edits, generic ones stop measuring anything.",
+  "rules": [
+    {
+      "id": "anti-hallucination",
+      "why": "Highest-priority gate. It lives in the guide HEAD precisely because losing it under a tight budget is what produced 'confidently wrong, then apologizes'.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "抗幻觉硬门槛",
+        "en": "Anti-hallucination gate",
+        "ar": "بوابة مكافحة الهلوسة"
+      }
+    },
+    {
+      "id": "response-language",
+      "why": "Without it the model answers in the skill text's language or the UI language instead of the user's.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "回复语言必须跟随用户最新一条消息",
+        "en": "Reply in the primary language of the user",
+        "ar": "استخدم اللغة الأساسية في آخر رسالة"
+      }
+    },
+    {
+      "id": "gateway-identity",
+      "why": "The app talks to user-configured gateways. Losing this makes the model claim to be an Anthropic product.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "不使用 Claude/Anthropic 服务",
+        "en": "NOT Claude/Anthropic services",
+        "ar": "وليس خدمات Claude/Anthropic"
+      }
+    },
+    {
+      "id": "native-skill-boundary",
+      "why": "Catalog entries are Lily capability guides, not engine-native skills. Losing this makes the model run `skill <id>` and fail the turn.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "禁止对这些平台能力执行原生",
+        "en": "Do not run native `skill <id>`",
+        "ar": "لا تشغّل `skill <id>` الأصلي"
+      }
+    },
+    {
+      "id": "source-provenance",
+      "why": "Stops invented 'global skills' and project memory being described as a skill.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "没有证据就说无法确认",
+        "en": "say it cannot be confirmed",
+        "ar": "فقل إن الأمر غير مؤكد"
+      }
+    },
+    {
+      "id": "external-fact-routing",
+      "why": "Routes anything outside the conversation and workspace through real verification instead of memory.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "外部事实分流是语义驱动的",
+        "en": "External fact routing is semantic",
+        "ar": "توجيه الحقائق الخارجية دلالي"
+      }
+    },
+    {
+      "id": "platform-facts-no-deny",
+      "why": "The model used to flatly deny real app features like scheduled tasks. This is the never-deny rule.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "不要断然否认",
+        "en": "do not flatly deny",
+        "ar": "لا تنفِ بشكل قاطع"
+      }
+    },
+    {
+      "id": "verification-gate",
+      "why": "Completion claims must be checked against the user goal, or stated as unverified.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "验证门",
+        "en": "Verification gate",
+        "ar": "التحقق من الإكمال يجب أن يكون حلقة مغلقة"
+      }
+    },
+    {
+      "id": "skill-catalog",
+      "why": "The index is the ONLY channel that tells the model which skills exist. If its heading is gone, discovery is gone.",
+      "requiredWhen": "always",
+      "anchors": {
+        "zh-CN": "Lily 平台能力目录",
+        "en": "Lily Platform Capability Catalog",
+        "ar": "فهرس قدرات منصة Lily"
+      }
+    },
+    {
+      "id": "windows-shell",
+      "why": "Windows PowerShell rules. Environment-conditional by design (agent-guide-blocks): required on win32, and pruned everywhere else because they cannot apply there.",
+      "requiredWhen": { "platform": ["win32"] },
+      "forbiddenWhen": { "platform": ["darwin", "linux"] },
+      "localesKnownMissing": ["ar"],
+      "localesKnownMissingWhy": "The Arabic guide body never contained a Windows section, so an Arabic user on Windows does not receive these shell rules. Recorded rather than silently tolerated; fixing it means authoring Arabic prose, not a code change.",
+      "anchors": {
+        "zh-CN": "UseBasicParsing",
+        "en": "UseBasicParsing",
+        "ar": "UseBasicParsing"
+      }
+    }
+  ]
+}
