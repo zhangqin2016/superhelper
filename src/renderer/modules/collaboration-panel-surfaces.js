@@ -75,3 +75,18 @@ export function wireConversationHeader({ input, toggle, infoButton, onChange, on
     reset() { if (input) { input.hidden = true; input.value = ""; } toggle?.setAttribute("aria-expanded", "false"); if (infoButton) infoButton.hidden = true; },
   };
 }
+
+/** The group-info drawer: same `{ open(label) -> body, close() }` shape as the
+ *  detail surface, but it slides in over the thread's trailing edge instead of
+ *  replacing the list — WeChat opens group info beside the conversation. */
+export function createDrawerSurface({ view, title, body, close: closeButton }) {
+  const close = () => { if (view) view.hidden = true; if (body) body.replaceChildren(); if (title) title.textContent = ""; };
+  const open = (label) => {
+    if (!view || !body) return null;
+    if (title) title.textContent = String(label || "");
+    view.hidden = false;
+    return body;
+  };
+  closeButton?.addEventListener("click", close);
+  return { open, close, destroy() { closeButton?.removeEventListener("click", close); } };
+}

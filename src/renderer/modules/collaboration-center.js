@@ -10,7 +10,7 @@ import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
-import { createDetailSurface, createDetachControl, wireConversationHeader } from "./collaboration-panel-surfaces.js";
+import { createDetailSurface, createDetachControl, createDrawerSurface, wireConversationHeader } from "./collaboration-panel-surfaces.js";
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
@@ -188,8 +188,9 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     panelShell?.setConversationOpen(false);
   }
   const detailSurface = { open: openDetail, close: closeDetail };
+  const groupDrawer = createDrawerSurface({ view: byId("collaborationGroupDrawer"), title: byId("collaborationGroupDrawerTitle"), body: byId("collaborationGroupDrawerBody"), close: byId("collaborationGroupDrawerClose") });
   const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface });
-  const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface });
+  const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface, drawer: groupDrawer });
   const sectionHandlers = Object.entries(sectionButtons).map(([section, button]) => {
     const handler = () => { showSection(section); void load(); }; button?.addEventListener("click", handler); return [button, handler];
   });
@@ -387,7 +388,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!panelShell) setActive(true);
     queueMicrotask(() => { composer.setActive?.(!panel.hidden && policyEnabled && !navigating); if (!panel.hidden) void load(); });
   };
-  const backClick = () => { conversationHeaderControl?.reset(); searchQuery = ""; panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
+  const backClick = () => { conversationHeaderControl?.reset(); groupDrawer.close(); searchQuery = ""; panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
   nav.addEventListener("click", navClick);
   back?.addEventListener("click", backClick);
   const searchInput = () => {
@@ -401,7 +402,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   // Header-icon controls: search (toggle, not a persistent bar) and group info.
   const conversationHeaderControl = wireConversationHeader({ input: conversationSearch, toggle: byId("collaborationConversationSearchToggle"), infoButton: byId("collaborationConversationInfo"),
     onChange: (value) => { searchQuery = value; renderTimeline(); },
-    onInfo: () => { if (!activeConversationId) return; if (lastSocial) teams.update(lastSocial); void teams.showConversation(activeConversationId); } });
+    onInfo: () => { if (!activeConversationId) return; if (lastSocial) teams.update(lastSocial); void teams.showConversation(activeConversationId, { surface: "drawer" }); } });
 
   // Scroll-to-latest: a thread scrolled away from the bottom must offer a way
   // back, and must say how many messages arrived while you were reading up.

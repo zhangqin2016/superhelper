@@ -69,8 +69,10 @@ const html = read("src/renderer/index.html");
 // ---- The views render into it, and still work without it ---------------
 {
   const teams = read("src/renderer/modules/collaboration-teams.js");
-  assert.match(teams, /const detailSurface = \(title\) => detail\?\.open\?\.\(title\) \|\| details;/,
-    "teams draws a roster on the detail surface, falling back to its inline container when there is none");
+  assert.match(teams, /const detailSurface = \(title\) => activeSurface\(\)\?\.open\?\.\(title\) \|\| details;/,
+    "teams draws a roster on whichever surface was asked for, falling back to its inline container when there is none");
+  assert.match(teams, /rosterSurface === "drawer" \? drawer : detail/,
+    "the drawer is the surface when a conversation asks for group info; the list-column detail otherwise");
   // The fallback matters: these modules are rendered standalone by the DOM
   // tests, with no panel around them.
   assert.match(teams, /if \(surface === details\)/,

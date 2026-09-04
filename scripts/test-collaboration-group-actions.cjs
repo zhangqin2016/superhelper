@@ -26,8 +26,8 @@ const u = (p) => require("url").pathToFileURL(path.join(ROOT, p)).href;
   assert.match(surfaces, /setKind\(kind\) \{ if \(infoButton\) infoButton\.hidden = !kind \|\| kind === "direct"; \}/,
     "the group-info header button is shown only for a group/channel");
   const center = fs.readFileSync(path.join(ROOT, "src/renderer/modules/collaboration-center.js"), "utf8");
-  assert.match(center, /onInfo: \(\) => \{[^}]*void teams\.showConversation\(activeConversationId\);/,
-    "the header info button opens the active conversation's roster");
+  assert.match(center, /onInfo: \(\) => \{[^}]*void teams\.showConversation\(activeConversationId, \{ surface: "drawer" \}\);/,
+    "the header info button opens the active conversation's roster in the drawer");
 }
 
 app.whenReady().then(async () => {

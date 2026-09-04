@@ -2,7 +2,7 @@ import { t } from "../i18n/index.js";
 import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
 
-export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0, detail = null } = {}) {
+export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0, detail = null, drawer = null } = {}) {
   if (!root?.querySelectorAll) return { update() {}, reset() {}, showConversation: async () => {} };
   root.replaceChildren();
   let directory = { contacts: [], teams: [] }, conversations = [], detailsGeneration = 0, detailsConversation = null, pendingDetailsId = "";
@@ -35,8 +35,12 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   /** Where a roster is drawn. With a detail view it is its own screen beside
    *  the list; without one (this module rendered standalone, as the DOM tests
    *  do) it falls back to the inline container it always used. */
-  const detailSurface = (title) => detail?.open?.(title) || details;
-  const closeDetailSurface = () => { detail?.close?.(); details.replaceChildren(); };
+  // Which surface a roster is drawn on: the drawer when opened from a
+  // conversation (WeChat's group info), otherwise the list-column detail.
+  let rosterSurface = "detail";
+  const activeSurface = () => (rosterSurface === "drawer" ? drawer : detail);
+  const detailSurface = (title) => activeSurface()?.open?.(title) || details;
+  const closeDetailSurface = () => { detail?.close?.(); drawer?.close?.(); details.replaceChildren(); };
   // The create entry lines up with the avatar column, like the other entries,
   // instead of floating above the section headings as a text link.
   const createGroupEntry = socialDisclosure(t("collaboration.social.createGroup"), groupForm, { primary: true, icon: "people" });
@@ -290,7 +294,8 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         surface.append(row);
       }
     },
-    async showConversation(conversationId) {
+    async showConversation(conversationId, { surface = "detail" } = {}) {
+      rosterSurface = drawer && surface === "drawer" ? "drawer" : "detail";
       const generation = ++detailsGeneration, epoch = ui.current();
       pendingDetailsId = conversationId;
       detailSurface(t("collaboration.social.loading")).replaceChildren(socialNode("p", t("collaboration.social.loading")));
