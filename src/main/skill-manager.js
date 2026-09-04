@@ -12,6 +12,9 @@ const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 const learnedContext = require("./learned-context");
 const { buildCrystallizationSection } = require("./learned-skills");
 const { ensureBundledPresent, installSkillFromSource } = require("./bundled-skill-sync");
+const { getLogger } = require("./logger");
+
+const guideLog = getLogger("agent-guide");
 
 const {
   BUNDLED_SKILL_IDS,
@@ -541,13 +544,19 @@ function shortIndexDesc(desc, cap = 180) {
  *  a SHORT when-to-use trigger and the path to its full guide, read on demand
  *  through normal file tools. Keep entries terse so the guide remains a router,
  *  not a second copy of each skill. */
-function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity) {
+function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity, report = null) {
   const head = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
   const lines = [`## ${head.title}`, "", head.intro, ""];
   let omitted = 0;
   for (const skill of enabledSkills) {
     const e = skillIndexEntry(skill, loc);
-    if (!e.desc) continue;
+    // A skill with no description is silently absent from the index, so the
+    // model never learns it exists. Record it: at any scale this is a
+    // discovery hole, and it is invisible in the produced text.
+    if (!e.desc) {
+      if (report) report.undescribedIds.push(e.id);
+      continue;
+    }
     // FULL-WIDTH parentheses, deliberately: gateway WAFs pattern-match code
     // injection as ASCII `eval (` — and a skill id ending in "-eval" followed
     // by " (Name)" tripped one in the field, killing EVERY request that
@@ -564,6 +573,9 @@ function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity) {
       : e.id;
     if (!appendWithinByteBudget(lines, `- **${label}** — ${shortIndexDesc(e.desc)}${guide}`, maxBytes)) {
       omitted += 1;
+      if (report) report.omittedIds.push(e.id);
+    } else if (report) {
+      report.indexedIds.push(e.id);
     }
   }
   if (lines.length <= 4) return "";
@@ -571,6 +583,7 @@ function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity) {
     const notice = `- ${head.truncated} (${omitted} omitted)`;
     if (!appendWithinByteBudget(lines, notice, maxBytes)) {
       lines.pop();
+      if (report && report.indexedIds.length) report.omittedIds.push(report.indexedIds.pop());
       appendWithinByteBudget(lines, notice, maxBytes);
     }
   }
@@ -828,16 +841,75 @@ function buildAgentGuideContent(enabledSkills, locale) {
   if (overlaySection) sections.push(overlaySection, "");
 
   const prefix = `${sections.join("\n").trim()}\n`;
-  const indexBudget = Math.max(0, AGENT_GUIDE_MAX_BYTES - utf8Bytes(prefix) - 512);
-  const index = buildSkillIndexSection(enabledSkills, loc, indexBudget);
+  const prefixBytes = utf8Bytes(prefix);
+  const indexBudget = Math.max(0, AGENT_GUIDE_MAX_BYTES - prefixBytes - 512);
+  const report = { indexedIds: [], omittedIds: [], undescribedIds: [] };
+  const index = buildSkillIndexSection(enabledSkills, loc, indexBudget, report);
   if (index) sections.push(index, "");
 
   const generated = sections.join("\n").trim() + "\n";
+  reportAgentGuideBudget(generated, prefixBytes, indexBudget, report, loc);
   if (utf8Bytes(generated) <= AGENT_GUIDE_MAX_BYTES) return generated;
 
+  // Whole-document amputation: the index sits at the tail, so this cuts skills
+  // mid-line and was entirely silent. It only happens when the FIXED prefix
+  // alone has grown past the budget, which no test could catch.
+  guideLog.warn(
+    "agent guide exceeded %dB after indexing (prefix alone %dB) — tail truncated mid-document, locale=%s",
+    AGENT_GUIDE_MAX_BYTES,
+    prefixBytes,
+    loc,
+  );
   const notice = `\n\n- ${indexI18n.truncated}\n`;
   const allowed = Math.max(0, AGENT_GUIDE_MAX_BYTES - utf8Bytes(notice));
   return `${trimUtf8ToBytes(generated, allowed).trimEnd()}${notice}`;
+}
+
+/** Last measured guide budget, for diagnostics and the headroom gate. Written
+ *  on every build so support can answer "is this install near the wall?". */
+let lastAgentGuideBudget = null;
+
+function namedIdList(ids, limit = 12) {
+  if (ids.length <= limit) return ids.join(", ");
+  return `${ids.slice(0, limit).join(", ")} … and ${ids.length - limit} more`;
+}
+
+function reportAgentGuideBudget(generated, prefixBytes, indexBudget, report, loc) {
+  const totalBytes = utf8Bytes(generated);
+  lastAgentGuideBudget = {
+    locale: loc,
+    totalBytes,
+    maxBytes: AGENT_GUIDE_MAX_BYTES,
+    prefixBytes,
+    indexBudget,
+    indexed: report.indexedIds.length,
+    indexedIds: [...report.indexedIds],
+    omittedIds: [...report.omittedIds],
+    undescribedIds: [...report.undescribedIds],
+    measuredAt: Date.now(),
+  };
+  if (report.omittedIds.length) {
+    guideLog.warn(
+      "skill index dropped %d of %d skills for budget (locale=%s, prefix=%dB, index budget=%dB): %s",
+      report.omittedIds.length,
+      report.omittedIds.length + report.indexedIds.length,
+      loc,
+      prefixBytes,
+      indexBudget,
+      namedIdList(report.omittedIds),
+    );
+  }
+  if (report.undescribedIds.length) {
+    guideLog.warn(
+      "skills missing a description are absent from the index and undiscoverable: %s",
+      namedIdList(report.undescribedIds),
+    );
+  }
+}
+
+/** @returns {null | {totalBytes:number,maxBytes:number,prefixBytes:number,indexed:number,indexedIds:string[],omittedIds:string[],undescribedIds:string[]}} */
+function getLastAgentGuideBudget() {
+  return lastAgentGuideBudget ? { ...lastAgentGuideBudget } : null;
 }
 
 function managedAgentGuideBlock(generatedContent) {
@@ -1916,6 +1988,7 @@ module.exports = {
   saveSkillsState,
   applyPlaceholders,
   buildAgentGuideContent,
+  getLastAgentGuideBudget,
   mergeManagedAgentGuide,
   buildAgentBasePersona,
   buildAgentSubagentPersona,

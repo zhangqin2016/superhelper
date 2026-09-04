@@ -636,6 +636,15 @@
       "tests": [
         "scripts/test-ui-style-scale.mjs"
       ]
+    },
+    {
+      "id": "agent-guide-headroom",
+      "protects": "The every-turn agent guide keeps room for its skill index. The index is what tells the model which skills exist; it is built last from whatever bytes the fixed prefix leaves over, so a growing prefix silently deletes skills from what the model can see. At supported scale (bundled skills, and bundled plus the whole installable catalog, in zh-CN/en/ar) no skill may be dropped or left undescribed, the guide stays under 95% of AGENT_GUIDE_MAX_BYTES, and per-configuration bytes may only fall.",
+      "baseline": "Measured, not assumed: today the worst realistic configuration is Arabic with the full catalog at 41976B, 85.4% of the 49152B budget, 42 of 42 skills indexed, about 30 average skills of headroom left. The pre-existing assertion only checked bytes <= AGENT_GUIDE_MAX_BYTES, which the builder guarantees by amputating the index, so it could never fail however many skills were being discarded.",
+      "failureFallback": "Static and deterministic: builds the real guide from the real skill directories, no model and no network. Reads the omission report the builder now fills, so a dropped skill is named rather than counted. The byte ratchet can only be raised by regenerating the baseline on purpose (--write-baseline). Mutation-verified 2026-09-04: a 4KB prefix growth, a budget cut to 30KB, and one description-less skill each fail the gate with the cause named.",
+      "tests": [
+        "scripts/test-agent-guide-headroom.mjs"
+      ]
     }
   ]
 }
