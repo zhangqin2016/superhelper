@@ -12,7 +12,10 @@ function profile(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
   const avatar = field(value, "avatarObjectId", "avatar_object_id");
   return { userId: id(field(value, "userId", "user_id")), lilyId: text(field(value, "lilyId", "lily_id")),
-    displayName: text(field(value, "displayName", "display_name")), avatarObjectId: avatar == null ? null : id(avatar) };
+    displayName: text(field(value, "displayName", "display_name")), avatarObjectId: avatar == null ? null : id(avatar),
+    // Optional facets (older servers omit them): the enterprise login and a
+    // server-masked phone. Both are display fallbacks, never identifiers.
+    loginName: text(field(value, "loginName", "login_name")), phoneMasked: text(field(value, "phoneMasked", "phone_masked")) };
 }
 function role(value) { if (value == null) return null; if (!["owner", "admin", "member"].includes(value)) invalid(); return value; }
 function pair(store, a, b) {
@@ -22,9 +25,10 @@ function pair(store, a, b) {
 }
 function saveProfile(store, value) {
   const p = profile(value);
-  store.db.run(`INSERT INTO profiles(account_id,user_id,lily_id,display_name,avatar_object_id,updated_at) VALUES(?,?,?,?,?,?)
-    ON CONFLICT(account_id,user_id) DO UPDATE SET lily_id=excluded.lily_id,display_name=excluded.display_name,avatar_object_id=excluded.avatar_object_id,updated_at=excluded.updated_at`,
-  store.accountId, p.userId, p.lilyId, p.displayName, p.avatarObjectId, store.now());
+  store.db.run(`INSERT INTO profiles(account_id,user_id,lily_id,display_name,avatar_object_id,login_name,phone_masked,updated_at) VALUES(?,?,?,?,?,?,?,?)
+    ON CONFLICT(account_id,user_id) DO UPDATE SET lily_id=excluded.lily_id,display_name=excluded.display_name,avatar_object_id=excluded.avatar_object_id,
+    login_name=excluded.login_name,phone_masked=excluded.phone_masked,updated_at=excluded.updated_at`,
+  store.accountId, p.userId, p.lilyId, p.displayName, p.avatarObjectId, p.loginName || null, p.phoneMasked || null, store.now());
 }
 function contact(store, peer, relationship, requestId = null) {
   store.db.run(`INSERT INTO directory_contacts(account_id,user_id,relationship,request_id) VALUES(?,?,?,?)
@@ -88,8 +92,8 @@ function replaceDirectory(store, snapshot) {
     const teamId = id(field(member, "organizationId", "organization_id"));
     if (!allowed.has(teamId)) invalid();
     const p = profile(member);
-    store.db.run(`INSERT INTO directory_team_members(account_id,team_id,user_id,lily_id,display_name,avatar_object_id,role) VALUES(?,?,?,?,?,?,?)`,
-      store.accountId, teamId, p.userId, p.lilyId, p.displayName, p.avatarObjectId, role(member.role));
+    store.db.run(`INSERT INTO directory_team_members(account_id,team_id,user_id,lily_id,display_name,avatar_object_id,login_name,phone_masked,role) VALUES(?,?,?,?,?,?,?,?,?)`,
+      store.accountId, teamId, p.userId, p.lilyId, p.displayName, p.avatarObjectId, p.loginName || null, p.phoneMasked || null, role(member.role));
   }
 }
 
@@ -138,7 +142,7 @@ function pruneDirectoryProfiles(store) {
 function getDirectory(store) {
   return {
     profile: store.getProfile({ userId: store.accountId }),
-    contacts: store.db.all(`SELECT c.*,p.lily_id,p.display_name,p.avatar_object_id FROM directory_contacts c
+    contacts: store.db.all(`SELECT c.*,p.lily_id,p.display_name,p.avatar_object_id,p.login_name,p.phone_masked FROM directory_contacts c
       LEFT JOIN profiles p ON p.account_id=c.account_id AND p.user_id=c.user_id WHERE c.account_id=? ORDER BY c.user_id`, store.accountId)
       .map((r) => ({ ...profile(r), relationship: r.relationship, requestId: r.request_id, ownBlocked: Boolean(r.own_blocked) })),
     teams: store.db.all(`SELECT * FROM directory_teams WHERE account_id=? ORDER BY id`, store.accountId).map((r) => ({

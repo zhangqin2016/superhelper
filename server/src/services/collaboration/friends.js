@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { identityFacetsAvailable, withIdentityFields } from "./identity-fields.js";
 import { sql } from "kysely";
 
 import { canonicalFriendshipPair } from "./lock-order.js";
@@ -46,6 +47,10 @@ function profileView(profile) {
     lilyId: lilyId(profile?.lilyId ?? profile?.lily_id),
     displayName: String(profile?.displayName ?? profile?.display_name ?? ""),
     avatarObjectId: profile?.avatarObjectId ?? profile?.avatar_object_id ?? null,
+    // Present only for people who already share a relationship (the peer of an
+    // accepted friendship); a lookup by lilyId never carries them.
+    loginName: String(profile?.loginName ?? profile?.login_name ?? ""),
+    phoneMasked: String(profile?.phoneMasked ?? profile?.phone_masked ?? ""),
   };
 }
 
@@ -176,7 +181,12 @@ export function createKyselyFriendRepository(db) {
     async findProfileByLilyId(trx, normalizedLilyId) {
       return (trx || db).selectFrom("user_profiles").selectAll().where("lily_id", "=", normalizedLilyId).executeTakeFirst();
     },
-    async findProfileByUserId(trx, userId) { return trx.selectFrom("user_profiles").selectAll().where("user_id", "=", userId).executeTakeFirst(); },
+    async findProfileByUserId(trx, userId) {
+      if (!(await identityFacetsAvailable(trx))) return trx.selectFrom("user_profiles").selectAll().where("user_id", "=", userId).executeTakeFirst();
+      const row = await trx.selectFrom("user_profiles").leftJoin("users as identity", "identity.id", "user_profiles.user_id")
+        .selectAll("user_profiles").select(["identity.login_name", "identity.phone_e164"]).where("user_profiles.user_id", "=", userId).executeTakeFirst();
+      return withIdentityFields(row);
+    },
     async findRequest(trx, senderUserId, receiverUserId) {
       return trx.selectFrom("friend_requests").selectAll().where("sender_user_id", "=", senderUserId).where("receiver_user_id", "=", receiverUserId).where("status", "=", "pending").forUpdate().executeTakeFirst();
     },

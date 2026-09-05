@@ -35,7 +35,9 @@ try {
   assert.equal(initial.profile.userId, 'alice');
   assert.equal(initial.teams[0].scopeId, 'team:org');
   assert.deepEqual(initial.teams[0].members.map((m) => m.userId), ['alice', 'teammate']);
-  assert.doesNotMatch(JSON.stringify(initial), /private|phone|email|token|path/);
+  // `phoneMasked` is a deliberate display facet (server-masked); the raw
+  // number and its keys must still never appear.
+  assert.doesNotMatch(JSON.stringify(initial), /private|"phone"|phoneE164|phone_e164|email|token|path/);
   store.close(); store = new CollaborationStore(options);
   assert.deepEqual(store.getDirectory(), initial, 'same-account restart retains directory');
   store.replaceProjectionFromBootstrap({ watermark: 4, conversations: [], profile: snapshot.profile });

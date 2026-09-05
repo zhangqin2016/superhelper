@@ -1,6 +1,6 @@
 import { createEnterpriseRoster } from "./enterprise-roster.js";
 import { t } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
+import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName, resolvePerson, conversationDisplayTitle, preserveScroll } from "./collaboration-social-ui.js";
 import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
 
 export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0, detail = null, drawer = null } = {}) {
@@ -71,7 +71,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
    *  same words twice, and it is the widest thing on the row. */
   function conversationRow(conversation, { showScope = true } = {}) {
     const row = socialNode("div", "", "collaboration-social-row");
-    const title = conversation.title || conversation.id;
+    const title = conversationDisplayTitle(conversation, { currentUserId: directory.profile?.userId || "", resolveName: (userId) => identityName(resolvePerson(directory, userId)) });
     // Opening is the row itself; managing members is a hover/focus action, so
     // a list of channels reads as a list rather than as a grid of buttons.
     row.append(socialRowButton(title, () => onOpen(conversation.id), {
@@ -214,15 +214,46 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       surface.append(danger);
     }
   }
+  // What the list is built from, as a string. A sync event that changed
+  // nothing visible here (a typing tick, a read receipt, the 15 s directory
+  // poll returning the same people) used to rebuild every section anyway and
+  // the view snapped to the top — the "jumping" this fingerprint removes.
+  // Presence is part of it; `onlineUntil` is not, because it advances on every
+  // poll while nothing the user can see has changed.
+  let lastFingerprint = "";
+  const fingerprint = (dir, convs, cmds) => JSON.stringify({
+    self: dir.profile?.userId || "", source: dir.directorySource || "",
+    contacts: (dir.contacts || []).map((c) => [c.userId, c.relationship, Boolean(c.ownBlocked)]),
+    teams: (dir.teams || []).map((team) => [team.id, team.name, team.role,
+      (team.members || []).map((m) => [m.userId, m.displayName, m.loginName, m.phoneMasked, m.lilyId, m.role, m.presence || ""])]),
+    conversations: convs.filter((c) => c.scopeId === "personal" && c.kind === "group" || String(c.scopeId || "").startsWith("team:"))
+      .map((c) => [c.id, c.title, c.scopeId, c.kind, c.memberUserIds || []]),
+    commands: (cmds || []).map((c) => [c.id, c.state, c.code]),
+  });
   const controller = {
-    update({ directory: nextDirectory, conversations: nextConversations = [], commands = [] } = {}) {
-      const focusedRoster = document.activeElement?.closest?.(".enterprise-roster");
-      const focusedTeam = focusedRoster?.dataset.teamId;
-      directory = nextDirectory || { contacts: [], teams: [] }; conversations = nextConversations;
+    update(payload = {}) {
+      directory = payload.directory || { contacts: [], teams: [] }; conversations = payload.conversations || [];
+      // Revocation is state, not paint: a detail view (or one still loading)
+      // for a conversation that just vanished must be invalidated on EVERY
+      // update, including one whose visible content is identical — a late
+      // detail response would otherwise recreate controls for a revoked Team.
       if (pendingDetailsId && !conversations.some((c) => c.id === pendingDetailsId) || detailsConversation && (!conversations.some((c) => c.id === detailsConversation.id)
         || detailsConversation.scopeId.startsWith("team:") && !directory.teams.some((team) => team.scopeId === detailsConversation.scopeId))) {
         detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; closeDetailSurface(); ui.reset();
       }
+      const next = fingerprint(directory, conversations, payload.commands || []);
+      if (next === lastFingerprint && list.childElementCount) return;
+      lastFingerprint = next;
+      // The channel-form disclosures are recreated below; a user who had one
+      // open must find it still open.
+      const openForms = new Set([...list.querySelectorAll("section.collaboration-team[data-team-id] details.collaboration-disclosure[open]")].map((d) => d.closest("section").dataset.teamId));
+      preserveScroll(list, () => controller.rebuild(payload));
+      for (const teamId of openForms) list.querySelector(`section.collaboration-team[data-team-id="${teamId}"] details.collaboration-disclosure`)?.toggleAttribute("open", true);
+    },
+    /** DOM only — `update` has already taken the state and handled revocation. */
+    rebuild({ commands = [] } = {}) {
+      const focusedRoster = document.activeElement?.closest?.(".enterprise-roster");
+      const focusedTeam = focusedRoster?.dataset.teamId;
       // The picker keeps its own selection across a roster refresh, dropping
       // only people who are no longer selectable. A blocked or removed contact
       // therefore cannot stay silently selected.
@@ -332,7 +363,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       renderDetails(result);
     },
     reset() {
-      rosterState.clear(); detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); closeDetailSurface(); },
+      lastFingerprint = ""; rosterState.clear(); detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); closeDetailSurface(); },
   };
   return controller;
 }

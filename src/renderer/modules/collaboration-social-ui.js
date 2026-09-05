@@ -1,5 +1,17 @@
 import { t } from "../i18n/index.js";
 
+export function renderTypingHint(node, { state, conversationId, directory }) {
+  if (!node) return;
+  const ids = (conversationId && state?.typing?.[conversationId]) || [];
+  const others = ids.filter((userId) => userId && userId !== (directory?.profile?.userId || ""));
+  if (!others.length) { node.hidden = true; node.textContent = ""; return; }
+  const named = others.map((userId) => identityName(resolvePerson(directory, userId))).filter((name) => name && !/^usr_[a-z0-9]+$/i.test(name));
+  node.textContent = others.length > 1
+    ? t("collaboration.typing.many", { count: others.length })
+    : (named[0] ? t("collaboration.typing.one", { name: named[0] }) : t("collaboration.typing.someone"));
+  node.hidden = false;
+}
+
 export function socialNode(tag, text = "", className = "") {
   const node = document.createElement(tag); node.textContent = String(text); node.className = className; return node;
 }
@@ -76,18 +88,71 @@ export function socialField(form, name, label, { multiple = false, options = nul
 }
 export function selectedIds(select) { return [...select.selectedOptions].map((o) => o.value).filter(Boolean); }
 
-/** Human-facing identity: never expose a raw opaque `usr_…` id to the user. */
+/** Human-facing identity: never expose a raw opaque `usr_…` id to the user.
+ *  Nickname first; without one, what a colleague would actually recognise —
+ *  the enterprise login they were issued, then the phone the server already
+ *  masked ("138****5678") — and only then the Lily handle. */
 export function identityName(person) {
-  const displayName = typeof person?.displayName === "string" ? person.displayName.trim() : "";
-  const lilyId = typeof person?.lilyId === "string" ? person.lilyId.trim() : "";
+  const str = (value) => (typeof value === "string" ? value.trim() : "");
+  const displayName = str(person?.displayName);
+  const loginName = str(person?.loginName);
+  const phoneMasked = str(person?.phoneMasked);
+  const lilyId = str(person?.lilyId);
   const userId = typeof person?.userId === "string" ? person.userId : "";
   if (displayName) return displayName;
+  if (loginName) return loginName;
+  if (phoneMasked) return phoneMasked;
   if (lilyId) return lilyId;
   if (userId) {
     const tail = userId.length > 6 ? userId.slice(-6) : userId;
     return `${t("collaboration.social.unnamedUser")} ${tail}`;
   }
   return t("collaboration.social.unknownUser");
+}
+
+/** What a conversation is CALLED in a list or header. A direct chat has no
+ *  stored title — it is named after the other person; a group without one is
+ *  named after its members. The raw conversation id is never the answer: that
+ *  is the "long string" a list used to show for every 1:1. `resolveName` maps a
+ *  user id to a display name (the caller's directory + profiles). */
+export function conversationDisplayTitle(conversation, { currentUserId = "", resolveName = () => "", maxNames = 3 } = {}) {
+  const title = typeof conversation?.title === "string" ? conversation.title.trim() : "";
+  if (title) return title;
+  const self = String(currentUserId || "");
+  const ids = (Array.isArray(conversation?.memberUserIds) ? conversation.memberUserIds
+    : Array.isArray(conversation?.members) ? conversation.members.map((m) => (typeof m === "string" ? m : m?.userId)) : [])
+    .map((id) => String(id || "")).filter((id) => id && id !== self);
+  const isOpaque = (name) => !name || /^usr_[a-z0-9]+$/i.test(name);
+  const names = ids.map((id) => String(resolveName(id) || "").trim()).filter((name) => !isOpaque(name));
+  // A 1:1 with someone we cannot name yet is still that person ("成员 def456"),
+  // which beats a generic label. In a GROUP title such placeholders are noise
+  // next to real names, so they are left out there.
+  if (conversation?.kind === "direct") return names[0] || t("collaboration.conversation");
+  const placeholder = `${t("collaboration.social.unnamedUser")} `;
+  const real = names.filter((name) => !name.startsWith(placeholder));
+  if (!real.length) return t("collaboration.conversation");
+  const head = real.slice(0, maxNames).join("、");
+  return real.length > maxNames ? `${head} +${real.length - maxNames}` : head;
+}
+
+/** Rebuild a list without the viewport jumping: the nearest scrolling ancestor
+ *  keeps its offset across `fn`. A list that repaints on every sync event used
+ *  to snap back to the top each time — the "jumping" a user feels in Teams. */
+export function preserveScroll(node, fn) {
+  // Fail open: in a DOM-less harness (or anything unexpected) just paint.
+  let scroller = null, top = null;
+  try {
+    scroller = node;
+    while (scroller && scroller.nodeType === 1 && scroller !== document.body) {
+      const style = typeof getComputedStyle === "function" ? getComputedStyle(scroller).overflowY : "";
+      if ((style === "auto" || style === "scroll") && scroller.scrollHeight > scroller.clientHeight) break;
+      scroller = scroller.parentElement;
+    }
+    top = scroller && scroller.nodeType === 1 && scroller !== document.body ? scroller.scrollTop : null;
+  } catch { top = null; }
+  const result = fn();
+  try { if (top != null && scroller.isConnected) scroller.scrollTop = top; } catch { /* nothing to restore */ }
+  return result;
 }
 
 export function socialPerson(person) {

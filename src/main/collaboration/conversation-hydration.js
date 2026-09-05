@@ -72,7 +72,8 @@ function normalizeProjection(value, conversationId, accountId) {
   if (members.some((m) => m.conversationId !== conversationId || !id(m.userId) || m.status !== "active" || !["owner", "admin", "member"].includes(m.role) || !Number.isSafeInteger(m.joinedSeq) || m.joinedSeq < 0) || new Set(members.map((m) => m.userId)).size !== members.length) throw invalid();
   const self = members.find((m) => m.userId === accountId);
   if (c.visibility !== "public" && !self) throw invalid();
-  const profiles = value.profiles.map((p) => ({ userId: p.userId ?? p.user_id, lilyId: p.lilyId ?? p.lily_id ?? null, displayName: p.displayName ?? p.display_name ?? null, avatarObjectId: p.avatarObjectId ?? p.avatar_object_id ?? null }));
+  const profiles = value.profiles.map((p) => ({ userId: p.userId ?? p.user_id, lilyId: p.lilyId ?? p.lily_id ?? null, displayName: p.displayName ?? p.display_name ?? null, avatarObjectId: p.avatarObjectId ?? p.avatar_object_id ?? null,
+    loginName: p.loginName ?? p.login_name ?? null, phoneMasked: p.phoneMasked ?? p.phone_masked ?? null }));
   if (profiles.some((p) => !id(p.userId) || p.userId !== accountId && !members.some((m) => m.userId === p.userId))) throw invalid();
   const publicTeam = scopeType === "organization" && c.kind === "channel" && c.visibility === "public";
   const mentionCandidates = normalizeMentionCandidates(value.mentionCandidates, { memberIds: publicTeam ? null : new Set(members.map((m) => m.userId)) });
@@ -99,8 +100,8 @@ function applyAuthorizedConversation(store, conversationId, value) {
     if (!previous || priorSelf && normalized.self?.joinedSeq > priorSelf.joinedSeq) resetHistoryGeneration(store, conversationId);
     store.db.run(`DELETE FROM conversation_members WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     for (const m of normalized.members) store.db.run(`INSERT INTO conversation_members (account_id,conversation_id,user_id,status,role,joined_seq) VALUES (?, ?, ?, ?, ?, ?)`, store.accountId, conversationId, m.userId, m.status, m.role, m.joinedSeq);
-    for (const p of normalized.profiles) store.db.run(`INSERT INTO profiles (account_id,user_id,lily_id,display_name,avatar_object_id,updated_at) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(account_id,user_id) DO UPDATE SET lily_id=excluded.lily_id,display_name=excluded.display_name,avatar_object_id=excluded.avatar_object_id,updated_at=excluded.updated_at`, store.accountId, p.userId, p.lilyId, p.displayName, p.avatarObjectId, store.now());
+    for (const p of normalized.profiles) store.db.run(`INSERT INTO profiles (account_id,user_id,lily_id,display_name,avatar_object_id,login_name,phone_masked,updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account_id,user_id) DO UPDATE SET lily_id=excluded.lily_id,display_name=excluded.display_name,avatar_object_id=excluded.avatar_object_id,login_name=excluded.login_name,phone_masked=excluded.phone_masked,updated_at=excluded.updated_at`, store.accountId, p.userId, p.lilyId, p.displayName, p.avatarObjectId, p.loginName, p.phoneMasked, store.now());
     const freshActivity = activity.applyActivitySnapshot(store, conversationId, value.conversation);
     if (!freshActivity) queueAuthorizedRefresh(store, conversationId);
     store.db.run(`INSERT OR IGNORE INTO history_hydration (account_id,conversation_id,created_at) VALUES (?, ?, ?)`, store.accountId, conversationId, store.now());

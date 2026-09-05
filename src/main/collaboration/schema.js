@@ -192,6 +192,13 @@ const COLLABORATION_MIGRATIONS = [
     account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL,
     user_id TEXT NOT NULL, emoji TEXT NOT NULL,
     PRIMARY KEY(account_id,message_id,user_id,emoji));`),
+  // v19 — two more identity facets so a person without a nickname is shown as
+  // their enterprise login or masked phone, never as an opaque id. The server
+  // masks the phone before it leaves; the raw number is never stored here.
+  (db) => db.exec(`ALTER TABLE profiles ADD COLUMN login_name TEXT;
+    ALTER TABLE profiles ADD COLUMN phone_masked TEXT;
+    ALTER TABLE directory_team_members ADD COLUMN login_name TEXT;
+    ALTER TABLE directory_team_members ADD COLUMN phone_masked TEXT;`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

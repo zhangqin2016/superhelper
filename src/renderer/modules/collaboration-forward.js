@@ -8,7 +8,7 @@
  */
 import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
-import { mosaicAvatar } from "./collaboration-social-ui.js";
+import { mosaicAvatar, conversationDisplayTitle } from "./collaboration-social-ui.js";
 
 let openPicker = null;
 
@@ -55,7 +55,8 @@ export function openForwardPicker({ conversations = [], resolveSender = () => ""
 
   const paint = () => {
     const needle = search.value.trim().toLocaleLowerCase();
-    const rows = targets.filter((c) => !needle || String(c.title || "").toLocaleLowerCase().includes(needle));
+    const displayTitle = (c) => conversationDisplayTitle(c, { currentUserId, resolveName: resolveSender });
+    const rows = targets.filter((c) => !needle || displayTitle(c).toLocaleLowerCase().includes(needle));
     list.replaceChildren();
     if (!rows.length) {
       const empty = document.createElement("p");
@@ -69,7 +70,7 @@ export function openForwardPicker({ conversations = [], resolveSender = () => ""
       row.type = "button";
       row.className = "collab-forward-row";
       row.dataset.conversationId = String(conversation.id);
-      const title = String(conversation.title || conversation.id || "");
+      const title = displayTitle(conversation);
       const names = conversation.kind === "direct" ? []
         : (Array.isArray(conversation.memberUserIds) ? conversation.memberUserIds : [])
           .filter((userId) => userId !== currentUserId)

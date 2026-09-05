@@ -15,7 +15,7 @@ assert.ok(handlers.has('collaboration:get-directory'), 'strict read-only directo
 const invoke = (payload) => handlers.get('collaboration:get-directory')({}, payload);
 const projected = await invoke();
 assert.equal(projected.ok, true);
-assert.doesNotMatch(JSON.stringify(projected), /secret|email|phone|token|localPath|peerBlocked/);
+assert.doesNotMatch(JSON.stringify(projected), /secret|email|"phone"|phoneE164|phone_e164|token|localPath|peerBlocked/);
 assert.deepEqual(Object.keys(projected).sort(), ['contacts', 'ok', 'profile', 'teams']);
 assert.equal((await invoke({ accountId: 'other' })).code, 'COLLABORATION_INVALID_INPUT');
 assert.equal(calls, 1, 'renderer cannot select account or send directory writes');

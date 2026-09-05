@@ -54,7 +54,11 @@ function createDirectoryReads({ store, socialDirectory, directoryView, client, d
       if (typeof store.getDirectory !== "function") return unavailableService();
       const local = directoryView(store.getDirectory());
       if (!client?.getEnterpriseDirectory) return { ok: true, ...local };
-      return readEnterprise(local).then(value => ({ ok: true, ...directoryView(value) }));
+      // The live read is an enrichment. If the service stops while it is in
+      // flight the caller gets the same stopped result the sync path returns;
+      // any other failure falls back to the local directory it already had.
+      return readEnterprise(local).then(value => ({ ok: true, ...directoryView(value) }))
+        .catch(() => (isStopped() ? stoppedResult() : { ok: true, ...local }));
     },
     list() {
       if (isStopped()) return stoppedResult();

@@ -457,7 +457,8 @@ class CollaborationStore {
   getProfile({ userId }) {
     const row = this.db.get(`SELECT * FROM profiles WHERE account_id = ? AND user_id = ?`, this.accountId, requireId(userId, "profile user id"));
     if (!row) return null;
-    return { userId: row.user_id, lilyId: row.lily_id, displayName: row.display_name, avatarObjectId: row.avatar_object_id };
+    return { userId: row.user_id, lilyId: row.lily_id, displayName: row.display_name, avatarObjectId: row.avatar_object_id,
+      loginName: row.login_name || "", phoneMasked: row.phone_masked || "" };
   }
 
   listConversationMembers({ conversationId }) {

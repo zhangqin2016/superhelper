@@ -11,7 +11,7 @@ function normalizeMentionCandidates(value, { memberIds = null, allowUnknown = fa
   if (value.status !== "complete") throw invalid();
   const seen = new Set();
   const items = value.items.map((item) => {
-    if (!keysOnly(item, ["userId", "lilyId", "displayName", "avatarObjectId"]) || !identifier(item.userId) || seen.has(item.userId)
+    if (!keysOnly(item, ["userId", "lilyId", "displayName", "avatarObjectId", "loginName", "phoneMasked"]) || !identifier(item.userId) || seen.has(item.userId)
       || memberIds && !memberIds.has(item.userId) || item.lilyId !== "" && !identifier(item.lilyId)
       || typeof item.displayName !== "string" || item.displayName.length > 500
       || item.avatarObjectId !== null && !identifier(item.avatarObjectId)) throw invalid();

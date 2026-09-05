@@ -28,10 +28,11 @@ function projectAcceptedDirect(store, event) {
     const profile = payload.profilesByUserId?.[userId];
     if (!profile) continue;
     if (profile.userId !== userId) invalid();
-    store.db.run(`INSERT INTO profiles (account_id, user_id, lily_id, display_name, avatar_object_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, user_id) DO UPDATE SET
-      lily_id = excluded.lily_id, display_name = excluded.display_name, avatar_object_id = excluded.avatar_object_id, updated_at = excluded.updated_at`,
-    store.accountId, userId, profile.lilyId ?? null, profile.displayName ?? null, profile.avatarObjectId ?? null, store.now());
+    store.db.run(`INSERT INTO profiles (account_id, user_id, lily_id, display_name, avatar_object_id, login_name, phone_masked, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, user_id) DO UPDATE SET
+      lily_id = excluded.lily_id, display_name = excluded.display_name, avatar_object_id = excluded.avatar_object_id,
+      login_name = coalesce(excluded.login_name, profiles.login_name), phone_masked = coalesce(excluded.phone_masked, profiles.phone_masked), updated_at = excluded.updated_at`,
+    store.accountId, userId, profile.lilyId ?? null, profile.displayName ?? null, profile.avatarObjectId ?? null, profile.loginName ?? null, profile.phoneMasked ?? null, store.now());
   }
 }
 

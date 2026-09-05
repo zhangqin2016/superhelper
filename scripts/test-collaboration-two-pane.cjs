@@ -98,7 +98,11 @@ app.whenReady().then(async () => {
   assert.equal(wide.sideBySide, true, "the list and the thread are both laid out, thread beside list");
   assert.equal(wide.homeHidden, false, "the list stays, so the selected row keeps its context");
   assert.equal(wide.backHidden, true, "and there is nothing to go back from, so no back button");
-  assert.equal(wide.home.width, 380, "the list keeps a fixed width; widening the panel grows the thread");
+  assert.equal(wide.home.width, 344, "the desktop list uses the shared 344px column");
+  const wider = JSON.parse(await at(1200));
+  assert.ok(!wider.error, `wider: ${wider.error || ""}`);
+  assert.equal(wider.home.width, wide.home.width, "widening the panel keeps the list width fixed");
+  assert.ok(wider.conversation.width > wide.conversation.width, "widening the panel grows the thread");
   assert.ok(wide.conversation.width > wide.home.width,
     `the thread takes the remaining width (${wide.conversation.width}px vs ${wide.home.width}px)`);
 

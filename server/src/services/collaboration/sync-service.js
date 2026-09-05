@@ -187,6 +187,8 @@ export function buildBootstrapSnapshot({ profile = null, relationships = [], fri
     lilyId: String(profile.lilyId ?? profile.lily_id ?? ""),
     displayName: String(profile.displayName ?? profile.display_name ?? ""),
     avatarObjectId: profile.avatarObjectId ?? profile.avatar_object_id ?? null,
+    loginName: String(profile.loginName ?? profile.login_name ?? ""),
+    phoneMasked: String(profile.phoneMasked ?? profile.phone_masked ?? ""),
     discoverability: profile.discoverability ?? null,
   } : null;
   return {

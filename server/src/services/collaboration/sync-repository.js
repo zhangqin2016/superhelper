@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import { identityFacetsAvailable, withIdentityFields } from "./identity-fields.js";
 
 export const BOOTSTRAP_HISTORY_LIMIT_PER_CONVERSATION = 200;
 export const BOOTSTRAP_HISTORY_TOTAL_LIMIT = 500;
@@ -76,14 +77,19 @@ export function createKyselyRepository(db) {
         .orderBy("organization.id", "asc").execute();
     },
     async listBootstrapTeamMembers(trx, userId) {
-      return trx.selectFrom("organization_members as viewer")
+      const facets = await identityFacetsAvailable(trx);
+      let query = trx.selectFrom("organization_members as viewer")
         .innerJoin("organizations as organization", "organization.id", "viewer.organization_id")
         .innerJoin("organization_members as member", "member.organization_id", "viewer.organization_id")
         .leftJoin("user_profiles as profile", "profile.user_id", "member.user_id")
-        .select(["member.organization_id", "member.user_id", "member.role", "profile.lily_id", "profile.display_name", "profile.avatar_object_id"])
+        .select(["member.organization_id", "member.user_id", "member.role", "profile.lily_id", "profile.display_name", "profile.avatar_object_id"]);
+      // Login + masked phone ride along only where migration 044 has landed.
+      if (facets) query = query.leftJoin("users as identity", "identity.id", "member.user_id").select(["identity.login_name", "identity.phone_e164"]);
+      const rows = await query
         .where("viewer.user_id", "=", userId).where("viewer.status", "=", "active")
         .where("organization.status", "=", "active").where("member.status", "=", "active")
         .orderBy("member.organization_id", "asc").orderBy("member.user_id", "asc").execute();
+      return rows.map(withIdentityFields);
     },
     async listBootstrapConversations(trx, userId, conversationId) {
       const rows = await readableConversations(trx, userId)
@@ -121,8 +127,12 @@ export function createKyselyRepository(db) {
     },
     async listBootstrapProfiles(trx, userIds) {
       if (!Array.isArray(userIds) || userIds.length === 0) return [];
-      return trx.selectFrom("user_profiles").select(["user_id", "lily_id", "display_name", "avatar_object_id"])
-        .where("user_id", "in", userIds).orderBy("user_id", "asc").execute();
+      const facets = await identityFacetsAvailable(trx);
+      let query = trx.selectFrom("user_profiles")
+        .select(["user_profiles.user_id", "user_profiles.lily_id", "user_profiles.display_name", "user_profiles.avatar_object_id"]);
+      if (facets) query = query.leftJoin("users as identity", "identity.id", "user_profiles.user_id").select(["identity.login_name", "identity.phone_e164"]);
+      const rows = await query.where("user_profiles.user_id", "in", userIds).orderBy("user_profiles.user_id", "asc").execute();
+      return rows.map(withIdentityFields);
     },
     async listBootstrapHistory(trx, userId, conversationIds, perConversationLimit) {
       if (!Array.isArray(conversationIds) || conversationIds.length === 0) return [];

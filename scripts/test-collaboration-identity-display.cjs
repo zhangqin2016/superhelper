@@ -18,7 +18,8 @@ app.whenReady().then(async () => {
   await win.loadFile(page);
   const url = (name) => pathToFileURL(path.join(__dirname, '../src/renderer/modules/', name)).href;
   const result = await win.webContents.executeJavaScript(`(async () => {
-    const { identityName, socialPerson, resolvePerson } = await import(${JSON.stringify(url('collaboration-social-ui.js'))});
+    const { identityName, socialPerson, resolvePerson, renderTypingHint } = await import(${JSON.stringify(url('collaboration-social-ui.js'))});
+    const { t } = await import(${JSON.stringify(pathToFileURL(path.join(__dirname, '../src/renderer/i18n/index.js')).href)});
     const { initCollaborationTeams } = await import(${JSON.stringify(url('collaboration-teams.js'))});
 
     const neverLeaks = (fn, label) => {
@@ -33,6 +34,19 @@ app.whenReady().then(async () => {
     const tailVisible = unnamed.includes('def456');
 
     const directory = { profile: { userId: 'self', displayName: 'Me' }, contacts: [{ userId: 'peer-a', displayName: 'Peer A' }], teams: [{ id: 'org', scopeId: 'team:org', name: 'Team', members: [{ userId: 'peer-b', lilyId: 'peer-b-id' }] }] };
+    const hint = document.createElement('div');
+    const paintTyping = (ids, conversationId = 'chat') => renderTypingHint(hint, { state: { typing: { chat: ids } }, conversationId, directory });
+    paintTyping(['self', 'peer-a']);
+    if (hint.hidden || hint.textContent !== t('collaboration.typing.one', { name: 'Peer A' })) throw Error('peer typing excludes self and resolves the name');
+    paintTyping(['peer-a', 'peer-b']);
+    if (hint.textContent !== t('collaboration.typing.many', { count: 2 })) throw Error('group typing uses peer count');
+    paintTyping(['usr_abc123def456']);
+    if (hint.hidden || hint.textContent.includes('usr_')) throw Error('unknown typist never leaks raw identity');
+    paintTyping(['self']);
+    if (!hint.hidden || hint.textContent) throw Error('self-only typing clears the hint');
+    paintTyping(['peer-a'], 'other');
+    if (!hint.hidden || hint.textContent) throw Error('typing stays in the active conversation');
+    renderTypingHint(null, { state: null });
     const self = resolvePerson(directory, 'self');
     const contact = resolvePerson(directory, 'peer-a');
     const teamMember = resolvePerson(directory, 'peer-b');

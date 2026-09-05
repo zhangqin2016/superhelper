@@ -115,7 +115,7 @@ const snapshot = buildBootstrapSnapshot({
 assert.equal(snapshot.watermark, 18);
 assert.equal(snapshot.fromCursor, 18, "bootstrap returns the snapshot watermark, not wall-clock time");
 assert.deepEqual(snapshot.profile, {
-  userId: "user-1", lilyId: "alice", displayName: "", avatarObjectId: null, discoverability: null,
+  userId: "user-1", lilyId: "alice", displayName: "", avatarObjectId: null, loginName: "", phoneMasked: "", discoverability: null,
 });
 const organizationScopeSnapshot = buildBootstrapSnapshot({
   conversations: [{ id: "team-conversation", scope_type: "organization", organization_id: "org-design", kind: "group", title: "Design" }],

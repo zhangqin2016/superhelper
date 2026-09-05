@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import { identityFacetsAvailable, withIdentityFields } from "./identity-fields.js";
 
 export async function readEnterpriseDirectory(db, userId, presence) {
   return db.transaction().setIsolationLevel("repeatable read").execute(async trx => {
@@ -10,13 +11,18 @@ export async function readEnterpriseDirectory(db, userId, presence) {
       .select(["org.id", "org.name", "viewer.role"])
       .where("viewer.user_id", "=", userId).where("viewer.status", "=", "active").where("org.status", "=", "active").orderBy("org.id").execute();
     const teamIds = teams.map(t => t.id);
-    const members = teamIds.length ? await trx.selectFrom("organization_members as member")
+    // Enterprise login + server-masked phone (migration 044) let a colleague
+    // without a nickname still be recognised; absent the migration, neither.
+    const facets = await identityFacetsAvailable(trx);
+    let memberQuery = trx.selectFrom("organization_members as member")
       .innerJoin("users as u", "u.id", "member.user_id")
       .leftJoin("user_profiles as p", "p.user_id", "member.user_id")
       .select(["member.organization_id", "member.user_id", "member.role", "p.lily_id", "p.avatar_object_id",
-        sql`coalesce(nullif(p.display_name, ''), u.display_name, '')`.as("display_name")])
+        sql`coalesce(nullif(p.display_name, ''), u.display_name, '')`.as("display_name")]);
+    if (facets) memberQuery = memberQuery.select(["u.login_name", "u.phone_e164"]);
+    const members = teamIds.length ? (await memberQuery
       .where("member.organization_id", "in", teamIds).where("member.status", "=", "active").where("u.status", "=", "active")
-      .orderBy("member.organization_id").orderBy("member.user_id").limit(10001).execute() : [];
+      .orderBy("member.organization_id").orderBy("member.user_id").limit(10001).execute()).map(withIdentityFields) : [];
     if (members.length > 10000) throw Object.assign(new Error("Directory limit exceeded"), { code: "COLLAB_DIRECTORY_LIMIT" });
     const ids = [...new Set([userId, ...members.map(m => m.user_id)])];
     const sessions = presence ? await trx.selectFrom("user_sessions as session")
@@ -33,6 +39,7 @@ export async function readEnterpriseDirectory(db, userId, presence) {
         members: members.filter(m => m.organization_id === team.id).map(m => {
           const onlineUntil = presence?.expiresAt(m.user_id, devices.get(m.user_id) || new Set()) || null;
           return { userId: m.user_id, displayName: m.display_name, lilyId: m.lily_id || "", avatarObjectId: m.avatar_object_id || null,
+            loginName: m.login_name || "", phoneMasked: m.phone_masked || "",
             role: m.role, presence: presence ? onlineUntil ? "online" : "offline" : "unknown", onlineUntil };
         }) })) };
   });

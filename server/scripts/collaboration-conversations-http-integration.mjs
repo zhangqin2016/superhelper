@@ -299,7 +299,7 @@ try {
     assert.equal(confirmed.state, "completed");
     assert.equal(socialCalls.at(-1), pending.clientCommandId);
     assert.equal((await pool.query("select count(*) as n from friend_requests where sender_user_id='owner' and receiver_user_id='member'")).rows[0].n, "1");
-    const outgoing = socialDesktop.getDirectory().contacts.find((c) => c.userId === "member");
+    const outgoing = (await socialDesktop.getDirectory()).contacts.find((c) => c.userId === "member");
     assert.equal(outgoing.relationship, "outgoing");
     const accepted = await request("member", "friends", { action: "respond", requestId: outgoing.requestId, accept: true, clientCommandId: "desktop-accept" });
     assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
@@ -308,7 +308,7 @@ try {
     assert.equal((await socialDesktop.friend({ action: "block", peerUserId: "member" })).state, "completed");
     assert.equal(socialDesktop.openFriend({ peerUserId: "member" }).ok, false);
     assert.equal((await socialDesktop.friend({ action: "unblock", peerUserId: "member" })).state, "completed");
-    assert.equal(socialDesktop.getDirectory().contacts.find((c) => c.userId === "member").ownBlocked, false);
+    assert.equal((await socialDesktop.getDirectory()).contacts.find((c) => c.userId === "member").ownBlocked, false);
     dropResponse = true;
     const created = await socialDesktop.conversation({ action: "create", scopeType: "personal", kind: "group", title: "Desktop durable group", memberUserIds: ["member"] });
     assert.equal(created.state, "confirming");

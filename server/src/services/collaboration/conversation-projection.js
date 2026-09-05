@@ -28,6 +28,9 @@ export function createCollaborationConversationProjectionService({ database, rep
         const candidateProfiles = new Map((await repository.listBootstrapProfiles(trx, candidateIds)).map((profile) => [profile.user_id, profile]));
         const mentionCandidates = { status: "complete", items: candidateIds.map((userId) => {
           const profile = candidateProfiles.get(userId);
+          // Deliberately NOT extended with loginName/phoneMasked: shipped clients
+          // validate this item shape with an exact key list and would reject the
+          // whole list. Names for @-completion resolve through profiles instead.
           return { userId, lilyId: profile?.lily_id ?? "", displayName: profile?.display_name ?? "", avatarObjectId: profile?.avatar_object_id ?? null };
         }) };
         const snapshot = buildBootstrapSnapshot({ conversations, members, profiles });

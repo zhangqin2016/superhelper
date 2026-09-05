@@ -1,5 +1,5 @@
 import { t } from "../i18n/index.js";
-import { avatarHue, mosaicAvatar } from "./collaboration-social-ui.js";
+import { avatarHue, mosaicAvatar, conversationDisplayTitle, preserveScroll } from "./collaboration-social-ui.js";
 import { openContextMenu } from "./context-menu.js";
 
 function clear(node) { node?.replaceChildren(); }
@@ -21,8 +21,13 @@ function formatInboxTime(value) {
 }
 
 export function renderCollaborationInbox(node, conversations = [], options = {}) {
-  const { onOpen = () => {}, teams = [], activeConversationId = "", filterText = "", resolveSender = () => "", currentUserId = "", prefs = null, onPrefsChange = () => {} } = options;
   if (!node) return;
+  preserveScroll(node, () => paintInboxRows(node, conversations, options));
+}
+
+function paintInboxRows(node, conversations, options) {
+  const { onOpen = () => {}, teams = [], activeConversationId = "", filterText = "", resolveSender = () => "", currentUserId = "", prefs = null, onPrefsChange = () => {} } = options;
+  const displayTitle = (conversation) => conversationDisplayTitle(conversation, { currentUserId, resolveName: resolveSender });
   clear(node);
   // Pinned float to the top, muted are dimmed, deleted are hidden — applied
   // here so every render (load, search, pref change) stays consistent.
@@ -30,7 +35,7 @@ export function renderCollaborationInbox(node, conversations = [], options = {})
   conversations = prefs ? prefs.apply(conversations) : conversations;
   const needle = String(filterText || "").trim().toLocaleLowerCase();
   const rows = [...conversations]
-    .filter((conversation) => !needle || String(conversation.title || "").toLocaleLowerCase().includes(needle))
+    .filter((conversation) => !needle || displayTitle(conversation).toLocaleLowerCase().includes(needle))
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || Number(b.lastSeq || 0) - Number(a.lastSeq || 0) || Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
   const activeId = String(activeConversationId || "");
   if (rows.length === 0) {
@@ -62,7 +67,7 @@ export function renderCollaborationInbox(node, conversations = [], options = {})
     });
     const scopeId = String(conversation.scopeId || "personal");
     const scope = scopeId.startsWith("team:") ? (teams.find((team) => team.scopeId === scopeId)?.name || t("collaboration.scopeTeam")) : t("collaboration.scopePersonal");
-    const title = String(conversation.title || conversationId || "");
+    const title = displayTitle(conversation);
     // A group's tile is composed from its members. A single title initial gave
     // every "设计…" conversation the same avatar, which is the common case in a
     // workspace; a direct chat keeps the single initial, as it should.

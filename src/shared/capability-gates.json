@@ -825,6 +825,16 @@
         "scripts/test-enterprise-roster.cjs",
         "scripts/test-account-nickname.mjs"
       ]
+    },
+    {
+      "id": "collaboration-identity-and-list-stability",
+      "protects": "IM lists and headers name people and conversations the way a colleague recognises them. A 1:1 has no stored title and used to show the raw conversation id — a long opaque string — in the inbox, the Teams channel list, the forward picker and the thread header; a person without a nickname was shown by Lily handle or an opaque placeholder. Now a conversation is named after its other member(s) and a person by nickname → enterprise login → server-masked phone (138****5678) → handle, never a raw id. The Teams view no longer rebuilds on sync events that changed nothing visible (typing ticks, read receipts, the 15 s directory poll, onlineUntil advancing), and a real rebuild keeps open channel forms.",
+      "baseline": "Reported 2026-09-05: '会话会展示一大长串' (inbox rows showed conv_… ids for every direct chat) and '在 team 里跳来跳去' (teams.update() did list.replaceChildren() on every load(); socialDirty was set on every state event and a 15 s poll). Server rows carried no login/phone facets at all, so nothing better than lilyId was available to show. Strictly additive: rows without the new facets normalise to empty strings and every previous fallback still applies; the fingerprint short-circuit can only skip a rebuild whose inputs are byte-identical, and revocation handling runs before it on every update. The live enterprise directory carries the same facets (probe-gated on migration 044) and the desktop merge keeps local facets when a live row lacks them.",
+      "failureFallback": "Phone is masked server-side (identity-fields.js) before any row leaves; the raw number is never sent or cached, and the existing leak guards were tightened to reject phoneE164/phone_e164 while allowing the masked facet. The users join is probe-gated so a database without migration 044 keeps bootstrapping (the real-Postgres sync integration, which builds a minimal users table, caught the unconditional version). Mention-candidate items keep their old exact key set because shipped clients validate them strictly; the client allowlist was extended for forward compatibility. A service stop during the in-flight live directory read yields the stopped result instead of a rejection. Mutation-verified 2026-09-05: dropping the identical-payload short-circuit, admitting onlineUntil into the fingerprint, forgetting the enterprise login in the chain, falling back to the conversation id, keeping placeholders in group titles, searching the stored title instead of the displayed one, forgetting open forms across a rebuild, and removing the scroll restore each fail by name (the scroll test forces layout while empty — a synchronous refill never loses the offset, which is exactly the vacuous assertion the first version had).",
+      "tests": [
+        "scripts/test-collaboration-identity-facets.mjs",
+        "scripts/test-collaboration-list-stability.cjs"
+      ]
     }
   ]
 }
