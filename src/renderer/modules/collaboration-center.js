@@ -1,5 +1,6 @@
 import { t, onLocaleChange } from "../i18n/index.js";
-import { identityName, resolvePerson, conversationDisplayTitle } from "./collaboration-social-ui.js";
+import { identityName, resolvePerson } from "./collaboration-social-ui.js";
+import { paintConversationTitle } from "./collaboration-thread-header.js";
 import { renderCollaborationInbox, setActiveConversation } from "./collaboration-inbox.js";
 import { createConversationPrefs } from "./collaboration-conversation-prefs.js";
 import { createForwardAction, createBatchForwardAction } from "./collaboration-forward.js";
@@ -296,12 +297,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     attachments.setConversation(opened.conversation, transferPolicy);
     composer.refreshMentionCandidates?.();
     const scope = String(opened.conversation?.scopeId || "");
-    const conversationTitle = byId("collaborationConversationTitle");
-    if (conversationTitle) {
-      const profiles = Array.isArray(opened.conversation?.profiles) ? opened.conversation.profiles : [];
-      conversationTitle.textContent = conversationDisplayTitle(opened.conversation, { currentUserId: directory?.profile?.userId || "",
-        resolveName: (userId) => identityName(profiles.find((p) => p.userId === userId) || resolvePerson(directory, userId)) });
-    }
+    paintConversationTitle(byId("collaborationConversationTitle"), opened.conversation, directory);
     if (scopeBadge) scopeBadge.textContent = scope.startsWith("team:")
       ? `${directory?.teams?.find((team) => team.scopeId === scope)?.name || t("collaboration.scopeTeam")} · ${scope}` : t("collaboration.scopePersonal");
     renderTimeline();
