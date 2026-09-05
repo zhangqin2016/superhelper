@@ -1,4 +1,5 @@
 "use strict";
+const { MUTATIONS } = require("./message-mutation-outbox");
 const { safeOperationErrorCode } = require("./message-operation-view");
 
 function errorCode(error) { return String(error?.code || ""); }
@@ -27,11 +28,13 @@ function isCompleteReceipt(receipt, item) {
     && identity
     && isStorageId(receipt.eventId) && isStorageId(receipt.messageId)
     && isStorageId(item?.clientCommandId) && isStorageId(item?.conversationId)
-    && Number.isSafeInteger(eventSequence) && eventSequence > 0;
+    && (commandType === "message.reaction" || Number.isSafeInteger(eventSequence) && eventSequence > 0);
   if (!common) return false;
   if (commandType === "message.create") {
     return isStorageId(`message:${item.conversationId}:${receipt.messageId}`) && Number.isSafeInteger(receipt.sequence) && receipt.sequence > 0;
   }
+  if (commandType === "message.reaction") return receipt.messageId === item.messageId
+    && receipt.emoji === item.emoji && receipt.active === item.active;
   const matchedMutation = (commandType === "message.edit" || commandType === "message.revoke")
     && receipt.messageId === item.messageId && Number.isSafeInteger(receipt.revision) && Number.isSafeInteger(item.expectedRevision)
     && receipt.revision === item.expectedRevision + 1;
@@ -45,7 +48,7 @@ function isUnknownReceipt(receipt) {
   return receipt?.state === "unknown" && receipt.committed === false && receipt.deliveryUnknown === true
     && receipt.pending !== true && receipt.ok !== false
     && receipt.eventId == null && receipt.messageId == null && receipt.sequence == null && receipt.eventSequence == null
-    && receipt.commandType == null && receipt.conversationId == null && receipt.revision == null && receipt.revoked == null;
+    && receipt.commandType == null && receipt.conversationId == null && receipt.revision == null && receipt.revoked == null && receipt.emoji == null && receipt.active == null;
 }
 
 // Stores may legally return a live object. A transport is asynchronous, so it
@@ -69,7 +72,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
   let stopped = false;
   const stoppedResult = () => ({ ok: false, code: "COLLABORATION_STOPPED" });
   const deviceMismatch = (item) => {
-    const mutation = item?.commandType === "message.edit" || item?.commandType === "message.revoke";
+    const mutation = MUTATIONS.has(item?.commandType);
     if (mutation && (!isStorageId(item?.originDeviceId) || !isStorageId(deviceId))) return true;
     return typeof deviceId === "string" && deviceId && typeof item?.originDeviceId === "string" && item.originDeviceId !== deviceId;
   };
@@ -78,7 +81,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     if (!isCompleteReceipt(acknowledgement, item)) return false;
     try {
       store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: acknowledgement.eventId, messageId: acknowledgement.messageId,
-        commandType: item.commandType, conversationId: acknowledgement.conversationId, revision: acknowledgement.revision });
+        commandType: item.commandType, conversationId: acknowledgement.conversationId, revision: acknowledgement.revision, emoji: acknowledgement.emoji, active: acknowledgement.active });
       onStateChange({ outboxId: item.id, state: "persisted" });
       return true;
     } catch { return false; }
@@ -115,7 +118,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     // cannot be overridden by a stale drain into receipt-first continuation.
     if (item.state !== "queued") return { state: item.state, clientCommandId: item.clientCommandId };
     if (deviceMismatch(item)) return deviceResult(item);
-    if (!unknownReceiptProof && (item.commandType === "message.edit" || item.commandType === "message.revoke") && item.deliveryUncertain) {
+    if (!unknownReceiptProof && MUTATIONS.has(item.commandType) && item.deliveryUncertain) {
       return continueUncertainMutation(item);
     }
     if (item.deliveryConfirmed) {
@@ -142,7 +145,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
       // Shutdown is not proof of delivery or cancellation. Leave submitting
       // durable so the next service can recover this exact idempotency key.
       if (stopped) return stoppedResult();
-      if (item.commandType === "message.edit" || item.commandType === "message.revoke") {
+      if (MUTATIONS.has(item.commandType)) {
         // A mutation cannot use a bare HTTP 200 as commit evidence. Keep its
         // original key confirming until a strict response or typed receipt
         // binds type/conversation/target/revision to this durable intent.
@@ -217,7 +220,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
       if (item.commandType === "message.create") store.confirmOutboxDelivery?.({ outboxId: item.id });
       try {
         store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
-          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision, emoji: receipt.emoji, active: receipt.active });
       } catch {
         projectionFailed = true; // SQLite retained the original command; retry its receipt, never its send.
       }
@@ -247,7 +250,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
         // or cancellation must never turn unknown delivery into "not sent".
         const acknowledgement = await transport.submit(transportSnapshot(current));
         if (stopped) return stoppedResult();
-        if (current.commandType === "message.edit" || current.commandType === "message.revoke") {
+        if (MUTATIONS.has(current.commandType)) {
           if (settleMutationAcknowledgement(current, acknowledgement)) return;
           // A malformed/negative replay response is not a commit proof. Keep
           // the exact durable key confirming and let the next receipt-first
@@ -287,7 +290,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
     if (isCompleteReceipt(receipt, item)) {
       try {
         store.settleOutboxFromSync({ clientCommandId: item.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
-          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+          commandType: item.commandType, conversationId: receipt.conversationId, revision: receipt.revision, emoji: receipt.emoji, active: receipt.active });
         onStateChange({ outboxId: item.id, state: "persisted" });
         return { state: "persisted", clientCommandId: item.clientCommandId };
       } catch { return { state: item.state, clientCommandId: item.clientCommandId, recovery: "receipt_required" }; }
@@ -310,7 +313,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
       if (stopped) return stoppedResult();
       const item = store.getOutbox({ outboxId });
       if (item && deviceMismatch(item)) return deviceResult(item);
-      if (item && (item.commandType === "message.edit" || item.commandType === "message.revoke") && item.deliveryUncertain) {
+      if (item && MUTATIONS.has(item.commandType) && item.deliveryUncertain) {
         return enqueue(item.conversationId, () => continueUncertainMutation(item));
       }
       if (!item || !store.setOutboxState({ outboxId: item.id, expectedStates: ["paused", "delivery_unknown"], state: "queued" })) return { state: item?.state || "missing" };
@@ -374,7 +377,7 @@ function createCollaborationOutbox({ store, transport, deviceId = "", onStateCha
           if (current.commandType === "message.create") store.confirmOutboxDelivery?.({ outboxId: current.id });
           try {
             store.settleOutboxFromSync({ clientCommandId: current.clientCommandId, eventId: receipt.eventId, messageId: receipt.messageId, sequence: receipt.sequence,
-              commandType: current.commandType, conversationId: receipt.conversationId, revision: receipt.revision });
+              commandType: current.commandType, conversationId: receipt.conversationId, revision: receipt.revision, emoji: receipt.emoji, active: receipt.active });
             onStateChange({ outboxId: current.id, state: "persisted" });
             return { state: "persisted", canRevoke: true };
           } catch {

@@ -66,3 +66,20 @@ export function verifyModelGatewayToken(token, providerId = "") {
   }
   return { ok: true, ...payload };
 }
+
+// Signed account tokens are snapshots: disabling an account or resetting its
+// password must also close tokens already issued to that session. Device trial
+// and static gateway credentials retain their existing authentication path.
+export async function verifyLiveModelGatewayToken(token, providerId = "") {
+  const verified = verifyModelGatewayToken(token, providerId);
+  if (!verified.ok || !verified.userId) return verified;
+  const { db } = await import("../../db.js");
+  const session = await db.selectFrom("user_sessions").selectAll().where("id", "=", verified.sessionId || "").executeTakeFirst();
+  if (!session || session.user_id !== verified.userId || session.revoked_at || new Date(session.expires_at).getTime() <= Date.now()) {
+    return { ok: false, code: "USER_LOGIN_REQUIRED" };
+  }
+  const user = await db.selectFrom("users").select(["status", "password_must_change"]).where("id", "=", verified.userId).executeTakeFirst();
+  if (!user || user.status !== "active") return { ok: false, code: "USER_DISABLED" };
+  if (user.password_must_change) return { ok: false, code: "PASSWORD_CHANGE_REQUIRED" };
+  return verified;
+}

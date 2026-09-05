@@ -39,3 +39,5 @@
 - [False Stall — Unfinished-Todo Gate](2026-09-02-false-stall-todo-gate.md) — a finished 36min turn was labelled `turn.stalled` because 2 todos were parked on a user decision; the nudge budget refilled on every todo re-plan (7 nudges/13min). Budget now refills only when the unfinished set shrinks; an answered turn never gets the "没有形成完整最终回答" banner
 - [Internal Turn Permission Hang](2026-07-22-internal-turn-permission-hang.md) — unattended internal turns map permission ask→deny (fail-safe); stall summary names the unanswered card; catastrophic shell matching is exact root/home only (absolute rm -rf no longer prompts under full autonomy)
 - [Enterprise Organizations](enterprise-organizations.md) — org/member/quota design & invariants: personal-first consumption, org grant user_id = owner, member quota on membership row, x-lily-organization-id header, dual auth, admin governance scope
+
+- [Skill Discovery and Runtime Dependencies](skill-dependency-discovery.md) — manifest declarations, task-scoped preparation, workspace skill isolation, managed recovery, and honest read-evidence metrics.

@@ -1,6 +1,6 @@
 "use strict";
 
-const { applyReaction } = require("./message-reactions");
+const { applyReaction, reactionsForMessages } = require("./message-reactions");
 
 /**
  * The reaction command, factored out of the service so the service stays a
@@ -41,8 +41,24 @@ function createReactionCommand({ store, getOutbox, deviceId = "", isStopped, sto
     } catch {
       return { ok: false, code: "COLLAB_REACTION_INVALID", retryable: false };
     }
+    const wasActive = reactionsForMessages(store, [messageId])[messageId]?.some(entry => entry.emoji === emoji && entry.mine) === true;
     applyReaction(store, { conversationId, messageId, userId: store.accountId, emoji, active: on });
-    const result = await outbox.submit(persisted.outboxId);
+    onChanged();
+    let result;
+    try { result = await outbox.submit(persisted.outboxId); }
+    catch (error) {
+      if (isStopped()) return stoppedResult();
+      const pending = store.getOutbox({ outboxId: persisted.outboxId });
+      if (pending?.state === "failed" && !pending.deliveryUncertain) {
+        // A definitive rejection will never produce a correcting sync event.
+        // Do not undo a newer local transition for the same emoji.
+        const latest = store.listOutbox().filter(item => item.conversationId === conversationId).map(item => store.getOutbox({ outboxId: item.id })).filter(item => item.commandType === "message.reaction" && item.conversationId === conversationId && item.messageId === messageId && item.emoji === emoji).at(-1);
+        if (latest?.id === persisted.outboxId) applyReaction(store, { conversationId, messageId, userId: store.accountId, emoji, active: wasActive });
+        outbox.skip(persisted.outboxId); // known unsent: never block later chat messages
+      }
+      onChanged();
+      throw error;
+    }
     if (isStopped()) return stoppedResult();
     onChanged();
     return { ok: true, ...result };

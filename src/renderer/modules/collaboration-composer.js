@@ -9,7 +9,7 @@ const activeComposerByTextarea = new WeakMap();
 
 const TYPING_THROTTLE_MS = 3_000;
 
-export function initCollaborationComposer({ textarea, sendButton, getConversationId, getReplySourceStatus = () => null, onSent = () => {}, onError = () => {} } = {}) {
+export function initCollaborationComposer({ textarea, sendButton, getConversationId, getReplySourceStatus = () => null, onSent = () => {}, onError = () => {}, attachmentDraft = null } = {}) {
   if (!textarea || !sendButton) return { setConversation: () => {}, destroy: () => {} };
   activeComposerByTextarea.get(textarea)?.destroy?.();
   let conversationId = "";
@@ -41,9 +41,13 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   };
   // Empty means nothing to send: `send()` already refuses a blank message, so
   // an enabled button here was one that looked live and did nothing.
+  const canSendFiles = () => {
+    const value = currentIntent();
+    return !editTarget && !value.replyToMessageId && !value.mentionUserIds.length && Boolean(attachmentDraft?.hasDraft?.());
+  };
   const updateButton = () => {
     sendButton.disabled = !active || !conversationId || sending.has(conversationId)
-      || !String(textarea?.value || "").trim();
+      || (!String(textarea?.value || "").trim() && !canSendFiles());
   };
   const paintPreview = () => {
     if (!preview) return;
@@ -96,7 +100,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     if (disposed || !active || !conversationId) return;
     const value = currentIntent(); value.replyToMessageId = messageId || null;
     editVersion += 1;
-    saveDraft(conversationId, value); refreshReply();
+    saveDraft(conversationId, value); refreshReply(); updateButton();
   }
   const restoreDraft = () => {
     const id = conversationId, epoch = generation, selection = selectionVersion, version = editVersion;
@@ -112,14 +116,15 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
   const send = async () => {
     const id = conversationId, epoch = generation, selection = selectionVersion;
     const value = currentIntent();
-    if (disposed || !active || !id || !value.text.trim() || sending.has(id)) return;
+    const sendFiles = canSendFiles();
+    if (disposed || !active || !id || (!value.text.trim() && !sendFiles) || sending.has(id)) return;
     drafts.set(id, value);
     const prior = intents.get(id);
     const intent = sameIntent(prior?.value, value) ? prior : { value, clientCommandId: commandId() };
     intents.set(id, intent); sending.set(id, intent); updateButton();
     try {
       const editing = editTarget && editTarget.conversationId === id && editTarget.messageId ? editTarget : null;
-      const result = editing
+      const result = sendFiles ? await attachmentDraft.sendDraft({ conversationId: id, bodyText: value.text }) : editing
         ? await api()?.edit?.({ conversationId: id, messageId: editing.messageId, clientCommandId: intent.clientCommandId, expectedRevision: editing.baseRevision, bodyText: value.text })
         : await api()?.send?.({ conversationId: id, clientCommandId: intent.clientCommandId, bodyText: value.text, replyToMessageId: value.replyToMessageId, mentionUserIds: [...value.mentionUserIds] });
       if (!result?.ok) throw new Error(result?.code || "COLLABORATION_UNAVAILABLE");
@@ -129,7 +134,12 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       // Main clears only the complete submitted intent. A newer draft belongs
       // to the user, even when its body is identical and only its reply changed.
       const visibleMatches = conversationId === id && sameIntent(currentIntent(), value);
-      if (sameIntent(drafts.get(id), value)) drafts.set(id, draftIntent());
+      if (sameIntent(drafts.get(id), value)) {
+        drafts.set(id, draftIntent());
+        // Text sends clear the stored draft in main; attachment sends have a
+        // separate durable handoff, so persist this matching draft clear too.
+        if (sendFiles) saveDraft(id, draftIntent());
+      }
       if (visibleMatches) {
         textarea.value = ""; autoGrow(); drafts.set(id, draftIntent()); editVersion += 1; mentions.update(); refreshReply();
       }
@@ -179,6 +189,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       mentions.setContext(id, active);
       textarea.placeholder = t("collaboration.messagePlaceholder"); updateButton(); paintPreview(); restoreDraft();
     },
+    refreshAttachments: updateButton,
     setReply, refreshReply, refreshMentionCandidates: () => mentions.refresh(),
     beginEdit({ conversationId: cid, messageId, baseRevision, bodyText } = {}) {
       if (disposed || !cid || !messageId) return;
@@ -187,7 +198,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
       editTarget = { conversationId: String(cid), messageId, baseRevision: Number(baseRevision) || 1 };
       mentions.setContext(conversationId, active); updateButton(); paintPreview(); textarea.focus?.();
     },
-    clearEdit() { if (!editTarget) return; editTarget = null; textarea.placeholder = t("collaboration.messagePlaceholder"); },
+    clearEdit() { if (!editTarget) return; editTarget = null; textarea.placeholder = t("collaboration.messagePlaceholder"); updateButton(); },
     setActive(value) {
       if (disposed || active === Boolean(value)) return;
       active = Boolean(value); selectionVersion += 1; editVersion += 1; previewVersion += 1;

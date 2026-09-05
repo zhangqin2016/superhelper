@@ -585,7 +585,7 @@ try {
       payload: { assistant: "已生成完整报告" },
     },
   ]);
-  ok(store.getRuntimeEvents("S4").length === 4, "runtime events are persisted");
+  ok(JSON.stringify(store.getRuntimeEvents("S4").map(event => event.id)) === JSON.stringify(["evt_1", "evt_3", "evt_4"]), "durable runtime events persist while completed-turn streaming deltas are reclaimed");
   const projection = store.getTurnProjection("S4", "turn_1");
   ok(projection.status === "completed", "projection terminal status is completed");
   ok(projection.userText === "生成报告", "projection preserves user text");
@@ -600,7 +600,7 @@ try {
     source: "orchestrator",
     payload: { assistant: "重复事件不应重复投影" },
   }]);
-  ok(store.getRuntimeEvents("S4").length === 4, "duplicate runtime event id is ignored");
+  ok(JSON.stringify(store.getRuntimeEvents("S4").map(event => event.id)) === JSON.stringify(["evt_1", "evt_3", "evt_4"]), "duplicate runtime event id is ignored without restoring reclaimed deltas");
   ok(store.getTurnProjection("S4", "turn_1").assistantText === "已生成完整报告", "duplicate event must not mutate projection");
   const projectedConversation = store.getProjectedConversation("S4");
   ok(projectedConversation.length === 2, "projection builds user + assistant messages");

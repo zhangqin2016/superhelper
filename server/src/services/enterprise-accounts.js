@@ -281,6 +281,8 @@ export async function resetIssuedPassword(trx, { organizationId, userId }) {
     .set({ password_hash: hashPassword(initialPassword), password_must_change: true, password_failed_count: 0, password_locked_until: null })
     .where("id", "=", userId)
     .execute();
+  await trx.updateTable("user_sessions").set({ revoked_at: new Date().toISOString() })
+    .where("user_id", "=", userId).where("revoked_at", "is", null).execute();
   return { userId, loginName: user.login_name, initialPassword };
 }
 

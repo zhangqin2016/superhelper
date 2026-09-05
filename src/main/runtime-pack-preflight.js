@@ -108,7 +108,7 @@ function collectFileFacts(files = []) {
 }
 
 function addPack(ids, id) {
-  if (PACK_SPECS[id] && !ids.includes(id)) ids.push(id);
+  if (Object.hasOwn(PACK_SPECS, id) && !ids.includes(id)) ids.push(id);
 }
 
 function collectSkillIds(payload = {}) {
@@ -124,7 +124,10 @@ function collectSkillIds(payload = {}) {
 
 function addSkillRuntimePacks(ids, skillIds = []) {
   for (const skillId of skillIds) {
-    const packIds = SKILL_RUNTIME_PACKS[skillId] || [];
+    const packIds = Object.hasOwn(SKILL_RUNTIME_PACKS, skillId) ? [...SKILL_RUNTIME_PACKS[skillId]] : [];
+    try {
+      packIds.push(...require("./skill-runtime-declarations").declaredRuntimePacksForSkill(skillId));
+    } catch { /* Preserve the legacy requirements on declaration failure. */ }
     for (const packId of packIds) addPack(ids, packId);
   }
 }
@@ -284,6 +287,7 @@ function preflightRuntimePacks(payload = {}) {
 }
 
 module.exports = {
+  SKILL_RUNTIME_PACKS,
   buildRuntimePackAdvisory,
   inferRuntimePackIds,
   runtimePackIdsForSkills,

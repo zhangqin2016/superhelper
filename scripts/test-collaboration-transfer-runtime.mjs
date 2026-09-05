@@ -138,3 +138,15 @@ test("a cancelled native picker creates no transfer or network request", async (
   assert.deepEqual(await runtime.prepareAttachment({ conversationId: "conversation" }), { ok: true, cancelled: true });
   assert.deepEqual(runtime.list().transfers, []); assert.equal(f.state.requests, 0);
 });
+
+test("drop and clipboard import prepare encrypted attachments without network and enforce account access", async (t) => {
+  const f = fixture(t), runtime = f.create();
+  const dropped = await runtime.importAttachment({conversationId:"conversation",source:{kind:"file",path:f.source}});
+  assert.equal(dropped.ok,true);assert.equal(dropped.state,"prepared");
+  const pasted = await runtime.importAttachment({conversationId:"conversation",source:{kind:"image",bytes:Buffer.from('89504e470d0a1a0a00000000','hex')}});
+  assert.equal(pasted.ok,true);assert.match(pasted.originalName,/\.png$/);assert.equal(pasted.state,"prepared");
+  assert.equal(f.state.requests,0);assert.equal(f.state.selections,0);
+  assert.deepEqual(fs.readdirSync(path.join(f.options.rootPath,'imports')),[]);
+  assert.equal((await runtime.importAttachment({conversationId:"missing",source:{kind:"file",path:f.source}})).ok,false);
+  runtime.stop();assert.equal((await runtime.importAttachment({conversationId:"conversation",source:{kind:"file",path:f.source}})).ok,false);
+});

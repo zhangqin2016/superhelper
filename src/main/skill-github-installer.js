@@ -187,12 +187,14 @@ function finalizeInstalledSkill(entry, extractDir) {
       skillMd,
       version: entry.latestVersion,
     });
-    fs.writeFileSync(
-      existingManifestPath,
-      JSON.stringify(manifest, null, 2),
-      "utf8",
-    );
   }
+
+  const { normalizeRuntimePackIds } = require("./skill-runtime-declarations");
+  manifest.requiredRuntimePacks = normalizeRuntimePackIds([
+    ...normalizeRuntimePackIds(manifest.requiredRuntimePacks),
+    ...normalizeRuntimePackIds(entry.requiredRuntimePacks),
+  ]);
+  fs.writeFileSync(existingManifestPath, JSON.stringify(manifest, null, 2), "utf8");
 
   const target = installedSkillDir(entry.id);
   if (fs.existsSync(target)) {

@@ -1,4 +1,6 @@
 {
+  "collaboration.transfer.tooManyFiles": "يمكن إرفاق 20 ملفًا كحد أقصى لكل رسالة.",
+  "collaboration.transfer.tooLarge": "الملف كبير جدًا: الحد الأقصى للصور الملصقة 20 ميغابايت، وللملفات أقل من 1 غيغابايت.",
   "collaboration.mentions.action": "تنبيه الأعضاء",
   "collaboration.mentions.hint": "يتلقى الأعضاء المحددون فقط تنبيهات الإشارة بـ @. كتابة @ في الرسالة لا تضيف مستلمين لهذه التنبيهات.",
   "collaboration.mentions.selected": "الأعضاء المحددون للتنبيه",
@@ -1989,6 +1991,7 @@
   "collaboration.delivered": "تم التسليم",
   "collaboration.read": "مقروء",
   "collaboration.deliveryUnknown": "نتيجة التسليم غير معروفة — أعد المحاولة أو المزامنة",
+  "collaboration.reactionFailed": "تعذر إرسال التفاعل. يرجى المحاولة مجددًا.",
   "collaboration.sendFailed": "تحتاج الرسالة إلى متابعة",
   "collaboration.noFriends": "لا توجد جهات اتصال بعد",
   "collaboration.messageRevoked": "تم سحب الرسالة",

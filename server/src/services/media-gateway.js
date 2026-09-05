@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { config } from "../config.js";
-import { verifyModelGatewayToken } from "./model-gateway/auth.js";
+import { verifyLiveModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { gatewayAccountRequired } from "./model-gateway/usage.js";
 import { resolveOrgContextForRequest } from "./organization-context.js";
@@ -170,7 +170,7 @@ async function handleVision(request, reply) {
   if (!config.modelGatewayEnabled) {
     return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
   }
-  const token = verifyModelGatewayToken(bearerToken(request), "vision");
+  const token = await verifyLiveModelGatewayToken(bearerToken(request), "vision");
   if (!token.ok) {
     return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   }
@@ -204,7 +204,7 @@ async function handleVisionEmbeddings(request, reply) {
   if (!config.modelGatewayEnabled) {
     return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
   }
-  const token = verifyModelGatewayToken(bearerToken(request), "vision");
+  const token = await verifyLiveModelGatewayToken(bearerToken(request), "vision");
   if (!token.ok) {
     return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   }
@@ -233,7 +233,7 @@ async function handleSearch(request, reply) {
   if (!config.modelGatewayEnabled) {
     return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
   }
-  const token = verifyModelGatewayToken(bearerToken(request), "search");
+  const token = await verifyLiveModelGatewayToken(bearerToken(request), "search");
   if (!token.ok) {
     return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   }
@@ -484,7 +484,7 @@ async function handleLilyAsset(request, reply, kind) {
 async function handleLilyMedia(request, reply) {
   const requestUrl = new URL(request.url, "https://lily.local");
   const rawToken = bearerToken(request) || String(requestUrl.searchParams.get("access_token") || requestUrl.searchParams.get("token") || "").trim();
-  const token = verifyModelGatewayToken(rawToken, "lily-media");
+  const token = await verifyLiveModelGatewayToken(rawToken, "lily-media");
   if (!token.ok) {
     return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   }
@@ -535,7 +535,7 @@ function mediaHandler(fixedProvider) {
     if (!spec) {
       return reply.code(404).send({ error: { type: "not_found", message: "unknown media provider" } });
     }
-    const token = verifyModelGatewayToken(bearerToken(request), spec.credId);
+    const token = await verifyLiveModelGatewayToken(bearerToken(request), spec.credId);
     if (!token.ok) {
       return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
     }

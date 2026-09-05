@@ -169,7 +169,7 @@ assert.match(auth, /if \(!user\) return reply\.code\(401\)\.send\(\{ ok: false, 
 // timing of "no such user" differs from "wrong password".
 assert.ok(auth.indexOf("passwordLoginDecision({") < auth.indexOf('if (!user) return reply.code(401)'), "the decision is computed before the existence check, keeping timing uniform");
 assert.match(auth, /password_failed_count: decision\.failedCount/, "failures must be persisted or the lock never engages");
-assert.match(auth, /const account = await requireAccountSession\(request, reply, input\);\s*\n\s*if \(!account\) return;/, "changing a password requires the signed-in session");
+assert.match(auth, /const account = request\.headers\.authorization\s*\? await requireAccountSession\(request, reply, input\)\s*: await requireWebAccount\(request, reply\);\s*if \(!account\) return;/, "password changes require a live bearer session or verified web session, never an anonymous fallback");
 assert.match(auth, /if \(!verifyPassword\(input\.currentPassword, user\.password_hash\)\)/, "changing a password requires the CURRENT one — a stolen session alone must not be enough to take over the account");
 assert.match(auth, /password_must_change: false/, "a successful change clears the forced-change flag");
 

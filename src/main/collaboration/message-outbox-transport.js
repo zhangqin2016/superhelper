@@ -41,7 +41,7 @@ function committedView(item, response) {
   if (commandType === REACTION) {
     if (response?.ok !== true || !nonEmpty(result?.eventId) || !messageIdentifier(result.eventId)
       || result.messageId !== item.messageId || result.emoji !== item.emoji
-      || Boolean(result.active) !== (item.active !== false)) return null;
+      || result.active !== (item.active !== false)) return null;
     return { committed: true, state: "completed", commandType, eventId: result.eventId,
       conversationId: item.conversationId, messageId: item.messageId, emoji: item.emoji, active: item.active !== false };
   }
@@ -74,7 +74,7 @@ function createCollaborationOutboxTransport({ client, deviceId } = {}) {
       if (receipt?.state === "unknown") {
         if (receipt.ok !== true || receipt.committed !== false || receipt.deliveryUnknown !== true
           || (Object.hasOwn(receipt, "pending") && receipt.pending !== false)
-          || ["eventId", "messageId", "sequence", "eventSequence", "commandType", "conversationId", "revision", "revoked"].some(key => receipt[key] != null)) {
+          || ["eventId", "messageId", "sequence", "eventSequence", "commandType", "conversationId", "revision", "revoked", "emoji", "active"].some(key => receipt[key] != null)) {
           throw Object.assign(new Error("Collaboration unknown receipt is not replay evidence"), { code: "COLLAB_RESPONSE_UNKNOWN" });
         }
         return receipt;

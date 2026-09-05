@@ -12,8 +12,10 @@ assert.match(block[1], /onStateChange/, "preload exposes a collaboration state s
 assert.match(block[1], /collaboration:subscribe/, "subscription is explicitly registered in main");
 assert.match(block[1], /collaboration:unsubscribe/, "subscription is explicitly removed in main");
 assert.match(block[1], /removeListener/, "renderer receives an unsubscribe callback");
-assert.doesNotMatch(block[1], /accessToken|wrappedDek|localPath|filePath|ipcRenderer\.send\(/, "bridge does not provide secret/path or generic send access");
+assert.doesNotMatch(block[1], /accessToken|wrappedDek|localPath|ipcRenderer\.send\(/, "bridge does not provide secret/path or generic send access");
 assert.match(block[1], /collaboration:send/, "bridge uses the fixed collaboration IPC namespace");
+assert.match(block[1], /webUtils\.getPathForFile\(file\)/, "drop import resolves an OS-backed File inside preload");
+assert.doesNotMatch(block[1], /prepareDroppedAttachment:\s*\([^)]*(?:filePath|path)/, "drop API accepts a File, never a renderer path");
 const calls = [];
 const bridge = vm.runInNewContext(`({${block[1]}})`, { ipcRenderer: { invoke: (...args) => calls.push(args) } });
 bridge.send({ conversationId: "c", clientCommandId: "cmd", bodyText: "body", replyToMessageId: "reply", mentionUserIds: ["bob"], senderUserId: "forged" });

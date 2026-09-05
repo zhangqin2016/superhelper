@@ -4,29 +4,7 @@
  * Parse Agent Skills SKILL.md frontmatter and build lily-workbench skill.manifest.json.
  */
 
-function parseFrontmatter(text) {
-  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!match) {
-    return { meta: {}, body: text.trim() };
-  }
-
-  const meta = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const idx = line.indexOf(":");
-    if (idx === -1) continue;
-    const key = line.slice(0, idx).trim();
-    let value = line.slice(idx + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    meta[key] = value;
-  }
-
-  return { meta, body: match[2].trim() };
-}
+const { parseFrontmatter } = require("./skill-frontmatter");
 
 function slugToTitle(slug) {
   return slug
@@ -52,6 +30,7 @@ function buildManifestFromSkillMd({ skillId, skillMd, version = "1.0.0", priorit
     version,
     description,
     minAppVersion: "0.1.0",
+    ...(meta["runtime-packs"] ? { requiredRuntimePacks: require("./skill-runtime-declarations").normalizeRuntimePackIds(meta["runtime-packs"].split(",").map(id => id.trim())) } : {}),
     permissions: {
       network: false,
       filesystem: "read",

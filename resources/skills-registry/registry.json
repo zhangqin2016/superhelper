@@ -1578,7 +1578,14 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "8a7e8490754b0c83b720cac1438b1d01b5100292c776b0ad3077d23280687fc3"
+      "contentRevision": "8a7e8490754b0c83b720cac1438b1d01b5100292c776b0ad3077d23280687fc3",
+      "requiredRuntimePacks": [
+        "libreoffice",
+        "large-document",
+        "pro-pdf",
+        "rapidocr",
+        "opencv"
+      ]
     },
     {
       "id": "lily-pdf-extraction-router",
@@ -2393,7 +2400,10 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "0097747b5911889cc6f75a81fff105d83d1cef6bbe77f542457e1fa20774afe8"
+      "contentRevision": "0097747b5911889cc6f75a81fff105d83d1cef6bbe77f542457e1fa20774afe8",
+      "requiredRuntimePacks": [
+        "libreoffice"
+      ]
     },
     {
       "id": "anthropics-docx",
@@ -2430,7 +2440,10 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "38e27665a893c56756a4e74d1bf3d567d343eabd1961bd7486060d41f49933f5"
+      "contentRevision": "38e27665a893c56756a4e74d1bf3d567d343eabd1961bd7486060d41f49933f5",
+      "requiredRuntimePacks": [
+        "libreoffice"
+      ]
     },
     {
       "id": "anthropics-pdf",
@@ -2467,7 +2480,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "a941ca1f79e5d94cfdf415a2ddd03c53f3fc74acf47392388769043d8d17a749"
+      "contentRevision": "a941ca1f79e5d94cfdf415a2ddd03c53f3fc74acf47392388769043d8d17a749",
+      "requiredRuntimePacks": [
+        "large-document",
+        "pro-pdf",
+        "rapidocr",
+        "opencv"
+      ]
     },
     {
       "id": "anthropics-pptx",
@@ -2504,7 +2523,10 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "17688b0123b5d20a96b96f66549e140cb34d0996eb30031325e4a7945b463d04"
+      "contentRevision": "17688b0123b5d20a96b96f66549e140cb34d0996eb30031325e4a7945b463d04",
+      "requiredRuntimePacks": [
+        "libreoffice"
+      ]
     },
     {
       "id": "anthropics-xlsx",
@@ -2541,7 +2563,11 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "e72c2aa9e374ac77113e012b607fad761b07170b10b8615e944e162403205709"
+      "contentRevision": "e72c2aa9e374ac77113e012b607fad761b07170b10b8615e944e162403205709",
+      "requiredRuntimePacks": [
+        "libreoffice",
+        "large-document"
+      ]
     }
   ],
   "registryRevision": "2acc55d13323826f77bb4f6d3d230917c323d6111264e13c664644c94ba35a8e"

@@ -408,23 +408,11 @@ function baseLocale(loc) {
 }
 
 /** Read the YAML frontmatter (name/description/…) from a skill's SKILL.md.
- *  Lightweight single-line parser — every skill in this repo uses flat keys. */
+ *  Shared scalar parser preserves multiline descriptions and ignores nested keys. */
 function readSkillFrontmatter(skillDir) {
   try {
     const raw = fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
-    const m = /^---\s*\n([\s\S]*?)\n---/.exec(raw);
-    if (!m) return null;
-    const out = {};
-    for (const line of m[1].split("\n")) {
-      const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-      if (!kv) continue;
-      let v = kv[2].trim();
-      if (v.length >= 2 && ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))) {
-        v = v.slice(1, -1);
-      }
-      out[kv[1]] = v;
-    }
-    return out;
+    return require("./skill-frontmatter").parseFrontmatter(raw).meta;
   } catch {
     return null;
   }
@@ -651,7 +639,7 @@ function currentAvailableMediaProviderContext() {
 // are guaranteed to keep the correction.
 const { buildSkillOverlaySection } = require("./skill-platform-overlays");
 
-function buildAgentGuideContent(enabledSkills, locale) {
+function buildAgentGuideContent(enabledSkills, locale, { workspaceSkills = [], reservedBytes = 0 } = {}) {
   const loc = locale || getActiveLocale() || "en";
   const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N["en"];
   const indexI18n = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
@@ -754,7 +742,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
 
   const generated = sections.join("\n").trim() + "\n";
   reportAgentGuideBudget(generated, prefixBytes, indexBudget, report, loc);
-  if (utf8Bytes(generated) <= AGENT_GUIDE_MAX_BYTES) return generated;
+  if (utf8Bytes(generated) <= AGENT_GUIDE_MAX_BYTES) return require("./workspace-skill-index").appendWorkspaceSkillIndex(generated, workspaceSkills, loc, reservedBytes);
 
   // Whole-document amputation: the index sits at the tail, so this cuts skills
   // mid-line and was entirely silent. It only happens when the FIXED prefix
@@ -847,7 +835,7 @@ function buildAgentSubagentPersona(locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 23;
+const AGENT_GUIDE_STATIC_VERSION = 24;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -860,18 +848,19 @@ function getActiveLocale() {
   }
 }
 
-function sessionGuideWriteSignature(session, workspacePath = "") {
+function sessionGuideWriteSignature(session, workspacePath = "", workspaceFingerprint = "") {
   const skillSig = resolveSessionSkillIds(session).slice().sort().join("\0");
   const locale = getActiveLocale();
   const learnedSig = learnedContext.contextSignature(session?.projectId, workspacePath);
   const providerSig = configuredProviderContextSignature();
-  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}\0${workspacePath}\0${learnedSig}\0${providerSig}`;
+  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}\0${workspacePath}\0${learnedSig}\0${providerSig}\0${workspaceFingerprint}`;
 }
 
 function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
   ensureRuntimeNodeShim();
   const configDir = sessionGuideDir(sessionId);
-  const signature = sessionGuideWriteSignature(session, workspacePath);
+  const workspace = require("./workspace-local-skills").workspaceSkillsForSession(workspacePath, session, getAllInstalledSkillIds());
+  const signature = sessionGuideWriteSignature(session, workspacePath, `${workspace.fingerprint}\0${workspace.skills.map(skill => skill.id).join("\0")}`);
   if (sessionGuideWriteCache.get(sessionId) === signature) {
     return configDir;
   }
@@ -886,7 +875,7 @@ function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
     learnedContext.buildWorkspaceRulesSection(workspacePath) +
     learnedContext.buildLearnedSection(session?.projectId) +
     buildCrystallizationSection();
-  fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale) + learnedSections, "utf8");
+  fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale, { workspaceSkills: workspace.skills, reservedBytes: utf8Bytes(learnedSections) }) + learnedSections, "utf8");
   sessionGuideWriteCache.set(sessionId, signature);
   return configDir;
 }
@@ -1049,9 +1038,11 @@ function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false, projectId
   return id;
 }
 
-function listSkillsForSessionPublic(session) {
-  const installed = listSkillsPublic();
+function listSkillsForSessionPublic(session, workspacePath = "") {
+  const local = require("./workspace-local-skills").discoverWorkspaceLocalSkills(workspacePath, { installedIds: getAllInstalledSkillIds() }).skills;
+  const installed = [...listSkillsPublic(), ...local.map(s => ({ ...s.manifest, origin: s.origin, workspaceOnly: true, enabled: false }))];
   const effectiveIds = new Set(resolveSessionSkillIds(session));
+  for (const skill of require("./workspace-local-skills").selectWorkspaceSkills(local, session)) effectiveIds.add(skill.id);
   const customized = isSessionSkillCustomized(session);
   return {
     customized,
@@ -1073,11 +1064,13 @@ function listSkillsForSessionPublic(session) {
   };
 }
 
-function normalizeSessionSkillSelection(enabledSkillIds) {
+function normalizeSessionSkillSelection(enabledSkillIds, workspacePath = "") {
   if (enabledSkillIds == null) return null;
   const installed = new Set(getAllInstalledSkillIds());
-  const normalized = [...new Set((enabledSkillIds || []).filter((id) => installed.has(id)))];
-  if (sameIdSet(normalized, getGloballyEnabledSkillIds())) {
+  const local = require("./workspace-local-skills").discoverWorkspaceLocalSkills(workspacePath, { installedIds: [...installed] }).skills;
+  for (const skill of local) installed.add(skill.id);
+  const normalized = [...new Set((Array.isArray(enabledSkillIds) ? enabledSkillIds : []).filter((id) => installed.has(id)))];
+  if (!local.length && sameIdSet(normalized, getGloballyEnabledSkillIds())) {
     return null;
   }
   return normalized;

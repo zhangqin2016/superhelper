@@ -56,7 +56,7 @@ async function waitForOrganizationLock() {
 let desktop;
 try {
   await admin.query(`create schema ${schema}`);
-  await pool.query(`create table users(id text primary key,phone_e164 text);
+  await pool.query(`create table users(id text primary key,phone_e164 text,status text default 'active',password_must_change boolean default false,provisioned_organization_id text);
     create table devices(id text primary key);
     create table user_devices(user_id text references users(id),device_id text references devices(id),status text not null default 'active',primary key(user_id,device_id));
     create table user_profiles(user_id text primary key,lily_id text,display_name text,avatar_object_id text,discoverability text);
@@ -72,7 +72,7 @@ try {
   }
   for (const userId of ['owner', 'admin', 'member', 'extra', 'outsider']) {
     const key = crypto.generateKeyPairSync('ed25519'); keys.set(userId, key);
-    await pool.query('insert into users values($1,$2)', [userId, `+8613800${userId}`]);
+    await pool.query('insert into users(id,phone_e164) values($1,$2)', [userId, `+8613800${userId}`]);
     await pool.query('insert into devices values($1)', [`device-${userId}`]);
     await pool.query('insert into user_devices(user_id,device_id) values($1,$2)', [userId, `device-${userId}`]);
     await pool.query("insert into user_profiles values($1,$2,$1,null,'contacts')", [userId, `lily-${userId}`]);

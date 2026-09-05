@@ -82,21 +82,14 @@ function trimUtf8ToBytes(text, maxBytes) {
  *  SKILL.md only for matched capabilities. Duplicating the whole description
  *  here dilutes every turn and tempts models to treat the entry as a native
  *  OpenCode `skill` command. */
-function shortIndexDesc(desc, cap = 180) {
-  const s = String(desc || "").replace(/\s+/g, " ").trim();
-  if (s.length <= cap) return s;
-  const slice = s.slice(0, cap);
-  // Cut on a word boundary for space-delimited text; CJK (no spaces) hard-caps.
-  const trimmed = slice.replace(/\s+\S*$/, "");
-  return `${(trimmed.length >= cap * 0.6 ? trimmed : slice).trim()}…`;
-}
+const { shortIndexDesc, indexDesc } = require("./skill-index-description");
 
 /** Build the progressive-disclosure skill index: every enabled skill listed with
  *  a SHORT when-to-use trigger and the path to its full guide, read on demand
  *  through normal file tools. Keep entries terse so the guide remains a router,
  *  not a second copy of each skill. */
-function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity, report = null, entryOf = () => ({})) {
-  const head = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
+function renderSkillIndexSection(enabledSkills, loc, maxBytes, report, entryOf, opts, describe) {
+  const head = { ...(SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en), ...opts };
   const lines = [`## ${head.title}`, "", head.intro, ""];
   let omitted = 0;
   for (const skill of enabledSkills) {
@@ -122,7 +115,7 @@ function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity, report 
     const label = e.name && e.name !== e.id
       ? (asciiParens ? `${e.id} (${e.name})` : `${e.id}（${e.name}）`)
       : e.id;
-    if (!appendWithinByteBudget(lines, `- **${label}** — ${shortIndexDesc(e.desc)}${guide}`, maxBytes)) {
+    if (!appendWithinByteBudget(lines, `- **${label}** — ${describe(e.desc)}${guide}`, maxBytes)) {
       omitted += 1;
       if (report) report.omittedIds.push(e.id);
     } else if (report) {
@@ -143,6 +136,24 @@ function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity, report 
     }
   }
   return lines.join("\n");
+}
+
+// Expansion is optional: it must never remove any entry that fit before.
+function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity, report = null, entryOf = () => ({}), opts = {}) {
+  const baselineReport = createIndexReport();
+  const baseline = renderSkillIndexSection(enabledSkills, loc, maxBytes, baselineReport, entryOf, opts, shortIndexDesc);
+  let chosen = baseline, chosenReport = baselineReport;
+  try {
+    if (process.env.LILY_GUIDE_INDEX_NEGATIVE !== "0") {
+      const expandedReport = createIndexReport();
+      const expanded = renderSkillIndexSection(enabledSkills, loc, maxBytes, expandedReport, entryOf, opts, indexDesc);
+      if (baselineReport.indexedIds.every(id => expandedReport.indexedIds.includes(id))) {
+        chosen = expanded; chosenReport = expandedReport;
+      }
+    }
+  } catch { /* Description enhancement falls back to the exact old index. */ }
+  if (report) Object.assign(report, chosenReport);
+  return chosen;
 }
 
 /** A fresh accumulator for one index build. */
@@ -223,6 +234,8 @@ module.exports = {
   utf8Bytes,
   trimUtf8ToBytes,
   buildSkillIndexSection,
+  shortIndexDesc,
+  indexDesc,
   createIndexReport,
   reportAgentGuideBudget,
   getLastAgentGuideBudget,

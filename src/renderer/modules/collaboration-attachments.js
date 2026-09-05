@@ -1,4 +1,6 @@
 import { t } from "../i18n/index.js";
+import { initCollaborationFileInput } from "./collaboration-file-input.js";
+import { formatBytes } from "./format-bytes.js";
 
 const label = (key) => t(`collaboration.transfer.${key}`);
 const node = (tag, text = "", className = "") => { const value = document.createElement(tag); value.textContent = text; value.className = className; return value; };
@@ -6,7 +8,7 @@ const terminal = (state) => ["verified", "bound", "ready", "cancelled"].includes
 
 /** Presentation only: all file paths, authorization, durable send identities
  * and retry decisions remain in the account-scoped main process. */
-export function initCollaborationAttachments({ root, attachButton, api = window.assistantClient?.collaboration } = {}) {
+export function initCollaborationAttachments({ root, attachButton, api = window.assistantClient?.collaboration, composerMode = false, onDraftChange = () => {} } = {}) {
   if (!root || !attachButton) return { setConversation() {}, setPolicy() {}, dismiss() {}, reset() {}, destroy() {}, refresh: async () => {}, download: async () => {} };
   let conversation = null, policy = {}, epoch = 0, refreshVersion = 0, disposed = false;
   let transfers = [], selected = new Set(), confirmationIds = null, confirmationOpener = null;
@@ -18,7 +20,7 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   const sendButton = node("button", label("sendSelected")); sendButton.type = "button"; sendButton.dataset.action = "send-selected";
   root.append(status, recoveryStatus, list, sendButton, confirmation);
   const current = (generation) => !disposed && epoch === generation && Boolean(conversation);
-  const errorLabel = (result) => result?.code === "COLLAB_MESSAGE_CANCELLATION_REQUIRED" ? "messageCancellation"
+  const errorLabel = (result) => result?.code === "COLLAB_OBJECT_SIZE_INVALID" ? "tooLarge" : result?.code === "COLLAB_MESSAGE_CANCELLATION_REQUIRED" ? "messageCancellation"
     : result?.code === "COLLAB_TRANSFER_DESTINATION_EXISTS" ? "destinationExists"
     : /ACCESS_REVOKED|FORBIDDEN|UNAVAILABLE/.test(result?.code || "") ? "permissionDenied" : "failed";
   const selectable = (item) => item.direction === "upload" && !item.sendState && item.state !== "cancelled" && item.purpose === "attachment";
@@ -32,10 +34,11 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   }
   function controls() {
     attachButton.hidden = !policy.attachments;
-    attachButton.disabled = !conversation || busy.has("pick");
-    sendButton.hidden = !policy.attachments || !transfers.some(selectable);
+    attachButton.disabled = !conversation || busy.has("pick") || (composerMode && transfers.filter(selectable).length >= 20);
+    sendButton.hidden = composerMode || !policy.attachments || !transfers.some(selectable);
     sendButton.disabled = selected.size === 0 || selected.size > 20 || busy.has("send");
-    root.hidden = !policy.attachments && !policy.workspaceShares;
+    root.hidden = (!policy.attachments && !policy.workspaceShares) || (composerMode && !list.childElementCount && !status.textContent && recoveryStatus.hidden);
+    onDraftChange();
   }
   function action(row, name, key, operation) {
     const button = node("button", label(key)); button.type = "button"; button.dataset.action = name;
@@ -51,10 +54,12 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   // carries; only a FINISHED download exposes plaintext, so this returns null
   // until then and the bubble shows its name/size chip instead.
   const previewCache = new Map();
+  const requestedPreviews = new Set();
   function readyDownload(objectId) {
     return transfers.find((item) => item.objectId === objectId && item.direction === "download" && item.state === "ready") || null;
   }
   async function resolvePreviewByObject(objectId) {
+    const generation = epoch;
     if (!objectId || !policy.attachments || disposed) return null;
     if (previewCache.has(objectId)) return previewCache.get(objectId);
     const transfer = readyDownload(objectId);
@@ -62,6 +67,7 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     // null here would keep the thumbnail missing for the rest of the session.
     if (!transfer) return null;
     let resolved; try { resolved = await api?.resolveTransferPreview?.(transfer.id); } catch { resolved = null; }
+    if (!current(generation) || !policy.attachments) return null;
     const value = resolved?.ok === true && typeof resolved.url === "string" && resolved.url
       && String(resolved.mimeType || "").startsWith("image/")
       ? { url: resolved.url, mimeType: String(resolved.mimeType), originalName: String(resolved.originalName || "") }
@@ -70,11 +76,13 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     return value;
   }
   async function openPreview(transferId) {
+    const generation = epoch;
     let resolved; try { resolved = await api?.resolveTransferPreview?.(transferId); } catch { resolved = null; }
-    if (resolved?.ok !== true || !resolved.url) return;
+    if (!current(generation) || !policy.attachments || resolved?.ok !== true || !resolved.url) return;
     const mime = String(resolved.mimeType || "");
     if (!mime.startsWith("image/")) return;
     const viewer = await import("./image-viewer.js");
+    if (!current(generation) || !policy.attachments) return;
     viewer.openImageViewer?.(resolved.url, resolved.originalName || t("collaboration.transfer.preview"));
   }
   function render() {
@@ -82,20 +90,25 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     const focusId = focused?.closest?.("[data-transfer-id]")?.dataset.transferId, focusAction = focused?.dataset.action;
     list.replaceChildren();
     for (const item of transfers) {
+      if (composerMode && (item.state === "cancelled" || item.direction === "upload" && item.sendState === "persisted")) continue;
       const row = node("article", "", "collaboration-transfer"); row.dataset.transferId = item.id;
       const name = item.originalName || label("attachment");
+      if (composerMode) {
+        row.classList.add("is-composer-file");
+        const icon = node("span", name.split(".").pop().slice(0, 4).toUpperCase(), "collaboration-file-icon"); icon.setAttribute("aria-hidden", "true"); row.append(icon);
+      }
       row.append(node("strong", name), node("small", label(item.state)));
       if (item.sendState) row.append(node("small", label(["failed", "paused"].includes(item.sendState) ? `message_${item.sendState}` : item.sendState)));
-      if (Number.isSafeInteger(item.totalBytes)) row.append(node("small", `${item.totalBytes.toLocaleString()} ${label("bytes")}`));
+      if (Number.isSafeInteger(item.totalBytes)) row.append(node("small", composerMode ? formatBytes(item.totalBytes) : `${item.totalBytes.toLocaleString()} ${label("bytes")}`));
       if (item.completedParts > 0) row.append(node("small", `${label("completedParts")}: ${item.completedParts}`));
-      if (selectable(item)) {
+      if (selectable(item) && !composerMode) {
         const wrapper = node("label", label("select"));
         const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.checked = selected.has(item.id);
         checkbox.dataset.action = "select-transfer";
         checkbox.addEventListener("change", () => { checkbox.checked ? selected.add(item.id) : selected.delete(item.id); clearConfirmation(); controls(); });
         wrapper.prepend(checkbox); row.append(wrapper);
       }
-      if (!terminal(item.state)) {
+      if (!terminal(item.state) && (!composerMode || !selectable(item))) {
         if (item.automaticRetry) action(row, "pause-transfer", "pause", () => api.pauseTransfer(item.id));
         else action(row, "resume-transfer", "resume", () => api.enqueueTransfer(item.id));
       }
@@ -127,6 +140,10 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     selected = new Set([...selected].filter((id) => eligible.has(id)));
     if (confirmationIds?.some((id) => !eligible.has(id))) clearConfirmation();
     render();
+    for (const objectId of requestedPreviews) {
+      const ready = readyDownload(objectId);
+      if (ready) { requestedPreviews.delete(objectId); void openPreview(ready.id); }
+    }
   }
   async function run(key, operation) {
     if (!conversation || disposed || busy.has(key)) return;
@@ -134,7 +151,7 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     try {
       const result = await operation();
       if (!current(generation)) return;
-      status.textContent = label(!result?.ok ? errorLabel(result) : result.saved ? "saved" : result.cancelled ? "cancelled" : result.state || "updated");
+      status.textContent = composerMode && result?.ok && !result.saved ? "" : label(!result?.ok ? errorLabel(result) : result.saved ? "saved" : result.cancelled ? "cancelled" : result.state || "updated");
       await refresh();
       return result;
     } catch { if (current(generation)) status.textContent = label("failed"); }
@@ -178,16 +195,53 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
   confirmation.addEventListener("keydown", escape);
   attachButton.addEventListener("click", pick); sendButton.addEventListener("click", confirmSend);
   function reset() {
+    fileInput.clear();
     epoch += 1; refreshVersion += 1; conversation = null; transfers = []; selected.clear(); busy.clear(); clearConfirmation(false); status.textContent = ""; recoveryStatus.textContent = ""; recoveryStatus.hidden = true;
     // Preview URLs are scoped to a conversation's transfers: keeping them
     // across a switch would point a bubble at another conversation's file.
-    previewCache.clear();
+    previewCache.clear(); requestedPreviews.clear();
     render();
   }
+  const fileInput = initCollaborationFileInput({
+    dropTarget: root.closest(".collaboration-conversation"),
+    pasteTarget: root.closest(".collaboration-composer"),
+    enabled: () => !disposed && Boolean(conversation) && policy.attachments === true && !busy.has("pick"),
+    receive: async (files, kind) => {
+      if (!files.length || !conversation || !policy.attachments) return;
+      if (files.length + transfers.filter(selectable).length > 20) { status.textContent = t("collaboration.transfer.tooManyFiles"); controls(); return; }
+      await run("pick", async () => {
+        const generation = epoch, conversationId = conversation.id;
+        for (const file of files) {
+          if (!current(generation)) return;
+          let result;
+          if (kind === "paste") {
+            if (file.size > 20 * 1024 * 1024) return { ok: false, code: "COLLAB_OBJECT_SIZE_INVALID" };
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            if (!current(generation)) return;
+            result = await api?.preparePastedImage?.(conversationId, bytes);
+          } else result = await api?.prepareDroppedAttachment?.(conversationId, file);
+          if (!current(generation)) return;
+          if (!result?.ok) return result || { ok: false };
+          if (result.id) selected.add(result.id);
+          await refresh();
+        }
+        return { ok: true };
+      });
+    },
+  });
   controls();
   return {
+    hasDraft() { return Boolean(conversation && policy.attachments && transfers.some(selectable)); },
+    async sendDraft({ conversationId, bodyText = "" } = {}) {
+      if (!conversation || conversation.id !== conversationId || !policy.attachments || busy.has("send")) return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
+      const ids = transfers.filter(selectable).map((item) => item.id);
+      if (!ids.length || ids.length > 20) return { ok: false, code: "COLLAB_OBJECT_COUNT_INVALID" };
+      const result = await run("send", () => api.sendAttachments({ conversationId, transferIds: ids, bodyText }));
+      if (result?.ok) { selected.clear(); status.textContent = ""; controls(); }
+      return result;
+    },
     refresh,
-    dismiss() { epoch += 1; refreshVersion += 1; busy.clear(); clearConfirmation(false); render(); },
+    dismiss() { fileInput.clear(); epoch += 1; refreshVersion += 1; busy.clear(); clearConfirmation(false); render(); },
     setPolicy(nextPolicy = {}) {
       if (policy.attachments === nextPolicy.attachments && policy.workspaceShares === nextPolicy.workspaceShares) return;
       const previous = conversation;
@@ -203,8 +257,9 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
       const transfer = readyDownload(objectId);
       return transfer ? openPreview(transfer.id) : Promise.resolve();
     },
-    download(input, purpose = "attachment") {
+    download(input, purpose = "attachment", preview = false) {
       if (!conversation || input?.conversationId !== conversation.id || !(purpose === "attachment" ? policy.attachments : purpose === "workspace" && policy.workspaceShares)) return Promise.resolve();
+      if (preview) requestedPreviews.add(input.objectId);
       return run(`download:${input.messageId}:${input.objectId}`, async () => {
         const generation = epoch, prepared = await api.prepareDownload(input);
         if (!current(generation) || !prepared?.ok || !prepared.id) return prepared;
@@ -212,6 +267,6 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
       });
     },
     reset,
-    destroy() { reset(); disposed = true; attachButton.removeEventListener("click", pick); sendButton.removeEventListener("click", confirmSend); confirmation.removeEventListener("keydown", escape); },
+    destroy() { fileInput.destroy(); reset(); disposed = true; attachButton.removeEventListener("click", pick); sendButton.removeEventListener("click", confirmSend); confirmation.removeEventListener("keydown", escape); },
   };
 }

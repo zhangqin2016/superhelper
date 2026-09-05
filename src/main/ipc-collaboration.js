@@ -92,12 +92,12 @@ function rendererMessage(value = {}) {
     // from the record: the renderer must never see metadata for an object it
     // was not also given the id of.
     ...(() => { const meta = attachmentMetadata(value, attachmentIds(value)); return meta.length ? { attachments: meta } : {}; })(),
-    ...(Array.isArray(value.reactions) && value.reactions.length ? { reactions: value.reactions.slice(0, 24).flatMap((entry) => {
+    reactions: (Array.isArray(value.reactions) ? value.reactions : []).slice(0, 24).flatMap((entry) => {
       const emoji = typeof entry?.emoji === "string" ? entry.emoji.trim() : "";
       const count = Number(entry?.count);
       return emoji && emoji.length <= 32 && [...emoji].length <= 8 && Number.isSafeInteger(count) && count > 0
         ? [{ emoji, count, mine: entry.mine === true }] : [];
-    }) } : {}),
+    }),
     createdAt: optionalInteger(value.createdAt), clientCreatedAt: optionalInteger(value.clientCreatedAt), updatedAt: nonNegativeInteger(value.updatedAt),
     ...(safeIdentifier(value.clientCommandId) ? { clientCommandId: safeIdentifier(value.clientCommandId) } : {}),
     ...(optionalInteger(value.revision) != null ? { revision: optionalInteger(value.revision) } : {}),

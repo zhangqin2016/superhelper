@@ -150,10 +150,11 @@ export function buildGuideEvalCases({ skillDirs = {} } = {}) {
     {
       id: "discover-diagrams",
       kind: "discovery",
+      expectGuideRead: true,
       skill: "lily-diagrams",
       why: "Target description says 关系/步骤/结构/Mermaid/SVG/图示. This prompt uses none of them.",
       prompt:
-        "我们的报销要先经组长、再经财务、最后经总经理。请把这个先后顺序做成一份能放进文档、以后还能改动的可视化内容。先说明你会用本会话哪一个能力，只给出它的 id。",
+        "我们的报销要先经组长、再经财务、最后经总经理。请把这个先后顺序做成一份能放进文档、以后还能改动的可视化内容。先说明你会用本会话哪一个能力，读取它的操作指南后，只给出它的 id。",
       check: (text) => /lily-diagrams/.test(text),
       passSample: () => "lily-diagrams",
       failSample: () => "我直接手写一段文字描述就行。",
@@ -161,10 +162,11 @@ export function buildGuideEvalCases({ skillDirs = {} } = {}) {
     {
       id: "discover-speech",
       kind: "discovery",
+      expectGuideRead: true,
       skill: "lily-speech-generation",
       why: "Target description says 配音/旁白/音频/语音合成. This prompt uses none of them.",
       prompt:
-        "我有一段讲稿，想做成能用耳朵听的版本，男声，存到当前目录。先说明你会用本会话哪一个能力，只给出它的 id。",
+        "我有一段讲稿，想做成能用耳朵听的版本，男声，存到当前目录。先说明你会用本会话哪一个能力，读取它的操作指南后，只给出它的 id。",
       check: (text) => /lily-speech-generation/.test(text),
       passSample: () => "lily-speech-generation",
       failSample: () => "我没有相关能力。",
@@ -172,10 +174,12 @@ export function buildGuideEvalCases({ skillDirs = {} } = {}) {
     {
       id: "discover-external-fact",
       kind: "discovery",
+      expectGuideRead: true,
       skill: "websearch",
+      acceptedSkillIds: ["websearch", "webfetch"],
       why: "Doubles as the external-fact-routing rule: an answer outside the conversation and workspace must be verified, not recalled.",
       prompt:
-        "我需要知道现在市面上最新一代 USB 接口规范的正式名称。先说明你会用本会话哪一个能力来确认它，只给出它的 id。",
+        "我需要知道现在市面上最新一代 USB 接口规范的正式名称。先说明你会用本会话哪一个能力来确认它，读取它的操作指南后，只给出它的 id。",
       check: (text) => /websearch|webfetch/.test(text),
       passSample: () => "websearch",
       failSample: () => "我根据已有知识回答就可以。",

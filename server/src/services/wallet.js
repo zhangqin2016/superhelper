@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { publicId } from "./ids.js";
 import { config } from "../config.js";
 import { choosePricingRule, pricingUnitCost } from "./billing.js";
@@ -196,9 +197,9 @@ export async function ensureSignupGrants(userId, trx = null) {
   return grants;
 }
 
-export async function fetchUserGrants(userId, trx = null) {
+export async function fetchUserGrants(userId, trx = null, { forUpdate = false } = {}) {
   trx ||= await defaultDb();
-  return trx
+  let query = trx
     .selectFrom("wallet_grants")
     .selectAll()
     .where("user_id", "=", userId)
@@ -208,7 +209,9 @@ export async function fetchUserGrants(userId, trx = null) {
     // be mistaken for personal balance.
     .where("organization_id", "is", null)
     .orderBy("expires_at", "asc")
-    .execute();
+    .orderBy("id", "asc");
+  if (forUpdate) query = query.forUpdate();
+  return query.execute();
 }
 
 /**
@@ -217,14 +220,16 @@ export async function fetchUserGrants(userId, trx = null) {
  * personal path); membership + org status are checked by the caller
  * (consumeEntitlement / resolveOrgForConsumption).
  */
-export async function fetchOrgGrants(organizationId, trx = null) {
+export async function fetchOrgGrants(organizationId, trx = null, { forUpdate = false } = {}) {
   trx ||= await defaultDb();
-  return trx
+  let query = trx
     .selectFrom("wallet_grants")
     .selectAll()
     .where("organization_id", "=", organizationId)
     .orderBy("expires_at", "asc")
-    .execute();
+    .orderBy("id", "asc");
+  if (forUpdate) query = query.forUpdate();
+  return query.execute();
 }
 
 /**
@@ -313,15 +318,19 @@ export async function consumeEntitlement({
   }
   return db.transaction().execute(async (trx) => {
     if (idempotencyKey) {
+      // Serialize retries before looking up their receipt; otherwise concurrent
+      // retries race the unique usage-event key after spending the same grant.
+      await sql`select pg_advisory_xact_lock(hashtextextended(${idempotencyKey}, 0))`.execute(trx);
       const existing = await trx
         .selectFrom("usage_events")
         .selectAll()
         .where("idempotency_key", "=", idempotencyKey)
         .executeTakeFirst();
+      if (existing && existing.user_id !== userId) return { ok: false, code: "IDEMPOTENCY_CONFLICT" };
       if (existing) return { ok: true, idempotent: true, usageEventId: existing.id };
     }
 
-    const grants = await fetchUserGrants(userId, trx);
+    const grants = await fetchUserGrants(userId, trx, { forUpdate: true });
     let selected = selectGrantsForConsumption(grants, {
       resourceType,
       units: billableUnits,
@@ -335,7 +344,7 @@ export async function consumeEntitlement({
     if (!selected.ok && organizationId) {
       const orgDecision = await resolveOrgForConsumption({ userId, organizationId, units: billableUnits }, trx);
       if (orgDecision.ok) {
-        const orgGrants = await fetchOrgGrants(organizationId, trx);
+        const orgGrants = await fetchOrgGrants(organizationId, trx, { forUpdate: true });
         const orgSelected = selectGrantsForConsumption(orgGrants, {
           resourceType,
           units: billableUnits,
@@ -371,7 +380,7 @@ export async function consumeEntitlement({
       .execute();
 
     for (const debit of selected.debits) {
-      await trx
+      const updated = await trx
         .updateTable("wallet_grants")
         .set((eb) => ({
           unit_remaining: eb("unit_remaining", "-", debit.units),
@@ -380,6 +389,7 @@ export async function consumeEntitlement({
         .where("id", "=", debit.grant.id)
         .where("unit_remaining", ">=", debit.units)
         .executeTakeFirstOrThrow();
+      if (Number(updated.numUpdatedRows) !== 1) throw Object.assign(new Error("ENTITLEMENT_DEBIT_CONFLICT"), { code: "ENTITLEMENT_DEBIT_CONFLICT" });
       await trx
         .insertInto("wallet_ledger")
         .values({

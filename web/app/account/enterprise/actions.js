@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { API_BASE, userApiPost, userApiPatch, userApiDelete } from "../../../lib/user-api";
 
 export async function createOrganizationAction(formData) {
@@ -10,9 +10,10 @@ export async function createOrganizationAction(formData) {
   try {
     const result = await userApiPost("/api/enterprise/organizations", { name });
     revalidatePath("/account/enterprise");
-    if (result?.id) redirect(`/account/enterprise/${result.id}`);
+    if (result?.organization?.id) redirect(`/account/enterprise/${result.organization.id}`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "创建失败") };
   }
 }
@@ -24,6 +25,7 @@ export async function patchOrganizationAction(organizationId, formData) {
     revalidatePath(`/account/enterprise/${organizationId}`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "操作失败") };
   }
 }
@@ -41,6 +43,7 @@ export async function addMemberAction(organizationId, formData) {
     revalidatePath(`/account/enterprise/${organizationId}/members`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "添加失败") };
   }
 }
@@ -52,15 +55,17 @@ export async function patchMemberAction(organizationId, userId, formData) {
   const body = {};
   if (role) body.role = role;
   if (status) body.status = status;
-  if (quotaRaw !== "") {
-    const quota = Number(quotaRaw);
-    body.memberQuota = Number.isFinite(quota) && quota >= 0 ? quota : null;
+  if (formData.has("quota")) {
+    const quota = quotaRaw === "" ? null : Number(quotaRaw);
+    if (quota !== null && (!Number.isSafeInteger(quota) || quota < 0)) return { ok: false, message: "额度必须为非负整数，留空表示不限" };
+    body.memberQuota = quota;
   }
   try {
     await userApiPatch(`/api/enterprise/organizations/${organizationId}/members/${userId}`, body);
     revalidatePath(`/account/enterprise/${organizationId}/members`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "更新失败") };
   }
 }
@@ -71,6 +76,7 @@ export async function removeMemberAction(organizationId, userId) {
     revalidatePath(`/account/enterprise/${organizationId}/members`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "移除失败") };
   }
 }
@@ -82,6 +88,7 @@ export async function revokeInvitationAction(organizationId, invitationId) {
     revalidatePath(`/account/enterprise/${organizationId}/members`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "撤销失败") };
   }
 }
@@ -108,9 +115,9 @@ export async function provisionAccountsAction(organizationId, formData) {
     const result = await userApiPost(`/api/enterprise/organizations/${organizationId}/accounts`, body);
     revalidatePath(`/account/enterprise/${organizationId}/members`);
     const issued = Array.isArray(result?.accounts) ? result.accounts : [];
-    const payload = Buffer.from(JSON.stringify(issued.map((a) => ({ l: a.loginName, p: a.initialPassword }))), "utf8").toString("base64url");
-    redirect(`/account/enterprise/${organizationId}/members#issued=${payload}`);
+    return { ok: true, message: `已生成 ${issued.length} 个账户，请保存初始密码`, issued: issued.map((a) => ({ l: a.loginName, p: a.initialPassword })) };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "生成失败") };
   }
 }
@@ -119,9 +126,9 @@ export async function resetAccountPasswordAction(organizationId, userId) {
   try {
     const result = await userApiPost(`/api/enterprise/organizations/${organizationId}/accounts/${userId}/reset-password`, {});
     revalidatePath(`/account/enterprise/${organizationId}/members`);
-    const payload = Buffer.from(JSON.stringify([{ l: result?.loginName, p: result?.initialPassword }]), "utf8").toString("base64url");
-    redirect(`/account/enterprise/${organizationId}/members#issued=${payload}`);
+    return { ok: true, message: "密码已重置，旧登录会话已失效", issued: [{ l: result.loginName, p: result.initialPassword }] };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "重置失败") };
   }
 }

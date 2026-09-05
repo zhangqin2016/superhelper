@@ -104,9 +104,12 @@ async function consumeBillingLink(request) {
 
 export async function proxy(request) {
   if (request.nextUrl.pathname.startsWith("/account")) {
-    if (isUaeRequest(request)) {
+    const path = request.nextUrl.pathname;
+    const enterpriseRoute = path === "/account/enterprise" || path.startsWith("/account/enterprise/")
+      || path === "/account/password" || path === "/account/settings"
+      || path === "/account/login";
+    if (isUaeRequest(request) && !enterpriseRoute) {
       const response = NextResponse.redirect(new URL("/download", request.url));
-      response.cookies.delete("lily_user_session");
       return response;
     }
     const billingLinkResponse = await consumeBillingLink(request);

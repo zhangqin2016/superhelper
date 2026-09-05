@@ -7,6 +7,7 @@ import { publicId } from "../../services/ids.js";
 import { redeemInvitationsForPhone } from "../../services/enterprise-invitations.js";
 import { verifyPassword, hashPassword, validateNewPassword, normalizeLoginName, passwordLoginDecision } from "../../services/enterprise-accounts.js";
 import { requireAccountSession } from "../../services/account-session-guard.js";
+import { requireWebAccount } from "./account.js";
 import {
   createAccessToken,
   createRefreshToken,
@@ -41,7 +42,7 @@ const passwordLoginSchema = registerDeviceSchema.extend({
   loginName: z.string().min(3).max(40),
   password: z.string().min(1).max(128),
 });
-const passwordChangeSchema = registerDeviceSchema.extend({
+const passwordChangeSchema = registerDeviceSchema.partial().extend({
   currentPassword: z.string().min(1).max(128),
   newPassword: z.string().min(1).max(128),
 });
@@ -287,9 +288,6 @@ export function registerPublicAuthRoutes(app) {
       const input = passwordLoginSchema.parse(request.body);
       const loginName = normalizeLoginName(input.loginName);
       if (!loginName) return reply.code(400).send({ ok: false, code: "INVALID_LOGIN_NAME" });
-      if (!clientFeatureEnabled(request, "accountLogin")) {
-        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
-      }
       await upsertDevice(input);
       await upsertDevicePublicKey(input);
 
@@ -312,6 +310,12 @@ export function registerPublicAuthRoutes(app) {
         }).where("id", "=", user.id).execute();
         const status = decision.code === "PASSWORD_LOCKED" ? 429 : decision.code === "USER_DISABLED" ? 403 : 401;
         return reply.code(status).send({ ok: false, code: decision.code });
+      }
+
+      // Enterprise-issued identities must remain usable at the overseas enterprise
+      // workbench; this does not enable personal signup or purchases in that region.
+      if (!clientFeatureEnabled(request, "accountLogin") && !user.provisioned_organization_id) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
       }
 
       const result = await db.transaction().execute(async (trx) => {
@@ -353,11 +357,14 @@ export function registerPublicAuthRoutes(app) {
     },
     async (request, reply) => {
       const input = passwordChangeSchema.parse(request.body);
-      const account = await requireAccountSession(request, reply, input);
+      const account = request.headers.authorization
+        ? await requireAccountSession(request, reply, input)
+        : await requireWebAccount(request, reply);
       if (!account) return;
       const policy = validateNewPassword(input.newPassword);
       if (!policy.ok) return reply.code(400).send({ ok: false, code: policy.code });
       const user = await db.selectFrom("users").selectAll().where("id", "=", account.userId).executeTakeFirst();
+      if (user?.status !== "active") return reply.code(403).send({ ok: false, code: "USER_DISABLED" });
       if (!user || !user.password_hash) return reply.code(400).send({ ok: false, code: "PASSWORD_LOGIN_UNAVAILABLE" });
       if (!verifyPassword(input.currentPassword, user.password_hash)) return reply.code(401).send({ ok: false, code: "INVALID_CREDENTIALS" });
       if (input.currentPassword === input.newPassword) return reply.code(400).send({ ok: false, code: "PASSWORD_UNCHANGED" });
@@ -370,6 +377,18 @@ export function registerPublicAuthRoutes(app) {
       return reply.send({ ok: true, changed: true });
     },
   );
+
+  app.get("/api/auth/session/current", {
+    schema: { tags: ["public:auth"], summary: "Current web account identity", response: { 200: okResponse({ user: { type: "object" } }) } },
+  }, async (request, reply) => {
+    const account = await requireWebAccount(request, reply);
+    if (!account) return;
+    const user = await db.selectFrom("users").select(["id", "login_name", "display_name", "phone_e164", "password_must_change", "status"]).where("id", "=", account.userId).executeTakeFirst();
+    if (!user || user.status !== "active") return reply.code(403).send({ ok: false, code: "USER_DISABLED" });
+    return { ok: true, user: { id: user.id, loginName: user.login_name, displayName: user.display_name,
+      phoneMasked: user.phone_e164 ? `${user.phone_e164.slice(0, 6)}****${user.phone_e164.slice(-4)}` : null,
+      passwordMustChange: Boolean(user.password_must_change) } };
+  });
 
   app.post(
     "/api/auth/session/refresh",

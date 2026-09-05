@@ -42,19 +42,7 @@ function normalizePath(value = "") {
 function readSkillFrontmatter(skillDir = "") {
   try {
     const raw = fs.readFileSync(path.join(skillDir, SKILL_GUIDE_BASENAME), "utf8").replace(/\r\n/g, "\n");
-    const match = /^---\s*\n([\s\S]*?)\n---/.exec(raw);
-    if (!match) return {};
-    const out = {};
-    for (const line of match[1].split("\n")) {
-      const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-      if (!kv) continue;
-      let value = kv[2].trim();
-      if (value.length >= 2 && ((value[0] === '"' && value.endsWith('"')) || (value[0] === "'" && value.endsWith("'")))) {
-        value = value.slice(1, -1);
-      }
-      out[kv[1]] = value;
-    }
-    return out;
+    return require("./skill-frontmatter").parseFrontmatter(raw).meta;
   } catch {
     return {};
   }
@@ -107,16 +95,17 @@ function collectSkillGuideReads(tools = []) {
   return [...new Set(reads)];
 }
 
-function buildSkillCandidates({ userText = "", session = null, skillManager = null } = {}) {
+function buildSkillCandidates({ userText = "", session = null, skillManager = null, workspaceSkills = [] } = {}) {
   const mgr = skillManager || require("./skill-manager");
   const userTokens = tokenize(userText);
   const ids = mgr.resolveSessionSkillIds(session).slice(0, MAX_SKILLS_TO_CONSIDER);
   const candidates = [];
-  for (const id of ids) {
-    const skillDir = mgr.installedSkillDir(id);
+  const entries = [...ids.map(id => ({ id, skillDir: mgr.installedSkillDir(id), manifest: mgr.readInstalledManifest(id) })), ...workspaceSkills];
+  for (const entry of entries) {
+    const { id, skillDir } = entry;
     const guidePath = path.join(skillDir, SKILL_GUIDE_BASENAME);
     if (!fs.existsSync(guidePath)) continue;
-    const manifest = mgr.readInstalledManifest(id) || {};
+    const manifest = entry.manifest || {};
     const frontmatter = readSkillFrontmatter(skillDir);
     const haystack = [
       id,
@@ -143,8 +132,11 @@ function buildSkillCandidates({ userText = "", session = null, skillManager = nu
   return candidates.slice(0, MAX_MATCHED_SKILLS);
 }
 
-function buildSkillUsageAudit({ userText = "", session = null, tools = [], skillManager = null } = {}) {
-  const candidates = buildSkillCandidates({ userText, session, skillManager });
+function buildSkillUsageAudit({ userText = "", session = null, tools = [], skillManager = null, workspacePath = "", workspaceSkills = null } = {}) {
+  const mgr = skillManager || require("./skill-manager");
+  const local = workspaceSkills || require("./workspace-local-skills").workspaceSkillsForSession(workspacePath, session, mgr.getAllInstalledSkillIds?.() || mgr.resolveSessionSkillIds(session)).skills;
+  const candidates = buildSkillCandidates({ userText, session, skillManager: mgr, workspaceSkills: local });
+  const guideReadEvidence = require("./skill-read-evidence").collectSkillGuideReadEvidence(tools, workspacePath);
   const guideReads = collectSkillGuideReads(tools);
   const usedSkillIds = [];
   const missingGuideReads = [];
@@ -154,7 +146,9 @@ function buildSkillUsageAudit({ userText = "", session = null, tools = [], skill
     else missingGuideReads.push(candidate.id);
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    measurement: "candidate matches and current-turn read observations; not model selection or task success",
+    guideReadEvidence,
     mode: "advisory",
     candidateCount: candidates.length,
     candidates,
@@ -169,4 +163,5 @@ module.exports = {
   buildSkillUsageAudit,
   buildSkillCandidates,
   collectSkillGuideReads,
+  collectSkillGuideReadEvidence: require("./skill-read-evidence").collectSkillGuideReadEvidence,
 };

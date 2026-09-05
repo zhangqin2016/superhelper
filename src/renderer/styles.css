@@ -17,6 +17,7 @@
 @import "./styles/character-worlds.css?v=20260804-character-polish";
 @import "./styles/character-library.css";
 @import "./styles/collaboration.css";
+@import "./styles/collaboration-desktop.css";
 @import "./styles/system.css?v=20260716-motion";
 @import "../../node_modules/katex/dist/katex.min.css";
 @import "./styles/markdown-rich.css";

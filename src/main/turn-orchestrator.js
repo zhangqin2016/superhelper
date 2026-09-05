@@ -921,6 +921,7 @@ class TurnOrchestrator {
           files,
           taskContract,
           turnPolicy,
+          selectedSkills: require("./workspace-local-skills").selectedSkillsForTurn(session, project?.path || session.workspacePath || "", rawUserText, null, taskContract?.intentContract),
           deps: this.ctx.capabilityReadinessDeps,
           onProgress: (progress) => emitRuntimePackProgress(this, session.id, progress),
         });

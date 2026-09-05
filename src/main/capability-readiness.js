@@ -12,7 +12,7 @@ function fileExtensions(files = []) {
   )));
 }
 
-function planCapabilityReadiness({ text = "", files = [], intentContract = null, turnPolicy = null } = {}) {
+function planCapabilityReadiness({ text = "", files = [], intentContract = null, turnPolicy = null, selectedSkills = [] } = {}) {
   const body = String(text || "");
   const extensions = fileExtensions(files);
   const browser = /localhost|截图|控制台|浏览器|playwright|browser|responsive|响应式/i.test(body);
@@ -48,11 +48,33 @@ function planCapabilityReadiness({ text = "", files = [], intentContract = null,
     ]),
   };
 
+  // Only explicit selections for this task enter the blocking prepare path.
+  // Enabled/catalog-recommended skills remain discovery hints, never installs.
+  try {
+    const { SKILL_RUNTIME_PACKS } = require("./runtime-pack-preflight");
+    const { declaredRuntimePacksForSkill } = require("./skill-runtime-declarations");
+    if (process.env.LILY_SKILL_RUNTIME_DECLARATIONS !== "0"
+      && Array.isArray(selectedSkills) && selectedSkills.length <= 256) {
+      for (const skill of selectedSkills) {
+        try {
+          if (typeof skill?.id !== "string" || !/^[a-z][a-z0-9-]{1,99}$/.test(skill.id)) continue;
+          const legacy = Object.hasOwn(SKILL_RUNTIME_PACKS, skill.id) ? SKILL_RUNTIME_PACKS[skill.id] : [];
+          baseline.requiredPackIds = unique([...baseline.requiredPackIds, ...legacy]);
+          const options = Object.hasOwn(skill, "manifest") ? { manifest: skill.manifest } : {};
+          baseline.requiredPackIds = unique([
+            ...baseline.requiredPackIds, ...declaredRuntimePacksForSkill(skill.id, options),
+          ]);
+        } catch { /* One malformed selection must not erase the baseline. */ }
+      }
+    }
+    baseline.enhancementPackIds = baseline.enhancementPackIds.filter((id) => !baseline.requiredPackIds.includes(id));
+  } catch { /* Existing baseline remains usable when declarations fail. */ }
+
   try {
     const { recommendSkillCapabilityGraph } = require("./capability-broker");
     const { PACK_SPECS } = require("./runtime-pack-specs");
     const recommended = recommendSkillCapabilityGraph({ text, files, turnPolicy, maxSkills: 8 });
-    const explicitPackIds = (intentContract?.neededCapabilities || []).filter((id) => PACK_SPECS[id]);
+    const explicitPackIds = (intentContract?.neededCapabilities || []).filter((id) => typeof id === "string" && Object.hasOwn(PACK_SPECS, id));
     const recommendedPackIds = recommended.flatMap((skill) => skill.requiredRuntimePacks || []);
     return {
       capabilityIds: unique([

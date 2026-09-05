@@ -27,5 +27,6 @@
   "categoryLabel_i18n": {
     "en": "Office Documents",
     "ar": "مستندات المكتب"
-  }
+  },
+  "requiredRuntimePacks": ["large-document", "pro-pdf", "rapidocr", "opencv"]
 }

@@ -23,6 +23,7 @@ const PACK_ID_RE = /^[a-z0-9][a-z0-9._-]{0,79}$/i;
 const EXTRACT_PROGRESS_INTERVAL_MS = 1000;
 const MAX_EXTRACT_ERROR_CHARS = 24_000;
 const activeInstalls = new Map();
+const terminalInstalls = new Map(); // Terminal state must survive job cleanup.
 let baseProvidedCache = null;
 
 function platformKey() {
@@ -263,13 +264,14 @@ function createInstallJob(id, options = {}) {
         ...progress,
       };
       job.latest = enriched;
+      if (["failed", "installed", "skipped"].includes(enriched.phase)) terminalInstalls.set(id, enriched);
+      if (terminalInstalls.size > 128) terminalInstalls.delete(terminalInstalls.keys().next().value);
       for (const onProgress of [...subscribers]) safeProgressCall(onProgress, enriched);
       broadcastRuntimePackProgress(enriched);
     },
   };
   return job;
 }
-
 function emitProgress(onProgress, id, phase, detail = {}) {
   safeProgressCall(onProgress, { id, phase, at: new Date().toISOString(), ...detail });
 }
@@ -643,12 +645,12 @@ function isInternalPack(id) {
   return Boolean(PACK_SPECS[id]?.internal);
 }
 
-function listRuntimePacks() {
+function listRuntimePacks({ packId, includeInternal = false } = {}) {
   const state = readState();
   const userEntries = userInstallEntriesById();
   const baseProvided = baseProvidedRuntimePackMap();
   const seen = new Set();
-  const visibleSpecs = Object.values(PACK_SPECS).filter((spec) => !spec.internal);
+  const visibleSpecs = Object.values(PACK_SPECS).filter((spec) => includeInternal || !spec.internal || spec.id === packId);
   const packs = visibleSpecs.map((spec) => {
     seen.add(spec.id);
     return publicPackFromSpec(spec, userEntries.get(spec.id), state.installed[spec.id], bundledPackDir(spec.id), baseProvided.get(spec.id));
@@ -710,9 +712,8 @@ function listRuntimePacks() {
   }
   for (const pack of packs) {
     const job = activeInstalls.get(pack.id);
-    if (!job) continue;
-    pack.installing = true;
-    pack.progress = job.latest || null;
+    pack.installing = Boolean(job);
+    pack.progress = job?.latest || terminalInstalls.get(pack.id) || null;
   }
   return {
     ok: true,

@@ -38,6 +38,7 @@ class TurnArchive {
       partialJson: tool.partialJson || undefined,
       result: tool.result || null,
       status: tool.status || "done",
+      completionObserved: tool.completionObserved === true,
       parentToolUseId: tool.parentToolUseId || null,
       startedAt: Number.isFinite(tool.startedAt) ? tool.startedAt : null,
       endedAt: Number.isFinite(tool.endedAt) ? tool.endedAt : null,
@@ -260,6 +261,7 @@ class TurnArchive {
         userText: rawUserText,
         session,
         tools,
+        workspacePath,
       });
     } catch {
       record.meta.skillUsageAudit = null;

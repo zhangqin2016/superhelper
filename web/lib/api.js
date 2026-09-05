@@ -19,7 +19,7 @@ export async function apiGet(path) {
     cache: "no-store",
     headers: await adminHeaders(),
   });
-  if (!response.ok) throw new Error(`API ${path} failed: ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`API ${path} failed: ${response.status}`), { status: response.status });
   return response.json();
 }
 

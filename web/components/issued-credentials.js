@@ -10,8 +10,9 @@ import { useEffect, useState } from "react";
  * reaches the server. This component reads it, renders it, and clears it, so a
  * reload or a shared link shows nothing.
  */
-export default function IssuedCredentials() {
-  const [rows, setRows] = useState([]);
+export default function IssuedCredentials({ credentials } = {}) {
+  const [hashRows, setRows] = useState([]);
+  const rows = credentials || hashRows;
   useEffect(() => {
     const match = /#issued=([A-Za-z0-9_-]+)/.exec(window.location.hash || "");
     if (!match) return;

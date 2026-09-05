@@ -51,6 +51,7 @@ export function AdminNav({ groups }) {
                 <Link
                   key={href}
                   href={href}
+                  prefetch={false}
                   aria-current={active ? "page" : undefined}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${
                     active ? "bg-white/12 text-white" : "text-white/68 hover:bg-white/8 hover:text-white"

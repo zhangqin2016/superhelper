@@ -150,7 +150,7 @@ function registerSessionHandlers(ctx) {
     return {
       ok: true,
       sessionId: sid,
-      ...skillManager.listSkillsForSessionPublic(session),
+      ...skillManager.listSkillsForSessionPublic(session, projectManager.find(session.projectId)?.path || session.workspacePath || ""),
     };
   });
 
@@ -165,13 +165,13 @@ function registerSessionHandlers(ctx) {
     if (isSessionBusy(runnerPool, sessionId)) {
       return { ok: false, error: "BUSY" };
     }
-    const normalized = skillManager.normalizeSessionSkillSelection(payload?.enabledSkillIds);
+    const normalized = skillManager.normalizeSessionSkillSelection(payload?.enabledSkillIds, projectManager.find(session.projectId)?.path || session.workspacePath || "");
     if (!sessionManager.setEnabledSkillIds(sessionId, normalized)) {
       return { ok: false, error: "NOT_FOUND" };
     }
     const updated = sessionManager.findById(sessionId);
     const project = projectManager.find(updated?.projectId);
-    skillManager.writeSessionAgentGuide(sessionId, updated, project?.path || "");
+    skillManager.writeSessionAgentGuide(sessionId, updated, project?.path || updated.workspacePath || "");
     const runner = runnerPool.get(sessionId);
     if (runner?.isAlive() && !runner.isBusy()) {
       if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);
@@ -181,7 +181,7 @@ function registerSessionHandlers(ctx) {
     return {
       ok: true,
       sessionId,
-      ...skillManager.listSkillsForSessionPublic(updated),
+      ...skillManager.listSkillsForSessionPublic(updated, project?.path || updated.workspacePath || ""),
     };
   });
 

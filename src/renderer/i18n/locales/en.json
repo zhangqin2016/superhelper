@@ -1,4 +1,6 @@
 {
+  "collaboration.transfer.tooManyFiles": "You can attach up to 20 files per message.",
+  "collaboration.transfer.tooLarge": "File too large: pasted images are limited to 20 MB; files must be smaller than 1 GB.",
   "collaboration.mentions.action": "Remind members",
   "collaboration.mentions.hint": "Only selected members receive @ reminders. Typing @ in the message does not add reminder recipients.",
   "collaboration.mentions.selected": "Selected members",
@@ -1989,6 +1991,7 @@
   "collaboration.delivered": "Delivered",
   "collaboration.read": "Read",
   "collaboration.deliveryUnknown": "Delivery outcome unknown — retry or sync",
+  "collaboration.reactionFailed": "Reaction failed. Please try again.",
   "collaboration.sendFailed": "Message needs attention",
   "collaboration.noFriends": "No contacts yet",
   "collaboration.messageRevoked": "Message revoked",

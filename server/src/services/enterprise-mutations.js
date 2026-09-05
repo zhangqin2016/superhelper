@@ -27,6 +27,9 @@ export function createEnterpriseMutationService(database) {
         const session = account?.sessionId && await trx.selectFrom("user_sessions").selectAll()
           .where("id", "=", account.sessionId).forUpdate().executeTakeFirst();
         if (!session || session.user_id !== account?.userId || session.revoked_at || new Date(session.expires_at).getTime() <= Date.now()) fail("USER_LOGIN_REQUIRED", 401);
+        const user = await trx.selectFrom("users").select(["status", "password_must_change"]).where("id", "=", account.userId).forShare().executeTakeFirst();
+        if (!user || user.status !== "active") fail("USER_DISABLED");
+        if (user.password_must_change) fail("PASSWORD_CHANGE_REQUIRED");
         membership = scope.organizationMembers.find((member) => member.user_id === account.userId);
         if (!membership) fail("ORG_MEMBER_REQUIRED");
         if (membership.status !== "active") fail("ORG_MEMBER_DISABLED");
@@ -115,6 +118,7 @@ export function createEnterpriseMutationService(database) {
         const { trx, organizationId, organizationMembers } = context;
         const target = organizationMembers.find((member) => member.user_id === targetUserId);
         if (!target) fail("MEMBER_NOT_FOUND", 404);
+        if (target.role === "owner" && context.membership.role !== "owner") fail("ORG_OWNER_IMMUTABLE");
         return { ok: true, ...(await resetIssuedPassword(trx, { organizationId, userId: targetUserId })) };
       });
     },

@@ -206,12 +206,12 @@ class CollaborationStore {
     return row?.id || null;
   }
 
-  settleOutboxFromSync({ clientCommandId, eventId, messageId = null, sequence = null, commandType = "message.create", conversationId = null, revision = null }) {
+  settleOutboxFromSync({ clientCommandId, eventId, messageId = null, sequence = null, commandType = "message.create", conversationId = null, revision = null, emoji, active }) {
     const command = requireId(clientCommandId, "client command id");
     const event = requireId(eventId, "event id");
     const settle = this.db.transaction(() => {
       if (mutationOutbox.MUTATIONS.has(commandType)) {
-        return mutationOutbox.settleMutationReceipt(this, { clientCommandId: command, eventId: event, commandType, conversationId, messageId, revision });
+        return mutationOutbox.settleMutationReceipt(this, { clientCommandId: command, eventId: event, commandType, conversationId, messageId, revision, emoji, active });
       }
       const pending = this.db.get(
         `SELECT 1 AS present FROM outbox WHERE account_id = ? AND client_command_id = ? AND state IN ('queued', 'submitting', 'confirming', 'cancellation_requested', 'delivery_unknown', 'cancelled', 'paused', 'failed')`,

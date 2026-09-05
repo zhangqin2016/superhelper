@@ -73,3 +73,17 @@ test("actual preload exposes only transfer ID commands, never the verified file 
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), commands.map(([channel, , payload]) =>
     channel === "get-transfers" ? [`collaboration:${channel}`] : [`collaboration:${channel}`, payload]));
 });
+
+test("drop preload resolves native File paths itself and bounds screenshot bytes", async () => {
+  const source = fs.readFileSync(new URL("../src/preload.js", import.meta.url), "utf8");
+  const block = source.match(/collaboration:\s*\{([\s\S]*?)\n\s*\},\n\s*onRuntimeEvents/)[1];
+  const nativeFile = {}, calls = [];
+  const bridge = vm.runInNewContext(`({${block}})`, {Uint8Array, webUtils:{getPathForFile:file=>{if(file!==nativeFile)throw Error('not native');return '/tmp/dropped.zip';}},ipcRenderer:{invoke:(...args)=>{calls.push(args);return Promise.resolve({ok:true});}}});
+  assert.equal((await bridge.prepareDroppedAttachment('conversation',{path:'/private/forged'})).ok,false);
+  assert.equal(calls.length,0);
+  await bridge.prepareDroppedAttachment('conversation',nativeFile);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),['collaboration:import-attachment',{conversationId:'conversation',source:{kind:'file',path:'/tmp/dropped.zip'}}]);
+  assert.equal((await bridge.preparePastedImage('conversation',new Uint8Array(20*1024*1024+1))).ok,false);
+  await bridge.preparePastedImage('conversation',new Uint8Array([137,80,78,71]));
+  assert.equal(calls.length,2);assert.equal(calls[1][1].source.kind,'image');
+});

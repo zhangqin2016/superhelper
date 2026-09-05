@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { apiPatch, apiPost } from "../../../lib/api";
 
 /**
@@ -31,6 +31,7 @@ export async function createOrganizationAction(formData) {
     }
     redirect(id ? `/admin/enterprise/${id}` : "/admin/enterprise");
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "创建失败") };
   }
 }
@@ -44,6 +45,7 @@ export async function toggleOrgStatusAction(organizationId, formData) {
     revalidatePath(`/admin/enterprise/${organizationId}`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "Operation failed") };
   }
 }
@@ -62,6 +64,18 @@ export async function adjustOrgGrantAction(organizationId, formData) {
     revalidatePath(`/admin/enterprise/${organizationId}`);
     return { ok: true };
   } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, message: String(error?.message || "Operation failed") };
+  }
+}
+
+export async function reissueOwnerInitialPasswordAction(organizationId, userId) {
+  try {
+    const result = await apiPost(`/api/admin/enterprise/organizations/${organizationId}/owner-initial-password`, { userId });
+    revalidatePath(`/admin/enterprise/${organizationId}`);
+    return { ok: true, message: "负责人初始密码已重新签发，请立即保存并交给负责人", issued: [{ l: result.owner.loginName, p: result.owner.initialPassword }] };
+  } catch (error) {
+    unstable_rethrow(error);
+    return { ok: false, message: String(error?.message || "重新签发失败") };
   }
 }

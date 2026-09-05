@@ -51,6 +51,9 @@ export function initCollaborationPanelShell({
     if (detachButton) detachButton.hidden = true;
     if (backButton) backButton.hidden = true;
     if (home) home.hidden = false;
+    const status = document.getElementById("collaborationStatus");
+    const search = document.getElementById("collaborationInboxSearch");
+    if (status && search) search.after?.(status);
     return Object.freeze({
       openPanel() {}, closePanel() {}, isOpen: () => true,
       // A conversation opens beside the list, exactly as in the wide docked

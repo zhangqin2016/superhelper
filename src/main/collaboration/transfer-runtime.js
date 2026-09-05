@@ -1,6 +1,7 @@
 "use strict";
 
 const path = require("node:path");
+const { validImportCommand, withImportSource } = require("./import-source");
 const { createTransferManifestStore } = require("./transfer-manifest");
 const { createTransferManager } = require("./transfer-manager");
 const { createTransferScheduler } = require("./transfer-scheduler");
@@ -22,7 +23,8 @@ function safeError(error) {
 }
 
 /** Main-only assembly. Renderer supplies conversation/message/transfer IDs,
- * never a path, scope, account, object key, DEK or transport implementation.
+ * never scope, account, object key, DEK or transport implementation. The explicit
+ * import command also accepts a native drop path or bounded clipboard image.
  * Failures in this optional module must not disable ordinary collaboration.
  */
 function createTransferRuntime({ store, client, deviceId, policy, rootPath, chooseFile, chooseSaveFile, assertActive, onChange, fetchImpl } = {}) {
@@ -226,6 +228,15 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
         }
         catch (error) { return { ...safeError(error), transfers: [] }; }
       },
+      importAttachment(command) { return perform(async () => {
+        if (!validImportCommand(command)) throw fail("COLLABORATION_INVALID_INPUT");
+        const { conversationId, source } = command;
+        const target = conversation(conversationId, "attachment");
+        return withImportSource(source, path.join(rootPath, "imports"), (file) => {
+          authorize({ conversationId, scopeId: target.scopeId, purpose: "attachment" });
+          return manager.prepareUpload({ ...file, conversationId, scopeId: target.scopeId, purpose: "attachment" });
+        });
+      }); },
       prepareAttachment(command) { return perform(async () => {
         const { conversationId } = input(command, ["conversationId"]);
         const selectedConversation = conversation(conversationId, "attachment");

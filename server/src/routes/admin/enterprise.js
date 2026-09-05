@@ -9,7 +9,7 @@ import { zodBody, okResponse } from "../../openapi.js";
 import { publicId } from "../../services/ids.js";
 import { config } from "../../config.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
-import { provisionAccounts } from "../../services/enterprise-accounts.js";
+import { provisionAccounts, resetIssuedPassword } from "../../services/enterprise-accounts.js";
 import { normalizePhoneE164 } from "../../services/account-auth.js";
 import { enterpriseMutationResponse } from "../public/enterprise-route-support.js";
 
@@ -167,9 +167,40 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
         return;
       }
       const grants = await db.selectFrom("wallet_grants").selectAll().where("organization_id", "=", request.params.id).orderBy("expires_at", "asc").execute();
-      return { ok: true, organization: { ...org, grants } };
+      const ownerRows = await db.selectFrom("organization_members").innerJoin("users", "users.id", "organization_members.user_id")
+        .select(["users.id", "users.login_name", "users.display_name", "users.password_must_change", "users.provisioned_organization_id"])
+        .where("organization_members.organization_id", "=", org.id).where("organization_members.role", "=", "owner")
+        .where("organization_members.status", "=", "active").where("users.status", "=", "active").orderBy("users.id", "asc").execute();
+      const owners = ownerRows.map((owner) => ({ id: owner.id, loginName: owner.login_name, displayName: owner.display_name,
+        passwordMustChange: Boolean(owner.password_must_change), issued: owner.provisioned_organization_id === org.id }));
+      return { ok: true, organization: { ...org, grants, owners } };
     },
   );
+
+  // Recover only the initial handoff. Once the owner changes their password,
+  // platform governance cannot reset their credentials or manage membership.
+  const ownerInitialPasswordSchema = z.object({ userId: z.string().min(3).max(120) });
+  app.post("/api/admin/enterprise/organizations/:id/owner-initial-password", {
+    schema: { tags: ["admin:enterprise"], summary: "Reissue an unactivated issued owner's initial password",
+      params: orgIdSchema, body: zodBody(ownerInitialPasswordSchema), response: { 200: okResponse({ owner: { type: "object" } }) } },
+  }, async (request, reply) => {
+    const input = ownerInitialPasswordSchema.parse(request.body);
+    const result = await enterpriseMutationResponse(reply, () => db.transaction().execute(async (trx) => {
+      const org = await trx.selectFrom("organizations").select(["id", "status"]).where("id", "=", request.params.id).forUpdate().executeTakeFirst();
+      if (!org) throw Object.assign(new Error("ORG_NOT_FOUND"), { code: "ORG_NOT_FOUND", statusCode: 404 });
+      const membership = await trx.selectFrom("organization_members").select(["role", "status"])
+        .where("organization_id", "=", org.id).where("user_id", "=", input.userId).forUpdate().executeTakeFirst();
+      const user = await trx.selectFrom("users").select(["id", "status", "password_must_change", "provisioned_organization_id"])
+        .where("id", "=", input.userId).forUpdate().executeTakeFirst();
+      if (org.status !== "active" || membership?.role !== "owner" || membership?.status !== "active" || user?.status !== "active"
+        || !user.password_must_change || user.provisioned_organization_id !== org.id) {
+        throw Object.assign(new Error("OWNER_INITIAL_PASSWORD_UNAVAILABLE"), { code: "OWNER_INITIAL_PASSWORD_UNAVAILABLE", statusCode: 409 });
+      }
+      return { ok: true, owner: await resetIssuedPassword(trx, { organizationId: org.id, userId: user.id }) };
+    }));
+    if (result?.ok) await audit(request, "enterprise_owner_initial_password_reissue", "organization", request.params.id, { userId: input.userId });
+    return result;
+  });
 
   // PATCH /api/admin/enterprise/organizations/:id — enable/disable org
   app.patch(

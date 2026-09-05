@@ -53,7 +53,7 @@ async function requireAccount(request, reply, input) {
   };
 }
 
-async function requireWebAccount(request, reply) {
+export async function requireWebAccount(request, reply) {
   const sessionToken = request.cookies?.lily_user_session || "";
   const verified = verifyWebSessionToken(sessionToken);
   if (!verified.ok) {

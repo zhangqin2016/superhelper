@@ -112,9 +112,6 @@ function mcpServerNameForTool(tool) {
   return "";
 }
 
-function resolveRuntimePackInstaller(deps = {}) {
-  return deps.runtimePackInstaller || require("../runtime-pack-installer");
-}
 
 function serverNameForLearnedSystemDir(draftDir) {
   const base = path.basename(String(draftDir || "")).replace(/[^a-z0-9]+/gi, "_").toLowerCase();
@@ -370,24 +367,13 @@ const STATIC_TOOL_DEFINITIONS = [
     requiredSkillIds: [],
     executionSurface: EXECUTION_SURFACES.toolBroker,
     mcpServerName: MCP_SERVER_NAMES.toolBroker,
-    description: "List optional Lily dependency packs and their installed status.",
-    inputSchema: {},
-    annotations: { readOnlyHint: true },
-    handler: async () => {
-      const { PACK_SPECS } = require("../runtime-pack-specs");
-      const { installedRuntimePackIds } = require("../runtime-pack-installer");
-      const installed = installedRuntimePackIds();
-      return {
-        ok: true,
-        packs: Object.values(PACK_SPECS).map((pack) => ({
-          id: pack.id,
-          label: pack.label,
-          description: pack.description,
-          sizeEstimate: pack.sizeEstimate,
-          installed: installed.has(pack.id),
-        })),
-      };
+    description: "Observe dependency pack installation progress and terminal failures. Set packId and verify=true for targeted health and a resolved execution environment; installed alone does not mean ready.",
+    inputSchema: {
+      packId: z.string().optional().describe("optional target pack id"),
+      verify: z.boolean().optional().describe("check health of the target pack once installation is idle"),
     },
+    annotations: { readOnlyHint: true },
+    handler: require("./runtime-pack-tools").listRuntimePackTool,
   },
   {
     id: "runtime_pack_install",
@@ -402,11 +388,7 @@ const STATIC_TOOL_DEFINITIONS = [
       repair: z.boolean().optional().describe("force reinstall/repair when the pack is recorded as installed but health checks fail"),
     },
     annotations: { destructiveHint: true, openWorldHint: true },
-    handler: async ({ packId, repair }, _context, deps = {}) => {
-      const installer = resolveRuntimePackInstaller(deps);
-      const options = repair ? { repair: true, force: true } : {};
-      return installer.startRuntimePackInstall(packId, options);
-    },
+    handler: require("./runtime-pack-tools").installRuntimePackTool,
   },
   {
     id: "browser_open",

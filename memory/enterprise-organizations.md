@@ -54,6 +54,11 @@ platform-admin governance. Full design: `docs/enterprise-organizations-design.md
 
 ## Notes / gotchas
 
+- 2026-09-05 closure: detail endpoints return `{ ok, organization }`; web pages must unwrap it. Public detail includes the caller's membership role. Next server-action redirects are control flow and must escape error catches. Same-page account issuance/reset returns credential rows to the action form so a mounted page can display each batch.
+- Enterprise-issued password accounts can sign in at the overseas enterprise workbench; personal purchasing restrictions remain. First login is blocked from enterprise/gateway operations until password change. Password reset revokes existing sessions, and account-backed gateways check live user/session state; license/trial/static authentication paths remain available.
+- Enterprise pool grants remain platform-funded. Member quota means a **single debit limit**, not a cumulative employee budget. Display spendable Token separately from other resource types and exclude expired/future/disabled grants. Grant selection locks rows during debit; idempotent retries serialize before receipt lookup.
+- Regression: `scripts/test-enterprise-web-flow.mjs` executes pages/actions with boundary stubs; `server/scripts/admin-enterprise-create-integration.mjs` uses real migrations in an isolated schema, role/reset/session checks, concurrent wallet debits, and actual gateway HTTP against a local upstream. Production UI acceptance remains a separate step.
+
 - Enterprise API returns `{ ok: ... }` style responses; errors use `{ ok: false,
   code }` with 401/403/404/409. Gateway consumption errors keep the gateway's
   `{ error: { type } }` shape (402 payment_required / 403 org_forbidden).

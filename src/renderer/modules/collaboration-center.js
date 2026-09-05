@@ -63,7 +63,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let disposed = false, policyEnabled = false;
   let searchQuery = "";
   const replySourceMasks = createReplySourceMaskView();
-  const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton") });
+  let composer;
+  const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton"), composerMode: true, onDraftChange: () => composer?.refreshAttachments?.() });
   let lastRenderedCount = 0;
   // The most recent social payload, plus which hidden list still needs it.
   let lastSocial = null;
@@ -88,7 +89,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     unreadFromSeq: activeUnreadFromSeq,
     highlight: searchQuery.trim(),
     resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
-    onDownload: (input, purpose) => attachments.download(input, purpose),
+    onDownload: (input, purpose, preview) => attachments.download(input, purpose, preview),
     // Thumbnails resolve only for attachments already downloaded; the panel
     // owns the transfer list, so it answers by objectId and caches the URL.
     resolveAttachmentPreview: (objectId) => attachments.resolvePreview(objectId),
@@ -112,12 +113,16 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       const clientCommandId = `rct_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
       void Promise.resolve(window.assistantClient?.collaboration?.react?.({
         conversationId, messageId: message.id, clientCommandId, emoji, active,
-      })).then((result) => {
-        // The optimistic flip lives in the main-process projection, so a refresh
-        // is what reveals it — and also what corrects it if the command failed.
-        if (!disposed && conversationId === activeConversationId) void openConversation(conversationId, { userNavigation: false });
-        return result;
-      }).catch(() => undefined);
+      })).then(async (result) => {
+        if (disposed || conversationId !== activeConversationId) return;
+        await openConversation(conversationId, { userNavigation: false });
+        if (disposed || conversationId !== activeConversationId) return;
+        if (result?.ok !== true || result?.state === "failed" || result?.state === "delivery_unknown") throw new Error("reaction failed");
+      }).catch(() => {
+        if (disposed || conversationId !== activeConversationId) return;
+        if (status) { status.textContent = t("collaboration.reactionFailed"); status.classList.remove("is-available"); }
+        if (live) live.textContent = t("collaboration.reactionFailed");
+      });
     },
     canEdit: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
     onEdit: (message) => {
@@ -202,7 +207,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     isDisposed: () => disposed,
   });
   showSection("inbox");
-  const composer = initCollaborationComposer({
+  composer = initCollaborationComposer({
+    attachmentDraft: attachments,
     textarea: byId("collaborationComposer"), sendButton: byId("collaborationSendButton"),
     getConversationId: () => activeConversationId,
     getReplySourceStatus: replySourceMasks.get,

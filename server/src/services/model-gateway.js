@@ -5,7 +5,7 @@ import {
   forwardAnthropicCountTokens,
   forwardAnthropicModels,
 } from "./model-gateway/anthropic-adapter.js";
-import { signModelGatewayToken, verifyModelGatewayToken } from "./model-gateway/auth.js";
+import { signModelGatewayToken, verifyLiveModelGatewayToken } from "./model-gateway/auth.js";
 import {
   approximateAnthropicInputTokens,
   forwardOpenAi,
@@ -105,7 +105,7 @@ function authToken(request) {
   return String(request.headers["x-api-key"] || "").trim();
 }
 
-function providerContextForRequest(request, reply, defaultProvider = "deepseek") {
+async function providerContextForRequest(request, reply, defaultProvider = "deepseek") {
   if (!config.modelGatewayEnabled) {
     reply.code(404).send({ error: { type: "not_found", message: "model gateway disabled" } });
     return null;
@@ -117,7 +117,7 @@ function providerContextForRequest(request, reply, defaultProvider = "deepseek")
     reply.code(404).send({ error: { type: "not_found", message: "model provider not configured" } });
     return null;
   }
-  const token = verifyModelGatewayToken(authToken(request), providerId);
+  const token = await verifyLiveModelGatewayToken(authToken(request), providerId);
   if (!token.ok) {
     reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
     return null;
@@ -257,7 +257,7 @@ async function handleGatewayRequest(request, reply) {
   const provider = providers[providerId];
   if (!provider) return reply.code(404).send({ error: { type: "not_found", message: "model provider not configured" } });
 
-  const token = verifyModelGatewayToken(authToken(request), providerId);
+  const token = await verifyLiveModelGatewayToken(authToken(request), providerId);
   if (!token.ok) return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   if (!provider.apiKey || !provider.baseUrl) {
     return reply.code(503).send({ error: { type: "configuration_error", message: "model provider is missing apiKey or baseUrl" } });
@@ -309,12 +309,12 @@ async function handleGatewayRequest(request, reply) {
   return sendJsonFromOpenAi(upstream, reply, body, { onUsage });
 }
 
-function providerForRequest(request, reply) {
-  return providerContextForRequest(request, reply)?.provider || null;
+async function providerForRequest(request, reply) {
+  return (await providerContextForRequest(request, reply))?.provider || null;
 }
 
 async function handleOpenAiChatCompletionsRequest(request, reply) {
-  const context = providerContextForRequest(request, reply);
+  const context = await providerContextForRequest(request, reply);
   if (!context) return reply;
   const { providerId, provider, token } = context;
   if (provider.type !== "openai") {
@@ -360,7 +360,7 @@ async function handleOpenAiChatCompletionsRequest(request, reply) {
 }
 
 async function handleOpenAiEmbeddingsRequest(request, reply) {
-  const context = providerContextForRequest(request, reply);
+  const context = await providerContextForRequest(request, reply);
   if (!context) return reply;
   const { providerId, provider } = context;
   if (provider.type !== "openai") {
@@ -399,7 +399,7 @@ async function handleOpenAiEmbeddingsRequest(request, reply) {
 }
 
 async function handleCountTokensRequest(request, reply) {
-  const provider = providerForRequest(request, reply);
+  const provider = await providerForRequest(request, reply);
   if (!provider) return reply;
   const body = request.body && typeof request.body === "object" ? request.body : {};
 
@@ -416,7 +416,7 @@ async function handleCountTokensRequest(request, reply) {
 }
 
 async function handleModelsRequest(request, reply) {
-  const provider = providerForRequest(request, reply);
+  const provider = await providerForRequest(request, reply);
   if (!provider) return reply;
 
   if (provider.type === "openai") {

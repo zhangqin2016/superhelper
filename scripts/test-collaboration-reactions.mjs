@@ -118,6 +118,7 @@ try {
   }), /emoji is invalid/);
 
   forgetReactions(store, "c");
+  assert.deepEqual(store.listMessages({ conversationId: "c", includePending: true }).find(m => m.id === "real").reactions, [], "empty reaction state is explicit for renderer merging");
   assert.deepEqual(reactionsForMessages(store, ["m1", "real"]), {}, "revoking a conversation drops its reactions");
 
   // FAIL-OPEN: an unusable store yields no reactions rather than throwing.

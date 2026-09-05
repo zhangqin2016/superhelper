@@ -106,6 +106,9 @@ export function registerPublicEnterpriseRoutes(app) {
       reply.code(401).send({ ok: false, code: "USER_LOGIN_REQUIRED" });
       return;
     }
+    const user = await db.selectFrom("users").select(["status", "password_must_change"]).where("id", "=", verified.userId).executeTakeFirst();
+    if (!user || user.status !== "active") return reply.code(403).send({ ok: false, code: "USER_DISABLED" });
+    if (user.password_must_change) return reply.code(403).send({ ok: false, code: "PASSWORD_CHANGE_REQUIRED" });
     request.user = { userId: verified.userId, sessionId: verified.sessionId };
   });
   registerPublicEnterpriseMemberRoutes(app);
@@ -212,7 +215,7 @@ export function registerPublicEnterpriseRoutes(app) {
         unit_remaining: Number(g.unit_remaining || 0),
         expires_at: g.expires_at,
       }));
-      return { ok: true, organization: { ...org, quota: quotaSummary } };
+      return { ok: true, organization: { ...org, role: membership.role, quota: quotaSummary } };
     },
   );
 

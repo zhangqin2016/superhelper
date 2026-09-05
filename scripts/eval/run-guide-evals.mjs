@@ -32,6 +32,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { evaluateModelEval, parseModelEvalArgs } from "./model-eval-policy.mjs";
+import { parseGuideEvalEvents, checkGuideEvalEvidence } from "./guide-eval-evidence.mjs";
 import { buildGuideEvalCases } from "./guide-eval-cases.mjs";
 
 const require = createRequire(import.meta.url);
@@ -145,7 +146,7 @@ async function buildPlatformConfig() {
 }
 
 function runEngineTurn(configPath, cwd, prompt, runtimeEnv = {}, timeoutMs = 180_000) {
-  const out = execFileSync(engineBin(), ["run", prompt], {
+  const out = execFileSync(engineBin(), ["run", "--format", "json", prompt], {
     cwd,
     timeout: timeoutMs,
     encoding: "utf8",
@@ -157,12 +158,7 @@ function runEngineTurn(configPath, cwd, prompt, runtimeEnv = {}, timeoutMs = 180
       OPENCODE_DISABLE_LSP_DOWNLOAD: "true",
     },
   });
-  return out
-    .replace(/\x1b\[[0-9;]*m/g, "")
-    .split("\n")
-    .filter((line) => !/^\s*>\s/.test(line))
-    .join("\n")
-    .trim();
+  return parseGuideEvalEvents(out);
 }
 
 const { configContent, profile, runtimeEnv, guideBytes } = await buildPlatformConfig();
@@ -185,8 +181,9 @@ for (const c of CASES) {
     const dir = fs.mkdtempSync(path.join(work, `${c.id}-${attempt}-`));
     try {
       if (c.setup) c.setup(dir);
-      const text = runEngineTurn(configPath, dir, c.prompt, runtimeEnv);
-      if (c.check(text)) {
+      const observation = runEngineTurn(configPath, dir, c.prompt, runtimeEnv);
+      const text = observation.text;
+      if (checkGuideEvalEvidence(c, observation, skillDirs)) {
         successes += 1;
         if (!sample) sample = text.slice(0, 160);
       } else {

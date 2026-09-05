@@ -21,28 +21,11 @@ import { createCollaborationWsTicketService } from "./services/collaboration/ws-
 import { COLLABORATION_NOTIFY_CHANNEL, createRealtimeDispatcher, createRealtimeNotifyLifecycle } from "./services/collaboration/realtime-dispatcher.js";
 import { registerCollaborationRealtimeGateway } from "./services/collaboration/realtime-gateway.js";
 
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 120;
-const rateBuckets = new Map();
-
-function clientKey(request) {
-  return request.ip || request.headers["x-forwarded-for"] || "unknown";
-}
-
-function checkRateLimit(request) {
-  const now = Date.now();
-  const key = String(clientKey(request));
-  const bucket = rateBuckets.get(key);
-  if (!bucket || now >= bucket.resetAt) {
-    rateBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  bucket.count += 1;
-  return bucket.count <= RATE_LIMIT_MAX;
-}
+import { createRequestRateLimiter } from "./services/request-rate-limit.js";
 
 export async function buildApp() {
   assertProductionSecrets();
+  const checkRateLimit = createRequestRateLimiter();
   const app = Fastify({
     logger: true,
     // Vision requests carry base64 images, and admin catalog uploads can carry workspace apps.

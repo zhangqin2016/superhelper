@@ -739,6 +739,80 @@
         "scripts/test-admin-enterprise-create.mjs",
         "server/scripts/admin-enterprise-create-integration.mjs"
       ]
+    },
+    {
+      "id": "skill-runtime-declarations",
+      "protects": "Skill declarations reach preparation only for explicit task selections without turning every enabled or recommended skill into heavy downloads.",
+      "baseline": "The hardcoded skill map and existing task readiness remain the baseline.",
+      "failureFallback": "Fresh bounded own-ID validation; malformed schema/identity and per-source failures preserve registry/legacy sources. LILY_SKILL_RUNTIME_DECLARATIONS=0 restores pre-change readiness including selected legacy skills. Verified mutations: remove known-ID validation, legacy union, selection forwarding and kill switch.",
+      "tests": [
+        "scripts/test-skill-runtime-declarations.mjs",
+        "scripts/test-selected-skill-readiness.mjs"
+      ]
+    },
+    {
+      "id": "workspace-local-skills",
+      "protects": "Workspace guides stay inside the workspace, obey explicit conversation selection and never displace platform context.",
+      "baseline": "Workspace skill directories were not discovered; platform guide and learned sections must remain intact.",
+      "failureFallback": "LILY_WORKSPACE_SKILLS=0 or discovery errors leave existing guidance unchanged. Content hashes and selected local IDs invalidate session cache; final budget reserves learned sections. Mutations removing realpath checks, content hashing, local selection signature, kill switch and both reservation safeguards fail named behavioral assertions.",
+      "tests": [
+        "scripts/test-workspace-local-skills.mjs"
+      ]
+    },
+    {
+      "id": "native-skill-registry-isolation",
+      "protects": "Same-workspace conversations cannot regain a disabled skill through a shared native registry or stale local guide.",
+      "baseline": "Native skill paths stay empty; explicit conversation skills are authoritative.",
+      "failureFallback": "The engine native registry remains unmounted. Real session guide tests cover two conversations, local enable/disable, content edits and removal; mutation dropping local IDs from cache signature fails. No brittle engine session-keyword absence test.",
+      "tests": [
+        "scripts/test-native-skill-registry-isolation.mjs"
+      ]
+    },
+    {
+      "id": "skill-index-negative-routing",
+      "protects": "Long descriptions retain bounded routing exclusions without removing any previously discoverable skill.",
+      "baseline": "The original 180-character description index is preserved if expansion cannot fit.",
+      "failureFallback": "LILY_GUIDE_INDEX_NEGATIVE=0 restores exact old output. Enhancement exceptions or budget eviction revert to original index; all three languages retain existing headroom. Mutation allowing eviction fails. First-party descriptions are independently checked for short task-oriented content.",
+      "tests": [
+        "scripts/test-skill-index-negative-routing.mjs",
+        "scripts/test-skill-description-quality.mjs"
+      ]
+    },
+    {
+      "id": "runtime-dependency-hint",
+      "protects": "Real missing dependencies get actionable managed recovery without misclassifying input files, missing cwd, printed examples or inherited catalog keys.",
+      "baseline": "Failed bash output is preserved and the model can continue using existing tools.",
+      "failureFallback": "LILY_RUNTIME_DEP_HINT=0, unknown shapes or detection failures preserve output. Integer nonzero engine exit plus precise diagnostics are required; session dedup is bounded and clears on deletion or successful retry. Mutations remove dedup, own-property checks, exit evidence or Windows/Node detection, reintroduce ambiguous ENOENT or corrupt maps; each fails.",
+      "tests": [
+        "scripts/test-runtime-dependency-hint.mjs"
+      ]
+    },
+    {
+      "id": "runtime-pack-rescue-tools",
+      "protects": "A started background pack job is not reported ready; terminal failures remain observable and retries use freshly resolved managed environment.",
+      "baseline": "Existing background installer and artifact integrity/health checks remain authoritative.",
+      "failureFallback": "Broad lists never health-probe every pack. Targeted verification exposes safe environment keys only after successful health; bundled read-only repair refuses before starting. Real Python missing import then managed-environment retry and deferred installer failure are exercised. Mutations reporting starting as ready, dropping terminal state or bundled repair guard fail.",
+      "tests": [
+        "scripts/test-runtime-pack-rescue-tools.mjs"
+      ]
+    },
+    {
+      "id": "skill-usage-metrics",
+      "protects": "Advisory candidate matching cannot masquerade as model selection, successful reads or completed tasks.",
+      "baseline": "Legacy audits contain path attempts but no reliable outcome; those observations stay unknown.",
+      "failureFallback": "Pure aggregation never controls execution. SQLite reports are read-only and support real gzip envelopes; invalid rows counted, unknowns excluded from rate. Mutations treating failed reads as success or unknowns as known denominator fail. Actual tool.done provenance survives archive mapping; real router/finalizer/archive tests prevent terminal cleanup or missing status from fabricating success or failure. Removing the provenance mapping fails an isolated in-memory mutation.",
+      "tests": [
+        "scripts/test-skill-usage-metrics.mjs"
+      ]
+    },
+    {
+      "id": "guide-eval-read-evidence",
+      "protects": "Discovery evals require actual successful guide-read tool events rather than text merely naming a skill.",
+      "baseline": "Answer-only discovery cannot prove the guide was used.",
+      "failureFallback": "Structured CLI event collection fails loud on unavailable events, errors or mixed sessions; missing/wrong/failed guide reads fail discovery checks. Live credentials remain separate from deterministic fixture gates. Mutation skipping read-evidence check fails.",
+      "tests": [
+        "scripts/test-guide-eval-evidence.mjs"
+      ]
     }
   ]
 }

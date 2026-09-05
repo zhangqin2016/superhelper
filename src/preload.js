@@ -452,6 +452,16 @@ contextBridge.exposeInMainWorld("assistantClient", {
   // credentials, device signatures, encrypted key material, or local paths.
   collaboration: {
     getTransfers: () => ipcRenderer.invoke("collaboration:get-transfers"),
+    prepareDroppedAttachment: (conversationId, file) => {
+      let filePath = "";
+      try { filePath = webUtils.getPathForFile(file); } catch { /* not a native File */ }
+      if (!filePath) return Promise.resolve({ ok: false, code: "COLLABORATION_INVALID_INPUT" });
+      return ipcRenderer.invoke("collaboration:import-attachment", { conversationId, source: { kind: "file", path: filePath } });
+    },
+    preparePastedImage: (conversationId, bytes) => {
+      if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 20 * 1024 * 1024) return Promise.resolve({ ok: false, code: "COLLAB_OBJECT_SIZE_INVALID" });
+      return ipcRenderer.invoke("collaboration:import-attachment", { conversationId, source: { kind: "image", bytes } });
+    },
     prepareAttachment: (conversationId) => ipcRenderer.invoke("collaboration:prepare-attachment", { conversationId }),
     enqueueTransfer: (transferId) => ipcRenderer.invoke("collaboration:enqueue-transfer", { transferId }),
     pauseTransfer: (transferId) => ipcRenderer.invoke("collaboration:pause-transfer", { transferId }),

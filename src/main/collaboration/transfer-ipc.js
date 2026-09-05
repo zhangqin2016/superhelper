@@ -1,7 +1,10 @@
 "use strict";
 
+const { validImportCommand } = require("./import-source");
+
 const commands = Object.freeze({
   "get-transfers": ["getTransfers", []],
+  "import-attachment": ["importAttachment", ["conversationId", "source"]],
   "prepare-attachment": ["prepareAttachment", ["conversationId"]],
   "enqueue-transfer": ["enqueueTransfer", ["transferId"]],
   "pause-transfer": ["pauseTransfer", ["transferId"]],
@@ -50,6 +53,7 @@ function transferResult(method, value, { toPreviewUrl } = {}) {
 function registerTransferIpc({ ipcMain, invoke }) {
   for (const [channel, [method, keys]] of Object.entries(commands)) ipcMain.handle(`collaboration:${channel}`, (_event, payload) => {
     const value = payload === undefined && keys.length === 0 ? {} : payload;
+    if (method === "importAttachment") return validImportCommand(value) ? invoke(method, value) : { ok: false, code: "COLLABORATION_INVALID_INPUT", retryable: false };
     const attachmentSend = method === "sendAttachments";
     if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !keys.includes(key))
       || (!attachmentSend && keys.some((key) => !identifier(value[key])))

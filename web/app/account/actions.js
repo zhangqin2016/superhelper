@@ -99,6 +99,41 @@ export async function loginAccountAction(_previousState, formData) {
   redirect(nextUrl);
 }
 
+export async function loginPasswordAccountAction(_previousState, formData) {
+  let nextUrl = safeAccountNext(text(formData, "next"), "/account/enterprise");
+  try {
+    const result = await userApiPost("/api/auth/password/login", {
+      ...devicePayload(await webDeviceId()),
+      loginName: text(formData, "loginName"),
+      password: String(formData.get("password") || ""),
+    });
+    if (!result.webSessionToken) return { ok: false, message: "登录态创建失败" };
+    (await cookies()).set("lily_user_session", result.webSessionToken, {
+      httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 7,
+    });
+    if (result.user?.passwordMustChange) nextUrl = `/account/password?next=${encodeURIComponent(nextUrl)}`;
+  } catch (error) {
+    const message = String(error?.message || "登录失败");
+    return { ok: false, message: /INVALID_CREDENTIALS/.test(message) ? "账号或密码不正确" : /PASSWORD_LOCKED/.test(message) ? "尝试次数过多，请稍后再试" : message };
+  }
+  redirect(nextUrl);
+}
+
+export async function changePasswordAccountAction(formData) {
+  const next = safeAccountNext(text(formData, "next"), "/account/enterprise");
+  const newPassword = String(formData.get("newPassword") || "");
+  if (newPassword !== String(formData.get("confirmPassword") || "")) return { ok: false, message: "两次输入的新密码不一致" };
+  try {
+    await userApiPost("/api/auth/password/change", {
+      ...devicePayload(await webDeviceId()),
+      currentPassword: String(formData.get("currentPassword") || ""), newPassword,
+    });
+  } catch (error) {
+    return { ok: false, message: String(error?.message || "修改密码失败") };
+  }
+  redirect(next);
+}
+
 export async function createBillingOrderAction(previousStateOrFormData, maybeFormData) {
   const formData = actionFormData(previousStateOrFormData, maybeFormData);
   const productId = text(formData, "productId");

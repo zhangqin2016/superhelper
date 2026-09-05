@@ -81,21 +81,23 @@ function persistMessageMutation(store, input = {}) {
 function isCreateIntent(intent) { return normalizeOutboxIntent(intent).commandType === CREATE; }
 function isMutationIntent(intent) { return MUTATIONS.has(normalizeOutboxIntent(intent).commandType); }
 
-function settleMutationReceipt(store, { clientCommandId, eventId, commandType, conversationId, messageId, revision } = {}) {
+function settleMutationReceipt(store, { clientCommandId, eventId, commandType, conversationId, messageId, revision, emoji, active } = {}) {
   const command = id(clientCommandId, "client command id");
   const event = id(eventId, "event id");
   const settledConversation = id(conversationId, "conversation id");
   const settledIntent = store.db.get(`SELECT * FROM outbox WHERE account_id = ? AND client_command_id = ?`, store.accountId, command);
   if (!settledIntent) return { settled: false, eventId: event };
   const intent = normalizeOutboxIntent(store._decrypt({ scopeId: settledIntent.scope_id, recordId: store._outboxRecord(settledIntent.id), value: settledIntent.payload_envelope_json }));
-  const targetRevision = positive(revision, "revision");
+  const reaction = intent.commandType === REACTION;
+  const targetRevision = reaction ? null : positive(revision, "revision");
   if (!MUTATIONS.has(intent.commandType) || intent.commandType !== commandType || settledIntent.conversation_id !== settledConversation
-    || intent.messageId !== id(messageId, "message id") || targetRevision !== intent.expectedRevision + 1) {
+    || intent.messageId !== id(messageId, "message id") || (reaction ? emoji !== intent.emoji || active !== intent.active : targetRevision !== intent.expectedRevision + 1)) {
     const error = new Error("Mutation receipt does not match durable intent");
     error.code = "COLLAB_OUTBOX_RECEIPT_INVALID";
     throw error;
   }
   store.db.run(`UPDATE outbox SET state = 'persisted', delivery_confirmed = 1, delivery_uncertain = 0, error_code = NULL, updated_at = ? WHERE account_id = ? AND id = ?`, store.now(), store.accountId, settledIntent.id);
+  if (reaction) return { settled: true, eventId: event, mutation: true };
   store.db.run(`INSERT INTO history_hydration (account_id, conversation_id, created_at) VALUES (?, ?, ?)
     ON CONFLICT(account_id, conversation_id) DO NOTHING`, store.accountId, settledConversation, store.now());
   store.db.run(`INSERT INTO history_hydration_targets (account_id, conversation_id, message_id, revision) VALUES (?, ?, ?, ?)

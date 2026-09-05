@@ -362,7 +362,7 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
         card.dataset.action = "download-attachment"; card.dataset.objectId = objectId;
         const name = typeof info.originalName === "string" && info.originalName ? info.originalName : "";
         const mimeType = typeof info.mimeType === "string" ? info.mimeType : "";
-        const isImage = mimeType.startsWith("image/");
+        const isImage = mimeType.startsWith("image/") || /\.(?:png|jpe?g|webp|gif|bmp)$/i.test(name);
         let thumb = card.querySelector(".collaboration-attachment-thumb");
         if (!thumb) { thumb = document.createElement("span"); thumb.className = "collaboration-attachment-thumb"; card.append(thumb); }
         let text = card.querySelector(".collaboration-attachment-text");
@@ -376,7 +376,7 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
         // Size and type are the two things that decide whether a person wants
         // the download at all, so they are the subtitle rather than a tooltip.
         const detailText = [Number.isSafeInteger(info.sizeBytes) ? formatBytes(info.sizeBytes) : "",
-          isImage ? t("collaboration.transfer.image") : mimeType].filter(Boolean).join(" · ")
+          isImage ? t("collaboration.transfer.image") : name.includes(".") ? name.split(".").pop().toUpperCase().slice(0, 12) : ""].filter(Boolean).join(" · ")
           || t("collaboration.transfer.download");
         if (detail.textContent !== detailText) detail.textContent = detailText;
         card.dataset.kind = isImage ? "image" : "file";
@@ -391,7 +391,7 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
           // A resolved thumbnail means the bytes are already local: open the
           // viewer instead of starting a download that would only re-fetch.
           if (card.dataset.previewed === "1" && onPreview) { void onPreview(objectId); return; }
-          onDownload({ conversationId: message.conversationId, messageId: message.id, objectId }, purpose);
+          onDownload({ conversationId: message.conversationId, messageId: message.id, objectId }, purpose, isImage);
         };
         attachments.append(card); existing.delete(objectId);
         if (isImage && resolveAttachmentPreview && card.dataset.previewPending !== "1" && card.dataset.previewed !== "1") {

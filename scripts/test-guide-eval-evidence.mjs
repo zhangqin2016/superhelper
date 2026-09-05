@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { parseGuideEvalEvents, checkGuideEvalEvidence } from './eval/guide-eval-evidence.mjs';
+const guide='/work/skills/demo/SKILL.md';
+const c={skill:'demo',expectGuideRead:true,check:text=>text==='demo'};
+const text={type:'text',sessionID:'a',part:{text:'demo'}};
+const tool={type:'tool_use',sessionID:'a',part:{tool:'read',state:{status:'completed',input:{filePath:guide},output:'instructions'}}};
+const result=parseGuideEvalEvents([text,tool].map(e=>JSON.stringify(e)).join('\n'));
+assert.ok(checkGuideEvalEvidence(c,result,{demo:guide}));
+assert.ok(!checkGuideEvalEvidence(c,parseGuideEvalEvents(JSON.stringify(text)),{demo:guide}),'naming skill without reading must fail');
+tool.part.state.status='error';
+assert.ok(!checkGuideEvalEvidence(c,parseGuideEvalEvents([text,tool].map(e=>JSON.stringify(e)).join('\n')),{demo:guide}),'failed Read is not evidence');
+tool.part.state.status='completed'; tool.part.state.input.filePath='/wrong/SKILL.md';
+assert.ok(!checkGuideEvalEvidence(c,parseGuideEvalEvents([text,tool].map(e=>JSON.stringify(e)).join('\n')),{demo:guide}),'wrong guide fails');
+assert.throws(()=>parseGuideEvalEvents('not-json'),/events/,'unsupported CLI output fails loud');
+assert.throws(()=>parseGuideEvalEvents(JSON.stringify({type:'error',error:{message:'failed'}})),/engine/i);
+console.log('guide-eval-evidence: ok');

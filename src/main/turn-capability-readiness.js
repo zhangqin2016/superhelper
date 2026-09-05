@@ -44,6 +44,7 @@ async function prepareTurnCapabilityReadiness({
   files,
   taskContract = null,
   turnPolicy = null,
+  selectedSkills = [],
   deps = {},
   onProgress = null,
 }) {
@@ -55,6 +56,7 @@ async function prepareTurnCapabilityReadiness({
       files,
       intentContract: taskContract?.intentContract || null,
       turnPolicy,
+      selectedSkills,
     });
     const resolved = readiness.resolveCapabilityReadiness(plan, {
       installedPackIds: (deps.installed || installer.installedRuntimePackIds)(),

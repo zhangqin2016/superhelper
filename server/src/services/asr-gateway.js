@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { config } from "../config.js";
-import { verifyModelGatewayToken } from "./model-gateway/auth.js";
+import { verifyLiveModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
 
 // Realtime ASR relay (voice dictation, qwen3-asr-flash-realtime).
@@ -126,12 +126,12 @@ function armIdleTimer(session) {
   session.idleTimer = setTimeout(() => destroySession(session), IDLE_TIMEOUT_MS);
 }
 
-function authorized(request, reply) {
+async function authorized(request, reply) {
   if (!config.modelGatewayEnabled) {
     reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
     return false;
   }
-  const token = verifyModelGatewayToken(bearerToken(request), "vision");
+  const token = await verifyLiveModelGatewayToken(bearerToken(request), "vision");
   if (!token.ok) {
     reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
     return false;
@@ -153,7 +153,7 @@ export async function asrGatewayRoutes(app) {
     "/llm/asr/sessions",
     { schema: { tags: ["gateway:media"], summary: "Open a realtime ASR relay session" } },
     async (request, reply) => {
-      if (!authorized(request, reply)) return reply;
+      if (!(await authorized(request, reply))) return reply;
       if (typeof WebSocket === "undefined") {
         return reply.code(501).send({ error: { type: "configuration_error", message: "ASR relay needs Node 21+ (global WebSocket)" } });
       }
@@ -228,7 +228,7 @@ export async function asrGatewayRoutes(app) {
     "/llm/asr/sessions/:id/events",
     { schema: { tags: ["gateway:media"], summary: "Stream ASR relay events (SSE)" } },
     async (request, reply) => {
-      if (!authorized(request, reply)) return reply;
+      if (!(await authorized(request, reply))) return reply;
       const session = sessionFor(request, reply);
       if (!session) return reply;
       reply.raw.writeHead(200, {
@@ -259,7 +259,7 @@ export async function asrGatewayRoutes(app) {
     "/llm/asr/sessions/:id/audio",
     { schema: { tags: ["gateway:media"], summary: "Forward a base64 PCM16 frame" } },
     async (request, reply) => {
-      if (!authorized(request, reply)) return reply;
+      if (!(await authorized(request, reply))) return reply;
       const session = sessionFor(request, reply);
       if (!session) return reply;
       armIdleTimer(session);
@@ -282,7 +282,7 @@ export async function asrGatewayRoutes(app) {
     "/llm/asr/sessions/:id/finish",
     { schema: { tags: ["gateway:media"], summary: "Flush and close an ASR relay session" } },
     async (request, reply) => {
-      if (!authorized(request, reply)) return reply;
+      if (!(await authorized(request, reply))) return reply;
       const session = sessionFor(request, reply);
       if (!session) return reply;
       try {

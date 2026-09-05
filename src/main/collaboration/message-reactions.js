@@ -106,7 +106,7 @@ function attachReactions(store, page) {
   const messages = Array.isArray(page) ? page : [];
   if (!messages.length) return messages;
   const grouped = reactionsForMessages(store, messages.map((message) => message.id));
-  return messages.map((message) => (grouped[message.id] ? { ...message, reactions: grouped[message.id] } : message));
+  return messages.map((message) => ({ ...message, reactions: grouped[message.id] || [] }));
 }
 
 function forgetReactions(store, conversationId) {

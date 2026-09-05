@@ -74,6 +74,7 @@ function normalizeRegistryEntry(raw, capabilityOverride = null) {
     description: raw.description ? String(raw.description) : "",
     description_i18n: normalizeStringMap(raw.description_i18n),
     latestVersion: String(raw.latestVersion),
+    requiredRuntimePacks: require("./skill-runtime-declarations").normalizeRuntimePackIds(raw.requiredRuntimePacks),
     minAppVersion: raw.minAppVersion ? String(raw.minAppVersion) : null,
     sizeBytes: typeof raw.sizeBytes === "number" ? raw.sizeBytes : null,
     changelog: raw.changelog ? String(raw.changelog) : "",

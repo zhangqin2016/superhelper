@@ -255,6 +255,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     return {
       ok: true, store, syncEngine, outbox, realtime,
       getTransfers() { return transferCommand("list"); },
+      importAttachment(command) { return transferCommand("importAttachment", command); },
       prepareAttachment(command) { return transferCommand("prepareAttachment", command); },
       enqueueTransfer(command) { return transferCommand("enqueue", command); },
       pauseTransfer(command) { return transferCommand("pause", command); },

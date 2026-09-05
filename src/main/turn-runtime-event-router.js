@@ -231,6 +231,7 @@ function createTurnRuntimeEventRouter(options = {}) {
           const toolId = resolveToolDoneId(state, payload);
           if (!toolId) break;
           const tool = trackTool(sessionId, toolId, {});
+          tool.completionObserved = true;
           tool.status = payload.status || (payload.isError ? "failed" : "done");
           tool.result = payload.result ?? payload.content ?? null;
           if (payload.metadata && typeof payload.metadata === "object") tool.metadata = payload.metadata;

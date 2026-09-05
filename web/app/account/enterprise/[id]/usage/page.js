@@ -1,3 +1,4 @@
+import { requireEnterpriseOrganization, requireEnterpriseData } from "../../../../../lib/enterprise-page";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { userApiGet } from "../../../../../lib/user-api";
@@ -10,13 +11,13 @@ function fmt(value) {
 
 export default async function OrgUsagePage({ params, searchParams }) {
   const { id } = await params;
+  const org = await requireEnterpriseOrganization(id, "admin");
   const query = await searchParams;
   const days = Number(query?.days || 30);
-  const data = await userApiGet(`/api/enterprise/organizations/${id}/usage?days=${days}`, { usage: { byMember: [], byModel: [] } });
+  const data = await requireEnterpriseData(`/api/enterprise/organizations/${id}/usage?days=${days}`, { usage: { byMember: [], byModel: [] } });
   const usage = data?.usage || {};
   const byMember = Array.isArray(usage.byMember) ? usage.byMember : [];
   const byModel = Array.isArray(usage.byModel) ? usage.byModel : [];
-  const org = await userApiGet(`/api/enterprise/organizations/${id}`, null);
   if (!org?.id) notFound();
   return (
     <div className="space-y-8">
@@ -44,7 +45,7 @@ export default async function OrgUsagePage({ params, searchParams }) {
                 <tr key={row.user_id || row.userId} className="border-t border-slate-100">
                   <td className="py-2">{row.user_id || row.userId}</td>
                   <td className="py-2">{fmt(row.units)}</td>
-                  <td className="py-2">{fmt(row.count)}</td>
+                  <td className="py-2">{fmt(row.request_count)}</td>
                 </tr>
               ))}
             </tbody>
