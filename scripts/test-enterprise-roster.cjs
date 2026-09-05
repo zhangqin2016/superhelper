@@ -1,0 +1,31 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { app, BrowserWindow } = require('electron');
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'enterprise-roster-'));
+app.setPath('userData', path.join(temp, 'data')); app.disableHardwareAcceleration();
+let win;
+const timeout = setTimeout(() => app.exit(1), 30000);
+app.whenReady().then(async () => {
+ const html = path.join(temp,'test.html');
+ fs.writeFileSync(html, '<!doctype html><meta charset="utf-8"><style>body{font-family:system-ui;width:460px;margin:30px}button{display:block;padding:10px;margin:5px}input{padding:8px}small{display:block}</style><h2>企业通讯录</h2><div id="root"></div>');
+ win = new BrowserWindow({ show:false, width:600,height:650,webPreferences:{sandbox:true,contextIsolation:true,backgroundThrottling:false} }); await win.loadFile(html);
+ const moduleUrl = pathToFileURL(path.join(__dirname,'../src/renderer/modules/enterprise-roster.js')).href;
+ const result = await win.webContents.executeJavaScript(`(async()=>{
+ const {setLocale}=await import(${JSON.stringify(pathToFileURL(path.join(__dirname,'../src/renderer/i18n/index.js')).href)}); await setLocale('zh-CN',{persist:false});
+ const {createEnterpriseRoster,memberPresence}=await import(${JSON.stringify(moduleUrl)});
+ const team={id:'org',name:'验收企业',members:[{userId:'self',displayName:'负责人',role:'owner',presence:'offline'}, {userId:'peer',displayName:'小莉 🌸',role:'member',presence:'online',onlineUntil:new Date(Date.now()+60000).toISOString()}, {userId:'other',displayName:'同事',role:'member',presence:'unknown'}]};
+ const calls=[]; const state={open:true};
+ const roster=createEnterpriseRoster({team,selfId:'self',state,onChat:m=>calls.push(m.userId)});document.getElementById('root').append(roster);
+ const online=roster.querySelector('[data-presence="online"]'); online.click();
+ const search=roster.querySelector('input[type=search]');search.value='小莉';search.dispatchEvent(new Event('input'));const searched=roster.querySelectorAll('[data-user-id]').length;
+ search.value='';search.dispatchEvent(new Event('input'));const checkbox=roster.querySelector('input[type=checkbox]');checkbox.checked=true;checkbox.dispatchEvent(new Event('change'));const filtered=[...roster.querySelectorAll('[data-user-id]')].map(n=>n.dataset.userId);
+ checkbox.checked=false;checkbox.dispatchEvent(new Event('change'));
+ return {calls,searched,filtered,expired:memberPresence({presence:'online',onlineUntil:'2000-01-01'}),inert:roster.textContent.includes('小莉 🌸')}; })()`);
+ assert.deepEqual(result,{calls:['peer'],searched:1,filtered:['peer'],expired:'unknown',inert:true});
+ await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+ fs.writeFileSync('/tmp/lily-enterprise-roster-acceptance.png',(await win.webContents.capturePage()).toPNG());
+ console.log('enterprise roster Electron UI: nickname, search, online filter, direct chat and expiry passed');
+}).then(()=>{clearTimeout(timeout);win?.destroy();fs.rmSync(temp,{recursive:true,force:true});app.exit(0);}).catch(e=>{console.error(e);clearTimeout(timeout);win?.destroy();app.exit(1);});

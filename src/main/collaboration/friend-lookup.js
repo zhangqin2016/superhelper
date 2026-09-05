@@ -14,6 +14,8 @@
  * never guesses which case it was. Callers must not invent an explanation.
  */
 
+const { createEnterpriseDirectoryReader } = require("./enterprise-directory");
+
 const LILY_ID = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 
 /** Same shape the server enforces, applied before spending a rate-limit slot. */
@@ -44,12 +46,15 @@ function createFriendLookup({ client, deviceId, assertActive = () => {}, isStopp
 /** The two local directory reads, kept here with the lookup because all three
  *  answer the same question — "who can I talk to?" — and service.js is at its
  *  line ceiling. */
-function createDirectoryReads({ store, socialDirectory, directoryView, isStopped = () => false, stoppedResult, unavailableService }) {
+function createDirectoryReads({ store, socialDirectory, directoryView, client, deviceId, assertActive, isStopped = () => false, stoppedResult, unavailableService }) {
+  const readEnterprise = createEnterpriseDirectoryReader({ client, deviceId, assertActive });
   return {
     getDirectory() {
       if (isStopped()) return stoppedResult();
       if (typeof store.getDirectory !== "function") return unavailableService();
-      return { ok: true, ...directoryView(store.getDirectory()) };
+      const local = directoryView(store.getDirectory());
+      if (!client?.getEnterpriseDirectory) return { ok: true, ...local };
+      return readEnterprise(local).then(value => ({ ok: true, ...directoryView(value) }));
     },
     list() {
       if (isStopped()) return stoppedResult();

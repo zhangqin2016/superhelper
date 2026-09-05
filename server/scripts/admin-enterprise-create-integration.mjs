@@ -175,6 +175,13 @@ try {
   const nickname = await call("POST", "/api/auth/profile", { ...device, displayName: " 小莉 🌸 ", userId: "someone-else" }, bearer);
   assert.equal(nickname.status, 200, JSON.stringify(nickname.body));
   assert.equal(nickname.body.displayName, "小莉 🌸");
+  const existingLilyId = (await pool.query("select lily_id from user_profiles where user_id=$1", [userId])).rows[0].lily_id;
+  assert.equal(existingLilyId, "nickname-test-owner", "editing preserves an existing public Lily ID");
+  await pool.query("delete from user_profiles where user_id=$1", [userId]);
+  assert.equal((await call("POST", "/api/auth/profile", { ...device, displayName: "小莉 🌸" }, bearer)).status, 200);
+  const generatedProfile = (await pool.query("select lily_id,display_name from user_profiles where user_id=$1", [userId])).rows[0];
+  assert.match(generatedProfile.lily_id, /^lily_[a-f0-9]{24}$/);
+  assert.equal(generatedProfile.display_name, "小莉 🌸");
   assert.equal((await pool.query("select display_name from user_profiles where user_id=$1", [userId])).rows[0].display_name, "小莉 🌸");
 
   step("old password is dead, new one works and no longer forces a change");

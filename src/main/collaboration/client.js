@@ -64,6 +64,9 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
       const stableCommandId = clientCommandId || `ack:${String(deviceId)}:${Number(cursor)}:${bootstrapCompletionToken ? "bootstrap" : "incremental"}`;
       return invoke({ path: "/api/collaboration/v1/ack", body: { deviceId, cursor, clientCommandId: stableCommandId, ...(bootstrapCompletionToken ? { bootstrapCompletionToken } : {}) }, deviceId });
     },
+    getEnterpriseDirectory({ deviceId } = {}) {
+      return invoke({ path: "/api/collaboration/v1/enterprise-directory", body: { deviceId }, deviceId });
+    },
     bootstrap({ deviceId } = {}) {
       return invoke({ path: "/api/collaboration/v1/bootstrap", body: { deviceId }, deviceId });
     },

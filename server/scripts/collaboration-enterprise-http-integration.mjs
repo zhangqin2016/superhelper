@@ -56,7 +56,7 @@ async function waitForOrganizationLock() {
 let desktop;
 try {
   await admin.query(`create schema ${schema}`);
-  await pool.query(`create table users(id text primary key,phone_e164 text,status text default 'active',password_must_change boolean default false,provisioned_organization_id text);
+  await pool.query(`create table users(id text primary key,phone_e164 text,status text default 'active',display_name text default '',password_must_change boolean default false,provisioned_organization_id text);
     create table devices(id text primary key);
     create table user_devices(user_id text references users(id),device_id text references devices(id),status text not null default 'active',primary key(user_id,device_id));
     create table user_profiles(user_id text primary key,lily_id text,display_name text,avatar_object_id text,discoverability text);
@@ -93,6 +93,18 @@ try {
     if (messageBarrier && result.ok) { messageBarrier.entered.resolve(); await messageBarrier.release.promise; }
     return result;
   } });
+  const { createOnlinePresence } = await import('../src/services/collaboration/online-presence.js');
+  const presence = createOnlinePresence(); app.collaborationPresence = presence;
+  presence.connect('member-connection', { userId: 'member', deviceId: 'device-member' });
+  const directory = expectOK(await signed('owner', 'enterprise-directory'));
+  assert.equal(directory.teams[0].members.find(m => m.userId === 'member').presence, 'online');
+  assert.equal(expectOK(await signed('outsider', 'enterprise-directory')).teams.length, 0, 'outsider cannot enumerate enterprise members');
+  await pool.query("update users set display_name='新昵称' where id='member'; delete from user_profiles where user_id='member'");
+  assert.equal(expectOK(await signed('owner', 'enterprise-directory')).teams[0].members.find(m => m.userId === 'member').displayName, '新昵称', 'missing collaboration identity still gets safe nickname fallback');
+  await pool.query("insert into user_profiles values('member','lily-member','新昵称',null,'contacts')");
+  presence.disconnect('member-connection');
+  assert.equal(expectOK(await signed('owner', 'enterprise-directory')).teams[0].members.find(m => m.userId === 'member').presence, 'offline');
+  console.log('enterprise live directory: signed auth, nickname fallback, online/offline and outsider isolation passed');
   const conv = expectOK(await signed('owner', 'conversations', { clientCommandId: crypto.randomUUID(), action: 'create', scopeType: 'organization', organizationId: 'org', kind: 'channel', visibility: 'public', title: 'Team' })).result.conversationId;
   const send = (userId = 'member') => signed(userId, 'messages', { clientCommandId: crypto.randomUUID(), action: 'send', conversationId: conv, bodyText: 'Team message' });
   const seedMessage = expectOK(await send()).result.message;
@@ -119,7 +131,7 @@ try {
   assert.deepEqual((await pool.query('select user_id from user_sync_events where event_id=$1 order by user_id', [revoke.id])).rows.map((r) => r.user_id), ['member']);
   await desktop.realtime.notifyAvailable();
   assert.equal(store.getConversation({ conversationId: conv }), null);
-  assert.deepEqual(desktop.getDirectory().teams, []);
+  assert.deepEqual((await desktop.getDirectory()).teams, []);
   assert.throws(() => keyring.decrypt({ accountId: 'member', scopeId: 'team:org', recordId: 'proof', envelope: oldSecret }), { code: 'COLLAB_LOCAL_KEY_UNAVAILABLE' });
   assert.equal((await send()).status, 403);
   assert.equal((await download()).status, 403, 'member revocation denies fresh download capability issuance');
@@ -128,7 +140,7 @@ try {
   assert.deepEqual(await counts(), afterDisable, 'repeated no-op disable must not allocate events/cursors/outbox');
   expectOK(await enterprise('PATCH', 'org/members/member', { status: 'active', role: 'admin', memberQuota: 7 }));
   await desktop.realtime.notifyAvailable();
-  assert.equal(desktop.getDirectory().teams[0].role, 'admin', 'reactivation refreshes via real authorized bootstrap');
+  assert.equal((await desktop.getDirectory()).teams[0].role, 'admin', 'reactivation refreshes via real authorized bootstrap');
   assert.ok(store.getConversation({ conversationId: conv }));
   expectOK(await send());
   expectOK(await enterprise('POST', 'org/members', { userId: 'extra' }));
@@ -202,7 +214,7 @@ try {
   const adminEvent = (await events()).filter((e) => e.actor_source === 'platform-admin').at(-1);
   assert.equal(adminEvent.actor_user_id, null); assert.equal(adminEvent.actor_device_id, null); assert.equal(adminEvent.audit_actor, process.env.ADMIN_EMAIL);
   expectOK(await enterprise('PATCH', 'org', { status: 'active' }, { web: true }));
-  await desktop.realtime.notifyAvailable(); assert.equal(desktop.getDirectory().teams[0].id, 'org');
+  await desktop.realtime.notifyAvailable(); assert.equal((await desktop.getDirectory()).teams[0].id, 'org');
   const downloadBarrier = { entered: Promise.withResolvers(), release: Promise.withResolvers() };
   downloads.hold(downloadBarrier);
   const pendingDownload = download(); await downloadBarrier.entered.promise;
@@ -213,7 +225,7 @@ try {
   assert.equal((await download()).status, 403, 'download holding the org lock completes first; every later download denies');
   await desktop.realtime.notifyAvailable(); assert.equal(store.getConversation({ conversationId: conv }), null);
   expectOK(await enterprise('POST', 'org/members', { phoneE164: '+8613800member' }));
-  await desktop.realtime.notifyAvailable(); assert.equal(desktop.getDirectory().teams[0].role, 'member');
+  await desktop.realtime.notifyAvailable(); assert.equal((await desktop.getDirectory()).teams[0].role, 'member');
   expectOK(await enterprise('PATCH', 'org', { status: 'disabled' }, { platform: true, web: true }));
   await desktop.realtime.notifyAvailable(); assert.equal(store.getConversation({ conversationId: conv }), null, 'admin organization revoke reaches the actual desktop and purges Team cache');
   expectOK(await enterprise('PATCH', 'org', { status: 'active' }, { platform: true, web: true }));

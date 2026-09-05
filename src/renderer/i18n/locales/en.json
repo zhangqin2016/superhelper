@@ -2029,5 +2029,14 @@
   "settings.nicknameInvalid": "Use 1–32 characters without line breaks.",
   "settings.nicknameSaving": "Saving…",
   "settings.nicknameSaved": "Nickname saved",
-  "settings.nicknameFailed": "Could not save. Please retry."
+  "settings.nicknameFailed": "Could not save. Please retry.",
+  "collaboration.enterprise.membersSummary": "{count} members · {online} online",
+  "collaboration.enterprise.search": "Search nickname or Lily ID",
+  "collaboration.enterprise.onlineOnly": "Online only",
+  "collaboration.enterprise.cached": "Directory unavailable; presence is unknown",
+  "collaboration.enterprise.online": "Online",
+  "collaboration.enterprise.offline": "Offline",
+  "collaboration.enterprise.unknown": "Unknown",
+  "collaboration.enterprise.noMatch": "No matching members",
+  "collaboration.enterprise.more": "Show more members"
 }

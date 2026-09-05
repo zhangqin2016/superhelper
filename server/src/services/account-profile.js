@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 export function normalizeNickname(value) {
   if (typeof value !== "string") return null;
   const name = value.trim();
@@ -13,8 +14,9 @@ export async function updateAccountNickname(db, userId, displayName) {
     if (user.password_must_change) return { ok: false, code: "PASSWORD_CHANGE_REQUIRED" };
     await trx.updateTable("users").set({ display_name: displayName }).where("id", "=", userId).execute();
     // Preserve the independent Lily ID and discoverability of existing profiles.
-    await trx.updateTable("user_profiles").set({ display_name: displayName, updated_at: new Date() })
-      .where("user_id", "=", userId).execute();
+    const lilyId = `lily_${randomBytes(12).toString("hex")}`;
+    await trx.insertInto("user_profiles").values({ user_id: userId, lily_id: lilyId, lily_id_display: lilyId, display_name: displayName })
+      .onConflict(oc => oc.column("user_id").doUpdateSet({ display_name: displayName, updated_at: new Date() })).execute();
     return { ok: true, displayName };
   });
 }

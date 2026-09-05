@@ -813,6 +813,18 @@
       "tests": [
         "scripts/test-guide-eval-evidence.mjs"
       ]
+    },
+    {
+      "id": "enterprise-directory-presence",
+      "protects": "Enterprise membership and online indicators use current authorization and real expiring connections.",
+      "baseline": "Existing personal contacts and messaging remain available when the directory endpoint is unavailable.",
+      "failureFallback": "Offline caches show unknown presence; removed membership is not resurrected by network failures; nickname updates preserve existing Lily IDs.",
+      "tests": [
+        "scripts/test-enterprise-presence.mjs",
+        "scripts/test-enterprise-presence-websocket.mjs",
+        "scripts/test-enterprise-roster.cjs",
+        "scripts/test-account-nickname.mjs"
+      ]
     }
   ]
 }

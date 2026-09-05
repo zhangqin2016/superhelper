@@ -7,6 +7,7 @@ const writes = [];
 let active = { id: 'self', status: 'active', password_must_change: false };
 const db = { transaction: () => ({ execute: fn => fn(db) }),
  selectFrom: () => { const q = { select: () => q, where: (k, op, v) => { assert.equal(v, 'self'); return q; }, forUpdate: () => q, executeTakeFirst: async () => active }; return q; },
+ insertInto: table => { let values; const q = { values: v => { values = v; return q; }, onConflict: fn => { const c = { column: () => c, doUpdateSet: () => c }; fn(c); return q; }, execute: async () => writes.push({ table, values }) }; return q; },
  updateTable: table => { let values; const q = { set: v => { values = v; return q; }, where: (k, op, v) => { assert.equal(v, 'self'); return q; }, execute: async () => writes.push({ table, values }) }; return q; } };
 assert.deepEqual(await updateAccountNickname(db, 'self', '小莉'), { ok: true, displayName: '小莉' });
 assert.deepEqual(writes.map(w => w.table), ['users', 'user_profiles']);

@@ -1,0 +1,20 @@
+.enterprise-roster {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.enterprise-roster > summary {
+  cursor: pointer;
+  padding: 6px 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.enterprise-roster > .settings-input { width: 100%; margin: 8px 0; }
+.enterprise-roster > label { display: flex; align-items: center; gap: 6px; padding: 6px 0; font-size: var(--text-sm); }
+.enterprise-roster [data-presence] { width: 100%; text-align: start; }
+.enterprise-roster [data-presence="online"] .collaboration-row-avatar { position: relative; }
+.enterprise-roster [data-presence="online"] .collaboration-row-avatar::after {
+  content: ""; position: absolute; width: 8px; height: 8px; bottom: 0; right: 0;
+  border-radius: 50%; background: var(--success-color, #16a34a); border: 2px solid var(--bg-color, #fff);
+}

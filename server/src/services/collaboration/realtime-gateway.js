@@ -1,3 +1,4 @@
+import { createOnlinePresence } from "./online-presence.js";
 import crypto from "node:crypto";
 import { WebSocketServer } from "ws";
 
@@ -54,6 +55,8 @@ export function createRealtimeConnectionRegistry() {
 export function registerCollaborationRealtimeGateway(app, { ticketService, resolveEphemeralRecipients = async () => [] } = {}) {
   if (!ticketService) throw new TypeError("A collaboration websocket ticket service is required.");
   const registry = createRealtimeConnectionRegistry();
+  const presence = createOnlinePresence();
+  app.collaborationPresence = presence;
   const sockets = new Map();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
   const send = (connectionId, frame) => {
@@ -66,9 +69,18 @@ export function registerCollaborationRealtimeGateway(app, { ticketService, resol
     const connectionId = `collab_${crypto.randomUUID()}`;
     const { replacedConnectionId } = registry.add({ connectionId, ...identity });
     if (replacedConnectionId) { try { sockets.get(replacedConnectionId)?.close(4000, "REPLACED_BY_RECONNECT"); } catch { /* noop */ } }
+    if (replacedConnectionId) presence.disconnect(replacedConnectionId);
+    presence.connect(connectionId, identity);
     sockets.set(connectionId, socket);
     send(connectionId, { type: "realtime.ready", schemaVersion: COLLABORATION_REALTIME_SCHEMA_VERSION });
     socket.on("message", async (raw) => {
+      let heartbeat;
+      try { heartbeat = JSON.parse(String(raw)); } catch { /* invalid frame below */ }
+      if (heartbeat?.type === "realtime.heartbeat" && heartbeat.schemaVersion === 1) {
+        presence.touch(connectionId);
+        send(connectionId, { type: "realtime.heartbeat-ack", schemaVersion: 1 });
+        return;
+      }
       const frame = parseRealtimeClientFrame(raw);
       if (!frame) { send(connectionId, { type: "realtime.error", schemaVersion: COLLABORATION_REALTIME_SCHEMA_VERSION, code: "REALTIME_FRAME_INVALID" }); return; }
       let recipientUserIds;
@@ -84,8 +96,10 @@ export function registerCollaborationRealtimeGateway(app, { ticketService, resol
       const outbound = { ...frame, userId: identity.userId, expiresAt: new Date(Date.now() + frame.ttlMs).toISOString() };
       for (const { connectionId: target } of registry.ephemeralRecipients({ originConnectionId: connectionId, recipientUserIds })) send(target, outbound);
     });
-    socket.on("close", () => { sockets.delete(connectionId); registry.remove(connectionId); });
+    socket.on("close", () => { sockets.delete(connectionId); registry.remove(connectionId); presence.disconnect(connectionId); });
   });
+  const expiryTimer = setInterval(() => { for (const id of presence.expiredIds()) { presence.disconnect(id); sockets.get(id)?.terminate(); } }, 30000);
+  expiryTimer.unref?.();
   const upgradeHandler = async (request, socket, head) => {
     let url;
     try { url = new URL(request.url, "http://localhost"); } catch { return; }
@@ -100,6 +114,6 @@ export function registerCollaborationRealtimeGateway(app, { ticketService, resol
     }
   };
   app.server.on("upgrade", upgradeHandler);
-  app.addHook("onClose", (_instance, done) => { try { wss.close(); } catch { /* noop */ } done(); });
+  app.addHook("onClose", (_instance, done) => { clearInterval(expiryTimer); presence.clear(); try { wss.close(); } catch { /* noop */ } done(); });
   return { registry, wss, notifySyncAvailable: (userId, cursor) => registry.syncAvailable(userId, cursor).filter(({ connectionId, frame }) => send(connectionId, frame)).length };
 }

@@ -2029,5 +2029,14 @@
   "settings.nicknameInvalid": "استخدم من 1 إلى 32 حرفًا بدون أسطر جديدة.",
   "settings.nicknameSaving": "جارٍ الحفظ…",
   "settings.nicknameSaved": "تم حفظ الاسم المستعار",
-  "settings.nicknameFailed": "تعذر الحفظ. يرجى المحاولة مجددًا."
+  "settings.nicknameFailed": "تعذر الحفظ. يرجى المحاولة مجددًا.",
+  "collaboration.enterprise.membersSummary": "{count} أعضاء · {online} متصلون",
+  "collaboration.enterprise.search": "ابحث بالاسم أو Lily ID",
+  "collaboration.enterprise.onlineOnly": "المتصلون فقط",
+  "collaboration.enterprise.cached": "تعذر تحديث الدليل؛ حالة الاتصال غير معروفة",
+  "collaboration.enterprise.online": "متصل",
+  "collaboration.enterprise.offline": "غير متصل",
+  "collaboration.enterprise.unknown": "غير معروف",
+  "collaboration.enterprise.noMatch": "لا يوجد أعضاء مطابقون",
+  "collaboration.enterprise.more": "عرض المزيد من الأعضاء"
 }

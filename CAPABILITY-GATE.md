@@ -314,3 +314,5 @@ Reaction recovery companion guard (2026-09-05): `test-collaboration-reaction-rec
 Overseas enterprise password login: `test-enterprise-overseas-login.mjs` and `test-service-client-bootstrap.mjs` keep the dedicated account entry accessible while preserving disabled personal SMS and purchase policy. Existing domestic SMS remains available; explicit enterprise disable remains honored.
 
 Account nickname: `test-account-nickname.mjs` verifies Unicode length, invalid input, active-account checks, self-only mutation and renderer save feedback; `server/scripts/admin-enterprise-create-integration.mjs` proves authenticated device binding, profile persistence and reread after login. Login identifiers and Lily IDs remain unchanged.
+
+Enterprise directory and expiring online presence: `test-enterprise-presence.mjs`, `test-enterprise-presence-websocket.mjs`, `test-enterprise-roster.cjs`, `test-account-nickname.mjs` protect self-only nicknames, offline fallback, real heartbeat identity, multi-device disconnect and executable member UI. [gate: enterprise-directory-presence]

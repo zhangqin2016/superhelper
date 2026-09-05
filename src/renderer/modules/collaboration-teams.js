@@ -1,3 +1,4 @@
+import { createEnterpriseRoster } from "./enterprise-roster.js";
 import { t } from "../i18n/index.js";
 import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
@@ -10,6 +11,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   // every sync, so an unfinished selection has to be snapshotted and restored
   // the same way the text fields already are.
   const channelPickers = new Map();
+  const rosterState = new Map();
   const groupForm = socialNode("form", "", "collaboration-social-form"); groupForm.dataset.form = "group";
   // No heading: the disclosure that opens this form already carries the same
   // words, and printing them twice is the redundancy removed elsewhere here.
@@ -214,6 +216,8 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   }
   const controller = {
     update({ directory: nextDirectory, conversations: nextConversations = [], commands = [] } = {}) {
+      const focusedRoster = document.activeElement?.closest?.(".enterprise-roster");
+      const focusedTeam = focusedRoster?.dataset.teamId;
       directory = nextDirectory || { contacts: [], teams: [] }; conversations = nextConversations;
       if (pendingDetailsId && !conversations.some((c) => c.id === pendingDetailsId) || detailsConversation && (!conversations.some((c) => c.id === detailsConversation.id)
         || detailsConversation.scopeId.startsWith("team:") && !directory.teams.some((team) => team.scopeId === detailsConversation.scopeId))) {
@@ -264,6 +268,10 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         teamButton.dataset.teamId = team.id;
         teamHeading.append(teamButton);
         section.append(teamHeading);
+        if (!rosterState.has(team.id)) rosterState.set(team.id, { open: directory.teams.length === 1 });
+        section.append(createEnterpriseRoster({ team, selfId: directory.profile?.userId, state: rosterState.get(team.id), cached: directory.directorySource === "cached",
+          onChat: member => ui.run(() => api.conversation({ action: "create", scopeType: "organization", organizationId: team.id, kind: "direct", memberUserIds: [member.userId] }),
+            (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); }) }));
         const channels = conversations.filter((c) => c.scopeId === team.scopeId);
         const channelList = socialNode("div", "", "collaboration-team-channels");
         if (!channels.length) channelList.append(socialNode("p", t("collaboration.social.noChannels"), "collaboration-empty"));
@@ -281,6 +289,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         channelPickers.get(team.id)?.restore(channelSelections.get(team.id));
         section.querySelector('[name="visibility"]')?.dispatchEvent(new Event("change"));
       }
+      if (focusedTeam) [...list.querySelectorAll(".enterprise-roster")].find(node => node.dataset.teamId === focusedTeam)?.querySelector("input[type=search]")?.focus({ preventScroll: true });
       ui.renderPending(commands, "conversation", api, scopeLabel);
     },
     /** The roster, on demand. Members are not list content: a team of any real
@@ -322,7 +331,8 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       detailsConversation = result.conversation;
       renderDetails(result);
     },
-    reset() { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); closeDetailSurface(); },
+    reset() {
+      rosterState.clear(); detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); closeDetailSurface(); },
   };
   return controller;
 }

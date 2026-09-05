@@ -276,7 +276,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           typing: presence.snapshot() };
       },
       typing: typingCommand,
-      ...createDirectoryReads({ store, socialDirectory, directoryView, isStopped: () => stopped, stoppedResult, unavailableService }),
+      ...createDirectoryReads({ store, socialDirectory, directoryView, client, deviceId, assertActive, isStopped: () => stopped, stoppedResult, unavailableService }),
       openFriend(command) { return stopped ? stoppedResult() : socialDirectory.openFriend(store, command); },
       lookupFriend: createFriendLookup({ client, deviceId, assertActive, isStopped: () => stopped, stoppedResult, unavailableService }),
       getConversationDetails({ conversationId } = {}) {

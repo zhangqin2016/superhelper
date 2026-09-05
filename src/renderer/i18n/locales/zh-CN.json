@@ -1973,7 +1973,7 @@
   "collaboration.typing.many": "{count} 人正在输入…",
   "collaboration.typing.someone": "正在输入…",
   "collaboration.people": "联系人",
-  "collaboration.teams": "团队",
+  "collaboration.teams": "企业",
   "collaboration.conversation": "对话",
   "collaboration.empty": "选择一个对话开始协作",
   "collaboration.ariaLabel": "协作中心",
@@ -1981,7 +1981,7 @@
   "collaboration.statusAvailable": "协作已连接",
   "collaboration.statusUnavailable": "协作暂不可用",
   "collaboration.scopePersonal": "个人",
-  "collaboration.scopeTeam": "团队",
+  "collaboration.scopeTeam": "企业",
   "collaboration.messageLabel": "消息",
   "collaboration.messagePlaceholder": "输入消息",
   "collaboration.send": "发送",
@@ -2029,5 +2029,14 @@
   "settings.nicknameInvalid": "昵称须为 1–32 个字符，不能包含换行。",
   "settings.nicknameSaving": "正在保存…",
   "settings.nicknameSaved": "昵称已保存",
-  "settings.nicknameFailed": "保存失败，请重试"
+  "settings.nicknameFailed": "保存失败，请重试",
+  "collaboration.enterprise.membersSummary": "成员 {count} · 在线 {online}",
+  "collaboration.enterprise.search": "搜索昵称或 Lily ID",
+  "collaboration.enterprise.onlineOnly": "仅看在线",
+  "collaboration.enterprise.cached": "资料暂未刷新，在线状态未知",
+  "collaboration.enterprise.online": "在线",
+  "collaboration.enterprise.offline": "离线",
+  "collaboration.enterprise.unknown": "状态未知",
+  "collaboration.enterprise.noMatch": "没有符合条件的成员",
+  "collaboration.enterprise.more": "显示更多成员"
 }

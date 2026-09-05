@@ -1,3 +1,4 @@
+import { readEnterpriseDirectory } from "../../services/collaboration/enterprise-directory.js";
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -50,6 +51,12 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
     const requestId = String(request.id || randomUUID());
     if (!config.collaborationEnabled || config.collaborationKillSwitch) return reply.code(503).send({ ok: false, code: "COLLABORATION_UNAVAILABLE", retryable: false, requestId });
     try { return await handler(request, reply, requestId); } catch (error) { return reply.code(error?.status === 403 || error?.code?.includes("DENIED") || error?.code?.includes("REVOKED") ? 403 : 400).send(errorBody(error, requestId)); }
+  });
+  post("/api/collaboration/v1/enterprise-directory", deviceBody, async (request, reply) => {
+    const input = deviceBody.parse(request.body);
+    const account = await accountFor(request, reply, input, database);
+    if (!account) return;
+    return reply.send({ ok: true, ...(await readEnterpriseDirectory(database, account.userId, app.collaborationPresence)) });
   });
   post("/api/collaboration/v1/bootstrap", deviceBody, async (request, reply) => { const input = deviceBody.parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.bootstrapCollaboration({ userId: account.userId, deviceId: input.deviceId })) }); });
   post("/api/collaboration/v1/sync", deviceBody.extend({ afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }), async (request, reply) => { const input = z.object({ deviceId: z.string(), afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }).parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.syncAfterCursor({ userId: account.userId, deviceId: input.deviceId, afterCursor: input.afterCursor, limit: input.limit })) }); });
