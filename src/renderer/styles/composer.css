@@ -62,6 +62,10 @@
 .live-task-item.is-in_progress { color: var(--text-primary); font-weight: 600; }
 .live-task-item.is-warning { color: var(--warning-text, var(--text-primary)); font-weight: 600; }
 .live-task-item.is-info { color: var(--text-secondary); }
+/* Overlay states (todo-progress-overlay.js): evidenced = the record proves it
+   but the model has not confirmed; unconfirmed = turn ended, no evidence. */
+.live-task-item.is-evidenced { color: var(--text-muted, var(--text-secondary)); text-decoration: underline dotted; text-decoration-color: color-mix(in srgb, var(--text-faint, currentColor) 70%, transparent); }
+.live-task-item.is-unconfirmed { color: var(--warning-text, var(--text-secondary)); }
 
 .composer.composer-busy .composer-row {
   border-color: color-mix(in srgb, var(--accent-border) 70%, var(--border-light) 30%);

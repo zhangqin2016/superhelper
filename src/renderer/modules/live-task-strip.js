@@ -4,6 +4,7 @@
 // question. Sealed/history turns keep their inline card (turn-view-renderer skips
 // the inline card only while live, so there's no duplication).
 import { isTodoTool, parseTodoEntries } from "./turn-tool-model.js";
+import { decorateTodoItem, overlayPlanOnTodos, summarizeTodoProgress } from "./todo-progress-overlay.js";
 import { t } from "../i18n/index.js";
 
 let collapsed = false;
@@ -15,7 +16,10 @@ function latestTodos(liveTurn) {
   const values = tools instanceof Map ? [...tools.values()] : tools;
   let latest = null;
   for (const tool of values) if (isTodoTool(tool?.name)) latest = tool;
-  return latest ? applyActiveTaskStep(parseTodoEntries(latest), liveTurn?.taskRun) : [];
+  if (!latest) return [];
+  // Model statuses first, then the platform's execution-evidence overlay
+  // (evidenced / active / unconfirmed) — see todo-progress-overlay.js.
+  return overlayPlanOnTodos(applyActiveTaskStep(parseTodoEntries(latest), liveTurn?.taskRun), liveTurn?.taskRun);
 }
 
 function applyActiveTaskStep(todos = [], taskRun = null) {
@@ -35,11 +39,7 @@ export function buildLiveTaskStripModel(liveTurn, translate = t) {
   if (!liveTurn || liveTurn.final) return { visible: false, summary: "", items: [] };
   const todos = latestTodos(liveTurn);
   if (todos.length) {
-    const done = todos.filter((todo) => todo.status === "completed").length;
-    const inProgress = todos.find((todo) => todo.status === "in_progress");
-    let summary = translate("todo.summary", { done, total: todos.length });
-    if (inProgress) summary += ` · ${translate("task.strip.current", { item: inProgress.content })}`;
-    return { visible: true, summary, items: todos };
+    return { visible: true, summary: summarizeTodoProgress(todos, liveTurn?.taskRun, translate), items: todos };
   }
   return { visible: false, summary: "", items: [] };
 }
@@ -79,9 +79,7 @@ export function renderLiveTaskStrip(liveTurn) {
     list.replaceChildren();
     for (const item of model.items) {
       const li = document.createElement("li");
-      li.className = `live-task-item is-${item.status}`;
-      const icon = item.status === "completed" ? "✓" : item.status === "in_progress" ? "▸" : item.status === "warning" ? "!" : "○";
-      li.textContent = `${icon} ${item.content}`;
+      decorateTodoItem(li, item, t, "live-task-item");
       list.appendChild(li);
     }
   }

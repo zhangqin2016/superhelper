@@ -399,6 +399,14 @@ function createTurnTerminalFinalizer(options = {}) {
       if (record) record.timeline = (state.timeline || []).slice(-100);
     }
     completeShortTurnLifecycle(ctx, sessionId, state, type, payload);
+    // Plan-progress reconciliation runs before completion so the sealed
+    // record's taskRun carries the reconciled overlay (fail-open, bounded).
+    try {
+      const reconciled = taskRunRuntime?.reconcilePlan?.(sessionId, type);
+      if (reconciled && typeof reconciled.then === "function") await reconciled;
+    } catch (error) {
+      log.warn("plan reconciliation skipped: %s", error?.message || error);
+    }
     taskRunRuntime?.complete?.(sessionId, type, {
       evidenceGateAssessment,
       evidenceSummary: effectiveEvidenceSummary,

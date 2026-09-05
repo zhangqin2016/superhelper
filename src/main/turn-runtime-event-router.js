@@ -169,6 +169,7 @@ function createTurnRuntimeEventRouter(options = {}) {
             parentToolUseId: payload.parentToolUseId || null,
             startedAt: now(),
           });
+          taskRunRuntime?.observePlanTool?.(sessionId, tool, { running: true });
           taskRunRuntime?.markProgress?.(sessionId, "tool_running", `Running ${tool.name || payload.name || "tool"}`, {
             tool,
             resumeState: {

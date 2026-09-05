@@ -37,7 +37,14 @@ export function prepareProcessRenderView(liveTurn = {}, sealed = false, {
     childToolIds,
     processTools,
     latestTodoId,
-    entryCtx: { latestTodoId, childTools, sessionId },
+    entryCtx: {
+      latestTodoId,
+      childTools,
+      sessionId,
+      // Plan-progress overlay for the todo card (live: runtime taskRun; sealed:
+      // the reconciled taskRun stored in record.meta by the finalizer).
+      taskRun: liveTurn?.taskRun || liveTurn?.final?.payload?.record?.meta?.taskRun || null,
+    },
     diffEntries,
     diffKey: String(diffEntries.length),
     hasDiffs: diffEntries.length > 0,

@@ -319,6 +319,7 @@ module.exports = {
   buildSemanticJudgePrompt,
   judgeTurnSemantics,
   parseSemanticVerdict,
+  postJudgeChat,
   resolveJudgeConnection,
   resolveJudgeConnectionDetailed,
 };

@@ -28,8 +28,11 @@ globalThis.document = {
   },
 };
 
+// The summary line is composed by todo-progress-overlay.summarizeTodoProgress:
+// the model-confirmed count plus, when present, the current item.
 const translate = (key, vars) => {
-  assert.equal(key, "todo.summary");
+  assert.ok(["todo.summary", "task.strip.current"].includes(key), `unexpected i18n key ${key}`);
+  if (key === "task.strip.current") return `now ${vars.item}`;
   return `${vars.done}/${vars.total}`;
 };
 
@@ -52,7 +55,7 @@ assert.equal(entry.className, "assistant-todo-card");
 assert.equal(entry.dataset.toolId, "todo_1");
 assert.equal(entry.open, false, "non-latest todo snapshots should stay collapsed");
 assert.equal(entry.children[0].className, "assistant-todo-summary");
-assert.equal(entry.children[0].textContent, "1/3");
+assert.equal(entry.children[0].textContent, "1/3 · now Doing");
 assert.equal(entry.children[1].className, "assistant-todo-items");
 assert.deepEqual(
   entry.children[1].children.map((item) => [item.className, item.textContent]),

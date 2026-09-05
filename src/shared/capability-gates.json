@@ -835,6 +835,19 @@
         "scripts/test-collaboration-identity-facets.mjs",
         "scripts/test-collaboration-list-stability.cjs"
       ]
+    },
+    {
+      "id": "todo-progress-evidence-overlay",
+      "protects": "The task-list progress card cannot be confidently wrong when the model forgets to update its list. Field case 2026-09-05: one todowrite, eight more tool calls, card stuck at 0/7 while four steps were done. The platform now (1) nudges the model inside the tool result after N calls without a todowrite, naming the steps the execution record already supports (todo-progress-nudge plugin); (2) overlays execution evidence on the plan — a step is 'evidenced' only when a SUCCESSFUL tool call's input contains every identifier unique to that step; (3) reconciles at turn end: stale 'in progress' becomes 'unconfirmed', and a bounded model pass may settle undecided steps only with a quote literally present in the evidence; (4) states staleness in the summary. All four are display/nudge overlays: the model's own list is never rewritten.",
+      "baseline": "Without a taskRun or with the default scaffold plan the strip and card render exactly as before (same summary, same icons, same classes). Steps without a unique identifier are never inferred; shared identifiers prove nothing; a failed final attempt proves nothing; output-only mentions are not evidence. A fresh todowrite drops every overlay — the model's statuses win.",
+      "failureFallback": "Plugin and library fail open (try/catch on every hook call, bounded per-session windows, LRU of sessions); the shared library loads from resources or degrades to a no-op. The model reconciliation pass runs only for turn.completed, only when the list is stale AND a step is undecided, under LILY_TODO_RECONCILE_TIMEOUT_MS (10s) with kill switch LILY_TODO_MODEL_RECONCILE=0; interrupt/fail paths finalize synchronously as before (turn-orchestrator stop test). Nudge kill switch LILY_TODO_NUDGE=0, cadence LILY_TODO_NUDGE_AFTER.",
+      "tests": [
+        "scripts/test-todo-progress-inference.mjs",
+        "scripts/test-todo-progress-nudge-plugin.mjs",
+        "scripts/test-todo-progress-overlay.mjs",
+        "scripts/test-live-task-strip.mjs",
+        "scripts/test-turn-todo-entry.mjs"
+      ]
     }
   ]
 }

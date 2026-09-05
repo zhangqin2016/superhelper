@@ -73,7 +73,7 @@ export function renderTimelineEntry(entry, sealed, ctx = {}, deps = {}) {
   if (entry.kind === "tool") {
     if (isTodo(entry.name)) {
       if (!sealed) return null;
-      return renderTodo(entry, { isLatest: entry.id === ctx.latestTodoId });
+      return renderTodo(entry, { isLatest: entry.id === ctx.latestTodoId, taskRun: ctx.taskRun || null });
     }
     return renderToolWithChildren(entry, sealed, ctx.childTools, ctx, deps);
   }

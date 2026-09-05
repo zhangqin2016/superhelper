@@ -1168,6 +1168,17 @@
   font-weight: 500;
 }
 
+/* Overlay states (todo-progress-overlay.js) — see live-task-item counterparts. */
+.assistant-todo-item.is-evidenced {
+  color: var(--text-muted);
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, var(--text-faint, currentColor) 70%, transparent);
+}
+
+.assistant-todo-item.is-unconfirmed {
+  color: var(--warning-text, var(--text-secondary));
+}
+
 .assistant-turn-inline-text {
   margin: 4px 0;
   font-size: var(--text-md);

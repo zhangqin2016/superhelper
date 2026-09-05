@@ -5,6 +5,8 @@ const {
   addTaskEvidence,
   addTaskRisk,
   applyTaskPlanFromTodos,
+  observePlanTool: observePlanToolState,
+  reconcilePlanAtTurnEnd,
   assessTaskVerification,
   compactTaskRun,
   completeTaskRun,
@@ -260,6 +262,7 @@ function createTaskRunRuntime(options = {}) {
       if (!state.taskRun && opts.tool) ensure(sessionId, "tool_evidence");
       if (!state.taskRun) return null;
       const item = addTaskEvidence(state.taskRun, evidence);
+      if (opts.tool) observePlanTool(sessionId, opts.tool, { running: false });
       if (opts.tool) syncAgentTaskFromTool({ store: agentTaskGraphStore, state, sessionId, tool: opts.tool, now: now(), emit: (type, payload) => emitTaskEvent(sessionId, type, payload) });
       emitTaskEvent(sessionId, "task.evidence.added", {
         taskRunId: state.taskRun.id,
@@ -270,6 +273,63 @@ function createTaskRunRuntime(options = {}) {
       return item;
     } catch (err) {
       log.warn("TaskRun evidence failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  /** Feed a tool observation into the plan-progress overlay (see
+   *  task-run-state.observePlanTool). Emits task.plan.updated only when a step's
+   *  overlay actually changed, so idle tool traffic costs no renderer work. */
+  function observePlanTool(sessionId, tool, opts = {}) {
+    try {
+      const state = stateFor(sessionId);
+      if (!state.taskRun) return null;
+      const changed = observePlanToolState(state.taskRun, tool, opts);
+      if (changed) emitPlanUpdated(sessionId, state);
+      return state.taskRun;
+    } catch (err) {
+      log.warn("TaskRun plan observation failed open: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  function emitPlanUpdated(sessionId, state) {
+    emitTaskEvent(sessionId, "task.plan.updated", {
+      taskRunId: state.taskRun.id,
+      plan: state.taskRun.plan,
+      activeStep: state.taskRun.activeStep,
+      taskRun: compactTaskRun(state.taskRun),
+    });
+  }
+
+  /** End-of-turn plan reconciliation, BEFORE complete(): deterministic pass
+   *  always; the model pass only when the deterministic one left a stale item
+   *  undecided (see todo-plan-reconciler). Bounded by its own timeout and
+   *  fail-open — the turn seals with whatever overlay exists. */
+  function reconcilePlan(sessionId, terminalType = "turn.completed") {
+    try {
+      const state = stateFor(sessionId);
+      if (!state.taskRun) return null;
+      const changed = reconcilePlanAtTurnEnd(state.taskRun, terminalType);
+      // Synchronous unless a model pass is warranted: interrupt/fail paths must
+      // finalize in the same tick they always did (no new await in that path).
+      const reconciler = terminalType === "turn.completed" ? require("./todo-plan-reconciler") : null;
+      if (!reconciler || !reconciler.shouldReconcileWithModel(state.taskRun).ok) {
+        if (changed) emitPlanUpdated(sessionId, state);
+        return state.taskRun;
+      }
+      return reconciler.reconcilePlanWithModel({ taskRun: state.taskRun })
+        .then((result) => {
+          if (changed || result?.applied) emitPlanUpdated(sessionId, state);
+          return state.taskRun;
+        })
+        .catch((err) => {
+          log.warn("TaskRun model plan reconciliation failed open: %s", err?.message || err);
+          if (changed) emitPlanUpdated(sessionId, state);
+          return state.taskRun;
+        });
+    } catch (err) {
+      log.warn("TaskRun plan reconciliation failed open: %s", err?.message || err);
       return null;
     }
   }
@@ -466,6 +526,8 @@ function createTaskRunRuntime(options = {}) {
     ensure,
     markAwaitingUser,
     markProgress,
+    observePlanTool,
+    reconcilePlan,
     updateLivenessFromNotice,
     updatePlanFromTodos,
   };
