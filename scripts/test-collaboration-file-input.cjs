@@ -1,8 +1,9 @@
 "use strict";
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {pathToFileURL}=require('node:url');const {app,BrowserWindow}=require('electron');
+const {exitAndRemove}=require('./electron-test-cleanup.cjs');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'collab-file-input-'));app.setPath('userData',path.join(dir,'data'));app.disableHardwareAcceleration();let win;
-const timer=setTimeout(()=>finish(1),30000);function finish(code){clearTimeout(timer);win?.destroy();fs.rmSync(dir,{recursive:true,force:true});app.exit(code);}
+const timer=setTimeout(()=>finish(1),30000);function finish(code){exitAndRemove({app,window:win,directory:dir,timer,code});}
 app.whenReady().then(async()=>{
  const file=path.join(dir,'index.html');fs.writeFileSync(file,'<section class="collaboration-conversation"><div class="collaboration-composer"><div id="files"></div><textarea></textarea><button id="attach"></button></div></section>');
  win=new BrowserWindow({show:false,webPreferences:{sandbox:true,contextIsolation:true}});await win.loadFile(file);

@@ -5,13 +5,14 @@ const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow } = require("electron");
+const { exitAndRemove } = require("./electron-test-cleanup.cjs");
 if (!app?.whenReady) { console.error("Run with Electron: electron scripts/test-collaboration-timeline.cjs"); process.exit(2); }
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collaboration-timeline-dom-"));
 app.setPath("userData", path.join(dir, "userData"));
 app.disableHardwareAcceleration();
 let win;
 const deadline = setTimeout(() => { console.error("collaboration timeline DOM timed out"); finish(1); }, 30_000);
-function finish(code) { clearTimeout(deadline); if (win && !win.isDestroyed()) win.destroy(); fs.rmSync(dir, { recursive: true, force: true }); app.exit(code); }
+function finish(code) { exitAndRemove({ app, window: win, directory: dir, timer: deadline, code }); }
 app.whenReady().then(async () => {
   const page = path.join(dir, "test.html");
   fs.writeFileSync(page, '<!doctype html><html><body><div id="timeline" role="log"></div></body></html>');

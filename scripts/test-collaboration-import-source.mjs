@@ -17,7 +17,7 @@ test('explicit import IPC bounds source authority and never returns paths',async
 test('clipboard source is typed, private, and removed after encryption or failure',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'collab-import-'));
  try {
-  await withImportSource({kind:'image',bytes:png},root,async({inputPath,mimeType,originalName})=>{assert.equal(mimeType,'image/png');assert.match(originalName,/\.png$/);assert.deepEqual(await fs.readFile(inputPath),png);assert.equal((await fs.stat(inputPath)).mode&0o777,0o600);});
+  await withImportSource({kind:'image',bytes:png},root,async({inputPath,mimeType,originalName})=>{assert.equal(mimeType,'image/png');assert.match(originalName,/\.png$/);assert.deepEqual(await fs.readFile(inputPath),png);const stat=await fs.stat(inputPath);assert.equal(stat.isFile(),true);assert.equal(path.relative(root,inputPath).startsWith('..'),false);if(process.platform!=='win32')assert.equal(stat.mode&0o777,0o600);});
   assert.deepEqual(await fs.readdir(root),[]);
   await assert.rejects(withImportSource({kind:'image',bytes:png},root,async()=>{throw Error('encrypt failed');}),/encrypt failed/);assert.deepEqual(await fs.readdir(root),[]);
   await assert.rejects(withImportSource({kind:'image',bytes:Buffer.from('not an image')},root,()=>assert.fail()),{code:'COLLABORATION_INVALID_INPUT'});

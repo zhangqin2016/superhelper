@@ -125,6 +125,7 @@ try {
   assert.deepEqual(reactionsForMessages({ accountId: "a", db: { all() { throw new Error("gone"); } } }, ["m1"]), {});
   assert.deepEqual(reactionsForMessages(store, []), {});
 } finally {
+  store.close();
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

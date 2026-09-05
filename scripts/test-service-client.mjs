@@ -37,6 +37,7 @@ fs.writeFileSync(
 
 delete process.env.LILY_SERVICE_API_BASE_URL;
 delete process.env.SERVICE_API_BASE_URL;
+delete process.env.LILY_CLIENT_REGION;
 process.env.CLIENT_REGION = "china";
 const {
   getServiceSettings,

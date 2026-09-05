@@ -1,7 +1,8 @@
 "use strict";
 const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const {pathToFileURL}=require('node:url');const {app,BrowserWindow}=require('electron');
+const {exitAndRemove}=require('./electron-test-cleanup.cjs');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lily-im-layout-'));app.setPath('userData',path.join(dir,'data'));app.disableHardwareAcceleration();let win;
-const timer=setTimeout(()=>finish(1),30000);function finish(code){clearTimeout(timer);win?.destroy();fs.rmSync(dir,{recursive:true,force:true});app.exit(code);}
+const timer=setTimeout(()=>finish(1),30000);function finish(code){exitAndRemove({app,window:win,directory:dir,timer,code});}
 app.whenReady().then(async()=>{
  const root=path.resolve(__dirname,'../src/renderer');const base=pathToFileURL(root+'/').href;
  let html=fs.readFileSync(path.join(root,'index.html'),'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace('<head>','<head><base href="'+base+'">');

@@ -15,12 +15,16 @@ try { ({ createTransferRuntime } = require("../src/main/collaboration/transfer-r
 function fixture(t) {
   assert.equal(typeof createTransferRuntime, "function", "main-owned policy, scope and native file grants must be connected");
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "collab-transfer-runtime-")));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const keyring = new LocalCollaborationKeyring({ filePath: path.join(dir, "keys"), safeStorage: {
     isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => b.toString(),
   } });
   const store = new CollaborationStore({ dbPath: path.join(dir, "collaboration.db"), accountId: "alice", keyring });
-  t.after(() => store.close());
+  const runtimes = [];
+  t.after(async () => {
+    for (const runtime of runtimes) runtime.stop?.();
+    store.close();
+    await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
+  });
   store.replaceProjectionFromBootstrap({ conversations: [{ id: "conversation", kind: "direct" }] });
   const source = path.join(dir, "private-result.txt"); fs.writeFileSync(source, "local work");
   const state = { selections: 0, requests: 0, active: true };
@@ -30,7 +34,7 @@ function fixture(t) {
     chooseFile: async () => { state.selections++; return { canceled: false, filePaths: [source] }; },
     client: { objects: { async init() { state.requests++; throw Object.assign(new Error("secret URL"), { code: "COLLAB_RESPONSE_UNKNOWN", retryable: true }); } } },
   };
-  const create = (overrides = {}) => { const runtime = createTransferRuntime({ ...options, ...overrides }); t.after(() => runtime.stop?.()); return runtime; };
+  const create = (overrides = {}) => { const runtime = createTransferRuntime({ ...options, ...overrides }); runtimes.push(runtime); return runtime; };
   return { dir, store, source, state, options, create };
 }
 

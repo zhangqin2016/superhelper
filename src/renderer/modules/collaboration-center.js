@@ -15,6 +15,7 @@ import { createDetailSurface, createDetachControl, createDrawerSurface, wireConv
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
+import { renderCollaborationTypingHint } from "./collaboration-typing-view.js";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -455,20 +456,11 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!enabled) { attachments.reset(); setActive(false); if (status) status.textContent = t("collaboration.statusUnavailable"); }
     return enabled;
   }
-  function renderTypingHint(state) {
-    const node = byId("collaborationTyping");
-    if (!node) return;
-    const ids = (activeConversationId && state?.typing?.[activeConversationId]) || [];
-    const others = ids.filter((userId) => userId && userId !== (directory?.profile?.userId || ""));
-    if (!others.length) { node.hidden = true; node.textContent = ""; return; }
-    const named = others.map((userId) => identityName(resolvePerson(directory, userId))).filter((name) => name && !/^usr_[a-z0-9]+$/i.test(name));
-    node.textContent = others.length > 1
-      ? t("collaboration.typing.many", { count: others.length })
-      : (named[0] ? t("collaboration.typing.one", { name: named[0] }) : t("collaboration.typing.someone"));
-    node.hidden = false;
-  }
   const unsubscribe = window.assistantClient?.collaboration?.onStateChange?.((payload) => {
-    if (payload?.state?.ok === true) renderTypingHint(payload.state);
+    if (payload?.state?.ok === true) renderCollaborationTypingHint({
+      node: byId("collaborationTyping"), state: payload.state, conversationId: activeConversationId,
+      currentUserId: directory?.profile?.userId || "", directory,
+    });
     if (payload?.state?.ok === true && ["sync", "access-revoked", "bootstrap", "relationship"].includes(payload.type)) composer.refreshMentionCandidates?.();
     if (payload?.type === "availability" || payload?.state?.ok !== true) {
       viewGeneration += 1;

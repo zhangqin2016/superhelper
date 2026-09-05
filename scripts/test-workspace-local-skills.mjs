@@ -27,8 +27,12 @@ try {
   const escape = put('.agents/skills', 'escape');
   fs.unlinkSync(path.join(escape, 'SKILL.md'));
   fs.writeFileSync(path.join(outside,'SKILL.md'),raw);
-  fs.symlinkSync(path.join(outside,'SKILL.md'), path.join(escape, 'SKILL.md'));
-  fs.symlinkSync(outside,path.join(root,'.agents/skills/escape-directory'),'dir');
+  try {
+    fs.symlinkSync(path.join(outside,'SKILL.md'), path.join(escape, 'SKILL.md'));
+  } catch (error) {
+    if (process.platform !== 'win32' || error?.code !== 'EPERM') throw error;
+  }
+  fs.symlinkSync(outside,path.join(root,'.agents/skills/escape-directory'),process.platform === 'win32' ? 'junction' : 'dir');
   const report = discoverWorkspaceLocalSkills(root, { installedIds: ['platform-id'] });
   assert.equal(report.skills.length, 4, 'deduplicate directories and shadow ALL installed IDs');
   assert.ok(report.undescribed.includes('empty'));
