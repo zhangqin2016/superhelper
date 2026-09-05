@@ -2023,5 +2023,11 @@
   "settings.accountPasswordChanged": "Password updated",
   "settings.accountPasswordChangeFailed": "Could not change the password",
   "settings.accountLoginTitlePassword": "Company account sign-in",
-  "settings.accountLoginHintPassword": "Use the login name and password your company administrator issued. You will set a new password on first sign-in."
+  "settings.accountLoginHintPassword": "Use the login name and password your company administrator issued. You will set a new password on first sign-in.",
+  "settings.nickname": "Nickname",
+  "settings.nicknameSave": "Save nickname",
+  "settings.nicknameInvalid": "Use 1–32 characters without line breaks.",
+  "settings.nicknameSaving": "Saving…",
+  "settings.nicknameSaved": "Nickname saved",
+  "settings.nicknameFailed": "Could not save. Please retry."
 }

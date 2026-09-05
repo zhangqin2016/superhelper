@@ -348,6 +348,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   getAccountStatus: () => ipcRenderer.invoke("account:status"),
   sendAccountSmsCode: (phone) => ipcRenderer.invoke("account:sms-send", { phone }),
+  updateAccountProfile: (payload) => ipcRenderer.invoke("account:profile-update", payload || {}),
   loginAccountWithPassword: (payload) => ipcRenderer.invoke("account:password-login", payload || {}),
   changeAccountPassword: (payload) => ipcRenderer.invoke("account:password-change", payload || {}),
   loginAccountWithSms: (phoneOrPayload, code) => {

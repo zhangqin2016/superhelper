@@ -102,6 +102,7 @@ function defaultFeatures() {
   const editionFeatures = appEdition().features || {};
   return applyLocalFeatureOverrides({
     accountLogin: editionFeatures.account !== false,
+    enterpriseAccountLogin: true,
     purchase: editionFeatures.billing !== false,
     licenseActivation: true,
     usage: true,
@@ -568,7 +569,7 @@ const accountAuth = require("./service-client-account-auth").createAccountAuthCl
   devicePayload: () => devicePayload(),
   getDeviceId: () => getDeviceId(),
 });
-const { sendSmsCode, loginWithSms, loginWithPassword, changeAccountPassword, refreshAccountAccessToken, logoutAccount } = accountAuth;
+const { updateAccountProfile, sendSmsCode, loginWithSms, loginWithPassword, changeAccountPassword, refreshAccountAccessToken, logoutAccount } = accountAuth;
 
 async function fetchAccountEntitlements(accessToken) {
   return serviceFetch("/api/account/entitlements", {
@@ -822,6 +823,7 @@ module.exports = {
   loginWithSms,
   loginWithPassword,
   changeAccountPassword,
+  updateAccountProfile,
   refreshAccountAccessToken,
   logoutAccount,
   configuredServiceApiBaseUrl, fetchAccountEntitlements,

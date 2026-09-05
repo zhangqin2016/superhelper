@@ -2023,5 +2023,11 @@
   "settings.accountPasswordChanged": "تم تحديث كلمة المرور",
   "settings.accountPasswordChangeFailed": "تعذّر تغيير كلمة المرور",
   "settings.accountLoginTitlePassword": "تسجيل الدخول بحساب الشركة",
-  "settings.accountLoginHintPassword": "استخدم اسم الدخول وكلمة المرور اللذين أصدرهما مسؤول شركتك. ستعيّن كلمة مرور جديدة عند أول تسجيل دخول."
+  "settings.accountLoginHintPassword": "استخدم اسم الدخول وكلمة المرور اللذين أصدرهما مسؤول شركتك. ستعيّن كلمة مرور جديدة عند أول تسجيل دخول.",
+  "settings.nickname": "الاسم المستعار",
+  "settings.nicknameSave": "حفظ الاسم المستعار",
+  "settings.nicknameInvalid": "استخدم من 1 إلى 32 حرفًا بدون أسطر جديدة.",
+  "settings.nicknameSaving": "جارٍ الحفظ…",
+  "settings.nicknameSaved": "تم حفظ الاسم المستعار",
+  "settings.nicknameFailed": "تعذر الحفظ. يرجى المحاولة مجددًا."
 }

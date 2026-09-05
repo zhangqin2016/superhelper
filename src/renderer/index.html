@@ -648,6 +648,12 @@
 
                   <p id="accountFormStatus" class="settings-form-status account-form-status" hidden></p>
 
+                  <div id="accountNicknamePanel" class="settings-field" hidden>
+                    <label class="settings-field-label" for="accountNicknameInput" data-i18n="settings.nickname">昵称</label>
+                    <input id="accountNicknameInput" class="settings-input" type="text" autocomplete="nickname" maxlength="64" />
+                    <button id="accountNicknameSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.nicknameSave">保存昵称</button>
+                    <p id="accountNicknameStatus" class="settings-form-status" role="status" hidden></p>
+                  </div>
                   <div class="account-management-actions">
                     <button id="accountBillingBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.accountBilling">购买 / 充值</button>
                     <button id="accountLogoutBtn" class="settings-action-btn settings-action-btn--danger" type="button" data-i18n="settings.accountLogout">退出登录</button>

@@ -167,12 +167,23 @@ try {
   const changed = await call("POST", "/api/auth/password/change", { ...device, currentPassword: initialPassword, newPassword: "NewPass2026x" }, bearer);
   assert.equal(changed.status, 200, JSON.stringify(changed.body));
 
+  step("nickname updates only the signed-in account and survives login");
+  await pool.query("insert into user_profiles(user_id,lily_id,lily_id_display) values($1,$2,$2) on conflict(user_id) do nothing", [userId, "nickname-test-owner"]);
+  assert.equal((await call("POST", "/api/auth/profile", { ...device, displayName: "No auth" })).status, 401);
+  assert.equal((await call("POST", "/api/auth/profile", { ...device, deviceId: "wrong-device", displayName: "Wrong device" }, bearer)).status, 403);
+  assert.equal((await call("POST", "/api/auth/profile", { ...device, displayName: " " }, bearer)).status, 400);
+  const nickname = await call("POST", "/api/auth/profile", { ...device, displayName: " 小莉 🌸 ", userId: "someone-else" }, bearer);
+  assert.equal(nickname.status, 200, JSON.stringify(nickname.body));
+  assert.equal(nickname.body.displayName, "小莉 🌸");
+  assert.equal((await pool.query("select display_name from user_profiles where user_id=$1", [userId])).rows[0].display_name, "小莉 🌸");
+
   step("old password is dead, new one works and no longer forces a change");
   const oldAgain = await call("POST", "/api/auth/password/login", { ...device, loginName: "acme-owner", password: initialPassword });
   assert.equal(oldAgain.status, 401);
   const login2 = await call("POST", "/api/auth/password/login", { ...device, loginName: "acme-owner", password: "NewPass2026x" });
   assert.equal(login2.status, 200, JSON.stringify(login2.body));
   assert.equal(login2.body.user.passwordMustChange, false);
+  assert.equal(login2.body.user.displayName, "小莉 🌸");
 
   assert.equal((await call("POST", recoveryPath, { userId }, asAdmin)).status, 409, "activated owner is outside platform credential recovery");
 

@@ -24,7 +24,7 @@ import { initSupportSettings } from "./support-settings.js";
 import { initSupportDiagnosticsSettings } from "./support-diagnostics-settings.js";
 import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
 import { initMemorySettings, refreshMemorySettings } from "./memory-settings.js";
-import { initAccountSettings, refreshAccountSettings } from "./account-settings.js";
+import { initAccountSettings, refreshAccountSettings, applyAccountLoginPolicy } from "./account-settings.js";
 import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 
 const SETTINGS_PAGES = [
@@ -74,7 +74,7 @@ let appPolicyRefreshSeq = 0;
 
 export function accountFeatureEnabled() {
   const features = appPolicy?.features || {};
-  return features.account !== false && features.accountLogin !== false;
+  return features.enterpriseAccountLogin === true || (features.account !== false && features.accountLogin !== false);
 }
 
 function usageFeatureEnabled() {
@@ -101,6 +101,7 @@ export function applyAppPolicyToSettings(policy = {}) {
       ...(policy.features || {}),
     },
   };
+  applyAccountLoginPolicy(appPolicy);
   const accountEnabled = accountFeatureEnabled();
   const usageEnabled = usageFeatureEnabled();
   const accountNav = document.querySelector('.settings-nav-item[data-settings-page="account"], .settings-nav-item[data-edition-account-nav="true"]');

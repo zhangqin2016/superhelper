@@ -80,6 +80,10 @@ if (getServiceSettings().apiBaseUrl !== "https://lilyxinjiapo.lilywb.cn") {
   throw new Error(`service base should switch to UAE gateway: ${JSON.stringify(getServiceSettings())}`);
 }
 
+if (getClientPolicy().features.enterpriseAccountLogin !== true) {
+  throw new Error("overseas bootstrap must retain enterprise password login");
+}
+
 await workspaceAppCatalog();
 if (requests[0]?.url !== "https://lilyxinjiapo.lilywb.cn/api/client/bootstrap") {
   throw new Error(`UAE bootstrap should use edge host immediately: ${requests[0]?.url}`);

@@ -1,3 +1,4 @@
+import { normalizeNickname, updateAccountNickname } from "../../services/account-profile.js";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { zodBody, okResponse } from "../../openapi.js";
@@ -377,6 +378,18 @@ export function registerPublicAuthRoutes(app) {
       return reply.send({ ok: true, changed: true });
     },
   );
+
+  app.post("/api/auth/profile", async (request, reply) => {
+    const input = request.body || {};
+    const account = request.headers.authorization
+      ? await requireAccountSession(request, reply, input)
+      : await requireWebAccount(request, reply);
+    if (!account) return;
+    const displayName = normalizeNickname(input.displayName);
+    if (!displayName) return reply.code(400).send({ ok: false, code: "INVALID_NICKNAME" });
+    const result = await updateAccountNickname(db, account.userId, displayName);
+    return reply.code(result.ok ? 200 : 403).send(result);
+  });
 
   app.get("/api/auth/session/current", {
     schema: { tags: ["public:auth"], summary: "Current web account identity", response: { 200: okResponse({ user: { type: "object" } }) } },

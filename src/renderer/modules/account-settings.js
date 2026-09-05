@@ -1,3 +1,4 @@
+import { initAccountNickname, renderAccountNickname } from "./account-nickname.js";
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
@@ -14,6 +15,18 @@ let currentAccountPhone = "";
 let currentAccountLoginName = "";
 let loginMode = "sms";
 let passwordChanging = false;
+let smsLoginEnabled = true;
+
+export function applyAccountLoginPolicy(policy = {}) {
+  const features = policy.features || {};
+  smsLoginEnabled = features.account !== false && features.accountLogin !== false;
+  const smsTab = $("accountModeSmsBtn");
+  if (smsTab) smsTab.hidden = !smsLoginEnabled;
+  const billing = $("accountBillingBtn");
+  if (billing) billing.hidden = !smsLoginEnabled || features.purchase === false || features.billing === false;
+  if (!smsLoginEnabled) setLoginMode("password");
+}
+
 
 function setStatus(text, kind = "") {
   const el = $("accountFormStatus");
@@ -65,7 +78,7 @@ function updateLoginButton() {
 
 /** Two ways in: a personal phone, or an account the company issued. */
 function setLoginMode(mode) {
-  loginMode = mode === "password" ? "password" : "sms";
+  loginMode = mode === "password" || !smsLoginEnabled ? "password" : "sms";
   const sms = $("accountLoginContent");
   const pw = $("accountPasswordContent");
   if (sms) sms.hidden = accountLoggedIn || loginMode !== "sms";
@@ -191,8 +204,10 @@ export async function refreshAccountSettings() {
     statusEl.textContent = t("settings.accountStatusFailed");
     setStatus(t("settings.accountStatusFailed"), "error");
     setLoggedInUi(false);
+    renderAccountNickname(null);
     return;
   }
+  renderAccountNickname(status);
   if (!status?.loggedIn) {
     currentAccountPhone = "";
     currentAccountLoginName = "";
@@ -245,6 +260,7 @@ async function sendSmsCode() {
 }
 
 async function loginWithSms(event) {
+  if (!smsLoginEnabled) { event?.preventDefault(); return; }
   event?.preventDefault?.();
   if (accountLoggingIn || accountLoggedIn) return;
   const phone = $("accountPhoneInput")?.value || "";
@@ -435,6 +451,7 @@ async function logout() {
 }
 
 export function initAccountSettings() {
+  initAccountNickname(refreshAccountSettings);
   $("accountPhoneInput")?.addEventListener("input", () => updateAccountButtons());
   $("accountCodeInput")?.addEventListener("input", (event) => {
     event.target.value = String(event.target.value || "").replace(/\D/g, "").slice(0, 6);

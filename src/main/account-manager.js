@@ -148,6 +148,21 @@ function accountAccessStatus() {
   return { ok: true, usable: true, accountStatus: status };
 }
 
+async function updateProfile({ displayName } = {}) {
+  const generation = accountGeneration;
+  const ownerId = readState().user?.id;
+  const token = await ensureAccessToken();
+  if (!token.ok) return token;
+  if (generation !== accountGeneration) return { ok: false, error: "ACCOUNT_SESSION_CHANGED" };
+  const result = await serviceClient.updateAccountProfile({ accessToken: token.accessToken, displayName });
+  const current = readState();
+  if (generation !== accountGeneration || current.user?.id !== ownerId) return { ok: false, error: "ACCOUNT_SESSION_CHANGED" };
+  if (!result.ok) return result;
+  if (typeof result.json?.displayName !== "string") return { ok: false, error: "INVALID_PROFILE_RESPONSE" };
+  writeState({ ...current, user: { ...current.user, displayName: result.json.displayName } });
+  return { ok: true, displayName: result.json.displayName };
+}
+
 async function sendSmsCode(phone) {
   return serviceClient.sendSmsCode(phone);
 }
@@ -284,6 +299,7 @@ function clearAccount() {
   writeState({});
 }
 module.exports = {
+  updateProfile,
   accountStatus,
   accountAccessStatus,
   isTransientRefreshFailure,

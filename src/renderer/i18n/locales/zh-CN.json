@@ -2023,5 +2023,11 @@
   "settings.accountPasswordChanged": "密码已更新",
   "settings.accountPasswordChangeFailed": "密码修改失败",
   "settings.accountLoginTitlePassword": "企业账号登录",
-  "settings.accountLoginHintPassword": "使用企业管理员发给你的登录名和密码。首次登录需要设置新密码。"
+  "settings.accountLoginHintPassword": "使用企业管理员发给你的登录名和密码。首次登录需要设置新密码。",
+  "settings.nickname": "昵称",
+  "settings.nicknameSave": "保存昵称",
+  "settings.nicknameInvalid": "昵称须为 1–32 个字符，不能包含换行。",
+  "settings.nicknameSaving": "正在保存…",
+  "settings.nicknameSaved": "昵称已保存",
+  "settings.nicknameFailed": "保存失败，请重试"
 }

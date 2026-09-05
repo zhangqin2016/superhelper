@@ -77,7 +77,15 @@ function createAccountAuthClient({ serviceFetch, devicePayload, getDeviceId }) {
     });
   }
 
-  return { sendSmsCode, loginWithSms, loginWithPassword, changeAccountPassword, refreshAccountAccessToken, logoutAccount };
+  async function updateAccountProfile({ accessToken, displayName } = {}) {
+    return serviceFetch("/api/auth/profile", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${String(accessToken || "").trim()}` },
+      body: JSON.stringify({ ...devicePayload(), displayName }),
+    });
+  }
+
+  return { updateAccountProfile, sendSmsCode, loginWithSms, loginWithPassword, changeAccountPassword, refreshAccountAccessToken, logoutAccount };
 }
 
 module.exports = { createAccountAuthClient };

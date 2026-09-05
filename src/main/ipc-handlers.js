@@ -248,15 +248,16 @@ function registerAll(ctx) {
   ipcMain.handle("license:refresh", () =>
     require("./license-manager").refreshServerLicense());
 
-  const accountDisabled = () => {
+  const personalAccountDisabled = () => {
     const features = require("./service-client").getClientPolicy().features || {};
     return features.account === false || features.accountLogin === false;
   };
+  const accountDisabled = () => personalAccountDisabled() && require("./service-client").getClientPolicy().features?.enterpriseAccountLogin !== true;
   const disabledAccountResult = () => ({ ok: false, error: "ACCOUNT_FEATURE_DISABLED" });
   ipcMain.handle("account:status", () =>
     accountDisabled() ? { ok: true, loggedIn: false, disabled: true } : require("./account-manager").accountStatus());
   ipcMain.handle("account:sms-send", async (_event, payload) =>
-    accountDisabled() ? disabledAccountResult() : require("./account-manager").sendSmsCode(payload?.phone || payload));
+    personalAccountDisabled() ? disabledAccountResult() : require("./account-manager").sendSmsCode(payload?.phone || payload));
   ipcMain.handle("account:password-login", async (_event, payload) => {
     if (accountDisabled()) return disabledAccountResult();
     const result = await require("./account-manager").loginWithPassword(payload || {});
@@ -266,12 +267,14 @@ function registerAll(ctx) {
     ctx.refreshCollaborationService?.();
     return result;
   });
+  ipcMain.handle("account:profile-update", (_event, payload) =>
+    accountDisabled() ? disabledAccountResult() : require("./account-manager").updateProfile(payload || {}));
   ipcMain.handle("account:password-change", async (_event, payload) => {
     if (accountDisabled()) return disabledAccountResult();
     return require("./account-manager").changePassword(payload || {});
   });
   ipcMain.handle("account:sms-login", async (_event, payload) => {
-    if (accountDisabled()) return disabledAccountResult();
+    if (personalAccountDisabled()) return disabledAccountResult();
     const result = await require("./account-manager").loginWithSms(payload || {});
     if (!result?.ok) return result;
     ctx.scheduledTaskManager?.handlePrincipalChange?.();
@@ -316,7 +319,7 @@ function registerAll(ctx) {
     return { ok: true, organizationId: require("./account-manager").setCurrentOrganizationId(organizationId) };
   });
   ipcMain.handle("account:billing-link", () =>
-    accountDisabled() ? disabledAccountResult() : require("./account-manager").createBillingLink());
+    personalAccountDisabled() ? disabledAccountResult() : require("./account-manager").createBillingLink());
   ipcMain.handle("account:logout", async () => {
     if (accountDisabled()) return { ok: true };
     const result = await require("./account-manager").logout();

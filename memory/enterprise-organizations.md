@@ -73,3 +73,5 @@ platform-admin governance. Full design: `docs/enterprise-organizations-design.md
 - `npm` is not on the default PATH in this dev shell; use
   `~/.nvm/versions/node/v20.11.1/bin` (web needs Node >= 20.9; system node 16
   breaks `next dev`).
+
+Nickname editing (desktop source): Settings → Account saves 1–32 Unicode characters through `/api/auth/profile`. The server derives identity from the live bearer/device or web session, updates `users.display_name` and an existing `user_profiles.display_name` transactionally, and preserves login name/Lily ID. It does not create a collaboration identity as a side effect. Main-process generation checks reject stale account-switch responses. Collaborators receive the changed profile through their next directory snapshot; this change does not add live profile event fanout. Desktop package and API deployment are required before production use.
