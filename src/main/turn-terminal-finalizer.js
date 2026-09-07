@@ -9,6 +9,7 @@ const { buildEvidenceRecoveryContext } = require("./turn-recovery-context");
 const { TERMINAL_TYPES } = require("./turn-event-types");
 const { recoverFinalizationFailure, DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("./turn-finalize-fallback");
 const { promoteTerminalNarrative } = require("./turn-terminal-narrative");
+const { collectLearnedSkills } = require("./turn-learned-skills");
 const { attachDraftReceipts } = require("./character-worlds/receipt-finalizer"); const { completeShortTurnLifecycle } = require("./task-lifecycle-runtime");
 const {
   appendTimelineNotice,
@@ -36,41 +37,6 @@ function terminalTypeForWinner(winner, fallback) {
     case "stalled": return "turn.stalled";
     case "failed": return "turn.failed";
     default: return fallback;
-  }
-}
-function collectLearnedSkills(ctx, sessionId, state) {
-  try {
-    const { collectLearnedSkillDrafts } = require("./learned-skills");
-    const skillManager = require("./skill-manager");
-    const session = ctx.sessionManager?.findById?.(sessionId) || null;
-    const project = session?.projectId && ctx.projectManager?.find
-      ? ctx.projectManager.find(session.projectId)
-      : null;
-    const learned = collectLearnedSkillDrafts(
-      skillManager.registerLearnedSkillDir,
-      undefined,
-      {
-        sessionId,
-        projectId: session?.projectId || "",
-        workspacePath: project?.path || "",
-      },
-    );
-    if (!learned.length) return;
-    if (session) {
-      try {
-        skillManager.writeSessionAgentGuide(sessionId, session, project?.path || "");
-      } catch (err) {
-        log.warn("learned skill guide refresh failed: %s", err?.message || err);
-      }
-    }
-    appendTimelineNotice(state, {
-      code: "learnedSkillDraft",
-      level: "info",
-      panel: true,
-      done: true,
-    }, Date.now());
-  } catch (err) {
-    log.warn("learned skill collection failed: %s", err?.message || err);
   }
 }
 function clearTurnState(state) {

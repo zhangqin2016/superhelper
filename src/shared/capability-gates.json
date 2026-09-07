@@ -827,6 +827,20 @@
       ]
     },
     {
+      "id": "collaboration-redis-presence",
+      "protects": "Authorized, expiring IM presence across server instances with exact session/device binding and bounded Redis queries.",
+      "baseline": "PostgreSQL remains authoritative for messages, outbox and access control; presence is advisory and does not persist message content.",
+      "failureFallback": "Redis failure or uncertain leases return unknown instead of false offline; durable messaging continues and old connections cannot erase replacement leases.",
+      "tests": [
+        "scripts/test-collaboration-presence-redis.mjs",
+        "scripts/test-collaboration-presence-query.mjs",
+        "scripts/test-collaboration-presence-routes.mjs",
+        "scripts/test-collaboration-presence-gateway.mjs",
+        "scripts/test-collaboration-presence-hints.mjs",
+        "scripts/test-collaboration-redis-deploy.mjs"
+      ]
+    },
+    {
       "id": "collaboration-identity-and-list-stability",
       "protects": "IM lists and headers name people and conversations the way a colleague recognises them. A 1:1 has no stored title and used to show the raw conversation id — a long opaque string — in the inbox, the Teams channel list, the forward picker and the thread header; a person without a nickname was shown by Lily handle or an opaque placeholder. Now a conversation is named after its other member(s) and a person by nickname → enterprise login → server-masked phone (138****5678) → handle, never a raw id. The Teams view no longer rebuilds on sync events that changed nothing visible (typing ticks, read receipts, the 15 s directory poll, onlineUntil advancing), and a real rebuild keeps open channel forms.",
       "baseline": "Reported 2026-09-05: '会话会展示一大长串' (inbox rows showed conv_… ids for every direct chat) and '在 team 里跳来跳去' (teams.update() did list.replaceChildren() on every load(); socialDirty was set on every state event and a 15 s poll). Server rows carried no login/phone facets at all, so nothing better than lilyId was available to show. Strictly additive: rows without the new facets normalise to empty strings and every previous fallback still applies; the fingerprint short-circuit can only skip a rebuild whose inputs are byte-identical, and revocation handling runs before it on every update. The live enterprise directory carries the same facets (probe-gated on migration 044) and the desktop merge keeps local facets when a live row lacks them.",

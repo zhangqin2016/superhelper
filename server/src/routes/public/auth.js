@@ -379,7 +379,9 @@ export function registerPublicAuthRoutes(app) {
     },
   );
 
-  app.post("/api/auth/profile", async (request, reply) => {
+  app.post("/api/auth/profile", {
+    schema: { tags: ["public:auth"], summary: "Update the current account nickname" },
+  }, async (request, reply) => {
     const input = request.body || {};
     const account = request.headers.authorization
       ? await requireAccountSession(request, reply, input)

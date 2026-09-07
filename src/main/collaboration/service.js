@@ -22,7 +22,7 @@ const { createAttachmentSendCoordinator } = require("./attachment-send");
 const { createReadRecovery } = require("./read-recovery");
 const { createFriendLookup, createDirectoryReads } = require("./friend-lookup");
 const { messageMetadata, messageIdentifier, validateCreateBody, sameCreateIntent } = require("./message-intent");
-const { validOperationRequest } = require("./message-operation-view");
+const { createMessageCacheReads } = require("./message-cache-reads");
 const { createEditDraftService } = require("./edit-draft-service");
 
 function unavailableService() {
@@ -319,45 +319,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       getMentionCandidates({ conversationId } = {}) {
         return enqueueSync(() => socialDirectory.getMentionCandidates({ store, client, deviceId, conversationId, assertActive, recoverDeniedHistory, candidateCache }));
       },
-      getDraft({ conversationId } = {}) {
-        if (stopped) return stoppedResult();
-        if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };
-        const draft = store.getDraft({ conversationId, draftId: "composer" });
-        return { ok: true, text: draft?.text || "", ...messageMetadata(draft || {}) };
-      },
+      ...createMessageCacheReads({ store, deviceId, enqueueSync, assertActive, isStopped: () => stopped, stoppedResult }),
       ...createEditDraftService({ store, enqueueSync, assertActive, isStopped: () => stopped, stoppedResult }),
-      readMessages({ conversationId, messageIds } = {}) {
-        if (stopped) return stoppedResult();
-        if (!Array.isArray(messageIds) || messageIds.length > 200 || messageIds.some((id) => typeof id !== "string" || !id || id.length > 200)) return { ok: false, code: "COLLABORATION_INVALID_INPUT" };
-        return enqueueSync(() => {
-          if (!store.getConversation({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND" };
-          const messages = [], unavailableMessageIds = [];
-          for (const messageId of messageIds) {
-            const row = store.getMessage({ conversationId, messageId });
-            if (row) messages.push(row); else unavailableMessageIds.push(messageId);
-          }
-          return { ok: true, messages, unavailableMessageIds };
-        });
-      },
-      readMessageOperations(input = {}) {
-        if (stopped) return stoppedResult();
-        const request = validOperationRequest(input);
-        if (!request) return { ok: false, code: "COLLABORATION_INVALID_INPUT" };
-        const accountId = store.accountId;
-        return enqueueSync(() => {
-          const accessFailure = () => {
-            assertActive();
-            if (store.accountId !== accountId) return { ok: false, code: "COLLAB_ACCOUNT_CHANGED" };
-            if (isConversationRevoked(store, request.conversationId)) return { ok: false, code: "COLLAB_ACCESS_REVOKED" };
-            if (!store.getConversation?.({ conversationId: request.conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND" };
-            return null;
-          };
-          const beforeRead = accessFailure();
-          if (beforeRead) return beforeRead;
-          const result = store.readMessageOperations({ ...request, deviceId });
-          return accessFailure() || result;
-        });
-      },
       saveDraft({ conversationId, text, replyToMessageId, mentionUserIds } = {}) {
         if (stopped) return stoppedResult();
         if (!store.getConversation?.({ conversationId })) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };

@@ -7,7 +7,7 @@ import { createConversationPrefs } from "./collaboration-conversation-prefs.js";
 import { createForwardAction, createBatchForwardAction } from "./collaboration-forward.js";
 import { createMessageMultiSelect, createLocalDeleteAction } from "./collaboration-multiselect.js";
 import { createUnreadBadge } from "./collaboration-unread-badge.js";
-import { renderCollaborationTimeline } from "./collaboration-timeline.js";
+import { createCenterTimeline } from "./collaboration-center-timeline.js";
 import { initCollaborationComposer } from "./collaboration-composer.js";
 import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
@@ -70,7 +70,6 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const replySourceMasks = createReplySourceMaskView();
   let composer;
   const attachments = initCollaborationAttachments({ root: byId("collaborationTransfers"), attachButton: byId("collaborationAttachButton"), composerMode: true, onDraftChange: () => composer?.refreshAttachments?.() });
-  let lastRenderedCount = 0;
   // The most recent social payload, plus which hidden list still needs it.
   let lastSocial = null;
   const socialDirty = { people: true, teams: true };
@@ -79,73 +78,34 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (section === "people" && socialDirty.people) { socialDirty.people = false; friends.update(lastSocial); }
     if (section === "teams" && socialDirty.teams) { socialDirty.teams = false; teams.update(lastSocial); }
   };
-  const renderTimeline = () => {
-    const wasAway = Boolean(activeConversationId) && timeline && !atThreadBottom();
-    const grew = historyMessages.length - lastRenderedCount;
-    if (wasAway && grew > 0) unseenBelow += grew;
-    lastRenderedCount = historyMessages.length;
-    const needle = searchQuery.trim().toLocaleLowerCase();
-    const kept = inboxPrefs().applyMessages(historyMessages);
-    const visibleMessages = needle ? kept.filter((message) => String(message.bodyText || "").toLocaleLowerCase().includes(needle)) : kept;
-    renderCollaborationTimeline(timeline, visibleMessages, {
-    currentUserId: directory?.profile?.userId || "",
-    showSenderNames: activeConversationKind === "group" || activeConversationKind === "channel",
-    peerReadSeq: activePeerReadSeq,
-    unreadFromSeq: activeUnreadFromSeq,
-    highlight: searchQuery.trim(),
-    resolveSender: (userId) => identityName(resolvePerson(directory, userId)),
-    onDownload: (input, purpose, preview) => attachments.download(input, purpose, preview),
-    // Thumbnails resolve only for attachments already downloaded; the panel
-    // owns the transfer list, so it answers by objectId and caches the URL.
-    resolveAttachmentPreview: (objectId) => attachments.resolvePreview(objectId),
-    onPreview: (objectId) => attachments.openPreview(objectId),
-    canDownload: (purpose) => purpose === "workspace" ? transferPolicy.workspaceShares === true : transferPolicy.attachments === true,
-    canReply: (message) => !disposed && policyEnabled && !panel.hidden && !navigating && Boolean(activeConversationId) && historyMessages.includes(message),
-    onReply: (message) => {
-      if (disposed || !policyEnabled || panel.hidden || navigating || !activeConversationId || !historyMessages.includes(message) || message.revokedAt || message.visibilityMask || !message.id || !(Number(message.seq) > 0)) return;
-      composer.setReply?.({ messageId: message.id });
-      byId("collaborationComposer")?.focus();
-    },
-    // Anyone in the conversation may react to any live message — unlike edit and
-    // revoke, which are author-only.
-    canReact: (message) => !disposed && policyEnabled && !panel.hidden && !navigating
-      && Boolean(activeConversationId) && historyMessages.includes(message)
-      && !message.revokedAt && !message.visibilityMask && Boolean(message.id) && Number(message.seq) > 0,
-    onReact: (message, emoji, active) => {
-      if (disposed || !policyEnabled || panel.hidden || navigating || !activeConversationId) return;
-      if (!message?.id || !(Number(message.seq) > 0) || message.revokedAt || message.visibilityMask) return;
-      const conversationId = activeConversationId;
-      const clientCommandId = `rct_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-      void Promise.resolve(window.assistantClient?.collaboration?.react?.({
-        conversationId, messageId: message.id, clientCommandId, emoji, active,
-      })).then(async (result) => {
-        if (disposed || conversationId !== activeConversationId) return;
-        await openConversation(conversationId, { userNavigation: false });
-        if (disposed || conversationId !== activeConversationId) return;
-        if (result?.ok !== true || result?.state === "failed" || result?.state === "delivery_unknown") throw new Error("reaction failed");
-      }).catch(() => {
-        if (disposed || conversationId !== activeConversationId) return;
-        if (status) { status.textContent = t("collaboration.reactionFailed"); status.classList.remove("is-available"); }
-        if (live) live.textContent = t("collaboration.reactionFailed");
-      });
-    },
-    canEdit: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
-    onEdit: (message) => {
-      if (disposed || !policyEnabled || panel.hidden || navigating || !activeConversationId || !message.id) return;
-      composer.beginEdit?.({ conversationId: activeConversationId, messageId: message.id, baseRevision: Number(message.revision) || 1, bodyText: message.bodyText || "" });
-      byId("collaborationComposer")?.focus();
-    },
-    onForward: forwardMessage, selection: multiSelect, onDeleteLocal: deleteMessageLocally,
-    canRevoke: (message) => message.isOwn === true || message.senderUserId === directory?.profile?.userId,
-    onRevoke: async (message) => {
-      if (disposed || !policyEnabled || !activeConversationId || !message.id) return;
-      if (!window.confirm?.(t("collaboration.revoke.confirm"))) return;
-      const result = await window.assistantClient?.collaboration?.revoke?.({ conversationId: activeConversationId, messageId: message.id, clientCommandId: collabCommandId(), expectedRevision: Number(message.revision) || 1 }).catch(() => null);
-      if (result?.ok) void load();
-    },
+  let lastRenderedCount = 0;
+  const renderTimeline = createCenterTimeline({
+    get lastRenderedCount() { return lastRenderedCount; },
+    set lastRenderedCount(value) { lastRenderedCount = value; },
+    get activeConversationId() { return activeConversationId; },
+    get timeline() { return timeline; },
+    get historyMessages() { return historyMessages; },
+    get searchQuery() { return searchQuery; },
+    get inboxPrefs() { return inboxPrefs; },
+    get directory() { return directory; },
+    get activeConversationKind() { return activeConversationKind; },
+    get activePeerReadSeq() { return activePeerReadSeq; },
+    get activeUnreadFromSeq() { return activeUnreadFromSeq; },
+    get attachments() { return attachments; },
+    get transferPolicy() { return transferPolicy; },
+    get disposed() { return disposed; },
+    get policyEnabled() { return policyEnabled; },
+    get panel() { return panel; },
+    get navigating() { return navigating; },
+    get composer() { return composer; },
+    get openConversation() { return openConversation; },
+    get status() { return status; },
+    get live() { return live; },
+    get forwardMessage() { return forwardMessage; },
+    get multiSelect() { return multiSelect; },
+    get deleteMessageLocally() { return deleteMessageLocally; },
+    get load() { return load; },
   });
-    refreshScrollLatest();
-  };
   let historyMessages = [];
   let nextBeforeSeq = null;
   let hasMore = false;
@@ -469,33 +429,6 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const conversationHeaderControl = wireConversationHeader({ input: conversationSearch, toggle: byId("collaborationConversationSearchToggle"), infoButton: byId("collaborationConversationInfo"),
     onChange: (value) => { searchQuery = value; renderTimeline(); },
     onInfo: () => { if (!activeConversationId) return; if (lastSocial) teams.update(lastSocial); void teams.showConversation(activeConversationId, { surface: "drawer" }); } });
-
-  // Scroll-to-latest: a thread scrolled away from the bottom must offer a way
-  // back, and must say how many messages arrived while you were reading up.
-  // Without it, "new messages arrived" is invisible unless you happen to be at
-  // the bottom already, which is where the timeline auto-scrolls only when you
-  // ALREADY were.
-  const scrollLatest = byId("collaborationScrollLatest");
-  const scrollLatestCount = byId("collaborationScrollLatestCount");
-  let unseenBelow = 0;
-  const atThreadBottom = () => !timeline || timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 40;
-  function refreshScrollLatest() {
-    if (!scrollLatest) return;
-    const away = Boolean(activeConversationId) && !atThreadBottom();
-    if (!away) unseenBelow = 0;
-    scrollLatest.hidden = !away;
-    if (scrollLatestCount) {
-      scrollLatestCount.hidden = unseenBelow < 1;
-      scrollLatestCount.textContent = unseenBelow > 99 ? "99+" : String(unseenBelow);
-    }
-  }
-  timeline?.addEventListener("scroll", refreshScrollLatest, { passive: true });
-  scrollLatest?.addEventListener("click", () => {
-    if (!timeline) return;
-    timeline.scrollTop = timeline.scrollHeight;
-    unseenBelow = 0;
-    refreshScrollLatest();
-  });
 
   async function refresh() {
     const view = viewGeneration;

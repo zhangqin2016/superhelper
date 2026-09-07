@@ -447,6 +447,12 @@ function compactTaskRunForStore(taskRun = null) {
     successCriteria: Array.isArray(taskRun.successCriteria) ? taskRun.successCriteria : [],
     phase: taskRun.phase || "",
     plan: Array.isArray(taskRun.plan) ? taskRun.plan : [],
+    planSync: taskRun.planSync && typeof taskRun.planSync === "object" ? {
+      todoAt: taskRun.planSync.todoAt || null,
+      toolsSinceTodo: Number(taskRun.planSync.toolsSinceTodo || 0),
+      stale: Boolean(taskRun.planSync.stale),
+      reconciled: taskRun.planSync.reconciled ? { ...taskRun.planSync.reconciled } : null,
+    } : null,
     activeStep: taskRun.activeStep || "",
     progress: taskRun.progress || null,
     liveness: taskRun.liveness || null,

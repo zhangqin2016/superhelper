@@ -20,7 +20,7 @@
 .remote-task-status.is-active, .remote-task-status.is-accepted { color: var(--collab-accent); }
 .remote-task-button { appearance: none; min-block-size: 36px; padding: 8px 14px; border: 1px solid var(--chat-divider); border-radius: var(--radius-md); color: var(--chat-ink); background: var(--chat-input); font: inherit; font-size: var(--text-sm); font-weight: 500; line-height: 1.4; cursor: pointer; box-shadow: none; transition: background 120ms ease; }
 .remote-task-button:hover { background: var(--collab-hover-faint); }
-.remote-task-button.is-primary { background: var(--collab-send-btn); color: var(--collab-send-ink, white); border-color: transparent; }
+.remote-task-button.is-primary { background: var(--collab-send-btn); color: #fff; border-color: transparent; }
 .remote-task-button.is-primary:hover { filter: brightness(0.96); }
 .remote-task-button:disabled { opacity: 0.45; cursor: default; filter: none; }
 .remote-task-button:focus-visible, .remote-task-entry:focus-visible, .remote-task-reason:focus-visible { outline: 2px solid var(--collab-accent); outline-offset: 3px; }

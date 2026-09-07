@@ -30,6 +30,7 @@ Object.assign(sample, {
   successCriteria: ["verified"],
   phase: "completed",
   plan: [],
+  planSync: { todoAt: 100, toolsSinceTodo: 2, stale: true, reconciled: { source: "model", at: 120 }, tools: [{ privatePayload: "must not persist" }] },
   evidence: [],
   risks: [],
   resumeState: {},
@@ -45,6 +46,8 @@ for (const [label, compact] of [
     [...manifest.taskRunFields].sort(),
     `${label} TaskRun projection drifted from the shared contract`,
   );
+  assert.deepEqual(compact(sample).planSync, { todoAt: 100, toolsSinceTodo: 2, stale: true, reconciled: { source: "model", at: 120 } }, `${label} keeps only the safe plan sync summary`);
+  assert.equal(compact({ ...sample, planSync: null }).planSync, null, `${label} accepts old snapshots`);
 }
 
 const event = runtimeSchema.createRuntimeEvent({

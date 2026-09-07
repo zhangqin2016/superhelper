@@ -275,7 +275,7 @@ function fakeSender() {
   const clientConfig = fs.readFileSync(path.join(ROOT, "server/src/services/client-config.js"), "utf8");
   assert.match(clientConfig, /LILY_ASR_RELAY_URL/, "gateway media mode delivers the relay URL");
   const asrGateway = fs.readFileSync(path.join(ROOT, "server/src/services/asr-gateway.js"), "utf8");
-  assert.match(asrGateway, /verifyModelGatewayToken/, "relay authenticates gateway tokens");
+  assert.match(asrGateway, /await verifyLiveModelGatewayToken\(bearerToken\(request\), "vision"\)/, "relay authenticates gateway tokens against live account state");
   assert.match(asrGateway, /session\.finish/, "relay flushes the trailing segment on finish");
   const appJs = fs.readFileSync(path.join(ROOT, "src/renderer/app.js"), "utf8");
   assert.match(appJs, /initVoiceDictation/, "renderer initializes voice dictation");

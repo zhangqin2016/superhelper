@@ -2847,11 +2847,10 @@
   color: color-mix(in srgb, currentColor 70%, transparent);
 }
 /* Presence is a quiet hint with a text equivalent in every locale. */
-.collaboration-presence { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted, #737b87); font-size: var(--text-xs); line-height: 1.4; white-space: nowrap; }
+.collaboration-presence { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.4; white-space: nowrap; }
 .collaboration-presence::before { content: ""; width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; opacity: .55; }
-.collaboration-presence[data-presence="online"] { color: #27834d; }
+.collaboration-presence[data-presence="online"] { color: var(--success-text); }
 .collaboration-presence[data-presence="online"]::before { opacity: 1; }
-[data-theme="dark"] .collaboration-presence[data-presence="online"] { color: #75c895; }
 .collaboration-header-presence { min-width: 0; }
 .collaboration-row-content > .collaboration-presence { font-size: var(--text-xs); }
 .enterprise-roster .collaboration-row-open[hidden] { display: none; }

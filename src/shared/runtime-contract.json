@@ -213,6 +213,7 @@
     "successCriteria",
     "phase",
     "plan",
+    "planSync",
     "activeStep",
     "progress",
     "liveness",

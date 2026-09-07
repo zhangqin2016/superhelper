@@ -230,6 +230,12 @@ function compactTaskRun(taskRun = {}) {
           status: step.status || "",
         }))
       : [],
+    planSync: taskRun.planSync && typeof taskRun.planSync === "object" ? {
+      todoAt: taskRun.planSync.todoAt || null,
+      toolsSinceTodo: Number(taskRun.planSync.toolsSinceTodo || 0),
+      stale: Boolean(taskRun.planSync.stale),
+      reconciled: compactValue(taskRun.planSync.reconciled || null, 500),
+    } : null,
     activeStep: taskRun.activeStep || "",
     progress: compactValue(taskRun.progress || null, 500),
     liveness: compactValue(taskRun.liveness || null, 500),
