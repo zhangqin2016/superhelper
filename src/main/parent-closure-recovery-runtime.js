@@ -12,9 +12,10 @@ const log = getLogger("parent-closure-recovery-runtime");
 
 function persistedSource(source = {}, evidence = {}) {
   return {
-    objective: String(source.objective || source.state?.enginePayload?.rawText || "").trim().slice(0, 1200),
+    objective: String(source.objective || source.state?.enginePayload?.rawText || "").trim(),
     files: Array.isArray(source.files) ? source.files.slice(0, 64) : [],
     taskContract: source.taskContract || null,
+    continuationHandoff: source.payload?.continuationHandoff || null,
     // The immutable task core remains in turn_inputs. Persist only its
     // identity here; restart recovery rehydrates the full envelope by source
     // turn id instead of duplicating a potentially large context snapshot.
@@ -128,7 +129,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
       };
       emitRecovery("started");
       const rawObjective = String(source.objective || source.state?.enginePayload?.rawText || "").trim();
-      const guidance = buildParentClosurePrompt({ objective: rawObjective, evidence: decision.evidence });
+      const guidance = buildParentClosurePrompt({ objective: rawObjective, evidence: decision.evidence, continuationHandoff: source.payload?.continuationHandoff });
       if (typeof sendUserMessage !== "function" || !rawObjective) {
         if (durableClaim?.ok) {
           manager.markParentClosureRecoveryUnavailable(sessionId, {
@@ -222,7 +223,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
           pendingHooks: new Map(),
           currentPayload: { parentClosureRecovery: false },
         },
-        payload: { stalled: true },
+        payload: source.continuationHandoff ? { code: 0, continuationHandoff: source.continuationHandoff } : { stalled: true },
       });
       if (result.ok) resumed += 1;
     }

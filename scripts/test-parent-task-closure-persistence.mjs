@@ -33,6 +33,7 @@ const source = {
     running: [],
   },
   taskCore: { fingerprint: "sha256:source-core", taskId: "task-parent" },
+  continuationHandoff: { schemaVersion: 1, reason: "budget_exhausted", progress: 2, unfinished: [{ title: "remaining acceptance", status: "pending" }] },
 };
 
 let store = new MessageStore(dbPath, blobDir);
@@ -78,6 +79,7 @@ const restored = store.getParentClosureRecovery(identity.sessionId, identity.sou
 assert.equal(restored.status, "dispatched");
 assert.equal(restored.recoveryTurnId, prepared.recovery.recoveryTurnId);
 assert.deepEqual(restored.source.taskContract.intentContract, source.taskContract.intentContract);
+assert.deepEqual(restored.source.continuationHandoff, source.continuationHandoff, "restart preserves remaining work instead of converting it into a failed-turn replay");
 assert.equal(store.claimParentClosureRecovery({ ...identity, now: 10_003 }).reason, "ALREADY_DISPATCHED");
 store.close();
 

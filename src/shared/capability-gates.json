@@ -2,6 +2,25 @@
   "schemaVersion": 1,
   "gates": [
     {
+      "id": "task-completion-integrity",
+      "protects": "Task verification and durable completion cannot hide outstanding work or invent successful checks.",
+      "baseline": "Answers remain deliverable without machine-verifiable evidence; existing bounded engine and parent recovery remain available.",
+      "failureFallback": "Unknown, stale, failed or incomplete evidence remains unverified or observed. Continuation never bypasses user input or recursively recovers itself.",
+      "tests": [
+        "scripts/test-task-completion-integrity.mjs",
+        "scripts/test-task-original-acceptance.mjs",
+        "scripts/test-task-objective-coverage.mjs",
+        "scripts/test-task-acceptance-recovery.mjs",
+        "scripts/test-task-execution-progress.mjs",
+        "scripts/test-task-verification-shell.mjs",
+        "scripts/test-task-summary-localization.mjs",
+        "scripts/test-task-completion-multistage.mjs",
+        "scripts/test-task-continuation-handoff.mjs",
+        "scripts/test-parent-task-closure-persistence.mjs",
+        "scripts/test-opencode-agent-session.mjs"
+      ]
+    },
+    {
       "id": "collaboration-detail-presentation",
       "protects": "Collaboration dialogs and detail surfaces remain visible, actionable, and isolated from stale asynchronous results.",
       "baseline": "Creation drafts and focus survive locale and directory refreshes; confirmations, retries, and navigation remain usable in narrow and dark layouts.",

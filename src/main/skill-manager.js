@@ -658,6 +658,9 @@ function buildAgentGuideContent(enabledSkills, locale, { workspaceSkills = [], r
     guide.antiHallucination,
     guide.externalFactRouting,
     guide.nativeSkillBoundary,
+    // Verification execution is already delivered intact in agent.prompt by
+    // buildAgentBasePersona. Repeating it in this unshrinkable guide head can
+    // displace all runtime protocols under a measured 4k body.system limit.
     "",
     `## ${guide.disciplineTitle}`,
     "",
@@ -816,7 +819,7 @@ function buildAgentBasePersona(locale) {
     guide.gatewayNote,
     guide.vendorDisclaimer,
     guide.responseLanguage,
-    guide.nativeSkillBoundary,
+    guide.nativeSkillBoundary, require("./verification-execution-guidance").verificationExecutionGuidance(loc),
   ].join("\n");
 }
 
@@ -835,7 +838,7 @@ function buildAgentSubagentPersona(locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 24;
+const AGENT_GUIDE_STATIC_VERSION = 25;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

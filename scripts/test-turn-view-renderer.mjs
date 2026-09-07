@@ -312,7 +312,7 @@ assert.equal(
     { status: "completed", completionStatus: "verified_complete", evidence: [{}, {}], risks: [{}], verification: { status: "verified" } },
     translate,
   ),
-  "verified_complete/2/1/verified",
+  "task.summary.status.verified/2/1/task.summary.verification.verified",
 );
 
 assert.equal(
@@ -326,7 +326,7 @@ assert.equal(
     },
     translate,
   ),
-  "delivered_unverified/1/1/observed",
+  "task.summary.status.delivered/1/1/task.summary.verification.observed",
 );
 
 console.log("turn-view-renderer: ok");

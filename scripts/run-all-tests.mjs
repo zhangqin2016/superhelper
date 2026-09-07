@@ -47,14 +47,20 @@ function chainCommands(chainName) {
 }
 
 const chainName = process.argv[2];
-const commands = chainName ? chainCommands(chainName) : discoverCommands();
+// Hidden test windows still need prompt timer and renderer scheduling. Apply
+// this to discovery, benchmarks and curated chains, never product launches.
+const commands = (chainName ? chainCommands(chainName) : discoverCommands()).map(command =>
+  command.replace(/^npx electron\s+/, "npx electron --disable-background-timer-throttling --disable-renderer-backgrounding "),
+);
 const failures = [];
 const startedAt = Date.now();
 
 for (const command of commands) {
   const t0 = Date.now();
   try {
-    execSync(command, { stdio: "pipe", timeout: 180_000 });
+    // Force the direct shell to stop at the deadline. This is NOT a process-tree
+    // kill: npx/Electron descendants may outlive it and need scoped diagnosis.
+    execSync(command, { stdio: "pipe", timeout: 180_000, killSignal: "SIGKILL" });
     console.log(`PASS  ${command}  (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   } catch (error) {
     const output = `${error.stdout || ""}${error.stderr || ""}`;

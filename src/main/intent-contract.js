@@ -81,7 +81,7 @@ function normalizeIntentContract(value) {
     categories: stringList(value.categories, 12),
     objective,
     currentInstruction: safeText(value.currentInstruction || objective, 1_000),
-    deliverables: stringList(value.deliverables, 12),
+    deliverables: require("./task-delivery-manifest").normalizeDeliverables(value.deliverables),
     successCriteria: stringList(value.successCriteria, 20),
     constraints: stringList(value.constraints, 20),
     assumptions: stringList(value.assumptions, 12),

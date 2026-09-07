@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 
 // Max CONSECUTIVE continuation nudges that produced no progress. The caller only
-// resets its counter when the unfinished todo set actually shrinks, so this bounds
+// resets its counter on unique completed execution or a shrinking todo set, bounding
 // confirmed no-progress rather than effort: a model that keeps completing items
 // keeps earning nudges, a blocked one is asked twice and then left alone.
 const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 2;
@@ -12,7 +12,7 @@ const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 2;
 // can be pushed back into the same turn indefinitely (a field turn burned 7
 // nudges / 13 minutes re-asking for the same 2 user-blocked items).
 const TODO_COMPLETION_GATE_MAX_TOTAL_ATTEMPTS = 6;
-const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip";
+const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip|json|md";
 const DELIVERABLE_PATH_RE = new RegExp(
   String.raw`(?:^|[\s"'` + "`" + String.raw`(>])((?:/|[A-Za-z]:\\)[^\s"'` + "`" + String.raw`)<>|]+\.(?:${DELIVERABLE_EXT}))`,
   "gi",
@@ -22,7 +22,10 @@ const DELIVERABLE_PATH_RE = new RegExp(
  * Detect only high-confidence broken deliverables. Ambiguous or unreadable
  * paths fail open so this guard cannot turn a successful response into a loop.
  */
-function detectIncompleteDeliverable(output) {
+function detectIncompleteDeliverable(output, { deliverables = [], workspacePath = "" } = {}) {
+  const manifest = require("./task-delivery-manifest").inspectDeliverables(deliverables, workspacePath);
+  const broken = manifest.find(item => item.repairable && ["missing", "empty"].includes(item.status));
+  if (broken) return { path: broken.path, reason: broken.status === "missing" ? "does not exist" : "is empty" };
   const text = String(output || "");
   if (!text) return null;
   const seen = new Set();
@@ -102,7 +105,7 @@ function buildUnfinishedTodoNotice(snapshot = {}, limit = 4) {
 /**
  * What a clean turn end should do about unfinished todos.
  * `attempts` counts CONSECUTIVE nudges that produced no progress (the caller
- * resets it only when the unfinished set shrinks); `totalAttempts` is the whole
+ * resets it on execution progress or a shrinking unfinished set); `totalAttempts` is the whole
  * turn's nudge count.
  */
 function todoContinuationDecision(snapshot = {}, attempts = 0, totalAttempts = 0) {
@@ -120,18 +123,27 @@ function todoContinuationDecision(snapshot = {}, attempts = 0, totalAttempts = 0
  * decision). Marking such a turn `stalled` buried a complete delivery under a
  * "本轮没有形成完整最终回答" banner. Only an answerless turn keeps that terminal.
  */
-function buildTodoGiveUpPayload(payload = {}, snapshot = {}, collectedOutput = "") {
+function rememberTodoProgress(gate, unfinished) {
+  if (unfinished >= gate.best) return;
+  if (Number.isFinite(gate.best)) gate.progress = (gate.progress || 0) + 1;
+  gate.best = unfinished;
+  gate.attempts = 0;
+}
+
+function buildTodoGiveUpPayload(payload = {}, snapshot = {}, collectedOutput = "", { gate = {}, decision = "settle" } = {}) {
   const output = String(payload?.output || collectedOutput || "").trim();
   const notice = buildUnfinishedTodoNotice(snapshot);
   return {
     ...payload,
     ...(output ? {} : { stalled: true }),
     unfinishedTodoCount: (snapshot.unfinished || []).length,
+    ...(decision !== "settle" && gate.progress > 0 ? { continuationHandoff: { schemaVersion: 1, reason: "budget_exhausted", progress: gate.progress, unfinished: (snapshot.unfinished || []).slice(0, 32) } } : {}),
     output: output && notice ? `${output}\n\n${notice}` : output,
   };
 }
 
 module.exports = {
+  rememberTodoProgress,
   TODO_COMPLETION_GATE_MAX_ATTEMPTS,
   TODO_COMPLETION_GATE_MAX_TOTAL_ATTEMPTS,
   buildTodoContinuationPrompt,

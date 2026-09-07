@@ -48,13 +48,14 @@ const {
   transientClassificationText,
 } = require("./opencode-session-failure-policy");
 const {
-  TODO_COMPLETION_GATE_MAX_ATTEMPTS, buildTodoContinuationPrompt,
+  TODO_COMPLETION_GATE_MAX_ATTEMPTS, buildTodoContinuationPrompt, rememberTodoProgress,
   buildTodoGiveUpPayload, detectIncompleteDeliverable,
   nativeTodoSnapshot, todoContinuationDecision,
 } = require("./opencode-todo-completion-policy");
 const { claimContinuation, createTurnGateState } = require("./turn-continuation-budget");
 const { earliestPendingRequestAt } = require("./turn-user-wait");
 const requiredToolCompletion = require("./required-tool-completion-gate");
+const { rememberExecutionProgress } = require("./task-execution-progress");
 const { characterApplicationForTrace } = require("./character-worlds/application-receipt");
 const log = getLogger("opencode-agent-session");
 function rawToolFromEvent(ev = {}) {
@@ -878,16 +879,14 @@ class OpencodeAgentSession extends EventEmitter {
     // list change let a model that renamed/split its todos be pushed back into the
     // same turn forever while the unfinished count never actually moved.
     const unfinished = nativeTodoSnapshot(next).unfinished.length;
-    if (unfinished < this._turnGates.todo.best) {
-      this._turnGates.todo.best = unfinished;
-      this._turnGates.todo.attempts = 0;
-    }
+    rememberTodoProgress(this._turnGates.todo, unfinished);
     this._latestTodos = next;
   }
 
   _noteToolActivity(draft = {}) {
     this._sawToolActivity = true;
     requiredToolCompletion.note(this, draft);
+    rememberExecutionProgress(this._turnGates.todo, draft);
     const payload = draft.payload || {};
     const id = String(payload.id || "");
     if (draft.type === "tool.started") {
@@ -1555,7 +1554,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._server &&
       process.env.LILY_DISABLE_COMPLETION_GATE !== "1"
     ) {
-      const violation = detectIncompleteDeliverable(payload.output);
+      const violation = detectIncompleteDeliverable(payload.output, { deliverables: this._activeTaskContract?.intentContract?.deliverables || [], workspacePath: this.cwd || "" });
       // Out of shared turn re-entries: settle on the answer we have rather than
       // spend a round the other gates may need. The claim itself is never wrong,
       // only late — the deliverable warning is advisory, not a correctness check.
@@ -1602,7 +1601,7 @@ class OpencodeAgentSession extends EventEmitter {
     // Settling is this gate's graceful exit, so exhausting the SHARED turn
     // re-entry budget takes exactly the same path as exhausting its own.
     if (decision === "settle" || !claimContinuation(this._turnGates, "todo")) {
-      const settlePayload = buildTodoGiveUpPayload(payload, snapshot, this.collectedOutput);
+      const settlePayload = buildTodoGiveUpPayload(payload, snapshot, this.collectedOutput, { gate, decision });
       log.warn("unfinished todo completion gate giving up", {
         sessionId: this.sessionId,
         unfinished: snapshot.unfinished.length,

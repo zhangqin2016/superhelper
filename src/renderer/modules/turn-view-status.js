@@ -354,9 +354,13 @@ export function taskRunSummaryForView(taskRun, translate) {
   const risks = Array.isArray(taskRun.risks)
     ? taskRun.risks.filter((risk) => risk?.status !== "resolved").length
     : 0;
-  const verification = taskRun.verification?.status || "";
+  const rawStatus = taskRun.completionStatus || taskRun.status || "completed";
+  const statusKey = ({ __proto__: null, verified_complete: "verified", delivered_unverified: "delivered", completed_observed: "observed", completed: "completed", done: "completed", failed: "failed", interrupted: "interrupted", stalled: "stalled", running: "running" })[rawStatus] || "unknown";
+  const rawVerification = taskRun.verification?.status;
+  const verificationKey = ({ __proto__: null, verified: "verified", unverified: "pending", not_verified: "pending", observed: "observed", not_required: "notRequired" })[rawVerification] || "pending";
+  const verification = translate(`task.summary.verification.${verificationKey}`);
   return translate("task.summary.compact", {
-    status: taskRun.completionStatus || taskRun.status || "completed",
+    status: translate(`task.summary.status.${statusKey}`),
     evidence,
     risks,
     verification,

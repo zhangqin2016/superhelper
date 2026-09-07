@@ -92,7 +92,7 @@ try {
     delete process.env.LILY_TURN_CONTINUATION_BUDGET;
     assert.equal(continuationBudget.maxTurnContinuations(), continuationBudget.DEFAULT_MAX_TURN_CONTINUATIONS);
     const state = continuationBudget.createTurnGateState();
-    assert.deepEqual(state.todo, { attempts: 0, total: 0, best: Infinity });
+    assert.deepEqual(state.todo, { attempts: 0, total: 0, best: Infinity, progress: 0 });
     assert.equal(state.deliverableGated, false);
     for (let i = 0; i < continuationBudget.DEFAULT_MAX_TURN_CONTINUATIONS; i += 1) {
       assert.equal(continuationBudget.claimContinuation(state, i % 2 ? "todo" : "deliverable"), true);

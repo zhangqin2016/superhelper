@@ -39,7 +39,7 @@ function createTurnGateState() {
     /** Deliverable completion gate (Pillar 3-B) fires at most once per turn. */
     deliverableGated: false,
     /** `attempts` counts CONSECUTIVE no-progress nudges; `best` is the low-water mark. */
-    todo: { attempts: 0, total: 0, best: Infinity },
+    todo: { attempts: 0, total: 0, best: Infinity, progress: 0 },
   };
 }
 

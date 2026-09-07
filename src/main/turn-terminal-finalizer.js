@@ -373,13 +373,17 @@ function createTurnTerminalFinalizer(options = {}) {
     } catch (error) {
       log.warn("plan reconciliation skipped: %s", error?.message || error);
     }
-    taskRunRuntime?.complete?.(sessionId, type, {
+    if (state.turnId !== completedTurnId) return { suppressParentClosure: true };
+    const acceptanceResult = require("./turn-acceptance-recovery").completeWithAcceptance({ ctx, sessionId, state, type, payload, taskRunRuntime, terminalPersisted, specializedRecovery: triggerVerifyRetry || triggerDocumentVerifyRetry, prepare: options.prepareParentClosureRecovery, assess: options.assessObjectiveCoverage, completeOptions: {
       evidenceGateAssessment,
       evidenceSummary: effectiveEvidenceSummary,
       fileChangeCount: record?.fileChanges?.length || 0,
       artifactCount: record?.artifacts?.length || 0,
+      artifacts: record?.artifacts || [],
       outcomeUnknown: payload.errorCode === "DISPATCH_OUTCOME_UNKNOWN",
-    });
+    } });
+    const parentClosureSource = acceptanceResult?.then ? await acceptanceResult : acceptanceResult;
+    if (state.turnId !== completedTurnId) return { suppressParentClosure: true };
     if (record && state.taskRun) {
       record.meta = {
         ...(record.meta || {}),
@@ -471,6 +475,7 @@ function createTurnTerminalFinalizer(options = {}) {
       }
     }
     if (type === "turn.completed") scheduleBackgroundCompaction(sessionId);
+    return { parentClosureSource, suppressParentClosure: !terminalPersisted || triggerVerifyRetry || triggerDocumentVerifyRetry };
   }
 
   return { finalize };

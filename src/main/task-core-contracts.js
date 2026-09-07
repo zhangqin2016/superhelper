@@ -303,7 +303,7 @@ function taskContractEnvelope(contract, {
     categories: stringList(intent.categories || source.categories, 16, 100),
     objective,
     currentInstruction: text(intent.currentInstruction || objective, 1_000),
-    deliverables: stringList(intent.deliverables, 12, 240),
+    deliverables: require("./task-delivery-manifest").normalizeDeliverables(intent.deliverables),
     successCriteria: stringList(intent.successCriteria || source.verificationStrategy, 20, 240),
     constraints: stringList(intent.constraints, 20, 240),
     assumptions: stringList(intent.assumptions, 12, 240),
@@ -326,7 +326,7 @@ function taskContractEnvelope(contract, {
       20,
       240,
     ),
-    requestedDeliverables: stringList(intent.deliverables || [], 12, 240),
+    requestedDeliverables: require("./task-delivery-manifest").normalizeDeliverables(intent.deliverables),
     acceptanceCriteria: stringList(intent.successCriteria || source.verificationStrategy || [], 20, 240),
     requiredCapabilities: stringList(
       intent.neededCapabilities || source.categories || [],

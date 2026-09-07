@@ -2453,6 +2453,8 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     assert(!capped.done[0].stalled, "spending the shared budget is not a stall");
     assert(/进展中/.test(capped.done[0].output), "the model's own text survives the shared cap");
     assert(/本轮还有 3 项待办没有标记完成/.test(capped.done[0].output), "the settled turn still says what is open");
+    assert(capped.done[0].continuationHandoff?.reason === "budget_exhausted", "progress at the shared cap carries an explicit durable handoff");
+    assert(capped.done[0].continuationHandoff?.unfinished?.length === 3, "handoff preserves the actual remaining plan");
 
     // Kill switch restores the previous per-gate-only behaviour (fail open to
     // today's baseline): the third round is nudged instead of settled.

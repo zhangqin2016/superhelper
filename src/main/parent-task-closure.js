@@ -108,7 +108,11 @@ function shouldRecoverParentClosure({
     String(payload.errorCode || payload.failureCode || "") === "TRUNCATED_TURN_END"
     && !state.wasRescueAttempt
   ) return fail("SPECIALIZED_RESCUE");
-  if (!payload.stalled && !payload.failed && !payload.error && !payload.errorCode && !payload.code) return fail("NOT_INCOMPLETE");
+  const handoff = payload.continuationHandoff;
+  const remainingWork = handoff?.schemaVersion === 1 && Array.isArray(handoff.unfinished) && handoff.unfinished.length > 0
+    && ((handoff.reason === "budget_exhausted" && Number(handoff.progress) > 0)
+      || (handoff.reason === "acceptance_gap" && handoff.unfinished.every(item => ["verification", "delivery", "original_requirement"].includes(item.kind) && typeof item.title === "string" && item.title.trim())));
+  if (!remainingWork && !payload.stalled && !payload.failed && !payload.error && !payload.errorCode && !payload.code) return fail("NOT_INCOMPLETE");
   if (hasPendingUserInput(state)) return fail("WAITING_FOR_USER");
   if (!evidence.count) return fail("NO_EXECUTION_EVIDENCE");
   if (state.currentPayload?.parentClosureRecovery) return fail("ALREADY_ATTEMPTED");
@@ -116,14 +120,16 @@ function shouldRecoverParentClosure({
   return { ok: true, reason: "ELIGIBLE", recoveryKey, sourceTurnId, evidence };
 }
 
-function buildParentClosurePrompt({ objective = "", evidence = {} } = {}) {
+function buildParentClosurePrompt({ objective = "", evidence = {}, continuationHandoff = null } = {}) {
   const boundedObjective = String(objective || "").trim().slice(0, MAX_OBJECTIVE_LENGTH);
   const counts = `已完成工具 ${Number(evidence.done?.length || 0)} 个，失败 ${Number(evidence.failed?.length || 0)} 个，运行中 ${Number(evidence.running?.length || 0)} 个。`;
   return [
     "[Lily parent-task closure recovery]",
-    "继续完成原始任务。上一轮已经执行过工具，但父任务没有形成最终回答；请基于当前会话中已有的工具结果接着做。",
+    continuationHandoff?.unfinished?.length ? "继续完成原始任务的剩余工作；保留上一轮已完成的结果。" : "继续完成原始任务。上一轮已经执行过工具，但父任务没有形成最终回答；请基于当前会话中已有的工具结果接着做。",
     `原始任务：${boundedObjective || "继续当前用户要求"}`,
     counts,
+    ...(continuationHandoff?.unfinished?.length ? ["上一轮正常结束但尚有验收项未完成：", ...continuationHandoff.unfinished.slice(0, 32).map(item => `- ${String(item.title || "").slice(0, 180)}`)] : []),
+    "本次是接续剩余工作，不是重放上一轮命令。已有授权范围保持不变；需要新的权限或用户选择时提出问题，不得绕过；结果未知的写操作先核实，不得盲目重试。",
     "不要只返回计划，也不要重复已经完成的检查。先确认当前文件和状态，再完成剩余的修改、构建、打包、部署或验证步骤。",
     "如果原任务是检索、研究或分析，优先基于已有搜索和读取结果完成综合结论；只补充确实缺失的证据，不要重新抓取已经完成的来源。",
     "结束前必须给出实际完成内容、验证证据和仍然存在的硬阻塞；没有完成就明确说明，不能把计划当成结果。",

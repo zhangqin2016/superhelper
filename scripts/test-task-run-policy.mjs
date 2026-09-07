@@ -15,7 +15,7 @@ const {
 {
   const code = assessTaskVerification({
     taskType: "code",
-    evidence: [{ kind: "tool_result", label: "npm test", status: "done" }],
+    evidence: [buildTaskToolEvidence({ id: "test", name: "bash", input: { command: "npm test" }, status: "done", completionObserved: true, metadata: { exit: 0 } })],
   });
   if (code.status !== "verified" || code.reason !== "test_or_build_evidence") {
     throw new Error(`code test evidence should verify task: ${JSON.stringify(code)}`);
@@ -29,6 +29,8 @@ const {
     title: "Run focused tests",
     input: { command: "node scripts/test-task-contract.mjs" },
     status: "done",
+    completionObserved: true,
+    metadata: { exit: 0 },
   });
   if (!evidence.label.includes("test-task-contract.mjs")) {
     throw new Error(`tool evidence must retain bounded command/title detail: ${JSON.stringify(evidence)}`);
@@ -40,7 +42,7 @@ const {
     deliverables: ["requested_workspace_change"],
     fileChangeCount: 1,
   });
-  if (code.status !== "verified" || !code.criteria.some((item) => item.criterion === "focused_test" && item.status === "verified")) {
+  if (code.status !== "observed" || !code.criteria.some((item) => item.criterion === "focused_test" && item.status === "verified")) {
     throw new Error(`code_change success criteria should consume real test evidence: ${JSON.stringify(code)}`);
   }
 }
@@ -53,8 +55,8 @@ const {
     deliverables: ["requested_visible_ui_change"],
     fileChangeCount: 1,
   });
-  if (uiManual.status !== "observed" || uiManual.criteria[0]?.status !== "verified") {
-    throw new Error(`UI verification must accept its declared manual/visual alternative: ${JSON.stringify(uiManual)}`);
+  if (uiManual.status !== "unverified" || uiManual.criteria[0]?.status === "verified") {
+    throw new Error(`A screenshot label alone cannot prove manual acceptance: ${JSON.stringify(uiManual)}`);
   }
 }
 
@@ -138,10 +140,10 @@ const {
     { id: "todo_3", title: "Test", status: "pending" },
   ];
   completeTaskRun(taskRun, "turn.completed", { status: "verified" });
-  if (!taskRun.plan.every((step) => step.status === "completed")) {
-    throw new Error(`completed TaskRun should close all todo plan steps: ${JSON.stringify(taskRun.plan)}`);
+  if (taskRun.plan[1].status !== "in_progress" || taskRun.plan[2].status !== "pending") {
+    throw new Error(`terminal must preserve unfinished native todos: ${JSON.stringify(taskRun.plan)}`);
   }
-  if (taskRun.completionStatus !== "verified_complete") {
+  if (taskRun.completionStatus !== "delivered_unverified") {
     throw new Error(`verified task should expose truthful completion status: ${JSON.stringify(taskRun)}`);
   }
 }

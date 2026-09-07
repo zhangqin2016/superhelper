@@ -416,16 +416,18 @@ function createTaskRunRuntime(options = {}) {
             evidence: state.taskRun.evidence || [],
             evidenceGateAssessment: opts.evidenceGateAssessment || null,
             evidenceSummary: opts.evidenceSummary || null,
-            successCriteria: state.taskRun.successCriteria || [],
-            deliverables: state.taskRun.deliverables || [],
+            ...require("./task-original-acceptance").originalAcceptance(state),
+            workspacePath: opts.workspacePath || "",
             fileChangeCount: opts.fileChangeCount || 0,
             artifactCount: opts.artifactCount || 0,
+            artifacts: opts.artifacts || [],
           })
         : { status: "not_verified", reason: "" };
+      require("./task-original-acceptance").applyObjectiveCoverage(verification, opts.objectiveCoverage);
       completeTaskRun(state.taskRun, terminalType, verification);
       if (terminalType === "turn.completed") {
-        transitionTaskLifecycle(ctx, sessionId, state, verificationLifecycleStatus(verification), {
-          verification,
+        transitionTaskLifecycle(ctx, sessionId, state, verificationLifecycleStatus(state.taskRun.verification), {
+          verification: state.taskRun.verification,
           graphId: state.taskRun.agentGraphId || "",
           attemptId: state.taskRun.resumeState?.leadAttemptId || "",
         });

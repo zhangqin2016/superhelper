@@ -274,6 +274,7 @@ class TurnOrchestrator {
       taskRunRuntime: this.taskRunRuntime,
       subagentRuntime: this.subagentRuntime,
       getState: (sessionId) => this._state(sessionId),
+      prepareParentClosureRecovery: (sessionId, source) => this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, source),
       emit: (sessionId, type, payload, opts) => this._emit(sessionId, type, payload, opts),
       attemptVerifyRetry: (sessionId, failure) => this._maybeToolCallRescueRetry(sessionId, failure),
       scheduleBackgroundCompaction: (sessionId) => this._scheduleBackgroundCompaction(sessionId),
@@ -1663,11 +1664,12 @@ class TurnOrchestrator {
     const failed = Boolean(failure); const blockingProcessJobs = interrupted || stalled || failed
       ? []
       : findBlockingRunningProcessJobs([...state.tools.values()]);
-    const parentClosureSource = captureParentClosureSource(state, { ...payload, failed, stalled: stalled || Boolean(blockingProcessJobs.length), errorCode: failure?.code || "" }); this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource);
+    const parentClosureSource = captureParentClosureSource(state, { ...payload, failed, stalled: stalled || Boolean(blockingProcessJobs.length), errorCode: failure?.code || "" }); if (failed || stalled || blockingProcessJobs.length) this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource);
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
     let finalizeDone = null;
     const terminalMeta = {
+      ...(payload?.continuationHandoff ? { continuationHandoff: payload.continuationHandoff } : {}),
       durationMs: state.durationMs ?? null,
       totalCostUsd: state.totalCostUsd ?? null,
       // Rewind anchor: the engine message id of this turn (session:rewind reverts
@@ -1754,7 +1756,7 @@ class TurnOrchestrator {
         runner?.agentResumeId || null,
       );
     }
-    Promise.resolve(finalizeDone).then(() => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed, failure, selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
+    Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, result?.suppressParentClosure ? null : result?.parentClosureSource || parentClosureSource, { failed, failure, selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
   /** Post-completion procedure-card distillation. Fail-open and async — the
    *  finished turn's UX can never be affected. The active model's capability

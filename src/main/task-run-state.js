@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const { resolveToolSemantics } = require("./tool-semantics");
+const { executionReceipt, hasVerificationReceipt, existingArtifacts, deliveryAssessment, defaultExtractionRequirements } = require("./task-verification-receipt");
 const { taskRunSchemaVersion: TASK_RUN_SCHEMA_VERSION } = require("../shared/runtime-contract.json");
 const TRANSIENT_RISK_CODES = new Set(["NO_VISIBLE_PROGRESS"]);
 const CODE_VERIFICATION_TASK_TYPES = new Set([
@@ -14,10 +15,8 @@ const CODE_VERIFICATION_TASK_TYPES = new Set([
   "server_change",
   "ui_change",
 ]);
-const TEST_EVIDENCE_RE = /\b(test|tests|testing|lint|typecheck|type-check|build|pytest|jest|vitest|mocha|regression|unit)\b/i;
 const TEST_CRITERION_RE = /(test|lint|typecheck|type-check|build|pytest|jest|vitest|mocha|regression|unit)/i;
 const MANUAL_ALTERNATIVE_RE = /(manual|screenshot|visual|browser|dom)/i;
-const MANUAL_EVIDENCE_RE = /\b(manual|screenshot|visual|browser|playwright|dom)\b/i;
 
 const { nowMs, safeText, touch } = require("./task-run-values");
 function defaultPlan() {
@@ -101,7 +100,7 @@ function compactTaskRun(taskRun = {}) {
     intentContractId: safeText(taskRun.intentContractId, 120),
     intentRevision: Number(taskRun.intentRevision || 0),
     intentRelation: safeText(taskRun.intentRelation || "new", 40),
-    deliverables: Array.isArray(taskRun.deliverables) ? taskRun.deliverables.slice(0, 12).map((item) => safeText(item)) : [],
+    deliverables: require("./task-delivery-manifest").normalizeDeliverables(taskRun.deliverables),
     successCriteria: Array.isArray(taskRun.successCriteria) ? taskRun.successCriteria.slice(0, 20).map((item) => safeText(item)) : [],
     phase: taskRun.phase || "starting",
     plan: Array.isArray(taskRun.plan) ? taskRun.plan.slice(0, 20).map((step) => ({
@@ -178,7 +177,11 @@ function addTaskEvidence(taskRun, evidence = {}) {
     status: safeText(evidence.status || "", 80),
     refId: safeText(evidence.refId || "", 160),
     ts: nowMs(),
+    ...(evidence.receipt ? { receipt: { ...evidence.receipt } } : {}),
   };
+  if (item.receipt) {
+    for (const prior of taskRun.evidence) if (prior.receipt?.verified && (item.receipt.mutates || (item.receipt.kind !== "observation" && item.receipt.kind === prior.receipt.kind))) prior.receipt.stale = true;
+  }
   taskRun.evidence.push(item);
   if (taskRun.evidence.length > 50) taskRun.evidence.splice(0, taskRun.evidence.length - 50);
   touch(taskRun, item.ts);
@@ -283,6 +286,7 @@ function buildTaskToolEvidence(tool = {}) {
     label,
     status: tool.status || "done",
     refId: tool.id || "",
+    receipt: executionReceipt(tool),
   };
 }
 
@@ -314,6 +318,8 @@ function assessTaskVerification({
   deliverables = [],
   fileChangeCount = 0,
   artifactCount = 0,
+  artifacts = [],
+  workspacePath = "",
 } = {}) {
   if (evidenceGateAssessment?.ok === false) {
     return {
@@ -328,10 +334,10 @@ function assessTaskVerification({
     if (!evidenceSummary?.hasSourceContentEvidence) {
       return { status: "unverified", reason: "missing_source_content_evidence", criteria: [] };
     }
-    if (coverage.status === "complete") {
+    if (coverage.status === "complete" && defaultExtractionRequirements(successCriteria, deliverables)) {
       return { status: "verified", reason: "source_content_extracted", criteria: [] };
     }
-    return {
+    if (coverage.status !== "complete") return {
       status: "observed",
       reason: coverage.status === "partial" ? "partial_source_content" : "source_content_available",
       criteria: [],
@@ -340,22 +346,21 @@ function assessTaskVerification({
   const successfulEvidence = (Array.isArray(evidence) ? evidence : []).filter(
     (item) => !/fail|error/i.test(String(item?.status || "")),
   );
-  const labels = successfulEvidence
-    .map((item) => String(item?.label || "").toLowerCase())
-    .join("\n");
   const criteria = (Array.isArray(successCriteria) ? successCriteria : [])
     .map((criterion) => safeText(criterion, 180))
     .filter(Boolean);
   const requiresTest = CODE_VERIFICATION_TASK_TYPES.has(normalizedTaskType) && criteria.some(
     (criterion) => TEST_CRITERION_RE.test(criterion) && !MANUAL_ALTERNATIVE_RE.test(criterion),
   );
-  const hasTest = TEST_EVIDENCE_RE.test(labels);
-  const hasManualEvidence = MANUAL_EVIDENCE_RE.test(labels);
+  const hasTest = hasVerificationReceipt(successfulEvidence);
+  // A screenshot is an observation, not proof that a human reviewed it.
+  const hasManualEvidence = false;
   let missingMachineCriterion = false;
   const criterionResults = criteria.map((criterion) => {
     if (TEST_CRITERION_RE.test(criterion) && CODE_VERIFICATION_TASK_TYPES.has(normalizedTaskType)) {
       const allowsManual = MANUAL_ALTERNATIVE_RE.test(criterion);
-      const satisfied = hasTest || (allowsManual && hasManualEvidence);
+      const kinds = [["test", /test|pytest|jest|vitest|mocha|regression|unit/i], ["lint", /lint/i], ["typecheck", /type.?check/i], ["build", /build/i]].filter(([, pattern]) => pattern.test(criterion)).map(([kind]) => kind);
+      const satisfied = kinds.every(kind => hasVerificationReceipt(successfulEvidence, kind)) || (allowsManual && hasManualEvidence);
       if (!satisfied) missingMachineCriterion = true;
       return {
         criterion,
@@ -364,8 +369,9 @@ function assessTaskVerification({
       };
     }
     if (/artifact|output|preview|openable|document|media/i.test(criterion)) {
-      const hasArtifact = Number(fileChangeCount) > 0 || Number(artifactCount) > 0;
-      return { criterion, status: hasArtifact ? "verified" : "not_observed", evidence: hasArtifact ? "artifact_record" : "" };
+      const hasArtifact = existingArtifacts(artifacts).length > 0;
+      if (!hasArtifact) missingMachineCriterion = true;
+      return { criterion, status: hasArtifact ? "observed" : "not_observed", evidence: hasArtifact ? "existing_file_not_semantic_acceptance" : "" };
     }
     return {
       criterion,
@@ -373,9 +379,15 @@ function assessTaskVerification({
       evidence: successfulEvidence.length ? "tool_evidence_present" : "",
     };
   });
+  const delivery = deliveryAssessment(deliverables, workspacePath);
+  if (delivery?.status === "unverified") return { ...delivery, criteria: criterionResults };
   if (missingMachineCriterion) {
     return { status: "unverified", reason: requiresTest ? "missing_test_or_build_evidence" : "missing_manual_or_test_evidence", criteria: criterionResults };
   }
+  if (criterionResults.some(item => item.status !== "verified")) {
+    return { status: "observed", reason: "criteria_not_fully_verified", criteria: criterionResults };
+  }
+  if (delivery) return { ...delivery, criteria: criterionResults };
   if (requiresTest) {
     return hasTest
       ? { status: "verified", reason: "test_or_build_evidence", criteria: criterionResults }
@@ -405,6 +417,11 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
   const failed = terminalType === "turn.failed";
   const interrupted = terminalType === "turn.interrupted";
   const stalled = terminalType === "turn.stalled";
+  const nativePlan = isTodoPlan(taskRun);
+  const unfinished = nativePlan && taskRun.plan.some(step => step.status !== "completed");
+  if (!failed && !interrupted && !stalled && unfinished) {
+    verification = { ...verification, status: "unverified", reason: "unfinished_plan", previousReason: verification.reason || "" };
+  }
   taskRun.status = failed ? "failed" : interrupted ? "interrupted" : stalled ? "stalled" : "completed";
   taskRun.completionStatus = failed
     ? "failed"
@@ -422,7 +439,8 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
   taskRun.phase = taskRun.status;
   taskRun.activeStep = "verify";
   taskRun.plan = (taskRun.plan || []).map((step) => {
-    if (!failed && !stalled && !interrupted) return { ...step, status: "completed" };
+    if (nativePlan) return step.status === "in_progress" ? { ...step, inferred: step.inferred || "unconfirmed" } : step;
+    if (!failed && !stalled && !interrupted) return { ...step, status: step.id === "verify" && !["verified", "not_required"].includes(verification.status) ? "pending" : "completed" };
     if (step.id === "execute") return { ...step, status: "completed" };
     if (step.id === "verify") return { ...step, status: "pending" };
     return step;
@@ -432,9 +450,11 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
       TRANSIENT_RISK_CODES.has(risk?.code) ? { ...risk, status: "resolved", resolvedAt: ts } : risk
     ));
   }
+  const achieved = taskRun.plan.filter(step => step.status === "completed").length;
   taskRun.progress = {
-    label: taskRun.status,
-    value: 1,
+    label: taskRun.completionStatus,
+    value: achieved === taskRun.plan.length && !["verified", "not_required"].includes(verification.status)
+      ? null : taskRun.plan.length ? achieved / taskRun.plan.length : null,
   };
   taskRun.liveness = {
     ...(taskRun.liveness || {}),

@@ -13,7 +13,7 @@ function buildIntentContractToolDefinition({ executionSurface, mcpServerName } =
     description: "Commit one semantic refinement of the current turn's host-owned intent contract. Before answering an external factual request whose evidence gate is not already active, declare verificationPlan.externalFact=true. After finding primary sources, include authorityHosts and evidenceAnchorGroups when named conclusions require item-level support. The main process validates the candidate and preserves every baseline constraint.",
     inputSchema: {
       objective: z.string().min(1).max(1000).describe("the user's intended outcome, not a restatement of internal process"),
-      deliverables: z.array(z.string().min(1).max(500)).max(12).optional(),
+      deliverables: z.array(z.union([z.string().min(1).max(500), z.object({ path: z.string().min(1).max(500) }).strict()])).max(12).optional().describe("Expected deliverables; use {path: 'workspace-relative/output.json'} for concrete files, including extensionless filenames. Declaring a path grants no additional write permission."),
       successCriteria: z.array(z.string().min(1).max(500)).max(20).optional(),
       assumptions: z.array(z.string().min(1).max(500)).max(12).optional(),
       criticalUnknowns: z.array(z.string().min(1).max(500)).max(10).optional().describe("unknowns that make useful progress impossible or an action materially unsafe; omit defaultable ambiguity in reversible research or analysis"),

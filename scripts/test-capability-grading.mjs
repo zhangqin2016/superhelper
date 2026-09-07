@@ -689,6 +689,26 @@ try {
     "real 4k guide keeps the lite execution guardrail");
   assert.match(realCutLiteGuide, /Work one verified step at a time/,
     "real 4k guide keeps actionable lite protocol content, not only an omitted-title notice");
+  // Verification is an invariant of the primary-agent persona, separate from
+  // the budgeted per-turn skill guide. Check the actual config delivery lane:
+  // shrinking body.system must never remove or shorten these instructions.
+  const { buildAgentBasePersona } = require("../src/main/skill-manager.js");
+  const { verificationExecutionGuidance } = require("../src/main/verification-execution-guidance.js");
+  const { buildSharedBaseConfig } = require("../src/main/runtime/opencode-config-builder.js");
+  for (const locale of ["zh-CN", "en", "ar"]) {
+    const configured = buildSharedBaseConfig({
+      lilyEnv: require("../src/main/spawn-env.js").resolveLilyEnv(),
+      basePrompt: buildAgentBasePersona(locale),
+    });
+    assert.equal(configured.ok, true);
+    const config = JSON.parse(configured.configContent);
+    for (const agent of ["build", "plan"]) {
+      assert.ok(config.agent[agent].prompt.includes(verificationExecutionGuidance(locale)),
+        `${locale}/${agent}: final checks, real exits, revalidation and honest reporting survive intact`);
+      assert.match(config.agent[agent].prompt, /node test-summary\.cjs/,
+        `${locale}/${agent}: independent final check retains its runnable example`);
+    }
+  }
 
   console.log("capability-grading: ok");
 } finally {
