@@ -23,7 +23,7 @@ try {
   assert.deepEqual(manifest.map(x => x.status), ['exists', 'empty']);
   assert.equal(inspectDeliverables([{ path: '../outside.md' }], root)[0].repairable, false);
   assert.equal(inspectDeliverables([{ path: 'relative.json' }], '')[0].status, 'unresolved');
-  fs.symlinkSync(os.tmpdir(), path.join(root, 'escape'));
+  fs.symlinkSync(os.tmpdir(), path.join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
   assert.equal(inspectDeliverables([{ path: 'escape/absent.json' }], root)[0].repairable, false, 'symlink escape cannot authorize repair');
   const { detectIncompleteDeliverable } = require('../src/main/opencode-todo-completion-policy');
   assert.equal(detectIncompleteDeliverable('Done', { deliverables: [{ path: 'missing.json' }], workspacePath: root })?.path, path.join(fs.realpathSync(root), 'missing.json'), 'engine correction uses the structured contract, not just final prose');
