@@ -1,4 +1,5 @@
 import { t } from "../i18n/index.js";
+import { enhanceCreateDisclosure } from "./collaboration-create-dialog.js";
 
 export function renderTypingHint(node, { state, conversationId, directory }) {
   if (!node) return;
@@ -16,7 +17,12 @@ export function socialNode(tag, text = "", className = "") {
   const node = document.createElement(tag); node.textContent = String(text); node.className = className; return node;
 }
 export function socialButton(action, label, handler) {
-  const node = socialNode("button", t(`collaboration.social.${label}`)); node.type = "button"; node.dataset.action = action; node.addEventListener("click", handler); return node;
+  const node = socialNode("button", t(`collaboration.social.${label}`)); node.dataset.i18n = `collaboration.social.${label}`; node.type = "button"; node.dataset.action = action; node.addEventListener("click", handler); return node;
+}
+export function socialEmptyState(key, action = null) {
+  const empty = socialNode("div", "", "collaboration-empty-state");
+  const message = socialNode("p", t(key), "collaboration-empty"); message.dataset.i18n = key;
+  empty.append(message); if (action) empty.append(action); return empty;
 }
 export function avatarHue(label = "") {
   const source = String(label || "L");
@@ -77,10 +83,12 @@ export function socialDisclosure(label, form, { primary = false, icon = null } =
   if (icon) { const wrap = socialNode("span", "", "collaboration-row-glyph"); wrap.append(socialIcon(icon, 20)); summary.textContent = ""; summary.append(wrap, label); }
   disclosure.append(summary, form);
   form.classList.add("collaboration-disclosure-body");
+  enhanceCreateDisclosure(disclosure, summary, form);
   return disclosure;
 }
 export function socialField(form, name, label, { multiple = false, options = null } = {}) {
-  const wrapper = socialNode("label", t(`collaboration.social.${label}`));
+  const wrapper = socialNode("label");
+  const caption = socialNode("span", t(`collaboration.social.${label}`)); caption.dataset.i18n = `collaboration.social.${label}`; wrapper.append(caption);
   const input = document.createElement(options ? "select" : "input"); input.name = name;
   if (options) { input.multiple = multiple; for (const [value, text] of options) { const option = socialNode("option", text); option.value = value; input.append(option); } }
   else { input.type = "text"; input.maxLength = 200; input.dir = "auto"; }
@@ -246,32 +254,55 @@ export function createSocialUi(root, { onChanged = async () => {}, getNavigation
   let epoch = 0, busy = false, cancelConfirmation = null;
   let disabled = [];
   const status = socialNode("p", "", "collaboration-status"); status.setAttribute("role", "status");
-  const confirmation = socialNode("div", "", "collaboration-confirmation");
+  const candidate = socialNode("dialog", "", "collaboration-confirmation");
+  const confirmation = typeof candidate.showModal === "function" ? candidate : socialNode("div", "", "collaboration-confirmation");
   const pending = socialNode("div", "", "collaboration-pending");
+  let surface = root, surfaceGeneration = 0;
   root.append(status, confirmation, pending);
   const restore = () => { for (const [control, prior] of disabled) control.disabled = prior; disabled = []; };
   return {
     status,
+    setSurface(next = root) {
+      next ||= root;
+      if (surface !== next) { surfaceGeneration += 1; cancelConfirmation?.(); status.textContent = ""; }
+      surface = next;
+      for (const node of [status, confirmation, pending]) if (node.parentElement !== surface) surface.append(node);
+    },
     current: () => epoch,
-    reset() { epoch += 1; busy = false; restore(); cancelConfirmation?.(); confirmation.replaceChildren(); pending.replaceChildren(); status.textContent = ""; },
+    reset() { epoch += 1; busy = false; restore(); cancelConfirmation?.(); confirmation.replaceChildren(); pending.replaceChildren(); status.textContent = ""; this.setSurface(); },
     async confirm(label, target) {
       if (busy) return false;
       cancelConfirmation?.();
       return new Promise((resolve) => {
         const focused = document.activeElement;
-        confirmation.replaceChildren(socialNode("p", `${t(`collaboration.social.${label}`)}: ${target}`));
+        const heading = socialNode("p", t(`collaboration.social.${label}`)); heading.dataset.i18n = `collaboration.social.${label}`;
+        confirmation.replaceChildren(heading, socialNode("p", target, "collaboration-confirmation-target"));
         confirmation.setAttribute("role", "alertdialog"); confirmation.setAttribute("aria-label", t(`collaboration.social.${label}`));
-        const finish = (accepted) => { cancelConfirmation = null; confirmation.replaceChildren(); confirmation.removeAttribute("role"); focused?.focus?.(); resolve(accepted); };
+        const finish = (accepted) => {
+          if (!cancelConfirmation) return;
+          cancelConfirmation = null;
+          confirmation.oncancel = null; confirmation.onclose = null;
+          if (confirmation.open) confirmation.close();
+          confirmation.replaceChildren(); confirmation.removeAttribute("role");
+          if (focused?.isConnected && !focused.closest?.('[hidden]')) focused.focus?.();
+          resolve(accepted);
+        };
         cancelConfirmation = () => finish(false);
         const yes = socialButton("confirm", "confirm", () => finish(true));
-        confirmation.append(yes, socialButton("cancel-confirmation", "cancel", () => finish(false))); yes.focus();
+        const actions = socialNode("footer");
+        actions.append(socialButton("cancel-confirmation", "cancel", () => finish(false)), yes); confirmation.append(actions);
+        confirmation.oncancel = (event) => { event.preventDefault(); finish(false); };
+        confirmation.onclose = () => finish(false);
+        confirmation.showModal?.();
+        confirmation.querySelector('[data-action="cancel-confirmation"]').focus();
       });
     },
     async run(operation, onSuccess = async () => {}) {
       if (busy) return;
       const generation = epoch; busy = true;
+      const presentation = surfaceGeneration;
       const navigation = getNavigationGeneration();
-      disabled = [...root.querySelectorAll("button,input,select")].map((control) => [control, control.disabled]);
+      disabled = [...new Set([...root.querySelectorAll("button,input,select"), ...surface.querySelectorAll("button,input,select")])].filter(control => !control.hasAttribute("data-dialog-dismiss")).map((control) => [control, control.disabled]);
       for (const [control] of disabled) control.disabled = true;
       status.textContent = t("collaboration.social.loading");
       let result;
@@ -279,13 +310,15 @@ export function createSocialUi(root, { onChanged = async () => {}, getNavigation
       if (generation !== epoch) return;
       const rejected = result?.ok === false;
       const uncertain = !result || ["confirming", "queued", "submitting"].includes(result.state);
-      status.textContent = t(`collaboration.social.${rejected ? /FORBIDDEN|ACCESS_REVOKED|MEMBERSHIP/.test(result.code || "") ? "permissionDenied" : "failed" : uncertain ? "confirming" : "saved"}`);
-      if (result?.code === "COLLAB_DEVICE_CHANGED") status.textContent = t("collaboration.social.deviceChanged");
+      if (presentation === surfaceGeneration) {
+        status.textContent = t(`collaboration.social.${rejected ? /FORBIDDEN|ACCESS_REVOKED|MEMBERSHIP/.test(result.code || "") ? "permissionDenied" : "failed" : uncertain ? "confirming" : "saved"}`);
+        if (result?.code === "COLLAB_DEVICE_CHANGED") status.textContent = t("collaboration.social.deviceChanged");
+      }
       try {
         await Promise.resolve(onChanged()).catch(() => {});
         if (generation !== epoch) return;
         if (!rejected && !uncertain) await onSuccess(result, { isCurrentNavigation: () => navigation === getNavigationGeneration() });
-      } catch { if (generation === epoch) status.textContent = t("collaboration.social.unavailable"); }
+      } catch { if (generation === epoch && presentation === surfaceGeneration) status.textContent = t("collaboration.social.unavailable"); }
       finally { if (generation === epoch) { busy = false; restore(); } }
     },
     renderPending(commands, kind, api, scopeLabel = () => "") {

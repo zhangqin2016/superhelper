@@ -50,7 +50,12 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   function shell(title, detail = false) {
     surface.replaceChildren(); surface.setAttribute("aria-label", tr(phase === "localRecovery" ? "localRecovery" : "entry")); surface.toggleAttribute("aria-busy", busy);
     const top = node("header", "remote-task-header");
-    top.append(button("task-back", detail || phase === "localRecovery" ? tr("back") : tr("close"), () => detail ? void load() : close()));
+    const back = button("task-back", "", () => detail ? void load() : close());
+    back.classList.add("collaboration-icon-button");
+    back.setAttribute("aria-label", detail || phase === "localRecovery" ? tr("back") : tr("close"));
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg"), path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    for (const [key, value] of Object.entries({ viewBox: "0 0 24 24", width: "18", height: "18", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) icon.setAttribute(key, value);
+    path.setAttribute("d", detail ? "M15 18l-6-6 6-6" : "M18 6L6 18M6 6l12 12"); icon.append(path); back.append(icon); top.append(back);
     top.append(node("h2", "", title));
     surface.append(top);
     const body = node("div", "remote-task-content"); surface.append(body);

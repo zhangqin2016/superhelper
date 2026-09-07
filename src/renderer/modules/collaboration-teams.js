@@ -1,7 +1,7 @@
 import { createEnterpriseRoster } from "./enterprise-roster.js";
 import { presenceBadge } from "./collaboration-presence-view.js";
 import { t, getLocale } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName, resolvePerson, conversationDisplayTitle, preserveScroll } from "./collaboration-social-ui.js";
+import { createSocialUi, socialEmptyState, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName, resolvePerson, conversationDisplayTitle, preserveScroll } from "./collaboration-social-ui.js";
 import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
 
 export function initCollaborationTeams(root, { api = window.assistantClient?.collaboration, onChanged = async () => {}, onOpen = () => {}, getNavigationGeneration = () => 0, detail = null, drawer = null } = {}) {
@@ -34,6 +34,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     createGroup.title = groupMembers.satisfied() ? "" : t("collaboration.social.needMembers");
   }
   refreshGroupSubmit();
+  groupForm.addEventListener("dialog-locale", refreshGroupSubmit);
   const list = socialNode("div"), personal = socialNode("div"), details = socialNode("div", "", "collaboration-member-details");
   /** Where a roster is drawn. With a detail view it is its own screen beside
    *  the list; without one (this module rendered standalone, as the DOM tests
@@ -42,9 +43,9 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   // conversation (WeChat's group info), otherwise the list-column detail.
   let rosterSurface = "detail";
   const activeSurface = () => (rosterSurface === "drawer" ? drawer : detail);
-  const invalidateDetails = () => { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; };
+  const invalidateDetails = () => { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.setSurface(); };
   const detailSurface = (title) => activeSurface()?.open?.(title, { onClose: invalidateDetails }) || details;
-  const closeDetailSurface = () => { detail?.close?.(); drawer?.close?.(); details.replaceChildren(); };
+  const closeDetailSurface = () => { ui.setSurface(); detail?.close?.(); drawer?.close?.(); details.replaceChildren(); };
   // The create entry lines up with the avatar column, like the other entries,
   // instead of floating above the section headings as a text link.
   const createGroupEntry = socialDisclosure(t("collaboration.social.createGroup"), groupForm, { primary: true, icon: "people" });
@@ -62,10 +63,12 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     // Blank means "name it after the people in it", the way every chat client
     // does; the previous form refused to submit without a typed name.
     const title = groupTitle.value.trim() || derivedGroupTitle(groupMembers.selectedNames());
+    const dialogEpoch = groupForm.dataset.dialogEpoch;
     void ui.run(() => api.conversation({ action: "create", scopeType: "personal", kind: "group", title, memberUserIds }), async (result, origin) => {
+      if (dialogEpoch !== groupForm.dataset.dialogEpoch) return;
       if (groupTitle.value.trim() === title) groupTitle.value = "";
       groupMembers.reset();
-      if (result.conversationId && origin.isCurrentNavigation()) await onOpen(result.conversationId);
+      if (result.conversationId && origin.isCurrentNavigation() && dialogEpoch === groupForm.dataset.dialogEpoch) { groupForm.closest("dialog")?.close(); await onOpen(result.conversationId); }
     });
   });
   /** `showScope` is false wherever the row already sits under a heading that
@@ -92,6 +95,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     const title = socialField(form, "title", "name"); title.required = true;
     const visibility = socialField(form, "visibility", "visibility", { options: [["private", t("collaboration.social.private")],
       ...(["owner", "admin"].includes(team.role) ? [["public", t("collaboration.social.public")]] : [])] });
+    for (const option of visibility.options) option.dataset.i18n = `collaboration.social.${option.value}`;
     // A channel may legitimately start with nobody but its creator, so unlike
     // a personal group there is no minimum here.
     const members = createMemberPicker({ minimum: 0 });
@@ -107,18 +111,22 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       publicNote.hidden = !isPublic;
     };
     const publicNote = socialNode("p", t("collaboration.social.publicMembership"), "collaboration-form-note");
+    publicNote.dataset.i18n = "collaboration.social.publicMembership";
     form.append(publicNote);
     visibility.addEventListener("change", syncVisibility);
     syncVisibility();
     const submit = socialNode("button", t("collaboration.social.createChannel"), "collaboration-social-primary"); submit.type = "submit"; form.append(submit);
+    submit.dataset.i18n = "collaboration.social.createChannel";
     form.addEventListener("submit", (event) => {
       event.preventDefault(); const value = title.value.trim(); if (!value) return;
       const kind = visibility.value;
+      const dialogEpoch = form.dataset.dialogEpoch;
       void ui.run(() => api.conversation({ action: "create", scopeType: "organization", organizationId: team.id, kind: "channel", visibility: kind, title: value,
         memberUserIds: kind === "public" ? [] : members.selectedIds() }), async (result, origin) => {
+        if (dialogEpoch !== form.dataset.dialogEpoch) return;
         const current = [...list.querySelectorAll("section.collaboration-team[data-team-id]")].find((node) => node.dataset.teamId === team.id)?.querySelector('[name="title"]');
         if (current?.value.trim() === value) current.value = "";
-        if (result.conversationId && origin.isCurrentNavigation()) await onOpen(result.conversationId);
+        if (result.conversationId && origin.isCurrentNavigation() && dialogEpoch === form.dataset.dialogEpoch) { form.closest("dialog")?.close(); await onOpen(result.conversationId); }
       });
     });
     return socialDisclosure(`＋ ${t("collaboration.social.createChannel")}`, form);
@@ -127,7 +135,8 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
     const generation = ui.current();
     if (operation !== "add" && !await ui.confirm("confirmMemberChange", `${socialPerson(target)} · ${conversation.title || conversation.id} · ${scopeLabel(conversation.scopeId)}`)) return;
     if (generation !== ui.current()) return;
-    await ui.run(() => api.conversation({ action: "member", conversationId: conversation.id, targetUserId: target.userId, operation, ...(role ? { role } : {}) }), (_result, origin) => { if (origin.isCurrentNavigation()) return controller.showConversation(conversation.id); });
+    const destination = rosterSurface, detailGeneration = detailsGeneration;
+    await ui.run(() => api.conversation({ action: "member", conversationId: conversation.id, targetUserId: target.userId, operation, ...(role ? { role } : {}) }), (_result, origin) => { if (origin.isCurrentNavigation() && detailGeneration === detailsGeneration) return controller.showConversation(conversation.id, { surface: destination }); });
   }
   // Leaving removes yourself; dissolving (owner only) removes the group for
   // everyone. Both drop the conversation locally once projected, so the detail
@@ -159,8 +168,11 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       memberBody.disabled = false;
       row.append(memberBody);
       if (result.canManage && member.role !== "owner") {
-        row.append(socialButton("remove-member", "removeMember", () => memberChange(conversation, member, "remove")));
-        row.append(socialButton("role-member", member.role === "admin" ? "makeMember" : "makeAdmin", () => memberChange(conversation, member, "role", member.role === "admin" ? "member" : "admin")));
+        const manage = socialNode("details", "", "collaboration-member-manage");
+        manage.append(socialNode("summary", t("collaboration.social.manageMember")));
+        manage.append(socialButton("role-member", member.role === "admin" ? "makeMember" : "makeAdmin", () => memberChange(conversation, member, "role", member.role === "admin" ? "member" : "admin")));
+        manage.append(socialButton("remove-member", "removeMember", () => memberChange(conversation, member, "remove")));
+        row.append(manage);
       }
       surface.append(row);
     }
@@ -186,22 +198,22 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         form.append(target.node, add);
         // WeChat puts an add tile in the grid itself; this one reveals the form
         // below and puts the cursor in its search box.
-        const addTile = socialNode("button", "", "collaboration-social-row is-add-tile");
-        addTile.type = "button";
+        const addSection = socialNode("details", "", "collaboration-member-add");
+        const addTile = socialNode("summary", "", "collaboration-social-row is-add-tile");
         addTile.dataset.action = "add-member-tile";
         addTile.setAttribute("aria-label", t("collaboration.addMemberTile"));
         const plus = socialNode("span", "＋", "collaboration-row-avatar is-add");
         plus.setAttribute("aria-hidden", "true");
         addTile.append(plus, socialNode("small", t("collaboration.addMemberTile")));
-        addTile.addEventListener("click", () => { form.scrollIntoView?.({ block: "nearest" }); form.querySelector("input,select")?.focus?.(); });
-        surface.append(addTile);
+        addSection.append(addTile, form);
+        addSection.addEventListener("toggle", () => { if (addSection.open) form.querySelector("input,select")?.focus?.({ preventScroll: true }); });
         form.addEventListener("submit", (event) => {
           event.preventDefault();
           const [userId] = target.selectedIds();
           const person = candidates.find((p) => p.userId === userId);
           if (person) void memberChange(conversation, person, "add");
         });
-        surface.append(form);
+        surface.append(addSection);
       }
     } else surface.append(socialNode("p", t(result.visibility === "public" ? "collaboration.social.publicMembership" : "collaboration.social.readOnlyMembers")));
     // WeChat-style bottom action: the owner dissolves the group, everyone else
@@ -215,6 +227,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         : socialButton("leave-group", "leaveGroup", () => leaveGroup(conversation, self.userId)));
       surface.append(danger);
     }
+    ui.setSurface(surface);
   }
   // What the list is built from, as a string. A sync event that changed
   // nothing visible here (a typing tick, a read receipt, the 15 s directory
@@ -239,13 +252,27 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       if(label)label.textContent=t('collaboration.social.createGroup');
       refreshGroupSubmit();
       directory = payload.directory || { contacts: [], teams: [] }; conversations = payload.conversations || [];
-      // Revocation is state, not paint: a detail view (or one still loading)
-      // for a conversation that just vanished must be invalidated on EVERY
-      // update, including one whose visible content is identical — a late
-      // detail response would otherwise recreate controls for a revoked Team.
+      // Revocation must run even while a creation editor is preserving its DOM.
       if (pendingDetailsId && !conversations.some((c) => c.id === pendingDetailsId) || detailsConversation && (!conversations.some((c) => c.id === detailsConversation.id)
         || detailsConversation.scopeId.startsWith("team:") && !directory.teams.some((team) => team.scopeId === detailsConversation.scopeId))) {
         detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; closeDetailSurface(); ui.reset();
+      }
+      // Keep the active editor and its focus stable during background refresh.
+      // Authorization changes still update available people and public visibility.
+      const editing = root.querySelector("dialog[open]");
+      if (editing) {
+        const teamId = editing.closest("[data-team-id]")?.dataset.teamId;
+        const team = directory.teams.find(item => item.id === teamId);
+        if (teamId && !team) editing.close();
+        else {
+          if (team) {
+            channelPickers.get(teamId)?.setPeople(team.members.filter(m => m.userId !== directory.profile?.userId));
+            const visibility = editing.querySelector('[name="visibility"]');
+            if (!["owner", "admin"].includes(team.role)) { visibility.querySelector('option[value="public"]')?.remove(); visibility.value = "private"; visibility.dispatchEvent(new Event("change")); }
+          } else groupMembers.setPeople(directory.contacts.filter(c => c.relationship === "friend" && !c.ownBlocked));
+          ui.renderPending(payload.commands || [], "conversation", api, scopeLabel);
+          return;
+        }
       }
       const next = fingerprint(directory, conversations, payload.commands || []);
       if (next === lastFingerprint && list.childElementCount) return;
@@ -289,7 +316,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       const teamsHeading = socialNode("div", t("collaboration.teams"), "collaboration-section-letter");
       teamsHeading.dataset.letter = "teams";
       list.append(teamsHeading);
-      if (!directory.teams.length) list.append(socialNode("p", t("collaboration.social.noTeams"), "collaboration-empty"));
+      if (!directory.teams.length) list.append(socialEmptyState("collaboration.social.noTeams"));
       for (const team of directory.teams) {
         const section = socialNode("section", "", "collaboration-team"); section.dataset.teamId = team.id;
         // The header is the team's own row: name plus a member count that is
@@ -305,16 +332,16 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         teamButton.dataset.teamId = team.id;
         teamHeading.append(teamButton);
         section.append(teamHeading);
-        if (!rosterState.has(team.id)) rosterState.set(team.id, { open: directory.teams.length === 1 });
-        section.append(createEnterpriseRoster({ team, selfId: directory.profile?.userId, state: rosterState.get(team.id), cached: directory.directorySource === "cached",
+        if (!rosterState.has(team.id)) rosterState.set(team.id, { open: false });
+        const roster = createEnterpriseRoster({ team, selfId: directory.profile?.userId, state: rosterState.get(team.id), cached: directory.directorySource === "cached",
           onChat: member => ui.run(() => api.conversation({ action: "create", scopeType: "organization", organizationId: team.id, kind: "direct", memberUserIds: [member.userId] }),
-            (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); }) }));
+            (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); }) });
         const channels = conversations.filter((c) => c.scopeId === team.scopeId && c.kind === "channel");
         const channelList = socialNode("div", "", "collaboration-team-channels");
-        if (!channels.length) channelList.append(socialNode("p", t("collaboration.social.noChannels"), "collaboration-empty"));
+        if (!channels.length) channelList.append(socialEmptyState("collaboration.social.noChannels"));
         for (const conversation of channels) channelList.append(conversationRow(conversation, { showScope: false }));
         section.append(channelList);
-        section.append(channelForm(team)); list.append(section);
+        section.append(channelForm(team), roster); list.append(section);
         for (const field of section.querySelectorAll("input,select")) {
           if (!field.name || field.closest(".collaboration-member-picker")) continue;
           const draft = drafts.get(team.id)?.find((entry) => entry.name === field.name); if (!draft) continue;
@@ -333,6 +360,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
      *  size makes the channels unreachable if they are, and the permission
      *  checks that matter live on the conversation, not on the team. */
     showTeam(teamId) {
+      ui.setSurface();
       rosterSurface = "detail";
       detailsGeneration += 1; detailsConversation = null; pendingDetailsId = "";
       const team = directory.teams.find((entry) => entry.id === teamId);
@@ -357,8 +385,10 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         }
         surface.append(row);
       }
+      ui.setSurface(surface);
     },
     async showConversation(conversationId, { surface = "detail" } = {}) {
+      ui.setSurface();
       rosterSurface = drawer && surface === "drawer" ? "drawer" : "detail";
       const generation = ++detailsGeneration, epoch = ui.current();
       pendingDetailsId = conversationId;
@@ -372,6 +402,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       renderDetails(result);
     },
     reset() {
+      for (const dialog of root.querySelectorAll("dialog[open]")) dialog.close();
       lastFingerprint = ""; rosterState.clear(); detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); closeDetailSurface(); },
   };
   return controller;

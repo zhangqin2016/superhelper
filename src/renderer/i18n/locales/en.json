@@ -237,6 +237,7 @@
   "collaboration.social.needMembers": "Pick at least one contact",
   "collaboration.social.name": "Name",
   "collaboration.social.members": "Members",
+  "collaboration.social.manageMember": "Manage",
   "collaboration.social.visibility": "Channel visibility",
   "collaboration.social.private": "Private — invited members only",
   "collaboration.social.public": "Public — all Team members",

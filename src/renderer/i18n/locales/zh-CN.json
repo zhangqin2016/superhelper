@@ -237,6 +237,7 @@
   "collaboration.social.needMembers": "请至少选择 1 位联系人",
   "collaboration.social.name": "名称",
   "collaboration.social.members": "成员",
+  "collaboration.social.manageMember": "管理",
   "collaboration.social.visibility": "频道可见性",
   "collaboration.social.private": "私密，仅受邀成员可见",
   "collaboration.social.public": "公开，所有团队成员可见",

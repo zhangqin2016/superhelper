@@ -54,16 +54,25 @@ export function initCollaborationPanelShell({
     const status = document.getElementById("collaborationStatus");
     const search = document.getElementById("collaborationInboxSearch");
     if (status && search) search.after?.(status);
+    let conversationOpen = false;
+    const fitStandalone = () => {
+      const two = (Number(window.innerWidth) || TWO_PANE_WIDTH) >= TWO_PANE_WIDTH;
+      panel.dataset.collaborationPanes = two ? "two" : "one";
+      if (home) home.hidden = !two && conversationOpen;
+      if (backButton) backButton.hidden = two || !conversationOpen;
+    };
+    window.addEventListener?.("resize", fitStandalone); fitStandalone();
     return Object.freeze({
       openPanel() {}, closePanel() {}, isOpen: () => true,
       // A conversation opens beside the list, exactly as in the wide docked
       // panel; there is nothing to go back to because the list never left.
       setConversationOpen(value) {
+        conversationOpen = Boolean(value);
         panel.classList.toggle("is-conversation-open", Boolean(value));
         if (conversation) conversation.hidden = !value;
-        if (home) home.hidden = false;
+        fitStandalone();
       },
-      destroy() {},
+      destroy() { window.removeEventListener?.("resize", fitStandalone); },
     });
   }
   if (!toggle) return null;

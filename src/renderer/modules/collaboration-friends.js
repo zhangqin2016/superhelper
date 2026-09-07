@@ -1,5 +1,5 @@
 import { t } from "../i18n/index.js";
-import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
+import { createSocialUi, socialEmptyState, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 import { groupByLetter } from "./contact-sections.js";
 import { presenceBadge } from "./collaboration-presence-view.js";
 
@@ -42,15 +42,19 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   // out from a generic failure afterwards whether that person exists. The
   // server has always had a rate-limited lookup; it simply had no route.
   const addForm = socialNode("form", "", "collaboration-social-form");
+  addForm.dataset.form = "contact";
   const lilyId = socialField(addForm, "lilyId", "exactLilyId"); lilyId.required = true; lilyId.maxLength = 64;
   const findButton = socialNode("button", t("collaboration.social.findContact"), "collaboration-social-primary");
   findButton.type = "submit"; findButton.dataset.action = "find-contact"; addForm.append(findButton);
+  findButton.dataset.i18n = "collaboration.social.findContact";
   // What the lookup found: a real row, so you see who you are about to add.
   const foundBox = socialNode("div", "", "collaboration-lookup-result"); foundBox.hidden = true; addForm.append(foundBox);
   const lookupNote = socialNode("p", "", "collaboration-form-note"); lookupNote.hidden = true;
   lookupNote.setAttribute("role", "status"); addForm.append(lookupNote);
   const addDisclosure = socialDisclosure(t("collaboration.social.addContact"), addForm, { primary: true, icon: "plus" });
   addDisclosure.classList.add("is-row", "is-entry-row");
+  const contactDialog = addForm.closest("dialog");
+  contactDialog?.addEventListener("close", () => { clearLookup(); });
 
   const contacts = socialNode("div", "", "collaboration-contact-list");
   // No search input of its own: the panel header owns the one search box and
@@ -61,6 +65,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   let filter = "", requestsOpen = false;
   let requestSurface = null;
   const clearRequests = () => {
+    ui.setSurface();
     requestsOpen = false; requestSurface = null; requestsPanel.hidden = true;
     entries.querySelector('[data-action="new-friends"]')?.setAttribute("aria-expanded", "false");
   };
@@ -72,6 +77,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     }
     paint();
   };
+  const openAddContact = () => { clearRequests(); detail?.close?.(); addDisclosure.open = true; };
   let directoryCache = { contacts: [] };
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
 
@@ -80,6 +86,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   function clearLookup() {
     lookupGeneration += 1;
     found = null; foundBox.hidden = true; foundBox.replaceChildren();
+    contactDialog?.querySelector('[data-action="send-request"]')?.remove();
     lookupNote.hidden = true; lookupNote.textContent = "";
     findButton.disabled = false;
   }
@@ -107,18 +114,24 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     greeting.placeholder = t("collaboration.social.greeting");
     greeting.setAttribute("aria-label", t("collaboration.social.greeting"));
     greeting.dataset.field = "greeting";
+    greeting.dataset.i18nPlaceholder = "collaboration.social.greeting"; greeting.dataset.i18nAriaLabel = "collaboration.social.greeting";
     const send = socialNode("button", t("collaboration.social.sendRequest"), "collaboration-social-primary");
     send.type = "button"; send.dataset.action = "send-request";
+    send.dataset.i18n = "collaboration.social.sendRequest";
     send.addEventListener("click", () => {
       const target = found?.lilyId;
       if (!target) return;
       const message = greeting.value.trim();
+      const dialogEpoch = addForm.dataset.dialogEpoch;
       void ui.run(() => api.friend({ action: "request", lilyId: target, ...(message ? { message } : {}) }), () => {
+        if (dialogEpoch !== addForm.dataset.dialogEpoch) return;
         if (lilyId.value.trim().toLowerCase() === target) lilyId.value = "";
         clearLookup();
+        contactDialog?.close();
       });
     });
-    foundBox.append(greeting, send);
+    foundBox.append(greeting);
+    (contactDialog?.querySelector("footer") || foundBox).append(send);
   }
 
   addForm.addEventListener("submit", async (event) => {
@@ -131,6 +144,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     // for what is a read. It also owns the shared status line, which the
     // lookup should not take over.
     const generation = ++lookupGeneration;
+    const dialogEpoch = addForm.dataset.dialogEpoch;
     findButton.disabled = true;
     lookupNote.hidden = false;
     lookupNote.textContent = t("collaboration.social.searching");
@@ -138,6 +152,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     try { result = await api.lookupFriend?.(value); } catch { result = null; }
     // A later lookup, a reset, or a switched account must win.
     if (generation !== lookupGeneration) return;
+    if (dialogEpoch !== addForm.dataset.dialogEpoch) return;
     findButton.disabled = false;
     if (result?.ok === true && result.profile?.userId) {
       lookupNote.hidden = true;
@@ -234,18 +249,27 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   }
 
   function paintRequests(incoming) {
-    requestsPanel.replaceChildren();
     // With a detail view the requests are their own screen; without one (this
     // module rendered standalone, as the DOM tests do) they expand in place.
     const surface = requestSurface || requestsPanel;
     requestsPanel.hidden = !requestsOpen || surface !== requestsPanel;
     if (!requestsOpen) return;
-    surface.replaceChildren();
-    if (!incoming.length) { surface.append(socialNode("p", t("collaboration.social.noRequests"), "collaboration-empty")); return; }
+    let content = surface.querySelector('.collaboration-request-content');
+    if (!content) { content = socialNode("div", "", "collaboration-request-content"); surface.append(content); }
+    content.replaceChildren();
+    ui.setSurface(surface);
+    if (!incoming.length) {
+      const empty = socialNode("div", "", "collaboration-empty-state");
+      empty.append(socialNode("span", "＋", "collaboration-empty-symbol"));
+      empty.firstChild.setAttribute("aria-hidden", "true");
+      empty.append(socialNode("p", t("collaboration.social.noRequests"), "collaboration-empty"));
+      empty.append(socialButton("empty-add-contact", "addContact", openAddContact));
+      content.append(empty); return;
+    }
     // Accept/decline stay as words here: this is the one screen where deciding
     // is the whole purpose, so the actions should not hide behind hover.
     for (const contact of incoming) {
-      surface.append(contactRow(contact, { actions: [
+      content.append(contactRow(contact, { actions: [
         socialButton("accept", "accept", () => change("accept", contact)),
         socialButton("decline", "decline", () => change("decline", contact)),
       ] }));
@@ -268,7 +292,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     contacts.replaceChildren();
     const friends = all.filter((contact) => !contact.ownBlocked && contact.relationship !== "incoming" && matches(contact, needle));
     const blocked = all.filter((contact) => contact.ownBlocked && matches(contact, needle));
-    if (!friends.length && !blocked.length) { contacts.append(socialNode("p", t("collaboration.noFriends"), "collaboration-empty")); return; }
+    if (!friends.length && !blocked.length) { contacts.append(socialEmptyState(needle ? "workspaceCenter.noResults" : "collaboration.noFriends", needle ? null : socialButton("empty-add-contact", "addContact", openAddContact))); return; }
 
     for (const section of groupByLetter(friends, (contact) => identityName(contact))) {
       const heading = socialNode("div", section.letter, "collaboration-section-letter");
@@ -300,6 +324,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     },
     setFilter(value) { filter = String(value || ""); paint(); },
     reset() {
+      contactDialog?.close();
       ui.reset(); lilyId.value = ""; clearLookup(); filter = "";
       if (requestsOpen) detail?.close?.();
       clearRequests();

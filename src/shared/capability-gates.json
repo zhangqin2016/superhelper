@@ -2,6 +2,16 @@
   "schemaVersion": 1,
   "gates": [
     {
+      "id": "collaboration-detail-presentation",
+      "protects": "Collaboration dialogs and detail surfaces remain visible, actionable, and isolated from stale asynchronous results.",
+      "baseline": "Creation drafts and focus survive locale and directory refreshes; confirmations, retries, and navigation remain usable in narrow and dark layouts.",
+      "failureFallback": "Preserve drafts and original command identities, show actionable failures, and ignore late results after a surface is closed or replaced.",
+      "tests": [
+        "scripts/test-collaboration-page-polish.cjs",
+        "scripts/test-collaboration-create-dialog.cjs"
+      ]
+    },
+    {
       "id": "collaboration-local-first-reliability",
       "protects": "Optional collaboration cannot break AI work, cross accounts, fabricate delivery, lose cached history, or expose unverified decrypted files.",
       "baseline": "AI workbench behavior remains unchanged when collaboration is disabled or unavailable; collaboration uses its own encrypted store.",

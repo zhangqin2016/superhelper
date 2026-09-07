@@ -43,12 +43,14 @@ export function createMemberPicker({ minimum = 1, single = false, onChange = () 
   const search = document.createElement("input");
   search.type = "search"; search.className = "collaboration-search"; search.autocomplete = "off";
   search.placeholder = t("collaboration.social.pickMembers");
+  search.dataset.i18nPlaceholder = "collaboration.social.pickMembers"; search.dataset.i18nAriaLabel = "collaboration.social.pickMembers";
   search.setAttribute("aria-label", t("collaboration.social.pickMembers"));
 
   const strip = socialNode("div", "", "collaboration-picker-strip");
   const list = socialNode("div", "", "collaboration-picker-list");
   list.setAttribute("role", "group");
   list.setAttribute("aria-label", t("collaboration.social.pickMembers"));
+  list.dataset.i18nAriaLabel = "collaboration.social.pickMembers";
   root.append(search, strip, list);
 
   let people = [];
@@ -141,10 +143,21 @@ export function createMemberPicker({ minimum = 1, single = false, onChange = () 
     node: root,
     /** Selection is kept across a roster refresh for anyone still present. */
     setPeople(next) {
+      const active = document.activeElement;
+      const focusedId = active && root.contains(active) ? active.closest?.('[data-user-id]')?.dataset.userId : null;
+      const focusedChip = active?.classList?.contains("collaboration-picker-chip");
+      const listScroll = list.scrollTop, stripScroll = strip.scrollTop, stripLeft = strip.scrollLeft;
       people = (Array.isArray(next) ? next : []).filter((person) => typeof person?.userId === "string" && person.userId);
       const present = new Set(people.map((person) => person.userId));
       for (const userId of [...selected]) if (!present.has(userId)) selected.delete(userId);
       paint();
+      if (focusedId) {
+        const candidates = root.querySelectorAll(focusedChip ? '.collaboration-picker-chip' : '.is-pick');
+        const replacement = [...candidates].find(node => node.dataset.userId === focusedId);
+        (focusedChip ? replacement : replacement?.querySelector('input'))?.focus({ preventScroll: true });
+        if (!replacement) search.focus({ preventScroll: true });
+      }
+      list.scrollTop = listScroll; strip.scrollTop = stripScroll; strip.scrollLeft = stripLeft;
     },
     selectedIds() { return selectedPeople().map((person) => person.userId); },
     selectedNames() { return selectedPeople().map((person) => nameOf(person)); },

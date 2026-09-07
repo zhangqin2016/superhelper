@@ -1921,7 +1921,7 @@
 }
 
 .collaboration-social-actions button,
-.collaboration-social-row > button {
+.collaboration-social-row > button:not(.collaboration-row-open) {
   min-height: 28px;
   padding: 4px 7px;
   color: var(--muted);
@@ -1931,7 +1931,7 @@
 }
 
 .collaboration-social-actions button:hover,
-.collaboration-social-row > button:hover {
+.collaboration-social-row > button:not(.collaboration-row-open):hover {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
