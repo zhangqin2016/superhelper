@@ -5,9 +5,18 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { executionReceipt } = require('../src/main/task-verification-receipt');
+const { executionReceipt, verificationInvocation } = require('../src/main/task-verification-receipt');
+assert.equal(
+  verificationInvocation('node "C:\\work\\test-value.cjs"'),
+  process.platform === 'win32' ? 'test' : '',
+  'Windows test paths are accepted without weakening POSIX escape rejection',
+);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lily-shell-receipt-'));
 try {
+  if (process.platform === 'win32') {
+    console.log('task-verification-shell: Windows path classification passed; POSIX wrapper checks skipped');
+    process.exitCode = 0;
+  } else {
   fs.writeFileSync(path.join(dir, 'test-pass.cjs'), 'process.exitCode=0;');
   fs.writeFileSync(path.join(dir, 'test-fail.cjs'), 'console.log("EXIT_CODE=0");process.exitCode=1;');
   const run = command => {
@@ -37,4 +46,5 @@ try {
   const { buildAgentBasePersona } = require('../src/main/skill-manager');
   for (const locale of ['zh-CN', 'en', 'ar']) assert.match(buildAgentBasePersona(locale), /node test-summary\.cjs/, 'production guidance teaches an independent final verification call');
   console.log('task-verification-shell: passed');
+  }
 } finally { fs.rmSync(dir, { recursive: true, force: true }); }

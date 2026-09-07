@@ -16,7 +16,11 @@ function defaultExtractionRequirements(criteria = [], deliverables = []) {
 // Complex shell programs remain observations; this function never runs a shell.
 function verificationInvocation(command = "") {
   const text = String(command).trim();
-  if (!text || text.length > 4096 || /[\n\r;|&<>`$()#\\]/.test(text)) return "";
+  if (!text || text.length > 4096 || /[\n\r;|&<>`$()#]/.test(text)) return "";
+  // Backslashes are ordinary path separators on Windows, but remain rejected
+  // elsewhere because this deliberately narrow tokenizer does not interpret
+  // POSIX shell escaping.
+  if (process.platform !== "win32" && text.includes("\\")) return "";
   const args = text.match(/"[^"\n]*"|'[^'\n]*'|[^\s]+/g)?.map(x => x.replace(/^(["'])(.*)\1$/, "$2")) || [];
   if (args.some(arg => ["--help", "-h", "--version", "--collect-only", "--listTests", "--list", "list", "--dry-run"].includes(arg))) return "";
   const executable = path.basename(args.shift() || "").replace(/\.(exe|cmd)$/i, "").toLowerCase();
