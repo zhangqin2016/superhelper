@@ -1,5 +1,6 @@
 import { createEnterpriseRoster } from "./enterprise-roster.js";
-import { t } from "../i18n/index.js";
+import { presenceBadge } from "./collaboration-presence-view.js";
+import { t, getLocale } from "../i18n/index.js";
 import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName, resolvePerson, conversationDisplayTitle, preserveScroll } from "./collaboration-social-ui.js";
 import { createMemberPicker, derivedGroupTitle } from "./member-picker.js";
 
@@ -222,6 +223,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   // poll while nothing the user can see has changed.
   let lastFingerprint = "";
   const fingerprint = (dir, convs, cmds) => JSON.stringify({
+    locale: getLocale(),
     self: dir.profile?.userId || "", source: dir.directorySource || "",
     contacts: (dir.contacts || []).map((c) => [c.userId, c.relationship, Boolean(c.ownBlocked)]),
     teams: (dir.teams || []).map((team) => [team.id, team.name, team.role,
@@ -232,6 +234,9 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   });
   const controller = {
     update(payload = {}) {
+      const label = createGroupEntry.querySelector('summary')?.lastChild;
+      if(label)label.textContent=t('collaboration.social.createGroup');
+      refreshGroupSubmit();
       directory = payload.directory || { contacts: [], teams: [] }; conversations = payload.conversations || [];
       // Revocation is state, not paint: a detail view (or one still loading)
       // for a conversation that just vanished must be invalidated on EVERY
@@ -303,7 +308,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         section.append(createEnterpriseRoster({ team, selfId: directory.profile?.userId, state: rosterState.get(team.id), cached: directory.directorySource === "cached",
           onChat: member => ui.run(() => api.conversation({ action: "create", scopeType: "organization", organizationId: team.id, kind: "direct", memberUserIds: [member.userId] }),
             (result, origin) => { if (origin.isCurrentNavigation()) return onOpen(result.conversationId); }) }));
-        const channels = conversations.filter((c) => c.scopeId === team.scopeId);
+        const channels = conversations.filter((c) => c.scopeId === team.scopeId && c.kind === "channel");
         const channelList = socialNode("div", "", "collaboration-team-channels");
         if (!channels.length) channelList.append(socialNode("p", t("collaboration.social.noChannels"), "collaboration-empty"));
         for (const conversation of channels) channelList.append(conversationRow(conversation, { showScope: false }));
@@ -340,6 +345,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
           avatar: socialAvatar(name),
           subtitle: t(`collaboration.social.role.${member.role || "member"}`),
         }));
+        row.querySelector('.collaboration-row-content')?.append(presenceBadge(member.userId));
         if (member.userId !== directory.profile?.userId) {
           const controls = socialNode("div", "", "collaboration-social-actions");
           controls.append(socialIconButton("team-chat", "teamChat", "chat", () => ui.run(

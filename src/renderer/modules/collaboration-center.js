@@ -18,6 +18,8 @@ import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
 import { renderCollaborationTypingHint } from "./collaboration-typing-view.js";
+import { initRemoteTasks } from "./collaboration-remote-tasks.js";
+import { createOnlinePresenceView } from "./collaboration-online-presence.js";
 
 function byId(id) { return document.getElementById(id); }
 
@@ -167,10 +169,26 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let openingConversationId = "";
   const invalidateOpen = () => { openGeneration += 1; opening = false; navigating = false; openingConversationId = ""; loadingOlder = false; updateOlderButton(); };
   let directory = null, loadGeneration = 0, activeSection = "inbox", navigationGeneration = 0;
+  const presenceHeader = document.createElement('span');
+  presenceHeader.className = 'collaboration-header-presence';
+  byId('collaborationConversationTitle')?.parentElement?.append(presenceHeader);
+  const onlineView = createOnlinePresenceView({root:panel, header:presenceHeader,
+    getAccountId: () => directory?.profile?.userId || '',
+    getPeer: () => {
+      const conversation = lastConversations.find(row => row.id === activeConversationId);
+      if (byId('collaborationConversation')?.hidden || conversation?.kind !== 'direct') return '';
+      return conversation.memberUserIds?.find(id => id !== directory?.profile?.userId) || '';
+    } });
+  const remoteTasks = initRemoteTasks({ root: byId("collaborationConversation"), header: byId("collaborationConversation")?.querySelector(".collaboration-conversation-header"),
+    recoveryHeader: byId("collaborationInboxColumn"), recoveryRoot: panel,
+    getContext: () => ({ enabled: !disposed && !panel.hidden && policyEnabled && transferPolicy.tasks === true, conversationId: activeConversationId, userId: directory?.profile?.userId || "" }),
+    resolveName: (id) => identityName(resolvePerson(directory, id)),
+  });
   const sectionNodes = { inbox: byId("collaborationInbox"), people: byId("collaborationFriends"), teams: byId("collaborationTeams") };
   const sectionButtons = { inbox: byId("collaborationInboxTab"), people: byId("collaborationPeopleTab"), teams: byId("collaborationTeamsTab") };
   function showSection(section) {
     navigationGeneration += 1;
+    invalidateOpen();
     activeSection = section;
     for (const [name, node] of Object.entries(sectionNodes)) if (node) node.hidden = name !== section;
     // One search box, always in the same place, retargeted at the list on
@@ -219,7 +237,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     onError: () => { if (live) live.textContent = t("collaboration.sendFailed"); },
   });
   composer.setActive?.(!panel.hidden && policyEnabled);
-  const unsubscribeLocale = onLocaleChange(renderTimeline);
+  const unsubscribeLocale = onLocaleChange(() => {renderTimeline();socialDirty.people=true;socialDirty.teams=true;flushSocial(activeSection);});
 
   const clearRevokedSelection = (result, conversationId) => {
     if (!["COLLAB_ACCESS_REVOKED", "COLLABORATION_NOT_FOUND"].includes(result?.code)) return false;
@@ -228,6 +246,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (activeConversationId !== conversationId) return false;
     if (!opening || openingConversationId === conversationId) invalidateOpen();
     activeConversationId = "";
+    remoteTasks.update();
     activeConversationKind = "";
     historyMessages = []; nextBeforeSeq = null; hasMore = false; historyOffline = false;
     attachments.reset(); timeline?.replaceChildren(); updateOlderButton();
@@ -239,6 +258,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const queueOpen = createLatestOpenQueue();
   const openConversation = async (conversationId, { userNavigation = true } = {}) => {
     if (disposed) return;
+    if (userNavigation) remoteTasks.invalidate();
     if (userNavigation) navigationGeneration += 1;
     const generation = ++openGeneration;
     const view = viewGeneration;
@@ -318,7 +338,9 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     loadingOlder = false;
     updateOlderButton();
     composer.setConversation(conversationId);
-    panelShell?.setConversationOpen(true);
+    remoteTasks.update();
+    // Refreshing history has no navigation authority, including after Back.
+    if (userNavigation) panelShell?.setConversationOpen(true);
     // The search bar stays hidden until the header's search icon asks for it.
     composer.setActive?.(!panel.hidden && policyEnabled);
     composer.refreshReply?.(historyMessages);
@@ -360,6 +382,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   const setActive = (active) => {
     if (disposed) return;
     if (!active) { navigationGeneration += 1; invalidateOpen(); attachments.dismiss(); }
+    if (!active) remoteTasks.invalidate();
     if (panelShell) active ? panelShell.openPanel() : panelShell.closePanel();
     else { shell.classList.toggle("collaboration-active", active); panel.hidden = !active; }
     nav.setAttribute("aria-current", active ? "page" : "false");
@@ -409,6 +432,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (view !== viewGeneration || generation !== loadGeneration) return;
     if (socialDirectory?.ok) {
       directory = socialDirectory;
+      remoteTasks.update();
       lastSocial = { directory, commands: socialCommands?.commands || [], conversations: result?.conversations || [] };
       // The hidden lists keep their last render and are marked stale; showing
       // one flushes it. Rebuilding all of them on every load is most of what
@@ -430,7 +454,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (!panelShell) setActive(true);
     queueMicrotask(() => { composer.setActive?.(!panel.hidden && policyEnabled && !navigating); if (!panel.hidden) void load(); });
   };
-  const backClick = () => { conversationHeaderControl?.reset(); groupDrawer.close(); searchQuery = ""; panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
+  const backClick = () => { navigationGeneration += 1; invalidateOpen(); conversationHeaderControl?.reset(); groupDrawer.close(); searchQuery = ""; panelShell ? panelShell.setConversationOpen(false) : setActive(false); };
   nav.addEventListener("click", navClick);
   back?.addEventListener("click", backClick);
   const searchInput = () => {
@@ -480,6 +504,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     const enabled = policy?.collaboration?.enabled === true;
     policyEnabled = enabled;
     transferPolicy = enabled ? policy.collaboration : {};
+    remoteTasks.update();
     attachments.setPolicy(transferPolicy);
     composer.setActive?.(enabled && !panel.hidden && !navigating);
     renderTimeline();
@@ -488,6 +513,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     return enabled;
   }
   const unsubscribe = window.assistantClient?.collaboration?.onStateChange?.((payload) => {
+    if (["online-presence", "typing"].includes(payload?.type) && payload?.state?.ok === true) {
+      renderCollaborationTypingHint({node:byId("collaborationTyping"),state:payload.state,conversationId:activeConversationId,currentUserId:directory?.profile?.userId || "",directory});
+      onlineView.changed(payload.state.onlinePresence); return;
+    }
+    if (payload?.type === "task" && payload?.state?.ok === true) remoteTasks.onChange();
+    if (["availability", "access-revoked"].includes(payload?.type) || payload?.state?.ok !== true) remoteTasks.invalidate();
     if (payload?.state?.ok === true) renderCollaborationTypingHint({
       node: byId("collaborationTyping"), state: payload.state, conversationId: activeConversationId,
       currentUserId: directory?.profile?.userId || "", directory,
@@ -504,6 +535,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       historyMessages = []; nextBeforeSeq = null; hasMore = false; loadingOlder = false; historyOffline = false; updateOlderButton();
       bootstrapAttempted = false;
       loadGeneration += 1; directory = null; friends.reset(); teams.reset(); lastSocial = null; socialDirty.people = true; socialDirty.teams = true;
+      onlineView.reset();
       composer.reset?.();
       replySourceMasks.clear();
       attachments.reset();
@@ -526,5 +558,5 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   });
   void refresh();
   const directoryTimer = setInterval(() => { if (!disposed && !panel.hidden && policyEnabled) void load(); }, 15000);
-  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { clearInterval(directoryTimer); disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); lastSocial = null; socialDirty.people = true; socialDirty.teams = true; attachments.destroy(); panelShell?.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back?.removeEventListener("click", backClick); detach.destroy(); detail.destroy(); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
+  return { refresh, open: openConversation, loadOlder, show: () => { if (disposed) return; setActive(true); showSection(activeSection); void load(); }, hide: () => setActive(false), destroy: () => { onlineView.destroy(); presenceHeader.remove(); clearInterval(directoryTimer); disposed = true; viewGeneration += 1; openGeneration += 1; loadGeneration += 1; friends.reset(); teams.reset(); lastSocial = null; socialDirty.people = true; socialDirty.teams = true; attachments.destroy(); panelShell?.destroy(); for (const [button, handler] of sectionHandlers) button?.removeEventListener("click", handler); nav.removeEventListener("click", navClick); back?.removeEventListener("click", backClick); remoteTasks.destroy(); detach.destroy(); detail.destroy(); olderButton?.removeEventListener("click", loadOlder); unsubscribe?.(); unsubscribeLocale(); composer.destroy(); replySourceMasks.clear(); renderTimeline(); } };
 }

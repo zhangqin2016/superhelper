@@ -17,7 +17,9 @@ function directoryView(value) {
   const teams = rows(value.teams).map((team) => {
     const teamId = id(team?.id);
     if (team.scopeId !== `team:${teamId}` || !Array.isArray(team.members)) invalid();
-    const members = rows(team.members).map((member) => ({ ...profile(member), role: role(member.role), ...(member.presence == null ? {} : { presence: ["online", "offline", "unknown"].includes(member.presence) ? member.presence : "unknown", onlineUntil: Number.isFinite(Date.parse(member.onlineUntil)) ? member.onlineUntil : null }) }));
+    // Directory snapshots may survive process restarts. Only the independent
+    // memory-only presence query can claim someone is online.
+    const members = rows(team.members).map((member) => ({ ...profile(member), role: role(member.role), ...(member.presence == null ? {} : { presence: "unknown", onlineUntil: null }) }));
     unique(members.map((m) => m.userId));
     return { id: teamId, scopeId: team.scopeId, name: text(team.name), role: role(team.role), members };
   });

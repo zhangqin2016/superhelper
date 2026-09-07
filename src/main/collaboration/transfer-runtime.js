@@ -302,6 +302,30 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
       }); },
       // Main-process save/import brokers only. Never expose this through IPC.
       verifiedFile,
+      // Task material has a server task binding, never a fabricated chat message.
+      // Kept main-only: callers cannot supply filesystem paths through IPC.
+      taskFiles: Object.freeze({
+        prepareUpload({ conversationId, inputPath, originalName, expectedPlaintextSha256 }) { return perform(() => {
+          const target = conversation(conversationId, "workspace");
+          return manager.prepareUpload({ conversationId, scopeId: target.scopeId, purpose: "workspace", inputPath, originalName, expectedPlaintextSha256 });
+        }); },
+        upload(transferId) { return perform(() => manager.resumeUpload(transferId)); },
+        download({ conversationId, taskId, objectId }) { return perform(async () => {
+          const target = conversation(conversationId, "workspace");
+          const task = await client.getTask({ deviceId, taskId });
+          authorize({ conversationId, scopeId: target.scopeId, purpose: "workspace" });
+          if (!task || task.id !== taskId || task.conversationId !== conversationId
+            || ![task.requesterUserId, task.assigneeUserId].includes(store.accountId)
+            || ["cancelled", "declined"].includes(task.state)
+            || (task.inputSnapshotId !== objectId && !task.deliveries?.some(item => item.id === objectId))) throw fail("COLLAB_TASK_ACCESS_DENIED");
+          let transfer = manager.list().transfers.find(item => item.direction === "download" && item.conversationId === conversationId
+            && item.objectId === objectId && item.purpose === "workspace" && item.state !== "cancelled");
+          if (!transfer) transfer = manager.prepareDownload({ conversationId, scopeId: target.scopeId, purpose: "workspace", objectId });
+          const result = await manager.resumeDownload(transfer.id);
+          if (result?.ok !== true || result.state !== "ready") return result;
+          return { ok: true, packagePath: await verifiedFile(transfer.id) };
+        }); },
+      }),
       // Private coordinator capability; service uses it to hand off into the
       // ordinary text outbox. It is intentionally absent from IPC/preload.
       createSendIntent, listSendIntents, handoffIntent, completeHandoff,

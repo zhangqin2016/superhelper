@@ -166,6 +166,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   listSessions: () => ipcRenderer.invoke("session:list"),
   createSession: (title, projectId) => ipcRenderer.invoke("session:create", title, projectId),
   switchSession: (sessionId) => ipcRenderer.invoke("session:switch", sessionId),
+  focusSession: (sessionId) => ipcRenderer.invoke("session:focus", sessionId),
   getSessionConversation: (sessionId, options = {}) =>
     ipcRenderer.invoke("session:get-conversation", { sessionId, ...options }),
   renameSession: (sessionId, title) => ipcRenderer.invoke("session:rename", sessionId, title),
@@ -452,6 +453,12 @@ contextBridge.exposeInMainWorld("assistantClient", {
   // Intentionally a closed command set. The renderer never receives bearer
   // credentials, device signatures, encrypted key material, or local paths.
   collaboration: {
+    listTasks: (conversationId) => ipcRenderer.invoke("collaboration:list-tasks", { conversationId }),
+    getTask: ({ conversationId, taskId }) => ipcRenderer.invoke("collaboration:get-task", { conversationId, taskId }),
+    changeTask: (command) => ipcRenderer.invoke("collaboration:change-task", command),
+    getTaskCommands: (conversationId) => ipcRenderer.invoke("collaboration:get-task-commands", { conversationId }),
+    taskWorkflow: (payload) => ipcRenderer.invoke("collaboration:task-workflow", payload),
+    retryTask: (clientCommandId) => ipcRenderer.invoke("collaboration:retry-task", { clientCommandId }),
     getTransfers: () => ipcRenderer.invoke("collaboration:get-transfers"),
     prepareDroppedAttachment: (conversationId, file) => {
       let filePath = "";
@@ -472,6 +479,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     resolveTransferPreview: (transferId) => ipcRenderer.invoke("collaboration:resolve-preview", { transferId }),
     sendAttachments: ({ conversationId, transferIds, bodyText, clientCommandId } = {}) => ipcRenderer.invoke("collaboration:send-attachments", { conversationId, transferIds, bodyText, ...(clientCommandId == null ? {} : { clientCommandId }) }),
     getDirectory: () => ipcRenderer.invoke("collaboration:get-directory"),
+    getPresence: (payload) => ipcRenderer.invoke("collaboration:get-presence", payload),
     getState: () => ipcRenderer.invoke("collaboration:get-state"),
     bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),
     list: () => ipcRenderer.invoke("collaboration:list"),

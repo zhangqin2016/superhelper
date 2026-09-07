@@ -20,6 +20,7 @@ import { ADMIN_UPLOAD_LIMIT_BYTES } from "./limits.js";
 import { createCollaborationWsTicketService } from "./services/collaboration/ws-ticket.js";
 import { COLLABORATION_NOTIFY_CHANNEL, createRealtimeDispatcher, createRealtimeNotifyLifecycle } from "./services/collaboration/realtime-dispatcher.js";
 import { registerCollaborationRealtimeGateway } from "./services/collaboration/realtime-gateway.js";
+import { createPresenceRedisLifecycle } from "./services/collaboration/presence-redis.js";
 
 import { createRequestRateLimiter } from "./services/request-rate-limit.js";
 
@@ -86,7 +87,11 @@ export async function buildApp() {
   // Durable sync remains the delivery source of truth. This optional layer
   // emits only wake-up hints and is absent entirely when rollout is disabled.
   if (config.collaborationEnabled && config.collaborationRealtimeEnabled && !config.collaborationKillSwitch) {
-    const gateway = registerCollaborationRealtimeGateway(app, {
+    let gateway;
+    const redisPresence = config.collaborationRedisUrl ? await createPresenceRedisLifecycle({ url: config.collaborationRedisUrl, namespace: config.collaborationRedisNamespace, log: app.log, onHint: () => gateway?.notifyPresenceChanged() }) : null;
+    app.collaborationPresenceHealth = redisPresence?.health || (() => ({ configured: false, ready: false, subscriberReady: false }));
+    gateway = registerCollaborationRealtimeGateway(app, {
+      ...(redisPresence ? { presence: redisPresence.store } : {}),
       ticketService: createCollaborationWsTicketService({ db }),
       resolveEphemeralRecipients: async ({ userId, conversationId }) => {
         const conversation = await db.selectFrom("conversations").select(["scope_type", "organization_id"])
@@ -107,6 +112,7 @@ export async function buildApp() {
         return recipientUserIds.includes(userId) ? recipientUserIds : [];
       },
     });
+    if (redisPresence) app.addHook("onClose", async () => redisPresence.stop());
     const dispatcher = createRealtimeDispatcher({
       db,
       notify: async ({ userId, maxCursor }) => {

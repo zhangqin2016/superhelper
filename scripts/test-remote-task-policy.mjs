@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {resolveCollaborationPolicy,resolveServerCollaborationPolicy,applyCollaborationPolicyGate} from '../server/src/services/collaboration/policy.js';
+const policy={enabled:true,workspaceShares:true,tasks:true};
+assert.equal(resolveCollaborationPolicy(policy).tasks,true);
+assert.notEqual(resolveCollaborationPolicy({...policy,workspaceShares:false}).tasks,true);
+assert.notEqual(resolveCollaborationPolicy({...policy,enabled:false}).tasks,true);
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).tasks,true);
+assert.notEqual(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:true,tasks:false}).collaboration.tasks,true);
+assert.equal(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:true,tasks:true}).collaboration.tasks,true);
+assert.notEqual(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:false,tasks:true}).collaboration.tasks,true);
+console.log('remote task signed policy: optional rollout and independent master/workspace gates passed');

@@ -1,0 +1,29 @@
+# Optional sidecar for host-network API deployments. Core API health never
+# depends on this container: presence degrades to unknown during an outage.
+services:
+  collaboration-redis:
+    image: ${COLLABORATION_REDIS_IMAGE:-redis:7.4-alpine}
+    container_name: lily-collaboration-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:16379:6379"
+    entrypoint: ["/bin/sh", "/opt/lily/redis-entrypoint.sh"]
+    volumes:
+      - ./redis-entrypoint.sh:/opt/lily/redis-entrypoint.sh:ro
+      - ./redis-healthcheck.sh:/opt/lily/redis-healthcheck.sh:ro
+    secrets:
+      - redis_password
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/opt/lily/redis-healthcheck.sh"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  redis_password:
+    file: ${COLLABORATION_REDIS_PASSWORD_FILE:?private Redis password file is required}

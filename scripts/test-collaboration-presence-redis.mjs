@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const moduleUrl = new URL('../server/src/services/collaboration/presence-redis.js', import.meta.url);
+assert.ok(fs.existsSync(moduleUrl), 'shared Redis presence implementation is required');
+const { createRedisPresence } = await import(moduleUrl);
+const { createPresenceRedisLifecycle } = await import(moduleUrl);
+for (const settings of [{url:'invalid-url'},{url:'redis://127.0.0.1:1',namespace:'invalid/environment'}]) {
+ const invalid=await createPresenceRedisLifecycle(settings);
+ assert.deepEqual(invalid.health(),{configured:true,ready:false,subscriberReady:false});
+ assert.equal((await invalid.store.readBatch([{userId:'u',activeDevices:new Set(['d'])}]))[0].presence,'unknown');
+ await invalid.stop();
+}
+assert.throws(()=>createRedisPresence({namespace:'invalid/environment'}),/NAMESPACE_INVALID/,'invalid namespace cannot silently share another environment');
+const commands = [];
+let ready = false;
+const client = { get isReady() { return ready; }, async eval(script, args) { commands.push({script,args}); return args.keys.length > 1 ? ['0','0'] : 100000; } };
+const store = createRedisPresence({client, namespace:'test', commandTimeoutMs:20});
+assert.equal((await store.readBatch([{userId:'u',activeDevices:new Set(['d'])}]))[0].presence,'unknown');
+await store.connect('c1',{userId:'u',deviceId:'d',sessionId:'s'});
+ready = true;
+await store.touch('c1');
+assert.ok(commands.length, 'heartbeat recreates lease following outage');
+await store.disconnect('c1');
+const before = commands.length;
+await store.touch('c1');
+assert.equal(commands.length,before,'closed connections cannot resurrect');
+client.eval = async () => new Promise(()=>{});
+assert.equal((await store.readBatch([{userId:'u',activeDevices:new Set(['d'])}]))[0].presence,'unknown','hung command bounded to unknown');
+await store.clear();
+console.log('Redis presence: outage, recovery, close fencing and bounded reads passed');

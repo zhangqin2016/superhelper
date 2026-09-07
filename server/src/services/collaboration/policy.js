@@ -34,6 +34,7 @@ export function resolveCollaborationPolicy(input = {}, options = {}) {
     realtime: input.realtime !== false,
     attachments: input.attachments === true,
     workspaceShares: input.workspaceShares === true,
+    ...(input.enabled === true && input.workspaceShares === true && input.tasks === true ? { tasks: true } : {}),
     aiTools: input.aiTools === true,
   };
 }
@@ -45,6 +46,7 @@ export function resolveServerCollaborationPolicy(serverConfig = {}, options = {}
     realtime: serverConfig.collaborationRealtimeEnabled !== false,
     attachments: serverConfig.collaborationAttachmentsEnabled === true,
     workspaceShares: serverConfig.collaborationWorkspaceSharesEnabled === true,
+    tasks: serverConfig.collaborationTasksEnabled === true,
     aiTools: serverConfig.collaborationAiToolsEnabled === true,
   }, options);
 }
@@ -68,6 +70,7 @@ export function applyCollaborationPolicyGate(effectiveConfig = {}, options = {})
       realtime: bounded.realtime && options.realtime !== false,
       attachments: bounded.attachments && options.attachments === true,
       workspaceShares: bounded.workspaceShares && options.workspaceShares === true,
+      ...(bounded.tasks === true ? { tasks: options.tasks === true && options.workspaceShares === true } : {}),
       aiTools: bounded.aiTools && options.aiTools === true,
     },
   };

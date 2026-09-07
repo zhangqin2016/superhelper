@@ -4,12 +4,15 @@
 // with a one-click path to the diagnostics page — instead of discovering the
 // breakage on their first failed send.
 
-import { t } from "../i18n/index.js";
+import { t, onLocaleChange } from "../i18n/index.js";
+import { diagnosticText } from "./diagnostic-text.js";
 import { openSettingsPage } from "./settings-panel.js";
 
 let banner = null;
+let currentIssues = [];
 
 function dismiss() {
+  currentIssues = [];
   if (!banner) return;
   banner.remove();
   banner = null;
@@ -17,6 +20,7 @@ function dismiss() {
 
 function render(issues) {
   dismiss();
+  currentIssues = issues;
   banner = document.createElement("div");
   banner.className = "startup-health-banner";
   banner.setAttribute("role", "alert");
@@ -28,7 +32,7 @@ function render(issues) {
   title.textContent = t("startupHealth.title");
   const detail = document.createElement("div");
   detail.className = "startup-health-detail";
-  detail.textContent = issues[0]?.message || "";
+  detail.textContent = diagnosticText(issues[0] || {}).message;
   text.append(title, detail);
 
   const action = document.createElement("button");
@@ -52,6 +56,9 @@ function render(issues) {
 }
 
 export function initStartupHealth() {
+  onLocaleChange(() => {
+    if (banner) render(currentIssues);
+  });
   window.assistantClient.onStartupHealth?.((payload) => {
     if (payload && Array.isArray(payload.issues) && payload.issues.length) {
       render(payload.issues);

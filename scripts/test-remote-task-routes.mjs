@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { taskCommandBody, taskGetBody, taskListBody, registerCollaborationTaskRoutes } from '../server/src/routes/public/collaboration-tasks.js';
+import { createConfiguredTaskService } from '../server/src/services/collaboration/task-config.js';
+const create={deviceId:'d',clientCommandId:'c',action:'create',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'预算',objective:'核对',acceptanceCriteria:'差异说明'};
+assert.equal(taskCommandBody.safeParse(create).success,true);
+for(const extra of [{requesterUserId:'forged'},{role:'owner'},{state:'accepted'},{revision:100},{localPath:'/private/file'}])assert.equal(taskCommandBody.safeParse({...create,...extra}).success,false);
+assert.equal(taskCommandBody.safeParse({deviceId:'d',clientCommandId:'x',taskId:'t',action:'approve',expectedRevision:1}).success,false,'approval must identify the reviewed immutable version');
+assert.equal(taskCommandBody.safeParse({...create,title:' '.repeat(3)}).success,false);
+assert.equal(taskGetBody.safeParse({deviceId:'d',taskId:'t',userId:'owner'}).success,false);
+assert.equal(taskListBody.safeParse({deviceId:'d',conversationId:'chat'}).success,true);
+assert.equal(createConfiguredTaskService({config:{collaborationTasksEnabled:false}}),null);
+assert.equal(createConfiguredTaskService({config:{collaborationTasksEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationMessageKek:'bad'}}),null,'missing task crypto does not take ordinary IM down');
+const routes=new Map();let calls=0;
+registerCollaborationTaskRoutes({post:(path,schema,handler)=>routes.set(path,handler),accountFor:async()=>null,database:{},service:{create:()=>calls++}});
+await routes.get('/api/collaboration/v1/tasks')({body:create},{});
+assert.equal(calls,0,'unauthenticated requests never reach task mutation');
+console.log('remote task routes: closed inputs, explicit delivery approval, authentication boundary and disabled fallback passed');

@@ -12,6 +12,7 @@ import { openSettingsPage, accountFeatureEnabled } from "./settings-panel.js";
 const ACTION_PAGE = { account: "account", license: "license", mobile: "mobile", help: "help" };
 
 const el = (id) => document.getElementById(id);
+let accountMenuRefreshGeneration = 0;
 
 const PERSON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
 
@@ -81,6 +82,7 @@ function openPopover() {
 
 // Update the footer row (avatar label + sub) and gate the account item.
 export async function refreshAccountMenu() {
+  const generation = ++accountMenuRefreshGeneration;
   const nameEl = el("accountMenuName");
   const subEl = el("accountMenuSub");
   const acctItem = el("accountMenuItemAccount");
@@ -100,6 +102,7 @@ export async function refreshAccountMenu() {
   setAvatar();
   try {
     const status = await window.assistantClient?.getAccountStatus?.();
+    if (generation !== accountMenuRefreshGeneration) return;
     if (status?.loggedIn) {
       const phone = status.user?.phoneE164 || status.user?.phone_e164 || "";
       const expires = status.entitlements?.membershipExpiresAt;
@@ -171,5 +174,6 @@ export function initAccountMenu() {
     if (event.key === "Escape" && !popover.hidden) closePopover({ focusButton: true });
   });
 
+  window.addEventListener("lily:account-status-changed", () => void refreshAccountMenu());
   refreshAccountMenu();
 }

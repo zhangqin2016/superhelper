@@ -193,7 +193,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       // fencing. Server orphan cleanup owns objects whose ACK was never known.
       return { ...view(item), serverCancelled: false };
     },
-    async prepareUpload({ inputPath, conversationId, scopeId, purpose = "attachment", originalName, mimeType = "application/octet-stream" }) {
+    async prepareUpload({ inputPath, conversationId, scopeId, purpose = "attachment", originalName, mimeType = "application/octet-stream", expectedPlaintextSha256 }) {
       guard({ conversationId, scopeId, direction: "upload", purpose });
       let item = manifests.create({ scopeId, conversationId, direction: "upload", purpose });
       item = save(item, { state: "encrypting", deviceId });
@@ -202,6 +202,10 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
         const result = await encryptFile({ inputPath, outputPath: path.join(manifests.directory(item.id), "ciphertext.lilyenc"), key, fileName: originalName || path.basename(inputPath), contentType: mimeType });
         try {
           guard(item);
+          if (expectedPlaintextSha256 != null && result.metadata.plaintextSha256 !== expectedPlaintextSha256) {
+            item = save(item,{state:"failed"});
+            throw fail("COLLAB_TASK_BUNDLE_CHANGED");
+          }
           if (result.ciphertextSize > (purpose === "workspace" ? 256 * 1024 ** 2 : 1024 ** 3)) throw fail("COLLAB_OBJECT_SIZE_INVALID");
           item = save(item, { state: "prepared", content: { dek: key.toString("base64"), originalName: result.metadata.fileName, mimeType,
             ciphertextSize: result.ciphertextSize, ciphertextSha256: result.ciphertextSha256 } });

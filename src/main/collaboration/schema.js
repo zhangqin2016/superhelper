@@ -199,6 +199,25 @@ const COLLABORATION_MIGRATIONS = [
     ALTER TABLE profiles ADD COLUMN phone_masked TEXT;
     ALTER TABLE directory_team_members ADD COLUMN login_name TEXT;
     ALTER TABLE directory_team_members ADD COLUMN phone_masked TEXT;`),
+  // v20 — task commands have independent durable identities and scope keys.
+  (db) => db.exec(`CREATE TABLE task_commands (
+    account_id TEXT NOT NULL, id TEXT NOT NULL, task_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+    scope_id TEXT NOT NULL, fingerprint TEXT NOT NULL, state TEXT NOT NULL, code TEXT,
+    uncertain INTEGER NOT NULL DEFAULT 0, payload_envelope_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));
+    CREATE INDEX task_commands_pending ON task_commands(account_id,task_id,state);
+    CREATE INDEX task_commands_scope ON task_commands(account_id,scope_id,conversation_id);`),
+  // v21 — private task workspace bindings and application recovery journals.
+  (db) => db.exec(`CREATE TABLE task_workspace_records (
+    account_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL, scope_id TEXT NOT NULL,
+    payload_envelope_json TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));
+    CREATE INDEX task_workspace_records_scope ON task_workspace_records(account_id,scope_id,conversation_id);
+    CREATE INDEX task_workspace_records_conversation ON task_workspace_records(account_id,conversation_id,id);`),
+  // v22 — original-file recovery belongs to the local account, independent of
+  // revoked remote scopes. Payloads use the personal account encryption key.
+  (db) => db.exec(`CREATE TABLE task_local_recovery (
+    account_id TEXT NOT NULL, id TEXT NOT NULL, payload_envelope_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

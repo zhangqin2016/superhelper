@@ -5,6 +5,7 @@
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
+import { diagnosticText } from "./diagnostic-text.js";
 
 let lastDiagnostic = null;
 let running = false;
@@ -46,6 +47,7 @@ function renderDiagnostic(diagnostic) {
   summary.textContent = `${diagnostic.summary?.title || t("settings.diagnosticsReady")} · ${t("settings.diagnosticsIssueCount", { count: diagnostic.summary?.issueCount || 0 })}`;
 
   for (const check of diagnostic.checks || []) {
+    const localized = diagnosticText(check);
     const row = document.createElement("div");
     row.className = `settings-diagnostics-row settings-diagnostics-row--${check.status || "warning"}`;
 
@@ -58,12 +60,12 @@ function renderDiagnostic(diagnostic) {
     body.className = "settings-diagnostics-body";
     const title = document.createElement("div");
     title.className = "settings-diagnostics-title";
-    title.textContent = check.label || check.id || "";
+    title.textContent = localized.label || check.id || "";
     body.appendChild(title);
     if (check.detail) {
       const detail = document.createElement("div");
       detail.className = "settings-diagnostics-detail";
-      detail.textContent = check.detail;
+      detail.textContent = localized.detail;
       body.appendChild(detail);
     }
     row.appendChild(body);

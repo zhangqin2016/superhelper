@@ -1,6 +1,7 @@
 import { t } from "../i18n/index.js";
 import { createSocialUi, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 import { groupByLetter } from "./contact-sections.js";
+import { presenceBadge } from "./collaboration-presence-view.js";
 
 export function renderCollaborationFriends(node, relationships = []) {
   if (!node) return;
@@ -153,6 +154,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     // here too, but "friend" on every row in the friends list is noise.
     row.append(socialRowButton(name, contact.relationship === "friend" && !contact.ownBlocked ? () => openChat(contact) : null,
       { avatar: socialAvatar(name), subtitle: contact.lilyId || "" }));
+    if (contact.relationship === "friend" && !contact.ownBlocked) row.querySelector('.collaboration-row-content')?.append(presenceBadge(contact.userId));
     if (actions.length) {
       const controls = socialNode("div", "", "collaboration-social-actions");
       for (const control of actions) controls.append(control);

@@ -571,23 +571,14 @@
   line-height: 14px;
 }
 
-/* One pane only: when a conversation replaces the list, the panel header
-   shrinks to a corner and the conversation header takes over the title. In two
-   panes the list stays beside the thread, so the header stays full and spanning
-   — otherwise the title bar vanished on the Chats tab but not on People/Teams. */
+/* Window actions keep a separate toolbar in both one- and two-pane layouts. */
 .collaboration-center.is-conversation-open:not([data-collaboration-panes="two"]) .collaboration-panel-header {
-  position: absolute;
-  z-index: 3;
-  inset-block-start: 0;
-  inset-inline-end: 0;
-  inline-size: 46px;
+  /* Keep window actions in flow: an absolute corner overlapped search and
+     clipped the two buttons into a single 46px slot. */
+  position: static;
   min-height: 56px;
-  padding: 8px 10px 8px 0;
-  border: 0;
-  background: transparent;
 }
 
-.collaboration-center.is-conversation-open:not([data-collaboration-panes="two"]) .collaboration-panel-title,
 .collaboration-center.is-conversation-open:not([data-collaboration-panes="two"]) .collaboration-scope-badge {
   display: none;
 }
@@ -2855,3 +2846,13 @@
 .collaboration-message-status[data-tone="delivered"] {
   color: color-mix(in srgb, currentColor 70%, transparent);
 }
+/* Presence is a quiet hint with a text equivalent in every locale. */
+.collaboration-presence { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted, #737b87); font-size: var(--text-xs); line-height: 1.4; white-space: nowrap; }
+.collaboration-presence::before { content: ""; width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; opacity: .55; }
+.collaboration-presence[data-presence="online"] { color: #27834d; }
+.collaboration-presence[data-presence="online"]::before { opacity: 1; }
+[data-theme="dark"] .collaboration-presence[data-presence="online"] { color: #75c895; }
+.collaboration-header-presence { min-width: 0; }
+.collaboration-row-content > .collaboration-presence { font-size: var(--text-xs); }
+.enterprise-roster .collaboration-row-open[hidden] { display: none; }
+.enterprise-roster .collaboration-presence::before { display: none; }

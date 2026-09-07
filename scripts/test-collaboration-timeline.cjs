@@ -20,6 +20,7 @@ app.whenReady().then(async () => {
   await win.loadFile(page);
   const moduleUrl = pathToFileURL(path.join(__dirname, "../src/renderer/modules/collaboration-timeline.js")).href;
   const result = await win.webContents.executeJavaScript(`(async () => {
+    try {
     const { renderCollaborationTimeline: render } = await import(${JSON.stringify(moduleUrl)});
     const root = document.getElementById('timeline');
     const first = { id: 'one', seq: 1, bodyText: '<img src=x onerror=alert(1)>' };
@@ -172,11 +173,16 @@ app.whenReady().then(async () => {
     window.assistantClient = { collaboration: {
       getDraft: async () => ({ok:true,text:''}), onStateChange: () => () => {},
       readMessages: async (request) => { cacheCalls.push(request); return {ok:true,messages:request.messageIds.map(id=>({id,seq:Number(id.slice(4)),revision:2,bodyText:'',revokedAt:'now'})),unavailableMessageIds:[]}; },
-      open: async (id,beforeSeq) => { calls.push(beforeSeq ?? null); return {ok:true,conversation:{id},hasMore:beforeSeq==null,nextBeforeSeq:beforeSeq==null?3:1,
+      open: async (id,beforeSeq,options) => {
+        // This fixture has no local preview; count only authoritative page reads.
+        if (options?.cached) return {ok:false};
+        calls.push(beforeSeq ?? null); return {ok:true,conversation:{id},hasMore:beforeSeq==null,nextBeforeSeq:beforeSeq==null?3:1,
         messages:(beforeSeq==null?[3,4]:[1,2]).map(seq=>({id:'page'+seq,seq,bodyText:'page '+seq}))}; },
     } };
     const center = initCollaborationCenter({getPolicy:async()=>({collaboration:{enabled:true}})});
-    await center.open('c'); await center.loadOlder(); await center.open('c');
+    await center.open('c'); await center.loadOlder();
+    // Refresh the existing view, not a new user navigation (which resets it).
+    await center.open('c', {userNavigation:false});
     const pagedOrder = [...document.getElementById('collaborationTimeline').children].map(n=>n.dataset.messageKey);
     const olderHidden = document.getElementById('collaborationLoadOlder').hidden;
     const updatedOldBody = document.querySelector('[data-message-key="page1"] .collaboration-message-body').textContent;
@@ -187,6 +193,7 @@ app.whenReady().then(async () => {
       disabled:document.getElementById('collaborationSendButton').disabled, scope:document.getElementById('collaborationScopeBadge').textContent };
     center.destroy();
     return { reactionClicks, clearedReaction, threadNavContract, reactionContract, attachmentContract, initialOrder, visualContract, groupingContract, sameRow, sameBody, safeText, tombstone, anchorDelta:after-before, bottomGap, pagedOrder, olderHidden, calls, cacheCalls, updatedOldBody, revokedView };
+    } catch(error) { throw new Error(error.stack || error.message); }
   })()`);
   assert.deepEqual(result.initialOrder, ["one", "cmd"], "pending messages follow authoritative server sequence, not invented zero");
   assert.deepEqual(result.attachmentContract, { cards: "o1,o2,o3", firstTitle: "plan.png", firstDetail: "2.0 MB \u00b7 collaboration.transfer.image",

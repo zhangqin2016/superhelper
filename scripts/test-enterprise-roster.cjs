@@ -21,7 +21,7 @@ app.whenReady().then(async () => {
  const roster=createEnterpriseRoster({team,selfId:'self',state,onChat:m=>calls.push(m.userId)});document.getElementById('root').append(roster);
  const online=roster.querySelector('[data-presence="online"]'); online.click();
  const search=roster.querySelector('input[type=search]');search.value='小莉';search.dispatchEvent(new Event('input'));const searched=roster.querySelectorAll('[data-user-id]').length;
- search.value='';search.dispatchEvent(new Event('input'));const checkbox=roster.querySelector('input[type=checkbox]');checkbox.checked=true;checkbox.dispatchEvent(new Event('change'));const filtered=[...roster.querySelectorAll('[data-user-id]')].map(n=>n.dataset.userId);
+ search.value='';search.dispatchEvent(new Event('input'));const checkbox=roster.querySelector('input[type=checkbox]');checkbox.checked=true;checkbox.dispatchEvent(new Event('change'));const filtered=[...roster.querySelectorAll('[data-user-id]:not([hidden])')].map(n=>n.dataset.userId);
  checkbox.checked=false;checkbox.dispatchEvent(new Event('change'));
  return {calls,searched,filtered,expired:memberPresence({presence:'online',onlineUntil:'2000-01-01'}),inert:roster.textContent.includes('小莉 🌸')}; })()`);
  assert.deepEqual(result,{calls:['peer'],searched:1,filtered:['peer'],expired:'unknown',inert:true});

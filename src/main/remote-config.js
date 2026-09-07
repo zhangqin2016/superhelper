@@ -306,6 +306,7 @@ function getRemoteCollaborationPolicySync() {
     realtime: policy.realtime !== false,
     attachments: policy.attachments === true,
     workspaceShares: policy.workspaceShares === true,
+    ...(policy.enabled === true && policy.workspaceShares === true && policy.tasks === true ? { tasks: true } : {}),
     aiTools: policy.aiTools === true,
   };
 }
@@ -331,6 +332,15 @@ function notifyRefreshed() {
 
 async function refreshRemoteConfig(payload = {}) {
   const service = require("./service-client");
+  const accountPrincipal = () => {
+    try {
+      const status = require("./account-manager").accountStatus();
+      return status?.loggedIn ? String(status.user?.id || "") : "";
+    } catch { return null; }
+  };
+  const principal = accountPrincipal();
+  const accountChanged = () => accountPrincipal() !== principal;
+  const changedAccount = () => ({ ok: false, error: "ACCOUNT_SESSION_CHANGED" });
   let accountAccessToken = "";
   try {
     const account = require("./account-manager");
@@ -339,18 +349,22 @@ async function refreshRemoteConfig(payload = {}) {
   } catch {
     accountAccessToken = "";
   }
+  if (accountChanged()) return changedAccount();
   let result = await service.fetchClientConfig({
     ...payload,
     ...(accountAccessToken ? { accountAccessToken } : {}),
   });
+  if (accountChanged()) return changedAccount();
   if (!result.ok && shouldRetryAfterDeviceRegister(result.error)) {
     const registered = await service.registerDevice();
+    if (accountChanged()) return changedAccount();
     if (!registered.ok) return result;
     result = await service.fetchClientConfig({
       ...payload,
       ...(accountAccessToken ? { accountAccessToken } : {}),
     });
   }
+  if (accountChanged()) return changedAccount();
   if (!result.ok) return result;
   const verified = verifyConfigResponse(result.json);
   if (!verified.ok) return { ok: false, error: "CONFIG_SIGNATURE_INVALID" };

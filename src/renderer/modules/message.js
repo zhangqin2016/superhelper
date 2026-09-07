@@ -729,12 +729,13 @@ function findProjectIdForSession(sessionId) {
   return "";
 }
 
-async function focusSessionFromNotification(sessionId) {
+async function focusSessionFromNotification(sessionId, projectId) {
   if (!sessionId) return;
   try {
     const sw = await window.assistantClient.switchSession(sessionId);
-    const { applySessionSwitch } = await import("./session-chrome.js");
-    await applySessionSwitch(sw, sessionId, findProjectIdForSession(sessionId));
+    const { applySessionSwitch, refreshState } = await import("./session-chrome.js");
+    await applySessionSwitch(sw, sessionId, projectId || findProjectIdForSession(sessionId));
+    if (projectId) await refreshState();
   } catch (err) {
     const { showToast } = await import("./toast.js");
     showToast(err?.message || t("toast.switchSessionFailed"), "error");
@@ -848,7 +849,7 @@ export function wireMessageIpc() {
     if (activity?.sessionId) touchSessionUsage(activity.sessionId, activity.ts);
   });
   window.assistantClient.onFocusSession?.((data) => {
-    void focusSessionFromNotification(data?.sessionId || "");
+    void focusSessionFromNotification(data?.sessionId || "", data?.projectId || "");
   });
   window.assistantClient.onFileDiff?.((entry) => {
     if (entry?.sessionId) addDiffEntry(entry.sessionId, entry);

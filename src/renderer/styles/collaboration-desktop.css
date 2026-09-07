@@ -71,7 +71,7 @@
 .collaboration-date-separator time { color: var(--chat-muted); background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; font-size: var(--text-xs); }
 /* One inset surface owns the draft, files and actions. The surrounding chat
    canvas remains visible on all sides, including below the toolbar. */
-.collaboration-composer { flex: 0 0 auto; display: flex; flex-direction: column; margin: 4px 12px 12px; padding: 16px 16px 12px; border: 1px solid var(--chat-divider); border-radius: 12px; background: var(--chat-input); box-shadow: var(--collab-composer-shadow); gap: 12px; }
+.collaboration-composer { flex: 0 0 auto; display: flex; flex-direction: column; margin: 4px 12px 12px; padding: 16px 16px 12px; border: 1px solid var(--chat-divider); border-radius: var(--radius); background: var(--chat-input); box-shadow: var(--collab-composer-shadow); gap: 12px; }
 .collaboration-composer:focus-within { border-color: color-mix(in srgb, var(--chat-ink) 25%, var(--chat-divider)); }
 .collaboration-composer > .collaboration-transfer-panel:empty { display: none; }
 .collaboration-composer textarea { min-height: 76px; max-height: 150px; margin: 0; padding: 0; width: 100%; border: 0; border-radius: 0; background: transparent; color: var(--chat-ink); font-size: var(--text-md); line-height: 22px; outline: none; box-shadow: none; }
@@ -85,7 +85,7 @@
 .collaboration-transfer-panel { flex: 0 0 auto; padding: 0; max-block-size: 120px; overflow: auto; }
 .collaboration-transfer-panel > .collaboration-status:empty { display: none; }
 .collaboration-transfers { display: flex; flex-wrap: wrap; gap: 8px; }
-.collaboration-transfer.is-composer-file { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; width: min(100%, 280px); box-sizing: border-box; border: 1px solid var(--chat-divider); border-radius: 8px; padding: 8px 10px; background: var(--collab-page-bg); }
+.collaboration-transfer.is-composer-file { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; width: min(100%, 280px); box-sizing: border-box; border: 1px solid var(--chat-divider); border-radius: var(--radius-md); padding: 8px 10px; background: var(--collab-page-bg); }
 .collaboration-file-icon { grid-column: 1; grid-row: 1 / span 3; display: grid; place-items: center; width: 34px; height: 42px; border-radius: var(--radius-xs); background: var(--collab-file-icon-bg); color: #fff; font-size: var(--text-xs); font-weight: 600; }
 .collaboration-transfer.is-composer-file strong { grid-column: 2; font-size: var(--text-base); font-weight: 500; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .collaboration-transfer.is-composer-file small { grid-column: 2; font-size: var(--text-xs); color: var(--chat-muted); }
@@ -115,12 +115,12 @@
 .collaboration-composer > .collaboration-reply-preview {
   flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 28px;
   gap: 4px 12px; margin: 0; padding: 10px 12px; border: 0;
-  border-inline-start: 3px solid var(--collab-send-btn); border-radius: 6px;
+  border-inline-start: 3px solid var(--collab-send-btn); border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--chat-ink) 5%, var(--chat-input));
 }
-.collaboration-reply-label { grid-column: 1; color: var(--chat-muted); font-size: 12px; line-height: 16px; }
-.collaboration-reply-content { grid-column: 1; color: var(--chat-ink); font-size: 13px; line-height: 19px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.collaboration-reply-preview [data-action="clear-reply"] { grid-column: 2; grid-row: 1 / span 2; align-self: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--chat-muted); font: 22px/28px sans-serif; cursor: pointer; }
+.collaboration-reply-label { grid-column: 1; color: var(--chat-muted); font-size: var(--text-sm); line-height: 16px; }
+.collaboration-reply-content { grid-column: 1; color: var(--chat-ink); font-size: var(--text-base); line-height: 19px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.collaboration-reply-preview [data-action="clear-reply"] { grid-column: 2; grid-row: 1 / span 2; align-self: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--chat-muted); font: 22px/28px sans-serif; cursor: pointer; }
 .collaboration-reply-preview [data-action="clear-reply"]:hover { background: color-mix(in srgb, var(--chat-ink) 8%, transparent); color: var(--chat-ink); }
 .collaboration-reply-preview [data-action="clear-reply"]:focus-visible { outline: 2px solid var(--collab-send-btn); outline-offset: 2px; }
 .collaboration-center :is(button, input, select, summary):focus-visible { outline: 2px solid var(--collab-send-btn); outline-offset: 2px; }
@@ -130,8 +130,8 @@
 .collaboration-scope-badge:empty { display: none; }
 .collaboration-empty { color: var(--chat-muted); font-size: var(--text-base); line-height: 1.6; padding: 24px; }
 .collaboration-group-drawer { background: var(--chat-input); border-color: var(--chat-divider); box-shadow: var(--collab-drawer-shadow); }
-.collaboration-social-form :is(input, select) { background: var(--chat-input); border: 1px solid var(--chat-divider); border-radius: 8px; padding: 8px 10px; color: var(--chat-ink); }
-.collaboration-message-actions { background: var(--chat-input); border: 1px solid var(--chat-divider); border-radius: 8px; box-shadow: var(--collab-actions-shadow); }
+.collaboration-social-form :is(input, select) { background: var(--chat-input); border: 1px solid var(--chat-divider); border-radius: var(--radius-md); padding: 8px 10px; color: var(--chat-ink); }
+.collaboration-message-actions { background: var(--chat-input); border: 1px solid var(--chat-divider); border-radius: var(--radius-md); box-shadow: var(--collab-actions-shadow); }
 @media (prefers-reduced-motion: reduce) {
   .collaboration-center *, .collaboration-center *::before, .collaboration-center *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }

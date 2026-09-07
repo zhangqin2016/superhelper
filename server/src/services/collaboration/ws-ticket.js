@@ -26,7 +26,7 @@ function createKyselyTicketRepository(db) {
         .where("user_id", "=", record.userId).where("device_id", "=", record.deviceId).where("status", "=", "active").executeTakeFirst();
       if (!binding) return null;
       await trx.insertInto("collaboration_ws_tickets").values({
-        token_hash: record.tokenHash, user_id: record.userId, device_id: record.deviceId, expires_at: record.expiresAt,
+        token_hash: record.tokenHash, user_id: record.userId, device_id: record.deviceId, session_id: record.sessionId || null, expires_at: record.expiresAt,
       }).execute();
       return record;
     },
@@ -36,7 +36,13 @@ function createKyselyTicketRepository(db) {
         .where("ticket.token_hash", "=", tokenHash).where("ticket.consumed_at", "is", null).where("ticket.expires_at", ">", at)
         .where((eb) => eb.exists(eb.selectFrom("user_devices as device").select("device.device_id")
           .whereRef("device.user_id", "=", "ticket.user_id").whereRef("device.device_id", "=", "ticket.device_id").where("device.status", "=", "active")))
-        .returning(["ticket.user_id as userId", "ticket.device_id as deviceId"]).executeTakeFirst();
+        .where((eb) => eb.or([
+          eb("ticket.session_id", "is", null),
+          eb.exists(eb.selectFrom("user_sessions as session").select("session.id")
+            .whereRef("session.id", "=", "ticket.session_id").whereRef("session.user_id", "=", "ticket.user_id")
+            .whereRef("session.device_id", "=", "ticket.device_id").where("session.revoked_at", "is", null).where("session.expires_at", ">", at)),
+        ]))
+        .returning(["ticket.user_id as userId", "ticket.device_id as deviceId", "ticket.session_id as sessionId"]).executeTakeFirst();
     },
   };
 }
@@ -48,11 +54,11 @@ async function withWrite(repository, callback) {
 export function createCollaborationWsTicketService({ db, repository = db ? createKyselyTicketRepository(db) : null, now = () => new Date(), createToken = () => randomBytes(32).toString("base64url") } = {}) {
   if (!repository) throw new TypeError("A collaboration websocket ticket repository is required.");
   return {
-    async issue({ userId, deviceId } = {}) {
+    async issue({ userId, deviceId, sessionId } = {}) {
       const issuedAt = now();
       const ticket = String(createToken() || "");
       if (!ticket) throw new Error("Collaboration websocket ticket generation failed.");
-      const record = { userId: requiredId(userId, "Collaboration account id"), deviceId: requiredId(deviceId, "Collaboration device id"), tokenHash: hashCollaborationWsTicket(ticket), expiresAt: new Date(issuedAt.getTime() + WS_TICKET_TTL_MS) };
+      const record = { userId: requiredId(userId, "Collaboration account id"), deviceId: requiredId(deviceId, "Collaboration device id"), ...(sessionId ? { sessionId: requiredId(sessionId, "Collaboration session id") } : {}), tokenHash: hashCollaborationWsTicket(ticket), expiresAt: new Date(issuedAt.getTime() + WS_TICKET_TTL_MS) };
       const stored = await withWrite(repository, (trx) => repository.issueWsTicket(trx, record));
       if (!stored) throw ticketError();
       return { ticket, expiresAt: record.expiresAt };
@@ -62,7 +68,8 @@ export function createCollaborationWsTicketService({ db, repository = db ? creat
       if (!rawTicket) throw ticketError();
       const binding = await withWrite(repository, (trx) => repository.consumeWsTicket(trx, hashCollaborationWsTicket(rawTicket), now()));
       if (!binding) throw ticketError();
-      return { userId: String(binding.userId ?? binding.user_id), deviceId: String(binding.deviceId ?? binding.device_id) };
+      const sessionId = binding.sessionId ?? binding.session_id;
+      return { userId: String(binding.userId ?? binding.user_id), deviceId: String(binding.deviceId ?? binding.device_id), ...(sessionId ? { sessionId: String(sessionId) } : {}) };
     },
   };
 }

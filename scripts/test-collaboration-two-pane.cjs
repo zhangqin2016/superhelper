@@ -59,7 +59,10 @@ app.whenReady().then(async () => {
     const titleEl = document.getElementById('collaborationPanelTitle');
     const headerOpen = { position: getComputedStyle(headerEl).position, width: Math.round(headerEl.getBoundingClientRect().width),
       titleShown: titleEl ? getComputedStyle(titleEl).display !== 'none' : false };
+    const actions = ['collaborationPanelDetach','collaborationPanelClose','collaborationConversationSearchToggle'].map(id=>document.getElementById(id)).filter(n=>n&&!n.hidden).map(n=>n.getBoundingClientRect());
+    const actionsSeparate = actions.every((a,i)=>actions.slice(i+1).every(b=>a.right<=b.left||b.right<=a.left||a.bottom<=b.top||b.bottom<=a.top));
     return JSON.stringify({
+      actionsSeparate,
       headerOpen,
       headerHeightClosed,
       panes: panel.dataset.collaborationPanes,
@@ -78,6 +81,12 @@ app.whenReady().then(async () => {
   assert.equal(narrow.panes, "one", "a 420px panel holds one column at a time");
   assert.equal(narrow.homeHidden, true, "and a conversation replaces the list, because nothing else fits");
   assert.equal(narrow.backHidden, false, "so there is a way back to the list");
+  assert.equal(narrow.actionsSeparate, true, 'detach, close and search have separate clickable regions at 420px');
+  for (const direction of ['ltr','rtl']) {
+    await win.webContents.executeJavaScript('document.documentElement.dir='+JSON.stringify(direction));
+    assert.equal(JSON.parse(await at(360)).actionsSeparate,true,direction+' minimum width keeps toolbar actions separate');
+  }
+  await win.webContents.executeJavaScript('document.documentElement.dir="ltr"');
 
   const wide = JSON.parse(await at(1100));
   assert.ok(!wide.error, `wide: ${wide.error || ""}`);

@@ -1,0 +1,7 @@
+# Combine with docker-compose.images-app-only.yml; update only api with --no-deps.
+# Keep the existing shared IMAGE_TAG unchanged so later website work stays pinned.
+services:
+  api:
+    image: ${COLLABORATION_API_IMAGE:?verified API image is required}
+    environment:
+      IMAGE_TAG: ${COLLABORATION_API_TAG:?verified API release tag is required}

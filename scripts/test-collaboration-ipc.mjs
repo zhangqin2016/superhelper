@@ -23,12 +23,13 @@ const service = {
 
 createCollaborationIpc({ ipcMain, getService: () => service });
 assert.deepEqual([...handlers.keys()].sort(), [
+  "collaboration:list-tasks", "collaboration:get-task", "collaboration:get-task-commands", "collaboration:change-task", "collaboration:retry-task", "collaboration:task-workflow",
   "collaboration:bootstrap", "collaboration:cancel", "collaboration:edit", "collaboration:friend", "collaboration:get-directory", "collaboration:get-draft", "collaboration:get-edit-draft", "collaboration:get-state", "collaboration:list",
   "collaboration:mark-read", "collaboration:open", "collaboration:read-messages", "collaboration:retry", "collaboration:revoke", "collaboration:save-draft", "collaboration:send", "collaboration:subscribe", "collaboration:unsubscribe",
   "collaboration:conversation", "collaboration:get-social-commands", "collaboration:retry-social", "collaboration:open-friend", "collaboration:get-conversation-details", "collaboration:get-mention-candidates",
   "collaboration:get-transfers", "collaboration:import-attachment", "collaboration:prepare-attachment", "collaboration:enqueue-transfer", "collaboration:pause-transfer", "collaboration:cancel-transfer", "collaboration:prepare-download", "collaboration:save-download", "collaboration:send-attachments",
   "collaboration:read-message-operations", "collaboration:save-edit-draft", "collaboration:clear-edit-draft", "collaboration:skip",
-  "collaboration:resolve-preview", "collaboration:typing", "collaboration:react", "collaboration:lookup-friend",
+  "collaboration:resolve-preview", "collaboration:typing", "collaboration:react", "collaboration:lookup-friend", "collaboration:get-presence",
 ].sort());
 
 const publicState = { ok: true, cursor: 2, watermark: 0, outbox: [{ id: "o1", conversationId: "", clientCommandId: "", scopeId: "", state: "queued", attempts: 0, createdAt: 0 }] };

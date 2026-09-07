@@ -109,6 +109,9 @@ function registerSessionHandlers(ctx) {
   ipcMain.handle("session:switch", (_event, sessionId) => {
     return switchSessionFast(ctx, sessionId);
   });
+  ipcMain.handle("session:focus", (_event, sessionId) => {
+    return require("./collaboration/task-session").focusRegisteredSession(sessionManager,ctx.mainWindow,sessionId);
+  });
 
   ipcMain.handle("session:rename", (_event, sessionId, title) => {
     const trimmed = String(title || "").trim();

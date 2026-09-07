@@ -39,7 +39,16 @@ let shouldFocusMainWindowWhenReady = false;
 let agentBootstrap = null;
 
 // Keep persisted app data stable across display-name changes.
-app.setPath("userData", path.join(app.getPath("appData"), "lily-workbench"));
+// Explicit profiles must also control Electron's single-instance lock below.
+const userDataOverride = process.env.LILY_USER_DATA_DIR;
+if (userDataOverride !== undefined) {
+  if (!path.isAbsolute(userDataOverride)) {
+    throw new Error("LILY_USER_DATA_DIR must be an absolute path.");
+  }
+  app.setPath("userData", userDataOverride);
+} else {
+  app.setPath("userData", path.join(app.getPath("appData"), "lily-workbench"));
+}
 app.setName("Lily Workbench");
 if (process.platform === "win32") {
   app.setAppUserModelId("cn.lilywb.workbench");
@@ -254,6 +263,7 @@ app.whenReady().then(async () => {
         const deviceId = serviceClient.getDeviceId();
         const client = createCollaborationClient({
           accountManager,
+          getServiceBaseUrl: () => serviceClient.getServiceSettings().apiBaseUrl,
           expectedAccountId: storeOptions.accountId,
           // serviceFetch applies the desktop's signed device headers in the
           // main process. The renderer never sees either those headers or the
@@ -277,6 +287,18 @@ app.whenReady().then(async () => {
           storeOptions: { ...storeOptions, transferRoot: collaborationTransferRoot() },
           client,
           policy,
+          taskOptions: {
+            rootPath: path.join(collaborationTransferRoot(), "task-workspaces"),
+            chooseDirectory: () => dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] }),
+            openWorkspace: ({ rootPath, title, bindingId }) => {
+              const previousProjectId = projectManager.activeProjectId;
+              const project = projectManager.add(rootPath);
+              // Register only: the renderer's explicit session switch owns navigation.
+              if (previousProjectId) projectManager.switchTo(previousProjectId);
+              const session = require("./main/collaboration/task-session").createRemoteTaskSession(sessionManager, project.id, title, bindingId);
+              return { projectId: project.id, sessionId: session.id };
+            },
+          },
           transferOptions: {
             rootPath: collaborationTransferRoot(),
             chooseFile: () => dialog.showOpenDialog(mainWindow, { properties: ["openFile"] }),

@@ -5,9 +5,10 @@ export function createOnlinePresence({ now = () => Date.now() } = {}) {
     connect(id, identity) { connections.set(id, { ...identity, expiresAt: now() + ONLINE_TTL_MS }); },
     touch(id) { const entry = connections.get(id); if (entry) entry.expiresAt = now() + ONLINE_TTL_MS; },
     disconnect(id) { connections.delete(id); },
-    expiresAt(userId, activeDevices) {
+    expiresAt(userId, activeDevices, activeSessions) {
       let expiry = 0;
-      for (const entry of connections.values()) if (entry.userId === userId && entry.expiresAt > now() && activeDevices.has(entry.deviceId)) expiry = Math.max(expiry, entry.expiresAt);
+      for (const entry of connections.values()) if (entry.userId === userId && entry.expiresAt > now() && activeDevices.has(entry.deviceId)
+        && (!activeSessions || activeSessions.get(entry.sessionId) === entry.deviceId)) expiry = Math.max(expiry, entry.expiresAt);
       return expiry ? new Date(expiry).toISOString() : null;
     },
     expiredIds() { return [...connections].filter(([, entry]) => entry.expiresAt <= now()).map(([id]) => id); },

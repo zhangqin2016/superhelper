@@ -208,6 +208,7 @@ export async function refreshAccountSettings() {
     return;
   }
   renderAccountNickname(status);
+  window.dispatchEvent(new CustomEvent("lily:account-status-changed"));
   if (!status?.loggedIn) {
     currentAccountPhone = "";
     currentAccountLoginName = "";

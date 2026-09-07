@@ -104,7 +104,8 @@ function diagnoseSendBlocker(ctx, sessionId, options = {}) {
 
 async function refreshRemoteConfigForSend(options = {}) {
   const remoteConfig = require("./remote-config");
-  const force = Boolean(options.force);
+  const accountLogin = options.reason === "account_login";
+  const force = Boolean(options.force) || accountLogin;
   const timeoutMs = Number(options.timeoutMs || 1500);
   if (!force && remoteConfig.hasRemoteModelCatalogSync()) return { ok: true, skipped: true };
 
@@ -113,9 +114,12 @@ async function refreshRemoteConfigForSend(options = {}) {
     return { ok: true, skipped: true };
   }
 
-  if (!sendPreflightConfigRefresh) {
+  if (!sendPreflightConfigRefresh || accountLogin) {
+    // A login changes config scope. Finish any older anonymous/account request
+    // before fetching again; ordinary callers share the newest queued refresh.
+    const previousRefresh = sendPreflightConfigRefresh;
     lastSendPreflightConfigRefreshAt = now;
-    sendPreflightConfigRefresh = Promise.resolve()
+    const refresh = Promise.resolve(previousRefresh)
       .then(async () => {
         if (options.repairManagedService) {
           const service = require("./service-client");
@@ -129,8 +133,9 @@ async function refreshRemoteConfigForSend(options = {}) {
       })
       .catch((err) => ({ ok: false, error: err?.message || String(err) }))
       .finally(() => {
-        sendPreflightConfigRefresh = null;
+        if (sendPreflightConfigRefresh === refresh) sendPreflightConfigRefresh = null;
       });
+    sendPreflightConfigRefresh = refresh;
   }
 
   let timeoutId = null;

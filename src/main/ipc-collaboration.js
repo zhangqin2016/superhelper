@@ -1,5 +1,6 @@
 "use strict";
 const { normalizeMentionCandidates } = require("./collaboration/mention-candidates");
+const { presenceRequest } = require("./collaboration/online-status");
 const { directoryView } = require("./collaboration/directory-view");
 const { normalizeSocialCommand, socialIdentifier } = require("./collaboration/social-command-contract");
 const { attachmentIds, attachmentMetadata } = require("./collaboration/history-cache");
@@ -7,6 +8,8 @@ const { transferResult, registerTransferIpc } = require("./collaboration/transfe
 const { messageMetadata, messageIdentifier, MAX_CREATE_BYTES } = require("./collaboration/message-intent");
 const { normalizeReplySnapshot } = require("./collaboration/reply-snapshot");
 const { validOperationRequest, operationResult } = require("./collaboration/message-operation-view");
+const { taskKey, taskCommand, taskResult } = require("./collaboration/task-view");
+const { taskWorkflowCommand, taskWorkflowResult } = require("./collaboration/task-workflow-view");
 
 // The collaboration renderer is deliberately not a transport client.  It only
 // sees a small, validated command vocabulary; credentials and local encrypted
@@ -116,6 +119,18 @@ function rendererOutbox(value = {}) {
 }
 
 function rendererView(method, value, payload, options = {}) {
+  if (method === "getPresence" && value?.ok === true) {
+    if (!Array.isArray(value.states) || value.states.length !== payload.userIds.length || !Number.isFinite(Date.parse(value.observedAt))) return unavailable();
+    const byId = new Map(value.states.map(row => [row?.userId, row]));
+    if (byId.size !== payload.userIds.length || payload.userIds.some(id => !byId.has(id))) return unavailable();
+    return { ok: true, observedAt: value.observedAt, states: payload.userIds.map(userId => {
+      const row = byId.get(userId);
+      return { userId, presence: ["online", "offline", "unknown"].includes(row.presence) ? row.presence : "unknown",
+        onlineUntil: typeof row.onlineUntil === "string" && Number.isFinite(Date.parse(row.onlineUntil)) ? row.onlineUntil : null };
+    }) };
+  }
+  if (method === "taskWorkflow") return taskWorkflowResult(value);
+  if (["listTasks", "getTask", "changeTask", "getTaskCommands", "retryTask"].includes(method)) return taskResult(method, value);
   const transfer = transferResult(method, value, options);
   if (transfer) return transfer;
   if (["friend", "conversation", "retrySocial", "openFriend"].includes(method)) return {
@@ -154,7 +169,9 @@ function rendererView(method, value, payload, options = {}) {
     return { ok: true, conversationId: value.conversationId, mentionCandidates: normalizeMentionCandidates(value.mentionCandidates, { allowUnknown: true }) };
   }
   if (method === "getDirectory") return { ok: true, ...directoryView(value) };
-  if (method === "getState") return { ok: true, cursor: nonNegativeInteger(value?.cursor), watermark: nonNegativeInteger(value?.watermark), outbox: Array.isArray(value?.outbox) ? value.outbox.map(rendererOutbox) : [] };
+  if (method === "getState") return { ok: true, cursor: nonNegativeInteger(value?.cursor), watermark: nonNegativeInteger(value?.watermark), outbox: Array.isArray(value?.outbox) ? value.outbox.map(rendererOutbox) : [],
+    ...(value?.typing && typeof value.typing === "object" ? {typing:Object.fromEntries(Object.entries(value.typing).slice(0,64).filter(([id,ids]) => safeIdentifier(id) && Array.isArray(ids)).map(([id,ids]) => [id,ids.filter(safeIdentifier).slice(0,16)]))} : {}),
+    ...(presenceRequest({userIds:value?.onlinePresence?.states?.map(row => row?.userId)}) ? {onlinePresence:rendererView("getPresence",value.onlinePresence,{userIds:value.onlinePresence.states.map(row=>row.userId)})} : {}) };
   if (method === "list") return { ok: true, conversations: Array.isArray(value?.conversations) ? value.conversations.map(rendererConversation) : [] };
   if (method === "open") return { ok: true, conversation: rendererConversation(value?.conversation), messages: Array.isArray(value?.messages) ? value.messages.map(rendererMessage) : [],
     hasMore: value?.hasMore === true, nextBeforeSeq: optionalInteger(value?.nextBeforeSeq), offline: value?.offline === true };
@@ -296,16 +313,34 @@ function registerCommand(ipcMain, channel, getService, method, validate) {
 function createCollaborationIpc({ ipcMain, getService, subscribeState = () => () => {}, toPreviewUrl } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function") throw new TypeError("ipcMain.handle is required");
   const subscriptions = new Map();
+  registerCommand(ipcMain, "collaboration:task-workflow", getService, "taskWorkflow", taskWorkflowCommand);
+  registerCommand(ipcMain, "collaboration:list-tasks", getService, "listTasks", taskKey);
+  registerCommand(ipcMain, "collaboration:get-task-commands", getService, "getTaskCommands", taskKey);
+  registerCommand(ipcMain, "collaboration:retry-task", getService, "retryTask", value => taskKey(value, "clientCommandId"));
+  registerCommand(ipcMain, "collaboration:change-task", getService, "changeTask", taskCommand);
+  registerCommand(ipcMain, "collaboration:get-task", getService, "getTask", value => {
+    if (!hasOnlyKeys(value, new Set(["conversationId", "taskId"]))) return null;
+    return taskKey({ conversationId: value.conversationId }) && taskKey({ taskId: value.taskId }, "taskId") ? { conversationId: value.conversationId, taskId: value.taskId } : null;
+  });
   const transferOptions = { ...(typeof toPreviewUrl === "function" ? { toPreviewUrl } : {}) };
   registerTransferIpc({ ipcMain, invoke: (method, payload) => invoke(getService, method, payload, transferOptions) });
   const emitState = async (sender, change = {}) => {
     if (!sender || sender.isDestroyed?.()) return;
-    sender.send("collaboration:state", {
-      type: safeIdentifier(change.type) || "state",
-      state: await invoke(getService, "getState"),
-    });
+    const state = await invoke(getService, "getState", {_presenceSource:sender.id});
+    if (sender.isDestroyed?.()) return;
+    try { sender.send("collaboration:state", {type:safeIdentifier(change.type) || "state",state}); } catch { /* a closing view must not leak an event promise */ }
   };
-  ipcMain.handle("collaboration:get-state", () => invoke(getService, "getState"));
+  ipcMain.handle("collaboration:get-state", event => invoke(getService, "getState", {_presenceSource:event?.sender?.id}));
+  const presenceSenders = new WeakSet();
+  ipcMain.handle("collaboration:get-presence", (event, payload) => {
+    const normalized = presenceRequest(payload); if (!normalized) return invalid();
+    const sender = event?.sender;
+    if (sender && !presenceSenders.has(sender)) {
+      presenceSenders.add(sender);
+      sender.once?.("destroyed", () => { void invoke(getService,"getPresence",{userIds:[],_presenceSource:sender.id}); });
+    }
+    return invoke(getService,"getPresence",{...normalized,_presenceSource:sender?.id});
+  });
   registerCommand(ipcMain, "collaboration:react", getService, "react", (payload) => {
     if (!hasOnlyKeys(payload, new Set(["conversationId", "messageId", "clientCommandId", "emoji", "active"]))) return null;
     const conversationId = safeIdentifier(payload.conversationId);
@@ -367,7 +402,7 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
     if (!sender) return unavailable();
     subscriptions.get(sender)?.();
     subscriptions.set(sender, subscribeState((change) => { void emitState(sender, change); }) || (() => {}));
-    return invoke(getService, "getState");
+    return invoke(getService, "getState", {_presenceSource:sender.id});
   });
   ipcMain.handle("collaboration:unsubscribe", (event) => {
     const sender = event?.sender;

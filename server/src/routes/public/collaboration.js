@@ -1,4 +1,5 @@
 import { readEnterpriseDirectory } from "../../services/collaboration/enterprise-directory.js";
+import { queryPresence, assertPresenceAccount } from "../../services/collaboration/presence-query.js";
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -17,6 +18,8 @@ import { createKyselyMessageRepository, createLockedMessageAuthorizer } from "..
 import { assertCollaborationReceiptIdentity } from "../../services/collaboration/receipt-identity.js";
 import { commandReceiptView, receiptEvidenceError } from "../../services/collaboration/receipt-view.js";
 import { registerCollaborationConversationRoutes } from "./collaboration-conversations.js";
+import { registerCollaborationTaskRoutes } from "./collaboration-tasks.js";
+import { createConfiguredTaskService } from "../../services/collaboration/task-config.js";
 import { registerCollaborationObjectRoutes, objectRouteOptions } from "./collaboration-objects.js";
 import { createConfiguredCollaborationObjectService } from "../../services/collaboration/object-config.js";
 
@@ -42,7 +45,7 @@ async function accountFor(request, reply, input, database = db) {
     const eligible = memberships.some((member) => config.collaborationRolloutOrganizations.includes(String(member.organization_id)));
     if (!eligible) { reply.code(404).send({ ok: false, code: "COLLABORATION_UNAVAILABLE", retryable: false, requestId }); return null; }
   }
-  return { userId: verified.userId, deviceId: verified.deviceId, requestId };
+  return { userId: verified.userId, deviceId: verified.deviceId, sessionId: verified.sessionId, requestId };
 }
 
 /** Versioned HTTP edge: parsing/auth/error mapping only; domain services own writes. */
@@ -57,6 +60,14 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
     const account = await accountFor(request, reply, input, database);
     if (!account) return;
     return reply.send({ ok: true, ...(await readEnterpriseDirectory(database, account.userId, app.collaborationPresence)) });
+  });
+  const presenceBody = deviceBody.extend({ userIds: z.array(z.string().min(1).max(200)).max(200) });
+  post("/api/collaboration/v1/presence", presenceBody, async (request, reply) => {
+    const input = presenceBody.parse(request.body);
+    const account = await accountFor(request, reply, input, database); if (!account) return;
+    await assertPresenceAccount(database, account.userId, account.deviceId);
+    if (app.collaborationPresence?.allowQuery && !(await app.collaborationPresence.allowQuery(account.userId))) return reply.code(429).send({ ok: false, code: "COLLAB_PRESENCE_RATE_LIMIT", retryable: true });
+    return reply.send({ ok: true, ...(await queryPresence({ database, presence: app.collaborationPresence, userId: account.userId, userIds: input.userIds })) });
   });
   post("/api/collaboration/v1/bootstrap", deviceBody, async (request, reply) => { const input = deviceBody.parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.bootstrapCollaboration({ userId: account.userId, deviceId: input.deviceId })) }); });
   post("/api/collaboration/v1/sync", deviceBody.extend({ afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }), async (request, reply) => { const input = z.object({ deviceId: z.string(), afterCursor: z.number().int().min(0), limit: z.number().int().min(1).max(2000).optional() }).parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await syncService.syncAfterCursor({ userId: account.userId, deviceId: input.deviceId, afterCursor: input.afterCursor, limit: input.limit })) }); });
@@ -93,7 +104,7 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
     });
     return reply.send({ ok: true, requestId: account.requestId, ...response });
   });
-  post("/api/collaboration/v1/ws-ticket", commandBody, async (request, reply) => { const input = commandBody.parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await ticketService.issue({ userId: account.userId, deviceId: account.deviceId })) }); });
+  post("/api/collaboration/v1/ws-ticket", commandBody, async (request, reply) => { const input = commandBody.parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.send({ ok: true, requestId: account.requestId, ...(await ticketService.issue({ userId: account.userId, deviceId: account.deviceId, sessionId: account.sessionId })) }); });
   post("/api/collaboration/v1/friends", commandBody.extend({ action: z.enum(["request", "respond", "remove", "block", "unblock"]), lilyId: z.string().optional(), message: z.string().max(500).optional(), requestId: z.string().optional(), accept: z.boolean().optional(), peerUserId: z.string().optional() }), async (request, reply) => { const input = commandBody.extend({ action: z.enum(["request", "respond", "remove", "block", "unblock"]), lilyId: z.string().optional(), message: z.string().max(500).optional(), requestId: z.string().optional(), accept: z.boolean().optional(), peerUserId: z.string().optional() }).parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; const methods = { request: () => friendService.requestFriend({ account, clientCommandId: input.clientCommandId, lilyId: input.lilyId, message: input.message ?? null, ip: request.ip }), respond: () => friendService.respondToFriendRequest({ account, clientCommandId: input.clientCommandId, requestId: input.requestId, accept: input.accept }), remove: () => friendService.removeFriend({ account, clientCommandId: input.clientCommandId, peerUserId: input.peerUserId }), block: () => friendService.blockUser({ account, clientCommandId: input.clientCommandId, peerUserId: input.peerUserId }), unblock: () => friendService.unblockUser({ account, clientCommandId: input.clientCommandId, peerUserId: input.peerUserId }) }; return reply.send({ ok: true, requestId: account.requestId, ...(await methods[input.action]()) }); });
   // Looking a contact up BEFORE sending a request. A read, not a command:
   // nothing is persisted and there is no receipt, so it takes deviceBody
@@ -122,6 +133,7 @@ export function registerCollaborationRoutes(app, options = {}) { const { databas
     return reply.send({ ok: true, requestId: account.requestId, result: historyResult });
   });
   registerCollaborationConversationRoutes({ post, accountFor, database, conversationService: options.conversationService, projectionService: options.conversationProjectionService });
+  registerCollaborationTaskRoutes({ post, accountFor, database, service: options.taskService ?? createConfiguredTaskService({ database, config }) });
   registerCollaborationObjectRoutes({ post, accountFor, database, config, objectService });
   const unavailableObjectBody = commandBody.passthrough();
   const objectUnavailable = async (request, reply) => { const input = unavailableObjectBody.parse(request.body); const account = await accountFor(request, reply, input, database); if (!account) return; return reply.code(503).send({ ok: false, code: "COLLAB_OBJECTS_UNAVAILABLE", retryable: false, requestId: account.requestId }); };

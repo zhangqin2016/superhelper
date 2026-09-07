@@ -32,8 +32,10 @@ function redact(value) {
   return out;
 }
 
-function check(status, id, label, detail = "", action = "") {
-  return { id, status, label, detail, action };
+function check(status, id, label, detail = "", action = "", detailCode = "", params = {}) {
+  return { id, status, label, detail, action, ...(detailCode ? {
+    labelCode: `diagnostics.${id}.label`, detailCode: `diagnostics.${detailCode}`, params,
+  } : {}) };
 }
 
 function worstStatus(checks) {
@@ -51,6 +53,7 @@ function activeModelCheck(models, connection) {
       "Lily 默认模型",
       "没有可用的服务端模型配置。请刷新服务配置或检查网络。",
       "refresh_service_config",
+      "model.missing",
     );
   }
   if (activePreset?.custom || models.apiGateway?.mode === "custom") {
@@ -60,6 +63,7 @@ function activeModelCheck(models, connection) {
       "Lily 默认模型",
       "当前正在使用自定义模型或自定义 API，可能覆盖 Lily 默认模型。",
       "restore_default_model",
+      "model.custom",
     );
   }
   if (connection?.managed && !connection.ok) {
@@ -69,9 +73,10 @@ function activeModelCheck(models, connection) {
       "Lily 默认模型",
       "默认模型需要刷新服务配置后才能使用。",
       "refresh_service_config",
+      "model.refresh",
     );
   }
-  return check("ok", "model.default", "Lily 默认模型", "当前使用 Lily 托管模型配置。");
+  return check("ok", "model.default", "Lily 默认模型", "当前使用 Lily 托管模型配置。", "", "model.ready");
 }
 
 function serviceConfigCheck({ remoteReady, refreshResult }) {
@@ -82,12 +87,14 @@ function serviceConfigCheck({ remoteReady, refreshResult }) {
       "服务配置",
       `服务配置刷新失败：${refreshResult.error || "CONFIG_REFRESH_FAILED"}`,
       "refresh_service_config",
+      "service.failed",
+      { error: refreshResult.error || "CONFIG_REFRESH_FAILED" },
     );
   }
   if (!remoteReady) {
-    return check("warning", "service.config", "服务配置", "没有可用的服务端模型配置缓存。", "refresh_service_config");
+    return check("warning", "service.config", "服务配置", "没有可用的服务端模型配置缓存。", "refresh_service_config", "service.missing");
   }
-  return check("ok", "service.config", "服务配置", "服务端配置可用。");
+  return check("ok", "service.config", "服务配置", "服务端配置可用。", "", "service.ready");
 }
 
 function requestUrl(baseUrl, protocol) {

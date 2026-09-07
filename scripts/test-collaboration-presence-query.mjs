@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const url = new URL('../server/src/services/collaboration/presence-query.js',import.meta.url);
+assert.ok(fs.existsSync(url),'PostgreSQL-authorized presence query required');
+const { queryPresence } = await import(url);
+let received;
+const repository = { async authorizedDevices() { return new Map([['self',{activeDevices:new Set(['good']),activeSessions:new Map([['s','good']])}],['friend',{activeDevices:new Set(),activeSessions:new Map()}],['team',{activeDevices:new Set(['td']),activeSessions:new Map([['ts','td']])}]]); } };
+const presence = {async readBatch(entries) {received=entries;return entries.map(e=>({userId:e.userId,presence:e.activeDevices.size?'online':'offline',onlineUntil:e.activeDevices.size?'2030-01-01T00:00:00.000Z':null}));}};
+const value = await queryPresence({repository,presence,userId:'self',userIds:['self','friend','team','blocked','removed','absent']});
+assert.deepEqual(received.map(e=>e.userId),['self','friend','team']);
+assert.deepEqual(value.states.slice(3).map(e=>e.presence),['unknown','unknown','unknown']);
+assert.equal(value.states[1].presence,'offline');
+assert.ok(!JSON.stringify(value).includes('good'));
+presence.readBatch=async()=>{throw Error('redis unavailable');};
+assert.ok((await queryPresence({repository,presence,userId:'self',userIds:['self']})).states.every(e=>e.presence==='unknown'));
+console.log('Presence query: authorization boundary, revoked device and safe projection passed');

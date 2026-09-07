@@ -49,6 +49,26 @@ function network(request) {
   });
 }
 
+test("remote task rollout is independent and task hints follow a committed sync cursor", async (t) => {
+  for (const enabled of [false, true]) {
+    const f = fixture(t); let reads = 0;
+    const service = createCollaborationService({ openStore: () => ({ ok: true, store: f.store }), deviceId: "device", realtimeEnabled: false,
+      policy: { enabled: true, workspaceShares: true, tasks: enabled },
+      client: { submitTask: async () => ({}), getTask: async () => ({}), listTasks: async () => { reads++; return []; } },
+    });
+    const result = await service.listTasks({ conversationId: "c1" });
+    assert.equal(result.ok, enabled, "disabled tasks never make a network request or weaken ordinary IM");
+    assert.equal(reads, Number(enabled));
+    const hints = [];
+    service.subscribe(event => hints.push({ ...event, cursor: f.store.getSyncState().cursor }));
+    service.syncEngine.applyPage({ fromCursor: 0, toCursor: 1, events: [{ id: "task-event", cursor: 1, type: "task.updated", payload: { taskId: "task", revision: 2, state: "active" } }] });
+    assert.deepEqual(hints, [{ type: "task", cursor: 1 }], "task hint contains no body and follows the committed projection");
+    assert.throws(() => service.syncEngine.applyPage({ fromCursor: 1, toCursor: 2, events: [{ id: "task-failure", cursor: 2, type: "task.updated", payload: { failProjection: true } }] }));
+    assert.equal(hints.length, 1, "rolled-back task events do not refresh the UI as confirmed changes");
+    service.stop();
+  }
+});
+
 test("bootstrap, incremental sync, and open history share one commit/ACK lane", async (t) => {
   const f = fixture(t);
   const releasePage = deferred();

@@ -210,7 +210,9 @@ export function registerAdminSystemRoutes(app, { audit }) {
       },
     },
     async () => {
-    return buildAdminHealth();
+    const health = await buildAdminHealth();
+    health.runtime.collaborationPresence = app.collaborationPresenceHealth?.() || { configured: Boolean(config.collaborationRedisUrl), ready: false, subscriberReady: false };
+    return health;
   });
 
   app.get(

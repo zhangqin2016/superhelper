@@ -5,6 +5,7 @@ const { createCollaborationSyncEngine } = require("./sync-engine");
 const { createCollaborationOutbox } = require("./outbox");
 const { createCollaborationRealtimeClient } = require("./realtime-client");
 const { createEphemeralPresence, createTypingCommand } = require("./ephemeral-presence");
+const { createOnlineStatus } = require("./online-status");
 const { createReactionCommand } = require("./reaction-command");
 const { readHistoryPage } = require("./history-page");
 const { cachedHistory } = require("./cached-history");
@@ -13,6 +14,7 @@ const { isConversationRevoked, recoverAccessDenial } = require("./access-revocat
 const { recoverConversationHydration, assertHydrationComplete } = require("./conversation-hydration");
 const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
+const { createTaskCommands } = require("./task-commands");
 const socialDirectory = require("./social-directory-actions");
 const { createMentionCandidateCache } = require("./mention-candidate-cache");
 const { createTransferRuntime } = require("./transfer-runtime");
@@ -51,7 +53,7 @@ function initializeCollaborationService({
 }
 
 /** Build collaboration outside the Electron startup critical path. */
-function createCollaborationService({ openStore = openCollaborationStore, storeOptions, client, transport, deviceId = "", realtimeEnabled = true, realtimeOptions = {}, policy, transferOptions = {}, mentionCandidateClock } = {}) {
+function createCollaborationService({ openStore = openCollaborationStore, storeOptions, client, transport, deviceId = "", realtimeEnabled = true, realtimeOptions = {}, policy, transferOptions = {}, taskOptions = {}, mentionCandidateClock } = {}) {
   const opened = openStore(storeOptions);
   if (!opened?.ok) return { ok: false, code: "COLLABORATION_UNAVAILABLE" };
   try {
@@ -70,11 +72,15 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     const stateListeners = new Set();
     const emitState = (type) => {
       if (stopped) return;
+      if (["access-revoked", "relationship"].includes(type)) onlineStatus.clear();
       for (const listener of stateListeners) {
         try { listener({ type }); } catch { /* view observers never affect durable state */ }
       }
     };
     const presence = createEphemeralPresence();
+    const onlineStatus = createOnlineStatus({ getAccountId: () => store.accountId,
+      query: client?.getPresence ? userIds => client.getPresence({deviceId, userIds}) : null,
+      onChange: () => emitState("online-presence") });
     const reactionCommand = createReactionCommand({
       store, deviceId, getOutbox: () => outbox, isStopped: () => stopped, stoppedResult,
       onChanged: () => emitState("message"),
@@ -88,13 +94,16 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       applyPage(page) {
         assertActive();
         candidateCache.clear();
+        if (page.events?.some(event => /^(directory\.|scope\.|member\.|friend\.|conversation\.(dissolved|updated))/.test(event.type))) onlineStatus.clear();
         try { return engine.applyPage(page); } finally {
           if (page.events?.some((event) => ["scope.revoked", "member.removed", "member.left", "conversation.dissolved"].includes(event.type)) && store.getSyncState().cursor >= page.toCursor) emitState("access-revoked");
+          if (page.events?.some((event) => event.type === "task.updated") && store.getSyncState().cursor >= page.toCursor) emitState("task");
         }
       },
       applyBootstrap(snapshot) {
         assertActive();
         candidateCache.clear();
+        onlineStatus.clear();
         const previous = store.listConversationIds?.() || [];
         try { return engine.applyBootstrap(snapshot); } finally {
           if (previous.some((conversationId) => !store.getConversation({ conversationId }))) emitState("access-revoked");
@@ -243,18 +252,40 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         else if (client?.syncAndAcknowledge) await synchronize();
       },
     });
+    const tasks = createTaskCommands({ store, client, deviceId, assertActive, onChange: () => emitState("task") });
+    let workflow;
+    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,onChange:()=>emitState("task")});
+    const taskOperation = (method, payload) => stopped ? stoppedResult()
+      : policy?.enabled === true && policy?.tasks === true && policy?.workspaceShares === true ? tasks[method](payload) : unavailableService();
     const realtime = client && realtimeEnabled
       ? createCollaborationRealtimeClient({
         ...realtimeOptions,
-        onReconnect: () => outbox?.drainQueued?.(),
+        createSocket: realtimeOptions.createSocket || (client.createRealtimeSocket ? () => client.createRealtimeSocket({deviceId}) : null),
+        onReconnect: () => { onlineStatus.foreground(); return outbox?.drainQueued?.(); },
+        onConnectionState: state => { if (state !== "connected") onlineStatus.disconnected(); },
+        onForeground: () => onlineStatus.foreground(),
         // Typing is a hint, so it only reaches the UI when the live set actually
         // changes — a peer re-sending every keystroke must not re-render.
-        onEphemeral: (frame) => { if (presence.note(frame)) emitState("typing"); },
+        onEphemeral: (frame) => { if (frame.type === "presence.changed") onlineStatus.hint(); else if (presence.note(frame)) emitState("typing"); },
         sync: synchronize,
       })
       : null;
     return {
       ok: true, store, syncEngine, outbox, realtime,
+      taskWorkflow(payload) {
+        if (stopped) return stoppedResult();
+        if (payload?.operation === "recoveries" && !store.db?.get("SELECT id FROM task_local_recovery WHERE account_id = ? LIMIT 1",store.accountId)) return {ok:true,applications:[]};
+        if (!["recoveries","rollback"].includes(payload?.operation)
+          && (policy?.enabled !== true || policy?.tasks !== true || policy?.workspaceShares !== true)) return unavailableService();
+        try {
+          return getWorkflow().run(payload);
+        } catch { return unavailableService(); }
+      },
+      listTasks(payload) { return taskOperation("list", payload); },
+      getTask(payload) { return taskOperation("get", payload); },
+      changeTask(payload) { return taskOperation("submit", payload); },
+      getTaskCommands(payload) { return taskOperation("pending", payload); },
+      retryTask(payload) { return taskOperation("retry", payload); },
       getTransfers() { return transferCommand("list"); },
       importAttachment(command) { return transferCommand("importAttachment", command); },
       prepareAttachment(command) { return transferCommand("prepareAttachment", command); },
@@ -270,13 +301,15 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         stateListeners.add(listener);
         return () => stateListeners.delete(listener);
       },
-      getState() {
+      getState({ _presenceSource } = {}) {
         if (stopped) return stoppedResult();
         const sync = store.getSyncState();
+        const online = onlineStatus.sourceSnapshot(_presenceSource);
         return { ok: true, cursor: sync.cursor, watermark: sync.watermark, outbox: store.listOutbox?.() || [],
-          typing: presence.snapshot() };
+          typing: presence.snapshot(), ...(online.states.length ? {onlinePresence:online} : {}) };
       },
       typing: typingCommand,
+      getPresence: ({userIds, _presenceSource} = {}) => stopped ? stoppedResult() : onlineStatus.get({userIds}, _presenceSource),
       ...createDirectoryReads({ store, socialDirectory, directoryView, client, deviceId, assertActive, isStopped: () => stopped, stoppedResult, unavailableService }),
       openFriend(command) { return stopped ? stoppedResult() : socialDirectory.openFriend(store, command); },
       lookupFriend: createFriendLookup({ client, deviceId, assertActive, isStopped: () => stopped, stoppedResult, unavailableService }),
@@ -466,6 +499,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (stopped) return stoppedResult();
         if (started) return;
         started = true;
+        if (taskOptions.rootPath && store.db?.get("SELECT id FROM task_local_recovery WHERE account_id = ? LIMIT 1",store.accountId)) {
+          try { void getWorkflow().recoverPending().then(()=>emitState("task")).catch(()=>emitState("task")); }
+          catch { /* task recovery remains isolated from ordinary chat startup */ }
+        }
         void recoverReadsSafely();
         transfers.start?.();
         void attachmentSend?.recover?.().catch(() => undefined);
@@ -488,6 +525,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         // before closing SQLite so a hung network request cannot retain it.
         stopped = true;
         candidateCache.clear();
+        onlineStatus.stop();
         // Typing hints are per-session state: a stopped panel must show nobody
         // typing rather than whoever was typing when it closed.
         presence.forget();

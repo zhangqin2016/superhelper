@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import * as presence from '../server/src/services/collaboration/presence-redis.js';
+assert.equal(typeof presence.createPresenceHintCoalescer,'function','presence hints need trailing coalescing');
+let next=0;const timers=new Map();const delivered=[];
+const hints=presence.createPresenceHintCoalescer({emit:()=>delivered.push('changed'),schedule:fn=>{timers.set(++next,fn);return next;},cancel:id=>timers.delete(id)});
+for(let i=0;i<100;i++)hints.notify();
+assert.equal(timers.size,1,'one pending timer bounds bursts from any number of instances');
+let [id,fire]=timers.entries().next().value;timers.delete(id);fire();
+assert.equal(delivered.length,1);
+hints.notify();hints.notify();
+[id,fire]=timers.entries().next().value;timers.delete(id);fire();
+assert.equal(delivered.length,2,'last change in a new burst is delivered without later traffic');
+hints.notify();hints.stop();assert.equal(timers.size,0,'close cancels pending trailing work');
+hints.notify();assert.equal(timers.size,0,'closed coalescer cannot restart');
+console.log('Presence hints: bounded trailing burst delivery and shutdown cancellation passed');

@@ -265,7 +265,29 @@ function registerAll(ctx) {
     ctx.scheduledTaskManager?.handlePrincipalChange?.();
     ctx.turnOrchestrator?.handlePrincipalChange?.();
     ctx.refreshCollaborationService?.();
-    return result;
+    try {
+      const configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
+        force: true,
+        timeoutMs: 45_000,
+        repairManagedService: true,
+        refreshLicense: false,
+        reason: "account_login",
+      });
+      if (configRefresh?.ok) {
+        require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
+      }
+      return {
+        ...result,
+        modelConfigReady: Boolean(configRefresh?.ok),
+        modelConfigError: configRefresh?.ok ? "" : String(configRefresh?.error || "CONFIG_REFRESH_FAILED"),
+      };
+    } catch (err) {
+      return {
+        ...result,
+        modelConfigReady: false,
+        modelConfigError: err?.message || "CONFIG_REFRESH_FAILED",
+      };
+    }
   });
   ipcMain.handle("account:profile-update", (_event, payload) =>
     accountDisabled() ? disabledAccountResult() : require("./account-manager").updateProfile(payload || {}));

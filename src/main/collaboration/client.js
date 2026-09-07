@@ -1,5 +1,7 @@
 "use strict";
 const { createObjectClient } = require("./object-client");
+const { presenceRequest } = require("./online-status");
+const { randomUUID } = require("node:crypto");
 
 function clientError(code, message) {
   const error = new Error(message || code);
@@ -11,7 +13,7 @@ function clientError(code, message) {
  * Main-process-only collaboration HTTP client. The renderer receives decoded
  * domain values, never the short-lived bearer token or signed-device headers.
  */
-function createCollaborationClient({ accountManager, signDeviceRequest, request, expectedAccountId = "" } = {}) {
+function createCollaborationClient({ accountManager, signDeviceRequest, request, expectedAccountId = "", getServiceBaseUrl, WebSocketCtor = globalThis.WebSocket } = {}) {
   if (!accountManager || typeof accountManager.accessTokenForService !== "function") throw new TypeError("An account token provider is required.");
   if (typeof signDeviceRequest !== "function" || typeof request !== "function") throw new TypeError("Signed device request dependencies are required.");
   let stopped = false;
@@ -53,6 +55,16 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     throw clientError("COLLAB_SERVICE_UNAUTHORIZED", "Collaboration authorization could not be refreshed.");
   }
   return {
+    ...(typeof getServiceBaseUrl === "function" ? { async createRealtimeSocket({deviceId}) {
+      const base = getServiceBaseUrl();
+      const url = new URL("/api/collaboration/v1/realtime", base);
+      if (!["http:","https:"].includes(url.protocol) || typeof WebSocketCtor !== "function") throw clientError("COLLAB_REALTIME_UNAVAILABLE");
+      const value = await invoke({path:"/api/collaboration/v1/ws-ticket",body:{deviceId,clientCommandId:randomUUID()},deviceId});
+      assertAccountBinding();
+      if (base !== getServiceBaseUrl() || typeof value?.ticket !== "string" || !value.ticket || value.ticket.length > 2048) throw clientError("COLLAB_REALTIME_UNAVAILABLE");
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:"; url.searchParams.set("ticket",value.ticket);
+      return new WebSocketCtor(url.href);
+    } } : {}),
     objects: createObjectClient({ invoke }),
     // This fences local continuations, not a remote command that may already
     // have committed. The outbox retains the original durable recovery key.
@@ -66,6 +78,10 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     },
     getEnterpriseDirectory({ deviceId } = {}) {
       return invoke({ path: "/api/collaboration/v1/enterprise-directory", body: { deviceId }, deviceId });
+    },
+    getPresence({ deviceId, userIds } = {}) {
+      if (!presenceRequest({ userIds })) throw clientError("COLLABORATION_INVALID_INPUT");
+      return invoke({ path: "/api/collaboration/v1/presence", body: { deviceId, userIds }, deviceId });
     },
     bootstrap({ deviceId } = {}) {
       return invoke({ path: "/api/collaboration/v1/bootstrap", body: { deviceId }, deviceId });
@@ -84,6 +100,17 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
     },
     submitConversation(item) {
       return invoke({ path: "/api/collaboration/v1/conversations", body: item, deviceId: item?.deviceId });
+    },
+    submitTask(item) {
+      return invoke({ path: "/api/collaboration/v1/tasks", body: item, deviceId: item?.deviceId });
+    },
+    async getTask({ deviceId, taskId }) {
+      const response = await invoke({ path: "/api/collaboration/v1/tasks/get", body: { deviceId, taskId }, deviceId });
+      return response?.result;
+    },
+    async listTasks({ deviceId, conversationId }) {
+      const response = await invoke({ path: "/api/collaboration/v1/tasks/list", body: { deviceId, conversationId }, deviceId });
+      return response?.result;
     },
     async getConversationProjection({ deviceId, conversationId }) {
       const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });

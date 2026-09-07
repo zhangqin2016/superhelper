@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { identityFacetsAvailable, withIdentityFields } from "./identity-fields.js";
+import { queryPresence } from "./presence-query.js";
 
 export async function readEnterpriseDirectory(db, userId, presence) {
   return db.transaction().setIsolationLevel("repeatable read").execute(async trx => {
@@ -25,22 +26,17 @@ export async function readEnterpriseDirectory(db, userId, presence) {
       .orderBy("member.organization_id").orderBy("member.user_id").limit(10001).execute()).map(withIdentityFields) : [];
     if (members.length > 10000) throw Object.assign(new Error("Directory limit exceeded"), { code: "COLLAB_DIRECTORY_LIMIT" });
     const ids = [...new Set([userId, ...members.map(m => m.user_id)])];
-    const sessions = presence ? await trx.selectFrom("user_sessions as session")
-      .innerJoin("users as active_user", "active_user.id", "session.user_id")
-      .innerJoin("user_devices as device", join => join.onRef("device.user_id", "=", "session.user_id").onRef("device.device_id", "=", "session.device_id"))
-      .select(["session.user_id", "session.device_id"]).where("session.user_id", "in", ids)
-      .where("active_user.status", "=", "active").where("active_user.password_must_change", "=", false)
-      .where("session.revoked_at", "is", null).where("session.expires_at", ">", new Date()).where("device.status", "=", "active").distinct().execute() : [];
-    const devices = new Map();
-    for (const s of sessions) { if (!devices.has(s.user_id)) devices.set(s.user_id, new Set()); devices.get(s.user_id).add(s.device_id); }
+    const permitted = !presence?.allowQuery || await presence.allowQuery(userId);
+    const snapshot = await queryPresence({ database: trx, presence: permitted ? presence : null, userId, userIds: ids });
+    const states = new Map(snapshot.states.map(state => [state.userId, state]));
     const self = await trx.selectFrom("user_profiles").select(["lily_id", "avatar_object_id"]).where("user_id", "=", userId).executeTakeFirst();
     return { profile: { userId, displayName: user.display_name || "", lilyId: self?.lily_id || "", avatarObjectId: self?.avatar_object_id || null },
       teams: teams.map(team => ({ id: team.id, scopeId: `team:${team.id}`, name: team.name, role: team.role,
         members: members.filter(m => m.organization_id === team.id).map(m => {
-          const onlineUntil = presence?.expiresAt(m.user_id, devices.get(m.user_id) || new Set()) || null;
+          const state = states.get(m.user_id) || { presence: "unknown", onlineUntil: null };
           return { userId: m.user_id, displayName: m.display_name, lilyId: m.lily_id || "", avatarObjectId: m.avatar_object_id || null,
             loginName: m.login_name || "", phoneMasked: m.phone_masked || "",
-            role: m.role, presence: presence ? onlineUntil ? "online" : "offline" : "unknown", onlineUntil };
+            role: m.role, presence: state.presence, onlineUntil: state.onlineUntil };
         }) })) };
   });
 }

@@ -24,11 +24,23 @@ export function createKyselyObjectRepository(database, { conversations = createK
     if (!hint) return denied();
     const scope = await lockConversation(trx, { account, conversationId: hint.conversation_id, action: "read" });
     if (!scope.ok) return denied();
+    // Match task command lock order: conversation -> task -> object.
+    const task = hint.task_id ? await trx.selectFrom("collaboration_tasks").selectAll().where("id", "=", hint.task_id).forUpdate().executeTakeFirst() : null;
     const locks = await lockAuthorizationRows(trx, { messageIds: hint.bound_message_id ? [hint.bound_message_id] : [], objectIds: [objectId] });
     const object = locks.object[0];
-    if (!object || ["conversation_id", "owner_user_id", "scope_type", "organization_id", "bound_message_id"].some((key) => object[key] !== hint[key])) return denied();
+    if (!object || ["conversation_id", "owner_user_id", "scope_type", "organization_id", "bound_message_id", "task_id"].some((key) => object[key] !== hint[key])) return denied();
     const { context } = scope;
     if (object.scope_type !== context.conversation.scopeType || object.organization_id !== context.conversation.organizationId || expired(object.expires_at, Number(now()))) return denied();
+    if (object.task_id) {
+      if (!task || task.conversation_id !== object.conversation_id || ["declined", "cancelled"].includes(task.state)
+        || ![task.requester_user_id, task.assignee_user_id].includes(account.userId)) return denied();
+      const parties = await conversations.activeConversationMemberIds(trx, object.conversation_id);
+      if (![task.requester_user_id, task.assignee_user_id].every((id) => parties.includes(id))) return denied();
+      const decision = authorizeCollaborationAction(context, "send");
+      if (!decision.ok) return denied();
+      return action === "owner" ? (object.owner_user_id === account.userId ? { ok: true, object, context } : denied())
+        : object.state === "bound" ? { ok: true, object, context } : denied();
+    }
     if (action === "owner") return object.owner_user_id === account.userId ? { ok: true, object, context } : denied();
     const message = locks.message[0];
     const limitedHistory = context.conversation.scopeType === "personal" && context.conversation.kind === "group" || context.conversation.visibility === "private";

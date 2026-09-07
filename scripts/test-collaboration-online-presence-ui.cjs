@@ -1,0 +1,45 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const {pathToFileURL} = require('node:url');
+const {app,BrowserWindow} = require('electron');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'lily-presence-ui-'));
+app.setPath('userData',path.join(temp,'profile')); app.disableHardwareAcceleration();
+let win; const timeout=setTimeout(()=>app.exit(1),30000);
+app.whenReady().then(async()=>{
+ const html=path.join(temp,'test.html');
+ fs.writeFileSync(html,'<!doctype html><meta charset="utf-8"><div id="panel"><div id="friends"></div><div id="teams"></div><header id="header"></header><textarea id="composer">preserve draft</textarea></div>');
+ win=new BrowserWindow({show:false,width:450,height:700,webPreferences:{sandbox:true,contextIsolation:true,backgroundThrottling:false}});await win.loadFile(html);
+ const base=pathToFileURL(path.join(__dirname,'../src/renderer/modules/')).href;
+ const result=await win.webContents.executeJavaScript(`(async()=>{
+ const {createOnlinePresenceView}=await import(${JSON.stringify(base+'collaboration-online-presence.js')});
+ const {initCollaborationFriends}=await import(${JSON.stringify(base+'collaboration-friends.js')});
+ const {createEnterpriseRoster}=await import(${JSON.stringify(base+'enterprise-roster.js')});
+ const {setLocale}=await import(${JSON.stringify(base+'../i18n/index.js')});
+ const directory={profile:{userId:'self'},contacts:[{userId:'peer',displayName:'Alice',relationship:'friend',ownBlocked:false}],teams:[]};
+ const friends=initCollaborationFriends(document.querySelector('#friends')); friends.update({directory});
+ const team={id:'t',members:[{userId:'peer',displayName:'Alice',role:'member'},...Array.from({length:250},(_,i)=>({userId:'u'+i,displayName:'Z'+i,role:'member'}))]};
+ const roster=createEnterpriseRoster({team,selfId:'self',state:{open:true},onChat:()=>{}});document.querySelector('#teams').append(roster);
+ const composer=document.querySelector('#composer');composer.focus();composer.setSelectionRange(2,5);
+ const calls=[];let status='online';
+ const view=createOnlinePresenceView({root:document.querySelector('#panel'),header:document.querySelector('#header'),getPeer:()=> 'peer',getAccountId:()=> 'self',api:{getPresence:async({userIds})=>{calls.push(userIds);return {ok:true,observedAt:new Date().toISOString(),states:userIds.map(userId=>({userId,presence:status,onlineUntil:status==='online'?new Date(Date.now()+60000).toISOString():null}))};}}});
+ await view.refresh(); await new Promise(r=>setTimeout(r,30));
+ const online=[...document.querySelectorAll('[data-presence-user="peer"]')].map(n=>n.dataset.presence);
+ const memberButton=roster.querySelector('[data-user-id="peer"]');memberButton.focus();
+ status='unknown';await view.refresh();
+ const memberPreserved=memberButton===roster.querySelector('[data-user-id="peer"]')&&document.activeElement===memberButton;
+ const unknown=[...document.querySelectorAll('[data-presence-user="peer"]')].map(n=>n.dataset.presence);
+ const locales=[];for(const locale of ['zh-CN','en','ar']){await setLocale(locale,{persist:false});await view.refresh();locales.push(document.querySelector('#header').textContent);}
+ const checkbox=roster.querySelector('input[type=checkbox]');checkbox.checked=true;checkbox.dispatchEvent(new Event('change'));
+ const more=roster.querySelector('[data-action="presence-more"]');const canPageUnknown=!more.hidden;const beforePage=JSON.stringify(roster.presenceTargets());more.click();await new Promise(r=>setTimeout(r,30));const paged=beforePage!==JSON.stringify(roster.presenceTargets());
+ const search=roster.querySelector('input[type=search]');search.value='Z249';search.dispatchEvent(new Event('input'));await new Promise(r=>setTimeout(r,30));
+ const extra=calls.some(ids=>ids.includes('u249'));
+ const preserved=composer===document.querySelector('#composer')&&composer.value==='preserve draft'&&composer.selectionStart===2;
+ view.destroy(); return {online,unknown,locales,bounded:calls.every(ids=>ids.length<=200),extra,preserved,memberPreserved,canPageUnknown,paged};})()`);
+ assert.ok(result.online.length>=3); assert.ok(result.online.every(x=>x==='online'));assert.ok(result.unknown.every(x=>x==='unknown'));
+ assert.equal(new Set(result.locales).size,3);assert.equal(result.bounded,true);assert.equal(result.extra,true);assert.equal(result.preserved,true);
+ assert.equal(result.memberPreserved,true,'presence expiration preserves member button and focus');
+ assert.equal(result.canPageUnknown,true,'online-only unknown page still offers next candidate page');assert.equal(result.paged,true);
+ console.log('online presence Electron DOM: friend/header/Team, bounded search, locale and composer identity passed');
+}).then(()=>{clearTimeout(timeout);win?.destroy();fs.rmSync(temp,{recursive:true,force:true});app.exit(0);}).catch(error=>{console.error(error);clearTimeout(timeout);win?.destroy();app.exit(1);});

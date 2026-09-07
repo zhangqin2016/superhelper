@@ -21,6 +21,11 @@ const STARTUP_HEALTH_DELAY_MS = 4_000;
 function issueFromCheck(check) {
   return {
     id: check.id,
+    label: check.label,
+    detail: check.detail,
+    labelCode: check.labelCode,
+    detailCode: check.detailCode,
+    params: check.params,
     message: check.detail ? `${check.label}：${check.detail}` : check.label,
   };
 }
@@ -31,6 +36,7 @@ async function collectStartupIssues({ getAgentBootstrap }) {
   if (bootstrap && bootstrap.ok === false) {
     issues.push({
       id: "engine.missing",
+      messageCode: "diagnostics.engine.missing",
       message: "AI 引擎缺失，无法开始对话。",
     });
   }

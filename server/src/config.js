@@ -76,8 +76,11 @@ export const config = {
   // signed to clients, while message/object KEKs remain server-only.
   collaborationEnabled: process.env.COLLABORATION_ENABLED === "true",
   collaborationRealtimeEnabled: process.env.COLLABORATION_REALTIME_ENABLED !== "false",
+  collaborationRedisUrl: process.env.COLLABORATION_REDIS_URL || "",
+  collaborationRedisNamespace: process.env.COLLABORATION_REDIS_NAMESPACE || "lily:collaboration",
   collaborationAttachmentsEnabled: process.env.COLLABORATION_ATTACHMENTS_ENABLED === "true",
   collaborationWorkspaceSharesEnabled: process.env.COLLABORATION_WORKSPACE_SHARES_ENABLED === "true",
+  collaborationTasksEnabled: process.env.COLLABORATION_TASKS_ENABLED === "true",
   collaborationAiToolsEnabled: process.env.COLLABORATION_AI_TOOLS_ENABLED === "true",
   collaborationKillSwitch: process.env.COLLABORATION_KILL_SWITCH === "true",
   collaborationRolloutOrganizations: String(process.env.COLLABORATION_ROLLOUT_ORGANIZATIONS || "")
