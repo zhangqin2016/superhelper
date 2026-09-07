@@ -38,14 +38,24 @@ app.whenReady().then(async () => {
       sendTrails:sr.right>=br.right-13 && sr.left>tr.left+tr.width*0.4,
       sendIsText:sr.width>44};
   })()`);
-  // WeChat-desktop shape: a flat input zone above a bottom toolbar row, no pill,
-  // the send action a text button trailing on that row. This supersedes the
-  // earlier single-row dock; the toolbar no longer reads as detached because it
-  // is flush inside the same flat, border-top-only zone rather than a separate
-  // bordered strip — which was the whole reason the one-row shape was chosen.
+  // Text and actions share one surface; neither gets a second input border.
   assert.deepEqual(result, { display: "flex", direction: "column", outline: "none", shadow: "none",
     inputBorder: "0px", inputAboveToolbar: true, toolbarFullWidth: true, sendTrails: true, sendIsText: true },
-    "collaboration composer must be the flat two-zone dock: borderless input above a full-width toolbar, send trailing as a text button");
+    "the floating composer contains a borderless input and a full-width action row");
+  for (const theme of ["light", "dark"]) {
+    const surface = await win.webContents.executeJavaScript(`(() => {
+      document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+      const el = document.querySelector('.collaboration-composer'), c = getComputedStyle(el);
+      const input = el.querySelector('textarea').getBoundingClientRect();
+      const toolbar = el.querySelector('.collaboration-composer-toolbar').getBoundingClientRect();
+      return { inset: parseFloat(c.marginLeft) >= 10 && parseFloat(c.marginRight) >= 10 && parseFloat(c.marginBottom) >= 10,
+        enclosed: ['borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth'].every(k => parseFloat(c[k]) > 0),
+        rounded: parseFloat(c.borderTopLeftRadius) >= 10, elevated: c.boxShadow !== 'none',
+        separated: toolbar.top - input.bottom >= 8 };
+    })()`);
+    assert.deepEqual(surface, { inset: true, enclosed: true, rounded: true, elevated: true, separated: true },
+      `${theme}: draft and toolbar must sit inside one inset, rounded surface with breathing room`);
+  }
   // ---- The input grows with the text, and the button tells the truth -----
   // Both were missing: the stylesheet has `max-height: 132px`, which only
   // makes sense for a box that grows, but nothing ever set the height — six
@@ -81,13 +91,26 @@ app.whenReady().then(async () => {
     // Whitespace is not a message.
     type('   ' + NL + '  ');
     const blank = { disabled: sendButton.disabled };
+    type('保留的草稿');
+    composer.setReply({ messageId: 'quoted' });
+    composer.refreshReply([{ id: 'quoted', conversationId: 'c1', bodyText: '引用正文'.repeat(100), state: 'persisted' }]);
+    const preview = document.getElementById('collaborationReplyPreview');
+    const close = preview.querySelector('[data-action="clear-reply"]');
+    const reply = { visible: !preview.hidden, layout: getComputedStyle(preview).display,
+      buttonBorder: getComputedStyle(close).borderTopWidth,
+      fits: preview.scrollWidth <= preview.clientWidth + 1, accessible: Boolean(close.getAttribute('aria-label')) };
+    close.click();
+    reply.cleared = preview.hidden;
+    reply.draftPreserved = textarea.value === '保留的草稿';
     composer.destroy();
-    return JSON.stringify({ empty, oneLine, many, cleared, blank });
+    return JSON.stringify({ empty, oneLine, many, cleared, blank, reply });
   } catch (error) { return JSON.stringify({ error: String(error && error.stack || error) }); } })()`);
   const grown = JSON.parse(growth);
   assert.ok(!grown.error, `the composer must initialise in the harness: ${grown.error || ""}`);
   assert.equal(grown.empty.disabled, true, "send is disabled with an empty box: send() refuses a blank message anyway");
   assert.equal(grown.blank.disabled, true, "whitespace alone is not a message");
+  assert.deepEqual(grown.reply, { visible: true, layout: 'grid', buttonBorder: '0px', fits: true,
+    accessible: true, cleared: true, draftPreserved: true }, 'long quoted text fits; accessible dismiss preserves the draft');
   assert.equal(grown.oneLine.disabled, false, "typing enables send");
   assert.ok(grown.many.height > grown.oneLine.height + 20,
     `the input grows with the text: ${grown.oneLine.height}px -> ${grown.many.height}px`);
@@ -95,5 +118,5 @@ app.whenReady().then(async () => {
   assert.equal(grown.many.scrolls, true, "past the cap the input scrolls instead of growing");
   assert.equal(grown.cleared.height, grown.empty.height,
     `clearing shrinks the input back to one line: ${grown.cleared.height}px vs ${grown.empty.height}px`);
-  console.log("collaboration composer layout: single-row dock, grows with text, honest send button");
+  console.log("collaboration composer layout: floating surface in both themes, grows with text, honest send button");
 }).then(() => finish(0)).catch((error) => { console.error(error); finish(1); });

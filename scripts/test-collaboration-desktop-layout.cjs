@@ -22,6 +22,11 @@ app.whenReady().then(async()=>{
  const {initCollaborationAttachments}=await import('${base}modules/collaboration-attachments.js');const upload={id:'draft',direction:'upload',purpose:'attachment',conversationId:'c0',originalName:'项目资料.zip',totalBytes:3456123,state:'prepared'};
  const files=initCollaborationAttachments({root:document.getElementById('collaborationTransfers'),attachButton:document.getElementById('collaborationAttachButton'),composerMode:true,api:{getTransfers:async()=>({ok:true,transfers:[upload]})}});files.setConversation({id:'c0'},{attachments:true});await files.refresh();
  document.getElementById('collaborationComposer').value='这份是整理好的项目资料。';document.getElementById('collaborationSendButton').disabled=false;
+ const {initCollaborationComposer}=await import('${base}modules/collaboration-composer.js');
+ const composer=initCollaborationComposer({textarea:document.getElementById('collaborationComposer'),sendButton:document.getElementById('collaborationSendButton')});
+ composer.setConversation('c0');document.getElementById('collaborationComposer').value='这份是整理好的项目资料。';
+ document.getElementById('collaborationComposer').dispatchEvent(new Event('input'));
+ composer.setReply({messageId:'m0'});composer.refreshReply(msgs);
  })()`);
  for(const theme of ['dark','light']){
   await win.webContents.executeJavaScript(`document.documentElement.dataset.theme='${theme}'`);await new Promise(r=>setTimeout(r,100));

@@ -22,7 +22,7 @@ app.whenReady().then(async () => {
     const opened=[],commands=[];let resolve;
     window.assistantClient={collaboration:{getDirectory:async()=>directory,getSocialCommands:async()=>({ok:true,commands:[]}),list:async()=>({ok:true,conversations:[{id:'B',scopeId:'personal',kind:'group'}]}),
       onStateChange:()=>()=>{},getDraft:async()=>({ok:true,text:'B draft'}),saveDraft:async()=>({ok:true}),
-      open:async id=>{opened.push(id);return{ok:true,conversation:{id,title:id,scopeId:'personal'},messages:[]};},
+      open:async (id, before, options)=>{if(options?.cached)return{ok:false};opened.push(id);return{ok:true,conversation:{id,title:id,scopeId:'personal'},messages:[]};},
       conversation:input=>{commands.push(input);return new Promise(r=>resolve=r);},
     }};
     const tick=()=>new Promise(r=>setTimeout(r,25));const center=initCollaborationCenter({getPolicy:async()=>({collaboration:{enabled:true}})});
@@ -36,10 +36,19 @@ app.whenReady().then(async () => {
     await start('group');center.hide();resolve({ok:true,state:'completed',conversationId:'A-hidden'});await tick();const hidden=[...opened],workbench=document.getElementById('collaborationCenter').hidden;
     center.show();await tick();await start('channel');document.getElementById('collaborationInboxTab').click();await tick();resolve({ok:true,state:'completed',conversationId:'A-tab'});await tick();const tab=[...opened];
     await start();resolve({ok:true,state:'completed',conversationId:'A-current'});await tick();const current=[...opened];
-    center.destroy();return{manual,draft,hidden,workbench,tab,current,commands:commands.length};
+    let finishRemote; let remoteStarted=false;
+    window.assistantClient.collaboration.open=async(id,before,options)=>{
+      if(options?.cached)return{ok:true,conversation:{id,title:id,scopeId:'personal'},messages:[{id:'cached',conversationId:id,seq:1,senderUserId:'peer',bodyText:'local preview',state:'persisted'}],offline:true};
+      remoteStarted=true;return new Promise(r=>{finishRemote=r;});
+    };
+    const pending=center.open('fast');await tick();
+    const previewBeforeNetwork=remoteStarted && document.getElementById('collaborationTimeline').textContent.includes('local preview');
+    finishRemote({ok:true,conversation:{id:'fast',title:'fast',scopeId:'personal'},messages:[]});await pending;
+    center.destroy();return{manual,draft,hidden,workbench,tab,current,commands:commands.length,previewBeforeNetwork};
   })()`);
   assert.deepEqual(result.manual,['B'],'late social completion cannot replace a manually opened conversation');
   assert.equal(result.draft,'B draft','manual conversation draft remains owned by B');
+  assert.equal(result.previewBeforeNetwork,true,'cached messages render while remote history is still pending');
   assert.deepEqual(result.hidden,['B'],'workbench navigation invalidates pending social navigation');assert.equal(result.workbench,true);
   assert.deepEqual(result.tab,['B'],'switching sections invalidates pending social navigation');
   assert.deepEqual(result.current,['B','A-current'],'completion still opens its result when user navigation is unchanged');

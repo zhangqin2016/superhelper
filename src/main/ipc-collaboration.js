@@ -327,10 +327,10 @@ function createCollaborationIpc({ ipcMain, getService, subscribeState = () => ()
     payload === undefined || hasOnlyKeys(payload, new Set()) ? {} : null);
   ipcMain.handle("collaboration:bootstrap", () => invoke(getService, "bootstrap"));
   registerCommand(ipcMain, "collaboration:open", getService, "open", (payload) => {
-    if (!hasOnlyKeys(payload, new Set(["conversationId", "beforeSeq"]))) return null;
+    if (!hasOnlyKeys(payload, new Set(["conversationId", "beforeSeq", "cached"])) || (payload.cached !== undefined && typeof payload.cached !== "boolean") || (payload.cached && payload.beforeSeq != null)) return null;
     const normalized = validOpen({ conversationId: payload.conversationId });
     if (!normalized || (payload.beforeSeq != null && (!Number.isSafeInteger(payload.beforeSeq) || payload.beforeSeq < 1))) return null;
-    return { ...normalized, ...(payload.beforeSeq == null ? {} : { beforeSeq: payload.beforeSeq }) };
+    return { ...normalized, ...(payload.beforeSeq == null ? {} : { beforeSeq: payload.beforeSeq }), ...(payload.cached ? { cached: true } : {}) };
   });
   registerCommand(ipcMain, "collaboration:get-draft", getService, "getDraft", validOpen);
   registerCommand(ipcMain, "collaboration:get-edit-draft", getService, "getEditDraft", validEditDraftKey);

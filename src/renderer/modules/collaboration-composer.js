@@ -60,7 +60,7 @@ export function initCollaborationComposer({ textarea, sendButton, getConversatio
     if (!content) { content = document.createElement("span"); content.className = "collaboration-reply-content"; content.dir = "auto"; preview.append(content); }
     const text = replyDisplay(previewValue); if (content.textContent !== text) content.textContent = text;
     if (!clear) { clear = document.createElement("button"); clear.type = "button"; clear.dataset.action = "clear-reply"; preview.append(clear); }
-    clear.textContent = t("collaboration.reply.clear"); clear.setAttribute("aria-label", t("collaboration.reply.clear"));
+    clear.textContent = "×"; clear.title = t("collaboration.reply.clear"); clear.setAttribute("aria-label", t("collaboration.reply.clear"));
     const id = conversationId, epoch = generation, selection = selectionVersion;
     clear.onclick = () => {
       if (!disposed && active && id === conversationId && epoch === generation && selection === selectionVersion && currentIntent().replyToMessageId === replyId && clear.parentElement === preview && preview.isConnected && !preview.closest("[hidden]")) setReply({ messageId: null });

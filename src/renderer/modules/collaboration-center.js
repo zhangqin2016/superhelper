@@ -1,6 +1,7 @@
 import { t, onLocaleChange } from "../i18n/index.js";
 import { identityName, resolvePerson } from "./collaboration-social-ui.js";
 import { paintConversationTitle } from "./collaboration-thread-header.js";
+import { createLatestOpenQueue } from "./collaboration-open-queue.js";
 import { renderCollaborationInbox, setActiveConversation } from "./collaboration-inbox.js";
 import { createConversationPrefs } from "./collaboration-conversation-prefs.js";
 import { createForwardAction, createBatchForwardAction } from "./collaboration-forward.js";
@@ -235,6 +236,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (live) live.textContent = t("collaboration.statusUnavailable");
     return true;
   };
+  const queueOpen = createLatestOpenQueue();
   const openConversation = async (conversationId, { userNavigation = true } = {}) => {
     if (disposed) return;
     if (userNavigation) navigationGeneration += 1;
@@ -244,12 +246,38 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     openingConversationId = conversationId;
     navigating = userNavigation || activeConversationId !== conversationId;
     if (navigating) composer.setActive?.(false);
+    const isCurrent = () => !disposed && generation === openGeneration && view === viewGeneration;
+    if (userNavigation && activeConversationId !== conversationId) {
+      activeConversationId = conversationId;
+      historyMessages = []; nextBeforeSeq = null; hasMore = false;
+      lastRenderedCount = 0; activePeerReadSeq = 0; activeUnreadFromSeq = 0;
+      searchQuery = ""; groupDrawer.close(); attachments.reset();
+      conversationHeaderControl.reset();
+      composer.setConversation(conversationId);
+      setActiveConversation(byId("collaborationInbox"), conversationId);
+      paintConversationTitle(byId("collaborationConversationTitle"), lastConversations.find((row) => row.id === conversationId), directory);
+      if (scopeBadge) scopeBadge.textContent = "";
+      if (empty) empty.hidden = true;
+      panelShell?.setConversationOpen(true);
+    }
     renderTimeline();
     loadingOlder = false;
     updateOlderButton();
-    const opened = await window.assistantClient?.collaboration?.open?.(conversationId).catch(() => null);
+    if (userNavigation) {
+      const cached = await window.assistantClient?.collaboration?.open?.(conversationId, undefined, { cached: true }).catch(() => null);
+      if (!isCurrent()) return;
+      if (cached?.ok) {
+        acceptPage(cached, { latest: true, reset: true });
+        activeConversationKind = String(cached.conversation?.kind || "");
+        conversationHeaderControl.setKind(activeConversationKind);
+        composer.refreshReply?.(historyMessages);
+        composer.setActive?.(!panel.hidden && policyEnabled);
+        renderTimeline();
+      }
+    }
+    const opened = await queueOpen(() => window.assistantClient?.collaboration?.open?.(conversationId), isCurrent).catch(() => null);
     let refreshFailed = false;
-    if (opened?.ok && activeConversationId === conversationId && generation === openGeneration && view === viewGeneration) {
+    if (!userNavigation && opened?.ok && activeConversationId === conversationId && generation === openGeneration && view === viewGeneration) {
       // Apply already-authoritative newest masks now. Fetching older loaded
       // rows must not keep a known revoked body/quote visible in the meantime.
       acceptPage(opened, { latest: true });
@@ -297,9 +325,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     attachments.setConversation(opened.conversation, transferPolicy);
     composer.refreshMentionCandidates?.();
     const scope = String(opened.conversation?.scopeId || "");
-    paintConversationTitle(byId("collaborationConversationTitle"), opened.conversation, directory);
+    const listedConversation = lastConversations.find((row) => row.id === conversationId);
+    paintConversationTitle(byId("collaborationConversationTitle"), { ...listedConversation, ...opened.conversation,
+      memberUserIds: opened.conversation?.memberUserIds?.length ? opened.conversation.memberUserIds : listedConversation?.memberUserIds,
+    }, directory);
     if (scopeBadge) scopeBadge.textContent = scope.startsWith("team:")
-      ? `${directory?.teams?.find((team) => team.scopeId === scope)?.name || t("collaboration.scopeTeam")} · ${scope}` : t("collaboration.scopePersonal");
+      ? (directory?.teams?.find((team) => team.scopeId === scope)?.name || t("collaboration.scopeTeam")) : "";
     renderTimeline();
     if (empty) empty.hidden = historyMessages.length > 0;
     if (live) live.textContent = refreshFailed ? t("collaboration.historyLoadFailed") : String(opened.conversation?.title || t("collaboration.conversation"));

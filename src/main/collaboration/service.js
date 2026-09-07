@@ -7,6 +7,7 @@ const { createCollaborationRealtimeClient } = require("./realtime-client");
 const { createEphemeralPresence, createTypingCommand } = require("./ephemeral-presence");
 const { createReactionCommand } = require("./reaction-command");
 const { readHistoryPage } = require("./history-page");
+const { cachedHistory } = require("./cached-history");
 const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
 const { recoverConversationHydration, assertHydrationComplete } = require("./conversation-hydration");
@@ -330,9 +331,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         store.saveDraft({ conversationId, text, replyToMessageId, mentionUserIds });
         return { ok: true };
       },
-      async open({ conversationId, beforeSeq } = {}) {
+      async open({ conversationId, beforeSeq, cached = false } = {}) {
         if (stopped) return stoppedResult();
         if (typeof store.getConversation !== "function" || typeof store.listMessages !== "function") return unavailableService();
+        if (cached) return cachedHistory(store, conversationId);
         return enqueueSync(async () => {
           const conversation = store.getConversation({ conversationId });
           if (!conversation) return { ok: false, code: "COLLABORATION_NOT_FOUND", retryable: false };

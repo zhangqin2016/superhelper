@@ -1,5 +1,7 @@
 # Capability Gate — 防止"变笨"硬门槛
 
+IM cached navigation guard: `test-collaboration-fast-open.mjs` verifies account-scoped local-preview eligibility, revoked scopes/conversations and pending hydration rejection, obsolete queued HTTP skipping and recovery after failure. `test-collaboration-social-navigation.cjs` verifies real renderer preview before a delayed network response and preserved navigation/draft ownership. `test-collaboration-ipc.mjs`, `test-collaboration-client-service.mjs` and `test-collaboration-scope-revocation.mjs` retain the preload/service/account boundaries. Local preview never hydrates or acknowledges history; authoritative network writes remain on the existing durable lane. This is controlled delayed-network validation, not a production latency measurement.
+
 This is a HARD GATE for every change in this platform. A change that cannot pass it
 does not ship. Its purpose: never let the product get *dumber* than it is today.
 

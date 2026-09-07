@@ -475,7 +475,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     getState: () => ipcRenderer.invoke("collaboration:get-state"),
     bootstrap: () => ipcRenderer.invoke("collaboration:bootstrap"),
     list: () => ipcRenderer.invoke("collaboration:list"),
-    open: (conversationId, beforeSeq) => ipcRenderer.invoke("collaboration:open", { conversationId, ...(beforeSeq == null ? {} : { beforeSeq }) }),
+    open: (conversationId, beforeSeq, options) => ipcRenderer.invoke("collaboration:open", { conversationId, ...(beforeSeq == null ? {} : { beforeSeq }), ...(options?.cached === true ? { cached: true } : {}) }),
     getDraft: (conversationId) => ipcRenderer.invoke("collaboration:get-draft", { conversationId }),
     getEditDraft: ({ conversationId, messageId } = {}) => ipcRenderer.invoke("collaboration:get-edit-draft", { conversationId, messageId }),
     saveEditDraft: ({ conversationId, messageId, bodyText, baseRevision, expectedGeneration } = {}) => ipcRenderer.invoke("collaboration:save-edit-draft", { conversationId, messageId, bodyText, baseRevision, expectedGeneration }),

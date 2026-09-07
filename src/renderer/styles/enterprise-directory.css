@@ -1,7 +1,7 @@
 .enterprise-roster {
   margin: 8px 0 12px;
   padding: 10px 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--collab-divider);
   border-radius: var(--radius-md);
 }
 .enterprise-roster > summary {
@@ -16,5 +16,5 @@
 .enterprise-roster [data-presence="online"] .collaboration-row-avatar { position: relative; }
 .enterprise-roster [data-presence="online"] .collaboration-row-avatar::after {
   content: ""; position: absolute; width: 8px; height: 8px; bottom: 0; right: 0;
-  border-radius: 50%; background: var(--success-color, #16a34a); border: 2px solid var(--bg-color, #fff);
+  border-radius: 50%; background: var(--collab-accent); border: 2px solid var(--collab-input);
 }
