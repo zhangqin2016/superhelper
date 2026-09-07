@@ -12,15 +12,31 @@
  * rather than appended into it. Opening one hides the list, so only one of the
  * two is on screen; leaving is the back button, as it is for a conversation.
  */
-export function createDetailSurface({ listColumn, view, title, body, back }) {
+function createSurfaceOwner(onClose) {
+  let opened = false, dismiss = null;
+  const release = () => {
+    if (!opened) return;
+    const callback = dismiss; opened = false; dismiss = null;
+    callback?.(); onClose?.();
+  };
+  return { release, claim(callback) {
+    if (opened && dismiss !== callback) release();
+    opened = true; dismiss = callback;
+  } };
+}
+
+export function createDetailSurface({ listColumn, view, title, body, back, onClose }) {
+  const owner = createSurfaceOwner(onClose);
   const close = () => {
+    owner.release();
     if (view) view.hidden = true;
     if (listColumn) listColumn.hidden = false;
     if (body) body.replaceChildren();
     if (title) title.textContent = "";
   };
-  const open = (label) => {
+  const open = (label, { onClose: onDismiss } = {}) => {
     if (!view || !body) return null;
+    owner.claim(onDismiss);
     if (title) title.textContent = String(label || "");
     if (listColumn) listColumn.hidden = true;
     view.hidden = false;
@@ -79,17 +95,20 @@ export function wireConversationHeader({ input, toggle, infoButton, onChange, on
 /** The group-info drawer: same `{ open(label) -> body, close() }` shape as the
  *  detail surface, but it slides in over the thread's trailing edge instead of
  *  replacing the list — WeChat opens group info beside the conversation. */
-export function createDrawerSurface({ view, title, body, close: closeButton }) {
+export function createDrawerSurface({ view, title, body, close: closeButton, onClose }) {
+  const owner = createSurfaceOwner(onClose);
   let returnFocusTo = null;
   const close = () => {
+    owner.release();
     if (view) view.hidden = true;
     if (body) body.replaceChildren();
     if (title) title.textContent = "";
     const target = returnFocusTo; returnFocusTo = null;
     if (target && document.contains(target)) target.focus?.({ preventScroll: true });
   };
-  const open = (label) => {
+  const open = (label, { onClose: onDismiss } = {}) => {
     if (!view || !body) return null;
+    owner.claim(onDismiss);
     if (!returnFocusTo && document.activeElement instanceof HTMLElement) returnFocusTo = document.activeElement;
     if (title) title.textContent = String(label || "");
     view.hidden = false;

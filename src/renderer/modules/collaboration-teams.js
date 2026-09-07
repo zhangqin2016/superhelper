@@ -42,7 +42,8 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
   // conversation (WeChat's group info), otherwise the list-column detail.
   let rosterSurface = "detail";
   const activeSurface = () => (rosterSurface === "drawer" ? drawer : detail);
-  const detailSurface = (title) => activeSurface()?.open?.(title) || details;
+  const invalidateDetails = () => { detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; };
+  const detailSurface = (title) => activeSurface()?.open?.(title, { onClose: invalidateDetails }) || details;
   const closeDetailSurface = () => { detail?.close?.(); drawer?.close?.(); details.replaceChildren(); };
   // The create entry lines up with the avatar column, like the other entries,
   // instead of floating above the section headings as a text link.
@@ -332,6 +333,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
      *  size makes the channels unreachable if they are, and the permission
      *  checks that matter live on the conversation, not on the team. */
     showTeam(teamId) {
+      rosterSurface = "detail";
       detailsGeneration += 1; detailsConversation = null; pendingDetailsId = "";
       const team = directory.teams.find((entry) => entry.id === teamId);
       if (!team) { closeDetailSurface(); return; }
@@ -361,8 +363,9 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       const generation = ++detailsGeneration, epoch = ui.current();
       pendingDetailsId = conversationId;
       detailSurface(t("collaboration.social.loading")).replaceChildren(socialNode("p", t("collaboration.social.loading")));
+      const navigation = getNavigationGeneration();
       const result = await Promise.resolve(api.getConversationDetails(conversationId)).catch(() => null);
-      if (generation !== detailsGeneration || epoch !== ui.current()) return;
+      if (generation !== detailsGeneration || epoch !== ui.current() || navigation !== getNavigationGeneration()) return;
       pendingDetailsId = "";
       if (!result?.ok) { detailSurface(t("collaboration.social.permissionUnavailable")).replaceChildren(socialNode("p", t("collaboration.social.permissionUnavailable"))); return; }
       detailsConversation = result.conversation;

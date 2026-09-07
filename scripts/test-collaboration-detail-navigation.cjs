@@ -1,0 +1,57 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { app, BrowserWindow } = require('electron');
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-detail-nav-'));
+app.setPath('userData', path.join(temp, 'profile'));
+app.disableHardwareAcceleration();
+let win;
+const timeout = setTimeout(() => app.exit(1), 30000);
+const url = name => JSON.stringify(pathToFileURL(path.resolve('src/renderer/modules', name)).href);
+app.whenReady().then(async () => {
+  const fixture = path.join(temp, 'fixture.html');
+  fs.writeFileSync(fixture, '<html><body><div id="friends"></div><div id="teams"></div><div id="view"><button id="back"></button><h2 id="title"></h2><div id="body"></div></div><div id="drawer"><button id="close"></button><h2 id="drawerTitle"></h2><div id="drawerBody"></div></div></body></html>');
+  win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true } });
+  await win.loadFile(fixture);
+  const result = await win.webContents.executeJavaScript(`(async () => {
+    const {initCollaborationFriends} = await import(${url('collaboration-friends.js')});
+    const {initCollaborationTeams} = await import(${url('collaboration-teams.js')});
+    const {createDetailSurface, createDrawerSurface} = await import(${url('collaboration-panel-surfaces.js')});
+    const byId = id => document.getElementById(id), checks = {};
+    const detail = createDetailSurface({listColumn:byId('friends'),view:byId('view'),title:byId('title'),body:byId('body'),back:byId('back')});
+    const drawer = createDrawerSurface({view:byId('drawer'),title:byId('drawerTitle'),body:byId('drawerBody'),close:byId('close')});
+    const directory = {profile:{userId:'self'}, contacts:[], teams:[]};
+    const friends = initCollaborationFriends(byId('friends'), {api:{},detail});
+    const update = () => friends.update({directory});
+    const openRequests = () => byId('friends').querySelector('[data-action="new-friends"]').click();
+    update(); openRequests(); checks.explicitOpen = !byId('view').hidden;
+    update(); checks.visibleRefresh = !byId('view').hidden;
+    byId('back').click(); update(); checks.backThenRefresh = byId('view').hidden;
+    friends.reset(); update(); openRequests(); detail.close(); friends.setFilter('');
+    checks.closeThenSearch = byId('view').hidden;
+    friends.reset(); update(); openRequests(); detail.close(); update();
+    checks.sectionThenRefresh = byId('view').hidden;
+    friends.reset(); update(); detail.open('Other owner'); update();
+    checks.refreshCannotCloseOther = !byId('view').hidden && byId('title').textContent === 'Other owner';
+    let resolveDetails;
+    const teams = initCollaborationTeams(byId('teams'), {api:{getConversationDetails:()=>new Promise(r=>resolveDetails=r)},detail,drawer});
+    const conversation = {id:'group',scopeId:'personal',title:'Group',kind:'group'};
+    teams.update({directory,conversations:[conversation]});
+    for (const surface of ['detail','drawer']) {
+      const pending = teams.showConversation('group',{surface});
+      byId(surface === 'drawer' ? 'close':'back').click();
+      resolveDetails({ok:true,conversation,members:[]}); await pending;
+      checks[surface+'LateResponse'] = byId(surface === 'drawer' ? 'drawer':'view').hidden;
+    }
+    const pending = teams.showConversation('group');
+    friends.reset(); update(); openRequests();
+    const heading = byId('title').textContent;
+    resolveDetails({ok:true,conversation,members:[]}); await pending;
+    checks.ownerReplacement = byId('title').textContent === heading;
+    friends.reset(); teams.reset(); detail.destroy(); drawer.destroy();
+    return checks;
+  })()`);
+  for (const [name, passed] of Object.entries(result)) console.log(name, passed);
+  assert.ok(Object.values(result).every(Boolean), JSON.stringify(result));
+  console.log('collaboration detail navigation: ok (real Electron)');
+}).then(() => { clearTimeout(timeout); win?.destroy(); app.quit(); }).catch(error => { console.error(error); app.exit(1); });

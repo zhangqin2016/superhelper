@@ -62,14 +62,14 @@ const html = read("src/renderer/index.html");
   const center = read("src/renderer/modules/collaboration-center.js");
   assert.match(center, /createDetailSurface\(\{/, "the centre wires that surface rather than building its own");
   // Switching destination must not leave someone else's roster on screen.
-  assert.match(center, /closeDetail\(\);\s*\n\s*\/\/ Render the destination now/,
+  assert.match(center, /closeDetail\(\);\s*groupDrawer\.close\(\);/,
     "changing destination closes any open detail");
 }
 
 // ---- The views render into it, and still work without it ---------------
 {
   const teams = read("src/renderer/modules/collaboration-teams.js");
-  assert.match(teams, /const detailSurface = \(title\) => activeSurface\(\)\?\.open\?\.\(title\) \|\| details;/,
+  assert.match(teams, /activeSurface\(\)\?\.open\?\.\(title, \{ onClose: invalidateDetails \}\) \|\| details/,
     "teams draws a roster on whichever surface was asked for, falling back to its inline container when there is none");
   assert.match(teams, /rosterSurface === "drawer" \? drawer : detail/,
     "the drawer is the surface when a conversation asks for group info; the list-column detail otherwise");
@@ -80,10 +80,13 @@ const html = read("src/renderer/index.html");
   assert.match(teams, /showTeam\(teamId\)/, "the roster is still reachable");
 
   const friends = read("src/renderer/modules/collaboration-friends.js");
-  assert.match(friends, /requestsOpen && detail\?\.open \? detail\.open\(t\("collaboration\.social\.newFriends"\)\) : requestsPanel/,
-    "pending requests are their own screen when there is a detail view");
-  assert.match(friends, /if \(!requestsOpen\) \{ detail\?\.close\?\.\(\); return; \}/,
-    "closing the requests entry leaves the detail screen");
+  // Actual Back/refresh/late-response behavior is exercised by
+  // test-collaboration-detail-navigation.cjs, not a regex requiring paint to navigate.
+  const requestPaint = friends.slice(friends.indexOf("function paintRequests("), friends.indexOf("function matches("));
+  assert.doesNotMatch(requestPaint, /detail\?*\.?(open|close)/,
+    "request rendering must neither open a closed screen nor close another owner's screen");
+  assert.match(friends, /onClose: clearRequests/,
+    "the surface reports dismissal to the request state owner");
   assert.match(friends, /detail\?\.close\?\.\(\);/, "a reset dismisses any open detail");
 }
 

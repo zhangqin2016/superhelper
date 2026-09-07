@@ -47,6 +47,18 @@ app.whenReady().then(async()=>{
  window.assistantClient.collaboration.list=async()=>({ok:true,conversations:[{...conversation,id:'team-direct',scopeId:'team:team'},{id:'channel',kind:'channel',scopeId:'team:team',title:'Project channel'}]});
  await center.refresh();center.show();await tick();document.getElementById('collaborationTeamsTab').click();await tick();
  navigationChecks.channelsOnly=!document.querySelector('.collaboration-team-channels').textContent.includes('林悦')&&document.querySelector('.collaboration-team-channels').textContent.includes('Project channel');
+ document.getElementById('collaborationPeopleTab').click();await tick();
+ document.querySelector('#collaborationFriends [data-action="new-friends"]').click();
+ document.getElementById('collaborationDetailBack').click();
+ callback({type:'sync',state:{ok:true}});await tick();await tick();
+ navigationChecks.requestsBackStaysBack=document.getElementById('collaborationDetail').hidden;
+ document.querySelector('#collaborationFriends [data-action="new-friends"]').click();
+ document.getElementById('collaborationTeamsTab').click();await tick();
+ document.getElementById('collaborationPeopleTab').click();await tick();
+ navigationChecks.requestsSectionStaysList=document.getElementById('collaborationDetail').hidden;
+ await setLocale('en',{persist:false});await tick();
+ navigationChecks.requestsLocaleStaysList=document.getElementById('collaborationDetail').hidden;
+ await setLocale('zh-CN',{persist:false});await tick();
  window.presenceNavigationChecks=navigationChecks;
  window.presenceCenterTest={center,setLocale,callback,presence,
    async showSurface(type){if(type==='chat')await center.open('private');else document.getElementById(type==='people'?'collaborationPeopleTab':'collaborationTeamsTab').click();await tick();},
@@ -58,7 +70,7 @@ app.whenReady().then(async()=>{
  })()`);
  assert.deepEqual(result,{friendOnline:true,headerOnline:true,updateInPlace:true,typingPriority:true,typingCleared:true,teamOnline:true,bounded:true});
  const navigationChecks=await win.webContents.executeJavaScript('window.presenceNavigationChecks');
- assert.deepEqual(navigationChecks,{backgroundKeepsTeam:true,lateOpenKeepsTeam:true,explicitOpenWorks:true,backStaysBack:true,channelsOnly:true},'background and delayed history must not navigate; enterprise channels exclude direct chats');
+ assert.deepEqual(navigationChecks,{backgroundKeepsTeam:true,lateOpenKeepsTeam:true,explicitOpenWorks:true,backStaysBack:true,channelsOnly:true,requestsBackStaysBack:true,requestsSectionStaysList:true,requestsLocaleStaysList:true},'background and delayed history must not navigate; enterprise channels exclude direct chats');
  const screenshotDir=process.env.PRESENCE_SCREENSHOTS;
  if(screenshotDir){fs.mkdirSync(screenshotDir,{recursive:true});await win.webContents.executeJavaScript('document.documentElement.dataset.theme="light"');for(const surface of ['people','chat']){await win.webContents.executeJavaScript('window.presenceCenterTest.showSurface('+JSON.stringify(surface)+')');fs.writeFileSync(path.join(screenshotDir,'presence-'+surface+'-light.png'),(await win.webContents.capturePage()).toPNG());}await win.webContents.executeJavaScript('window.presenceCenterTest.showSurface("teams")');}
  for(const [locale,theme,width] of [['zh-CN','light',1050],['en','dark',1050],['ar','light',420],['zh-CN','dark',420]]){

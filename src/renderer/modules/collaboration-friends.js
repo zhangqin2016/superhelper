@@ -59,6 +59,19 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
   root.append(profileRow, entries, addDisclosure, requestsPanel, contacts);
 
   let filter = "", requestsOpen = false;
+  let requestSurface = null;
+  const clearRequests = () => {
+    requestsOpen = false; requestSurface = null; requestsPanel.hidden = true;
+    entries.querySelector('[data-action="new-friends"]')?.setAttribute("aria-expanded", "false");
+  };
+  const toggleRequests = () => {
+    if (requestsOpen) { clearRequests(); detail?.close?.(); }
+    else {
+      requestSurface = detail?.open?.(t("collaboration.social.newFriends"), { onClose: clearRequests }) || requestsPanel;
+      requestsOpen = true;
+    }
+    paint();
+  };
   let directoryCache = { contacts: [] };
   const ui = createSocialUi(root, { onChanged, getNavigationGeneration });
 
@@ -211,7 +224,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     // WeChat's "new friends" entry: pending requests are an errand with a
     // count, not rows to be spotted inside the contact list.
     const requestRow = socialNode("div", "", "collaboration-social-row is-entry");
-    const button = socialRowButton(t("collaboration.social.newFriends"), () => { requestsOpen = !requestsOpen; paint(); },
+    const button = socialRowButton(t("collaboration.social.newFriends"), toggleRequests,
       { icon: "request", trailing: incoming.length ? String(incoming.length) : "" });
     button.dataset.action = "new-friends";
     button.setAttribute("aria-expanded", String(requestsOpen));
@@ -224,9 +237,9 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     requestsPanel.replaceChildren();
     // With a detail view the requests are their own screen; without one (this
     // module rendered standalone, as the DOM tests do) they expand in place.
-    const surface = requestsOpen && detail?.open ? detail.open(t("collaboration.social.newFriends")) : requestsPanel;
+    const surface = requestSurface || requestsPanel;
     requestsPanel.hidden = !requestsOpen || surface !== requestsPanel;
-    if (!requestsOpen) { detail?.close?.(); return; }
+    if (!requestsOpen) return;
     surface.replaceChildren();
     if (!incoming.length) { surface.append(socialNode("p", t("collaboration.social.noRequests"), "collaboration-empty")); return; }
     // Accept/decline stay as words here: this is the one screen where deciding
@@ -287,7 +300,9 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     },
     setFilter(value) { filter = String(value || ""); paint(); },
     reset() {
-      ui.reset(); lilyId.value = ""; clearLookup(); filter = ""; requestsOpen = false; detail?.close?.();
+      ui.reset(); lilyId.value = ""; clearLookup(); filter = "";
+      if (requestsOpen) detail?.close?.();
+      clearRequests();
       directoryCache = { contacts: [] };
       profileRow.replaceChildren(); profileRow.hidden = true; entries.replaceChildren(); requestsPanel.replaceChildren(); requestsPanel.hidden = true; contacts.replaceChildren();
     },

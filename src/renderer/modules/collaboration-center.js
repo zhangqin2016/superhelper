@@ -51,6 +51,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     title: byId("collaborationDetailTitle"),
     body: byId("collaborationDetailBody"),
     back: byId("collaborationDetailBack"),
+    onClose: () => { navigationGeneration += 1; },
   });
   const openDetail = detail.open;
   const closeDetail = detail.close;
@@ -171,12 +172,13 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     // Changing destination leaves any detail behind: it belonged to the list
     // you just left.
     closeDetail();
+    groupDrawer.close();
     // Render the destination now if it fell behind while it was hidden.
     flushSocial(section);
     panelShell?.setConversationOpen(false);
   }
   const detailSurface = { open: openDetail, close: closeDetail };
-  const groupDrawer = createDrawerSurface({ view: byId("collaborationGroupDrawer"), title: byId("collaborationGroupDrawerTitle"), body: byId("collaborationGroupDrawerBody"), close: byId("collaborationGroupDrawerClose") });
+  const groupDrawer = createDrawerSurface({ view: byId("collaborationGroupDrawer"), title: byId("collaborationGroupDrawerTitle"), body: byId("collaborationGroupDrawerBody"), close: byId("collaborationGroupDrawerClose"), onClose: () => { navigationGeneration += 1; } });
   const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface });
   const teams = initCollaborationTeams(sectionNodes.teams, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface, drawer: groupDrawer });
   const sectionHandlers = Object.entries(sectionButtons).map(([section, button]) => {
