@@ -86,6 +86,9 @@ function compactMessageDatabase(dbPath, deps = {}) {
 
   try {
     if (!target || !files.existsSync(target)) return { compacted: false, reason: "missing" };
+    // A WAL belongs to the source page layout, never to the VACUUM copy.
+    // Leave recovery/checkpointing to the owning store before a future attempt.
+    if (files.existsSync(`${target}-wal`)) return { compacted: false, reason: "wal_present" };
     const beforeBytes = files.statSync(target).size;
     if (beforeBytes < minBytes) return { compacted: false, reason: "small_enough", beforeBytes };
 
@@ -141,6 +144,10 @@ function compactMessageDatabase(dbPath, deps = {}) {
 
     // (5) Swap. Keep the original under a .bak until the rename lands, so an
     // interrupted swap can never leave the user with no database at all.
+    if (files.existsSync(`${target}-wal`)) {
+      files.rmSync(tmpPath);
+      return { compacted: false, reason: "wal_present", beforeBytes };
+    }
     const afterBytes = files.statSync(tmpPath).size;
     const backupPath = `${target}.precompact`;
     try { if (files.existsSync(backupPath)) files.rmSync(backupPath); } catch { /* best effort */ }

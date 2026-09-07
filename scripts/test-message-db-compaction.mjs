@@ -82,6 +82,59 @@ function bloatedDb(name, { rows = 20_000, keep = 50 } = {}) {
 
 // --- the refusals --------------------------------------------------------
 {
+  const dbPath = bloatedDb("late-wal.db");
+  let writer;
+  let opens = 0;
+  try {
+    const result = compactMessageDatabase(dbPath, {
+      minBytes: 1,
+      openDatabase(p, ro) {
+        opens += 1;
+        if (opens === 2) {
+          writer = new DatabaseSync(dbPath);
+          writer.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;");
+          writer.prepare("insert into messages values (?,?,?,?)").run("s1", 2, "late", "late WAL row");
+        }
+        return new DatabaseSync(p, ro ? { readOnly: true } : undefined);
+      },
+    });
+    assert.equal(result.compacted, false);
+    assert.equal(result.reason, "wal_present");
+    assert.equal(writer.prepare("select body from messages where id='late'").get().body, "late WAL row");
+    assert.equal(fs.existsSync(`${dbPath}.compacting`), false);
+    const reader = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      assert.equal(Object.values(reader.prepare("pragma integrity_check").get())[0], "ok");
+      assert.equal(reader.prepare("select count(*) n from messages").get().n, 2);
+    } finally { reader.close(); }
+  } finally { writer?.close(); }
+}
+{
+  const dbPath = bloatedDb("wal.db");
+  const writer = new DatabaseSync(dbPath);
+  try {
+    writer.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;");
+    writer.prepare("insert into messages values (?,?,?,?)").run("s1", 2, "wal-only", "preserve me");
+    const mainBefore = fs.readFileSync(dbPath);
+    const walBefore = fs.readFileSync(`${dbPath}-wal`);
+    const result = compactMessageDatabase(dbPath, { minBytes: 1 });
+    assert.equal(result.reason, "wal_present");
+    assert.equal(result.compacted, false);
+    assert.deepEqual(fs.readFileSync(dbPath), mainBefore);
+    assert.deepEqual(fs.readFileSync(`${dbPath}-wal`), walBefore);
+    assert.equal(writer.prepare("select body from messages where id='wal-only'").get().body, "preserve me");
+  } finally {
+    writer.close();
+  }
+  const reopened = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    assert.equal(reopened.prepare("select count(*) n from messages").get().n, 2);
+    assert.equal(Object.values(reopened.prepare("pragma integrity_check").get())[0], "ok");
+  } finally {
+    reopened.close();
+  }
+}
+{
   // A small database is left alone: the copy would cost more than it saves.
   const small = bloatedDb("small.db", { rows: 40 });
   const sizeBefore = fs.statSync(small).size;
