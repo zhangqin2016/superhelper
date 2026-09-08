@@ -28,6 +28,17 @@ function fixture() {
   return { session, done, drafts, event, text, tool, aborts: () => aborted, close: () => session.terminate() };
 }
 const phrase = "Let me check the flow. Let me check the job.\n";
+for (const chunks of [
+  ["```js\nconst answer = 42;\n```\n", phrase.repeat(30)],
+  [..."```js\nconst answer = 42;\n```\n", ...phrase.repeat(30)],
+  ["~~~~text\n", phrase.repeat(30), "~~~~\n", phrase.repeat(30)],
+]) {
+  const f = fixture();
+  for (const chunk of chunks) f.text(chunk);
+  await tick();
+  assert.equal(f.done[0]?.loopDetected?.kind, "repeated_text", "a closed code fence cannot disable later prose-loop detection");
+  f.close();
+}
 {
   const f = fixture();
   for (const c of phrase.repeat(30)) f.text(c);

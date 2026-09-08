@@ -3,7 +3,7 @@
 const { createHash } = require("node:crypto");
 const { jobObservation } = require("./job-observation-lib");
 const states = new WeakMap();
-const MAX_TEXT = 32_768;
+const { appendLoopProse } = require("./loop-prose-window");
 const MIN_REPEATED_CHARS = 240;
 const REPEATS = 6;
 const POLL_REPEATS = 12;
@@ -42,7 +42,7 @@ function observeTurnLoop(session, reduced) {
   try {
     let state = states.get(session._turnGates);
     if (!state) { state = { text: "", protectedText: false, tools: new Map(), jobs: new Map() }; states.set(session._turnGates, state); }
-    if (session._pendingPermissions.size || session._pendingQuestions.size) { state.text = ""; state.jobs.clear(); return baseline; }
+    if (session._pendingPermissions.size || session._pendingQuestions.size) { state.text = ""; state.line = ""; state.jobs.clear(); return baseline; }
     for (const draft of reduced.drafts || []) {
       const p = draft.payload || {};
       if (draft.type === "tool.started") {
@@ -50,17 +50,17 @@ function observeTurnLoop(session, reduced) {
       } else if (draft.type === "tool.done") {
         const tool = state.tools.get(p.id); state.tools.delete(p.id);
         if (!tool) continue;
-        if ([...session._activeTools.keys()].some(id => id !== p.id)) { state.text = ""; state.jobs.clear(); continue; }
+        if ([...session._activeTools.keys()].some(id => id !== p.id)) { state.text = ""; state.line = ""; state.jobs.clear(); continue; }
         const raw = p.content ?? p.result;
         const job = !p.isError ? jobObservation(tool.name, tool.input, raw) : null;
-        if (!job) { state.text = ""; state.jobs.clear(); continue; }
+        if (!job) { state.text = ""; state.line = ""; state.jobs.clear(); continue; }
         const sig = digest([tool.name, tool.input, job]);
         let entry = state.jobs.get(job.jobId);
         if (!entry) { if (state.jobs.size >= 64) state.jobs.clear(); entry = { signatures: new Map(), repeats: 0 }; state.jobs.set(job.jobId, entry); }
         const key = digest([tool.name, tool.input]);
         if (entry.signatures.get(key) !== sig) {
           if (entry.signatures.size >= 8) entry.signatures.clear();
-          entry.signatures.set(key, sig); state.text = "";
+          entry.signatures.set(key, sig); state.text = ""; state.line = "";
           for (const observed of state.jobs.values()) observed.repeats = 0;
         } else {
           entry.repeats++;
@@ -68,15 +68,13 @@ function observeTurnLoop(session, reduced) {
         }
       } else if (draft.type === "assistant.delta" || draft.type === "assistant.thinking.delta") {
         // Foreground work may legitimately narrate a repeated observation; its lease governs liveness.
-        if (session._activeTools.size) { state.text = ""; continue; }
+        if (session._activeTools.size) { state.text = ""; state.line = ""; continue; }
         if (state.protectedText) continue;
         const piece = String(p.text || "");
-        if (piece.length > MAX_TEXT) state.protectedText = true; // Oversized snapshot: do not infer missing boundaries.
-        state.text = `${state.text}${piece}`.slice(-MAX_TEXT);
-        if (/```|~~~|(?:^|\n)\s*(?:>|["“]|[-*]\s|\d+[.)]\s)/u.test(state.text)) state.protectedText = true;
-        if (state.protectedText) continue;
+        const prose = appendLoopProse(state, piece);
+        if (!prose) continue;
         if (!/[.!?。！？\n]/u.test(piece)) continue;
-        const repeats = repeatedText(state.text, String(session._pendingPromptPayload?.text || ""));
+        const repeats = repeatedText(prose, String(session._pendingPromptPayload?.text || ""));
         if (repeats) {
           return { progress: false, stop: true, kind: "repeated_text", repeats };
         }
