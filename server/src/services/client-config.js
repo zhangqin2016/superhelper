@@ -6,6 +6,7 @@ import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { discoveredModelMetadataSync, discoveredModelsSync } from "./model-gateway/model-discovery.js";
 import { normalizeProviderForProtocol } from "./model-gateway/model-aliases.js";
 import { getModelCatalog } from "./model-catalog.js";
+import { parseRequestShapeHints } from "./request-shape-hints.js";
 import { resolveModelRuntimeBudget } from "./model-runtime-budget.js";
 import { resolveModelCapabilities } from "./model-capabilities.js";
 import { buildMediaProviderContracts } from "./media-provider-contracts.js";
@@ -481,6 +482,13 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
     : catalog;
 
   const runtimeEnv = runtimeEnvFromServerConfig(serverConfig);
+  // Request-shape hints: rules for provider quirks no shipped client rule knows
+  // yet ({ id, when: { status?, param?, message? }, then: { omit?, rename?,
+  // api?, toolChoice?, stripSchemaKeywords?, outputLimitField? } }). Delivered
+  // signed with the rest of the config, so a new quirk is a server setting, not
+  // a desktop release. Source: MODEL_REQUEST_SHAPE_HINTS_JSON; config profiles
+  // may also set models.requestShapeHints. Malformed → no hints, never a throw.
+  const requestShapeHints = parseRequestShapeHints(process.env.MODEL_REQUEST_SHAPE_HINTS_JSON);
   const effectiveConfig = {
     schemaVersion: 1,
     ...(modelPresets.length
@@ -490,6 +498,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
             activePresetId,
             presets: modelPresets,
             ...(visibleCatalog.length ? { catalog: visibleCatalog } : {}),
+            ...(requestShapeHints.length ? { requestShapeHints } : {}),
           },
         }
       : {}),

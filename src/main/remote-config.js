@@ -261,6 +261,14 @@ function getRemoteRuntimeEnvSync() {
 /** BYOK provider catalog the server published (endpoint + protocol + models, no
  *  keys). The client's "add model" flow uses it so the user only picks a provider
  *  + model and enters their own key. Empty when the server didn't publish one. */
+/** Request-shape hints the server delivered (see openai-request-shape.js); an
+ *  absent or malformed block is simply no hints. */
+function getRemoteRequestShapeHintsSync() {
+  const hints = getRemoteEffectiveConfigSync()?.models?.requestShapeHints;
+  if (!Array.isArray(hints)) return [];
+  return hints.filter((h) => h && typeof h === "object" && h.when && typeof h.when === "object" && h.then && typeof h.then === "object").slice(0, 32);
+}
+
 function getRemoteProviderCatalogSync() {
   const cfg = getRemoteEffectiveConfigSync();
   const catalog = cfg?.models?.catalog;
@@ -393,6 +401,7 @@ module.exports = {
   getRemoteEffectiveConfigSync,
   getRemoteRuntimeEnvSync,
   getRemoteProviderCatalogSync,
+  getRemoteRequestShapeHintsSync,
   getRemoteCharacterWorldsPolicySync,
   getRemoteCollaborationPolicySync,
   decodeGatewayTokenPayload,

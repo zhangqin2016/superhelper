@@ -4,11 +4,21 @@
 const OUTPUT_LIMIT_FIELDS = ["max_tokens", "max_completion_tokens"];
 const UNSUPPORTED_RE = /unsupported|not supported|unrecognized|unknown (?:parameter|argument|field)|invalid (?:parameter|argument)|not allowed|does not support|is not permitted|only the default/;
 
+const listOf = (v) => [...new Set((Array.isArray(v) ? v : []).map((x) => String(x || "").trim()).filter((x) => /^[A-Za-z_$][\w$.-]{0,63}$/.test(x)))].sort().slice(0, 8);
+const ESSENTIAL = new Set(["model", "messages", "stream", "tools"]);
+const SCHEMA_KEYWORDS = ["additionalProperties", "$schema", "format", "default", "minimum", "maximum", "minLength", "maxLength", "pattern", "examples", "title"];
+const hasKeyDeep = (v, k) => Array.isArray(v) ? v.some((x) => hasKeyDeep(x, k)) : Boolean(v && typeof v === "object" && (Object.prototype.hasOwnProperty.call(v, k) || Object.values(v).some((x) => hasKeyDeep(x, k))));
+const stripDeep = (v, ks) => Array.isArray(v) ? v.map((x) => stripDeep(x, ks)) : (v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([k]) => !ks.includes(k)).map(([k, x]) => [k, stripDeep(x, ks)])) : v);
 export function normalizeRequestShape(value) {
   const source = value && typeof value === "object" ? value : {};
+  const rename = {};
+  if (source.rename && typeof source.rename === "object") for (const [k, v] of Object.entries(source.rename).slice(0, 8)) if (/^[A-Za-z_]\w{0,63}$/.test(k) && /^[A-Za-z_]\w{0,63}$/.test(String(v || ""))) rename[k] = String(v);
   return {
     outputLimitField: OUTPUT_LIMIT_FIELDS.includes(source.outputLimitField) ? source.outputLimitField : "max_tokens",
     temperature: source.temperature === "omit" ? "omit" : "allowed",
+    omit: listOf(source.omit),
+    rename,
+    stripSchemaKeywords: listOf(source.stripSchemaKeywords),
   };
 }
 
@@ -38,6 +48,15 @@ export function classifyShapeRejection({ status, error, shape, sentBody }) {
   if (sentBody && sentBody.temperature !== undefined && current.temperature !== "omit" && (param === "temperature" || (mentions(text, "temperature") && unsupported))) {
     return { shape: { ...current, temperature: "omit" }, reason: "unsupported_value:temperature" };
   }
+  const raw = String(info.message || ""); const sent = sentBody || {};
+  const rn = /['"`]([A-Za-z_]\w{0,63})['"`][\s\S]{0,160}?\b(?:use|try)\s+['"`]([A-Za-z_]\w{0,63})['"`]\s+instead/i.exec(raw);
+  if (rn && unsupported && Object.prototype.hasOwnProperty.call(sent, rn[1]) && !ESSENTIAL.has(rn[1]) && current.rename[rn[1]] !== rn[2]) return { shape: { ...current, rename: { ...current.rename, [rn[1]]: rn[2] } }, reason: `rename:${rn[1]}->${rn[2]}` };
+  if (Array.isArray(sent.tools) && sent.tools.length) {
+    const kw = SCHEMA_KEYWORDS.find((k) => raw.includes(k) && !current.stripSchemaKeywords.includes(k) && hasKeyDeep(sent.tools, k));
+    if (kw && (unsupported || /unknown name|cannot find field|not allowed|invalid/i.test(raw))) return { shape: { ...current, stripSchemaKeywords: [...current.stripSchemaKeywords, kw] }, reason: `strip_schema_keyword:${kw}` };
+  }
+  const named = param && Object.prototype.hasOwnProperty.call(sent, param) ? param : Object.keys(sent).find((k) => !ESSENTIAL.has(k) && mentions(text, k.toLowerCase()) && unsupported) || "";
+  if (named && !ESSENTIAL.has(named) && !current.omit.includes(named) && unsupported) return { shape: { ...current, omit: [...current.omit, named] }, reason: `omit:${named}` };
   return null;
 }
 
@@ -48,6 +67,9 @@ export function applyRequestShape(body, shape) {
   for (const field of OUTPUT_LIMIT_FIELDS) delete out[field];
   if (limit !== undefined) out[s.outputLimitField] = Math.floor(Number(limit));
   if (s.temperature === "omit") delete out.temperature;
+  for (const [from, to] of Object.entries(s.rename)) if (Object.prototype.hasOwnProperty.call(out, from)) { out[to] = out[from]; delete out[from]; }
+  for (const f of s.omit) delete out[f];
+  if (s.stripSchemaKeywords.length && Array.isArray(out.tools)) out.tools = out.tools.map((t) => (t?.function?.parameters ? { ...t, function: { ...t.function, parameters: stripDeep(t.function.parameters, s.stripSchemaKeywords) } } : t));
   return out;
 }
 

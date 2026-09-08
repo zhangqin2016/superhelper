@@ -25,23 +25,47 @@ const OUTPUT_LIMIT_FIELDS = Object.freeze(["max_tokens", "max_completion_tokens"
 const DEFAULT_SHAPE = Object.freeze({ outputLimitField: "max_tokens", temperature: "allowed", api: "chat" });
 const MAX_ADAPTATIONS = 3;
 
+const MAX_LIST = 8;
+const listOf = (value) => [...new Set((Array.isArray(value) ? value : []).map((v) => String(v || "").trim()).filter((v) => /^[A-Za-z_$][\w$.-]{0,63}$/.test(v)))].sort().slice(0, MAX_LIST);
+const mapOf = (value) => {
+  const out = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [k, v] of Object.entries(value).slice(0, MAX_LIST)) if (/^[A-Za-z_]\w{0,63}$/.test(k) && /^[A-Za-z_]\w{0,63}$/.test(String(v || ""))) out[k] = String(v);
+  }
+  return out;
+};
 function normalizeRequestShape(value) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return {
     outputLimitField: OUTPUT_LIMIT_FIELDS.includes(source.outputLimitField) ? source.outputLimitField : DEFAULT_SHAPE.outputLimitField,
     temperature: source.temperature === "omit" ? "omit" : DEFAULT_SHAPE.temperature,
     api: source.api === "responses" ? "responses" : DEFAULT_SHAPE.api,
+    // Generic lessons: fields the endpoint told us to drop, to call by another
+    // name, JSON-schema keywords it rejects inside tool parameters, and a
+    // tool_choice it insists on. Learned from its 4xx, never assumed.
+    omit: listOf(source.omit),
+    rename: mapOf(source.rename),
+    stripSchemaKeywords: listOf(source.stripSchemaKeywords),
+    toolChoice: source.toolChoice === "auto" ? "auto" : null,
   };
 }
 
 function isDefaultShape(shape) {
   const s = normalizeRequestShape(shape);
-  return s.outputLimitField === DEFAULT_SHAPE.outputLimitField && s.temperature === DEFAULT_SHAPE.temperature && s.api === DEFAULT_SHAPE.api;
+  return s.outputLimitField === DEFAULT_SHAPE.outputLimitField && s.temperature === DEFAULT_SHAPE.temperature && s.api === DEFAULT_SHAPE.api
+    && !s.omit.length && !Object.keys(s.rename).length && !s.stripSchemaKeywords.length && !s.toolChoice;
 }
 
 /** Only a non-default shape is worth persisting or sending to the runtime. */
 function compactRequestShape(shape) {
-  return isDefaultShape(shape) ? null : normalizeRequestShape(shape);
+  if (isDefaultShape(shape)) return null;
+  const s = normalizeRequestShape(shape);
+  const out = { outputLimitField: s.outputLimitField, temperature: s.temperature, api: s.api };
+  if (s.omit.length) out.omit = s.omit;
+  if (Object.keys(s.rename).length) out.rename = s.rename;
+  if (s.stripSchemaKeywords.length) out.stripSchemaKeywords = s.stripSchemaKeywords;
+  if (s.toolChoice) out.toolChoice = s.toolChoice;
+  return out;
 }
 
 function shapeFromEnv(env = {}) {
@@ -84,19 +108,67 @@ const UNSUPPORTED_RE = /unsupported|not supported|unrecognized|unknown (?:parame
  * error is about something else — that is the caller's problem to report, not
  * a reason to keep resending.
  */
+// Never dropped or renamed: without these there is no request at all.
+const ESSENTIAL_FIELDS = new Set(["model", "messages", "input", "stream", "tools"]);
+// JSON-schema keywords a strict gateway may refuse inside tool parameters.
+const SCHEMA_KEYWORDS = ["additionalProperties", "$schema", "format", "default", "minimum", "maximum", "minLength", "maxLength", "pattern", "examples", "title", "minItems", "maxItems", "uniqueItems", "nullable", "const", "oneOf", "anyOf", "allOf"];
+const hasKeyDeep = (value, key) => {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((v) => hasKeyDeep(v, key));
+  return Object.prototype.hasOwnProperty.call(value, key) || Object.values(value).some((v) => hasKeyDeep(v, key));
+};
+
+/** Rules delivered by the server (signed remote config) for quirks no built-in
+ *  rule knows yet — so a new provider never needs a desktop release. Shape:
+ *  { id, when: { status?, param?, message? (regex source) }, then: { rename?, omit?, api?, toolChoice?, stripSchemaKeywords? } } */
+let remoteHintsProvider = () => {
+  try { return require("./remote-config").getRemoteRequestShapeHintsSync?.() || []; } catch { return []; }
+};
+function setRemoteHintsProviderForTests(fn) { remoteHintsProvider = typeof fn === "function" ? fn : () => []; }
+function hintMatches(hint, { status, error, text }) {
+  const when = hint?.when || {};
+  if (when.status && Number(when.status) !== Number(status)) return false;
+  if (when.param && String(when.param).toLowerCase() !== String(error?.param || "").toLowerCase()) return false;
+  if (when.message) {
+    const src = String(when.message).slice(0, 200);
+    try { if (!new RegExp(src, "i").test(text)) return false; } catch { return false; }
+  }
+  return Boolean(when.status || when.param || when.message);
+}
+function applyHint(current, then, sentBody) {
+  const next = { ...current, omit: [...current.omit], rename: { ...current.rename }, stripSchemaKeywords: [...current.stripSchemaKeywords] };
+  let changed = false;
+  for (const field of listOf(then?.omit)) if (!ESSENTIAL_FIELDS.has(field) && !next.omit.includes(field)) { next.omit.push(field); changed = true; }
+  for (const [from, to] of Object.entries(mapOf(then?.rename))) if (!ESSENTIAL_FIELDS.has(from) && next.rename[from] !== to) { next.rename[from] = to; changed = true; }
+  for (const kw of listOf(then?.stripSchemaKeywords)) if (!next.stripSchemaKeywords.includes(kw)) { next.stripSchemaKeywords.push(kw); changed = true; }
+  if (then?.api === "responses" && next.api !== "responses") { next.api = "responses"; changed = true; }
+  if (then?.toolChoice === "auto" && next.toolChoice !== "auto" && sentBody?.tool_choice && typeof sentBody.tool_choice === "object") { next.toolChoice = "auto"; changed = true; }
+  if (then?.outputLimitField && OUTPUT_LIMIT_FIELDS.includes(then.outputLimitField) && next.outputLimitField !== then.outputLimitField) { next.outputLimitField = then.outputLimitField; changed = true; }
+  return changed ? normalizeRequestShape(next) : null;
+}
+
+/**
+ * Decide how to change the shape after a rejection. Specific, well-understood
+ * lessons first; then generic ones read straight from the sentence (rename X to
+ * Y, drop X, strip a schema keyword, fall back to tool_choice auto); then any
+ * server-delivered hint. Returns null when the error is about something else —
+ * that is the caller's problem to report, not a reason to keep resending.
+ */
 function classifyShapeRejection({ status, error, shape, sentBody }) {
   const s = Number(status) || 0;
   if (s < 400 || s >= 500) return null;
   const current = normalizeRequestShape(shape);
   const info = error || {};
   const text = `${info.code} ${info.type} ${info.param} ${info.message}`.toLowerCase();
+  const raw = String(info.message || "");
   const param = String(info.param || "").toLowerCase();
   const unsupported = UNSUPPORTED_RE.test(text) || /unsupported_(parameter|value)/.test(param);
+  const sent = sentBody && typeof sentBody === "object" ? sentBody : {};
   // Which parameter is being refused. Prefer the server's own `param`; fall
   // back to the parameter it names in the sentence. The official message names
   // BOTH fields ("'max_tokens' … use 'max_completion_tokens'"), so the one
   // being refused is the one actually present in what we sent.
-  const sentLimit = OUTPUT_LIMIT_FIELDS.find((field) => sentBody && Object.prototype.hasOwnProperty.call(sentBody, field)) || current.outputLimitField;
+  const sentLimit = OUTPUT_LIMIT_FIELDS.find((field) => Object.prototype.hasOwnProperty.call(sent, field)) || current.outputLimitField;
   const refusedLimit = OUTPUT_LIMIT_FIELDS.includes(param) ? param
     : (mentions(text, sentLimit) && unsupported ? sentLimit : "");
   if (refusedLimit && (unsupported || mentions(text, "max_completion_tokens") || mentions(text, "max_tokens"))) {
@@ -106,26 +178,74 @@ function classifyShapeRejection({ status, error, shape, sentBody }) {
     }
   }
   // "To use function tools, use /v1/responses …": the server names the surface
-  // that works. Only relevant when tools were sent; a plain chat still works.
+  // that works (with or without tools in the request — the codex family refuses
+  // even plain chat).
   if (current.api === "chat" && /v1\/responses\b|responses api|responses endpoint/i.test(text)) {
     return { shape: { ...current, api: "responses" }, reason: "use_responses_api" };
   }
-  const sentTemperature = sentBody && sentBody.temperature !== undefined;
+  const sentTemperature = sent.temperature !== undefined;
   if (sentTemperature && current.temperature !== "omit" && (param === "temperature" || (mentions(text, "temperature") && unsupported))) {
     return { shape: { ...current, temperature: "omit" }, reason: "unsupported_value:temperature" };
+  }
+  // Generic rename: "Unsupported parameter: 'A' … Use 'B' instead."
+  const renameMatch = /['"`]([A-Za-z_]\w{0,63})['"`][\s\S]{0,160}?\b(?:use|try)\s+['"`]([A-Za-z_]\w{0,63})['"`]\s+instead/i.exec(raw);
+  if (renameMatch && unsupported) {
+    const [, from, to] = renameMatch;
+    if (Object.prototype.hasOwnProperty.call(sent, from) && !ESSENTIAL_FIELDS.has(from) && current.rename[from] !== to) {
+      return { shape: { ...current, rename: { ...current.rename, [from]: to } }, reason: `rename:${from}->${to}` };
+    }
+  }
+  // Forced tool_choice refused → auto (a request-SHAPE constraint, not "no tools").
+  if (sent.tool_choice && typeof sent.tool_choice === "object" && current.toolChoice !== "auto" && /tool[_\s-]?choice/.test(text)) {
+    return { shape: { ...current, toolChoice: "auto" }, reason: "tool_choice:auto" };
+  }
+  // A JSON-schema keyword our tool parameters use that this gateway rejects
+  // (e.g. Gemini: Unknown name "additionalProperties" at 'tools[0]…').
+  if (Array.isArray(sent.tools) && sent.tools.length) {
+    const keyword = SCHEMA_KEYWORDS.find((kw) => raw.includes(kw) && !current.stripSchemaKeywords.includes(kw) && hasKeyDeep(sent.tools, kw));
+    if (keyword && (unsupported || /unknown name|cannot find field|not allowed|invalid/i.test(raw))) {
+      return { shape: { ...current, stripSchemaKeywords: [...current.stripSchemaKeywords, keyword] }, reason: `strip_schema_keyword:${keyword}` };
+    }
+  }
+  // Generic omit: the server names a top-level field we sent and refuses it.
+  const named = param && Object.prototype.hasOwnProperty.call(sent, param) ? param
+    : Object.keys(sent).find((key) => !ESSENTIAL_FIELDS.has(key) && mentions(text, key.toLowerCase()) && unsupported) || "";
+  if (named && !ESSENTIAL_FIELDS.has(named) && !current.omit.includes(named) && unsupported) {
+    return { shape: { ...current, omit: [...current.omit, named] }, reason: `omit:${named}` };
+  }
+  // Server-delivered hints for anything the built-ins do not recognise.
+  let hints = [];
+  try { hints = remoteHintsProvider() || []; } catch { hints = []; }
+  for (const hint of (Array.isArray(hints) ? hints : []).slice(0, 32)) {
+    if (!hintMatches(hint, { status: s, error: info, text })) continue;
+    const next = applyHint(current, hint.then, sent);
+    if (next) return { shape: next, reason: `hint:${String(hint.id || "remote").slice(0, 40)}` };
   }
   return null;
 }
 
 /** Write the output limit and temperature the way this shape wants them. */
+const stripKeywordsDeep = (value, keywords) => {
+  if (Array.isArray(value)) return value.map((v) => stripKeywordsDeep(v, keywords));
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) if (!keywords.includes(k)) out[k] = stripKeywordsDeep(v, keywords);
+  return out;
+};
 function applyRequestShape(body, shape, { maxTokens = undefined, temperature = undefined } = {}) {
   const s = normalizeRequestShape(shape);
-  const out = { ...(body || {}) };
+  let out = { ...(body || {}) };
   for (const field of OUTPUT_LIMIT_FIELDS) delete out[field];
   const limit = Number(maxTokens);
   if (Number.isFinite(limit) && limit > 0) out[s.outputLimitField] = Math.floor(limit);
   delete out.temperature;
   if (temperature !== undefined && temperature !== null && s.temperature !== "omit") out.temperature = temperature;
+  for (const [from, to] of Object.entries(s.rename)) if (Object.prototype.hasOwnProperty.call(out, from)) { out[to] = out[from]; delete out[from]; }
+  for (const field of s.omit) delete out[field];
+  if (s.toolChoice === "auto" && out.tool_choice && typeof out.tool_choice === "object") out.tool_choice = "auto";
+  if (s.stripSchemaKeywords.length && Array.isArray(out.tools)) {
+    out.tools = out.tools.map((tool) => (tool?.function?.parameters ? { ...tool, function: { ...tool.function, parameters: stripKeywordsDeep(tool.function.parameters, s.stripSchemaKeywords) } } : tool));
+  }
   return out;
 }
 
@@ -263,5 +383,6 @@ module.exports = {
   recallShape,
   rememberShape,
   resetLearnedShapesForTests,
+  setRemoteHintsProviderForTests,
   redactSecrets,
 };

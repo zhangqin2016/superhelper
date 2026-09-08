@@ -2,6 +2,7 @@
 
 const requestShapeModule = require("./openai-request-shape");
 const { getSafeStorage, secretStorageAvailable, protectSecret, unprotectSecret, hydrateSecret } = require("./model-preset-secrets");
+const { reportUnhandledProbeRejection } = require("./model-probe-telemetry");
 
 function userSettingsPath() {
   return userDataPath("model-settings.json");
@@ -1055,6 +1056,7 @@ async function saveCustomPresetWithProbe(input = {}) {
         ? { ...saved, probeDeferred: true, probeWarning: probe.error || "MODEL_PROBE_UNREACHABLE" }
         : saved;
     }
+    reportUnhandledProbeRejection({ baseUrl: urlValidated.baseUrl, model: modelValidated.model, probe });
     return {
       ok: false,
       error: probe.error || "MODEL_PROBE_FAILED",
