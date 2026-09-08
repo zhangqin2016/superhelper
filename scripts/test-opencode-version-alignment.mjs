@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const expected = "1.18.21";
+const expected = "1.18.29";
 const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const packageLock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
 const fetchScript = fs.readFileSync("scripts/fetch-opencode-engine.mjs", "utf8");
