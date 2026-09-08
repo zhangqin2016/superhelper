@@ -16,6 +16,13 @@
 }
 .collaboration-create-dialog[open] { display: flex; flex-direction: column; }
 .collaboration-create-dialog::backdrop { background: var(--bg-backdrop); }
+.collaboration-create-dialog.workspace-collaboration-dialog { inline-size: min(520px, calc(100vw - 32px)); block-size: fit-content; max-block-size: calc(100dvh - 24px); }
+.collaboration-create-dialog.workspace-collaboration-dialog .collaboration-social-form { flex: 0 1 auto; }
+.workspace-collaboration-dialog .collaboration-dialog-fields { display: flex; flex-direction: column; overflow-y: auto; flex: 0 1 auto; min-block-size: 0; }
+.workspace-collaboration-dialog .collaboration-form-note { color: var(--text-secondary); animation: none; }
+.workspace-collaboration-dialog p { overflow-wrap: anywhere; }
+.workspace-collaboration-dialog footer { flex-wrap: wrap; }
+.workspace-collaboration-dialog [hidden] { display: none !important; }
 .collaboration-create-dialog > header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px 24px; border-bottom: 1px solid var(--border); flex: 0 0 auto;

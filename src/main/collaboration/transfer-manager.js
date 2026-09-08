@@ -13,6 +13,7 @@ const safeId = (value) => typeof value === "string" && /^[A-Za-z0-9_=-]{1,200}$/
 function view(item) {
   const c = item.checkpoint;
   return { ok: true, id: item.id, conversationId: item.conversationId, scopeId: item.scopeId, direction: item.direction, purpose: item.purpose,
+    ...(c.taskOwned === true ? { taskOwned: true } : {}),
     state: c.state || "prepared", ...(c.objectId ? { objectId: c.objectId } : {}), completedParts: c.completedParts?.length || 0,
     ...(c.content ? { originalName: c.content.originalName, totalBytes: c.content.ciphertextSize } : {}) };
 }
@@ -193,10 +194,10 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       // fencing. Server orphan cleanup owns objects whose ACK was never known.
       return { ...view(item), serverCancelled: false };
     },
-    async prepareUpload({ inputPath, conversationId, scopeId, purpose = "attachment", originalName, mimeType = "application/octet-stream", expectedPlaintextSha256 }) {
+    async prepareUpload({ inputPath, conversationId, scopeId, purpose = "attachment", originalName, mimeType = "application/octet-stream", expectedPlaintextSha256, taskOwned = false }) {
       guard({ conversationId, scopeId, direction: "upload", purpose });
       let item = manifests.create({ scopeId, conversationId, direction: "upload", purpose });
-      item = save(item, { state: "encrypting", deviceId });
+      item = save(item, { state: "encrypting", deviceId, ...(taskOwned === true ? { taskOwned: true } : {}) });
       const key = crypto.randomBytes(32);
       try {
         const result = await encryptFile({ inputPath, outputPath: path.join(manifests.directory(item.id), "ciphertext.lilyenc"), key, fileName: originalName || path.basename(inputPath), contentType: mimeType });
@@ -219,9 +220,14 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       const promise = resume(id).finally(() => { if (running.get(id) === promise) running.delete(id); });
       running.set(id, promise); return promise;
     },
-    prepareDownload({ objectId, conversationId, scopeId, purpose = "attachment" }) {
+    prepareDownload({ objectId, conversationId, scopeId, purpose = "attachment", taskOwned = false }) {
       guard({ conversationId, scopeId, direction: "download", purpose }); ensure(safeId(objectId));
-      return view(save(manifests.create({ scopeId, conversationId, direction: "download", purpose }), { state: "prepared", objectId }));
+      return view(save(manifests.create({ scopeId, conversationId, direction: "download", purpose }), { state: "prepared", objectId, ...(taskOwned === true ? { taskOwned: true } : {}) }));
+    },
+    markTaskOwned(id) {
+      const item = manifests.read(id); guard(item, true, false); ensure(item.purpose === "workspace");
+      if (item.checkpoint.taskOwned === true) return view(item);
+      return view(manifests.update({ id, expectedRevision: item.revision, checkpoint: { ...item.checkpoint, taskOwned: true } }));
     },
     resumeDownload(id) {
       if (running.has(id)) return running.get(id);

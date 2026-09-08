@@ -34,6 +34,11 @@ app.whenReady().then(async () => {
       saveDownload:async(id)=>{calls.push(['save',id]);return denied?{ok:false,code:'COLLAB_ACCESS_REVOKED'}:{ok:true,saved:true};}};
     const controller=initCollaborationAttachments({root,attachButton:button,api});
     const settle=()=>new Promise(r=>setTimeout(r,20));
+    list=[{...upload,id:'ordinary-attachment',state:'ready',direction:'download'},{...upload,id:'ordinary-workspace',purpose:'workspace',state:'ready',direction:'download'},{...upload,id:'task-package',purpose:'workspace',taskOwned:true,state:'ready',direction:'download'}];
+    controller.setConversation({id:'conversation',scopeId:'team:org',title:'Exact recipient'}, {attachments:true,workspaceShares:true});await settle();
+    if(root.querySelector('[data-transfer-id="task-package"]'))throw Error('Task-owned package must not leak into generic attachment save/preview tray');
+    if(!root.querySelector('[data-transfer-id="ordinary-attachment"]')||!root.querySelector('[data-transfer-id="ordinary-workspace"]'))throw Error('Ordinary attachment and workspace transfer controls must remain available');
+    list=[];
     controller.setConversation({id:'conversation',scopeId:'team:org',title:'Exact recipient'}, {attachments:true});await settle();
     button.click();await settle();
     const picked=calls.at(-1),noAutoUpload=!calls.some(c=>c[0]==='enqueue'),safe=!root.querySelector('img');

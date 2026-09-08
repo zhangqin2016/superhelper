@@ -134,7 +134,7 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     const recoveryBlocked = Boolean((policy.attachments || policy.workspaceShares) && result?.ok && (result.recoveryFailureCount > 0 || result.unrecognizedCount > 0));
     recoveryStatus.textContent = recoveryBlocked ? label("recoveryBlocked") : ""; recoveryStatus.hidden = !recoveryBlocked;
     if (!result?.ok) { transfers = []; selected.clear(); clearConfirmation(); render(); status.textContent = label("unavailable"); return; }
-    transfers = (result.transfers || []).filter((item) => item.conversationId === conversation.id
+    transfers = (result.transfers || []).filter((item) => item.conversationId === conversation.id && item.taskOwned !== true
       && (item.purpose === "attachment" ? policy.attachments : policy.workspaceShares));
     const eligible = new Set(transfers.filter(selectable).map((item) => item.id));
     selected = new Set([...selected].filter((id) => eligible.has(id)));

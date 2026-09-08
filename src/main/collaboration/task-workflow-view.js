@@ -2,7 +2,7 @@
 const id = v => typeof v === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(v);
 const fields = {
   recoveries:[],
-  prepare:[],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
+  prepare:["projectId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
   preview:["taskId","deliveryId"],apply:["taskId","deliveryId","applicationId","expectedPlanHash","confirmDeletions"],rollback:["taskId","applicationId"],
 };
@@ -12,6 +12,7 @@ function taskWorkflowCommand(value) {
   const keys = fields[value.operation];
   if (Object.keys(value).some(key=>!["operation","conversationId",...keys].includes(key))) return null;
   for (const key of keys) {
+    if (key === "projectId" && !Object.hasOwn(value,key)) continue;
     const v = value[key];
     if (key === "deliveryId" && value.operation === "open" && v == null) continue;
     if (key === "confirmDeletions") { if (typeof v !== "boolean") return null; }

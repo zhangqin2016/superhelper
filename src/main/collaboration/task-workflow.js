@@ -13,7 +13,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
 /** Main-only orchestration. Renderer supplies identities and consent, never paths.
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
-function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory,
+function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory,
   openWorkspace, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const recoveries = createTaskRecovery({store,assertActive});
@@ -42,10 +42,10 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     return { id:value.id, name:value.name, files:value.files, warnings:value.warnings, omitted:value.omitted,
       state:value.state, ...(value.input ? { input:value.input } : {}), ...(value.taskId ? {taskId:value.taskId} : {}) };
   }
-  async function freeze(sourceRoot, conversationId, extras = {}) {
+  async function freeze(sourceRoot, conversationId, extras = {}, assertAuthorized = assertActive) {
     const id = randomUUID();
     const result = await bundle.freezeTaskBundle({ sourceRoot, destinationRoot:allocate(), name:path.basename(sourceRoot) });
-    assertActive();
+    assertAuthorized();
     const packageBytes = fs.readFileSync(result.packagePath);
     return save({ ...result, ...extras, id, conversationId, sourceRoot, name:path.basename(sourceRoot),
       packageHash:createHash("sha256").update(packageBytes).digest("hex"),packageSize:packageBytes.length,
@@ -81,6 +81,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function receive(command) {
     const task = await taskFor(command);
     if (task.assigneeUserId !== store.accountId || !["active","changes_requested"].includes(task.state)) throw fail("COLLAB_TASK_STATE_CONFLICT");
+    await transfers?.taskFiles?.markOwned?.(task);
     let local = await binding(command);
     if (!local.workRoot) {
       const input = await download(command, task.inputSnapshotId);
@@ -146,10 +147,25 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     }
     if (operation === "prepare") {
       records.list(conversationId); // authorization before showing native UI
-      const selected = await chooseDirectory?.();
-      if (selected?.canceled) return {ok:true,cancelled:true};
-      if (selected?.filePaths?.length !== 1) throw fail();
-      const draft = await freeze(fs.realpathSync(selected.filePaths[0]),conversationId);
+      const scopeId = store.getConversation({conversationId}).scopeId;
+      const assertAuthorized = () => {
+        records.list(conversationId); // active account and current conversation authority
+        if (store.getConversation({conversationId}).scopeId !== scopeId) throw fail("COLLAB_ACCESS_REVOKED");
+      };
+      let sourceRoot;
+      if (command.projectId) {
+        sourceRoot = await resolveProjectDirectory?.(command.projectId);
+        assertAuthorized();
+        if (typeof sourceRoot !== "string" || !path.isAbsolute(sourceRoot)
+          || !fs.existsSync(sourceRoot) || !fs.statSync(sourceRoot).isDirectory()) throw fail("COLLAB_TASK_LOCAL_MISSING");
+      } else {
+        const selected = await chooseDirectory?.();
+        assertAuthorized();
+        if (selected?.canceled) return {ok:true,cancelled:true};
+        if (selected?.filePaths?.length !== 1) throw fail();
+        sourceRoot = selected.filePaths[0];
+      }
+      const draft = await freeze(fs.realpathSync(sourceRoot),conversationId,{},assertAuthorized);
       return {ok:true,draft:draftView(draft)};
     }
     if (operation === "send") {
@@ -191,7 +207,9 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       else if (task.assigneeUserId === store.accountId) target = (await receive(command)).workRoot;
       else target = (await binding(command)).sourceRoot;
       if (!target || !openWorkspace) throw fail("COLLAB_TASK_LOCAL_MISSING");
-      await taskFor(command);
+      const current = await taskFor(command);
+      await transfers?.taskFiles?.markOwned?.(current);
+      records.list(conversationId);
       return {ok:true,...await openWorkspace({rootPath:target,title:task.title,bindingId:`${task.id}:${command.deliveryId || store.accountId}`})};
     }
     if (operation === "prepareDelivery") {

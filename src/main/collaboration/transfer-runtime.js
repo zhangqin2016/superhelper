@@ -305,11 +305,27 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
       // Task material has a server task binding, never a fabricated chat message.
       // Kept main-only: callers cannot supply filesystem paths through IPC.
       taskFiles: Object.freeze({
+        // Main-only: the workflow supplies its freshly authorized task, never
+        // renderer ownership claims. Cover cached copies without redownloading.
+        markOwned(task) { return perform(() => {
+          conversation(task?.conversationId, "workspace");
+          if (!task || ![task.requesterUserId, task.assigneeUserId].includes(accountId)
+            || ["cancelled", "declined"].includes(task.state)) throw fail("COLLAB_TASK_ACCESS_DENIED");
+          const objects = new Set([task.inputSnapshotId, ...(task.deliveries || []).map(item => item.id)].filter(id));
+          let changed = 0;
+          try {
+            for (const item of manager.list().transfers) {
+              if (item.purpose !== "workspace" || item.conversationId !== task.conversationId || !objects.has(item.objectId) || item.taskOwned === true) continue;
+              manager.markTaskOwned(item.id); changed += 1;
+            }
+          } finally { if (changed) onChange?.(); }
+          return { ok: true };
+        }); },
         prepareUpload({ conversationId, inputPath, originalName, expectedPlaintextSha256 }) { return perform(() => {
           const target = conversation(conversationId, "workspace");
-          return manager.prepareUpload({ conversationId, scopeId: target.scopeId, purpose: "workspace", inputPath, originalName, expectedPlaintextSha256 });
+          return manager.prepareUpload({ conversationId, scopeId: target.scopeId, purpose: "workspace", inputPath, originalName, expectedPlaintextSha256, taskOwned: true });
         }); },
-        upload(transferId) { return perform(() => manager.resumeUpload(transferId)); },
+        upload(transferId) { return perform(() => { manager.markTaskOwned(transferId); return manager.resumeUpload(transferId); }); },
         download({ conversationId, taskId, objectId }) { return perform(async () => {
           const target = conversation(conversationId, "workspace");
           const task = await client.getTask({ deviceId, taskId });
@@ -320,7 +336,8 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
             || (task.inputSnapshotId !== objectId && !task.deliveries?.some(item => item.id === objectId))) throw fail("COLLAB_TASK_ACCESS_DENIED");
           let transfer = manager.list().transfers.find(item => item.direction === "download" && item.conversationId === conversationId
             && item.objectId === objectId && item.purpose === "workspace" && item.state !== "cancelled");
-          if (!transfer) transfer = manager.prepareDownload({ conversationId, scopeId: target.scopeId, purpose: "workspace", objectId });
+          if (!transfer) transfer = manager.prepareDownload({ conversationId, scopeId: target.scopeId, purpose: "workspace", objectId, taskOwned: true });
+          else manager.markTaskOwned(transfer.id);
           const result = await manager.resumeDownload(transfer.id);
           if (result?.ok !== true || result.state !== "ready") return result;
           return { ok: true, packagePath: await verifiedFile(transfer.id) };

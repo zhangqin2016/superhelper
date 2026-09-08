@@ -54,7 +54,7 @@
 /* Detached: the panel is the whole window, so the workbench around it is not
    rendered and the panel loses the chrome that only makes sense docked — no
    inset border, no floating shadow, no width variable. */
-[data-app-view="collaboration"] > *:not(.collaboration-center):not(.collaboration-panel-scrim) {
+[data-app-view="collaboration"] > *:not(.collaboration-center):not(.collaboration-panel-scrim):not(.workspace-collaboration-dialog) {
   display: none !important;
 }
 

@@ -16,6 +16,7 @@ import { reorderWorkspaceByCommand } from "./workspace-order.js";
 import { createWorkspaceProjectHeader } from "./workspace-project-header.js";
 import { sortSessionsByRecency } from "./workspace-switcher-model.js";
 import { showWorkspaceVersionDialog } from "./workspace-version-dialog.js";
+import { openWorkspaceCollaboration } from "./workspace-collaboration-entry.js";
 
 const container = () => $("projectTree");
 
@@ -403,6 +404,11 @@ function showProjectMenu(e, project) {
       action: () => shareWorkspacePack(project),
     },
     {
+      label: t("collaboration.workspace.entry"),
+      actionId: "workspace-collaboration",
+      action: () => openWorkspaceCollaboration({ projectId: project.id, name: project.name }),
+    },
+    {
       label: t("ctx.delete"),
       danger: true,
       action: async () => {
@@ -421,6 +427,7 @@ function showProjectMenu(e, project) {
   for (const item of items) {
     const btn = document.createElement("button");
     btn.className = "ctx-menu-item";
+    if (item.actionId) btn.dataset.action = item.actionId;
     btn.disabled = Boolean(item.disabled);
     if (item.danger) btn.style.color = "#f87171";
     btn.textContent = item.label;

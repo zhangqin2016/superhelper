@@ -72,6 +72,7 @@ function resolveSessionStatus(sessionId) {
 
 function formatSessionMeta(project) {
   const projects = store.get("projects") || [];
+  if (activeSession()?.remoteTask && project?.name) return t("app.folderLabel", { name: project.name });
   if (project?.path) {
     const parts = String(project.path).split(/[/\\]/);
     const leaf = parts[parts.length - 1] || project.path;

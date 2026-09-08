@@ -894,6 +894,7 @@ class SessionManager {
     return this._getProjectSessions(projectId).map((s) => ({
       id: s.id,
       title: s.title,
+      ...(s.remoteTaskBinding ? { remoteTask: true } : {}),
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       messageCount: Number.isInteger(s.messageCount) ? s.messageCount : 0,

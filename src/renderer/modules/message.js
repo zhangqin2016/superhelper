@@ -735,7 +735,7 @@ async function focusSessionFromNotification(sessionId, projectId) {
     const sw = await window.assistantClient.switchSession(sessionId);
     const { applySessionSwitch, refreshState } = await import("./session-chrome.js");
     await applySessionSwitch(sw, sessionId, projectId || findProjectIdForSession(sessionId));
-    if (projectId) await refreshState();
+    if (projectId) { await refreshState(); (await import("./project-tree.js")).renderProjectTree(); }
   } catch (err) {
     const { showToast } = await import("./toast.js");
     showToast(err?.message || t("toast.switchSessionFailed"), "error");

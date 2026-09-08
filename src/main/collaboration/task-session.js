@@ -11,6 +11,15 @@ function createRemoteTaskSession(manager,projectId,title,bindingId) {
   manager.saveImmediate();
   return session;
 }
+function registerRemoteTaskWorkspace(projectManager,sessionManager,{rootPath,title,bindingId}) {
+  const previousProjectId=projectManager.activeProjectId;
+  const existing=projectManager.hasPath(rootPath);
+  const project=projectManager.add(rootPath);
+  if (!existing && typeof title === "string" && title.trim()) projectManager.rename(project.id,title.trim());
+  if (previousProjectId) projectManager.switchTo(previousProjectId);
+  const session=createRemoteTaskSession(sessionManager,project.id,title,bindingId);
+  return {projectId:project.id,sessionId:session.id};
+}
 function focusRegisteredSession(manager,win,sessionId) {
   if (typeof sessionId !== "string" || sessionId.length > 200 || !manager._find(sessionId) || !win || win.isDestroyed()) return {ok:false};
   const session=manager._find(sessionId);
@@ -19,4 +28,4 @@ function focusRegisteredSession(manager,win,sessionId) {
   win.webContents.send("assistant:focus-session",{sessionId,projectId:session.projectId});
   return {ok:true};
 }
-module.exports = {createRemoteTaskSession,focusRegisteredSession};
+module.exports = {createRemoteTaskSession,registerRemoteTaskWorkspace,focusRegisteredSession};

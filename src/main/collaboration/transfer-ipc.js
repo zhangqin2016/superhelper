@@ -26,6 +26,7 @@ function transferView(value = {}) {
   if (typeof value.scopeId === "string" && value.scopeId.length <= 210 && /^(personal|team:[A-Za-z0-9_-]+)$/.test(value.scopeId)) result.scopeId = value.scopeId;
   if (["upload", "download"].includes(value.direction)) result.direction = value.direction;
   if (["attachment", "workspace"].includes(value.purpose)) result.purpose = value.purpose;
+  if (value.taskOwned === true) result.taskOwned = true;
   if (["waiting_attachments", "queued", "prepared", "encrypting", "uploading", "uploaded", "verifying", "verified", "bound", "downloading", "decrypting", "ready", "paused", "failed", "cancelled", "submitting", "confirming", "persisted", "delivery_unknown"].includes(value.state)) result.state = value.state;
   if (["waiting_attachments", "ready_to_handoff", "queued", "submitting", "confirming", "persisted", "cancelled", "delivery_unknown", "paused", "failed", "cancellation_requested"].includes(value.sendState)) result.sendState = value.sendState;
   if (typeof value.originalName === "string" && value.originalName.length <= 255 && !/[\\/\x00-\x1f\x7f]/.test(value.originalName)) result.originalName = value.originalName;

@@ -290,14 +290,8 @@ app.whenReady().then(async () => {
           taskOptions: {
             rootPath: path.join(collaborationTransferRoot(), "task-workspaces"),
             chooseDirectory: () => dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] }),
-            openWorkspace: ({ rootPath, title, bindingId }) => {
-              const previousProjectId = projectManager.activeProjectId;
-              const project = projectManager.add(rootPath);
-              // Register only: the renderer's explicit session switch owns navigation.
-              if (previousProjectId) projectManager.switchTo(previousProjectId);
-              const session = require("./main/collaboration/task-session").createRemoteTaskSession(sessionManager, project.id, title, bindingId);
-              return { projectId: project.id, sessionId: session.id };
-            },
+            resolveProjectDirectory: (projectId) => projectManager.find(projectId)?.path,
+            openWorkspace: (input) => require("./main/collaboration/task-session").registerRemoteTaskWorkspace(projectManager, sessionManager, input),
           },
           transferOptions: {
             rootPath: collaborationTransferRoot(),

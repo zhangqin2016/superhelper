@@ -18,7 +18,7 @@ import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
 import { renderCollaborationTypingHint } from "./collaboration-typing-view.js";
-import { initRemoteTasks } from "./collaboration-remote-tasks.js";
+import { initCenterRemoteTasks } from "./collaboration-workspace-integration.js";
 import { createOnlinePresenceView } from "./collaboration-online-presence.js";
 
 function byId(id) { return document.getElementById(id); }
@@ -141,10 +141,12 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (byId('collaborationConversation')?.hidden || conversation?.kind !== 'direct') return '';
       return conversation.memberUserIds?.find(id => id !== directory?.profile?.userId) || '';
     } });
-  const remoteTasks = initRemoteTasks({ root: byId("collaborationConversation"), header: byId("collaborationConversation")?.querySelector(".collaboration-conversation-header"),
+  const remoteTasks = initCenterRemoteTasks({ root: byId("collaborationConversation"), header: byId("collaborationConversation")?.querySelector(".collaboration-conversation-header"),
     recoveryHeader: byId("collaborationInboxColumn"), recoveryRoot: panel,
+    refreshContext: () => refresh(),
     getContext: () => ({ enabled: !disposed && !panel.hidden && policyEnabled && transferPolicy.tasks === true, conversationId: activeConversationId, userId: directory?.profile?.userId || "" }),
     resolveName: (id) => identityName(resolvePerson(directory, id)),
+    workspace: { getPolicy, getContext: () => ({ disposed, view: viewGeneration, navigation: navigationGeneration, userId: directory?.profile?.userId || "", conversationId: activeConversationId }), activate: () => setActive(true), load: () => load(), open: id => openConversation(id) },
   });
   const sectionNodes = { inbox: byId("collaborationInbox"), people: byId("collaborationFriends"), teams: byId("collaborationTeams") };
   const sectionButtons = { inbox: byId("collaborationInboxTab"), people: byId("collaborationPeopleTab"), teams: byId("collaborationTeamsTab") };
@@ -454,7 +456,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       onlineView.changed(payload.state.onlinePresence); return;
     }
     if (payload?.type === "task" && payload?.state?.ok === true) remoteTasks.onChange();
-    if (["availability", "access-revoked"].includes(payload?.type) || payload?.state?.ok !== true) remoteTasks.invalidate();
+    if (["availability", "access-revoked"].includes(payload?.type) || payload?.state?.ok !== true) remoteTasks.invalidateService();
     if (payload?.state?.ok === true) renderCollaborationTypingHint({
       node: byId("collaborationTyping"), state: payload.state, conversationId: activeConversationId,
       currentUserId: directory?.profile?.userId || "", directory,

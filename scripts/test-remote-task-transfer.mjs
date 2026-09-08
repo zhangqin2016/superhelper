@@ -11,6 +11,8 @@ const {LocalCollaborationKeyring}=require('../src/main/collaboration/local-keyri
 const {createTransferRuntime}=require('../src/main/collaboration/transfer-runtime');
 const {decryptFile}=require('../src/main/collaboration/encrypted-container');
 const {freezeTaskBundle,unpackTaskBundle}=require('../src/main/collaboration/task-bundle');
+const {transferResult}=require('../src/main/collaboration/transfer-ipc');
+const {createTransferManifestStore}=require('../src/main/collaboration/transfer-manifest');
 const digest=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 
 async function fixture(t) {
@@ -42,15 +44,17 @@ async function fixture(t) {
     else {const {parts}=JSON.parse(options.body);remote.ciphertext=Buffer.concat(parts.map(p=>remote.parts.get(p.partNumber)));result={key:ticket.objectKey,hash:'object-etag'};}
     return Response.json(result);
   };
-  const runtime=createTransferRuntime({store,client,deviceId:'device',rootPath:path.join(dir,'collaboration-transfer'),policy:{enabled:true,attachments:false,workspaceShares:true,tasks:true},assertActive:()=>{},fetchImpl});
+  const options={store,client,deviceId:'device',rootPath:path.join(dir,'collaboration-transfer'),policy:{enabled:true,attachments:false,workspaceShares:true,tasks:true},assertActive:()=>{},fetchImpl};
+  let runtime=createTransferRuntime(options);
   t.after(()=>{runtime.stop();store.close();fs.rmSync(dir,{recursive:true,force:true});});
-  return {dir,store,bundle,remote,runtime};
+  return {dir,store,bundle,remote,manifests:()=>createTransferManifestStore({rootPath:options.rootPath,accountId:store.accountId,keyring}),get runtime(){return runtime;},restart(){runtime.stop();runtime=createTransferRuntime(options);}};
 }
 
 test('taskFiles uploads a real encrypted workspace and downloads the exact authenticated package',async t=>{
   const f=await fixture(t);
   const prepared=await f.runtime.taskFiles.prepareUpload({conversationId:'conversation',inputPath:f.bundle.packagePath,originalName:'materials.lilyspace.zip'});
   assert.equal(prepared.ok,true);assert.equal(prepared.state,'prepared');assert.equal(f.remote.metadata,null,'preview must not upload');
+  assert.equal(prepared.taskOwned,true,'task upload is explicitly marked as task-owned before ordinary transfer list reads');
   const uploaded=await f.runtime.taskFiles.upload(prepared.id);
   assert.equal(uploaded.ok,true);assert.equal(uploaded.state,'verified');assert.equal(uploaded.objectId,'object');
   assert.notDeepEqual(f.remote.ciphertext,fs.readFileSync(f.bundle.packagePath));
@@ -59,6 +63,18 @@ test('taskFiles uploads a real encrypted workspace and downloads the exact authe
   assert.deepEqual(fs.readFileSync(plainFile),fs.readFileSync(f.bundle.packagePath));
   const downloaded=await f.runtime.taskFiles.download({conversationId:'conversation',taskId:'task',objectId:'object'});
   assert.equal(downloaded.ok,true);
+  f.restart();
+  const taskTransfers=transferResult('getTransfers',f.runtime.list()).transfers;
+  assert.ok(taskTransfers.length>=2&&taskTransfers.every(item=>item.taskOwned===true),'task ownership survives encrypted manifest reopen and safe IPC projection');
+  const legacyDownload=taskTransfers.find(item=>item.direction==='download');
+  const manifests=f.manifests(),stored=manifests.read(legacyDownload.id),{taskOwned,...legacyCheckpoint}=stored.checkpoint;
+  manifests.update({id:stored.id,expectedRevision:stored.revision,checkpoint:legacyCheckpoint});
+  f.restart();assert.equal(f.runtime.list().transfers.find(item=>item.id===stored.id).taskOwned,undefined,'legacy unmarked records remain readable');
+  assert.equal((await f.runtime.taskFiles.download({conversationId:'conversation',taskId:'task',objectId:'object'})).ok,true);
+  assert.equal(f.runtime.list().transfers.find(item=>item.id===stored.id).taskOwned,true,'explicit authorized task reopen marks an old cached task transfer');
+  f.store.hydrateAuthorizedHistory({conversationId:'conversation',messages:[{id:'share',createSeq:1,kind:'workspace_share',attachmentIds:['ordinary_object'],revision:1}]});
+  const ordinary=await f.runtime.prepareDownload({conversationId:'conversation',messageId:'share',objectId:'ordinary_object'});
+  assert.equal(ordinary.ok,true);assert.equal(ordinary.purpose,'workspace');assert.equal(ordinary.taskOwned,undefined,'ordinary workspace shares remain outside task ownership');
   const unpacked=await unpackTaskBundle({packagePath:downloaded.packagePath,destinationRoot:path.join(f.dir,'unpacked')});
   assert.deepEqual(unpacked.manifest,f.bundle.manifest);
   assert(f.remote.taskReads>=1);assert(f.remote.tickets>=2,'publishing a cached file reacquires object authorization');

@@ -13,13 +13,14 @@ function actions(task, userId) {
 /** An on-demand surface inside the existing chat column. No new navigation
  * rail, no background list fetch on conversation switching, no optimistic
  * task state. Local filesystem actions belong to a separate main broker. */
-export function initRemoteTasks({ root, header, recoveryHeader = header, recoveryRoot = root, api = () => window.assistantClient?.collaboration, getContext, resolveName = () => "" }) {
+export function initRemoteTasks({ root, header, recoveryHeader = header, recoveryRoot = root, api = () => window.assistantClient?.collaboration, getContext, resolveName = () => "", refreshContext = async () => {} }) {
   if (!root || !header) return { update() {}, onChange() {}, invalidate() {}, destroy() {} };
   let disposed = false, generation = 0, contextKey = "", context = {}, selected = null, rows = [], pending = [], confirming = "", busy = false;
   let returnFocus = null, reasonDraft = "";
   let phase = "closed", statusView = null;
   let hasUpdate = false;
   let drafts = [], workflow = null;
+  let contextService = api();
   const applications = new Map();
   let localRecoveries = [], recoveryGeneration = 0, recoveryError = "";
   const inertNodes = new Map();
@@ -161,7 +162,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     }
     controls.append(button("task-dismiss", tr("back"), () => { confirming = ""; reasonDraft = ""; paintDetail(); }), submit); footer.append(controls);
   }
-  function valid(ticket) { return !disposed && !surface.hidden && ticket === generation; }
+  function valid(ticket) { return !disposed && !surface.hidden && ticket === generation && contextService === api(); }
   function restoreLocal(result) {
     drafts = result?.ok ? result.drafts || [] : [];
     applications.clear();
@@ -178,16 +179,23 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     busy = false; surface.removeAttribute("aria-busy");
     return result || { ok: false };
   }
-  async function createTask(draft = null) {
+  async function createTask(draft = null, options = {}) {
+    const retryOptions = { projectId: options.projectId, assigneeUserId: options.assigneeUserId };
     const ticket = ++generation; busy = false; showStatus("loading", { detail: true });
     try {
       const result = await api()?.getConversationDetails?.(context.conversationId);
       if (!valid(ticket)) return;
-      if (!result?.ok) { showStatus("loadFailed", { detail: true, retry: () => void createTask(draft) }); return; }
+      if (options.isCurrent && !options.isCurrent()) { close({ restoreFocus: false }); return; }
+      if (!result?.ok) { showStatus("loadFailed", { detail: true, retry: () => void createTask(draft, retryOptions) }); return; }
       const members = (result.members || []).filter(member => member.userId && member.userId !== context.userId);
-      workflow = { kind: "create", draft, members, input: { assigneeUserId: members[0]?.userId || "", title: "", objective: "", acceptanceCriteria: "", ...draft?.input }, locked: !!draft?.input && draft.state !== "failed" };
+      if (options.assigneeUserId && !members.some(member => member.userId === options.assigneeUserId)) { showStatus("loadFailed", { detail: true }); return; }
+      workflow = { kind: "create", projectId: options.projectId, draft, members, input: { assigneeUserId: options.assigneeUserId || members[0]?.userId || "", title: "", objective: "", acceptanceCriteria: "", ...draft?.input }, locked: !!draft?.input && draft.state !== "failed" };
       paintWorkflow();
-    } catch { if (valid(ticket)) showStatus("loadFailed", { detail: true, retry: () => void createTask(draft) }); }
+    } catch {
+      if (!valid(ticket)) return;
+      if (options.isCurrent && !options.isCurrent()) { close({ restoreFocus: false }); return; }
+      showStatus("loadFailed", { detail: true, retry: () => void createTask(draft, retryOptions) });
+    }
   }
   function paintSnapshot(body, draft) {
     const section = node("section", "remote-task-section"); section.append(node("h4", "", tr("snapshot")), node("p", "remote-task-meta", tr("snapshotNote")));
@@ -214,7 +222,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
         label.append(field); form.append(label);
       }
       body.append(form);
-      if (!current.draft) body.append(button("task-prepare", tr("chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare" }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
+      if (!current.draft) body.append(button("task-prepare", tr(current.projectId ? "previewWorkspace" : "chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare", ...(current.projectId ? { projectId: current.projectId } : {}) }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
       else {
         paintSnapshot(body, current.draft);
         if (current.locked) notice(body, "confirming");
@@ -302,6 +310,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     } catch { if (valid(ticket)) { paintDetail(); notice(surface.querySelector(".remote-task-content"), "workflowFailed"); } }
   }
   async function load() {
+    if (!context.enabled) { showStatus("disabled", { retry: async () => { const ticket = generation; await refreshContext(); if (!valid(ticket)) return; update(); if (!surface.hidden) void load(); } }); return; }
     const ticket = ++generation; busy = false; confirming = ""; reasonDraft = "";
     selected = null; rows = []; pending = []; hasUpdate = false; showStatus("loading");
     try {
@@ -403,18 +412,21 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   function update() {
     if (disposed) return;
     const next = getContext?.() || {};
-    const key = JSON.stringify([next.enabled === true, next.conversationId || "", next.userId || ""]);
-    if (key !== contextKey) { close({ restoreFocus: false }); clearRecoveries(); contextKey = key; context = next; void refreshRecoveries(); }
-    entry.hidden = !(context.enabled && context.conversationId && context.userId);
+    const key = JSON.stringify([next.conversationId || "", next.userId || ""]);
+    if (key !== contextKey || contextService !== api() || (context.enabled && !next.enabled)) { close({ restoreFocus: false }); clearRecoveries(); contextKey = key; context = next; contextService = api(); void refreshRecoveries(); }
+    context = next;
+    entry.hidden = !(context.conversationId && context.userId);
     entry.textContent = tr("entry"); entry.title = tr("entry");
     recoveryEntry.textContent = tr("localRecovery"); recoveryEntry.title = tr("localRecovery");
   }
-  const open = () => {
+  const open = (createOptions = null) => {
     update(); if (disposed || entry.hidden) return;
     if (!surface.hidden) { close(); return; }
     returnFocus = document.activeElement;
     for (const el of root.children) if (el !== surface) { inertNodes.set(el, el.inert); el.inert = true; }
-    surface.hidden = false; entry.setAttribute("aria-expanded", "true"); surface.focus(); void load();
+    surface.hidden = false; entry.setAttribute("aria-expanded", "true"); surface.focus();
+    if (createOptions && context.enabled) return createTask(null, createOptions);
+    void load();
   };
   const keydown = event => {
     if (event.isComposing || event.keyCode === 229) return;
@@ -426,7 +438,8 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
   };
-  entry.addEventListener("click", open); recoveryEntry.addEventListener("click", openRecoveries); surface.addEventListener("keydown", keydown);
+  const openEntry = () => open();
+  entry.addEventListener("click", openEntry); recoveryEntry.addEventListener("click", openRecoveries); surface.addEventListener("keydown", keydown);
   const recoveryResize = new ResizeObserver(fitRecoverySurface); recoveryResize.observe(recoveryRoot);
   const locale = onLocaleChange(() => {
     update(); if (surface.hidden) return;
@@ -445,5 +458,5 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     else if (phase === "detail" && !confirming) void openTask(selected.id);
     else if (phase === "detail") paintUpdate(surface.querySelector(".remote-task-footer"), selected);
   }
-  return { update, onChange, invalidate: () => { close({ restoreFocus: false }); clearRecoveries(); }, destroy() { close({ restoreFocus: false }); clearRecoveries(); disposed = true; recoveryResize.disconnect(); locale(); entry.removeEventListener("click", open); recoveryEntry.removeEventListener("click", openRecoveries); surface.removeEventListener("keydown", keydown); entry.remove(); recoveryEntry.remove(); surface.remove(); } };
+  return { update, onChange, create: options => { close({ restoreFocus: false }); return open(options || {}); }, invalidate: () => { close({ restoreFocus: false }); clearRecoveries(); }, destroy() { close({ restoreFocus: false }); clearRecoveries(); disposed = true; recoveryResize.disconnect(); locale(); entry.removeEventListener("click", openEntry); recoveryEntry.removeEventListener("click", openRecoveries); surface.removeEventListener("keydown", keydown); entry.remove(); recoveryEntry.remove(); surface.remove(); } };
 }

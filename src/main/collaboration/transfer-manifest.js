@@ -40,7 +40,8 @@ function privateDirectory(value) {
 function safeCheckpoint(value) {
   // This closed journal vocabulary is deliberately not a serialized HTTP
   // response. Fresh network capabilities must be reacquired after restart.
-  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext", "deviceId", "schedule", "sendIntent"].includes(key))) throw invalid();
+  if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some((key) => !["state", "objectId", "completedParts", "content", "uploadId", "etag", "download", "plaintext", "deviceId", "schedule", "sendIntent", "taskOwned"].includes(key))) throw invalid();
+  if (value.taskOwned !== undefined && value.taskOwned !== true) throw invalid();
   if (value.sendIntent !== undefined) {
     const intent = value.sendIntent;
     if (!intent || Object.getPrototypeOf(intent) !== Object.prototype || Object.keys(intent).some((key) => !["coordinatorId", "clientCommandId", "conversationId", "scopeId", "purpose", "transferIds", "bodyText", "status"].includes(key))

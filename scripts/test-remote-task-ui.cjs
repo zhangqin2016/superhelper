@@ -14,7 +14,7 @@ app.whenReady().then(async()=>{
   await win.loadFile(fixture);
   await win.webContents.executeJavaScript(`(async()=>{
     const {initRemoteTasks}=await import(${JSON.stringify(pathToFileURL(path.resolve('src/renderer/modules/collaboration-remote-tasks.js')).href)});
-    const {setLocale}=await import(${JSON.stringify(pathToFileURL(path.resolve('src/renderer/i18n/index.js')).href)});
+    const {setLocale,t}=await import(${JSON.stringify(pathToFileURL(path.resolve('src/renderer/i18n/index.js')).href)});
     await setLocale('zh-CN',{persist:false});
     document.body.replaceChildren();document.documentElement.dataset.theme='light';
     const shell=document.createElement('div');shell.className='collaboration-center';shell.style='display:block;width:100%;height:100vh';document.body.append(shell);
@@ -54,7 +54,9 @@ app.whenReady().then(async()=>{
     mode='normal';await setLocale('zh-CN',{persist:false});
     root.querySelector('.remote-tasks').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));check(root.querySelector('.remote-tasks').hidden,'Escape closes');check(!draft.inert,'closing restores chat');
     mode='hold';document.querySelector('[data-action="task-entry"]').click();await settle();context={...context,conversationId:'other'};ui.update();hold();await settle();check(root.querySelector('.remote-tasks').hidden,'late read cannot reopen another conversation');
-    context={enabled:false,conversationId:'chat',userId:'owner'};ui.update();check(root.querySelector('[data-action="task-entry"]').hidden,'disabled feature leaves IM baseline');
+    context={enabled:false,conversationId:'chat',userId:'owner'};ui.update();check(!root.querySelector('[data-action="task-entry"]').hidden,'disabled feature remains discoverable');
+    document.querySelector('[data-action="task-entry"]').click();check(root.querySelector('.remote-tasks').textContent.includes(t('collaboration.task.disabled')),'disabled entry explains policy');
+    root.querySelector('[data-action="task-back"]').click();
     mode='normal';context={enabled:true,conversationId:'chat',userId:'helper'};task={...task,state:'offered',revision:1,deliveries:[],currentDeliveryId:null};ui.update();
     root.querySelector('[data-action="task-entry"]').click();await settle();root.querySelector('[data-action="task-open"]').click();await settle();
     check(root.querySelector('[data-action="accept"]')&&!root.querySelector('[data-action="approve"]'),'recipient sees only own actions');
