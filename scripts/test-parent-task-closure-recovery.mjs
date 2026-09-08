@@ -180,7 +180,7 @@ const duplicate = await runtime.maybeParentClosureRecovery("session_1", {
   state,
   payload: { stalled: true },
 });
-assert.equal(duplicate.attempted, false, "duplicate engine terminal cannot dispatch a second continuation");
+assert.equal(duplicate.attempted, true, "existing recovery owns the attempt and must suppress competing self-heal");
 assert.equal(sent.length, 1);
 
 const durableCalls = { prepared: 0, claimed: 0, dispatched: 0 };

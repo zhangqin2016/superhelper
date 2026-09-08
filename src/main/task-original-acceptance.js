@@ -9,9 +9,9 @@ function originalAcceptance(state = {}) {
   const original = state.taskCore?.contract || {};
   const intent = state.taskContract?.intentContract || {};
   const summary = String(original.objective || intent.objective || state.taskRun?.objective || "");
-  const raw = String(state.enginePayload?.rawText || "");
+  const raw = String(state.taskRequest?.text || state.enginePayload?.rawText || "");
   return {
-    objective: !raw || summary === raw ? summary : raw.startsWith(summary) ? raw : `${summary}\nCurrent user instruction:\n${raw}`,
+    objective: state.taskRequest?.text ? raw : !raw || summary === raw ? summary : raw.startsWith(summary) ? raw : `${summary}\nCurrent user instruction:\n${raw}`,
     successCriteria: union(original.acceptanceCriteria, original.intentContract?.successCriteria, intent.successCriteria, state.taskRun?.successCriteria),
     deliverables: union(original.requestedDeliverables, original.intentContract?.deliverables, intent.deliverables, state.taskRun?.deliverables),
   };
@@ -20,6 +20,7 @@ function originalAcceptance(state = {}) {
 async function assessObjectiveCoverage({ state = {}, post, resolveConnection } = {}) {
   const contract = originalAcceptance(state);
   const unknown = reason => ({ status: "unknown", reason, requirements: [] });
+  if (state.taskRequest?.complete === false) return unknown(state.taskRequest.reason || "request_source_incomplete");
   if (!require("./parent-task-closure").hasExecutionIntent(state.taskContract) || !contract.objective) return { status: "not_required", requirements: [] };
   if (process.env.LILY_OBJECTIVE_COVERAGE === "0") return unknown("disabled");
   if (contract.objective.length > 64000) return unknown("objective_exceeds_audit_budget");

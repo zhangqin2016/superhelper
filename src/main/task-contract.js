@@ -1005,6 +1005,7 @@ function buildTaskContract({
     taskType: classification.taskType,
     categories: classification.categories,
     verificationStrategy,
+    operation: classification.semanticIntent?.operation || "",
     negativeConstraints,
     previousSnapshot,
   });

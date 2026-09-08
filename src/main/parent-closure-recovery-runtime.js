@@ -34,6 +34,65 @@ function createParentClosureRecoveryRuntime(options = {}) {
   const emitNotice = options.emitNotice || null;
   const sendUserMessage = options.sendUserMessage;
   const ledger = options.parentClosureLedger || createParentClosureLedger();
+  const now = options.now || Date.now;
+  const schedule = options.setTimeout || setTimeout;
+  const unschedule = options.clearTimeout || clearTimeout;
+  const leases = new Map();
+  const retryCounts = new Map();
+  const generations = new Map();
+  let disposed = false;
+
+  function clearLease(sessionId) {
+    const lease = leases.get(sessionId);
+    if (lease) unschedule(lease.timer);
+    leases.delete(sessionId);
+  }
+
+  function cancelPendingParentClosures(sessionId) {
+    generations.set(sessionId, (generations.get(sessionId) || 0) + 1);
+    clearLease(sessionId);
+    try { ctx.sessionManager?.cancelPendingParentClosureRecoveries?.(sessionId); }
+    catch (err) { log.warn("parent closure cancellation failed: %s", err?.message || err); }
+  }
+
+  function dispose() {
+    disposed = true;
+    for (const sessionId of leases.keys()) clearLease(sessionId);
+    retryCounts.clear();
+    generations.clear();
+  }
+
+  function scheduleFutureClaims(sessionId) {
+    if (disposed) return;
+    const manager = ctx.sessionManager;
+    const candidate = manager?.listFutureParentClosureRecoveries?.(sessionId, now())?.[0];
+    const prior = leases.get(sessionId);
+    if (prior?.expiresAt === candidate?.claimExpiresAt && prior?.ownerScope === candidate?.ownerScope) return;
+    // A live send may finish after expiry. A scan's final future-only refresh
+    // must not erase its separately scheduled, still-authoritative reconciliation.
+    if (!candidate && prior?.reconcileSourceTurnId
+      && manager?.getParentClosureRecovery?.(sessionId, prior.reconcileSourceTurnId)?.status === "claimed") return;
+    clearLease(sessionId);
+    if (!candidate) return;
+    armLease(sessionId, { expiresAt: candidate.claimExpiresAt, ownerScope: candidate.ownerScope });
+  }
+
+  function armLease(sessionId, lease) {
+    const manager = ctx.sessionManager;
+    lease.generation = generations.get(sessionId) || 0;
+    leases.set(sessionId, lease);
+    lease.timer = schedule(async () => {
+      if (disposed || leases.get(sessionId) !== lease) return;
+      leases.delete(sessionId);
+      try {
+        const owner = manager.resolveTurnOwnerScope?.(sessionId)?.ownerScope;
+        if (owner !== lease.ownerScope || !manager._find?.(sessionId)) return;
+        await resumePendingParentClosures(sessionId, lease);
+      }
+      catch (err) { log.warn("parent closure lease resume failed: %s", err?.message || err); }
+    }, Math.max(0, lease.expiresAt - now()));
+    lease.timer?.unref?.();
+  }
 
   function decisionFor(sessionId, source = {}) {
     return shouldRecoverParentClosure({
@@ -72,15 +131,23 @@ function createParentClosureRecoveryRuntime(options = {}) {
   }
 
   async function maybeParentClosureRecovery(sessionId, source = {}) {
+    let attempted = false;
+    let unconfirmed = false;
+    let durableClaim = null;
+    const generation = generations.get(sessionId) || 0;
     try {
+      if (disposed) return { ok: false, attempted: false, reason: "DISPOSED" };
       const decision = decisionFor(sessionId, source);
       if (!decision.ok) return { ok: false, attempted: false, reason: decision.reason };
       const manager = ctx.sessionManager;
-      let durableClaim = null;
       if (typeof manager?.claimParentClosureRecovery === "function") {
+        // A claim write can succeed before its acknowledgement fails. Once
+        // ownership is attempted, an exception cannot authorize another retry lane.
+        attempted = true;
         durableClaim = manager.claimParentClosureRecovery(sessionId, {
           sourceTurnId: decision.sourceTurnId,
           recoveryKey: decision.recoveryKey,
+          now: now(),
         });
         if (durableClaim?.reason === "NOT_FOUND") {
           const prepared = prepareParentClosureRecovery(sessionId, source);
@@ -88,15 +155,17 @@ function createParentClosureRecoveryRuntime(options = {}) {
             durableClaim = manager.claimParentClosureRecovery(sessionId, {
               sourceTurnId: decision.sourceTurnId,
               recoveryKey: decision.recoveryKey,
+              now: now(),
             });
           }
         }
         if (!durableClaim?.ok) {
-          return { ok: false, attempted: false, reason: durableClaim?.reason || "CLAIM_UNAVAILABLE" };
+          return { ok: false, attempted: Boolean(durableClaim?.recovery), reason: durableClaim?.reason || "CLAIM_UNAVAILABLE" };
         }
       } else if (!ledger.claim(decision.recoveryKey)) {
-        return { ok: false, attempted: false, reason: "ALREADY_CLAIMED" };
+        return { ok: false, attempted: true, reason: "ALREADY_CLAIMED" };
       }
+      attempted = true;
       const durableRecovery = durableClaim?.recovery || null;
       const emitRecovery = (phase, extra = {}) => {
         emit(sessionId, "turn.parent_closure_recovery", {
@@ -146,12 +215,13 @@ function createParentClosureRecoveryRuntime(options = {}) {
       if (recoveryTurnId && typeof manager?.getTurnInputByTurnId === "function") {
         const existing = manager.getTurnInputByTurnId(sessionId, recoveryTurnId);
         if (existing) {
-          manager.markParentClosureRecoveryDispatched(sessionId, {
+          const marked = manager.markParentClosureRecoveryDispatched(sessionId, {
             sourceTurnId: decision.sourceTurnId,
             recoveryKey: decision.recoveryKey,
             recoveryTurnId,
             claimToken: durableClaim.claimToken,
           });
+          if (marked?.ok === false) throw new Error(marked.reason || "RECEIPT_UNCONFIRMED");
           emitRecovery("dispatched", { recoveryTurnId, existing: true });
           return { ok: true, attempted: true, turnId: recoveryTurnId, existing: true };
         }
@@ -177,36 +247,76 @@ function createParentClosureRecoveryRuntime(options = {}) {
         return { ok: false, attempted: true, reason: sent?.error || "DISPATCH_FAILED" };
       }
       if (durableClaim?.ok) {
-        manager.markParentClosureRecoveryDispatched(sessionId, {
+        const marked = manager.markParentClosureRecoveryDispatched(sessionId, {
           sourceTurnId: decision.sourceTurnId,
           recoveryKey: decision.recoveryKey,
           recoveryTurnId: recoveryTurnId || sent.turnId || "",
           claimToken: durableClaim.claimToken,
         });
+        if (marked?.ok === false) throw new Error(marked.reason || "RECEIPT_UNCONFIRMED");
       }
       emitRecovery("dispatched", { recoveryTurnId: sent.turnId || null });
       return { ok: true, attempted: true, turnId: sent.turnId || null };
     } catch (err) {
+      unconfirmed = true;
       log.warn("parent closure recovery failed open: %s", err?.message || err);
-      return { ok: false, attempted: false, reason: err?.message || "RECOVERY_ERROR" };
+      return { ok: false, attempted, reason: err?.message || "RECOVERY_ERROR" };
+    } finally {
+      if (attempted && !disposed && generation === (generations.get(sessionId) || 0)) {
+        try { scheduleFutureClaims(sessionId); }
+        catch (err) {
+          log.warn("live parent closure lease discovery failed: %s", err?.message || err);
+          unconfirmed = true;
+        }
+        const recovery = durableClaim?.recovery;
+        if (unconfirmed && !leases.has(sessionId) && recovery?.ownerScope && recovery.claimExpiresAt) {
+          // The response may arrive after the lease expired. Keep one delayed
+          // authoritative reconciliation, never replay the unknown send here.
+          armLease(sessionId, { ownerScope: recovery.ownerScope, reconcileSourceTurnId: recovery.sourceTurnId, expiresAt: Math.max(recovery.claimExpiresAt, now() + 120000) });
+        }
+      }
     }
   }
 
-  async function resumePendingParentClosures(sessionId) {
+  async function resumePendingParentClosures(sessionId, lease = null) {
     const manager = ctx.sessionManager;
-    if (typeof manager?.listPendingParentClosureRecoveries !== "function") return 0;
-    let candidates;
+    const generation = lease?.generation ?? (generations.get(sessionId) || 0);
+    const ownerScope = lease?.ownerScope || manager?.resolveTurnOwnerScope?.(sessionId)?.ownerScope;
     try {
-      candidates = manager.listPendingParentClosureRecoveries(sessionId) || [];
+      const result = await scanPendingParentClosures(sessionId);
+      retryCounts.delete(sessionId);
+      return result;
     } catch (err) {
-      log.warn("pending parent closure scan failed open: %s", err?.message || err);
+      log.warn("parent closure discovery failed: %s", err?.message || err);
+      // Two delayed retries per failed discovery sequence. Preserve the claim
+      // and its stable admission identity; unavailable reads never authorize a send.
+      const retries = retryCounts.get(sessionId) || 0;
+      if (!disposed && retries < 2 && generation === (generations.get(sessionId) || 0)
+        && ownerScope && manager?.resolveTurnOwnerScope?.(sessionId)?.ownerScope === ownerScope
+        && manager?._find?.(sessionId)) {
+        retryCounts.set(sessionId, retries + 1);
+        clearLease(sessionId);
+        armLease(sessionId, { ownerScope, expiresAt: now() + 120000 });
+      }
       return 0;
     }
+  }
+
+  async function scanPendingParentClosures(sessionId) {
+    const manager = ctx.sessionManager;
+    if (disposed || typeof manager?.listPendingParentClosureRecoveries !== "function") return 0;
+    const candidates = manager.listPendingParentClosureRecoveries(sessionId, now()) || [];
+    try { scheduleFutureClaims(sessionId); }
+    catch (err) { log.warn("parent closure lease discovery failed: %s", err?.message || err); }
     let resumed = 0;
     for (const candidate of candidates) {
+      if (disposed) break;
+      if (typeof manager.resolveTurnOwnerScope === "function"
+        && (manager.resolveTurnOwnerScope(sessionId)?.ownerScope !== candidate.ownerScope || !manager._find?.(sessionId))) break;
       const source = candidate.source || {};
       const evidence = source.evidence || {};
       const sourceTurn = manager.getTurnInputByTurnId?.(sessionId, candidate.sourceTurnId);
+      if (sourceTurn?.status === "interrupted" || sourceTurn?.status === "cancelled") continue;
       const tools = [...(evidence.done || []), ...(evidence.failed || []), ...(evidence.running || [])]
         .map((tool) => [tool.id || tool.name || crypto.randomUUID(), tool]);
       const result = await maybeParentClosureRecovery(sessionId, {
@@ -227,6 +337,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
       });
       if (result.ok) resumed += 1;
     }
+    scheduleFutureClaims(sessionId);
     return resumed;
   }
 
@@ -237,6 +348,8 @@ function createParentClosureRecoveryRuntime(options = {}) {
   }
 
   return {
+    dispose,
+    cancelPendingParentClosures,
     maybeParentClosureRecovery,
     prepareParentClosureRecovery,
     resumePendingParentClosures,

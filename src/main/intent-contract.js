@@ -45,7 +45,7 @@ function stringList(values, limit = MAX_LIST_ITEMS) {
 }
 
 function relationForText(text, hasPrevious = false) {
-  const source = safeText(text, 2_000);
+  const source = safeText(text, 2_000).replace(/^(?:(?:好的|好|可以|行|没问题)[，,\s]+|(?:please|ok|okay|sure)[,\s]+)/i, "");
   if (!source || !hasPrevious || NEW_TASK_RE.test(source)) return "new";
   if (CANCELLATION_RE.test(source)) return "cancel";
   if (CORRECTION_RE.test(source)) return "correct";
@@ -80,6 +80,8 @@ function normalizeIntentContract(value) {
     taskType,
     categories: stringList(value.categories, 12),
     objective,
+    ...(typeof value.operation === "string" ? { operation: safeText(value.operation, 80) } : {}),
+    ...(require("./task-request-source").normalizeRequestSource(value.requestSource) ? { requestSource: require("./task-request-source").normalizeRequestSource(value.requestSource) } : {}),
     currentInstruction: safeText(value.currentInstruction || objective, 1_000),
     deliverables: require("./task-delivery-manifest").normalizeDeliverables(value.deliverables),
     successCriteria: stringList(value.successCriteria, 20),
@@ -184,6 +186,7 @@ function snapshotFromSummary(intentContract) {
     taskType: normalized.taskType,
     categories: normalized.categories,
     verificationStrategy: normalized.successCriteria,
+    semanticIntent: normalized.operation ? { operation: normalized.operation } : null,
     intentContract: normalized,
   };
 }
@@ -206,6 +209,7 @@ function negativeConstraintRules(negativeConstraints = []) {
 function buildIntentContract({
   text = "",
   taskType = "general",
+  operation = "",
   categories = [],
   verificationStrategy = [],
   negativeConstraints = [],
@@ -233,6 +237,8 @@ function buildIntentContract({
     categories: inherited ? [...categories, ...previous.categories] : categories,
     objective,
     currentInstruction,
+    ...(operation || (inherited && previous.operation) ? { operation: operation || previous.operation } : {}),
+    ...(inherited && previous.requestSource ? { requestSource: previous.requestSource } : {}),
     deliverables: inherited ? [...currentDeliverables, ...previous.deliverables] : currentDeliverables,
     successCriteria: inherited ? [...currentCriteria, ...previous.successCriteria] : currentCriteria,
     constraints: inherited ? [...currentConstraints, ...previous.constraints] : currentConstraints,

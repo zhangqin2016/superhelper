@@ -45,6 +45,7 @@ function createTurnRecoveryRuntime(options = {}) {
     emitNotice,
     sendUserMessage,
     parentClosureLedger: options.parentClosureLedger,
+    now: options.now, setTimeout: options.setTimeout, clearTimeout: options.clearTimeout,
   });
 
   function stateFor(sessionId) {
@@ -264,6 +265,8 @@ function createTurnRecoveryRuntime(options = {}) {
   }
 
   return {
+    disposeParentClosureRecovery: parentClosureRuntime.dispose,
+    cancelPendingParentClosures: parentClosureRuntime.cancelPendingParentClosures,
     maybeSelfHealAndRetry,
     maybeParentClosureRecovery: parentClosureRuntime.maybeParentClosureRecovery,
     prepareParentClosureRecovery: parentClosureRuntime.prepareParentClosureRecovery,

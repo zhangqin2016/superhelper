@@ -34,6 +34,7 @@ let longTaskSupervisorRef = null;
 let agentRuntimeControlServerRef = null;
 let publicHookBridgeRef = null;
 let runtimePackAutoRepairRef = null;
+let turnRecoveryRuntimeRef = null;
 let shouldFocusMainWindowWhenReady = false;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
@@ -397,6 +398,7 @@ app.whenReady().then(async () => {
 
   ipcHandlers.registerAll(appContext);
   agentRuntimeControlServerRef = appContext.agentRuntimeControlServer || null;
+  turnRecoveryRuntimeRef = appContext.turnOrchestrator?.turnRecoveryRuntime || null;
   publicHookBridgeRef = appContext.publicHookBridge || null;
   try {
     const { longTaskDbPath } = require("./main/config");
@@ -498,6 +500,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  turnRecoveryRuntimeRef?.disposeParentClosureRecovery?.();
   longTaskSupervisorRef?.close();
   runtimePackAutoRepairRef?.cancel?.();
   scheduledTaskManagerRef?.close();

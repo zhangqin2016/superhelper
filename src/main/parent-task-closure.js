@@ -81,7 +81,7 @@ function hasExecutionIntent(taskContract = {}) {
   const operation = String(taskContract.semanticIntent?.operation || "");
   if (!MUTATING_OPERATIONS.test(operation)) return false;
   return categories.some((category) => ["architecture_audit", "agent_quality", "release"].includes(String(category)))
-    || ["document", "media"].includes(String(taskContract.taskType || ""));
+    || ["document_work", "media_generation"].includes(require("./task-type-schema").taskTypeDefinition(taskContract.taskType).id);
 }
 
 function hasPendingUserInput(state = {}) {

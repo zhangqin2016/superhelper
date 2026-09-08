@@ -16,6 +16,7 @@ function completeWithAcceptance({ ctx = {}, sessionId, state, type, payload, tas
   const workspacePath = workspaceFor(ctx, sessionId);
   // Failure/cancellation must retain the synchronous terminal projection; an
   // added microtask here would drop the outcome-unknown assistant event.
+  if (type === "turn.completed" && state.taskRequest?.complete === false) return finish({ status: "unknown", reason: state.taskRequest.reason || "request_source_incomplete", requirements: [] });
   if (type === "turn.completed" && state.taskRun && state.tools?.size && hasExecutionIntent(state.taskContract)) return Promise.resolve().then(() => assess({ state })).catch(() => ({ status: "unknown", requirements: [] })).then(finish);
   return finish(null);
   function finish(coverage) {

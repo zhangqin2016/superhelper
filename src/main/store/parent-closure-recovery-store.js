@@ -224,6 +224,25 @@ function createParentClosureRecoveryStoreMethods() {
       return hydrate(row);
     },
 
+    listFutureParentClosureRecoveries(sessionId, ownerScope = null, now = Date.now()) {
+      if (!sessionId) return [];
+      return this.db.all(
+        `SELECT * FROM parent_closure_recoveries
+         WHERE session_id = ? AND (? IS NULL OR owner_scope = ?)
+           AND status = 'claimed' AND claim_expires_at > ?
+         ORDER BY claim_expires_at, source_turn_id LIMIT 1`,
+        String(sessionId), ownerScope, ownerScope, now,
+      ).map(hydrate);
+    },
+
+    cancelPendingParentClosureRecoveries(sessionId, ownerScope, now = Date.now()) {
+      if (!sessionId || !ownerScope) return;
+      this.db.run(`UPDATE parent_closure_recoveries SET status = 'unavailable',
+        reason = 'USER_INTERRUPTED', claim_expires_at = NULL, updated_at = ?
+        WHERE session_id = ? AND owner_scope = ? AND status IN ('prepared', 'claimed')`,
+      now, sessionId, ownerScope);
+    },
+
     listPendingParentClosureRecoveries(sessionId, ownerScope = null, now = Date.now()) {
       if (!sessionId) return [];
       const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();

@@ -132,4 +132,27 @@ function trustedSourceTaskCore(sessionId, ownerScope, source) {
   return source;
 }
 
-module.exports = { bindTurnAdmission, captureAndPersistTaskCore, persistTaskCoreEnvelope, trustedSourceTaskCore };
+function sourceTurnIdForTurn(state, options = {}) {
+  const admitted = state.admittedTurnInput || {};
+  return options.sourceTurnId || admitted.sourceTurnId || admitted.metadata?.queueRecovery?.options?.sourceTurnId || null;
+}
+
+function sourceTaskCoreForTurn(ctx, session, state, options = {}) {
+  const admitted = state.admittedTurnInput || {};
+  const sourceTurnId = sourceTurnIdForTurn(state, options);
+  const lookup = ctx.sessionManager?.getTurnInputByTurnId;
+  let source = options.sourceTaskCore;
+  if (sourceTurnId && typeof lookup === "function") {
+    try {
+      const input = lookup.call(ctx.sessionManager, session.id, sourceTurnId);
+      if (!input || input.sessionId !== session.id || input.turnId !== sourceTurnId || input.ownerScope !== admitted.ownerScope) return null;
+      source = input.taskCore;
+    } catch { return null; }
+  }
+  const trusted = trustedSourceTaskCore(session.id, admitted.ownerScope, source);
+  if (!trusted || (sourceTurnId && trusted.turnId !== sourceTurnId)
+    || (trusted.projectId && trusted.projectId !== session.projectId)) return null;
+  return trusted;
+}
+
+module.exports = { bindTurnAdmission, captureAndPersistTaskCore, persistTaskCoreEnvelope, trustedSourceTaskCore, sourceTaskCoreForTurn, sourceTurnIdForTurn };

@@ -30,6 +30,7 @@ function createTurnQueueLifecycleMethods({ log }) {
         return { ok: false, error: "TURN_CLAIM_MISMATCH" };
       }
       let queueResult = null;
+      this.turnRecoveryRuntime?.cancelPendingParentClosures?.(sessionId);
       if (opts.clearQueue !== false) {
         queueResult = this._removeQueuedItemsDurably(
           sessionId,

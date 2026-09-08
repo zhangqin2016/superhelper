@@ -6,7 +6,7 @@ const { getLogger } = require("./logger");
 
 const log = getLogger("turn-intelligence");
 
-function resolveTurnIntelligence({ ctx, session, project = null, text = "", files = [], turnId = "", previousIntentContract = null } = {}) {
+function resolveTurnIntelligence({ ctx, session, project = null, text = "", files = [], turnId = "", previousIntentContract = null, missingRecoverySource = false } = {}) {
   let committedMessages = Array.isArray(session?.messages) ? session.messages : [];
   let sessionSummary = null;
   try {
@@ -27,11 +27,23 @@ function resolveTurnIntelligence({ ctx, session, project = null, text = "", file
       files,
       session,
       project,
-      messages: committedMessages.filter((message) => message.turnId !== turnId),
-      previousIntentContract: previousIntentContract || sessionSummary?.lastIntentContract || null,
+      // An explicitly supplied, host-validated recovery source outranks the
+      // latest visible task. Native history remains intact in committedMessages.
+      messages: previousIntentContract || missingRecoverySource ? [] : committedMessages.filter((message) => message.turnId !== turnId),
+      previousIntentContract: missingRecoverySource ? null : previousIntentContract || sessionSummary?.lastIntentContract || null,
     });
+    let taskRequest = { text, complete: false, reason: "recovery_source_unavailable" };
+    if (!missingRecoverySource) {
+      try {
+        taskRequest = require("./task-request-source").bindTaskRequest({ manager: ctx?.sessionManager, session, taskContract, turnId, text });
+      } catch (err) {
+        log.warn("request lineage unavailable; preserving native task contract: %s", err?.message || err);
+        taskRequest = { text, complete: false, reason: "request_source_unavailable" };
+      }
+    }
     return {
       taskContract,
+      taskRequest,
       turnPolicy: buildTurnPolicy({ text, taskContract }),
       committedMessages,
       sessionSummary,

@@ -85,6 +85,14 @@ try {
 } finally { store.close(); fs.rmSync(scratch, { recursive: true, force: true }); }
 
 const { completeWithAcceptance } = require('../src/main/turn-acceptance-recovery');
+for (const taskContract of [{ active: false }, { active: true, taskType: 'code_change' }]) {
+  let coverage;
+  completeWithAcceptance({ sessionId: 's', state: { turnId: 'missing', taskContract,
+    taskRequest: { complete: false, reason: 'recovery_source_unavailable' }, tools: new Map() },
+    type: 'turn.completed', payload: {}, taskRunRuntime: { complete: (_s, _t, opts) => { coverage = opts.objectiveCoverage; } },
+    assess: () => { throw new Error('missing source must not call a model'); } });
+  assert.equal(coverage?.status, 'unknown', 'no-tool and unclassified recovery must retain incomplete-source coverage');
+}
 const completedState = { ...source.state, taskContract: source.taskContract, taskRun: { verification: { status: 'verified', criteria: [] } } };
 const legacyHandoff = { schemaVersion: 1, reason: 'budget_exhausted', progress: 2, unfinished: [{ title: 'remaining authorized acceptance' }] };
 const preparedAfterAssessment = [];

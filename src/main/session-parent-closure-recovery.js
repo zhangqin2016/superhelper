@@ -63,18 +63,34 @@ function getParentClosureRecovery(sessionId, sourceTurnId) {
   return this._store().getParentClosureRecovery(session.id, String(sourceTurnId), ownerScope);
 }
 
-function listPendingParentClosureRecoveries(sessionId) {
+function listFutureParentClosureRecoveries(sessionId, now = Date.now()) {
+  const session = this._find(sessionId);
+  const ownerScope = ownerFor(this, sessionId);
+  if (!session || !ownerScope) return [];
+  return this._store().listFutureParentClosureRecoveries(session.id, ownerScope, now);
+}
+
+function cancelPendingParentClosureRecoveries(sessionId) {
+  const session = this._find(sessionId);
+  const ownerScope = ownerFor(this, sessionId);
+  if (!session || !ownerScope) return;
+  this._store().cancelPendingParentClosureRecoveries(session.id, ownerScope);
+}
+
+function listPendingParentClosureRecoveries(sessionId, now = Date.now()) {
   const session = this._find(sessionId);
   const ownerScope = ownerFor(this, sessionId);
   if (!session || !ownerScope) return [];
   this._ensureImported(session);
-  return this._store().listPendingParentClosureRecoveries(session.id, ownerScope);
+  return this._store().listPendingParentClosureRecoveries(session.id, ownerScope, now);
 }
 
 module.exports = {
+  cancelPendingParentClosureRecoveries,
   claimParentClosureRecovery,
   getParentClosureRecovery,
   listPendingParentClosureRecoveries,
+  listFutureParentClosureRecoveries,
   markParentClosureRecoveryDispatched,
   markParentClosureRecoveryUnavailable,
   prepareParentClosureRecovery,

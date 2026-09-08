@@ -75,7 +75,7 @@ const {
   emitLocalAssistantStarted,
   taskContractEventPayload,
 } = require("./task-core-contracts");
-const { bindTurnAdmission, captureAndPersistTaskCore, trustedSourceTaskCore } = require("./task-core-runtime");
+const { bindTurnAdmission, captureAndPersistTaskCore, sourceTaskCoreForTurn, sourceTurnIdForTurn } = require("./task-core-runtime");
 const { captureParentClosureSource } = require("./turn-parent-closure-runtime");
 const log = getLogger("turn-orchestrator");
 const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
@@ -863,7 +863,7 @@ class TurnOrchestrator {
       return { ok: false, error: "LEGAL_KB_UNAVAILABLE", detail, legalKnowledge };
     }
     state.legalKnowledge = legalKnowledge;
-    const sourceTaskCore = trustedSourceTaskCore(session.id, state.admittedTurnInput?.ownerScope, opts.sourceTaskCore);
+    const sourceTaskCore = sourceTaskCoreForTurn(this.ctx, session, state, opts);
     state.scheduledTask = opts.scheduledTaskRunId
       ? {
           id: opts.scheduledTaskId || null,
@@ -889,12 +889,12 @@ class TurnOrchestrator {
       text: rawUserText,
       files,
       turnId: state.turnId,
-      previousIntentContract: sourceTaskCore?.contract?.intentContract || null,
+      previousIntentContract: sourceTaskCore?.contract?.intentContract || null, missingRecoverySource: Boolean(sourceTurnIdForTurn(state, opts) && !sourceTaskCore?.contract?.intentContract),
     });
     const { taskContract, turnPolicy } = documentDeliveryTurnIntelligence(turnIntelligence, state.documentDeliveryRecovery);
     const committedMessages = turnIntelligence.committedMessages || [];
     const sessionSummary = turnIntelligence.sessionSummary || null;
-    state.pendingTaskContract = taskContract;
+    state.pendingTaskContract = taskContract; state.taskRequest = turnIntelligence.taskRequest || null;
     state.taskContract = taskContract.active ? taskContract : null;
     state.turnPolicy = turnPolicy;
     if (taskContract.taskType === "content_extraction" && taskContract.priorSourceContentEvidence) {
