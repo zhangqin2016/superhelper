@@ -2563,4 +2563,28 @@ if (queueState.queue.length !== 0) {
   must(st2.queue.length === 0, "a post-restart replay does NOT enqueue a second turn (exactly-once survives restart)");
 }
 
+// Recovery must keep its durable identity through the real vision/document
+// preflight path; skipping those preflights hid the live recursive recovery.
+{
+  const assert = require('node:assert/strict');
+  const recoveryOrchestrator = new TurnOrchestrator(ctx);
+  runner.busy = false;
+  const recoveryId = 'turn_parent_closure_live_regression';
+  const result = await recoveryOrchestrator.sendUserMessage('s1', 'Check the existing result', [], {
+    skipPreflight: true, spawnEngine: false, recordUser: false,
+    turnId: recoveryId, recovery: { kind: 'parent_task_closure', guidance: 'Verify remaining work once.' },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.turnId, recoveryId, 'durable recovery turn identity must reach the actual admission');
+  const state = recoveryOrchestrator._state('s1');
+  assert.equal(state.currentPayload.parentClosureRecovery, true, 'preflight must preserve recovery provenance');
+  const { captureParentClosureSource } = require('../src/main/turn-parent-closure-runtime');
+  const { shouldRecoverParentClosure } = require('../src/main/parent-task-closure');
+  state.tools.set('read', { name: 'read', status: 'done' });
+  state.taskContract = { active: true, taskType: 'code_change' };
+  const source = captureParentClosureSource(state, { failed: true });
+  assert.equal(shouldRecoverParentClosure({ sessionId: 's1', ...source }).reason, 'ALREADY_ATTEMPTED');
+  recoveryOrchestrator.turnRecoveryRuntime.dispose?.();
+  runner.busy = false;
+}
 console.log("turn-orchestrator: ok");

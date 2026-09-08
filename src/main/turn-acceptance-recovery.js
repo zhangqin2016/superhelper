@@ -24,10 +24,11 @@ function completeWithAcceptance({ ctx = {}, sessionId, state, type, payload, tas
   if (state.turnId !== sourceTurnId) return null;
   taskRunRuntime?.complete?.(sessionId, type, { ...completeOptions, workspacePath, objectiveCoverage: coverage });
   if (type !== "turn.completed" || !terminalPersisted || specializedRecovery || !state.taskRun) return null;
-  const verification = state.taskRun.verification || {};
-  const unfinished = (verification.criteria || []).filter(item => ["unverified", "not_observed"].includes(item.status))
-    .map(item => ({ title: item.criterion, status: "pending", kind: "verification" }));
-  if (verification.reason === "missing_test_or_build_evidence" && !unfinished.length) unfinished.push({ title: "Run the task's focused verification after the final edits and retain the actual exit status.", status: "pending", kind: "verification" });
+  // Template criteria are audit observations, not additional user requests.
+  // Unknown evidence (including an unavailable judge) must not manufacture
+  // work such as renderer testing for a one-shot shell command. Only grounded
+  // missing requirements, declared files, or native productive handoffs recover.
+  const unfinished = [];
   const manifest = inspectDeliverables(originalAcceptance(state).deliverables, workspacePath);
   for (const file of manifest) {
     if (file.repairable && ["missing", "empty"].includes(file.status)) unfinished.push({ title: `Complete and verify the declared output: ${file.path}`, status: "pending", kind: "delivery" });

@@ -41,6 +41,18 @@ const legacy = {
 const index = buildMetadataIndex([legacy]);
 assert.equal(index.get("msg_engine"), legacy);
 
+// A native cancellation may contain no text. The same engine message can
+// later report an abort error; that is not a second assistant failure.
+const interruptedLocal = { id: 'local-stop', role: 'assistant', turnId: 'stop-turn', content: '',
+  record: { turnId: 'stop-turn', engineMessageId: 'engine-stop', terminal: 'turn.interrupted', tools: [{ id: 'command', status: 'cancelled' }], meta: { interrupted: true } } };
+const interruptedOfficial = { id: 'engine-stop', engineMessageId: 'engine-stop', role: 'assistant', content: '', failed: true,
+  record: { terminal: 'turn.failed', engineMessageId: 'engine-stop', meta: { failed: true } } };
+const stopMerged = mergeProjectionConversation([mergeMetadata(interruptedOfficial, interruptedLocal)], [interruptedLocal]);
+assert.equal(stopMerged.length, 1, 'empty interrupted messages match on identity, not text');
+assert.equal(stopMerged[0].record.terminal, 'turn.interrupted', 'host cancellation remains authoritative over engine abort');
+assert.equal(stopMerged[0].record.turnId, 'stop-turn');
+assert.equal(Boolean(stopMerged[0].failed), false);
+
 const merged = mergeMetadata({
   id: "msg_engine",
   role: "assistant",
@@ -518,6 +530,16 @@ const page = await getConversationPageFromSource(ctx, "s1", {});
 assert.equal(page.source, "opencode");
 assert.equal(page.projectId, "p1");
 assert.deepEqual(page.conversation[0].record.artifacts, [{ path: "/tmp/out.pdf" }]);
+
+const stoppedPage = await getConversationPageFromSource({
+  sessionManager: { ...ctx.sessionManager, getConversation: () => [interruptedLocal] },
+  runnerPool: { get: () => ({ isAlive: () => true, getConversationPage: async () => ({
+    ok: true, conversation: [{ ...interruptedOfficial, id: 'abort-tail', engineMessageId: 'abort-tail',
+      record: { ...interruptedOfficial.record, engineMessageId: 'abort-tail', meta: { opencode: { mergedAssistantMessageIds: ['engine-stop', 'abort-tail'] } } } }],
+  }) }) },
+}, 's1', {});
+assert.equal(stoppedPage.conversation.length, 1, 'coalesced native abort maps to the same host interrupted turn');
+assert.equal(stoppedPage.conversation[0].record.terminal, 'turn.interrupted');
 
 const userMergeCtx = {
   sessionManager: {

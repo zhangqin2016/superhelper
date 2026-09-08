@@ -186,7 +186,7 @@ function mergeMetadata(opencodeMessage, metadataMessage) {
       },
     };
   }
-  return merged;
+  return require("./conversation-terminal-authority").preserveHostInterruption(merged, metadataMessage);
 }
 
 function findLocalUserForOfficial(officialMessage, localUsers, usedIndexes, fallbackIndexRef) {
@@ -548,8 +548,8 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     const localConversation = stripInternalContinuationTurns(ctx.sessionManager.getConversation(session.id));
     const metadata = buildMetadataIndex(localConversation);
     const mergedOfficial = mergeUserDisplayText(stripInternalContinuationTurns(page.conversation || []), localConversation).map((message) => {
-      const key = metadataKey(message);
-      return mergeMetadata(message, key ? metadata.get(key) : null);
+      const keys = [metadataKey(message), ...(message.record?.meta?.opencode?.mergedAssistantMessageIds || [])];
+      return mergeMetadata(message, keys.map(key => metadata.get(key)).find(Boolean));
     });
     const projections = projectedConversationFor(ctx, session.id, {
       ...opts,

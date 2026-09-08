@@ -8,18 +8,19 @@ const { createTaskRunRuntime } = require('../src/main/task-run-runtime');
 const { createTaskRun } = require('../src/main/task-run-state');
 const { createTurnTerminalFinalizer } = require('../src/main/turn-terminal-finalizer');
 const { shouldRecoverParentClosure } = require('../src/main/parent-task-closure');
-async function scenario({ type = 'turn.completed', interrupted = false } = {}) {
+async function scenario({ type = 'turn.completed', interrupted = false, unknown = false } = {}) {
   const state = { sessionId: 's', phase: 'running', turnId: 'acceptance', taskContract: { active: true, taskType: 'code_change', intentContract: { successCriteria: ['focused_test'] } }, taskRun: createTaskRun({ turnId: 'acceptance' }), enginePayload: { rawText: 'Implement and test the summary', files: [] }, tools: new Map([['edit', { name: 'edit', status: 'done' }]]), pendingPermissions: new Map(interrupted ? [['permission', {}]] : []), pendingQuestions: new Map(), pendingHooks: new Map(), timeline: [], notices: [], contentBlocks: [], blockIndexToToolId: new Map() };
   const prepared = [];
   const runtime = createTaskRunRuntime({ getState: () => state });
   const finalizer = createTurnTerminalFinalizer({ getState: () => state, taskRunRuntime: runtime,
     prepareParentClosureRecovery: (_session, source) => { assert.equal(state.turnId, 'acceptance', 'persist before cleanup'); prepared.push(source); },
-    assessObjectiveCoverage: async () => ({ status: 'unknown', requirements: [] }),
+    assessObjectiveCoverage: async () => unknown ? ({ status: 'unknown', requirements: [] }) : ({ status: 'missing', requirements: [{ title: 'focused_test', status: 'missing' }] }),
     turnArchive: { buildRecord: () => ({ artifacts: [], fileChanges: [], meta: {} }), commit: () => ({ id: 'record' }) } });
   const result = await finalizer.finalize('s', type, { assistant: 'Implementation done, not tested.' });
   return { state, result, prepared };
 }
 const outcome = await scenario();
+assert.equal((await scenario({ unknown: true })).prepared.length, 0, 'generic unobserved criteria cannot invent an unfinished user obligation when the judge is unavailable');
 assert.ok(outcome.result?.parentClosureSource, 'clean end with missing test returns an acceptance continuation');
 assert.equal(outcome.prepared.length, 1);
 assert.equal(outcome.state.turnId, null, 'normal terminal cleanup still runs');

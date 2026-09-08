@@ -772,7 +772,7 @@ class TurnOrchestrator {
     const allowImageFileParts = modelRuntime.allowImageFileParts(modelRoute);
     state.phase = "starting";
     state.turnGeneration = (state.turnGeneration || 0) + 1;
-    state.turnId = preadmitted?.turnId || newTurnId();
+    state.turnId = preadmitted?.turnId || opts.turnId || newTurnId();
     state.wasRescueAttempt = Boolean(opts.rescueAttempt || (opts.recovery && opts.recovery.kind !== "parent_task_closure"));
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
@@ -1027,11 +1027,11 @@ class TurnOrchestrator {
           buildVisionFailureContext(files, vision.detail || vision.error || "VISION_FAILED"),
           "Image recognition result",
         );
-        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
+        state.currentPayload = { ...state.currentPayload, rawText: rawUserText, text, files, displayFiles };
       } else {
         text = vision.text;
         files = vision.files;
-        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
+        state.currentPayload = { ...state.currentPayload, rawText: rawUserText, text, files, displayFiles };
       }
     }
     if (!opts.skipDocument) {
@@ -1058,7 +1058,7 @@ class TurnOrchestrator {
           chunks: [],
           extractedPaths: [],
         });
-        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
+        state.currentPayload = { ...state.currentPayload, rawText: rawUserText, text, files, displayFiles };
       } else {
         text = document.text;
         files = document.files;
@@ -1076,7 +1076,7 @@ class TurnOrchestrator {
             log.warn("document query index persist failed: %s", err?.message || err);
           }
         }
-        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
+        state.currentPayload = { ...state.currentPayload, rawText: rawUserText, text, files, displayFiles };
       }
     }
 

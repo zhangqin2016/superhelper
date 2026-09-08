@@ -3,6 +3,20 @@
 const store = await import("../src/renderer/modules/session-runtime-store.js");
 const renderableTimeline = await import("../src/renderer/modules/turn-renderable-timeline.js");
 
+// Late/replayed starts cannot resurrect an already terminal turn or replace a
+// newer live turn. Sequence order alone does not imply lifecycle authority.
+{
+  const assert = await import('node:assert/strict');
+  const event = (type, turnId, seq) => ({ id: `late-${seq}`, type, turnId, seq, sessionId: 'late-start', ts: seq, payload: {} });
+  store.applyRuntimeEvent(event('turn.started', 'old', 1));
+  store.applyRuntimeEvent(event('turn.completed', 'old', 2));
+  store.applyRuntimeEvent(event('turn.started', 'old', 3));
+  assert.equal(store.getRuntimeSession('late-start').phase, 'idle');
+  store.applyRuntimeEvent(event('turn.started', 'new', 4));
+  store.applyRuntimeEvent(event('turn.started', 'old', 5));
+  assert.equal(store.getRuntimeSession('late-start').liveTurn.turnId, 'new');
+}
+
 store.applyRuntimeBatch({
   sessionId: "s1",
   batchSeq: 1,

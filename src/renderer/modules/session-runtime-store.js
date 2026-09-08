@@ -562,6 +562,7 @@ export function applyRuntimeEvent(event, opts = {}) {
     return;
   }
   if (event.type === "turn.started") {
+    if (terminalTurns.has(`${event.sessionId}:${event.turnId}`)) return;
     const live = ensureLiveTurn(runtime, event);
     applyTurnStarted(runtime, live);
     return;
