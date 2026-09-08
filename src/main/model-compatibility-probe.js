@@ -61,6 +61,11 @@ function streamShape(text) {
     if (!data || data === "[DONE]") continue;
     try {
       const json = JSON.parse(data);
+      if (typeof json?.type === "string" && json.type.startsWith("response.")) { // Responses-surface event
+        const evt = require("./model-probe-responses").streamEventSignals(json);
+        hasContent ||= evt.hasContent; hasToolCalls ||= evt.hasToolCalls; hasReasoning ||= evt.hasReasoning; if (evt.finishReason) finishReason = evt.finishReason;
+        continue;
+      }
       const choice = json?.choices?.[0] || {};
       const delta = choice.delta || {};
       if (typeof delta.content === "string" && delta.content.trim()) hasContent = true;
@@ -219,15 +224,17 @@ async function validateAgentConformance({ baseUrl, apiKey, model, bodyOverlay = 
   // single short flat tool yet kill every real turn, so this is the probe
   // that actually predicts agent conformance.
   let tools = await probeTools({ baseUrl, apiKey, model, bodyOverlay, timeoutMs, extraTools: AGENT_SHAPE_DECOY_TOOLS });
+  // The sender may have moved this endpoint+model to the Responses surface on
+  // the way ("use /v1/responses"); the profile records where tools really ran.
+  const surface = () => requestShape.recallShape(baseUrl, model).api;
   if (tools.ok && tools.hasToolCalls) {
-    return { ...content, tools, hasAgentConformance: true };
+    return { ...content, tools, hasAgentConformance: true, api: surface() };
   }
   // The endpoint said its chat surface will not run tools for this model and
   // named the one that does. Ask THAT surface the same question.
   const responsesProbe = require("./model-probe-responses");
   if (responsesProbe.wantsResponsesApi(tools, baseUrl, model)) {
     const viaResponses = await responsesProbe.probeToolsViaResponses({ baseUrl, apiKey, model, timeoutMs, extraTools: AGENT_SHAPE_DECOY_TOOLS });
-    // (The shape learner already recorded api=responses when it read the 400.)
     if (viaResponses.ok && viaResponses.hasToolCalls) return { ...content, tools: viaResponses, hasAgentConformance: true, api: "responses" };
     tools = viaResponses.ok ? viaResponses : { ...tools, responsesDetail: viaResponses.detail || null };
   }

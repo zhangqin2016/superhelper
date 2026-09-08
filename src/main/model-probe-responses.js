@@ -28,6 +28,17 @@ function responseShape(json) {
   return { hasContent: text.trim().length > 0, hasToolCalls: calls.length > 0, hasReasoning: output.some((item) => item?.type === "reasoning"), finishReason: incomplete === "max_output_tokens" ? "length" : (json?.status || "") };
 }
 
+/** What one Responses SSE event says about the answer so far. */
+function streamEventSignals(evt) {
+  const type = String(evt?.type || "");
+  return {
+    hasContent: type === "response.output_text.delta" && String(evt.delta || "").trim().length > 0,
+    hasToolCalls: type === "response.function_call_arguments.delta" || type === "response.function_call_arguments.done" || (type === "response.output_item.done" && evt.item?.type === "function_call"),
+    hasReasoning: type === "response.output_item.done" && evt.item?.type === "reasoning",
+    finishReason: type === "response.completed" ? (evt.response?.status === "incomplete" && evt.response?.incomplete_details?.reason === "max_output_tokens" ? "length" : "stop") : "",
+  };
+}
+
 function streamResponseShape(text) {
   let hasToolCalls = false, hasContent = false, finishReason = "";
   for (const line of String(text || "").split(/\r?\n/)) {
@@ -98,4 +109,4 @@ function wantsResponsesApi(result, baseUrl, model) {
   return Boolean(result && !result.ok && Number(result.status) >= 400 && Number(result.status) < 500 && /\/v1\/responses\b|responses api/i.test(text));
 }
 
-module.exports = { probeToolsViaResponses, wantsResponsesApi, toResponsesTools, responseShape, streamResponseShape };
+module.exports = { probeToolsViaResponses, wantsResponsesApi, toResponsesTools, responseShape, streamResponseShape, streamEventSignals };

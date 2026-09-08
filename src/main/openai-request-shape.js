@@ -107,7 +107,7 @@ function classifyShapeRejection({ status, error, shape, sentBody }) {
   }
   // "To use function tools, use /v1/responses …": the server names the surface
   // that works. Only relevant when tools were sent; a plain chat still works.
-  if (current.api === "chat" && sentBody && Array.isArray(sentBody.tools) && /\/v1\/responses\b|responses api/i.test(text)) {
+  if (current.api === "chat" && /v1\/responses\b|responses api|responses endpoint/i.test(text)) {
     return { shape: { ...current, api: "responses" }, reason: "use_responses_api" };
   }
   const sentTemperature = sentBody && sentBody.temperature !== undefined;
@@ -127,6 +127,67 @@ function applyRequestShape(body, shape, { maxTokens = undefined, temperature = u
   delete out.temperature;
   if (temperature !== undefined && temperature !== null && s.temperature !== "omit") out.temperature = temperature;
   return out;
+}
+
+/** /chat/completions → /responses on the same base. */
+function responsesUrl(url) {
+  return String(url || "").replace(/\/chat\/completions\/?$/, "/responses");
+}
+
+function toResponsesContent(content, role) {
+  const textType = role === "assistant" ? "output_text" : "input_text";
+  if (typeof content === "string") return [{ type: textType, text: content }];
+  if (!Array.isArray(content)) return [];
+  return content.map((part) => {
+    if (!part || typeof part !== "object") return null;
+    if (part.type === "text") return { type: textType, text: String(part.text || "") };
+    if (part.type === "image_url") {
+      const image = part.image_url && typeof part.image_url === "object" ? part.image_url : { url: part.image_url };
+      return { type: "input_image", image_url: String(image?.url || ""), ...(image?.detail ? { detail: image.detail } : {}) };
+    }
+    return null;
+  }).filter(Boolean);
+}
+
+/** A chat-completions body, expressed for the Responses surface. System
+ *  messages become `instructions`; tools/tool_choice flatten; the output limit
+ *  becomes max_output_tokens; chat-only knobs are dropped. */
+function toResponsesBody(body) {
+  const b = body || {};
+  const messages = Array.isArray(b.messages) ? b.messages : [];
+  const instructions = messages.filter((m) => m?.role === "system" || m?.role === "developer").map((m) => (typeof m.content === "string" ? m.content : toResponsesContent(m.content, "user").map((p) => p.text || "").join("\n"))).filter(Boolean).join("\n\n");
+  const input = messages.filter((m) => m && m.role !== "system" && m.role !== "developer").map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: toResponsesContent(m.content, m.role) }));
+  const out = { model: b.model, input };
+  if (instructions) out.instructions = instructions;
+  const limit = Number(b.max_completion_tokens ?? b.max_tokens);
+  if (Number.isFinite(limit) && limit > 0) out.max_output_tokens = Math.floor(limit);
+  if (b.temperature !== undefined) out.temperature = b.temperature;
+  if (b.stream) out.stream = true;
+  if (Array.isArray(b.tools)) {
+    out.tools = b.tools.map((tool) => { const fn = tool?.function || tool || {}; return { type: "function", name: fn.name, description: fn.description || "", parameters: fn.parameters || { type: "object", properties: {} } }; });
+  }
+  if (b.tool_choice !== undefined) {
+    out.tool_choice = b.tool_choice && typeof b.tool_choice === "object" ? { type: "function", name: b.tool_choice.function?.name || b.tool_choice.name } : b.tool_choice;
+  }
+  return out;
+}
+
+/** A Responses result, expressed the way chat-completions callers read it. */
+function fromResponsesJson(json) {
+  if (!json || typeof json !== "object" || !Array.isArray(json.output)) return json;
+  const output = json.output;
+  const text = output.filter((item) => item?.type === "message").flatMap((item) => Array.isArray(item.content) ? item.content : []).map((c) => (c?.type === "output_text" && typeof c.text === "string" ? c.text : "")).join("");
+  const toolCalls = output.filter((item) => item?.type === "function_call").map((item) => ({ id: item.call_id || item.id, type: "function", function: { name: item.name, arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}) } }));
+  const reasoning = output.filter((item) => item?.type === "reasoning").flatMap((item) => item.summary || []).map((s) => s?.text || "").join("\n");
+  const cutOff = json.status === "incomplete" && json.incomplete_details?.reason === "max_output_tokens";
+  const usage = json.usage || {};
+  return {
+    id: json.id, object: "chat.completion", model: json.model,
+    choices: [{ index: 0, message: { role: "assistant", content: text || (toolCalls.length ? null : ""), ...(toolCalls.length ? { tool_calls: toolCalls } : {}), ...(reasoning ? { reasoning } : {}) },
+      finish_reason: cutOff ? "length" : toolCalls.length ? "tool_calls" : "stop" }],
+    usage: { prompt_tokens: usage.input_tokens, completion_tokens: usage.output_tokens, total_tokens: usage.total_tokens, completion_tokens_details: usage.output_tokens_details },
+    _responses: json,
+  };
 }
 
 // What an endpoint+model taught us, for the life of this process. Persistence
@@ -156,17 +217,20 @@ async function sendChatCompletion({
   let current = normalizeRequestShape(shape);
   const adaptations = [];
   for (let attempt = 0; ; attempt += 1) {
-    const payload = applyRequestShape({ ...body, ...(stream ? { stream: true } : {}) }, current, { maxTokens, temperature });
+    const chatPayload = applyRequestShape({ ...body, ...(stream ? { stream: true } : {}) }, current, { maxTokens, temperature });
+    const viaResponses = current.api === "responses";
+    const payload = viaResponses ? toResponsesBody(chatPayload) : chatPayload;
+    const target = viaResponses ? responsesUrl(url) : url;
     let response;
     try {
-      response = await fetchFn(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload), signal });
+      response = await fetchFn(target, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload), signal });
     } catch (err) {
       return { ok: false, status: 0, error: { code: "NETWORK", param: "", message: redactSecrets(err?.message || String(err)) }, shape: current, adaptations };
     }
     if (response.ok) {
       let json = null;
-      if (!stream) { try { json = await response.json(); } catch { json = null; } }
-      return { ok: true, response, json, shape: current, adaptations, sentBody: payload };
+      if (!stream) { try { json = await response.json(); } catch { json = null; } if (viaResponses) json = fromResponsesJson(json); }
+      return { ok: true, response, json, shape: current, adaptations, sentBody: payload, api: current.api };
     }
     const text = await response.text().catch(() => "");
     let json = null; try { json = JSON.parse(text); } catch { json = null; }
@@ -178,8 +242,7 @@ async function sendChatCompletion({
     adaptations.push(adaptation.reason);
     current = normalizeRequestShape(adaptation.shape);
     try { onAdapt?.(current, adaptation.reason); } catch { /* observers never break the send */ }
-    // A different API surface cannot be re-sent here; the caller owns that path.
-    if (adaptation.reason === "use_responses_api") return { ok: false, status: response.status, error, shape: current, adaptations, response, json, apiSwitch: "responses" };
+    // (A surface switch is re-sent by the same loop: the next iteration goes to /responses.)
   }
 }
 
@@ -194,6 +257,9 @@ module.exports = {
   classifyShapeRejection,
   applyRequestShape,
   sendChatCompletion,
+  toResponsesBody,
+  fromResponsesJson,
+  responsesUrl,
   recallShape,
   rememberShape,
   resetLearnedShapesForTests,

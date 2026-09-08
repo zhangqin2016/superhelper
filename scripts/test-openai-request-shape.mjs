@@ -28,7 +28,7 @@ const COMPAT_UNKNOWN_FIELD = { error: { message: "Unrecognized request argument 
   assert.equal(shape.classifyShapeRejection({ status: 500, error: e, shape: null, sentBody: { max_tokens: 8 } }), null, "a 5xx is never a shape problem");
   const useResponses = shape.parseOpenAiError(400, { error: { message: "Function tools with reasoning_effort are not supported for gpt-x in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.", type: "invalid_request_error", param: "reasoning_effort", code: null } });
   assert.deepEqual(shape.classifyShapeRejection({ status: 400, error: useResponses, shape: null, sentBody: { max_completion_tokens: 8, tools: [{}] } }), { shape: { outputLimitField: "max_tokens", temperature: "allowed", api: "responses" }, reason: "use_responses_api" }, "the server names the surface that runs tools → learn it");
-  assert.equal(shape.classifyShapeRejection({ status: 400, error: useResponses, shape: null, sentBody: { max_completion_tokens: 8 } }), null, "without tools in the request the hint is not ours to act on");
+  assert.equal(shape.classifyShapeRejection({ status: 404, error: shape.parseOpenAiError(404, { error: { message: "This model is not supported in the v1/chat/completions endpoint. Use the v1/responses endpoint instead.", code: null } }), shape: null, sentBody: { max_completion_tokens: 8 } })?.shape.api, "responses", "a Responses-only model says so on a plain request too (codex family, 404)");
   assert.equal(shape.classifyShapeRejection({ status: 401, error: shape.parseOpenAiError(401, { error: { message: "Incorrect API key provided: sk-abcdefghijklmnopqrstuvwxyz", code: "invalid_api_key" } }), shape: null, sentBody: { max_tokens: 8 } }), null);
   assert.doesNotMatch(shape.parseOpenAiError(401, { error: { message: "Incorrect API key provided: sk-abcdefghijklmnopqrstuvwxyz" } }).message, /abcdefghijklmnop/, "keys are redacted out of error messages");
 }
@@ -43,6 +43,33 @@ const COMPAT_UNKNOWN_FIELD = { error: { message: "Unrecognized request argument 
   assert.deepEqual(shape.compactRequestShape({ outputLimitField: "max_completion_tokens" }), { outputLimitField: "max_completion_tokens", temperature: "allowed", api: "chat" });
   assert.deepEqual(shape.shapeFromEnv({ LILY_MODEL_REQUEST_SHAPE: JSON.stringify({ outputLimitField: "max_completion_tokens" }) }).outputLimitField, "max_completion_tokens");
   assert.deepEqual(shape.shapeFromEnv({ LILY_MODEL_REQUEST_SHAPE: "not json" }), shape.normalizeRequestShape(null), "garbage env → default, never a throw");
+}
+
+// --- translation to and from the Responses surface ------------------------
+{
+  const chat = { model: "m", messages: [{ role: "system", content: "Be terse." }, { role: "user", content: [{ type: "text", text: "what is this" }, { type: "image_url", image_url: { url: "data:image/png;base64,AAA", detail: "low" } }] }],
+    max_completion_tokens: 300, temperature: 0, stream: true, tools: [{ type: "function", function: { name: "f", description: "d", parameters: { type: "object", properties: {} } } }], tool_choice: { type: "function", function: { name: "f" } }, chat_template_kwargs: { enable_thinking: false } };
+  const r = shape.toResponsesBody(chat);
+  assert.equal(r.instructions, "Be terse."); assert.equal(r.max_output_tokens, 300); assert.equal(r.temperature, 0); assert.equal(r.stream, true);
+  assert.deepEqual(r.input, [{ role: "user", content: [{ type: "input_text", text: "what is this" }, { type: "input_image", image_url: "data:image/png;base64,AAA", detail: "low" }] }]);
+  assert.deepEqual(r.tools, [{ type: "function", name: "f", description: "d", parameters: { type: "object", properties: {} } }]);
+  assert.deepEqual(r.tool_choice, { type: "function", name: "f" }); assert.equal("chat_template_kwargs" in r, false, "chat-only knobs are dropped"); assert.equal("messages" in r, false);
+  const back = shape.fromResponsesJson({ id: "resp", model: "m", status: "completed", output: [{ type: "reasoning", summary: [{ text: "thought" }] }, { type: "function_call", call_id: "c1", name: "f", arguments: "{\"a\":1}" }], usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 } });
+  assert.equal(back.choices[0].finish_reason, "tool_calls"); assert.deepEqual(back.choices[0].message.tool_calls, [{ id: "c1", type: "function", function: { name: "f", arguments: "{\"a\":1}" } }]); assert.equal(back.choices[0].message.reasoning, "thought"); assert.equal(back.usage.prompt_tokens, 3);
+  const cut = shape.fromResponsesJson({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [] });
+  assert.equal(cut.choices[0].finish_reason, "length", "an exhausted Responses answer reads as finish_reason=length");
+  assert.equal(shape.fromResponsesJson({ output: [{ type: "message", content: [{ type: "output_text", text: "pong" }] }] }).choices[0].message.content, "pong");
+  assert.equal(shape.responsesUrl("https://api.example/v1/chat/completions"), "https://api.example/v1/responses");
+}
+{
+  // Responses-only endpoint: chat says "use v1/responses" (404) → same loop re-sends there, caller still reads chat shape.
+  const log = [];
+  const fake = async (url, init) => { const body = JSON.parse(init.body); log.push({ url, body });
+    if (url.endsWith("/chat/completions")) return new Response(JSON.stringify({ error: { message: "This model is not supported in the v1/chat/completions endpoint. Use the v1/responses endpoint instead." } }), { status: 404 });
+    return new Response(JSON.stringify({ id: "r", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "pong" }] }], usage: {} }), { status: 200 }); };
+  const sent = await shape.sendChatCompletion({ url: "https://api.example/v1/chat/completions", body: { model: "codex", messages: [{ role: "user", content: "Say pong only." }] }, maxTokens: 64, fetchFn: fake });
+  assert.equal(sent.ok, true); assert.equal(sent.api, "responses"); assert.equal(sent.json.choices[0].message.content, "pong", "caller reads a chat-shaped answer");
+  assert.equal(log[1].url, "https://api.example/v1/responses"); assert.equal(log[1].body.max_output_tokens, 64); assert.equal(log.length, 2);
 }
 
 // --- the send loop against a strict "official" fake -----------------------

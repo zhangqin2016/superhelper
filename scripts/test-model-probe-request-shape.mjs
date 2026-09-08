@@ -32,7 +32,17 @@ const server = http.createServer((req, res) => {
     const parsed = JSON.parse(body || "{}"); requests.push(parsed);
     const json = (status, obj) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
     if (req.url.endsWith("/responses")) {
+      const wantsTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
       const call = { type: "function_call", id: "fc_1", call_id: "call_1", name: "lily_probe_tool", arguments: "{\"ok\":true}" };
+      if (!wantsTools) {
+        if (parsed.stream) {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.write(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "pong" })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: "response.completed", response: { status: "completed" } })}\n\n`);
+          res.write("data: [DONE]\n\n"); res.end(); return;
+        }
+        return json(200, { id: "resp_0", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "pong" }] }], usage: { output_tokens: 1 } });
+      }
       if (parsed.stream) {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(`data: ${JSON.stringify({ type: "response.output_item.added", item: call })}\n\n`);
@@ -44,6 +54,7 @@ const server = http.createServer((req, res) => {
       return json(200, { id: "resp_1", status: "completed", output: [call], usage: { output_tokens: 5, output_tokens_details: { reasoning_tokens: 0 } } });
     }
     if (!req.url.includes("/chat/completions")) return json(404, { error: "not found" });
+    if (parsed.model === "codex-only") return json(404, { error: { message: "This model is not supported in the v1/chat/completions endpoint. Use the v1/responses endpoint instead.", type: "invalid_request_error", code: null } });
     if (parsed.model === "gpt-responses-only" && Array.isArray(parsed.tools)) return json(400, { error: { message: "Function tools with reasoning_effort are not supported for gpt-responses-only in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.", type: "invalid_request_error", param: "reasoning_effort", code: null } });
     if (parsed.model === "missing-model") return json(404, { error: { message: "The model `missing-model` does not exist or you do not have access to it.", type: "invalid_request_error", code: "model_not_found" } });
     if ("max_tokens" in parsed) return json(400, OFFICIAL_MAX_TOKENS);
@@ -118,6 +129,14 @@ try {
   assert.equal(JSON.parse(cfg2.configContent).provider[cfg2.model.providerID].npm, "@ai-sdk/openai", "engine runs the learned surface through the official SDK");
   const cfgChat = resolveOpencodeModelConfig({ LILY_API_BASE_URL: baseUrl, LILY_API_KEY: "sk-test", LILY_MODEL: "gpt-strict", LILY_OPENCODE_PROTOCOL: "openai" });
   assert.equal(JSON.parse(cfgChat.configContent).provider[cfgChat.model.providerID].npm, "@ai-sdk/openai-compatible", "without the lesson nothing changes");
+
+  // A Responses-only model (codex family): chat refuses even plain text with a
+  // 404 that names the surface; content, stream and tools all run on /responses.
+  shapes.resetLearnedShapesForTests();
+  const codex = await probeCustomModelProfile({ protocol: "openai", baseUrl, apiKey: "sk-test", model: "codex-only", timeoutMs: 5000 });
+  assert.equal(codex.ok, true, `responses-only (codex-like) model must pass: ${JSON.stringify(codex)}`);
+  assert.equal(codex.profile.requestShape?.api, "responses"); assert.equal(codex.profile.conformance.contentSource, "responses-api");
+  assert.equal(requests.filter((r) => r.model === "codex-only" && "messages" in r).length, 1, "exactly one chat request paid for the lesson");
 
   // A rejection for another reason reaches the caller with the server's words.
   shapes.resetLearnedShapesForTests();
