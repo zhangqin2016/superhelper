@@ -1,7 +1,7 @@
 "use strict";
 
 const { createHash } = require("node:crypto");
-const { jobObservation } = require("../../resources/opencode-plugins/lib/job-observation.cjs");
+const { jobObservation } = require("./job-observation-lib");
 const states = new WeakMap();
 const MAX_TEXT = 32_768;
 const MIN_REPEATED_CHARS = 240;

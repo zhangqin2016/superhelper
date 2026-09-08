@@ -38,6 +38,8 @@ Chosen over a global task timeout (would truncate useful work) or hiding duplica
 
 ## Completed verification — 2026-09-08
 
+- Release follow-up: actual 0.1.169 package inspection disproved the assumption that `build.files` duplicates `extraResources` inside ASAR. Both host consumers used an absent ASAR-relative helper. The new packaging regression failed with `MODULE_NOT_FOUND`; an external-resources-aware loader fixed it, with source fallback and missing/invalid-library fail-open coverage. Do not use the first unpublished 0.1.169 build; both architectures must be rebuilt and packaged module loading rechecked before upload.
+
 - RED then GREEN: repeated text/session termination, timestamp-only job observations/progress budgets, and historical running receipts. Subsequent review tests reproduced abort returning `false`, user-stop/abort races, task-ID reuse, and stale process callbacks before their fixes.
 - Expanded within the same bug scope: legacy process producer generation fencing. `node scripts/test-process-job-generation.mjs` passes six controlled stale-callback/health/stop races against real temporary registry IO. The focused helper avoids increasing the existing module size limit.
 - `npm run test:capability-gate`: exit 0, **277 test scripts**, log `/private/tmp/lily-loop-capability-gate-final.log`. This run preceded registration of the additional producer generation test; that test was run separately and passed, then registered for future gate runs.

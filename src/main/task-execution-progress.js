@@ -2,7 +2,7 @@
 
 const { createHash } = require("node:crypto");
 const { executionReceipt } = require("./task-verification-receipt");
-const { stableToolResult } = require("../../resources/opencode-plugins/lib/job-observation.cjs");
+const { stableToolResult } = require("./job-observation-lib");
 const turnReceipts = new WeakMap();
 const LIMIT = 1024;
 const CONTROL_TOOLS = new Set(["todowrite", "todoread", "todo_write", "todo_read", "update_plan", "question", "ask_user", "askuserquestion"]);

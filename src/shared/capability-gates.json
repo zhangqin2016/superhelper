@@ -887,6 +887,7 @@
       "tests": [
         "scripts/test-turn-loop-guard.mjs",
         "scripts/test-job-observation.mjs",
+        "scripts/test-job-observation-packaging.mjs",
         "scripts/test-loop-detector.mjs",
         "scripts/test-task-execution-progress.mjs",
         "scripts/test-process-job-turn-guard.mjs",
