@@ -1,7 +1,7 @@
 "use strict";
 
 const requestShape = require("./openai-request-shape");
-const { AGENT_SHAPE_DECOY_TOOLS, toolProbeFields } = require("./model-probe-tools");
+const { AGENT_SHAPE_DECOY_TOOLS, toolProbeFields, withBudgetLadder } = require("./model-probe-tools");
 
 function trimUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
@@ -163,6 +163,10 @@ async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutM
     toolChoice = "auto";
     nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, timeoutMs });
   }
+  if (nonStream.ok) {
+    const climbed = await withBudgetLadder((budget) => postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, maxTokens: budget, timeoutMs }), nonStream);
+    nonStream = climbed.result; maxTokens = climbed.maxTokens;
+  }
   if (!nonStream.ok) {
     // Low output-cap gateway may reject 512; retry tiny (a non-reasoning model
     // still emits a tool_call in 16 tokens). Reuse the working budget for stream.
@@ -175,6 +179,7 @@ async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutM
   return {
     ok: true,
     toolChoice: toolChoice || "forced",
+    maxTokens,
     nonStreamShape: nonStream.shape,
     streamShape: stream.shape,
     hasToolCalls: Boolean(nonStream.shape?.hasToolCalls && stream.shape?.hasToolCalls),
@@ -184,6 +189,10 @@ async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutM
 async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
   let maxTokens = 512; // reasoning-tolerant default
   let nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens, timeoutMs });
+  if (nonStream.ok) {
+    const climbed = await withBudgetLadder((budget) => postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens: budget, timeoutMs }), nonStream);
+    nonStream = climbed.result; maxTokens = climbed.maxTokens;
+  }
   // A strict gateway whose OUTPUT cap is below 512 rejects the default. Don't
   // false-reject it: retry once at the old tiny budget (which used to pass) — a
   // non-reasoning model answers fine — and REUSE that budget for the stream call
@@ -659,6 +668,16 @@ async function probeCustomModelProfile({
     if (repaired.hasContent && repaired.tools && !repaired.tools.hasToolCalls) toolCallsBlocked = true;
   }
 
+  const observed = (label, shape) => (shape ? `${label}: content=${shape.hasContent ? "yes" : "no"} tool_calls=${shape.hasToolCalls ? "yes" : "no"}${shape.finishReason ? ` finish_reason=${shape.finishReason}` : ""}` : "");
+  const detail = {
+    code: "probe_observation",
+    param: "",
+    message: [
+      observed("chat", plain.nonStreamShape), observed("stream", plain.streamShape),
+      plain.tools ? observed(`tools(${plain.tools.toolChoice || "forced"}, budget=${plain.tools.maxTokens || 512})`, plain.tools.nonStreamShape) : "",
+      plain.tools ? observed("tools-stream", plain.tools.streamShape) : "",
+    ].filter(Boolean).join("; "),
+  };
   return {
     ok: false,
     error: toolCallsBlocked
@@ -668,6 +687,7 @@ async function probeCustomModelProfile({
       : plain.nonStreamShape?.hasReasoning || plain.streamShape?.hasReasoning
         ? "MODEL_REASONING_ONLY"
         : "MODEL_NO_CONTENT",
+    ...(detail.message ? { detail } : {}),
   };
 }
 

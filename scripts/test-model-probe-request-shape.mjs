@@ -22,6 +22,7 @@ const shapes = require("../src/main/openai-request-shape.js");
 const modelPresets = require("../src/main/model-presets.js");
 
 const requests = [];
+const REASONING_NEED = 3000; // tokens of thinking before this fake answers
 const OFFICIAL_MAX_TOKENS = { error: { message: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", type: "invalid_request_error", param: "max_tokens", code: "unsupported_parameter" } };
 // A strict "official" endpoint: refuses max_tokens, refuses a non-default
 // temperature, knows only one model, otherwise answers like a plain model.
@@ -36,6 +37,16 @@ const server = http.createServer((req, res) => {
     if (parsed.temperature !== undefined && parsed.temperature !== 1) return json(400, { error: { message: "Unsupported value: 'temperature' does not support 0 with this model.", param: "temperature", code: "unsupported_value" } });
     const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
     const toolCall = { id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } };
+    // A reasoning model: below REASONING_NEED tokens the whole budget goes to
+    // thinking and the answer is cut off — finish_reason "length", nothing else.
+    if (Number(parsed.max_completion_tokens) < REASONING_NEED) {
+      if (parsed.stream) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", model: parsed.model, choices: [{ index: 0, delta: {}, finish_reason: "length" }] })}\n\n`);
+        res.write("data: [DONE]\n\n"); res.end(); return;
+      }
+      return json(200, { id: "c", object: "chat.completion", model: parsed.model, choices: [{ index: 0, message: { role: "assistant", content: "" }, finish_reason: "length" }], usage: { prompt_tokens: 1, completion_tokens: parsed.max_completion_tokens, completion_tokens_details: { reasoning_tokens: parsed.max_completion_tokens } } });
+    }
     if (parsed.stream) {
       res.writeHead(200, { "content-type": "text/event-stream" });
       const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
@@ -58,6 +69,8 @@ try {
   assert.equal(rejected, 1, `exactly ONE request paid for the lesson, got ${rejected}`);
   assert.equal(requests.filter((r) => "max_completion_tokens" in r).length, requests.length - 1, "every later request used the learned field");
   assert.equal(result.profile.conformance.toolCalls, true, "tool conformance still measured under the learned shape");
+  assert.ok(requests.some((r) => Number(r.max_completion_tokens) >= REASONING_NEED), "the budget was raised when the server reported exhaustion (finish_reason=length)");
+  assert.ok(requests.filter((r) => Array.isArray(r.tools) && Number(r.max_completion_tokens) >= REASONING_NEED).length >= 2, "the working budget was reused for the tool probes and their stream pass");
 
   // Persisted through the preset and visible to the runtime.
   const saved = await modelPresets.saveCustomPresetWithProbe({ label: "Strict", model: "gpt-strict", baseUrl, apiKey: "sk-test-0123456789", protocol: "openai", probeTimeoutMs: 5000 });

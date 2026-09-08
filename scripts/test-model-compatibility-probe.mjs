@@ -165,12 +165,17 @@ try {
     "mock volunteers tool calls under tool_choice:auto but echoes lowercase pong → standard grade",
   );
   assert(requests.length > 6, "probe should verify chat, stream, tools, and system prompt capacity");
-  assert.equal(requests[0].chat_template_kwargs, undefined, "first probe must measure the endpoint as configured");
-  assert.equal(requests[1].chat_template_kwargs, undefined, "plain stream probe must also measure the endpoint as configured");
-  assert.equal(requests[2].chat_template_kwargs.enable_thinking, false, "candidate repair applies to non-stream probe");
-  assert.equal(requests[3].chat_template_kwargs.enable_thinking, false, "candidate repair also applies to stream probe");
-  assert.equal(Array.isArray(requests[4].tools), true, "candidate repair must be checked with non-stream tools");
-  assert.equal(Array.isArray(requests[5].tools), true, "candidate repair must be checked with streaming tools");
+  // Order, not fixed positions: the endpoint is measured AS CONFIGURED first
+  // (non-stream, a budget retry when it reports exhaustion, then stream); only
+  // after that do repair candidates apply — to both non-stream and stream.
+  const firstRepaired = requests.findIndex((r) => r.chat_template_kwargs);
+  assert(firstRepaired >= 2, "plain non-stream and stream probes run before any repair candidate");
+  assert(requests.slice(0, firstRepaired).every((r) => r.chat_template_kwargs === undefined), "every probe before the first repair measures the endpoint as configured");
+  assert(requests.slice(0, firstRepaired).some((r) => r.stream === true), "the plain stream probe ran before repair");
+  const repairedRequests = requests.slice(firstRepaired).filter((r) => r.chat_template_kwargs?.enable_thinking === false);
+  assert(repairedRequests.some((r) => !r.stream) && repairedRequests.some((r) => r.stream === true), "candidate repair applies to non-stream AND stream probes");
+  assert(repairedRequests.some((r) => Array.isArray(r.tools) && !r.stream), "candidate repair must be checked with non-stream tools");
+  assert(repairedRequests.some((r) => Array.isArray(r.tools) && r.stream === true), "candidate repair must be checked with streaming tools");
   assert.equal(result.diagnostics.stream, "repaired", "probe must prove the repaired profile works for streaming, not only non-streaming");
 
   const saved = await modelPresets.saveCustomPresetWithProbe({

@@ -70,4 +70,29 @@ function toolProbeFields(extraTools = [], toolChoice = null) {
   };
 }
 
-module.exports = { AGENT_SHAPE_DECOY_TOOLS, toolProbeFields };
+// The server's own word for "I ran out of room": finish_reason "length" with
+// nothing produced. A reasoning model spends its budget on thinking first, and
+// how much it needs varies by model AND by prompt — deepseek-v4 used ~50 tokens,
+// a large official reasoning model can use thousands. So the budget is not
+// guessed from the model name: it is raised only when the server says it was
+// exhausted, along this ladder, and the working value is reused downstream.
+// One step only: 4096 covers a simple prompt's reasoning on every model seen so
+// far, and a probe must not burn 16k thinking tokens against a 10 s timeout.
+const OUTPUT_BUDGET_LADDER = Object.freeze([512, 4096]);
+function budgetExhausted(shape) {
+  return Boolean(shape && !shape.hasContent && !shape.hasToolCalls && shape.finishReason === "length");
+}
+/** Re-send with a larger budget while the server reports exhaustion. Returns the
+ *  last result plus the budget that produced it. */
+async function withBudgetLadder(send, first) {
+  let result = first, maxTokens = OUTPUT_BUDGET_LADDER[0];
+  for (const next of OUTPUT_BUDGET_LADDER.slice(1)) {
+    if (!(result.ok && budgetExhausted(result.shape))) break;
+    const retry = await send(next);
+    if (!retry.ok) break; // a rejection at the larger size keeps the smaller, valid answer
+    result = retry; maxTokens = next;
+  }
+  return { result, maxTokens };
+}
+
+module.exports = { AGENT_SHAPE_DECOY_TOOLS, toolProbeFields, OUTPUT_BUDGET_LADDER, budgetExhausted, withBudgetLadder };
