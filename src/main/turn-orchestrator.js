@@ -1669,6 +1669,7 @@ class TurnOrchestrator {
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
     let finalizeDone = null;
     const terminalMeta = {
+      ...(payload?.loopDetected ? { loopDetected: payload.loopDetected } : {}),
       ...(payload?.continuationHandoff ? { continuationHandoff: payload.continuationHandoff } : {}),
       durationMs: state.durationMs ?? null,
       totalCostUsd: state.totalCostUsd ?? null,

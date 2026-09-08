@@ -44,4 +44,15 @@ session._turnGates = createTurnGateState();
 session._turnGates.todo.attempts = 2;
 execution();
 assert.equal(session._turnGates.todo.attempts, 0, "receipt deduplication is turn scoped");
+for (let i = 0; i < 4; i++) {
+  session._turnGates.todo.attempts = 2;
+  execution({ name: "lily_process_jobs_job_status", input: { jobId: "job-1" }, output: JSON.stringify({
+    ok: true, jobId: "job-1", state: "running", stdoutBytes: 0, updatedAt: String(i), heartbeatAt: String(i),
+  }) });
+  assert.equal(session._turnGates.todo.attempts, i === 0 ? 0 : 2, "observation timestamp changes cannot refill no-progress attempts");
+}
+execution({ name: "lily_process_jobs_job_status", input: { jobId: "job-1" }, output: JSON.stringify({
+  ok: true, jobId: "job-1", state: "running", stdoutBytes: 10, updatedAt: "5",
+}) });
+assert.equal(session._turnGates.todo.attempts, 0, "real job log growth remains progress");
 console.log("task execution progress: PASS (actual reducer → session completion path, bounded continuation)");

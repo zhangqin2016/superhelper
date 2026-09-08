@@ -2,6 +2,7 @@
 
 const { createHash } = require("node:crypto");
 const { executionReceipt } = require("./task-verification-receipt");
+const { stableToolResult } = require("../../resources/opencode-plugins/lib/job-observation.cjs");
 const turnReceipts = new WeakMap();
 const LIMIT = 1024;
 const CONTROL_TOOLS = new Set(["todowrite", "todoread", "todo_write", "todo_read", "update_plan", "question", "ask_user", "askuserquestion"]);
@@ -39,7 +40,7 @@ function rememberExecutionProgress(gate, draft = {}) {
     const input = { ...started.input };
     // Presentation labels and timeouts do not make an identical command new work.
     for (const key of ["description", "title", "timeout", "timeout_ms"]) delete input[key];
-    const serialized = JSON.stringify(canonical([name, input, payload.content ?? payload.result ?? ""]));
+    const serialized = JSON.stringify(canonical([name, input, stableToolResult(name, input, payload.content ?? payload.result ?? "")]));
     if (serialized.length > 2_000_000) return false;
     const fingerprint = createHash("sha256").update(serialized).digest("hex");
     if (state.seen.has(fingerprint)) return false;

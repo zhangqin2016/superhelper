@@ -56,6 +56,7 @@ const { claimContinuation, createTurnGateState } = require("./turn-continuation-
 const { earliestPendingRequestAt } = require("./turn-user-wait");
 const requiredToolCompletion = require("./required-tool-completion-gate");
 const { rememberExecutionProgress } = require("./task-execution-progress");
+const { observeTurnLoop, stopTurnLoop } = require("./turn-loop-guard");
 const { characterApplicationForTrace } = require("./character-worlds/application-receipt");
 const log = getLogger("opencode-agent-session");
 function rawToolFromEvent(ev = {}) {
@@ -777,13 +778,14 @@ class OpencodeAgentSession extends EventEmitter {
   async _abortWithTimeout(server) {
     let timer = null;
     try {
-      await Promise.race([
+      const aborted = await Promise.race([
         server.abort(),
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error("abort timed out")), OpencodeAgentSession.INTERRUPT_ABORT_TIMEOUT_MS);
           timer.unref?.();
         }),
       ]);
+      if (aborted === false) throw new Error("engine did not confirm abort");
     } catch (err) {
       try { server.terminate?.(); } catch { /* best effort */ }
       if (this._server === server) {
@@ -800,7 +802,7 @@ class OpencodeAgentSession extends EventEmitter {
   // --- inbound: OpenCode event -> runtime drafts + host effects ------------
 
   _handleEvent(ev) {
-    if (!this.busy || this._turnSettled) return;
+    if (!this.busy || this._turnSettled || this._turnGates.loopStopping) return;
     const childSessionID = ev?.__lilySubagentSessionID || "";
     if (childSessionID) {
       this._subagentRuntime.handleEvent(childSessionID, ev);
@@ -830,14 +832,10 @@ class OpencodeAgentSession extends EventEmitter {
       return;
     }
 
-    // Meaningful reducer progress = the engine is making forward movement (text,
-    // thinking, a tool call/update/result, permission/question, completion, or
-    // usage). Reset the no-progress watchdog only on these — NOT on
-    // every event. Busy/heartbeat events carry no actions, so a turn that just
-    // pings "busy" without doing anything still times out, while a genuinely long
-    // task that keeps progressing (an hour of converting files, etc.) resets the
-    // watchdog on each step and runs to completion.
-    if (reduced.progress) {
+    // Native activity renews liveness unless the bounded observer proves a loop.
+    // Heartbeats alone never extend a turn; evolving long work remains allowed.
+    const loop = observeTurnLoop(this, reduced);
+    if (loop.progress) {
       this._sawActivity = true;
       this._clearDispatchFailureTimer();
       this._clearPromptDispatchPendingCheck();
@@ -870,6 +868,7 @@ class OpencodeAgentSession extends EventEmitter {
     }
     if (reduced.processEvent) drafts.push(reduced.processEvent);
     this._ingest(drafts);
+    if (loop.stop) stopTurnLoop(this, loop);
   }
 
   _rememberLatestTodos(todos) {
@@ -1538,6 +1537,7 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   _completeTurn(payload) {
+    if (this._turnGates.loopStopping && !payload?.interruptedByUser) return;
     if (this._turnSettled || pauseForPendingUserInput(this, payload)) return;
     if (requiredToolCompletion.continueBeforeCompletion(this, payload)) return;
     if (this._continueUnfinishedTodosBeforeCompletion(payload)) return;

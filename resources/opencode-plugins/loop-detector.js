@@ -14,6 +14,8 @@
 // Tunable (0 disables that check): LILY_LOOP_NO_PROGRESS (default 3),
 // LILY_LOOP_PING_PONG cycles (default 2). LILY_LOOP_DETECT=0 disables entirely.
 
+import jobObservation from "./lib/job-observation.cjs";
+const { stableToolResult } = jobObservation;
 const WINDOW = 16; // signatures kept per session
 const MAX_SESSIONS = 200; // bound memory in the long-lived serve
 
@@ -114,7 +116,7 @@ export const LoopDetectorPlugin = async () => ({
       }
       // Signature computed from the RAW result BEFORE we append any note, so our
       // own note can never pollute the signature on the next iteration.
-      const sig = `${tool}|${hash(argsStr)}|${hash(resultText(output))}`;
+      const sig = `${tool}|${hash(argsStr)}|${hash(stableToolResult(tool, input.args, resultText(output)))}`;
       const sigs = track(String((input && input.sessionID) || "default"), sig);
 
       const kind = detectLoop(sigs, noProgress, pingPong);

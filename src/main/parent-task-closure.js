@@ -102,6 +102,7 @@ function shouldRecoverParentClosure({
   const evidence = toolEvidenceSnapshot(state);
   const fail = (reason) => ({ ok: false, reason, recoveryKey, sourceTurnId, evidence });
   if (!sessionId || !sourceTurnId) return fail("MISSING_TURN_IDENTITY");
+  if (payload.loopDetected) return fail("CONFIRMED_LOOP");
   if (!hasExecutionIntent(taskContract)) return fail("NON_EXECUTION_TASK");
   if (payload.interruptedByUser || payload.userInterrupted || payload.engineInterrupted) return fail("INTERRUPTED");
   if (

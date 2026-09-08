@@ -880,6 +880,20 @@
       ]
     },
     {
+      "id": "confirmed-turn-repetition",
+      "protects": "Confirmed repetitive text and unchanged job inspection cannot keep a task alive indefinitely; terminal job receipts retire historical running blockers.",
+      "baseline": "Evolving work, foreground tool leases, pending user input, structured/quoted/requested content and unknown observations retain existing behavior. No model downgrade or tool replay.",
+      "failureFallback": "Bounded per-turn observation fails open on malformed/oversized data; kill switch restores baseline. Confirmed stops retain partial output and reason, use the existing bounded abort, never stop background jobs or automatically re-enter parent recovery.",
+      "tests": [
+        "scripts/test-turn-loop-guard.mjs",
+        "scripts/test-job-observation.mjs",
+        "scripts/test-loop-detector.mjs",
+        "scripts/test-task-execution-progress.mjs",
+        "scripts/test-process-job-turn-guard.mjs",
+        "scripts/test-process-job-generation.mjs"
+      ]
+    },
+    {
       "id": "todo-progress-evidence-overlay",
       "protects": "The task-list progress card cannot be confidently wrong when the model forgets to update its list. Field case 2026-09-05: one todowrite, eight more tool calls, card stuck at 0/7 while four steps were done. The platform now (1) nudges the model inside the tool result after N calls without a todowrite, naming the steps the execution record already supports (todo-progress-nudge plugin); (2) overlays execution evidence on the plan — a step is 'evidenced' only when a SUCCESSFUL tool call's input contains every identifier unique to that step; (3) reconciles at turn end: stale 'in progress' becomes 'unconfirmed', and a bounded model pass may settle undecided steps only with a quote literally present in the evidence; (4) states staleness in the summary. All four are display/nudge overlays: the model's own list is never rewritten.",
       "baseline": "Without a taskRun or with the default scaffold plan the strip and card render exactly as before (same summary, same icons, same classes). Steps without a unique identifier are never inferred; shared identifiers prove nothing; a failed final attempt proves nothing; output-only mentions are not evidence. A fresh todowrite drops every overlay — the model's statuses win.",

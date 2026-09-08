@@ -71,4 +71,19 @@ await after({}, {});
 await after({ sessionID: "s9", tool: "x" }, null);
 await after(null, null);
 await after({ sessionID: "s9", tool: "x", args: { a: 1 } }, { content: [{ type: "text", text: "ok" }] });
+// Observation timestamps are not job progress; the wire result itself stays intact.
+for (let i = 0; i < 3; i++) {
+  const result = await run("job-poll", "lily_process_jobs_job_status", { jobId: "job-1" }, JSON.stringify({
+    ok: true, jobId: "job-1", state: "running", stdoutBytes: 0, updatedAt: String(i), heartbeatAt: String(i),
+  }));
+  assert.equal(looped(result), i === 2, "timestamp-only job polls must be detected");
+  assert(result.includes(`\"updatedAt\":\"${i}\"`), "normalization never rewrites the actual result");
+}
+for (let i = 0; i < 8; i++) {
+  assert.equal(looped(await run("job-growing", "job_status", { jobId: "job-2" }, JSON.stringify({
+    ok: true, jobId: "job-2", state: "running", stdoutBytes: i, updatedAt: String(i),
+  }))), false, "real log growth remains progress");
+  assert.equal(looped(await run("other-clock", "read", {}, JSON.stringify({ updatedAt: String(i) }))), false,
+    "timestamps of arbitrary tools must not be ignored");
+}
 console.log("loop-detector: ok");

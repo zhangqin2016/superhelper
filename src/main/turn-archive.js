@@ -181,6 +181,7 @@ class TurnArchive {
         stalled: terminalType === "turn.stalled",
         failed: terminalType === "turn.failed",
         failure: failureMeta,
+        ...(payload.loopDetected ? { loopDetected: payload.loopDetected } : {}),
         resultFromCli: Boolean(payload.resultFromCli),
         toolsSummary: { count: tools.length },
         taskContract: state.taskContract
