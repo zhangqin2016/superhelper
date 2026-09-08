@@ -5,7 +5,7 @@ const { app, BrowserWindow } = require('electron');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-collaboration-'));
 app.setPath('userData', path.join(temp, 'data')); app.disableHardwareAcceleration();
 let win; const timer = setTimeout(() => finish(1), 45000);
-function finish(code) { clearTimeout(timer); win?.destroy(); fs.rmSync(temp, { recursive: true, force: true }); app.exit(code); }
+function finish(code) { clearTimeout(timer); win?.destroy(); try { require('./lib/electron-test-cleanup.cjs')(temp); } catch (error) { console.error(error); code = 1; } app.exit(code); }
 app.whenReady().then(async () => {
   const renderer = path.join(__dirname, '../src/renderer');
   const markup = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
@@ -50,9 +50,12 @@ app.whenReady().then(async () => {
     picker().value='friend:friend';picker().focus();for(const locale of ['en','ar','zh-CN']){await setLocale(locale);check(picker().querySelector('option[value=""]').textContent===t('collaboration.workspace.choose'),'Live locale updates chooser placeholder');check(picker().value==='friend:friend'&&document.activeElement===picker(),'Live locale preserves recipient and focus');}
     check(!calls.some(c=>c.operation==='open'||c.operation==='prepare'),'Opening selector does not navigate or prepare');
     click('[data-action=workspace-collaboration-cancel]');await tick();check(!document.querySelector('dialog[open]'),'Cancel closes');check(document.activeElement===returnTarget,'Cancel preserves prior workspace keyboard focus');
+    const nativeFrame=window.requestAnimationFrame,delayedFrames=[];window.requestAnimationFrame=callback=>(delayedFrames.push(callback),delayedFrames.length);
     await launch();picker().value='friend:friend';picker().dispatchEvent(new Event('change'));click('[data-action=workspace-collaboration-continue]');await tick();
     check(document.querySelector('[name=assigneeUserId]')?.value==='friend','Chosen friend remains recipient');
     check(document.activeElement===document.querySelector('[name=assigneeUserId]'),'Successful chooser handoff focuses the new task form: '+document.activeElement?.outerHTML.slice(0,300));
+    window.requestAnimationFrame=nativeFrame;for(const callback of delayedFrames)callback(performance.now());await tick();
+    check(document.activeElement===document.querySelector('[name=assigneeUserId]'),'Delayed panel/back focus cannot steal the task recipient focus');
     click('[data-action=task-prepare]');await tick();
     const prepared=calls.find(c=>c.operation==='prepare');check(prepared?.projectId==='project'&&!('path' in prepared),'Prepare carries project ID only');
     check(!calls.some(c=>c.operation==='send'),'No automatic send');click('[data-action=task-back]');await tick();

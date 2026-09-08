@@ -112,13 +112,14 @@ export function initCollaborationPanelShell({
   // Focus moves INTO the panel (for Escape and screen readers) but onto the
   // panel itself, not its first button: that button is "detach", and a focus
   // ring on it was the first thing you saw every time the panel opened.
-  const openPanel = () => { open = true; apply(); if (panel.tabIndex == null || panel.tabIndex < 0) panel.tabIndex = -1; requestAnimationFrame(() => panel.focus?.({ preventScroll: true })); };
+  // A task dialog may already have handed focus to an input before this frame.
+  const openPanel = () => { open = true; apply(); if (panel.tabIndex == null || panel.tabIndex < 0) panel.tabIndex = -1; requestAnimationFrame(() => { if (open && !panel.contains(document.activeElement)) panel.focus?.({ preventScroll: true }); }); };
   const closePanel = () => { if (!open) return; open = false; apply(); toggle.focus?.(); };
   const setConversationOpen = (value) => {
     conversationOpen = Boolean(value);
     panel.classList.toggle("is-conversation-open", conversationOpen);
     applyPanes();
-    if (conversationOpen && panes() === "one") requestAnimationFrame(() => backButton?.focus?.());
+    if (conversationOpen && panes() === "one") requestAnimationFrame(() => { if (open && conversationOpen && !conversation?.contains(document.activeElement)) backButton?.focus?.(); });
   };
   const togglePanel = () => open ? closePanel() : openPanel();
   const keydown = (event) => { if (open && event.key === "Escape") { event.preventDefault(); closePanel(); } };

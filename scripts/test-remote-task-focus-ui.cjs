@@ -6,7 +6,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(),'remote-task-focus-'));
 app.setPath('userData',path.join(temp,'data')); app.disableHardwareAcceleration();
 require('../src/main/config').bindRuntimePaths({userData:path.join(temp,'data'),home:temp,documents:temp});
 let win, sessions; const timer=setTimeout(()=>finish(1),30000);
-function finish(code){clearTimeout(timer);win?.destroy();sessions?.close();fs.rmSync(temp,{recursive:true,force:true});app.exit(code);}
+function finish(code){clearTimeout(timer);win?.destroy();try{sessions?.close();require('./lib/electron-test-cleanup.cjs')(temp);}catch(error){console.error(error);code=1;}app.exit(code);}
 app.whenReady().then(async()=>{
   const ProjectManager=require('../src/main/project-manager'),SessionManager=require('../src/main/session-manager');
   const {registerRemoteTaskWorkspace,focusRegisteredSession}=require('../src/main/collaboration/task-session');
