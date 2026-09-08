@@ -13,7 +13,8 @@ class Node extends EventTarget {
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
   removeAttribute(name) { this.attributes.delete(name); }
-  focus() {}
+  focus() { document.activeElement = this; }
+  contains(node) { return node === this || this.children.some(child => child?.contains?.(node)); }
   closest() { return null; }
   querySelector() { return null; }
   querySelectorAll() { return []; }
