@@ -10,6 +10,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { stopPid } = require("../process-tree-kill");
 const { latestWorkProgress } = require("../work-progress-protocol");
+const { sameJobGeneration, updateJobGeneration } = require("./process-job-generation").createJobGenerationGuard({ readRegistry, writeRegistry });
 
 const DEFAULT_LOG_TAIL_BYTES = 64 * 1024;
 const DEFAULT_STOP_TIMEOUT_MS = 5_000;
@@ -383,6 +384,7 @@ async function startLegacyJob(input = {}, options = {}) {
   child.unref();
   const record = {
     jobId,
+    generationId: crypto.randomUUID(),
     pid: child.pid || null,
     status: child.pid ? "running" : "failed",
     command,
@@ -403,41 +405,32 @@ async function startLegacyJob(input = {}, options = {}) {
   writeRegistry(registry, options);
 
   child.once("exit", (code, signal) => {
-    const latest = readRegistry(options);
-    const current = latest.jobs[jobId];
-    if (!current) return;
-    latest.jobs[jobId] = {
-      ...current,
-      status: code === 0 ? "exited" : "failed",
-      exitCode: code,
-      signal: signal || null,
-      updatedAt: nowIso(),
-    };
-    try { writeRegistry(latest, options); } catch { /* best effort */ }
+    try {
+      updateJobGeneration(record, (current) => ({
+        ...current,
+        status: code === 0 ? "exited" : "failed",
+        exitCode: code,
+        signal: signal || null,
+        updatedAt: nowIso(),
+      }), options);
+    } catch { /* best effort */ }
   });
   child.once("error", (err) => {
-    const latest = readRegistry(options);
-    const current = latest.jobs[jobId];
-    if (!current) return;
-    latest.jobs[jobId] = {
-      ...current,
-      status: "failed",
-      error: err?.message || String(err),
-      updatedAt: nowIso(),
-    };
-    try { writeRegistry(latest, options); } catch { /* best effort */ }
+    try {
+      updateJobGeneration(record, (current) => ({
+        ...current,
+        status: "failed",
+        error: err?.message || String(err),
+        updatedAt: nowIso(),
+      }), options);
+    } catch { /* best effort */ }
   });
 
   const waitMs = Number(input.waitForHealthMs || 0);
   const health = waitMs > 0
     ? await waitForHealth(record, record.healthcheck, waitMs)
     : await evaluateHealth(record, record.healthcheck);
-  const afterHealth = readRegistry(options);
-  if (afterHealth.jobs[jobId]) {
-    afterHealth.jobs[jobId].health = health;
-    afterHealth.jobs[jobId].updatedAt = nowIso();
-    writeRegistry(afterHealth, options);
-  }
+  updateJobGeneration(record, (current) => ({ ...current, health, updatedAt: nowIso() }), options);
   const progress = latestProgressForRecord({ ...record, health });
   return { ok: true, ...withProgressObservability(compactJob({ ...record, health }), progress), health };
 }
@@ -446,12 +439,13 @@ async function statusLegacyJob(input = {}, options = {}) {
   const found = findJob(input.jobId, options);
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const health = await evaluateHealth(found.record, input.healthcheck || found.record.healthcheck);
-  found.registry.jobs[found.id] = withObservedOutputFiles({ ...found.record, health, updatedAt: nowIso() });
-  writeRegistry(found.registry, options);
-  const progress = latestProgressForRecord(found.registry.jobs[found.id]);
+  const observed = updateJobGeneration(found.record,
+    (current) => withObservedOutputFiles({ ...current, health, updatedAt: nowIso() }), options);
+  if (!observed) return fail("JOB_REPLACED", { jobId: found.id });
+  const progress = latestProgressForRecord(observed);
   return {
     ok: true,
-    ...withProgressObservability(compactJob(found.registry.jobs[found.id]), progress),
+    ...withProgressObservability(compactJob(observed), progress),
     alive: isPidAlive(found.record.pid),
     stdoutBytes: fileSize(found.record.stdoutPath),
     stderrBytes: fileSize(found.record.stderrPath),
@@ -495,18 +489,20 @@ async function stopLegacyJob(input = {}, options = {}) {
   while (isPidAlive(pid) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  const latest = readRegistry(options);
+  if (!sameJobGeneration(latest.jobs[found.id], found.record)) return fail("JOB_REPLACED", { jobId: found.id });
   if (isPidAlive(pid) && input.force !== false) {
     try { process.kill(pid, "SIGKILL"); } catch { /* best effort */ }
   }
   const stopped = !isPidAlive(pid);
-  found.registry.jobs[found.id] = {
-    ...found.record,
+  latest.jobs[found.id] = {
+    ...latest.jobs[found.id],
     status: stopped ? "stopped" : "running",
     signal: stopped ? signal : null,
     updatedAt: nowIso(),
   };
-  writeRegistry(found.registry, options);
-  return { ok: stopped, stopped, ...compactJob(found.registry.jobs[found.id]) };
+  writeRegistry(latest, options);
+  return { ok: stopped, stopped, ...compactJob(latest.jobs[found.id]) };
 }
 
 function listLegacyJobs(input = {}, options = {}) {

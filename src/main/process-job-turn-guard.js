@@ -1,5 +1,9 @@
 "use strict";
 
+// Durable store terminal states plus legacy process-jobs-core receipts.
+const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "cancelled", "outcome_unknown", "exited", "stopped"]);
+const PROCESS_JOB_TOOL = /^(?:(?:mcp__)?lily_(?:process_jobs|pj)(?:__|[._/:]))?job_(?:start|status|logs|stop)$/;
+
 function parseJson(text) {
   try {
     return JSON.parse(String(text || ""));
@@ -49,12 +53,55 @@ function compactJob(payload = {}) {
   };
 }
 
+function jobGeneration(payload) {
+  const startedAt = typeof payload.startedAt === "string" ? Date.parse(payload.startedAt) : NaN;
+  return Number.isInteger(payload.pid) && payload.pid > 0 && Number.isFinite(startedAt)
+    ? { pid: payload.pid, startedAt }
+    : null;
+}
+
 function findBlockingRunningProcessJobs(tools = []) {
   const jobs = new Map();
+  const terminalJobs = new Set();
+  const generations = new Map();
   for (const tool of tools || []) {
     for (const payload of resultObjects(tool?.result)) {
-      if (!payload?.jobId || !isBlockingJobPayload(payload)) continue;
-      jobs.set(String(payload.jobId), compactJob(payload));
+      if (!payload?.jobId) continue;
+      const jobId = String(payload.jobId);
+      const statuses = [payload.state, payload.status].filter((value) => value != null);
+      const validReceipt = typeof payload.jobId === "string"
+        && (tool?.input?.jobId === undefined || tool.input.jobId === payload.jobId)
+        && payload.ok === true && payload.isError !== true
+        && tool?.result?.isError !== true && tool?.result?.ok !== false
+        && ["done", "completed"].includes(tool?.status)
+        && PROCESS_JOB_TOOL.test(String(tool?.name || ""))
+        && statuses.length > 0
+        && statuses.every((status) => typeof status === "string"
+          && status.toLowerCase() === statuses[0].toLowerCase());
+      const status = validReceipt ? statuses[0].toLowerCase() : "";
+      const generation = jobGeneration(payload);
+      const previous = generations.get(jobId);
+      if (previous && (!generation || generation.pid !== previous.pid || generation.startedAt !== previous.startedAt)) {
+        // Only an observed new start can reuse a legacy ID; status replies cannot.
+        const restarted = validReceipt && status === "running" && /job_start$/.test(tool.name)
+          && generation && generation.startedAt > previous.startedAt;
+        if (!restarted) continue;
+        terminalJobs.delete(jobId);
+        jobs.delete(jobId);
+        generations.set(jobId, generation);
+      }
+      if (terminalJobs.has(jobId)) continue;
+      if (validReceipt && generation && (status === "running" || TERMINAL_JOB_STATUSES.has(status))) {
+        generations.set(jobId, generation);
+      }
+      const validTerminal = validReceipt && TERMINAL_JOB_STATUSES.has(status);
+      if (validTerminal) {
+        // A terminal receipt ends liveness only; task acceptance is decided elsewhere.
+        terminalJobs.add(jobId);
+        jobs.delete(jobId);
+      } else if (isBlockingJobPayload(payload)) {
+        jobs.set(jobId, compactJob(payload));
+      }
     }
   }
   return [...jobs.values()];
