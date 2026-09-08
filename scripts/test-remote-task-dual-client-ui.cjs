@@ -10,7 +10,7 @@ let fixture;
 const timeout = setTimeout(() => { console.error("dual-client UI acceptance timed out"); finish(1); }, 90000);
 function finish(code) {
   clearTimeout(timeout); for (const win of windows) if (!win.isDestroyed()) win.destroy();
-  fixture?.close(); fs.rmSync(temporary, { recursive: true, force: true }); app.exit(code);
+  try { fixture?.close(); require('./lib/electron-test-cleanup.cjs')(temporary); } catch (error) { console.error(error); code = 1; } app.exit(code);
 }
 const renderer = path.resolve(__dirname, "../src/renderer");
 const url = file => pathToFileURL(path.join(renderer, file)).href;

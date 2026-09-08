@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {pathToFileURL}=require('node:url');const {app,BrowserWindow,ipcMain}=require('electron');
 const temp=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'task-cached-transfer-ui-')));app.setPath('userData',path.join(temp,'data'));app.disableHardwareAcceleration();
 let win,store,runtime;const timer=setTimeout(()=>finish(1),30000);
-function finish(code){clearTimeout(timer);win?.destroy();runtime?.stop();store?.close();fs.rmSync(temp,{recursive:true,force:true});app.exit(code);}
+function finish(code){clearTimeout(timer);win?.destroy();try{runtime?.stop();store?.close();require('./lib/electron-test-cleanup.cjs')(temp);}catch(error){console.error(error);code=1;}app.exit(code);}
 app.whenReady().then(async()=>{
   const {CollaborationStore}=require('../src/main/collaboration/collaboration-store');const {LocalCollaborationKeyring}=require('../src/main/collaboration/local-keyring');
   const {createTransferRuntime}=require('../src/main/collaboration/transfer-runtime');const {createTransferManifestStore}=require('../src/main/collaboration/transfer-manifest');

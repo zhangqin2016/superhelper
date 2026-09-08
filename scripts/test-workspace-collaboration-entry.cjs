@@ -5,7 +5,7 @@ const { app, BrowserWindow } = require('electron');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-collaboration-'));
 app.setPath('userData', path.join(temp, 'data')); app.disableHardwareAcceleration();
 let win; const timer = setTimeout(() => finish(1), 45000);
-function finish(code) { clearTimeout(timer); win?.destroy(); fs.rmSync(temp, { recursive: true, force: true }); app.exit(code); }
+function finish(code) { clearTimeout(timer); win?.destroy(); try { require('./lib/electron-test-cleanup.cjs')(temp); } catch (error) { console.error(error); code = 1; } app.exit(code); }
 app.whenReady().then(async () => {
   const renderer = path.join(__dirname, '../src/renderer');
   const markup = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');

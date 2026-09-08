@@ -84,5 +84,5 @@ app.whenReady().then(async () => {
   })()`);
   assert.deepEqual(results, { listOnly: true, visibleRead: true, badgeCleared: true, dedup: true, hiddenNotRead: true, reopenRead: true, unfocusedNotRead: true, focusRead: true, searchNotRead: true, searchExitRead: true, retried: true, viewportOnly: true, disposed: true });
   console.log('visible read: actual center read submission, unread badge, hidden-section fence and teardown passed');
-}).then(() => { clearTimeout(timeout); win?.destroy(); fs.rmSync(temp, { recursive: true, force: true }); app.exit(0); })
+}).then(() => { clearTimeout(timeout); win?.destroy(); require('./lib/electron-test-cleanup.cjs')(temp); app.exit(0); })
   .catch(error => { console.error(error); clearTimeout(timeout); win?.destroy(); app.exit(1); });

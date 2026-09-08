@@ -58,6 +58,6 @@ export function connectWorkspaceCollaboration({ getContext, getPolicy, refreshPo
     await opening;
     if (!isCurrent() || !current(own) || getContext().conversationId !== conversationId) return { reason: "changed" };
     await tasks.create({ projectId, isCurrent: () => isCurrent() && current(own), ...(target.userId ? { assigneeUserId: target.userId } : {}) });
-    return { ok: true, focus: () => requestAnimationFrame(() => { if (current(own)) focusTask?.(); }) };
+    return { ok: true, focus: () => { if (current(own)) focusTask?.(); } };
   } });
 }
