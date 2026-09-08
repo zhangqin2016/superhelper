@@ -5,6 +5,10 @@ import module from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// This harness runs outside Electron (no OS keychain). Storing a key in plain
+// Base64 is now an explicit opt-in (see test-secret-storage-guard.mjs); this
+// test is not about storage, so opt in here.
+process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = module.createRequire(import.meta.url);

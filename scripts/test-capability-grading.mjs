@@ -14,6 +14,10 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+// This harness runs outside Electron (no OS keychain). Storing a key in plain
+// Base64 is now an explicit opt-in (see test-secret-storage-guard.mjs); this
+// test is not about storage, so opt in here.
+process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-capability-grading-"));
 const savedEnv = {};

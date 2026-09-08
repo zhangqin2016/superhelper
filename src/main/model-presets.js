@@ -955,8 +955,9 @@ function updateCustomPreset(presetId, {
     existing: previous.apiKey || "",
   });
   if (!keyValidated.ok) return keyValidated;
-  // Only a NEW key needs storage; keeping the existing one re-uses its record.
-  if (String(apiKey || "").trim() && !secretStorageAvailable()) return { ok: false, error: "SECRET_STORAGE_UNAVAILABLE" };
+  // Only a NEW or CHANGED key needs storage; re-saving the key already on file
+  // (self-heal re-probes pass it back verbatim) re-uses the stored record.
+  if (String(apiKey || "").trim() && String(apiKey).trim() !== String(previous?.apiKey || "").trim() && !secretStorageAvailable()) return { ok: false, error: "SECRET_STORAGE_UNAVAILABLE" };
 
   const haikuValidated = validateOptionalModelId(modelHaiku);
   const sonnetValidated = validateOptionalModelId(modelSonnet);
