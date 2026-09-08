@@ -8,6 +8,11 @@
       "failureFallback": "Unknown, stale, failed or incomplete evidence remains unverified or observed. Continuation never bypasses user input or recursively recovers itself.",
       "tests": [
         "scripts/test-task-completion-integrity.mjs",
+        "scripts/test-task-request-continuity.mjs",
+        "scripts/test-task-execution-classification.mjs",
+        "scripts/test-task-source-resolution.mjs",
+        "scripts/test-parent-closure-lease-resume.mjs",
+        "scripts/test-parent-closure-live-failure.mjs",
         "scripts/test-task-original-acceptance.mjs",
         "scripts/test-task-objective-coverage.mjs",
         "scripts/test-task-acceptance-recovery.mjs",
