@@ -186,8 +186,17 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
   const profile = runtimeOptions.modelProfile;
   const context = positiveInt(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS);
   const output = positiveInt(lilyEnv.LILY_MAX_OUTPUT_TOKENS);
+  // The SDK turns `limit.output` into `max_tokens`. When the probe learned that
+  // this endpoint refuses that field, the same number rides the request body
+  // as `max_completion_tokens` (model options are spread into the body by the
+  // openai-compatible SDK) and the SDK is left with no `max_tokens` to send.
+  const learnedShape = require("../openai-request-shape").shapeFromEnv(lilyEnv);
+  const routeLimitThroughOptions = Boolean(output) && learnedShape.outputLimitField === "max_completion_tokens";
+  if (routeLimitThroughOptions) {
+    models[modelId].options = { ...(models[modelId].options || {}), max_completion_tokens: output };
+  }
   // OpenCode requires both keys; zero retains its existing unknown-limit behavior.
-  if (context || output) models[modelId].limit = { context: context || 0, output: output || 0 };
+  if (context || (output && !routeLimitThroughOptions)) models[modelId].limit = { context: context || 0, output: routeLimitThroughOptions ? 0 : (output || 0) };
   if (profile?.capabilities) {
     models[modelId].tool_call = profile.capabilities.toolCall !== false;
     models[modelId].modalities = {

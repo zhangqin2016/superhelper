@@ -16,7 +16,13 @@ function isBusy() {
   return anySessionRunning();
 }
 
-function apiErrorMessage(error) {
+function apiErrorMessage(error, detail = null) {
+  if (error === "SECRET_STORAGE_UNAVAILABLE") return t("toast.modelSecretStorageUnavailable");
+  // An HTTP rejection with the server's own (redacted) words: which parameter,
+  // which model, which key — instead of one sentence for every failure.
+  if (/^HTTP_\d+$/.test(String(error || "")) && detail?.message) {
+    return t("toast.modelRequestRejected", { status: String(error).slice(5), detail: `${detail.code ? `${detail.code}: ` : ""}${detail.message}` });
+  }
   if (error === "INVALID_BASE_URL") return t("toast.modelApiInvalidBaseUrl");
   if (error === "INVALID_API_KEY") return t("toast.modelApiInvalidKey");
   if (error === "INVALID_LABEL") return t("toast.modelCustomInvalidLabel");
@@ -370,7 +376,7 @@ export async function initModelSettings() {
         protocol: provider.protocol,
       });
       if (!result.ok) {
-        showToast(apiErrorMessage(result.error), "error");
+        showToast(apiErrorMessage(result.error, result.detail), "error");
         return;
       }
       if ($("modelCatalogKey")) $("modelCatalogKey").value = "";
@@ -408,7 +414,7 @@ export async function initModelSettings() {
         ? await window.assistantClient.updateCustomModel(editingCustomPresetId, payload)
         : await window.assistantClient.saveCustomModel(payload);
       if (!result.ok) {
-        showToast(apiErrorMessage(result.error), "error");
+        showToast(apiErrorMessage(result.error, result.detail), "error");
         return;
       }
 

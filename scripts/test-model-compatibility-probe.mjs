@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+// This harness runs outside Electron (no OS keychain). Saving a preset stores a
+// key, and plaintext storage is now an explicit opt-in — this test is about the
+// probe, not about storage, so opt in here; test-secret-storage-guard.mjs covers
+// the refusal itself.
+process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";

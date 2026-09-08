@@ -76,7 +76,8 @@ function resolveJudgeConnectionDetailed() {
       const raw = JSON.parse(String(env?.LILY_OPENCODE_BODY_OVERLAY_JSON || ""));
       if (raw && typeof raw === "object" && !Array.isArray(raw)) bodyOverlay = raw;
     } catch { /* no overlay contract for this preset */ }
-    return { connection: { baseUrl, apiKey, model, protocol, bodyOverlay }, reason: "" };
+    const requestShape = require("./openai-request-shape").shapeFromEnv(env || {});
+    return { connection: { baseUrl, apiKey, model, protocol, bodyOverlay, requestShape }, reason: "" };
   } catch (error) {
     return { connection: null, reason: `resolve_error:${error?.message || error}` };
   }
@@ -117,26 +118,25 @@ async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics }) {
       const parts = Array.isArray(json?.content) ? json.content : [];
       return parts.map((part) => (typeof part?.text === "string" ? part.text : "")).join("");
     }
-    const response = await fetch(`${trimUrl(connection.baseUrl)}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${connection.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: connection.model,
-        max_tokens: 8000,
-        temperature: 0,
-        ...(connection.bodyOverlay || {}),
-        messages: [{ role: "user", content: prompt }],
-      }),
+    // Output limit / temperature are placed by the request shape this endpoint
+    // taught us (probe-learned via LILY_MODEL_REQUEST_SHAPE, or learned right
+    // here on a parameter rejection and remembered for the process).
+    const requestShape = require("./openai-request-shape");
+    const sent = await requestShape.sendChatCompletion({
+      url: `${trimUrl(connection.baseUrl)}/chat/completions`,
+      headers: { authorization: `Bearer ${connection.apiKey}` },
+      body: { model: connection.model, ...(connection.bodyOverlay || {}), messages: [{ role: "user", content: prompt }] },
+      maxTokens: 8000,
+      temperature: 0,
+      shape: requestShape.recallShape(connection.baseUrl, connection.model, connection.requestShape),
       signal: controller.signal,
+      onAdapt: (shape) => requestShape.rememberShape(connection.baseUrl, connection.model, shape),
     });
-    if (!response.ok) {
-      if (diagnostics) diagnostics.reason = `http_${response.status}`;
+    if (!sent.ok) {
+      if (diagnostics) diagnostics.reason = sent.status ? `http_${sent.status}${sent.error?.code ? `:${sent.error.code}` : ""}` : `network:${sent.error?.message || ""}`;
       return "";
     }
-    const json = await response.json().catch(() => null);
+    const json = sent.json;
     const message = json?.choices?.[0]?.message || {};
     // Thinking models may spend the budget on reasoning_content and leave
     // content empty — the verdict JSON is often written there. The verdict

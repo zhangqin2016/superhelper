@@ -1394,6 +1394,8 @@
   "toast.modelApiSaved": "API 连接已保存",
   "toast.modelApiReset": "已恢复内置 API",
   "toast.modelApiSaveFailed": "保存 API 连接失败",
+  "toast.modelRequestRejected": "模型服务拒绝了请求（HTTP {status}）：{detail}",
+  "toast.modelSecretStorageUnavailable": "系统安全存储不可用，无法保存密钥。请在系统启用钥匙串/凭据保护后重试；仅在受控环境可用 LILY_ALLOW_PLAINTEXT_SECRETS=1 明确允许明文存储。",
   "toast.modelProbeToolShapeUnsupported": "该网关无法处理智能体工具调用：兼容性检测发现它对携带较长工具名或嵌套参数的请求返回错误。请联系网关管理员修复后重试。",
   "toast.modelProbeToolCallsUnavailable": "该模型或网关不支持工具调用（Function Calling），无法用于智能体对话。",
   "toast.modelProbeReasoningOnly": "该模型只返回思考内容、没有正文。请更换模型，或在网关侧关闭思考模式后重试。",

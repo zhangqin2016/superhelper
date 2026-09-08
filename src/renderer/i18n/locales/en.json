@@ -1394,6 +1394,8 @@
   "toast.modelApiSaved": "API connection saved",
   "toast.modelApiReset": "Restored built-in API",
   "toast.modelApiSaveFailed": "Failed to save API connection",
+  "toast.modelRequestRejected": "The model service rejected the request (HTTP {status}): {detail}",
+  "toast.modelSecretStorageUnavailable": "Secure secret storage is unavailable, so the key was not saved. Enable the OS keychain/credential protection and retry; only in a controlled environment set LILY_ALLOW_PLAINTEXT_SECRETS=1 to allow plaintext storage explicitly.",
   "toast.modelProbeToolShapeUnsupported": "This gateway cannot handle agent tool calls: the compatibility check found it fails requests carrying longer tool names or nested parameters. Ask the gateway admin to fix it, then retry.",
   "toast.modelProbeToolCallsUnavailable": "This model or gateway does not support tool calls (function calling), so it cannot power agent conversations.",
   "toast.modelProbeReasoningOnly": "This model only returns reasoning with no answer text. Switch models, or disable thinking mode on the gateway and retry.",

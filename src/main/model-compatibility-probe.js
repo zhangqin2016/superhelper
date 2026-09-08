@@ -1,5 +1,8 @@
 "use strict";
 
+const requestShape = require("./openai-request-shape");
+const { AGENT_SHAPE_DECOY_TOOLS, toolProbeFields } = require("./model-probe-tools");
+
 function trimUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
@@ -8,6 +11,9 @@ function mergeBody(base, overlay) {
   if (!overlay || typeof overlay !== "object" || Array.isArray(overlay)) return { ...base };
   const out = { ...base };
   for (const [key, value] of Object.entries(overlay)) {
+    // `null` removes a key. Without this an overlay could add a field but never
+    // take one away, so a gateway that rejects a default field was unfixable.
+    if (value === null) { delete out[key]; continue; }
     if (
       value &&
       typeof value === "object" &&
@@ -75,68 +81,6 @@ function streamShape(text) {
 // tool but return an HTML error page for any request containing these shapes,
 // which breaks every real turn even though a simple tool probe passes. The
 // decoys ride along the forced lily_probe_tool call and are never invoked.
-const AGENT_SHAPE_DECOY_TOOLS = Object.freeze([
-  {
-    type: "function",
-    function: {
-      // 44 chars — covers Lily's longest real tool name with headroom
-      name: "lily_probe_agent_tool_shape_name_len_check_a",
-      description: "Probe decoy mirroring Lily's longest real tool names.",
-      parameters: {
-        type: "object",
-        properties: { ok: { type: "boolean" } },
-        required: ["ok"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "lily_probe_nested_params",
-      description: "Probe decoy mirroring Lily tools with nested object parameters.",
-      parameters: {
-        type: "object",
-        properties: {
-          range: {
-            type: "object",
-            properties: {
-              start: { type: "integer" },
-              end: { type: "integer" },
-            },
-            required: ["start"],
-          },
-        },
-        required: ["range"],
-        additionalProperties: false,
-      },
-    },
-  },
-]);
-
-function toolProbeFields(extraTools = [], toolChoice = null) {
-  return {
-    tools: [{
-      type: "function",
-      function: {
-        name: "lily_probe_tool",
-        description: "Return a probe result.",
-        parameters: {
-          type: "object",
-          properties: {
-            ok: { type: "boolean" },
-          },
-          required: ["ok"],
-          additionalProperties: false,
-        },
-      },
-    }, ...extraTools],
-    tool_choice: toolChoice || {
-      type: "function",
-      function: { name: "lily_probe_tool" },
-    },
-  };
-}
 
 // maxTokens default 512 (not 16): a reasoning model spends its output budget on
 // reasoning_content FIRST, so a tiny probe finishes with reason "length" and EMPTY
@@ -151,32 +95,39 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
   const messages = [];
   if (systemText) messages.push({ role: "system", content: String(systemText) });
   messages.push({ role: "user", content: userText || (tools ? "Call lily_probe_tool with ok=true." : "Say pong only.") });
+  // The output limit is placed by the request shape this endpoint has taught
+  // us so far (default `max_tokens`); a rejection that names the parameter
+  // adapts the shape and re-sends inside sendChatCompletion. An overlay still
+  // wins over both — it is the operator's explicit word.
+  const overlay = bodyOverlay && typeof bodyOverlay === "object" ? bodyOverlay : null;
   const body = mergeBody({
     model,
     messages,
-    max_tokens: maxTokens,
-    stream: Boolean(stream),
     ...(tools ? toolProbeFields(extraTools, toolChoice) : {}),
-  }, bodyOverlay);
+  }, overlay);
+  const overlayLimit = overlay ? requestShape.OUTPUT_LIMIT_FIELDS.find((field) => Object.prototype.hasOwnProperty.call(overlay, field)) : null;
   try {
-    const response = await fetch(`${trimUrl(baseUrl)}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify(body),
+    const sent = await requestShape.sendChatCompletion({
+      url: `${trimUrl(baseUrl)}/chat/completions`,
+      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+      body,
+      // An overlay that fixes the limit field keeps it verbatim.
+      maxTokens: overlayLimit ? undefined : maxTokens,
+      shape: requestShape.recallShape(baseUrl, model),
+      stream,
       signal: controller.signal,
+      onAdapt: (shape) => requestShape.rememberShape(baseUrl, model, shape),
     });
-    const text = await response.text();
-    if (stream) return { ok: response.ok, status: response.status, shape: streamShape(text) };
-    let json = null;
-    try {
-      json = JSON.parse(text || "{}");
-    } catch {
-      json = null;
+    if (overlayLimit && sent.sentBody) { /* limit came from the overlay */ }
+    if (!sent.ok) {
+      if (sent.status === 0) return { ok: false, error: sent.error?.message || "MODEL_PROBE_NETWORK" };
+      return { ok: false, status: sent.status, json: sent.json, detail: sent.error, shape: messageShape(sent.json) };
     }
-    return { ok: response.ok, status: response.status, json, shape: messageShape(json) };
+    if (stream) {
+      const text = await sent.response.text();
+      return { ok: true, status: sent.response.status, shape: streamShape(text) };
+    }
+    return { ok: true, status: sent.response.status, json: sent.json, shape: messageShape(sent.json) };
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
   } finally {
@@ -217,10 +168,10 @@ async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutM
     // still emits a tool_call in 16 tokens). Reuse the working budget for stream.
     const small = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, maxTokens: 16, timeoutMs });
     if (small.ok) { nonStream = small; maxTokens = 16; }
-    else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
+    else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}`, detail: nonStream.detail || null };
   }
   const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, toolChoice, maxTokens, stream: true, timeoutMs });
-  if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}` };
+  if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}`, detail: stream.detail || null };
   return {
     ok: true,
     toolChoice: toolChoice || "forced",
@@ -240,10 +191,10 @@ async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, time
   if (!nonStream.ok) {
     const small = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens: 16, timeoutMs });
     if (small.ok) { nonStream = small; maxTokens = 16; }
-    else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
+    else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}`, detail: nonStream.detail || null };
   }
   const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens, stream: true, timeoutMs });
-  if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}`, nonStreamShape: nonStream.shape };
+  if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}`, detail: stream.detail || null, nonStreamShape: nonStream.shape };
   return {
     ok: true,
     nonStreamShape: nonStream.shape,
@@ -621,7 +572,9 @@ async function probeCustomModelProfile({
     return { ok: true, profile: {}, diagnostics: { skipped: "non-openai-protocol" } };
   }
   const plain = await validateAgentConformance({ baseUrl, apiKey, model, timeoutMs });
-  if (!plain.ok) return { ok: false, error: plain.error };
+  // The server's own words ride along (redacted): "HTTP_400" alone told the user
+  // nothing about a rejected parameter, a wrong model id or a revoked key.
+  if (!plain.ok) return { ok: false, error: plain.error, ...(plain.detail ? { detail: plain.detail } : {}) };
 
   const finish = async ({ bodyOverlay = null, contentSource, toolShapeCompat = false, diagnostics = {} }) => {
     const prompt = await probeSystemPromptProfile({ baseUrl, apiKey, model, bodyOverlay, systemPromptProbeText, timeoutMs });
@@ -635,11 +588,15 @@ async function probeCustomModelProfile({
         capability = null;
       }
     }
+    // Learned request shape: non-default only, so a profile from a normal
+    // gateway stays byte-identical to before.
+    const learnedShape = requestShape.compactRequestShape(requestShape.recallShape(baseUrl, model));
     return {
       ok: true,
       profile: {
         probeVersion: PROBE_PROFILE_VERSION,
         ...(bodyOverlay ? { requestBodyOverlay: bodyOverlay } : {}),
+        ...(learnedShape ? { requestShape: learnedShape } : {}),
         ...(toolShapeCompat ? { toolShapeCompat: true } : {}),
         ...(capability ? { capability } : {}),
         conformance: {

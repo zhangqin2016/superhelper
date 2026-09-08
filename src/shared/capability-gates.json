@@ -911,6 +911,29 @@
         "scripts/test-live-task-strip.mjs",
         "scripts/test-turn-todo-entry.mjs"
       ]
+    },
+    {
+      "id": "openai-request-shape-adaptive",
+      "protects": "Any OpenAI-style endpoint can be added and used regardless of which output-limit field it accepts. Every direct request Lily makes (compatibility probe, evidence judge, scheduled-task draft, connectivity diagnostics, vision, the platform gateway's upstream calls) and the engine's configured output limit take their shape from what the server itself answered: `max_tokens` by default, `max_completion_tokens` after a 400 that names the parameter, no temperature after an unsupported_value on it. Nothing is keyed on a model name or host. The learned shape is persisted on the preset (compatibilityProfile.requestShape), handed to the runtime as LILY_MODEL_REQUEST_SHAPE, and remembered per endpoint+model for the process. A rejection for any other reason carries the server's redacted code/param/message to the caller and the UI.",
+      "baseline": "Reported 2026-09-08: adding an official OpenAI model failed with '保存 API 连接失败' — the probe hard-coded max_tokens, its retry only shrank the number, and the 400 body was reduced to HTTP_400. The same hard-coded field sat in five other call sites and the server gateway; tests passed because every mock accepted anything. Strictly additive: the default shape is byte-identical to the previous requests, adaptation happens only on an explicit 4xx that names a parameter we sent, and is bounded to three lessons per call.",
+      "failureFallback": "Fail-open by construction: with no rejection nothing changes; a rejection that names no parameter is returned as before (plus structured detail); network errors are structured results, never throws; the engine keeps limit.output unless the learned field is max_completion_tokens AND an output limit is configured. Mutation-verified 2026-09-08 (each fails by name): classifier never adapts; send loop never re-sends; probe forgets the learned shape; profile normalization drops requestShape; engine config ignores the learned shape; probe swallows the server detail; gateway never retries.",
+      "tests": [
+        "scripts/test-openai-request-shape.mjs",
+        "scripts/test-model-probe-request-shape.mjs",
+        "scripts/test-model-gateway-request-shape.mjs",
+        "scripts/test-model-compatibility-probe.mjs",
+        "scripts/test-model-gateway-openai-adapter.mjs"
+      ]
+    },
+    {
+      "id": "secret-storage-no-silent-plaintext",
+      "protects": "A model API key or mail password is never written as plain Base64 by accident. When the OS secure storage is unavailable, saving a NEW secret is refused with SECRET_STORAGE_UNAVAILABLE (shown to the user in words), the operator can opt in explicitly with LILY_ALLOW_PLAINTEXT_SECRETS=1, and operations that merely re-serialize an already stored secret (switch active preset, relabel) keep working by reusing the stored record. Existing plaintext records still read back.",
+      "baseline": "Before 2026-09-08 protectSecret() silently fell back to Base64 (encrypted:false) in model-presets.js and mail-accounts.js — an encoding presented as storage. Found during the request-shape audit; the collaboration keyring already refused in the same situation, so the repo had the safer precedent.",
+      "failureFallback": "The read path is unchanged (legacy records decode). The device keypair in service-client.js keeps its fallback because the app cannot start without one — noted, not changed. Test harnesses without Electron opt in explicitly. Mutation-verified 2026-09-08: restoring the silent fallback and removing the stored-record reuse each fail by name.",
+      "tests": [
+        "scripts/test-secret-storage-guard.mjs",
+        "scripts/test-model-settings-secret-storage.mjs"
+      ]
     }
   ]
 }

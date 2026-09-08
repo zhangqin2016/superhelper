@@ -145,30 +145,41 @@ function systemPrompt() {
   ].join("\n");
 }
 
-async function callModelApi({ url, protocol, apiKey, model, text, now }) {
+async function callModelApi({ url, protocol, apiKey, model, text, now, requestShape = null }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const resolvedProtocol = normalizeProtocol(protocol);
-  const body = resolvedProtocol === "openai"
-    ? {
-        model,
-        max_tokens: 700,
-        temperature: 0,
-        messages: [
+  if (resolvedProtocol === "openai") {
+    // Limit and temperature are placed by the learned request shape; a
+    // parameter rejection adapts it and re-sends instead of failing the draft.
+    const shapes = require("./openai-request-shape");
+    try {
+      const sent = await shapes.sendChatCompletion({
+        url,
+        headers: { authorization: `Bearer ${apiKey}` },
+        body: { model, messages: [
           { role: "system", content: systemPrompt() },
           { role: "user", content: `Now: ${now}\nUser request: ${text}` },
-        ],
-      }
-    : {
-        model,
-        max_tokens: 700,
+        ] },
+        maxTokens: 700,
         temperature: 0,
-        system: systemPrompt(),
-        messages: [{
-          role: "user",
-          content: `Now: ${now}\nUser request: ${text}`,
-        }],
-      };
+        shape: shapes.recallShape(url, model, requestShape),
+        signal: controller.signal,
+        onAdapt: (shape) => shapes.rememberShape(url, model, shape),
+      });
+      if (!sent.ok) return { ok: false, error: "AI_DRAFT_REQUEST_FAILED", status: sent.status, detail: sent.error?.message || "" };
+      return { ok: true, json: sent.json };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const body = {
+    model,
+    max_tokens: 700,
+    temperature: 0,
+    system: systemPrompt(),
+    messages: [{ role: "user", content: `Now: ${now}\nUser request: ${text}` }],
+  };
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -213,6 +224,7 @@ async function parseScheduledTaskDraftWithModel(payload = {}) {
     model,
     text,
     now: payload.now || new Date().toISOString(),
+    requestShape: require("./openai-request-shape").shapeFromEnv(env),
   });
   if (!result.ok) return result;
   return normalizeModelDraft(parseJsonObject(extractText(result.json)), payload);

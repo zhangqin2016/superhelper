@@ -1,5 +1,26 @@
 "use strict";
 
+const requestShapeModule = require("./openai-request-shape");
+const { getSafeStorage, secretStorageAvailable, protectSecret, unprotectSecret, hydrateSecret } = require("./model-preset-secrets");
+
+function userSettingsPath() {
+  return userDataPath("model-settings.json");
+}
+
+function readJson(filePath, fallback) {
+  try {
+    if (!fs.existsSync(filePath)) return fallback;
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(filePath, data) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+}
+
 const fs = require("node:fs");
 const path = require("node:path");
 const { userDataPath } = require("./config");
@@ -29,66 +50,6 @@ function legacyProtocolForBaseUrl(baseUrl) {
   return /\/anthropic(\/|$)/i.test(String(baseUrl || "")) ? "anthropic" : DEFAULT_PROTOCOL;
 }
 
-function getSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
-
-function userSettingsPath() {
-  return userDataPath("model-settings.json");
-}
-
-function readJson(filePath, fallback) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
-}
-
-function protectSecret(value) {
-  const text = String(value || "").trim();
-  if (!text) return null;
-  const safeStorage = getSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return {
-      encrypted: true,
-      data: safeStorage.encryptString(text).toString("base64"),
-    };
-  }
-  return {
-    encrypted: false,
-    data: Buffer.from(text, "utf8").toString("base64"),
-  };
-}
-
-function unprotectSecret(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(String(record.data), "base64");
-  if (!record.encrypted) return buf.toString("utf8");
-  const safeStorage = getSafeStorage();
-  if (!safeStorage?.isEncryptionAvailable?.()) return "";
-  try {
-    return safeStorage.decryptString(buf);
-  } catch {
-    return "";
-  }
-}
-
-function hydrateSecret(value, protectedRecord) {
-  const plain = String(value || "").trim();
-  if (plain) return plain;
-  return unprotectSecret(protectedRecord);
-}
 
 function hydrateUserChoice(raw) {
   const apiGateway = raw?.apiGateway && typeof raw.apiGateway === "object"
@@ -111,10 +72,24 @@ function hydrateUserChoice(raw) {
 }
 
 function serializeUserChoice(user) {
+  // When secure storage is unavailable and no plaintext opt-in is set,
+  // protectSecret refuses. A key that is merely being re-serialized (switching
+  // the active preset, editing a label) already has a stored record — reuse it
+  // so those operations keep working; only a NEW key has nowhere safe to go.
+  const stored = readJson(userSettingsPath(), {}) || {};
+  const storedPresets = new Map((stored.customPresets || []).map((entry) => [entry?.id, entry?.apiKeyProtected || null]));
+  const protectOrReuse = (apiKey, previous) => {
+    try {
+      return protectSecret(apiKey);
+    } catch (error) {
+      if (error?.code === "SECRET_STORAGE_UNAVAILABLE" && previous && hydrateSecret("", previous) === String(apiKey || "").trim()) return previous;
+      throw error;
+    }
+  };
   const apiGateway = user?.apiGateway
     ? {
         ...user.apiGateway,
-        apiKeyProtected: protectSecret(user.apiGateway.apiKey),
+        apiKeyProtected: protectOrReuse(user.apiGateway.apiKey, stored.apiGateway?.apiKeyProtected || null),
       }
     : null;
   if (apiGateway) delete apiGateway.apiKey;
@@ -122,7 +97,7 @@ function serializeUserChoice(user) {
   const customPresets = (user?.customPresets || []).map((preset) => {
     const entry = {
       ...preset,
-      apiKeyProtected: protectSecret(preset.apiKey),
+      apiKeyProtected: protectOrReuse(preset.apiKey, storedPresets.get(preset.id) || null),
     };
     delete entry.apiKey;
     return entry;
@@ -293,6 +268,10 @@ function normalizeCompatibilityProfile(value) {
     : null;
   if (probeVersion) out.probeVersion = probeVersion;
   if (requestBodyOverlay) out.requestBodyOverlay = requestBodyOverlay;
+  // Request shape the endpoint taught the probe (e.g. max_completion_tokens);
+  // only a non-default shape is kept.
+  const requestShape = requestShapeModule.compactRequestShape(value.requestShape);
+  if (requestShape) out.requestShape = requestShape;
   if (value.toolShapeCompat === true) out.toolShapeCompat = true;
   if (capability) out.capability = capability;
   if (conformance) out.conformance = conformance;
@@ -335,6 +314,7 @@ function buildCompatibilityProfileRuntimeEnv(compatibilityProfile, requestBodyOv
   const env = {};
   const overlay = normalizeRequestBodyOverlay(requestBodyOverlay || profile?.requestBodyOverlay);
   if (overlay) env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(overlay);
+  if (profile?.requestShape) env.LILY_MODEL_REQUEST_SHAPE = JSON.stringify(profile.requestShape);
 
   // Two independent evidence sources cap the system-guide size; the runtime
   // gets the tighter one: an observed explicit size ceiling (v6 prompt probe)
@@ -882,6 +862,7 @@ function saveCustomPreset({
     required: Boolean(urlValidated.baseUrl) && !isLoopbackBaseUrl(urlValidated.baseUrl),
   });
   if (!keyValidated.ok) return keyValidated;
+  if (keyValidated.apiKey && !secretStorageAvailable()) return { ok: false, error: "SECRET_STORAGE_UNAVAILABLE" };
 
   const haikuValidated = validateOptionalModelId(modelHaiku);
   const sonnetValidated = validateOptionalModelId(modelSonnet);
@@ -973,6 +954,8 @@ function updateCustomPreset(presetId, {
     existing: previous.apiKey || "",
   });
   if (!keyValidated.ok) return keyValidated;
+  // Only a NEW key needs storage; keeping the existing one re-uses its record.
+  if (String(apiKey || "").trim() && !secretStorageAvailable()) return { ok: false, error: "SECRET_STORAGE_UNAVAILABLE" };
 
   const haikuValidated = validateOptionalModelId(modelHaiku);
   const sonnetValidated = validateOptionalModelId(modelSonnet);
@@ -1046,6 +1029,8 @@ async function saveCustomPresetWithProbe(input = {}) {
   if (!keyValidated.ok) return keyValidated;
   const modelValidated = validateCustomInput(input.label, input.model);
   if (!modelValidated.ok) return modelValidated;
+  // Do not spend a probe on a key we could not store safely afterwards.
+  if (keyValidated.apiKey && !secretStorageAvailable()) return { ok: false, error: "SECRET_STORAGE_UNAVAILABLE" };
 
   const probe = await require("./model-compatibility-probe").probeCustomModelProfile({
     protocol,
@@ -1073,6 +1058,7 @@ async function saveCustomPresetWithProbe(input = {}) {
     return {
       ok: false,
       error: probe.error || "MODEL_PROBE_FAILED",
+      ...(probe.detail ? { detail: probe.detail } : {}),
     };
   }
   return saveCustomPreset({
@@ -1154,6 +1140,7 @@ async function updateCustomPresetWithProbe(presetId, input = {}) {
     return {
       ok: false,
       error: probe.error || "MODEL_PROBE_FAILED",
+      ...(probe.detail ? { detail: probe.detail } : {}),
     };
   }
   return updateCustomPreset(presetId, {
@@ -1284,6 +1271,7 @@ function setApiGateway({ mode, baseUrl, apiKey, protocol, tlsSkipVerify }) {
     existing: user.apiGateway?.apiKey || "",
   });
   if (!keyValidated.ok) return keyValidated;
+  if (String(apiKey || "").trim() && !secretStorageAvailable()) return { ok: false, error: "SECRET_STORAGE_UNAVAILABLE" };
 
   persistUserChoice({
     ...user,

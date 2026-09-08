@@ -45,10 +45,13 @@ function protectSecret(value) {
       data: safeStorage.encryptString(text).toString("base64"),
     };
   }
-  return {
-    encrypted: false,
-    data: Buffer.from(text, "utf8").toString("base64"),
-  };
+  // Base64 is not encryption. Only an explicit operator opt-in
+  // (LILY_ALLOW_PLAINTEXT_SECRETS=1) writes a mail password that way; existing
+  // records still read back.
+  if (process.env.LILY_ALLOW_PLAINTEXT_SECRETS === "1") {
+    return { encrypted: false, data: Buffer.from(text, "utf8").toString("base64") };
+  }
+  throw Object.assign(new Error("Secure secret storage is unavailable"), { code: "SECRET_STORAGE_UNAVAILABLE" });
 }
 
 function unprotectSecret(record) {

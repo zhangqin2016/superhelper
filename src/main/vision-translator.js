@@ -11,8 +11,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const https = require("node:https");
-const http = require("node:http");
 const { resolveSettingsEnvValue } = require("./agent-settings");
 const { bridgeConcurrency, bridgeImagesConcurrently } = require("./vision-bridge-runner");
 const { withLiveFilePath } = require("./live-file-source");
@@ -370,49 +368,27 @@ function normalizeVisionContent(content) {
   return "";
 }
 
-function callVisionApi(config, payload) {
+async function callVisionApi(config, payload) {
   const url = new URL(`${config.baseUrl.replace(/\/?$/, "/")}chat/completions`);
-  const body = JSON.stringify(payload);
-  const transport = url.protocol === "https:" ? https : http;
-
-  return new Promise((resolve, reject) => {
-    const req = transport.request(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(body),
-      },
-    }, (res) => {
-      let data = "";
-      res.on("data", (chunk) => { data += chunk; });
-      res.on("end", () => {
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`Vision API ${res.statusCode}: ${data.slice(0, 300)}`));
-        }
-        try {
-          const parsed = JSON.parse(data);
-          const content = normalizeVisionContent(parsed?.choices?.[0]?.message?.content);
-          if (!content) {
-            return reject(new Error("Vision API returned no readable image content"));
-          }
-          resolve(content);
-        } catch (err) {
-          if (err?.message === "Vision API returned no readable image content") {
-            return reject(err);
-          }
-          reject(new Error("Vision API returned an invalid response"));
-        }
-      });
-    });
-    req.on("error", reject);
-    req.setTimeout(getVisionTimeoutMs(), () => {
-      req.destroy();
-      reject(new Error("Vision API timeout"));
-    });
-    req.write(body);
-    req.end();
+  // Vision endpoints differ in which output-limit field they accept; learn it
+  // from the response instead of hard-coding one.
+  const shapes = require("./openai-request-shape");
+  const { max_tokens: maxTokens, temperature, ...rest } = payload || {};
+  const sent = await shapes.sendChatCompletion({
+    url: url.toString(),
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+    body: rest,
+    maxTokens,
+    temperature,
+    shape: shapes.recallShape(config.baseUrl, config.model),
+    signal: AbortSignal.timeout(getVisionTimeoutMs()),
+    onAdapt: (shape) => shapes.rememberShape(config.baseUrl, config.model, shape),
   });
+  if (!sent.ok) {
+    if (!sent.status) throw new Error(`Vision API request failed: ${sent.error?.message || "network"}`);
+    throw new Error(`Vision API ${sent.status}: ${sent.error?.message || ""}`.slice(0, 320));
+  }
+  return sent.json;
 }
 
 /**

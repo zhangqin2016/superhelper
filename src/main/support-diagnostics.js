@@ -186,18 +186,26 @@ async function modelConnectivityCheck(options = {}) {
     body = {
       model: resolved.model.modelID,
       messages: [{ role: "user", content: "ping" }],
-      max_tokens: 1,
-      stream: true,
     };
   }
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    let response;
+    if (resolved.protocol === "anthropic") {
+      response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal });
+    } else {
+      // Same learned request shape as every other direct call: a gateway that
+      // wants max_completion_tokens is not "unreachable".
+      const shapes = require("./openai-request-shape");
+      const sent = await shapes.sendChatCompletion({
+        url, headers, body, maxTokens: 1, stream: true,
+        shape: shapes.recallShape(url, resolved.model.modelID, shapes.shapeFromEnv(lilyEnv)),
+        signal: controller.signal,
+        onAdapt: (shape) => shapes.rememberShape(url, resolved.model.modelID, shape),
+      });
+      if (!sent.ok && sent.status === 0) throw new Error(sent.error?.message || "network");
+      response = sent.response;
+    }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       return check(

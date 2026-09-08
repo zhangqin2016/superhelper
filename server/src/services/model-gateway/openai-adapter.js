@@ -1,3 +1,4 @@
+import * as requestShape from "./request-shape.js";
 import crypto from "node:crypto";
 import { stableStringify } from "../security.js";
 import { discoveredModelMetadataSync } from "./model-discovery.js";
@@ -194,14 +195,14 @@ export async function forwardOpenAi(provider, body) {
 
 export async function forwardOpenAiChatCompletions(provider, body) {
   const target = `${provider.baseUrl}/chat/completions`;
-  const payload = body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
-  const model = normalizeModelForProtocol(provider, payload.model || provider.model);
-  if (model) payload.model = model;
-  payload.max_tokens = resolveMaxTokens(payload, provider);
+  const base = body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
+  const model = normalizeModelForProtocol(provider, base.model || provider.model);
+  if (model) base.model = model;
+  base.max_tokens = resolveMaxTokens(base, provider);
   // Streamed passthrough: request the final usage chunk so metered billing can
   // reconcile against real prompt/completion tokens.
-  if (payload.stream) payload.stream_options = { include_usage: true, ...(payload.stream_options || {}) };
-  return fetch(target, {
+  if (base.stream) base.stream_options = { include_usage: true, ...(base.stream_options || {}) };
+  const send = (payload) => fetch(target, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -210,6 +211,21 @@ export async function forwardOpenAiChatCompletions(provider, body) {
     },
     body: JSON.stringify(payload),
   });
+  // The output-limit field (and whether temperature is accepted) is whatever
+  // this upstream has taught us, learned from its own 4xx rather than assumed
+  // from the model id. One adaptation per distinct rejection, bounded.
+  let shape = requestShape.recallShape(provider, model);
+  for (let attempt = 0; ; attempt += 1) {
+    const payload = requestShape.applyRequestShape(base, shape);
+    const upstream = await send(payload);
+    if (upstream.ok || upstream.status < 400 || upstream.status >= 500 || attempt >= 2) return upstream;
+    const text = await upstream.clone().text().catch(() => "");
+    let json = null; try { json = JSON.parse(text); } catch { json = null; }
+    const adaptation = requestShape.classifyShapeRejection({ status: upstream.status, error: requestShape.parseOpenAiError(upstream.status, json, text), shape, sentBody: payload });
+    if (!adaptation) return upstream;
+    shape = adaptation.shape;
+    requestShape.rememberShape(provider, model, shape);
+  }
 }
 
 export async function forwardOpenAiModels(provider) {
