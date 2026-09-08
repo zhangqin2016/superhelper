@@ -95,6 +95,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     get attachments() { return attachments; },
     get transferPolicy() { return transferPolicy; },
     get disposed() { return disposed; },
+    get readEpoch() { return viewGeneration; },
     get policyEnabled() { return policyEnabled; },
     get panel() { return panel; },
     get navigating() { return navigating; },

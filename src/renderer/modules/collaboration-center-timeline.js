@@ -1,13 +1,16 @@
 import { t } from "../i18n/index.js";
 import { identityName, resolvePerson } from "./collaboration-social-ui.js";
 import { renderCollaborationTimeline } from "./collaboration-timeline.js";
+import { createVisibleRead } from "./collaboration-visible-read.js";
 
 const byId = (id) => document.getElementById(id);
 const collabCommandId = () => globalThis.crypto?.randomUUID?.() || `collab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 // Getters retain live navigation state across asynchronous message actions.
 export function createCenterTimeline(ctx) {
+  const visibleRead = createVisibleRead(ctx);
   const renderTimeline = () => {
+    if (ctx.disposed) visibleRead.destroy();
     const wasAway = Boolean(ctx.activeConversationId) && ctx.timeline && !atThreadBottom();
     const grew = ctx.historyMessages.length - ctx.lastRenderedCount;
     if (wasAway && grew > 0) unseenBelow += grew;
@@ -73,6 +76,7 @@ export function createCenterTimeline(ctx) {
     },
   });
     refreshScrollLatest();
+    visibleRead.schedule();
   };
   // Scroll-to-latest: a thread scrolled away from the bottom must offer a way
   // back, and must say how many messages arrived while you were reading up.
