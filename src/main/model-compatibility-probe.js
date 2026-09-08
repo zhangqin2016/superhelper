@@ -218,9 +218,18 @@ async function validateAgentConformance({ baseUrl, apiKey, model, bodyOverlay = 
   // Probe with decoys shaped like Lily's real toolset. A gateway can pass a
   // single short flat tool yet kill every real turn, so this is the probe
   // that actually predicts agent conformance.
-  const tools = await probeTools({ baseUrl, apiKey, model, bodyOverlay, timeoutMs, extraTools: AGENT_SHAPE_DECOY_TOOLS });
+  let tools = await probeTools({ baseUrl, apiKey, model, bodyOverlay, timeoutMs, extraTools: AGENT_SHAPE_DECOY_TOOLS });
   if (tools.ok && tools.hasToolCalls) {
     return { ...content, tools, hasAgentConformance: true };
+  }
+  // The endpoint said its chat surface will not run tools for this model and
+  // named the one that does. Ask THAT surface the same question.
+  const responsesProbe = require("./model-probe-responses");
+  if (responsesProbe.wantsResponsesApi(tools, baseUrl, model)) {
+    const viaResponses = await responsesProbe.probeToolsViaResponses({ baseUrl, apiKey, model, timeoutMs, extraTools: AGENT_SHAPE_DECOY_TOOLS });
+    // (The shape learner already recorded api=responses when it read the 400.)
+    if (viaResponses.ok && viaResponses.hasToolCalls) return { ...content, tools: viaResponses, hasAgentConformance: true, api: "responses" };
+    tools = viaResponses.ok ? viaResponses : { ...tools, responsesDetail: viaResponses.detail || null };
   }
   // Distinguish "tool calls broken entirely" from "gateway rejects Lily-shaped
   // tools" so the save dialog can say which side to fix.
@@ -622,7 +631,7 @@ async function probeCustomModelProfile({
   };
 
   if (plain.hasAgentConformance) {
-    return finish({ contentSource: "plain", diagnostics: { content: "plain", stream: "plain" } });
+    return finish({ contentSource: plain.api === "responses" ? "responses-api" : "plain", diagnostics: { content: "plain", stream: "plain", ...(plain.api === "responses" ? { tools: "responses-api" } : {}) } });
   }
   // Gateway rejects Lily-shaped tool definitions but a simple tool works:
   // runtime tool-shape compat (short MCP server keys + flat schemas) keeps
@@ -636,7 +645,8 @@ async function probeCustomModelProfile({
     });
   }
 
-  let toolCallsBlocked = Boolean(plain.hasContent && plain.tools && !plain.tools.hasToolCalls);
+  let toolCallsBlocked = Boolean(plain.hasContent && plain.tools?.ok && !plain.tools.hasToolCalls);
+  const toolsRejected = plain.tools && plain.tools.ok === false && plain.tools.detail ? plain.tools : null;
   for (const candidate of BODY_OVERLAY_CANDIDATES) {
     const repaired = await validateAgentConformance({
       baseUrl,
@@ -665,9 +675,13 @@ async function probeCustomModelProfile({
         diagnostics: { ...diagnostics, toolShape: "compat" },
       });
     }
-    if (repaired.hasContent && repaired.tools && !repaired.tools.hasToolCalls) toolCallsBlocked = true;
+    if (repaired.hasContent && repaired.tools?.ok && !repaired.tools.hasToolCalls) toolCallsBlocked = true;
   }
 
+  if (!toolCallsBlocked && toolsRejected) {
+    // e.g. 400 "Function tools with reasoning_effort are not supported … use /v1/responses"
+    return { ok: false, error: toolsRejected.error || `HTTP_${toolsRejected.status || 0}`, detail: toolsRejected.detail };
+  }
   const observed = (label, shape) => (shape ? `${label}: content=${shape.hasContent ? "yes" : "no"} tool_calls=${shape.hasToolCalls ? "yes" : "no"}${shape.finishReason ? ` finish_reason=${shape.finishReason}` : ""}` : "");
   const detail = {
     code: "probe_observation",

@@ -18,7 +18,7 @@ const COMPAT_UNKNOWN_FIELD = { error: { message: "Unrecognized request argument 
 {
   const e = shape.parseOpenAiError(400, OFFICIAL_MAX_TOKENS);
   assert.deepEqual(shape.classifyShapeRejection({ status: 400, error: e, shape: null, sentBody: { max_tokens: 512 } }),
-    { shape: { outputLimitField: "max_completion_tokens", temperature: "allowed" }, reason: "unsupported_parameter:max_tokens" }, "official rejection → switch to max_completion_tokens");
+    { shape: { outputLimitField: "max_completion_tokens", temperature: "allowed", api: "chat" }, reason: "unsupported_parameter:max_tokens" }, "official rejection → switch to max_completion_tokens");
   const t = shape.parseOpenAiError(400, OFFICIAL_TEMPERATURE);
   assert.equal(shape.classifyShapeRejection({ status: 400, error: t, shape: { outputLimitField: "max_completion_tokens" }, sentBody: { max_completion_tokens: 8, temperature: 0 } })?.shape.temperature, "omit", "temperature refused → omit it");
   assert.equal(shape.classifyShapeRejection({ status: 400, error: t, shape: null, sentBody: { max_tokens: 8 } }), null, "a temperature complaint when none was sent is not ours to fix");
@@ -26,6 +26,9 @@ const COMPAT_UNKNOWN_FIELD = { error: { message: "Unrecognized request argument 
   assert.equal(shape.classifyShapeRejection({ status: 400, error: c, shape: { outputLimitField: "max_completion_tokens" }, sentBody: { max_completion_tokens: 8 } })?.shape.outputLimitField, "max_tokens", "a gateway that does not know the new name gets the old one back");
   assert.equal(shape.classifyShapeRejection({ status: 400, error: shape.parseOpenAiError(400, { error: { message: "The model `gpt-x` does not exist", code: "model_not_found" } }), shape: null, sentBody: { max_tokens: 8 } }), null, "an unrelated 400 is not a shape problem");
   assert.equal(shape.classifyShapeRejection({ status: 500, error: e, shape: null, sentBody: { max_tokens: 8 } }), null, "a 5xx is never a shape problem");
+  const useResponses = shape.parseOpenAiError(400, { error: { message: "Function tools with reasoning_effort are not supported for gpt-x in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.", type: "invalid_request_error", param: "reasoning_effort", code: null } });
+  assert.deepEqual(shape.classifyShapeRejection({ status: 400, error: useResponses, shape: null, sentBody: { max_completion_tokens: 8, tools: [{}] } }), { shape: { outputLimitField: "max_tokens", temperature: "allowed", api: "responses" }, reason: "use_responses_api" }, "the server names the surface that runs tools → learn it");
+  assert.equal(shape.classifyShapeRejection({ status: 400, error: useResponses, shape: null, sentBody: { max_completion_tokens: 8 } }), null, "without tools in the request the hint is not ours to act on");
   assert.equal(shape.classifyShapeRejection({ status: 401, error: shape.parseOpenAiError(401, { error: { message: "Incorrect API key provided: sk-abcdefghijklmnopqrstuvwxyz", code: "invalid_api_key" } }), shape: null, sentBody: { max_tokens: 8 } }), null);
   assert.doesNotMatch(shape.parseOpenAiError(401, { error: { message: "Incorrect API key provided: sk-abcdefghijklmnopqrstuvwxyz" } }).message, /abcdefghijklmnop/, "keys are redacted out of error messages");
 }
@@ -37,7 +40,7 @@ const COMPAT_UNKNOWN_FIELD = { error: { message: "Unrecognized request argument 
   const b = shape.applyRequestShape({ model: "m", max_tokens: 99 }, { outputLimitField: "max_completion_tokens", temperature: "omit" }, { maxTokens: 512, temperature: 0 });
   assert.deepEqual(b, { model: "m", max_completion_tokens: 512 }, "learned shape: new field, stale field removed, temperature dropped");
   assert.equal(shape.compactRequestShape(null), null, "default shape is not worth persisting");
-  assert.deepEqual(shape.compactRequestShape({ outputLimitField: "max_completion_tokens" }), { outputLimitField: "max_completion_tokens", temperature: "allowed" });
+  assert.deepEqual(shape.compactRequestShape({ outputLimitField: "max_completion_tokens" }), { outputLimitField: "max_completion_tokens", temperature: "allowed", api: "chat" });
   assert.deepEqual(shape.shapeFromEnv({ LILY_MODEL_REQUEST_SHAPE: JSON.stringify({ outputLimitField: "max_completion_tokens" }) }).outputLimitField, "max_completion_tokens");
   assert.deepEqual(shape.shapeFromEnv({ LILY_MODEL_REQUEST_SHAPE: "not json" }), shape.normalizeRequestShape(null), "garbage env → default, never a throw");
 }
@@ -61,7 +64,7 @@ function officialFake(log) {
   assert.deepEqual(learned, ["unsupported_parameter:max_tokens", "unsupported_value:temperature"], "each rejection taught exactly one thing, in order");
   assert.equal(log.length, 3, "one request per lesson, then success");
   assert.deepEqual(Object.keys(log[2]).sort(), ["max_completion_tokens", "messages", "model"], "final body: new limit field, no temperature");
-  assert.deepEqual(sent.shape, { outputLimitField: "max_completion_tokens", temperature: "omit" });
+  assert.deepEqual(sent.shape, { outputLimitField: "max_completion_tokens", temperature: "omit", api: "chat" });
   assert.equal(sent.json.choices[0].message.content, "pong");
 }
 {

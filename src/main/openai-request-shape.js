@@ -18,7 +18,11 @@
  */
 
 const OUTPUT_LIMIT_FIELDS = Object.freeze(["max_tokens", "max_completion_tokens"]);
-const DEFAULT_SHAPE = Object.freeze({ outputLimitField: "max_tokens", temperature: "allowed" });
+// `api`: "chat" (/chat/completions, every gateway) or "responses" (/responses —
+// the official API's newer reasoning models refuse function tools on chat and
+// say so in the 400: "use /v1/responses"). Learned from that sentence, nothing
+// else.
+const DEFAULT_SHAPE = Object.freeze({ outputLimitField: "max_tokens", temperature: "allowed", api: "chat" });
 const MAX_ADAPTATIONS = 3;
 
 function normalizeRequestShape(value) {
@@ -26,12 +30,13 @@ function normalizeRequestShape(value) {
   return {
     outputLimitField: OUTPUT_LIMIT_FIELDS.includes(source.outputLimitField) ? source.outputLimitField : DEFAULT_SHAPE.outputLimitField,
     temperature: source.temperature === "omit" ? "omit" : DEFAULT_SHAPE.temperature,
+    api: source.api === "responses" ? "responses" : DEFAULT_SHAPE.api,
   };
 }
 
 function isDefaultShape(shape) {
   const s = normalizeRequestShape(shape);
-  return s.outputLimitField === DEFAULT_SHAPE.outputLimitField && s.temperature === DEFAULT_SHAPE.temperature;
+  return s.outputLimitField === DEFAULT_SHAPE.outputLimitField && s.temperature === DEFAULT_SHAPE.temperature && s.api === DEFAULT_SHAPE.api;
 }
 
 /** Only a non-default shape is worth persisting or sending to the runtime. */
@@ -99,6 +104,11 @@ function classifyShapeRejection({ status, error, shape, sentBody }) {
     if (next !== current.outputLimitField || refusedLimit === current.outputLimitField) {
       return { shape: { ...current, outputLimitField: next }, reason: `unsupported_parameter:${refusedLimit}` };
     }
+  }
+  // "To use function tools, use /v1/responses …": the server names the surface
+  // that works. Only relevant when tools were sent; a plain chat still works.
+  if (current.api === "chat" && sentBody && Array.isArray(sentBody.tools) && /\/v1\/responses\b|responses api/i.test(text)) {
+    return { shape: { ...current, api: "responses" }, reason: "use_responses_api" };
   }
   const sentTemperature = sentBody && sentBody.temperature !== undefined;
   if (sentTemperature && current.temperature !== "omit" && (param === "temperature" || (mentions(text, "temperature") && unsupported))) {
@@ -168,6 +178,8 @@ async function sendChatCompletion({
     adaptations.push(adaptation.reason);
     current = normalizeRequestShape(adaptation.shape);
     try { onAdapt?.(current, adaptation.reason); } catch { /* observers never break the send */ }
+    // A different API surface cannot be re-sent here; the caller owns that path.
+    if (adaptation.reason === "use_responses_api") return { ok: false, status: response.status, error, shape: current, adaptations, response, json, apiSwitch: "responses" };
   }
 }
 

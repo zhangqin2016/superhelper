@@ -56,6 +56,9 @@ function detectProtocol(baseUrl, env = {}) {
 function providerNpmProtocol(npm) {
   if (npm === "@ai-sdk/anthropic") return "anthropic";
   if (npm === "@ai-sdk/openai-compatible") return "openai";
+  // The official SDK: OpenCode routes it through the Responses API, which is
+  // what the endpoint asks for when its chat surface refuses tools.
+  if (npm === "@ai-sdk/openai") return "openai";
   return "";
 }
 
@@ -154,7 +157,13 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
 
   const providerSpec = resolveOpencodeProviderSpec(lilyEnv, protocol);
   const providerID = providerSpec.providerID;
-  const npm = providerSpec.npm;
+  // Learned from the server ("use /v1/responses"), never from the model name:
+  // an openai-protocol preset whose probe had to use the Responses surface for
+  // tools runs the engine on the official SDK, which OpenCode routes through
+  // Responses. Everything else keeps the openai-compatible SDK it has today.
+  const learnedShapeEarly = require("../openai-request-shape").shapeFromEnv(lilyEnv);
+  const useResponses = protocol === "openai" && learnedShapeEarly.api === "responses" && !lilyEnv.LILY_OPENCODE_PROVIDER_NPM;
+  const npm = useResponses ? "@ai-sdk/openai" : providerSpec.npm;
   const baseURL = protocol === "anthropic" ? anthropicUrl(rawBase) : openaiUrl(rawBase);
 
   // Keep every OpenCode tier on the selected model. Fast/haiku/subagent
@@ -167,7 +176,9 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
     haiku: modelId,
     subagent: modelId,
   };
-  const modelOptions = bodyOverlay.body && protocol === "openai" ? { ...bodyOverlay.body } : null;
+  // A chat-completions body overlay (e.g. chat_template_kwargs) has no meaning
+  // on the Responses surface and would be rejected as an unknown option.
+  const modelOptions = bodyOverlay.body && protocol === "openai" && !useResponses ? { ...bodyOverlay.body } : null;
   const modelIds = [
     tiers.main,
     tiers.opus,
@@ -191,7 +202,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
   // as `max_completion_tokens` (model options are spread into the body by the
   // openai-compatible SDK) and the SDK is left with no `max_tokens` to send.
   const learnedShape = require("../openai-request-shape").shapeFromEnv(lilyEnv);
-  const routeLimitThroughOptions = Boolean(output) && learnedShape.outputLimitField === "max_completion_tokens";
+  const routeLimitThroughOptions = Boolean(output) && learnedShape.outputLimitField === "max_completion_tokens" && !useResponses;
   if (routeLimitThroughOptions) {
     models[modelId].options = { ...(models[modelId].options || {}), max_completion_tokens: output };
   }
@@ -212,7 +223,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
   // includeUsage=true for @ai-sdk/openai-compatible, and the AI SDK rejects that
   // non-standard chunk before the completed assistant text can settle. Disabling
   // streaming usage keeps the model URL/body otherwise unchanged.
-  if (protocol === "openai") options.includeUsage = false;
+  if (protocol === "openai" && !useResponses) options.includeUsage = false;
   if (token) {
     options.apiKey = token;
     options.headers = { Authorization: `Bearer ${token}` };
