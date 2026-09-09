@@ -10,6 +10,12 @@
 const requestShape = require("./openai-request-shape");
 const { OUTPUT_BUDGET_LADDER } = require("./model-probe-tools");
 
+// Which output-limit field this Responses endpoint accepts. Default is the
+// standard max_output_tokens; a proxy that refuses it (learned from its 400)
+// gets the field omitted. Remembered per endpoint+model for the process.
+const responsesOutputField = new Map();
+const rkey = (baseUrl, model) => `${String(baseUrl || "").replace(/\/+$/, "").toLowerCase()}|${String(model || "")}`;
+
 function trimUrl(value = "") { return String(value || "").replace(/\/+$/, ""); }
 
 /** chat-style tool defs ({type:"function", function:{name,…}}) → Responses style (flat). */
@@ -59,11 +65,20 @@ async function postResponses({ baseUrl, apiKey, model, tools, toolChoice, maxTok
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("MODEL_PROBE_TIMEOUT")), Math.max(500, timeoutMs));
   try {
-    const body = { model, input: "Call lily_probe_tool with ok=true.", max_output_tokens: maxTokens, tools, tool_choice: toolChoice, ...(stream ? { stream: true } : {}) };
+    const includeLimit = responsesOutputField.get(rkey(baseUrl, model)) !== "omit";
+    const body = { model, input: "Call lily_probe_tool with ok=true.", ...(includeLimit ? { max_output_tokens: maxTokens } : {}), tools, tool_choice: toolChoice, ...(stream ? { stream: true } : {}) };
     const response = await fetch(`${trimUrl(baseUrl)}/responses`, { method: "POST", headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) }, body: JSON.stringify(body), signal: controller.signal });
     const text = await response.text();
     let json = null; try { json = JSON.parse(text); } catch { json = null; }
-    if (!response.ok) return { ok: false, status: response.status, json, detail: requestShape.parseOpenAiError(response.status, json, text) };
+    if (!response.ok) {
+      const detail = requestShape.parseOpenAiError(response.status, json, text);
+      // A proxy that refuses max_output_tokens: drop it and let the caller retry.
+      if (response.status >= 400 && response.status < 500 && includeLimit && /max_output_tokens/.test(`${detail.param} ${detail.message}`) && /unsupported|unrecognized|unknown|not (?:allowed|supported)|invalid/i.test(detail.message)) {
+        responsesOutputField.set(rkey(baseUrl, model), "omit");
+        return postResponses({ baseUrl, apiKey, model, tools, toolChoice, maxTokens, stream, timeoutMs });
+      }
+      return { ok: false, status: response.status, json, detail };
+    }
     return { ok: true, status: response.status, json, shape: stream ? streamResponseShape(text) : responseShape(json) };
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
@@ -109,4 +124,6 @@ function wantsResponsesApi(result, baseUrl, model) {
   return Boolean(result && !result.ok && Number(result.status) >= 400 && Number(result.status) < 500 && /\/v1\/responses\b|responses api/i.test(text));
 }
 
-module.exports = { probeToolsViaResponses, wantsResponsesApi, toResponsesTools, responseShape, streamResponseShape, streamEventSignals };
+function resetResponsesProbeStateForTests() { responsesOutputField.clear(); }
+
+module.exports = { probeToolsViaResponses, wantsResponsesApi, toResponsesTools, responseShape, streamResponseShape, streamEventSignals, resetResponsesProbeStateForTests };

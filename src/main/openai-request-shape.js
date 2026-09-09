@@ -232,6 +232,28 @@ const stripKeywordsDeep = (value, keywords) => {
   for (const [k, v] of Object.entries(value)) if (!keywords.includes(k)) out[k] = stripKeywordsDeep(v, keywords);
   return out;
 };
+/** Apply the LEARNED corrections (rename, omit, tool_choice, schema strip) to a
+ *  body that is already on its final surface. Runs on the actual wire body so a
+ *  Responses-only field name (max_output_tokens) can be dropped too — the omit
+ *  learned from the Responses rejection carries that field's name, which the
+ *  chat body never has. Field-name agnostic; safe to run twice. */
+function applyLearnedCorrections(body, shape) {
+  const s = normalizeRequestShape(shape);
+  let out = { ...(body || {}) };
+  for (const [from, to] of Object.entries(s.rename)) if (Object.prototype.hasOwnProperty.call(out, from)) { out[to] = out[from]; delete out[from]; }
+  for (const field of s.omit) delete out[field];
+  if (s.toolChoice === "auto" && out.tool_choice && typeof out.tool_choice === "object") out.tool_choice = "auto";
+  if (s.stripSchemaKeywords.length && Array.isArray(out.tools)) {
+    out.tools = out.tools.map((tool) => {
+      const params = tool?.function?.parameters || (tool?.type === "function" && tool.parameters);
+      if (tool?.function?.parameters) return { ...tool, function: { ...tool.function, parameters: stripKeywordsDeep(tool.function.parameters, s.stripSchemaKeywords) } };
+      if (params) return { ...tool, parameters: stripKeywordsDeep(params, s.stripSchemaKeywords) };
+      return tool;
+    });
+  }
+  return out;
+}
+
 function applyRequestShape(body, shape, { maxTokens = undefined, temperature = undefined } = {}) {
   const s = normalizeRequestShape(shape);
   let out = { ...(body || {}) };
@@ -240,13 +262,7 @@ function applyRequestShape(body, shape, { maxTokens = undefined, temperature = u
   if (Number.isFinite(limit) && limit > 0) out[s.outputLimitField] = Math.floor(limit);
   delete out.temperature;
   if (temperature !== undefined && temperature !== null && s.temperature !== "omit") out.temperature = temperature;
-  for (const [from, to] of Object.entries(s.rename)) if (Object.prototype.hasOwnProperty.call(out, from)) { out[to] = out[from]; delete out[from]; }
-  for (const field of s.omit) delete out[field];
-  if (s.toolChoice === "auto" && out.tool_choice && typeof out.tool_choice === "object") out.tool_choice = "auto";
-  if (s.stripSchemaKeywords.length && Array.isArray(out.tools)) {
-    out.tools = out.tools.map((tool) => (tool?.function?.parameters ? { ...tool, function: { ...tool.function, parameters: stripKeywordsDeep(tool.function.parameters, s.stripSchemaKeywords) } } : tool));
-  }
-  return out;
+  return applyLearnedCorrections(out, s);
 }
 
 /** /chat/completions → /responses on the same base. */
@@ -339,7 +355,10 @@ async function sendChatCompletion({
   for (let attempt = 0; ; attempt += 1) {
     const chatPayload = applyRequestShape({ ...body, ...(stream ? { stream: true } : {}) }, current, { maxTokens, temperature });
     const viaResponses = current.api === "responses";
-    const payload = viaResponses ? toResponsesBody(chatPayload) : chatPayload;
+    // On the Responses surface the learned corrections must also run on the
+    // TRANSLATED body, so a Responses-only field the endpoint refused (e.g. a
+    // proxy that rejects max_output_tokens) is actually dropped.
+    const payload = viaResponses ? applyLearnedCorrections(toResponsesBody(chatPayload), current) : chatPayload;
     const target = viaResponses ? responsesUrl(url) : url;
     let response;
     try {
@@ -377,6 +396,7 @@ module.exports = {
   classifyShapeRejection,
   applyRequestShape,
   sendChatCompletion,
+  applyLearnedCorrections,
   toResponsesBody,
   fromResponsesJson,
   responsesUrl,
