@@ -8,7 +8,7 @@ import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
 import { anySessionRunning } from "./session-runtime-store.js";
 
-const FIELD_LABELS = { apiKey: "API Key", accessKey: "AccessKey", secretKey: "SecretKey", groupId: "GroupId" };
+const FIELD_LABELS = { apiKey: "API Key", accessKey: "AccessKey", secretKey: "SecretKey", groupId: "GroupId", baseUrl: "Base URL" };
 const MODALITIES = [
   { id: "image", titleKey: "settings.mediaImage", modelField: "imageModel", modelLabelKey: "settings.mediaModelImage" },
   { id: "video", titleKey: "settings.mediaVideo", modelField: "videoModel", modelLabelKey: "settings.mediaModelVideo" },
@@ -104,7 +104,7 @@ function keyEditor(provider, modality) {
     const group = el("div", "media-field");
     group.appendChild(el("span", "settings-field-label", FIELD_LABELS[field] || field));
     const input = el("input", "settings-input");
-    input.type = field === "groupId" ? "text" : "password";
+    input.type = (field === "groupId" || field === "baseUrl") ? "text" : "password";
     input.autocomplete = "off";
     inputs[field] = input;
     group.appendChild(input);

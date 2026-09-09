@@ -947,6 +947,24 @@
       "tests": [
         "scripts/test-runtime-identity-skill-cap.mjs"
       ]
+    },
+    {
+      "id": "model-vision-capability",
+      "protects": "A self-configured (BYOK) model that can see images actually receives them. On save/update the endpoint is probed with a tiny image (probeVision), and the detected support is persisted on the preset as capabilities.vision; a manual toggle in the add-model form forces it on when probing is off or a server false-negatives. That flag then reaches every consumer: customPresetRecord carries it so getActivePreset()/listPresetsPublic surface it, the selection catalog and normalizeOption keep it on route.model.capabilities.vision, allowImageFileParts/activePresetSupportsVision route images straight to the model instead of the Qwen-VL translation bridge, and the engine model config sets modalities.input to include 'image'.",
+      "baseline": "Before 2026-09-09 a BYOK model's vision was undetectable and unsettable: presets had no capabilities field, customPresetRecord dropped any capabilities so getActivePreset never saw it, and images from a vision-capable custom model were always forced through the translation bridge — the model 'supported images but we still could not use it'.",
+      "failureFallback": "Fail-open: no capabilities field means the bridge path is used exactly as before; LILY_PROBE_VISION=0 disables auto-probe and leaves the manual toggle as the sole signal. Mutation-verified 2026-09-09: dropping capabilities from customPresetRecord, skipping the probe-vision persistence, and ignoring the manual toggle each fail the data-flow test by name.",
+      "tests": [
+        "scripts/test-model-vision-capability.mjs"
+      ]
+    },
+    {
+      "id": "model-image-generation",
+      "protects": "A user with their own OpenAI-compatible image endpoint can actually generate images. The openai adapter (providers/openai.cjs) POSTs /images/generations with the configured model, decodes b64_json into files, accepts a returned url, and self-heals a server that rejects response_format (gpt-image-1) by retrying once without it. A missing key fails loudly with a named error, never a silent no-op. Settings image providers exposes it as a BYOK provider (endpoint+key+model), and media-provider-settings maps that choice to the exact env vars the adapter reads (OPENAI_IMAGE_API_KEY/BASE_URL/MODEL).",
+      "baseline": "Before 2026-09-09 lily-image-generation only had adapters for dashscope/lily/volcengine/kling/minimax/zhipu — there was no OpenAI-compatible image path at all, so a self-configured OpenAI/DALL-E/gpt-image endpoint could not be used for generation ('supported generation but we still could not use it').",
+      "failureFallback": "Purely additive: a new opt-in BYOK provider plus a new adapter; every existing provider and the service path are untouched, and with no openai key/endpoint configured nothing changes. Mutation-verified 2026-09-09: removing the response_format retry, the b64 decode, and the byokEnv mapping each fail the adapter test by name.",
+      "tests": [
+        "scripts/test-model-image-generation.mjs"
+      ]
     }
   ]
 }

@@ -1111,6 +1111,8 @@
   "settings.modelCustomApiKeyPlaceholder": "sk-...",
   "settings.modelTlsSkipVerify": "تخطي التحقق من شهادة TLS لعنوان هذا النموذج",
   "settings.modelTlsSkipVerifyDesc": "يُستخدم فقط لخدمات النماذج الداخلية ذات الشهادات الذاتية. لا يتم تغيير عنوان API.",
+  "settings.modelVisionCapable": "يدعم هذا النموذج التعرف على الصور (الرؤية)",
+  "settings.modelVisionCapableDesc": "اتركه فارغًا للاكتشاف التلقائي؛ عند التحديد تُرسل الصور مباشرة إلى النموذج بدلًا من جسر الترجمة.",
   "settings.modelCustomOwnKey": "مفتاح مستقل مُعد",
   "settings.modelCustomAdd": "إضافة",
   "settings.modelVerifying": "جارٍ التحقق…",

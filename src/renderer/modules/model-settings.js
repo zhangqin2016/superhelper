@@ -170,6 +170,7 @@ function customFormPayload() {
     protocol: normalizeProtocolValue($("modelCustomProtocol")?.value),
     apiKey: $("modelCustomApiKey")?.value?.trim() || "",
     tlsSkipVerify: Boolean($("modelCustomTlsSkipVerify")?.checked),
+    capabilities: { vision: Boolean($("modelCustomVision")?.checked) },
   };
 }
 
@@ -181,6 +182,7 @@ function resetCustomForm() {
     "modelCustomProtocol",
     "modelCustomApiKey",
     "modelCustomTlsSkipVerify",
+    "modelCustomVision",
   ]) {
     const el = $(id);
     if (el?.type === "checkbox") el.checked = false;
@@ -208,6 +210,7 @@ function setCustomEditMode(preset = null) {
   if ($("modelCustomBaseUrl")) $("modelCustomBaseUrl").value = preset.baseUrl || "";
   if ($("modelCustomProtocol")) $("modelCustomProtocol").value = normalizeProtocolValue(preset.protocol);
   if ($("modelCustomTlsSkipVerify")) $("modelCustomTlsSkipVerify").checked = Boolean(preset.tlsSkipVerify);
+  if ($("modelCustomVision")) $("modelCustomVision").checked = Boolean(preset.capabilities?.vision);
   if ($("modelCustomApiKey")) {
     $("modelCustomApiKey").value = "";
     $("modelCustomApiKey").setAttribute(

@@ -16,6 +16,7 @@ const ADAPTERS = {
   kling: require("./providers/kling.cjs"),
   minimax: require("./providers/minimax.cjs"),
   zhipu: require("./providers/zhipu.cjs"),
+  openai: require("./providers/openai.cjs"),
 };
 
 function readStdin() {
@@ -120,6 +121,7 @@ function inferProviderFromEnv(env) {
   if (env.KLING_API_KEY || (env.KLING_ACCESS_KEY && env.KLING_SECRET_KEY)) return "kling";
   if (env.MINIMAX_API_KEY) return "minimax";
   if (env.ZHIPU_API_KEY || env.BIGMODEL_API_KEY) return "zhipu";
+  if (env.OPENAI_IMAGE_API_KEY || env.OPENAI_IMAGE_BASE_URL) return "openai";
   return "";
 }
 

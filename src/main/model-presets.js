@@ -1,5 +1,6 @@
 "use strict";
 
+const { capabilitiesEntry } = require("./model-preset-capabilities");
 const requestShapeModule = require("./openai-request-shape");
 const { getSafeStorage, secretStorageAvailable, protectSecret, unprotectSecret, hydrateSecret } = require("./model-preset-secrets");
 const { reportUnhandledProbeRejection } = require("./model-probe-telemetry");
@@ -525,6 +526,7 @@ function customPresetRecord(entry) {
     protocol,
     apiKeySet: Boolean(apiKey),
     tlsSkipVerify: Boolean(entry.tlsSkipVerify && baseUrl),
+    ...capabilitiesEntry(entry.capabilities),
     custom: true,
     env,
   };
@@ -842,6 +844,7 @@ function saveCustomPreset({
   tlsSkipVerify = false,
   requestBodyOverlay = null,
   compatibilityProfile = null,
+  capabilities = null,
 }) {
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
@@ -891,6 +894,7 @@ function saveCustomPreset({
     // Carried from the provider catalog so anthropic vs openai-compatible
     // endpoints resolve correctly instead of relying on URL auto-detection.
     protocol: normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl),
+    ...capabilitiesEntry(capabilities),
   };
   const customPresets = [...(user.customPresets || []), entry];
   // Adding a connection must not change the model of existing or new chats.
@@ -923,6 +927,7 @@ function updateCustomPreset(presetId, {
   tlsSkipVerify = false,
   requestBodyOverlay = undefined,
   compatibilityProfile = undefined,
+  capabilities = undefined,
 } = {}) {
   if (!String(presetId || "").startsWith(CUSTOM_ID_PREFIX)) {
     return { ok: false, error: "NOT_CUSTOM" };
@@ -995,6 +1000,8 @@ function updateCustomPreset(presetId, {
     compatibilityProfile: normalizedCompatibilityProfile,
     requestBodyOverlay: normalizedRequestBodyOverlay,
     protocol: nextProtocol,
+    // Merge capabilities over what was stored so a re-probe/edit never clears vision.
+    ...capabilitiesEntry(capabilities === undefined ? previous.capabilities : capabilities, previous.capabilities),
   };
   customPresets[index] = entry;
   persistUserChoice({ ...user, customPresets });
@@ -1071,6 +1078,7 @@ async function saveCustomPresetWithProbe(input = {}) {
     apiKey: keyValidated.apiKey,
     compatibilityProfile: probe.profile || null,
     requestBodyOverlay: probe.profile?.requestBodyOverlay || null,
+    capabilities: { ...(input.capabilities || {}), vision: Boolean(input.capabilities?.vision) || Boolean(probe.vision) },
   });
 }
 
@@ -1151,6 +1159,7 @@ async function updateCustomPresetWithProbe(presetId, input = {}) {
     protocol,
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
+    capabilities: { ...(previous.capabilities || {}), ...(input.capabilities || {}), vision: Boolean(input.capabilities?.vision) || Boolean(probe.vision) || Boolean(previous.capabilities?.vision) },
     compatibilityProfile: probe.profile || null,
     requestBodyOverlay: probe.profile?.requestBodyOverlay || null,
   });

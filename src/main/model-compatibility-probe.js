@@ -2,33 +2,9 @@
 
 const requestShape = require("./openai-request-shape");
 const { AGENT_SHAPE_DECOY_TOOLS, toolProbeFields, withBudgetLadder } = require("./model-probe-tools");
+const { trimUrl, mergeBody } = require("./model-probe-http");
+const { probeVision } = require("./model-probe-vision");
 
-function trimUrl(value) {
-  return String(value || "").trim().replace(/\/+$/, "");
-}
-
-function mergeBody(base, overlay) {
-  if (!overlay || typeof overlay !== "object" || Array.isArray(overlay)) return { ...base };
-  const out = { ...base };
-  for (const [key, value] of Object.entries(overlay)) {
-    // `null` removes a key. Without this an overlay could add a field but never
-    // take one away, so a gateway that rejects a default field was unfixable.
-    if (value === null) { delete out[key]; continue; }
-    if (
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      out[key] &&
-      typeof out[key] === "object" &&
-      !Array.isArray(out[key])
-    ) {
-      out[key] = mergeBody(out[key], value);
-    } else {
-      out[key] = value;
-    }
-  }
-  return out;
-}
 
 function messageShape(json) {
   const choice = json?.choices?.[0] || {};
@@ -613,11 +589,17 @@ async function probeCustomModelProfile({
         capability = null;
       }
     }
+    // Vision: one tiny-image probe after content conformance is established.
+    // Result rides the profile so saveCustomPresetWithProbe can set the preset's
+    // capabilities.vision — images then go straight to this model, not the bridge.
+    let vision = false;
+    try { vision = await probeVision({ baseUrl, apiKey, model, bodyOverlay, timeoutMs }); } catch { vision = false; }
     // Learned request shape: non-default only, so a profile from a normal
     // gateway stays byte-identical to before.
     const learnedShape = requestShape.compactRequestShape(requestShape.recallShape(baseUrl, model));
     return {
       ok: true,
+      vision,
       profile: {
         probeVersion: PROBE_PROFILE_VERSION,
         ...(bodyOverlay ? { requestBodyOverlay: bodyOverlay } : {}),

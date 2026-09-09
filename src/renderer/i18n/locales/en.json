@@ -1110,6 +1110,8 @@
   "settings.modelCustomApiKeyPlaceholder": "sk-...",
   "settings.modelTlsSkipVerify": "Skip TLS certificate validation for this model URL",
   "settings.modelTlsSkipVerifyDesc": "Use only for intranet self-signed model services. The API URL is not changed.",
+  "settings.modelVisionCapable": "This model supports image recognition (vision)",
+  "settings.modelVisionCapableDesc": "Leave off to auto-detect. When checked, images are sent to the model directly instead of the translation bridge.",
   "settings.modelCustomOwnKey": "Custom key configured",
   "settings.modelCustomAdd": "Add",
   "settings.modelVerifying": "Verifying…",

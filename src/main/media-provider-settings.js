@@ -19,6 +19,7 @@ const PROVIDERS = [
   { id: "kling", label: "可灵 Kling", fields: ["accessKey", "secretKey"], modalities: ["image", "video"] },
   { id: "minimax", label: "MiniMax 海螺", fields: ["apiKey", "groupId"], modalities: ["image", "video"] },
   { id: "zhipu", label: "智谱 CogView / CogVideoX", fields: ["apiKey"], modalities: ["image", "video"] },
+  { id: "openai", label: "OpenAI 兼容图片接口（gpt-image-1 / DALL·E / 自建）", fields: ["apiKey", "baseUrl"], modalities: ["image"] },
 ];
 
 const PROVIDER_IDS = new Set(PROVIDERS.map((p) => p.id));
@@ -33,7 +34,7 @@ const MODALITY_MODEL = {
   video: { field: "videoModel", suffix: "VIDEO" },
   speech: { field: "speechModel", suffix: "TTS" },
 };
-const ENV_PREFIX = { dashscope: "DASHSCOPE", volcengine: "VOLCENGINE", kling: "KLING", minimax: "MINIMAX", zhipu: "ZHIPU" };
+const ENV_PREFIX = { dashscope: "DASHSCOPE", volcengine: "VOLCENGINE", kling: "KLING", minimax: "MINIMAX", zhipu: "ZHIPU", openai: "OPENAI" };
 const MODEL_FIELDS = Object.values(MODALITY_MODEL).map((item) => item.field);
 
 let cached = null;
@@ -259,6 +260,8 @@ function byokEnv(provider, keys) {
       return k.apiKey ? { MINIMAX_API_KEY: k.apiKey, MINIMAX_GROUP_ID: k.groupId || "", MINIMAX_BASE_URL: "" } : {};
     case "zhipu":
       return k.apiKey ? { ZHIPU_API_KEY: k.apiKey, ZHIPU_BASE_URL: "" } : {};
+    case "openai":
+      return k.apiKey ? { OPENAI_IMAGE_API_KEY: k.apiKey, OPENAI_IMAGE_BASE_URL: k.baseUrl || "" } : {};
     default:
       return {};
   }
