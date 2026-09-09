@@ -938,6 +938,15 @@
         "scripts/test-secret-storage-guard.mjs",
         "scripts/test-model-settings-secret-storage.mjs"
       ]
+    },
+    {
+      "id": "runtime-identity-skill-cap-legible",
+      "protects": "When a conversation activates more skills than the runtime identity token allows (MAX_CAPABILITIES=64), the failure must be legible and actionable: the error names the field that actually overflowed (activeSkillIds, not capabilities), is its own code (RUNTIME_IDENTITY_TOO_MANY_SKILLS) distinct from a malformed field, reports the count, and the user is shown 'too many active skills, disable some' — never the raw code.",
+      "baseline": "Reported 2026-09-09 (docx audit): a turn with >64 active skills failed with 'RUNTIME_IDENTITY_FIELD_INVALID: capabilities are invalid'. The field was activeSkillIds, not capabilities (both share normalizeCapabilities with a hardcoded message), the raw code reached the user, and it said nothing to do. Hygiene fix only — the count cap itself is unchanged here; the architectural per-turn selection is a separate change.",
+      "failureFallback": "Purely a message/code change at token issuance plus a friendly mapping in agent-runner's ERROR_PATTERNS; the legacy 'capabilities are invalid' string still maps so older/cached errors read well. A non-array field is still RUNTIME_IDENTITY_FIELD_INVALID, now named. Mutation-verified 2026-09-09: validating activeSkillIds as 'capabilities' and removing the friendly mapping each fail by name.",
+      "tests": [
+        "scripts/test-runtime-identity-skill-cap.mjs"
+      ]
     }
   ]
 }

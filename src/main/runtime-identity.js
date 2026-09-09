@@ -35,12 +35,19 @@ function boundedString(value, name, { required = true, max = MAX_FIELD_CHARS } =
   return text;
 }
 
-function normalizeCapabilities(value) {
+function normalizeCapabilities(value, field = "capabilities") {
   if (value == null) return [];
-  if (!Array.isArray(value) || value.length > MAX_CAPABILITIES) {
-    throw codedError("RUNTIME_IDENTITY_FIELD_INVALID", "capabilities are invalid");
+  if (!Array.isArray(value)) {
+    throw codedError("RUNTIME_IDENTITY_FIELD_INVALID", `${field} is invalid`);
   }
-  return [...new Set(value.map((item) => boundedString(item, "capability", { max: 120 })))].sort();
+  // Over-limit is a distinct, actionable condition (too many skills active this
+  // turn), NOT a malformed field — a distinct code lets the UI say exactly that,
+  // and the message names the REAL field (activeSkillIds, not capabilities).
+  if (value.length > MAX_CAPABILITIES) {
+    throw codedError("RUNTIME_IDENTITY_TOO_MANY_SKILLS", `${field} exceeds the ${MAX_CAPABILITIES}-item limit (${value.length})`);
+  }
+  const itemName = field === "activeSkillIds" ? "skill id" : "capability";
+  return [...new Set(value.map((item) => boundedString(item, itemName, { max: 120 })))].sort();
 }
 
 function normalizeIdentity(input = {}, options = {}) {
@@ -68,8 +75,8 @@ function normalizeIdentity(input = {}, options = {}) {
     issuedAt,
     expiresAt,
     nonce: boundedString(options.nonce || input.nonce || crypto.randomUUID(), "nonce"),
-    capabilities: normalizeCapabilities(input.capabilities),
-    activeSkillIds: normalizeCapabilities(input.activeSkillIds),
+    capabilities: normalizeCapabilities(input.capabilities, "capabilities"),
+    activeSkillIds: normalizeCapabilities(input.activeSkillIds, "activeSkillIds"),
     workspacePath: boundedString(input.workspacePath || "workspace:none", "workspacePath", { max: 2_048 }),
     permissionMode: boundedString(input.permissionMode || "ask", "permissionMode", { max: 40 }),
   };

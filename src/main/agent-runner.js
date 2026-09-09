@@ -2,6 +2,17 @@
 
 const ERROR_PATTERNS = [
   {
+    code: "RUNTIME_SKILL_TOO_MANY",
+    category: "runtime_diagnostic",
+    // The runtime identity token caps the skills active in ONE conversation.
+    // Reported verbatim before this: "RUNTIME_IDENTITY_FIELD_INVALID:
+    // capabilities are invalid" — the field was actually activeSkillIds, and
+    // the message told the user nothing to do.
+    test: /RUNTIME_IDENTITY_TOO_MANY_SKILLS|activeSkillIds exceeds the \d+-item limit|capabilities are invalid/i,
+    message: "本对话同时生效的技能过多，超过了单轮上限。请在技能面板停用一部分暂时用不到的技能（工作区学习技能可优先停用）后重试。",
+    retryable: false,
+  },
+  {
     code: "RUNTIME_SKILL_PARSE_FAILED",
     category: "runtime_diagnostic",
     test: /Failed to parse skill .*SKILL\.md|skill failed to load|runtime skill parse error/i,
