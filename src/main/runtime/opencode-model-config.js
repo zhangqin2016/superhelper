@@ -206,8 +206,16 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
   if (routeLimitThroughOptions) {
     models[modelId].options = { ...(models[modelId].options || {}), max_completion_tokens: output };
   }
+  // The endpoint's output-limit field on the surface this preset actually uses:
+  // max_output_tokens on Responses, else the learned chat field. If the probe
+  // learned the endpoint REFUSES that field (a proxy that rejects it), the
+  // engine must not send it either — so drop the limit entirely and let the
+  // model use its default, exactly as the probe did to pass.
+  const activeOutputField = useResponses ? "max_output_tokens" : learnedShape.outputLimitField;
+  const outputFieldRefused = Array.isArray(learnedShape.omit) && learnedShape.omit.includes(activeOutputField);
+  const setOutputLimit = Boolean(output) && !routeLimitThroughOptions && !outputFieldRefused;
   // OpenCode requires both keys; zero retains its existing unknown-limit behavior.
-  if (context || (output && !routeLimitThroughOptions)) models[modelId].limit = { context: context || 0, output: routeLimitThroughOptions ? 0 : (output || 0) };
+  if (context || setOutputLimit) models[modelId].limit = { context: context || 0, output: setOutputLimit ? output : 0 };
   if (profile?.capabilities) {
     models[modelId].tool_call = profile.capabilities.toolCall !== false;
     models[modelId].modalities = {

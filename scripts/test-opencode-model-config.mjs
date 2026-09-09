@@ -232,4 +232,41 @@ assert(normalizeModelIdForProtocol("deepseek-v4-pro") === "deepseek-v4-pro", "pr
   assert(r2.ok === false && /relative/.test(r2.reason), "relative path flagged");
 }
 
+// --- engine parity: a preset whose probe learned the Responses surface -------
+{
+  const shape = JSON.stringify({ outputLimitField: "max_tokens", temperature: "allowed", api: "responses" });
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://lilyxinjiapo.lilywb.cn/codex/v1", LILY_API_KEY: "sk",
+    LILY_MODEL: "gpt-5.3-codex-spark", LILY_OPENCODE_PROTOCOL: "openai", LILY_MODEL_REQUEST_SHAPE: shape,
+  });
+  assert(r.ok === true, r.reason);
+  const prov = JSON.parse(r.configContent).provider[r.model.providerID];
+  assert(prov.npm === "@ai-sdk/openai", "learned Responses surface runs on the official SDK (Responses route)");
+  assert(prov.options.includeUsage === undefined, "the openai-compatible stream-usage tweak is not applied on Responses");
+}
+
+// --- engine parity: the engine never sends an output field the probe learned is refused
+{
+  // A proxy that rejects max_output_tokens; the probe recorded omit of it.
+  const shape = JSON.stringify({ outputLimitField: "max_tokens", temperature: "allowed", api: "responses", omit: ["max_output_tokens"] });
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://lilyxinjiapo.lilywb.cn/codex/v1", LILY_API_KEY: "sk",
+    LILY_MODEL: "gpt-5.3-codex-spark", LILY_OPENCODE_PROTOCOL: "openai", LILY_MODEL_REQUEST_SHAPE: shape,
+    LILY_MAX_OUTPUT_TOKENS: "4096",
+  });
+  const m = JSON.parse(r.configContent).provider[r.model.providerID].models[r.model.modelID];
+  assert(!m.limit || (m.limit.output || 0) === 0, "a refused output field means no limit.output, so the SDK sends no max_output_tokens");
+}
+// --- and when NOT refused, a configured cap is still honored -----------------
+{
+  const shape = JSON.stringify({ outputLimitField: "max_tokens", temperature: "allowed", api: "responses" });
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://api.openai.com/v1", LILY_API_KEY: "sk",
+    LILY_MODEL: "gpt-6-astra", LILY_OPENCODE_PROTOCOL: "openai", LILY_MODEL_REQUEST_SHAPE: shape,
+    LILY_MAX_OUTPUT_TOKENS: "4096",
+  });
+  const m = JSON.parse(r.configContent).provider[r.model.providerID].models[r.model.modelID];
+  assert(m.limit && m.limit.output === 4096, "a cap the endpoint accepts is still passed as limit.output");
+}
+
 console.log("opencode-model-config: ok");
