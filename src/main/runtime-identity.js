@@ -7,7 +7,14 @@ const path = require("node:path");
 const TOKEN_PREFIX = "lilyri1";
 const SCHEMA_VERSION = 1;
 const MAX_FIELD_CHARS = 256;
-const MAX_CAPABILITIES = 64;
+// A structural sanity bound on the token's authorization scope, NOT a product
+// cap on how many skills a user may enable. The token lists every skill whose
+// tools the session is allowed to use, so it must hold a rich workspace's
+// enabled set; per-turn RELEVANCE is applied elsewhere (recommendSkillCapability
+// Graph injects the turn-relevant subset into guidance every turn). 64 was too
+// small and broke real workspaces; 256 short ids is a ~10KB signed token. Above
+// this the failure is legible (RUNTIME_IDENTITY_TOO_MANY_SKILLS).
+const MAX_CAPABILITIES = 256;
 const MIN_SECRET_BYTES = 32;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -202,6 +209,7 @@ function runtimeIdentityInstallSecret(options = {}) {
 
 module.exports = {
   DEFAULT_TTL_MS,
+  MAX_CAPABILITIES,
   issueRuntimeIdentity,
   redactRuntimeIdentity,
   runtimeIdentityInstallSecret,
