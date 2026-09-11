@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getFullState: () => ipcRenderer.invoke("state:full"),
 
   listModels: () => ipcRenderer.invoke("models:list"),
+  discoverEndpointModels: (payload) => ipcRenderer.invoke("models:discover-endpoint", payload),
   listModelSelection: (sessionId) => ipcRenderer.invoke("models:selection-list", { sessionId }),
   setModelSelection: (selection, sessionId) => ipcRenderer.invoke("models:set-selection", { selection, sessionId }),
   setActiveModel: (presetId) => ipcRenderer.invoke("models:set-active", presetId),

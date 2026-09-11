@@ -445,4 +445,44 @@ export async function initModelSettings() {
     }
   });
   $("modelCustomCancelBtn")?.addEventListener("click", () => setCustomEditMode(null));
+  $("modelCustomDiscoverBtn")?.addEventListener("click", () => void discoverCustomModels());
+}
+
+// Fill the model-id datalist from the endpoint the user just typed, so they pick
+// a real model instead of guessing its id. Convenience only: any failure just
+// tells them to type it (capabilities are still auto-probed on save).
+async function discoverCustomModels() {
+  const btn = $("modelCustomDiscoverBtn");
+  const baseUrl = $("modelCustomBaseUrl")?.value?.trim() || "";
+  const apiKey = $("modelCustomApiKey")?.value?.trim() || "";
+  const protocol = normalizeProtocolValue($("modelCustomProtocol")?.value);
+  if (!baseUrl) {
+    showToast(t("settings.modelDiscoverNeedUrl"), "error");
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.dataset.busy = "1"; btn.textContent = t("settings.modelDiscovering"); }
+  try {
+    const result = await window.assistantClient.discoverEndpointModels({ baseUrl, apiKey, protocol });
+    if (!result?.ok) {
+      showToast(t("settings.modelDiscoverFailed"), "error");
+      return;
+    }
+    const list = $("modelCustomIdOptions");
+    if (list) {
+      list.replaceChildren();
+      for (const id of result.models) {
+        const opt = document.createElement("option");
+        opt.value = id;
+        list.appendChild(opt);
+      }
+    }
+    const field = $("modelCustomId");
+    if (field && !field.value.trim() && result.models[0]) field.value = result.models[0];
+    field?.focus();
+    showToast(t("settings.modelDiscoverOk", { count: String(result.models.length) }), "success");
+  } catch {
+    showToast(t("settings.modelDiscoverFailed"), "error");
+  } finally {
+    if (btn) { btn.disabled = false; delete btn.dataset.busy; btn.textContent = t("settings.modelDiscover"); }
+  }
 }

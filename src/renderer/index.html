@@ -854,16 +854,22 @@
                     autocomplete="off"
                   />
                   <label class="settings-field-label model-custom-id-label" for="modelCustomId" data-i18n="settings.modelCustomMainId">模型 ID</label>
-                  <input
-                    id="modelCustomId"
-                    class="skills-registry-input"
-                    type="text"
-                    maxlength="128"
-                    data-i18n-placeholder="settings.modelCustomMainIdPlaceholder"
-                    placeholder="例如 qwen3.7-max、glm-5.1"
-                    spellcheck="false"
-                    autocomplete="off"
-                  />
+                  <div class="model-custom-form-row">
+                    <input
+                      id="modelCustomId"
+                      class="skills-registry-input"
+                      type="text"
+                      maxlength="128"
+                      list="modelCustomIdOptions"
+                      data-i18n-placeholder="settings.modelCustomMainIdPlaceholder"
+                      placeholder="例如 qwen3.7-max、glm-5.1"
+                      spellcheck="false"
+                      autocomplete="off"
+                    />
+                    <datalist id="modelCustomIdOptions"></datalist>
+                    <button id="modelCustomDiscoverBtn" class="settings-action-btn settings-action-btn--secondary" type="button" data-i18n="settings.modelDiscover" data-i18n-title="settings.modelDiscoverHint">获取模型</button>
+                  </div>
+                  <p class="settings-section-desc" data-i18n="settings.modelDiscoverHint">填好下方「API 地址」和「API 密钥」后点此，自动列出该地址支持的模型；能力（视觉等）会在保存时自动探测。</p>
                   <label class="settings-field-label model-custom-id-label" for="modelCustomBaseUrl" data-i18n="settings.modelCustomBaseUrl">API 地址</label>
                   <input
                     id="modelCustomBaseUrl"

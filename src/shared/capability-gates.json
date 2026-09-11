@@ -974,6 +974,15 @@
       "tests": [
         "scripts/test-model-image-generation-codex-relay.mjs"
       ]
+    },
+    {
+      "id": "model-endpoint-discovery",
+      "protects": "Adding a model is simpler: paste the API URL + key and Fetch models, and Lily lists what the endpoint actually serves (standard GET /models, OpenAI Bearer or Anthropic x-api-key) so the user picks a real id instead of typing one. Discovery is convenience only and fails SOFT — any error (401/403/404/network/empty) returns { ok:false } and the caller falls back to manual entry, never a thrown error or a blocked save. Capabilities (vision, tool-call, request shape) remain auto-detected by the save-time probe; discovery only fills the model id.",
+      "baseline": "Before 2026-09-11 the custom-model form had no way to enumerate an endpoint's models — the user typed the model id by hand and could only guess what the address served. A server-published catalog existed (models.dev) but nothing queried the user's OWN base URL.",
+      "failureFallback": "Purely additive: a new opt-in Fetch-models button + discovery module; the manual model-id field is unchanged and remains the fallback whenever discovery fails. Mutation-verified 2026-09-11: making discovery throw instead of returning ok:false, and dropping the auth header, each fail the test by name. Verified live against the real relay (37 models).",
+      "tests": [
+        "scripts/test-model-endpoint-discovery.mjs"
+      ]
     }
   ]
 }

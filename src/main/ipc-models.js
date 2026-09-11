@@ -116,6 +116,11 @@ function registerModelHandlers(ctx) {
     }), { liveEnv: false });
   });
 
+  ipcMain.handle("models:discover-endpoint", async (_event, payload) => {
+    const { discoverEndpointModels } = require("./model-endpoint-discovery");
+    return discoverEndpointModels(payload || {});
+  });
+
   ipcMain.handle("models:delete-custom", (_event, presetId) => {
     return withRunnerChange(ctx, () => deleteCustomPreset(presetId), { liveEnv: false });
   });
