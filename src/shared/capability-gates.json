@@ -965,6 +965,15 @@
       "tests": [
         "scripts/test-model-image-generation.mjs"
       ]
+    },
+    {
+      "id": "model-image-generation-codex-relay",
+      "protects": "A user can generate images with the SAME ChatGPT/Codex account they chat through, via the codex-relay proxy — no separate OpenAI platform API key and no REST /images/generations endpoint (which the Codex line does not expose). The codex-relay image adapter drives the relay's /chat/completions path (which auto-injects the Responses built-in image_generation tool), streams the reply (required — a non-streamed request 502s behind nginx), buffers the full text, and extracts every data:image data-URI the relay emits as markdown into real files fed to the normal media pipeline (so a ~2MB image never bloats the chat transcript or context). Missing key/URL or a reply with no image both fail loudly, never silently. Settings exposes it as a BYOK image provider (relay URL + member key + model); media-provider-settings maps the choice to CODEX_RELAY_API_KEY/BASE_URL/MODEL.",
+      "baseline": "Before 2026-09-11 image generation had adapters only for dashscope/lily/volcengine/kling/minimax/zhipu/openai, and the openai adapter needed a real /images/generations endpoint + platform key. A ChatGPT-plan Codex relay exposes neither (probed: /images/generations 404, /chat/completions and /responses exist), yet its /chat/completions already returns generated images as data:image markdown — there was no Lily path to use it, so 'same token, can chat and recognize images but cannot generate' was a real gap.",
+      "failureFallback": "Purely additive: a new opt-in BYOK provider + adapter; every existing provider and the service path are untouched, and with no relay key/URL configured nothing changes. Streaming avoids the nginx 502; the tier suffix is stripped from the model id. Mutation-verified 2026-09-11: removing the data:image extraction, dropping stream:true, and removing the byokEnv mapping each fail the adapter test by name.",
+      "tests": [
+        "scripts/test-model-image-generation-codex-relay.mjs"
+      ]
     }
   ]
 }

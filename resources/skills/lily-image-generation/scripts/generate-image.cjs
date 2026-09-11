@@ -17,6 +17,7 @@ const ADAPTERS = {
   minimax: require("./providers/minimax.cjs"),
   zhipu: require("./providers/zhipu.cjs"),
   openai: require("./providers/openai.cjs"),
+  "codex-relay": require("./providers/codex-relay.cjs"),
 };
 
 function readStdin() {
@@ -122,6 +123,7 @@ function inferProviderFromEnv(env) {
   if (env.MINIMAX_API_KEY) return "minimax";
   if (env.ZHIPU_API_KEY || env.BIGMODEL_API_KEY) return "zhipu";
   if (env.OPENAI_IMAGE_API_KEY || env.OPENAI_IMAGE_BASE_URL) return "openai";
+  if (env.CODEX_RELAY_API_KEY && env.CODEX_RELAY_BASE_URL) return "codex-relay";
   return "";
 }
 
