@@ -99,15 +99,30 @@ test("missing relay config fails loudly", async () => {
   assert.match(r.err, /relay|中转/i, "the error names the relay config");
 });
 
-test("media-provider settings maps the codex-relay BYOK choice to adapter env", () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "mps-"));
+test("image generation FOLLOWS the active model when it is flagged imageGen", () => {
+  // Not a standard media provider: a model flagged imageGen routes image
+  // generation through its OWN connection (base+key+model) via codex-relay,
+  // with no separate provider setup.
+  const dir = mkdtempSync(path.join(os.tmpdir(), "sp-"));
   process.env.LILY_USER_DATA_DIR = dir;
-  const settings = require("../src/main/media-provider-settings.js");
-  settings.setProviderKey("codex-relay", { apiKey: "cr_live", baseUrl: "https://host/codex/v1", imageModel: "gpt-6-astra" });
-  settings.setModalityChoice("image", "own", "codex-relay");
-  const env = settings.getMediaProviderSpawnEnv();
-  assert.equal(env.LILY_IMAGE_PROVIDER, "codex-relay");
-  assert.equal(env.CODEX_RELAY_API_KEY, "cr_live");
-  assert.equal(env.CODEX_RELAY_BASE_URL, "https://host/codex/v1");
-  assert.equal(env.CODEX_RELAY_IMAGE_MODEL, "gpt-6-astra");
+  process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
+  const presets = require("../src/main/model-presets.js");
+  const saved = presets.saveCustomPreset({
+    label: "Relay", model: "gpt-6-astra:high", baseUrl: "https://host/codex/v1",
+    apiKey: "cr_live_key_123456", protocol: "openai",
+    capabilities: { imageGen: true },
+  });
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  presets.setActivePreset(saved.preset.id);
+  const { activePresetImageGenEnv } = require("../src/main/spawn-env.js");
+  const env = activePresetImageGenEnv();
+  assert.equal(env.LILY_IMAGE_PROVIDER, "codex-relay", "image gen routes to codex-relay");
+  assert.equal(env.CODEX_RELAY_BASE_URL, "https://host/codex/v1", "uses the model's own base URL");
+  assert.equal(env.CODEX_RELAY_API_KEY, "cr_live_key_123456", "uses the model's own key");
+  assert.equal(env.CODEX_RELAY_IMAGE_MODEL, "gpt-6-astra", "tier suffix stripped");
+
+  // A model NOT flagged imageGen must not hijack image generation.
+  const plain = presets.saveCustomPreset({ label: "Plain", model: "m2", baseUrl: "https://host2/v1", apiKey: "k2xxxxxxxx", protocol: "openai" });
+  presets.setActivePreset(plain.preset.id);
+  assert.deepEqual(activePresetImageGenEnv(), {}, "a non-imageGen model emits no image env");
 });

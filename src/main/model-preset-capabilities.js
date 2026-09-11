@@ -13,12 +13,18 @@ function normalizePresetCapabilities(value, previous = null) {
   const src = value && typeof value === "object" && !Array.isArray(value) ? value : null;
   const prev = previous && typeof previous === "object" ? previous : {};
   const vision = src && "vision" in src ? Boolean(src.vision) : Boolean(prev.vision);
+  // imageGen: this model can PRODUCE images (e.g. a Codex-relay endpoint that
+  // injects the Responses image_generation tool on its chat path). When set,
+  // image generation follows THIS model's own connection instead of a separate
+  // standard media provider — the relay is not one of our standard services.
+  const imageGen = src && "imageGen" in src ? Boolean(src.imageGen) : Boolean(prev.imageGen);
   const rawMimes = src && "filePartMimes" in src ? src.filePartMimes : prev.filePartMimes;
   const filePartMimes = Array.isArray(rawMimes)
     ? [...new Set(rawMimes.map((m) => String(m || "").trim().toLowerCase()).filter(Boolean))].slice(0, 12)
     : [];
   const out = {};
   if (vision) out.vision = true;
+  if (imageGen) out.imageGen = true;
   if (filePartMimes.length) out.filePartMimes = filePartMimes;
   return Object.keys(out).length ? out : null;
 }

@@ -1113,6 +1113,8 @@
   "settings.modelTlsSkipVerifyDesc": "يُستخدم فقط لخدمات النماذج الداخلية ذات الشهادات الذاتية. لا يتم تغيير عنوان API.",
   "settings.modelVisionCapable": "يدعم هذا النموذج التعرف على الصور (الرؤية)",
   "settings.modelVisionCapableDesc": "اتركه فارغًا للاكتشاف التلقائي؛ عند التحديد تُرسل الصور مباشرة إلى النموذج بدلًا من جسر الترجمة.",
+  "settings.modelImageGenCapable": "يستطيع هذا النموذج توليد الصور (عبر واجهة المحادثة)",
+  "settings.modelImageGenCapableDesc": "لنقاط النهاية ذات توليد الصور المدمج مثل وسيط Codex؛ عند التحديد يستخدم توليد الصور اتصال هذا النموذج — دون الحاجة إلى مزوّد صور منفصل.",
   "settings.modelCustomOwnKey": "مفتاح مستقل مُعد",
   "settings.modelCustomAdd": "إضافة",
   "settings.modelVerifying": "جارٍ التحقق…",

@@ -58,6 +58,32 @@ function findDevelopmentPlaywrightNodeModules() {
   return "";
 }
 
+// Image generation that FOLLOWS the active model. When the active preset is
+// flagged imageGen-capable (e.g. a Codex-relay endpoint whose chat path injects
+// the Responses image_generation tool), route image generation through that same
+// connection via the codex-relay adapter — no separate standard media provider,
+// no re-entering the key. An explicit media-provider choice still wins because
+// getMediaProviderSpawnEnv() is spread AFTER this.
+function activePresetImageGenEnv() {
+  try {
+    const preset = require("./model-presets").getActivePreset();
+    if (!preset?.capabilities?.imageGen) return {};
+    const env = resolveLilyEnv();
+    const base = String(env.LILY_API_BASE_URL || env.LILY_OPENCODE_BASE_URL || "").trim();
+    const key = String(env.LILY_API_KEY || env.LILY_OPENCODE_API_KEY || "").trim();
+    const model = String(env.LILY_MODEL || env.LILY_OPENCODE_MODEL || "").trim().split(":")[0];
+    if (!base || !key) return {};
+    return {
+      LILY_IMAGE_PROVIDER: "codex-relay",
+      CODEX_RELAY_BASE_URL: base,
+      CODEX_RELAY_API_KEY: key,
+      ...(model ? { CODEX_RELAY_IMAGE_MODEL: model } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
 function buildAgentSpawnEnv(options = {}) {
   ensureRuntimeNodeShim();
   const home = userHome();
@@ -109,6 +135,9 @@ function buildAgentSpawnEnv(options = {}) {
     ...engineEnv,
     ...getSearchSpawnEnv(),
     ...getRuntimeEnvExtras(),
+    // Model-driven image generation (active preset flagged imageGen): before both
+    // the server default and the explicit media choice below, so either overrides.
+    ...activePresetImageGenEnv(),
     // After getRuntimeEnvExtras (server-delivered LILY_*_PROVIDER default) so an
     // explicit local user choice wins; emits nothing when set to "auto".
     ...getMediaProviderSpawnEnv(),
@@ -162,4 +191,4 @@ function buildAgentSpawnEnv(options = {}) {
   return env;
 }
 
-module.exports = { buildAgentSpawnEnv, resolveLilyEnv };
+module.exports = { buildAgentSpawnEnv, resolveLilyEnv, activePresetImageGenEnv };

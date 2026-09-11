@@ -909,6 +909,13 @@
                       <small data-i18n="settings.modelVisionCapableDesc">留空则自动探测；勾选后图片直接发给模型，不再走翻译桥。</small>
                     </span>
                   </label>
+                  <label class="settings-check-row model-imagegen-row" for="modelCustomImageGen">
+                    <input id="modelCustomImageGen" type="checkbox" />
+                    <span>
+                      <span data-i18n="settings.modelImageGenCapable">此模型支持生成图片（通过对话接口）</span>
+                      <small data-i18n="settings.modelImageGenCapableDesc">用于 Codex 中转等内置生图的端点；勾选后生图直接用此模型的连接，无需单独配置图片服务商。</small>
+                    </span>
+                  </label>
                 </div>
               </details>
             </section>

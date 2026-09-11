@@ -1111,6 +1111,8 @@
   "settings.modelTlsSkipVerifyDesc": "仅用于内网自签名模型服务；不修改 API 地址。",
   "settings.modelVisionCapable": "此模型支持图片识别（视觉）",
   "settings.modelVisionCapableDesc": "留空则自动探测；勾选后图片直接发给模型，不再走翻译桥。",
+  "settings.modelImageGenCapable": "此模型支持生成图片（通过对话接口）",
+  "settings.modelImageGenCapableDesc": "用于 Codex 中转等内置生图的端点；勾选后生图直接用此模型的连接，无需单独配置图片服务商。",
   "settings.modelCustomApiKeyPlaceholder": "sk-...",
   "settings.modelCustomOwnKey": "已配置独立密钥",
   "settings.modelCustomAdd": "添加",
