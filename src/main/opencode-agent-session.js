@@ -55,7 +55,7 @@ const {
 const { claimContinuation, createTurnGateState } = require("./turn-continuation-budget");
 const { earliestPendingRequestAt } = require("./turn-user-wait");
 const requiredToolCompletion = require("./required-tool-completion-gate");
-const { rememberExecutionProgress } = require("./task-execution-progress");
+const { rememberExecutionProgress, executionProgressKeys } = require("./task-execution-progress");
 const { observeTurnLoop, stopTurnLoop } = require("./turn-loop-guard");
 const { characterApplicationForTrace } = require("./character-worlds/application-receipt");
 const log = getLogger("opencode-agent-session");
@@ -1631,6 +1631,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   _settleTurn(payload) {
     if (this._turnSettled) return;
+    payload = { ...payload, executionProgressKeys: executionProgressKeys(this._turnGates.todo) };
     this._clearIdleSettleTimer();
     this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;

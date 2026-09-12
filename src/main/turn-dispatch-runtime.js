@@ -135,6 +135,8 @@ function createTurnDispatchMethods({ log }) {
       }
       const attemptId = newDispatchAttemptId();
       try {
+        const continuation = manager.validateTaskContinuation?.(session.id, { continuationTurnId: admitted.turnId });
+        if (continuation?.ok === false) return { ok: false, reason: continuation.reason, turn: admitted };
         const claimed = manager.claimTurnInputDispatch(session.id, admitted.turnId, {
           attemptId,
           startedAt: Date.now(),

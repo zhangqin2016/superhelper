@@ -1,5 +1,6 @@
 "use strict";
 
+const { recordTaskContinuationSource } = require("./task-continuation-budget");
 const {
   LEGACY_AMBIGUOUS_OWNER_SCOPE,
   TURN_INPUT_MIGRATION_OWNED,
@@ -285,6 +286,12 @@ function createTurnAdmissionStoreMethods({
         keys.externalMobileDeviceId,
         characterWorldsSnapshot ? JSON.stringify(characterWorldsSnapshot) : null,
       );
+      if (inserted.changes === 1 && typeof admissionContext.sourceTurnId === "string" && admissionContext.sourceTurnId) {
+        recordTaskContinuationSource(this.db, {
+          sessionId: sid, ownerScope, sourceTurnId: admissionContext.sourceTurnId, continuationTurnId: turnId,
+          newTaskAttempt: admissionContext.newTaskAttempt === true,
+        });
+      }
       let row = inserted.changes === 1
         ? this.db.get(
             `SELECT * FROM turn_inputs

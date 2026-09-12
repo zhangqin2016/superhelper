@@ -238,6 +238,10 @@ const ctx = {
       ownerScope: "profile:tool-call-rescue",
     }),
     admitTurnInput: (sessionId, input) => admitTestTurn(sessionId, input),
+    getTurnInputByTurnId: (sessionId, turnId) => {
+      const turn = durableTurns.get(turnId);
+      return turn?.sessionId === sessionId ? turn : null;
+    },
     admitTurnInputFromSource: (sessionId, input) => (
       admitTestTurn(sessionId, input)
     ),

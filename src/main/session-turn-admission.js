@@ -36,6 +36,7 @@ function admitTurnInputFromSource(sessionId, input = {}, sourceTurnId = "") {
   return this._store().admitTurnInput(session.id, input, {
     ownerScope,
     sourceTurnId: String(sourceTurnId || ""),
+    newTaskAttempt: input.newTaskAttempt === true,
   });
 }
 
@@ -60,6 +61,7 @@ function admitQueuedTurnInput(
   const context = {
     ownerScope,
     queueRecoveryEnvelope,
+    newTaskAttempt: input.newTaskAttempt === true,
   };
   if (typeof sourceTurnId === "string" && sourceTurnId) {
     context.sourceTurnId = sourceTurnId;

@@ -30,7 +30,7 @@ function rememberExecutionProgress(gate, draft = {}) {
     if (draft.type !== "tool.done") return false;
     const started = state.active.get(id);
     state.active.delete(id);
-    if (!started || payload.isError === true || state.seen.size >= LIMIT) return false;
+    if (!started || payload.isError === true) return false;
     const name = String(started.name || "").trim().toLowerCase();
     if (!name || CONTROL_TOOLS.has(name.split(/[.:/]/).pop())) return false;
     const nativeExit = payload.metadata?.exit ?? payload.metadata?.exitCode;
@@ -45,10 +45,19 @@ function rememberExecutionProgress(gate, draft = {}) {
     const fingerprint = createHash("sha256").update(serialized).digest("hex");
     if (state.seen.has(fingerprint)) return false;
     state.seen.add(fingerprint);
+    // This is a bounded recent-observation window, not an acceptance ledger.
+    // Saturating it must not disable progress detection for the rest of a long
+    // turn. Absolute continuation/step caps remain independent of this signal:
+    // even a cycle longer than this window cannot earn unbounded re-entry.
+    if (state.seen.size > LIMIT) state.seen.delete(state.seen.values().next().value);
     gate.progress = (gate.progress || 0) + 1;
     gate.attempts = 0;
     return true;
   } catch { return false; } // Malformed receipts retain the existing todo-only policy.
 }
 
-module.exports = { rememberExecutionProgress };
+function executionProgressKeys(gate) {
+  return [...(turnReceipts.get(gate)?.seen || [])].slice(-128);
+}
+
+module.exports = { rememberExecutionProgress, executionProgressKeys };

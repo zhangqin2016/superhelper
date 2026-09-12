@@ -55,4 +55,11 @@ execution({ name: "lily_process_jobs_job_status", input: { jobId: "job-1" }, out
   ok: true, jobId: "job-1", state: "running", stdoutBytes: 10, updatedAt: "5",
 }) });
 assert.equal(session._turnGates.todo.attempts, 0, "real job log growth remains progress");
+let terminal;
+session._orchestrator = { notifyRunnerDone: (_, payload) => { terminal = payload; } };
+session._turnSettled = false;
+session._settleTurn({ code: 0, executionProgressKeys: ["forged"] });
+assert.ok(terminal.executionProgressKeys.length > 0);
+assert.ok(terminal.executionProgressKeys.every(key => /^[a-f0-9]{64}$/.test(key)), "only host receipts survive settlement, never supplied progress claims");
+assert.equal(session._turnGates.todo.progress || 0, 0, "receipt snapshot precedes gate reset");
 console.log("task execution progress: PASS (actual reducer → session completion path, bounded continuation)");

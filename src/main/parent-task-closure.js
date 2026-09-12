@@ -96,6 +96,7 @@ function shouldRecoverParentClosure({
   state = {},
   payload = {},
   recoveryLedger = null,
+  allowProductiveContinuation = false,
 } = {}) {
   const sourceTurnId = String(state.turnId || "").trim();
   const recoveryKey = `parent-closure:${String(sessionId || "").trim()}:${sourceTurnId}`;
@@ -103,6 +104,7 @@ function shouldRecoverParentClosure({
   const fail = (reason) => ({ ok: false, reason, recoveryKey, sourceTurnId, evidence });
   if (!sessionId || !sourceTurnId) return fail("MISSING_TURN_IDENTITY");
   if (payload.loopDetected) return fail("CONFIRMED_LOOP");
+  if (payload.continuationStopReason === "no_progress") return fail("NO_PROGRESS");
   if (!hasExecutionIntent(taskContract)) return fail("NON_EXECUTION_TASK");
   if (payload.interruptedByUser || payload.userInterrupted || payload.engineInterrupted) return fail("INTERRUPTED");
   if (
@@ -116,7 +118,8 @@ function shouldRecoverParentClosure({
   if (!remainingWork && !payload.stalled && !payload.failed && !payload.error && !payload.errorCode && !payload.code) return fail("NOT_INCOMPLETE");
   if (hasPendingUserInput(state)) return fail("WAITING_FOR_USER");
   if (!evidence.count) return fail("NO_EXECUTION_EVIDENCE");
-  if (state.currentPayload?.parentClosureRecovery) return fail("ALREADY_ATTEMPTED");
+  if (state.currentPayload?.parentClosureRecovery && !(allowProductiveContinuation
+    && Array.isArray(payload.executionProgressKeys) && payload.executionProgressKeys.length > 0)) return fail("ALREADY_ATTEMPTED");
   if (recoveryLedger?.has?.(recoveryKey)) return fail("ALREADY_CLAIMED");
   return { ok: true, reason: "ELIGIBLE", recoveryKey, sourceTurnId, evidence };
 }

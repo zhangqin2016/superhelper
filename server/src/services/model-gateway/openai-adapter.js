@@ -299,45 +299,83 @@ export async function pipeOpenAiStreamAsAnthropic(upstream, reply, body, { onUsa
     content_block: { type: "text", text: "" },
   });
 
-  const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let stopReason = "end_turn";
+  let sawCompletion = false;
+  let eventName = "";
   let inputTokens = 0;
   let outputTokens = 0;
   let sawUsage = false;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      let chunk;
-      try {
-        chunk = JSON.parse(payload);
-      } catch {
-        continue;
+  let reader;
+  const processLine = (line) => {
+    if (!line) { eventName = ""; return; }
+    if (line.startsWith("event:")) { eventName = line.slice(6).trim(); return; }
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (eventName === "error") throw new Error("Upstream stream error");
+    if (!payload) return;
+    if (payload === "[DONE]") { sawCompletion = true; return; }
+    let chunk;
+    try {
+      chunk = JSON.parse(payload);
+    } catch {
+      throw new Error("Malformed upstream stream data");
+    }
+    if (chunk?.error || chunk?.type === "error") throw new Error("Upstream stream error");
+    // Final include_usage chunk (choices may be empty) carries real usage.
+    if (chunk.usage) {
+      inputTokens = Number(chunk.usage.prompt_tokens || 0);
+      outputTokens = Number(chunk.usage.completion_tokens || 0);
+      sawUsage = true;
+    }
+    const choice = chunk.choices?.[0] || {};
+    const text = choice.delta?.content || "";
+    if (text) {
+      writeSse(reply, "content_block_delta", {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text },
+      });
+    }
+    if (choice.finish_reason != null) {
+      if (!["stop", "length", "tool_calls", "function_call", "content_filter"].includes(choice.finish_reason)) {
+        throw new Error("Invalid upstream finish reason");
       }
-      // Final include_usage chunk (choices may be empty) carries real usage.
-      if (chunk.usage) {
-        inputTokens = Number(chunk.usage.prompt_tokens || 0);
-        outputTokens = Number(chunk.usage.completion_tokens || 0);
-        sawUsage = true;
+      sawCompletion = true;
+      stopReason = ["tool_calls", "function_call"].includes(choice.finish_reason) ? "tool_use"
+        : choice.finish_reason === "stop" ? "end_turn"
+        : choice.finish_reason === "length" ? "max_tokens" : choice.finish_reason;
+    }
+  };
+  try {
+    reader = upstream.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+      for (const line of lines) processLine(line);
+      if (done) {
+        if (buffer) processLine(buffer);
+        break;
       }
-      const choice = chunk.choices?.[0] || {};
-      const text = choice.delta?.content || "";
-      if (choice.finish_reason) stopReason = choice.finish_reason === "tool_calls" ? "tool_use" : choice.finish_reason;
-      if (text) {
-        writeSse(reply, "content_block_delta", {
-          type: "content_block_delta",
-          index: 0,
-          delta: { type: "text_delta", text },
-        });
-      }
+    }
+    // A clean transport EOF does not establish that generation completed.
+    if (!sawCompletion) throw new Error("Upstream stream ended without completion");
+  } catch {
+    writeSse(reply, "error", {
+      type: "error",
+      error: { type: "api_error", message: "Upstream stream interrupted before a complete response was received." },
+    });
+    reply.raw.end();
+    if (typeof onUsage === "function") onUsage({ inputTokens, outputTokens, seen: sawUsage });
+    return;
+  } finally {
+    // Error events can arrive before EOF; release the upstream connection too.
+    if (reader) {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
   }
   writeSse(reply, "content_block_stop", { type: "content_block_stop", index: 0 });

@@ -8,7 +8,7 @@ const { LongTaskStore, TERMINAL_LONG_TASK_STATUSES } = require("./store");
 const { verifyProcessJobScope } = require("./turn-scope");
 const { matchesProcessIdentity } = require("./process-identity");
 const { enforceLogQuota } = require("./log-policy");
-const { latestWorkProgress } = require("../work-progress-protocol");
+const { recordJobProgress } = require("./job-progress");
 const { stopPidTree } = require("../process-tree-kill");
 const { ensureLaunchDiskSpace } = require("./disk-policy");
 
@@ -118,18 +118,14 @@ class DurableProcessJobRuntime {
     job = claimed.job;
     enforceLogQuota(job.stdoutPath);
     enforceLogQuota(job.stderrPath);
-    const stdout = readTail(job.stdoutPath).text;
-    const stderr = readTail(job.stderrPath).text;
-    const progress = latestWorkProgress(`${stdout}\n${stderr}`);
-    const seq = fileSize(job.stdoutPath) + fileSize(job.stderrPath);
-    if (progress && JSON.stringify(progress) !== JSON.stringify(job.progress)) {
-      const advanced = store.recordProgress(scope, job.id, {
-        holder: HOLDER, fencingEpoch: job.fencingEpoch, progressSeq: job.progressSeq + 1, progress,
-      });
-      if (advanced.ok) job = advanced.job;
-    }
+    const progress = recordJobProgress(store, scope, job, HOLDER);
+    if (!progress.ok) return progress.job || job;
+    job = progress.job;
     const marker = readJson(this._marker(job));
     if (marker && marker.launchNonce === job.processIdentity?.launchNonce) {
+      const finalProgress = recordJobProgress(store, scope, job, HOLDER);
+      if (!finalProgress.ok) return finalProgress.job || job;
+      job = finalProgress.job;
       const status = marker.exitCode === 0 ? "succeeded" : "failed";
       const terminal = store.markTerminal(scope, job.id, {
         holder: HOLDER, fencingEpoch: job.fencingEpoch, status,

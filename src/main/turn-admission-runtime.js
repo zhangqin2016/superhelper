@@ -175,6 +175,7 @@ function createTurnAdmissionMethods(deps = {}) {
           files,
           metadata,
           createdAt,
+          newTaskAttempt: input.newTaskAttempt === true,
         };
         if (hasSource) {
           const admitted = manager.admitTurnInputFromSource(
@@ -216,6 +217,7 @@ function createTurnAdmissionMethods(deps = {}) {
           scheduledTaskRunId: item.options?.scheduledTaskRunId || null,
         },
         createdAt: Date.now(),
+        newTaskAttempt: item.options?.newTaskAttempt === true,
       };
       if (Object.hasOwn(item.options || {}, "sourceTurnId")) {
         admissionOptions.sourceTurnId = item.options.sourceTurnId;
@@ -455,7 +457,7 @@ function createTurnAdmissionMethods(deps = {}) {
       state.queue.push(item);
       this._emitQueue(sessionId);
       require("./turn-start-guard").cancelTurnStart(this, sessionId);
-      this.interrupt(sessionId, { clearQueue: false });
+      this.interrupt(sessionId, { clearQueue: false, preservedTurnId: item.admittedTurnInput?.turnId });
       void this._dispatchNext(sessionId);
       return {
         ok: true,

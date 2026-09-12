@@ -57,20 +57,34 @@ function createTurnRecoveryRuntime(options = {}) {
     const session = ctx.sessionManager?.findById?.(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
     const lastUser = ctx.sessionManager?.getLastUserMessage?.(sessionId);
-    if (!lastUser) return { ok: false, error: "NO_USER_MESSAGE" };
-    transcriptStore?.removeLastAssistantMessage?.(sessionId);
     if (typeof sendUserMessage !== "function") return { ok: false, error: "SEND_UNAVAILABLE" };
-    const sourceTurnId = lastUser.turnId || lastUser.record?.turnId || null;
+    const sourceTurnId = retryOptions.sourceTurnId || lastUser?.turnId || lastUser?.record?.turnId || null;
     const sourceTurn = sourceTurnId
       ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, sourceTurnId)
       : null;
-    return sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
+    const explicitSource = Boolean(retryOptions.sourceTurnId);
+    if (explicitSource && (!sourceTurn || sourceTurn.sessionId !== sessionId || sourceTurn.turnId !== sourceTurnId
+      || typeof sourceTurn.userText !== "string" || !sourceTurn.userText.trim())) {
+      return { ok: false, error: "TASK_CONTINUATION_SOURCE_UNAVAILABLE" };
+    }
+    const replay = explicitSource ? { content: sourceTurn.userText, files: sourceTurn.files } : lastUser;
+    if (!replay) return { ok: false, error: "NO_USER_MESSAGE" };
+    if (!explicitSource) transcriptStore?.removeLastAssistantMessage?.(sessionId);
+    const result = await sendUserMessage(sessionId, replay.content, replay.files || [], {
       recordUser: false,
       spawnEngine: true,
+      ...retryOptions,
       sourceTurnId,
       sourceTaskCore: sourceTurn?.taskCore || null,
-      ...retryOptions,
+      // Only the explicit retry IPC renews authority. Internal self-heal uses
+      // this same helper and must remain part of the original finite chain.
+      newTaskAttempt: retryOptions.userInitiated === true,
     });
+    if (result?.ok && explicitSource) {
+      transcriptStore?.supersedeAssistantTurn?.(sessionId, sourceTurnId, result.turnId);
+      emit(sessionId, "assistant.supersedes", { supersedes: sourceTurnId }, { turnId: sourceTurnId });
+    }
+    return result;
   }
 
   async function maybeSelfHealAndRetry(sessionId, failure) {
@@ -100,7 +114,7 @@ function createTurnRecoveryRuntime(options = {}) {
       require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
       log.info("model self-heal retry: session=%s code=%s", sessionId, failure.code);
       emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code });
-      const retried = await retryLastMessage(sessionId);
+      const retried = await retryLastMessage(sessionId, { sourceTurnId: failure?.sourceTurnId || failure?.supersedesTurnId });
       if (!retried?.ok) log.warn("model self-heal retry not sent: %s", retried?.error || "unknown");
     } catch (err) {
       log.warn("model self-heal failed open: %s", err?.message || err);
@@ -142,8 +156,16 @@ function createTurnRecoveryRuntime(options = {}) {
       const continueInstead = !documentRecovery
         && rescue.shouldContinueInsteadOfReplay(failure?.code, ranTools);
       if (!documentRecovery && !continueInstead && !rescue.isSideEffectFreeToolRun(ranTools)) return false;
+      const sourceTurnId = failure?.supersedesTurnId || failure?.sourceTurnId || null;
+      const sourceTurn = sourceTurnId
+        ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, sourceTurnId)
+        : null;
+      if (failure?.sourceTurnId && (!sourceTurn || sourceTurn.sessionId !== sessionId
+        || sourceTurn.turnId !== sourceTurnId || typeof sourceTurn.userText !== "string" || !sourceTurn.userText.trim())) return false;
       const lastUser = documentRecovery || continueInstead
         ? null
+        : sourceTurn && failure?.sourceTurnId
+          ? { content: sourceTurn.userText, files: sourceTurn.files, turnId: sourceTurnId }
         : ctx.sessionManager?.getLastUserMessage?.(sessionId);
       if (!documentRecovery && !continueInstead && !lastUser) return false;
       rescue.markRescueAttempt(sessionId, failure.code);
@@ -173,20 +195,19 @@ function createTurnRecoveryRuntime(options = {}) {
         }
       }
 
-      const deferAssistantRemoval = strategy.kind === "evidence_verify_retry" || documentRecovery;
+      const deferAssistantRemoval = strategy.kind === "evidence_verify_retry" || documentRecovery || sourceTurnId;
       if (!deferAssistantRemoval) transcriptStore?.removeLastAssistantMessage?.(sessionId);
       const content = documentRecovery
         ? documentRecovery.content
         : continueInstead
           ? rescue.continuationHintFor(modelRecipes())
           : String(lastUser.content || "").trim();
-      const sourceTurnId = failure?.supersedesTurnId
+      const replaySourceTurnId = sourceTurnId
         || lastUser?.turnId
         || lastUser?.record?.turnId
         || null;
-      const sourceTurn = sourceTurnId
-        ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, sourceTurnId)
-        : null;
+      const replaySource = sourceTurn || (replaySourceTurnId
+        ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, replaySourceTurnId) : null);
       const recipes = modelRecipes();
       const hint = continueInstead
         ? rescue.continuationHintFor(recipes)
@@ -211,8 +232,8 @@ function createTurnRecoveryRuntime(options = {}) {
           skipPreflight: !strategy.preflight,
           expectedArtifactPaths: documentRecovery?.paths || [],
           documentDeliveryRecovery: Boolean(documentRecovery),
-          sourceTurnId,
-          sourceTaskCore: sourceTurn?.taskCore || null,
+          sourceTurnId: replaySourceTurnId,
+          sourceTaskCore: replaySource?.taskCore || null,
           recovery: {
             kind: strategy.kind,
             mode: continueInstead ? "continuation" : "replay",
@@ -229,16 +250,16 @@ function createTurnRecoveryRuntime(options = {}) {
         try {
           superseded = transcriptStore?.supersedeAssistantTurn?.(
             sessionId,
-            failure?.supersedesTurnId,
+            sourceTurnId,
             retried.turnId,
           );
         } catch {
           superseded = null;
         }
-        if (!superseded) transcriptStore?.removeLastAssistantMessage?.(sessionId);
-        if (failure?.supersedesTurnId) {
-          emit(sessionId, "assistant.supersedes", { supersedes: failure.supersedesTurnId }, {
-            turnId: failure.supersedesTurnId,
+        if (!superseded && !sourceTurnId) transcriptStore?.removeLastAssistantMessage?.(sessionId);
+        if (sourceTurnId) {
+          emit(sessionId, "assistant.supersedes", { supersedes: sourceTurnId }, {
+            turnId: sourceTurnId,
           });
         }
       }
@@ -249,10 +270,12 @@ function createTurnRecoveryRuntime(options = {}) {
     }
   }
 
-  async function afterParentClosureTerminal(sessionId, source, { failed = false, failure = null, selfHeal, afterFinalize } = {}) {
+  async function afterParentClosureTerminal(sessionId, source, { failed = false, failure = null, selfHeal, afterFinalize, suppressRecovery = false } = {}) {
     let parentClosure = { attempted: false };
-    if (source) parentClosure = await parentClosureRuntime.maybeParentClosureRecovery(sessionId, source);
-    if (!parentClosure.attempted && failed && typeof selfHeal === "function") await selfHeal(sessionId, failure);
+    if (source && !suppressRecovery) parentClosure = await parentClosureRuntime.maybeParentClosureRecovery(sessionId, source);
+    if (!suppressRecovery && !parentClosure.attempted && failed && typeof selfHeal === "function") {
+      await selfHeal(sessionId, { ...failure, sourceTurnId: failure?.sourceTurnId || source?.state?.turnId });
+    }
     if (typeof afterFinalize === "function") afterFinalize(sessionId);
     return parentClosure;
   }

@@ -1551,6 +1551,32 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(narrativeUpgradeResult);
+    console.log(await win.webContents.executeJavaScript(`(async () => {
+      const store = (await import("./modules/state.js")).default;
+      const { syncCommittedMessages, applyRuntimeEvent } = await import("./modules/session-runtime-store.js");
+      const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+      const sessionId = "session_task_pause_notice";
+      store.set("activeSessionId", sessionId);
+      const message = { id: "msg_task_pause_test", turnId: "turn_task_pause_test", role: "assistant",
+        content: "任务接续已暂停\\n\\n达到自动接续上限。最近记录的进度：3000 / 22280。\\n整个任务尚未验证完成。",
+        timestamp: new Date().toISOString(), meta: { taskContinuation: { status: "paused", sourceTurnId: "original", reason: "TASK_CONTINUATION_BUDGET_EXHAUSTED" } } };
+      syncCommittedMessages(sessionId, []);
+      showSessionMessages(sessionId);
+      for (let seq = 1; seq <= 2; seq++) applyRuntimeEvent({ sessionId, seq, turnId: null,
+        type: "engine.warning", source: "long_task_supervisor", ts: Date.now(),
+        payload: { notice: { code: "taskContinuationPaused" }, committedMessage: message } });
+      renderConversation(sessionId, { force: true });
+      const panel = document.querySelector('[data-session-id="' + sessionId + '"] .runtime-messages');
+      const notices = panel.querySelectorAll('.task-continuation-notice');
+      if (notices.length !== 1) throw new Error('pause must render once as a platform notice, not as a completed agent turn');
+      if (!notices[0].textContent.includes('3000 / 22280')) throw new Error('pause progress missing');
+      if (notices[0].querySelector('.assistant-turn-footer, .assistant-turn-status')) throw new Error('pause fabricated a completion footer');
+      if (notices[0].getBoundingClientRect().height <= 0) throw new Error('pause notice is hidden');
+      syncCommittedMessages(sessionId, [message]);
+      renderConversation(sessionId, { force: true });
+      if (panel.querySelectorAll('.task-continuation-notice').length !== 1) throw new Error('history reload lost/duplicated pause notice');
+      return 'task-continuation-notice-dom: ok';
+    })()`));
     const liveTurnPreserveResult = await win.webContents.executeJavaScript(`(
       async () => {
         const store = (await import("./modules/state.js")).default;

@@ -64,7 +64,7 @@ function createProcessJobsMcpServer(options = {}) {
         healthcheck: healthcheckSchema,
         waitForHealthMs: z.number().int().min(0).max(120_000).optional().describe("Wait up to this many ms for health before returning."),
         idempotencyKey: z.string().optional().describe("Stable key for this logical job. Repeated starts with the same key return the original job."),
-        replayPolicy: z.enum(["never", "idempotent", "inspect"]).optional().describe("Crash recovery policy. Use idempotent only when rerunning cannot duplicate side effects."),
+        replayPolicy: z.enum(["never", "idempotent", "inspect"]).optional().describe("Use inspect for a finite job to wake the original task for outcome inspection (no automatic command replay). Default never disables automatic wake. Use idempotent only when rerunning cannot duplicate side effects."),
         outputFiles: z.array(z.string()).max(50).optional().describe("Expected result paths for verification and automatic continuation."),
       },
       annotations: { destructiveHint: true, openWorldHint: true },

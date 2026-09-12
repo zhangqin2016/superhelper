@@ -18,6 +18,8 @@ const timers = new Set(), sent = [];
 const manager = Object.assign({ _find: () => session, resolveTurnOwnerScope: () => ({ ownerScope }), _ensureImported() {}, _store: () => store,
   getTurnInputByTurnId: () => null }, methods);
 const identity = { sessionId: 's', ownerScope, sourceTurnId: 'source', recoveryKey: 'parent-closure:s:source' };
+const admitSource = id => store.admitTurnInput('s', { turnId: id, delivery: 'direct', status: 'completed', userText: 'Finish and test', files: [], metadata: {}, createdAt: now }, { ownerScope });
+admitSource('source');
 store.prepareParentClosureRecovery({ ...identity, now, source: { objective: 'Finish and test', taskContract: { active: true, taskType: 'code_change' }, evidence: { done: [{ id: 't', name: 'read', status: 'done' }] } } });
 store.claimParentClosureRecovery({ ...identity, now });
 store.close(); store = new MessageStore(path.join(root, 'messages.db'), path.join(root, 'blobs'));
@@ -39,6 +41,8 @@ try {
   assert.equal(sent.length, 1);
   // Reuse the real reopened database for distinct crash-window scenarios.
   const seed = (id) => {
+    now += 1; // A fresh user request follows the preceding cancellation epoch.
+    admitSource(id);
     const value = { ...identity, sourceTurnId: id, recoveryKey: `parent-closure:s:${id}` };
     store.prepareParentClosureRecovery({ ...value, now, source: { objective: 'Finish and test', taskContract: { active: true, taskType: 'code_change' }, evidence: { done: [{ id: 't', name: 'read', status: 'done' }] } } });
     return store.claimParentClosureRecovery({ ...value, now }).recovery;
@@ -66,6 +70,7 @@ try {
     manager.getTurnInputByTurnId = () => null;
   }
   const admitted = seed('admission');
+  assert.equal(manager.reserveTaskContinuation('s', { sourceTurnId: 'admission', continuationTurnId: admitted.recoveryTurnId, now }).ok, true);
   store.admitTurnInput('s', { turnId: admitted.recoveryTurnId, delivery: 'direct', status: 'admitted', userText: 'Finish and test', files: [], metadata: {}, createdAt: now }, { ownerScope });
   manager.getTurnInputByTurnId = (_s, id) => store.getTurnInputByTurnId(id, ownerScope);
   const mark = manager.markParentClosureRecoveryDispatched;

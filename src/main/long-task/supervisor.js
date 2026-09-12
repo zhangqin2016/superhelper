@@ -5,6 +5,8 @@ const path = require("node:path");
 const { LongTaskStore, TERMINAL_LONG_TASK_STATUSES } = require("./store");
 const { matchesProcessIdentity } = require("./process-identity");
 const { enforceGlobalLogQuota } = require("./log-policy");
+const { recordJobProgress } = require("./job-progress");
+const { deliverWakeNotifications } = require("./wake-notifications");
 
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
@@ -24,6 +26,7 @@ class LongTaskSupervisor {
     this.now = options.now || Date.now;
     this.matchesIdentity = options.matchesIdentity || matchesProcessIdentity;
     this.onWake = options.onWake || (async () => ({ ok: false, error: "WAKE_HANDLER_UNAVAILABLE" }));
+    this.onWakeAbandoned = options.onWakeAbandoned;
     this.timer = null;
     this.running = null;
   }
@@ -53,11 +56,16 @@ class LongTaskSupervisor {
         const scope = this._scope(candidate);
         const lease = store.claimLease(scope, candidate.id, { holder: this.holder, ttlMs: this.leaseMs });
         if (!lease.ok) { counts.skipped += 1; continue; }
-        const job = lease.job;
+        const progress = recordJobProgress(store, scope, lease.job, this.holder);
+        if (!progress.ok) { counts.skipped += 1; continue; }
+        let job = progress.job;
         const marker = readJson(path.join(this.jobsDir, `${job.id}.terminal.json`));
         let status = null;
         let error = null;
         if (marker && marker.launchNonce === job.processIdentity?.launchNonce) {
+          const finalProgress = recordJobProgress(store, scope, job, this.holder);
+          if (!finalProgress.ok) { counts.skipped += 1; continue; }
+          job = finalProgress.job;
           status = marker.exitCode === 0 ? "succeeded" : "failed";
           error = marker.error || null;
         } else {
@@ -123,6 +131,7 @@ class LongTaskSupervisor {
           }).ok) result.released += 1;
         }
       }
+      await deliverWakeNotifications(store, this.onWakeAbandoned);
       return result;
     } finally { store.close(); }
   }

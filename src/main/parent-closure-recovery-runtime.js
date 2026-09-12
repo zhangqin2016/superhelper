@@ -16,6 +16,7 @@ function persistedSource(source = {}, evidence = {}) {
     files: Array.isArray(source.files) ? source.files.slice(0, 64) : [],
     taskContract: source.taskContract || null,
     continuationHandoff: source.payload?.continuationHandoff || null,
+    executionProgressKeys: source.payload?.executionProgressKeys || [],
     // The immutable task core remains in turn_inputs. Persist only its
     // identity here; restart recovery rehydrates the full envelope by source
     // turn id instead of duplicating a potentially large context snapshot.
@@ -48,10 +49,10 @@ function createParentClosureRecoveryRuntime(options = {}) {
     leases.delete(sessionId);
   }
 
-  function cancelPendingParentClosures(sessionId) {
+  function cancelPendingParentClosures(sessionId, options = {}) {
     generations.set(sessionId, (generations.get(sessionId) || 0) + 1);
     clearLease(sessionId);
-    try { ctx.sessionManager?.cancelPendingParentClosureRecoveries?.(sessionId); }
+    try { ctx.sessionManager?.cancelPendingParentClosureRecoveries?.(sessionId, options); }
     catch (err) { log.warn("parent closure cancellation failed: %s", err?.message || err); }
   }
 
@@ -100,6 +101,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
       taskContract: source.taskContract || null,
       state: source.state || {},
       payload: source.payload || {},
+      allowProductiveContinuation: typeof ctx.sessionManager?.reserveTaskContinuation === "function",
     });
   }
 
@@ -181,11 +183,17 @@ function createParentClosureRecoveryRuntime(options = {}) {
           ...extra,
         }, { turnId: decision.sourceTurnId });
         if (typeof emitNotice === "function") {
-          const detail = phase === "started"
+          const stopDetails = {
+            TASK_CONTINUATION_NO_PROGRESS: "未观察到跨轮新增执行进展，已停止自动接续；原任务尚未完成。",
+            TASK_CONTINUATION_BUDGET_EXHAUSTED: "本任务已达到 8 次自动接续上限；已保留进展，剩余工作尚未完成。",
+            TASK_CONTINUATION_DEADLINE: "本任务已达到 24 小时自动接续时限；已保留进展，剩余工作尚未完成。",
+            TASK_CONTINUATION_CANCELLED: "任务已停止，不再自动接续。",
+          };
+          const detail = stopDetails[extra.reason] || (phase === "started"
             ? "检测到父任务尚未收尾，正在基于已有工具结果继续执行"
             : phase === "dispatched"
               ? "已在原会话中继续执行，并将完成剩余验证"
-              : "自动续跑未启动，本轮将保留失败原因并等待用户处理";
+              : "自动续跑未启动，本轮将保留失败原因并等待用户处理");
           emitNotice(sessionId, {
             code: "parentTaskClosureRecovery",
             level: phase === "unavailable" ? "warning" : "progress",
@@ -196,7 +204,6 @@ function createParentClosureRecoveryRuntime(options = {}) {
           });
         }
       };
-      emitRecovery("started");
       const rawObjective = String(source.objective || source.state?.enginePayload?.rawText || "").trim();
       const guidance = buildParentClosurePrompt({ objective: rawObjective, evidence: decision.evidence, continuationHandoff: source.payload?.continuationHandoff });
       if (typeof sendUserMessage !== "function" || !rawObjective) {
@@ -212,6 +219,24 @@ function createParentClosureRecoveryRuntime(options = {}) {
         return { ok: false, attempted: true, reason: "SEND_UNAVAILABLE" };
       }
       const recoveryTurnId = durableRecovery?.recoveryTurnId || null;
+      // Shared with process-job wakes. Persistence failures never authorize a
+      // fallback send, and uncertain sends retain their reserved budget.
+      if (typeof manager?.reserveTaskContinuation === "function") {
+        const reservation = manager.reserveTaskContinuation(sessionId, {
+          sourceTurnId: decision.sourceTurnId, continuationTurnId: recoveryTurnId,
+          progressKeys: source.payload?.executionProgressKeys || [], now: now(),
+        });
+        if (!reservation?.ok) {
+          const reason = reservation?.reason || "TASK_CONTINUATION_UNAVAILABLE";
+          manager.markParentClosureRecoveryUnavailable?.(sessionId, {
+            sourceTurnId: decision.sourceTurnId, recoveryKey: decision.recoveryKey,
+            claimToken: durableClaim?.claimToken, reason,
+          });
+          emitRecovery("unavailable", { reason });
+          return { ok: false, attempted: true, reason };
+        }
+      }
+      emitRecovery("started");
       if (recoveryTurnId && typeof manager?.getTurnInputByTurnId === "function") {
         const existing = manager.getTurnInputByTurnId(sessionId, recoveryTurnId);
         if (existing) {
@@ -333,7 +358,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
           pendingHooks: new Map(),
           currentPayload: { parentClosureRecovery: false },
         },
-        payload: source.continuationHandoff ? { code: 0, continuationHandoff: source.continuationHandoff } : { stalled: true },
+        payload: { executionProgressKeys: source.executionProgressKeys || [], ...(source.continuationHandoff ? { code: 0, continuationHandoff: source.continuationHandoff } : { stalled: true }) },
       });
       if (result.ok) resumed += 1;
     }

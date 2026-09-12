@@ -1,5 +1,23 @@
 "use strict";
 
+const { reserveTaskContinuation: reserveBudget, cancelTaskContinuations, validateTaskContinuation: validateBudget } = require("./store/task-continuation-budget");
+
+function validateTaskContinuation(sessionId, input = {}) {
+  const session = this._find(sessionId), ownerScope = ownerFor(this, sessionId);
+  if (!session || !ownerScope) return { ok: false, reason: "OWNER_SCOPE_UNAVAILABLE" };
+  return validateBudget(this._store().db, { sessionId: session.id, ownerScope, continuationTurnId: input.continuationTurnId });
+}
+
+function reserveTaskContinuation(sessionId, input = {}) {
+  const identity = identityFor(this, sessionId, input);
+  if (!identity) return { ok: false, reason: "OWNER_SCOPE_UNAVAILABLE" };
+  this._ensureImported(this._find(sessionId));
+  return reserveBudget(this._store().db, {
+    ...identity, continuationTurnId: input.continuationTurnId,
+    progressKeys: input.progressKeys, now: input.now,
+  });
+}
+
 function ownerFor(manager, sessionId) {
   return manager.resolveTurnOwnerScope?.(sessionId)?.ownerScope || null;
 }
@@ -70,10 +88,11 @@ function listFutureParentClosureRecoveries(sessionId, now = Date.now()) {
   return this._store().listFutureParentClosureRecoveries(session.id, ownerScope, now);
 }
 
-function cancelPendingParentClosureRecoveries(sessionId) {
+function cancelPendingParentClosureRecoveries(sessionId, options = {}) {
   const session = this._find(sessionId);
   const ownerScope = ownerFor(this, sessionId);
   if (!session || !ownerScope) return;
+  cancelTaskContinuations(this._store().db, { sessionId: session.id, ownerScope, preservedTurnId: options.preservedTurnId });
   this._store().cancelPendingParentClosureRecoveries(session.id, ownerScope);
 }
 
@@ -86,6 +105,8 @@ function listPendingParentClosureRecoveries(sessionId, now = Date.now()) {
 }
 
 module.exports = {
+  validateTaskContinuation,
+  reserveTaskContinuation,
   cancelPendingParentClosureRecoveries,
   claimParentClosureRecovery,
   getParentClosureRecovery,

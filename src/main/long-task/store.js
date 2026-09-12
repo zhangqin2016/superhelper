@@ -3,6 +3,7 @@
 const path = require("node:path");
 const { openDatabase } = require("../store/sqlite-db");
 const { normalizeScope } = require("./scope-token");
+const { ensureWakeNotificationSchema } = require("./wake-notifications");
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "outcome_unknown"]);
 const ACTIVE = new Set(["starting", "running", "stopping"]);
@@ -90,6 +91,7 @@ class LongTaskStore {
     this.db = openDatabase(this.filePath);
     this.now = now;
     this._migrate();
+    ensureWakeNotificationSchema(this.db);
   }
 
   _migrate() {
@@ -366,10 +368,14 @@ class LongTaskStore {
     this.db.transaction(() => {
       for (const job of candidates) {
         const pending = this.db.get(
-          `SELECT 1 AS present FROM long_task_wakes WHERE job_id=? AND status='pending' LIMIT 1`,
+          `SELECT 1 AS present FROM long_task_wakes w
+           LEFT JOIN long_task_wake_notifications n ON n.wake_id=w.id
+           WHERE w.job_id=? AND (w.status='pending' OR (w.status='abandoned' AND n.delivered_at IS NULL)) LIMIT 1`,
           job.id,
         );
         if (pending) continue;
+        this.db.run(`DELETE FROM long_task_wake_notifications WHERE wake_id IN
+          (SELECT id FROM long_task_wakes WHERE job_id=?)`, job.id);
         this.db.run(`DELETE FROM long_task_wakes WHERE job_id=?`, job.id);
         if (this.db.run(`DELETE FROM long_task_jobs WHERE id=? AND terminal_at IS NOT NULL`, job.id).changes === 1) {
           prunedJobs.push(job);

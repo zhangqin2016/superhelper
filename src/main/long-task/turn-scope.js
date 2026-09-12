@@ -14,6 +14,9 @@ function buildProcessJobTurnGuidance({ secret, scope, now = Date.now } = {}) {
   });
   return [
     "## Process Job Scope",
+    "For long deterministic batches, use a durable job whose worker owns the full authorized queue, stable item IDs and committed checkpoints. A completed batch is not completion of the whole request.",
+    "Choose replayPolicy=inspect when a finite job should wake this conversation to inspect its outcome; never means no automatic wake, not an instruction to keep polling. Job wakeups do not authorize replay.",
+    "Checkpoint each committed batch, resume only pending items, bound retries and stop on cancellation or repeated failure. Unknown writes must be reconciled before retrying. Report processed/remaining/failed counts; final success requires the original acceptance criteria, not merely exit code 0.",
     "For every lily_process_jobs call in this turn, pass the following opaque value as scopeToken.",
     "Never print, quote, summarize, or place this token in user-visible content.",
     `scopeToken: \`${token}\``,

@@ -403,7 +403,7 @@ app.whenReady().then(async () => {
   try {
     const { longTaskDbPath } = require("./main/config");
     const { LongTaskSupervisor } = require("./main/long-task/supervisor");
-    const { createLongTaskWakeHandler } = require("./main/long-task/session-wakeup");
+    const { createLongTaskWakeHandler, createLongTaskPauseHandler } = require("./main/long-task/session-wakeup");
     const jobsDir = path.join(path.dirname(longTaskDbPath()), "process-jobs");
     const migration = require("./main/long-task/legacy-migration").migrateLegacyProcessJobs({
       legacyPath: path.join(jobsDir, "jobs.json"),
@@ -414,6 +414,7 @@ app.whenReady().then(async () => {
       dbPath: longTaskDbPath(),
       jobsDir,
       onWake: createLongTaskWakeHandler(appContext),
+      onWakeAbandoned: createLongTaskPauseHandler(appContext),
     });
     supervisor.start();
     longTaskSupervisorRef = supervisor;

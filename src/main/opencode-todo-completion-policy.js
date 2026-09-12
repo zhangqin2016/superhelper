@@ -133,12 +133,22 @@ function rememberTodoProgress(gate, unfinished) {
 function buildTodoGiveUpPayload(payload = {}, snapshot = {}, collectedOutput = "", { gate = {}, decision = "settle" } = {}) {
   const output = String(payload?.output || collectedOutput || "").trim();
   const notice = buildUnfinishedTodoNotice(snapshot);
+  const noProgress = Number(gate.attempts || 0) >= TODO_COMPLETION_GATE_MAX_ATTEMPTS;
+  const budgetExhausted = !noProgress && (decision !== "settle"
+    || Number(gate.total || 0) >= TODO_COMPLETION_GATE_MAX_TOTAL_ATTEMPTS);
+  const stopReason = budgetExhausted ? "turn_budget_exhausted" : "no_progress";
+  const reasonNotice = budgetExhausted
+    ? "本轮自动接续已达到上限；剩余工作尚未完成。"
+    : "连续接续未观察到新的执行进展；已停止重复催促，剩余工作尚未完成。";
   return {
     ...payload,
     ...(output ? {} : { stalled: true }),
     unfinishedTodoCount: (snapshot.unfinished || []).length,
-    ...(decision !== "settle" && gate.progress > 0 ? { continuationHandoff: { schemaVersion: 1, reason: "budget_exhausted", progress: gate.progress, unfinished: (snapshot.unfinished || []).slice(0, 32) } } : {}),
-    output: output && notice ? `${output}\n\n${notice}` : output,
+    continuationStopReason: stopReason,
+    continuationHandoff: budgetExhausted && gate.progress > 0
+      ? { schemaVersion: 1, reason: "budget_exhausted", progress: gate.progress, unfinished: (snapshot.unfinished || []).slice(0, 32) }
+      : undefined,
+    output: notice ? [output, notice, reasonNotice].filter(Boolean).join("\n\n") : output,
   };
 }
 

@@ -7,6 +7,24 @@ function wakeTurnId(wakeId) {
   return `turn_long_task_${digest.slice(0, 32)}`;
 }
 
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])]));
+}
+
+function progressKeys(job) {
+  if (job.status !== "succeeded" || job.exitCode !== 0) return [];
+  // A new process ID, observation timestamp or progress sequence is not new
+  // work. Only stable successful result facts can qualify another continuation.
+  const receipt = stableValue({
+    command: job.command || "", args: job.args || [], cwd: job.cwd || "",
+    status: job.status, exitCode: job.exitCode, progress: job.progress || {},
+    outputFiles: Array.isArray(job.outputFiles) ? [...job.outputFiles].sort() : [],
+  });
+  return [crypto.createHash("sha256").update(JSON.stringify(receipt), "utf8").digest("hex")];
+}
+
 function createLongTaskWakeHandler(ctx) {
   return async (wake, job) => {
     if (!job?.turnId || job.id !== wake.jobId || job.turnId !== wake.turnId
@@ -22,11 +40,41 @@ function createLongTaskWakeHandler(ctx) {
     if (!owner?.ok || owner.ownerScope !== wake.ownerScope) {
       return { ok: false, permanent: true, error: "OWNER_SCOPE_CHANGED" };
     }
+    if (job.replayPolicy === "never") return { ok: false, permanent: true, error: "JOB_REPLAY_FORBIDDEN" };
+    const manager = ctx.sessionManager;
+    let source;
+    try {
+      source = manager.getTurnInputByTurnId?.(wake.sessionId, job.turnId);
+      if (!source || source.sessionId !== wake.sessionId || source.turnId !== job.turnId
+        || source.ownerScope !== wake.ownerScope || typeof source.userText !== "string" || !source.userText.trim()) {
+        return { ok: false, permanent: true, error: "TASK_CONTINUATION_SOURCE_UNAVAILABLE" };
+      }
+      if (["cancelled", "interrupted"].includes(source.status)
+        || ["turn.cancelled", "turn.interrupted"].includes(source.terminalType)) {
+        return { ok: false, permanent: true, error: "TASK_CONTINUATION_CANCELLED" };
+      }
+      if (typeof manager.reserveTaskContinuation !== "function") {
+        return { ok: false, permanent: true, error: "TASK_CONTINUATION_BUDGET_UNAVAILABLE" };
+      }
+      const reservation = manager.reserveTaskContinuation(wake.sessionId, {
+        sourceTurnId: job.turnId,
+        continuationTurnId: wakeTurnId(wake.id),
+        progressKeys: progressKeys(job),
+      });
+      if (!reservation?.ok) {
+        return { ok: false, permanent: true, error: reservation?.reason || "TASK_CONTINUATION_BUDGET_UNAVAILABLE" };
+      }
+    } catch {
+      // The supervisor has a bounded retry policy. No send follows an unknown
+      // reservation outcome, and a retry reuses the same durable admission ID.
+      return { ok: false, permanent: false, error: "TASK_CONTINUATION_STATE_UNAVAILABLE" };
+    }
     const outputs = Array.isArray(job.outputFiles) && job.outputFiles.length
       ? `\nExpected outputs:\n${job.outputFiles.map((file) => `- ${file}`).join("\n")}`
       : "";
     const engineText = [
-      `A durable background process started by this conversation reached terminal state: ${job.status || "succeeded"}.`,
+      source.userText,
+      `A durable background process started by this conversation reached terminal state: ${job.status || "outcome_unknown"}.`,
       `Job id: ${job.id}`,
       `Original turn id: ${job.turnId}`,
       outputs,
@@ -34,7 +82,7 @@ function createLongTaskWakeHandler(ctx) {
     ].filter(Boolean).join("\n");
     const result = await ctx.turnOrchestrator.sendUserMessage(
       wake.sessionId,
-      `Continue completed background job ${job.id}`,
+      source.userText,
       [],
       {
         engineText,
@@ -47,10 +95,12 @@ function createLongTaskWakeHandler(ctx) {
         turnId: wakeTurnId(wake.id),
         durableQueueKey: wake.id,
         sourceTurnId: job.turnId,
+        sourceTaskCore: source.taskCore || null,
       },
     );
     return result?.ok ? { ok: true, duplicate: Boolean(result.duplicate) } : result;
   };
 }
 
-module.exports = { createLongTaskWakeHandler, wakeTurnId };
+module.exports = { createLongTaskWakeHandler, wakeTurnId,
+  createLongTaskPauseHandler: require("./session-wake-notice").createLongTaskPauseHandler };

@@ -1633,6 +1633,21 @@ if (messages.some((message) => message.role === "assistant" && message.turnId ==
 }
 
 sent.length = 0;
+const continuityStoppedTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "bounded partial turn", [], {
+  spawnEngine: false, skipPreflight: true,
+});
+runner.busy = false;
+runner.emit("done", { code: 0, output: "Partial work retained", unfinishedTodoCount: 2, continuationStopReason: "no_progress", executionProgressKeys: ["a".repeat(64)] });
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+const continuityTerminal = sent.flatMap((entry) => entry.payload?.events || [])
+  .find((event) => event.turnId === continuityStoppedTurn.turnId && event.type === "turn.completed");
+if (continuityTerminal?.payload?.continuationStopReason !== "no_progress"
+  || continuityTerminal.payload.unfinishedTodoCount !== 2 || continuityTerminal.payload.executionProgressKeys?.[0] !== "a".repeat(64)) {
+  throw new Error("terminal events must preserve the bounded stop reason and remaining todo count");
+}
+
+sent.length = 0;
 const engineInterruptedTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "engine interrupted", [], {
   spawnEngine: false,
   skipPreflight: true,
@@ -1899,11 +1914,18 @@ const originalTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "old work"
 if (!originalTurn.ok || !runner.isBusy()) {
   throw new Error(`priority source turn should start and own the runner: ${JSON.stringify(originalTurn)}`);
 }
+const originalCancelClosures = ctx.turnOrchestrator.turnRecoveryRuntime.cancelPendingParentClosures;
+let priorityCancellation;
+ctx.turnOrchestrator.turnRecoveryRuntime.cancelPendingParentClosures = (sid, options) => {
+  priorityCancellation = options;
+  return originalCancelClosures(sid, options);
+};
 const priority = await ctx.turnOrchestrator.interruptAndSend("s1", "urgent follow-up", [], {
   displayFiles: [],
   spawnEngine: false,
   skipPreflight: true,
 });
+ctx.turnOrchestrator.turnRecoveryRuntime.cancelPendingParentClosures = originalCancelClosures;
 if (!priority.ok || !priority.priority || !priority.queued) {
   throw new Error(`interruptAndSend should report a priority queued item: ${JSON.stringify(priority)}`);
 }
@@ -1914,6 +1936,7 @@ if (!allEvents.some((event) => event.type === "turn.interrupted" && event.turnId
   throw new Error("priority send must interrupt the active turn before dispatching");
 }
 const urgentStarted = allEvents.find((event) => event.type === "turn.started" && event.turnId !== originalTurn.turnId);
+if (priorityCancellation?.preservedTurnId !== urgentStarted?.turnId) throw new Error("priority replacement must be excluded from the old task cancellation fence");
 if (!urgentStarted) {
   throw new Error(`priority send must start a replacement turn: ${allEvents.map((event) => event.type).join(",")}`);
 }

@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { issueScopeToken, verifyScopeToken } = require("../src/main/long-task/scope-token.js");
+const { buildProcessJobTurnGuidance } = require("../src/main/long-task/turn-scope.js");
 
 const secret = Buffer.alloc(32, 7).toString("base64url");
 let now = 1_000_000;
@@ -21,6 +22,10 @@ const token = issueScopeToken({
   ttlMs: 60_000,
   now: () => now,
 });
+const guidance = buildProcessJobTurnGuidance({ secret, scope, now: () => now });
+assert.match(guidance, /worker owns the full authorized queue/);
+assert.match(guidance, /replayPolicy=inspect/);
+assert.match(guidance, /Unknown writes must be reconciled/);
 
 const verified = verifyScopeToken(token, { secret, operation: "start", now: () => now });
 assert.equal(verified.ok, true);

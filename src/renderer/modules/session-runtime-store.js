@@ -537,6 +537,15 @@ export function applyRuntimeEvent(event, opts = {}) {
   if (Number.isInteger(event.seq)) eventSeqBySession.set(event.sessionId, event.seq);
 
   const runtime = getRuntimeSession(event.sessionId);
+  if (event.type === "engine.warning" && event.source === "long_task_supervisor"
+    && event.payload?.notice?.code === "taskContinuationPaused") {
+    const message = event.payload.committedMessage;
+    if (message?.role === "assistant" && typeof message.id === "string" && message.meta?.taskContinuation?.status === "paused") {
+      upsertCommittedMessage(runtime, message);
+      runtime.attention = "failed";
+    }
+    return;
+  }
   if (event.type === "assistant.supersedes") return void removeSupersededAssistant(runtime, String(event.payload?.supersedes || ""));
   if (event.type === "user.committed") {
     const turnKey = event.turnId ? `${event.sessionId}:${event.turnId}` : "";

@@ -83,7 +83,7 @@ try {
   // No answer at all is the ONLY case that still deserves the stalled terminal.
   const answerless = todoPolicy.buildTodoGiveUpPayload({ code: 0, output: "  " }, todos, "");
   assert.equal(answerless.stalled, true, "an answerless turn keeps the stalled terminal");
-  assert.equal(answerless.output, "");
+  assert.match(answerless.output, /未观察到新的执行进展/);
   assert.equal(todoPolicy.buildUnfinishedTodoNotice({ unfinished: [] }), "");
 
   // One shared budget across every gate that re-enters a cleanly-ended turn.

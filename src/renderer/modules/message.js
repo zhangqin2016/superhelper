@@ -58,6 +58,7 @@ import { renderMessageQueue, refreshSendEnabled } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
 import { appendSwitchNoticeArticle } from "./character-switch-notices.js";
+import { appendTaskContinuationNotice } from "./task-continuation-notice.js";
 import { collectUnrenderedCommittedMessages, collectEvictedMessageKeys, removeCommittedArticlesByKeys } from "./message-render-keys.js";
 import {
   liveTurnRenderMode,
@@ -446,6 +447,10 @@ function appendUserMessage(sessionId, message, beforeNode = null, key = "") {
 }
 
 function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key = "") {
+  if (message?.meta?.taskContinuation?.status === "paused") {
+    appendTaskContinuationNotice(ensurePanel(sessionId).listEl, message, beforeNode, key);
+    return;
+  }
   if (message?.meta?.scheduledDraft) {
     appendScheduledDraftArticle(sessionId, message, beforeNode, key);
     return;

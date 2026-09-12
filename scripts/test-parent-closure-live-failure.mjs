@@ -15,6 +15,7 @@ for (const fault of ['lookup', 'mark-throws', 'mark-rejects', 'send-unknown', 'l
   const ownerScope = 'account:live';
   const timers = new Set();
   let now = Date.now(), sends = 0, fallback = 0, failing = true;
+  store.admitTurnInput('s', { turnId: 'source', delivery: 'direct', status: 'completed', userText: 'Finish and test', files: [], metadata: {}, createdAt: now }, { ownerScope });
   const source = { objective: 'Finish and test', taskContract: { active: true, taskType: 'code_change' },
     state: { turnId: 'source', tools: new Map([['read', { id: 'read', name: 'read', status: 'done' }]]),
       pendingPermissions: new Map(), pendingQuestions: new Map(), pendingHooks: new Map() }, payload: { stalled: true } };

@@ -251,6 +251,7 @@ function registerAssistantHandlers(ctx) {
     const routingAvailability = await ensureRoutingAvailable(ctx, routing);
     if (!routingAvailability.ok) return attachRouting(routingAvailability, session);
     return await turnOrchestrator.retryLastMessage(session.id, {
+      userInitiated: true,
       engineText: routing.engineText,
       requiredSuccessfulTools: routing.requiredSuccessfulTools,
     });

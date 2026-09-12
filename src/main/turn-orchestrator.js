@@ -660,6 +660,7 @@ class TurnOrchestrator {
         localAssistant: true,
       },
       createdAt: state.startedAt,
+      newTaskAttempt: opts.newTaskAttempt === true,
     };
     if (Object.hasOwn(opts, "sourceTurnId")) {
       admissionOptions.sourceTurnId = opts.sourceTurnId;
@@ -841,6 +842,7 @@ class TurnOrchestrator {
         scheduledTaskRunId: opts.scheduledTaskRunId || null,
       },
       createdAt: state.startedAt,
+      newTaskAttempt: opts.newTaskAttempt === true,
     };
     if (Object.hasOwn(opts, "sourceTurnId")) {
       admissionOptions.sourceTurnId = opts.sourceTurnId;
@@ -942,6 +944,7 @@ class TurnOrchestrator {
     runner = ensured.runner;
     if (!runner) {
       const error = ensured.error || "RUNNER_ERROR";
+      const sourceTurnId = state.turnId;
       const detail = ensured.detail
         || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
       this._finalize(session.id, "turn.failed", {
@@ -954,7 +957,7 @@ class TurnOrchestrator {
       // (RUNNER_ERROR strategy). Codes without a strategy (e.g. the engine
       // binary is missing) fall through to the normal failure UX.
       if (!opts.rescueAttempt) {
-        void this._maybeSelfHealAndRetry(session.id, { code: error, retryable: true });
+        void this._maybeSelfHealAndRetry(session.id, { code: error, retryable: true, sourceTurnId });
       }
       const result = { ok: false, error };
       if (detail) result.detail = detail;
@@ -990,11 +993,12 @@ class TurnOrchestrator {
           runner = ensured.runner;
           if (!runner) {
             const error = ensured.error || "RUNNER_ERROR";
+            const sourceTurnId = state.turnId;
             const detail = ensured.detail
               || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
             this._finalize(session.id, "turn.failed", { failed: true, assistant: detail || error, code: error });
             if (!opts.rescueAttempt) {
-              void this._maybeSelfHealAndRetry(session.id, { code: error, retryable: true });
+              void this._maybeSelfHealAndRetry(session.id, { code: error, retryable: true, sourceTurnId });
             }
             const result = { ok: false, error };
             if (detail) result.detail = detail;
@@ -1669,8 +1673,11 @@ class TurnOrchestrator {
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
     let finalizeDone = null;
     const terminalMeta = {
+      executionProgressKeys: Array.isArray(payload?.executionProgressKeys) ? payload.executionProgressKeys.slice(-128) : [],
       ...(payload?.loopDetected ? { loopDetected: payload.loopDetected } : {}),
       ...(payload?.continuationHandoff ? { continuationHandoff: payload.continuationHandoff } : {}),
+      ...(["no_progress", "turn_budget_exhausted"].includes(payload?.continuationStopReason)
+        ? { continuationStopReason: payload.continuationStopReason, unfinishedTodoCount: Number(payload.unfinishedTodoCount) || 0 } : {}),
       durationMs: state.durationMs ?? null,
       totalCostUsd: state.totalCostUsd ?? null,
       // Rewind anchor: the engine message id of this turn (session:rewind reverts
@@ -1757,7 +1764,7 @@ class TurnOrchestrator {
         runner?.agentResumeId || null,
       );
     }
-    Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, result?.suppressParentClosure ? null : result?.parentClosureSource || parentClosureSource, { failed, failure, selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
+Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, result?.suppressParentClosure ? null : result?.parentClosureSource || parentClosureSource, { failed, failure: { ...failure, sourceTurnId: parentClosureSource.state.turnId }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
   /** Post-completion procedure-card distillation. Fail-open and async — the
    *  finished turn's UX can never be affected. The active model's capability
@@ -1808,7 +1815,7 @@ class TurnOrchestrator {
       retryable: classified?.retryable !== false,
       error: raw,
     });
-    Promise.resolve(finalizeDone).then(() => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed: true, failure: classified, selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
+    Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed: true, failure: { ...classified, sourceTurnId: parentClosureSource.state.turnId }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
   _finalize(sessionId, type, payload = {}) {
     return this.terminalFinalizer.finalize(sessionId, type, payload);

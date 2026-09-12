@@ -10,6 +10,7 @@ function queueDispatchOptions(opts = {}) {
   const options = {
     engineText: typeof opts.engineText === "string" ? opts.engineText : null,
     recordUser: opts.recordUser !== false,
+    newTaskAttempt: opts.newTaskAttempt === true,
     recovery: opts.recovery && typeof opts.recovery === "object" ? opts.recovery : null,
     localAssistant,
     reloadSkillsBeforeStart: Boolean(opts.reloadSkillsBeforeStart),

@@ -39,7 +39,7 @@ function completeWithAcceptance({ ctx = {}, sessionId, state, type, payload, tas
   const handoff = unfinished.length ? { schemaVersion: 1, reason: "acceptance_gap", unfinished: unfinished.slice(0, 32) } : payload.continuationHandoff;
   if (!handoff) return null;
   const source = captureParentClosureSource(state, { ...payload, code: 0, continuationHandoff: handoff });
-  if (!shouldRecoverParentClosure({ sessionId, ...source }).ok) return null;
+  if (!shouldRecoverParentClosure({ sessionId, ...source, allowProductiveContinuation: typeof ctx.sessionManager?.reserveTaskContinuation === "function" }).ok) return null;
   prepare?.(sessionId, source);
   return source;
   }
