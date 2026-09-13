@@ -20,7 +20,7 @@ try{
     CREATE TABLE user_devices(user_id text references users(id),device_id text references devices(id),status text default 'active',primary key(user_id,device_id));
     CREATE TABLE organizations(id text primary key,name text,status text);
     CREATE TABLE organization_members(organization_id text,user_id text,role text,status text,primary key(organization_id,user_id));`);
-  for(const name of ['033_collaboration_core.sql','035_collaboration_bootstrap_completion.sql','037_collaboration_relationship_events.sql','038_collaboration_conversations.sql','039_collaboration_objects.sql','045_collaboration_tasks.sql'])await pool.query(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['033_collaboration_core.sql','035_collaboration_bootstrap_completion.sql','037_collaboration_relationship_events.sql','038_collaboration_conversations.sql','039_collaboration_objects.sql','045_collaboration_tasks.sql','047_collaboration_shared_workspaces.sql'])await pool.query(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
   for(const id of ['owner','helper','observer']){
     await pool.query('INSERT INTO users VALUES($1)',[id]);await pool.query('INSERT INTO devices VALUES($1)',[`d_${id}`]);
     await pool.query('INSERT INTO user_devices(user_id,device_id) VALUES($1,$2)',[id,`d_${id}`]);
@@ -31,10 +31,27 @@ try{
   await pool.query("INSERT INTO stored_objects(id,owner_user_id,conversation_id,scope_type,purpose,object_key,state,ciphertext_size,ciphertext_sha256,mime_type,original_name) VALUES('snapshot','owner','chat','personal','workspace','test/snapshot','verified',10,$1,'application/zip','input.zip')",['a'.repeat(64)]);
   const service=createCollaborationTaskService({repository:createKyselyConversationRepository(database),crypto:createCollaborationMessageCrypto({currentKekVersion:1,kekByVersion:{1:randomBytes(32)}}),packages});
   const owner={userId:'owner',deviceId:'d_owner'},helper={userId:'helper',deviceId:'d_helper'};
-  const input={account:owner,clientCommandId:'create',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'预算',objective:'核查',acceptanceCriteria:'差异说明'};
+  const input={account:owner,clientCommandId:'create',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'预算',objective:'核查',acceptanceCriteria:'差异说明',sharedWorkspaceId:'shared'};
   const [first,replay]=await Promise.all([service.create(input),service.create(input)]);
   assert.deepEqual(first,replay,'concurrent same intent creates exactly one task');
   const taskId=first.taskId;
+  assert.equal((await service.get({account:helper,taskId})).sharedWorkspaceId,'shared');
+  assert.equal(Number((await pool.query('SELECT count(*) FROM collaboration_shared_workspaces')).rows[0].count),1);
+  await assert.rejects(service.create({...input,account:helper,assigneeUserId:'owner',clientCommandId:'steal'}),{code:'COLLAB_TASK_ACCESS_DENIED'},'workspace ID cannot transfer ownership');
+  await pool.query("INSERT INTO conversations(id,scope_type,kind,created_by) VALUES('other','personal','group','owner')");
+  await pool.query("INSERT INTO conversation_members(conversation_id,user_id,role,status,joined_seq) VALUES('other','owner','owner','active',0),('other','helper','member','active',0)");
+  await assert.rejects(service.create({...input,conversationId:'other',clientCommandId:'cross-conversation'}),{code:'COLLAB_TASK_ACCESS_DENIED'},'same owner cannot transfer the identity into another permission domain');
+  await assert.rejects(service.get({account:{userId:'observer',deviceId:'d_observer'},taskId}),{code:'COLLAB_TASK_UNAVAILABLE'},'workspace identity grants no bystander task access');
+  await assert.rejects(service.create({...input,clientCommandId:'broken',sharedWorkspaceId:'rolledback',inputSnapshotId:'missing'}));
+  assert.equal((await pool.query("SELECT id FROM collaboration_shared_workspaces WHERE id='rolledback'")).rowCount,0,'failed object binding rolls back workspace creation');
+  await pool.query("INSERT INTO stored_objects(id,owner_user_id,conversation_id,scope_type,purpose,object_key,state,ciphertext_size,ciphertext_sha256,mime_type,original_name) VALUES('snapshot2','owner','chat','personal','workspace','test/snapshot2','verified',10,$1,'application/zip','input.zip')",['b'.repeat(64)]);
+  const second=await service.create({...input,clientCommandId:'second',inputSnapshotId:'snapshot2'});
+  assert.notEqual(second.taskId,taskId);
+  assert.equal((await service.get({account:helper,taskId:second.taskId})).sharedWorkspaceId,'shared','separate tasks retain one workspace identity');
+  await pool.query("UPDATE collaboration_tasks SET shared_workspace_id=NULL WHERE id=$1",[second.taskId]);
+  await assert.rejects(service.get({account:helper,taskId:second.taskId}),{code:'COLLAB_TASK_UNAVAILABLE'},'encrypted identity must agree with database routing');
+  await pool.query("UPDATE collaboration_tasks SET shared_workspace_id='shared' WHERE id=$1",[second.taskId]);
+  await assert.rejects(pool.query("UPDATE collaboration_tasks SET requester_user_id='observer' WHERE id=$1",[second.taskId]),{code:'23503'},'database rejects moving a task into another owner domain');
   const objects=createKyselyObjectRepository(database);
   for(const userId of ['owner','helper','observer']){
     const access=await database.transaction().execute(trx=>objects.authorizeObject(trx,{account:{userId,deviceId:`d_${userId}`},objectId:'snapshot',action:'download'}));
@@ -48,7 +65,7 @@ try{
   assert.equal(races.find(r=>r.status==='rejected').reason.code,'COLLAB_TASK_REVISION_CONFLICT');
   await pool.query("UPDATE conversation_members SET status='removed' WHERE user_id='helper'");
   await assert.rejects(service.create(input),{code:'COLLAB_TASK_ACCESS_DENIED'},'removed peer blocks old receipt replay');
-  const tasks=await pool.query('SELECT * FROM collaboration_tasks');assert.equal(tasks.rows.length,1);assert.equal(Number(tasks.rows[0].revision),2);
+  const tasks=await pool.query('SELECT * FROM collaboration_tasks');assert.equal(tasks.rows.length,2);assert.equal(Number(tasks.rows.find(t=>t.id===taskId).revision),2);
   console.log('PostgreSQL remote tasks: migrations, concurrent replay, task package ACL, transition race and revoked receipt replay passed; object upload verification seeded');
 }finally{
   await database.destroy();await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await admin.end();

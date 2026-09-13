@@ -4,7 +4,7 @@ const device={deviceId:id.max(120)};
 const command={...device,clientCommandId:id};
 const change={...command,taskId:id,expectedRevision:z.number().int().positive().max(Number.MAX_SAFE_INTEGER-1)};
 export const taskCommandBody=z.union([
-  z.object({...command,action:z.literal('create'),conversationId:id,assigneeUserId:id,inputSnapshotId:id,title:z.string().trim().min(1).max(200),objective:z.string().trim().min(1).max(12000),acceptanceCriteria:z.string().trim().min(1).max(12000)}).strict(),
+  z.object({...command,action:z.literal('create'),conversationId:id,assigneeUserId:id,inputSnapshotId:id,sharedWorkspaceId:id.optional(),title:z.string().trim().min(1).max(200),objective:z.string().trim().min(1).max(12000),acceptanceCriteria:z.string().trim().min(1).max(12000)}).strict(),
   z.object({...change,action:z.enum(['accept','decline','cancel']),reason:z.string().max(4000).optional()}).strict(),
   z.object({...change,action:z.enum(['submit','approve']),deliveryId:id}).strict(),
   z.object({...change,action:z.literal('request_changes'),deliveryId:id,reason:z.string().trim().min(1).max(4000)}).strict(),

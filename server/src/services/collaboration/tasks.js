@@ -17,13 +17,15 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
     const task = JSON.parse(crypto.decryptTask({ ciphertext: row.content_ciphertext, keyVersion: row.content_key_version,
       messageId: row.id, conversationId: row.conversation_id, revision: Number(row.revision) }).toString('utf8'));
     if (task.id !== row.id || task.conversationId !== row.conversation_id || task.revision !== Number(row.revision)
-      || task.requesterUserId !== row.requester_user_id || task.assigneeUserId !== row.assignee_user_id || task.state !== row.state) return unavailable();
+      || task.requesterUserId !== row.requester_user_id || task.assigneeUserId !== row.assignee_user_id || task.state !== row.state
+      || (task.sharedWorkspaceId ?? null) !== (row.shared_workspace_id ?? null)) return unavailable();
     return task;
   };
   const encryptedRow = (task) => {
     const envelope = crypto.encryptTask({ plaintext: Buffer.from(JSON.stringify(task)), messageId: task.id, conversationId: task.conversationId, revision: task.revision });
     return { id: task.id, conversation_id: task.conversationId, requester_user_id: task.requesterUserId,
       assignee_user_id: task.assigneeUserId, input_snapshot_id: task.inputSnapshotId, state: task.state, revision: task.revision,
+      ...(task.sharedWorkspaceId ? {shared_workspace_id:task.sharedWorkspaceId} : {}),
       content_ciphertext: envelope.ciphertext, content_key_version: envelope.keyVersion, updated_at: new Date(task.updatedAt) };
   };
   async function authorize(trx, account, conversationId, parties) {
@@ -82,9 +84,25 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
       // ID generated inside project: same-intent receipt replay cannot fail
       // because a retry picked a different task identifier.
       return runCollaborationCommand({account,clientCommandId,input,commandType:'task.create',database:repository.database,operations:commandOperations,
-        authorize:({trx,account:actor})=>authorize(trx,actor,input.conversationId,[actor.userId,input.assigneeUserId]),
+        authorize:async({trx,account:actor})=>{
+          const decision=await authorize(trx,actor,input.conversationId,[actor.userId,input.assigneeUserId]);
+          if (!decision.ok || !input.sharedWorkspaceId) return decision;
+          const workspace=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',input.sharedWorkspaceId).forUpdate().executeTakeFirst();
+          if (workspace && (workspace.owner_user_id!==actor.userId || workspace.conversation_id!==input.conversationId)) return denied();
+          return decision;
+        },
         project:async({trx,account:actor,authorization})=>{
           const task=contract.createTask({...input,id:createId()},{actorUserId:actor.userId,authorizedParticipantIds:authorization.authorizedParticipantIds,now:now()});
+          if (task.sharedWorkspaceId) {
+            // Concurrent first creates can meet at the unique key. Recheck the
+            // actual winner before binding any object or task to this identity.
+            await trx.insertInto('collaboration_shared_workspaces').values({id:task.sharedWorkspaceId,
+              conversation_id:task.conversationId,owner_user_id:actor.userId})
+              .onConflict(oc=>oc.column('id').doNothing()).execute();
+            const workspace=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',task.sharedWorkspaceId).forUpdate().executeTakeFirst();
+            if (!workspace || workspace.owner_user_id!==actor.userId || workspace.conversation_id!==task.conversationId)
+              throw new CollaborationCommandError('COLLAB_TASK_ACCESS_DENIED','Workspace unavailable');
+          }
           // Broker binds the verified input to this task in the same transaction.
           await packages.verifyInput({trx,task,account:actor});
           return projection(task);

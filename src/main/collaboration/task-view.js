@@ -18,6 +18,7 @@ function taskCommand(value) {
     ...(value.reason != null ? { reason: value.reason.trim() } : {}) };
 }
 function taskView(value) {
+  if (value && Object.hasOwn(value,"sharedWorkspaceId") && !id(value.sharedWorkspaceId)) return null;
   if (!value || !["id", "conversationId", "requesterUserId", "assigneeUserId", "inputSnapshotId"].every(key => id(value[key]))
     || !states.includes(value.state) || !integer(value.revision) || value.revision < 1 || value.revision >= Number.MAX_SAFE_INTEGER
     || !text(value.title, 200, true) || !text(value.objective, 12000, true) || !text(value.acceptanceCriteria, 12000, true)
@@ -33,7 +34,8 @@ function taskView(value) {
     || value.state === "accepted" && acceptedDeliveryId !== currentDeliveryId
     || value.state !== "accepted" && acceptedDeliveryId != null || value.reason != null && !text(value.reason, 4000)) return null;
   return { ...Object.fromEntries(["id", "conversationId", "requesterUserId", "assigneeUserId", "inputSnapshotId", "title", "objective", "acceptanceCriteria", "state", "revision", "createdAt", "updatedAt"].map(key => [key, value[key]])),
-    deliveries, currentDeliveryId, acceptedDeliveryId, ...(value.reason ? { reason: value.reason } : {}) };
+    deliveries, currentDeliveryId, acceptedDeliveryId, ...(value.reason ? { reason: value.reason } : {}),
+    ...(value.sharedWorkspaceId ? {sharedWorkspaceId:value.sharedWorkspaceId} : {}) };
 }
 function taskResult(method, value) {
   if (value?.ok !== true) return { ok: false, code: id(value?.code) ? value.code : "COLLAB_TASK_UNAVAILABLE" };

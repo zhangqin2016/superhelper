@@ -19,12 +19,13 @@ function exact(value, allowed) {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((k) => !allowed.includes(k))) fail("COLLAB_TASK_INVALID");
 }
 function createTask(input, { actorUserId, authorizedParticipantIds, now } = {}) {
-  exact(input, ["id", "conversationId", "assigneeUserId", "inputSnapshotId", "title", "objective", "acceptanceCriteria"]);
+  exact(input, ["id", "conversationId", "assigneeUserId", "inputSnapshotId", "title", "objective", "acceptanceCriteria", "sharedWorkspaceId"]);
   const requesterUserId = identifier(actorUserId), assigneeUserId = identifier(input.assigneeUserId);
   if (requesterUserId === assigneeUserId) fail("COLLAB_TASK_SELF_ASSIGNMENT");
   if (!Array.isArray(authorizedParticipantIds) || ![requesterUserId, assigneeUserId].every((id) => authorizedParticipantIds.includes(id))) fail("COLLAB_TASK_ACCESS_DENIED");
   if (!Number.isSafeInteger(now) || now < 0) fail("COLLAB_TASK_INVALID");
   return { id: identifier(input.id), conversationId: identifier(input.conversationId), requesterUserId, assigneeUserId,
+    ...(Object.hasOwn(input,"sharedWorkspaceId") ? {sharedWorkspaceId:identifier(input.sharedWorkspaceId)} : {}),
     inputSnapshotId: identifier(input.inputSnapshotId), title: bounded(input.title, 200, true),
     objective: bounded(input.objective, 12000, true), acceptanceCriteria: bounded(input.acceptanceCriteria, 12000, true),
     state: "offered", revision: 1, currentDeliveryId: null, acceptedDeliveryId: null,

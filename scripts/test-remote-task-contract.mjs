@@ -5,6 +5,14 @@ const { createTask, transitionTask } = require('../server/src/services/collabora
 const { planTaskApplication, manifestMap } = require('../src/main/collaboration/task-apply-plan');
 const hash = (n) => String(n).repeat(64);
 const context = (actorUserId, now = 2) => ({ actorUserId, now, authorizedParticipantIds: ['owner','helper'] });
+const sharedInput = {id:'shared-task',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'Budget',objective:'Review',acceptanceCriteria:'Verified',sharedWorkspaceId:'workspace'};
+const shared = createTask(sharedInput, context('owner',1));
+assert.equal(shared.sharedWorkspaceId, 'workspace');
+assert.equal(transitionTask(shared,{action:'accept',expectedRevision:1},context('helper')).sharedWorkspaceId,'workspace');
+for (const sharedWorkspaceId of [null, '', '../private', 123]) assert.throws(()=>createTask({...sharedInput,sharedWorkspaceId},context('owner',1)),{code:'COLLAB_TASK_INVALID'});
+const {taskView} = require('../src/main/collaboration/task-view');
+assert.equal(taskView(shared).sharedWorkspaceId,'workspace','desktop retains stable shared identity');
+assert.equal(taskView({...shared,sharedWorkspaceId:'../private'}),null);
 const task = createTask({ id:'task', conversationId:'chat', assigneeUserId:'helper', inputSnapshotId:'snapshot', title:'预算复核', objective:'核对预算表', acceptanceCriteria:'交付修订表和差异说明' }, context('owner',1));
 assert.equal(task.state, 'offered');
 assert.throws(() => transitionTask(task, {action:'accept',expectedRevision:1}, context('owner')), {code:'COLLAB_TASK_ACCESS_DENIED'});
