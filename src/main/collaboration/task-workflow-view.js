@@ -1,9 +1,10 @@
 "use strict";
 const id = v => typeof v === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(v);
+const cursor=v=>v&&typeof v==="object"&&!Array.isArray(v)&&Object.keys(v).length===2&&id(v.id)&&Number.isSafeInteger(v.createdAt)&&v.createdAt>=0;
 const fields = {
   recoveries:[],
-  cards:[],
-  sessionCards:["sessionId"],
+  cards:["before"],
+  sessionCards:["sessionId","before"],
   bind:["taskId","projectId","sessionId"],
   bindingOptions:["taskId"],
   prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
@@ -19,6 +20,7 @@ function taskWorkflowCommand(value) {
   if (value.operation === "bind" && Object.hasOwn(value,"sessionId") && !Object.hasOwn(value,"projectId")) return null;
   if (Object.keys(value).some(key=>!["operation","conversationId",...keys].includes(key))) return null;
   for (const key of keys) {
+    if(key==="before") {if(Object.hasOwn(value,key)&&!cursor(value[key]))return null;continue;}
     if (value.operation === "prepare" && !Object.hasOwn(value,key)) continue;
     if (value.operation === "bind" && ["projectId","sessionId"].includes(key) && !Object.hasOwn(value,key)) continue;
     const v = value[key];
@@ -34,6 +36,7 @@ function taskWorkflowCommand(value) {
 // Closed projection: local absolute paths, keys and recovery journals never cross.
 function taskWorkflowResult(value) {
   const result = {ok:value?.ok === true};
+  if(Object.hasOwn(value || {},"nextCursor"))result.nextCursor=cursor(value.nextCursor)?{id:value.nextCursor.id,createdAt:value.nextCursor.createdAt}:null;
   if (Array.isArray(value?.conversationIds)) result.conversationIds=value.conversationIds.filter(id).slice(0,1000);
   if (Array.isArray(value?.cards) && value.cards.length>1000) result.hasMoreCards=true;
   if (Array.isArray(value?.cards)) result.cards = value.cards.slice(-1000).filter(c=>id(c.id)).map(c=>({

@@ -83,6 +83,7 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   let remoteTasks = null;
   const renderTimeline = createCenterTimeline({
     get taskCards() { return remoteTasks?.cards?.() || []; },
+    get taskCardPagination() { return remoteTasks?.cardPagination?.(); },
     openTaskCard:card=>remoteTasks?.openCard?.(card),
     get lastRenderedCount() { return lastRenderedCount; },
     set lastRenderedCount(value) { lastRenderedCount = value; },

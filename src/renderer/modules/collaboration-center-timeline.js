@@ -20,6 +20,7 @@ export function createCenterTimeline(ctx) {
     const visibleMessages = needle ? kept.filter((message) => String(message.bodyText || "").toLocaleLowerCase().includes(needle)) : kept;
     renderCollaborationTimeline(ctx.timeline, visibleMessages, {
     taskCards:(ctx.taskCards || []).filter(card=>!needle || card.title.toLocaleLowerCase().includes(needle)),
+    taskCardPagination:ctx.taskCardPagination,
     onOpenTask:card=>ctx.openTaskCard?.(card),
     currentUserId: ctx.directory?.profile?.userId || "",
     showSenderNames: ctx.activeConversationKind === "group" || ctx.activeConversationKind === "channel",

@@ -157,11 +157,12 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function execute(command) {
     assertActive();
     const {operation,conversationId} = command;
-    if (operation === "cards") return {ok:true,cards:cards.list(conversationId)};
+    if (operation === "cards") return {ok:true,...require("./task-cards").pageTaskCards(cards.list(conversationId),command.before)};
     if (operation === "sessionCards") {
       const session=resolveCardSession?.(command.sessionId);
       if (!session || session.sessionId!==command.sessionId) throw fail("COLLAB_TASK_LOCAL_MISSING");
-      return {ok:true,...cards.sessionProjection({...session,deviceId})};
+      const projection=cards.sessionProjection({...session,deviceId});
+      return {ok:true,...projection,...require("./task-cards").pageTaskCards(projection.cards,command.before)};
     }
     if (operation === "bindingOptions") {
       const task = await taskFor(command);

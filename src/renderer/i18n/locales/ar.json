@@ -1,4 +1,7 @@
 {
+  "collaboration.task.loadOlder": "تحميل المهام السابقة",
+  "collaboration.task.loadingOlder": "جارٍ تحميل المهام السابقة…",
+  "collaboration.task.retryOlder": "إعادة محاولة تحميل المهام السابقة",
   "collaboration.task.cachedState": "آخر حالة محفوظة",
   "collaboration.task.cardState.preparing": "جارٍ تجهيز الملفات",
   "collaboration.task.cardState.preparation_failed": "تعذر التجهيز — تابع لإعادة المحاولة",

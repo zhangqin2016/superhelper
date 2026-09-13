@@ -1,31 +1,49 @@
 import {t} from "../i18n/index.js";
+import {readCardWindow,compareCardPosition} from "./task-card-pages.js";
 
 export function createTaskCardController({api,getContext,onChange=()=>{}}) {
-  let rows=[],generation=0,key="",service=null,disposed=false;
+  let rows=[],nextCursor=null,busy=false,error=false,refreshPending=false,generation=0,key="",service=null,disposed=false;
   const contextKey=()=>{const c=getContext() || {};return c.enabled&&c.userId&&c.conversationId?JSON.stringify([c.userId,c.conversationId]):"";};
   function publish(value) {if(JSON.stringify(rows)!==JSON.stringify(value)){rows=value;onChange();}}
+  function clear(){generation++;nextCursor=null;busy=false;error=false;refreshPending=false;rows=[];onChange();}
   async function update(force=false) {
     const next=contextKey(),client=api();
-    if(disposed || (!force && next===key && client===service)) return;
+    if(disposed || (!force && next===key && client===service))return;
     const changed=next!==key || client!==service;
-    key=next;service=client;const ticket=++generation;
-    if(changed)publish([]);
-    if(!key){publish([]);return;}
+    if(busy&&!changed){refreshPending=true;return;}
+    key=next;service=client;if(changed)clear();const ticket=++generation;
+    if(!key){clear();return;}
     const conversationId=getContext().conversationId;
     const current=()=>!disposed&&ticket===generation&&client===api()&&key===contextKey();
     const read=async(cached=true)=>{
-      const result=await client?.taskWorkflow?.({operation:"cards",conversationId});
-      if(current())publish(result?.ok?(result.cards || []).map(card=>({...card,cached})):[]);
+      const result=await readCardWindow(before=>client?.taskWorkflow?.({operation:"cards",conversationId,...(before?{before}:{})}),{through:rows[0],current});
+      if(!current()||!result)return;
+      nextCursor=result.nextCursor;error=false;
+      publish(result.ok?result.cards.map(card=>({...card,cached})):[]);onChange();
     };
     try {
       await read();if(!current())return;
-      // Main caches only participant-authorized, monotonic task snapshots.
       const fresh=await client?.listTasks?.(conversationId);
       if(current()&&fresh?.ok)await read(false);
     } catch { /* cached local state remains; no invented remote success */ }
   }
-  return {cards:()=>rows,update:()=>void update(),refresh:()=>void update(true),
-    invalidate(){generation++;key="";publish([]);},destroy(){disposed=true;generation++;publish([]);}};
+  async function loadMore() {
+    if(disposed||busy||!nextCursor||!key)return;
+    const ticket=++generation,client=api(),conversationId=getContext().conversationId;
+    const current=()=>!disposed&&ticket===generation&&client===api()&&key===contextKey();
+    busy=true;error=false;onChange();
+    try {
+      const page=await readCardWindow(before=>client.taskWorkflow({operation:"cards",conversationId,before}),{before:nextCursor,current});
+      if(!current()||!page)return;
+      if(!page.ok){if(/REVOKED|ACCOUNT_CHANGED|STOPPED/.test(page.code||"")){clear();return;}throw Error("Task page unavailable");}
+      nextCursor=page.nextCursor;
+      const merged=new Map(rows.map(card=>[card.id,card]));for(const card of page.cards)merged.set(card.id,{...card,cached:true});
+      publish([...merged.values()].sort(compareCardPosition));
+    } catch {if(current())error=true;}
+    finally {if(current()){busy=false;onChange();if(refreshPending){refreshPending=false;void update(true);}}}
+  }
+  return {cards:()=>rows,pagination:()=>({nextCursor,busy,error,loadMore}),update:()=>void update(),refresh:()=>void update(true),
+    invalidate(){key="";clear();},destroy(){disposed=true;clear();}};
 }
 
 const states=new Set(["offered","active","review","changes_requested","accepted","declined","cancelled"]);

@@ -57,6 +57,9 @@ try {
   assert.deepEqual(projected.conversationIds,['chat']);
   assert.equal((await linked.workflow.run({operation:'sessionCards',sessionId:'missing'})).ok,false);
   assert.equal(taskWorkflowCommand({operation:'sessionCards',sessionId:'origin',conversationId:'chat'}),null);
+  assert.equal(taskWorkflowCommand({operation:'cards',conversationId:'chat',before:{id:'card',createdAt:1}}).before.id,'card');
+  for(const before of [{id:'../card',createdAt:1},{id:'card',createdAt:-1},{id:'card',createdAt:1,path:'/tmp'},null])
+    assert.equal(taskWorkflowCommand({operation:'cards',conversationId:'chat',before}),null,'cursor cannot introduce paths or extra authority');
   assert.doesNotMatch(JSON.stringify(taskWorkflowResult(projected)),/sourceRoot|sourceProjectId|sourceSessionId|snapshotRoot/);
   const invalidSession=fixture({sourceSession:()=>null});
   assert.equal((await invalidSession.workflow.run(sessionCommand)).ok,false);assert.equal(invalidSession.counts().frozen,0);

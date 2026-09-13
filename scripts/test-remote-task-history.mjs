@@ -5,7 +5,7 @@ const {LocalCollaborationKeyring}=require('../src/main/collaboration/local-keyri
 const {createTaskHistory}=require('../src/main/collaboration/task-history');
 const {createTaskRecords}=require('../src/main/collaboration/task-records');
 const {createCollaborationService}=require('../src/main/collaboration/service');
-const {createTaskCards}=require('../src/main/collaboration/task-cards');
+const {createTaskCards,pageTaskCards}=require('../src/main/collaboration/task-cards');
 const {taskWorkflowResult}=require('../src/main/collaboration/task-workflow-view');
 const {createTask}=require('../server/src/services/collaboration/task-contract.cjs');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'task-history-'));
@@ -29,6 +29,9 @@ try {
  const window=taskWorkflowResult({ok:true,cards:createTaskCards({store,assertActive:active}).list('chat')});
  assert.equal(window.hasMoreCards,true);assert.equal(window.cards.length,1000);
  assert.ok(window.cards.some(card=>card.taskId===tasks[0].id),'backfilling older history must not evict the newest task from the existing UI window');
+ const allCards=createTaskCards({store,assertActive:active}).list('chat');let before,visited=[];
+ do {const page=pageTaskCards(allCards,before);assert.ok(page.cards.length<=100);visited.push(...page.cards.map(c=>c.id));before=page.nextCursor;}while(before);
+ assert.equal(visited.length,1150);assert.equal(new Set(visited).size,1150,'local pages expose every card without duplicates');
  assert.equal(JSON.stringify(store.db.all('SELECT * FROM task_workspace_records')).includes('Private 1000'),false);
  let release;
  now+=300001;const pending=worker({client:{listTaskHistory:()=>new Promise(resolve=>{release=resolve;})}}).recover();await Promise.resolve();

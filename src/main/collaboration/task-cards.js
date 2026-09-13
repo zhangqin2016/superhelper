@@ -2,6 +2,12 @@
 const {createTaskRecords}=require("./task-records");
 const {taskView}=require("./task-view");
 const fail=code=>{throw Object.assign(new Error(code),{code});};
+const compare=(a,b)=>a.createdAt-b.createdAt||(a.id===b.id?0:a.id<b.id?-1:1);
+function pageTaskCards(cards,before) {
+  const eligible=cards.filter(card=>!before||compare(card,before)<0).sort(compare);
+  const page=eligible.slice(-100),first=page[0];
+  return {cards:page,nextCursor:eligible.length>page.length?{id:first.id,createdAt:first.createdAt}:null};
+}
 
 /** Authorized snapshots and local intents share a card anchor, not an IM
  * message. No task body or local filesystem path is broadcast in events. */
@@ -52,7 +58,7 @@ function createTaskCards({store,assertActive}) {
       if (task) tasks.delete(task.id);
     }
     for (const task of tasks.values()) cards.push(card(task.id,task.createdAt,task));
-    return cards.sort((a,b)=>a.createdAt-b.createdAt || a.id.localeCompare(b.id));
+    return cards.sort(compare);
   }
   function list(conversationId) { return project(records.list(conversationId)); }
   function sessionProjection({projectId,sessionId,deviceId}) {
@@ -70,8 +76,8 @@ function createTaskCards({store,assertActive}) {
       for (const card of project(all)) if (origins.has(card.id) || taskIds.has(card.taskId)) result.push({...card,conversationId});
     }
     assertActive();
-    return {cards:result.sort((a,b)=>a.createdAt-b.createdAt || a.id.localeCompare(b.id)),conversationIds};
+    return {cards:result.sort(compare),conversationIds};
   }
   return {remember,list,sessionProjection,forSession:input=>sessionProjection(input).cards};
 }
-module.exports={createTaskCards};
+module.exports={createTaskCards,pageTaskCards};

@@ -1,4 +1,7 @@
 {
+  "collaboration.task.loadOlder": "加载更早任务",
+  "collaboration.task.loadingOlder": "正在加载更早任务…",
+  "collaboration.task.retryOlder": "重试加载更早任务",
   "collaboration.task.cachedState": "上次保存的状态",
   "collaboration.task.cardState.preparing": "正在准备材料",
   "collaboration.task.cardState.preparation_failed": "准备失败，可继续重试",

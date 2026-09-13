@@ -1,4 +1,7 @@
 {
+  "collaboration.task.loadOlder": "Load earlier tasks",
+  "collaboration.task.loadingOlder": "Loading earlier tasks…",
+  "collaboration.task.retryOlder": "Retry earlier tasks",
   "collaboration.task.cachedState": "Last saved status",
   "collaboration.task.cardState.preparing": "Preparing materials",
   "collaboration.task.cardState.preparation_failed": "Preparation failed — resume to retry",

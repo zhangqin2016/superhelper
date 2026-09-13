@@ -7,7 +7,7 @@ export function initCenterRemoteTasks({ workspace, ...options }) {
   const cards=createTaskCardController({api:options.api || (()=>window.assistantClient?.collaboration),getContext:options.getContext,onChange:options.onCardsChange});
   const focusTask = () => { const surface = options.root?.querySelector('.remote-tasks:not([hidden])'); (surface?.querySelector('[name="assigneeUserId"]') || surface)?.focus({ preventScroll: true }); };
   const connection = connectWorkspaceCollaboration({ ...workspace, refreshPolicy: options.refreshContext, focusTask, tasks });
-  return { ...tasks,cards:cards.cards,update(){tasks.update();cards.update();},onChange(){tasks.onChange();cards.refresh();},
+  return { ...tasks,cards:cards.cards,cardPagination:cards.pagination,update(){tasks.update();cards.update();},onChange(){tasks.onChange();cards.refresh();},
     invalidate(){tasks.invalidate();cards.invalidate();},invalidateService() { connection.invalidate(); tasks.invalidate();cards.invalidate(); },
     destroy() { connection.destroy();tasks.destroy();cards.destroy(); } };
 }
