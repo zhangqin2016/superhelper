@@ -2,6 +2,19 @@
   "schemaVersion": 1,
   "gates": [
     {
+      "id": "opencode-upgrade-continuity",
+      "protects": "A verified engine patch upgrade must not discard an otherwise valid native session binding.",
+      "baseline": "Same-version and legacy-unbound resumes retain existing behavior; session, workspace, skill and first-message identity checks remain strict.",
+      "failureFallback": "Only the explicitly verified forward version pair is compatible. Unknown upgrades, downgrades and foreign or missing artifacts retain isolated fresh-session recovery.",
+      "tests": [
+        "scripts/test-resume-binding.mjs",
+        "scripts/test-ensure-session-runner-resume-reset.mjs",
+        "scripts/test-resume-continuity-guard.mjs",
+        "scripts/test-opencode-version-alignment.mjs",
+        "scripts/test-opencode-upgrade-native.mjs"
+      ]
+    },
+    {
       "id": "task-completion-integrity",
       "protects": "Task verification and durable completion cannot hide outstanding work or invent successful checks.",
       "baseline": "Answers remain deliverable without machine-verifiable evidence; existing bounded engine and parent recovery remain available.",

@@ -59,6 +59,12 @@ function buildResumeBinding({ session, project, activeSkillIds, sessionManager, 
   };
 }
 
+function compatibleOpencodeVersion(actual, expected) {
+  // Only this validated forward upgrade may reuse a differently versioned
+  // binding. Future upgrades and downgrades require separate validation.
+  return actual === expected || (actual === "1.18.29" && expected === "1.18.30");
+}
+
 function verifyResumeBinding(session, expected = {}) {
   const actual = session?.agentResumeBinding;
   if (!session?.agentResumeId) return { ok: true, reason: "no_resume" };
@@ -74,6 +80,7 @@ function verifyResumeBinding(session, expected = {}) {
   ];
   for (const key of checks) {
     if (key === "firstUserMessageHash" && !actual[key]) continue;
+    if (key === "opencodeVersion" && compatibleOpencodeVersion(actual[key], expected[key])) continue;
     if (String(actual[key] || "") !== String(expected[key] || "")) {
       return {
         ok: false,
