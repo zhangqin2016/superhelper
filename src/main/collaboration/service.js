@@ -11,7 +11,8 @@ const { readHistoryPage } = require("./history-page");
 const { cachedHistory } = require("./cached-history");
 const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
-const { recoverConversationHydration, assertHydrationComplete } = require("./conversation-hydration");
+const { recoverConversationHydration, assertHydrationComplete, queueAuthorizedRefresh } = require("./conversation-hydration");
+const { createTaskHydration } = require("./task-hydration");
 const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
 const { createTaskCommands } = require("./task-commands");
@@ -97,7 +98,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (page.events?.some(event => /^(directory\.|scope\.|member\.|friend\.|conversation\.(dissolved|updated))/.test(event.type))) onlineStatus.clear();
         try { return engine.applyPage(page); } finally {
           if (page.events?.some((event) => ["scope.revoked", "member.removed", "member.left", "conversation.dissolved"].includes(event.type)) && store.getSyncState().cursor >= page.toCursor) emitState("access-revoked");
-          if (page.events?.some((event) => event.type === "task.updated") && store.getSyncState().cursor >= page.toCursor) emitState("task");
+          if (page.events?.some((event) => event.type === "task.updated") && store.getSyncState().cursor >= page.toCursor) {
+            emitState("task");
+            void recoverTasks().catch(()=>undefined);
+          }
         }
       },
       applyBootstrap(snapshot) {
@@ -253,6 +257,18 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       },
     });
     const tasks = createTaskCommands({ store, client, deviceId, assertActive, onChange: () => emitState("task") });
+    const taskHydration=createTaskHydration({store,client,deviceId,assertActive,onChange:()=>emitState("task"),
+      ensureConversation:async conversationId=>{
+        await enqueueSync(async()=>{
+          assertActive();
+          if(isConversationRevoked(store,conversationId))throw Object.assign(new Error("Access revoked"),{code:"COLLAB_ACCESS_REVOKED"});
+          queueAuthorizedRefresh(store,conversationId);
+          await recoverConversationHydration({store,client,deviceId,assertActive,recoverDeniedHistory});
+        });
+      }});
+    const recoverTasks=()=>policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true
+      ? taskHydration.recover() : Promise.resolve();
+    let taskHydrationTimer=null;
     let workflow;
     const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,onChange:()=>emitState("task")});
     const taskOperation = (method, payload) => stopped ? stoppedResult()
@@ -462,6 +478,11 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (stopped) return stoppedResult();
         if (started) return;
         started = true;
+        if(policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true&&client?.getTask) {
+          void recoverTasks().catch(()=>undefined);
+          taskHydrationTimer=setInterval(()=>{void recoverTasks().catch(()=>undefined);},2000);
+          taskHydrationTimer.unref?.();
+        }
         if (taskOptions.rootPath && store.db?.get("SELECT id FROM task_local_recovery WHERE account_id = ? LIMIT 1",store.accountId)) {
           try { void getWorkflow().recoverPending().then(()=>emitState("task")).catch(()=>emitState("task")); }
           catch { /* task recovery remains isolated from ordinary chat startup */ }
@@ -487,6 +508,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         // Store operations are synchronous. Fence all async continuations
         // before closing SQLite so a hung network request cannot retain it.
         stopped = true;
+        if(taskHydrationTimer!=null)clearInterval(taskHydrationTimer);
+        taskHydrationTimer=null;
         candidateCache.clear();
         onlineStatus.stop();
         // Typing hints are per-session state: a stopped panel must show nobody

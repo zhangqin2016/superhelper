@@ -7,6 +7,7 @@ const { hydrateAuthorizedHistory, backfillMessageCommandIds, adoptOptimisticIden
 const { queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration } = require("./history-hydration");
 const access = require("./access-revocation");
 const { queueConversationHydration, queueAuthorizedRefresh } = require("./conversation-hydration");
+const { queueTaskHydration } = require("./task-hydration");
 const directory = require("./directory-projection");
 const { validateAttachmentPayload, optimisticAttachmentProjection, attachmentProjectionFromOutboxIntent } = require("./message-attachment-payload");
 const mutationOutbox = require("./message-mutation-outbox");
@@ -303,6 +304,7 @@ class CollaborationStore {
         const inserted = this.db.run(`INSERT OR IGNORE INTO applied_events (account_id, event_id, applied_at) VALUES (?, ?, ?)`, this.accountId, id, this.now());
         if (inserted.changes === 0) continue;
         projectEvent(row);
+        queueTaskHydration(this, row);
         activity.projectMessageActivity(this, row);
         queueConversationHydration(this, row);
         queueHistoryTarget(this, row);

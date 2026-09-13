@@ -28,14 +28,15 @@ function createTaskCards({store,assertActive}) {
     })();
   }
   function project(all) {
-    const tasks=new Map(all.filter(r=>r.kind==="task-card").map(r=>[r.task.id,r.task]));
+    const denied=new Set(store.db.all("SELECT task_id FROM task_hydration WHERE account_id=? AND access_denied=1",store.accountId).map(row=>row.task_id));
+    const tasks=new Map(all.filter(r=>r.kind==="task-card"&&!denied.has(r.task.id)).map(r=>[r.task.id,r.task]));
     const cards=[];
     const card=(id,createdAt,task,draft)=>({id,taskId:task?.id || draft?.taskId || null,
       createdAt:createdAt || 0,revision:task?.revision || draft?.taskRevision || 0,
       title:task?.title || draft?.input?.title || draft?.name || "",
       state:task?.state || draft?.taskState || draft?.state || "preparing",
       localState:draft?.state || null});
-    for (const draft of all.filter(r=>r.kind==="draft" && (!r.taskId || r.input))) {
+    for (const draft of all.filter(r=>r.kind==="draft" && !denied.has(r.taskId) && (!r.taskId || r.input))) {
       // The server may commit before the sender receives its receipt. Only the
       // task-scoped object and exact command content can connect that snapshot
       // to a pending intent; matching titles alone would hide distinct tasks.

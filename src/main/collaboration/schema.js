@@ -218,6 +218,22 @@ const COLLABORATION_MIGRATIONS = [
   (db) => db.exec(`CREATE TABLE task_local_recovery (
     account_id TEXT NOT NULL, id TEXT NOT NULL, payload_envelope_json TEXT NOT NULL,
     updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));`),
+  // v23 — task hints survive sync ACKs independently of UI lifecycle.
+  (db) => db.exec(`CREATE TABLE task_hydration (
+    account_id TEXT NOT NULL, task_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    generation TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+    access_denied INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
+    code TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,task_id));
+    CREATE INDEX task_hydration_due ON task_hydration(account_id,state,next_attempt_at);
+    INSERT INTO task_hydration(account_id,task_id,revision,generation,updated_at)
+      SELECT account_id,json_extract(payload_json,'$.taskId'),MAX(json_extract(payload_json,'$.revision')),lower(hex(randomblob(16))),MAX(created_at)
+      FROM events WHERE type='task.updated' AND json_valid(payload_json)
+        AND json_type(payload_json,'$.taskId')='text'
+        AND length(json_extract(payload_json,'$.taskId')) BETWEEN 1 AND 200
+        AND json_extract(payload_json,'$.taskId') NOT GLOB '*[^A-Za-z0-9_-]*'
+        AND json_type(payload_json,'$.revision')='integer' AND json_extract(payload_json,'$.revision')>0
+      GROUP BY account_id,json_extract(payload_json,'$.taskId');`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };
