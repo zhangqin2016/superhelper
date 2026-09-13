@@ -55,8 +55,7 @@ function getRunningSessionIds(runnerPool) {
 }
 
 function resolveProjectForSession(projectManager, session) {
-  if (!session) return null;
-  return projectManager.find(session.projectId) || null;
+  return require("./session-workspace").resolveSessionWorkspace(projectManager, session);
 }
 
 function diagnoseSendBlocker(ctx, sessionId, options = {}) {

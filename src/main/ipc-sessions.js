@@ -153,7 +153,7 @@ function registerSessionHandlers(ctx) {
     return {
       ok: true,
       sessionId: sid,
-      ...skillManager.listSkillsForSessionPublic(session, projectManager.find(session.projectId)?.path || session.workspacePath || ""),
+      ...skillManager.listSkillsForSessionPublic(session, require("./session-workspace").resolveSessionWorkspace(projectManager, session)?.path || (!session.remoteTaskExecution && session.workspacePath) || ""),
     };
   });
 
@@ -168,13 +168,13 @@ function registerSessionHandlers(ctx) {
     if (isSessionBusy(runnerPool, sessionId)) {
       return { ok: false, error: "BUSY" };
     }
-    const normalized = skillManager.normalizeSessionSkillSelection(payload?.enabledSkillIds, projectManager.find(session.projectId)?.path || session.workspacePath || "");
+    const normalized = skillManager.normalizeSessionSkillSelection(payload?.enabledSkillIds, require("./session-workspace").resolveSessionWorkspace(projectManager, session)?.path || (!session.remoteTaskExecution && session.workspacePath) || "");
     if (!sessionManager.setEnabledSkillIds(sessionId, normalized)) {
       return { ok: false, error: "NOT_FOUND" };
     }
     const updated = sessionManager.findById(sessionId);
-    const project = projectManager.find(updated?.projectId);
-    skillManager.writeSessionAgentGuide(sessionId, updated, project?.path || updated.workspacePath || "");
+    const project = require("./session-workspace").resolveSessionWorkspace(projectManager, updated);
+    skillManager.writeSessionAgentGuide(sessionId, updated, project?.path || (!updated.remoteTaskExecution && updated.workspacePath) || "");
     const runner = runnerPool.get(sessionId);
     if (runner?.isAlive() && !runner.isBusy()) {
       if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);
@@ -184,7 +184,7 @@ function registerSessionHandlers(ctx) {
     return {
       ok: true,
       sessionId,
-      ...skillManager.listSkillsForSessionPublic(updated, project?.path || updated.workspacePath || ""),
+      ...skillManager.listSkillsForSessionPublic(updated, project?.path || (!updated.remoteTaskExecution && updated.workspacePath) || ""),
     };
   });
 
@@ -205,7 +205,7 @@ function registerSessionHandlers(ctx) {
     const sid = sessionId || null;
     if (!sid) return { ok: false, error: "SESSION_ID_REQUIRED", commands: [] };
     const session = sid ? sessionManager.findById(sid) : null;
-    const project = session?.projectId ? projectManager.find(session.projectId) : null;
+    const project = session?.projectId ? require("./session-workspace").resolveSessionWorkspace(projectManager, session) : null;
     const list = slashCommands.loadCommands(project?.path || "");
     return { ok: true, commands: list.map(({ name, description, argHint }) => ({ name, description, argHint })) };
   });
@@ -215,7 +215,7 @@ function registerSessionHandlers(ctx) {
     const sid = payload?.sessionId || null;
     if (!sid) return { ok: false, error: "SESSION_ID_REQUIRED", expanded: null };
     const session = sid ? sessionManager.findById(sid) : null;
-    const project = session?.projectId ? projectManager.find(session.projectId) : null;
+    const project = session?.projectId ? require("./session-workspace").resolveSessionWorkspace(projectManager, session) : null;
     const list = slashCommands.loadCommands(project?.path || "");
     return { ok: true, expanded: slashCommands.expandCommand(payload?.input || "", list) };
   });

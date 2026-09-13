@@ -17,17 +17,28 @@ function resolveRemoteTaskBinding(projectManager,sessionManager,{projectId,sessi
   return {projectId,sessionId:session.id,rootPath};
 }
 /** Register an idle task workspace; execution still requires an explicit prompt. */
-function createRemoteTaskSession(manager,projectId,title,bindingId) {
+function createRemoteTaskSession(manager,projectId,title,bindingId,executionRoot) {
+  const execution = executionRoot ? require("../session-workspace").captureExecutionWorkspace(executionRoot) : null;
   const existing = manager.sessions[projectId]?.find(item=>item.remoteTaskBinding === bindingId);
-  if (existing) return existing;
+  if (existing) {
+    if (execution && JSON.stringify(existing.remoteTaskExecution)!==JSON.stringify(execution))
+      throw Object.assign(new Error("Task execution directory changed"),{code:"COLLAB_TASK_BINDING_CONFLICT"});
+    return existing;
+  }
   const now = new Date().toISOString();
   const session = {id:randomUUID(),projectId,title:(title || "Remote task").slice(0,80),createdAt:now,updatedAt:now,
-    status:"idle",messages:[],messageCount:0,remoteTaskBinding:bindingId};
+    status:"idle",messages:[],messageCount:0,remoteTaskBinding:bindingId,
+    ...(execution ? {remoteTaskExecution:execution} : {})};
   (manager.sessions[projectId] ||= []).push(session);
   manager.saveImmediate();
   return session;
 }
-function registerRemoteTaskWorkspace(projectManager,sessionManager,{rootPath,title,bindingId}) {
+function registerRemoteTaskWorkspace(projectManager,sessionManager,{rootPath,title,bindingId,projectId}) {
+  if (projectId) {
+    if (!projectManager.find(projectId)) throw Object.assign(new Error("Workspace missing"),{code:"COLLAB_TASK_LOCAL_MISSING"});
+    const session=createRemoteTaskSession(sessionManager,projectId,title,bindingId,rootPath);
+    return {projectId,sessionId:session.id};
+  }
   const previousProjectId=projectManager.activeProjectId;
   const existing=projectManager.hasPath(rootPath);
   const project=projectManager.add(rootPath);

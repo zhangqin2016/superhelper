@@ -10,7 +10,7 @@ const {createTaskWorkflow}=require('../src/main/collaboration/task-workflow');
 const {createTaskRecords}=require('../src/main/collaboration/task-records');
 const {taskWorkflowCommand,taskWorkflowResult}=require('../src/main/collaboration/task-workflow-view');
 const temporary=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'workspace-binding-')));
-let store, records, revoked=false, resolutions=0;
+let store, records, revoked=false, resolutions=0, opened;
 function open() {
   const keyring=new LocalCollaborationKeyring({filePath:path.join(temporary,'keys'),safeStorage:{isEncryptionAvailable:()=>true,encryptString:s=>Buffer.from(s),decryptString:b=>b.toString()}});
   store=new CollaborationStore({accountId:'helper',dbPath:path.join(temporary,'cache.db'),keyring});
@@ -18,7 +18,8 @@ function open() {
   records=createTaskRecords({store,assertActive(){}});
   return createTaskWorkflow({store,assertActive(){},deviceId:'device',rootPath:path.join(temporary,'managed'),
     tasks:{get:async({taskId})=>revoked?{ok:false,code:'COLLAB_TASK_ACCESS_DENIED'}:{ok:true,task:{id:taskId,conversationId:'chat',state:'active',sharedWorkspaceId:'shared',requesterUserId:'owner',assigneeUserId:'helper'}}},
-    resolveWorkspaceBinding(input){resolutions++;return {projectId:input.projectId,sessionId:input.sessionId||'session',rootPath:temporary};}});
+    resolveWorkspaceBinding(input){resolutions++;return {projectId:input.projectId,sessionId:input.sessionId||'session',rootPath:temporary};},
+    openWorkspace(input){opened=input;return {projectId:input.projectId,sessionId:'execution-session'};}});
 }
 const command={operation:'bind',conversationId:'chat',taskId:'task1',projectId:'project',sessionId:'session'};
 try {
@@ -33,6 +34,12 @@ try {
   const next=await workflow.run({...command,taskId:'task2'});
   assert.equal(next.sessionId,result.sessionId,'another task after reopen binds to the same session');
   assert.equal(records.get('task:task2').workspaceBindingId,records.get('task:task1').workspaceBindingId);
+  const workRoot=path.join(temporary,'isolated');fs.mkdirSync(workRoot);
+  records.put('task:task2',{...records.get('task:task2'),workRoot});
+  const openedResult=await workflow.run({operation:'open',conversationId:'chat',taskId:'task2'});
+  assert.equal(openedResult.ok,true);
+  assert.equal(opened.projectId,'project','opening an isolated task cannot create another top-level workspace');
+  assert.equal(opened.rootPath,workRoot,'the execution session receives task material, not unrelated private files');
   assert.equal((await workflow.run({...command,projectId:'other'})).code,'COLLAB_TASK_BINDING_CONFLICT','later task cannot silently move the workspace');
   revoked=true;const count=resolutions;
   assert.equal((await workflow.run(command)).ok,false);

@@ -408,7 +408,7 @@ class TurnOrchestrator {
     try {
       const session = this.ctx.sessionManager?.findById?.(sessionId);
       const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
-        ? this.ctx.projectManager.find(session.projectId)
+        ? require("./session-workspace").resolveSessionWorkspace(this.ctx.projectManager, session)
         : null;
       const activeSkillIds = require("./skill-manager").resolveSessionSkillIds(session);
       binding = require("./resume-binding").buildResumeBinding({
@@ -724,7 +724,7 @@ class TurnOrchestrator {
     let ensured = null;
     let runner = null;
     const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
-      ? this.ctx.projectManager.find(session.projectId)
+      ? require("./session-workspace").resolveSessionWorkspace(this.ctx.projectManager, session)
       : null;
     const workspaceBusy = rejectIfWorkspaceVersionBusy(this.ctx.workspaceVersionService, project?.path);
     if (workspaceBusy) return workspaceBusy;

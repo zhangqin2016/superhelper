@@ -20,7 +20,7 @@ function attachRouting(result, session) {
 }
 function refreshSessionGuide(projectManager, session) {
   const skillManager = require("./skill-manager");
-  const project = projectManager?.find?.(session.projectId);
+  const project = require("./session-workspace").resolveSessionWorkspace(projectManager, session);
   skillManager.writeSessionAgentGuide(session.id, session, project?.path || "");
 }
 

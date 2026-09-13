@@ -269,6 +269,18 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       const current = await taskFor(command);
       await transfers?.taskFiles?.markOwned?.(current);
       records.list(conversationId);
+      const local = await binding(command);
+      if (local.workspaceBindingId) {
+        const workspace = read(local.workspaceBindingId,conversationId);
+        const resolved = resolveWorkspaceBinding?.({projectId:workspace.projectId,sessionId:workspace.sessionId,
+          bindingId:workspace.id,title:task.title});
+        if (!resolved || resolved.rootPath !== workspace.rootPath || resolved.sessionId !== workspace.sessionId)
+          throw fail("COLLAB_TASK_BINDING_CONFLICT");
+        if (!command.deliveryId && task.requesterUserId === store.accountId)
+          return {ok:true,projectId:workspace.projectId,sessionId:workspace.sessionId};
+        return {ok:true,...await openWorkspace({rootPath:target,projectId:workspace.projectId,title:task.title,
+          bindingId:`${store.accountId}:${task.id}:${command.deliveryId || "execution"}`})};
+      }
       return {ok:true,...await openWorkspace({rootPath:target,title:task.title,bindingId:`${task.id}:${command.deliveryId || store.accountId}`})};
     }
     if (operation === "prepareDelivery") {

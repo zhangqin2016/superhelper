@@ -9,7 +9,7 @@ const { emitLifecycle } = require("./task-lifecycle-runtime");
 function sessionContext(ctx, sessionId) {
   const session = ctx.sessionManager.findById(sessionId);
   if (!session) return null;
-  const project = ctx.projectManager.find(session.projectId);
+  const project = require("./session-workspace").resolveSessionWorkspace(ctx.projectManager, session);
   if (!project?.path) return null;
   return { session, project };
 }

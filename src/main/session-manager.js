@@ -326,7 +326,7 @@ class SessionManager {
     const store = this._store();
     const flag = this._enrichmentFlag(session.id);
     if (store.meta(flag)) return;
-    const workspacePath = this.pm?.find?.(session.projectId)?.path || "";
+    const workspacePath = require("./session-workspace").resolveSessionWorkspace(this.pm,session)?.path || "";
     if (!workspacePath) return; // retry next launch once a workspace is known
     let enriched = 0;
     for (const message of store.getAll(session.id)) {

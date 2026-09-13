@@ -12,7 +12,7 @@ function collectLearnedSkills(ctx, sessionId, state) {
     const skillManager = require("./skill-manager");
     const session = ctx.sessionManager?.findById?.(sessionId) || null;
     const project = session?.projectId && ctx.projectManager?.find
-      ? ctx.projectManager.find(session.projectId)
+      ? require("./session-workspace").resolveSessionWorkspace(ctx.projectManager, session)
       : null;
     const learned = collectLearnedSkillDrafts(
       skillManager.registerLearnedSkillDir,
