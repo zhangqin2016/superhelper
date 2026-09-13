@@ -1,4 +1,5 @@
 "use strict";
+const {parseGitDescriptor} = require("./task-git-transport");
 const id = value => typeof value === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 const text = (value, max, required = false) => typeof value === "string" && value.length <= max && !value.includes("\0") && (!required || Boolean(value.trim()));
 const integer = value => Number.isSafeInteger(value) && value >= 0;
@@ -17,13 +18,29 @@ function taskCommand(value) {
     ...(value.clientCommandId ? { clientCommandId: value.clientCommandId } : {}), ...(delivery ? { deliveryId: value.deliveryId } : {}),
     ...(value.reason != null ? { reason: value.reason.trim() } : {}) };
 }
-function taskView(value) {
+function taskView(value, {includeGit = false} = {}) {
   if (value && Object.hasOwn(value,"sharedWorkspaceId") && !id(value.sharedWorkspaceId)) return null;
   if (!value || !["id", "conversationId", "requesterUserId", "assigneeUserId", "inputSnapshotId"].every(key => id(value[key]))
     || !states.includes(value.state) || !integer(value.revision) || value.revision < 1 || value.revision >= Number.MAX_SAFE_INTEGER
     || !text(value.title, 200, true) || !text(value.objective, 12000, true) || !text(value.acceptanceCriteria, 12000, true)
     || !integer(value.createdAt) || !integer(value.updatedAt) || value.updatedAt < value.createdAt
     || !Array.isArray(value.deliveries) || value.deliveries.length > 1000) return null;
+  let inputGit;
+  const gitDeliveries = new Map();
+  try {
+    if (Object.hasOwn(value,"inputGit")) {
+      inputGit = parseGitDescriptor(value.inputGit);
+      if (!inputGit.ref.endsWith("/baseline") || inputGit.prerequisites.length) return null;
+    }
+    for (const delivery of value.deliveries) {
+      if (inputGit || delivery && Object.hasOwn(delivery,"git")) {
+        const git = parseGitDescriptor(delivery?.git);
+        if (!inputGit || !git.ref.includes("/deliveries/") || git.commit === inputGit.commit
+          || git.prerequisites.length !== 1 || git.prerequisites[0] !== inputGit.commit) return null;
+        gitDeliveries.set(delivery.id,git);
+      }
+    }
+  } catch {return null;}
   const deliveries = value.deliveries.map(d => d && id(d.id) && integer(d.number) && d.number > 0 && integer(d.submittedAt)
     ? { id: d.id, number: d.number, submittedAt: d.submittedAt } : null);
   if (deliveries.some(d => !d) || new Set(deliveries.map(d => d.id)).size !== deliveries.length
@@ -33,9 +50,13 @@ function taskView(value) {
     || ["review", "changes_requested", "accepted"].includes(value.state) && !currentDeliveryId
     || value.state === "accepted" && acceptedDeliveryId !== currentDeliveryId
     || value.state !== "accepted" && acceptedDeliveryId != null || value.reason != null && !text(value.reason, 4000)) return null;
+  if (includeGit) for (const delivery of deliveries) {
+    if (gitDeliveries.has(delivery.id)) delivery.git = gitDeliveries.get(delivery.id);
+  }
   return { ...Object.fromEntries(["id", "conversationId", "requesterUserId", "assigneeUserId", "inputSnapshotId", "title", "objective", "acceptanceCriteria", "state", "revision", "createdAt", "updatedAt"].map(key => [key, value[key]])),
     deliveries, currentDeliveryId, acceptedDeliveryId, ...(value.reason ? { reason: value.reason } : {}),
-    ...(value.sharedWorkspaceId ? {sharedWorkspaceId:value.sharedWorkspaceId} : {}) };
+    ...(value.sharedWorkspaceId ? {sharedWorkspaceId:value.sharedWorkspaceId} : {}),
+    ...(includeGit && inputGit ? {inputGit} : {}) };
 }
 function taskResult(method, value) {
   if (value?.ok !== true) return { ok: false, code: id(value?.code) ? value.code : "COLLAB_TASK_UNAVAILABLE" };

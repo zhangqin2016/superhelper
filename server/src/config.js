@@ -81,6 +81,7 @@ export const config = {
   collaborationAttachmentsEnabled: process.env.COLLABORATION_ATTACHMENTS_ENABLED === "true",
   collaborationWorkspaceSharesEnabled: process.env.COLLABORATION_WORKSPACE_SHARES_ENABLED === "true",
   collaborationTasksEnabled: process.env.COLLABORATION_TASKS_ENABLED === "true",
+  collaborationTaskGitEnabled: process.env.COLLABORATION_TASK_GIT_ENABLED === "true",
   collaborationAiToolsEnabled: process.env.COLLABORATION_AI_TOOLS_ENABLED === "true",
   collaborationKillSwitch: process.env.COLLABORATION_KILL_SWITCH === "true",
   collaborationRolloutOrganizations: String(process.env.COLLABORATION_ROLLOUT_ORGANIZATIONS || "")

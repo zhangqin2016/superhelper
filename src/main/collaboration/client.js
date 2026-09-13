@@ -116,6 +116,11 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
       const response = await invoke({ path: "/api/collaboration/v1/tasks/history", body: {deviceId,conversationId,...(cursor?{cursor}:{})}, deviceId });
       return response?.result;
     },
+    async missingTaskGitObjects({deviceId,taskId,deliveryId,haveCommits=[]}) {
+      const response = await invoke({path:"/api/collaboration/v1/tasks/git/missing",
+        body:{deviceId,taskId,...(deliveryId?{deliveryId}:{}),haveCommits},deviceId});
+      return response?.result;
+    },
     async getConversationProjection({ deviceId, conversationId }) {
       const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });
       return response?.result;

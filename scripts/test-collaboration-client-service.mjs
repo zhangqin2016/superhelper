@@ -39,6 +39,9 @@ assert.deepEqual(await historyClient.listMessageHistory({ deviceId: "device-1", 
 assert.equal(historyRequest.path, "/api/collaboration/v1/messages");
 assert.equal(historyRequest.body.action, "history");
 assert.equal(historyRequest.body.bodyCiphertext, undefined, "history requests use the server-authorized decrypted view, never client ciphertext/key material");
+await historyClient.missingTaskGitObjects({deviceId:'device-1',taskId:'task',deliveryId:'delivery',haveCommits:['a'.repeat(40)]});
+assert.equal(historyRequest.path,'/api/collaboration/v1/tasks/git/missing');
+assert.deepEqual(historyRequest.body,{deviceId:'device-1',taskId:'task',deliveryId:'delivery',haveCommits:['a'.repeat(40)]});
 
 let receiptRequest = null;
 const receiptClient = createCollaborationClient({

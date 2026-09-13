@@ -1,6 +1,7 @@
 "use strict";
 const { randomUUID, createHash } = require("node:crypto");
 const { taskView, taskCommand, taskTargets } = require("./task-view");
+const {parseGitDescriptor} = require("./task-git-transport");
 const { assertScopeWritable, isConversationRevoked } = require("./access-revocation");
 const fail = (code = "COLLAB_TASK_UNAVAILABLE") => ({ ok: false, code });
 const permanent = code => /^(COLLAB_TASK_(INVALID|ACCESS_DENIED|REVISION_CONFLICT|STATE_CONFLICT|DELIVERY_CONFLICT|REASON_REQUIRED|DELIVERY_UNVERIFIED|PACKAGE_UNAVAILABLE)|IDEMPOTENCY_KEY_REUSED)$/.test(code);
@@ -80,9 +81,11 @@ function createTaskCommands({ store, client, deviceId, assertActive, onChange = 
     async get({ conversationId, taskId }) {
       try {
         assertActive(); if (!available()) return fail(); scope(conversationId);
-        const task = taskView(await client.getTask({ deviceId, taskId }));
+        const task = taskView(await client.getTask({ deviceId, taskId }),{includeGit:true});
         scope(conversationId);
-        return task && task.id === taskId && task.conversationId === conversationId && [task.requesterUserId, task.assigneeUserId].includes(store.accountId) ? { ok: true, task:remember(task) } : fail("COLLAB_TASK_INVALID");
+        if (!task || task.id !== taskId || task.conversationId !== conversationId || ![task.requesterUserId, task.assigneeUserId].includes(store.accountId)) return fail("COLLAB_TASK_INVALID");
+        remember(task);
+        return {ok:true,task};
       } catch (error) { return fail(error.code); }
     },
     pending({ conversationId }) {
@@ -92,19 +95,27 @@ function createTaskCommands({ store, client, deviceId, assertActive, onChange = 
       } catch (error) { return fail(error.code); }
     },
     retry,
-    async submit(command) {
+    async submit(command, gitDescriptor) {
       try {
         assertActive(); if (!available()) return fail();
         const normalized = taskCommand(command); if (!normalized) return fail("COLLAB_TASK_INVALID");
         const { conversationId, clientCommandId, ...input } = normalized;
+        // Second argument is main-only; renderer command parsing stays closed.
+        if (gitDescriptor !== undefined) {
+          if (input.action !== "submit") return fail("COLLAB_TASK_INVALID");
+          input.deliveryGit = parseGitDescriptor(gitDescriptor);
+        }
         scope(conversationId);
         // Resolve immutable routing before choosing the journal encryption
         // scope. A renderer-supplied conversation must not misfile a Team
         // command under a personal key. This read cannot execute the intent.
-        const target = taskView(await client.getTask({ deviceId, taskId: input.taskId }));
+        const target = taskView(await client.getTask({ deviceId, taskId: input.taskId }),{includeGit:true});
         const scopeId = scope(conversationId);
         if (!target || target.id !== input.taskId || target.conversationId !== conversationId
           || ![target.requesterUserId, target.assigneeUserId].includes(store.accountId)) return fail("COLLAB_TASK_ACCESS_DENIED");
+        if (input.action === "submit" && (Boolean(target.inputGit) !== Boolean(input.deliveryGit)
+          || input.deliveryGit && (!input.deliveryGit.ref.includes("/deliveries/") || input.deliveryGit.commit === target.inputGit.commit
+            || input.deliveryGit.prerequisites.length !== 1 || input.deliveryGit.prerequisites[0] !== target.inputGit.commit))) return fail("COLLAB_TASK_INVALID");
         const fingerprint = createHash("sha256").update(JSON.stringify({ conversationId, input })).digest("hex");
         const id = store.db.transaction(() => {
           const existing = clientCommandId ? get(clientCommandId) : null;

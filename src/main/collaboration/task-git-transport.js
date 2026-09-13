@@ -113,4 +113,4 @@ function createTaskGitTransport(taskGit) {
     },
   };
 }
-module.exports = {createTaskGitTransport};
+module.exports = {createTaskGitTransport,parseGitDescriptor:descriptor};

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import {resolveCollaborationPolicy,resolveServerCollaborationPolicy,applyCollaborationPolicyGate} from '../server/src/services/collaboration/policy.js';
 const policy={enabled:true,workspaceShares:true,tasks:true};
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).taskGitProtocol,undefined,'Git rollout stays off by default');
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true,collaborationTaskGitEnabled:true}).taskGitProtocol,1);
+assert.equal(resolveCollaborationPolicy({...policy,taskGitProtocol:2}).taskGitProtocol,undefined);
+assert.equal(applyCollaborationPolicyGate({collaboration:{...policy,taskGitProtocol:1}},{collaborationEnabled:true,workspaceShares:true,tasks:true,taskGit:false}).collaboration.taskGitProtocol,undefined,'profile cannot override Git rollout');
+assert.equal(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:true,tasks:true,taskGit:true}).collaboration.taskGitProtocol,1);
 assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).sharedWorkspaceProtocol,1);
 assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).taskHistoryProtocol,1);
 assert.equal(resolveCollaborationPolicy(policy).taskHistoryProtocol,undefined,'old profiles do not invent task history support');

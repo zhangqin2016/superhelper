@@ -209,6 +209,14 @@ for (const taskHistoryProtocol of [1, 2, '1', null]) {
     effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:true,taskHistoryProtocol}}});
   assert.equal(remoteConfig.getRemoteCollaborationPolicySync().taskHistoryProtocol,taskHistoryProtocol===1?1:undefined);
 }
+for (const taskGitProtocol of [1,2,'1',null]) {
+  writeRemoteConfigCache({schemaVersion:1,configVersion:'task-git-protocol',expiresAt:new Date(Date.now()+60_000).toISOString(),
+    effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:true,taskGitProtocol}}});
+  assert.equal(remoteConfig.getRemoteCollaborationPolicySync().taskGitProtocol,taskGitProtocol===1?1:undefined);
+}
+writeRemoteConfigCache({schemaVersion:1,configVersion:'task-git-disabled',expiresAt:new Date(Date.now()+60_000).toISOString(),
+  effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:false,taskGitProtocol:1}}});
+assert.equal(remoteConfig.getRemoteCollaborationPolicySync().taskGitProtocol,undefined);
 fs.rmSync(remoteUserData, { recursive: true, force: true });
 
 console.log("collaboration-policy: ok");

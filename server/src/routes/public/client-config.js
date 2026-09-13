@@ -188,6 +188,7 @@ export function registerPublicClientConfigRoutes(app) {
       attachments: config.collaborationAttachmentsEnabled,
       workspaceShares: config.collaborationWorkspaceSharesEnabled,
       tasks: config.collaborationTasksEnabled,
+      taskGit: config.collaborationTaskGitEnabled,
       aiTools: config.collaborationAiToolsEnabled,
     });
     // Expand any per-scope `models.providers` directive into its preset menu
