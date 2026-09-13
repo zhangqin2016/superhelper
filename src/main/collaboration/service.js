@@ -13,6 +13,7 @@ const { hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
 const { recoverConversationHydration, assertHydrationComplete, queueAuthorizedRefresh } = require("./conversation-hydration");
 const { createTaskHydration } = require("./task-hydration");
+const { createTaskHistory } = require("./task-history");
 const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
 const { createTaskCommands } = require("./task-commands");
@@ -109,7 +110,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         candidateCache.clear();
         onlineStatus.clear();
         const previous = store.listConversationIds?.() || [];
-        try { return engine.applyBootstrap(snapshot); } finally {
+        try { const result=engine.applyBootstrap(snapshot);void recoverTasks().catch(()=>undefined);return result; } finally {
           if (previous.some((conversationId) => !store.getConversation({ conversationId }))) emitState("access-revoked");
         }
       },
@@ -266,8 +267,9 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           await recoverConversationHydration({store,client,deviceId,assertActive,recoverDeniedHistory});
         });
       }});
+    const taskHistory=createTaskHistory({store,client,deviceId,protocol:policy?.taskHistoryProtocol,assertActive,onChange:()=>emitState("task")});
     const recoverTasks=()=>policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true
-      ? taskHydration.recover() : Promise.resolve();
+      ? Promise.all([taskHydration.recover(),taskHistory.recover()]) : Promise.resolve();
     let taskHydrationTimer=null;
     let workflow;
     const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,onChange:()=>emitState("task")});
@@ -478,7 +480,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (stopped) return stoppedResult();
         if (started) return;
         started = true;
-        if(policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true&&client?.getTask) {
+        if(policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true&&(client?.getTask||client?.listTaskHistory)) {
           void recoverTasks().catch(()=>undefined);
           taskHydrationTimer=setInterval(()=>{void recoverTasks().catch(()=>undefined);},2000);
           taskHydrationTimer.unref?.();

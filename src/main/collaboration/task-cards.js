@@ -28,6 +28,7 @@ function createTaskCards({store,assertActive}) {
     })();
   }
   function project(all) {
+    if(all.length&&store.db.get("SELECT 1 FROM task_history_scans WHERE account_id=? AND conversation_id=? AND access_denied=1",store.accountId,all[0].conversationId))return [];
     const denied=new Set(store.db.all("SELECT task_id FROM task_hydration WHERE account_id=? AND access_denied=1",store.accountId).map(row=>row.task_id));
     const tasks=new Map(all.filter(r=>r.kind==="task-card"&&!denied.has(r.task.id)).map(r=>[r.task.id,r.task]));
     const cards=[];

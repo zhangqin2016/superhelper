@@ -234,6 +234,18 @@ const COLLABORATION_MIGRATIONS = [
         AND json_extract(payload_json,'$.taskId') NOT GLOB '*[^A-Za-z0-9_-]*'
         AND json_type(payload_json,'$.revision')='integer' AND json_extract(payload_json,'$.revision')>0
       GROUP BY account_id,json_extract(payload_json,'$.taskId');`),
+  // v24 — resumable discovery of tasks older than retained sync events.
+  (db) => db.exec(`CREATE TABLE task_history_scans (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, scope_id TEXT NOT NULL,
+    generation TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', access_denied INTEGER NOT NULL DEFAULT 0,
+    cursor_created_at INTEGER, cursor_task_id TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0, code TEXT, updated_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,conversation_id));
+    CREATE INDEX task_history_due ON task_history_scans(account_id,next_attempt_at,updated_at);
+    CREATE TABLE task_history_seen (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, generation TEXT NOT NULL, task_id TEXT NOT NULL,
+      PRIMARY KEY(account_id,conversation_id,generation,task_id),
+      FOREIGN KEY(account_id,conversation_id) REFERENCES task_history_scans(account_id,conversation_id) ON DELETE CASCADE);`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

@@ -35,7 +35,8 @@ function taskWorkflowCommand(value) {
 function taskWorkflowResult(value) {
   const result = {ok:value?.ok === true};
   if (Array.isArray(value?.conversationIds)) result.conversationIds=value.conversationIds.filter(id).slice(0,1000);
-  if (Array.isArray(value?.cards)) result.cards = value.cards.slice(0,1000).filter(c=>id(c.id)).map(c=>({
+  if (Array.isArray(value?.cards) && value.cards.length>1000) result.hasMoreCards=true;
+  if (Array.isArray(value?.cards)) result.cards = value.cards.slice(-1000).filter(c=>id(c.id)).map(c=>({
     id:c.id,taskId:id(c.taskId)?c.taskId:null,title:String(c.title || "").slice(0,200),
     ...(id(c.conversationId)?{conversationId:c.conversationId}:{}),
     createdAt:Number.isSafeInteger(c.createdAt)&&c.createdAt>=0?c.createdAt:0,
