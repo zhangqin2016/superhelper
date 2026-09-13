@@ -40,8 +40,22 @@ try{
  assert.throws(()=>cards.remember({...task,id:'foreign',requesterUserId:'stranger'}),{code:'COLLAB_TASK_ACCESS_DENIED'});
  store.close();store=null;open();
  const restored=cards.list('chat');assert.equal(restored.length,1);assert.equal(restored[0].state,'active');assert.equal(restored[0].revision,2);
+ records.put('draft',{...records.get('draft'),deviceId:'device',sourceProjectId:'project',sourceSessionId:'origin'});
+ const session={projectId:'project',sessionId:'origin',deviceId:'device'};
+ assert.equal(cards.forSession(session)[0].id,'draft','origin sees its persistent intent anchor');
+ assert.equal(cards.forSession({...session,deviceId:'other'}).length,0,'binding belongs to this device');
+ assert.equal(cards.forSession({...session,projectId:'other'}).length,0);
+ assert.equal(cards.forSession({...session,sessionId:'other'}).length,0);
+ const shared={...active,id:'shared-task',sharedWorkspaceId:'workspace'};
+ cards.remember(shared);
+ records.put('workspace-binding',{kind:'workspace-binding',conversationId:'chat',deviceId:'device',projectId:'project',sessionId:'receiver',sharedWorkspaceId:'workspace'});
+ assert.deepEqual(cards.forSession({...session,sessionId:'receiver'}).map(c=>c.taskId),['shared-task'],'saved receiving workspace projects incoming tasks');
+ store.close();store=null;open();
+ assert.equal(cards.forSession(session)[0].id,'draft','origin card survives SQLite reopen');
+ assert.equal(cards.forSession({...session,sessionId:'receiver'})[0].taskId,'shared-task','receiving binding survives SQLite reopen');
  assert.equal(JSON.stringify(store.db.all('SELECT * FROM task_workspace_records')).includes('Check totals'),false,'task content is encrypted');
  store.db.run("INSERT INTO revoked_conversations(account_id,conversation_id,scope_id) VALUES ('owner','chat','personal')");
  assert.throws(()=>cards.list('chat'),{code:'COLLAB_ACCESS_REVOKED'});
+ assert.deepEqual(cards.forSession(session),[],'revoked conversation is removed from the local session');
  console.log('task cards: real SQLite pending anchor/ACK dedupe, monotonic state, encrypted reopen and participant/revocation guards passed');
 }finally{store?.close();fs.rmSync(dir,{recursive:true,force:true});}

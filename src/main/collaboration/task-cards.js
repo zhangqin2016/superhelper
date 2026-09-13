@@ -27,8 +27,7 @@ function createTaskCards({store,assertActive}) {
       return task;
     })();
   }
-  function list(conversationId) {
-    const all=records.list(conversationId);
+  function project(all) {
     const tasks=new Map(all.filter(r=>r.kind==="task-card").map(r=>[r.task.id,r.task]));
     const cards=[];
     const card=(id,createdAt,task,draft)=>({id,taskId:task?.id || draft?.taskId || null,
@@ -53,6 +52,24 @@ function createTaskCards({store,assertActive}) {
     for (const task of tasks.values()) cards.push(card(task.id,task.createdAt,task));
     return cards.sort((a,b)=>a.createdAt-b.createdAt || a.id.localeCompare(b.id));
   }
-  return {remember,list};
+  function list(conversationId) { return project(records.list(conversationId)); }
+  function sessionProjection({projectId,sessionId,deviceId}) {
+    assertActive();
+    const result=[],conversationIds=[];
+    const conversations=store.db.all("SELECT DISTINCT conversation_id FROM task_workspace_records WHERE account_id = ?",store.accountId);
+    for (const {conversation_id:conversationId} of conversations) {
+      let all;
+      try { all=records.list(conversationId); }
+      catch (error) { if (error.code==="COLLAB_ACCESS_REVOKED") continue; throw error; }
+      const origins=new Set(all.filter(r=>r.kind==="draft" && r.deviceId===deviceId && r.sourceProjectId===projectId && r.sourceSessionId===sessionId).map(r=>r.id));
+      const workspaces=new Set(all.filter(r=>r.kind==="workspace-binding" && r.deviceId===deviceId && r.projectId===projectId && r.sessionId===sessionId).map(r=>r.sharedWorkspaceId));
+      if (origins.size || workspaces.size) conversationIds.push(conversationId);
+      const taskIds=new Set(all.filter(r=>r.kind==="task-card" && workspaces.has(r.task.sharedWorkspaceId)).map(r=>r.task.id));
+      for (const card of project(all)) if (origins.has(card.id) || taskIds.has(card.taskId)) result.push({...card,conversationId});
+    }
+    assertActive();
+    return {cards:result.sort((a,b)=>a.createdAt-b.createdAt || a.id.localeCompare(b.id)),conversationIds};
+  }
+  return {remember,list,sessionProjection,forSession:input=>sessionProjection(input).cards};
 }
 module.exports={createTaskCards};

@@ -3,6 +3,7 @@ const id = v => typeof v === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(v);
 const fields = {
   recoveries:[],
   cards:[],
+  sessionCards:["sessionId"],
   bind:["taskId","projectId","sessionId"],
   bindingOptions:["taskId"],
   prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
@@ -11,7 +12,7 @@ const fields = {
 };
 function taskWorkflowCommand(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(fields,value.operation)
-    || (value.operation === "recoveries" ? value.conversationId != null : !id(value.conversationId))) return null;
+    || (["recoveries","sessionCards"].includes(value.operation) ? value.conversationId != null : !id(value.conversationId))) return null;
   const keys = fields[value.operation];
   if (value.operation === "prepare" && Object.hasOwn(value,"projectId") && Object.hasOwn(value,"draftId")) return null;
   if (value.operation === "prepare" && Object.hasOwn(value,"sessionId") && !Object.hasOwn(value,"projectId")) return null;
@@ -33,8 +34,10 @@ function taskWorkflowCommand(value) {
 // Closed projection: local absolute paths, keys and recovery journals never cross.
 function taskWorkflowResult(value) {
   const result = {ok:value?.ok === true};
+  if (Array.isArray(value?.conversationIds)) result.conversationIds=value.conversationIds.filter(id).slice(0,1000);
   if (Array.isArray(value?.cards)) result.cards = value.cards.slice(0,1000).filter(c=>id(c.id)).map(c=>({
     id:c.id,taskId:id(c.taskId)?c.taskId:null,title:String(c.title || "").slice(0,200),
+    ...(id(c.conversationId)?{conversationId:c.conversationId}:{}),
     createdAt:Number.isSafeInteger(c.createdAt)&&c.createdAt>=0?c.createdAt:0,
     revision:Number.isSafeInteger(c.revision)&&c.revision>=0?c.revision:0,
     state:id(c.state)?c.state:"preparing",localState:id(c.localState)?c.localState:null,

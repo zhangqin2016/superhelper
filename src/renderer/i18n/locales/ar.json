@@ -1,4 +1,5 @@
 {
+  "collaboration.task.cachedState": "آخر حالة محفوظة",
   "collaboration.task.cardState.preparing": "جارٍ تجهيز الملفات",
   "collaboration.task.cardState.preparation_failed": "تعذر التجهيز — تابع لإعادة المحاولة",
   "collaboration.task.cardState.prepared": "الملفات جاهزة للمشاركة",

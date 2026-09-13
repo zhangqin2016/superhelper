@@ -13,15 +13,15 @@ export function createTaskCardController({api,getContext,onChange=()=>{}}) {
     if(!key){publish([]);return;}
     const conversationId=getContext().conversationId;
     const current=()=>!disposed&&ticket===generation&&client===api()&&key===contextKey();
-    const read=async()=>{
+    const read=async(cached=true)=>{
       const result=await client?.taskWorkflow?.({operation:"cards",conversationId});
-      if(current())publish(result?.ok?result.cards || []:[]);
+      if(current())publish(result?.ok?(result.cards || []).map(card=>({...card,cached})):[]);
     };
     try {
       await read();if(!current())return;
       // Main caches only participant-authorized, monotonic task snapshots.
       const fresh=await client?.listTasks?.(conversationId);
-      if(current()&&fresh?.ok)await read();
+      if(current()&&fresh?.ok)await read(false);
     } catch { /* cached local state remains; no invented remote success */ }
   }
   return {cards:()=>rows,update:()=>void update(),refresh:()=>void update(true),
@@ -42,7 +42,7 @@ export function renderTaskCards(root,cards=[],onOpen) {
     }
     row.querySelector("strong").textContent=card.title;
     const label=states.has(card.state)?`state.${card.state}`:`cardState.${localStates.has(card.state)?card.state:"preparing"}`;
-    row.querySelector("p").textContent=t(`collaboration.task.${label}`);
+    row.querySelector("p").textContent=t(`collaboration.task.${label}`)+(card.cached&&card.taskId?` · ${t("collaboration.task.cachedState")}`:"");
     const button=row.querySelector("button");button.textContent=t(`collaboration.task.${card.taskId?"view":"resume"}`);button.onclick=()=>onOpen?.(card);
     row.dataset.revision=String(card.revision);row.dataset.taskId=card.taskId || "";
     const after=[...root.querySelectorAll(":scope > .collaboration-message")].find(message=>Number(message.dataset.createdAt)>card.createdAt);

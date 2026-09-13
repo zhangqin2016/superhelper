@@ -293,6 +293,11 @@ app.whenReady().then(async () => {
             chooseDirectory: () => dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] }),
             resolveProjectDirectory: (projectId) => projectManager.find(projectId)?.path,
             resolveSourceSession: (input) => require("./main/collaboration/task-session").resolveRemoteTaskSourceSession(projectManager,sessionManager,input),
+            resolveCardSession: (id) => {
+              const session=sessionManager._find(id);
+              return session && !session.archived && projectManager.find(session.projectId)
+                ? {sessionId:session.id,projectId:session.projectId} : null;
+            },
             resolveWorkspaceBinding: (input) => require("./main/collaboration/task-session").resolveRemoteTaskBinding(projectManager, sessionManager, input),
             listWorkspaceBindings: () => require("./main/collaboration/task-session").listRemoteTaskBindingTargets(projectManager,sessionManager),
             openWorkspace: (input) => require("./main/collaboration/task-session").registerRemoteTaskWorkspace(projectManager, sessionManager, input),

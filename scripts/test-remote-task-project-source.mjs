@@ -29,6 +29,7 @@ function fixture({ resolve, choose, afterFreeze, sourceSession } = {}) {
   const workflow = createTaskWorkflow({ store, assertActive, deviceId: 'device', rootPath: path.join(dir, 'managed'),
     resolveProjectDirectory: async id => { resolved++; assert.equal(id, command.projectId); return resolve ? resolve(store) : source; },
     resolveSourceSession: sourceSession,
+    resolveCardSession: id=>id==='origin'?{sessionId:id,projectId:'project_1'}:null,
     chooseDirectory: async () => { chosen++; return choose ? choose(store) : { filePaths: [source] }; },
     bundle: { unpackTaskBundle, async freezeTaskBundle(input) {
       frozen++; const result = await freezeTaskBundle(input); await afterFreeze?.(store); return result;
@@ -51,6 +52,12 @@ try {
   const linkedResult=await linked.workflow.run(sessionCommand);
   assert.equal(linkedResult.ok,true,JSON.stringify(linkedResult));assert.equal(sessionResolved,1);
   assert.equal(linked.records.get(linkedResult.draft.id).sourceSessionId,'origin');
+  const projected=await linked.workflow.run({operation:'sessionCards',sessionId:'origin'});
+  assert.equal(projected.ok,true);assert.equal(projected.cards[0].id,linkedResult.draft.id);
+  assert.deepEqual(projected.conversationIds,['chat']);
+  assert.equal((await linked.workflow.run({operation:'sessionCards',sessionId:'missing'})).ok,false);
+  assert.equal(taskWorkflowCommand({operation:'sessionCards',sessionId:'origin',conversationId:'chat'}),null);
+  assert.doesNotMatch(JSON.stringify(taskWorkflowResult(projected)),/sourceRoot|sourceProjectId|sourceSessionId|snapshotRoot/);
   const invalidSession=fixture({sourceSession:()=>null});
   assert.equal((await invalidSession.workflow.run(sessionCommand)).ok,false);assert.equal(invalidSession.counts().frozen,0);
   let failOnce=true,originExists=true;

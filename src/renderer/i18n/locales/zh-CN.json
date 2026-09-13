@@ -1,4 +1,5 @@
 {
+  "collaboration.task.cachedState": "上次保存的状态",
   "collaboration.task.cardState.preparing": "正在准备材料",
   "collaboration.task.cardState.preparation_failed": "准备失败，可继续重试",
   "collaboration.task.cardState.prepared": "材料已准备，等待分享",

@@ -1,4 +1,5 @@
 {
+  "collaboration.task.cachedState": "Last saved status",
   "collaboration.task.cardState.preparing": "Preparing materials",
   "collaboration.task.cardState.preparation_failed": "Preparation failed — resume to retry",
   "collaboration.task.cardState.prepared": "Materials ready to share",

@@ -28,7 +28,15 @@ export function connectWorkspaceCollaboration({ getContext, getPolicy, refreshPo
     if (!directory.ok || !list?.ok || !api()?.taskWorkflow) return { ok: false, reason: "unavailable" };
     return { ok: true, directory, conversations: list.conversations || [], captured: { ...captured, userId: directory.profile.userId } };
   }
-  return registerWorkspaceCollaborationController({ read, async continue({ snapshot, target, projectId, sessionId, isCurrent }) {
+  return registerWorkspaceCollaborationController({ read, async openCard(card) {
+    const fresh=await read();
+    if(!fresh.ok || !fresh.conversations.some(item=>item.id===card.conversationId))return {ok:false};
+    await load();if(!current(fresh.captured))return {ok:false};
+    activate();const opening=open(card.conversationId),own=stamp();await opening;
+    if(!current(own)||getContext().conversationId!==card.conversationId)return {ok:false};
+    const result=await tasks.openCard(card);
+    return {ok:current(own)&&result?.ok===true};
+  }, async continue({ snapshot, target, projectId, sessionId, isCurrent }) {
     const valid = () => isCurrent() && current(snapshot.captured);
     if (!valid()) return { reason: "changed" };
     await refreshPolicy?.();

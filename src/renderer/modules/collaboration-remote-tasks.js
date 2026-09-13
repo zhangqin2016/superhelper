@@ -490,7 +490,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   }
   async function openCard(card) {
     close({restoreFocus:false});open();
-    if (card.taskId) {await openTask(card.taskId);return;}
+    if (card.taskId) {await openTask(card.taskId);return {ok:phase==="detail"&&selected?.id===card.taskId};}
     const ticket=++generation;
     try {
       const result=await api()?.taskWorkflow?.({operation:"drafts",conversationId:context.conversationId});
@@ -498,6 +498,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       const draft=result?.drafts?.find(item=>item.id===card.id);
       if (draft) await createTask(draft);
     } catch {if(valid(ticket))showStatus("loadFailed");}
+    return {ok:phase==="workflow"&&workflow?.draft?.id===card.id};
   }
   return { update, onChange, openCard, create: options => { close({ restoreFocus: false }); return open(options || {}); }, invalidate: () => { close({ restoreFocus: false }); clearRecoveries(); }, destroy() { close({ restoreFocus: false }); clearRecoveries(); disposed = true; recoveryResize.disconnect(); locale(); entry.removeEventListener("click", openEntry); recoveryEntry.removeEventListener("click", openRecoveries); surface.removeEventListener("keydown", keydown); entry.remove(); recoveryEntry.remove(); surface.remove(); } };
 }

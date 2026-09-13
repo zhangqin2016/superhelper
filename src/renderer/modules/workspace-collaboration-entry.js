@@ -5,6 +5,10 @@ let controller = null, dismissCurrent = null;
 const tr = key => t(`collaboration.workspace.${key}`);
 const node = (tag, text = "", className = "") => { const el = document.createElement(tag); el.textContent = text; el.className = className; return el; };
 
+export async function openWorkspaceTaskCard(card) {
+  return await controller?.openCard?.(card) || {ok:false};
+}
+
 /** The project tree passes identity only; the center owns navigation and policy. */
 export function registerWorkspaceCollaborationController(value) {
   dismissCurrent?.(); controller = value;
