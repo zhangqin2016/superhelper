@@ -20,6 +20,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   const recoveries = createTaskRecovery({store,assertActive});
   const running = new Map();
   const preparing = new Set();
+  let taskGit;
+  const git = () => taskGit || (taskGit = new (require("./task-git").TaskGit)({rootPath:path.join(root(),"git")}));
   const workspaceBindingId = task => `workspace-binding:${createHash("sha256").update(JSON.stringify([store.accountId,deviceId,task.sharedWorkspaceId])).digest("hex")}`;
   function root() {
     assertActive();
@@ -107,11 +109,21 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       local = save({...local,sharedWorkspaceId:task.sharedWorkspaceId,workspaceBindingId:workspace.id});
     }
     if (!local.workRoot) {
-      const input = await download(command, task.inputSnapshotId);
-      // Extract a second, independent copy. Never edit the baseline snapshot.
-      const work = await download(command, task.inputSnapshotId);
-      for (const file of work.manifest) fs.chmodSync(path.join(work.snapshotRoot,file.path),0o600);
-      local = save({...local,baseManifest:input.manifest,snapshotRoot:input.snapshotRoot,workRoot:work.snapshotRoot});
+      if (!local.snapshotRoot) {
+        const input = await download(command, task.inputSnapshotId);
+        local = save({...local,baseManifest:input.manifest,snapshotRoot:input.snapshotRoot});
+      }
+      if (!local.gitBaseline) {
+        const gitBaseline = await git().captureBaseline({taskId:task.id,snapshotRoot:local.snapshotRoot,manifest:local.baseManifest});
+        await taskFor(command);
+        local = save({...local,gitBaseline,executionRoot:allocate()});
+      }
+      await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.executionRoot,manifest:local.baseManifest});
+      await taskFor(command);
+      local = save({...local,workRoot:local.executionRoot});
+    } else if (local.gitBaseline) {
+      await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.workRoot,manifest:local.baseManifest});
+      await taskFor(command);
     }
     return local;
   }
@@ -274,6 +286,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       if (draft.deviceId !== deviceId) throw fail("COLLAB_DEVICE_CHANGED");
       if (draft.state === "completed") return {ok:true,state:"completed",taskId:draft.taskId,draftId:draft.id};
       if (draft.sharedWorkspaceId && sharedWorkspaceProtocol !== 1) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
+      if (!draft.gitBaseline) {
+        const gitBaseline = await git().captureBaseline({taskId:draft.id,snapshotRoot:draft.snapshotRoot,manifest:draft.manifest});
+        read(draft.id,conversationId);
+        draft = save({...draft,gitBaseline});
+      }
       draft = save({...draft,input,state:"uploading"});
       draft = await upload(draft);
       const priorUncertain = draft.uncertain === true;
@@ -296,7 +313,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         ...(draft.sourceProjectId ? {sourceProjectId:draft.sourceProjectId} : {}),
         ...(draft.sourceSessionId ? {sourceSessionId:draft.sourceSessionId} : {}),
         ...(draft.sharedWorkspaceId ? {sharedWorkspaceId:draft.sharedWorkspaceId} : {}),
-        snapshotRoot:draft.snapshotRoot,baseManifest:draft.manifest});
+        snapshotRoot:draft.snapshotRoot,baseManifest:draft.manifest,gitBaseline:draft.gitBaseline});
       save({...draft,taskId:result.taskId,taskState:result.state,taskRevision:result.revision,state:"completed"});
       return {ok:true,state:"completed",taskId:result.taskId,draftId:draft.id};
     }

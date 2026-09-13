@@ -25,6 +25,25 @@ try {
   assert.equal(execFileSync('git',['--git-dir',baseline.repository,'show',`${baseline.commit}:authorized.txt`]).toString(),'frozen baseline\r\n');
   assert.throws(()=>inspect('cat-file','-e',privateHead));
   assert.equal(git('rev-parse','HEAD'),privateHead);
+  const workRoot=path.join(temporary,'execution');
+  await tasks.ensureWorktree({baseline,workRoot,snapshotRoot:source,manifest:[entry]});
+  assert.equal(execFileSync('git',['-C',workRoot,'rev-parse','HEAD'],{encoding:'utf8'}).trim(),baseline.commit);
+  assert.equal(fs.readFileSync(path.join(workRoot,'authorized.txt'),'utf8'),'frozen baseline\r\n');
+  assert.equal(execFileSync('git',['-C',workRoot,'status','--porcelain'],{encoding:'utf8'}),'');
+  const attributes=file('.gitattributes','*.txt text eol=lf');
+  const attributed=await tasks.captureBaseline({taskId:'attributes',snapshotRoot:source,manifest:[entry,attributes]});
+  const attributedRoot=path.join(temporary,'attributed');
+  await tasks.ensureWorktree({baseline:attributed,workRoot:attributedRoot,manifest:[entry,attributes]});
+  assert.equal(fs.readFileSync(path.join(attributedRoot,'authorized.txt'),'utf8'),'frozen baseline\r\n','materialization bypasses checkout attribute transforms');
+  fs.writeFileSync(path.join(workRoot,'authorized.txt'),'task edits');
+  await tasks.ensureWorktree({baseline,workRoot,snapshotRoot:source,manifest:[entry]});
+  assert.equal(fs.readFileSync(path.join(workRoot,'authorized.txt'),'utf8'),'task edits');
+  const metadata=fs.readFileSync(path.join(workRoot,'.git'),'utf8').trim().slice(8);
+  const marker=path.join(metadata,'lily-task.json'),ready=fs.readFileSync(marker);
+  fs.unlinkSync(marker);
+  await assert.rejects(tasks.ensureWorktree({baseline,workRoot,manifest:[entry]}),/WORKTREE_INCOMPLETE/);
+  assert.equal(fs.readFileSync(path.join(workRoot,'authorized.txt'),'utf8'),'task edits','incomplete checkout never authorizes a reset');
+  fs.writeFileSync(marker,ready);
   const restarted=new TaskGit({rootPath:path.join(temporary,'collaboration'),gitOptions:{autoInstall:false}});
   assert.equal((await restarted.captureBaseline({taskId:'task_one',snapshotRoot:source,manifest:[entry]})).commit,baseline.commit);
   // A host process can itself be running under Git; that environment must not

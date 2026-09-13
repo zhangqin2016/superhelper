@@ -2,7 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const {createHash} = require("node:crypto");
-const {execFile} = require("node:child_process");
+const {execFile,spawn} = require("node:child_process");
 const {promisify} = require("node:util");
 const {pipeline} = require("node:stream/promises");
 const {Transform} = require("node:stream");
@@ -51,7 +51,73 @@ class TaskGit {
     directory(repository);
     const git = (args,extra)=>run(["--git-dir",repository,...args],extra);
     if (await git(["rev-parse","--is-bare-repository"]) !== "true" || fs.existsSync(path.join(repository,"objects","info","alternates"))) throw fail("REPOSITORY_INVALID");
-    return {repository,git};
+    const writeBlob = async (blob,destination,file) => {
+      const child = spawn(runtime.executable,["--git-dir",repository,"cat-file","blob",blob],{cwd:this.rootPath,env,stdio:["ignore","pipe","pipe"],windowsHide:true});
+      child.stderr.resume();
+      const finished = new Promise((resolve,reject)=>{
+        child.once("error",reject);
+        child.once("close",code=>code === 0 ? resolve() : reject(fail("OBJECT_READ_FAILED")));
+      });
+      const digest = createHash("sha256"); let size = 0;
+      try {
+        await Promise.all([finished,pipeline(child.stdout,new Transform({transform(chunk,_encoding,callback) {
+          size += chunk.length; digest.update(chunk); callback(null,chunk);
+        }}),fs.createWriteStream(destination,{flags:"wx",mode:0o600}))]);
+        if (size !== file.sizeBytes || digest.digest("hex") !== file.sha256) throw fail("SNAPSHOT_CHANGED");
+      } finally {if (child.exitCode === null) child.kill();}
+    };
+    return {repository,git,writeBlob};
+  }
+  async ensureWorktree({baseline,workRoot,manifest}) {
+    const files = manifestMap(manifest);
+    const {repository,git,writeBlob} = await this.ensure();
+    if (baseline?.repository !== repository || !/^[0-9a-f]{40}$/.test(baseline.commit || "")
+      || !/^refs\/tasks\/[0-9a-f]{64}\/baseline$/.test(baseline.ref || "")
+      || await git(["rev-parse","--verify",baseline.ref]) !== baseline.commit) throw fail("BASELINE_CONFLICT");
+    if (typeof workRoot !== "string" || !path.isAbsolute(workRoot) || path.resolve(workRoot) !== workRoot
+      || workRoot === this.rootPath || workRoot.startsWith(`${this.rootPath}${path.sep}`)
+      || this.rootPath.startsWith(`${workRoot}${path.sep}`)) throw fail("UNSAFE_PATH");
+    directory(path.dirname(workRoot));
+    const metadata = () => {
+      directory(workRoot);
+      const link = path.join(workRoot,".git");
+      const stat = fs.lstatSync(link);
+      if (!stat.isFile() || stat.nlink !== 1) throw fail("UNSAFE_PATH");
+      const value = fs.readFileSync(link,"utf8").trim();
+      if (!value.startsWith("gitdir: ")) throw fail("WORKTREE_CONFLICT");
+      const target = value.slice(8);
+      if (path.dirname(target) !== path.join(repository,"worktrees")) throw fail("WORKTREE_CONFLICT");
+      directory(target);
+      if (fs.readFileSync(path.join(target,"gitdir"),"utf8").trim() !== link) throw fail("WORKTREE_CONFLICT");
+      return target;
+    };
+    if (fs.existsSync(workRoot)) {
+      const marker = path.join(metadata(),"lily-task.json");
+      if (!fs.existsSync(marker)) throw fail("WORKTREE_INCOMPLETE");
+      const saved = JSON.parse(fs.readFileSync(marker,"utf8")), stat = fs.statSync(workRoot);
+      if (saved.commit !== baseline.commit || saved.ref !== baseline.ref || saved.workRoot !== workRoot
+        || saved.dev !== stat.dev || saved.ino !== stat.ino) throw fail("WORKTREE_CONFLICT");
+      return {workRoot};
+    }
+    const entries = (await git(["ls-tree","-r","-z",baseline.commit])).split("\0").filter(Boolean).map(value=>{
+      const match = /^(100644) blob ([0-9a-f]{40})\t(.+)$/.exec(value);
+      if (!match) throw fail("TREE_INVALID");
+      const file = files.get(match[3].toLowerCase());
+      if (!file || file.path !== match[3] || controlPath(file.path)) throw fail("TREE_INVALID");
+      return {blob:match[2],file};
+    });
+    if (entries.length !== files.size) throw fail("TREE_INVALID");
+    await git(["worktree","add","--detach","--no-checkout",workRoot,baseline.commit]);
+    const target = metadata();
+    await git(["--git-dir",target,"read-tree",baseline.commit]);
+    for (const {blob,file} of entries) {
+      const destination = path.join(workRoot,file.path);
+      fs.mkdirSync(path.dirname(destination),{recursive:true,mode:0o700});
+      await writeBlob(blob,destination,file);
+    }
+    const stat = fs.statSync(workRoot);
+    fs.writeFileSync(path.join(target,"lily-task.json"),JSON.stringify({commit:baseline.commit,ref:baseline.ref,workRoot,dev:stat.dev,ino:stat.ino}),{flag:"wx",mode:0o600});
+    return {workRoot};
   }
   async captureBaseline({taskId,snapshotRoot,manifest}) {
     if (typeof taskId !== "string" || !taskId || taskId.length > 512) throw fail("TASK_INVALID");
