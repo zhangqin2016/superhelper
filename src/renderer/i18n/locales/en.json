@@ -1,4 +1,11 @@
 {
+  "collaboration.task.cardState.preparing": "Preparing materials",
+  "collaboration.task.cardState.preparation_failed": "Preparation failed — resume to retry",
+  "collaboration.task.cardState.prepared": "Materials ready to share",
+  "collaboration.task.cardState.uploading": "Uploading materials",
+  "collaboration.task.cardState.confirming": "Confirming task creation",
+  "collaboration.task.cardState.failed": "Sharing failed — resume to retry",
+  "collaboration.task.cardState.completed": "Sharing confirmed",
   "collaboration.task.bindWorkspace": "Bind workspace",
   "collaboration.task.bindSession": "Conversation for collaboration",
   "collaboration.task.newBindingSession": "New collaboration conversation",

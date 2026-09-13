@@ -488,5 +488,16 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     else if (phase === "detail" && !confirming) void openTask(selected.id);
     else if (phase === "detail") paintUpdate(surface.querySelector(".remote-task-footer"), selected);
   }
-  return { update, onChange, create: options => { close({ restoreFocus: false }); return open(options || {}); }, invalidate: () => { close({ restoreFocus: false }); clearRecoveries(); }, destroy() { close({ restoreFocus: false }); clearRecoveries(); disposed = true; recoveryResize.disconnect(); locale(); entry.removeEventListener("click", openEntry); recoveryEntry.removeEventListener("click", openRecoveries); surface.removeEventListener("keydown", keydown); entry.remove(); recoveryEntry.remove(); surface.remove(); } };
+  async function openCard(card) {
+    close({restoreFocus:false});open();
+    if (card.taskId) {await openTask(card.taskId);return;}
+    const ticket=++generation;
+    try {
+      const result=await api()?.taskWorkflow?.({operation:"drafts",conversationId:context.conversationId});
+      if (!valid(ticket)) return;
+      const draft=result?.drafts?.find(item=>item.id===card.id);
+      if (draft) await createTask(draft);
+    } catch {if(valid(ticket))showStatus("loadFailed");}
+  }
+  return { update, onChange, openCard, create: options => { close({ restoreFocus: false }); return open(options || {}); }, invalidate: () => { close({ restoreFocus: false }); clearRecoveries(); }, destroy() { close({ restoreFocus: false }); clearRecoveries(); disposed = true; recoveryResize.disconnect(); locale(); entry.removeEventListener("click", openEntry); recoveryEntry.removeEventListener("click", openRecoveries); surface.removeEventListener("keydown", keydown); entry.remove(); recoveryEntry.remove(); surface.remove(); } };
 }

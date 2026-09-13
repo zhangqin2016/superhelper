@@ -1,4 +1,11 @@
 {
+  "collaboration.task.cardState.preparing": "جارٍ تجهيز الملفات",
+  "collaboration.task.cardState.preparation_failed": "تعذر التجهيز — تابع لإعادة المحاولة",
+  "collaboration.task.cardState.prepared": "الملفات جاهزة للمشاركة",
+  "collaboration.task.cardState.uploading": "جارٍ رفع الملفات",
+  "collaboration.task.cardState.confirming": "جارٍ تأكيد إنشاء المهمة",
+  "collaboration.task.cardState.failed": "تعذرت المشاركة — تابع لإعادة المحاولة",
+  "collaboration.task.cardState.completed": "تم تأكيد المشاركة",
   "collaboration.task.bindWorkspace": "ربط مساحة العمل",
   "collaboration.task.bindSession": "محادثة التعاون",
   "collaboration.task.newBindingSession": "محادثة تعاون جديدة",

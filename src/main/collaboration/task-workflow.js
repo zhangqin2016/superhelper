@@ -16,6 +16,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory,
   openWorkspace, resolveWorkspaceBinding, listWorkspaceBindings, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
+  const cards = require("./task-cards").createTaskCards({store,assertActive});
   const recoveries = createTaskRecovery({store,assertActive});
   const running = new Map();
   const preparing = new Set();
@@ -156,6 +157,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function execute(command) {
     assertActive();
     const {operation,conversationId} = command;
+    if (operation === "cards") return {ok:true,cards:cards.list(conversationId)};
     if (operation === "bindingOptions") {
       const task = await taskFor(command);
       if (!task.sharedWorkspaceId || !listWorkspaceBindings) throw fail("COLLAB_TASK_UNAVAILABLE");
@@ -279,7 +281,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         ...(draft.sourceProjectId ? {sourceProjectId:draft.sourceProjectId} : {}),
         ...(draft.sharedWorkspaceId ? {sharedWorkspaceId:draft.sharedWorkspaceId} : {}),
         snapshotRoot:draft.snapshotRoot,baseManifest:draft.manifest});
-      save({...draft,taskId:result.taskId,state:"completed"});
+      save({...draft,taskId:result.taskId,taskState:result.state,taskRevision:result.revision,state:"completed"});
       return {ok:true,state:"completed",taskId:result.taskId,draftId:draft.id};
     }
     if (operation === "receive") { await receive(command); return {ok:true,state:"ready"}; }
@@ -382,7 +384,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   return {recoverPending:()=>ready,run(command) {
     command = taskWorkflowCommand(command);
     if (!command) return Promise.resolve({ok:false,code:"COLLAB_TASK_INVALID"});
-    if (["drafts","recoveries","bindingOptions"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
+    if (["drafts","recoveries","bindingOptions","cards"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
     const key = `${command.conversationId}:${command.taskId || command.draftId || "new"}`;
     if (running.has(key)) return Promise.resolve({ok:false,code:"COLLAB_TASK_BUSY"});
     const promise = ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_|^IDEMPOTENCY_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));

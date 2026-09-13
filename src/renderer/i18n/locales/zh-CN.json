@@ -1,4 +1,11 @@
 {
+  "collaboration.task.cardState.preparing": "正在准备材料",
+  "collaboration.task.cardState.preparation_failed": "准备失败，可继续重试",
+  "collaboration.task.cardState.prepared": "材料已准备，等待分享",
+  "collaboration.task.cardState.uploading": "正在上传材料",
+  "collaboration.task.cardState.confirming": "正在确认任务创建",
+  "collaboration.task.cardState.failed": "分享失败，可继续重试",
+  "collaboration.task.cardState.completed": "分享已确认",
   "collaboration.task.bindWorkspace": "绑定工作空间",
   "collaboration.task.bindSession": "协作归属会话",
   "collaboration.task.newBindingSession": "新建协作会话",

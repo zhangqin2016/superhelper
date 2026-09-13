@@ -80,7 +80,10 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (section === "teams" && socialDirty.teams) { socialDirty.teams = false; teams.update(lastSocial); }
   };
   let lastRenderedCount = 0;
+  let remoteTasks = null;
   const renderTimeline = createCenterTimeline({
+    get taskCards() { return remoteTasks?.cards?.() || []; },
+    openTaskCard:card=>remoteTasks?.openCard?.(card),
     get lastRenderedCount() { return lastRenderedCount; },
     set lastRenderedCount(value) { lastRenderedCount = value; },
     get activeConversationId() { return activeConversationId; },
@@ -141,7 +144,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (byId('collaborationConversation')?.hidden || conversation?.kind !== 'direct') return '';
       return conversation.memberUserIds?.find(id => id !== directory?.profile?.userId) || '';
     } });
-  const remoteTasks = initCenterRemoteTasks({ root: byId("collaborationConversation"), header: byId("collaborationConversation")?.querySelector(".collaboration-conversation-header"),
+  remoteTasks = initCenterRemoteTasks({ root: byId("collaborationConversation"), header: byId("collaborationConversation")?.querySelector(".collaboration-conversation-header"),
+    onCardsChange:()=>renderTimeline(),
     recoveryHeader: byId("collaborationInboxColumn"), recoveryRoot: panel,
     refreshContext: () => refresh(),
     getContext: () => ({ enabled: !disposed && !panel.hidden && policyEnabled && transferPolicy.tasks === true, conversationId: activeConversationId, userId: directory?.profile?.userId || "" }),

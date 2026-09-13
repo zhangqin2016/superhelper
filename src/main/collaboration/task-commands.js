@@ -9,6 +9,8 @@ const permanent = code => /^(COLLAB_TASK_(INVALID|ACCESS_DENIED|REVISION_CONFLIC
  * cached across authorization changes; recovery never invents a new device. */
 function createTaskCommands({ store, client, deviceId, assertActive, onChange = () => {} }) {
   const inFlight = new Map();
+  let cards;
+  const remember = task => (cards ||= require("./task-cards").createTaskCards({store,assertActive})).remember(task);
   const available = () => Boolean(store.db && client?.submitTask && client?.getTask && deviceId);
   function scope(conversationId) {
     assertActive();
@@ -72,7 +74,7 @@ function createTaskCommands({ store, client, deviceId, assertActive, onChange = 
         scope(conversationId);
         const tasks = Array.isArray(raw) && raw.length <= 50 ? raw.map(taskView) : null;
         if (!tasks || tasks.some(task => !task || task.conversationId !== conversationId || ![task.requesterUserId, task.assigneeUserId].includes(store.accountId))) return fail("COLLAB_TASK_INVALID");
-        return { ok: true, tasks };
+        return { ok: true, tasks:tasks.map(remember) };
       } catch (error) { return fail(error.code); }
     },
     async get({ conversationId, taskId }) {
@@ -80,7 +82,7 @@ function createTaskCommands({ store, client, deviceId, assertActive, onChange = 
         assertActive(); if (!available()) return fail(); scope(conversationId);
         const task = taskView(await client.getTask({ deviceId, taskId }));
         scope(conversationId);
-        return task && task.id === taskId && task.conversationId === conversationId && [task.requesterUserId, task.assigneeUserId].includes(store.accountId) ? { ok: true, task } : fail("COLLAB_TASK_INVALID");
+        return task && task.id === taskId && task.conversationId === conversationId && [task.requesterUserId, task.assigneeUserId].includes(store.accountId) ? { ok: true, task:remember(task) } : fail("COLLAB_TASK_INVALID");
       } catch (error) { return fail(error.code); }
     },
     pending({ conversationId }) {

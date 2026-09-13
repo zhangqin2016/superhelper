@@ -1,11 +1,15 @@
 import { registerWorkspaceCollaborationController } from "./workspace-collaboration-entry.js";
 import { initRemoteTasks } from "./collaboration-remote-tasks.js";
+import {createTaskCardController} from "./collaboration-task-cards.js";
 
 export function initCenterRemoteTasks({ workspace, ...options }) {
   const tasks = initRemoteTasks(options);
+  const cards=createTaskCardController({api:options.api || (()=>window.assistantClient?.collaboration),getContext:options.getContext,onChange:options.onCardsChange});
   const focusTask = () => { const surface = options.root?.querySelector('.remote-tasks:not([hidden])'); (surface?.querySelector('[name="assigneeUserId"]') || surface)?.focus({ preventScroll: true }); };
   const connection = connectWorkspaceCollaboration({ ...workspace, refreshPolicy: options.refreshContext, focusTask, tasks });
-  return { ...tasks, invalidateService() { connection.invalidate(); tasks.invalidate(); }, destroy() { connection.destroy(); tasks.destroy(); } };
+  return { ...tasks,cards:cards.cards,update(){tasks.update();cards.update();},onChange(){tasks.onChange();cards.refresh();},
+    invalidate(){tasks.invalidate();cards.invalidate();},invalidateService() { connection.invalidate(); tasks.invalidate();cards.invalidate(); },
+    destroy() { connection.destroy();tasks.destroy();cards.destroy(); } };
 }
 
 /** Keeps the workspace chooser independent of center DOM/navigation details. */

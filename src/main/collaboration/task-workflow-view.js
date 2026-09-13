@@ -2,6 +2,7 @@
 const id = v => typeof v === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(v);
 const fields = {
   recoveries:[],
+  cards:[],
   bind:["taskId","projectId","sessionId"],
   bindingOptions:["taskId"],
   prepare:["projectId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
@@ -31,6 +32,12 @@ function taskWorkflowCommand(value) {
 // Closed projection: local absolute paths, keys and recovery journals never cross.
 function taskWorkflowResult(value) {
   const result = {ok:value?.ok === true};
+  if (Array.isArray(value?.cards)) result.cards = value.cards.slice(0,1000).filter(c=>id(c.id)).map(c=>({
+    id:c.id,taskId:id(c.taskId)?c.taskId:null,title:String(c.title || "").slice(0,200),
+    createdAt:Number.isSafeInteger(c.createdAt)&&c.createdAt>=0?c.createdAt:0,
+    revision:Number.isSafeInteger(c.revision)&&c.revision>=0?c.revision:0,
+    state:id(c.state)?c.state:"preparing",localState:id(c.localState)?c.localState:null,
+  }));
   if (Array.isArray(value?.projects)) result.projects = value.projects.slice(0,100).filter(p=>id(p.id)).map(p=>({
     id:p.id,name:String(p.name || "").slice(0,200),sessions:(p.sessions || []).slice(0,100).filter(s=>id(s.id)).map(s=>({id:s.id,title:String(s.title || "").slice(0,200)})),
   }));

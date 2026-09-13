@@ -54,6 +54,13 @@ Self-review: A covers requests 1/3 and ACL; B covers 2/4/5 and private-history b
 
 ## Execution log
 
+2026-09-14 checkpoint 7 (A4 partial):
+
+- Added encrypted participant-authorized task snapshot projections and stable draft card anchors. Revisions cannot regress; contradictory same-revision responses fail. An authoritative task discovered before send ACK reuses a draft only when task-scoped input object, requester, shared workspace and full creation content match. Projection never resolves the pending command receipt itself.
+- IM timeline loads cards without opening the task panel, updates existing DOM nodes, and clears account-owned cards on navigation/logout with generation fences. Cards use existing task detail/create surfaces and remain separate from message sequence/read/reply semantics. Fixed renderer listTasks to use the real preload string-ID signature.
+- RED: delayed ACK initially produced two cards. PASS Node: remote-task-cards (real SQLite, reopen encryption, exact-match negative cases, revocation), remote-task-workflow, remote-task-desktop, collaboration-center-lifecycle. PASS Electron: remote-task-cards-ui (including delayed logout response), collaboration-timeline, collaboration-visible-read, collaboration-reply-ui. UI APIs use fixtures; no live-device acceptance claim.
+- A4 remains incomplete: originating local session cards, bound-session projections, persistent background event hydration/history pagination, offline freshness indication and actual card-click acceptance remain. Existing task list is capped at 50 and card projection at 1000; do not claim exhaustive history. B/C/D remain outstanding. Next slice must validate card opening and complete source session identity/card plumbing before broader Git integration.
+
 2026-09-14 checkpoint 1:
 
 - A1 implemented. Preparing records now exist before bundle I/O; failed preparation remains encrypted and can resume via `prepare {draftId}`. Ready material is required for send. Live preparation IDs fence duplicate retries within the singleton workflow. Read-only drafts/recoveries bypass mutation locks and do not emit change events. State writes emit immediate lightweight hints. Renderer supports re-preparing a restored draft.
