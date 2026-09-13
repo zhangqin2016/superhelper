@@ -14,7 +14,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory,
-  openWorkspace, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const recoveries = createTaskRecovery({store,assertActive});
   const running = new Map();
@@ -150,6 +150,26 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function execute(command) {
     assertActive();
     const {operation,conversationId} = command;
+    if (operation === "bind") {
+      const task = await taskFor(command);
+      if (!task.sharedWorkspaceId || !resolveWorkspaceBinding) throw fail("COLLAB_TASK_UNAVAILABLE");
+      const id = `workspace-binding:${createHash("sha256").update(JSON.stringify([store.accountId,deviceId,task.sharedWorkspaceId])).digest("hex")}`;
+      const existing = records.get(id);
+      if (existing && (existing.conversationId !== conversationId || existing.projectId !== command.projectId
+        || (command.sessionId && existing.sessionId !== command.sessionId))) throw fail("COLLAB_TASK_BINDING_CONFLICT");
+      // Main-process resolver is synchronous: no authorization gap between the
+      // current task grant and choosing/creating an idle local session.
+      const target = resolveWorkspaceBinding({projectId:command.projectId,sessionId:existing?.sessionId || command.sessionId,
+        bindingId:id,title:task.title});
+      records.list(conversationId);
+      if (!target || target.projectId !== command.projectId || typeof target.sessionId !== "string"
+        || !path.isAbsolute(target.rootPath || "")) throw fail("COLLAB_TASK_LOCAL_MISSING");
+      if (existing && target.rootPath !== existing.rootPath) throw fail("COLLAB_TASK_BINDING_CONFLICT");
+      if (!existing) save({id,kind:"workspace-binding",conversationId,deviceId,sharedWorkspaceId:task.sharedWorkspaceId,...target});
+      const local = await binding(command);
+      save({...local,sharedWorkspaceId:task.sharedWorkspaceId,workspaceBindingId:id});
+      return {ok:true,projectId:target.projectId,sessionId:target.sessionId};
+    }
     if (operation === "recoveries") return {ok:true,applications:recoveries.list().filter(v=>v.journal && v.state !== "rolled_back").map(v=>({
       conversationId:v.conversationId,taskId:v.taskId,applicationId:v.id,state:v.state,deliveryId:v.deliveryId,planHash:v.planHash,
       label:path.basename(v.input.rootPath),

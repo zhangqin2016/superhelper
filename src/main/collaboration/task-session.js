@@ -1,5 +1,21 @@
 "use strict";
 const {randomUUID} = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+function resolveRemoteTaskBinding(projectManager,sessionManager,{projectId,sessionId,bindingId,title}) {
+  const missing = () => { throw Object.assign(new Error("Local workspace unavailable"),{code:"COLLAB_TASK_LOCAL_MISSING"}); };
+  const project = projectManager.find(projectId);
+  if (!project || !path.isAbsolute(project.path || "")) return missing();
+  let rootPath;
+  try { rootPath=fs.realpathSync(project.path); if (!fs.statSync(rootPath).isDirectory()) return missing(); }
+  catch { return missing(); }
+  // Existing sessions can be running: binding must never mutate runtime state,
+  // switch the active project, or change the session's engine directory.
+  const selected = sessionId ? sessionManager._find(sessionId) : null;
+  if (sessionId && (!selected || selected.projectId !== projectId)) return missing();
+  const session = selected || createRemoteTaskSession(sessionManager,projectId,title,bindingId);
+  return {projectId,sessionId:session.id,rootPath};
+}
 /** Register an idle task workspace; execution still requires an explicit prompt. */
 function createRemoteTaskSession(manager,projectId,title,bindingId) {
   const existing = manager.sessions[projectId]?.find(item=>item.remoteTaskBinding === bindingId);
@@ -28,4 +44,4 @@ function focusRegisteredSession(manager,win,sessionId) {
   win.webContents.send("assistant:focus-session",{sessionId,projectId:session.projectId});
   return {ok:true};
 }
-module.exports = {createRemoteTaskSession,registerRemoteTaskWorkspace,focusRegisteredSession};
+module.exports = {createRemoteTaskSession,registerRemoteTaskWorkspace,focusRegisteredSession,resolveRemoteTaskBinding};
