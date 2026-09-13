@@ -2,8 +2,20 @@
 const {randomUUID} = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-function resolveRemoteTaskBinding(projectManager,sessionManager,{projectId,sessionId,bindingId,title}) {
+function listRemoteTaskBindingTargets(projectManager,sessionManager) {
+  return (projectManager.projects || []).slice(0,100).map(project=>({id:project.id,name:project.name,
+    sessions:(sessionManager.sessions[project.id] || []).filter(s=>!s.remoteTaskExecution && !s.archived).slice(0,100).map(s=>({id:s.id,title:s.title})),
+  }));
+}
+function resolveRemoteTaskBinding(projectManager,sessionManager,{projectId,sessionId,bindingId,title,rootPath:selectedRoot}) {
   const missing = () => { throw Object.assign(new Error("Local workspace unavailable"),{code:"COLLAB_TASK_LOCAL_MISSING"}); };
+  if (!projectId) {
+    if (!selectedRoot || sessionId) return missing();
+    try { if (fs.realpathSync(selectedRoot)!==selectedRoot || !fs.statSync(selectedRoot).isDirectory()) return missing(); } catch { return missing(); }
+    const previous=projectManager.activeProjectId;
+    projectId=projectManager.add(selectedRoot).id;
+    if (previous) projectManager.switchTo(previous);
+  }
   const project = projectManager.find(projectId);
   if (!project || !path.isAbsolute(project.path || "")) return missing();
   let rootPath;
@@ -55,4 +67,4 @@ function focusRegisteredSession(manager,win,sessionId) {
   win.webContents.send("assistant:focus-session",{sessionId,projectId:session.projectId});
   return {ok:true};
 }
-module.exports = {createRemoteTaskSession,registerRemoteTaskWorkspace,focusRegisteredSession,resolveRemoteTaskBinding};
+module.exports = {createRemoteTaskSession,registerRemoteTaskWorkspace,focusRegisteredSession,resolveRemoteTaskBinding,listRemoteTaskBindingTargets};

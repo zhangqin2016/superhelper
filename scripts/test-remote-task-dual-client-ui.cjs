@@ -92,7 +92,7 @@ async function openTask(win) {
   await action(win, "task-entry"); await action(win, "task-open");
 }
 app.whenReady().then(async () => {
-  fixture = createFixture(temporary);
+  fixture = createFixture(temporary,{sharedWorkspaceProtocol:process.env.LILY_TEST_SHARED_WORKSPACE === "1" ? 1 : undefined});
   ipcMain.handle("dual-ui-command", async (event, channel, payload) => {
     const account = identities.get(event.sender.id); assert.ok(account);
     return account.invoke(channel, payload);
@@ -122,10 +122,18 @@ app.whenReady().then(async () => {
   const task = [...fixture.serverTasks.values()][0];
   await openTask(helper.win); await action(helper.win, "accept"); await action(helper.win, "task-confirm");
   await action(helper.win, "task-receive");
+  if (process.env.LILY_TEST_SHARED_WORKSPACE === "1") {
+    assert.ok(task.sharedWorkspaceId,"create retains the negotiated workspace identity");
+    await action(helper.win,"task-bind");
+  }
   await waitFor(helper.win, "!!document.querySelector('[data-action=task-workspace-open]') && !document.querySelector('[data-action=task-workspace-open]').disabled", "receive completes");
   await action(helper.win, "task-workspace-open");
   await waitFor(helper.win, "document.querySelector('.remote-tasks').hidden", "open independent workspace");
   const work = helper.account.opened().rootPath, binding = helper.account.records.get(`task:${task.id}`);
+  if (process.env.LILY_TEST_SHARED_WORKSPACE === "1") {
+    assert.equal(helper.account.opened().projectId,"existing-project","isolated task opens under chosen top-level project");
+    assert.ok(binding.workspaceBindingId,"binding is persisted through production SQLite workflow");
+  }
   assert.notEqual(work, fixture.source); assert.notEqual(work, binding.snapshotRoot);
   // Synthetic external editing step, NOT an AI-run or editor-UI claim. All
   // collaboration lifecycle actions above and below are actual button clicks.

@@ -13,7 +13,7 @@ const { createTaskRecords } = require("../../src/main/collaboration/task-records
 const { createCollaborationIpc } = require("../../src/main/ipc-collaboration");
 const { createTask, transitionTask } = require("../../server/src/services/collaboration/task-contract.cjs");
 
-exports.createFixture = function createFixture(temporary) {
+exports.createFixture = function createFixture(temporary, {sharedWorkspaceProtocol} = {}) {
   const source = path.join(temporary, "Budget workspace");
   fs.mkdirSync(source);
   fs.writeFileSync(path.join(source, "budget.txt"), "original budget\n");
@@ -67,7 +67,9 @@ exports.createFixture = function createFixture(temporary) {
       },
     };
     const tasks = createTaskCommands({ store, client, deviceId, assertActive });
-    const workflow = createTaskWorkflow({ store, client, tasks, deviceId, assertActive, rootPath: path.join(temporary, "managed"),
+    const workflow = createTaskWorkflow({ store, client, tasks, deviceId, assertActive, sharedWorkspaceProtocol, rootPath: path.join(temporary, "managed"),
+      listWorkspaceBindings:()=>[{id:"existing-project",name:"Existing workspace",sessions:[{id:"bound-session",title:"Workspace conversation"}]}],
+      resolveWorkspaceBinding:input=>({projectId:input.projectId,sessionId:input.sessionId || "bound-session",rootPath:source}),
       resolveProjectDirectory: id => id === "budget-project" ? source : undefined,
       chooseDirectory: async () => { events.push({ accountId, chooser: true }); return { canceled: false, filePaths: [source] }; },
       openWorkspace: input => { opened = input; return { projectId: "received-project", sessionId: "received-session" }; },

@@ -14,11 +14,12 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory,
-  openWorkspace, resolveWorkspaceBinding, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, listWorkspaceBindings, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const recoveries = createTaskRecovery({store,assertActive});
   const running = new Map();
   const preparing = new Set();
+  const workspaceBindingId = task => `workspace-binding:${createHash("sha256").update(JSON.stringify([store.accountId,deviceId,task.sharedWorkspaceId])).digest("hex")}`;
   function root() {
     assertActive();
     if (!rootPath) throw fail();
@@ -99,6 +100,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (task.assigneeUserId !== store.accountId || !["active","changes_requested"].includes(task.state)) throw fail("COLLAB_TASK_STATE_CONFLICT");
     await transfers?.taskFiles?.markOwned?.(task);
     let local = await binding(command);
+    if (task.sharedWorkspaceId && !local.workspaceBindingId) {
+      const workspace = records.get(workspaceBindingId(task));
+      if (!workspace || workspace.conversationId !== command.conversationId) throw fail("COLLAB_TASK_BINDING_REQUIRED");
+      local = save({...local,sharedWorkspaceId:task.sharedWorkspaceId,workspaceBindingId:workspace.id});
+    }
     if (!local.workRoot) {
       const input = await download(command, task.inputSnapshotId);
       // Extract a second, independent copy. Never edit the baseline snapshot.
@@ -150,19 +156,37 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function execute(command) {
     assertActive();
     const {operation,conversationId} = command;
+    if (operation === "bindingOptions") {
+      const task = await taskFor(command);
+      if (!task.sharedWorkspaceId || !listWorkspaceBindings) throw fail("COLLAB_TASK_UNAVAILABLE");
+      const workspace = records.get(workspaceBindingId(task));
+      if (workspace && workspace.conversationId !== conversationId) throw fail("COLLAB_TASK_ACCESS_DENIED");
+      return {ok:true,projects:listWorkspaceBindings(),binding:workspace ? {projectId:workspace.projectId,sessionId:workspace.sessionId} : null};
+    }
     if (operation === "bind") {
       const task = await taskFor(command);
       if (!task.sharedWorkspaceId || !resolveWorkspaceBinding) throw fail("COLLAB_TASK_UNAVAILABLE");
-      const id = `workspace-binding:${createHash("sha256").update(JSON.stringify([store.accountId,deviceId,task.sharedWorkspaceId])).digest("hex")}`;
+      const id = workspaceBindingId(task);
       const existing = records.get(id);
-      if (existing && (existing.conversationId !== conversationId || existing.projectId !== command.projectId
+      const projectId = command.projectId || existing?.projectId;
+      if (existing && (existing.conversationId !== conversationId || existing.projectId !== projectId
         || (command.sessionId && existing.sessionId !== command.sessionId))) throw fail("COLLAB_TASK_BINDING_CONFLICT");
+      let selectedRoot;
+      if (!projectId) {
+        const selected=await chooseDirectory?.();
+        const current=await taskFor(command);
+        if (current.sharedWorkspaceId!==task.sharedWorkspaceId) throw fail("COLLAB_TASK_BINDING_CONFLICT");
+        if (selected?.canceled) return {ok:true,cancelled:true};
+        if (selected?.filePaths?.length!==1) throw fail("COLLAB_TASK_LOCAL_MISSING");
+        selectedRoot=fs.realpathSync(selected.filePaths[0]);
+        if (records.get(id)) throw fail("COLLAB_TASK_BINDING_CONFLICT");
+      }
       // Main-process resolver is synchronous: no authorization gap between the
       // current task grant and choosing/creating an idle local session.
-      const target = resolveWorkspaceBinding({projectId:command.projectId,sessionId:existing?.sessionId || command.sessionId,
+      const target = resolveWorkspaceBinding({projectId,rootPath:selectedRoot,sessionId:existing?.sessionId || command.sessionId,
         bindingId:id,title:task.title});
       records.list(conversationId);
-      if (!target || target.projectId !== command.projectId || typeof target.sessionId !== "string"
+      if (!target || (projectId && target.projectId !== projectId) || typeof target.projectId !== "string" || typeof target.sessionId !== "string"
         || !path.isAbsolute(target.rootPath || "")) throw fail("COLLAB_TASK_LOCAL_MISSING");
       if (existing && target.rootPath !== existing.rootPath) throw fail("COLLAB_TASK_BINDING_CONFLICT");
       if (!existing) save({id,kind:"workspace-binding",conversationId,deviceId,sharedWorkspaceId:task.sharedWorkspaceId,...target});
@@ -269,7 +293,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       const current = await taskFor(command);
       await transfers?.taskFiles?.markOwned?.(current);
       records.list(conversationId);
-      const local = await binding(command);
+      let local = await binding(command);
+      if (!local.workspaceBindingId && current.sharedWorkspaceId) {
+        const workspace=records.get(workspaceBindingId(current));
+        if (workspace && workspace.conversationId===conversationId) local=save({...local,workspaceBindingId:workspace.id});
+      }
       if (local.workspaceBindingId) {
         const workspace = read(local.workspaceBindingId,conversationId);
         const resolved = resolveWorkspaceBinding?.({projectId:workspace.projectId,sessionId:workspace.sessionId,
@@ -354,7 +382,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   return {recoverPending:()=>ready,run(command) {
     command = taskWorkflowCommand(command);
     if (!command) return Promise.resolve({ok:false,code:"COLLAB_TASK_INVALID"});
-    if (["drafts","recoveries"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
+    if (["drafts","recoveries","bindingOptions"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
     const key = `${command.conversationId}:${command.taskId || command.draftId || "new"}`;
     if (running.has(key)) return Promise.resolve({ok:false,code:"COLLAB_TASK_BUSY"});
     const promise = ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_|^IDEMPOTENCY_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));

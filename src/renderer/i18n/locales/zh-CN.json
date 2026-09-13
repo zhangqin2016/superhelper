@@ -1,4 +1,9 @@
 {
+  "collaboration.task.bindWorkspace": "绑定工作空间",
+  "collaboration.task.bindSession": "协作归属会话",
+  "collaboration.task.newBindingSession": "新建协作会话",
+  "collaboration.task.bindContinue": "绑定并继续",
+  "collaboration.task.bindingNote": "选择一次，后续共享任务复用该项目和会话。任务文件在独立副本中编辑。",
   "collaboration.workspace.rejected": "会话创建请求未获批准。请选择其他协作对象，或关闭后稍后重新发起。",
   "collaboration.workspace.conversations": "已有会话",
   "collaboration.workspace.friends": "好友",
@@ -46,7 +51,7 @@
   "collaboration.task.send": "确认并发送任务",
   "collaboration.task.receive": "接收任务材料",
   "collaboration.task.openWorkspace": "打开工作空间",
-  "collaboration.task.workspaceReady": "任务材料已接收到独立工作空间。可打开后继续处理。",
+  "collaboration.task.workspaceReady": "任务文件已在独立副本中准备好。打开会话继续。",
   "collaboration.task.prepareDelivery": "准备交付成果",
   "collaboration.task.submitDelivery": "确认提交此版本",
   "collaboration.task.openDelivery": "打开成果副本",

@@ -1,4 +1,9 @@
 {
+  "collaboration.task.bindWorkspace": "Bind workspace",
+  "collaboration.task.bindSession": "Conversation for collaboration",
+  "collaboration.task.newBindingSession": "New collaboration conversation",
+  "collaboration.task.bindContinue": "Bind and continue",
+  "collaboration.task.bindingNote": "Choose once. Later tasks in this shared workspace reuse the same project and conversation. Task files are edited in an isolated copy.",
   "collaboration.workspace.rejected": "The conversation request was rejected. Choose another recipient, or close and start again later.",
   "collaboration.workspace.conversations": "Existing conversations",
   "collaboration.workspace.friends": "Friends",
@@ -46,7 +51,7 @@
   "collaboration.task.send": "Confirm and send task",
   "collaboration.task.receive": "Receive task files",
   "collaboration.task.openWorkspace": "Open workspace",
-  "collaboration.task.workspaceReady": "Task files are ready in an independent workspace. Open it to continue.",
+  "collaboration.task.workspaceReady": "Task files are ready in an isolated copy. Open the conversation to continue.",
   "collaboration.task.prepareDelivery": "Prepare delivery",
   "collaboration.task.submitDelivery": "Submit this version",
   "collaboration.task.openDelivery": "Open delivery copy",

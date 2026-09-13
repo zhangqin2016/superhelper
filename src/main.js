@@ -293,6 +293,7 @@ app.whenReady().then(async () => {
             chooseDirectory: () => dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] }),
             resolveProjectDirectory: (projectId) => projectManager.find(projectId)?.path,
             resolveWorkspaceBinding: (input) => require("./main/collaboration/task-session").resolveRemoteTaskBinding(projectManager, sessionManager, input),
+            listWorkspaceBindings: () => require("./main/collaboration/task-session").listRemoteTaskBindingTargets(projectManager,sessionManager),
             openWorkspace: (input) => require("./main/collaboration/task-session").registerRemoteTaskWorkspace(projectManager, sessionManager, input),
           },
           transferOptions: {

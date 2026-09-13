@@ -1,4 +1,9 @@
 {
+  "collaboration.task.bindWorkspace": "ربط مساحة العمل",
+  "collaboration.task.bindSession": "محادثة التعاون",
+  "collaboration.task.newBindingSession": "محادثة تعاون جديدة",
+  "collaboration.task.bindContinue": "ربط ومتابعة",
+  "collaboration.task.bindingNote": "اختر مرة واحدة. ستستخدم المهام اللاحقة المشروع والمحادثة نفسيهما. تُحرَّر ملفات المهمة في نسخة منفصلة.",
   "collaboration.workspace.rejected": "رُفض طلب إنشاء المحادثة. اختر جهة أخرى، أو أغلق النافذة وابدأ مجددًا لاحقًا.",
   "collaboration.workspace.conversations": "المحادثات الحالية",
   "collaboration.workspace.friends": "الأصدقاء",
@@ -46,7 +51,7 @@
   "collaboration.task.send": "تأكيد وإرسال المهمة",
   "collaboration.task.receive": "استلام ملفات المهمة",
   "collaboration.task.openWorkspace": "فتح مساحة العمل",
-  "collaboration.task.workspaceReady": "ملفات المهمة جاهزة في مساحة عمل مستقلة. افتحها للمتابعة.",
+  "collaboration.task.workspaceReady": "ملفات المهمة جاهزة في نسخة منفصلة. افتح المحادثة للمتابعة.",
   "collaboration.task.prepareDelivery": "إعداد التسليم",
   "collaboration.task.submitDelivery": "إرسال هذا الإصدار",
   "collaboration.task.openDelivery": "فتح نسخة التسليم",

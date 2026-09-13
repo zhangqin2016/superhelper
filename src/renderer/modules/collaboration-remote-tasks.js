@@ -209,9 +209,25 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   function paintWorkflow() {
     if (!workflow) return;
     phase = "workflow"; statusView = null;
-    const current = workflow, body = shell(tr(current.kind === "create" ? "create" : current.kind === "delivery" ? "prepareDelivery" : "previewApply"), true);
+    const current = workflow, body = shell(tr(current.kind === "binding" ? "bindWorkspace" : current.kind === "create" ? "create" : current.kind === "delivery" ? "prepareDelivery" : "previewApply"), true);
     if (current.error) notice(body, current.error);
-    if (current.kind === "create") {
+    if (current.kind === "binding") {
+      body.append(node("p","remote-task-meta",tr("bindingNote")));
+      const projectLabel=node("label","remote-task-field",tr("bindWorkspace")), projects=node("select","remote-task-input");projects.name="bindingProject";
+      for (const project of [{id:"",name:tr("chooseFolder")},...current.projects]) {const option=node("option","",project.name);option.value=project.id;projects.append(option);}
+      projects.value=current.projectId;projectLabel.append(projects);body.append(projectLabel);
+      const sessionLabel=node("label","remote-task-field",tr("bindSession")), sessions=node("select","remote-task-input");sessions.name="bindingSession";
+      for (const session of [{id:"",title:tr("newBindingSession")},...(current.projects.find(p=>p.id===current.projectId)?.sessions || [])]) {const option=node("option","",session.title);option.value=session.id;sessions.append(option);}
+      sessions.value=current.sessionId;sessionLabel.append(sessions);body.append(sessionLabel);
+      projects.addEventListener("change",()=>{current.projectId=projects.value;current.sessionId="";paintWorkflow();});
+      sessions.addEventListener("change",()=>{current.sessionId=sessions.value;});
+      body.append(button("task-bind",tr("bindContinue"),async()=>{
+        const result=await runWorkflow({operation:"bind",taskId:current.task.id,...(current.projectId?{projectId:current.projectId}:{}),...(current.sessionId?{sessionId:current.sessionId}:{})});
+        if (!result) return;
+        if (result.ok && !result.cancelled) {workflow=null;await current.resume();return;}
+        current.error=result.cancelled?null:workflowError(result);paintWorkflow();
+      },true));
+    } else if (current.kind === "create") {
       const form = node("div", "remote-task-form");
       for (const [name, labelKey] of [["assigneeUserId", "recipient"], ["title", "title"], ["objective", "objective"], ["acceptanceCriteria", "criteria"]]) {
         const label = node("label", "remote-task-field", tr(labelKey));
@@ -268,10 +284,14 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     current.error = result.ok && result.state === "confirming" ? null : workflowError(result, result.state === "failed" ? "sendFailed" : "checkFailed"); paintWorkflow();
   }
   async function receiveTask(task) {
+    const ticket=generation;
+    if (!await ensureTaskBinding(task,()=>receiveTask(task)) || !valid(ticket)) return;
     const result = await runWorkflow({ operation: "receive", taskId: task.id }); if (!result) return;
     paintDetail(); notice(surface.querySelector(".remote-task-content"), result.ok && result.state === "ready" ? "workspaceReady" : workflowError(result));
   }
   async function prepareDelivery(task) {
+    const ticket=generation;
+    if (!await ensureTaskBinding(task,()=>prepareDelivery(task)) || !valid(ticket)) return;
     const result = await runWorkflow({ operation: "prepareDelivery", taskId: task.id }); if (!result) return;
     if (result.cancelled) { paintDetail(); return; }
     if (result.ok && result.draft) { workflow = { kind: "delivery", task, draft: result.draft, locked: false }; paintWorkflow(); }
@@ -290,6 +310,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   }
   async function openWorkspace(task, deliveryId) {
     const ticket = generation;
+    if (!await ensureTaskBinding(task,()=>openWorkspace(task,deliveryId)) || !valid(ticket)) return;
     const result = await runWorkflow({ operation: "open", taskId: task.id, ...(deliveryId ? { deliveryId } : {}) }); if (!result) return;
     if (!result.ok || !result.sessionId) { if (phase === "workflow") paintWorkflow(); else paintDetail(); notice(surface.querySelector(".remote-task-content"), "workflowFailed"); return; }
     try {
@@ -308,6 +329,15 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       close({ restoreFocus: false });
       await applySessionSwitch(switched, result.sessionId, result.projectId); await refreshState();
     } catch { if (valid(ticket)) { paintDetail(); notice(surface.querySelector(".remote-task-content"), "workflowFailed"); } }
+  }
+  async function ensureTaskBinding(task,resume) {
+    if (!task.sharedWorkspaceId) return true;
+    const result=await runWorkflow({operation:"bindingOptions",taskId:task.id});
+    if (!result) return false;
+    if (!result.ok) {paintDetail();notice(surface.querySelector(".remote-task-content"),"workflowFailed");return false;}
+    if (result.binding) return true;
+    workflow={kind:"binding",task,projects:result.projects || [],projectId:result.projects?.[0]?.id || "",sessionId:"",resume};
+    paintWorkflow();return false;
   }
   async function load() {
     if (!context.enabled) { showStatus("disabled", { retry: async () => { const ticket = generation; await refreshContext(); if (!valid(ticket)) return; update(); if (!surface.hidden) void load(); } }); return; }
