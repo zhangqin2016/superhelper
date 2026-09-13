@@ -198,6 +198,12 @@ assert.deepEqual(
   DEFAULT_COLLABORATION_POLICY,
   "stale signed config must disable collaboration deterministically",
 );
+for (const sharedWorkspaceProtocol of [1, 2, '1', null]) {
+  writeRemoteConfigCache({schemaVersion:1,configVersion:'workspace-protocol',expiresAt:new Date(Date.now()+60_000).toISOString(),
+    effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:true,sharedWorkspaceProtocol}}});
+  assert.equal(remoteConfig.getRemoteCollaborationPolicySync().sharedWorkspaceProtocol,sharedWorkspaceProtocol===1?1:undefined,
+    'desktop accepts only the explicitly supported signed protocol version');
+}
 fs.rmSync(remoteUserData, { recursive: true, force: true });
 
 console.log("collaboration-policy: ok");

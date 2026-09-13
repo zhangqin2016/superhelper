@@ -254,7 +254,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     });
     const tasks = createTaskCommands({ store, client, deviceId, assertActive, onChange: () => emitState("task") });
     let workflow;
-    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,onChange:()=>emitState("task")});
+    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,onChange:()=>emitState("task")});
     const taskOperation = (method, payload) => stopped ? stoppedResult()
       : policy?.enabled === true && policy?.tasks === true && policy?.workspaceShares === true ? tasks[method](payload) : unavailableService();
     const realtime = client && realtimeEnabled

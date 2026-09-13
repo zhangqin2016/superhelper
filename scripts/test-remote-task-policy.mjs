@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import {resolveCollaborationPolicy,resolveServerCollaborationPolicy,applyCollaborationPolicyGate} from '../server/src/services/collaboration/policy.js';
 const policy={enabled:true,workspaceShares:true,tasks:true};
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).sharedWorkspaceProtocol,1);
+assert.equal(resolveCollaborationPolicy(policy).sharedWorkspaceProtocol,undefined,'old profiles do not invent support');
+assert.equal(resolveCollaborationPolicy({...policy,sharedWorkspaceProtocol:2}).sharedWorkspaceProtocol,undefined,'unknown versions cannot authorize new commands');
+assert.equal(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:true,tasks:true}).collaboration.sharedWorkspaceProtocol,1);
+assert.equal(applyCollaborationPolicyGate({collaboration:{...policy,sharedWorkspaceProtocol:1}},{collaborationEnabled:true,workspaceShares:true,tasks:false}).collaboration.sharedWorkspaceProtocol,undefined);
 assert.equal(resolveCollaborationPolicy(policy).tasks,true);
 assert.notEqual(resolveCollaborationPolicy({...policy,workspaceShares:false}).tasks,true);
 assert.notEqual(resolveCollaborationPolicy({...policy,enabled:false}).tasks,true);

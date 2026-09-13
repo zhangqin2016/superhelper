@@ -14,7 +14,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory,
-  openWorkspace, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const recoveries = createTaskRecovery({store,assertActive});
   const running = new Map();
@@ -189,7 +189,17 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       }
       sourceRoot = fs.realpathSync(sourceRoot);
       if (previous && sourceRoot !== previous.sourceRoot) throw fail("COLLAB_TASK_LOCAL_MISSING");
-      const draft = await freeze(sourceRoot,conversationId,projectId ? {sourceProjectId:projectId} : {},assertAuthorized,previous);
+      let sharedWorkspaceId = previous?.sharedWorkspaceId;
+      if (!previous && sharedWorkspaceProtocol === 1) {
+        const id = `shared:${createHash("sha256").update(JSON.stringify([deviceId,conversationId,projectId || null,sourceRoot])).digest("hex")}`;
+        const workspace = store.db.transaction(() => records.get(id) || records.put(id,{
+          id,kind:"shared-workspace",conversationId,deviceId,sharedWorkspaceId:randomUUID(),sourceRoot,
+          ...(projectId ? {sourceProjectId:projectId} : {}),
+        }))();
+        sharedWorkspaceId = workspace.sharedWorkspaceId;
+      }
+      const draft = await freeze(sourceRoot,conversationId,{...(projectId ? {sourceProjectId:projectId} : {}),
+        ...(sharedWorkspaceId ? {sharedWorkspaceId} : {})},assertAuthorized,previous);
       return {ok:true,draft:draftView(draft)};
     }
     if (operation === "send") {
@@ -202,13 +212,15 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       if (draft.input && JSON.stringify(draft.input) !== JSON.stringify(input)) throw fail("IDEMPOTENCY_KEY_REUSED");
       if (draft.deviceId !== deviceId) throw fail("COLLAB_DEVICE_CHANGED");
       if (draft.state === "completed") return {ok:true,state:"completed",taskId:draft.taskId,draftId:draft.id};
+      if (draft.sharedWorkspaceId && sharedWorkspaceProtocol !== 1) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
       draft = save({...draft,input,state:"uploading"});
       draft = await upload(draft);
       const priorUncertain = draft.uncertain === true;
       draft = save({...draft,state:"confirming",uncertain:true});
       let result;
       try {
-        result = requireOk(await client.submitTask({...input,conversationId,action:"create",inputSnapshotId:draft.objectId,deviceId,clientCommandId:draft.clientCommandId})).result;
+        result = requireOk(await client.submitTask({...input,conversationId,action:"create",inputSnapshotId:draft.objectId,deviceId,clientCommandId:draft.clientCommandId,
+          ...(draft.sharedWorkspaceId ? {sharedWorkspaceId:draft.sharedWorkspaceId} : {})})).result;
         if (!result?.taskId || result.state !== "offered" || result.revision !== 1) throw fail("COLLAB_RESPONSE_UNKNOWN");
       } catch (error) {
         read(draft.id,conversationId);
@@ -220,6 +232,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       }
       read(draft.id,conversationId);
       save({id:`task:${result.taskId}`,kind:"task",conversationId,taskId:result.taskId,sourceRoot:draft.sourceRoot,
+        ...(draft.sourceProjectId ? {sourceProjectId:draft.sourceProjectId} : {}),
+        ...(draft.sharedWorkspaceId ? {sharedWorkspaceId:draft.sharedWorkspaceId} : {}),
         snapshotRoot:draft.snapshotRoot,baseManifest:draft.manifest});
       save({...draft,taskId:result.taskId,state:"completed"});
       return {ok:true,state:"completed",taskId:result.taskId,draftId:draft.id};
