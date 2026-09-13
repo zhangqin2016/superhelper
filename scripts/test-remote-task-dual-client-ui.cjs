@@ -137,8 +137,13 @@ app.whenReady().then(async () => {
   assert.notEqual(work, fixture.source); assert.notEqual(work, binding.snapshotRoot);
   // Synthetic external editing step, NOT an AI-run or editor-UI claim. All
   // collaboration lifecycle actions above and below are actual button clicks.
-  fs.writeFileSync(path.join(work, "budget.txt"), "reviewed budget\n");
-  fs.unlinkSync(path.join(work, "remove.txt")); fs.writeFileSync(path.join(work, "evidence.txt"), "totals checked\n");
+  const deleteAll = process.env.LILY_TEST_DELETE_ALL === "1";
+  if (deleteAll) {
+    for (const file of binding.baseManifest) fs.unlinkSync(path.join(work,file.path));
+  } else {
+    fs.writeFileSync(path.join(work, "budget.txt"), "reviewed budget\n");
+    fs.unlinkSync(path.join(work, "remove.txt")); fs.writeFileSync(path.join(work, "evidence.txt"), "totals checked\n");
+  }
   assert.equal(fs.readFileSync(path.join(binding.snapshotRoot, "budget.txt"), "utf8"), "original budget\n");
   assertOriginalSource("editing helper copy leaves all requester files unchanged");
   await action(helper.win, "task-entry"); await action(helper.win, "task-open");
@@ -154,9 +159,13 @@ app.whenReady().then(async () => {
   assert.equal(await owner.win.webContents.executeJavaScript("document.querySelector('[data-action=task-apply]').disabled"), true);
   await click(owner.win, "[name=confirmDeletions]"); await action(owner.win, "task-apply");
   await waitFor(owner.win, "!!document.querySelector('[data-action=task-rollback]')", "applied with rollback");
-  assert.equal(fs.readFileSync(path.join(fixture.source, "budget.txt"), "utf8"), "reviewed budget\n");
+  if (deleteAll) {
+    for (const file of binding.baseManifest) assert.equal(fs.existsSync(path.join(fixture.source,file.path)),false);
+  } else {
+    assert.equal(fs.readFileSync(path.join(fixture.source, "budget.txt"), "utf8"), "reviewed budget\n");
+    assert.equal(fs.readFileSync(path.join(fixture.source, "evidence.txt"), "utf8"), "totals checked\n");
+  }
   assert.equal(fs.existsSync(path.join(fixture.source, "remove.txt")), false);
-  assert.equal(fs.readFileSync(path.join(fixture.source, "evidence.txt"), "utf8"), "totals checked\n");
   await action(owner.win, "task-rollback");
   await waitFor(owner.win, "document.querySelector('.remote-tasks').innerText.includes('rolled back')", "rollback rendered");
   assertOriginalSource("rollback restores every original and removes the added file");

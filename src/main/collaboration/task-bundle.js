@@ -75,10 +75,10 @@ function snapshotManifest(root) {
   manifestMap(files);
   return files.sort((a,b)=>a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 }
-async function unpackBytes(bytes,destinationRoot) {
-  await inspectCollaborationWorkspacePackage({zipBuffer:bytes});
+async function unpackBytes(bytes,destinationRoot,allowEmpty = false) {
+  await inspectCollaborationWorkspacePackage({zipBuffer:bytes,allowEmpty});
   const snapshotRoot = path.join(destinationRoot,"snapshot");
-  await extractCollaborationWorkspacePackage({zipBuffer:bytes,targetDir:snapshotRoot});
+  await extractCollaborationWorkspacePackage({zipBuffer:bytes,targetDir:snapshotRoot,allowEmpty});
   const manifest = snapshotManifest(snapshotRoot);
   if (manifest.some(file=>controlPath(file.path))) throw fail("CONTROL_FILE");
   // This baseline is never a working directory. Read-only files discourage
@@ -86,13 +86,13 @@ async function unpackBytes(bytes,destinationRoot) {
   for (const file of manifest) fs.chmodSync(path.join(snapshotRoot,file.path),0o400);
   return {snapshotRoot:directory(snapshotRoot),manifest};
 }
-async function unpackTaskBundle({packagePath,destinationRoot} = {}) {
+async function unpackTaskBundle({packagePath,destinationRoot,allowEmpty = false} = {}) {
   if (typeof packagePath !== "string" || !path.isAbsolute(packagePath)) throw fail("UNSAFE_PATH");
   const bytes = checkedFile(directory(path.dirname(packagePath)),path.basename(packagePath),DEFAULT_LIMITS.maxPackageBytes).bytes;
   const destination = prepareDestination(destinationRoot);
-  return unpackBytes(bytes,destination);
+  return unpackBytes(bytes,destination,allowEmpty);
 }
-async function freezeTaskBundle({sourceRoot,destinationRoot,name} = {}) {
+async function freezeTaskBundle({sourceRoot,destinationRoot,name,allowEmpty = false} = {}) {
   const source = directory(sourceRoot);
   const destination = prepareDestination(destinationRoot,source);
   const appManifest = path.join(source,"lily-app.json");
@@ -128,7 +128,7 @@ async function freezeTaskBundle({sourceRoot,destinationRoot,name} = {}) {
     const controls = captures.filter(file=>controlPath(file.relPath));
     const excluded = new Set([...secrets,...controls].map(item=>item.relPath));
     const selected = captures.filter(file=>!excluded.has(file.relPath));
-    if (!selected.length) throw fail("EMPTY");
+    if (!selected.length && allowEmpty !== true) throw fail("EMPTY");
     const zip = new JSZip();
     const expected = [];
     for (const file of selected) {
@@ -142,7 +142,7 @@ async function freezeTaskBundle({sourceRoot,destinationRoot,name} = {}) {
     // archive rejected by the strict compression-ratio guard on import.
     const bytes = await zip.generateAsync({type:"nodebuffer",compression:"STORE"});
     if (bytes.length > DEFAULT_LIMITS.maxPackageBytes) throw fail("LIMIT_EXCEEDED");
-    const unpacked = await unpackBytes(bytes,destination);
+    const unpacked = await unpackBytes(bytes,destination,allowEmpty);
     expected.sort((a,b)=>a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
     if (JSON.stringify(expected) !== JSON.stringify(unpacked.manifest)) throw fail("SNAPSHOT_MISMATCH");
     const packagePath = path.join(destination,"task.lilyspace.zip");

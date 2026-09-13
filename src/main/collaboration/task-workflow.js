@@ -57,7 +57,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         kind:"draft", state:"preparing", createdAt:previous?.createdAt || Date.now(), deviceId,
         clientCommandId:previous?.clientCommandId || randomUUID() });
       try {
-        const result = await bundle.freezeTaskBundle({ sourceRoot, destinationRoot:allocate(), name:path.basename(sourceRoot) });
+        const result = await bundle.freezeTaskBundle({ sourceRoot, destinationRoot:allocate(), name:path.basename(sourceRoot),allowEmpty:Boolean(extras.taskId) });
         assertAuthorized();
         const packageBytes = fs.readFileSync(result.packagePath);
         return save({ ...pending, ...result,
@@ -85,10 +85,10 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (!["verified", "bound"].includes(uploaded.state) || !uploaded.objectId) throw fail("COLLAB_TRANSFER_NOT_READY");
     return save({ ...draft, objectId:uploaded.objectId });
   }
-  async function download(command, objectId) {
+  async function download(command, objectId, allowEmpty = false) {
     const file = requireOk(await transfers.taskFiles.download({ ...command, objectId }));
     assertActive();
-    const value = await bundle.unpackTaskBundle({ packagePath:file.packagePath, destinationRoot:allocate() });
+    const value = await bundle.unpackTaskBundle({ packagePath:file.packagePath, destinationRoot:allocate(),allowEmpty });
     await taskFor(command);
     return value;
   }
@@ -158,7 +158,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       }
       return cached;
     }
-    const result = await download(command, command.deliveryId);
+    const result = await download(command, command.deliveryId, true);
     save({...local,deliveries:{...local.deliveries,[command.deliveryId]:result}});
     return result;
   }

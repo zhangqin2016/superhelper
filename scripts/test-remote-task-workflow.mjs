@@ -255,6 +255,33 @@ try {
   assert.equal(renewedRecord.packagePath, expiredRecord.packagePath);
   assert.equal(renewedRecord.packageHash, expiredRecord.packageHash, 'object renewal preserves the frozen material approved by the user');
 
+  const deleteDraft = ok(await owner.run({operation:'prepare',conversationId:'chat'}),'prepare all-delete task');
+  const deleteTask = ok(await owner.run({...send,draftId:deleteDraft.draft.id}),'send all-delete task').taskId;
+  ok(await helper.tasks.submit({conversationId:'chat',taskId:deleteTask,action:'accept',expectedRevision:1}),'accept all-delete task');
+  ok(await helper.run({operation:'receive',conversationId:'chat',taskId:deleteTask}),'receive all-delete task');
+  const deleteLocal=helper.records.get(`task:${deleteTask}`);
+  for (const file of deleteLocal.baseManifest) fs.unlinkSync(path.join(deleteLocal.workRoot,file.path));
+  const filteredPath=path.join(deleteLocal.workRoot,deleteLocal.baseManifest[0].path);
+  fs.writeFileSync(filteredPath,`fixture-only credential: sk-${'a'.repeat(24)}`);
+  assert.equal((await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:deleteTask})).code,'COLLAB_TASK_DELIVERY_OMITTED','an entirely filtered snapshot cannot become all-delete');
+  fs.unlinkSync(filteredPath);
+  const emptyDelivery=ok(await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:deleteTask}),'prepare empty result').draft;
+  assert.deepEqual(emptyDelivery.files,[]);
+  const emptyContribution=helper.records.get(emptyDelivery.id).gitContribution;
+  assert.equal(emptyContribution.operations.length,deleteLocal.baseManifest.length);
+  assert.ok(emptyContribution.operations.every(entry=>entry.kind==='delete'));
+  assert.equal(execFileSync('git',['--git-dir',emptyContribution.repository,'ls-tree','-r','--name-only',emptyContribution.commit],{encoding:'utf8'}),'');
+  ok(await helper.run({operation:'submitDelivery',conversationId:'chat',taskId:deleteTask,draftId:emptyDelivery.id}),'submit empty result');
+  const emptyReview=serverTasks.get(deleteTask),emptyId=emptyReview.currentDeliveryId;
+  ok(await owner.tasks.submit({conversationId:'chat',taskId:deleteTask,action:'approve',expectedRevision:emptyReview.revision,deliveryId:emptyId}),'approve empty result');
+  const emptyPreview=ok(await owner.run({operation:'preview',conversationId:'chat',taskId:deleteTask,deliveryId:emptyId}),'preview all-delete');
+  const emptyApply={operation:'apply',conversationId:'chat',taskId:deleteTask,deliveryId:emptyId,applicationId:emptyPreview.applicationId,expectedPlanHash:emptyPreview.planHash};
+  assert.equal((await owner.run({...emptyApply,confirmDeletions:false})).ok,false,'empty delivery still requires deletion consent');
+  ok(await owner.run({...emptyApply,confirmDeletions:true}),'apply all-delete');
+  for (const file of deleteLocal.baseManifest) assert.equal(fs.existsSync(path.join(source,file.path)),false);
+  ok(await owner.run({operation:'rollback',conversationId:'chat',taskId:deleteTask,applicationId:emptyPreview.applicationId}),'undo all-delete');
+  for (const file of deleteLocal.baseManifest) assert.equal(digest(fs.readFileSync(path.join(source,file.path))),file.sha256);
+
   const teamDraft = ok(await owner.run({ operation: 'prepare', conversationId: 'team-chat' }), 'prepare Team task');
   const teamSent = ok(await owner.run({ ...send, conversationId: 'team-chat', draftId: teamDraft.draft.id }), 'send Team task');
   const teamTaskId = teamSent.taskId;

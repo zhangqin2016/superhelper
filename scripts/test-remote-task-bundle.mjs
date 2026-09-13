@@ -20,6 +20,12 @@ fs.writeFileSync(path.join(sourceRoot,'.claude/settings.json'),'{"hooks":{}}');
 fs.writeFileSync(path.join(sourceRoot,'config.js'),'const token = "sk-123456789012345678901234567890";');
 fs.symlinkSync(path.join(sourceRoot,'notes/work.txt'),path.join(sourceRoot,'linked.txt'));
 try {
+  const emptySource=path.join(temporary,'empty-source');fs.mkdirSync(emptySource);
+  await assert.rejects(freezeTaskBundle({sourceRoot:emptySource,destinationRoot:path.join(temporary,'empty-input')}),/EMPTY/);
+  const empty=await freezeTaskBundle({sourceRoot:emptySource,destinationRoot:path.join(temporary,'empty-delivery'),allowEmpty:true});
+  assert.deepEqual(empty.manifest,[]);
+  await assert.rejects(unpackTaskBundle({packagePath:empty.packagePath,destinationRoot:path.join(temporary,'empty-input-import')}),/PACKAGE_INVALID/);
+  assert.deepEqual((await unpackTaskBundle({packagePath:empty.packagePath,destinationRoot:path.join(temporary,'empty-delivery-import'),allowEmpty:true})).manifest,[]);
   const scan = share.scanForSecrets;
   let frozen;
   try {

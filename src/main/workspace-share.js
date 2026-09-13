@@ -566,7 +566,7 @@ async function importWorkspacePack(zipBuffer, targetDir, options = {}) {
 
   const entries = selectImportEntries(zip, layout);
   const declaredWorkspaceSkillIds = manifestWorkspaceSkillIds(manifest);
-  if (entries.length === 0 && declaredWorkspaceSkillIds.length === 0) {
+  if (entries.length === 0 && declaredWorkspaceSkillIds.length === 0 && options.allowEmpty !== true) {
     throw new Error("WORKSPACE_PACK_EMPTY");
   }
   for (const { entry, rel } of entries) {
