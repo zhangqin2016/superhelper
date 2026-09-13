@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
-import { taskCommandBody, taskGetBody, taskListBody, taskHistoryBody, registerCollaborationTaskRoutes } from '../server/src/routes/public/collaboration-tasks.js';
+import { taskCommandBody, taskGetBody, taskListBody, taskHistoryBody, taskGitMissingBody, registerCollaborationTaskRoutes } from '../server/src/routes/public/collaboration-tasks.js';
 import { createConfiguredTaskService } from '../server/src/services/collaboration/task-config.js';
 const create={deviceId:'d',clientCommandId:'c',action:'create',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'预算',objective:'核对',acceptanceCriteria:'差异说明'};
 assert.equal(taskCommandBody.safeParse(create).success,true);
+const inputGit={version:1,format:'git-bundle-v2',ref:`refs/tasks/${'a'.repeat(64)}/baseline`,commit:'b'.repeat(40),prerequisites:[],sha256:'c'.repeat(64),sizeBytes:500};
+assert.equal(taskCommandBody.safeParse({...create,inputGit}).success,true);
+assert.equal(taskCommandBody.safeParse({...create,inputGit:{...inputGit,localPath:'/private'}}).success,false);
+assert.equal(taskGitMissingBody.safeParse({deviceId:'d',taskId:'t',haveCommits:[inputGit.commit]}).success,true);
+for (const haveCommits of [[inputGit.commit,inputGit.commit],['private'],Array(257).fill(inputGit.commit)])
+  assert.equal(taskGitMissingBody.safeParse({deviceId:'d',taskId:'t',haveCommits}).success,false);
 assert.equal(taskCommandBody.safeParse({...create,sharedWorkspaceId:'workspace'}).success,true);
 for (const sharedWorkspaceId of ['',null,'../private']) assert.equal(taskCommandBody.safeParse({...create,sharedWorkspaceId}).success,false);
 for(const extra of [{requesterUserId:'forged'},{role:'owner'},{state:'accepted'},{revision:100},{localPath:'/private/file'}])assert.equal(taskCommandBody.safeParse({...create,...extra}).success,false);
@@ -20,5 +26,6 @@ const routes=new Map();let calls=0;
 registerCollaborationTaskRoutes({post:(path,schema,handler)=>routes.set(path,handler),accountFor:async()=>null,database:{},service:{create:()=>calls++}});
 await routes.get('/api/collaboration/v1/tasks')({body:create},{});
 await routes.get('/api/collaboration/v1/tasks/history')({body:{deviceId:'d',conversationId:'chat'}},{});
+await routes.get('/api/collaboration/v1/tasks/git/missing')({body:{deviceId:'d',taskId:'t',haveCommits:[]}},{});
 assert.equal(calls,0,'unauthenticated requests never reach task mutation');
 console.log('remote task routes: closed inputs, explicit delivery approval, authentication boundary and disabled fallback passed');

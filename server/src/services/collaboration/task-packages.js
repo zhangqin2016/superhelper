@@ -17,6 +17,12 @@ export function createTaskPackageBroker({now=Date.now}={}){
   return Object.freeze({
     verifyInput:async({trx,task,account})=>bind({trx,task,account,objectId:task.inputSnapshotId}),
     verifyDelivery:async({trx,task,account,deliveryId})=>{
+      if(task.inputGit){
+        const input=await trx.selectFrom('stored_objects').selectAll().where('id','=',task.inputSnapshotId).forUpdate().executeTakeFirst();
+        if(!input || input.state!=='bound' || input.task_id!==task.id || input.purpose!=='workspace'
+          || input.owner_user_id!==task.requesterUserId || input.conversation_id!==task.conversationId
+          || (input.expires_at!=null && (!Number.isFinite(new Date(input.expires_at).getTime()) || new Date(input.expires_at).getTime()<=now())))return fail();
+      }
       const object=await bind({trx,task,account,objectId:deliveryId});
       return {id:deliveryId,taskId:task.id,inputSnapshotId:task.inputSnapshotId,actorUserId:account.userId,complete:true,manifestHash:object.ciphertext_sha256};
     },

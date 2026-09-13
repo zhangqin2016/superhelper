@@ -17,7 +17,7 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
     if (!row) return unavailable();
     const task = JSON.parse(crypto.decryptTask({ ciphertext: row.content_ciphertext, keyVersion: row.content_key_version,
       messageId: row.id, conversationId: row.conversation_id, revision: Number(row.revision) }).toString('utf8'));
-    if (task.id !== row.id || task.conversationId !== row.conversation_id || task.revision !== Number(row.revision)
+    if (task.id !== row.id || task.conversationId !== row.conversation_id || task.revision !== Number(row.revision) || task.inputSnapshotId !== row.input_snapshot_id
       || task.requesterUserId !== row.requester_user_id || task.assigneeUserId !== row.assignee_user_id || task.state !== row.state
       || (task.sharedWorkspaceId ?? null) !== (row.shared_workspace_id ?? null)) return unavailable();
     return task;
@@ -101,6 +101,23 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
       }
       const last=candidates.at(-1);
       return {tasks,nextCursor:rows.length>50?{createdAt:new Date(last.created_at).getTime(),id:last.id}:null};
+    },
+    async missingGitObjects({account,taskId,deliveryId,haveCommits}) {
+      if (!Array.isArray(haveCommits) || haveCommits.length>256 || new Set(haveCommits).size!==haveCommits.length
+        || haveCommits.some(commit=>typeof commit!=='string' || !/^[0-9a-f]{40}$/.test(commit)))
+        throw new CollaborationCommandError('COLLAB_TASK_INVALID','Invalid task request');
+      // The hashes only suppress this authorized task's required packs. Never
+      // query a global hash index or reveal whether another task owns a hash.
+      const task=await this.get({account,taskId});
+      if(['cancelled','declined'].includes(task.state))return inaccessible();
+      if(!task.inputGit)throw new CollaborationCommandError('COLLAB_TASK_PROTOCOL_UNAVAILABLE','Git task required');
+      const objects=[{objectId:task.inputSnapshotId,descriptor:task.inputGit}];
+      if(deliveryId!==undefined){
+        const delivery=task.deliveries.find(item=>item.id===deliveryId);
+        if(!delivery?.git)return inaccessible();
+        objects.push({objectId:delivery.id,descriptor:delivery.git});
+      }
+      return {objects:objects.filter(item=>!haveCommits.includes(item.descriptor.commit))};
     },
     async create({account,clientCommandId,...input}) {
       // ID generated inside project: same-intent receipt replay cannot fail

@@ -92,7 +92,35 @@ try{
   do {const page=await service.listHistory({account:owner,conversationId:'chat',cursor});assert.equal(page.tasks.length,0,'every scanned body rechecks both participants');cursor=page.nextCursor;assert.ok(++pages<5);}while(cursor);
   assert.equal(pages,3,'denied candidate pages must still advance rather than hide later history');
   await assert.rejects(service.listHistory({account:helper,conversationId:'chat'}),{code:'COLLAB_TASK_ACCESS_DENIED'},'revoked actor cannot page the conversation');
-  console.log('PostgreSQL remote tasks: migrations, replay, package ACL, CAS, 107-task immutable pagination, denied-page advancement and revoked access passed; object verification and historical encrypted rows seeded');
+  await pool.query("UPDATE conversation_members SET status='active' WHERE user_id='helper'");
+  for(const [objectId,userId] of [['git-input','owner'],['git-delivery','helper']])
+    await pool.query("INSERT INTO stored_objects(id,owner_user_id,conversation_id,scope_type,purpose,object_key,state,ciphertext_size,ciphertext_sha256,mime_type,original_name) VALUES($1,$2,'chat','personal','workspace',$3,'verified',1000,$4,'application/octet-stream','task.bundle')",[objectId,userId,`test/${objectId}`,'a'.repeat(64)]);
+  const inputGit={version:1,format:'git-bundle-v2',ref:`refs/tasks/${'a'.repeat(64)}/baseline`,commit:'b'.repeat(40),prerequisites:[],sha256:'c'.repeat(64),sizeBytes:500};
+  const gitInput={...input,clientCommandId:'git-create',inputSnapshotId:'git-input',inputGit};
+  const gitTask=(await service.create(gitInput)).taskId;
+  assert.equal((await service.create(gitInput)).taskId,gitTask);
+  assert.deepEqual((await service.get({account:helper,taskId:gitTask})).inputGit,inputGit,'descriptor survives encrypted PostgreSQL storage');
+  await pool.query("UPDATE collaboration_tasks SET input_snapshot_id='snapshot' WHERE id=$1",[gitTask]);
+  await assert.rejects(service.get({account:helper,taskId:gitTask}),{code:'COLLAB_TASK_UNAVAILABLE'},'encrypted Git input descriptor cannot be routed through another input object');
+  await pool.query("UPDATE collaboration_tasks SET input_snapshot_id='git-input' WHERE id=$1",[gitTask]);
+  assert.deepEqual((await service.missingGitObjects({account:helper,taskId:gitTask,haveCommits:[]})).objects,[{objectId:'git-input',descriptor:inputGit}]);
+  assert.deepEqual((await service.missingGitObjects({account:helper,taskId:gitTask,haveCommits:[inputGit.commit]})).objects,[]);
+  assert.equal((await service.missingGitObjects({account:helper,taskId:gitTask,haveCommits:['0'.repeat(40)]})).objects.length,1,'unknown hashes cannot query other tasks');
+  await assert.rejects(service.missingGitObjects({account:{userId:'observer',deviceId:'d_observer'},taskId:gitTask,haveCommits:[]}),{code:'COLLAB_TASK_ACCESS_DENIED'});
+  await service.act({account:helper,clientCommandId:'git-accept',taskId:gitTask,action:'accept',expectedRevision:1});
+  const deliveryGit={...inputGit,ref:`refs/tasks/${'a'.repeat(64)}/deliveries/${'d'.repeat(64)}`,commit:'e'.repeat(40),prerequisites:[inputGit.commit]};
+  const gitSubmit={account:helper,clientCommandId:'git-submit',taskId:gitTask,action:'submit',expectedRevision:2,deliveryId:'git-delivery',deliveryGit};
+  await pool.query("UPDATE stored_objects SET state='revoked' WHERE id='git-input'");
+  await assert.rejects(service.act({...gitSubmit,clientCommandId:'git-unavailable-base'}),{code:'COLLAB_TASK_PACKAGE_UNAVAILABLE'},'incremental delivery cannot depend on revoked server input');
+  assert.equal((await pool.query("SELECT state FROM stored_objects WHERE id='git-delivery'")).rows[0].state,'verified','failed prerequisite check leaves delivery unbound');
+  await pool.query("UPDATE stored_objects SET state='bound' WHERE id='git-input'");
+  await service.act(gitSubmit);await service.act(gitSubmit);
+  const gitResult=await service.get({account:owner,taskId:gitTask});assert.equal(gitResult.deliveries.length,1);assert.deepEqual(gitResult.deliveries[0].git,deliveryGit);
+  assert.deepEqual((await service.missingGitObjects({account:owner,taskId:gitTask,deliveryId:'git-delivery',haveCommits:[inputGit.commit]})).objects,[{objectId:'git-delivery',descriptor:deliveryGit}]);
+  await assert.rejects(service.act({...gitSubmit,deliveryGit:{...deliveryGit,sha256:'0'.repeat(64)}}),{code:'IDEMPOTENCY_KEY_REUSED'},'immutable command binds the descriptor too');
+  await pool.query("UPDATE conversation_members SET status='removed' WHERE user_id='helper'");
+  await assert.rejects(service.missingGitObjects({account:owner,taskId:gitTask,haveCommits:[]}),{code:'COLLAB_TASK_ACCESS_DENIED'},'missing query rechecks both parties');
+  console.log('PostgreSQL remote tasks: migrations, replay, package ACL, CAS, history pagination and Git descriptor/missing-query/prerequisite/revocation checks passed; object verification and historical encrypted rows seeded');
 }finally{
   await database.destroy();await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await admin.end();
 }
