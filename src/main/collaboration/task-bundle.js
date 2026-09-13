@@ -164,4 +164,4 @@ async function freezeTaskBundle({sourceRoot,destinationRoot,name} = {}) {
     }
   }
 }
-module.exports = {freezeTaskBundle,unpackTaskBundle};
+module.exports = {freezeTaskBundle,unpackTaskBundle,controlPath};

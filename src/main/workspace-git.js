@@ -174,6 +174,13 @@ class WorkspaceGit {
     };
   }
 
+  async runtime() {
+    if (!(await this.isAvailable())) {
+      throw Object.assign(new Error("GIT_RUNTIME_UNAVAILABLE"), { code: "GIT_RUNTIME_UNAVAILABLE" });
+    }
+    return { executable: this.gitPath, env: { ...this._gitRuntimeEnv }, pathEntries: [...this._gitPathEntries] };
+  }
+
   _env(paths) {
     return {
       ...process.env,
