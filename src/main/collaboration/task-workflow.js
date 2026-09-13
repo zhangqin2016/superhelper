@@ -13,7 +13,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
 /** Main-only orchestration. Renderer supplies identities and consent, never paths.
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
-function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory,
+function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
   openWorkspace, resolveWorkspaceBinding, listWorkspaceBindings, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const cards = require("./task-cards").createTaskCards({store,assertActive});
@@ -235,6 +235,14 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       }
       sourceRoot = fs.realpathSync(sourceRoot);
       if (previous && sourceRoot !== previous.sourceRoot) throw fail("COLLAB_TASK_LOCAL_MISSING");
+      let sourceSessionId = previous?.sourceSessionId || command.sessionId;
+      if (projectId && (resolveSourceSession || sourceSessionId)) {
+        const source = await resolveSourceSession?.({projectId,sessionId:sourceSessionId});
+        assertAuthorized();
+        if (!source || source.projectId!==projectId || !source.sessionId || source.rootPath!==sourceRoot
+          || (sourceSessionId && source.sessionId!==sourceSessionId)) throw fail("COLLAB_TASK_LOCAL_MISSING");
+        sourceSessionId = source.sessionId;
+      }
       let sharedWorkspaceId = previous?.sharedWorkspaceId;
       if (!previous && sharedWorkspaceProtocol === 1) {
         const id = `shared:${createHash("sha256").update(JSON.stringify([deviceId,conversationId,projectId || null,sourceRoot])).digest("hex")}`;
@@ -245,6 +253,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         sharedWorkspaceId = workspace.sharedWorkspaceId;
       }
       const draft = await freeze(sourceRoot,conversationId,{...(projectId ? {sourceProjectId:projectId} : {}),
+        ...(sourceSessionId ? {sourceSessionId} : {}),
         ...(sharedWorkspaceId ? {sharedWorkspaceId} : {})},assertAuthorized,previous);
       return {ok:true,draft:draftView(draft)};
     }
@@ -279,6 +288,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       read(draft.id,conversationId);
       save({id:`task:${result.taskId}`,kind:"task",conversationId,taskId:result.taskId,sourceRoot:draft.sourceRoot,
         ...(draft.sourceProjectId ? {sourceProjectId:draft.sourceProjectId} : {}),
+        ...(draft.sourceSessionId ? {sourceSessionId:draft.sourceSessionId} : {}),
         ...(draft.sharedWorkspaceId ? {sharedWorkspaceId:draft.sharedWorkspaceId} : {}),
         snapshotRoot:draft.snapshotRoot,baseManifest:draft.manifest});
       save({...draft,taskId:result.taskId,taskState:result.state,taskRevision:result.revision,state:"completed"});

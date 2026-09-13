@@ -406,7 +406,7 @@ function showProjectMenu(e, project) {
     {
       label: t("collaboration.workspace.entry"),
       actionId: "workspace-collaboration",
-      action: () => openWorkspaceCollaboration({ projectId: project.id, name: project.name }),
+      action: () => openWorkspaceCollaboration({ projectId: project.id, name: project.name, ...(store.get("activeProjectId") === project.id && store.get("activeSessionId") ? { sessionId: store.get("activeSessionId") } : {}) }),
     },
     {
       label: t("ctx.delete"),

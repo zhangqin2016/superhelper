@@ -5,7 +5,7 @@ const fields = {
   cards:[],
   bind:["taskId","projectId","sessionId"],
   bindingOptions:["taskId"],
-  prepare:["projectId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
+  prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
   preview:["taskId","deliveryId"],apply:["taskId","deliveryId","applicationId","expectedPlanHash","confirmDeletions"],rollback:["taskId","applicationId"],
 };
@@ -14,6 +14,7 @@ function taskWorkflowCommand(value) {
     || (value.operation === "recoveries" ? value.conversationId != null : !id(value.conversationId))) return null;
   const keys = fields[value.operation];
   if (value.operation === "prepare" && Object.hasOwn(value,"projectId") && Object.hasOwn(value,"draftId")) return null;
+  if (value.operation === "prepare" && Object.hasOwn(value,"sessionId") && !Object.hasOwn(value,"projectId")) return null;
   if (value.operation === "bind" && Object.hasOwn(value,"sessionId") && !Object.hasOwn(value,"projectId")) return null;
   if (Object.keys(value).some(key=>!["operation","conversationId",...keys].includes(key))) return null;
   for (const key of keys) {

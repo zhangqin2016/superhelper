@@ -35,6 +35,7 @@ app.whenReady().then(async () => {
     const {default:store}=await import(base+'modules/state.js');
     const {renderProjectTree}=await import(base+'modules/project-tree.js');
     store.set('projects',[{id:'project',name:'Budget',path:'/must-not-cross-renderer-boundary',sessions:[]}]);store.set('sessions',[]);renderProjectTree();
+    store.set('activeProjectId','project');store.set('activeSessionId','origin');
     const tick=()=>new Promise(r=>setTimeout(r,60));
     const check=(value,message)=>{if(!value)throw Error(message);};
     const click=selector=>{const el=document.querySelector(selector);check(el,'Missing '+selector+' calls='+JSON.stringify(calls)+' '+document.querySelector('.remote-tasks')?.textContent+' '+document.querySelector('.workspace-collaboration-dialog')?.textContent);el.click();};
@@ -57,7 +58,7 @@ app.whenReady().then(async () => {
     window.requestAnimationFrame=nativeFrame;for(const callback of delayedFrames)callback(performance.now());await tick();
     check(document.activeElement===document.querySelector('[name=assigneeUserId]'),'Delayed panel/back focus cannot steal the task recipient focus');
     click('[data-action=task-prepare]');await tick();
-    const prepared=calls.find(c=>c.operation==='prepare');check(prepared?.projectId==='project'&&!('path' in prepared),'Prepare carries project ID only');
+    const prepared=calls.find(c=>c.operation==='prepare');check(prepared?.projectId==='project'&&prepared.sessionId==='origin'&&!('path' in prepared),'Prepare carries source project and session identities only');
     check(!calls.some(c=>c.operation==='send'),'No automatic send');click('[data-action=task-back]');await tick();
     detailsFailed=true;await launch();picker().value='friend:friend';picker().dispatchEvent(new Event('change'));click('[data-action=workspace-collaboration-continue]');await tick();check(!document.querySelector('.workspace-collaboration-dialog'),'Task surface takes ownership after recipient read failure');
     detailsFailed=false;click('[data-action=task-refresh]');await tick();check(document.querySelector('[name=assigneeUserId]')?.value==='friend','Task recipient retry survives selector dismissal');click('[data-action=task-back]');await tick();

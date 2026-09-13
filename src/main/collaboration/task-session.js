@@ -28,6 +28,14 @@ function resolveRemoteTaskBinding(projectManager,sessionManager,{projectId,sessi
   const session = selected || createRemoteTaskSession(sessionManager,projectId,title,bindingId);
   return {projectId,sessionId:session.id,rootPath};
 }
+function resolveRemoteTaskSourceSession(projectManager,sessionManager,{projectId,sessionId}) {
+  const selected=sessionId ? sessionManager._find(sessionId)
+    : sessionManager.sessions[projectId]?.find(item=>item.remoteTaskBinding===`collaboration-source:${projectId}`);
+  if ((sessionId && !selected) || selected?.remoteTaskExecution || selected?.archived)
+    throw Object.assign(new Error("Source session unavailable"),{code:"COLLAB_TASK_LOCAL_MISSING"});
+  return resolveRemoteTaskBinding(projectManager,sessionManager,{projectId,sessionId,
+    bindingId:`collaboration-source:${projectId}`,title:projectManager.find(projectId)?.name});
+}
 /** Register an idle task workspace; execution still requires an explicit prompt. */
 function createRemoteTaskSession(manager,projectId,title,bindingId,executionRoot) {
   const execution = executionRoot ? require("../session-workspace").captureExecutionWorkspace(executionRoot) : null;
@@ -67,4 +75,4 @@ function focusRegisteredSession(manager,win,sessionId) {
   win.webContents.send("assistant:focus-session",{sessionId,projectId:session.projectId});
   return {ok:true};
 }
-module.exports = {createRemoteTaskSession,registerRemoteTaskWorkspace,focusRegisteredSession,resolveRemoteTaskBinding,listRemoteTaskBindingTargets};
+module.exports = {createRemoteTaskSession,registerRemoteTaskWorkspace,focusRegisteredSession,resolveRemoteTaskBinding,resolveRemoteTaskSourceSession,listRemoteTaskBindingTargets};

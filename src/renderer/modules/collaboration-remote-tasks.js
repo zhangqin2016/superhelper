@@ -180,7 +180,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     return result || { ok: false };
   }
   async function createTask(draft = null, options = {}) {
-    const retryOptions = { projectId: options.projectId, assigneeUserId: options.assigneeUserId };
+    const retryOptions = { projectId: options.projectId, sessionId: options.sessionId, assigneeUserId: options.assigneeUserId };
     const ticket = ++generation; busy = false; showStatus("loading", { detail: true });
     try {
       const result = await api()?.getConversationDetails?.(context.conversationId);
@@ -189,7 +189,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       if (!result?.ok) { showStatus("loadFailed", { detail: true, retry: () => void createTask(draft, retryOptions) }); return; }
       const members = (result.members || []).filter(member => member.userId && member.userId !== context.userId);
       if (options.assigneeUserId && !members.some(member => member.userId === options.assigneeUserId)) { showStatus("loadFailed", { detail: true }); return; }
-      workflow = { kind: "create", projectId: options.projectId, draft, members, input: { assigneeUserId: options.assigneeUserId || members[0]?.userId || "", title: "", objective: "", acceptanceCriteria: "", ...draft?.input }, locked: !!draft?.input && draft.state !== "failed" };
+      workflow = { kind: "create", projectId: options.projectId, sessionId: options.sessionId, draft, members, input: { assigneeUserId: options.assigneeUserId || members[0]?.userId || "", title: "", objective: "", acceptanceCriteria: "", ...draft?.input }, locked: !!draft?.input && draft.state !== "failed" };
       paintWorkflow();
     } catch {
       if (!valid(ticket)) return;
@@ -238,7 +238,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
         label.append(field); form.append(label);
       }
       body.append(form);
-      if (!current.draft || ["preparing", "preparation_failed"].includes(current.draft.state)) body.append(button("task-prepare", tr(current.draft ? "resume" : current.projectId ? "previewWorkspace" : "chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare", ...(current.draft ? { draftId: current.draft.id } : current.projectId ? { projectId: current.projectId } : {}) }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
+      if (!current.draft || ["preparing", "preparation_failed"].includes(current.draft.state)) body.append(button("task-prepare", tr(current.draft ? "resume" : current.projectId ? "previewWorkspace" : "chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare", ...(current.draft ? { draftId: current.draft.id } : current.projectId ? { projectId: current.projectId, ...(current.sessionId ? { sessionId: current.sessionId } : {}) } : {}) }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
       else {
         paintSnapshot(body, current.draft);
         if (current.locked) notice(body, "confirming");

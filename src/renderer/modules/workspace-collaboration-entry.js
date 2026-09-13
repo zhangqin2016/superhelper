@@ -14,7 +14,7 @@ export function registerWorkspaceCollaborationController(value) {
   };
 }
 
-export function openWorkspaceCollaboration({ projectId, name }) {
+export function openWorkspaceCollaboration({ projectId, sessionId, name }) {
   dismissCurrent?.();
   const owner = controller, dialog = node("dialog", "", "collaboration-create-dialog workspace-collaboration-dialog");
   const header = node("header"), title = node("h2"), form = node("form", "", "collaboration-social-form");
@@ -70,7 +70,7 @@ export function openWorkspaceCollaboration({ projectId, name }) {
     // abandons navigation only; the durable social journal retains the command.
     intent ||= { ...target, clientCommandId: crypto.randomUUID() };
     let result;
-    try { result = await owner.continue({ snapshot, target: intent, projectId, isCurrent: () => valid(ticket) }); } catch { result = null; }
+    try { result = await owner.continue({ snapshot, target: intent, projectId, sessionId, isCurrent: () => valid(ticket) }); } catch { result = null; }
     if (!valid(ticket)) return;
     busy = false;
     if (result?.ok) { dismiss({ restoreFocus: false }); result.focus?.(); return; }

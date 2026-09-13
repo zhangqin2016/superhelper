@@ -28,7 +28,7 @@ export function connectWorkspaceCollaboration({ getContext, getPolicy, refreshPo
     if (!directory.ok || !list?.ok || !api()?.taskWorkflow) return { ok: false, reason: "unavailable" };
     return { ok: true, directory, conversations: list.conversations || [], captured: { ...captured, userId: directory.profile.userId } };
   }
-  return registerWorkspaceCollaborationController({ read, async continue({ snapshot, target, projectId, isCurrent }) {
+  return registerWorkspaceCollaborationController({ read, async continue({ snapshot, target, projectId, sessionId, isCurrent }) {
     const valid = () => isCurrent() && current(snapshot.captured);
     if (!valid()) return { reason: "changed" };
     await refreshPolicy?.();
@@ -61,7 +61,7 @@ export function connectWorkspaceCollaboration({ getContext, getPolicy, refreshPo
     const opening = open(conversationId), own = stamp();
     await opening;
     if (!isCurrent() || !current(own) || getContext().conversationId !== conversationId) return { reason: "changed" };
-    await tasks.create({ projectId, isCurrent: () => isCurrent() && current(own), ...(target.userId ? { assigneeUserId: target.userId } : {}) });
+    await tasks.create({ projectId, ...(sessionId ? { sessionId } : {}), isCurrent: () => isCurrent() && current(own), ...(target.userId ? { assigneeUserId: target.userId } : {}) });
     return { ok: true, focus: () => { if (current(own)) focusTask?.(); } };
   } });
 }
