@@ -9,6 +9,7 @@ const {Transform} = require("node:stream");
 const {WorkspaceGit} = require("../workspace-git");
 const {manifestMap} = require("./task-apply-plan");
 const {controlPath} = require("./task-bundle");
+const {taskChangeset,manifestHash} = require("./task-changeset");
 const execute = promisify(execFile);
 const fail = code => Object.assign(new Error(`COLLAB_TASK_GIT_${code}`),{code:`COLLAB_TASK_GIT_${code}`});
 const identity = stat => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
@@ -121,6 +122,23 @@ class TaskGit {
   }
   async captureBaseline({taskId,snapshotRoot,manifest}) {
     if (typeof taskId !== "string" || !taskId || taskId.length > 512) throw fail("TASK_INVALID");
+    const key = createHash("sha256").update(taskId).digest("hex");
+    return {...await this._capture({snapshotRoot,manifest,ref:`refs/tasks/${key}/baseline`,message:"Task baseline",conflict:"BASELINE_CONFLICT"}),manifestHash:manifestHash(manifest)};
+  }
+  async captureContribution({baseline,baseManifest,materializedPaths,deliveryId,snapshotRoot,manifest}) {
+    const {repository,git} = await this.ensure();
+    if (baseline?.repository !== repository || baseline.manifestHash !== manifestHash(baseManifest)
+      || !/^[0-9a-f]{40}$/.test(baseline.commit || "") || !/^refs\/tasks\/[0-9a-f]{64}\/baseline$/.test(baseline.ref || "")
+      || await git(["rev-parse","--verify",baseline.ref]) !== baseline.commit) throw fail("BASELINE_CONFLICT");
+    if (typeof deliveryId !== "string" || !deliveryId || deliveryId.length > 512) throw fail("DELIVERY_INVALID");
+    const changes = taskChangeset({baseManifest,manifest,materializedPaths});
+    const key = createHash("sha256").update(deliveryId).digest("hex");
+    const ref = baseline.ref.replace(/baseline$/,`deliveries/${key}`);
+    const result = await this._capture({snapshotRoot,manifest:changes.files,parent:baseline.commit,removed:changes.removed,
+      ref,message:`Task contribution\n\n${JSON.stringify({version:1,operations:changes.operations})}`,conflict:"CONTRIBUTION_CONFLICT"});
+    return {...result,baseCommit:baseline.commit,operations:changes.operations};
+  }
+  async _capture({snapshotRoot,manifest,parent,removed=[],ref,message,conflict}) {
     const files = [...manifestMap(manifest).values()].sort((a,b)=>a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
     if (files.some(file=>controlPath(file.path))) throw fail("CONTROL_FILE");
     directory(snapshotRoot);
@@ -129,9 +147,10 @@ class TaskGit {
       || snapshotRoot.startsWith(`${this.rootPath}${path.sep}`)) throw fail("ROOT_OVERLAP");
     const {repository,git} = await this.ensure();
     const temporary = fs.mkdtempSync(path.join(this.rootPath,"capture-"));
-    const indexEnv = {GIT_INDEX_FILE:path.join(temporary,"index")};
+    const indexEnv = {GIT_INDEX_FILE:path.join(temporary,"index"),GIT_WORK_TREE:temporary};
     try {
-      await git(["read-tree","--empty"],indexEnv);
+      await git(parent ? ["read-tree",parent] : ["read-tree","--empty"],indexEnv);
+      for (const relative of removed) await git(["update-index","--force-remove","--",relative],indexEnv);
       for (const file of files) {
         const source = path.join(snapshotRoot,file.path);
         let current = snapshotRoot;
@@ -159,15 +178,15 @@ class TaskGit {
         fs.unlinkSync(captured);
       }
       const tree = await git(["write-tree"],indexEnv);
-      const commit = await git(["commit-tree",tree,"-m","Task baseline"]);
-      const key = createHash("sha256").update(taskId).digest("hex");
-      const ref = `refs/tasks/${key}/baseline`;
+      const messagePath = path.join(temporary,"message");
+      fs.writeFileSync(messagePath,message,{flag:"wx",mode:0o600});
+      const commit = await git(["commit-tree",tree,...(parent ? ["-p",parent] : []),"-F",messagePath]);
       try {await git(["update-ref",ref,commit,"0".repeat(40)]);}
       catch (error) {
         // Lost acknowledgements/concurrent captures resolve against the actual
         // immutable ref, never by overwriting a previous baseline.
         const existing = await git(["rev-parse","--verify",ref]).catch(()=>{throw error;});
-        if (existing !== commit) throw fail("BASELINE_CONFLICT");
+        if (existing !== commit) throw fail(conflict);
       }
       return {repository,ref,commit,tree};
     } finally {fs.rmSync(temporary,{recursive:true,force:true});}

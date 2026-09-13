@@ -159,6 +159,7 @@ try {
   fs.writeFileSync(path.join(working, 'budget.txt'), 'reviewed budget\n');
   fs.unlinkSync(path.join(working, 'remove.txt'));
   fs.writeFileSync(path.join(working, 'evidence.txt'), 'totals verified\n');
+  fs.writeFileSync(path.join(source,'private-local.txt'),'unrelated owner working edit');
   const {workRoot:unacknowledgedWorkRoot,...pendingWorktree}=helper.records.get(`task:${taskId}`);
   helper.records.put(`task:${taskId}`,pendingWorktree);
   helper.close(); helper = assemble('helper');
@@ -176,10 +177,17 @@ try {
   fs.writeFileSync(path.join(working, 'budget.txt'), 'reviewed budget\n');
   const preparedDelivery = ok(await helper.run({ operation: 'prepareDelivery', conversationId: 'chat', taskId }), 'prepare delivery');
   const deliveryDraftId = preparedDelivery.draft.id;
+  const contribution=helper.records.get(deliveryDraftId).gitContribution;
+  assert.ok(contribution?.commit,'prepared delivery owns an immutable Git contribution');
+  assert.equal(contribution.baseCommit,binding.gitBaseline.commit);
+  assert.deepEqual(contribution.operations.map(entry=>entry.kind).sort(),['add','delete','modify']);
+  assert.equal(execFileSync('git',['--git-dir',contribution.repository,'rev-parse',`${contribution.commit}^`],{encoding:'utf8'}).trim(),binding.gitBaseline.commit);
+  assert.doesNotMatch(execFileSync('git',['--git-dir',contribution.repository,'ls-tree','-r','--name-only',contribution.commit],{encoding:'utf8'}),/private-local/);
   helper.close(); helper = assemble('helper');
   assert.equal(ok(await helper.run({ operation: 'drafts', conversationId: 'chat' }), 'restart delivery draft').drafts[0].id, deliveryDraftId);
   const submitted = ok(await helper.run({ operation: 'submitDelivery', conversationId: 'chat', taskId, draftId: deliveryDraftId }), 'submit delivery');
   assert.equal(submitted.state, 'completed');
+  assert.equal(helper.records.get(deliveryDraftId).gitContribution.commit,contribution.commit,'restart and upload preserve the frozen contribution');
   const reviewTask = serverTasks.get(taskId), deliveryId = reviewTask.currentDeliveryId;
   assert.equal(reviewTask.state, 'review'); assert.ok(objects.has(deliveryId));
   ok(await owner.tasks.submit({ conversationId: 'chat', taskId, action: 'approve', expectedRevision: reviewTask.revision, deliveryId }), 'approve');

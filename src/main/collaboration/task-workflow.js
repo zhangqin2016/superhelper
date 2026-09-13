@@ -120,12 +120,30 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       }
       await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.executionRoot,manifest:local.baseManifest});
       await taskFor(command);
-      local = save({...local,workRoot:local.executionRoot});
+      local = save({...local,workRoot:local.executionRoot,materializedPaths:local.baseManifest.map(file=>file.path)});
     } else if (local.gitBaseline) {
       await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.workRoot,manifest:local.baseManifest});
       await taskFor(command);
     }
     return local;
+  }
+  async function contribution(draft) {
+    if (draft.gitContribution) return draft;
+    let local = read(`task:${draft.taskId}`,draft.conversationId);
+    if (!local.gitBaseline?.manifestHash) {
+      const gitBaseline = await git().captureBaseline({taskId:draft.taskId,snapshotRoot:local.snapshotRoot,manifest:local.baseManifest});
+      read(local.id,draft.conversationId);
+      local = save({...local,gitBaseline});
+    }
+    // Existing ZIP task copies were completely materialized at receive time.
+    // Sparse inventories require the new wire protocol, not a legacy full ZIP.
+    const materializedPaths = local.materializedPaths || local.baseManifest.map(file=>file.path);
+    if (materializedPaths.length !== local.baseManifest.length) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
+    const gitContribution = await git().captureContribution({baseline:local.gitBaseline,baseManifest:local.baseManifest,
+      materializedPaths,deliveryId:draft.id,snapshotRoot:draft.snapshotRoot,manifest:draft.manifest});
+    await taskFor({conversationId:draft.conversationId,taskId:draft.taskId});
+    read(draft.id,draft.conversationId);
+    return save({...draft,gitContribution});
   }
   async function delivery(command) {
     const task = await taskFor(command);
@@ -356,6 +374,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         save({...draft,state:"blocked"});
         throw fail("COLLAB_TASK_DELIVERY_OMITTED");
       }
+      await contribution(draft);
       return {ok:true,draft:draftView(draft)};
     }
     if (operation === "submitDelivery") {
@@ -364,6 +383,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       if (draft.state === "blocked") throw fail("COLLAB_TASK_DELIVERY_OMITTED");
       if (draft.deviceId !== deviceId) throw fail("COLLAB_DEVICE_CHANGED");
       if (draft.state === "completed") return {ok:true,state:"completed",clientCommandId:draft.clientCommandId};
+      draft = await contribution(draft);
       draft = await upload(draft);
       const result = await tasks.submit({conversationId,taskId:command.taskId,action:"submit",expectedRevision:draft.expectedRevision,
         deliveryId:draft.objectId,clientCommandId:draft.clientCommandId});

@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const {TaskGit}=require('../src/main/collaboration/task-git');
+const {taskChangeset}=require('../src/main/collaboration/task-changeset');
+const temporary=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'task-changeset-'));
+const source=path.join(temporary,'baseline'),delivery=path.join(temporary,'delivery');
+fs.mkdirSync(source);fs.mkdirSync(delivery);
+const file=(root,name,text)=>{fs.writeFileSync(path.join(root,name),text);return {path:name,sha256:createHash('sha256').update(text).digest('hex'),sizeBytes:Buffer.byteLength(text)};};
+try {
+ const baseManifest=[file(source,'change.txt','old'),file(source,'delete.txt','delete'),file(source,'rename.txt','move'),file(source,'offline.txt','not downloaded')];
+ const manifest=[file(delivery,'change.txt','new'),file(delivery,'added.txt','added'),file(delivery,'renamed.txt','move')];
+ file(delivery,'unrelated.txt','private dirty bytes outside authorized manifest');
+ const git=new TaskGit({rootPath:path.join(temporary,'git'),gitOptions:{autoInstall:false}});
+ const baseline=await git.captureBaseline({taskId:'task',snapshotRoot:source,manifest:baseManifest});
+ const input={baseline,baseManifest,materializedPaths:['change.txt','delete.txt','rename.txt'],deliveryId:'one',snapshotRoot:delivery,manifest};
+ const result=await git.captureContribution(input);
+ assert.deepEqual(result.operations.map(x=>x.kind).sort(),['add','delete','modify','rename']);
+ const inspect=(...args)=>execFileSync('git',['--git-dir',result.repository,...args],{encoding:'utf8'}).trim();
+ assert.equal(inspect('rev-parse',`${result.commit}^`),baseline.commit);
+ assert.equal(inspect('show',`${result.commit}:offline.txt`),'not downloaded','unknown absence cannot become deletion');
+ assert.equal(inspect('ls-tree','-r','--name-only',result.commit),'added.txt\nchange.txt\noffline.txt\nrenamed.txt');
+ assert.equal(inspect('show',`${result.commit}:change.txt`),'new');
+ assert.deepEqual(taskChangeset({baseManifest:[baseManifest[2],{...baseManifest[2],path:'duplicate.txt'}],manifest:[manifest[2]],materializedPaths:['rename.txt','duplicate.txt']}).operations.map(x=>x.kind).sort(),['add','delete','delete'],'ambiguous identical files cannot establish rename identity');
+ assert.equal(taskChangeset({baseManifest:[baseManifest[0]],manifest:[{...baseManifest[0],path:'CHANGE.txt'}],materializedPaths:['change.txt']}).operations[0].kind,'rename');
+ assert.equal((await git.captureContribution(input)).commit,result.commit);
+ const changed=file(delivery,'change.txt','late edit');
+ await assert.rejects(git.captureContribution({...input,manifest:manifest.map(x=>x.path===changed.path?changed:x)}),/CONTRIBUTION_CONFLICT/);
+ assert.equal(inspect('rev-parse',result.ref),result.commit);
+ await assert.rejects(git.captureContribution({...input,deliveryId:'bad',baseManifest:baseManifest.slice(1)}),/BASELINE_CONFLICT/);
+ await assert.rejects(git.captureContribution({...input,deliveryId:'unknown',materializedPaths:[]}),/NOT_MATERIALIZED/);
+ console.log('task changeset: explicit add/modify/delete/rename, baseline ancestry, offline preservation, unrelated exclusion and immutable retry passed');
+} finally {fs.rmSync(temporary,{recursive:true,force:true});}
