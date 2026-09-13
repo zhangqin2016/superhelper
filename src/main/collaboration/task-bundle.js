@@ -6,6 +6,7 @@ const crypto = require("node:crypto");
 const JSZip = require("jszip");
 const share = require("../workspace-share");
 const {manifestMap} = require("./task-apply-plan");
+const {taskFileIdentity} = require("./task-file-identity");
 const {DEFAULT_LIMITS,inspectCollaborationWorkspacePackage,extractCollaborationWorkspacePackage} = require("./workspace-package");
 const fail = (code) => Object.assign(new Error(`COLLAB_TASK_BUNDLE_${code}`), {code:`COLLAB_TASK_BUNDLE_${code}`});
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -34,10 +35,11 @@ function checkedFile(root, relative, maxBytes = DEFAULT_LIMITS.maxFileBytes) {
   const fd = fs.openSync(current,fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try {
     if (signature(fs.fstatSync(fd)) !== signature(stat)) throw fail("SOURCE_CHANGED");
+    const fileIdentity = taskFileIdentity(fs.fstatSync(fd,{bigint:true}));
     const bytes = fs.readFileSync(fd);
     if (signature(fs.fstatSync(fd)) !== signature(stat) || signature(fs.lstatSync(current)) !== signature(stat)
       || bytes.length !== stat.size) throw fail("SOURCE_CHANGED");
-    return {bytes,signature:signature(stat)};
+    return {bytes,signature:signature(stat),fileIdentity};
   } finally { fs.closeSync(fd); }
 }
 function prepareDestination(value, source) {
@@ -115,7 +117,7 @@ async function freezeTaskBundle({sourceRoot,destinationRoot,name,allowEmpty = fa
       total += captured.bytes.length;
       if (total > DEFAULT_LIMITS.maxTotalBytes || captured.bytes.length !== file.size) throw fail("SOURCE_CHANGED");
       const fullPath = path.join(captureRoot,String(captures.length));
-      captures.push({...file,fullPath,size:captured.bytes.length,sha256:hash(captured.bytes),signature:captured.signature});
+      captures.push({...file,fullPath,size:captured.bytes.length,sha256:hash(captured.bytes),signature:captured.signature,fileIdentity:captured.fileIdentity});
       writePrivate(fullPath,captured.bytes);
     }
     for (const file of captures) {
@@ -148,7 +150,7 @@ async function freezeTaskBundle({sourceRoot,destinationRoot,name,allowEmpty = fa
     const packagePath = path.join(destination,"task.lilyspace.zip");
     writePrivate(packagePath,bytes);
     fs.chmodSync(packagePath,0o400);
-    return {packagePath,...unpacked,files:unpacked.manifest.map(({path,sizeBytes})=>({path,sizeBytes})),warnings:[
+    return {packagePath,...unpacked,fileIdentities:selected.filter(file=>file.fileIdentity).map(file=>({path:file.relPath,identity:file.fileIdentity})),files:unpacked.manifest.map(({path,sizeBytes})=>({path,sizeBytes})),warnings:[
       ...secrets.map(item=>`Sensitive content omitted: ${item.relPath} (${item.kinds.join(", ")})`),
       ...controls.map(item=>`Agent configuration omitted: ${item.relPath}`),
       ...(collected.skippedFiles || []).map(item=>`File omitted: ${item.relPath} (${item.reason})`),

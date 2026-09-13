@@ -8,6 +8,7 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const {TaskGit}=require('../src/main/collaboration/task-git');
 const {taskChangeset}=require('../src/main/collaboration/task-changeset');
+const {taskFileIdentity}=require('../src/main/collaboration/task-file-identity');
 const temporary=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'task-changeset-'));
 const source=path.join(temporary,'baseline'),delivery=path.join(temporary,'delivery');
 fs.mkdirSync(source);fs.mkdirSync(delivery);
@@ -15,6 +16,14 @@ const file=(root,name,text)=>{fs.writeFileSync(path.join(root,name),text);return
 try {
  const baseManifest=[file(source,'change.txt','old'),file(source,'delete.txt','delete'),file(source,'rename.txt','move'),file(source,'offline.txt','not downloaded')];
  const manifest=[file(delivery,'change.txt','new'),file(delivery,'added.txt','added'),file(delivery,'renamed.txt','move')];
+ const renameInput={baseManifest:[baseManifest[0]],manifest:[{...manifest[0],path:'moved.txt'}],materializedPaths:['change.txt'],baseFileIdentities:[{path:'change.txt',identity:'1:2:3'}],fileIdentities:[{path:'moved.txt',identity:'1:2:3'}]};
+ assert.equal(taskChangeset(renameInput).operations[0].kind,'rename');
+ assert.deepEqual(taskChangeset({...renameInput,fileIdentities:[{path:'moved.txt',identity:'1:2:4'}]}).operations.map(x=>x.kind).sort(),['add','delete'],'reused inode with different birth time is not rename evidence');
+ assert.deepEqual(taskChangeset({...renameInput,baseFileIdentities:[]}).operations.map(x=>x.kind).sort(),['add','delete'],'older tasks without captured identity remain conservative');
+ assert.throws(()=>taskChangeset({...renameInput,fileIdentities:[{path:42,identity:'1:2:3'}]}),/INVENTORY_INVALID/);
+ assert.throws(()=>taskChangeset({...renameInput,manifest:[...renameInput.manifest,{...manifest[1],path:'duplicate.txt'}],fileIdentities:[...renameInput.fileIdentities,{path:'duplicate.txt',identity:'1:2:3'}]}),/INVENTORY_INVALID/);
+ assert.equal(taskFileIdentity({...fs.statSync(path.join(source,'change.txt'),{bigint:true}),ino:0n}),null);
+ assert.equal(taskFileIdentity({...fs.statSync(path.join(source,'change.txt'),{bigint:true}),birthtimeNs:0n}),null);
  file(delivery,'unrelated.txt','private dirty bytes outside authorized manifest');
  const git=new TaskGit({rootPath:path.join(temporary,'git'),gitOptions:{autoInstall:false}});
  const baseline=await git.captureBaseline({taskId:'task',snapshotRoot:source,manifest:baseManifest});

@@ -10,6 +10,7 @@ const {WorkspaceGit} = require("../workspace-git");
 const {manifestMap} = require("./task-apply-plan");
 const {controlPath} = require("./task-bundle");
 const {taskChangeset,manifestHash} = require("./task-changeset");
+const {taskFileIdentity} = require("./task-file-identity");
 const execute = promisify(execFile);
 const fail = code => Object.assign(new Error(`COLLAB_TASK_GIT_${code}`),{code:`COLLAB_TASK_GIT_${code}`});
 const identity = stat => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
@@ -98,7 +99,7 @@ class TaskGit {
       const saved = JSON.parse(fs.readFileSync(marker,"utf8")), stat = fs.statSync(workRoot);
       if (saved.commit !== baseline.commit || saved.ref !== baseline.ref || saved.workRoot !== workRoot
         || saved.dev !== stat.dev || saved.ino !== stat.ino) throw fail("WORKTREE_CONFLICT");
-      return {workRoot};
+      return {workRoot,fileIdentities:saved.fileIdentities || []};
     }
     const entries = (await git(["ls-tree","-r","-z",baseline.commit])).split("\0").filter(Boolean).map(value=>{
       const match = /^(100644) blob ([0-9a-f]{40})\t(.+)$/.exec(value);
@@ -116,22 +117,23 @@ class TaskGit {
       fs.mkdirSync(path.dirname(destination),{recursive:true,mode:0o700});
       await writeBlob(blob,destination,file);
     }
+    const fileIdentities = entries.map(({file})=>({path:file.path,identity:taskFileIdentity(fs.lstatSync(path.join(workRoot,file.path),{bigint:true}))})).filter(file=>file.identity);
     const stat = fs.statSync(workRoot);
-    fs.writeFileSync(path.join(target,"lily-task.json"),JSON.stringify({commit:baseline.commit,ref:baseline.ref,workRoot,dev:stat.dev,ino:stat.ino}),{flag:"wx",mode:0o600});
-    return {workRoot};
+    fs.writeFileSync(path.join(target,"lily-task.json"),JSON.stringify({commit:baseline.commit,ref:baseline.ref,workRoot,dev:stat.dev,ino:stat.ino,fileIdentities}),{flag:"wx",mode:0o600});
+    return {workRoot,fileIdentities};
   }
   async captureBaseline({taskId,snapshotRoot,manifest}) {
     if (typeof taskId !== "string" || !taskId || taskId.length > 512) throw fail("TASK_INVALID");
     const key = createHash("sha256").update(taskId).digest("hex");
     return {...await this._capture({snapshotRoot,manifest,ref:`refs/tasks/${key}/baseline`,message:"Task baseline",conflict:"BASELINE_CONFLICT"}),manifestHash:manifestHash(manifest)};
   }
-  async captureContribution({baseline,baseManifest,materializedPaths,deliveryId,snapshotRoot,manifest}) {
+  async captureContribution({baseline,baseManifest,materializedPaths,deliveryId,snapshotRoot,manifest,baseFileIdentities,fileIdentities}) {
     const {repository,git} = await this.ensure();
     if (baseline?.repository !== repository || baseline.manifestHash !== manifestHash(baseManifest)
       || !/^[0-9a-f]{40}$/.test(baseline.commit || "") || !/^refs\/tasks\/[0-9a-f]{64}\/baseline$/.test(baseline.ref || "")
       || await git(["rev-parse","--verify",baseline.ref]) !== baseline.commit) throw fail("BASELINE_CONFLICT");
     if (typeof deliveryId !== "string" || !deliveryId || deliveryId.length > 512) throw fail("DELIVERY_INVALID");
-    const changes = taskChangeset({baseManifest,manifest,materializedPaths});
+    const changes = taskChangeset({baseManifest,manifest,materializedPaths,baseFileIdentities,fileIdentities});
     const key = createHash("sha256").update(deliveryId).digest("hex");
     const ref = baseline.ref.replace(/baseline$/,`deliveries/${key}`);
     const result = await this._capture({snapshotRoot,manifest:changes.files,parent:baseline.commit,removed:changes.removed,

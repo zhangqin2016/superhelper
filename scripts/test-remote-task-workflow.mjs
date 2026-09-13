@@ -21,7 +21,7 @@ fs.writeFileSync(path.join(source, 'budget.txt'), 'original budget\n');
 fs.writeFileSync(path.join(source, 'remove.txt'), 'remove after explicit consent\n');
 const serverTasks = new Map(), receipts = new Map(), transfers = new Map(), objects = new Map();
 const participants = ['owner', 'helper'];
-let clock = 1, dropCreate = true, rejectReplay = false, failNextPackage = false, createCalls = 0, createEvents = 0;
+let clock = 1, dropCreate = true, dropSubmit = true, rejectReplay = false, failNextPackage = false, createCalls = 0, createEvents = 0;
 const offlineAccounts = new Set();
 const err = code => Object.assign(new Error(code), { code });
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -72,6 +72,7 @@ function assemble(accountId) {
       const response = { ok: true, result: { taskId: task.id, state: task.state, revision: task.revision } };
       receipts.set(key, { fingerprint, response });
       if (action === 'create' && dropCreate) { dropCreate = false; throw err('COLLAB_RESPONSE_UNKNOWN'); }
+      if (action === 'submit' && dropSubmit) { dropSubmit = false; throw err('COLLAB_RESPONSE_UNKNOWN'); }
       return clone(response);
     },
   };
@@ -185,7 +186,11 @@ try {
   assert.doesNotMatch(execFileSync('git',['--git-dir',contribution.repository,'ls-tree','-r','--name-only',contribution.commit],{encoding:'utf8'}),/private-local/);
   helper.close(); helper = assemble('helper');
   assert.equal(ok(await helper.run({ operation: 'drafts', conversationId: 'chat' }), 'restart delivery draft').drafts[0].id, deliveryDraftId);
-  const submitted = ok(await helper.run({ operation: 'submitDelivery', conversationId: 'chat', taskId, draftId: deliveryDraftId }), 'submit delivery');
+  const submitCommand={operation:'submitDelivery',conversationId:'chat',taskId,draftId:deliveryDraftId};
+  assert.equal(ok(await helper.run(submitCommand),'lost delivery response').state,'confirming');
+  fs.writeFileSync(path.join(working,'budget.txt'),'later helper edit after uncertain delivery');
+  helper.close();helper=assemble('helper');
+  const submitted = ok(await helper.run(submitCommand), 'replay delivery after restart');
   assert.equal(submitted.state, 'completed');
   assert.equal(helper.records.get(deliveryDraftId).gitContribution.commit,contribution.commit,'restart and upload preserve the frozen contribution');
   const reviewTask = serverTasks.get(taskId), deliveryId = reviewTask.currentDeliveryId;
@@ -254,6 +259,23 @@ try {
   assert.notEqual(renewedRecord.objectId, expiredRecord.objectId);
   assert.equal(renewedRecord.packagePath, expiredRecord.packagePath);
   assert.equal(renewedRecord.packageHash, expiredRecord.packageHash, 'object renewal preserves the frozen material approved by the user');
+
+  const renameDraft=ok(await owner.run({operation:'prepare',conversationId:'chat'}),'prepare rename task');
+  const renameTask=ok(await owner.run({...send,draftId:renameDraft.draft.id}),'send rename task').taskId;
+  ok(await helper.tasks.submit({conversationId:'chat',taskId:renameTask,action:'accept',expectedRevision:1}),'accept rename task');
+  ok(await helper.run({operation:'receive',conversationId:'chat',taskId:renameTask}),'receive rename task');
+  const renameLocal=helper.records.get(`task:${renameTask}`),renameBefore=renameLocal.baseManifest[0];
+  fs.renameSync(path.join(renameLocal.workRoot,renameBefore.path),path.join(renameLocal.workRoot,'renamed-edited.txt'));
+  fs.writeFileSync(path.join(renameLocal.workRoot,'renamed-edited.txt'),'entirely rewritten after moving');
+  helper.close();helper=assemble('helper');
+  const renameDelivery=ok(await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:renameTask}),'prepare edited rename').draft;
+  const renameContribution=helper.records.get(renameDelivery.id).gitContribution;
+  assert.equal(renameContribution.operations.length,1);
+  assert.equal(renameContribution.operations[0].kind,'rename','same file identity preserves edited rename across restart');
+  assert.equal(renameContribution.operations[0].before.path,renameBefore.path);
+  assert.equal(renameContribution.operations[0].after.path,'renamed-edited.txt');
+  assert.notEqual(renameContribution.operations[0].before.sha256,renameContribution.operations[0].after.sha256);
+  assert.doesNotMatch(JSON.stringify(renameDelivery),/fileIdentit|baseFileIdentit|birthtime|repository/,'device identities stay in encrypted main records');
 
   const deleteDraft = ok(await owner.run({operation:'prepare',conversationId:'chat'}),'prepare all-delete task');
   const deleteTask = ok(await owner.run({...send,draftId:deleteDraft.draft.id}),'send all-delete task').taskId;

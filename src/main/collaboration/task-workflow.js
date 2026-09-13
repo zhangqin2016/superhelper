@@ -118,9 +118,9 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         await taskFor(command);
         local = save({...local,gitBaseline,executionRoot:allocate()});
       }
-      await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.executionRoot,manifest:local.baseManifest});
+      const worktree = await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.executionRoot,manifest:local.baseManifest});
       await taskFor(command);
-      local = save({...local,workRoot:local.executionRoot,materializedPaths:local.baseManifest.map(file=>file.path)});
+      local = save({...local,workRoot:local.executionRoot,materializedPaths:local.baseManifest.map(file=>file.path),baseFileIdentities:worktree.fileIdentities});
     } else if (local.gitBaseline) {
       await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.workRoot,manifest:local.baseManifest});
       await taskFor(command);
@@ -140,7 +140,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     const materializedPaths = local.materializedPaths || local.baseManifest.map(file=>file.path);
     if (materializedPaths.length !== local.baseManifest.length) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
     const gitContribution = await git().captureContribution({baseline:local.gitBaseline,baseManifest:local.baseManifest,
-      materializedPaths,deliveryId:draft.id,snapshotRoot:draft.snapshotRoot,manifest:draft.manifest});
+      materializedPaths,deliveryId:draft.id,snapshotRoot:draft.snapshotRoot,manifest:draft.manifest,
+      baseFileIdentities:local.baseFileIdentities,fileIdentities:draft.fileIdentities});
     await taskFor({conversationId:draft.conversationId,taskId:draft.taskId});
     read(draft.id,draft.conversationId);
     return save({...draft,gitContribution});
