@@ -222,7 +222,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
         label.append(field); form.append(label);
       }
       body.append(form);
-      if (!current.draft) body.append(button("task-prepare", tr(current.projectId ? "previewWorkspace" : "chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare", ...(current.projectId ? { projectId: current.projectId } : {}) }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
+      if (!current.draft || ["preparing", "preparation_failed"].includes(current.draft.state)) body.append(button("task-prepare", tr(current.draft ? "resume" : current.projectId ? "previewWorkspace" : "chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare", ...(current.draft ? { draftId: current.draft.id } : current.projectId ? { projectId: current.projectId } : {}) }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
       else {
         paintSnapshot(body, current.draft);
         if (current.locked) notice(body, "confirming");
@@ -258,7 +258,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     for (const child of [...body.children]) if (child.tagName === "BUTTON") controls.append(child);
     if (controls.children.length) body.append(controls);
   }
-  function canSend(current) { return !busy && !!current.draft && Object.values(current.input).every(value => typeof value === "string" && value.trim()) && current.input.assigneeUserId !== context.userId && current.members.some(member => member.userId === current.input.assigneeUserId); }
+  function canSend(current) { return !busy && !!current.draft && !["preparing", "preparation_failed"].includes(current.draft.state) && Object.values(current.input).every(value => typeof value === "string" && value.trim()) && current.input.assigneeUserId !== context.userId && current.members.some(member => member.userId === current.input.assigneeUserId); }
   async function sendDraft(current) {
     if (!canSend(current)) return;
     current.locked = true;

@@ -84,7 +84,8 @@ try {
     }
     const blocked = fixture({ afterFreeze: async store => invalidate(store) });
     assert.equal((await blocked.workflow.run(command)).ok, false, 'authority is rechecked before committing frozen draft');
-    assert.equal(blocked.store.db.get('SELECT COUNT(*) AS n FROM task_workspace_records').n, 0);
+    assert.equal(blocked.store.db.get('SELECT COUNT(*) AS n FROM task_workspace_records').n, 1,
+      'preparation intent remains encrypted; a revoked late callback cannot publish prepared material');
   }
   let release, entered;
   const waiting = new Promise(resolve => { entered = resolve; });

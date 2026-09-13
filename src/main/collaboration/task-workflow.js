@@ -18,6 +18,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   const records = createTaskRecords({ store, assertActive });
   const recoveries = createTaskRecovery({store,assertActive});
   const running = new Map();
+  const preparing = new Set();
   function root() {
     assertActive();
     if (!rootPath) throw fail();
@@ -27,7 +28,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     return fs.realpathSync(target);
   }
   const allocate = () => path.join(root(), randomUUID());
-  function save(value) { return records.put(value.id, value); }
+  function notify() { try { onChange(); } catch { /* persisted state remains authoritative */ } }
+  function save(value) { const saved = records.put(value.id, value); notify(); return saved; }
   function read(id, conversationId) {
     const value = records.get(id);
     if (!value || value.conversationId !== conversationId) throw fail("COLLAB_TASK_LOCAL_MISSING");
@@ -42,14 +44,28 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     return { id:value.id, name:value.name, files:value.files, warnings:value.warnings, omitted:value.omitted,
       state:value.state, ...(value.input ? { input:value.input } : {}), ...(value.taskId ? {taskId:value.taskId} : {}) };
   }
-  async function freeze(sourceRoot, conversationId, extras = {}, assertAuthorized = assertActive) {
-    const id = randomUUID();
-    const result = await bundle.freezeTaskBundle({ sourceRoot, destinationRoot:allocate(), name:path.basename(sourceRoot) });
-    assertAuthorized();
-    const packageBytes = fs.readFileSync(result.packagePath);
-    return save({ ...result, ...extras, id, conversationId, sourceRoot, name:path.basename(sourceRoot),
-      packageHash:createHash("sha256").update(packageBytes).digest("hex"),packageSize:packageBytes.length,
-      kind:"draft", state:"prepared", deviceId, clientCommandId:randomUUID() });
+  async function freeze(sourceRoot, conversationId, extras = {}, assertAuthorized = assertActive, previous = null) {
+    const id = previous?.id || randomUUID();
+    if (preparing.has(id)) throw fail("COLLAB_TASK_BUSY");
+    preparing.add(id);
+    try {
+      const pending = save({ ...previous, ...extras, id, conversationId, sourceRoot, name:path.basename(sourceRoot),
+        kind:"draft", state:"preparing", createdAt:previous?.createdAt || Date.now(), deviceId,
+        clientCommandId:previous?.clientCommandId || randomUUID() });
+      try {
+        const result = await bundle.freezeTaskBundle({ sourceRoot, destinationRoot:allocate(), name:path.basename(sourceRoot) });
+        assertAuthorized();
+        const packageBytes = fs.readFileSync(result.packagePath);
+        return save({ ...pending, ...result,
+          packageHash:createHash("sha256").update(packageBytes).digest("hex"),packageSize:packageBytes.length,
+          state:"prepared" });
+      } catch (error) {
+        // Revoked/account-switched records cannot be republished by a late callback.
+        assertAuthorized();
+        save({ ...pending, state:"preparation_failed" });
+        throw error;
+      }
+    } finally { preparing.delete(id); }
   }
   async function upload(draft) {
     if (!transfers?.taskFiles) throw fail();
@@ -153,11 +169,17 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         if (store.getConversation({conversationId}).scopeId !== scopeId) throw fail("COLLAB_ACCESS_REVOKED");
       };
       let sourceRoot;
-      if (command.projectId) {
-        sourceRoot = await resolveProjectDirectory?.(command.projectId);
+      const previous = command.draftId ? read(command.draftId,conversationId) : null;
+      if (previous && (previous.kind !== "draft" || previous.taskId || previous.deviceId !== deviceId
+        || !["preparing","preparation_failed"].includes(previous.state))) throw fail("COLLAB_TASK_INVALID");
+      const projectId = previous?.sourceProjectId || command.projectId;
+      if (projectId) {
+        sourceRoot = await resolveProjectDirectory?.(projectId);
         assertAuthorized();
         if (typeof sourceRoot !== "string" || !path.isAbsolute(sourceRoot)
           || !fs.existsSync(sourceRoot) || !fs.statSync(sourceRoot).isDirectory()) throw fail("COLLAB_TASK_LOCAL_MISSING");
+      } else if (previous) {
+        sourceRoot = previous.sourceRoot;
       } else {
         const selected = await chooseDirectory?.();
         assertAuthorized();
@@ -165,12 +187,15 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         if (selected?.filePaths?.length !== 1) throw fail();
         sourceRoot = selected.filePaths[0];
       }
-      const draft = await freeze(fs.realpathSync(sourceRoot),conversationId,{},assertAuthorized);
+      sourceRoot = fs.realpathSync(sourceRoot);
+      if (previous && sourceRoot !== previous.sourceRoot) throw fail("COLLAB_TASK_LOCAL_MISSING");
+      const draft = await freeze(sourceRoot,conversationId,projectId ? {sourceProjectId:projectId} : {},assertAuthorized,previous);
       return {ok:true,draft:draftView(draft)};
     }
     if (operation === "send") {
       let draft = read(command.draftId,conversationId);
       if (draft.kind !== "draft" || draft.taskId && draft.state !== "completed") throw fail("COLLAB_TASK_INVALID");
+      if (!draft.packageHash || !["prepared","uploading","confirming","completed","failed"].includes(draft.state)) throw fail("COLLAB_TASK_NOT_PREPARED");
       const input = Object.fromEntries(["assigneeUserId","title","objective","acceptanceCriteria"].map(key=>[key,command[key]]));
       if (draft.state === "failed") draft = save({...draft,input:null,clientCommandId:randomUUID(),uncertain:false,
         ...(draft.code === "COLLAB_TASK_PACKAGE_UNAVAILABLE" ? {transferId:null,objectId:null} : {})});
@@ -283,11 +308,12 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   return {recoverPending:()=>ready,run(command) {
     command = taskWorkflowCommand(command);
     if (!command) return Promise.resolve({ok:false,code:"COLLAB_TASK_INVALID"});
+    if (["drafts","recoveries"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
     const key = `${command.conversationId}:${command.taskId || command.draftId || "new"}`;
     if (running.has(key)) return Promise.resolve({ok:false,code:"COLLAB_TASK_BUSY"});
     const promise = ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_|^IDEMPOTENCY_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
     running.set(key,promise);
-    promise.finally(()=>{running.delete(key);if (!["drafts","open","recoveries"].includes(command.operation)) onChange();}).catch(()=>{});
+    promise.finally(()=>{running.delete(key);if (command.operation !== "open") notify();}).catch(()=>{});
     return promise;
   }};
 }

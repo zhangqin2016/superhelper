@@ -2,7 +2,7 @@
 const id = v => typeof v === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(v);
 const fields = {
   recoveries:[],
-  prepare:["projectId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
+  prepare:["projectId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
   preview:["taskId","deliveryId"],apply:["taskId","deliveryId","applicationId","expectedPlanHash","confirmDeletions"],rollback:["taskId","applicationId"],
 };
@@ -10,9 +10,10 @@ function taskWorkflowCommand(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(fields,value.operation)
     || (value.operation === "recoveries" ? value.conversationId != null : !id(value.conversationId))) return null;
   const keys = fields[value.operation];
+  if (value.operation === "prepare" && Object.hasOwn(value,"projectId") && Object.hasOwn(value,"draftId")) return null;
   if (Object.keys(value).some(key=>!["operation","conversationId",...keys].includes(key))) return null;
   for (const key of keys) {
-    if (key === "projectId" && !Object.hasOwn(value,key)) continue;
+    if (value.operation === "prepare" && !Object.hasOwn(value,key)) continue;
     const v = value[key];
     if (key === "deliveryId" && value.operation === "open" && v == null) continue;
     if (key === "confirmDeletions") { if (typeof v !== "boolean") return null; }

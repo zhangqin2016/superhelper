@@ -1,5 +1,7 @@
 # Capability Gate — 防止"变笨"硬门槛
 
+Remote task preparation continuity (2026-09-14): `test-remote-task-preparation.mjs` guards a durable encrypted identity before bundle I/O, readable pending state during preparation, pre-ready send refusal, same-identity retry and SQLite reopen. `test-remote-task-project-source.mjs` retains source/account/revocation fences; `test-remote-task-workflow-ui.cjs` covers the actual Electron retry affordance. This is a preparation foundation, not completed persistent conversation cards, shared-workspace binding or live two-device acceptance.
+
 OpenCode upgrade continuity (2026-09-14): `test-resume-binding.mjs`, `test-ensure-session-runner-resume-reset.mjs`, `test-resume-continuity-guard.mjs`, `test-opencode-version-alignment.mjs`, and opt-in `test-opencode-upgrade-native.mjs` guard the explicit 1.18.29 to 1.18.30 forward transition, strict ownership and unknown-version rejection. Native acceptance requires `LILY_TEST_OLD_OPENCODE_BIN`; default skip is not cross-version verification. No arbitrary semver compatibility or historical metadata rewrite is permitted. [gate: opencode-upgrade-continuity]
 
 Task continuity audit repair (2026-09-12): `test-task-continuity-integration.mjs`
