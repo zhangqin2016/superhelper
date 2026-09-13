@@ -129,6 +129,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   }
   async function contribution(draft) {
     if (draft.gitContribution) return draft;
+    if (draft.deliveryValidated !== true) throw fail("COLLAB_TASK_DELIVERY_NOT_VALIDATED");
     let local = read(`task:${draft.taskId}`,draft.conversationId);
     if (!local.gitBaseline?.manifestHash) {
       const gitBaseline = await git().captureBaseline({taskId:draft.taskId,snapshotRoot:local.snapshotRoot,manifest:local.baseManifest});
@@ -367,14 +368,32 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     }
     if (operation === "prepareDelivery") {
       const task = await taskFor(command), local = await receive(command);
-      const draft = await freeze(local.workRoot,conversationId,{taskId:task.id,expectedRevision:task.revision,inputSnapshotId:task.inputSnapshotId});
+      let draft = await freeze(local.workRoot,conversationId,{taskId:task.id,expectedRevision:task.revision,inputSnapshotId:task.inputSnapshotId});
       // Omission by a secret/size filter is not a collaborator's deletion.
       const delivered = new Set(draft.manifest.map(file=>file.path));
-      const exists = file => { try { fs.lstatSync(file); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } };
-      if (local.baseManifest.some(file=>!delivered.has(file.path) && exists(path.join(local.workRoot,file.path)))) {
+      const omitted = relative => {
+        const parts = relative.split("/"); let current = local.workRoot;
+        for (let index = 0; index < parts.length; index++) {
+          current = path.join(current,parts[index]);
+          let stat;
+          try { stat = fs.lstatSync(current); }
+          catch (error) { if (error.code === "ENOENT") return false; throw error; }
+          // Never walk through unsupported links when deciding deletion.
+          if (stat.isSymbolicLink()) return true;
+          if (index === parts.length - 1) return !stat.isDirectory();
+          if (!stat.isDirectory()) {
+            // A delivered file replacing an ancestor directory explicitly
+            // removes its former children; an omitted ancestor cannot do so.
+            return !stat.isFile() || !delivered.has(parts.slice(0,index + 1).join("/"));
+          }
+        }
+        return false;
+      };
+      if (local.baseManifest.some(file=>!delivered.has(file.path) && omitted(file.path))) {
         save({...draft,state:"blocked"});
         throw fail("COLLAB_TASK_DELIVERY_OMITTED");
       }
+      draft = save({...draft,deliveryValidated:true});
       await contribution(draft);
       return {ok:true,draft:draftView(draft)};
     }

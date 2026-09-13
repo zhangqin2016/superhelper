@@ -179,6 +179,13 @@ try {
   const preparedDelivery = ok(await helper.run({ operation: 'prepareDelivery', conversationId: 'chat', taskId }), 'prepare delivery');
   const deliveryDraftId = preparedDelivery.draft.id;
   const contribution=helper.records.get(deliveryDraftId).gitContribution;
+  const validatedDraft=helper.records.get(deliveryDraftId);
+  const {gitContribution:unfinishedContribution,deliveryValidated:unfinishedValidation,...interruptedDraft}=validatedDraft;
+  helper.records.put(deliveryDraftId,interruptedDraft);
+  const transfersBeforeValidationRetry=transfers.size;
+  assert.equal((await helper.run({operation:'submitDelivery',conversationId:'chat',taskId,draftId:deliveryDraftId})).code,'COLLAB_TASK_DELIVERY_NOT_VALIDATED','crash after freeze cannot bypass omitted-file validation');
+  assert.equal(transfers.size,transfersBeforeValidationRetry);
+  helper.records.put(deliveryDraftId,validatedDraft);
   assert.ok(contribution?.commit,'prepared delivery owns an immutable Git contribution');
   assert.equal(contribution.baseCommit,binding.gitBaseline.commit);
   assert.deepEqual(contribution.operations.map(entry=>entry.kind).sort(),['add','delete','modify']);
@@ -303,6 +310,40 @@ try {
   for (const file of deleteLocal.baseManifest) assert.equal(fs.existsSync(path.join(source,file.path)),false);
   ok(await owner.run({operation:'rollback',conversationId:'chat',taskId:deleteTask,applicationId:emptyPreview.applicationId}),'undo all-delete');
   for (const file of deleteLocal.baseManifest) assert.equal(digest(fs.readFileSync(path.join(source,file.path))),file.sha256);
+
+  fs.writeFileSync(path.join(source,'was-file'),'old file');
+  fs.mkdirSync(path.join(source,'was-directory.txt'));
+  fs.writeFileSync(path.join(source,'was-directory.txt/child.txt'),'old child');
+  const shapeDraft=ok(await owner.run({operation:'prepare',conversationId:'chat'}),'prepare shape-change task');
+  const shapeTask=ok(await owner.run({...send,draftId:shapeDraft.draft.id}),'send shape-change task').taskId;
+  ok(await helper.tasks.submit({conversationId:'chat',taskId:shapeTask,action:'accept',expectedRevision:1}),'accept shape-change task');
+  ok(await helper.run({operation:'receive',conversationId:'chat',taskId:shapeTask}),'receive shape-change task');
+  const shapeLocal=helper.records.get(`task:${shapeTask}`),shapeRoot=shapeLocal.workRoot;
+  fs.unlinkSync(path.join(shapeRoot,'was-file'));fs.mkdirSync(path.join(shapeRoot,'was-file'));
+  fs.writeFileSync(path.join(shapeRoot,'was-file/new.txt'),'new child');
+  fs.unlinkSync(path.join(shapeRoot,'was-directory.txt/child.txt'));fs.rmdirSync(path.join(shapeRoot,'was-directory.txt'));
+  fs.writeFileSync(path.join(shapeRoot,'was-directory.txt'),'new file');
+  fs.writeFileSync(path.join(shapeRoot,'was-directory.txt'),`fixture-only credential: sk-${'a'.repeat(24)}`);
+  assert.equal((await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask})).code,'COLLAB_TASK_DELIVERY_OMITTED','filtered ancestor replacement cannot delete baseline children');
+  fs.unlinkSync(path.join(shapeRoot,'was-directory.txt'));
+  const outside=path.join(temporary,'outside-empty');fs.mkdirSync(outside);
+  fs.symlinkSync(outside,path.join(shapeRoot,'was-directory.txt'));
+  assert.equal((await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask})).code,'COLLAB_TASK_DELIVERY_OMITTED','a skipped parent link must not look like missing baseline children');
+  fs.unlinkSync(path.join(shapeRoot,'was-directory.txt'));fs.writeFileSync(path.join(shapeRoot,'was-directory.txt'),'new file');
+  const unreadable=path.join(shapeRoot,'budget.txt');fs.chmodSync(unreadable,0o000);
+  try {
+    assert.throws(()=>fs.readFileSync(unreadable),error=>error.code==='EACCES','this test requires actual host permission denial');
+    assert.equal((await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask})).ok,false,'unreadable baseline material cannot silently become deletion');
+  } finally {fs.chmodSync(unreadable,0o600);}
+  const fullInventory=helper.records.get(`task:${shapeTask}`);
+  helper.records.put(fullInventory.id,{...fullInventory,materializedPaths:fullInventory.materializedPaths.slice(1)});
+  assert.equal((await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask})).code,'COLLAB_TASK_PROTOCOL_UNAVAILABLE','legacy full-ZIP delivery cannot represent sparse input');
+  helper.records.put(fullInventory.id,fullInventory);
+  const shapeDelivery=ok(await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask}),'prepare file-directory changes').draft;
+  const shapeContribution=helper.records.get(shapeDelivery.id).gitContribution;
+  assert.deepEqual(shapeContribution.operations.map(entry=>entry.kind).sort(),['add','add','delete','delete']);
+  assert.equal(execFileSync('git',['--git-dir',shapeContribution.repository,'show',`${shapeContribution.commit}:was-file/new.txt`],{encoding:'utf8'}),'new child');
+  assert.equal(execFileSync('git',['--git-dir',shapeContribution.repository,'show',`${shapeContribution.commit}:was-directory.txt`],{encoding:'utf8'}),'new file');
 
   const teamDraft = ok(await owner.run({ operation: 'prepare', conversationId: 'team-chat' }), 'prepare Team task');
   const teamSent = ok(await owner.run({ ...send, conversationId: 'team-chat', draftId: teamDraft.draft.id }), 'send Team task');
