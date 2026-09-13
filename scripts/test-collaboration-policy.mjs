@@ -204,6 +204,11 @@ for (const sharedWorkspaceProtocol of [1, 2, '1', null]) {
   assert.equal(remoteConfig.getRemoteCollaborationPolicySync().sharedWorkspaceProtocol,sharedWorkspaceProtocol===1?1:undefined,
     'desktop accepts only the explicitly supported signed protocol version');
 }
+for (const taskHistoryProtocol of [1, 2, '1', null]) {
+  writeRemoteConfigCache({schemaVersion:1,configVersion:'task-history-protocol',expiresAt:new Date(Date.now()+60_000).toISOString(),
+    effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:true,taskHistoryProtocol}}});
+  assert.equal(remoteConfig.getRemoteCollaborationPolicySync().taskHistoryProtocol,taskHistoryProtocol===1?1:undefined);
+}
 fs.rmSync(remoteUserData, { recursive: true, force: true });
 
 console.log("collaboration-policy: ok");

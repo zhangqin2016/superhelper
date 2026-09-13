@@ -6,6 +6,7 @@ import contract from './task-contract.cjs';
 
 const denied = () => ({ ok: false, code: 'COLLAB_TASK_ACCESS_DENIED' });
 const unavailable = () => { throw new CollaborationCommandError('COLLAB_TASK_UNAVAILABLE', 'Task unavailable'); };
+const inaccessible = () => { throw new CollaborationCommandError('COLLAB_TASK_ACCESS_DENIED', 'Task unavailable'); };
 
 /** Not registered until task-scoped package authorization and desktop recovery
  * are available. Neither conversation object access nor client booleans can
@@ -61,11 +62,11 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
     async get({account,taskId}) {
       return repository.database.transaction().execute(async trx=>{
         const hint=await trx.selectFrom('collaboration_tasks').selectAll().where('id','=',taskId).executeTakeFirst();
-        if(!hint)return unavailable();
+        if(!hint)return inaccessible();
         const decision=await authorize(trx,account,hint.conversation_id,[hint.requester_user_id,hint.assignee_user_id]);
-        if(!decision.ok)return unavailable();
+        if(!decision.ok)return inaccessible();
         const locked=await trx.selectFrom('collaboration_tasks').selectAll().where('id','=',taskId).forUpdate().executeTakeFirst();
-        if(!locked || locked.conversation_id!==hint.conversation_id || locked.requester_user_id!==hint.requester_user_id || locked.assignee_user_id!==hint.assignee_user_id)return unavailable();
+        if(!locked || locked.conversation_id!==hint.conversation_id || locked.requester_user_id!==hint.requester_user_id || locked.assignee_user_id!==hint.assignee_user_id)return inaccessible();
         return read(locked);
       });
     },
@@ -77,8 +78,29 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
         .where(eb=>eb.or([eb('requester_user_id','=',account.userId),eb('assignee_user_id','=',account.userId)]))
         .orderBy('updated_at','desc').orderBy('id','desc').limit(50).execute();
       const tasks=[];
-      for(const row of rows){try{tasks.push(await this.get({account,taskId:row.id}));}catch(error){if(error.code!=='COLLAB_TASK_UNAVAILABLE')throw error;}}
+      for(const row of rows){try{tasks.push(await this.get({account,taskId:row.id}));}catch(error){if(!['COLLAB_TASK_UNAVAILABLE','COLLAB_TASK_ACCESS_DENIED'].includes(error.code))throw error;}}
       return tasks;
+    },
+    async listHistory({account,conversationId,cursor}) {
+      const rows=await repository.database.transaction().execute(async trx=>{
+        const decision=await authorize(trx,account,conversationId,[account.userId]);
+        if(!decision.ok)return inaccessible();
+        let query=trx.selectFrom('collaboration_tasks').select(['id','created_at'])
+          .where('conversation_id','=',conversationId)
+          .where(eb=>eb.or([eb('requester_user_id','=',account.userId),eb('assignee_user_id','=',account.userId)]));
+        // Creation order is immutable; progress updates cannot move a task
+        // across a page boundary. The ID breaks timestamp ties deterministically.
+        if(cursor)query=query.where(eb=>eb.or([eb('created_at','<',new Date(cursor.createdAt)),
+          eb.and([eb('created_at','=',new Date(cursor.createdAt)),eb('id','<',cursor.id)])]));
+        return query.orderBy('created_at','desc').orderBy('id','desc').limit(51).execute();
+      });
+      const candidates=rows.slice(0,50),tasks=[];
+      for(const row of candidates) {
+        try {tasks.push(await this.get({account,taskId:row.id}));}
+        catch(error){if(error.code!=='COLLAB_TASK_ACCESS_DENIED')throw error;}
+      }
+      const last=candidates.at(-1);
+      return {tasks,nextCursor:rows.length>50?{createdAt:new Date(last.created_at).getTime(),id:last.id}:null};
     },
     async create({account,clientCommandId,...input}) {
       // ID generated inside project: same-intent receipt replay cannot fail

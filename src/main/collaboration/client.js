@@ -112,6 +112,10 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
       const response = await invoke({ path: "/api/collaboration/v1/tasks/list", body: { deviceId, conversationId }, deviceId });
       return response?.result;
     },
+    async listTaskHistory({ deviceId, conversationId, cursor }) {
+      const response = await invoke({ path: "/api/collaboration/v1/tasks/history", body: {deviceId,conversationId,...(cursor?{cursor}:{})}, deviceId });
+      return response?.result;
+    },
     async getConversationProjection({ deviceId, conversationId }) {
       const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });
       return response?.result;

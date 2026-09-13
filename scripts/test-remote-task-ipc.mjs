@@ -20,5 +20,9 @@ const client=createCollaborationClient({accountManager:{accessTokenForService:as
 assert.deepEqual(await client.listTasks({deviceId:'dev',conversationId:'chat'}),[]);
 await client.getTask({deviceId:'dev',taskId:'task'});await client.submitTask({deviceId:'dev',action:'accept'});
 assert.deepEqual(requests.map(r=>r.path),['/api/collaboration/v1/tasks/list','/api/collaboration/v1/tasks/get','/api/collaboration/v1/tasks']);
+const cursor={createdAt:1000,id:'task'};
+await client.listTaskHistory({deviceId:'dev',conversationId:'chat',cursor});
+assert.equal(requests.at(-1).path,'/api/collaboration/v1/tasks/history');
+assert.deepEqual(requests.at(-1).body,{deviceId:'dev',conversationId:'chat',cursor});
 assert.ok(requests.every(r=>r.headers.authorization==='Bearer only-main'&&r.headers['x-signed']==='yes'));
 console.log('remote task IPC/client: strict commands, sanitized views, account fencing and signed transport passed');

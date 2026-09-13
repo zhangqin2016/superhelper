@@ -316,6 +316,7 @@ function getRemoteCollaborationPolicySync() {
     workspaceShares: policy.workspaceShares === true,
     ...(policy.enabled === true && policy.workspaceShares === true && policy.tasks === true ? { tasks: true } : {}),
     ...(policy.enabled === true && policy.workspaceShares === true && policy.tasks === true && policy.sharedWorkspaceProtocol === 1 ? {sharedWorkspaceProtocol:1} : {}),
+    ...(policy.enabled === true && policy.workspaceShares === true && policy.tasks === true && policy.taskHistoryProtocol === 1 ? {taskHistoryProtocol:1} : {}),
     aiTools: policy.aiTools === true,
   };
 }

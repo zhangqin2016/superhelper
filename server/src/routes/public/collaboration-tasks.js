@@ -11,6 +11,9 @@ export const taskCommandBody=z.union([
 ]);
 export const taskGetBody=z.object({...device,taskId:id}).strict();
 export const taskListBody=z.object({...device,conversationId:id}).strict();
+export const taskHistoryBody=z.object({...device,conversationId:id,cursor:z.object({
+  createdAt:z.number().int().min(0).max(8640000000000000),id,
+}).strict().optional()}).strict();
 export function registerCollaborationTaskRoutes({post,accountFor,database,service}){
   const run=(schema,fn)=>async(request,reply)=>{
     const input=schema.parse(request.body);
@@ -22,4 +25,5 @@ export function registerCollaborationTaskRoutes({post,accountFor,database,servic
   post('/api/collaboration/v1/tasks',taskCommandBody,run(taskCommandBody,(account,{action,...input})=>action==='create'?service.create({account,...input}):service.act({account,action,...input})));
   post('/api/collaboration/v1/tasks/get',taskGetBody,run(taskGetBody,(account,input)=>service.get({account,...input})));
   post('/api/collaboration/v1/tasks/list',taskListBody,run(taskListBody,(account,input)=>service.list({account,...input})));
+  post('/api/collaboration/v1/tasks/history',taskHistoryBody,run(taskHistoryBody,(account,input)=>service.listHistory({account,...input})));
 }
