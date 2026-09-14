@@ -3,11 +3,13 @@ const fs=require("node:fs"),path=require("node:path"),{spawn}=require("node:chil
 const {createHash}=require("node:crypto");
 const {StringDecoder}=require("node:string_decoder");
 const hash=value=>createHash("sha256").update(value).digest("hex");
-function sandboxProfile(snapshotRoot,scratch,bootstrap){
+function sandboxProfile(snapshotRoot,scratch,bootstrap,dependencies=null){
   const executable=fs.realpathSync(process.execPath),appEnd=executable.indexOf(".app/");
   const literals=[executable,"/","/dev/null","/dev/random","/dev/urandom"];
   if(bootstrap)literals.push(bootstrap);
+  if(dependencies)literals.push(dependencies.link);
   const directories=[snapshotRoot,scratch,"/System","/usr/lib","/usr/share/zoneinfo","/private/var/db/timezone"];
+  if(dependencies)directories.push(dependencies.root);
   if(appEnd>=0)directories.push(executable.slice(0,appEnd+4));
   if([...literals,...directories].some(value=>/[\x00-\x1f]/.test(value)))throw Error("Unsupported sandbox path");
   return `(version 1)(deny default)
@@ -17,10 +19,14 @@ function sandboxProfile(snapshotRoot,scratch,bootstrap){
     (allow file-read-data ${literals.map(value=>`(literal ${JSON.stringify(value)})`).join(" ")} ${directories.map(value=>`(subpath ${JSON.stringify(value)})`).join(" ")})
     (allow file-write* (subpath ${JSON.stringify(scratch)}) (literal "/dev/null"))`;
 }
-async function executeNodeTests({snapshotRoot,scratch,files,assertActive,timeoutMs=45000}){
+async function executeNodeTests({snapshotRoot,scratch,files,assertActive,timeoutMs=45000,dependencyRoot=null,dependencyLink=null}){
   assertActive();
   if(process.platform!=="darwin"||!fs.existsSync("/usr/bin/sandbox-exec"))return {state:"required",code:"SANDBOX_UNAVAILABLE"};
   if(!Array.isArray(files)||!files.length||files.length>32 || [snapshotRoot,scratch,...files].some(value=>!path.isAbsolute(value)||fs.realpathSync(value)!==value))throw Error("Invalid check roots");
+  if((dependencyRoot===null)!==(dependencyLink===null))throw Error("Invalid dependency roots");
+  if(dependencyRoot!==null&&(!path.isAbsolute(dependencyRoot)||fs.realpathSync(dependencyRoot)!==dependencyRoot||!path.isAbsolute(dependencyLink)
+    ||!fs.lstatSync(dependencyLink).isSymbolicLink()||fs.realpathSync(dependencyLink)!==dependencyRoot))throw Error("Invalid dependency roots");
+  const dependencies=dependencyRoot===null?null:{root:dependencyRoot,link:dependencyLink};
   // Node 24 also inherits -e from its internal option binding. Use a trusted
   // file outside the writable scratch tree so test children receive no bootstrap.
   const source=fs.readFileSync(path.join(__dirname,"node-check-host.cjs"),"utf8");
@@ -28,7 +34,7 @@ async function executeNodeTests({snapshotRoot,scratch,files,assertActive,timeout
   try{
   const bootstrap=path.join(hostRoot,"host.cjs");
   fs.writeFileSync(bootstrap,source,{flag:"wx",mode:0o400});
-  const profile=sandboxProfile(snapshotRoot,scratch,bootstrap);
+  const profile=sandboxProfile(snapshotRoot,scratch,bootstrap,dependencies);
   return await new Promise((resolve,reject)=>{
     const child=spawn("/usr/bin/sandbox-exec",["-p",profile,process.execPath,"--max-old-space-size=256",bootstrap],
       {cwd:snapshotRoot,env:{ELECTRON_RUN_AS_NODE:"1",TMPDIR:scratch,TMP:scratch,TEMP:scratch},detached:true,stdio:["pipe","pipe","pipe","pipe"],windowsHide:true});
@@ -57,7 +63,7 @@ async function executeNodeTests({snapshotRoot,scratch,files,assertActive,timeout
       resolve({state:ok?"passed":"failed",...(code?{code}:{}),exitCode,signal,runtime:process.version,sandbox:"macos-seatbelt-v1",
         ...(result||{}),diagnostic,evidenceHash:hash(JSON.stringify({exitCode,code,report,diagnostic}))});
     });
-    child.stdin.end(JSON.stringify({snapshotRoot,scratch,files}));
+    child.stdin.end(JSON.stringify({snapshotRoot,scratch,files,dependencyPaths:dependencies?[dependencies.link,dependencies.root]:[]}));
   });
   }finally{fs.rmSync(hostRoot,{recursive:true,force:true});}
 }

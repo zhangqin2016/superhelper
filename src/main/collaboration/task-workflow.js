@@ -54,6 +54,14 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (["cancelled", "declined"].includes(task.state)) throw fail("COLLAB_TASK_ACCESS_DENIED");
     return task;
   }
+  // The project's own installed dependencies, exposed read-only to pinned
+  // checks. Absent or aliased directories mean checks needing packages wait.
+  function dependencyRoot(sourceRoot){
+    try{
+      const target=path.join(sourceRoot,"node_modules"),stat=fs.lstatSync(target);
+      return stat.isDirectory()&&!stat.isSymbolicLink()&&fs.realpathSync(target)===target?target:null;
+    }catch{return null;}
+  }
   async function authorizeIntegration(input) {
     if(taskGitProtocol!==1)throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
     const task=await taskFor({conversationId:input.conversationId,taskId:input.taskId});
@@ -629,7 +637,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         deviceId,assertActive:guard,authorize:async value=>{await authorizeIntegration(value);guard();return true;}});
       const result=await local.prepare({intentId,input,localRoot:source.sourceRoot,baseline:source.gitBaseline,published});guard();notify();
       if(result.state==="ready"){
-        const validator=require("./local-candidate-validation").createLocalCandidateValidation({store,rootPath:path.join(root(),"local-validation-git"),assertActive:guard,
+        const validator=require("./local-candidate-validation").createLocalCandidateValidation({store,rootPath:path.join(root(),"local-validation-git"),assertActive:guard,dependencyRoot:dependencyRoot(source.sourceRoot),
           getPolicy:value=>checkPolicies.current(value,checkSelection.sourceIdentity(source.sourceRoot))});
         const validation=await validator.validate({job:result,input});guard();notify();
         // Main-owned admission must fence foreground writers across profiles.
@@ -665,6 +673,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     assertActive();const source=read(`task:${input.taskId}`,input.conversationId);
     const current=checkPolicies.current(input,checkSelection.sourceIdentity(source.sourceRoot));
     if((current?.id||null)!==expectedId)throw fail("COLLAB_CHECK_POLICY_CHANGED");
+  },integrationDependencyRoot:async input=>{
+    await authorizeIntegration(input);return dependencyRoot(read(`task:${input.taskId}`,input.conversationId).sourceRoot);
   },getIntegrationCheckPolicy:async input=>{
     await authorizeIntegration(input);const source=read(`task:${input.taskId}`,input.conversationId);
     return checkPolicies.current(input,checkSelection.sourceIdentity(source.sourceRoot));

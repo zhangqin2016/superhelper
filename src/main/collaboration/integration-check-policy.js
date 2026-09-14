@@ -5,6 +5,7 @@ const {createHash}=require("node:crypto");
 const {createTaskRecords}=require("./task-records");
 const {manifestMap}=require("./task-apply-plan");
 const {assertScopeWritable,isConversationRevoked}=require("./access-revocation");
+const {resolveCheckImports,CHECK_IMPORT_LIMITS}=require("./check-imports");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail=code=>Object.assign(Error(`COLLAB_CHECK_POLICY_${code}`),{code:`COLLAB_CHECK_POLICY_${code}`});
 function createIntegrationCheckPolicy({store,assertActive}){
@@ -39,23 +40,40 @@ function createIntegrationCheckPolicy({store,assertActive}){
     const entries=new Map((await taskGit.inspectTree(baseline.commit)).map(file=>[file.path,file]));assertActive();
     const selected=[...paths].sort().map(name=>entries.get(name));
     if(selected.some(file=>!file||file.sizeBytes>128*1024) || selected.reduce((sum,file)=>sum+file.sizeBytes,0)>1024*1024)throw fail("LIMIT");
-    const temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"check-policy-")),files=[];
+    const temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"check-policy-")),loaded=new Map();let index=0;
+    // Every pinned byte, test or helper, comes from the immutable baseline blob.
+    async function load(file){
+      if(loaded.has(file.path))return loaded.get(file.path);
+      assertActive();const destination=path.join(temporary,String(index++));
+      const content=await runtime.writeBlob(file.blob,destination,file);assertActive();
+      const fd=fs.openSync(destination,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);let bytes;
+      try{
+        const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.size!==file.sizeBytes)throw fail("SOURCE_CHANGED");
+        bytes=Buffer.alloc(file.sizeBytes);let offset=0;
+        while(offset<bytes.length){const count=fs.readSync(fd,bytes,offset,bytes.length-offset,offset);if(!count)throw fail("SOURCE_CHANGED");offset+=count;}
+        if(createHash("sha256").update(bytes).digest("hex")!==content.sha256)throw fail("SOURCE_CHANGED");
+      }finally{fs.closeSync(fd);}
+      const value={path:file.path,blob:file.blob,...content,base64:bytes.toString("base64"),bytes};
+      loaded.set(file.path,value);return value;
+    }
+    const record=value=>({path:value.path,blob:value.blob,sha256:value.sha256,sizeBytes:value.sizeBytes,base64:value.base64});
     try{
-      for(let i=0;i<selected.length;i++){
-        assertActive();const file=selected[i],destination=path.join(temporary,String(i));
-        const content=await runtime.writeBlob(file.blob,destination,file);assertActive();
-        if(selectedHashes && selectedHashes[file.path]!==content.sha256)throw fail("SOURCE_CHANGED");
-        const fd=fs.openSync(destination,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);let bytes;
-        try{
-          const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.size!==file.sizeBytes)throw fail("SOURCE_CHANGED");
-          bytes=Buffer.alloc(file.sizeBytes);let offset=0;
-          while(offset<bytes.length){const count=fs.readSync(fd,bytes,offset,bytes.length-offset,offset);if(!count)throw fail("SOURCE_CHANGED");offset+=count;}
-          if(createHash("sha256").update(bytes).digest("hex")!==content.sha256)throw fail("SOURCE_CHANGED");
-        }finally{fs.closeSync(fd);}
-        files.push({path:file.path,blob:file.blob,...content,base64:bytes.toString("base64")});
+      const files=[];
+      for(const file of selected){
+        const value=await load(file);
+        if(selectedHashes && selectedHashes[file.path]!==value.sha256)throw fail("SOURCE_CHANGED");
+        files.push(record(value));
       }
+      // Helpers imported by the selected checks are pinned from the same
+      // baseline; third-party packages are recorded, never bundled.
+      const imports=await resolveCheckImports({entries,roots:files.map(file=>file.path),read:async entry=>(await load(entry)).bytes,limits:CHECK_IMPORT_LIMITS});assertActive();
+      const helpers=[];for(const file of imports.helpers)helpers.push(record(await load(file)));
+      // Code under test is identified by baseline hash so evidence can say
+      // whether the candidate changed it; oversized files stay unhashed.
+      const sourceImports=[];
+      for(const file of imports.sourceImports)sourceImports.push({path:file.path,sizeBytes:file.sizeBytes,sha256:file.sizeBytes<=1024*1024?(await load(file)).sha256:null});
       if(await authorize()!==true)throw fail("ACCESS");assertActive();
-      const policy={version:1,type:"node-test",binding:bound,origin:{commit:baseline.commit,ref:baseline.ref},files};
+      const policy={version:2,type:"node-test",binding:bound,origin:{commit:baseline.commit,ref:baseline.ref},files,helpers,sourceImports,dependencies:imports.dependencies,unresolvedImports:imports.unresolved};
       const id=`validation-policy:${hash(policy)}`;
       return store.db.transaction(()=>{
         binding(input,sourceIdentity);assertCurrent();

@@ -10,7 +10,7 @@ const fail=code=>Object.assign(Error(`COLLAB_LOCAL_VALIDATION_${code}`),{code:`C
 
 // This repository belongs only to local validation. It is never passed to the
 // shared transport or publisher. A real private commit binds the execution copy.
-function createLocalCandidateValidation({store,rootPath,assertActive,getPolicy}){
+function createLocalCandidateValidation({store,rootPath,assertActive,getPolicy,dependencyRoot=null}){
   const records=createTaskRecords({store,assertActive});
   const taskGit=new TaskGit({rootPath});
   async function validate({job,input}){
@@ -26,7 +26,7 @@ function createLocalCandidateValidation({store,rootPath,assertActive,getPolicy})
     const syntax=await checkCandidateJavascript({...job.candidate,assertActive:guard});guard();
     let project={state:"required"};
     if(policy){
-      const checker=createNodeCheckPolicy({taskGit,record:policy,input,assertActive:guard,candidateParents:[]});
+      const checker=createNodeCheckPolicy({taskGit,record:policy,input,assertActive:guard,candidateParents:[],dependencyRoot});
       project=await checker.validate(revision,{assertActive:guard});guard();
     }
     const intact=await unchanged(job.candidate.snapshotRoot,job.candidate.manifest,guard);guard();

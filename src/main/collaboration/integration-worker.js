@@ -49,7 +49,8 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
       const workflow=getWorkflow(),context=await workflow.acquireIntegrationInput(intent.input);guard();intents.assertLease(lease);
       const checkPolicy=await workflow.getIntegrationCheckPolicy?.(intent.input);guard();intents.assertLease(lease);
       expectedPolicyId=checkPolicy?.id||null;policyReady=true;guard();
-      const nodePolicy=checkPolicy?createNodeCheckPolicy({taskGit:context.taskGit,record:checkPolicy,input:intent.input,
+      const dependencyRoot=checkPolicy?(await workflow.integrationDependencyRoot?.(intent.input))??null:null;guard();
+      const nodePolicy=checkPolicy?createNodeCheckPolicy({taskGit:context.taskGit,record:checkPolicy,input:intent.input,dependencyRoot,
         assertActive:()=>{guard();intents.assertLease(lease);}}):null;
       const authorize=async input=>{
         if(await workflow.authorizeIntegration(input)!==true)return false;

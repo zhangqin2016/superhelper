@@ -6,7 +6,8 @@ const input=JSON.parse(fs.readFileSync(0,"utf8")),abort=new AbortController();
 process.execArgv=[];
 const perFile=[],failures=[],logs=[];let summary=null,bytes=0,events=0,limited=false,limitReason=null;
 const stream=run({files:input.files,concurrency:1,isolation:"process",signal:abort.signal,timeout:20000,
-  execArgv:["--permission",`--allow-fs-read=${input.snapshotRoot}`,`--allow-fs-read=${input.scratch}`,`--allow-fs-write=${input.scratch}`,"--max-old-space-size=128"]});
+  execArgv:["--permission",`--allow-fs-read=${input.snapshotRoot}`,`--allow-fs-read=${input.scratch}`,
+    ...(input.dependencyPaths||[]).map(value=>`--allow-fs-read=${value}`),`--allow-fs-write=${input.scratch}`,"--max-old-space-size=128"]});
 // Inspect writable scratch inside the OS sandbox, never in the unrestricted
 // main process. A concurrent path replacement cannot expose private files.
 function checkScratch(){
