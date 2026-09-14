@@ -70,7 +70,15 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     createIntegrationDiscovery({store:owner.store,assertActive(){},resolveSourceSession}).observe(task);
     const makeHost=()=>require('./collaboration-native-turn-fixture.cjs')({root:owner.root,source:owner.source,accountId:'a',execute:(request,execution)=>service.runIntegration(request,execution)});
     let host=makeHost(),foreground=host.orchestrator._state('source-session');foreground.phase='streaming';foreground.turnId='foreground';
-    const makeService=remote=>createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
+    let removedPublicationStaging=null;
+    const makeService=remote=>createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:remote?{...owner.client,publishIntegration:async request=>{
+      if(!removedPublicationStaging){
+        const attempt=owner.records.list(conversationId).find(row=>row.kind==='remote-publication'&&row.objectId===request.objectId);
+        assert.ok(attempt?.directory?.startsWith(owner.root+path.sep));assert.match(path.basename(attempt.directory),/^remote-publication-/);
+        fs.rmSync(attempt.directory,{recursive:true});removedPublicationStaging=attempt.directory;
+      }
+      return owner.client.publishIntegration(request);
+    }}:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
       policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,...(remote?{sharedPublicationProtocol:1}:{})},
       transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,
         chooseValidationChecks:async()=>({filePaths:[path.join(owner.source,'rule.test.cjs')]}),enqueueIntegrationTurn:request=>host.enqueue(request)}});
@@ -124,6 +132,9 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
         const orphan=(await pool.query('SELECT state,shared_workspace_id,task_id,bound_message_id FROM stored_objects WHERE id=$1',[retired[0].objectId])).rows[0];
         assert.equal(orphan.state,'verified');assert.equal(orphan.shared_workspace_id,null);assert.equal(orphan.task_id,null);assert.equal(orphan.bound_message_id,null);
         assert.notEqual(retired[0].objectId,(await pool.query('SELECT object_id FROM collaboration_shared_publications WHERE workspace_id=$1',[task.sharedWorkspaceId])).rows[0].object_id);
+        assert.ok(removedPublicationStaging);assert.equal(fs.existsSync(removedPublicationStaging),false,'recovery does not depend on or recreate the missing old staging directory');
+        const remoteAttempt=owner.records.list(conversationId).find(row=>row.kind==='remote-publication'&&row.state==='confirmed');
+        assert.notEqual(remoteAttempt.directory,removedPublicationStaging);assert.equal(remoteAttempt.descriptor.commit,published.candidate.commit);
         assert.ok((await pool.query("SELECT count(*)::int n FROM command_receipts WHERE command_type='integration.renew'")).rows[0].n>=1,'actual remote lease renews while original Node checks run');
         assert.equal(owner.records.get(published.outboxId).state,'sent');
         assert.ok(owner.store.db.get('SELECT generation FROM task_integration_work').generation>=3,'lost publication ACK recovers through another native original-session attempt');

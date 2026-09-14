@@ -18,7 +18,10 @@ function view(item) {
     ...(c.content ? { originalName: c.content.originalName, totalBytes: c.content.ciphertextSize } : {}) };
 }
 async function checkedCiphertext(filename, content) {
-  const before = await fs.promises.lstat(filename);
+  const before = await fs.promises.lstat(filename).catch(error => {
+    if (error.code === "ENOENT") throw fail("COLLAB_TRANSFER_STAGING_MISSING");
+    throw error;
+  });
   if (!before.isFile() || before.nlink !== 1 || before.size !== content.ciphertextSize) throw fail("COLLAB_TRANSFER_INTEGRITY_FAILED");
   const file = await fs.promises.open(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
   try {
@@ -162,6 +165,13 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       guard(item); ensure(verified?.objectId === item.checkpoint.objectId && verified.state === "verified");
       return view(save(item, { state: "verified" }));
     } catch (error) {
+      if (error?.code === "COLLAB_TRANSFER_STAGING_MISSING") {
+        try {
+          guard(item);
+          const current = manifests.read(id); guard(current);
+          if (current.revision !== item.revision) throw fail("COLLAB_TRANSFER_CONFLICT");
+        } catch (fenced) { return failureView(fenced, item); }
+      }
       return failureView(error, item);
     } finally { await file?.close(); }
   }

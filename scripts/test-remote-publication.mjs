@@ -34,7 +34,7 @@ const client={
   if(publishLost){publishLost=false;throw unavailable('COLLAB_NETWORK_UNAVAILABLE');}return {workspaceId:'workspace',publicationId:publication.id,headCommit:server.headCommit,revision:server.revision};
  },
 };
-const transfers={taskFiles:{prepareUpload:async({inputPath})=>{const id='transfer'+transfersById.size;transfersById.set(id,{packagePath:inputPath,objectId:'object'+transfersById.size});return {ok:true,id};},
+const transfers={taskFiles:{prepareUpload:async({inputPath,expectedPlaintextSha256})=>{const bytes=fs.readFileSync(inputPath);assert.equal(createHash('sha256').update(bytes).digest('hex'),expectedPlaintextSha256);const id='transfer'+transfersById.size,packagePath=path.join(root,id+'.bundle');fs.writeFileSync(packagePath,bytes);transfersById.set(id,{packagePath,stagingPath:inputPath,objectId:'object'+transfersById.size});return {ok:true,id};},
  upload:async id=>({ok:!transfersById.get(id).expired,...(transfersById.get(id).expired?{code:'COLLAB_TRANSFER_ORPHAN_EXPIRED'}:{}),objectId:transfersById.get(id).objectId})},sharedFiles:{download:async({publicationId})=>{const publication=publications.get(publicationId),transfer=[...transfersById.values()].find(item=>item.objectId===publication.objectId);return {ok:true,packagePath:transfer.packagePath,publication:structuredClone(publication)};}}};
 function session(input,intentId){
  const guard=()=>{remote?.assertCurrent();};
@@ -71,10 +71,16 @@ try{
  await assert.rejects(remote.publish(expiredJournal.candidate,expiredJournal.validation),{code:'COLLAB_REMOTE_PUBLICATION_UPLOAD_UNAVAILABLE'});
  assert.equal(transfersById.size,1,'generic unavailable cannot authorize replacement');transfers.taskFiles.upload=upload;
  await assert.rejects(remote.publish(expiredJournal.candidate,expiredJournal.validation),{code:'COLLAB_REMOTE_PUBLICATION_FENCED'},'an uncertain request in the current lease cannot be replaced');
- assert.equal(transfersById.size,1);assert.equal(validations,1);await remote.close();remote=null;store.close();time+=31000;open();localLease=intents.claim(intent.id,{workerId:'replace-expired'});context=session(input,intent.id);
+ assert.equal(transfersById.size,1);assert.equal(validations,1);
+ const lostDirectory=path.dirname(transfersById.get('transfer0').stagingPath);fs.rmSync(lostDirectory,{recursive:true});
+ const {git:maintenanceGit}=await taskGit.ensure();await maintenanceGit(['config','pack.compression','0']);await maintenanceGit(['repack','-adf']);
+ await remote.close();remote=null;store.close();time+=31000;open();localLease=intents.claim(intent.id,{workerId:'replace-expired'});context=session(input,intent.id);
  await assert.rejects(context.publisher.run({...args,lease:localLease,remote}),{code:'COLLAB_NETWORK_UNAVAILABLE'});
  const retired=createTaskRecords({store,assertActive(){}}).list('chat').filter(row=>row.kind==='retired-publication-upload');assert.equal(retired.length,1);assert.equal(retired[0].objectId,'object0');
  assert.equal(transfersById.size,2,'a fenced expired orphan receives one replacement transfer with a new object identity');
+ assert.notEqual(path.dirname(transfersById.get('transfer1').stagingPath),lostDirectory,'missing staging is rebuilt into a new owned directory');assert.equal(fs.existsSync(lostDirectory),false);
+ const rebuilt=createTaskRecords({store,assertActive(){}}).list('chat').find(row=>row.kind==='remote-publication');
+ assert.notEqual(rebuilt.descriptor.sha256,retired[0].descriptor.sha256,'Git maintenance may change pack bytes without changing the validated commit');assert.equal(rebuilt.descriptor.commit,retired[0].descriptor.commit);
  assert.equal(validations,1);assert.equal(publishCalls,1);assert.equal(intents.get(intent.id).state,'running');assert.equal(context.publisher.outbox('chat').filter(row=>row.state==='sent').length,0,'uncertain remote commit cannot complete local work');
  assert.equal(createTaskRecords({store,assertActive(){}}).get(legacy.outboxId).state,'queued');
  const before=context.publisher.get(intent.id);assert.equal((await shared.initialize({workspaceId:'workspace',baseline})).commit,baseline.commit,'a lost remote ACK does not optimistically advance local H');
@@ -84,7 +90,14 @@ try{
  assert.equal(createTaskRecords({store,assertActive(){}}).get(legacy.outboxId).state,'superseded','legacy outbox retires only with the confirmed replacement');
  assert.equal(publishCalls,1);assert.equal(validations,1,'reopening confirms the committed immutable publication without repeating checks or publication');await remote.close();remote=null;
  const secondInput={...input,deliveryId:'delivery2',deliveryCommit:deliveries[1].commit},second=intents.enqueue(secondInput);localLease=intents.claim(second.id,{workerId:'four'});context=session(secondInput,second.id);
+ let verifiedStagingRemoved=false;
+ transfers.taskFiles.upload=async id=>{if(!verifiedStagingRemoved){verifiedStagingRemoved=true;fs.rmSync(path.dirname(transfersById.get(id).stagingPath),{recursive:true});return {ok:false,code:'COLLAB_RESPONSE_UNKNOWN'};}return upload(id);};
+ await assert.rejects(context.publisher.run({baseline,delivery:deliveries[1],validationPolicyId:'fixture',validate,lease:localLease,remote}),{code:'COLLAB_REMOTE_PUBLICATION_UPLOAD_UNAVAILABLE'});
+ const transferCount=transfersById.size,validatedCount=validations;
+ await remote.close();remote=null;store.close();time+=31000;open();localLease=intents.claim(second.id,{workerId:'verified-without-staging'});context=session(secondInput,second.id);
  const secondResult=await context.publisher.run({baseline,delivery:deliveries[1],validationPolicyId:'fixture',validate,lease:localLease,remote});
+ assert.equal(transfersById.size,transferCount,'a verified upload survives losing the entire local package directory without replacement');assert.equal(validations,validatedCount);
+ transfers.taskFiles.upload=upload;
  const secondPublication=publications.get(secondResult.remoteReceipt.publicationId);assert.ok(secondPublication.git.prerequisites.includes(recovered.remoteReceipt.headCommit));
  assert.ok(secondPublication.git.sizeBytes<4096,'second native publication reuses the verified remote H');
  const {git}=await taskGit.ensure();assert.equal(await git(['show',`${secondResult.candidate.commit}:a.txt`]),'changed');assert.equal(await git(['show',`${secondResult.candidate.commit}:b.txt`]),'changed');
@@ -97,6 +110,26 @@ try{
  await remote.close();remote=null;assert.equal(server.lease,null,'cleanup releases only the held scope after failed validation');
  assert.equal(intents.get(third.id).remotePublicationRequired,true,'new remote work also retains the protocol requirement');
  await assert.rejects(createSharedPublication({store,taskGit,assertActive(){},authorize:async()=>true,now:()=>time}).run({baseline,delivery:deliveries[2],validationPolicyId:'fixture',validate,lease:localLease}),{code:'COLLAB_PUBLICATION_REMOTE_REQUIRED'});
+ renewFailure=false;store.close();time+=31000;open();localLease=intents.claim(third.id,{workerId:'missing-ciphertext'});context=session(thirdInput,third.id);
+ let lostCiphertext=false,linkedPackage;
+ transfers.taskFiles.upload=async id=>{
+  if(!lostCiphertext){lostCiphertext=true;const transfer=transfersById.get(id);linkedPackage=transfer.stagingPath;fs.unlinkSync(linkedPackage);fs.symlinkSync(transfer.packagePath,linkedPackage);return {ok:false,code:'COLLAB_TRANSFER_STAGING_MISSING',objectId:transfer.objectId};}
+  return upload(id);
+ };
+ await assert.rejects(context.publisher.run({baseline,delivery:deliveries[2],validationPolicyId:'fixture',validate,lease:localLease,remote}),{code:'COLLAB_REMOTE_PUBLICATION_JOURNAL_INVALID'},'a missing cipher does not authorize overwriting a replaced plaintext package');
+ const pending=context.publisher.get(third.id),checksBeforeRestore=validations;
+ assert.equal(fs.lstatSync(linkedPackage).isSymbolicLink(),true);fs.unlinkSync(linkedPackage);
+ const encrypt=store._encrypt.bind(store);store._encrypt=entry=>{if(entry.value?.kind==='remote-publication'&&entry.value.state==='prepared')throw Error('after-pack-export');return encrypt(entry);};
+ await assert.rejects(remote.publish(pending.candidate,pending.validation),/after-pack-export/);store._encrypt=encrypt;
+ const interrupted=createTaskRecords({store,assertActive(){}}).list('chat').find(row=>row.kind==='remote-publication'&&row.intentId===third.id);
+ assert.equal(interrupted.state,'preparing');assert.equal(fs.existsSync(path.join(interrupted.directory,'candidate.bundle')),true);
+ await remote.close();remote=null;store.close();time+=31000;open();localLease=intents.claim(third.id,{workerId:'rebuild-after-export-crash'});context=session(thirdInput,third.id);
+ const restored=await context.publisher.run({baseline,delivery:deliveries[2],validationPolicyId:'fixture',validate,lease:localLease,remote});
+ assert.equal(restored.remoteReceipt.headCommit,pending.candidate.commit);assert.equal(validations,checksBeforeRestore);
+ const completedAttempt=createTaskRecords({store,assertActive(){}}).list('chat').find(row=>row.kind==='remote-publication'&&row.intentId===third.id);
+ assert.notEqual(completedAttempt.directory,interrupted.directory,'an unjournaled export is not adopted after reopening');assert.equal(intents.get(third.id).state,'completed');
+ const stagingRetired=createTaskRecords({store,assertActive(){}}).list('chat').filter(row=>row.kind==='retired-publication-upload'&&row.reason==='staging-missing');
+ assert.equal(stagingRetired.length,1);assert.equal(publishCalls,3);
  assert.equal(fs.readFileSync(path.join(base.snapshotRoot,'a.txt'),'utf8'),'a');
  console.log('remote-first publication: durable claim/commit ACK loss across reopen, one confirmed outbox, actual incremental packs and failed-renewal publication fence passed (server/transfer fixtures).');
 }finally{await remote?.close();store?.close();fs.rmSync(root,{recursive:true,force:true});}

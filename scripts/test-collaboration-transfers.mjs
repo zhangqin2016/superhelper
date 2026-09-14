@@ -87,6 +87,33 @@ test('expiry during missing multipart recovery preserves the orphan proof and do
   assert.equal(f.remote.uploads,1);assert.deepEqual(f.remote.puts,[1]);
 });
 
+test('missing ciphertext is recoverable only after fresh owner status and retains the immutable transfer identity',async t=>{
+  const f=fixture(t),first=f.manager(),prepared=await f.prepare(first);
+  f.remote.drop='part';assert.equal((await first.resumeUpload(prepared.id)).state,'paused');first.stop();
+  fs.unlinkSync(path.join(f.manifests.directory(prepared.id),'ciphertext.lilyenc'));
+  const next=f.manager(),missing=await next.resumeUpload(prepared.id);
+  assert.equal(missing.code,'COLLAB_TRANSFER_STAGING_MISSING');assert.equal(missing.objectId,'obj');
+  assert.equal(f.remote.uploads,1);assert.deepEqual(f.remote.puts,[1]);
+  f.objectClient.status=async()=>{throw Object.assign(Error('denied'),{code:'COLLAB_OBJECT_UNAVAILABLE'});};
+  assert.equal((await next.resumeUpload(prepared.id)).code,'COLLAB_OBJECT_UNAVAILABLE','missing local bytes cannot bypass current server denial');
+});
+
+for(const [action,code] of [['cancel','COLLAB_TRANSFER_CANCELLED'],['revoke','COLLAB_ACCESS_REVOKED'],['stop','COLLABORATION_STOPPED'],['changed','COLLAB_TRANSFER_CONFLICT']])test(`${action} during missing-file inspection cannot authorize a replacement`,async t=>{
+  const f=fixture(t),api=f.manager(),prepared=await f.prepare(api);f.remote.drop='part';await api.resumeUpload(prepared.id);
+  const lstat=fs.promises.lstat;t.after(()=>{fs.promises.lstat=lstat;});
+  fs.promises.lstat=async filename=>{
+    if(String(filename).endsWith('ciphertext.lilyenc')){
+      if(action==='cancel')await api.cancel(prepared.id);
+      else if(action==='revoke')f.remote.authorized=false;
+      else if(action==='stop')api.stop();
+      else {const item=f.manifests.read(prepared.id);f.manifests.update({id:item.id,expectedRevision:item.revision,checkpoint:item.checkpoint});}
+      throw Object.assign(Error('missing'),{code:'ENOENT'});
+    }
+    return lstat(filename);
+  };
+  assert.equal((await api.resumeUpload(prepared.id)).code,code);assert.equal(f.remote.uploads,1);
+});
+
 test("encrypt/upload/verify retains bounded parts, private credentials and authentic plaintext", async (t) => {
   const f = fixture(t), api = f.manager(), prepared = await f.prepare(api);
   assert.equal(prepared.state, "prepared");

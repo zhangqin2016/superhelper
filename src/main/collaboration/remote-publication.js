@@ -5,13 +5,13 @@ const {randomUUID,createHash}=require('node:crypto');
 const {performance}=require('node:perf_hooks');
 const {createTaskRecords}=require('./task-records');
 const {createSharedHeadSync}=require('./shared-head-sync');
-const {createSharedGitTransport}=require('./task-git-transport');
+const {createSharedGitTransport,parseSharedGitDescriptor}=require('./task-git-transport');
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail=code=>Object.assign(Error(`COLLAB_REMOTE_PUBLICATION_${code}`),{code:`COLLAB_REMOTE_PUBLICATION_${code}`});
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const receipt=value=>({workspaceId:value.workspaceId,publicationId:value.id,headCommit:value.git.commit,revision:value.revision});
 
-/** One native attempt, with persisted immutable upload/publication identity.
+/** One native attempt, with persisted publication and retired-upload identity.
  * Local completion requires a freshly read committed server publication. A
  * renewal response or historical lease receipt never proves publication. */
 function createRemotePublication({store,taskGit,client,transfers,deviceId,input,intentId,assertActive,assertAccountActive,authorize,clock=()=>performance.now()}){
@@ -119,26 +119,37 @@ function createRemotePublication({store,taskGit,client,transfers,deviceId,input,
         const directory=fs.mkdtempSync(path.join(taskGit.rootPath,'remote-publication-'));
         attempt=save(id,{kind:'remote-publication',state:'preparing',candidateCommit:candidate.commit,directory});
       }
-      if(attempt.kind!=='remote-publication'||attempt.candidateCommit!==candidate.commit||path.dirname(attempt.directory)!==taskGit.rootPath
-        ||fs.realpathSync(attempt.directory)!==attempt.directory||!fs.lstatSync(attempt.directory).isDirectory())throw fail('JOURNAL_INVALID');
-      const packagePath=path.join(attempt.directory,'candidate.bundle');
-      if(!attempt.descriptor){
-        if(fs.existsSync(packagePath)){
-          const stat=fs.lstatSync(packagePath);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)throw fail('JOURNAL_INVALID');fs.unlinkSync(packagePath);
-        }
-        const prerequisites=held.expectedRevision>0&&publicationDepth<64?[held.expectedHead]:[];
+      if(attempt.kind!=='remote-publication'||attempt.candidateCommit!==candidate.commit||typeof attempt.directory!=='string'||path.dirname(attempt.directory)!==taskGit.rootPath)throw fail('JOURNAL_INVALID');
+      async function preparePackage(){
+        active();if(attempt.transferId||attempt.objectId||attempt.request)throw fail('JOURNAL_INVALID');
+        const stat=file=>{try{return fs.lstatSync(file);}catch(error){if(error.code==='ENOENT')return null;throw error;}};
+        let directory=attempt.directory,packagePath=path.join(directory,'candidate.bundle');
+        const folder=stat(directory);
+        if(folder&&(!folder.isDirectory()||folder.isSymbolicLink()||fs.realpathSync(directory)!==directory))throw fail('JOURNAL_INVALID');
+        const file=folder&&stat(packagePath);
+        if(file&&(!file.isFile()||file.isSymbolicLink()||file.nlink!==1))throw fail('JOURNAL_INVALID');
+        const previous=attempt.descriptor&&parseSharedGitDescriptor(attempt.descriptor);
+        if(previous&&(previous.commit!==candidate.commit||previous.ref!==candidate.ref))throw fail('JOURNAL_INVALID');
+        if(previous&&file&&attempt.state!=='preparing')return packagePath;
+        // Only an upload-free attempt may change its pack representation. Git
+        // can repack the same commit into different bytes after maintenance.
+        await taskGit.ensure();active();
+        if(!folder||file){directory=fs.mkdtempSync(path.join(taskGit.rootPath,'remote-publication-'));packagePath=path.join(directory,'candidate.bundle');}
+        attempt=save(id,{directory,state:'preparing'});
+        const prerequisites=previous?previous.prerequisites:held.expectedRevision>0&&publicationDepth<64?[held.expectedHead]:[];
         const exported=await createSharedGitTransport(taskGit).exportBundle({revision:candidate,prerequisites,destination:packagePath});active();
-        attempt=save(id,{descriptor:exported.descriptor,state:'prepared'});
+        attempt=save(id,{descriptor:exported.descriptor,state:'prepared'});return packagePath;
       }
       for(let replacement=0;replacement<2;replacement++){
         if(!attempt.transferId){
+          const packagePath=await preparePackage();active();
           const transfer=await transfers.taskFiles.prepareUpload({conversationId:input.conversationId,inputPath:packagePath,originalName:'shared.bundle',expectedPlaintextSha256:attempt.descriptor.sha256});active();
           if(transfer?.ok!==true)throw fail('UPLOAD_UNAVAILABLE');attempt=save(id,{transferId:transfer.id,state:'uploading'});
         }
         // Re-probe even a previously verified upload after a long offline gap.
-        // A generic unavailable/denied response is never proof of orphan expiry.
+        // Generic unavailable/denied responses never authorize replacement.
         const uploaded=await transfers.taskFiles.upload(attempt.transferId);active();
-        if(uploaded?.code==='COLLAB_TRANSFER_ORPHAN_EXPIRED'){
+        if(['COLLAB_TRANSFER_ORPHAN_EXPIRED','COLLAB_TRANSFER_STAGING_MISSING'].includes(uploaded?.code)){
           if(replacement===1)throw fail('UPLOAD_UNAVAILABLE');
           if(typeof uploaded.objectId!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(uploaded.objectId)||attempt.objectId&&attempt.objectId!==uploaded.objectId)throw fail('JOURNAL_INVALID');
           // An older publication request cannot commit after this newer grant.
@@ -148,7 +159,7 @@ function createRemotePublication({store,taskGit,client,transfers,deviceId,input,
           attempt=store.db.transaction(()=>{
             active();const retiredId=`retired-upload:${hash([id,attempt.transferId])}`;
             records.put(retiredId,{kind:'retired-publication-upload',conversationId:input.conversationId,intentId,attemptId:id,transferId:attempt.transferId,
-              objectId:uploaded.objectId,descriptor:attempt.descriptor,request:attempt.request||null,reason:'orphan-expired',replacementGeneration:held.generation,createdAt:store.now()});
+              objectId:uploaded.objectId,descriptor:attempt.descriptor,request:attempt.request||null,reason:uploaded.code==='COLLAB_TRANSFER_ORPHAN_EXPIRED'?'orphan-expired':'staging-missing',replacementGeneration:held.generation,createdAt:store.now()});
             return save(id,{transferId:null,objectId:null,request:null,state:'prepared'});
           })();
           continue;
