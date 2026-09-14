@@ -9,6 +9,7 @@ const descriptions={
   validation_required:"The shared candidate is ready for project validation.",
   validation_failed:"The shared candidate did not pass project validation.",
   conflict:"The shared candidate needs conflict resolution.",
+  decision_required:"The shared candidate needs one decision from the requester before integration can continue.",
   published:"The shared version was prepared locally and is waiting to sync.",
   cancelled:"Collaboration integration was cancelled.",
   queued:"Collaboration integration remains queued.",
@@ -23,8 +24,8 @@ const descriptions={
   local_validation_required:"The shared version is published. The private candidate still requires local checks before application.",
 };
 const translated={
-  "zh-CN":{start:"整合协作任务交付",validation_required:"共享候选版本已准备，等待项目验证。",validation_failed:"共享候选版本未通过项目验证。",conflict:"共享候选版本存在待解决的冲突。",published:"共享版本已在本机生成，等待同步。",cancelled:"协作集成已取消。",queued:"协作集成仍在排队。",failed:"协作集成未能完成，请查看任务中的重试状态。"},
-  ar:{start:"دمج تسليم المهمة المشتركة",validation_required:"الإصدار المرشح المشترك جاهز للتحقق من المشروع.",validation_failed:"لم يجتز الإصدار المرشح المشترك التحقق من المشروع.",conflict:"يحتاج الإصدار المرشح المشترك إلى حل التعارضات.",published:"تم إعداد الإصدار المشترك محليًا وهو بانتظار المزامنة.",cancelled:"تم إلغاء دمج التعاون.",queued:"لا يزال دمج التعاون في قائمة الانتظار.",failed:"تعذر إكمال دمج التعاون. راجع حالة إعادة المحاولة في المهمة."},
+  "zh-CN":{start:"整合协作任务交付",validation_required:"共享候选版本已准备，等待项目验证。",validation_failed:"共享候选版本未通过项目验证。",conflict:"共享候选版本存在待解决的冲突。",decision_required:"共享候选版本需要发起人先回答一个问题，整合才能继续。",published:"共享版本已在本机生成，等待同步。",cancelled:"协作集成已取消。",queued:"协作集成仍在排队。",failed:"协作集成未能完成，请查看任务中的重试状态。"},
+  ar:{start:"دمج تسليم المهمة المشتركة",validation_required:"الإصدار المرشح المشترك جاهز للتحقق من المشروع.",validation_failed:"لم يجتز الإصدار المرشح المشترك التحقق من المشروع.",conflict:"يحتاج الإصدار المرشح المشترك إلى حل التعارضات.",decision_required:"يحتاج الإصدار المرشح المشترك إلى قرار واحد من مقدم الطلب قبل متابعة الدمج.",published:"تم إعداد الإصدار المشترك محليًا وهو بانتظار المزامنة.",cancelled:"تم إلغاء دمج التعاون.",queued:"لا يزال دمج التعاون في قائمة الانتظار.",failed:"تعذر إكمال دمج التعاون. راجع حالة إعادة المحاولة في المهمة."},
 };
 Object.assign(translated["zh-CN"],{local_ready:"共享版本已发布。保留本地修改的候选已准备，尚未写入工作空间。",local_conflicts:"共享版本已发布。本地修改存在冲突，解决后才能应用。",local_baseline_required:"共享版本已发布。应用前需要恢复本机上次同步的基线。"});
 Object.assign(translated.ar,{local_ready:"تم نشر الإصدار المشترك. الإصدار المحلي المرشح الذي يحافظ على التعديلات الخاصة جاهز، ولم يُطبّق على ملفات مساحة العمل بعد.",local_conflicts:"تم نشر الإصدار المشترك. تحتاج التعديلات المحلية إلى حل التعارضات قبل التطبيق.",local_baseline_required:"تم نشر الإصدار المشترك. يجب استعادة آخر إصدار تمت مزامنته محليًا قبل التطبيق."});

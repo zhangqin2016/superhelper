@@ -41,6 +41,24 @@ try{
  task={...task,state:'changes_requested'};store.db.run("UPDATE task_integration_work SET state='waiting',code='COLLAB_NETWORK_UNAVAILABLE'");
  assert.equal((await workflow.run(retry)).ok,false,'fresh withdrawn review fences retry');
  task={...task,state:'review'};
+ // Unresolved model questions surface as a decision stage; the requester's answer is stored as evidence and re-admits the same intent.
+ store.db.run("UPDATE task_integration_work SET state='waiting',code='COLLAB_INTEGRATION_DECISION_REQUIRED'");
+ records.put('publication-journal',{kind:'shared-publication',conversationId:'chat',intentId:intent.id,state:'conflicts',candidate:{state:'conflicts',repair:{policy:'model-repair-v1',questions:[{path:'budget.txt',question:'Keep 1.2M or accept 1.8M?'},{path:'../secret',question:''}]}}});
+ status=await workflow.run(command);assert.equal(status.integration.stage,'decision_required');assert.equal(status.integration.canRetry,true);
+ assert.deepEqual(status.integration.questions,[{path:'budget.txt',question:'Keep 1.2M or accept 1.8M?'}],'only well-formed questions cross the closed projection');
+ assert.deepEqual(taskWorkflowResult({ok:true,integration:{...status.integration,questions:[{path:'budget.txt',question:'q',evidence:'private'}]}}).integration.questions,[{path:'budget.txt',question:'q'}]);
+ const answer={operation:'answerIntegration',conversationId:'chat',taskId:'task',deliveryId:'delivery',answers:[{path:'budget.txt',answer:'Accept 1.8M'}]};
+ assert.ok(taskWorkflowCommand(answer));assert.equal(taskWorkflowCommand({...answer,answers:[{path:'budget.txt',answer:'   '}]}),null);assert.equal(taskWorkflowCommand({...answer,answers:[{path:'budget.txt',answer:'x',rootPath:root}]}),null);
+ assert.equal(taskWorkflowCommand({...answer,answers:[]}),null);
+ assert.equal((await workflow.run({...answer,answers:[{path:'other.txt',answer:'x'}]})).code,'COLLAB_TASK_INVALID','answers must address an open question');
+ const answered=await workflow.run(answer);assert.equal(answered.ok,true);assert.equal(answered.integration.stage,'queued');
+ const stored=records.get(`integration-answers:${createHash('sha256').update(JSON.stringify(intent.id)).digest('hex')}`);
+ assert.equal(stored.kind,'integration-answers');assert.deepEqual(stored.answers.map(a=>[a.path,a.question,a.answer]),[['budget.txt','Keep 1.2M or accept 1.8M?','Accept 1.8M']]);
+ assert.equal(store.db.get('SELECT state FROM task_integration_work').state,'pending','an answer re-admits the durable work item');
+ assert.doesNotMatch(JSON.stringify(store.db.all('SELECT payload_envelope_json FROM task_workspace_records')),/Accept 1.8M|Keep 1.2M/,'answers are encrypted at rest');
+ store.db.run("UPDATE task_integration_work SET code='COLLAB_INTEGRATION_CONFLICT',state='waiting'");
+ status=await workflow.run(command);assert.equal(status.integration.stage,'conflict');assert.equal(status.integration.canRetry,true,'a conflict can be retried once a model is configured');
+ store.db.run("UPDATE task_integration_work SET code=NULL,state='pending'");
  const finalLease=intents.claim(intent.id,{workerId:'worker'});intents.complete(finalLease);
  assert.equal((await workflow.run(command)).integration.stage,'publication_pending','completed local Git work must not claim remote sync');
  records.put('outbox',{kind:'publication-outbox',conversationId:'chat',intentId:intent.id,state:'sent'});

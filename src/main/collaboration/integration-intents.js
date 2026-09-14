@@ -81,4 +81,5 @@ function createIntegrationIntents({store,assertActive,now=Date.now}){
     });},
   });
 }
-module.exports={createIntegrationIntents};
+const integrationIntentId=binding=>`integration:${hash([binding.workspaceId,binding.deliveryId,binding.targetId,binding.chain])}`;
+module.exports={createIntegrationIntents,integrationIntentId};

@@ -3,6 +3,7 @@ const fs=require("node:fs");
 const path=require("node:path");
 const {createHash}=require("node:crypto");
 const {mergeJson,MAX_JSON_BYTES,POLICY}=require("./integration-json-merge");
+const {REPAIR_POLICY,REPAIR_LIMITS}=require("./conflict-repair");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const sha=value=>typeof value==="string" && /^[a-f0-9]{40}$/.test(value);
 const fail=code=>Object.assign(new Error(`COLLAB_SHARED_GIT_${code}`),{code:`COLLAB_SHARED_GIT_${code}`});
@@ -17,9 +18,10 @@ function candidateRef(candidate){
 }
 
 /** Published history and candidates live exclusively in the task object DB.
- * This primitive never reads a private working tree and does not call a model.
- * Publication requires an external validator bound to the exact candidate;
- * durable validation/outbox and cross-device publication are coordinated above. */
+ * This primitive never reads a private working tree. It calls no model itself:
+ * an optional `resolve` hook supplied by the caller may propose complete file
+ * contents for conflicted paths, which are written as an ordinary resolution
+ * with its own identity and still pass the external validator before publication. */
 function createSharedGit(taskGit){
   async function runtime(){
     const context=await taskGit.ensure(),info=path.join(context.repository,"info"),file=path.join(info,"attributes");
@@ -37,6 +39,15 @@ function createSharedGit(taskGit){
     try{await git(["update-ref",ref,commit,"0".repeat(40)]);}
     catch(error){if(await git(["rev-parse","--verify",ref]).catch(()=>null)!==commit)throw error;}
   }
+  // Replace only the given paths on top of the merged tree in an isolated index.
+  async function writeResolutions(git,tree,resolutions){
+    const temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"resolution-")),indexEnv={GIT_INDEX_FILE:path.join(temporary,"index")};
+    try{
+      await git(["read-tree",tree],indexEnv);
+      for(const [name,blob] of resolutions)await git(["update-index","--add","--cacheinfo",`100644,${blob},${name}`],indexEnv);
+      const resolvedTree=await git(["write-tree"],indexEnv);await taskGit.inspectTree(resolvedTree);return resolvedTree;
+    }finally{fs.rmSync(temporary,{recursive:true,force:true});}
+  }
   async function resolveJson({tree,paths,baseline,head,delivery}){
     // Only bounded regular files present at the same path on all three sides.
     // Renames, deletes, non-JSON and mixed unresolved conflicts stay pending.
@@ -46,7 +57,6 @@ function createSharedGit(taskGit){
     if(inputs.flat().some(file=>!file || file.sizeBytes>MAX_JSON_BYTES)
       || inputs.flat().reduce((sum,file)=>sum+file.sizeBytes,0)>6*1024*1024)return null;
     const {git,writeBlob}=await runtime(),temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"json-merge-"));
-    const indexEnv={GIT_INDEX_FILE:path.join(temporary,"index")};
     try{
       const resolutions=[];
       for(let i=0;i<paths.length;i++){
@@ -59,10 +69,38 @@ function createSharedGit(taskGit){
         const blob=await git(["hash-object","-w","--stdin"],undefined,result.text);
         resolutions.push([paths[i],blob]);
       }
-      await git(["read-tree",tree],indexEnv);
-      for(const [name,blob] of resolutions)await git(["update-index","--add","--cacheinfo",`100644,${blob},${name}`],indexEnv);
-      const resolvedTree=await git(["write-tree"],indexEnv);await taskGit.inspectTree(resolvedTree);
-      return {tree:resolvedTree,resolutionHash:hash([POLICY,resolutions])};
+      return {tree:await writeResolutions(git,tree,resolutions),resolutionHash:hash([POLICY,resolutions])};
+    }finally{fs.rmSync(temporary,{recursive:true,force:true});}
+  }
+  /** Hand the conflicted text files that exist on all three sides to the
+   * caller's resolver with their diff3 view. Complete resolutions become blobs;
+   * anything else stays an unresolved path with the resolver's questions. */
+  async function resolveWith({tree,paths,baseline,head,delivery},resolve){
+    if(!paths.length||paths.length>REPAIR_LIMITS.maxFiles*2)return null;
+    const trees=await Promise.all([baseline,head,delivery].map(commit=>taskGit.inspectTree(commit)));
+    const {git,writeBlob}=await runtime(),temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"repair-"));
+    try{
+      const files=[];let total=0;
+      for(const [index,name] of paths.entries()){
+        const sides=trees.map(entries=>entries.find(file=>file.path===name));
+        if(sides.some(file=>!file||file.sizeBytes>REPAIR_LIMITS.maxFileBytes)||files.length>=REPAIR_LIMITS.maxFiles)continue;
+        const size=sides.reduce((sum,file)=>sum+file.sizeBytes,0);if(total+size>REPAIR_LIMITS.maxTotalBytes)continue;total+=size;
+        const [base,ours,theirs]=await Promise.all(sides.map(async(file,side)=>{const destination=path.join(temporary,`${index}-${side}`);await writeBlob(file.blob,destination,file);return destination;}));
+        let merged=null;
+        try{merged=await git(["merge-file","-p","--diff3","-L","ours","-L","base","-L","theirs",ours,base,theirs]);}
+        catch(error){if(typeof error.stdout==="string"&&Number.isInteger(error.code)&&error.code>=1&&error.code<=127)merged=error.stdout;}
+        files.push({path:name,base:fs.readFileSync(base),ours:fs.readFileSync(ours),theirs:fs.readFileSync(theirs),...(merged===null?{}:{merged:Buffer.from(merged)})});
+      }
+      if(!files.length)return null;
+      const outcome=await resolve({files});if(!outcome)return null;
+      const resolutions=[];
+      for(const [name,bytes] of outcome.resolutions||[]){
+        if(!files.some(file=>file.path===name)||!Buffer.isBuffer(bytes))throw fail("MERGE_INVALID");
+        resolutions.push([name,await git(["hash-object","-w","--stdin"],undefined,bytes.toString("utf8"))]);
+      }
+      const repair={...outcome.evidence,questions:outcome.questions||[]};
+      if(resolutions.length!==paths.length)return {repair,unresolvedPaths:paths.filter(name=>!resolutions.some(([resolved])=>resolved===name))};
+      return {tree:await writeResolutions(git,tree,resolutions),resolutionHash:hash([REPAIR_POLICY,resolutions,repair.responseHash]),repair};
     }finally{fs.rmSync(temporary,{recursive:true,force:true});}
   }
   function receiptRef(candidate){
@@ -123,7 +161,7 @@ function createSharedGit(taskGit){
       if(existing){await verified({ref,commit:existing});await taskGit.inspectTree(existing);return {repository,ref,commit:existing};}
       await immutable(git,ref,baseline.commit);return {repository,ref,commit:baseline.commit};
     },
-    async prepare({workspaceId,baseline,delivery,expectedHead}){
+    async prepare({workspaceId,baseline,delivery,expectedHead,resolve=null}){
       const {git,merge,repository}=await runtime();await verified(baseline);await verified(delivery);
       if(!sha(expectedHead) || !baseline.ref.endsWith("/baseline") || !delivery.ref.startsWith(baseline.ref.replace(/baseline$/,"deliveries/")))throw fail("INVALID");
       const parent=(await git(["rev-list","--parents","-n","1",delivery.commit])).split(" ").slice(1);
@@ -138,8 +176,14 @@ function createSharedGit(taskGit){
       let resolution={};
       if(conflicts){
         const unresolved={state:"conflicts",tree,paths:[...new Set(names.filter(Boolean))].sort(),head:expectedHead,delivery:delivery.commit,baseline:baseline.commit};
-        const resolved=await resolveJson(unresolved);if(!resolved)return unresolved;
-        tree=resolved.tree;resolution={resolutionHash:resolved.resolutionHash};
+        let resolved=await resolveJson(unresolved);
+        if(!resolved&&typeof resolve==="function"){
+          const outcome=await resolveWith(unresolved,resolve);
+          if(outcome?.tree)resolved=outcome;
+          else if(outcome)return {...unresolved,repair:outcome.repair,unresolvedPaths:outcome.unresolvedPaths};
+        }
+        if(!resolved)return unresolved;
+        tree=resolved.tree;resolution={resolutionHash:resolved.resolutionHash,...(resolved.repair?{repair:resolved.repair}:{})};
       }
       const commit=await git(["commit-tree",tree,"-p",expectedHead,"-p",delivery.commit,"-m",`Shared task integration\n\n${JSON.stringify({baseline:baseline.commit,delivery:delivery.commit,...resolution})}`]);
       const ref=candidateRef({headRef,head:expectedHead,baseline:baseline.commit,delivery:delivery.commit,...resolution});

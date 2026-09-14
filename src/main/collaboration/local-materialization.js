@@ -12,7 +12,7 @@ const identity=root=>{safeTaskRoot(root);const stat=fs.statSync(root);return `${
 
 /** Durable private candidate preparation. A advances only with a future local
  * materialization receipt, never merely because shared publication succeeded. */
-function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActive,authorize}){
+function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActive,authorize,repair=null}){
   const records=createTaskRecords({store,assertActive});
   if(typeof authorize!=="function")throw fail("INVALID");
   async function prepare({intentId,input,localRoot,baseline,published}){
@@ -38,7 +38,9 @@ function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActiv
     if(!Number.isSafeInteger(base.remoteRevision)||base.remoteRevision<0||published.remoteReceipt.revision<base.remoteRevision
       ||published.remoteReceipt.revision===base.remoteRevision&&published.candidate.commit!==base.revision.commit)throw fail("STALE_PUBLICATION");
     const revision={ref:published.candidate.ref,commit:published.candidate.commit,remoteRevision:published.remoteReceipt.revision};
-    const fingerprint=hash({policy:LOCAL_CANDIDATE_POLICY,binding,base:base.revision,baseGeneration:base.generation,baseRemoteRevision:base.remoteRevision,revision});
+    // New requester answers invalidate a cached conflicted candidate so the
+    // resolver runs again with them; without a resolver the fingerprint is unchanged.
+    const fingerprint=hash({policy:LOCAL_CANDIDATE_POLICY,binding,base:base.revision,baseGeneration:base.generation,baseRemoteRevision:base.remoteRevision,revision,...(repair?.answersHash?{answersHash:repair.answersHash}:{})});
     const previous=records.get(id);
     if(previous&&hash(previous.binding)!==hash(binding))throw fail("BINDING_CONFLICT");
     if(previous?.state==="applied"&&hash(previous.sharedRevision)===hash(revision)
@@ -77,7 +79,7 @@ function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActiv
         return {rootPath:result.snapshotRoot,manifest:result.manifest};
       };
       const a=await snapshot(base.revision,"a"),m=await snapshot(revision,"m"),stage=path.join(attempt,"private");fs.mkdirSync(stage,{mode:0o700});
-      const candidate=await prepareLocalCandidate({base:a,shared:m,rootPath:localRoot,destinationRoot:stage,assertActive:guard});guard();
+      const candidate=await prepareLocalCandidate({base:a,shared:m,rootPath:localRoot,destinationRoot:stage,assertActive:guard,resolve:repair?.resolve||null});guard();
       await authorized();guard();
       // Shared refs/objects receive no W bytes. A remains unchanged until a
       // separate, verified writer commits W' and its local receipt.

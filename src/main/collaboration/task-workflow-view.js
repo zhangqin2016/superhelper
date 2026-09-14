@@ -8,7 +8,7 @@ const fields = {
   sessionCards:["sessionId","before"],
   bind:["taskId","projectId","sessionId"],
   bindingOptions:["taskId"],
-  integrationStatus:["taskId"],retryIntegration:["taskId","deliveryId"],
+  integrationStatus:["taskId"],retryIntegration:["taskId","deliveryId"],answerIntegration:["taskId","deliveryId","answers"],
   configureIntegrationChecks:["taskId","deliveryId"],
   prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
@@ -28,6 +28,12 @@ function taskWorkflowCommand(value) {
     if (value.operation === "bind" && ["projectId","sessionId"].includes(key) && !Object.hasOwn(value,key)) continue;
     const v = value[key];
     if (key === "deliveryId" && value.operation === "open" && v == null) continue;
+    if (key === "answers") {
+      if (!Array.isArray(v) || !v.length || v.length > 8 || v.some(item=>!item || typeof item !== "object" || Array.isArray(item) || Object.keys(item).some(k=>!["path","answer"].includes(k))
+        || typeof item.path !== "string" || !item.path || item.path.length > 1024 || /[\x00-\x1f\x7f]/.test(item.path)
+        || typeof item.answer !== "string" || !item.answer.trim() || item.answer.length > 4000 || item.answer.includes("\0"))) return null;
+      continue;
+    }
     if (key === "confirmDeletions") { if (typeof v !== "boolean") return null; }
     else if (key === "expectedPlanHash") { if (!/^[a-f0-9]{64}$/.test(v || "")) return null; }
     else if (["title","objective","acceptanceCriteria"].includes(key)) {

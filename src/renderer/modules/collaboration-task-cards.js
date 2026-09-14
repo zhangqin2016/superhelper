@@ -48,7 +48,7 @@ export function createTaskCardController({api,getContext,onChange=()=>{}}) {
 
 const states=new Set(["offered","active","review","changes_requested","accepted","declined","cancelled"]);
 const localStates=new Set(["preparing","preparation_failed","prepared","uploading","confirming","failed","completed"]);
-const integrationStates=new Set(["queued","preparing","validation_required","conflict","failed","publication_pending","published","cancelled","binding_required"]);
+const integrationStates=new Set(["queued","preparing","validation_required","conflict","decision_required","failed","publication_pending","published","cancelled","binding_required"]);
 const localIntegrationStates=new Set(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied","undone"]);
 export function renderTaskCards(root,cards=[],onOpen) {
   const previous=new Map([...root.querySelectorAll(":scope > .collaboration-task-card")].map(row=>[row.dataset.cardId,row]));

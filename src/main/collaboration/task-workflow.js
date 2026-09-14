@@ -14,7 +14,8 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
-  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, sharedPublicationProtocol, integrationValidationAvailable=false, chooseValidationChecks, writerLockPath, localApplicationWriter, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, sharedPublicationProtocol, integrationValidationAvailable=false, chooseValidationChecks, writerLockPath, localApplicationWriter, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle },
+  repairCompletion = () => { try { return require("../model-direct-completion").createDirectCompletion(); } catch { return null; } } }) {
   const records = createTaskRecords({ store, assertActive });
   const checkPolicies=require("./integration-check-policy").createIntegrationCheckPolicy({store,assertActive});
   const checkSelection=require("./integration-check-selection");
@@ -53,6 +54,22 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     const { task } = requireOk(await tasks.get(command));
     if (["cancelled", "declined"].includes(task.state)) throw fail("COLLAB_TASK_ACCESS_DENIED");
     return task;
+  }
+  // Unresolved conflicts are repaired by the requester's configured model with
+  // the task goal and the requester's own answers as evidence. No model means
+  // the conflict stays visible; nothing is ever approved by a model alone.
+  const answersId=intentId=>`integration-answers:${createHash("sha256").update(JSON.stringify(intentId)).digest("hex")}`;
+  async function repairContextFor(input){
+    await authorizeIntegration(input);
+    const intentId=require("./integration-intents").integrationIntentId(input);
+    const card=records.get(`task-card:${input.taskId}`)?.task;
+    const task=card&&card.conversationId===input.conversationId?card:(await taskFor({conversationId:input.conversationId,taskId:input.taskId}));
+    const goal={title:task?.title||"",objective:task?.objective||"",acceptanceCriteria:task?.acceptanceCriteria||""};
+    const stored=records.get(answersId(intentId));
+    const answers=stored?.kind==="integration-answers"&&stored.intentId===intentId?stored.answers:[];
+    let completion=null;try{completion=repairCompletion?.()||null;}catch{completion=null;}
+    return {goal,answers,answersHash:answers.length?createHash("sha256").update(JSON.stringify(answers.map(a=>[a.path,a.answer]))).digest("hex"):null,
+      complete:completion?.available?completion.complete:null};
   }
   // The project's own installed dependencies, exposed read-only to pinned
   // checks. Absent or aliased directories mean checks needing packages wait.
@@ -288,7 +305,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function execute(command) {
     assertActive();
     const {operation,conversationId} = command;
-    if(operation==="integrationStatus" || operation==="retryIntegration" || operation==="configureIntegrationChecks"){
+    if(operation==="integrationStatus" || operation==="retryIntegration" || operation==="configureIntegrationChecks" || operation==="answerIntegration"){
       const task=await taskFor(command);
       const current=()=>require("./integration-status").taskIntegration(task,records.list(conversationId),new Map(store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND conversation_id=?",store.accountId,conversationId).map(row=>[row.intent_id,row])),integrationValidationAvailable,
         store.db.get("SELECT code FROM task_hydration WHERE account_id=? AND task_id=?",store.accountId,task.id)?.code==="COLLAB_TASK_BINDING_REQUIRED");
@@ -321,6 +338,23 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
           paths:selected.paths,selectedHashes:selected.hashes,expectedPolicyId:previous?.id||null,authorize,assertCurrent,
           onInstalled:()=>store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=? AND state='waiting' AND code IN ('COLLAB_INTEGRATION_VALIDATION_REQUIRED','COLLAB_INTEGRATION_VALIDATION_FAILED')",store.accountId,found.intent.id)});
         notify();return {ok:true,integration:{...current().status,canConfigureChecks:true,checkCount:policy.policy.files.length}};
+      }
+      if(operation==="answerIntegration"){
+        // Requester answers are evidence for the next repair attempt, stored
+        // per intent and re-admitting the same durable work item.
+        const questions=found.status.questions||[];
+        if(!questions.length||command.answers.some(item=>!questions.some(q=>q.path===item.path)))throw fail("COLLAB_TASK_INVALID");
+        const id=answersId(found.intent.id),previous=records.get(id);
+        if(previous&&(previous.kind!=="integration-answers"||previous.intentId!==found.intent.id))throw fail("COLLAB_TASK_INVALID");
+        const now=store.now(),answers=[...(previous?.answers||[]).filter(a=>!command.answers.some(n=>n.path===a.path)),
+          ...command.answers.map(item=>({path:item.path,question:questions.find(q=>q.path===item.path).question,answer:item.answer.trim().slice(0,4000),answeredAt:now}))].slice(-32);
+        store.db.transaction(()=>{
+          if(found.work.state==="running")throw fail("COLLAB_TASK_BUSY");
+          records.put(id,{kind:"integration-answers",conversationId,intentId:found.intent.id,answers});
+          store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=? AND state='waiting' AND code IN ('COLLAB_INTEGRATION_CONFLICT','COLLAB_INTEGRATION_DECISION_REQUIRED')",store.accountId,found.intent.id);
+          store.db.run("UPDATE task_integration_work SET code='COLLAB_LOCAL_APPLICATION_PENDING',next_attempt_at=0 WHERE account_id=? AND intent_id=? AND state='done' AND code='COLLAB_LOCAL_APPLICATION_REQUIRED'",store.accountId,found.intent.id);
+        })();
+        notify();return {ok:true,integration:current().status};
       }
       const result=store.db.transaction(()=>{
         const fresh=current();if(!fresh?.intent || !fresh.work)throw fail("COLLAB_TASK_LOCAL_MISSING");
@@ -633,8 +667,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       if(intent?.state!=="completed")throw fail("COLLAB_LOCAL_MATERIALIZATION_PUBLICATION_REQUIRED");
       const input=intent.input,source=read(`task:${input.taskId}`,input.conversationId);
       const published=records.get(`shared-publication:${createHash("sha256").update(JSON.stringify(intentId)).digest("hex")}`);
+      const repairContext=await repairContextFor(input);guard();
+      const repairer=repairContext.complete?require("./conflict-repair").createConflictRepair({complete:repairContext.complete}):null;
+      const repair=repairer?{answersHash:repairContext.answersHash,resolve:async({files})=>{guard();const outcome=await repairer.repair({kind:"merge",goal:repairContext.goal,answers:repairContext.answers,files});guard();return outcome;}}:null;
       const local=require("./local-materialization").createLocalMaterialization({store,taskGit:git(),rootPath:path.join(root(),"local-materialization"),
-        deviceId,assertActive:guard,authorize:async value=>{await authorizeIntegration(value);guard();return true;}});
+        deviceId,assertActive:guard,authorize:async value=>{await authorizeIntegration(value);guard();return true;},repair});
       const result=await local.prepare({intentId,input,localRoot:source.sourceRoot,baseline:source.gitBaseline,published});guard();notify();
       if(result.state==="ready"){
         const validator=require("./local-candidate-validation").createLocalCandidateValidation({store,rootPath:path.join(root(),"local-validation-git"),assertActive:guard,dependencyRoot:dependencyRoot(source.sourceRoot),
@@ -673,7 +710,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     assertActive();const source=read(`task:${input.taskId}`,input.conversationId);
     const current=checkPolicies.current(input,checkSelection.sourceIdentity(source.sourceRoot));
     if((current?.id||null)!==expectedId)throw fail("COLLAB_CHECK_POLICY_CHANGED");
-  },integrationDependencyRoot:async input=>{
+  },integrationRepair:async input=>repairContextFor(input),integrationDependencyRoot:async input=>{
     await authorizeIntegration(input);return dependencyRoot(read(`task:${input.taskId}`,input.conversationId).sourceRoot);
   },getIntegrationCheckPolicy:async input=>{
     await authorizeIntegration(input);const source=read(`task:${input.taskId}`,input.conversationId);

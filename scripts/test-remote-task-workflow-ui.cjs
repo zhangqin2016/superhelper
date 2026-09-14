@@ -22,12 +22,12 @@ app.whenReady().then(async()=>{
  const root=document.createElement('section'),header=document.createElement('header');root.className='collaboration-conversation';root.style='display:flex;height:100%;position:relative';header.className='collaboration-conversation-header';shell.append(root);root.append(header);
  const check=(x,s)=>{if(!x)throw Error(s)}, settle=async()=>{for(let i=0;i<12;i++)await new Promise(r=>setTimeout(r,0));};
  const click=async action=>{let b;for(let i=0;i<200;i++){b=shell.querySelector('[data-action="'+action+'"]');if(b&&!b.disabled)break;await new Promise(r=>setTimeout(r,5));}check(b&&!b.disabled,'missing or disabled '+action+': '+shell.textContent);b.click();await settle();};
- let context={enabled:true,conversationId:'chat',userId:'owner'},commands=[],drafts=[],applications=[],localRecoveries=[],hold,conflict=false,cancelPrepare=true,sendFailed=true,deliveryError='',writerBusy=true,undoMode='';
+ let context={enabled:true,conversationId:'chat',userId:'owner'},commands=[],drafts=[],applications=[],localRecoveries=[],hold,conflict=false,cancelPrepare=true,sendFailed=true,deliveryError='',writerBusy=true,undoMode='',integrationFixture={stage:'published',deliveryId:'v1',canRetry:false,localStage:'waiting'};
  let task={id:'task',conversationId:'chat',requesterUserId:'owner',assigneeUserId:'helper',title:'Budget',objective:'Review',acceptanceCriteria:'Correct',state:'accepted',revision:4,acceptedDeliveryId:'v1',currentDeliveryId:'v1',deliveries:[{id:'v1',number:1,submittedAt:1000}],updatedAt:1000};
  const frozen={id:'draft1',name:'Budget',files:[{path:'<img src=x>',sizeBytes:20}],warnings:['Review secrets'],omitted:2};
  let savedBinding=null;
  const workflow=async c=>{commands.push(c);
- if(c.operation==='integrationStatus')return{ok:true,integration:{stage:'published',deliveryId:'v1',canRetry:false,localStage:'waiting'}};
+ if(c.operation==='integrationStatus')return{ok:true,integration:integrationFixture};if(c.operation==='answerIntegration'){integrationFixture={stage:'queued',deliveryId:'v1',canRetry:false};return{ok:true,integration:integrationFixture};}
  if(c.operation==='bindingOptions')return{ok:true,projects:[{id:'existing',name:'Existing workspace',sessions:[{id:'existing-session',title:'My conversation'}]}],binding:savedBinding};
  if(c.operation==='bind'){savedBinding={projectId:c.projectId||'chosen-folder',sessionId:c.sessionId||'new-session'};return{ok:true,...savedBinding};}
  if(c.operation==='recoveries')return{ok:true,applications:localRecoveries};
@@ -59,6 +59,12 @@ app.whenReady().then(async()=>{
  await setLocale('en',{persist:false});applications[0].state='applied';undoMode='conflict';await click('task-back');await click('task-open');await click('task-rollback');check(root.textContent.includes('not undone')&&root.querySelector('[data-action="task-rollback"]'),'undo conflict keeps the contribution and its action');
  undoMode='undone';await click('task-rollback');check(root.textContent.includes('was undone')&&!root.querySelector('[data-action="task-rollback"]'),'undone contribution shows history without another rollback action');
  await click('task-back');await click('task-open');check(root.textContent.includes('was undone')&&!root.querySelector('[data-action="task-rollback"]')&&commands.filter(c=>c.operation==='integrationStatus').length>=2,'undone state persists after reopening and refreshes integration status');await setLocale('ar',{persist:false});
+ integrationFixture={stage:'decision_required',deliveryId:'v1',canRetry:true,questions:[{path:'budget.txt',question:'Keep 1.2M or accept 1.8M?'}]};await click('task-back');await click('task-open');
+ const area=root.querySelector('textarea[data-path="budget.txt"]');check(area&&root.textContent.includes('Keep 1.2M or accept 1.8M?')&&root.textContent.includes('budget.txt'),'requester sees the single decision question with its file');
+ area.value='Accept 1.8M';await click('task-answer-integration');const answered=commands.find(c=>c.operation==='answerIntegration');
+ check(answered&&answered.deliveryId==='v1'&&answered.answers.length===1&&answered.answers[0].path==='budget.txt'&&answered.answers[0].answer==='Accept 1.8M','answer travels as an identity-only validated command');
+ check(!root.querySelector('textarea[data-path]')&&root.querySelector('.remote-task-integration'),'an answered decision leaves the queued state without a stale question');
+ integrationFixture={stage:'published',deliveryId:'v1',canRetry:false,localStage:'waiting'};
  await click('task-back');drafts[0]={...frozen,state:'preparation_failed'};await click('task-back');await click('task-entry');await click('task-resume');check(!root.querySelector('[data-action="task-send"]'),'failed preparation cannot be sent');await click('task-prepare');check(commands.filter(c=>c.operation==='prepare').at(-1).draftId===frozen.id,'preparation retry keeps persistent card identity');
  context={...context,userId:'helper'};task={...task,state:'active',acceptedDeliveryId:null,sharedWorkspaceId:'shared'};ui.update();await click('task-entry');await click('task-open');check(!root.querySelector('[data-action="task-preview"]'),'assignee cannot apply requester files');await click('task-receive');
  check(!commands.some(c=>c.operation==='receive'),'first receive waits for workspace choice');

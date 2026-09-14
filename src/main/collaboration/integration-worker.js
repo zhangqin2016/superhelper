@@ -4,6 +4,7 @@ const {createIntegrationIntents}=require("./integration-intents");
 const {createSharedPublication}=require("./shared-publication");
 const {createCandidateValidation}=require("./candidate-validation");
 const {createNodeCheckPolicy}=require("./node-check-policy");
+const {createConflictRepair}=require("./conflict-repair");
 
 /** Bounded background preparation. Waiting validation/conflicts are durable;
  * no default validator, engine prompt or implicit successful approval exists. */
@@ -60,14 +61,20 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
       };
       remote=workflow.createIntegrationRemote?.({input:intent.input,intentId:intent.id,taskGit:context.taskGit,assertCurrent:()=>{guard();intents.assertLease(lease);},authorize});
       if(remote)remotes.add(remote);
+      // Unresolved conflicts go to the requester's configured model with the
+      // task goal, three-way evidence and any answers; the result still passes
+      // the same validation gate as a deterministic merge.
+      const repairContext=await workflow.integrationRepair?.(intent.input);guard();intents.assertLease(lease);
+      const repairer=repairContext?.complete?createConflictRepair({complete:repairContext.complete}):null;
+      const resolve=repairer?async({files})=>{guard();const outcome=await repairer.repair({kind:"merge",goal:repairContext.goal,answers:repairContext.answers||[],files});guard();return outcome;}:null;
       const publisher=createSharedPublication({store,taskGit:context.taskGit,assertActive:guard,now,authorize});
       const validation=createCandidateValidation({store,taskGit:context.taskGit,assertActive:()=>{guard();intents.assertLease(lease);},intentId:intent.id,input:intent.input,
         validationPolicyId:nodePolicy?.policyId||validationPolicyId,checkPolicyId:checkPolicy?.id||null,
         validateIntegration:nodePolicy?.validate||validateIntegration});
-      const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,
+      const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,resolve,
         validationPolicyId:validation.policyId,validate:validation.validate,remote});
       guard();
-      const code=result.state==="conflicts"?"COLLAB_INTEGRATION_CONFLICT":result.state==="published"?null:
+      const code=result.state==="conflicts"?(result.candidate?.repair?.questions?.length?"COLLAB_INTEGRATION_DECISION_REQUIRED":"COLLAB_INTEGRATION_CONFLICT"):result.state==="published"?null:
         result.validationAttempt?.state==="failed"?"COLLAB_INTEGRATION_VALIDATION_FAILED":"COLLAB_INTEGRATION_VALIDATION_REQUIRED";
       store.db.run("UPDATE task_integration_work SET state=?,code=?,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=? AND generation=? AND state='running'",result.state==="published"?"done":"waiting",code,accountId,intent.id,lease.generation);
       notify();
@@ -101,7 +108,7 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
     if(['pending','running'].includes(row.state))await executeRow(row,execution.assertActive);
     active();execution.assertActive();row=store.db.get("SELECT * FROM task_integration_work WHERE account_id=? AND intent_id=?",accountId,intent.id);
     const final=intents.get(intent.id);
-    const state=final?.state==='completed'?'published':final?.state==='cancelled'?'cancelled':row?.code==='COLLAB_INTEGRATION_VALIDATION_REQUIRED'?'validation_required':row?.code==='COLLAB_INTEGRATION_VALIDATION_FAILED'?'validation_failed':row?.code==='COLLAB_INTEGRATION_CONFLICT'?'conflict':row?.state==='waiting'?'failed':'queued';
+    const state=final?.state==='completed'?'published':final?.state==='cancelled'?'cancelled':row?.code==='COLLAB_INTEGRATION_VALIDATION_REQUIRED'?'validation_required':row?.code==='COLLAB_INTEGRATION_VALIDATION_FAILED'?'validation_failed':row?.code==='COLLAB_INTEGRATION_CONFLICT'?'conflict':row?.code==='COLLAB_INTEGRATION_DECISION_REQUIRED'?'decision_required':row?.state==='waiting'?'failed':'queued';
     const local=state==='published'&&remotePublicationEnabled
       ? await getWorkflow().prepareIntegrationLocal?.({intentId:intent.id,assertCurrent:()=>{active();execution.assertActive();}}):null;
     active();execution.assertActive();

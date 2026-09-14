@@ -45,6 +45,15 @@ try {
   assert.ok(conflict.conflicts.some(file=>file.path==='doc.txt'));
   assert.ok(conflict.conflicts.some(file=>file.path==='remove.txt'));
   assert.equal(fs.readFileSync(path.join(paths.w,'remove.txt'),'utf8'),'private deletion conflict');
+  // The requester's resolver sees only the content conflict with its diff3 view; a complete resolution enters the candidate, everything else stays a conflict.
+  const requests=[];
+  const repaired=await prepareLocalCandidate({...input,resolve:async({files})=>{requests.push(files);return {resolutions:new Map([['doc.txt',Buffer.from('resolved by requester\n')]]),questions:[{path:'doc.txt',question:'ignored because resolved'}],evidence:{policy:'model-repair-v1',model:'fixture',promptHash:'a'.repeat(64),responseHash:'b'.repeat(64),resolvedPaths:['doc.txt'],questionPaths:[]}};}});
+  assert.deepEqual(requests[0].map(file=>file.path),['doc.txt'],'deletion conflicts are never sent for content repair');
+  assert.equal(requests[0][0].ours.toString(),'conflicting\n');assert.match(requests[0][0].merged.toString(),/<<<<<<< ours[\s\S]*>>>>>>> theirs/);
+  assert.equal(repaired.state,'conflicts');assert.deepEqual(repaired.conflicts.map(file=>file.path),['remove.txt']);
+  assert.equal(fs.readFileSync(path.join(repaired.snapshotRoot,'doc.txt'),'utf8'),'resolved by requester\n');assert.ok(repaired.manifest.some(file=>file.path==='doc.txt'));
+  assert.equal(repaired.repair.model,'fixture');assert.equal(fs.readFileSync(path.join(paths.w,'doc.txt'),'utf8'),'conflicting\n','repair never writes W');
+  await assert.rejects(prepareLocalCandidate({...input,resolve:async()=>({resolutions:new Map([['unrelated.txt',Buffer.from('x')]]),questions:[],evidence:{}})}),/INVALID/,'a resolver cannot touch paths it was not asked about');
   fs.writeFileSync(path.join(paths.w,'new.txt'),'private collision');
   const collision=await prepareLocalCandidate(input);
   assert.ok(collision.conflicts.some(file=>file.path==='new.txt'&&file.reason==='add_add'));

@@ -1,21 +1,25 @@
 "use strict";
-const stages=new Set(["queued","preparing","validation_required","conflict","failed","publication_pending","published","cancelled","binding_required"]);
+const stages=new Set(["queued","preparing","validation_required","conflict","decision_required","failed","publication_pending","published","cancelled","binding_required"]);
+const questionsView=value=>Array.isArray(value)?value.slice(0,8).filter(item=>typeof item?.path==="string"&&typeof item.question==="string"&&item.question.trim())
+  .map(item=>({path:item.path.slice(0,300),question:item.question.trim().slice(0,500)})):[];
 const localStages=new Set(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied","undone"]);
 function integrationView(value){
   return value && stages.has(value.stage) && /^[A-Za-z0-9_-]{1,200}$/.test(value.deliveryId||"")
     ? {stage:value.stage,deliveryId:value.deliveryId,canRetry:value.canRetry===true,
       ...(value.stage==="published"&&localStages.has(value.localStage)?{localStage:value.localStage}:{}),
+      ...(questionsView(value.questions).length?{questions:questionsView(value.questions)}:{}),
       ...(value.canConfigureChecks===true?{canConfigureChecks:true}:{}),
       ...(Number.isInteger(value.checkCount)&&value.checkCount>=0&&value.checkCount<=32?{checkCount:value.checkCount}:{})} : null;
 }
 function integrationIndex(records){
-  const byTask=new Map(),sent=new Set(),local=new Map();
+  const byTask=new Map(),sent=new Set(),local=new Map(),publications=new Map();
   for(const row of records){
     if(row.kind==="integration-intent"){const list=byTask.get(row.input.taskId)||[];list.push(row);byTask.set(row.input.taskId,list);}
     if(row.kind==="publication-outbox" && row.state==="sent")sent.add(row.intentId);
     if(row.kind==="local-materialization")local.set(row.intentId,local.has(row.intentId)?null:row);
+    if(row.kind==="shared-publication")publications.set(row.intentId,row);
   }
-  return {byTask,sent,local};
+  return {byTask,sent,local,publications};
 }
 function localStage(job,intent,task,work){
   if(!job)return work.code==="COLLAB_LOCAL_APPLICATION_PENDING"?"waiting":undefined;
@@ -52,9 +56,15 @@ function taskIntegration(task,records,workById,validationAvailable=false,binding
   else if(work.state==="running")stage="preparing";
   else if(work.code==="COLLAB_INTEGRATION_VALIDATION_REQUIRED")stage="validation_required";
   else if(work.code==="COLLAB_INTEGRATION_CONFLICT")stage="conflict";
+  else if(work.code==="COLLAB_INTEGRATION_DECISION_REQUIRED")stage="decision_required";
   else stage=work.code?"failed":"queued";
-  const local=stage==="published"?localStage(index.local?.get(intent.id),intent,task,work):undefined;
-  return {intent,work,status:{stage,...(local?{localStage:local}:{}),deliveryId:task.currentDeliveryId,canRetry:intent.state==="pending"
-    && ["waiting","pending"].includes(work.state) && (stage==="failed" || stage==="validation_required" && validationAvailable)}};
+  const localJob=stage==="published"?index.local?.get(intent.id):null;
+  const local=stage==="published"?localStage(localJob,intent,task,work):undefined;
+  // Questions the model could not answer from the goal travel with the status
+  // so the requester can decide; answering re-admits the same intent.
+  const questions=["conflict","decision_required"].includes(stage)?index.publications?.get(intent.id)?.candidate?.repair?.questions
+    :local==="conflict"?localJob?.candidate?.repair?.questions:null;
+  return {intent,work,status:{stage,...(local?{localStage:local}:{}),...(questionsView(questions).length?{questions:questionsView(questions)}:{}),deliveryId:task.currentDeliveryId,canRetry:intent.state==="pending"
+    && ["waiting","pending"].includes(work.state) && (["failed","conflict","decision_required"].includes(stage) || stage==="validation_required" && validationAvailable)}};
 }
 module.exports={integrationView,taskIntegration,integrationIndex};

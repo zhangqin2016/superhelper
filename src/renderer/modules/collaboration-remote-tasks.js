@@ -115,6 +115,24 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       box.append(node("p","",tr(`integration.${integration.stage}`)));
       if(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied","undone"].includes(integration.localStage))box.append(node("p","",tr(`integration.local.${integration.localStage}`)));
       if(integrationError)box.append(node("p","",tr(integrationError==="checks"?"integration.checksFailed":"integration.retryFailed")));
+      if(integration.questions?.length){
+        // The model could not settle these from the goal; the requester's answer
+        // is recorded as evidence and re-admits the same integration.
+        box.append(node("p","",tr("integration.questions")));
+        const list=node("ul","remote-task-questions"),inputs=[];
+        for(const item of integration.questions){
+          const row=node("li","remote-task-question");row.append(node("strong","",item.path),node("p","",item.question));
+          const area=node("textarea","remote-task-reason");area.rows=2;area.maxLength=4000;area.dataset.path=item.path;area.setAttribute("aria-label",item.question);area.placeholder=tr("integration.answerPlaceholder");
+          row.append(area);inputs.push(area);list.append(row);
+        }
+        box.append(list,button("task-answer-integration",tr("integration.answer"),async()=>{
+          const answers=inputs.filter(area=>area.value.trim()).map(area=>({path:area.dataset.path,answer:area.value.trim().slice(0,4000)}));
+          if(!answers.length)return;
+          const result=await runWorkflow({operation:"answerIntegration",taskId:task.id,deliveryId:integration.deliveryId,answers});
+          if(!result)return;
+          integrationError=!result.ok;if(result.ok)integration=result.integration||null;paintDetail();
+        }));
+      }
       if(integration.canConfigureChecks){
         if(integration.checkCount)box.append(node("p","",tr("integration.checksPinned",{count:integration.checkCount})));
         box.append(node("p","",tr("integration.checksTrust")));
