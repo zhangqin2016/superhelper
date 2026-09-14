@@ -19,6 +19,7 @@ Object.assign(process.env, {
   DATABASE_URL: scoped.href, SESSION_SECRET: crypto.randomBytes(32).toString("hex"),
   COLLABORATION_ENABLED: "true", COLLABORATION_KILL_SWITCH: "false", COLLABORATION_ROLLOUT_ORGANIZATIONS: "",
   COLLABORATION_ATTACHMENTS_ENABLED: "true", COLLABORATION_WORKSPACE_SHARES_ENABLED: "true",
+  COLLABORATION_TASKS_ENABLED: "true", COLLABORATION_TASK_GIT_ENABLED: "true",
   COLLAB_MESSAGE_KEK: crypto.randomBytes(32).toString("hex"), COLLAB_MESSAGE_KEK_VERSION: "v1",
   COLLAB_OBJECT_KEK: crypto.randomBytes(32).toString("hex"), COLLAB_OBJECT_KEK_VERSION: "v1", COLLAB_OBJECT_KEKS: "",
   COLLAB_QINIU_ACCESS_KEY: "test-private-ak", COLLAB_QINIU_SECRET_KEY: "test-private-sk", COLLAB_QINIU_BUCKET: "test-private-bucket",
@@ -78,7 +79,7 @@ try {
     create table device_public_keys(device_id text primary key,public_key text);
     create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
     create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);`);
-  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql", "041_collaboration_reply_snapshots.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql", "041_collaboration_reply_snapshots.sql", "045_collaboration_tasks.sql", "047_collaboration_shared_workspaces.sql", "048_collaboration_task_history.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   for (const user of ["a", "b", "outsider"]) {
     const pair = crypto.generateKeyPairSync("ed25519"); keys.set(user, pair);
     await pool.query("insert into users values($1)", [user]);

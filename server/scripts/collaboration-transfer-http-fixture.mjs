@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { verifyAttachmentServiceHttp } from "./collaboration-attachment-send-http-fixture.mjs";
+import { verifyTaskGitServiceHttp } from "./collaboration-task-git-http-fixture.mjs";
 const require = createRequire(import.meta.url);
 const { createCollaborationClient } = require("../../src/main/collaboration/client");
 const { createTransferManager } = require("../../src/main/collaboration/transfer-manager");
@@ -111,5 +112,6 @@ export async function verifyTransferHttp({ app, keys, createAccessToken, stableS
     assert.deepEqual(fs.readFileSync(await receiving.verifiedFile(inbound.id)), fs.readFileSync(source));
     sending.stop(); receiving.stop(); sender.client.stop(); recipient.client.stop();
     await verifyAttachmentServiceHttp({ desktop, directory, source, fetchImpl, conversationId, pool, dropAck });
+    await verifyTaskGitServiceHttp({ desktop, directory, fetchImpl, conversationId, pool, dropAck, uploaded });
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
