@@ -258,7 +258,11 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       },
     });
     const tasks = createTaskCommands({ store, client, deviceId, assertActive, onChange: () => emitState("task") });
+    const integrationDiscovery=policy?.taskGitProtocol===1 && taskOptions.resolveSourceSession
+      ? require("./integration-discovery").createIntegrationDiscovery({store,assertActive,resolveSourceSession:taskOptions.resolveSourceSession}) : null;
+    const onTask=integrationDiscovery ? task=>integrationDiscovery.observe(task) : undefined;
     const taskHydration=createTaskHydration({store,client,deviceId,assertActive,onChange:()=>emitState("task"),
+      onTask,
       ensureConversation:async conversationId=>{
         await enqueueSync(async()=>{
           assertActive();
@@ -267,7 +271,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
           await recoverConversationHydration({store,client,deviceId,assertActive,recoverDeniedHistory});
         });
       }});
-    const taskHistory=createTaskHistory({store,client,deviceId,protocol:policy?.taskHistoryProtocol,assertActive,onChange:()=>emitState("task")});
+    const taskHistory=createTaskHistory({store,client,deviceId,protocol:policy?.taskHistoryProtocol,assertActive,onChange:()=>emitState("task"),onTask});
     const recoverTasks=()=>policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true
       ? Promise.all([taskHydration.recover(),taskHistory.recover()]) : Promise.resolve();
     let taskHydrationTimer=null;

@@ -17,7 +17,7 @@ function queueTaskHydration(store,event) {
 
 /** Read-only network work. Queue mutation and encrypted publication are atomic;
  * a newer generation or stopped account invalidates every awaited response. */
-function createTaskHydration({store,client,deviceId,assertActive,ensureConversation,onChange=()=>{}}) {
+function createTaskHydration({store,client,deviceId,assertActive,ensureConversation,onChange=()=>{},onTask}) {
   const accountId=store.accountId;
   let running=null,cards=null;
   const active=()=>{assertActive();if(store.accountId!==accountId)fail("COLLAB_ACCOUNT_CHANGED");};
@@ -29,7 +29,7 @@ function createTaskHydration({store,client,deviceId,assertActive,ensureConversat
     for(const row of rows) {
       try {
         active();
-        const task=taskView(await client.getTask({deviceId,taskId:row.task_id}));
+        const task=taskView(await client.getTask({deviceId,taskId:row.task_id}),{includeGit:Boolean(onTask)});
         active();if(!current(row))continue;
         if(!task||task.id!==row.task_id)fail("COLLAB_TASK_INVALID");
         if(![task.requesterUserId,task.assigneeUserId].includes(accountId))fail("COLLAB_TASK_ACCESS_DENIED");
@@ -41,8 +41,10 @@ function createTaskHydration({store,client,deviceId,assertActive,ensureConversat
         }
         store.db.transaction(()=>{
           active();if(!current(row))return;
-          cards.remember(task);
-          store.db.run("DELETE FROM task_hydration WHERE account_id=? AND task_id=? AND generation=?",accountId,row.task_id,row.generation);
+          const remembered=cards.remember(task);
+          if(onTask && remembered.revision>task.revision)fail("COLLAB_TASK_REVISION_STALE");
+          if(onTask?.(task)===false)store.db.run("UPDATE task_hydration SET access_denied=0,next_attempt_at=?,code='COLLAB_TASK_BINDING_REQUIRED' WHERE account_id=? AND task_id=? AND generation=?",store.now()+30000,accountId,row.task_id,row.generation);
+          else store.db.run("DELETE FROM task_hydration WHERE account_id=? AND task_id=? AND generation=?",accountId,row.task_id,row.generation);
         })();
         onChange();
       } catch(error) {

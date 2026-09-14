@@ -28,7 +28,7 @@ function seedTaskHistory(store,{reset=false}={}) {
   })();
 }
 
-function createTaskHistory({store,client,deviceId,protocol,assertActive,onChange=()=>{}}) {
+function createTaskHistory({store,client,deviceId,protocol,assertActive,onChange=()=>{},onTask}) {
   const accountId=store.accountId;let running=null,cards,records;
   const active=()=>{assertActive();if(store.accountId!==accountId)fail("COLLAB_ACCOUNT_CHANGED");};
   const current=row=>store.db.get("SELECT generation FROM task_history_scans WHERE account_id=? AND conversation_id=?",accountId,row.conversation_id)?.generation===row.generation;
@@ -55,14 +55,16 @@ function createTaskHistory({store,client,deviceId,protocol,assertActive,onChange
         const page=await client.listTaskHistory({deviceId,conversationId:row.conversation_id,...(cursor?{cursor}:{})});
         active();if(!current(row))break;scope(row);
         if(!page||!Array.isArray(page.tasks)||page.tasks.length>50||!(page.nextCursor===null||position(page.nextCursor)))fail("COLLAB_TASK_HISTORY_INVALID");
-        const next=page.nextCursor,tasks=page.tasks.map(taskView);
+        const next=page.nextCursor,tasks=page.tasks.map(value=>taskView(value,{includeGit:Boolean(onTask)}));
         if(next&&cursor&&compare(next,cursor)>=0)fail("COLLAB_TASK_HISTORY_INVALID");
         if(tasks.some(t=>!t||t.conversationId!==row.conversation_id||![t.requesterUserId,t.assigneeUserId].includes(accountId)
           ||(cursor&&compare(t,cursor)>=0)||(next&&compare(t,next)<0))||new Set(tasks.map(t=>t.id)).size!==tasks.length)fail("COLLAB_TASK_HISTORY_INVALID");
         store.db.transaction(()=>{
           scope(row);
           for(const task of tasks) {
-            cards.remember(task);
+            const remembered=cards.remember(task);
+            if(onTask && remembered.revision>task.revision)queueTaskHydration(store,{type:"task.updated",payload:{taskId:task.id,revision:remembered.revision}});
+            else if(onTask?.(task)===false)queueTaskHydration(store,{type:"task.updated",payload:{taskId:task.id,revision:task.revision}});
             store.db.run("INSERT OR IGNORE INTO task_history_seen VALUES (?,?,?,?)",accountId,row.conversation_id,row.generation,task.id);
             if(store.db.get("SELECT 1 FROM task_hydration WHERE account_id=? AND task_id=? AND access_denied=1",accountId,task.id))
               queueTaskHydration(store,{type:"task.updated",payload:{taskId:task.id,revision:task.revision}});
