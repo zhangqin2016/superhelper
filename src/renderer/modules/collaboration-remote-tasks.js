@@ -113,7 +113,16 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     if(integration){
       const box=node("section","remote-task-notice remote-task-integration");box.setAttribute("role","status");
       box.append(node("p","",tr(`integration.${integration.stage}`)));
-      if(integrationError)box.append(node("p","",tr("integration.retryFailed")));
+      if(integrationError)box.append(node("p","",tr(integrationError==="checks"?"integration.checksFailed":"integration.retryFailed")));
+      if(integration.canConfigureChecks){
+        if(integration.checkCount)box.append(node("p","",tr("integration.checksPinned",{count:integration.checkCount})));
+        box.append(node("p","",tr("integration.checksTrust")));
+        box.append(button("task-configure-checks",tr(integration.checkCount?"integration.updateChecks":"integration.selectChecks"),async()=>{
+          const result=await runWorkflow({operation:"configureIntegrationChecks",taskId:task.id,deliveryId:integration.deliveryId});
+          if(!result||result.cancelled)return;
+          integrationError=result.ok?false:"checks";if(result.ok)integration=result.integration||null;paintDetail();
+        }));
+      }
       if(integration.canRetry)box.append(button("task-retry-integration",tr("integration.retry"),async()=>{
         const result=await runWorkflow({operation:"retryIntegration",taskId:task.id,deliveryId:integration.deliveryId});
         if(!result)return;

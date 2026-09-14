@@ -295,6 +295,7 @@ app.whenReady().then(async () => {
               ? require("./main/collaboration/integration-turn").enqueueIntegrationTurn(collaborationTurnOrchestrator,request)
               : {ok:false,error:"COLLAB_INTEGRATION_NOT_READY"},
             chooseDirectory: () => dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] }),
+            chooseValidationChecks: ({sourceRoot}) => require("./main/collaboration/integration-check-selection").chooseChecks(dialog,mainWindow,sourceRoot),
             resolveProjectDirectory: (projectId) => projectManager.find(projectId)?.path,
             resolveSourceSession: (input) => require("./main/collaboration/task-session").resolveRemoteTaskSourceSession(projectManager,sessionManager,input),
             resolveCardSession: (id) => {

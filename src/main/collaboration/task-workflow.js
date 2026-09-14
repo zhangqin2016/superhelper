@@ -14,8 +14,10 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
-  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, integrationValidationAvailable=false, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, integrationValidationAvailable=false, chooseValidationChecks, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
+  const checkPolicies=require("./integration-check-policy").createIntegrationCheckPolicy({store,assertActive});
+  const checkSelection=require("./integration-check-selection");
   const cards = require("./task-cards").createTaskCards({store,assertActive});
   const recoveries = createTaskRecovery({store,assertActive});
   const running = new Map();
@@ -270,14 +272,39 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function execute(command) {
     assertActive();
     const {operation,conversationId} = command;
-    if(operation==="integrationStatus" || operation==="retryIntegration"){
+    if(operation==="integrationStatus" || operation==="retryIntegration" || operation==="configureIntegrationChecks"){
       const task=await taskFor(command);
       const current=()=>require("./integration-status").taskIntegration(task,records.list(conversationId),new Map(store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND conversation_id=?",store.accountId,conversationId).map(row=>[row.intent_id,row])),integrationValidationAvailable,
         store.db.get("SELECT code FROM task_hydration WHERE account_id=? AND task_id=?",store.accountId,task.id)?.code==="COLLAB_TASK_BINDING_REQUIRED");
       const found=current();
-      if(operation==="integrationStatus")return {ok:true,integration:found?.status || null};
+      if(operation==="integrationStatus"){
+        const status=found?.status;
+        if(status && found?.intent?.state==="pending" && found.work.state!=="running" && typeof chooseValidationChecks==="function"){
+          await authorizeIntegration(found.intent.input);
+          const source=read(`task:${task.id}`,conversationId),identity=checkSelection.sourceIdentity(source.sourceRoot);
+          status.canConfigureChecks=true;status.checkCount=checkPolicies.current(found.intent.input,identity)?.policy.files.length||0;
+        }
+        return {ok:true,integration:status || null};
+      }
       if(!found?.intent || command.deliveryId!==task.currentDeliveryId)throw fail("COLLAB_TASK_LOCAL_MISSING");
       await authorizeIntegration(found.intent.input);
+      if(operation==="configureIntegrationChecks"){
+        if(typeof chooseValidationChecks!=="function"||found.intent.state!=="pending"||found.work.state==="running")throw fail("COLLAB_TASK_BUSY");
+        const input=found.intent.input,source=read(`task:${task.id}`,conversationId),identity=checkSelection.sourceIdentity(source.sourceRoot);
+        const previous=checkPolicies.current(input,identity);
+        const choice=await chooseValidationChecks({sourceRoot:source.sourceRoot});assertActive();
+        if(choice?.canceled)return {ok:true,cancelled:true,integration:found.status};
+        if(checkSelection.sourceIdentity(source.sourceRoot)!==identity)throw fail("COLLAB_CHECK_POLICY_SOURCE_CHANGED");
+        const selected=checkSelection.selectedChecks(source.sourceRoot,choice?.filePaths);
+        const assertCurrent=()=>{
+          if(checkSelection.sourceIdentity(source.sourceRoot)!==identity)throw fail("COLLAB_CHECK_POLICY_SOURCE_CHANGED");
+          const fresh=current();if(!fresh?.intent || fresh.intent.id!==found.intent.id || fresh.intent.state!=="pending" || fresh.work.state==="running")throw fail("COLLAB_TASK_BUSY");
+        };
+        const authorize=async()=>{await authorizeIntegration(input);assertCurrent();return true;};
+        const policy=await checkPolicies.install({input,sourceIdentity:identity,taskGit:git(),baseline:source.gitBaseline,
+          paths:selected.paths,selectedHashes:selected.hashes,expectedPolicyId:previous?.id||null,authorize,assertCurrent});
+        notify();return {ok:true,integration:{...current().status,canConfigureChecks:true,checkCount:policy.policy.files.length}};
+      }
       const result=store.db.transaction(()=>{
         const fresh=current();if(!fresh?.intent || !fresh.work)throw fail("COLLAB_TASK_LOCAL_MISSING");
         if(fresh.status.stage==="queued")return fresh.status;
@@ -560,7 +587,10 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       catch { /* durable record remains available; never report it as applied */ }
     }
   });
-  return {recoverPending:()=>ready,acquireIntegrationInput,authorizeIntegration:async input=>{await authorizeIntegration(input);return true;},run(command) {
+  return {recoverPending:()=>ready,acquireIntegrationInput,getIntegrationCheckPolicy:async input=>{
+    await authorizeIntegration(input);const source=read(`task:${input.taskId}`,input.conversationId);
+    return checkPolicies.current(input,checkSelection.sourceIdentity(source.sourceRoot));
+  },authorizeIntegration:async input=>{await authorizeIntegration(input);return true;},run(command) {
     command = taskWorkflowCommand(command);
     if (!command) return Promise.resolve({ok:false,code:"COLLAB_TASK_INVALID"});
     if (["drafts","recoveries","bindingOptions","cards","sessionCards","integrationStatus"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));

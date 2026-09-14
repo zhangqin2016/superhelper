@@ -1,4 +1,9 @@
 {
+  "collaboration.task.integration.selectChecks": "Choose project checks",
+  "collaboration.task.integration.updateChecks": "Update check set",
+  "collaboration.task.integration.checksPinned": "Pinned {count} check files",
+  "collaboration.task.integration.checksTrust": "Selected tests will run project code on the candidate copy. Their original contents will be saved for future tasks.",
+  "collaboration.task.integration.checksFailed": "Could not save checks. Ensure the selected files still match the task baseline, then refresh and try again.",
   "collaboration.task.integration.queued": "Integration queued",
   "collaboration.task.integration.preparing": "Preparing integration",
   "collaboration.task.integration.validation_required": "Waiting for validation",

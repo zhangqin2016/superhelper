@@ -85,6 +85,21 @@ try{
  assert.equal(intents.get(jsonIntent.id).state,'completed');
  assert.equal((await shared.publication(jsonJournal.candidate)).commit,jsonJournal.candidate.commit);
  assert.equal(fs.readFileSync(path.join(jsonSource,'config.json'),'utf8'),'{"left":1,"right":1}');
+ worker.stop();let unrelatedCalled=false;
+ const pinned=intents.enqueue({...jsonInput,workspaceId:'pinned-checks',targetId:'pinned-target'});
+ worker=createIntegrationWorker({...jsonOptions,getWorkflow:()=>({...jsonOptions.getWorkflow(),getIntegrationCheckPolicy:async()=>({id:'validation-policy:'+'a'.repeat(64)})}),
+  validationPolicyId:'unrelated-policy',validateIntegration:async c=>{unrelatedCalled=true;return {ok:true,commit:c.commit,policyId:'unrelated-policy',evidenceHash:'b'.repeat(64)};}});
+ await worker.runIntent({accountId:'owner',sessionId:'session',intentId:pinned.id},{assertActive(){}});
+ assert.equal(unrelatedCalled,false,'a saved original check set cannot be bypassed by an unrelated callback');
+ assert.equal(intents.get(pinned.id).state,'pending');
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',pinned.id).code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED');
+ worker.stop();let policyReads=0;
+ const changedPolicy=intents.enqueue({...jsonInput,workspaceId:'changed-policy',targetId:'changed-policy-target'});
+ worker=createIntegrationWorker({...jsonOptions,getWorkflow:()=>({...jsonOptions.getWorkflow(),getIntegrationCheckPolicy:async()=>++policyReads===1?null:{id:'validation-policy:'+'c'.repeat(64)}}),
+  validationPolicyId:'old-policy',validateIntegration:async()=>{throw Error('old policy must not run');}});
+ await worker.runIntent({accountId:'owner',sessionId:'session',intentId:changedPolicy.id},{assertActive(){}});
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',changedPolicy.id).code,'COLLAB_CHECK_POLICY_CHANGED','policy change at authorization fences stale validation');
+ assert.equal(intents.get(changedPolicy.id).state,'pending');
  store.revokeScope({scopeId:'team:org'});assert.equal(store.db.get('SELECT count(*) n FROM task_integration_work').n,0,'scope retirement removes pending scheduler rows');
  console.log('integration worker: actual candidate validation/evidence, missing/failed policy distinction, restart publication, bounded retry, stop and scope fences passed (input and project policy are fixtures)');
 }finally{worker?.stop();store?.close();fs.rmSync(root,{recursive:true,force:true});}

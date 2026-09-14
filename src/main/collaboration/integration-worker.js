@@ -25,9 +25,17 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
       timer=setInterval(()=>{try{guard();const renewed=intents.renew(lease,30000);store.db.run("UPDATE task_integration_work SET next_attempt_at=? WHERE account_id=? AND intent_id=? AND generation=? AND state='running'",renewed.expiresAt,accountId,intent.id,lease.generation);}catch{leaseLost=true;}},5000);timer.unref?.();
       timers.add(timer);
       const workflow=getWorkflow(),context=await workflow.acquireIntegrationInput(intent.input);guard();intents.assertLease(lease);
-      const publisher=createSharedPublication({store,taskGit:context.taskGit,assertActive:guard,now,authorize:input=>workflow.authorizeIntegration(input)});
+      const checkPolicy=await workflow.getIntegrationCheckPolicy?.(intent.input);guard();intents.assertLease(lease);
+      const publisher=createSharedPublication({store,taskGit:context.taskGit,assertActive:guard,now,authorize:async input=>{
+        if(await workflow.authorizeIntegration(input)!==true)return false;
+        const current=await workflow.getIntegrationCheckPolicy?.(input);
+        if((current?.id||null)!==(checkPolicy?.id||null))throw Object.assign(Error("Check policy changed"),{code:"COLLAB_CHECK_POLICY_CHANGED"});
+        return true;
+      }});
       const validation=createCandidateValidation({store,taskGit:context.taskGit,assertActive:()=>{guard();intents.assertLease(lease);},intentId:intent.id,input:intent.input,
-        validationPolicyId,validateIntegration});
+        // A saved check set must be executed by its dedicated policy runner.
+        // Until that runner is available, an unrelated callback cannot approve it.
+        validationPolicyId,checkPolicyId:checkPolicy?.id||null,validateIntegration:checkPolicy?undefined:validateIntegration});
       const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,
         validationPolicyId:validation.policyId,validate:validation.validate});
       guard();

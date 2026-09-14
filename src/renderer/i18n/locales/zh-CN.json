@@ -1,4 +1,9 @@
 {
+  "collaboration.task.integration.selectChecks": "选择项目检查",
+  "collaboration.task.integration.updateChecks": "更新检查集",
+  "collaboration.task.integration.checksPinned": "已固定 {count} 个检查文件",
+  "collaboration.task.integration.checksTrust": "选中的测试将在候选副本上运行项目代码。原始内容会固定保存，供后续任务验证使用。",
+  "collaboration.task.integration.checksFailed": "检查未保存。请确认选中文件仍与任务基线一致，然后刷新重试。",
   "collaboration.task.integration.queued": "集成已排队",
   "collaboration.task.integration.preparing": "正在准备集成",
   "collaboration.task.integration.validation_required": "等待验证",

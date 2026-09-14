@@ -2,7 +2,9 @@
 const stages=new Set(["queued","preparing","validation_required","conflict","failed","publication_pending","published","cancelled","binding_required"]);
 function integrationView(value){
   return value && stages.has(value.stage) && /^[A-Za-z0-9_-]{1,200}$/.test(value.deliveryId||"")
-    ? {stage:value.stage,deliveryId:value.deliveryId,canRetry:value.canRetry===true} : null;
+    ? {stage:value.stage,deliveryId:value.deliveryId,canRetry:value.canRetry===true,
+      ...(value.canConfigureChecks===true?{canConfigureChecks:true}:{}),
+      ...(Number.isInteger(value.checkCount)&&value.checkCount>=0&&value.checkCount<=32?{checkCount:value.checkCount}:{})} : null;
 }
 function integrationIndex(records){
   const byTask=new Map(),sent=new Set();

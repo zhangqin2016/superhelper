@@ -37,9 +37,10 @@ async function unchanged(root,manifest,guard){
  * evidence boundary, not a sandbox: only trusted main-process checkers belong
  * here. Contributions cannot supply commands, policy IDs or passing receipts.
  * Structural integrity alone does not authorize semantic publication. */
-function createCandidateValidation({store,taskGit,assertActive,intentId,input,validationPolicyId,validateIntegration}){
+function createCandidateValidation({store,taskGit,assertActive,intentId,input,validationPolicyId,validateIntegration,checkPolicyId=null}){
+  if(checkPolicyId!==null && !/^validation-policy:[a-f0-9]{64}$/.test(checkPolicyId))throw fail();
   const configured=typeof validateIntegration==="function" && typeof validationPolicyId==="string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(validationPolicyId);
-  const policyId=`candidate-v3:${hash([configured?validationPolicyId:"unconfigured",process.version])}`;
+  const policyId=`candidate-v4:${hash([configured,configured?validationPolicyId:null,process.version,checkPolicyId])}`;
   const records=createTaskRecords({store,assertActive});
   const recordId=candidate=>`candidate-validation-latest:${hash([intentId,candidate.commit,policyId])}`;
   function get(candidate){
@@ -94,7 +95,7 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
       checks.push({id:"candidate-unchanged",version:"1",status:intact?"passed":"failed",coverage:"candidate files after all checks",
         ...(intact?{evidenceHash:manifestHash(material.manifest)}:{code:"CANDIDATE_CHANGED"})});
       if(!await taskGit.hasRevision(candidate))throw fail();assertActive();
-      const report={version:1,policyId,commit:candidate.commit,tree:candidate.tree,head:candidate.head,baseline:candidate.baseline,delivery:candidate.delivery,
+      const report={version:1,policyId,checkPolicyId,commit:candidate.commit,tree:candidate.tree,head:candidate.head,baseline:candidate.baseline,delivery:candidate.delivery,
         runtime:{git:gitVersion.slice(0,200),node:process.version},state,checks};
       const evidenceHash=hash(report),evidenceId=`candidate-validation:${hash([intentId,evidenceHash])}`;
       store.db.transaction(()=>{

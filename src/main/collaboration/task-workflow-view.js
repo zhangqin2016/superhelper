@@ -9,6 +9,7 @@ const fields = {
   bind:["taskId","projectId","sessionId"],
   bindingOptions:["taskId"],
   integrationStatus:["taskId"],retryIntegration:["taskId","deliveryId"],
+  configureIntegrationChecks:["taskId","deliveryId"],
   prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
   preview:["taskId","deliveryId"],apply:["taskId","deliveryId","applicationId","expectedPlanHash","confirmDeletions"],rollback:["taskId","applicationId"],

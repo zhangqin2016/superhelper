@@ -22,6 +22,9 @@ try{
  const candidate=await shared.prepare({workspaceId:'workspace',baseline,delivery,expectedHead:head.commit});
  const input={conversationId:'chat',workspaceId:'workspace',taskId:'task',deliveryId:'delivery',baselineCommit:baseline.commit,deliveryCommit:delivery.commit};
  const options={store,taskGit,assertActive(){},intentId:'intent',input};
+ const missingPolicyId=createCandidateValidation(options).policyId;
+ assert.notEqual(createCandidateValidation({...options,validationPolicyId:'unconfigured',validateIntegration:async()=>({ok:true})}).policyId,missingPolicyId,'a host policy named unconfigured cannot collide with an absent validator');
+ assert.notEqual(createCandidateValidation({...options,checkPolicyId:'validation-policy:'+'a'.repeat(64)}).policyId,missingPolicyId,'installed original-check identity participates in validation receipt reuse');
  let validator=createCandidateValidation(options),result=await validator.validate(candidate);
  assert.equal(result.ok,false);assert.equal(result.state,'required');
  assert.equal(validator.get(candidate).report.checks[0].status,'passed','actual Git integrity is recorded even when project validation is missing');

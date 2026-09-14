@@ -1,4 +1,9 @@
 {
+  "collaboration.task.integration.selectChecks": "اختيار فحوصات المشروع",
+  "collaboration.task.integration.updateChecks": "تحديث مجموعة الفحوصات",
+  "collaboration.task.integration.checksPinned": "تم تثبيت {count} من ملفات الفحص",
+  "collaboration.task.integration.checksTrust": "ستشغّل الاختبارات المحددة كود المشروع على النسخة المرشحة. سيُحفظ محتواها الأصلي للتحقق من المهام اللاحقة.",
+  "collaboration.task.integration.checksFailed": "تعذر حفظ الفحوصات. تأكد من تطابق الملفات المحددة مع أساس المهمة، ثم حدّث وحاول مجددًا.",
   "collaboration.task.integration.queued": "تمت إضافة الدمج إلى قائمة الانتظار",
   "collaboration.task.integration.preparing": "جارٍ تجهيز الدمج",
   "collaboration.task.integration.validation_required": "بانتظار التحقق",

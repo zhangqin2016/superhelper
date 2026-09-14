@@ -16,10 +16,14 @@ app.whenReady().then(async()=>{
   const {setLocale}=await import(${JSON.stringify(pathToFileURL(path.resolve('src/renderer/i18n/index.js')).href)});await setLocale('en',{persist:false});
   const check=(x,s)=>{if(!x)throw Error(s);},settle=async()=>{for(let i=0;i<15;i++)await new Promise(r=>setTimeout(r,0));};
   let context={enabled:true,conversationId:'chat',userId:'owner'},rows=[{id:'draft',taskId:null,title:'<img src=x>',state:'preparing',createdAt:10,revision:0}],reads=0;
-  let detailTask=${JSON.stringify(task)},integration=null,retries=0,releaseRetry;
+  let detailTask=${JSON.stringify(task)},integration=null,retries=0,releaseRetry,configurations=0,releaseChecks;
   const api={taskWorkflow:async command=>{
     if(command.operation==='cards')return {ok:true,cards:structuredClone(rows)};
     if(command.operation==='integrationStatus')return {ok:true,integration};
+    if(command.operation==='configureIntegrationChecks'){
+      check(JSON.stringify(Object.keys(command).sort())===JSON.stringify(['conversationId','deliveryId','operation','taskId']),'check selection carries only identities');
+      configurations++;return new Promise(resolve=>{releaseChecks=resolve;});
+    }
     if(command.operation==='retryIntegration'){
       check(JSON.stringify(Object.keys(command).sort())===JSON.stringify(['conversationId','deliveryId','operation','taskId']),'retry carries only identities');
       check(command.taskId==='task'&&command.deliveryId==='delivery'&&command.conversationId==='chat','retry targets original delivery');
@@ -58,7 +62,16 @@ app.whenReady().then(async()=>{
   integration={...integration,stage:'validation_required',canRetry:false};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();
   await setLocale('zh-CN',{persist:false});await settle();
   check(document.querySelector('.remote-task-integration').textContent.includes('等待验证')&&!document.querySelector('[data-action="task-retry-integration"]'),'missing validator is localized and not retryable');
-  await setLocale('en',{persist:false});integration={...integration,stage:'publication_pending'};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();
+  integration={...integration,canConfigureChecks:true,checkCount:0};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();
+  for(const locale of ['en','zh-CN','ar']){await setLocale(locale,{persist:false});await settle();check(!document.querySelector('.remote-task-integration').textContent.includes('collaboration.task.'),'check selection localized '+locale);}
+  await setLocale('en',{persist:false});await settle();
+  check(document.querySelector('.remote-task-integration').textContent.includes('run project code'),'check selection explains automatic execution trust');
+  const choose=document.querySelector('[data-action="task-configure-checks"]');choose.click();choose.click();await settle();check(configurations===1&&choose.disabled,'native check selection is single-flight');
+  integration={...integration,checkCount:2};releaseChecks({ok:true,integration});await settle();
+  check(document.querySelector('.remote-task-integration').textContent.includes('Pinned 2 check files'),'saved check count is visible');
+  document.querySelector('[data-action="task-configure-checks"]').click();await settle();releaseChecks({ok:true,cancelled:true});await settle();
+  check(document.querySelector('.remote-task-integration').textContent.includes('Pinned 2 check files'),'cancelled picker preserves installed checks');
+  await setLocale('en',{persist:false});integration={...integration,stage:'publication_pending',canConfigureChecks:false};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();
   check(document.querySelector('.remote-task-integration').textContent.includes('waiting to sync'),'local publication is not labeled remotely synced');
   integration={...integration,stage:'failed',canRetry:true};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();document.querySelector('[data-action="task-retry-integration"]').click();await settle();
   context={...context,conversationId:'other'};rows=[];ui.update();await settle();check(!timeline.querySelector('.collaboration-task-card'),'navigation clears old card');

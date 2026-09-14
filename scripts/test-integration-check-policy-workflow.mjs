@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createHash} from 'node:crypto';import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const {TaskGit}=require('../src/main/collaboration/task-git');
+const {CollaborationStore}=require('../src/main/collaboration/collaboration-store');
+const {LocalCollaborationKeyring}=require('../src/main/collaboration/local-keyring');
+const {createTaskRecords}=require('../src/main/collaboration/task-records');
+const {createIntegrationIntents}=require('../src/main/collaboration/integration-intents');
+const {createTaskWorkflow}=require('../src/main/collaboration/task-workflow');
+const {taskWorkflowCommand,taskWorkflowResult}=require('../src/main/collaboration/task-workflow-view');
+const root=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'check-policy-workflow-'));
+const hash=value=>createHash('sha256').update(value).digest('hex');
+const keyring=new LocalCollaborationKeyring({filePath:path.join(root,'keys'),safeStorage:{isEncryptionAvailable:()=>true,encryptString:s=>Buffer.from(s),decryptString:b=>b.toString()}});
+const store=new CollaborationStore({dbPath:path.join(root,'db'),accountId:'owner',keyring});
+try{
+ store.replaceProjectionFromBootstrap({conversations:[{id:'chat',kind:'direct'}]});
+ const source=path.join(root,'source');fs.mkdirSync(source);const file=path.join(source,'rule.test.cjs'),bytes="require('node:test').test('rule',()=>{});";fs.writeFileSync(file,bytes);
+ const rootPath=path.join(root,'managed'),taskGit=new TaskGit({rootPath:path.join(rootPath,hash('owner'),'git'),gitOptions:{autoInstall:false}});
+ const baseline=await taskGit.captureBaseline({taskId:'task',snapshotRoot:source,manifest:[{path:'rule.test.cjs',sizeBytes:Buffer.byteLength(bytes),sha256:hash(bytes)}]});
+ let task={id:'task',conversationId:'chat',requesterUserId:'owner',assigneeUserId:'helper',sharedWorkspaceId:'workspace',state:'review',currentDeliveryId:'delivery',inputGit:baseline,deliveries:[{id:'delivery',git:{commit:'b'.repeat(40)}}]};
+ const input={conversationId:'chat',workspaceId:'workspace',taskId:'task',deliveryId:'delivery',targetId:hash(source),chain:'shared',sessionId:'session',projectId:'project',baselineCommit:baseline.commit,deliveryCommit:'b'.repeat(40)};
+ const intents=createIntegrationIntents({store,assertActive(){}});intents.enqueue(input);
+ createTaskRecords({store,assertActive(){}}).put('task:task',{kind:'task',conversationId:'chat',taskId:'task',sharedWorkspaceId:'workspace',sourceRoot:source,sourceProjectId:'project',sourceSessionId:'session',gitBaseline:baseline});
+ let choice={filePaths:[file]},withdraw=false,replaceRoot=false,choices=0;
+ const workflow=createTaskWorkflow({store,assertActive(){},rootPath,taskGitProtocol:1,tasks:{get:async()=>({ok:true,task})},client:{},transfers:{},
+  resolveSourceSession:({projectId,sessionId})=>({projectId,sessionId,rootPath:source}),chooseValidationChecks:async ({sourceRoot})=>{assert.equal(sourceRoot,source);choices++;if(withdraw)task={...task,state:'changes_requested'};if(replaceRoot){fs.renameSync(source,source+'.old');fs.mkdirSync(source);fs.writeFileSync(file,bytes);}return choice;}});
+ const command={operation:'configureIntegrationChecks',conversationId:'chat',taskId:'task',deliveryId:'delivery'};
+ assert.ok(taskWorkflowCommand(command));assert.equal(taskWorkflowCommand({...command,filePaths:[file]}),null,'renderer cannot supply file paths');
+ const status={operation:'integrationStatus',conversationId:'chat',taskId:'task'};
+ assert.equal((await workflow.run(status)).integration.canConfigureChecks,true);
+ assert.equal((await workflow.run(status)).integration.checkCount,0);
+ assert.equal((await workflow.run(command)).integration.checkCount,1);
+ const saved=await workflow.getIntegrationCheckPolicy(input);
+ const projected=taskWorkflowResult({...await workflow.run(status),policy:saved,sourceRoot:source});
+ assert.equal(projected.integration.checkCount,1);assert.doesNotMatch(JSON.stringify(projected),/rule.test|base64|sourceRoot|validation-policy/);
+ assert.equal(projected.integration.canRetry,false,'saving a policy does not pretend its executor already ran');
+ choice={canceled:true};assert.equal((await workflow.run(command)).cancelled,true);
+ choice={filePaths:[file]};fs.writeFileSync(file,'changed after task freeze');
+ assert.equal((await workflow.run(command)).code,'COLLAB_CHECK_POLICY_SOURCE_CHANGED');assert.equal((await workflow.getIntegrationCheckPolicy(input)).id,saved.id);
+ fs.writeFileSync(file,bytes);const outside=path.join(root,'outside.cjs');fs.writeFileSync(outside,bytes);choice={filePaths:[outside]};
+ assert.equal((await workflow.run(command)).ok,false,'native selection cannot escape the bound source project');
+ choice={filePaths:[file]};withdraw=true;assert.equal((await workflow.run(command)).ok,false,'review withdrawal during native picker prevents configuration');withdraw=false;task={...task,state:'review'};
+ replaceRoot=true;assert.equal((await workflow.run(command)).code,'COLLAB_CHECK_POLICY_SOURCE_CHANGED','physical directory replacement during picker cannot inherit trust');replaceRoot=false;
+ fs.rmSync(source,{recursive:true});fs.renameSync(source+'.old',source);assert.equal((await workflow.getIntegrationCheckPolicy(input)).id,saved.id);
+ const before=choices;store.db.run("UPDATE task_integration_work SET state='running'");assert.equal((await workflow.run(command)).code,'COLLAB_TASK_BUSY');assert.equal(choices,before);
+ assert.equal((await workflow.run({...command,deliveryId:'stale'})).ok,false);
+ console.log('check policy workflow: real Git/SQLite installation, native-only paths, closed summary, cancellation, source change/escape, withdrawal and running fences passed (task API/picker fixtures)');
+}finally{store.close();fs.rmSync(root,{recursive:true,force:true});}
