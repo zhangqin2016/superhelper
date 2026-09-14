@@ -349,6 +349,20 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
       // A published H belongs to its workspace owner, not to all participants
       // of the source task. Always refresh publication authority for cache hits.
       sharedFiles: Object.freeze({
+        downloadBaseline({conversationId,workspaceId}) { return perform(async()=>{
+          const target=conversation(conversationId,'workspace');
+          const {baseline}=await client.getIntegrationBaseline({deviceId,workspaceId});
+          authorize({conversationId,scopeId:target.scopeId,purpose:'workspace'});
+          if(!baseline||baseline.workspaceId!==workspaceId||baseline.conversationId!==conversationId
+            ||baseline.ownerUserId!==accountId)throw fail('COLLAB_TASK_ACCESS_DENIED');
+          let transfer=manager.list().transfers.find(item=>item.direction==='download'&&item.conversationId===conversationId
+            &&item.objectId===baseline.objectId&&item.purpose==='workspace'&&item.state!=='cancelled');
+          if(!transfer)transfer=manager.prepareDownload({conversationId,scopeId:target.scopeId,purpose:'workspace',objectId:baseline.objectId,taskOwned:true});
+          else manager.markTaskOwned(transfer.id);
+          const result=await manager.resumeDownload(transfer.id);
+          if(result?.ok!==true||result.state!=='ready')return result;
+          return {ok:true,packagePath:await verifiedFile(transfer.id),baseline};
+        }); },
         download({conversationId,workspaceId,publicationId}) { return perform(async()=>{
           const target=conversation(conversationId,'workspace');
           const {publication}=await client.getIntegrationPublication({deviceId,workspaceId,publicationId});

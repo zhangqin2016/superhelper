@@ -26,8 +26,12 @@ try{
  const safe=taskWorkflowResult({...status,integration:{...status.integration,intentId:intent.id,rootPath:root,code:'PRIVATE'}});
  assert.deepEqual(safe.integration,{stage:'failed',deliveryId:'delivery',canRetry:true});
  assert.deepEqual(taskWorkflowResult({ok:true,cards:[{id:'card',integration:{...status.integration,intentId:intent.id,rootPath:root}}]}).cards[0].integration,safe.integration,'cards use the same closed status projection');
+ const baselineId=`remote-baseline:${createHash('sha256').update(JSON.stringify(intent.id)).digest('hex')}`;
+ records.put(baselineId,{kind:'remote-baseline-resolution',conversationId:'chat',intentId:intent.id,state:'unavailable',headCommit:'a'.repeat(40),request:null,nextCursor:null});
  assert.equal((await workflow.run({...retry,deliveryId:'stale'})).ok,false,'stale delivery cannot reset current work');
+ assert.equal(records.get(baselineId).state,'unavailable');
  assert.equal((await workflow.run(retry)).ok,true);assert.equal((await workflow.run(retry)).ok,true,'repeated click reuses the queued intent');
+ assert.equal(records.get(baselineId).state,'pending','an authorized explicit retry can rescan after a missing source is restored');
  assert.equal(intents.list('chat').length,1);assert.equal(store.db.get('SELECT attempts FROM task_integration_work').attempts,0);
  const lease=intents.claim(intent.id,{workerId:'worker'});store.db.run("UPDATE task_integration_work SET state='running'");
  assert.equal((await workflow.run(retry)).code,'COLLAB_TASK_BUSY');intents.release(lease);

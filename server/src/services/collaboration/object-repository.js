@@ -25,7 +25,10 @@ export function createKyselyObjectRepository(database, { conversations = createK
     const scope = await lockConversation(trx, { account, conversationId: hint.conversation_id, action: "read" });
     if (!scope.ok) return denied();
     // Match task command lock order: conversation -> task -> object.
-    const workspace = hint.shared_workspace_id ? await trx.selectFrom("collaboration_shared_workspaces").selectAll().where("id","=",hint.shared_workspace_id).forUpdate().executeTakeFirst() : null;
+    const baselineHint=hint.task_id&&hint.owner_user_id===account.userId&&action==='download'
+      ?await trx.selectFrom('collaboration_shared_baselines').selectAll().where('source_object_id','=',objectId).where('owner_user_id','=',account.userId).executeTakeFirst():null;
+    const workspaceId=hint.shared_workspace_id||baselineHint?.workspace_id;
+    const workspace = workspaceId ? await trx.selectFrom("collaboration_shared_workspaces").selectAll().where("id","=",workspaceId).forUpdate().executeTakeFirst() : null;
     const task = hint.task_id ? await trx.selectFrom("collaboration_tasks").selectAll().where("id", "=", hint.task_id).forUpdate().executeTakeFirst() : null;
     const locks = await lockAuthorizationRows(trx, { messageIds: hint.bound_message_id ? [hint.bound_message_id] : [], objectIds: [objectId] });
     const object = locks.object[0];
@@ -37,6 +40,15 @@ export function createKyselyObjectRepository(database, { conversations = createK
       return action==='owner'||object.state==='bound'?{ok:true,object,context}:denied();
     }
     if (object.task_id) {
+      if(baselineHint){
+        const baseline=await trx.selectFrom('collaboration_shared_baselines').selectAll().where('workspace_id','=',workspaceId).forUpdate().executeTakeFirst();
+        if(baseline&&workspace&&task&&baseline.source_object_id===object.id&&baseline.source_task_id===task.id
+          &&baseline.owner_user_id===account.userId&&baseline.conversation_id===object.conversation_id
+          &&workspace.owner_user_id===account.userId&&workspace.conversation_id===object.conversation_id
+          &&task.shared_workspace_id===workspaceId&&task.requester_user_id===account.userId&&task.conversation_id===object.conversation_id
+          &&task.input_snapshot_id===object.id&&object.owner_user_id===account.userId&&object.purpose==='workspace'&&object.state==='bound')return {ok:true,object,context};
+        return denied();
+      }
       if (!task || task.conversation_id !== object.conversation_id || ["declined", "cancelled"].includes(task.state)
         || ![task.requester_user_id, task.assignee_user_id].includes(account.userId)) return denied();
       const parties = await conversations.activeConversationMemberIds(trx, object.conversation_id);

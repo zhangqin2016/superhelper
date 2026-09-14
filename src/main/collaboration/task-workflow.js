@@ -311,6 +311,9 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         if(fresh.status.stage==="queued")return fresh.status;
         if(fresh.work.state==="running")throw fail("COLLAB_TASK_BUSY");
         if(!fresh.status.canRetry)throw fail("COLLAB_TASK_RETRY_UNAVAILABLE");
+        const baselineId=`remote-baseline:${createHash('sha256').update(JSON.stringify(fresh.intent.id)).digest('hex')}`,baseline=records.get(baselineId);
+        if(baseline?.kind==='remote-baseline-resolution'&&baseline.intentId===fresh.intent.id&&baseline.state==='unavailable')
+          records.put(baselineId,{...baseline,state:'pending',request:null,nextCursor:null,updatedAt:store.now()});
         store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=?",store.accountId,fresh.intent.id);
         return {...fresh.status,stage:"queued",canRetry:false};
       })();

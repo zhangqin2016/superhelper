@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createHash} from 'node:crypto';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{TaskGit}=require('../src/main/collaboration/task-git'),{createSharedGit}=require('../src/main/collaboration/shared-git');
-const {createSharedGitTransport}=require('../src/main/collaboration/task-git-transport');
+const {createSharedGitTransport,createTaskGitTransport}=require('../src/main/collaboration/task-git-transport');
 const root=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'shared-head-sync-'));
 const snapshot=(name,files)=>{const snapshotRoot=path.join(root,name);fs.mkdirSync(snapshotRoot);return {snapshotRoot,manifest:Object.entries(files).map(([name,text])=>{fs.writeFileSync(path.join(snapshotRoot,name),text);return {path:name,sizeBytes:Buffer.byteLength(text),sha256:createHash('sha256').update(text).digest('hex')};})};};
 try{
@@ -75,7 +75,26 @@ try{
  const initialSync=createSharedHeadSync({taskGit:initialGit,accountId:'owner',deviceId:'device',assertActive(){},authorize:async()=>true,
   client:{getIntegrationTarget:async()=>({workspaceId:'workspace',headCommit:baseline.commit,revision:0})},sharedFiles:{download:()=>{throw Error('No publication exists yet');}}});
  const initialized=await initialSync.acquire({input,baseline:initialBaseline});assert.equal(initialized.remoteRevision,0);assert.equal(initialized.publicationId,null);
+ const unclaimedSync=createSharedHeadSync({taskGit:initialGit,accountId:'owner',deviceId:'device',assertActive(){},authorize:async()=>true,
+  client:{getIntegrationTarget:async()=>({workspaceId:'unclaimed',headCommit:baseline.commit,revision:0,initialized:false,baselineReady:false})},sharedFiles:{}});
+ await assert.rejects(unclaimedSync.acquire({input:{...input,workspaceId:'unclaimed'},baseline:initialBaseline}),{code:'COLLAB_SHARED_SYNC_BASELINE_UNAVAILABLE'},'a task fallback before the first server claim is not canonical H');
+ assert.equal(await createSharedGit(initialGit).remoteState('unclaimed'),null);
  await assert.rejects(initialSync.acquire({input,baseline}),{code:'COLLAB_SHARED_SYNC_BASELINE_UNAVAILABLE'},'another repository or unknown initial anchor cannot be guessed from the current task');
+ const originalPack=await createTaskGitTransport(source).exportBundle({revision:baseline,destination:path.join(root,'initial.bundle')});
+ const separate=new TaskGit({rootPath:path.join(root,'cross-task'),gitOptions:{autoInstall:false}});
+ const newer=await separate.captureBaseline({taskId:'different',...snapshot('different-base',{'a.txt':'new private work'})});
+ assert.notEqual(newer.commit,baseline.commit);
+ let changed=false,baselineReads=0;
+ const baselineFiles={downloadBaseline:async()=>{baselineReads++;return {ok:true,packagePath:originalPack.packagePath,baseline:{workspaceId:input.workspaceId,
+  conversationId:input.conversationId,ownerUserId:changed?'outsider':'owner',sourceTaskId:'task',objectId:'input-original',git:originalPack.descriptor}};}};
+ const separateSync=createSharedHeadSync({taskGit:separate,accountId:'owner',deviceId:'device',assertActive(){},authorize:async()=>true,
+  client:{getIntegrationTarget:async()=>({workspaceId:'workspace',headCommit:baseline.commit,revision:0,baselineReady:true})},sharedFiles:baselineFiles});
+ const anchored=await separateSync.acquire({input,baseline:newer});assert.equal(anchored.commit,baseline.commit);assert.equal(baselineReads,1);
+ const separateGit=(await separate.ensure()).git;
+ assert.equal(await separateGit(['show',`${newer.commit}:a.txt`]),'new private work','downloading original H preserves the current task B');
+ assert.equal(await separateGit(['rev-list','--parents','-n','1',anchored.commit]),anchored.commit);
+ changed=true;await assert.rejects(separateSync.acquire({input,baseline:newer}),{code:'COLLAB_SHARED_SYNC_METADATA_INVALID'});
+ assert.equal((await createSharedGit(separate).remoteState('workspace')).commit,baseline.commit);
  const initialShared=createSharedGit(initialGit),initialState=await initialShared.remoteState('workspace');
  const importedFirst=await createSharedGitTransport(initialGit).importBundle({packagePath:packs.get('pub1').packagePath,descriptor:publications.get('pub1').git});
  const adoption={workspaceId:'workspace',revision:importedFirst,remoteRevision:1,publicationId:'pub1',expectedHead:initialized.commit,expectedRemoteState:initialState.object,assertCurrent(){}};

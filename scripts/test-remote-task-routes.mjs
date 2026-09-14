@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { taskCommandBody, taskGetBody, taskListBody, taskHistoryBody, taskGitMissingBody, registerCollaborationTaskRoutes } from '../server/src/routes/public/collaboration-tasks.js';
+import { taskCommandBody, taskGetBody, taskListBody, taskHistoryBody, taskGitMissingBody, integrationBaselineBody, integrationBaselineResolveBody, registerCollaborationTaskRoutes } from '../server/src/routes/public/collaboration-tasks.js';
 import { createConfiguredTaskService } from '../server/src/services/collaboration/task-config.js';
 const create={deviceId:'d',clientCommandId:'c',action:'create',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'预算',objective:'核对',acceptanceCriteria:'差异说明'};
 assert.equal(taskCommandBody.safeParse(create).success,true);
@@ -20,6 +20,11 @@ assert.equal(taskHistoryBody.safeParse({deviceId:'d',conversationId:'chat',curso
 for(const cursor of [{createdAt:-1,id:'task'},{createdAt:100,id:'../task'},{createdAt:100,id:'task',userId:'other'}])
   assert.equal(taskHistoryBody.safeParse({deviceId:'d',conversationId:'chat',cursor}).success,false);
 assert.equal(taskHistoryBody.safeParse({deviceId:'d',conversationId:'chat',limit:1000000}).success,false,'page size cannot be chosen by an untrusted client');
+const resolve={deviceId:'d',clientCommandId:'restore',workspaceId:'workspace',taskId:'task',deliveryId:'delivery',expectedHead:inputGit.commit,expectedRevision:0};
+assert.equal(integrationBaselineResolveBody.safeParse(resolve).success,true);
+for(const extra of [{limit:10000},{expectedRevision:1},{afterTaskId:'../private'},{ownerUserId:'forged'}])
+  assert.equal(integrationBaselineResolveBody.safeParse({...resolve,...extra}).success,false,'initial H restoration is scoped, revision-zero and server-bounded');
+assert.equal(integrationBaselineBody.safeParse({deviceId:'d',workspaceId:'workspace',sourceTaskId:'forged'}).success,false);
 assert.equal(createConfiguredTaskService({config:{collaborationTasksEnabled:false}}),null);
 assert.equal(createConfiguredTaskService({config:{collaborationTasksEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationMessageKek:'bad'}}),null,'missing task crypto does not take ordinary IM down');
 const routes=new Map();let calls=0;
@@ -27,5 +32,7 @@ registerCollaborationTaskRoutes({post:(path,schema,handler)=>routes.set(path,han
 await routes.get('/api/collaboration/v1/tasks')({body:create},{});
 await routes.get('/api/collaboration/v1/tasks/history')({body:{deviceId:'d',conversationId:'chat'}},{});
 await routes.get('/api/collaboration/v1/tasks/git/missing')({body:{deviceId:'d',taskId:'t',haveCommits:[]}},{});
+await routes.get('/api/collaboration/v1/tasks/integration/baseline')({body:{deviceId:'d',workspaceId:'workspace'}},{});
+await routes.get('/api/collaboration/v1/tasks/integration/baseline/resolve')({body:resolve},{});
 assert.equal(calls,0,'unauthenticated requests never reach task mutation');
 console.log('remote task routes: closed inputs, explicit delivery approval, authentication boundary and disabled fallback passed');

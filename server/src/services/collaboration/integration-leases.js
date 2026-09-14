@@ -4,6 +4,7 @@ import {runCollaborationCommand} from './command-runner.js';
 import {CollaborationCommandError,canonicalRequestJson} from './idempotency.js';
 import contract from './integration-lease-contract.cjs';
 import publicationContract from './shared-publication-contract.cjs';
+import gitContract from './task-git-descriptor.cjs';
 import {authorizeCollaborationAction} from './authorization.js';
 const fail=code=>{throw new CollaborationCommandError(`COLLAB_INTEGRATION_${code}`,`Integration ${code.toLowerCase()}`,{retryable:code==='BUSY'});};
 const denied=()=>({ok:false,code:'COLLAB_TASK_ACCESS_DENIED'});
@@ -21,6 +22,47 @@ const view=(row,serverTime)=>({workspaceId:row.workspace_id,headCommit:row.head_
  * must verify Git structure and exact validation evidence before publishing. */
 export function createIntegrationLeaseService({repository,authorize,readTask,crypto,enabled=false,commandOperations}){
   const available=()=>{if(enabled!==true)fail('PROTOCOL_UNAVAILABLE');};
+  async function ownerWorkspace(trx,account,workspaceId){
+    const deny=()=>{throw new CollaborationCommandError('COLLAB_TASK_ACCESS_DENIED','Workspace unavailable');};
+    const hint=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',workspaceId).executeTakeFirst();
+    if(!hint||hint.owner_user_id!==account.userId)return deny();
+    if(!(await repository.lockDevice(trx,account)).ok)return deny();
+    const context=await repository.lockConversationContext(trx,{actorUserId:account.userId,conversationId:hint.conversation_id});
+    if(context.decision||!authorizeCollaborationAction(context,'read').ok)return deny();
+    const workspace=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',workspaceId).forUpdate().executeTakeFirst();
+    if(!workspace||workspace.owner_user_id!==account.userId||workspace.conversation_id!==hint.conversation_id)return deny();
+    return workspace;
+  }
+  // The workspace retains authority over its exact original input object. The
+  // object keeps one task binding; retirement still invalidates every download.
+  async function baseline(trx,workspaceId,ownerUserId,conversationId){
+    const row=await trx.selectFrom('collaboration_shared_baselines').selectAll().where('workspace_id','=',workspaceId).executeTakeFirst();
+    if(!row)return null;
+    if(row.owner_user_id!==ownerUserId||row.conversation_id!==conversationId)fail('BASELINE_UNAVAILABLE');
+    const value=JSON.parse(crypto.decryptIntegrationBaseline({ciphertext:row.content_ciphertext,keyVersion:row.content_key_version,
+      messageId:workspaceId,conversationId}).toString('utf8'));
+    if(value.workspaceId!==workspaceId||value.ownerUserId!==ownerUserId||value.conversationId!==conversationId
+      ||value.sourceTaskId!==row.source_task_id||value.objectId!==row.source_object_id||value.git?.commit!==row.commit_id)fail('BASELINE_UNAVAILABLE');
+    const git=gitContract.gitDescriptor(value.git);
+    if(git.prerequisites.length||!git.ref.endsWith('/baseline'))fail('BASELINE_UNAVAILABLE');
+    const source=await trx.selectFrom('collaboration_tasks').selectAll().where('id','=',row.source_task_id).forUpdate().executeTakeFirst();
+    if(!source||source.shared_workspace_id!==workspaceId||source.requester_user_id!==ownerUserId||source.conversation_id!==conversationId
+      ||source.input_snapshot_id!==value.objectId||canonicalRequestJson(readTask(source).inputGit)!==canonicalRequestJson(git))fail('BASELINE_UNAVAILABLE');
+    const object=await trx.selectFrom('stored_objects').selectAll().where('id','=',value.objectId).forUpdate().executeTakeFirst();
+    if(!object||object.state!=='bound'||object.task_id!==source.id||object.shared_workspace_id||object.bound_message_id
+      ||object.owner_user_id!==ownerUserId||object.conversation_id!==conversationId||object.purpose!=='workspace')fail('PACKAGE_UNAVAILABLE');
+    unexpired([object],await clock(trx));return value;
+  }
+  async function anchor(trx,task,head){
+    const existing=await baseline(trx,task.sharedWorkspaceId,task.requesterUserId,task.conversationId);
+    if(existing){if(existing.git.commit!==head)fail('BASELINE_UNAVAILABLE');return;}
+    if(task.inputGit.commit!==head)fail('BASELINE_UNAVAILABLE');
+    const value={workspaceId:task.sharedWorkspaceId,conversationId:task.conversationId,ownerUserId:task.requesterUserId,
+      sourceTaskId:task.id,objectId:task.inputSnapshotId,git:task.inputGit};
+    const envelope=crypto.encryptIntegrationBaseline({plaintext:Buffer.from(JSON.stringify(value)),messageId:value.workspaceId,conversationId:value.conversationId});
+    await trx.insertInto('collaboration_shared_baselines').values({workspace_id:value.workspaceId,conversation_id:value.conversationId,owner_user_id:value.ownerUserId,
+      source_task_id:value.sourceTaskId,source_object_id:value.objectId,commit_id:head,content_ciphertext:envelope.ciphertext,content_key_version:envelope.keyVersion}).execute();
+  }
   async function authorized({trx,account,input}){
     const hint=await trx.selectFrom('collaboration_tasks').selectAll().where('id','=',input.taskId).executeTakeFirst();
     if(!hint)return denied();
@@ -41,7 +83,13 @@ export function createIntegrationLeaseService({repository,authorize,readTask,cry
       const object=objects.find(value=>value.id===id);
       if(!object||object.state!=='bound'||object.task_id!==task.id||object.conversation_id!==task.conversationId||object.purpose!=='workspace'||object.owner_user_id!==owner)fail('PACKAGE_UNAVAILABLE');
     }
-    unexpired(objects,serverTime);return {ok:true,task,objects};
+    unexpired(objects,serverTime);
+    const current=await target(trx,input.workspaceId);
+    if(current&&Number(current.revision)===0){
+      const initial=await baseline(trx,input.workspaceId,account.userId,task.conversationId);
+      if(initial&&initial.git.commit!==current.head_commit)fail('BASELINE_UNAVAILABLE');
+    }
+    return {ok:true,task,objects};
   }
   async function target(trx,workspaceId){return trx.selectFrom('collaboration_integration_targets').selectAll().where('workspace_id','=',workspaceId).forUpdate().executeTakeFirst();}
   function expected(row,input){if(row.head_commit!==input.expectedHead||Number(row.revision)!==input.expectedRevision)fail('HEAD_CHANGED');}
@@ -111,6 +159,7 @@ export function createIntegrationLeaseService({repository,authorize,readTask,cry
         const serverTime=await clock(trx);unexpired(authorization.objects,serverTime);let patch;
         if(action==='claim'){
           expected(row,input);
+          if(Number(row.revision)===0)await anchor(trx,authorization.task,row.head_commit);
           if(row.lease_id&&milliseconds(row.lease_expires_at)>serverTime)fail('BUSY');
           if(Number(row.generation)>=Number.MAX_SAFE_INTEGER-1)fail('GENERATION_LIMIT');
           patch={generation:Number(row.generation)+1,lease_id:randomUUID(),lease_device_id:actor.deviceId,lease_task_id:input.taskId,
@@ -126,6 +175,46 @@ export function createIntegrationLeaseService({repository,authorize,readTask,cry
       }});
   }
   return Object.freeze({
+    async resolveIntegrationBaseline({account,clientCommandId,...raw}){
+      available();const input=contract.leaseInput(raw,'resolve');
+      return runCollaborationCommand({account,clientCommandId,input,commandType:'integration.resolveBaseline',database:repository.database,operations:commandOperations,
+        authorize:async args=>{
+          const decision=await authorized(args);if(!decision.ok)return decision;
+          const row=await target(args.trx,input.workspaceId);if(!row)fail('HEAD_CHANGED');expected(row,input);
+          return decision;
+        },project:async({trx,authorization})=>{
+          const task=authorization.task;
+          const response=ready=>({noEvent:true,event:{},project:async()=>{},response:{workspaceId:input.workspaceId,headCommit:input.expectedHead,ready,nextCursor:null}});
+          if(await baseline(trx,input.workspaceId,account.userId,task.conversationId))return response(true);
+          // Indexed keyset pages bound decryption work even for a long-lived
+          // workspace. Source task state/old assignee membership are irrelevant.
+          let query=trx.selectFrom('collaboration_tasks').selectAll().where('shared_workspace_id','=',input.workspaceId)
+            .where('requester_user_id','=',account.userId).where('conversation_id','=',task.conversationId);
+          if(input.afterTaskId)query=query.where('id','>',input.afterTaskId);
+          const rows=await query.orderBy('id','asc').limit(64).execute();
+          for(const row of rows){
+            const source=readTask(row);if(source.inputGit?.commit!==input.expectedHead)continue;
+            const git=gitContract.gitDescriptor(source.inputGit);if(git.prerequisites.length||!git.ref.endsWith('/baseline'))continue;
+            const object=await trx.selectFrom('stored_objects').selectAll().where('id','=',source.inputSnapshotId).forUpdate().executeTakeFirst();
+            if(!object||object.state!=='bound'||object.task_id!==source.id||object.shared_workspace_id||object.bound_message_id
+              ||object.owner_user_id!==account.userId||object.conversation_id!==task.conversationId||object.purpose!=='workspace')continue;
+            try{unexpired([object],await clock(trx));}catch(error){if(error.code==='COLLAB_INTEGRATION_PACKAGE_UNAVAILABLE')continue;throw error;}
+            await anchor(trx,source,input.expectedHead);return response(true);
+          }
+          const result=response(false);result.response.nextCursor=rows.length===64?rows.at(-1).id:null;return result;
+        }});
+    },
+    async getIntegrationBaseline({account,workspaceId}){
+      available();if(typeof workspaceId!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(workspaceId))fail('INVALID');
+      return repository.database.transaction().execute(async trx=>{
+        await sql`SET LOCAL lock_timeout = '2s'`.execute(trx);
+        await sql`SET LOCAL statement_timeout = '8s'`.execute(trx);
+        const workspace=await ownerWorkspace(trx,account,workspaceId);
+        const value=await baseline(trx,workspaceId,account.userId,workspace.conversation_id);
+        if(!value)fail('BASELINE_UNAVAILABLE');
+        return {workspaceId,baseline:value};
+      });
+    },
     async publishIntegration({account,clientCommandId,...raw}){
       available();const input=publicationContract.publicationInput(raw);
       return runCollaborationCommand({account,clientCommandId,input,commandType:'integration.publish',database:repository.database,operations:commandOperations,
@@ -176,14 +265,7 @@ export function createIntegrationLeaseService({repository,authorize,readTask,cry
       return repository.database.transaction().execute(async trx=>{
         await sql`SET LOCAL lock_timeout = '2s'`.execute(trx);
         await sql`SET LOCAL statement_timeout = '8s'`.execute(trx);
-        const hint=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',workspaceId).executeTakeFirst();
-        const deny=()=>{throw new CollaborationCommandError('COLLAB_TASK_ACCESS_DENIED','Workspace unavailable');};
-        if(!hint||hint.owner_user_id!==account.userId)return deny();
-        if(!(await repository.lockDevice(trx,account)).ok)return deny();
-        const context=await repository.lockConversationContext(trx,{actorUserId:account.userId,conversationId:hint.conversation_id});
-        if(context.decision||!authorizeCollaborationAction(context,'read').ok)return deny();
-        const workspace=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',workspaceId).forUpdate().executeTakeFirst();
-        if(!workspace||workspace.owner_user_id!==account.userId||workspace.conversation_id!==hint.conversation_id)return deny();
+        const workspace=await ownerWorkspace(trx,account,workspaceId);
         const row=await target(trx,workspaceId),id=publicationId??row?.head_publication_id;
         if(!id)return {workspaceId,publication:null};
         const chain=await publicationChain(trx,id,workspaceId,account.userId,workspace.conversation_id),publication=chain[0].publication;
@@ -194,11 +276,14 @@ export function createIntegrationLeaseService({repository,authorize,readTask,cry
     async getIntegrationTarget({account,...raw}){
       available();const input=contract.leaseInput(raw,'get');
       return repository.database.transaction().execute(async trx=>{
+        await sql`SET LOCAL lock_timeout = '2s'`.execute(trx);
+        await sql`SET LOCAL statement_timeout = '8s'`.execute(trx);
         const decision=await authorized({trx,account,input});if(!decision.ok)throw new CollaborationCommandError(decision.code,'Integration unavailable');
         const row=await target(trx,input.workspaceId),serverTime=await clock(trx);
         unexpired(decision.objects,serverTime);
-        return row?{...view(row,serverTime),initialized:true}:
-          {workspaceId:input.workspaceId,headCommit:decision.task.inputGit.commit,revision:0,generation:0,serverTime,lease:null,initialized:false};
+        const baselineReady=row&&Number(row.revision)===0?Boolean(await baseline(trx,input.workspaceId,account.userId,decision.task.conversationId)):false;
+        return row?{...view(row,serverTime),initialized:true,baselineReady}:
+          {workspaceId:input.workspaceId,headCommit:decision.task.inputGit.commit,revision:0,generation:0,serverTime,lease:null,initialized:false,baselineReady:false};
       });
     },
     claimIntegration:input=>mutate('claim',input),renewIntegration:input=>mutate('renew',input),releaseIntegration:input=>mutate('release',input),

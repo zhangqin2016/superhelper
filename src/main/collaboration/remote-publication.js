@@ -56,6 +56,22 @@ function createRemotePublication({store,taskGit,client,transfers,deviceId,input,
     const confirmed=receipt(result.publication);
     save(attempt.id,{state:'confirmed',receipt:confirmed});return confirmed;
   }
+  async function restoreBaseline(target){
+    const id=`remote-baseline:${hash(intentId)}`,prior=records.get(id);
+    if(prior&&(prior.kind!=='remote-baseline-resolution'||prior.intentId!==intentId))throw fail('JOURNAL_INVALID');
+    const matching=prior?.headCommit===target.headCommit;
+    if(matching&&prior.state==='unavailable')throw fail('BASELINE_UNAVAILABLE');
+    const request=matching&&prior.request||{...scope,expectedHead:target.headCommit,expectedRevision:0,clientCommandId:randomUUID(),
+      ...(matching&&prior.nextCursor?{afterTaskId:prior.nextCursor}:{})};
+    if(Object.entries(scope).some(([key,value])=>request[key]!==value)||request.expectedHead!==target.headCommit||request.expectedRevision!==0)throw fail('JOURNAL_INVALID');
+    save(id,{kind:'remote-baseline-resolution',headCommit:target.headCommit,request,state:'resolving'});
+    const result=await client.resolveIntegrationBaseline(request);active();
+    if(!result||result.workspaceId!==input.workspaceId||result.headCommit!==target.headCommit||typeof result.ready!=='boolean'
+      ||result.nextCursor!==null&&(typeof result.nextCursor!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(result.nextCursor))
+      ||result.ready&&result.nextCursor!==null||result.nextCursor&&result.nextCursor===request.afterTaskId)throw fail('BASELINE_INVALID');
+    save(id,{request:null,nextCursor:result.nextCursor,state:result.ready?'ready':result.nextCursor?'pending':'unavailable'});
+    if(!result.ready)throw fail(result.nextCursor?'BASELINE_PENDING':'BASELINE_UNAVAILABLE');
+  }
   return Object.freeze({assertCurrent,
     async recover(journal){
       await authorized();if(!journal?.candidate||!journal.validation)return null;
@@ -69,8 +85,14 @@ function createRemotePublication({store,taskGit,client,transfers,deviceId,input,
     async acquire(baseline){
       await authorized();const id=`remote-lease:${hash(intentId)}`;
       for(let tries=0;tries<2;tries++){
-        const target=await client.getIntegrationTarget(scope);active();
+        let target=await client.getIntegrationTarget(scope);active();
         if(!target||target.workspaceId!==input.workspaceId||!Number.isSafeInteger(target.revision)||target.revision<0||!/^[a-f0-9]{40}$/.test(target.headCommit||''))throw fail('TARGET_INVALID');
+        if(target.initialized===true&&target.revision===0&&target.baselineReady===false){
+          await restoreBaseline(target);
+          const fresh=await client.getIntegrationTarget(scope);active();
+          if(fresh?.workspaceId!==target.workspaceId||fresh.headCommit!==target.headCommit||fresh.revision!==0||fresh.baselineReady!==true)throw fail('HEAD_CHANGED');
+          target=fresh;
+        }
         const prior=records.get(id),expected={expectedHead:target.headCommit,expectedRevision:target.revision};
         const request=prior?.request&&prior.request.deviceId===deviceId&&prior.request.expectedHead===expected.expectedHead&&prior.request.expectedRevision===expected.expectedRevision
           ?prior.request:{...scope,...expected,clientCommandId:randomUUID()};

@@ -1,7 +1,7 @@
 "use strict";
 const {createHash}=require('node:crypto');
 const {createSharedGit}=require('./shared-git');
-const {createSharedGitTransport,parseSharedGitDescriptor}=require('./task-git-transport');
+const {createSharedGitTransport,parseSharedGitDescriptor,createTaskGitTransport,parseGitDescriptor}=require('./task-git-transport');
 const fail=code=>Object.assign(Error(`COLLAB_SHARED_SYNC_${code}`),{code:`COLLAB_SHARED_SYNC_${code}`});
 const id=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(value);
 const oid=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
@@ -42,14 +42,28 @@ function createSharedHeadSync({taskGit,client,sharedFiles,accountId,deviceId,ass
     const readTarget=async()=>{
       const target=await client.getIntegrationTarget(scope);active();
       if(!target||target.workspaceId!==input.workspaceId||!oid(target.headCommit)||!Number.isSafeInteger(target.revision)||target.revision<0||target.revision>=Number.MAX_SAFE_INTEGER)throw fail('METADATA_INVALID');
-      return {commit:target.headCommit,revision:target.revision};
+      if(target.initialized===false)throw fail('BASELINE_UNAVAILABLE');
+      return {commit:target.headCommit,revision:target.revision,baselineReady:target.baselineReady===true};
     };
     const target=await readTarget();
     if(previous&&target.revision<previous.revision)throw Object.assign(Error('Remote head regressed'),{code:'COLLAB_SHARED_GIT_REMOTE_REGRESSED'});
     let revision,publicationId=null,publicationDepth=0;
     if(target.revision===0){
-      if(baseline?.commit!==target.commit||baseline.repository!==repository||!await taskGit.hasRevision(baseline))throw fail('BASELINE_UNAVAILABLE');
-      revision=baseline;
+      if(target.baselineReady){
+        const download=await sharedFiles.downloadBaseline({conversationId:input.conversationId,workspaceId:input.workspaceId});active();
+        if(download?.ok!==true)throw fail('PACKAGE_UNAVAILABLE');
+        const value=download.baseline;
+        if(!value||value.workspaceId!==input.workspaceId||value.conversationId!==input.conversationId||value.ownerUserId!==accountId
+          ||!id(value.sourceTaskId)||!id(value.objectId))throw fail('METADATA_INVALID');
+        const descriptor=parseGitDescriptor(value.git);
+        if(descriptor.commit!==target.commit||descriptor.prerequisites.length||!descriptor.ref.endsWith('/baseline'))throw fail('METADATA_INVALID');
+        revision=await createTaskGitTransport(taskGit).importBundle({packagePath:download.packagePath,descriptor});active();
+        if(await git(['rev-list','--parents','-n','1',revision.commit])!==revision.commit)throw fail('ANCESTRY_INVALID');
+        await taskGit.inspectTree(revision.commit);active();
+      }else{
+        if(baseline?.commit!==target.commit||baseline.repository!==repository||!await taskGit.hasRevision(baseline))throw fail('BASELINE_UNAVAILABLE');
+        revision=baseline;
+      }
     }else{
       const chain=[],seen=new Set();let requested;
       do{

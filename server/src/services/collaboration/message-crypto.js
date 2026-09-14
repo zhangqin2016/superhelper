@@ -176,6 +176,8 @@ export function createCollaborationMessageCrypto({ currentKekVersion, kekByVersi
     decryptTask: (input) => decryptEnvelope(input, "collaboration-task"),
     encryptIntegrationPublication: (input) => encryptEnvelope({...input,revision:1}, "collaboration-publication"),
     decryptIntegrationPublication: (input) => decryptEnvelope({...input,revision:1}, "collaboration-publication"),
+    encryptIntegrationBaseline: (input) => encryptEnvelope({...input,revision:1}, "collaboration-baseline"),
+    decryptIntegrationBaseline: (input) => decryptEnvelope({...input,revision:1}, "collaboration-baseline"),
   });
 }
 

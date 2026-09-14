@@ -4,6 +4,7 @@ import path from 'node:path';
 import {randomBytes} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {verifyPublicationHttp} from './collaboration-publication-http-fixture.mjs';
+import {verifyBaselineHttp} from './collaboration-baseline-http-fixture.mjs';
 const require=createRequire(import.meta.url);
 const {CollaborationStore}=require('../../src/main/collaboration/collaboration-store');
 const {createTransferRuntime}=require('../../src/main/collaboration/transfer-runtime');
@@ -122,6 +123,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       assert.equal(host.manager._store().getTurnInputByTurnId(nextAdmission.turnId,'a').terminalType,'turn.completed');
     }finally{service.stop();host.close();}
     owner.close();owner=open('a');
+    await verifyBaselineHttp({owner,helper,conversationId,pool,dropAck});
     const integrationScope={deviceId:owner.deviceId,workspaceId:task.sharedWorkspaceId,taskId,deliveryId:delivered.id};
     const target=await owner.client.getIntegrationTarget(integrationScope);
     assert.equal(target.initialized,true);

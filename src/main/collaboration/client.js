@@ -129,6 +129,14 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
       const response=await invoke({path:'/api/collaboration/v1/tasks/integration/publication',body:{deviceId,workspaceId,...(publicationId?{publicationId}:{})},deviceId});
       return response?.result;
     },
+    async getIntegrationBaseline({deviceId,workspaceId}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/baseline',body:{deviceId,workspaceId},deviceId});
+      return response?.result;
+    },
+    async resolveIntegrationBaseline({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,afterTaskId}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/baseline/resolve',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,...(afterTaskId?{afterTaskId}:{})},deviceId});
+      return response?.result;
+    },
     async publishIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation,publicationId,objectId,baselineCommit,deliveryCommit,tree,git,validation}) {
       const response=await invoke({path:'/api/collaboration/v1/tasks/integration/publish',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation,publicationId,objectId,baselineCommit,deliveryCommit,tree,git,validation},deviceId});
       return response?.result;

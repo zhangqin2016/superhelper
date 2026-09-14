@@ -73,7 +73,7 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
       active();
       if(lease){try{intents.release(lease);}catch{/* A successor or cancellation owns further state. */}}
       const code=/^COLLAB_[A-Z_]{1,80}$/.test(error.code||"")?error.code:"COLLAB_INTEGRATION_FAILED";
-      const coordination=['COLLAB_INTEGRATION_BUSY','COLLAB_INTEGRATION_HEAD_CHANGED','COLLAB_REMOTE_PUBLICATION_FENCED','COLLAB_REMOTE_PUBLICATION_HEAD_CHANGED','COLLAB_SHARED_SYNC_HEAD_CHANGED','COLLAB_SHARED_GIT_HEAD_CHANGED'].includes(code);
+      const coordination=['COLLAB_INTEGRATION_BUSY','COLLAB_INTEGRATION_HEAD_CHANGED','COLLAB_REMOTE_PUBLICATION_FENCED','COLLAB_REMOTE_PUBLICATION_HEAD_CHANGED','COLLAB_REMOTE_PUBLICATION_BASELINE_PENDING','COLLAB_SHARED_SYNC_HEAD_CHANGED','COLLAB_SHARED_GIT_HEAD_CHANGED'].includes(code);
       const attempts=row.attempts+1,waiting=!coordination&&(attempts>=3 || ["COLLAB_TASK_ACCESS_DENIED","COLLAB_ACCESS_REVOKED","COLLAB_INTEGRATION_FENCED"].includes(code));
       const delay=code==='COLLAB_INTEGRATION_BUSY'?30000:Math.min(60000,1000*2**Math.min(attempts,5));
       store.db.run("UPDATE task_integration_work SET state=?,attempts=?,code=?,next_attempt_at=? WHERE account_id=? AND intent_id=? AND generation=? AND state!='done'",waiting?"waiting":"pending",attempts,code,now()+delay,accountId,row.intent_id,lease?.generation??row.generation);

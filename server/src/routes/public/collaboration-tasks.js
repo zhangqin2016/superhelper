@@ -31,6 +31,8 @@ export const integrationPublishBody=z.object({...command,workspaceId:id,taskId:i
   publicationId:id,objectId:id,baselineCommit:z.string(),deliveryCommit:z.string(),tree:z.string(),git:z.unknown(),validation:z.unknown()}).strict()
   .superRefine(({deviceId,clientCommandId,...input},context)=>{try{publicationContract.publicationInput(input);}catch{context.addIssue({code:z.ZodIssueCode.custom,message:'Invalid publication'});}});
 export const integrationPublicationBody=z.object({...device,workspaceId:id,publicationId:id.optional()}).strict();
+export const integrationBaselineBody=z.object({...device,workspaceId:id}).strict();
+export const integrationBaselineResolveBody=z.object({...command,...integrationScope,expectedHead:integrationHead.expectedHead,expectedRevision:z.literal(0),afterTaskId:id.optional()}).strict();
 export function registerCollaborationTaskRoutes({post,accountFor,database,service}){
   const run=(schema,fn)=>async(request,reply)=>{
     const input=schema.parse(request.body);
@@ -50,4 +52,6 @@ export function registerCollaborationTaskRoutes({post,accountFor,database,servic
   post('/api/collaboration/v1/tasks/integration/release',integrationReleaseBody,run(integrationReleaseBody,(account,input)=>service.releaseIntegration({account,...input})));
   post('/api/collaboration/v1/tasks/integration/publish',integrationPublishBody,run(integrationPublishBody,(account,input)=>service.publishIntegration({account,...input})));
   post('/api/collaboration/v1/tasks/integration/publication',integrationPublicationBody,run(integrationPublicationBody,(account,input)=>service.getIntegrationPublication({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/baseline',integrationBaselineBody,run(integrationBaselineBody,(account,input)=>service.getIntegrationBaseline({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/baseline/resolve',integrationBaselineResolveBody,run(integrationBaselineResolveBody,(account,input)=>service.resolveIntegrationBaseline({account,...input})));
 }
