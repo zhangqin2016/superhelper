@@ -246,6 +246,11 @@ const COLLABORATION_MIGRATIONS = [
       account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, generation TEXT NOT NULL, task_id TEXT NOT NULL,
       PRIMARY KEY(account_id,conversation_id,generation,task_id),
       FOREIGN KEY(account_id,conversation_id) REFERENCES task_history_scans(account_id,conversation_id) ON DELETE CASCADE);`),
+  // v25 — retain monotonic writer generations even after intent retirement.
+  (db) => db.exec(`CREATE TABLE task_integration_leases (
+    account_id TEXT NOT NULL, target_key TEXT NOT NULL, generation INTEGER NOT NULL,
+    intent_id TEXT, worker_id TEXT, expires_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,target_key));`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };
