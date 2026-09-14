@@ -75,7 +75,7 @@ class TaskGit {
     return {repository,git,writeBlob};
   }
   async hasRevision(revision) {
-    if (!/^[0-9a-f]{40}$/.test(revision?.commit || "") || !/^refs\/tasks\/[0-9a-f]{64}\/(baseline|deliveries\/[0-9a-f]{64})$/.test(revision?.ref || "")) return false;
+    if (!/^[0-9a-f]{40}$/.test(revision?.commit || "") || !/^refs\/(tasks\/[0-9a-f]{64}\/(baseline|deliveries\/[0-9a-f]{64})|workspaces\/[0-9a-f]{64}\/(head|candidates\/[0-9a-f]{64}))$/.test(revision?.ref || "")) return false;
     const {git} = await this.ensure();
     try {
       if (await git(["rev-parse","--verify",revision.ref]) !== revision.commit) return false;
@@ -83,12 +83,10 @@ class TaskGit {
       return true;
     } catch {return false;}
   }
-  async materializeSnapshot({revision,destinationRoot,parentCommit}) {
-    if (!(await this.hasRevision(revision))) throw fail("REVISION_UNAVAILABLE");
-    const {repository,git,writeBlob} = await this.ensure();
-    const lineage = (await git(["rev-list","--parents","-n","1",revision.commit])).split(" ");
-    if (lineage.length !== (parentCommit ? 2 : 1) || parentCommit && lineage[1] !== parentCommit) throw fail("ANCESTRY_INVALID");
-    const entries = (await git(["ls-tree","-r","-l","-z",revision.commit])).split("\0").filter(Boolean).map(value=>{
+  async inspectTree(commit) {
+    if (!/^[0-9a-f]{40}$/.test(commit || "")) throw fail("REVISION_UNAVAILABLE");
+    const {git}=await this.ensure();
+    const entries = (await git(["ls-tree","-r","-l","-z",commit])).split("\0").filter(Boolean).map(value=>{
       const match = /^100644 blob ([0-9a-f]{40}) +([0-9]+)\t(.+)$/.exec(value);
       if (!match || controlPath(match[3])) throw fail("TREE_INVALID");
       return {blob:match[1],path:match[3],sizeBytes:Number(match[2])};
@@ -96,6 +94,16 @@ class TaskGit {
     manifestMap(entries.map(file=>({path:file.path,sha256:"0".repeat(64),sizeBytes:file.sizeBytes})));
     const limits = require("./workspace-package").DEFAULT_LIMITS;
     if (entries.some(file=>file.sizeBytes>limits.maxFileBytes) || entries.reduce((sum,file)=>sum+file.sizeBytes,0)>limits.maxTotalBytes) throw fail("LIMIT_EXCEEDED");
+    return entries;
+  }
+  async materializeSnapshot({revision,destinationRoot,parentCommit,parents}) {
+    if (!(await this.hasRevision(revision))) throw fail("REVISION_UNAVAILABLE");
+    const {repository,git,writeBlob} = await this.ensure();
+    const expected=parents===undefined?(parentCommit?[parentCommit]:[]):parents;
+    if (!Array.isArray(expected) || expected.length>2 || expected.some(value=>!/^[0-9a-f]{40}$/.test(value)) || parents!==undefined && parentCommit) throw fail("ANCESTRY_INVALID");
+    const lineage = (await git(["rev-list","--parents","-n","1",revision.commit])).split(" ").slice(1);
+    if (JSON.stringify(lineage)!==JSON.stringify(expected)) throw fail("ANCESTRY_INVALID");
+    const entries=await this.inspectTree(revision.commit);
     if (typeof destinationRoot !== "string" || !path.isAbsolute(destinationRoot) || path.resolve(destinationRoot)!==destinationRoot
       || destinationRoot===this.rootPath || destinationRoot.startsWith(`${this.rootPath}${path.sep}`)
       || this.rootPath.startsWith(`${destinationRoot}${path.sep}`)) throw fail("UNSAFE_PATH");
