@@ -18,7 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { getLogger } = require("../logger");
-const { killProcessTree } = require("../process-tree-kill");
+const { killProcessTree, terminateProcessGroup } = require("../process-tree-kill");
 const { parseServeDiagnostics } = require("./opencode-serve-diagnostics");
 
 const log = getLogger("opencode-shared-server");
@@ -50,6 +50,8 @@ class OpencodeSharedServer extends EventEmitter {
     this.configContent = opts.configContent || "";
 
     this.process = null;
+    this._ownedProcess = null;
+    this._termination = null;
     this.host = "127.0.0.1";
     this.port = 0;
     this._starting = null;
@@ -120,6 +122,7 @@ class OpencodeSharedServer extends EventEmitter {
 
   /** Spawn the serve once; resolve when it reports its listening port. Idempotent. */
   ensureStarted({ timeoutMs = 20_000 } = {}) {
+    if(this._terminated)return Promise.reject(Object.assign(new Error("Engine server was terminated"),{code:"OPENCODE_SERVER_TERMINATED"}));
     if (this._baseClient) return Promise.resolve(this);
     if (this._starting) return this._starting;
     this._starting = new Promise((resolve, reject) => {
@@ -166,6 +169,7 @@ class OpencodeSharedServer extends EventEmitter {
         },
       );
       this.process = child;
+      this._ownedProcess = child;
       let settled = false;
       const settle = (fn) => {
         if (settled) return;
@@ -481,19 +485,21 @@ class OpencodeSharedServer extends EventEmitter {
   }
 
   terminate() {
+    if(this._termination)return this._termination;
     this._terminated = true;
+    const child = this._ownedProcess || this.process;
+    this.process = null;
+    this._termination = terminateProcessGroup(child).catch(()=>({ok:false,code:"TERMINATION_FAILED"}));
     this._sseAbort?.abort();
     this._flushEvents();
     this._eventHandlers.clear();
     this._clients.clear();
     this._baseClient = null;
-    const child = this.process;
-    this.process = null;
-    killProcessTree(child); // reap the serve + its tool children (unlock the dir)
     if (this._configPath) {
       try { fs.unlinkSync(this._configPath); } catch { /* best-effort credential cleanup */ }
       this._configPath = null;
     }
+    return this._termination;
   }
 }
 

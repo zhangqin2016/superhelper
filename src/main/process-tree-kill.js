@@ -97,4 +97,27 @@ function stopPidTree(pid, signal = "SIGTERM", deps = {}) {
   }
 }
 
-module.exports = { killProcessTree, killPidTreeBestEffort, stopPid, stopPidTree };
+// For owned detached POSIX children only. A dead leader can leave tool writers
+// in its group, so confirmation probes the group, not just ChildProcess.exit.
+// This does not prove that a tool which deliberately detached has stopped.
+async function terminateProcessGroup(child, deps = {}) {
+  if(!child)return {ok:true,scope:"not-started"};
+  const pid=child.pid,platform=deps.platform||process.platform;
+  if(!Number.isSafeInteger(pid)||pid<=1||pid===process.pid)return {ok:false,code:"PID_UNAVAILABLE"};
+  const kill=deps.kill||((target,signal)=>process.kill(target,signal));
+  const hard=killProcessTree(child,{...deps,platform,kill});
+  if(platform==="win32")return {ok:false,code:"TREE_CONFIRMATION_UNAVAILABLE",pid};
+  const deadline=Date.now()+(deps.timeoutMs??5000);
+  let confirmed=false;
+  try{
+    for(;;){
+      try{kill(-pid,0);}catch(error){
+        if(error.code==="ESRCH"){confirmed=true;return {ok:true,scope:"process-group",pid};}
+      }
+      if(Date.now()>=deadline)return {ok:false,code:"EXIT_UNCONFIRMED",pid};
+      await new Promise(resolve=>setTimeout(resolve,25));
+    }
+  }finally{if(confirmed&&hard)clearTimeout(hard);}
+}
+
+module.exports = { killProcessTree, killPidTreeBestEffort, stopPid, stopPidTree, terminateProcessGroup };
