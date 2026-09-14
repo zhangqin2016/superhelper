@@ -29,7 +29,18 @@ function createSharedGit(taskGit){
     try{await git(["update-ref",ref,commit,"0".repeat(40)]);}
     catch(error){if(await git(["rev-parse","--verify",ref]).catch(()=>null)!==commit)throw error;}
   }
+  function receiptRef(candidate){
+    if(!sha(candidate?.commit)||!sha(candidate.head)||!/^refs\/workspaces\/[a-f0-9]{64}\/head$/.test(candidate.headRef||""))throw fail("INVALID");
+    return candidate.headRef.replace(/head$/,`publications/${hash([candidate.head,candidate.commit])}`);
+  }
   return Object.freeze({
+    async publication(candidate){
+      const {git,repository}=await runtime(),ref=receiptRef(candidate);
+      const commit=await git(["rev-parse","--verify",ref]).catch(()=>null);
+      if(commit && commit!==candidate.commit)throw fail("RECEIPT_CONFLICT");
+      if(commit)await git(["fsck","--strict","--no-reflogs","--no-dangling",commit]);
+      return commit?{repository,ref:candidate.headRef,commit,receiptRef:ref}:null;
+    },
     async initialize({workspaceId,baseline}){
       const {git,repository}=await runtime();await verified(baseline);
       if(!baseline.ref.endsWith("/baseline"))throw fail("INVALID");
@@ -69,9 +80,12 @@ function createSharedGit(taskGit){
       await taskGit.inspectTree(candidate.commit);
       const result=await validate(candidate);
       if(result?.ok!==true || result.commit!==candidate.commit)throw fail("VALIDATION_FAILED");
-      try{await git(["update-ref",candidate.headRef,candidate.commit,candidate.head]);}
-      catch{if(await git(["rev-parse","--verify",candidate.headRef])!==candidate.commit)throw fail("HEAD_CHANGED");}
-      return {repository:candidate.repository,ref:candidate.headRef,commit:candidate.commit};
+      const receipt=receiptRef(candidate);
+      if(await git(["rev-parse","--verify",receipt]).catch(()=>null)!==candidate.commit){
+        try{await git(["update-ref","--stdin"],undefined,`start\nupdate ${candidate.headRef} ${candidate.commit} ${candidate.head}\ncreate ${receipt} ${candidate.commit}\nprepare\ncommit\n`);}
+        catch{if(await git(["rev-parse","--verify",receipt]).catch(()=>null)!==candidate.commit)throw fail("HEAD_CHANGED");}
+      }
+      return {repository:candidate.repository,ref:candidate.headRef,commit:candidate.commit,receiptRef:receipt};
     },
   });
 }

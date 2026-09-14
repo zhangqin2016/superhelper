@@ -31,6 +31,7 @@ try{
  const competing=await shared.prepare({workspaceId:'workspace',baseline,delivery:other,expectedHead:published.commit});
  assert.equal(competing.state,'ready');
  await shared.publish({candidate:merged,validate:async value=>({ok:true,commit:value.commit})});
+ assert.equal((await shared.publication(candidate)).commit,candidate.commit,'atomic publication receipt survives later head advancement');
  await assert.rejects(shared.publish({candidate:competing,validate:async value=>({ok:true,commit:value.commit})}),/HEAD_CHANGED/,'target advancement invalidates the old candidate');
  assert.equal((await shared.publish({candidate:merged,validate:async value=>({ok:true,commit:value.commit})})).commit,merged.commit,'lost publish ACK resolves from actual Git ref');
  await assert.rejects(shared.prepare({workspaceId:'workspace',baseline,delivery:first,expectedHead:initial.commit}),/HEAD_CHANGED/);

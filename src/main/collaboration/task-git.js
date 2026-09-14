@@ -46,12 +46,16 @@ class TaskGit {
       GIT_AUTHOR_DATE:"2000-01-01T00:00:00Z",GIT_COMMITTER_DATE:"2000-01-01T00:00:00Z",
     });
     const repository = path.join(this.rootPath,"tasks.git");
-    const run = async (args,extra={}) => (await execute(runtime.executable,
-      ["-c","core.hooksPath=" ,"-c","commit.gpgsign=false",...args],
-      {cwd:this.rootPath,env:{...env,...extra},encoding:"utf8",timeout:120000,maxBuffer:1024*1024,windowsHide:true})).stdout.trim();
+    const run = async (args,extra={},input) => {
+      const pending=execute(runtime.executable,["-c","core.hooksPath=" ,"-c","commit.gpgsign=false",...args],
+        {cwd:this.rootPath,env:{...env,...extra},encoding:"utf8",timeout:120000,maxBuffer:1024*1024,windowsHide:true});
+      pending.child.stdin.on("error",()=>{}); // Process exit supplies the command error.
+      pending.child.stdin.end(input);
+      return (await pending).stdout.trim();
+    };
     if (!fs.existsSync(repository)) await run(["init","--bare","--template=","--object-format=sha1",repository]);
     directory(repository);
-    const git = (args,extra)=>run(["--git-dir",repository,...args],extra);
+    const git = (args,extra,input)=>run(["--git-dir",repository,...args],extra,input);
     if (await git(["rev-parse","--is-bare-repository"]) !== "true" || fs.existsSync(path.join(repository,"objects","info","alternates"))) throw fail("REPOSITORY_INVALID");
     const writeBlob = async (blob,destination,file) => {
       const child = spawn(runtime.executable,["--git-dir",repository,"cat-file","blob",blob],{cwd:this.rootPath,env,stdio:["ignore","pipe","pipe"],windowsHide:true});
