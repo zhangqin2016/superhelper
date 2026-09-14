@@ -27,7 +27,7 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
   return Object.freeze({
     get,
     outbox(conversationId){return records.list(conversationId).filter(value=>value.kind==="publication-outbox");},
-    async run({lease,baseline,delivery,validationPolicyId,validate,remote,resolve=null}){
+    async run({lease,baseline,delivery,validationPolicyId,validate,remote,resolve=null,repairFailure=null,repairKey="none"}){
       const guard=()=>intents.assertLease(lease);
       guard();const intent=intents.get(lease.intentId),input=intent.input;
       if(intent.remotePublicationRequired===true&&!remote)throw fail('REMOTE_REQUIRED');
@@ -84,15 +84,30 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
       if(journal.state==="conflicts"){
         intents.release(lease);return journal;
       }
-      if(!validation(journal.validation,journal.candidate,validationPolicyId)){
+      let repaired=false;
+      while(!validation(journal.validation,journal.candidate,validationPolicyId)){
         const result=await validate(Object.freeze({...journal.candidate}));guard();
         const evidence=validation(result,journal.candidate,validationPolicyId);
-        if(!evidence){
-          const attempt=result?.commit===journal.candidate.commit && result.policyId===validationPolicyId && /^[a-f0-9]{64}$/.test(result.evidenceHash||"")
-            ? {commit:result.commit,policyId:validationPolicyId,evidenceHash:result.evidenceHash,state:result.state==="required"?"required":"failed"}:null;
-          save({state:"validation_failed",validation:null,validationAttempt:attempt});intents.release(lease);return journal;
+        if(evidence){save({state:"validated",validation:evidence});break;}
+        const attempt=result?.commit===journal.candidate.commit && result.policyId===validationPolicyId && /^[a-f0-9]{64}$/.test(result.evidenceHash||"")
+          ? {commit:result.commit,policyId:validationPolicyId,evidenceHash:result.evidenceHash,state:result.state==="required"?"required":"failed"}:null;
+        // One bounded model repair per requester answer set when pinned checks
+        // fail. The amended candidate re-enters the same validation; a model
+        // that asks instead of fixing leaves a question, never a publication.
+        const repairs={...(journal.repairs||{})};
+        if(attempt?.state==="failed"&&typeof repairFailure==="function"&&!repaired&&(repairs[repairKey]||0)<1){
+          repaired=true;repairs[repairKey]=(repairs[repairKey]||0)+1;
+          const outcome=await repairFailure({candidate:journal.candidate,attempt});guard();
+          const repair=outcome?{...outcome.evidence,kind:"check_failure",questions:outcome.questions||[]}:null;
+          if(outcome?.resolutions?.size){
+            const amended=await sharedGit.amend({candidate:journal.candidate,resolutions:outcome.resolutions,repair});guard();
+            save({state:"candidate",candidate:amended,validation:null,remoteReceipt:null,repairs,repair:null,
+              failedCandidates:[...(journal.failedCandidates||[]),{commit:journal.candidate.commit,evidenceHash:attempt.evidenceHash}].slice(-8)});
+            continue;
+          }
+          save({state:"validation_failed",validation:null,validationAttempt:attempt,repairs,repair});intents.release(lease);return journal;
         }
-        save({state:"validated",validation:evidence});
+        save({state:"validation_failed",validation:null,validationAttempt:attempt});intents.release(lease);return journal;
       }
       await authorized();save({state:"publishing"});
       let canonicalHead;

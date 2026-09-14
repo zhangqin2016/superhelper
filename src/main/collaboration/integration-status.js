@@ -62,7 +62,8 @@ function taskIntegration(task,records,workById,validationAvailable=false,binding
   const local=stage==="published"?localStage(localJob,intent,task,work):undefined;
   // Questions the model could not answer from the goal travel with the status
   // so the requester can decide; answering re-admits the same intent.
-  const questions=["conflict","decision_required"].includes(stage)?index.publications?.get(intent.id)?.candidate?.repair?.questions
+  const publication=index.publications?.get(intent.id);
+  const questions=["conflict","decision_required"].includes(stage)?(publication?.repair?.questions?.length?publication.repair.questions:publication?.candidate?.repair?.questions)
     :local==="conflict"?localJob?.candidate?.repair?.questions:null;
   return {intent,work,status:{stage,...(local?{localStage:local}:{}),...(questionsView(questions).length?{questions:questionsView(questions)}:{}),deliveryId:task.currentDeliveryId,canRetry:intent.state==="pending"
     && ["waiting","pending"].includes(work.state) && (["failed","conflict","decision_required"].includes(stage) || stage==="validation_required" && validationAvailable)}};

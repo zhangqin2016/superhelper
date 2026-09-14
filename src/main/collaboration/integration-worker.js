@@ -5,6 +5,7 @@ const {createSharedPublication}=require("./shared-publication");
 const {createCandidateValidation}=require("./candidate-validation");
 const {createNodeCheckPolicy}=require("./node-check-policy");
 const {createConflictRepair}=require("./conflict-repair");
+const {createSharedGit}=require("./shared-git");
 
 /** Bounded background preparation. Waiting validation/conflicts are durable;
  * no default validator, engine prompt or implicit successful approval exists. */
@@ -67,18 +68,32 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
       const repairContext=await workflow.integrationRepair?.(intent.input);guard();intents.assertLease(lease);
       const repairer=repairContext?.complete?createConflictRepair({complete:repairContext.complete}):null;
       const resolve=repairer?async({files})=>{guard();const outcome=await repairer.repair({kind:"merge",goal:repairContext.goal,answers:repairContext.answers||[],files});guard();return outcome;}:null;
-      const publisher=createSharedPublication({store,taskGit:context.taskGit,assertActive:guard,now,authorize});
+      const sharedGit=createSharedGit(context.taskGit);
+      const publisher=createSharedPublication({store,taskGit:context.taskGit,sharedGit,assertActive:guard,now,authorize});
       const validation=createCandidateValidation({store,taskGit:context.taskGit,assertActive:()=>{guard();intents.assertLease(lease);},intentId:intent.id,input:intent.input,
         validationPolicyId:nodePolicy?.policyId||validationPolicyId,checkPolicyId:checkPolicy?.id||null,
         validateIntegration:nodePolicy?.validate||validateIntegration});
-      const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,resolve,
+      // Failed pinned checks get one bounded repair of the delivery's own files;
+      // the checks and their helpers are never offered to the model.
+      const repairFailure=repairer?async({candidate})=>{
+        guard();const proof=validation.get(candidate);
+        const failures=(proof?.report?.checks||[]).filter(check=>check.status==="failed").map(check=>({id:check.id,code:check.code||null,
+          detail:check.execution?.execution?{failures:check.execution.execution.failures,logs:check.execution.execution.logs,diagnostic:check.execution.execution.diagnostic,code:check.execution.execution.code}:check.execution??null}));
+        const exclude=checkPolicy?[...checkPolicy.policy.files,...(checkPolicy.policy.helpers||[])].map(file=>file.path):[];
+        const files=await sharedGit.repairInputs({candidate,exclude});guard();
+        if(!files.length)return null;
+        const outcome=await repairer.repair({kind:"check_failure",goal:repairContext.goal,answers:repairContext.answers||[],files,failures});guard();return outcome;
+      }:null;
+      const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,resolve,repairFailure,repairKey:repairContext?.answersHash||"none",
         validationPolicyId:validation.policyId,validate:validation.validate,remote});
       guard();
       const code=result.state==="conflicts"?(result.candidate?.repair?.questions?.length?"COLLAB_INTEGRATION_DECISION_REQUIRED":"COLLAB_INTEGRATION_CONFLICT"):result.state==="published"?null:
+        result.repair?.questions?.length?"COLLAB_INTEGRATION_DECISION_REQUIRED":
         result.validationAttempt?.state==="failed"?"COLLAB_INTEGRATION_VALIDATION_FAILED":"COLLAB_INTEGRATION_VALIDATION_REQUIRED";
       store.db.run("UPDATE task_integration_work SET state=?,code=?,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=? AND generation=? AND state='running'",result.state==="published"?"done":"waiting",code,accountId,intent.id,lease.generation);
       notify();
     }catch(error){
+      if(process.env.LILY_DEBUG_INTEGRATION)console.error("[integration-worker]",error);
       if(stopped)return;
       active();
       if(lease){try{intents.release(lease);}catch{/* A successor or cancellation owns further state. */}}

@@ -26,7 +26,7 @@ try{
  let reply=null,answers=[],modelCalls=[],modelAvailable=true;
  const complete=async request=>{modelCalls.push(request);return typeof reply==='function'?reply(request):reply;};
  const workflow={authorizeIntegration:async()=>true,acquireIntegrationInput:async input=>({taskGit,baseline,delivery:deliveries[input.deliveryId]}),
-  integrationRepair:async()=>({goal:{title:'Budget cap',objective:'Apply the approved cap',acceptanceCriteria:'The approved cap is 1.2M'},answers,complete:modelAvailable?complete:null})};
+  integrationRepair:async()=>({goal:{title:'Budget cap',objective:'Apply the approved cap',acceptanceCriteria:'The approved cap is 1.2M'},answers,answersHash:answers.length?hash(JSON.stringify(answers.map(a=>[a.path,a.answer]))):null,complete:modelAvailable?complete:null})};
  const validate=async candidate=>({ok:true,state:'passed',commit:candidate.commit,policyId:'fixture-v1',evidenceHash:hash(candidate.commit)});
  worker=createIntegrationWorker({store,assertActive(){},getWorkflow:()=>workflow,validationPolicyId:'fixture-v1',validateIntegration:validate});
  const git=async args=>(await taskGit.ensure()).git(args);
@@ -78,5 +78,37 @@ try{
  const fifth=intents.enqueue({...common,deliveryId:'fifth',deliveryCommit:deliveries.fifth.commit});await worker.recover();
  assert.deepEqual(work(fifth.id),{state:'waiting',code:'COLLAB_INTEGRATION_CONFLICT'});assert.equal(modelCalls.length,calls);assert.equal(journal(fifth.id).candidate.repair,undefined);
  assert.doesNotMatch(JSON.stringify(store.db.all('SELECT payload_envelope_json FROM task_workspace_records')),/board approved|Keep 1.2M/,'questions and answers are encrypted at rest');
- console.log('PASS integration repair: deterministic merge without model, model resolution with goal and diff3 evidence published through validation, decision question and answered re-admission, invalid model output refused, unconfigured model reports conflict');
+ // 6. Failed pinned checks: one bounded repair of the delivery's own files, re-validated before H advances.
+ modelAvailable=true;worker.stop();
+ const checking=async(candidate,context)=>{const bad=fs.readdirSync(context.snapshotRoot).filter(name=>/^config.*\.txt$/.test(name)&&!fs.readFileSync(path.join(context.snapshotRoot,name),'utf8').includes('approved: yes'));
+  const report={kind:'fixture-check',failures:bad.map(name=>({name:'config approval',message:`${name} must contain approved: yes`}))};
+  return {ok:bad.length===0,state:bad.length?'failed':'passed',commit:candidate.commit,policyId:'fixture-v1',evidenceHash:hash(JSON.stringify(report)),report};};
+ worker=createIntegrationWorker({store,assertActive(){},getWorkflow:()=>workflow,validationPolicyId:'fixture-v1',validateIntegration:checking});
+ await deliver('sixth',{'budget.txt':'cap: 1.0M\nowner: finance\n','README.md':'notes\n','config.txt':'approved: no\n'});
+ reply=request=>{assert.match(request.user,/config.txt must contain approved: yes/);assert.match(request.user,/<current>\napproved: no/);assert.doesNotMatch(request.user,/notes\n|cap: /,'unchanged files stay out of a check-failure repair');
+  return {ok:true,text:'{"files":{"config.txt":"approved: yes\\n"}}',model:'fixture-model',provider:'fixture-host'};};
+ const before6=modelCalls.length;
+ const sixth=intents.enqueue({...common,deliveryId:'sixth',deliveryCommit:deliveries.sixth.commit});await worker.recover();
+ assert.equal(modelCalls.length,before6+1);assert.equal(intents.get(sixth.id).state,'completed','the amended candidate passed the same checks and published');
+ assert.equal(await git(['show',`${await head()}:config.txt`]),'approved: yes');assert.equal(await git(['show',`${await head()}:budget.txt`]),'cap: 1.8M\nowner: finance','the merge result is kept');
+ const amended=journal(sixth.id);assert.equal(amended.candidate.repair.kind,'check_failure');assert.match(amended.candidate.repair.previousCandidate,/^[a-f0-9]{40}$/);
+ assert.equal(amended.failedCandidates.length,1);assert.equal(amended.failedCandidates[0].commit,amended.candidate.repair.previousCandidate);assert.deepEqual(Object.values(amended.repairs),[1],'one repair attempt per requester answer set');assert.match(Object.keys(amended.repairs)[0],/^(?:none|[a-f0-9]{64})$/);
+ assert.equal(await git(['rev-list','--parents','-n','1',await head()]),`${await head()} ${amended.candidate.head} ${deliveries.sixth.commit}`);
+ // 7. A repair touching a file the delivery did not change is refused, and the budget is one attempt per answer set.
+ await deliver('seventh',{'budget.txt':'cap: 1.0M\nowner: finance\n','README.md':'notes\n','config2.txt':'approved: later\n'});
+ reply={ok:true,text:'{"files":{"README.md":"approved: yes\\n"}}',model:'fixture-model',provider:'fixture-host'};
+ const seventh=intents.enqueue({...common,deliveryId:'seventh',deliveryCommit:deliveries.seventh.commit});await worker.recover();
+ assert.deepEqual(work(seventh.id),{state:'waiting',code:'COLLAB_INTEGRATION_VALIDATION_FAILED'});assert.equal(journal(seventh.id).repair.error,'RESOLUTION_INVALID');
+ const before7=modelCalls.length;store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE intent_id=?",seventh.id);await worker.recover();
+ assert.equal(modelCalls.length,before7,'the same answer set never buys a second repair attempt');assert.deepEqual(work(seventh.id),{state:'waiting',code:'COLLAB_INTEGRATION_VALIDATION_FAILED'});
+ // 8. A check failure the model cannot fix without a decision becomes a question; the answer unlocks one more attempt.
+ reply={ok:true,text:'{"files":{},"questions":[{"path":"config2.txt","question":"Should this config be approved now?"}]}',model:'fixture-model',provider:'fixture-host'};
+ answers=[{path:'budget.txt',question:'old',answer:'stale answer'}];
+ store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE intent_id=?",seventh.id);await worker.recover();
+ assert.deepEqual(work(seventh.id),{state:'waiting',code:'COLLAB_INTEGRATION_DECISION_REQUIRED'});assert.deepEqual(journal(seventh.id).repair.questions,[{path:'config2.txt',question:'Should this config be approved now?'}]);
+ answers=[...answers,{path:'config2.txt',question:'Should this config be approved now?',answer:'Yes, approve it'}];
+ reply=request=>{assert.match(request.user,/Yes, approve it/);return {ok:true,text:'{"files":{"config2.txt":"approved: yes\\n"}}',model:'fixture-model',provider:'fixture-host'};};
+ store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE intent_id=?",seventh.id);await worker.recover();
+ assert.equal(intents.get(seventh.id).state,'completed');assert.equal(await git(['show',`${await head()}:config2.txt`]),'approved: yes');
+ console.log('PASS integration repair: deterministic merge without model, model resolution with goal and diff3 evidence published through validation, decision question and answered re-admission, invalid model output refused, unconfigured model reports conflict, bounded check-failure repair of delivery files re-validated before publication');
 }finally{worker?.stop();store.close();fs.rmSync(root,{recursive:true,force:true});}

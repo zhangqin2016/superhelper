@@ -190,6 +190,47 @@ function createSharedGit(taskGit){
       await immutable(git,ref,commit);
       return {state:"ready",repository,ref,commit,tree,headRef,head:expectedHead,delivery:delivery.commit,baseline:baseline.commit,...resolution};
     },
+    /** Files the delivery itself changed, as they stand in the failed candidate,
+     * for a bounded check-failure repair. Pinned checks/helpers are excluded by
+     * the caller; unchanged files never enter the request. */
+    async repairInputs({candidate,exclude=[]}){
+      if(candidate?.state!=="ready"||!sha(candidate.tree)||!sha(candidate.baseline)||!sha(candidate.delivery))throw fail("INVALID");
+      const {git,writeBlob}=await runtime(),excluded=new Set(exclude);
+      const changed=(await git(["diff","--name-only","-z",candidate.baseline,candidate.delivery])).split("\0").filter(Boolean).sort();
+      const [baseTree,candidateTree]=await Promise.all([taskGit.inspectTree(candidate.baseline),taskGit.inspectTree(candidate.tree)]);
+      const temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"repair-inputs-"));
+      try{
+        const files=[];let total=0;
+        for(const [index,name] of changed.entries()){
+          const current=candidateTree.find(file=>file.path===name),base=baseTree.find(file=>file.path===name);
+          if(excluded.has(name)||!current||current.sizeBytes>REPAIR_LIMITS.maxFileBytes||(base&&base.sizeBytes>REPAIR_LIMITS.maxFileBytes)||files.length>=REPAIR_LIMITS.maxFiles)continue;
+          const size=current.sizeBytes+(base?.sizeBytes||0);if(total+size>REPAIR_LIMITS.maxTotalBytes)continue;total+=size;
+          const read=async(file,side)=>{const destination=path.join(temporary,`${index}-${side}`);await writeBlob(file.blob,destination,file);return fs.readFileSync(destination);};
+          files.push({path:name,current:await read(current,"current"),...(base?{base:await read(base,"base")}:{})});
+        }
+        return files;
+      }finally{fs.rmSync(temporary,{recursive:true,force:true});}
+    },
+    /** A new candidate from a failed one: only delivery-changed paths may be
+     * replaced, the parents stay H and D, and the resolution identity chains
+     * to the previous candidate. It still has to pass validation like any other. */
+    async amend({candidate,resolutions,repair}){
+      if(candidate?.state!=="ready"||candidate.ref!==candidateRef(candidate)||!(resolutions instanceof Map)||!resolutions.size||!repair||typeof repair.responseHash!=="string")throw fail("INVALID");
+      const {git,repository}=await runtime();if(candidate.repository!==repository)throw fail("INVALID");await verified(candidate);
+      const changed=new Set((await git(["diff","--name-only","-z",candidate.baseline,candidate.delivery])).split("\0").filter(Boolean));
+      const blobs=[];
+      for(const [name,bytes] of resolutions){
+        if(!changed.has(name)||!Buffer.isBuffer(bytes))throw fail("MERGE_INVALID");
+        blobs.push([name,await git(["hash-object","-w","--stdin"],undefined,bytes.toString("utf8"))]);
+      }
+      const tree=await writeResolutions(git,candidate.tree,blobs);
+      const resolutionHash=hash([REPAIR_POLICY,"check_failure",blobs,repair.responseHash,candidate.resolutionHash||null]);
+      const commit=await git(["commit-tree",tree,"-p",candidate.head,"-p",candidate.delivery,"-m",`Shared task integration\n\n${JSON.stringify({baseline:candidate.baseline,delivery:candidate.delivery,resolutionHash})}`]);
+      const ref=candidateRef({headRef:candidate.headRef,head:candidate.head,baseline:candidate.baseline,delivery:candidate.delivery,resolutionHash});
+      await immutable(git,ref,commit);
+      return {state:"ready",repository,ref,commit,tree,headRef:candidate.headRef,head:candidate.head,delivery:candidate.delivery,baseline:candidate.baseline,
+        resolutionHash,repair:{...repair,kind:"check_failure",previousCandidate:candidate.commit}};
+    },
     async publish({candidate,validate,canonicalHead}){
       candidate=Object.freeze({...candidate});
       if(candidate.state!=="ready" || typeof validate!=="function" || !sha(candidate.head)||!sha(candidate.delivery)||!sha(candidate.tree)||!sha(candidate.baseline)
