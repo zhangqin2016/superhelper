@@ -59,7 +59,8 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
       return authorize({ conversationId: id, scopeId: row?.scopeId, purpose });
     }
     const transferRoot = rootPath || require("../config").collaborationTransferRoot();
-    const manifests = createTransferManifestStore({ rootPath: transferRoot, accountId, keyring: store.keyring });
+    const recovery = require('./task-transfer-journal').createTaskTransferJournal({store,deviceId,assertActive:active});
+    const manifests = createTransferManifestStore({ rootPath: transferRoot, accountId, keyring: store.keyring, recovery });
     const manager = createTransferManager({ manifests, objectClient: client.objects, deviceId, assertAuthorized: authorize,
       multipart: createQiniuMultipartTransport({ ...(fetchImpl ? { fetchImpl } : {}) }), ...(fetchImpl ? { fetchImpl } : {}) });
     const scheduler = createTransferScheduler({ manager, manifests, onChange });
