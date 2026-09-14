@@ -28,7 +28,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     if(!store.listConversations().length)store.replaceProjectionFromBootstrap({conversations:[{id:conversationId,scopeId:'team:org',kind:'channel'}]});
     const assertActive=()=>{},tasks=createTaskCommands({store,client,deviceId,assertActive});
     const transfers=createTransferRuntime({store,client,deviceId,assertActive,rootPath:path.join(root,'collaboration-transfer'),policy:{enabled:true,tasks:true,workspaceShares:true},fetchImpl});
-    const workflow=createTaskWorkflow({store,client,deviceId,tasks,transfers,assertActive,rootPath:path.join(root,'managed'),taskGitProtocol:1,sharedWorkspaceProtocol:1,
+    const workflow=createTaskWorkflow({store, writerLockPath:path.join(root,'writer.sqlite'),client,deviceId,tasks,transfers,assertActive,rootPath:path.join(root,'managed'),taskGitProtocol:1,sharedWorkspaceProtocol:1,
       chooseDirectory:async()=>({canceled:false,filePaths:[source]}),
       resolveProjectDirectory:()=>source,resolveSourceSession:input=>({...input,rootPath:source}),
       resolveWorkspaceBinding:input=>({projectId:input.projectId,sessionId:'fixture-session',rootPath:source})});

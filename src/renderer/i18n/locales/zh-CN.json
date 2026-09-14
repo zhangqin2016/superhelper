@@ -55,6 +55,7 @@
   "collaboration.task.deliveryOmitted": "部分原共享文件被敏感文件或配置过滤规则排除。请先清理这些文件，再重新准备交付；被排除的文件不能当作删除。",
   "collaboration.task.bundleChanged": "冻结文件已变化。请重新准备文件快照，再确认发送。",
   "collaboration.task.recoveryRequired": "上次本地应用中断。请先通过“本地文件恢复”恢复，再继续应用。",
+  "collaboration.task.writerBusy": "另一项本地文件操作正在进行。请稍后重试。",
   "collaboration.task.localRecovery": "本地文件恢复",
   "collaboration.task.localRecoveryNote": "这里仅显示本机的文件应用记录。即使原协作任务无法访问，也可以撤回本次本地改动。",
   "collaboration.task.noLocalRecovery": "没有需要恢复的本地文件应用。",

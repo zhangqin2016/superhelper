@@ -1,7 +1,7 @@
 import { t, getLocale, onLocaleChange } from "../i18n/index.js";
 
 const tr = (key, params) => t(`collaboration.task.${key}`, params);
-const workflowError = (result, fallback = "workflowFailed") => ({ COLLAB_TASK_DELIVERY_OMITTED: "deliveryOmitted", COLLAB_TASK_BUNDLE_CHANGED: "bundleChanged", COLLAB_TASK_APPLICATION_RECOVERY_REQUIRED: "recoveryRequired" }[result?.code] || fallback);
+const workflowError = (result, fallback = "workflowFailed") => ({ COLLAB_TASK_DELIVERY_OMITTED: "deliveryOmitted", COLLAB_TASK_BUNDLE_CHANGED: "bundleChanged", COLLAB_TASK_APPLICATION_RECOVERY_REQUIRED: "recoveryRequired", COLLAB_TASK_APPLICATION_BUSY: "writerBusy" }[result?.code] || fallback);
 const node = (tag, className, text) => { const el = document.createElement(tag); el.className = className; if (text != null) el.textContent = text; return el; };
 const date = value => new Intl.DateTimeFormat(getLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 function actions(task, userId) {
@@ -285,7 +285,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       const submit = button("task-apply", tr("apply"), async () => {
         const result = await runWorkflow({ operation: "apply", taskId: current.task.id, deliveryId: current.deliveryId, applicationId: current.preview.applicationId, expectedPlanHash: current.preview.planHash, confirmDeletions: !!current.confirmDeletions }); if (!result) return;
         if (result.ok && result.state === "applied") { applications.set(current.task.id, { ...current.preview, state: "applied" }); selected = current.task; paintDetail(); }
-        else { current.error = workflowError(result, "applyConflict"); current.blocked = true; paintWorkflow(); }
+        else { current.error = workflowError(result, "applyConflict"); current.blocked = result.code !== "COLLAB_TASK_APPLICATION_BUSY"; paintWorkflow(); }
       }, true);
       submit.disabled = busy || current.blocked || !applicable || (deletions && !current.confirmDeletions);
       if (deletions) { const label = node("label", "remote-task-deletion-consent"), checkbox = node("input", ""); checkbox.type = "checkbox"; checkbox.name = "confirmDeletions"; checkbox.checked = !!current.confirmDeletions; checkbox.addEventListener("change", () => { current.confirmDeletions = checkbox.checked; submit.disabled = busy || current.blocked || !applicable || !checkbox.checked; }); label.append(checkbox, node("span", "", tr("confirmDeletions"))); body.append(label); }

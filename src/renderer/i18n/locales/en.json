@@ -55,6 +55,7 @@
   "collaboration.task.deliveryOmitted": "Some originally shared files were excluded by sensitive-file or configuration filters. Clean up those files and prepare delivery again; excluded files cannot be treated as deletions.",
   "collaboration.task.bundleChanged": "The frozen files have changed. Prepare a new snapshot before sending.",
   "collaboration.task.recoveryRequired": "The previous local application was interrupted. Use Local file recovery before applying again.",
+  "collaboration.task.writerBusy": "Another local file operation is in progress. Try again shortly.",
   "collaboration.task.localRecovery": "Local file recovery",
   "collaboration.task.localRecoveryNote": "These are file application records on this computer. You can roll back local changes even when the original task is unavailable.",
   "collaboration.task.noLocalRecovery": "No local file applications remain to recover.",

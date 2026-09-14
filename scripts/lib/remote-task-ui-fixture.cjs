@@ -73,7 +73,7 @@ exports.createFixture = function createFixture(temporary, {sharedWorkspaceProtoc
       },
     };
     const tasks = createTaskCommands({ store, client, deviceId, assertActive });
-    const workflow = createTaskWorkflow({ store, client, tasks, deviceId, assertActive, sharedWorkspaceProtocol, taskGitProtocol, rootPath: path.join(temporary, "managed"),
+    const workflow = createTaskWorkflow({ store, writerLockPath:path.join(temporary,"writer.sqlite"), client, tasks, deviceId, assertActive, sharedWorkspaceProtocol, taskGitProtocol, rootPath: path.join(temporary, "managed"),
       listWorkspaceBindings:()=>[{id:"existing-project",name:"Existing workspace",sessions:[{id:"bound-session",title:"Workspace conversation"}]}],
       resolveWorkspaceBinding:input=>({projectId:input.projectId,sessionId:input.sessionId || "bound-session",rootPath:source}),
       resolveProjectDirectory: id => id === "budget-project" ? source : undefined,

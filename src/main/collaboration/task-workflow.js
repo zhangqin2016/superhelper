@@ -14,7 +14,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
-  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, sharedPublicationProtocol, integrationValidationAvailable=false, chooseValidationChecks, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, sharedPublicationProtocol, integrationValidationAvailable=false, chooseValidationChecks, writerLockPath, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const checkPolicies=require("./integration-check-policy").createIntegrationCheckPolicy({store,assertActive});
   const checkSelection=require("./integration-check-selection");
@@ -251,6 +251,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     const journalRoot = path.join(root(), "recovery");
     fs.mkdirSync(journalRoot,{recursive:true,mode:0o700});
     return createTaskApplication({ journalRoot:fs.realpathSync(journalRoot),
+      writer:require("./local-writer").createLocalWriter({filePath:writerLockPath}),
       journal:{ get:() => recoveries.get(record.id)?.journal || null, put:(_id,journal) => {
         const live = recoveries.get(record.id) || record;
         const next = {...live,journal,state:journal.state};

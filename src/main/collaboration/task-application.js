@@ -68,8 +68,8 @@ function syncDirectory(directory) {
  * Filesystem commits use synchronous, per-file checkpoints. There is deliberately
  * no await between the final hash check and mutation. A hostile concurrent local
  * process is outside this broker's portable Node filesystem threat boundary. */
-function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) {
-  if (!journal?.get || !journal?.put || typeof assertAuthorized !== "function") throw fail("CONFIG_INVALID");
+function createTaskApplication({ journal, journalRoot, assertAuthorized, writer } = {}) {
+  if (!journal?.get || !journal?.put || typeof assertAuthorized !== "function" || typeof writer?.run !== "function") throw fail("CONFIG_INVALID");
   const storage = safeRoot(journalRoot);
   const busy = new Set();
   async function authorize(input) {
@@ -135,7 +135,7 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
     await authorize(input);
     if (busy.has(input.applicationId)) throw fail("BUSY");
     busy.add(input.applicationId);
-    try {
+    try { return writer.run(() => {
       const previous = journal.get(input.applicationId);
       if (previous) {
         const binding = {applicationId:input.applicationId,rootPath:path.resolve(input.rootPath),deliveryRoot:path.resolve(input.deliveryRoot),baseManifest:input.baseManifest,deliveryManifest:input.deliveryManifest,editablePaths:input.editablePaths};
@@ -181,14 +181,14 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
       record.result = {ok:true,state:"applied",applicationId:input.applicationId,planHash:record.planHash,entries:record.plan.entries};
       journal.put(input.applicationId,record);
       return record.result;
-    } finally { busy.delete(input.applicationId); }
+    }); } finally { busy.delete(input.applicationId); }
   }
   async function recover(input) {
     await authorize(input);
     if (input.mode !== "rollback") throw fail("RECOVERY_MODE_INVALID");
     if (busy.has(input.applicationId)) throw fail("BUSY");
     busy.add(input.applicationId);
-    try {
+    try { return writer.run(() => {
       const record = journal.get(input.applicationId);
       if (!record) throw fail("NOT_FOUND");
       if (record.state === "rolled_back") return {ok:true,state:"rolled_back",applicationId:input.applicationId,conflicts:[]};
@@ -226,7 +226,7 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
       record.state = conflicts.length ? "recovery_conflict" : "rolled_back";
       journal.put(input.applicationId,record);
       return {ok:conflicts.length===0,state:record.state,applicationId:input.applicationId,conflicts};
-    } finally { busy.delete(input.applicationId); }
+    }); } finally { busy.delete(input.applicationId); }
   }
   return {preview,apply,recover};
 }

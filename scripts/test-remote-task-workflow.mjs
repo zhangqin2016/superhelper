@@ -87,7 +87,7 @@ function assemble(accountId,protocol=gitMode?1:undefined) {
   };
   const tasks = createTaskCommands({ store, client, deviceId, assertActive });
   let lastOpened, changes = 0;
-  const workflow = createTaskWorkflow({ store, client, tasks, deviceId, assertActive, rootPath: path.join(temporary, 'managed'),
+  const workflow = createTaskWorkflow({ store, writerLockPath:path.join(temporary,'writer.sqlite'), client, tasks, deviceId, assertActive, rootPath: path.join(temporary, 'managed'),
     taskGitProtocol:protocol,
     onChange: () => { changes++; },
     chooseDirectory: async () => ({ canceled: false, filePaths: [source] }),
