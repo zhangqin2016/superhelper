@@ -53,6 +53,38 @@ try{
  const third=intents.enqueue({...input,workspaceId:'third',targetId:'third'});let resolve;pause=new Promise(done=>{resolve=done;});
  const pending=worker.recover();await Promise.resolve();worker.stop();resolve();await pending;
  assert.equal(intents.get(third.id).state,'running','stopped late response leaves a durable lease for successor recovery');
+ // A native worker must validate the resolved bytes, not stop at Git's text conflict.
+ pause=null;worker.stop();
+ const jsonSource=path.join(root,'json-source');fs.mkdirSync(jsonSource);
+ const jsonFile=(directory,text)=>{fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'config.json'),text);return {path:'config.json',sha256:createHash('sha256').update(text).digest('hex'),sizeBytes:Buffer.byteLength(text)};};
+ const jsonBase=[jsonFile(jsonSource,'{"left":1,"right":1}')];
+ const jsonBaseline=await taskGit.captureBaseline({taskId:'json-task',snapshotRoot:jsonSource,manifest:jsonBase});
+ const jsonDeliveries=[];
+ for(const [id,text] of [['json-first','{"left":2,"right":1}'],['json-second','{"left":1,"right":2}']]){
+  const directory=path.join(root,id),manifest=[jsonFile(directory,text)];
+  jsonDeliveries.push(await taskGit.captureContribution({baseline:jsonBaseline,baseManifest:jsonBase,materializedPaths:['config.json'],deliveryId:id,snapshotRoot:directory,manifest}));
+ }
+ const {createSharedGit}=require('../src/main/collaboration/shared-git'),shared=createSharedGit(taskGit);
+ const head=await shared.initialize({workspaceId:'json-worker',baseline:jsonBaseline});
+ const initial=await shared.prepare({workspaceId:'json-worker',baseline:jsonBaseline,delivery:jsonDeliveries[0],expectedHead:head.commit});
+ await shared.publish({candidate:initial,validate:async c=>({ok:true,commit:c.commit})});
+ const jsonInput={...input,workspaceId:'json-worker',targetId:'json-target',taskId:'json-task',deliveryId:'json-second',baselineCommit:jsonBaseline.commit,deliveryCommit:jsonDeliveries[1].commit};
+ const jsonIntent=intents.enqueue(jsonInput);
+ const jsonOptions={...options,store,getWorkflow:()=>({authorizeIntegration:async()=>true,acquireIntegrationInput:async()=>({taskGit,baseline:jsonBaseline,delivery:jsonDeliveries[1]})})};
+ worker=createIntegrationWorker(jsonOptions);await worker.runIntent({accountId:'owner',sessionId:'session',intentId:jsonIntent.id},{assertActive(){}});
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',jsonIntent.id).code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED','typed resolution still requires project policy');
+ const jsonJournal=createTaskRecords({store,assertActive(){}}).list('chat').find(r=>r.kind==='shared-publication'&&r.intentId===jsonIntent.id);
+ assert.match(jsonJournal.candidate.resolutionHash,/^[a-f0-9]{64}$/);
+ worker.stop();
+ worker=createIntegrationWorker({...jsonOptions,validationPolicyId:'fixture-json-v1',validateIntegration:async(c,context)=>{
+  const bytes=fs.readFileSync(path.join(context.snapshotRoot,'config.json'));
+  assert.deepEqual(JSON.parse(bytes),{left:2,right:2});
+  return {ok:true,commit:c.commit,policyId:'fixture-json-v1',evidenceHash:createHash('sha256').update(bytes).digest('hex')};
+ }});
+ await worker.runIntent({accountId:'owner',sessionId:'session',intentId:jsonIntent.id},{assertActive(){}});
+ assert.equal(intents.get(jsonIntent.id).state,'completed');
+ assert.equal((await shared.publication(jsonJournal.candidate)).commit,jsonJournal.candidate.commit);
+ assert.equal(fs.readFileSync(path.join(jsonSource,'config.json'),'utf8'),'{"left":1,"right":1}');
  store.revokeScope({scopeId:'team:org'});assert.equal(store.db.get('SELECT count(*) n FROM task_integration_work').n,0,'scope retirement removes pending scheduler rows');
  console.log('integration worker: actual candidate validation/evidence, missing/failed policy distinction, restart publication, bounded retry, stop and scope fences passed (input and project policy are fixtures)');
 }finally{worker?.stop();store?.close();fs.rmSync(root,{recursive:true,force:true});}

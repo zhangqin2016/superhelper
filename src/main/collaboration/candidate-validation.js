@@ -3,6 +3,7 @@ const fs=require("node:fs");
 const path=require("node:path");
 const {createHash}=require("node:crypto");
 const {createTaskRecords}=require("./task-records");
+const {candidateRef}=require("./shared-git");
 const {manifestHash}=require("./task-changeset");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail=()=>Object.assign(Error("Candidate validation binding invalid"),{code:"COLLAB_INTEGRATION_VALIDATION_INVALID"});
@@ -52,7 +53,7 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
     if(candidate.state!=="ready" || ["commit","tree","head","baseline","delivery"].some(key=>!/^[a-f0-9]{40}$/.test(candidate[key]||""))
       || candidate.baseline!==input.baselineCommit || candidate.delivery!==input.deliveryCommit
       || candidate.headRef!==`refs/workspaces/${hash(input.workspaceId)}/head`
-      || candidate.ref!==candidate.headRef.replace(/head$/,`candidates/${hash([candidate.head,candidate.baseline,candidate.delivery])}`)
+      || candidate.ref!==candidateRef(candidate)
       || !await taskGit.hasRevision(candidate))throw fail();assertActive();
     const runtime=await taskGit.ensure();assertActive();
     if(candidate.repository!==runtime.repository||await runtime.git(["rev-parse",`${candidate.commit}^{tree}`])!==candidate.tree)throw fail();

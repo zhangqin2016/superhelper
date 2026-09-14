@@ -48,5 +48,37 @@ try{
  const binaryPublished=await shared.publish({candidate:binaryFirst,validate:async value=>({ok:true,commit:value.commit})});
  const binaryConflict=await shared.prepare({workspaceId:'binary-workspace',baseline:binaryBaseline,delivery:binaryDeliveries[1],expectedHead:binaryPublished.commit});
  assert.equal(binaryConflict.state,'conflicts');assert.deepEqual(binaryConflict.paths,['book.xlsx'],'binary conflicts await typed/semantic resolution and never silently choose a side');
+ const jsonRoot=path.join(root,'json'),jsonBase=[write(jsonRoot,'config.json','{"left":1,"right":1}\n'),write(jsonRoot,'keep.txt','base\n')];
+ const jsonBaseline=await taskGit.captureBaseline({taskId:'json',snapshotRoot:jsonRoot,manifest:jsonBase});
+ const jsonHead=await shared.initialize({workspaceId:'json',baseline:jsonBaseline});
+ const jsonDeliveries=[];
+ for(const [id,text,keep] of [['json-one','{"left":2,"right":1}\n','base\n'],['json-two','{"left":1,"right":2}\n','changed\n'],['json-conflict','{"left":3,"right":1}\n','base\n']]){
+  const directory=path.join(root,id),manifest=[write(directory,'config.json',text),write(directory,'keep.txt',keep)];
+  jsonDeliveries.push(await taskGit.captureContribution({baseline:jsonBaseline,baseManifest:jsonBase,materializedPaths:jsonBase.map(f=>f.path),deliveryId:id,snapshotRoot:directory,manifest}));
+ }
+ const jsonFirst=await shared.prepare({workspaceId:'json',baseline:jsonBaseline,delivery:jsonDeliveries[0],expectedHead:jsonHead.commit});
+ const jsonPublished=await shared.publish({candidate:jsonFirst,validate:async c=>({ok:true,commit:c.commit})});
+ const jsonArgs={workspaceId:'json',baseline:jsonBaseline,delivery:jsonDeliveries[1],expectedHead:jsonPublished.commit};
+ const jsonMerged=await shared.prepare(jsonArgs);
+ assert.equal(jsonMerged.state,'ready','independent fields on the same text line are resolved before model judgment');
+ assert.match(jsonMerged.resolutionHash,/^[a-f0-9]{64}$/);
+ assert.deepEqual(JSON.parse(await git(['show',`${jsonMerged.commit}:config.json`])),{left:2,right:2});
+ assert.equal(await git(['show',`${jsonMerged.commit}:keep.txt`]),'changed','typed resolution preserves the nonconflicting Git result');
+ assert.equal((await shared.prepare(jsonArgs)).commit,jsonMerged.commit,'deterministic resolved candidates are immutable on retry');
+ await assert.rejects(shared.publish({candidate:{...jsonMerged,resolutionHash:'0'.repeat(64)},validate:async c=>({ok:true,commit:c.commit})}),/INVALID/);
+ await assert.rejects(shared.publish({candidate:jsonMerged,validate:async()=>({ok:false})}),/VALIDATION_FAILED/,'typed merge does not bypass project validation');
+ assert.equal((await shared.prepare({...jsonArgs,delivery:jsonDeliveries[2]})).state,'conflicts','same-field disagreement still needs judgment');
+ const mixedDirectory=path.join(root,'mixed-head'),mixedManifest=[write(mixedDirectory,'config.json','{"left":2,"right":1}'),write(mixedDirectory,'keep.txt','head-only\n')];
+ const mixedDelivery=await taskGit.captureContribution({baseline:jsonBaseline,baseManifest:jsonBase,materializedPaths:jsonBase.map(f=>f.path),deliveryId:'mixed-head',snapshotRoot:mixedDirectory,manifest:mixedManifest});
+ const mixedHead=await shared.initialize({workspaceId:'mixed',baseline:jsonBaseline});
+ const mixedFirst=await shared.prepare({workspaceId:'mixed',baseline:jsonBaseline,delivery:mixedDelivery,expectedHead:mixedHead.commit});
+ await shared.publish({candidate:mixedFirst,validate:async c=>({ok:true,commit:c.commit})});
+ const mixed=await shared.prepare({workspaceId:'mixed',baseline:jsonBaseline,delivery:jsonDeliveries[1],expectedHead:mixedFirst.commit});
+ assert.equal(mixed.state,'conflicts','resolvable JSON cannot hide an unresolved conflict in another file');
+ assert.deepEqual(mixed.paths,['config.json','keep.txt']);
+ assert.equal(await git(['rev-parse',mixedHead.ref]),mixedFirst.commit);
+ assert.equal(fs.readdirSync(taskGit.rootPath).some(name=>name.startsWith('json-merge-')),false,'owned typed-merge scratch space is cleaned');
+ await shared.publish({candidate:jsonMerged,validate:async c=>({ok:true,commit:c.commit})});
+ assert.equal(fs.readFileSync(path.join(jsonRoot,'config.json'),'utf8'),'{"left":1,"right":1}\n');
  console.log('shared Git: immutable candidates, explicit-base three-way merge, attribute isolation, conflict refusal, validation gate, CAS target advancement and publish replay passed');
 }finally{fs.rmSync(root,{recursive:true,force:true});}

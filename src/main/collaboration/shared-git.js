@@ -2,11 +2,19 @@
 const fs=require("node:fs");
 const path=require("node:path");
 const {createHash}=require("node:crypto");
+const {mergeJson,MAX_JSON_BYTES,POLICY}=require("./integration-json-merge");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const sha=value=>typeof value==="string" && /^[a-f0-9]{40}$/.test(value);
 const fail=code=>Object.assign(new Error(`COLLAB_SHARED_GIT_${code}`),{code:`COLLAB_SHARED_GIT_${code}`});
 const attributes="* !merge -filter -text -eol -working-tree-encoding\n";
 function prefix(workspaceId){if(typeof workspaceId!=="string"||!workspaceId||workspaceId.length>200)throw fail("INVALID");return `refs/workspaces/${hash(workspaceId)}`;}
+function candidateRef(candidate){
+  if(!/^refs\/workspaces\/[a-f0-9]{64}\/head$/.test(candidate.headRef||"")
+    || candidate.resolutionHash!==undefined && !/^[a-f0-9]{64}$/.test(candidate.resolutionHash))throw fail("INVALID");
+  const identity=[candidate.head,candidate.baseline,candidate.delivery];
+  if(candidate.resolutionHash!==undefined)identity.push(candidate.resolutionHash);
+  return candidate.headRef.replace(/head$/,`candidates/${hash(identity)}`);
+}
 
 /** Published history and candidates live exclusively in the task object DB.
  * This primitive never reads a private working tree and does not call a model.
@@ -28,6 +36,34 @@ function createSharedGit(taskGit){
   async function immutable(git,ref,commit){
     try{await git(["update-ref",ref,commit,"0".repeat(40)]);}
     catch(error){if(await git(["rev-parse","--verify",ref]).catch(()=>null)!==commit)throw error;}
+  }
+  async function resolveJson({tree,paths,baseline,head,delivery}){
+    // Only bounded regular files present at the same path on all three sides.
+    // Renames, deletes, non-JSON and mixed unresolved conflicts stay pending.
+    if(!paths.length || paths.length>32 || paths.some(name=>!name.endsWith(".json")))return null;
+    const trees=await Promise.all([baseline,head,delivery].map(commit=>taskGit.inspectTree(commit)));
+    const inputs=paths.map(name=>trees.map(entries=>entries.find(file=>file.path===name)));
+    if(inputs.flat().some(file=>!file || file.sizeBytes>MAX_JSON_BYTES)
+      || inputs.flat().reduce((sum,file)=>sum+file.sizeBytes,0)>6*1024*1024)return null;
+    const {git,writeBlob}=await runtime(),temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"json-merge-"));
+    const indexEnv={GIT_INDEX_FILE:path.join(temporary,"index")};
+    try{
+      const resolutions=[];
+      for(let i=0;i<paths.length;i++){
+        const buffers=[];
+        for(let j=0;j<3;j++){
+          const file=inputs[i][j],destination=path.join(temporary,`${i}-${j}`);
+          await writeBlob(file.blob,destination,file);buffers.push(fs.readFileSync(destination));
+        }
+        const result=mergeJson(...buffers);if(result.state!=="resolved")return null;
+        const blob=await git(["hash-object","-w","--stdin"],undefined,result.text);
+        resolutions.push([paths[i],blob]);
+      }
+      await git(["read-tree",tree],indexEnv);
+      for(const [name,blob] of resolutions)await git(["update-index","--add","--cacheinfo",`100644,${blob},${name}`],indexEnv);
+      const resolvedTree=await git(["write-tree"],indexEnv);await taskGit.inspectTree(resolvedTree);
+      return {tree:resolvedTree,resolutionHash:hash([POLICY,resolutions])};
+    }finally{fs.rmSync(temporary,{recursive:true,force:true});}
   }
   function receiptRef(candidate){
     if(!sha(candidate?.commit)||!sha(candidate.head)||!/^refs\/workspaces\/[a-f0-9]{64}\/head$/.test(candidate.headRef||""))throw fail("INVALID");
@@ -61,19 +97,24 @@ function createSharedGit(taskGit){
       let output,conflicts=false;
       try{output=await merge(["merge-tree","--write-tree","--no-messages","--name-only","-z",`--merge-base=${baseline.commit}`,expectedHead,delivery.commit]);}
       catch(error){if(error.code!==1 || typeof error.stdout!=="string")throw fail("MERGE_UNAVAILABLE");output=error.stdout;conflicts=true;}
-      const [tree,...names]=output.split("\0");if(!sha(tree))throw fail("MERGE_INVALID");
+      let [tree,...names]=output.split("\0");if(!sha(tree))throw fail("MERGE_INVALID");
       await taskGit.inspectTree(tree);
-      if(conflicts)return {state:"conflicts",tree,paths:[...new Set(names.filter(Boolean))].sort(),head:expectedHead,delivery:delivery.commit,baseline:baseline.commit};
-      const commit=await git(["commit-tree",tree,"-p",expectedHead,"-p",delivery.commit,"-m",`Shared task integration\n\n${JSON.stringify({baseline:baseline.commit,delivery:delivery.commit})}`]);
-      const ref=`${prefix(workspaceId)}/candidates/${hash([expectedHead,baseline.commit,delivery.commit])}`;
+      let resolution={};
+      if(conflicts){
+        const unresolved={state:"conflicts",tree,paths:[...new Set(names.filter(Boolean))].sort(),head:expectedHead,delivery:delivery.commit,baseline:baseline.commit};
+        const resolved=await resolveJson(unresolved);if(!resolved)return unresolved;
+        tree=resolved.tree;resolution={resolutionHash:resolved.resolutionHash};
+      }
+      const commit=await git(["commit-tree",tree,"-p",expectedHead,"-p",delivery.commit,"-m",`Shared task integration\n\n${JSON.stringify({baseline:baseline.commit,delivery:delivery.commit,...resolution})}`]);
+      const ref=candidateRef({headRef,head:expectedHead,baseline:baseline.commit,delivery:delivery.commit,...resolution});
       await immutable(git,ref,commit);
-      return {state:"ready",repository,ref,commit,tree,headRef,head:expectedHead,delivery:delivery.commit,baseline:baseline.commit};
+      return {state:"ready",repository,ref,commit,tree,headRef,head:expectedHead,delivery:delivery.commit,baseline:baseline.commit,...resolution};
     },
     async publish({candidate,validate}){
       candidate=Object.freeze({...candidate});
       if(candidate.state!=="ready" || typeof validate!=="function" || !sha(candidate.head)||!sha(candidate.delivery)||!sha(candidate.tree)||!sha(candidate.baseline)
         || !/^refs\/workspaces\/[a-f0-9]{64}\/head$/.test(candidate.headRef||"")
-        || candidate.ref!==candidate.headRef.replace(/head$/,`candidates/${hash([candidate.head,candidate.baseline,candidate.delivery])}`))throw fail("INVALID");
+        || candidate.ref!==candidateRef(candidate))throw fail("INVALID");
       const {git,repository}=await runtime();if(candidate.repository!==repository)throw fail("INVALID");await verified(candidate);
       if(await git(["rev-parse",`${candidate.commit}^{tree}`])!==candidate.tree
         || await git(["rev-list","--parents","-n","1",candidate.commit])!==`${candidate.commit} ${candidate.head} ${candidate.delivery}`)throw fail("ANCESTRY_INVALID");
@@ -89,4 +130,4 @@ function createSharedGit(taskGit){
     },
   });
 }
-module.exports={createSharedGit};
+module.exports={createSharedGit,candidateRef};
