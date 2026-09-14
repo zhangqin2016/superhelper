@@ -41,6 +41,10 @@ test("orphan expiry is distinguishable without restoring an object or credential
   const expired=await inspectObjectRecovery({ repository, account: {}, objectId: "obj", now: () => 100000 });
   assert.equal(expired.objectId,'obj');assert.equal(expired.state,'expired');assert.equal(expired.reason,'orphan-expired');assert.equal(expired.upload,undefined);
   object.state='revoked';await assert.rejects(inspectObjectRecovery({repository,account:{},objectId:'obj',now:()=>100000}),{code:'COLLAB_OBJECT_UNAVAILABLE'});
+  for(const state of ['expired','deleted']){
+    object.state=state;await assert.rejects(inspectObjectRecovery({repository,account:{},objectId:'obj',now:()=>100000}),{code:'COLLAB_OBJECT_UNAVAILABLE'});
+    object.cleanup_reason='orphan-expired';assert.equal((await inspectObjectRecovery({repository,account:{},objectId:'obj',now:()=>100000})).reason,'orphan-expired');delete object.cleanup_reason;
+  }
   object.state='verified';object.task_id='task';await assert.rejects(inspectObjectRecovery({repository,account:{},objectId:'obj',now:()=>100000}),{code:'COLLAB_OBJECT_UNAVAILABLE'});delete object.task_id;
   object.state = "bound";
   assert.equal((await inspectObjectRecovery({ repository, account: {}, objectId: "obj", now: () => 100000 })).state, "bound", "binding ends the orphan deadline, not the actual object expiration policy");

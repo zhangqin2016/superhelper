@@ -58,7 +58,14 @@ export function createKyselyObjectRepository(database, { conversations = createK
       return action === "owner" ? (object.owner_user_id === account.userId ? { ok: true, object, context } : denied())
         : object.state === "bound" ? { ok: true, object, context } : denied();
     }
-    if (action === "owner") return object.owner_user_id === account.userId ? { ok: true, object, context } : denied();
+    if (action === "owner") {
+      if (object.owner_user_id !== account.userId) return denied();
+      if (['expired','deleted'].includes(object.state)) {
+        const cleanup=await trx.selectFrom('object_cleanup_jobs').select('reason').where('object_id','=',object.id).executeTakeFirst();
+        return {ok:true,object:{...object,cleanup_reason:cleanup?.reason},context};
+      }
+      return {ok:true,object,context};
+    }
     const message = locks.message[0];
     const limitedHistory = context.conversation.scopeType === "personal" && context.conversation.kind === "group" || context.conversation.visibility === "private";
     const boundary = limitedHistory ? Number(context.authorization.conversationMembership?.joined_seq || 0) : 0;

@@ -2,6 +2,7 @@ import { createCollaborationObjectKeyBroker } from "./object-key-broker.js";
 import { createPrivateQiniuObjectStore } from "./object-store.js";
 import { createCollaborationObjectService } from "./objects.js";
 import { createKyselyObjectRepository } from "./object-repository.js";
+import { createObjectCleanup } from './object-cleanup.js';
 
 const failure = (code) => Object.assign(new Error(code), { code, retryable: false });
 
@@ -61,6 +62,11 @@ function storeFor(config, fetchImpl) {
 
 export function validateCollaborationObjectConfig(config, { fetchImpl } = {}) {
   return { keyBroker: keyBrokerFor(config), objectStore: storeFor(config, fetchImpl) };
+}
+
+export function createConfiguredObjectCleanup({database,config={},fetchImpl}={}) {
+  if(config.collaborationObjectCleanupEnabled!==true)return null;
+  return createObjectCleanup({database,objectStore:storeFor(config,fetchImpl)});
 }
 
 /** Optional assembly: absent object secrets do not disable ordinary messages. */
