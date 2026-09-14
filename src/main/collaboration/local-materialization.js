@@ -86,4 +86,4 @@ function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActiv
   }
   return {prepare,get:intentId=>records.get(jobId(intentId))};
 }
-module.exports={createLocalMaterialization};
+module.exports={createLocalMaterialization,localMaterializationJobId:jobId};

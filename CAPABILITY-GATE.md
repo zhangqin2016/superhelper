@@ -528,3 +528,6 @@ Admitted local materialization (checkpoint 57): `test-local-materialization-appl
 
 
 Foreground group admission (checkpoint 58): `test-foreground-writer.mjs` uses real detached groups to prove registration before execution, blocking after leader exit, owner-IPC crash cleanup and admission after confirmed group exit. Actual engine and both job launchers register; legacy stop verifies identity and waits for group shutdown. Tests inject private coordination paths. This is POSIX registration/admission, not yet warm-profile draining, automatic local retry, Windows proof or full-client acceptance.
+
+
+Automatic local continuation (checkpoint 59): POSIX source wiring now connects registered foreground admission to native application. `test-idle-foreground-drain.mjs` preserves active/unknown views and SDK work, retires idle profiles and clears advisory hints. `test-local-application-retry.mjs` covers durable completed-shared retries and the shared-generation/local-validation race. The signed native/HTTP fixture requires an actual terminal waiting turn and a distinct successful application turn after foreground release. Production switches and installed clients were not changed; undo, persistent local card status, Windows/old-process proof and full acceptance remain open.

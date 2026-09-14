@@ -16,21 +16,29 @@ function createIntegrationAdmission({store,assertActive,getWorkflow,enqueue,work
   const records=createTaskRecords({store,assertActive:active}),intents=createIntegrationIntents({store,assertActive:active,now});
   const get=intentId=>records.get(id(intentId));
   const notify=()=>{try{onChange();}catch{/* Durable state is authoritative. */}};
-  const updateWork=(row,state,code,delay,attempts=row.attempts)=>store.db.run("UPDATE task_integration_work SET state=?,code=?,next_attempt_at=?,attempts=? WHERE account_id=? AND intent_id=? AND generation=? AND state IN ('pending','running')",
-    state,code,now()+delay,attempts,accountId,row.intent_id,row.generation);
+  const updateWork=(row,state,code,delay,attempts=row.attempts)=>row.state==="done"
+    ?store.db.run("UPDATE task_integration_work SET code=?,next_attempt_at=? WHERE account_id=? AND intent_id=? AND generation=? AND state='done' AND (code IS NULL OR code='COLLAB_LOCAL_APPLICATION_PENDING')",
+      state==="waiting"?"COLLAB_LOCAL_APPLICATION_REQUIRED":code||"COLLAB_LOCAL_APPLICATION_PENDING",now()+delay,accountId,row.intent_id,row.generation)
+    :store.db.run("UPDATE task_integration_work SET state=?,code=?,next_attempt_at=?,attempts=? WHERE account_id=? AND intent_id=? AND generation=? AND state IN ('pending','running')",
+      state,code,now()+delay,attempts,accountId,row.intent_id,row.generation);
   async function drain(){
     try{await worker.recoverCheckPolicies?.();}catch(error){if(stopped)return;throw error;}if(stopped)return;active();
-    const rows=store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND state IN ('pending','running') AND next_attempt_at<=? ORDER BY next_attempt_at,intent_id LIMIT 8",accountId,now());
+    const rows=store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND (state IN ('pending','running') OR (state='done' AND (code IS NULL OR code='COLLAB_LOCAL_APPLICATION_PENDING'))) AND next_attempt_at<=? ORDER BY next_attempt_at,intent_id LIMIT 8",accountId,now());
     for(const row of rows){
       try{
         active();const intent=intents.get(row.intent_id);
-        if(!intent || ["completed","cancelled"].includes(intent.state))continue;
+        if(!intent||intent.state==="cancelled"||(intent.state==="completed"&&row.state!=="done"))continue;
         await getWorkflow().authorizeIntegration(intent.input);active();
+        if(row.state==="done"){
+          const local=getWorkflow().localApplicationStatus?.(intent.id)||{state:"disabled"};active();
+          if(local.state!=="pending"){updateWork(row,"done",`COLLAB_LOCAL_APPLICATION_${local.state.toUpperCase()}`,0);continue;}
+          if(!local.ready){updateWork(row,"done","COLLAB_LOCAL_APPLICATION_PENDING",2000);continue;}
+        }
         let journal=store.db.transaction(()=>{
           active();const current=store.db.get("SELECT * FROM task_integration_work WHERE account_id=? AND intent_id=?",accountId,intent.id);
-          if(!current || current.generation!==row.generation || !["pending","running"].includes(current.state) || current.next_attempt_at>now())return null;
+          if(!current || current.generation!==row.generation || !["pending","running",...(row.state==="done"?["done"]:[])].includes(current.state) || current.next_attempt_at>now())return null;
           const previous=get(intent.id);
-          if(previous && previous.generation===row.generation && previous.state!=="terminal")return previous;
+          if(previous && (previous.generation===row.generation||row.state==="done") && previous.state!=="terminal")return previous;
           const attempt=previous?previous.attempt+1:0;
           const request={accountId,intentId:intent.id,sessionId:intent.input.sessionId,attempt},turnId=integrationTurnId(request);
           if(!turnId)throw fail("INVALID");
@@ -44,7 +52,7 @@ function createIntegrationAdmission({store,assertActive,getWorkflow,enqueue,work
         // The queued handler may already have claimed/completed this work while
         // send returned its acknowledgement. Never overwrite its newer state.
         store.db.transaction(()=>{
-          active();if(get(intent.id)?.turnId!==journal.turnId)return;
+          active();const current=get(intent.id);if(current?.turnId!==journal.turnId||current.state==="terminal")return;
           const ended=terminal.has(receipt.durableStatus),unknown=receipt.outcomeUnknown===true && receipt.active===false;
           journal=records.put(id(intent.id),{...journal,state:ended||unknown?"terminal":"admitted"});
           if(ended && receipt.durableStatus!=="completed")updateWork(row,"waiting","COLLAB_INTEGRATION_TURN_CANCELLED",0);
@@ -66,7 +74,16 @@ function createIntegrationAdmission({store,assertActive,getWorkflow,enqueue,work
     if(!intent || !journal || request.sessionId!==intent.input.sessionId || execution.turnId!==journal.turnId || journal.state==="terminal")throw fail("FENCED");
     const guard=()=>{active();execution.assertActive();const current=get(request.intentId);if(current?.turnId!==execution.turnId || current.state==="terminal")throw fail("FENCED");};
     await getWorkflow().authorizeIntegration(intent.input);guard();
-    return worker.runIntent(request,{...execution,assertActive:guard});
+    const result=await worker.runIntent(request,{...execution,assertActive:guard});guard();
+    if(result.state==="published"&&result.localState){
+      store.db.transaction(()=>{
+        guard();
+        const code=result.localState==="applied"?"COLLAB_LOCAL_APPLICATION_APPLIED":result.localState==="waiting"?"COLLAB_LOCAL_APPLICATION_PENDING":"COLLAB_LOCAL_APPLICATION_REQUIRED";
+        store.db.run("UPDATE task_integration_work SET code=?,next_attempt_at=? WHERE account_id=? AND intent_id=? AND state='done'",code,now()+2000,accountId,intent.id);
+        records.put(journal.id,{...get(intent.id),state:"terminal"});
+      })();notify();
+    }
+    return result;
   }
   return {get,execute,recover(){if(stopped)return Promise.resolve();if(!running)running=drain().finally(()=>{running=null;});return running;},stop(){stopped=true;}};
 }

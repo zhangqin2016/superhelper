@@ -41,5 +41,8 @@ try{
  host.ctx.executeCollaborationIntegration=async()=>({ok:true,state:'published',localState:'applied',localValidationState:'passed'});
  const applied=await runIntegrationTurn(host,{id:'session'},state,restored.options.localAssistant.collaborationIntegration);
  assert.match(applied.assistant,/has been applied|已写入工作空间|وتطبيق المرشح/);
+ host.ctx.executeCollaborationIntegration=async()=>({ok:true,state:'published',localState:'waiting',localValidationState:'passed'});
+ const waiting=await runIntegrationTurn(host,{id:'session'},state,restored.options.localAssistant.collaborationIntegration);
+ assert.match(waiting.assistant,/will resume|空闲后会继续|سيُستأنف/);assert.equal(waiting.failed,false);
  console.log('integration turn recovery: actual SQLite dedupe/reopen, restored closed background operation, explicit attempts and owner fences passed');
 }finally{store?.close();fs.rmSync(root,{recursive:true,force:true});}

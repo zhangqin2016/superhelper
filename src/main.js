@@ -291,6 +291,7 @@ app.whenReady().then(async () => {
           policy,
           taskOptions: {
             rootPath: path.join(collaborationTransferRoot(), "task-workspaces"),
+            localApplicationWriter:process.platform==="win32"?undefined:require("./main/collaboration/foreground-writer").createForegroundWriter(),
             enqueueIntegrationTurn: request => collaborationTurnOrchestrator
               ? require("./main/collaboration/integration-turn").enqueueIntegrationTurn(collaborationTurnOrchestrator,request)
               : {ok:false,error:"COLLAB_INTEGRATION_NOT_READY"},

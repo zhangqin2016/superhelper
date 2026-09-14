@@ -8,6 +8,14 @@ const fail=code=>Object.assign(Error(`COLLAB_TASK_APPLICATION_${code}`),{code:`C
 function sync(directory){const fd=fs.openSync(directory,"r");try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
 function createForegroundWriter(options={}){
   const writer=createLocalWriter(options),directory=path.join(path.dirname(writer.filePath),"foreground-groups");
+  const request=path.join(path.dirname(writer.filePath),"idle-application-request");
+  function idleRequested(){
+    try{const stat=fs.lstatSync(request);return stat.isFile()&&stat.nlink===1&&stat.size===0&&Date.now()-stat.mtimeMs<30000;}catch{return false;}
+  }
+  function requestIdle(){
+    const fd=fs.openSync(request,fs.constants.O_CREAT|fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW,0o600);
+    try{const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.size!==0)throw fail("UNSAFE_PATH");fs.futimesSync(fd,new Date(),new Date());}finally{fs.closeSync(fd);}
+  }
   function root(){
     fs.mkdirSync(directory,{recursive:true,mode:0o700});
     if(fs.realpathSync(directory)!==directory||!fs.lstatSync(directory).isDirectory())throw fail("UNSAFE_PATH");
@@ -37,13 +45,14 @@ function createForegroundWriter(options={}){
           if(error.code!=="ESRCH")throw fail("BUSY");
           fs.unlinkSync(target);removed=true;continue;
         }
-        throw fail("BUSY");
+        requestIdle();throw fail("BUSY");
       }
       if(removed)sync(directory);
+      if(idleRequested())fs.unlinkSync(request);
       return operation();
     });
   }
-  return {run,registerCurrentGroup};
+  return {run,registerCurrentGroup,idleRequested};
 }
 
 /** Detached wrapper registers its own group before spawning any workspace

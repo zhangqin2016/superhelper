@@ -252,7 +252,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     const journalRoot = path.join(root(), "recovery");
     fs.mkdirSync(journalRoot,{recursive:true,mode:0o700});
     return createTaskApplication({ journalRoot:fs.realpathSync(journalRoot),
-      writer:require("./local-writer").createLocalWriter({filePath:writerLockPath}),
+      writer:localApplicationWriter||require("./local-writer").createLocalWriter({filePath:writerLockPath}),
       journal:{ get:() => recoveries.get(record.id)?.journal || null, put:(_id,journal) => {
         const live = recoveries.get(record.id) || record;
         const next = {...live,journal,state:journal.state};
@@ -586,17 +586,28 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   }
   // Incomplete local writes recover without a network or Team membership grant.
   // Matching hashes are still mandatory; later user edits become conflicts.
-  const ready = Promise.resolve().then(async () => {
+  async function recoverLocalWrites(){
     for (const record of recoveries.list()) {
       if (!record.journal || ["applied","rolled_back"].includes(record.state)) continue;
       try { await application(record,true).recover({applicationId:record.id,mode:"rollback"}); }
       catch { /* durable record remains available; never report it as applied */ }
     }
-  });
+  }
+  const ready=Promise.resolve().then(recoverLocalWrites);
   return {recoverPending:()=>ready,acquireIntegrationInput,
+    localApplicationStatus(intentId){
+      if(sharedPublicationProtocol!==1||!localApplicationWriter)return {state:"disabled"};
+      const job=records.get(require("./local-materialization").localMaterializationJobId(intentId));
+      if(job?.state==="applied")return {state:"applied"};
+      if(["conflicts","failed","baseline_required"].includes(job?.state)||["failed","required"].includes(job?.validation?.state)
+        ||(job?.applicationId&&recoveries.get(job.applicationId)?.state==="recovery_conflict"))return {state:"required"};
+      try{return {state:"pending",ready:localApplicationWriter.run(()=>true)};}
+      catch(error){if(error.code==="COLLAB_TASK_APPLICATION_BUSY")return {state:"pending",ready:false};throw error;}
+    },
     async prepareIntegrationLocal({intentId,assertCurrent}){
       if(sharedPublicationProtocol!==1)return null;
       const guard=()=>{assertActive();assertCurrent();};guard();
+      await ready;await recoverLocalWrites();guard();
       const intent=require("./integration-intents").createIntegrationIntents({store,assertActive:guard}).get(intentId);
       if(intent?.state!=="completed")throw fail("COLLAB_LOCAL_MATERIALIZATION_PUBLICATION_REQUIRED");
       const input=intent.input,source=read(`task:${input.taskId}`,input.conversationId);
@@ -614,8 +625,14 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
           const application=require("./local-materialization-application").createLocalMaterializationApplication({store,writer:localApplicationWriter,
             journalRoot:path.join(root(),"recovery"),assertActive:guard,authorize:async value=>{await authorizeIntegration(value);guard();return true;},
             getPolicy:value=>checkPolicies.current(value,checkSelection.sourceIdentity(source.sourceRoot))});
-          const applied=await application.apply({job:local.get(intentId),input});guard();notify();
-          return {...applied,validationState:validation.state};
+          try{
+            const applied=await application.apply({job:local.get(intentId),input});guard();notify();
+            return {...applied,validationState:validation.state};
+          }catch(error){
+            guard();
+            if(["COLLAB_TASK_APPLICATION_BUSY","COLLAB_LOCAL_APPLICATION_STALE_WORKSPACE","COLLAB_TASK_APPLICATION_PREVIEW_CHANGED"].includes(error.code))return {state:"waiting",validationState:validation.state};
+            throw error;
+          }
         }
         return {state:result.state,validationState:validation.state};
       }

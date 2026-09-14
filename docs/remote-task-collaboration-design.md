@@ -115,3 +115,6 @@ Checkpoint 57 connects native private validation to application through an expli
 
 
 Checkpoint 58: controlled POSIX engine/job groups register durably under the global local-writer lock before command execution. Application admission requires every registered group to be absent, including tools surviving their leader. Engine owner IPC closes the running group on main-process death; persistent jobs retain their independent lifecycle. Safe warm-profile draining and local-write retry still need to connect this admission to automatic materialization. Existing Windows paths are unchanged and no Windows foreground-completion proof is claimed.
+
+
+Checkpoint 59 supplies POSIX foreground admission in the desktop source path. Busy application requests advisory idle-profile retirement without interrupting active/unknown views or retained SDK work. Completed-shared local continuation persists in the existing work schedule and returns through a fresh original-session TaskCore turn after admission becomes available. Work-generation changes do not replace the current local validator's turn. Local A/application receipts remain atomic; contribution-specific undo and task-card local state are the next required steps. Existing operator protocol gates remain unchanged.

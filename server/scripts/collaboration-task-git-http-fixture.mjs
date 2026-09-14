@@ -70,7 +70,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     createIntegrationDiscovery({store:owner.store,assertActive(){},resolveSourceSession}).observe(task);
     const makeHost=()=>require('./collaboration-native-turn-fixture.cjs')({root:owner.root,source:owner.source,accountId:'a',execute:(request,execution)=>service.runIntegration(request,execution)});
     let host=makeHost(),foreground=host.orchestrator._state('source-session');foreground.phase='streaming';foreground.turnId='foreground';
-    let removedPublicationStaging=null,removedTransferStaging=null;
+    let removedPublicationStaging=null,removedTransferStaging=null,blockingProfile=null;
     const makeService=remote=>createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:remote?{...owner.client,publishIntegration:async request=>{
       if(!removedPublicationStaging){
         const attempt=owner.records.list(conversationId).find(row=>row.kind==='remote-publication'&&row.objectId===request.objectId);
@@ -84,7 +84,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     }}:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
       policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,...(remote?{sharedPublicationProtocol:1}:{})},
       transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,
-        ...(remote?{localApplicationWriter:require('../../src/main/collaboration/local-writer').createLocalWriter({filePath:path.join(owner.root,'writer.sqlite')})}:{}),
+        ...(remote?{localApplicationWriter:require('../../src/main/collaboration/foreground-writer').createForegroundWriter({filePath:path.join(owner.root,'writer.sqlite')})}:{}),
         chooseValidationChecks:async()=>({filePaths:[path.join(owner.source,'rule.test.cjs')]}),enqueueIntegrationTurn:request=>host.enqueue(request)}});
     let service=makeService(false);
     assert.equal(service.ok,true);service.start();
@@ -124,15 +124,27 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
         assert.equal((await pool.query('SELECT count(*)::int n FROM collaboration_shared_publications WHERE workspace_id=$1',[task.sharedWorkspaceId])).rows[0].n,0,'old native completion has no remote publication');
         while(foreground.phase!=='idle'&&Date.now()<checkedDeadline)await new Promise(resolve=>setTimeout(resolve,20));
         service.stop();host.close();owner.close();owner=open('a');host=makeHost();foreground=host.orchestrator._state('source-session');
+        const foregroundTools=require('../../src/main/collaboration/foreground-writer');
+        const child=foregroundTools.spawnForeground(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:owner.root,env:process.env,stdio:['ignore','ignore','ignore']},{filePath:path.join(owner.root,'writer.sqlite')});
+        blockingProfile=new (require('../../src/main/runtime/opencode-shared-server').OpencodeSharedServer)({serverCommand:'fixture',cwd:owner.root,dataDir:':memory:',writerLockPath:path.join(owner.root,'writer.sqlite')});
+        blockingProfile.process=blockingProfile._ownedProcess=child;blockingProfile._idleReady=true;
+        const releaseActive=blockingProfile.retainView(()=>true);
         service=makeService(true);assert.equal(service.ok,true);service.start();
-        const upgradeDeadline=Date.now()+45000;
+        const upgradeDeadline=Date.now()+60000;
         while((!owner.records.get(journal.id)?.remoteReceipt||owner.records.get(journal.id)?.state!=='published')&&Date.now()<upgradeDeadline)await new Promise(resolve=>setTimeout(resolve,20));
         published=owner.records.get(journal.id);
         assert.equal(published.state,'published');
         assert.ok(published.remoteReceipt,'native completion requires a real remote publication receipt');
+        while((owner.store.db.get('SELECT code FROM task_integration_work')?.code!=='COLLAB_LOCAL_APPLICATION_PENDING'
+          ||owner.records.list(conversationId).find(row=>row.kind==='integration-admission')?.state!=='terminal')&&Date.now()<upgradeDeadline)await new Promise(resolve=>setTimeout(resolve,20));
+        assert.equal(owner.store.db.get('SELECT code FROM task_integration_work')?.code,'COLLAB_LOCAL_APPLICATION_PENDING');
+        const waitingTurn=owner.records.list(conversationId).find(row=>row.kind==='integration-admission');assert.equal(waitingTurn.state,'terminal');
+        assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','registered foreground work defers application without losing shared publication');
+        releaseActive();assert.equal(blockingProfile.drainIfIdle(),true);await blockingProfile.terminate();
         let local;
         while(Date.now()<upgradeDeadline){local=owner.records.list(conversationId).find(row=>row.kind==='local-materialization'&&row.intentId===published.intentId);if(['applied','conflicts','failed','baseline_required'].includes(local?.state))break;await new Promise(resolve=>setTimeout(resolve,20));}
         assert.equal(local?.state,'applied','the native turn applies the validated candidate under the fixture-owned writer admission');
+        assert.notEqual(owner.records.list(conversationId).find(row=>row.kind==='integration-admission').turnId,waitingTurn.turnId,'idle completion resumes through a fresh original-session TaskCore turn');
         assert.equal(fs.readFileSync(path.join(local.candidate.snapshotRoot,'work.txt'),'utf8'),'reviewed');
         assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'reviewed','the admitted local candidate is written to the original workspace');
         assert.equal(owner.records.get(local.baseId).revision.commit,published.candidate.commit,'A advances to shared M only with the local application receipt');
@@ -169,7 +181,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       const finishDeadline=Date.now()+10000;
       while(foreground.phase!=='idle' && Date.now()<finishDeadline)await new Promise(resolve=>setTimeout(resolve,20));
       assert.equal(host.manager._store().getTurnInputByTurnId(nextAdmission.turnId,'a').terminalType,'turn.completed');
-    }finally{service.stop();host.close();}
+    }finally{service.stop();host.close();if(blockingProfile)await blockingProfile.terminate();}
     owner.close();owner=open('a');
     await verifyBaselineHttp({owner,helper,conversationId,pool,dropAck});
     const integrationScope={deviceId:owner.deviceId,workspaceId:task.sharedWorkspaceId,taskId,deliveryId:delivered.id};

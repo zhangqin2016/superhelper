@@ -49,6 +49,10 @@ class OpencodeSharedServer extends EventEmitter {
     this.env = processProfileEnv(opts.env);
     this.configContent = opts.configContent || "";
     this.writerLockPath=opts.writerLockPath;
+    this._viewActivity=new Set();
+    this._idleReady=false;
+    this._idlePoll=null;
+    this._foregroundWriter=require("../collaboration/foreground-writer").createForegroundWriter({filePath:this.writerLockPath});
 
     this.process = null;
     this._ownedProcess = null;
@@ -93,8 +97,20 @@ class OpencodeSharedServer extends EventEmitter {
     return `http://${this.host}:${this.port}`;
   }
 
-  retainView() {
-    return this._retain("_activeViews");
+  retainView(isActive) {
+    const view={isActive};this._viewActivity.add(view);
+    const release=this._retain("_activeViews");
+    return ()=>{this._viewActivity.delete(view);release();};
+  }
+
+  drainIfIdle(){
+    if(this._terminated||!this._idleReady||this._activeWork||!this._foregroundWriter.idleRequested())return false;
+    for(const view of this._viewActivity){try{if(typeof view.isActive!=="function"||view.isActive()!==false)return false;}catch{return false;}}
+    this.terminate();
+    // Invalidate idle views synchronously so a new turn cannot reuse the old
+    // SDK while process-group shutdown is still being confirmed.
+    this.emit("idle-retire",{code:0});
+    return true;
   }
 
   retainWork() {
@@ -197,6 +213,8 @@ class OpencodeSharedServer extends EventEmitter {
             this._baseClient = createOpencodeClient({ baseUrl: this.baseUrl });
             this._startEventStream();
             await this._waitForEventStreamReady();
+            this._idleReady=true;
+            this._idlePoll=setInterval(()=>{try{this.drainIfIdle();}catch(error){log.warn("idle drain failed: %s",error?.code||"unavailable");}},250);this._idlePoll.unref?.();
             log.info("shared opencode serve ready on %s (cwd %s)", this.baseUrl, this.cwd);
             resolve(this);
           } catch (err) {
@@ -488,6 +506,7 @@ class OpencodeSharedServer extends EventEmitter {
   terminate() {
     if(this._termination)return this._termination;
     this._terminated = true;
+    if(this._idlePoll)clearInterval(this._idlePoll);this._idlePoll=null;
     const child = this._ownedProcess || this.process;
     this.process = null;
     this._termination = terminateProcessGroup(child).catch(()=>({ok:false,code:"TERMINATION_FAILED"}));
