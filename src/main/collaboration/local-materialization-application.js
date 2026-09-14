@@ -75,7 +75,7 @@ function createLocalMaterializationApplication({store,writer,journalRoot,assertA
       const preview=await broker.preview(binding);guard();planHash=preview.planHash;
       store.db.transaction(()=>{
         guard();recoveries.put(applicationId,{id:applicationId,kind:"materialization",conversationId:input.conversationId,taskId:input.taskId,deliveryId:input.deliveryId,
-          input:binding,planHash,state:"planned",createdAt:store.now()});
+          input:binding,planHash,state:"planned",createdAt:store.now(),jobId:job.id});
         records.put(job.id,{...records.get(job.id),applicationId});
       })();
     }

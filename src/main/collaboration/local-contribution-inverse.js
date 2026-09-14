@@ -54,7 +54,10 @@ async function prepareContributionInverse({record,journalRoot,destinationRoot,as
       }
     }
     const candidate=await prepareLocalCandidate({base:{rootPath:baseRoot,manifest:base},shared:{rootPath:incomingRoot,manifest:incoming},rootPath:root,destinationRoot:output,assertActive,gitOptions,officeOptions});
-    return candidate;
+    // Files the contribution deleted come back with their recorded pre-application mode.
+    const restored=new Set(candidate.manifest.map(file=>file.path)),fileModes={};
+    for(const op of journal.operations)if(op.resultHash===null&&restored.has(op.path)&&Number.isInteger(op.mode)&&op.mode>0&&op.mode<=0o777)fileModes[op.path]=op.mode;
+    return {...candidate,fileModes};
   }catch(error){fs.rmSync(output,{recursive:true,force:true});throw error;}
   finally{fs.rmSync(attempt,{recursive:true,force:true});}
 }

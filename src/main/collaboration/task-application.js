@@ -39,6 +39,15 @@ function safePath(root, relative, { createParents = false } = {}) {
   }
   throw fail("UNSAFE_PATH");
 }
+/** Optional creation modes (e.g. restoring a deleted file's original mode).
+ * They are part of the immutable binding and plan hash, never a side channel. */
+function modeBinding(input) {
+  if (input.fileModes === undefined) return {};
+  const modes = input.fileModes;
+  if (!modes || Object.getPrototypeOf(modes) !== Object.prototype || !Array.isArray(input.editablePaths)) throw fail("MODE_INVALID");
+  for (const [name, mode] of Object.entries(modes)) if (!input.editablePaths.includes(name) || !Number.isInteger(mode) || mode <= 0 || mode > 0o777) throw fail("MODE_INVALID");
+  return {fileModes:{...modes}};
+}
 function readFile(root, relative) {
   const { target, stat } = safePath(root, relative);
   if (!stat) return null;
@@ -97,7 +106,7 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized, writer 
       if (!delivered || delivered.sha256 !== file.sha256 || delivered.sizeBytes !== file.sizeBytes) throw fail("DELIVERY_MISMATCH");
     }
     const plan = planTaskApplication({base:baseManifest,current,delivery:deliveryManifest,editablePaths:input.editablePaths});
-    const binding = {applicationId:input.applicationId,rootPath,deliveryRoot,baseManifest,deliveryManifest,editablePaths:input.editablePaths};
+    const binding = {applicationId:input.applicationId,rootPath,deliveryRoot,baseManifest,deliveryManifest,editablePaths:input.editablePaths,...modeBinding(input)};
     return {binding, plan, planHash:digest({...binding,current,plan,rootIdentity:identity(fs.lstatSync(rootPath)),deliveryIdentity:identity(fs.lstatSync(deliveryRoot))})};
   }
   async function preview(input) {
@@ -138,7 +147,7 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized, writer 
     try { return writer.run(() => {
       const previous = journal.get(input.applicationId);
       if (previous) {
-        const binding = {applicationId:input.applicationId,rootPath:path.resolve(input.rootPath),deliveryRoot:path.resolve(input.deliveryRoot),baseManifest:input.baseManifest,deliveryManifest:input.deliveryManifest,editablePaths:input.editablePaths};
+        const binding = {applicationId:input.applicationId,rootPath:path.resolve(input.rootPath),deliveryRoot:path.resolve(input.deliveryRoot),baseManifest:input.baseManifest,deliveryManifest:input.deliveryManifest,editablePaths:input.editablePaths,...modeBinding(input)};
         if (digest(binding) !== digest(previous.binding) || input.expectedPlanHash !== previous.planHash) throw fail("ID_REUSED");
         if (previous.state === "applied") return previous.result;
         throw fail("RECOVERY_REQUIRED");
@@ -157,7 +166,7 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized, writer 
         const delivered = entry.operation === "delete" ? null : readFile(record.binding.deliveryRoot,entry.path);
         if ((local?.sha256 || null) !== entry.expectedLocalHash || (delivered?.sha256 || null) !== entry.resultHash) throw fail("INPUT_CHANGED");
         const index = record.operations.length;
-        const operation = {...entry,mode:local?.mode || 0o600,backupName:`${index}.before`,stagedName:`${index}.after`,temporaryName:`.lily-apply-${crypto.randomUUID()}`,state:"prepared"};
+        const operation = {...entry,mode:local?.mode || description.binding.fileModes?.[entry.path] || 0o600,backupName:`${index}.before`,stagedName:`${index}.after`,temporaryName:`.lily-apply-${crypto.randomUUID()}`,state:"prepared"};
         if (local) writeExclusive(path.join(backupDirectory,operation.backupName),local.bytes);
         if (delivered) writeExclusive(path.join(backupDirectory,operation.stagedName),delivered.bytes);
         record.operations.push(operation);

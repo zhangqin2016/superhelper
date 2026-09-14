@@ -1,6 +1,6 @@
 "use strict";
 const stages=new Set(["queued","preparing","validation_required","conflict","failed","publication_pending","published","cancelled","binding_required"]);
-const localStages=new Set(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied"]);
+const localStages=new Set(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied","undone"]);
 function integrationView(value){
   return value && stages.has(value.stage) && /^[A-Za-z0-9_-]{1,200}$/.test(value.deliveryId||"")
     ? {stage:value.stage,deliveryId:value.deliveryId,canRetry:value.canRetry===true,
@@ -21,6 +21,7 @@ function localStage(job,intent,task,work){
   if(!job)return work.code==="COLLAB_LOCAL_APPLICATION_PENDING"?"waiting":undefined;
   if(job.taskId!==task.id||job.deliveryId!==task.currentDeliveryId||job.binding?.accountId!==task.requesterUserId
     ||["workspaceId","targetId","projectId","sessionId"].some(key=>job.binding[key]!==intent.input[key]))return undefined;
+  if(job.state==="undone")return job.receipt?.applicationId===job.applicationId&&/^[A-Za-z0-9_-]{1,200}$/.test(job.undoApplicationId||"")?"undone":undefined;
   if(job.state==="applied"){
     const receipt=job.receipt;
     return receipt&&job.applicationId&&receipt.applicationId===job.applicationId&&receipt.token===job.token

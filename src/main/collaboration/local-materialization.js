@@ -43,8 +43,11 @@ function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActiv
     if(previous&&hash(previous.binding)!==hash(binding))throw fail("BINDING_CONFLICT");
     if(previous?.state==="applied"&&hash(previous.sharedRevision)===hash(revision)
       &&base.receipt?.applicationId===previous.applicationId&&base.revision.commit===revision.commit)return previous;
+    // Undo is a private W change on top of synced A. The same shared M must not
+    // silently come back; only a newer shared revision starts a fresh candidate.
+    if(previous?.state==="undone"&&hash(previous.sharedRevision)===hash(revision))return previous;
     const recovery=previous?.applicationId?require("./task-recovery").createTaskRecovery({store,assertActive}).get(previous.applicationId):null;
-    if(recovery?.journal&&!["rolled_back","applied"].includes(recovery.state))throw fail("RECOVERY_REQUIRED");
+    if(recovery?.journal&&!["rolled_back","applied","undone"].includes(recovery.state))throw fail("RECOVERY_REQUIRED");
     const intact=value=>{
       if(recovery?.state==="rolled_back")return false;
       if(value?.fingerprint!==fingerprint||!["ready","conflicts"].includes(value.state))return false;

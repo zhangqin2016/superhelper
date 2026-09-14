@@ -40,6 +40,9 @@ app.whenReady().then(async()=>{
   check(card.querySelector('p').textContent.includes('Waiting for foreground work'),'published shared state still shows local waiting');
   rows=[{...rows[0],integration:{...rows[0].integration,localStage:'applied'}}];for(const fn of listeners)fn({type:'task'});await tick();
   check(card.querySelector('p').textContent.includes('Applied to the local workspace'),'local receipt updates the same card');
+  rows=[{...rows[0],integration:{...rows[0].integration,localStage:'undone'}}];for(const fn of listeners)fn({type:'task'});await tick();
+  check(card.querySelector('p').textContent.includes('Contribution undone locally'),'undone contribution updates the same card');
+  rows=[{...rows[0],integration:{...rows[0].integration,localStage:'applied'}}];for(const fn of listeners)fn({type:'task'});await tick();
   renderConversation('origin',{force:true});check(panel.querySelector('.collaboration-task-card')===card,'conversation rebuild preserves card');
   check(getComputedStyle(panel.querySelector('.workbench-empty')).display==='none','task content replaces empty-session onboarding');
   check(getRuntimeSession('origin').committedMessages.length===0,'task cards never become engine context');

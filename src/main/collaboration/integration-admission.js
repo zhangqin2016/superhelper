@@ -78,7 +78,7 @@ function createIntegrationAdmission({store,assertActive,getWorkflow,enqueue,work
     if(result.state==="published"&&result.localState){
       store.db.transaction(()=>{
         guard();
-        const code=result.localState==="applied"?"COLLAB_LOCAL_APPLICATION_APPLIED":result.localState==="waiting"?"COLLAB_LOCAL_APPLICATION_PENDING":"COLLAB_LOCAL_APPLICATION_REQUIRED";
+        const code=result.localState==="applied"?"COLLAB_LOCAL_APPLICATION_APPLIED":result.localState==="undone"?"COLLAB_LOCAL_APPLICATION_UNDONE":result.localState==="waiting"?"COLLAB_LOCAL_APPLICATION_PENDING":"COLLAB_LOCAL_APPLICATION_REQUIRED";
         store.db.run("UPDATE task_integration_work SET code=?,next_attempt_at=? WHERE account_id=? AND intent_id=? AND state='done'",code,now()+2000,accountId,intent.id);
         records.put(journal.id,{...get(intent.id),state:"terminal"});
       })();notify();

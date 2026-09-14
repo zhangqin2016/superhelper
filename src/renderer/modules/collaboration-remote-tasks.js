@@ -113,7 +113,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     if(integration){
       const box=node("section","remote-task-notice remote-task-integration");box.setAttribute("role","status");
       box.append(node("p","",tr(`integration.${integration.stage}`)));
-      if(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied"].includes(integration.localStage))box.append(node("p","",tr(`integration.local.${integration.localStage}`)));
+      if(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied","undone"].includes(integration.localStage))box.append(node("p","",tr(`integration.local.${integration.localStage}`)));
       if(integrationError)box.append(node("p","",tr(integrationError==="checks"?"integration.checksFailed":"integration.retryFailed")));
       if(integration.canConfigureChecks){
         if(integration.checkCount)box.append(node("p","",tr("integration.checksPinned",{count:integration.checkCount})));
@@ -147,8 +147,8 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     }
     body.append(deliveries);
     const application = applications.get(task.id);
-    if (task.state === "accepted") notice(body, application?.state === "applied" ? "applied" : application?.state === "rolled_back" ? "rolledBack" : application ? "applicationRecovery" : "notApplied");
-    if (application && !["rolled_back", "preview"].includes(application.state)) body.append(button("task-rollback", tr("rollback"), () => void rollbackApplication(task, application)));
+    if (task.state === "accepted") notice(body, application?.state === "applied" ? "applied" : application?.state === "undone" ? "undone" : application?.state === "rolled_back" ? "rolledBack" : application ? "applicationRecovery" : "notApplied");
+    if (application && !["rolled_back", "undone", "preview"].includes(application.state)) body.append(button("task-rollback", tr("rollback"), () => void rollbackApplication(task, application)));
     if (api()?.taskWorkflow && ["active", "changes_requested"].includes(task.state) && context.userId === task.assigneeUserId) {
       const controls = node("div", "remote-task-workspace-controls");
       controls.append(button("task-receive", tr("receive"), () => void receiveTask(task)), button("task-workspace-open", tr("openWorkspace"), () => void openWorkspace(task)), button("task-prepare-delivery", tr("prepareDelivery"), () => void prepareDelivery(task)));
@@ -328,8 +328,13 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   }
   async function rollbackApplication(task, application) {
     const result = await runWorkflow({ operation: "rollback", taskId: task.id, applicationId: application.applicationId }); if (!result) return;
-    if (result.ok && result.state === "rolled_back") applications.set(task.id, { ...application, state: "rolled_back" });
-    paintDetail(); if (!result.ok) notice(surface.querySelector(".remote-task-content"), "applyConflict");
+    if (result.ok && ["rolled_back", "undone"].includes(result.state)) applications.set(task.id, { ...application, state: result.state });
+    if (result.ok && result.state === "undone" && integration) {
+      const ticket = generation, status = await Promise.resolve().then(() => api()?.taskWorkflow?.({ operation: "integrationStatus", conversationId: context.conversationId, taskId: task.id })).catch(() => null);
+      if (!valid(ticket)) return;
+      if (status?.ok && status.integration?.deliveryId === task.currentDeliveryId) integration = status.integration;
+    }
+    paintDetail(); if (!result.ok) notice(surface.querySelector(".remote-task-content"), result.code === "COLLAB_LOCAL_UNDO_CONFLICT" ? "undoConflict" : "applyConflict");
   }
   async function openWorkspace(task, deliveryId) {
     const ticket = generation;

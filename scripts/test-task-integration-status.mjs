@@ -58,6 +58,13 @@ try{
  records.put('local',{...local,state:'applied',applicationId:'application',sharedRevision:revision,
   receipt:{applicationId:'application',token:local.token,fingerprint:local.fingerprint,validationHash:local.validation.evidenceHash,sharedRevision:revision}});
  const applied=(await workflow.run(command)).integration;assert.equal(applied.localStage,'applied');
+ const appliedRecord=records.get('local');
+ records.put('local',{...appliedRecord,state:'undone'});
+ assert.equal((await workflow.run(command)).integration.localStage,undefined,'an undone label requires its inverse linkage');
+ records.put('local',{...appliedRecord,state:'undone',undoApplicationId:'undo-attempt'});
+ assert.equal((await workflow.run(command)).integration.localStage,'undone','undone contribution is projected on the published shared state');
+ assert.equal(taskWorkflowResult({ok:true,integration:{stage:'published',deliveryId:'delivery',canRetry:false,localStage:'undone'}}).integration.localStage,'undone');
+ records.put('local',appliedRecord);
  assert.equal(taskWorkflowResult({ok:true,integration:{...applied,localStage:'private-path'}}).integration.localStage,undefined,'unknown local states cannot cross IPC');
  const reopened=new CollaborationStore({dbPath:path.join(root,'db'),accountId:'owner',keyring});
  try{

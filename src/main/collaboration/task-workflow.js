@@ -247,12 +247,18 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     save({...local,deliveries:{...local.deliveries,[command.deliveryId]:result}});
     return result;
   }
+  // Successful materializations are undone through their contribution inverse,
+  // never by whole-file rollback that would erase later edits.
+  const localWriter=()=>localApplicationWriter||require("./local-writer").createLocalWriter({filePath:writerLockPath});
+  const undo=()=>require("./local-contribution-undo").createLocalContributionUndo({store,writer:localWriter(),assertActive,
+    journalRoot:path.join(root(),"recovery"),destinationRoot:path.join(root(),"local-undo")});
   function application(record, localRecovery = false) {
-    if(record.kind==="materialization"&&record.state==="applied")throw fail("COLLAB_LOCAL_APPLICATION_INVERSE_REQUIRED");
+    if(record.kind==="materialization"&&["applied","undone"].includes(record.state))throw fail("COLLAB_LOCAL_APPLICATION_INVERSE_REQUIRED");
+    if(record.kind==="inverse")throw fail("COLLAB_TASK_INVALID");
     const journalRoot = path.join(root(), "recovery");
     fs.mkdirSync(journalRoot,{recursive:true,mode:0o700});
     return createTaskApplication({ journalRoot:fs.realpathSync(journalRoot),
-      writer:localApplicationWriter||require("./local-writer").createLocalWriter({filePath:writerLockPath}),
+      writer:localWriter(),
       journal:{ get:() => recoveries.get(record.id)?.journal || null, put:(_id,journal) => {
         const live = recoveries.get(record.id) || record;
         const next = {...live,journal,state:journal.state};
@@ -366,14 +372,15 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       save({...local,sharedWorkspaceId:task.sharedWorkspaceId,workspaceBindingId:id});
       return {ok:true,projectId:target.projectId,sessionId:target.sessionId};
     }
-    if (operation === "recoveries") return {ok:true,applications:recoveries.list().filter(v=>v.journal && v.state !== "rolled_back" && !(v.kind==="materialization"&&v.state==="applied")).map(v=>({
+    // Completed materializations/undos are history, not recovery work; interrupted inverse attempts are.
+    if (operation === "recoveries") return {ok:true,applications:recoveries.list().filter(v=>v.journal && !["rolled_back","undone"].includes(v.state) && !(["materialization","inverse"].includes(v.kind)&&v.state==="applied")).map(v=>({
       conversationId:v.conversationId,taskId:v.taskId,applicationId:v.id,state:v.state,deliveryId:v.deliveryId,planHash:v.planHash,
       label:path.basename(v.input.rootPath),
     }))};
     if (operation === "drafts") {
       const all = records.list(conversationId);
       const localApplications = new Map(all.filter(v=>v.kind === "application").map(v=>[v.id,v]));
-      for (const value of recoveries.list()) if (value.conversationId === conversationId) localApplications.set(value.id,value);
+      for (const value of recoveries.list()) if (value.conversationId === conversationId && value.kind !== "inverse") localApplications.set(value.id,value);
       return {ok:true,drafts:all.filter(v=>v.kind === "draft" && !["completed","blocked"].includes(v.state) && !(v.taskId && v.state === "failed")).map(draftView),
         applications:[...localApplications.values()].sort((a,b)=>Number(!!a.journal)-Number(!!b.journal)||(a.createdAt||0)-(b.createdAt||0)).map(v=>({taskId:v.taskId,applicationId:v.id,state:v.state,deliveryId:v.deliveryId,planHash:v.planHash}))};
     }
@@ -578,7 +585,9 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (operation === "apply" || operation === "rollback") {
       const record = operation === "rollback" ? recoveries.get(command.applicationId) : read(command.applicationId,conversationId);
       if (!record || record.conversationId !== conversationId) throw fail("COLLAB_TASK_LOCAL_MISSING");
-      if ((record.kind !== "application" && !(operation==="rollback"&&record.kind==="materialization")) || record.taskId !== command.taskId || (operation === "apply" && record.deliveryId !== command.deliveryId)) throw fail("COLLAB_TASK_INVALID");
+      if ((record.kind !== "application" && !(operation==="rollback"&&["materialization","inverse"].includes(record.kind))) || record.taskId !== command.taskId || (operation === "apply" && record.deliveryId !== command.deliveryId)) throw fail("COLLAB_TASK_INVALID");
+      if (operation === "rollback" && record.kind === "materialization") return undo().undo(record.id);
+      if (operation === "rollback" && record.kind === "inverse") return undo().recover(record.id);
       if (operation === "rollback") return application(record,true).recover({applicationId:record.id,mode:"rollback"});
       return application(record).apply({...record.input,expectedPlanHash:command.expectedPlanHash,confirmDeletions:command.confirmDeletions});
     }
@@ -588,8 +597,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   // Matching hashes are still mandatory; later user edits become conflicts.
   async function recoverLocalWrites(){
     for (const record of recoveries.list()) {
-      if (!record.journal || ["applied","rolled_back"].includes(record.state)) continue;
-      try { await application(record,true).recover({applicationId:record.id,mode:"rollback"}); }
+      if (!record.journal || ["applied","rolled_back","undone"].includes(record.state)) continue;
+      try {
+        if (record.kind === "inverse") await undo().recover(record.id);
+        else await application(record,true).recover({applicationId:record.id,mode:"rollback"});
+      }
       catch { /* durable record remains available; never report it as applied */ }
     }
   }
@@ -599,6 +611,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       if(sharedPublicationProtocol!==1||!localApplicationWriter)return {state:"disabled"};
       const job=records.get(require("./local-materialization").localMaterializationJobId(intentId));
       if(job?.state==="applied")return {state:"applied"};
+      if(job?.state==="undone")return {state:"undone"};
       if(["conflicts","failed","baseline_required"].includes(job?.state)||["failed","required"].includes(job?.validation?.state)
         ||(job?.applicationId&&recoveries.get(job.applicationId)?.state==="recovery_conflict"))return {state:"required"};
       try{return {state:"pending",ready:localApplicationWriter.run(()=>true)};}
