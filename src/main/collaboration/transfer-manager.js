@@ -63,6 +63,11 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     guard(item);
     return manifests.update({ id: item.id, expectedRevision: item.revision, checkpoint: { ...item.checkpoint, ...patch } });
   }
+  function current(item) {
+    guard(item);
+    const latest = manifests.read(item.id); guard(latest);
+    if (latest.revision !== item.revision) throw fail("COLLAB_TRANSFER_CONFLICT");
+  }
   function failureView(error, item) {
     const code = /^(COLLAB[A-Z_]*|LILYENC_[A-Z_]+)$/.test(error?.code || "") ? error.code : "COLLAB_TRANSFER_FAILED";
     const retryable = error?.retryable === true || ["COLLAB_RESPONSE_UNKNOWN", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_TRANSFER_AUTH_REQUIRED"].includes(code);
@@ -84,16 +89,27 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
         guard(item);
         ensure(status?.objectId === item.checkpoint.objectId && status.ciphertextSize === content.ciphertextSize && status.ciphertextSha256 === content.ciphertextSha256);
       } else {
-        file = await checkedCiphertext(path.join(manifests.directory(id), "ciphertext.lilyenc"), content); guard(item);
+        try { file = await checkedCiphertext(path.join(manifests.directory(id), "ciphertext.lilyenc"), content); }
+        catch (error) { if (error?.code !== "COLLAB_TRANSFER_STAGING_MISSING") throw error; current(item); }
+        guard(item);
         const result = await objectClient.init({ deviceId, clientCommandId: item.commandIds.init, conversationId: item.conversationId, purpose: item.purpose, ...content });
         guard(item);
         if(result?.state==='expired'&&result.reason==='orphan-expired'){
           ensure(safeId(result.objectId)&&result.ciphertextSize===content.ciphertextSize&&result.ciphertextSha256===content.ciphertextSha256);
           item=save(item,{objectId:result.objectId,state:'failed'});throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
         }
+        if (["verified", "bound"].includes(result?.state)) {
+          ensure(safeId(result.objectId) && result.ciphertextSize === content.ciphertextSize && result.ciphertextSha256 === content.ciphertextSha256);
+          return view(save(item, { objectId: result.objectId, state: result.state }));
+        }
         ensure(safeId(result?.objectId) && result.state === "uploading" && result.upload);
         item = save(item, { objectId: result.objectId, state: "uploading" });
         status = { ...result, provider: { state: "missing" } };
+        if (!file) {
+          status = await objectClient.status({ deviceId, objectId: item.checkpoint.objectId, clientCommandId: `${item.commandIds.init}:status` });
+          current(item);
+          ensure(status?.objectId === item.checkpoint.objectId && status.ciphertextSize === content.ciphertextSize && status.ciphertextSha256 === content.ciphertextSha256);
+        }
       }
       if(status.state==='expired'&&status.reason==='orphan-expired')throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
       if (["verified", "bound"].includes(status.state)) return view(save(item, { state: status.state }));
@@ -167,9 +183,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     } catch (error) {
       if (error?.code === "COLLAB_TRANSFER_STAGING_MISSING") {
         try {
-          guard(item);
-          const current = manifests.read(id); guard(current);
-          if (current.revision !== item.revision) throw fail("COLLAB_TRANSFER_CONFLICT");
+          current(item);
         } catch (fenced) { return failureView(fenced, item); }
       }
       return failureView(error, item);

@@ -98,8 +98,25 @@ test('missing ciphertext is recoverable only after fresh owner status and retain
   assert.equal((await next.resumeUpload(prepared.id)).code,'COLLAB_OBJECT_UNAVAILABLE','missing local bytes cannot bypass current server denial');
 });
 
-for(const [action,code] of [['cancel','COLLAB_TRANSFER_CANCELLED'],['revoke','COLLAB_ACCESS_REVOKED'],['stop','COLLABORATION_STOPPED'],['changed','COLLAB_TRANSFER_CONFLICT']])test(`${action} during missing-file inspection cannot authorize a replacement`,async t=>{
-  const f=fixture(t),api=f.manager(),prepared=await f.prepare(api);f.remote.drop='part';await api.resumeUpload(prepared.id);
+test('lost init ACK plus missing ciphertext recovers the original identity before requesting replacement',async t=>{
+  const f=fixture(t),first=f.manager(),prepared=await f.prepare(first);f.remote.drop='init';
+  assert.equal((await first.resumeUpload(prepared.id)).state,'paused');first.stop();
+  const original=f.manifests.read(prepared.id);assert.equal(original.checkpoint.objectId,undefined);
+  fs.unlinkSync(path.join(f.manifests.directory(prepared.id),'ciphertext.lilyenc'));
+  const result=await f.manager().resumeUpload(prepared.id);
+  assert.equal(result.code,'COLLAB_TRANSFER_STAGING_MISSING');assert.equal(result.objectId,'obj');assert.equal(f.remote.uploads,0);
+  assert.equal(f.remote.initCalls.length,2);assert.deepEqual(f.remote.initCalls[0],f.remote.initCalls[1]);
+});
+
+test('init replay can recover a verified object without local ciphertext or new upload credentials',async t=>{
+  const f=fixture(t),api=f.manager(),prepared=await f.prepare(api);f.remote.drop='init';await api.resumeUpload(prepared.id);
+  fs.unlinkSync(path.join(f.manifests.directory(prepared.id),'ciphertext.lilyenc'));
+  f.objectClient.init=async input=>({objectId:'obj',state:'verified',ciphertextSize:input.ciphertextSize,ciphertextSha256:input.ciphertextSha256,etag:'verified'});
+  const result=await api.resumeUpload(prepared.id);assert.equal(result.state,'verified');assert.equal(result.objectId,'obj');assert.equal(f.remote.uploads,0);
+});
+
+for(const checkpoint of ['init','part'])for(const [action,code] of [['cancel','COLLAB_TRANSFER_CANCELLED'],['revoke','COLLAB_ACCESS_REVOKED'],['stop','COLLABORATION_STOPPED'],['changed','COLLAB_TRANSFER_CONFLICT']])test(`${action} during missing-file inspection after ${checkpoint} cannot authorize a replacement`,async t=>{
+  const f=fixture(t),api=f.manager(),prepared=await f.prepare(api);f.remote.drop=checkpoint;await api.resumeUpload(prepared.id);
   const lstat=fs.promises.lstat;t.after(()=>{fs.promises.lstat=lstat;});
   fs.promises.lstat=async filename=>{
     if(String(filename).endsWith('ciphertext.lilyenc')){
@@ -111,7 +128,7 @@ for(const [action,code] of [['cancel','COLLAB_TRANSFER_CANCELLED'],['revoke','CO
     }
     return lstat(filename);
   };
-  assert.equal((await api.resumeUpload(prepared.id)).code,code);assert.equal(f.remote.uploads,1);
+  assert.equal((await api.resumeUpload(prepared.id)).code,code);assert.equal(f.remote.uploads,checkpoint==='part'?1:0);assert.equal(f.remote.initCalls.length,1);
 });
 
 test("encrypt/upload/verify retains bounded parts, private credentials and authentic plaintext", async (t) => {

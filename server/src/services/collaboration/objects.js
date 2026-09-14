@@ -43,6 +43,9 @@ export function createCollaborationObjectService({ repository, keyBroker, object
     return repository.withTransaction(async (trx) => {
       const { object } = checked(await owner(trx, account, objectId));
       const expired=expiredOrphanRecovery(object,now());if(expired)return expired;
+      if (["verified", "bound"].includes(object.state) && (object.state === "bound" || new Date(object.orphan_expires_at).getTime() > Number(now()))) {
+        return { objectId, state: object.state, ciphertextSize: Number(object.ciphertext_size), ciphertextSha256: object.ciphertext_sha256, etag: object.provider_etag || null };
+      }
       if (object.state !== "uploading" || new Date(object.orphan_expires_at).getTime() <= Number(now())) throw unavailable();
       const deadline = Math.min(new Date(object.orphan_expires_at).getTime(), object.expires_at ? new Date(object.expires_at).getTime() : Infinity);
       const ttlSeconds = Math.min(900, Math.floor((deadline - Number(now())) / 1000));
