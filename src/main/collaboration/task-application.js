@@ -118,7 +118,14 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized, writer 
     if (safeRoot(record.binding.rootPath) !== record.binding.rootPath
       || identity(fs.lstatSync(record.binding.rootPath)) !== record.rootIdentity) throw fail("INPUT_CHANGED");
   }
+  // An external application holding the file (Office on Windows, an editor
+  // with an exclusive lock) is a retryable condition, not a corrupt workspace.
+  const LOCK_CODES = new Set(["EBUSY", "EPERM", "EACCES", "ETXTBSY", "ESHARINGVIOLATION"]);
+  function locked(error) { return LOCK_CODES.has(error?.code) ? Object.assign(fail("LOCKED"), { cause: error.code }) : error; }
   function mutate(record, operation, bytes, expectedHash, resultHash) {
+    try { return mutateUnlocked(record, operation, bytes, expectedHash, resultHash); } catch (error) { throw locked(error); }
+  }
+  function mutateUnlocked(record, operation, bytes, expectedHash, resultHash) {
     checkRoot(record);
     const root = record.binding.rootPath;
     const existing = readFile(root, operation.path);

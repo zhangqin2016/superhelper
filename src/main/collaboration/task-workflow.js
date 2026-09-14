@@ -725,7 +725,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
             return {...applied,validationState:validation.state};
           }catch(error){
             guard();
-            if(["COLLAB_TASK_APPLICATION_BUSY","COLLAB_LOCAL_APPLICATION_STALE_WORKSPACE","COLLAB_TASK_APPLICATION_PREVIEW_CHANGED"].includes(error.code))return {state:"waiting",validationState:validation.state};
+            if(["COLLAB_TASK_APPLICATION_BUSY","COLLAB_LOCAL_APPLICATION_STALE_WORKSPACE","COLLAB_TASK_APPLICATION_PREVIEW_CHANGED","COLLAB_TASK_APPLICATION_LOCKED"].includes(error.code))return {state:"waiting",validationState:validation.state};
             throw error;
           }
         }

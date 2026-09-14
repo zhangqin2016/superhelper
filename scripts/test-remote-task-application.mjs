@@ -1,3 +1,4 @@
+import {createHash as lockedHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -89,5 +90,22 @@ try {
   fs.writeFileSync(path.join(saved.backupDirectory,editOperation.backupName),'corrupt backup');
   await assert.rejects(broker.recover({applicationId:'app-6',mode:'rollback'}),/BACKUP_MISMATCH/);
   assert.equal(fs.readFileSync(path.join(rootPath,'edit.txt'),'utf8'),'new');
-  console.log('remote task application: preview, conflicts, integrity, symlinks, deletion, idempotency and crash rollback passed');
+  // An externally locked destination is a retryable LOCKED condition, and the journal still recovers.
+{
+  const lockRoot=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'lily-locked-')),lockDelivery=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'lily-locked-delivery-')),lockJournal=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'lily-locked-journal-'));
+  try{
+    fs.mkdirSync(path.join(lockRoot,'docs'));fs.writeFileSync(path.join(lockRoot,'docs','report.txt'),'old');fs.mkdirSync(path.join(lockDelivery,'docs'));fs.writeFileSync(path.join(lockDelivery,'docs','report.txt'),'new');
+    const digestOf=text=>lockedHash('sha256').update(text).digest('hex');
+    const lockInput={applicationId:'locked',rootPath:lockRoot,deliveryRoot:lockDelivery,baseManifest:[{path:'docs/report.txt',sha256:digestOf('old'),sizeBytes:3}],deliveryManifest:[{path:'docs/report.txt',sha256:digestOf('new'),sizeBytes:3}],editablePaths:['docs/report.txt']};
+    const rows=new Map();
+    const lockBroker=createTaskApplication({journalRoot:lockJournal,writer:{run:fn=>fn()},assertAuthorized:async()=>true,journal:{get:id=>rows.get(id),put:(id,v)=>rows.set(id,structuredClone(v))}});
+    const preview=await lockBroker.preview(lockInput);
+    fs.chmodSync(path.join(lockRoot,'docs'),0o500);
+    try{await assert.rejects(lockBroker.apply({...lockInput,expectedPlanHash:preview.planHash}),error=>error.code==='COLLAB_TASK_APPLICATION_LOCKED');}
+    finally{fs.chmodSync(path.join(lockRoot,'docs'),0o700);}
+    assert.equal(fs.readFileSync(path.join(lockRoot,'docs','report.txt'),'utf8'),'old','a locked destination leaves the original bytes');
+    assert.equal((await lockBroker.recover({applicationId:'locked',mode:'rollback'})).state,'rolled_back');
+  }finally{for(const dir of [lockRoot,lockDelivery,lockJournal])fs.rmSync(dir,{recursive:true,force:true});}
+}
+console.log('remote task application: preview, conflicts, integrity, symlinks, deletion, idempotency and crash rollback passed');
 } finally { fs.rmSync(dir,{recursive:true,force:true}); }
