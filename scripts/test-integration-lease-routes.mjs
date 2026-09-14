@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {integrationTargetBody,integrationClaimBody,integrationRenewBody,registerCollaborationTaskRoutes} from '../server/src/routes/public/collaboration-tasks.js';
+import {createIntegrationLeaseService} from '../server/src/services/collaboration/integration-leases.js';
+const scope={deviceId:'device',workspaceId:'workspace',taskId:'task',deliveryId:'delivery'};
+const claim={...scope,clientCommandId:'claim',expectedHead:'a'.repeat(40),expectedRevision:0};
+assert.equal(integrationTargetBody.safeParse(scope).success,true);
+assert.equal(integrationClaimBody.safeParse(claim).success,true);
+const renew={...claim,leaseId:'lease',generation:1};assert.equal(integrationRenewBody.safeParse(renew).success,true);
+for(const extra of [{leaseMs:9999999},{actorUserId:'owner'},{expiresAt:9999999},{localPath:'/private'},{generation:1}])assert.equal(integrationClaimBody.safeParse({...claim,...extra}).success,false);
+for(const generation of [0,-1,1.5,Number.MAX_SAFE_INTEGER])assert.equal(integrationRenewBody.safeParse({...renew,generation}).success,false);
+const routes=new Map();let calls=0;
+registerCollaborationTaskRoutes({post:(url,schema,handler)=>routes.set(url,handler),accountFor:async()=>null,database:{},service:{claimIntegration(){calls++;}}});
+await routes.get('/api/collaboration/v1/tasks/integration/claim')({body:claim},{});assert.equal(calls,0);
+await assert.rejects(createIntegrationLeaseService({enabled:'true'}).getIntegrationTarget({}),{code:'COLLAB_INTEGRATION_PROTOCOL_UNAVAILABLE'},'only an explicit server capability enables qualification');
+console.log('integration qualification routes: closed identity/head/generation inputs, server-owned TTL and authentication boundary passed');

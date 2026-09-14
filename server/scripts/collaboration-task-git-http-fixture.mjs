@@ -114,6 +114,21 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       assert.equal(host.manager._store().getTurnInputByTurnId(nextAdmission.turnId,'a').terminalType,'turn.completed');
     }finally{service.stop();host.close();}
     owner.close();owner=open('a');
+    const integrationScope={deviceId:owner.deviceId,workspaceId:task.sharedWorkspaceId,taskId,deliveryId:delivered.id};
+    const target=await owner.client.getIntegrationTarget(integrationScope);
+    assert.equal(target.headCommit,task.inputGit.commit);assert.equal(target.initialized,false);
+    const claim={...integrationScope,clientCommandId:'signed-integration-claim',expectedHead:target.headCommit,expectedRevision:target.revision};
+    dropAck('/api/collaboration/v1/tasks/integration/claim');
+    await assert.rejects(owner.client.claimIntegration(claim),'the committed claim response is deliberately lost');
+    const claimed=await owner.client.claimIntegration(claim);
+    assert.equal(claimed.generation,1);assert.equal(claimed.lease.deviceId,owner.deviceId);
+    await assert.rejects(owner.client.claimIntegration({...claim,clientCommandId:'signed-integration-busy'}),{code:'COLLAB_INTEGRATION_BUSY',retryable:true});
+    assert.equal(Number((await pool.query('SELECT generation FROM collaboration_integration_targets WHERE workspace_id=$1',[task.sharedWorkspaceId])).rows[0].generation),1,'signed receipt replay did not acquire twice');
+    const held={...claim,leaseId:claimed.lease.id,generation:claimed.generation};
+    const renewed=await owner.client.renewIntegration({...held,clientCommandId:'signed-integration-renew'});assert.equal(renewed.generation,1);
+    await assert.rejects(helper.client.claimIntegration({...claim,deviceId:helper.deviceId,clientCommandId:'assignee-claim'}),{code:'COLLAB_TASK_ACCESS_DENIED'});
+    const released=await owner.client.releaseIntegration({...held,clientCommandId:'signed-integration-release'});assert.equal(released.lease,null);
+    assert.equal(released.headCommit,task.inputGit.commit,'qualification does not mark the local publication as remotely synced');
     ok(await owner.tasks.submit({conversationId,taskId,action:'approve',deliveryId:delivered.id,expectedRevision:task.revision}));
     const preview=ok(await owner.run({operation:'preview',taskId,deliveryId:delivered.id}));
     assert.deepEqual(preview.plan.entries.map(item=>item.operation).sort(),['add','delete','replace']);

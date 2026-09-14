@@ -121,6 +121,22 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
         body:{deviceId,taskId,...(deliveryId?{deliveryId}:{}),haveCommits},deviceId});
       return response?.result;
     },
+    async getIntegrationTarget({deviceId,workspaceId,taskId,deliveryId}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/get',body:{deviceId,workspaceId,taskId,deliveryId},deviceId});
+      return response?.result;
+    },
+    async claimIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/claim',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision},deviceId});
+      return response?.result;
+    },
+    async renewIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/renew',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation},deviceId});
+      return response?.result;
+    },
+    async releaseIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/release',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation},deviceId});
+      return response?.result;
+    },
     async getConversationProjection({ deviceId, conversationId }) {
       const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });
       return response?.result;

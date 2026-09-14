@@ -9,6 +9,7 @@ import { createCollaborationMessageCrypto } from '../src/services/collaboration/
 import { createTaskPackageBroker } from '../src/services/collaboration/task-packages.js';
 import { createKyselyObjectRepository } from '../src/services/collaboration/object-repository.js';
 import taskContract from '../src/services/collaboration/task-contract.cjs';
+import {verifyIntegrationLeases} from './collaboration-integration-lease-fixture.mjs';
 if(!process.env.DATABASE_URL)throw new Error('DATABASE_URL required for isolated PostgreSQL test');
 const schema=`task_test_${randomUUID().replaceAll('-','')}`;
 const admin=new pg.Pool({connectionString:process.env.DATABASE_URL});
@@ -21,7 +22,7 @@ try{
     CREATE TABLE user_devices(user_id text references users(id),device_id text references devices(id),status text default 'active',primary key(user_id,device_id));
     CREATE TABLE organizations(id text primary key,name text,status text);
     CREATE TABLE organization_members(organization_id text,user_id text,role text,status text,primary key(organization_id,user_id));`);
-  for(const name of ['033_collaboration_core.sql','035_collaboration_bootstrap_completion.sql','037_collaboration_relationship_events.sql','038_collaboration_conversations.sql','039_collaboration_objects.sql','045_collaboration_tasks.sql','047_collaboration_shared_workspaces.sql','048_collaboration_task_history.sql'])await pool.query(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['033_collaboration_core.sql','035_collaboration_bootstrap_completion.sql','037_collaboration_relationship_events.sql','038_collaboration_conversations.sql','039_collaboration_objects.sql','045_collaboration_tasks.sql','047_collaboration_shared_workspaces.sql','048_collaboration_task_history.sql','049_collaboration_integration_targets.sql'])await pool.query(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
   for(const id of ['owner','helper','observer']){
     await pool.query('INSERT INTO users VALUES($1)',[id]);await pool.query('INSERT INTO devices VALUES($1)',[`d_${id}`]);
     await pool.query('INSERT INTO user_devices(user_id,device_id) VALUES($1,$2)',[id,`d_${id}`]);
@@ -31,7 +32,7 @@ try{
   const packages=createTaskPackageBroker();
   await pool.query("INSERT INTO stored_objects(id,owner_user_id,conversation_id,scope_type,purpose,object_key,state,ciphertext_size,ciphertext_sha256,mime_type,original_name) VALUES('snapshot','owner','chat','personal','workspace','test/snapshot','verified',10,$1,'application/zip','input.zip')",['a'.repeat(64)]);
   const crypto=createCollaborationMessageCrypto({currentKekVersion:1,kekByVersion:{1:randomBytes(32)}});
-  const service=createCollaborationTaskService({repository:createKyselyConversationRepository(database),crypto,packages});
+  const service=createCollaborationTaskService({repository:createKyselyConversationRepository(database),crypto,packages,integrationLeasesEnabled:true});
   const owner={userId:'owner',deviceId:'d_owner'},helper={userId:'helper',deviceId:'d_helper'};
   const input={account:owner,clientCommandId:'create',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'预算',objective:'核查',acceptanceCriteria:'差异说明',sharedWorkspaceId:'shared'};
   const [first,replay]=await Promise.all([service.create(input),service.create(input)]);
@@ -119,6 +120,13 @@ try{
   const gitResult=await service.get({account:owner,taskId:gitTask});assert.equal(gitResult.deliveries.length,1);assert.deepEqual(gitResult.deliveries[0].git,deliveryGit);
   assert.deepEqual((await service.missingGitObjects({account:owner,taskId:gitTask,deliveryId:'git-delivery',haveCommits:[inputGit.commit]})).objects,[{objectId:'git-delivery',descriptor:deliveryGit}]);
   await assert.rejects(service.act({...gitSubmit,deliveryGit:{...deliveryGit,sha256:'0'.repeat(64)}}),{code:'IDEMPOTENCY_KEY_REUSED'},'immutable command binds the descriptor too');
+  for(const [objectId,userId] of [['git-input-2','owner'],['git-delivery-2','helper']])
+    await pool.query("INSERT INTO stored_objects(id,owner_user_id,conversation_id,scope_type,purpose,object_key,state,ciphertext_size,ciphertext_sha256,mime_type,original_name) VALUES($1,$2,'chat','personal','workspace',$3,'verified',1000,$4,'application/octet-stream','task.bundle')",[objectId,userId,`test/${objectId}`,'a'.repeat(64)]);
+  const competingTaskId=(await service.create({...gitInput,clientCommandId:'git-create-2',inputSnapshotId:'git-input-2'})).taskId;
+  await service.act({account:helper,clientCommandId:'git-accept-2',taskId:competingTaskId,action:'accept',expectedRevision:1});
+  await service.act({...gitSubmit,taskId:competingTaskId,clientCommandId:'git-submit-2',deliveryId:'git-delivery-2'});
+  await verifyIntegrationLeases({service,pool,owner,helper,taskId:gitTask,workspaceId:'shared',deliveryId:'git-delivery',baselineCommit:inputGit.commit,
+    competingTask:{taskId:competingTaskId,deliveryId:'git-delivery-2'}});
   await pool.query("UPDATE conversation_members SET status='removed' WHERE user_id='helper'");
   await assert.rejects(service.missingGitObjects({account:owner,taskId:gitTask,haveCommits:[]}),{code:'COLLAB_TASK_ACCESS_DENIED'},'missing query rechecks both parties');
   console.log('PostgreSQL remote tasks: migrations, replay, package ACL, CAS, history pagination and Git descriptor/missing-query/prerequisite/revocation checks passed; object verification and historical encrypted rows seeded');

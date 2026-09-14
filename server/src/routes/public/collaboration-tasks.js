@@ -20,6 +20,12 @@ export const taskListBody=z.object({...device,conversationId:id}).strict();
 export const taskHistoryBody=z.object({...device,conversationId:id,cursor:z.object({
   createdAt:z.number().int().min(0).max(8640000000000000),id,
 }).strict().optional()}).strict();
+const integrationScope={workspaceId:id,taskId:id,deliveryId:id};
+const integrationHead={expectedHead:z.string().regex(/^[a-f0-9]{40}$/),expectedRevision:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER-1)};
+export const integrationTargetBody=z.object({...device,...integrationScope}).strict();
+export const integrationClaimBody=z.object({...command,...integrationScope,...integrationHead}).strict();
+export const integrationRenewBody=z.object({...command,...integrationScope,...integrationHead,leaseId:id,generation:z.number().int().positive().max(Number.MAX_SAFE_INTEGER-1)}).strict();
+export const integrationReleaseBody=integrationRenewBody;
 export function registerCollaborationTaskRoutes({post,accountFor,database,service}){
   const run=(schema,fn)=>async(request,reply)=>{
     const input=schema.parse(request.body);
@@ -33,4 +39,8 @@ export function registerCollaborationTaskRoutes({post,accountFor,database,servic
   post('/api/collaboration/v1/tasks/list',taskListBody,run(taskListBody,(account,input)=>service.list({account,...input})));
   post('/api/collaboration/v1/tasks/history',taskHistoryBody,run(taskHistoryBody,(account,input)=>service.listHistory({account,...input})));
   post('/api/collaboration/v1/tasks/git/missing',taskGitMissingBody,run(taskGitMissingBody,(account,input)=>service.missingGitObjects({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/get',integrationTargetBody,run(integrationTargetBody,(account,input)=>service.getIntegrationTarget({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/claim',integrationClaimBody,run(integrationClaimBody,(account,input)=>service.claimIntegration({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/renew',integrationRenewBody,run(integrationRenewBody,(account,input)=>service.renewIntegration({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/release',integrationReleaseBody,run(integrationReleaseBody,(account,input)=>service.releaseIntegration({account,...input})));
 }

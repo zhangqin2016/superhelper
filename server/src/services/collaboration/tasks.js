@@ -3,6 +3,7 @@ import { runCollaborationCommand } from './command-runner.js';
 import { authorizeCollaborationAction } from './authorization.js';
 import { CollaborationCommandError } from './idempotency.js';
 import contract from './task-contract.cjs';
+import { createIntegrationLeaseService } from './integration-leases.js';
 
 const denied = () => ({ ok: false, code: 'COLLAB_TASK_ACCESS_DENIED' });
 const unavailable = () => { throw new CollaborationCommandError('COLLAB_TASK_UNAVAILABLE', 'Task unavailable'); };
@@ -11,7 +12,7 @@ const inaccessible = () => { throw new CollaborationCommandError('COLLAB_TASK_AC
 /** Not registered until task-scoped package authorization and desktop recovery
  * are available. Neither conversation object access nor client booleans can
  * stand in for the required package broker. */
-export function createCollaborationTaskService({ repository, crypto, packages, now = Date.now, createId = () => `task_${randomUUID()}`, commandOperations }) {
+export function createCollaborationTaskService({ repository, crypto, packages, now = Date.now, createId = () => `task_${randomUUID()}`, commandOperations, integrationLeasesEnabled=false }) {
   if (!repository?.database || !crypto?.encryptTask || !crypto?.decryptTask || !packages?.verifyInput || !packages?.verifyDelivery) throw new TypeError('Task repository, encryption and scoped package broker required');
   const read = (row) => {
     if (!row) return unavailable();
@@ -59,6 +60,7 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
     },
   });
   return Object.freeze({
+    ...createIntegrationLeaseService({repository,authorize,readTask:read,enabled:integrationLeasesEnabled,commandOperations}),
     async get({account,taskId}) {
       return repository.database.transaction().execute(async trx=>{
         const hint=await trx.selectFrom('collaboration_tasks').selectAll().where('id','=',taskId).executeTakeFirst();
