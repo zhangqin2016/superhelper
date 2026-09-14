@@ -16,8 +16,18 @@ app.whenReady().then(async()=>{
   const {setLocale}=await import(${JSON.stringify(pathToFileURL(path.resolve('src/renderer/i18n/index.js')).href)});await setLocale('en',{persist:false});
   const check=(x,s)=>{if(!x)throw Error(s);},settle=async()=>{for(let i=0;i<15;i++)await new Promise(r=>setTimeout(r,0));};
   let context={enabled:true,conversationId:'chat',userId:'owner'},rows=[{id:'draft',taskId:null,title:'<img src=x>',state:'preparing',createdAt:10,revision:0}],reads=0;
-  const api={taskWorkflow:async command=>command.operation==='cards'?{ok:true,cards:structuredClone(rows)}:{ok:true,applications:[],drafts:[{id:'draft',state:'prepared',files:[]}]},listTasks:async conversationId=>{check(typeof conversationId==='string','preload listTasks takes a conversation ID');reads++;return {ok:true,tasks:[]};},
-    getTask:async()=>({ok:true,task:${JSON.stringify(task)}}),getTaskCommands:async()=>({ok:true,commands:[]}),
+  let detailTask=${JSON.stringify(task)},integration=null,retries=0,releaseRetry;
+  const api={taskWorkflow:async command=>{
+    if(command.operation==='cards')return {ok:true,cards:structuredClone(rows)};
+    if(command.operation==='integrationStatus')return {ok:true,integration};
+    if(command.operation==='retryIntegration'){
+      check(JSON.stringify(Object.keys(command).sort())===JSON.stringify(['conversationId','deliveryId','operation','taskId']),'retry carries only identities');
+      check(command.taskId==='task'&&command.deliveryId==='delivery'&&command.conversationId==='chat','retry targets original delivery');
+      retries++;return new Promise(resolve=>{releaseRetry=resolve;});
+    }
+    return {ok:true,applications:[],drafts:[{id:'draft',state:'prepared',files:[]}]};
+  },listTasks:async conversationId=>{check(typeof conversationId==='string','preload listTasks takes a conversation ID');reads++;return {ok:true,tasks:[]};},
+    getTask:async()=>({ok:true,task:detailTask}),getTaskCommands:async()=>({ok:true,commands:[]}),
     getConversationDetails:async()=>({ok:true,members:[{userId:'owner'},{userId:'helper'}]}),
     getDirectory:async()=>({ok:true,profile:{userId:'owner'}}),list:async()=>({ok:true,conversations:[{id:'chat'}]})};
   window.assistantClient={collaboration:api,getAccountStatus:async()=>({loggedIn:true,user:{id:'owner'}})};
@@ -35,7 +45,24 @@ app.whenReady().then(async()=>{
   check(opened.ok&&navigated==='chat'&&document.querySelector('.remote-tasks').textContent.includes('Budget review'),'local card route opens actual authorized task detail');
   rows=[{...rows[0],state:'active',revision:2}];ui.onChange();await settle();check(card.dataset.revision==='2','progress updates same node');
   renderCollaborationTimeline(timeline,[{id:'m',seq:1,createdAt:20,bodyText:'Later message',senderUserId:'helper'}],{taskCards:ui.cards()});check(timeline.firstElementChild===card,'later messages preserve the original card position');
+  detailTask={...detailTask,state:'review',revision:3,currentDeliveryId:'delivery',deliveries:[{id:'delivery',number:1,submittedAt:30}]};
+  integration={stage:'failed',deliveryId:'delivery',canRetry:true};rows=[{...rows[0],state:'review',revision:3,integration}];ui.onChange();await settle();
+  check(timeline.firstElementChild===card&&card.textContent.includes('Automatic integration failed'),'integration updates original conversation card');
+  await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();
+  let retry=document.querySelector('[data-action="task-retry-integration"]');check(retry,'failed integration exposes retry');
+  retry.click();retry.click();await settle();check(retries===1&&retry.disabled,'retry is single-flight');
+  releaseRetry({ok:false});await settle();check(document.querySelector('.remote-task-integration').textContent.includes('Could not retry'),'failed retry remains visible');
+  document.querySelector('[data-action="task-retry-integration"]').click();await settle();
+  releaseRetry({ok:true,integration:{...integration,stage:'queued',canRetry:false}});await settle();
+  check(document.querySelector('.remote-task-integration').textContent.includes('Integration queued')&&!document.querySelector('[data-action="task-retry-integration"]'),'successful retry shows queue without another action');
+  integration={...integration,stage:'validation_required',canRetry:false};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();
+  await setLocale('zh-CN',{persist:false});await settle();
+  check(document.querySelector('.remote-task-integration').textContent.includes('等待验证')&&!document.querySelector('[data-action="task-retry-integration"]'),'missing validator is localized and not retryable');
+  await setLocale('en',{persist:false});integration={...integration,stage:'publication_pending'};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();
+  check(document.querySelector('.remote-task-integration').textContent.includes('waiting to sync'),'local publication is not labeled remotely synced');
+  integration={...integration,stage:'failed',canRetry:true};await openWorkspaceTaskCard({...rows[0],conversationId:'chat'});await settle();document.querySelector('[data-action="task-retry-integration"]').click();await settle();
   context={...context,conversationId:'other'};rows=[];ui.update();await settle();check(!timeline.querySelector('.collaboration-task-card'),'navigation clears old card');
+  releaseRetry({ok:true,integration:{...integration,stage:'queued'}});await settle();check(!document.querySelector('.remote-task-integration'),'late retry cannot repaint after navigation');
   let release;const normalRead=api.taskWorkflow;
   api.taskWorkflow=command=>command.operation==='cards'?new Promise(resolve=>{release=resolve;}):normalRead(command);
   ui.onChange();await settle();check(release,'pending read started');
@@ -43,5 +70,5 @@ app.whenReady().then(async()=>{
   release({ok:true,cards:[{id:'late',title:'Private previous account',state:'active',createdAt:10,revision:2}]});await settle();
   check(ui.cards().length===0&&!timeline.querySelector('.collaboration-task-card'),'late response cannot restore previous account cards');ui.destroy();
  })()`);
- console.log('task cards UI: panel-independent load, pending/ACK node identity, progress, safe text, ordering and navigation/logout passed');
+ console.log('task cards UI: original anchors, integration states/localization, identity-only single-flight retry/failure and navigation/logout fences passed');
 }).then(()=>finish(0)).catch(error=>{console.error(error);finish(1);});

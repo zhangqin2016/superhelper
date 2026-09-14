@@ -1,5 +1,6 @@
 "use strict";
 const id = v => typeof v === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(v);
+const {integrationView}=require("./integration-status");
 const cursor=v=>v&&typeof v==="object"&&!Array.isArray(v)&&Object.keys(v).length===2&&id(v.id)&&Number.isSafeInteger(v.createdAt)&&v.createdAt>=0;
 const fields = {
   recoveries:[],
@@ -7,6 +8,7 @@ const fields = {
   sessionCards:["sessionId","before"],
   bind:["taskId","projectId","sessionId"],
   bindingOptions:["taskId"],
+  integrationStatus:["taskId"],retryIntegration:["taskId","deliveryId"],
   prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
   preview:["taskId","deliveryId"],apply:["taskId","deliveryId","applicationId","expectedPlanHash","confirmDeletions"],rollback:["taskId","applicationId"],
@@ -36,6 +38,7 @@ function taskWorkflowCommand(value) {
 // Closed projection: local absolute paths, keys and recovery journals never cross.
 function taskWorkflowResult(value) {
   const result = {ok:value?.ok === true};
+  if(Object.hasOwn(value||{},"integration"))result.integration=integrationView(value.integration);
   if(Object.hasOwn(value || {},"nextCursor"))result.nextCursor=cursor(value.nextCursor)?{id:value.nextCursor.id,createdAt:value.nextCursor.createdAt}:null;
   if (Array.isArray(value?.conversationIds)) result.conversationIds=value.conversationIds.filter(id).slice(0,1000);
   if (Array.isArray(value?.cards) && value.cards.length>1000) result.hasMoreCards=true;
@@ -45,6 +48,7 @@ function taskWorkflowResult(value) {
     createdAt:Number.isSafeInteger(c.createdAt)&&c.createdAt>=0?c.createdAt:0,
     revision:Number.isSafeInteger(c.revision)&&c.revision>=0?c.revision:0,
     state:id(c.state)?c.state:"preparing",localState:id(c.localState)?c.localState:null,
+    ...(integrationView(c.integration)?{integration:integrationView(c.integration)}:{}),
   }));
   if (Array.isArray(value?.projects)) result.projects = value.projects.slice(0,100).filter(p=>id(p.id)).map(p=>({
     id:p.id,name:String(p.name || "").slice(0,200),sessions:(p.sessions || []).slice(0,100).filter(s=>id(s.id)).map(s=>({id:s.id,title:String(s.title || "").slice(0,200)})),

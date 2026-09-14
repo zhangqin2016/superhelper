@@ -276,7 +276,8 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       ? Promise.all([taskHydration.recover(),taskHistory.recover(),integrationWorker?.recover()]) : Promise.resolve();
     let taskHydrationTimer=null;
     let workflow;
-    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,taskGitProtocol:policy?.taskGitProtocol,onChange:()=>emitState("task")});
+    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,taskGitProtocol:policy?.taskGitProtocol,
+      integrationValidationAvailable:typeof taskOptions.validateIntegration==="function" && typeof taskOptions.validationPolicyId==="string",onChange:()=>emitState("task")});
     const integrationWorker=integrationDiscovery && taskOptions.rootPath
       ? require("./integration-worker").createIntegrationWorker({store,assertActive,getWorkflow,validateIntegration:taskOptions.validateIntegration,
         validationPolicyId:taskOptions.validationPolicyId,onChange:()=>emitState("task")}) : null;

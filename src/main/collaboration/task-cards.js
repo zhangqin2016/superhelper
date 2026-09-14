@@ -1,6 +1,7 @@
 "use strict";
 const {createTaskRecords}=require("./task-records");
 const {taskView}=require("./task-view");
+const {taskIntegration,integrationIndex}=require("./integration-status");
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const compare=(a,b)=>a.createdAt-b.createdAt||(a.id===b.id?0:a.id<b.id?-1:1);
 function pageTaskCards(cards,before) {
@@ -35,14 +36,21 @@ function createTaskCards({store,assertActive}) {
   }
   function project(all) {
     if(all.length&&store.db.get("SELECT 1 FROM task_history_scans WHERE account_id=? AND conversation_id=? AND access_denied=1",store.accountId,all[0].conversationId))return [];
-    const denied=new Set(store.db.all("SELECT task_id FROM task_hydration WHERE account_id=? AND access_denied=1",store.accountId).map(row=>row.task_id));
+    const hydration=store.db.all("SELECT task_id,access_denied,code FROM task_hydration WHERE account_id=?",store.accountId);
+    const denied=new Set(hydration.filter(row=>row.access_denied).map(row=>row.task_id));
+    const unbound=new Set(hydration.filter(row=>row.code==="COLLAB_TASK_BINDING_REQUIRED").map(row=>row.task_id));
     const tasks=new Map(all.filter(r=>r.kind==="task-card"&&!denied.has(r.task.id)).map(r=>[r.task.id,r.task]));
     const cards=[];
-    const card=(id,createdAt,task,draft)=>({id,taskId:task?.id || draft?.taskId || null,
+    const workById=new Map(all.length?store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND conversation_id=?",store.accountId,all[0].conversationId).map(row=>[row.intent_id,row]):[]);
+    const integrationRecords=integrationIndex(all);
+    const card=(id,createdAt,task,draft)=>{
+      const integration=taskIntegration(task,integrationRecords,workById,false,unbound.has(task?.id))?.status;
+      return {id,taskId:task?.id || draft?.taskId || null,
       createdAt:createdAt || 0,revision:task?.revision || draft?.taskRevision || 0,
       title:task?.title || draft?.input?.title || draft?.name || "",
       state:task?.state || draft?.taskState || draft?.state || "preparing",
-      localState:draft?.state || null});
+      localState:draft?.state || null,...(integration?{integration}:{})};
+    };
     for (const draft of all.filter(r=>r.kind==="draft" && !denied.has(r.taskId) && (!r.taskId || r.input))) {
       // The server may commit before the sender receives its receipt. Only the
       // task-scoped object and exact command content can connect that snapshot

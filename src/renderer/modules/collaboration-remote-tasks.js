@@ -20,6 +20,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   let phase = "closed", statusView = null;
   let hasUpdate = false;
   let drafts = [], workflow = null;
+  let integration=null,integrationError=false;
   let contextService = api();
   const applications = new Map();
   let localRecoveries = [], recoveryGeneration = 0, recoveryError = "";
@@ -40,6 +41,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   function close({ restoreFocus = true } = {}) {
     generation++; busy = false; selected = null; confirming = ""; rows = []; pending = []; reasonDraft = "";
     phase = "closed"; statusView = null; workflow = null; drafts = []; applications.clear();
+    integration=null;integrationError=false;
     hasUpdate = false;
     surface.hidden = true; surface.removeAttribute("aria-busy"); surface.replaceChildren(); entry.setAttribute("aria-expanded", "false");
     for (const [el, value] of inertNodes) el.inert = value; inertNodes.clear();
@@ -108,6 +110,17 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     hero.append(node("span", `remote-task-status is-${task.state}`, tr(`state.${task.state}`)), node("h3", "", task.title));
     hero.append(node("p", "remote-task-meta", tr("participants", { requester: resolveName(task.requesterUserId) || tr("person"), assignee: resolveName(task.assigneeUserId) || tr("person") })));
     body.append(hero);
+    if(integration){
+      const box=node("section","remote-task-notice remote-task-integration");box.setAttribute("role","status");
+      box.append(node("p","",tr(`integration.${integration.stage}`)));
+      if(integrationError)box.append(node("p","",tr("integration.retryFailed")));
+      if(integration.canRetry)box.append(button("task-retry-integration",tr("integration.retry"),async()=>{
+        const result=await runWorkflow({operation:"retryIntegration",taskId:task.id,deliveryId:integration.deliveryId});
+        if(!result)return;
+        integrationError=!result.ok;if(result.ok)integration=result.integration || null;paintDetail();
+      }));
+      body.append(box);
+    }
     for (const [label, value] of [["objective", task.objective], ["criteria", task.acceptanceCriteria], ["feedback", task.reason]]) {
       if (!value) continue;
       const section = node("section", "remote-task-section"); section.append(node("h4", "", tr(label)), node("p", "remote-task-prose", value)); body.append(section);
@@ -356,14 +369,17 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   async function openTask(taskId) {
     const ticket = ++generation; busy = false; confirming = ""; reasonDraft = "";
     selected = null; pending = []; hasUpdate = false; showStatus("loading", { detail: true });
+    integration=null;integrationError=false;
     try {
-      const [result, recovery, local] = await Promise.all([api()?.getTask?.({ conversationId: context.conversationId, taskId }), api()?.getTaskCommands?.(context.conversationId), api()?.taskWorkflow?.({ operation: "drafts", conversationId: context.conversationId })]);
+      const [result, recovery, local, integrationResult] = await Promise.all([api()?.getTask?.({ conversationId: context.conversationId, taskId }), api()?.getTaskCommands?.(context.conversationId), api()?.taskWorkflow?.({ operation: "drafts", conversationId: context.conversationId }),api()?.taskWorkflow?.({operation:"integrationStatus",conversationId:context.conversationId,taskId})]);
       if (!valid(ticket)) return;
       if (hasUpdate) { void openTask(taskId); return; }
       if (result?.ok !== true || recovery?.ok !== true || result.task?.id !== taskId || result.task?.conversationId !== context.conversationId) {
         showStatus("loadFailed", { detail: true, retry: () => void openTask(taskId) }); return;
       }
-      restoreLocal(local); selected = result.task; pending = recovery.commands || []; paintDetail(); surface.focus({ preventScroll: true });
+      restoreLocal(local); selected = result.task; pending = recovery.commands || [];
+      integration=integrationResult?.ok && integrationResult.integration?.deliveryId===selected.currentDeliveryId?integrationResult.integration:null;
+      paintDetail(); surface.focus({ preventScroll: true });
     } catch { if (valid(ticket)) showStatus("loadFailed", { detail: true, retry: () => void openTask(taskId) }); }
   }
   async function commit(action, clientCommandId) {

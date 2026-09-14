@@ -14,7 +14,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
-  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, integrationValidationAvailable=false, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const cards = require("./task-cards").createTaskCards({store,assertActive});
   const recoveries = createTaskRecovery({store,assertActive});
@@ -270,6 +270,24 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   async function execute(command) {
     assertActive();
     const {operation,conversationId} = command;
+    if(operation==="integrationStatus" || operation==="retryIntegration"){
+      const task=await taskFor(command);
+      const current=()=>require("./integration-status").taskIntegration(task,records.list(conversationId),new Map(store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND conversation_id=?",store.accountId,conversationId).map(row=>[row.intent_id,row])),integrationValidationAvailable,
+        store.db.get("SELECT code FROM task_hydration WHERE account_id=? AND task_id=?",store.accountId,task.id)?.code==="COLLAB_TASK_BINDING_REQUIRED");
+      const found=current();
+      if(operation==="integrationStatus")return {ok:true,integration:found?.status || null};
+      if(!found?.intent || command.deliveryId!==task.currentDeliveryId)throw fail("COLLAB_TASK_LOCAL_MISSING");
+      await authorizeIntegration(found.intent.input);
+      const result=store.db.transaction(()=>{
+        const fresh=current();if(!fresh?.intent || !fresh.work)throw fail("COLLAB_TASK_LOCAL_MISSING");
+        if(fresh.status.stage==="queued")return fresh.status;
+        if(fresh.work.state==="running")throw fail("COLLAB_TASK_BUSY");
+        if(!fresh.status.canRetry)throw fail("COLLAB_TASK_RETRY_UNAVAILABLE");
+        store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=?",store.accountId,fresh.intent.id);
+        return {...fresh.status,stage:"queued",canRetry:false};
+      })();
+      notify();return {ok:true,integration:result};
+    }
     if (operation === "cards") return {ok:true,...require("./task-cards").pageTaskCards(cards.list(conversationId),command.before)};
     if (operation === "sessionCards") {
       const session=resolveCardSession?.(command.sessionId);
@@ -545,7 +563,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
   return {recoverPending:()=>ready,acquireIntegrationInput,authorizeIntegration:async input=>{await authorizeIntegration(input);return true;},run(command) {
     command = taskWorkflowCommand(command);
     if (!command) return Promise.resolve({ok:false,code:"COLLAB_TASK_INVALID"});
-    if (["drafts","recoveries","bindingOptions","cards","sessionCards"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
+    if (["drafts","recoveries","bindingOptions","cards","sessionCards","integrationStatus"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
     const key = `${command.conversationId}:${command.taskId || command.draftId || "new"}`;
     if (running.has(key)) return Promise.resolve({ok:false,code:"COLLAB_TASK_BUSY"});
     const promise = ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_|^IDEMPOTENCY_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));
