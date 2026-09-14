@@ -688,11 +688,14 @@ class TurnOrchestrator {
 
     emitLocalAssistantStarted({ emit: this._emit.bind(this), sessionId: session.id, text: rawUserText, queueLength: state.queue.length });
 
-    const assistant = String(opts.assistant || "").trim();
+    const integration = opts.collaborationIntegration
+      ? await require("./collaboration/integration-turn").runIntegrationTurn(this,session,state,opts.collaborationIntegration) : null;
+    const assistant = integration?.assistant || String(opts.assistant || "").trim();
     state.assistantText = assistant;
     const completedTurnId = state.turnId;
-    this._finalize(session.id, "turn.completed", {
+    this._finalize(session.id, integration?.failed ? "turn.failed" : "turn.completed", {
       assistant,
+      ...(integration?.failed?{failed:true,errorCode:"COLLAB_INTEGRATION_VALIDATION_FAILED",retryable:true}:{}),
       scheduledDraft: opts.scheduledDraft || null,
       resultFromCli: false,
     });

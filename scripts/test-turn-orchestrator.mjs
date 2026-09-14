@@ -2610,4 +2610,40 @@ if (queueState.queue.length !== 0) {
   recoveryOrchestrator.turnRecoveryRuntime.dispose?.();
   runner.busy = false;
 }
+// Host-owned integration work uses TaskCore and the durable background queue;
+// it cannot retarget a foreground engine or finalize a replacement turn.
+{
+  const assert=require('node:assert/strict');
+  const {enqueueIntegrationTurn}=require('../src/main/collaboration/integration-turn');
+  let called=0,release,guard;
+  const work=new TurnOrchestrator({...ctx,executeCollaborationIntegration:async(request,execution)=>{
+    called++;guard=execution.assertActive;guard();
+    assert.equal(request.sessionId,'s1');assert.equal(request.accountId,'owner');
+    assert.ok(work._state('s1').taskCore,'TaskCore exists before any host operation');
+    await new Promise(resolve=>{release=resolve;});guard();return {ok:true,state:'validation_required'};
+  }});
+  const state=work._state('s1');state.queue=[];state.phase='streaming';state.turnId='foreground';
+  const before=runner.sentPayloads.length,userMessagesBefore=messages.filter(m=>m.role==='user').length,identity={sessionId:'s1',accountId:'owner',intentId:'integration:'+ 'a'.repeat(64),attempt:0};
+  const admitted=await enqueueIntegrationTurn(work,identity);assert.equal(admitted.queued,true);assert.equal(called,0);assert.equal(state.turnId,'foreground');
+  assert.equal(work.snapshot('s1').queue.find(item=>item.id===admitted.itemId).composerVisible,false);
+  const queued=state.queue.find(item=>item.id===admitted.itemId);assert.equal(queued.options.localAssistant.collaborationIntegration.intentId,identity.intentId);
+  assert.equal((await enqueueIntegrationTurn(work,{...identity,rootPath:'/private'})).ok,false,'operation cannot carry paths or arbitrary options');
+  state.phase='idle';state.turnId=null;state.terminalEmitted=false;runner.busy=false;
+  const running=work._dispatchNext('s1');assert.equal(await waitFor(()=>called===1),true);
+  release();await running;assert.equal(await waitFor(()=>state.phase==='idle'),true);
+  assert.equal(runner.sentPayloads.length,before,'integration never dispatches an engine prompt');
+  assert.equal(messages.filter(m=>m.role==='user').length,userMessagesBefore,'background work does not invent another user message');
+  assert.equal(durableTurns.get(admitted.turnId).terminalType,'turn.completed');
+  const next=await enqueueIntegrationTurn(work,{...identity,attempt:1});assert.equal(await waitFor(()=>called===2),true);
+  const oldGuard=guard;
+  state.turnGeneration++;state.turnId='replacement';state.phase='starting';
+  assert.throws(oldGuard,/FENCED/);release();await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(state.turnId,'replacement','late host completion cannot finalize another turn');
+  assert.notEqual(next.turnId,admitted.turnId);
+  state.phase='idle';state.turnId=null;state.terminalEmitted=false;
+  work.ctx.executeCollaborationIntegration=async()=>{throw Error('host operation failed');};
+  const failed=await enqueueIntegrationTurn(work,{...identity,attempt:2});
+  assert.equal(await waitFor(()=>durableTurns.get(failed.turnId)?.terminalType==='turn.failed'),true,'host failure cannot become a successful assistant turn');
+  assert.equal(await waitFor(()=>state.phase==='idle'),true);work.turnRecoveryRuntime.dispose?.();
+}
 console.log("turn-orchestrator: ok");

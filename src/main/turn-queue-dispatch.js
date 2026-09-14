@@ -285,6 +285,8 @@ function createTurnQueueDispatchMethods({
           fromQueue: true,
           displayFiles: item.displayFiles,
           assistant: item.options.localAssistant.assistant,
+          collaborationIntegration: item.options.localAssistant.collaborationIntegration || null,
+          recordUser: item.options.recordUser !== false,
           scheduledDraft: item.options.localAssistant.scheduledDraft || null,
           turnId: item.options.localAssistant.turnId || null,
           admittedTurnInput: item.admittedTurnInput || null,
