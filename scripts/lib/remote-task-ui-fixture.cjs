@@ -13,7 +13,7 @@ const { createTaskRecords } = require("../../src/main/collaboration/task-records
 const { createCollaborationIpc } = require("../../src/main/ipc-collaboration");
 const { createTask, transitionTask } = require("../../server/src/services/collaboration/task-contract.cjs");
 
-exports.createFixture = function createFixture(temporary, {sharedWorkspaceProtocol} = {}) {
+exports.createFixture = function createFixture(temporary, {sharedWorkspaceProtocol,taskGitProtocol} = {}) {
   const source = path.join(temporary, "Budget workspace");
   fs.mkdirSync(source);
   fs.writeFileSync(path.join(source, "budget.txt"), "original budget\n");
@@ -40,6 +40,12 @@ exports.createFixture = function createFixture(temporary, {sharedWorkspaceProtoc
     };
     const client = {
       getTask,
+      async missingTaskGitObjects({taskId,deliveryId,haveCommits}) {
+        const task=await getTask({taskId});
+        const objects=[{objectId:task.inputSnapshotId,descriptor:task.inputGit}];
+        if(deliveryId)objects.push({objectId:deliveryId,descriptor:task.deliveries.find(item=>item.id===deliveryId)?.git});
+        return {objects:objects.filter(item=>!haveCommits.includes(item.descriptor.commit))};
+      },
       listTasks: async ({ conversationId }) => [...serverTasks.values()].filter(t => t.conversationId === conversationId).map(t => structuredClone(t)),
       async submitTask(input) {
         assert.equal(input.deviceId, deviceId);
@@ -67,7 +73,7 @@ exports.createFixture = function createFixture(temporary, {sharedWorkspaceProtoc
       },
     };
     const tasks = createTaskCommands({ store, client, deviceId, assertActive });
-    const workflow = createTaskWorkflow({ store, client, tasks, deviceId, assertActive, sharedWorkspaceProtocol, rootPath: path.join(temporary, "managed"),
+    const workflow = createTaskWorkflow({ store, client, tasks, deviceId, assertActive, sharedWorkspaceProtocol, taskGitProtocol, rootPath: path.join(temporary, "managed"),
       listWorkspaceBindings:()=>[{id:"existing-project",name:"Existing workspace",sessions:[{id:"bound-session",title:"Workspace conversation"}]}],
       resolveWorkspaceBinding:input=>({projectId:input.projectId,sessionId:input.sessionId || "bound-session",rootPath:source}),
       resolveProjectDirectory: id => id === "budget-project" ? source : undefined,

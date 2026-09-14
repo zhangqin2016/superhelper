@@ -111,6 +111,7 @@ try{
   const deliveryGit={...inputGit,ref:`refs/tasks/${'a'.repeat(64)}/deliveries/${'d'.repeat(64)}`,commit:'e'.repeat(40),prerequisites:[inputGit.commit]};
   const gitSubmit={account:helper,clientCommandId:'git-submit',taskId:gitTask,action:'submit',expectedRevision:2,deliveryId:'git-delivery',deliveryGit};
   await pool.query("UPDATE stored_objects SET state='revoked' WHERE id='git-input'");
+  await assert.rejects(service.missingGitObjects({account:helper,taskId:gitTask,haveCommits:[inputGit.commit]}),{code:'COLLAB_TASK_PACKAGE_UNAVAILABLE'},'a local cache hit cannot bypass object revocation');
   await assert.rejects(service.act({...gitSubmit,clientCommandId:'git-unavailable-base'}),{code:'COLLAB_TASK_PACKAGE_UNAVAILABLE'},'incremental delivery cannot depend on revoked server input');
   assert.equal((await pool.query("SELECT state FROM stored_objects WHERE id='git-delivery'")).rows[0].state,'verified','failed prerequisite check leaves delivery unbound');
   await pool.query("UPDATE stored_objects SET state='bound' WHERE id='git-input'");

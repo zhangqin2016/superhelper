@@ -14,7 +14,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
-  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const cards = require("./task-cards").createTaskCards({store,assertActive});
   const recoveries = createTaskRecovery({store,assertActive});
@@ -39,6 +39,14 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (!value || value.conversationId !== conversationId) throw fail("COLLAB_TASK_LOCAL_MISSING");
     return value;
   }
+  const gitObjectKey = (taskId,objectId) => `git-object:${createHash("sha256").update(JSON.stringify([taskId,objectId])).digest("hex")}`;
+  const sameGitDescriptor = (a,b) => a && b && ["version","format","ref","commit","sha256","sizeBytes"].every(key=>a[key]===b[key])
+    && JSON.stringify(a.prerequisites)===JSON.stringify(b.prerequisites);
+  function rememberGitObject(command,objectId,descriptor) {
+    const id=gitObjectKey(command.taskId,objectId),previous=records.get(id);
+    if (previous && (previous.conversationId!==command.conversationId || !sameGitDescriptor(previous.descriptor,descriptor))) throw fail("COLLAB_TASK_INVALID");
+    save({id,kind:"git-object",conversationId:command.conversationId,taskId:command.taskId,objectId,descriptor});
+  }
   async function taskFor(command) {
     const { task } = requireOk(await tasks.get(command));
     if (["cancelled", "declined"].includes(task.state)) throw fail("COLLAB_TASK_ACCESS_DENIED");
@@ -54,6 +62,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     preparing.add(id);
     try {
       const pending = save({ ...previous, ...extras, id, conversationId, sourceRoot, name:path.basename(sourceRoot),
+        transport:extras.transport || (previous ? previous.transport || "zip" : !extras.taskId && taskGitProtocol===1 ? "git" : "zip"),
         kind:"draft", state:"preparing", createdAt:previous?.createdAt || Date.now(), deviceId,
         clientCommandId:previous?.clientCommandId || randomUUID() });
       try {
@@ -77,8 +86,10 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       const stat = fs.lstatSync(draft.packagePath);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size !== draft.packageSize
         || createHash("sha256").update(fs.readFileSync(draft.packagePath)).digest("hex") !== draft.packageHash) throw fail("COLLAB_TASK_BUNDLE_CHANGED");
+      const wire = draft.wireBundle;
       const transfer = requireOk(await transfers.taskFiles.prepareUpload({ conversationId:draft.conversationId,
-        inputPath:draft.packagePath, originalName:`${draft.name}.lilyspace.zip`,expectedPlaintextSha256:draft.packageHash }));
+        inputPath:wire?.packagePath || draft.packagePath, originalName:wire ? `${draft.name}.bundle` : `${draft.name}.lilyspace.zip`,
+        expectedPlaintextSha256:wire?.descriptor.sha256 || draft.packageHash }));
       draft = save({ ...draft, transferId:transfer.id });
     }
     const uploaded = requireOk(await transfers.taskFiles.upload(draft.transferId));
@@ -86,6 +97,42 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     return save({ ...draft, objectId:uploaded.objectId });
   }
   async function download(command, objectId, allowEmpty = false) {
+    const task = await taskFor(command);
+    if (task.inputGit) {
+      if (taskGitProtocol!==1 || !client.missingTaskGitObjects) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
+      const required=[{objectId:task.inputSnapshotId,descriptor:task.inputGit}];
+      if (objectId!==task.inputSnapshotId) {
+        const selected=task.deliveries.find(item=>item.id===objectId);
+        if (!selected?.git) throw fail("COLLAB_TASK_DELIVERY_CONFLICT");
+        required.push({objectId,descriptor:selected.git});
+      }
+      const haveCommits=[];
+      for (const item of required) {
+        const proof=records.get(gitObjectKey(task.id,item.objectId));
+        if (proof?.conversationId===command.conversationId && proof.taskId===task.id && proof.objectId===item.objectId
+          && sameGitDescriptor(proof.descriptor,item.descriptor) && await git().hasRevision(item.descriptor)) haveCommits.push(item.descriptor.commit);
+      }
+      const missing=await client.missingTaskGitObjects({deviceId,taskId:task.id,...(objectId!==task.inputSnapshotId?{deliveryId:objectId}:{}),haveCommits});
+      await taskFor(command);
+      const expected=required.filter(item=>!haveCommits.includes(item.descriptor.commit));
+      if (!Array.isArray(missing?.objects) || missing.objects.length!==expected.length
+        || new Set(missing.objects.map(item=>item.objectId)).size!==expected.length) throw fail("COLLAB_TASK_INVALID");
+      for (const item of expected) {
+        const returned=missing.objects.find(value=>value.objectId===item.objectId);
+        if (!returned || !sameGitDescriptor(returned.descriptor,item.descriptor)) throw fail("COLLAB_TASK_INVALID");
+        const file=requireOk(await transfers.taskFiles.download({...command,objectId:item.objectId}));
+        await taskFor(command);
+        await require("./task-git-transport").createTaskGitTransport(git()).importBundle({packagePath:file.packagePath,descriptor:item.descriptor});
+        await taskFor(command);
+        rememberGitObject(command,item.objectId,item.descriptor);
+      }
+      await taskFor(command);
+      const snapshot=await git().materializeSnapshot({revision:required.at(-1).descriptor,destinationRoot:allocate(),
+        ...(objectId!==task.inputSnapshotId?{parentCommit:task.inputGit.commit}:{})});
+      if (!allowEmpty && !snapshot.manifest.length) throw fail("COLLAB_TASK_BUNDLE_EMPTY");
+      await taskFor(command);
+      return {...snapshot,...(objectId===task.inputSnapshotId?{gitBaseline:snapshot.gitRevision}:{})};
+    }
     const file = requireOk(await transfers.taskFiles.download({ ...command, objectId }));
     assertActive();
     const value = await bundle.unpackTaskBundle({ packagePath:file.packagePath, destinationRoot:allocate(),allowEmpty });
@@ -111,13 +158,14 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (!local.workRoot) {
       if (!local.snapshotRoot) {
         const input = await download(command, task.inputSnapshotId);
-        local = save({...local,baseManifest:input.manifest,snapshotRoot:input.snapshotRoot});
+        local = save({...local,baseManifest:input.manifest,snapshotRoot:input.snapshotRoot,...(input.gitBaseline?{gitBaseline:input.gitBaseline}:{})});
       }
       if (!local.gitBaseline) {
         const gitBaseline = await git().captureBaseline({taskId:task.id,snapshotRoot:local.snapshotRoot,manifest:local.baseManifest});
         await taskFor(command);
         local = save({...local,gitBaseline,executionRoot:allocate()});
       }
+      if (!local.executionRoot) local=save({...local,executionRoot:allocate()});
       const worktree = await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.executionRoot,manifest:local.baseManifest});
       await taskFor(command);
       local = save({...local,workRoot:local.executionRoot,materializedPaths:local.baseManifest.map(file=>file.path),baseFileIdentities:worktree.fileIdentities});
@@ -146,6 +194,15 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     await taskFor({conversationId:draft.conversationId,taskId:draft.taskId});
     read(draft.id,draft.conversationId);
     return save({...draft,gitContribution});
+  }
+  async function wireBundle(draft,revision,parentCommit) {
+    if (draft.transport!=="git") return draft;
+    if (taskGitProtocol!==1) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
+    if (draft.wireBundle) return draft;
+    const wireBundle=await require("./task-git-transport").createTaskGitTransport(git()).exportBundle({revision,
+      prerequisites:parentCommit?[parentCommit]:[],destination:`${allocate()}.bundle`});
+    read(draft.id,draft.conversationId);
+    return save({...draft,wireBundle});
   }
   async function delivery(command) {
     const task = await taskFor(command);
@@ -311,6 +368,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         read(draft.id,conversationId);
         draft = save({...draft,gitBaseline});
       }
+      draft = await wireBundle(draft,draft.gitBaseline);
       draft = save({...draft,input,state:"uploading"});
       draft = await upload(draft);
       const priorUncertain = draft.uncertain === true;
@@ -318,7 +376,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       let result;
       try {
         result = requireOk(await client.submitTask({...input,conversationId,action:"create",inputSnapshotId:draft.objectId,deviceId,clientCommandId:draft.clientCommandId,
-          ...(draft.sharedWorkspaceId ? {sharedWorkspaceId:draft.sharedWorkspaceId} : {})})).result;
+          ...(draft.sharedWorkspaceId ? {sharedWorkspaceId:draft.sharedWorkspaceId} : {}),
+          ...(draft.wireBundle ? {inputGit:draft.wireBundle.descriptor} : {})})).result;
         if (!result?.taskId || result.state !== "offered" || result.revision !== 1) throw fail("COLLAB_RESPONSE_UNKNOWN");
       } catch (error) {
         read(draft.id,conversationId);
@@ -329,6 +388,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         return {ok:true,state:"confirming",draftId:draft.id,code:"COLLAB_RESPONSE_UNKNOWN"};
       }
       read(draft.id,conversationId);
+      if (draft.wireBundle) rememberGitObject({conversationId,taskId:result.taskId},draft.objectId,draft.wireBundle.descriptor);
       save({id:`task:${result.taskId}`,kind:"task",conversationId,taskId:result.taskId,sourceRoot:draft.sourceRoot,
         ...(draft.sourceProjectId ? {sourceProjectId:draft.sourceProjectId} : {}),
         ...(draft.sourceSessionId ? {sourceSessionId:draft.sourceSessionId} : {}),
@@ -368,7 +428,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     }
     if (operation === "prepareDelivery") {
       const task = await taskFor(command), local = await receive(command);
-      let draft = await freeze(local.workRoot,conversationId,{taskId:task.id,expectedRevision:task.revision,inputSnapshotId:task.inputSnapshotId});
+      let draft = await freeze(local.workRoot,conversationId,{taskId:task.id,expectedRevision:task.revision,inputSnapshotId:task.inputSnapshotId,
+        transport:task.inputGit?"git":"zip"});
       // Omission by a secret/size filter is not a collaborator's deletion.
       const delivered = new Set(draft.manifest.map(file=>file.path));
       const omitted = relative => {
@@ -394,7 +455,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         throw fail("COLLAB_TASK_DELIVERY_OMITTED");
       }
       draft = save({...draft,deliveryValidated:true});
-      await contribution(draft);
+      draft = await contribution(draft);
+      await wireBundle(draft,draft.gitContribution,draft.gitContribution.baseCommit);
       return {ok:true,draft:draftView(draft)};
     }
     if (operation === "submitDelivery") {
@@ -404,10 +466,12 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       if (draft.deviceId !== deviceId) throw fail("COLLAB_DEVICE_CHANGED");
       if (draft.state === "completed") return {ok:true,state:"completed",clientCommandId:draft.clientCommandId};
       draft = await contribution(draft);
+      draft = await wireBundle(draft,draft.gitContribution,draft.gitContribution.baseCommit);
       draft = await upload(draft);
       const result = await tasks.submit({conversationId,taskId:command.taskId,action:"submit",expectedRevision:draft.expectedRevision,
-        deliveryId:draft.objectId,clientCommandId:draft.clientCommandId});
+        deliveryId:draft.objectId,clientCommandId:draft.clientCommandId},draft.wireBundle?.descriptor);
       read(draft.id,conversationId);
+      if (result.state==="completed" && draft.wireBundle) rememberGitObject(command,draft.objectId,draft.wireBundle.descriptor);
       if (result.ok) save({...draft,state:result.state});
       return result;
     }

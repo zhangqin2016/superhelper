@@ -63,12 +63,54 @@ class TaskGit {
       const digest = createHash("sha256"); let size = 0;
       try {
         await Promise.all([finished,pipeline(child.stdout,new Transform({transform(chunk,_encoding,callback) {
-          size += chunk.length; digest.update(chunk); callback(null,chunk);
+          size += chunk.length;
+          if (size > file.sizeBytes) return callback(fail("SNAPSHOT_CHANGED"));
+          digest.update(chunk); callback(null,chunk);
         }}),fs.createWriteStream(destination,{flags:"wx",mode:0o600}))]);
-        if (size !== file.sizeBytes || digest.digest("hex") !== file.sha256) throw fail("SNAPSHOT_CHANGED");
+        const sha256 = digest.digest("hex");
+        if (size !== file.sizeBytes || file.sha256 && sha256 !== file.sha256) throw fail("SNAPSHOT_CHANGED");
+        return {sha256,sizeBytes:size};
       } finally {if (child.exitCode === null) child.kill();}
     };
     return {repository,git,writeBlob};
+  }
+  async hasRevision(revision) {
+    if (!/^[0-9a-f]{40}$/.test(revision?.commit || "") || !/^refs\/tasks\/[0-9a-f]{64}\/(baseline|deliveries\/[0-9a-f]{64})$/.test(revision?.ref || "")) return false;
+    const {git} = await this.ensure();
+    try {
+      if (await git(["rev-parse","--verify",revision.ref]) !== revision.commit) return false;
+      await git(["fsck","--strict","--no-reflogs","--no-dangling",revision.commit]);
+      return true;
+    } catch {return false;}
+  }
+  async materializeSnapshot({revision,destinationRoot,parentCommit}) {
+    if (!(await this.hasRevision(revision))) throw fail("REVISION_UNAVAILABLE");
+    const {repository,git,writeBlob} = await this.ensure();
+    const lineage = (await git(["rev-list","--parents","-n","1",revision.commit])).split(" ");
+    if (lineage.length !== (parentCommit ? 2 : 1) || parentCommit && lineage[1] !== parentCommit) throw fail("ANCESTRY_INVALID");
+    const entries = (await git(["ls-tree","-r","-l","-z",revision.commit])).split("\0").filter(Boolean).map(value=>{
+      const match = /^100644 blob ([0-9a-f]{40}) +([0-9]+)\t(.+)$/.exec(value);
+      if (!match || controlPath(match[3])) throw fail("TREE_INVALID");
+      return {blob:match[1],path:match[3],sizeBytes:Number(match[2])};
+    });
+    manifestMap(entries.map(file=>({path:file.path,sha256:"0".repeat(64),sizeBytes:file.sizeBytes})));
+    const limits = require("./workspace-package").DEFAULT_LIMITS;
+    if (entries.some(file=>file.sizeBytes>limits.maxFileBytes) || entries.reduce((sum,file)=>sum+file.sizeBytes,0)>limits.maxTotalBytes) throw fail("LIMIT_EXCEEDED");
+    if (typeof destinationRoot !== "string" || !path.isAbsolute(destinationRoot) || path.resolve(destinationRoot)!==destinationRoot
+      || destinationRoot===this.rootPath || destinationRoot.startsWith(`${this.rootPath}${path.sep}`)
+      || this.rootPath.startsWith(`${destinationRoot}${path.sep}`)) throw fail("UNSAFE_PATH");
+    directory(path.dirname(destinationRoot));
+    fs.mkdirSync(destinationRoot,{mode:0o700});
+    const snapshotRoot=path.join(destinationRoot,"snapshot");fs.mkdirSync(snapshotRoot,{mode:0o700});
+    const manifest=[];
+    for (const file of entries) {
+      const destination=path.join(snapshotRoot,file.path);
+      fs.mkdirSync(path.dirname(destination),{recursive:true,mode:0o700});
+      const content=await writeBlob(file.blob,destination,file);
+      fs.chmodSync(destination,0o400);manifest.push({path:file.path,...content});
+    }
+    return {snapshotRoot,manifest,gitRevision:{repository,ref:revision.ref,commit:revision.commit,
+      tree:await git(["rev-parse",`${revision.commit}^{tree}`]),manifestHash:manifestHash(manifest)}};
   }
   async ensureWorktree({baseline,workRoot,manifest}) {
     const files = manifestMap(manifest);

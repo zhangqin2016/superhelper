@@ -16,6 +16,8 @@ const { createCollaborationIpc } = require('../src/main/ipc-collaboration');
 const { taskWorkflowCommand, taskWorkflowResult } = require('../src/main/collaboration/task-workflow-view');
 const { createTask, transitionTask } = require('../server/src/services/collaboration/task-contract.cjs');
 const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'remote-task-workflow-')));
+const gitMode=process.env.LILY_TEST_GIT_PROTOCOL==='1';
+const gitQueries=[];
 const source = path.join(temporary, 'source'); fs.mkdirSync(source);
 fs.writeFileSync(path.join(source, 'budget.txt'), 'original budget\n');
 fs.writeFileSync(path.join(source, 'remove.txt'), 'remove after explicit consent\n');
@@ -27,7 +29,7 @@ const err = code => Object.assign(new Error(code), { code });
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const clone = value => structuredClone(value);
 const opened = new Set();
-function assemble(accountId) {
+function assemble(accountId,protocol=gitMode?1:undefined) {
   let stopped = false;
   const keyring = new LocalCollaborationKeyring({ filePath: path.join(temporary, `${accountId}.keys`), safeStorage: {
     isEncryptionAvailable: () => true, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString(),
@@ -44,6 +46,13 @@ function assemble(accountId) {
     return clone(task);
   };
   const client = {
+    async missingTaskGitObjects({taskId,deliveryId,haveCommits}) {
+      gitQueries.push({accountId,taskId,deliveryId,haveCommits:[...haveCommits]});
+      const task=await getTask({taskId});
+      const wanted=[{objectId:task.inputSnapshotId,descriptor:task.inputGit}];
+      if(deliveryId)wanted.push({objectId:deliveryId,descriptor:task.deliveries.find(item=>item.id===deliveryId)?.git});
+      return {objects:wanted.filter(item=>!haveCommits.includes(item.descriptor.commit))};
+    },
     getTask, listTasks: async ({ conversationId }) => [...serverTasks.values()].filter(task => task.conversationId === conversationId && [task.requesterUserId, task.assigneeUserId].includes(accountId)).map(clone),
     async submitTask(input) {
       assert.equal(input.deviceId, deviceId);
@@ -79,6 +88,7 @@ function assemble(accountId) {
   const tasks = createTaskCommands({ store, client, deviceId, assertActive });
   let lastOpened, changes = 0;
   const workflow = createTaskWorkflow({ store, client, tasks, deviceId, assertActive, rootPath: path.join(temporary, 'managed'),
+    taskGitProtocol:protocol,
     onChange: () => { changes++; },
     chooseDirectory: async () => ({ canceled: false, filePaths: [source] }),
     openWorkspace: async input => { lastOpened = input; return { projectId: 'project', sessionId: 'session' }; },
@@ -145,10 +155,19 @@ try {
   const sent = ok(await owner.run(send), 'replayed create');
   assert.equal(sent.state, 'completed'); assert.equal(createEvents, 1); assert.equal(createCalls, 3);
   const taskId = sent.taskId;
+  assert.equal(Boolean(serverTasks.get(taskId).inputGit),gitMode,'negotiated Git tasks carry a bound bundle descriptor');
+  if(gitMode)assert.equal(objects.get(serverTasks.get(taskId).inputSnapshotId).bytes.subarray(0,15).toString(),'# v2 git bundle');
   assert.equal(owner.records.get(`task:${taskId}`).taskId, taskId, 'server task IDs bind separate private records');
   assert.equal((await helper.run({ operation: 'receive', conversationId: 'other', taskId })).ok, false);
   ok(await helper.tasks.submit({ conversationId: 'chat', taskId, action: 'accept', expectedRevision: 1 }), 'accept');
+  if(gitMode){
+    const {TaskGit}=require('../src/main/collaboration/task-git');
+    const {createTaskGitTransport}=require('../src/main/collaboration/task-git-transport');
+    const localGit=new TaskGit({rootPath:path.join(temporary,'managed',digest(Buffer.from('helper')),'git'),gitOptions:{autoInstall:false}});
+    await createTaskGitTransport(localGit).importBundle({packagePath:objects.get(serverTasks.get(taskId).inputSnapshotId).packagePath,descriptor:serverTasks.get(taskId).inputGit});
+  }
   ok(await helper.run({ operation: 'receive', conversationId: 'chat', taskId }), 'receive');
+  if(gitMode)assert.deepEqual(gitQueries.find(query=>query.accountId==='helper'&&query.taskId===taskId).haveCommits,[],'bare local commit presence is not a verified task-object binding');
   ok(await helper.run({ operation: 'open', conversationId: 'chat', taskId }), 'open received workspace');
   const working = helper.lastOpened().rootPath, binding = helper.records.get(`task:${taskId}`);
   assert.ok(binding.gitBaseline?.commit, 'receive persists a real Git baseline');
@@ -201,10 +220,15 @@ try {
   assert.equal(submitted.state, 'completed');
   assert.equal(helper.records.get(deliveryDraftId).gitContribution.commit,contribution.commit,'restart and upload preserve the frozen contribution');
   const reviewTask = serverTasks.get(taskId), deliveryId = reviewTask.currentDeliveryId;
+  if(gitMode){
+    assert.equal(reviewTask.deliveries[0].git.commit,contribution.commit);
+    assert.equal(objects.get(deliveryId).bytes.subarray(0,15).toString(),'# v2 git bundle');
+  }
   assert.equal(reviewTask.state, 'review'); assert.ok(objects.has(deliveryId));
   ok(await owner.tasks.submit({ conversationId: 'chat', taskId, action: 'approve', expectedRevision: reviewTask.revision, deliveryId }), 'approve');
   assert.equal(fs.readFileSync(path.join(source, 'budget.txt'), 'utf8'), 'original budget\n', 'approval does not apply files');
   const preview = ok(await owner.run({ operation: 'preview', conversationId: 'chat', taskId, deliveryId }), 'preview');
+  if(gitMode)assert.deepEqual(gitQueries.find(query=>query.accountId==='owner'&&query.taskId===taskId&&query.deliveryId===deliveryId).haveCommits,[binding.gitBaseline.commit],'requester reuses its verified input bundle');
   assert.deepEqual(preview.plan.entries.map(entry => entry.operation).sort(), ['add', 'delete', 'replace']);
   assert.doesNotMatch(JSON.stringify(preview), /rootPath|deliveryRoot|snapshotRoot|backupDirectory/);
   const apply = { operation: 'apply', conversationId: 'chat', taskId, deliveryId, applicationId: preview.applicationId, expectedPlanHash: preview.planHash, confirmDeletions: false };
@@ -345,6 +369,23 @@ try {
   assert.equal(execFileSync('git',['--git-dir',shapeContribution.repository,'show',`${shapeContribution.commit}:was-file/new.txt`],{encoding:'utf8'}),'new child');
   assert.equal(execFileSync('git',['--git-dir',shapeContribution.repository,'show',`${shapeContribution.commit}:was-directory.txt`],{encoding:'utf8'}),'new file');
 
+  if(gitMode){
+    owner.close();owner=assemble('owner',0);
+    const legacy=ok(await owner.run({operation:'prepare',conversationId:'chat'}),'prepare ZIP before protocol upgrade').draft;
+    owner.close();owner=assemble('owner');
+    const mixedTask=ok(await owner.run({...send,draftId:legacy.id}),'send preserved ZIP draft').taskId;
+    assert.equal(serverTasks.get(mixedTask).inputGit,undefined,'enabling Git cannot change an existing ZIP draft');
+    ok(await helper.tasks.submit({conversationId:'chat',taskId:mixedTask,action:'accept',expectedRevision:1}),'accept legacy task after upgrade');
+    const mixedDelivery=ok(await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:mixedTask}),'prepare legacy delivery after upgrade').draft;
+    assert.equal(helper.records.get(mixedDelivery.id).wireBundle,undefined);
+    ok(await helper.run({operation:'submitDelivery',conversationId:'chat',taskId:mixedTask,draftId:mixedDelivery.id}),'submit preserved legacy delivery');
+    const gated=ok(await owner.run({operation:'prepare',conversationId:'chat'}),'prepare Git before rollout disabled').draft;
+    owner.close();owner=assemble('owner',0);
+    const transferCountBeforeGate=transfers.size;
+    assert.equal((await owner.run({...send,draftId:gated.id})).code,'COLLAB_TASK_PROTOCOL_UNAVAILABLE');
+    assert.equal(transfers.size,transferCountBeforeGate,'disabled Git cannot upload a changed format');
+    owner.close();owner=assemble('owner');
+  }
   const teamDraft = ok(await owner.run({ operation: 'prepare', conversationId: 'team-chat' }), 'prepare Team task');
   const teamSent = ok(await owner.run({ ...send, conversationId: 'team-chat', draftId: teamDraft.draft.id }), 'send Team task');
   const teamTaskId = teamSent.taskId;
@@ -367,5 +408,5 @@ try {
   ok(await owner.run({ operation: 'rollback', conversationId: 'team-chat', taskId: teamTaskId, applicationId: teamPreview.applicationId }), 'offline rollback after Team retirement');
   assert.equal(fs.readFileSync(path.join(source, 'budget.txt'), 'utf8'), 'original budget\n');
   assert.equal(ok(await owner.run({ operation: 'recoveries' }), 'rolled-back recovery projection').applications.some(item => item.applicationId === teamPreview.applicationId), false);
-  console.log('remote task workflow: real two-account SQLite, ZIP/manifests, create response loss/replay, acceptance, writable import, delivery, apply and restart rollback passed (network/object fixture only)');
+  console.log(`remote task workflow (${gitMode?'Git bundles':'ZIP'}): real two-account SQLite, manifests, response loss/replay, acceptance, writable import, delivery, apply and restart rollback passed (network/object fixture only)`);
 } finally { for (const user of [...opened]) user.close(); fs.rmSync(temporary, { recursive: true, force: true }); }

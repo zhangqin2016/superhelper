@@ -117,6 +117,18 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
         if(!delivery?.git)return inaccessible();
         objects.push({objectId:delivery.id,descriptor:delivery.git});
       }
+      // Cached commits suppress bytes, never the current package authorization.
+      const stored=await repository.database.selectFrom('stored_objects')
+        .select(['id','state','task_id','conversation_id','purpose','owner_user_id','expires_at'])
+        .where('id','in',objects.map(item=>item.objectId)).execute();
+      for(const item of objects){
+        const object=stored.find(row=>row.id===item.objectId);
+        const owner=item.objectId===task.inputSnapshotId?task.requesterUserId:task.assigneeUserId;
+        if(!object || object.state!=='bound' || object.task_id!==task.id || object.conversation_id!==task.conversationId
+          || object.purpose!=='workspace' || object.owner_user_id!==owner
+          || (object.expires_at!=null && (!Number.isFinite(new Date(object.expires_at).getTime()) || new Date(object.expires_at).getTime()<=now())))
+          throw new CollaborationCommandError('COLLAB_TASK_PACKAGE_UNAVAILABLE','Task package unavailable');
+      }
       return {objects:objects.filter(item=>!haveCommits.includes(item.descriptor.commit))};
     },
     async create({account,clientCommandId,...input}) {

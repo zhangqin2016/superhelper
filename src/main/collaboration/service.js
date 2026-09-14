@@ -272,7 +272,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       ? Promise.all([taskHydration.recover(),taskHistory.recover()]) : Promise.resolve();
     let taskHydrationTimer=null;
     let workflow;
-    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,onChange:()=>emitState("task")});
+    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,taskGitProtocol:policy?.taskGitProtocol,onChange:()=>emitState("task")});
     const taskOperation = (method, payload) => stopped ? stoppedResult()
       : policy?.enabled === true && policy?.tasks === true && policy?.workspaceShares === true ? tasks[method](payload) : unavailableService();
     const realtime = client && realtimeEnabled
