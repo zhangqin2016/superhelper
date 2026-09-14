@@ -10,8 +10,7 @@ const fail = name => Object.assign(new Error(`COLLAB_TASK_APPLICATION_${name}`),
 function createLocalWriter({filePath} = {}) {
   const target = filePath || path.join(fs.realpathSync(os.homedir()), ".lily-workbench-coordination", "writer.sqlite");
   if (!path.isAbsolute(target)) throw fail("UNSAFE_PATH");
-  function run(operation) {
-    if (typeof operation !== "function" || operation.constructor.name === "AsyncFunction") throw fail("SYNC_REQUIRED");
+  function acquire() {
     const directory = path.dirname(target);
     fs.mkdirSync(directory, {recursive:true,mode:0o700});
     if (fs.realpathSync(directory) !== directory) throw fail("UNSAFE_PATH");
@@ -31,13 +30,29 @@ function createLocalWriter({filePath} = {}) {
         if ([5,6].includes(error.errcode)) throw fail("BUSY");
         throw error;
       }
-      const result = operation();
-      if (result && typeof result.then === "function") throw fail("SYNC_REQUIRED");
-      return result;
-    } finally {
-      try { if (locked) db.exec("ROLLBACK"); } finally { db.close(); }
+    } catch(error) {
+      db.close();throw error;
     }
+    return () => {
+      if(!locked)return;
+      locked=false;
+      try { db.exec("ROLLBACK"); } finally { db.close(); }
+    };
   }
-  return {run};
+  function run(operation) {
+    if (typeof operation !== "function" || operation.constructor.name === "AsyncFunction") throw fail("SYNC_REQUIRED");
+    const release=acquire();
+    try {
+      const result=operation();
+      if(result&&typeof result.then==="function")throw fail("SYNC_REQUIRED");
+      return result;
+    } finally {release();}
+  }
+  async function runAsync(operation) {
+    if(typeof operation!=="function")throw fail("CONFIG_INVALID");
+    const release=acquire();
+    try {return await operation();} finally {release();}
+  }
+  return {run,runAsync};
 }
 module.exports = {createLocalWriter};

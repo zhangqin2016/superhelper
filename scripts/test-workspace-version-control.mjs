@@ -39,7 +39,7 @@ async function testGitIsolationAndRestore() {
     fs.writeFileSync(path.join(workspace, "notes.txt"), "one\n");
     fs.writeFileSync(path.join(workspace, ".env"), "SECRET=do-not-track\n");
 
-    const service = new WorkspaceVersionService();
+    const service = new WorkspaceVersionService({writerLockPath:path.join(fs.realpathSync(workspace),".lily-work","writer.sqlite")});
     const firstStatus = await service.status(workspace);
     assert.equal(firstStatus.mode, "git");
     assert.deepEqual(firstStatus.unprotectedFiles.map((entry) => entry.path), ["notes.txt"]);
@@ -78,7 +78,7 @@ async function testGitIsolationAndRestore() {
 async function testAutomaticSaveAndLocalFallback() {
   const workspace = tempWorkspace();
   try {
-    const service = new WorkspaceVersionService();
+    const service = new WorkspaceVersionService({writerLockPath:path.join(fs.realpathSync(workspace),".lily-work","writer.sqlite")});
     fs.writeFileSync(path.join(workspace, "task.txt"), "before\n");
     await service.save(workspace);
     const baseline = await service.captureBaseline(workspace);
@@ -98,7 +98,7 @@ async function testAutomaticSaveAndLocalFallback() {
 
     const fallbackWorkspace = tempWorkspace();
     try {
-      const fallback = new WorkspaceVersionService({ git: { isAvailable: async () => false } });
+      const fallback = new WorkspaceVersionService({ writerLockPath:path.join(fs.realpathSync(fallbackWorkspace),".lily-work","writer.sqlite"), git: { isAvailable: async () => false } });
       fs.writeFileSync(path.join(fallbackWorkspace, "draft.txt"), "local\n");
       const version = await fallback.save(fallbackWorkspace);
       assert.equal(version.mode, "local");
@@ -133,7 +133,7 @@ async function testGitBackendSupportsLargeWorkspace() {
     for (let index = 0; index < 10_001; index += 1) {
       fs.writeFileSync(path.join(workspace, `case-${String(index).padStart(5, "0")}.md`), "case\n");
     }
-    const service = new WorkspaceVersionService();
+    const service = new WorkspaceVersionService({writerLockPath:path.join(fs.realpathSync(workspace),".lily-work","writer.sqlite")});
     const saved = await service.save(workspace);
     assert.equal(saved.ok, true);
     assert.equal(saved.mode, "git");
@@ -146,7 +146,7 @@ async function testGitBackendSupportsLargeWorkspace() {
 async function testRestoreRollbackOnFailure() {
   const workspace = tempWorkspace();
   try {
-    const service = new WorkspaceVersionService();
+    const service = new WorkspaceVersionService({writerLockPath:path.join(fs.realpathSync(workspace),".lily-work","writer.sqlite")});
     fs.writeFileSync(path.join(workspace, "report.txt"), "before\n");
     const first = await service.save(workspace);
     fs.writeFileSync(path.join(workspace, "report.txt"), "current\n");
@@ -168,7 +168,7 @@ async function testRestoreRollbackOnFailure() {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    const guarded = new WorkspaceVersionService({ git: failingGit });
+    const guarded = new WorkspaceVersionService({ writerLockPath:path.join(fs.realpathSync(workspace),".lily-work","writer.sqlite"), git: failingGit });
     await assert.rejects(
       guarded.restore(workspace, first.version.id),
       (error) => error.message === "INJECTED_READ_FAILURE",
@@ -181,7 +181,7 @@ async function testRestoreRollbackOnFailure() {
 
   const fallbackWorkspace = tempWorkspace();
   try {
-    const fallback = new WorkspaceVersionService({ git: { isAvailable: async () => false } });
+    const fallback = new WorkspaceVersionService({ writerLockPath:path.join(fs.realpathSync(fallbackWorkspace),".lily-work","writer.sqlite"), git: { isAvailable: async () => false } });
     fs.writeFileSync(path.join(fallbackWorkspace, "broken.txt"), "safe\n");
     const version = await fallback.save(fallbackWorkspace);
     fs.writeFileSync(path.join(fallbackWorkspace, ".lily-work", "version-snapshots", version.version.id, "files", "broken.txt"), "tampered\n");

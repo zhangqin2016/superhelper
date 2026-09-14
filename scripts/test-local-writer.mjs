@@ -49,6 +49,15 @@ if(process.argv[2]==='hold') {
     assert.throws(()=>b.run(()=>writes++),/UNSAFE_PATH/);
     fs.unlinkSync(linked);
     assert.equal(writes,2);
+    let release,entered;
+    const started=new Promise(resolve=>entered=resolve);
+    const pending=a.runAsync(async()=>{entered();await new Promise(resolve=>release=resolve);});
+    await started;
+    assert.throws(()=>b.run(()=>writes++),/APPLICATION_BUSY/,'async version writes must exclude synchronous task applications across await');
+    await assert.rejects(b.runAsync(async()=>writes++),/APPLICATION_BUSY/);
+    release();await pending;
+    await assert.rejects(a.runAsync(async()=>{throw Error('async failure');}),/async failure/);
+    b.run(()=>writes++);assert.equal(writes,3);
     console.log('local writer: account/reentrant exclusion, exception/crash release and unsafe paths passed');
   } finally {
     if(child){const exit=once(child,'exit');child.kill('SIGKILL');await exit;}

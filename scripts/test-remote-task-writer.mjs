@@ -52,6 +52,8 @@ if(childMode) {
     assert.ok(fs.existsSync(ready),'real application reached the interrupted write checkpoint');
     await assert.rejects(b.broker.apply(inputB),/APPLICATION_BUSY/);
     await assert.rejects(a.broker.recover({applicationId:'a',mode:'rollback'}),/APPLICATION_BUSY/);
+    const versions=new (require('../src/main/workspace-version-service').WorkspaceVersionService)({writerLockPath:filePath});
+    await assert.rejects(versions.restore(path.join(root,'workspace'),'unused'),/WORKSPACE_VERSION_BUSY/,'version restoration must not enter another process task write');
     assert.equal(b.journal.get('b'),null,'busy admission creates no partial application or recovery obligation');
     assert.equal(fs.readFileSync(path.join(root,'workspace/sub/doc.txt'),'utf8'),'one');
     const exit=once(child,'exit');child.kill('SIGKILL');await exit;child=null;
