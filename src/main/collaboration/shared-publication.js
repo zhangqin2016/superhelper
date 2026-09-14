@@ -65,7 +65,11 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
       if(!validation(journal.validation,journal.candidate,validationPolicyId)){
         const result=await validate(Object.freeze({...journal.candidate}));guard();
         const evidence=validation(result,journal.candidate,validationPolicyId);
-        if(!evidence){save({state:"validation_failed",validation:null});intents.release(lease);return journal;}
+        if(!evidence){
+          const attempt=result?.commit===journal.candidate.commit && result.policyId===validationPolicyId && /^[a-f0-9]{64}$/.test(result.evidenceHash||"")
+            ? {commit:result.commit,policyId:validationPolicyId,evidenceHash:result.evidenceHash,state:result.state==="required"?"required":"failed"}:null;
+          save({state:"validation_failed",validation:null,validationAttempt:attempt});intents.release(lease);return journal;
+        }
         save({state:"validated",validation:evidence});
       }
       await authorized();save({state:"publishing"});

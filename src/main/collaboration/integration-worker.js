@@ -2,6 +2,7 @@
 const {randomUUID}=require("node:crypto");
 const {createIntegrationIntents}=require("./integration-intents");
 const {createSharedPublication}=require("./shared-publication");
+const {createCandidateValidation}=require("./candidate-validation");
 
 /** Bounded background preparation. Waiting validation/conflicts are durable;
  * no default validator, engine prompt or implicit successful approval exists. */
@@ -10,7 +11,7 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
   function active(){assertActive();if(stopped || store.accountId!==accountId)throw Object.assign(Error("Integration stopped"),{code:"COLLAB_INTEGRATION_STOPPED"});}
   const intents=createIntegrationIntents({store,assertActive:active,now});
   const notify=()=>{try{onChange();}catch{/* Observers cannot change durable work. */}};
-  const configured=typeof validateIntegration==="function" && typeof validationPolicyId==="string";
+  const configured=typeof validateIntegration==="function" && typeof validationPolicyId==="string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(validationPolicyId);
   if(configured)store.db.run("UPDATE task_integration_work SET state='pending',next_attempt_at=0 WHERE account_id=? AND state='waiting' AND code='COLLAB_INTEGRATION_VALIDATION_REQUIRED'",accountId);
   async function drain(){
     active();
@@ -28,10 +29,13 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
         timers.add(timer);
         const workflow=getWorkflow(),context=await workflow.acquireIntegrationInput(intent.input);guard();intents.assertLease(lease);
         const publisher=createSharedPublication({store,taskGit:context.taskGit,assertActive:guard,now,authorize:input=>workflow.authorizeIntegration(input)});
+        const validation=createCandidateValidation({store,taskGit:context.taskGit,assertActive:()=>{guard();intents.assertLease(lease);},intentId:intent.id,input:intent.input,
+          validationPolicyId,validateIntegration});
         const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,
-          validationPolicyId:configured?validationPolicyId:"unconfigured",validate:configured?validateIntegration:async()=>({ok:false})});
+          validationPolicyId:validation.policyId,validate:validation.validate});
         guard();
-        const code=result.state==="conflicts"?"COLLAB_INTEGRATION_CONFLICT":result.state==="published"?null:"COLLAB_INTEGRATION_VALIDATION_REQUIRED";
+        const code=result.state==="conflicts"?"COLLAB_INTEGRATION_CONFLICT":result.state==="published"?null:
+          result.validationAttempt?.state==="failed"?"COLLAB_INTEGRATION_VALIDATION_FAILED":"COLLAB_INTEGRATION_VALIDATION_REQUIRED";
         store.db.run("UPDATE task_integration_work SET state=?,code=?,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=? AND generation=? AND state='running'",result.state==="published"?"done":"waiting",code,accountId,intent.id,lease.generation);
         notify();
       }catch(error){

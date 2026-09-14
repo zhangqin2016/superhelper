@@ -74,6 +74,9 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       while(owner.store.db.get('SELECT state FROM task_integration_work')?.state!=='waiting' && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
       assert.equal(owner.store.db.get('SELECT code FROM task_integration_work')?.code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED','real service startup acquires and prepares the signed encrypted delivery without UI');
       const journal=owner.records.list(conversationId).find(row=>row.kind==='shared-publication');assert.equal(journal.state,'validation_failed');
+      const evidence=owner.records.list(conversationId).find(row=>row.kind==='candidate-validation'&&row.evidenceHash===journal.validationAttempt.evidenceHash);
+      assert.equal(evidence.report.commit,journal.candidate.commit);assert.equal(evidence.report.state,'required');
+      assert.equal(evidence.report.checks[0].status,'passed');assert.equal(evidence.report.checks.at(-1).status,'passed','signed service delivery is materialized and rechecked before recording evidence');
       assert.equal(journal.candidate.delivery,delivered.git.commit);assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','background preparation leaves foreground/private files untouched');
     }finally{service.stop();}
     owner.close();owner=open('a');
