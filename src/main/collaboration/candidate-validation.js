@@ -4,6 +4,7 @@ const path=require("node:path");
 const {createHash}=require("node:crypto");
 const {createTaskRecords}=require("./task-records");
 const {candidateRef}=require("./shared-git");
+const {checkCandidateJavascript}=require("./candidate-javascript");
 const {manifestHash}=require("./task-changeset");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail=()=>Object.assign(Error("Candidate validation binding invalid"),{code:"COLLAB_INTEGRATION_VALIDATION_INVALID"});
@@ -37,7 +38,7 @@ async function unchanged(root,manifest,guard){
  * Structural integrity alone does not authorize semantic publication. */
 function createCandidateValidation({store,taskGit,assertActive,intentId,input,validationPolicyId,validateIntegration}){
   const configured=typeof validateIntegration==="function" && typeof validationPolicyId==="string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(validationPolicyId);
-  const policyId=`candidate-v1:${hash(configured?validationPolicyId:"unconfigured")}`;
+  const policyId=`candidate-v2:${hash([configured?validationPolicyId:"unconfigured",process.version])}`;
   const records=createTaskRecords({store,assertActive});
   const recordId=candidate=>`candidate-validation-latest:${hash([intentId,candidate.commit,policyId])}`;
   function get(candidate){
@@ -64,6 +65,7 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
     try{
       const material=await taskGit.materializeSnapshot({revision:candidate,destinationRoot:path.join(temporary,"candidate"),parents:[candidate.head,candidate.delivery]});assertActive();
       checks.push({id:"git-candidate",version:"1",status:"passed",coverage:"exact candidate tree, parents and blob hashes",evidenceHash:material.gitRevision.manifestHash});
+      const syntax=await checkCandidateJavascript({...material,assertActive});assertActive();checks.push(syntax);
       if(configured){
         let result;
         try{result=await validateIntegration(candidate,Object.freeze({snapshotRoot:material.snapshotRoot,
@@ -76,6 +78,8 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
         checks.push({id:"project-policy",version:validationPolicyId,status:state,coverage:"host-configured project checks",
           ...(valid?{evidenceHash:result.evidenceHash}:{code:"INVALID_OR_FAILED_CHECK"})});
       }else checks.push({id:"project-policy",version:"unconfigured",status:"required",coverage:"project validation is unavailable"});
+      if(syntax.status==="failed")state="failed";
+      else if(syntax.status==="required"&&state==="passed")state="required";
       let intact=false;
       try{intact=await unchanged(material.snapshotRoot,material.manifest,assertActive);}catch{/* Record modified/unreadable bytes; active guard below fences stopped work. */}
       assertActive();

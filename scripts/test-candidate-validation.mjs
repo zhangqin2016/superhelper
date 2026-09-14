@@ -36,7 +36,7 @@ try{
  validator=createCandidateValidation({...options,validationPolicyId:'totals-v1',validateIntegration});
  result=await validator.validate(candidate);assert.equal(result.state,'failed','clean Git merge with broken related totals must fail actual policy');
  assert.equal(fs.existsSync(seenRoot),false,'temporary candidate bytes are removed after checking');
- const failed=validator.get(candidate);assert.equal(failed.report.checks[1].status,'failed');assert.equal(hash(JSON.stringify(failed.report)),failed.evidenceHash);
+ const failed=validator.get(candidate);assert.equal(failed.report.checks.find(c=>c.id==='project-policy').status,'failed');assert.equal(hash(JSON.stringify(failed.report)),failed.evidenceHash);
  const successful=async(c,context)=>({ok:JSON.parse(fs.readFileSync(path.join(context.snapshotRoot,'rate.json'))).rate===3,commit:c.commit,policyId:'rate-v1',evidenceHash:hash('rate equals 3')});
  validator=createCandidateValidation({...options,validationPolicyId:'rate-v1',validateIntegration:successful});
  result=await validator.validate(candidate);assert.equal(result.ok,true);assert.equal(result.policyId,validator.policyId);
@@ -56,5 +56,20 @@ try{
  validator=createCandidateValidation({...options,store,intentId:'late',assertActive(){if(!active)throw Error('fenced');},validationPolicyId:'late',validateIntegration:async()=>{active=false;return {ok:true};}});
  await assert.rejects(validator.validate(candidate),/fenced/);
  assert.equal(store.db.all("SELECT id FROM task_workspace_records").some(r=>r.id===validator.recordId(candidate)),false,'late stopped validation cannot save evidence');
+ const jsBase=snapshot('js-base',{'package.json':'{"type":"module"}','work.js':'export const value = 1;'});
+ const jsBaseline=await taskGit.captureBaseline({taskId:'js',...jsBase});
+ const jsChanged=snapshot('js-changed',{'package.json':'{"type":"module"}','work.js':'export const value = ;'});
+ const jsDelivery=await taskGit.captureContribution({baseline:jsBaseline,baseManifest:jsBase.manifest,materializedPaths:jsBase.manifest.map(f=>f.path),deliveryId:'js-delivery',...jsChanged});
+ const jsHead=await shared.initialize({workspaceId:'js',baseline:jsBaseline});
+ const jsCandidate=await shared.prepare({workspaceId:'js',baseline:jsBaseline,delivery:jsDelivery,expectedHead:jsHead.commit});
+ const jsOptions={...options,store,intentId:'js-intent',input:{...input,workspaceId:'js',baselineCommit:jsBaseline.commit,deliveryCommit:jsDelivery.commit}};
+ const jsValidator=createCandidateValidation(jsOptions),jsResult=await jsValidator.validate(jsCandidate);
+ assert.equal(jsResult.state,'failed','native syntax failure blocks the candidate even without a project validator');
+ const jsProof=jsValidator.get(jsCandidate);
+ assert.equal(jsProof.report.checks.find(c=>c.id==='javascript-syntax').details[0].attempts[0].mode,'module');
+ assert.equal(jsProof.report.checks.find(c=>c.id==='project-policy').status,'required');
+ const accepting=createCandidateValidation({...jsOptions,validationPolicyId:'fixture-accept',validateIntegration:async c=>({ok:true,commit:c.commit,policyId:'fixture-accept',evidenceHash:hash('fixture')})});
+ assert.equal((await accepting.validate(jsCandidate)).state,'failed','a permissive project callback cannot override a syntax failure');
+ assert.doesNotMatch(JSON.stringify(store.db.all('SELECT payload_envelope_json FROM task_workspace_records')),/export const value|SyntaxError|work.js/);
  console.log('candidate validation: actual Git snapshots, related-file failure, policy identity, encrypted evidence/reopen, mutation and late-result fences passed');
 }finally{store.close();fs.rmSync(root,{recursive:true,force:true});}
