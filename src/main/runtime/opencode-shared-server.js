@@ -16,7 +16,7 @@ const { EventEmitter } = require("node:events");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const {spawnForeground}=require("../collaboration/foreground-writer");
 const { getLogger } = require("../logger");
 const { killProcessTree, terminateProcessGroup } = require("../process-tree-kill");
 const { parseServeDiagnostics } = require("./opencode-serve-diagnostics");
@@ -48,6 +48,7 @@ class OpencodeSharedServer extends EventEmitter {
     this.dataDir = opts.dataDir;
     this.env = processProfileEnv(opts.env);
     this.configContent = opts.configContent || "";
+    this.writerLockPath=opts.writerLockPath;
 
     this.process = null;
     this._ownedProcess = null;
@@ -155,7 +156,7 @@ class OpencodeSharedServer extends EventEmitter {
       // error-level only (low noise). Combined with the un-truncated stderr
       // capture below, the real upstream cause lands in Lily's log instead of
       // being swallowed into an opaque "Unexpected server error" ref.
-      const child = spawn(
+      const child = spawnForeground(
         this.serverCommand,
         ["serve", "--hostname", this.host, "--port", "0", "--print-logs", "--log-level", "ERROR"],
         {
@@ -166,7 +167,7 @@ class OpencodeSharedServer extends EventEmitter {
           // tree via kill(-pid). Windows uses taskkill /T instead.
           detached: process.platform !== "win32",
           windowsHide: true,
-        },
+        },{filePath:this.writerLockPath,parentBound:true},
       );
       this.process = child;
       this._ownedProcess = child;

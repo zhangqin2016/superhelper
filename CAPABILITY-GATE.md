@@ -525,3 +525,6 @@ DOCX private candidate policy (checkpoint 56): `test_office_merge.py` and `test-
 
 
 Admitted local materialization (checkpoint 57): `test-local-materialization-apply.mjs` proves real broker writes and atomic encrypted applied/A receipts, refusal on stale W/base/policy and writer contention, and rollback after receipt failure. The signed HTTP/native fixture now applies independently validated W′ and advances A to M using fixture-owned writer admission. Production foreground admission is not supplied, so automatic desktop application is not enabled. Applied materialization cannot use legacy rollback; contribution-specific undo and installed-client acceptance remain pending.
+
+
+Foreground group admission (checkpoint 58): `test-foreground-writer.mjs` uses real detached groups to prove registration before execution, blocking after leader exit, owner-IPC crash cleanup and admission after confirmed group exit. Actual engine and both job launchers register; legacy stop verifies identity and waits for group shutdown. Tests inject private coordination paths. This is POSIX registration/admission, not yet warm-profile draining, automatic local retry, Windows proof or full-client acceptance.

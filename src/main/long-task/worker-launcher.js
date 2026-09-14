@@ -11,7 +11,7 @@ function atomicJson(file, value) {
   fs.renameSync(tmp, file);
 }
 
-function main() {
+async function main() {
   const specPath = process.argv[2];
   if (!specPath) process.exit(125);
   const spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
@@ -36,6 +36,19 @@ function main() {
   }, 2_000);
   heartbeatTimer.unref?.();
   atomicJson(spec.startMarkerPath, { ...identity, heartbeatPath });
+  if(process.platform!=="win32"){
+    const writer=require("../collaboration/foreground-writer").createForegroundWriter({filePath:spec.writerLockPath}),deadline=Date.now()+15000;
+    for(;;){
+      try{writer.registerCurrentGroup();break;}
+      catch(error){
+        if(error.code!=="COLLAB_TASK_APPLICATION_BUSY"||Date.now()>=deadline){
+          atomicJson(spec.markerPath,{version:1,launchNonce:spec.launchNonce,launcherPid:process.pid,workerPid:null,exitCode:125,signal:null,error:error.code||"FOREGROUND_LAUNCH_FAILED",completedAt:Date.now()});
+          process.exitCode=125;return;
+        }
+        await new Promise(resolve=>setTimeout(resolve,25));
+      }
+    }
+  }
   const env = { ...process.env, ...(spec.env || {}), LILY_LONG_TASK_LAUNCH_NONCE: spec.launchNonce };
   delete env.LILY_PROCESS_JOBS_SCOPE_SECRET;
   const child = spawn(spec.command, Array.isArray(spec.args) ? spec.args : [], {
@@ -69,4 +82,4 @@ function main() {
   child.once("exit", (code, signal) => finish(code, signal));
 }
 
-main();
+main().catch(()=>{process.exitCode=125;});

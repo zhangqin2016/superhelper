@@ -53,6 +53,6 @@ function createLocalWriter({filePath} = {}) {
     const release=acquire();
     try {return await operation();} finally {release();}
   }
-  return {run,runAsync};
+  return {run,runAsync,filePath:target};
 }
 module.exports = {createLocalWriter};

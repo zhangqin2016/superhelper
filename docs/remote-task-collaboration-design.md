@@ -112,3 +112,6 @@ Checkpoint 56: private A/W/M preparation now offers conservative DOCX part mergi
 
 
 Checkpoint 57 connects native private validation to application through an explicitly supplied foreground-aware writer. The final applied recovery journal, candidate receipt and A generation/revision advance share one SQLite transaction after whole-candidate verification; A references shared M. Interrupted receipts retain per-file rollback evidence without advancing A. Replayed completed publication preserves later private edits. Production still needs the cross-profile foreground admission implementation; only the controlled native/HTTP fixture supplies admission today. Applied materializations require contribution-specific inverse undo, not the legacy whole-file rollback.
+
+
+Checkpoint 58: controlled POSIX engine/job groups register durably under the global local-writer lock before command execution. Application admission requires every registered group to be absent, including tools surviving their leader. Engine owner IPC closes the running group on main-process death; persistent jobs retain their independent lifecycle. Safe warm-profile draining and local-write retry still need to connect this admission to automatic materialization. Existing Windows paths are unchanged and no Windows foreground-completion proof is claimed.

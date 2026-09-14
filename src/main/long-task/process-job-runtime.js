@@ -69,6 +69,7 @@ class DurableProcessJobRuntime {
     this.jobsDir = options.jobsDir || path.join(path.dirname(this.dbPath), "process-jobs");
     this.evaluateHealth = options.evaluateHealth || (async (job) => ({ ok: this._alive(job), type: "process", detail: this._alive(job) ? "process_alive" : "process_not_running" }));
     this.now = options.now || Date.now;
+    this.writerLockPath=options.writerLockPath;
   }
 
   _authorize(input, operation) {
@@ -185,7 +186,7 @@ class DurableProcessJobRuntime {
       const launchNonce = crypto.randomBytes(24).toString("base64url");
       fs.writeFileSync(specPath, `${JSON.stringify({
         command, args: job.args, cwd, env: bounded.env, shell: input.shell === undefined ? job.args.length === 0 : input.shell,
-        markerPath, startMarkerPath, heartbeatPath, launchNonce,
+        markerPath, startMarkerPath, heartbeatPath, launchNonce, writerLockPath:this.writerLockPath,
       })}\n`, { encoding: "utf8", mode: 0o600 });
       const outFd = fs.openSync(stdoutPath, "a");
       const errFd = fs.openSync(stderrPath, "a");

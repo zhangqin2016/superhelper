@@ -7,8 +7,8 @@ const https = require("node:https");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
-const { stopPid } = require("../process-tree-kill");
+const {stopPid,stopPidTree,terminateProcessGroup}=require("../process-tree-kill");
+const {captureProcessIdentity,matchesProcessIdentity}=require("../long-task/process-identity");
 const { latestWorkProgress } = require("../work-progress-protocol");
 const { sameJobGeneration, updateJobGeneration } = require("./process-job-generation").createJobGenerationGuard({ readRegistry, writeRegistry });
 
@@ -365,14 +365,14 @@ async function startLegacyJob(input = {}, options = {}) {
   const errFd = fs.openSync(stderrPath, "a");
   let child;
   try {
-    child = spawn(command, args, {
+    child = require("../collaboration/foreground-writer").spawnForeground(command, args, {
       cwd,
       env: { ...process.env, ...(input.env && typeof input.env === "object" ? input.env : {}) },
       shell: input.shell === undefined ? args.length === 0 : input.shell,
       detached: true,
       stdio: ["ignore", outFd, errFd],
       windowsHide: true,
-    });
+    },{filePath:options.writerLockPath,deferLaunch:true});
   } catch (err) {
     fs.closeSync(outFd);
     fs.closeSync(errFd);
@@ -382,10 +382,19 @@ async function startLegacyJob(input = {}, options = {}) {
   fs.closeSync(errFd);
 
   child.unref();
+  const processIdentity=process.platform!=="win32"?captureProcessIdentity(child.pid,{processGroupId:child.pid}):null;
+  if(process.platform!=="win32"&&!processIdentity){
+    await terminateProcessGroup(child);
+    return fail("PROCESS_IDENTITY_UNAVAILABLE");
+  }
+  // Capture the wrapper identity while it is still waiting for stdin, so even
+  // a command that exits immediately retains a verifiable stop identity.
+  child.startForeground?.();
   const record = {
     jobId,
     generationId: crypto.randomUUID(),
     pid: child.pid || null,
+    processIdentity,
     status: child.pid ? "running" : "failed",
     command,
     args,
@@ -482,19 +491,29 @@ async function stopLegacyJob(input = {}, options = {}) {
     return { ok: true, stopped: true, alreadyExited: true, ...compactJob(found.registry.jobs[found.id]) };
   }
   const signal = input.signal || "SIGTERM";
+  const group=found.record.processIdentity;
+  if(group&&!matchesProcessIdentity(group))return fail("PROCESS_IDENTITY_CHANGED",{jobId:found.id});
+  const stop=group?stopPidTree:stopPid;
+  const alive=()=>{
+    if(!group)return isPidAlive(pid);
+    try{process.kill(-pid,0);return true;}catch(error){return error.code!=="ESRCH";}
+  };
   // Windows has no signal semantics and the recorded pid is usually the cmd.exe wrapper — stopPid tree-kills there.
-  const killErr = stopPid(pid, signal);
+  const killErr = stop(pid, signal);
   if (killErr) return fail("STOP_FAILED", { jobId: found.id, pid, message: killErr?.message || String(killErr) });
   const deadline = Date.now() + Number(input.timeoutMs || DEFAULT_STOP_TIMEOUT_MS);
-  while (isPidAlive(pid) && Date.now() < deadline) {
+  while (alive() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   const latest = readRegistry(options);
   if (!sameJobGeneration(latest.jobs[found.id], found.record)) return fail("JOB_REPLACED", { jobId: found.id });
-  if (isPidAlive(pid) && input.force !== false) {
-    try { process.kill(pid, "SIGKILL"); } catch { /* best effort */ }
+  if (alive() && input.force !== false) {
+    if(group&&!matchesProcessIdentity(group))return fail("PROCESS_IDENTITY_CHANGED",{jobId:found.id});
+    stop(pid, "SIGKILL");
+    const killDeadline=Date.now()+2000;
+    while(alive()&&Date.now()<killDeadline)await new Promise(resolve=>setTimeout(resolve,25));
   }
-  const stopped = !isPidAlive(pid);
+  const stopped = !alive();
   latest.jobs[found.id] = {
     ...latest.jobs[found.id],
     status: stopped ? "stopped" : "running",
