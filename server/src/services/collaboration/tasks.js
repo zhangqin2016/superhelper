@@ -60,7 +60,7 @@ export function createCollaborationTaskService({ repository, crypto, packages, n
     },
   });
   return Object.freeze({
-    ...createIntegrationLeaseService({repository,authorize,readTask:read,enabled:integrationLeasesEnabled,commandOperations}),
+    ...createIntegrationLeaseService({repository,authorize,readTask:read,crypto,enabled:integrationLeasesEnabled,commandOperations}),
     async get({account,taskId}) {
       return repository.database.transaction().execute(async trx=>{
         const hint=await trx.selectFrom('collaboration_tasks').selectAll().where('id','=',taskId).executeTakeFirst();

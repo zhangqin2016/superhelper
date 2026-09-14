@@ -346,6 +346,24 @@ function createTransferRuntime({ store, client, deviceId, policy, rootPath, choo
       // Private coordinator capability; service uses it to hand off into the
       // ordinary text outbox. It is intentionally absent from IPC/preload.
       createSendIntent, listSendIntents, handoffIntent, completeHandoff,
+      // A published H belongs to its workspace owner, not to all participants
+      // of the source task. Always refresh publication authority for cache hits.
+      sharedFiles: Object.freeze({
+        download({conversationId,workspaceId,publicationId}) { return perform(async()=>{
+          const target=conversation(conversationId,'workspace');
+          const {publication}=await client.getIntegrationPublication({deviceId,workspaceId,publicationId});
+          authorize({conversationId,scopeId:target.scopeId,purpose:'workspace'});
+          if(!publication||publication.workspaceId!==workspaceId||publication.conversationId!==conversationId
+            ||publication.ownerUserId!==accountId||publicationId&&publication.id!==publicationId)throw fail('COLLAB_TASK_ACCESS_DENIED');
+          let transfer=manager.list().transfers.find(item=>item.direction==='download'&&item.conversationId===conversationId
+            &&item.objectId===publication.objectId&&item.purpose==='workspace'&&item.state!=='cancelled');
+          if(!transfer)transfer=manager.prepareDownload({conversationId,scopeId:target.scopeId,purpose:'workspace',objectId:publication.objectId,taskOwned:true});
+          else manager.markTaskOwned(transfer.id);
+          const result=await manager.resumeDownload(transfer.id);
+          if(result?.ok!==true||result.state!=='ready')return result;
+          return {ok:true,packagePath:await verifiedFile(transfer.id),publication};
+        }); },
+      }),
     });
   } catch { return unavailable(); }
 }

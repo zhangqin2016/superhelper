@@ -52,6 +52,10 @@ export const COLLABORATION_EVENT_TYPES = Object.freeze([
 ]);
 
 export function collaborationAccountEventScope(type) {
+  // Identity-only hints use participant/owner fanout, not conversation history.
+  // Older projections may ignore them while still advancing the durable cursor.
+  if (type === "task.updated") return "task";
+  if (type === "workspace.published") return "workspace";
   if (["friend.requested", "friend.accepted", "friend.declined", "friend.removed", "user.blocked", "user.unblocked"].includes(type)) return "relationship";
   if (["scope.revoked", "directory.changed"].includes(type)) return "organization";
   if (["object.initiated", "object.verified", "object.rejected", "object.aborted", "object.revoked", "object.download_authorized"].includes(type)) return "object";

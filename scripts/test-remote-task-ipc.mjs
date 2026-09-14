@@ -32,5 +32,11 @@ await client.claimIntegration(claim);assert.equal(requests.at(-1).path,'/api/col
 const renewal={...claim,clientCommandId:'renew',leaseId:'lease',generation:1};
 await client.renewIntegration(renewal);assert.equal(requests.at(-1).path,'/api/collaboration/v1/tasks/integration/renew');assert.deepEqual(requests.at(-1).body,renewal);
 await client.releaseIntegration({...renewal,clientCommandId:'release'});assert.equal(requests.at(-1).path,'/api/collaboration/v1/tasks/integration/release');
+const publication={...renewal,clientCommandId:'publish',publicationId:'publication',objectId:'object',baselineCommit:'a'.repeat(40),deliveryCommit:'b'.repeat(40),tree:'c'.repeat(40),git:{commit:'d'.repeat(40)},validation:{policyId:'checks'}};
+await client.publishIntegration({...publication,localPath:'/private',leaseMs:999});
+assert.equal(requests.at(-1).path,'/api/collaboration/v1/tasks/integration/publish');assert.deepEqual(requests.at(-1).body,publication);
+await client.getIntegrationPublication({deviceId:'dev',workspaceId:'workspace',publicationId:'publication',ownerUserId:'other'});
+assert.deepEqual(requests.at(-1).body,{deviceId:'dev',workspaceId:'workspace',publicationId:'publication'});
+assert.equal(requests.at(-1).path,'/api/collaboration/v1/tasks/integration/publication');
 assert.ok(requests.every(r=>r.headers.authorization==='Bearer only-main'&&r.headers['x-signed']==='yes'));
 console.log('remote task IPC/client: strict commands, sanitized views, account fencing and signed transport passed');

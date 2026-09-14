@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {randomBytes} from 'node:crypto';
 import {createRequire} from 'node:module';
+import {verifyPublicationHttp} from './collaboration-publication-http-fixture.mjs';
 const require=createRequire(import.meta.url);
 const {CollaborationStore}=require('../../src/main/collaboration/collaboration-store');
 const {createTransferRuntime}=require('../../src/main/collaboration/transfer-runtime');
@@ -129,6 +130,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     await assert.rejects(helper.client.claimIntegration({...claim,deviceId:helper.deviceId,clientCommandId:'assignee-claim'}),{code:'COLLAB_TASK_ACCESS_DENIED'});
     const released=await owner.client.releaseIntegration({...held,clientCommandId:'signed-integration-release'});assert.equal(released.lease,null);
     assert.equal(released.headCommit,task.inputGit.commit,'qualification does not mark the local publication as remotely synced');
+    await verifyPublicationHttp({owner,helper,task,conversationId,pool,dropAck,uploaded});
     ok(await owner.tasks.submit({conversationId,taskId,action:'approve',deliveryId:delivered.id,expectedRevision:task.revision}));
     const preview=ok(await owner.run({operation:'preview',taskId,deliveryId:delivered.id}));
     assert.deepEqual(preview.plan.entries.map(item=>item.operation).sort(),['add','delete','replace']);

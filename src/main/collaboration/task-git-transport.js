@@ -6,15 +6,16 @@ const {pipeline} = require("node:stream/promises");
 const {Transform} = require("node:stream");
 const oid = value => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
 const taskRef = value => typeof value === "string" && /^refs\/tasks\/[0-9a-f]{64}\/(baseline|deliveries\/[0-9a-f]{64})$/.test(value);
+const sharedRef = value => typeof value === "string" && /^refs\/workspaces\/[0-9a-f]{64}\/candidates\/[0-9a-f]{64}$/.test(value);
 const fail = code => Object.assign(new Error(`COLLAB_TASK_GIT_${code}`),{code:`COLLAB_TASK_GIT_${code}`});
 const limit = 256 * 1024 * 1024;
 function prerequisites(values) {
   if (!Array.isArray(values) || values.length > 256 || values.some(value=>!oid(value)) || new Set(values).size !== values.length) throw fail("DESCRIPTOR_INVALID");
   return [...values].sort();
 }
-function descriptor(value) {
+function descriptor(value,validRef=taskRef) {
   if (!value || Object.keys(value).some(key=>!["version","format","ref","commit","prerequisites","sha256","sizeBytes"].includes(key))
-    || value.version !== 1 || value.format !== "git-bundle-v2" || !taskRef(value.ref) || !oid(value.commit)
+    || value.version !== 1 || value.format !== "git-bundle-v2" || !validRef(value.ref) || !oid(value.commit)
     || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(value.sha256)
     || !Number.isSafeInteger(value.sizeBytes) || value.sizeBytes < 1 || value.sizeBytes > limit) throw fail("DESCRIPTOR_INVALID");
   return {...value,prerequisites:prerequisites(value.prerequisites)};
@@ -61,11 +62,11 @@ function header(file) {
 
 // Local Git plumbing only. Network callers must authorize the task and bind
 // this descriptor to a verified encrypted object before passing it here.
-function createTaskGitTransport(taskGit) {
+function createTransport(taskGit,validRef) {
   return {
     async exportBundle({revision,prerequisites:known=[],destination}) {
       const {repository,git} = await taskGit.ensure();
-      if (revision?.repository !== repository || !taskRef(revision.ref) || !oid(revision.commit)
+      if (revision?.repository !== repository || !validRef(revision.ref) || !oid(revision.commit)
         || await git(["rev-parse","--verify",revision.ref]) !== revision.commit) throw fail("BASELINE_CONFLICT");
       const required = prerequisites(known);
       if (required.includes(revision.commit)) throw fail("NO_MISSING_OBJECTS");
@@ -80,8 +81,15 @@ function createTaskGitTransport(taskGit) {
         const raw = path.join(temporary,"raw.bundle"), verified = path.join(temporary,"verified.bundle");
         await git(["bundle","create","--version=2",raw,revision.ref,...required.map(commit=>`^${commit}`)]);
         const metadata = await copyVerified(raw,verified), actual = header(verified);
-        if (actual.heads.length !== 1 || actual.heads[0] !== `${revision.commit} ${revision.ref}`
-          || actual.required.some(commit=>!required.includes(commit))) throw fail("DESCRIPTOR_INVALID");
+        if (actual.heads.length !== 1 || actual.heads[0] !== `${revision.commit} ${revision.ref}`) throw fail("DESCRIPTOR_INVALID");
+        for(const commit of actual.required){
+          if(required.includes(commit))continue;
+          // A shared merge can cross the excluded H boundary at its baseline
+          // as well. Every such boundary must already be reachable from H.
+          if(validRef!==sharedRef)throw fail("DESCRIPTOR_INVALID");
+          let covered=false;for(const known of required){try{await git(["merge-base","--is-ancestor",commit,known]);covered=true;break;}catch{}}
+          if(!covered)throw fail("DESCRIPTOR_INVALID");
+        }
         // Exclusive creation preserves a caller's existing output on races.
         fs.copyFileSync(verified,destination,fs.constants.COPYFILE_EXCL);
         fs.chmodSync(destination,0o400);
@@ -89,7 +97,7 @@ function createTaskGitTransport(taskGit) {
       } finally {fs.rmSync(temporary,{recursive:true,force:true});}
     },
     async importBundle({packagePath,descriptor:input}) {
-      const info = descriptor(input), {repository,git} = await taskGit.ensure();
+      const info = descriptor(input,validRef), {repository,git} = await taskGit.ensure();
       const temporary = fs.mkdtempSync(path.join(taskGit.rootPath,"import-"));
       try {
         const verified = path.join(temporary,"verified.bundle"), actual = await copyVerified(packagePath,verified);
@@ -113,4 +121,6 @@ function createTaskGitTransport(taskGit) {
     },
   };
 }
-module.exports = {createTaskGitTransport,parseGitDescriptor:descriptor};
+const createTaskGitTransport=taskGit=>createTransport(taskGit,taskRef);
+const createSharedGitTransport=taskGit=>createTransport(taskGit,sharedRef);
+module.exports = {createTaskGitTransport,createSharedGitTransport,parseGitDescriptor:value=>descriptor(value)};

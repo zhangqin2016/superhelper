@@ -7,7 +7,7 @@ const fail=()=>{throw new CollaborationCommandError('COLLAB_TASK_PACKAGE_UNAVAIL
 export function createTaskPackageBroker({now=Date.now}={}){
   async function bind({trx,task,account,objectId}){
     const object=await trx.selectFrom('stored_objects').selectAll().where('id','=',objectId).forUpdate().executeTakeFirst();
-    if(!object || object.state!=='verified' || object.task_id || object.bound_message_id || object.owner_user_id!==account.userId
+    if(!object || object.state!=='verified' || object.task_id || object.shared_workspace_id || object.bound_message_id || object.owner_user_id!==account.userId
       || object.conversation_id!==task.conversationId || object.purpose!=='workspace'
       || !/^[a-f0-9]{64}$/.test(object.ciphertext_sha256||''))return fail();
     for(const expires of [object.expires_at,object.orphan_expires_at])if(expires!=null && (!Number.isFinite(new Date(expires).getTime()) || new Date(expires).getTime()<=now()))return fail();

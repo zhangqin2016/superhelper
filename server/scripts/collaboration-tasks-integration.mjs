@@ -1,3 +1,4 @@
+import {verifySharedPublications} from './collaboration-publication-fixture.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -22,7 +23,7 @@ try{
     CREATE TABLE user_devices(user_id text references users(id),device_id text references devices(id),status text default 'active',primary key(user_id,device_id));
     CREATE TABLE organizations(id text primary key,name text,status text);
     CREATE TABLE organization_members(organization_id text,user_id text,role text,status text,primary key(organization_id,user_id));`);
-  for(const name of ['033_collaboration_core.sql','035_collaboration_bootstrap_completion.sql','037_collaboration_relationship_events.sql','038_collaboration_conversations.sql','039_collaboration_objects.sql','045_collaboration_tasks.sql','047_collaboration_shared_workspaces.sql','048_collaboration_task_history.sql','049_collaboration_integration_targets.sql'])await pool.query(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['033_collaboration_core.sql','035_collaboration_bootstrap_completion.sql','037_collaboration_relationship_events.sql','038_collaboration_conversations.sql','039_collaboration_objects.sql','045_collaboration_tasks.sql','047_collaboration_shared_workspaces.sql','048_collaboration_task_history.sql','049_collaboration_integration_targets.sql','050_collaboration_shared_publications.sql'])await pool.query(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
   for(const id of ['owner','helper','observer']){
     await pool.query('INSERT INTO users VALUES($1)',[id]);await pool.query('INSERT INTO devices VALUES($1)',[`d_${id}`]);
     await pool.query('INSERT INTO user_devices(user_id,device_id) VALUES($1,$2)',[id,`d_${id}`]);
@@ -127,6 +128,7 @@ try{
   await service.act({...gitSubmit,taskId:competingTaskId,clientCommandId:'git-submit-2',deliveryId:'git-delivery-2'});
   await verifyIntegrationLeases({service,pool,owner,helper,taskId:gitTask,workspaceId:'shared',deliveryId:'git-delivery',baselineCommit:inputGit.commit,
     competingTask:{taskId:competingTaskId,deliveryId:'git-delivery-2'}});
+  await verifySharedPublications({service,pool,database,crypto,owner,helper,taskId:competingTaskId,workspaceId:'shared',deliveryId:'git-delivery-2'});
   await pool.query("UPDATE conversation_members SET status='removed' WHERE user_id='helper'");
   await assert.rejects(service.missingGitObjects({account:owner,taskId:gitTask,haveCommits:[]}),{code:'COLLAB_TASK_ACCESS_DENIED'},'missing query rechecks both parties');
   console.log('PostgreSQL remote tasks: migrations, replay, package ACL, CAS, history pagination and Git descriptor/missing-query/prerequisite/revocation checks passed; object verification and historical encrypted rows seeded');

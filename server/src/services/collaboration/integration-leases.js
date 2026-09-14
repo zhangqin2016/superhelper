@@ -1,8 +1,10 @@
 import {randomUUID} from 'node:crypto';
 import {sql} from 'kysely';
 import {runCollaborationCommand} from './command-runner.js';
-import {CollaborationCommandError} from './idempotency.js';
+import {CollaborationCommandError,canonicalRequestJson} from './idempotency.js';
 import contract from './integration-lease-contract.cjs';
+import publicationContract from './shared-publication-contract.cjs';
+import {authorizeCollaborationAction} from './authorization.js';
 const fail=code=>{throw new CollaborationCommandError(`COLLAB_INTEGRATION_${code}`,`Integration ${code.toLowerCase()}`,{retryable:code==='BUSY'});};
 const denied=()=>({ok:false,code:'COLLAB_TASK_ACCESS_DENIED'});
 const milliseconds=value=>new Date(value).getTime();
@@ -14,10 +16,10 @@ const view=(row,serverTime)=>({workspaceId:row.workspace_id,headCommit:row.head_
   lease:row.lease_id?{id:row.lease_id,deviceId:row.lease_device_id,taskId:row.lease_task_id,deliveryId:row.lease_delivery_id,
     expiresAt:milliseconds(row.lease_expires_at),active:milliseconds(row.lease_expires_at)>serverTime}:null});
 
-/** Server qualification only. Remote publication must check this same locked
- * generation together with head CAS; a previously returned receipt is not a
- * continuing grant. Lease traffic intentionally does not emit chat events. */
-export function createIntegrationLeaseService({repository,authorize,readTask,enabled=false,commandOperations}){
+/** Qualification and publication share one locked generation/head. Historical
+ * lease receipts are never continuing grants. Packs remain encrypted; clients
+ * must verify Git structure and exact validation evidence before publishing. */
+export function createIntegrationLeaseService({repository,authorize,readTask,crypto,enabled=false,commandOperations}){
   const available=()=>{if(enabled!==true)fail('PROTOCOL_UNAVAILABLE');};
   async function authorized({trx,account,input}){
     const hint=await trx.selectFrom('collaboration_tasks').selectAll().where('id','=',input.taskId).executeTakeFirst();
@@ -44,10 +46,58 @@ export function createIntegrationLeaseService({repository,authorize,readTask,ena
   async function target(trx,workspaceId){return trx.selectFrom('collaboration_integration_targets').selectAll().where('workspace_id','=',workspaceId).forUpdate().executeTakeFirst();}
   function expected(row,input){if(row.head_commit!==input.expectedHead||Number(row.revision)!==input.expectedRevision)fail('HEAD_CHANGED');}
   function holding(row,input,account,serverTime){
+    if(!row)fail('FENCED');
     expected(row,input);
     if(row.lease_id!==input.leaseId||Number(row.generation)!==input.generation||row.lease_device_id!==account.deviceId
       ||row.lease_task_id!==input.taskId||row.lease_delivery_id!==input.deliveryId||!Number.isFinite(milliseconds(row.lease_expires_at))||milliseconds(row.lease_expires_at)<=serverTime)fail('FENCED');
   }
+  function durable(input){const {leaseId,generation,...content}=input;return content;}
+  function readPublication(row){
+    if(!row)fail('PUBLICATION_UNAVAILABLE');
+    const value=JSON.parse(crypto.decryptIntegrationPublication({ciphertext:row.content_ciphertext,keyVersion:row.content_key_version,
+      messageId:row.id,conversationId:row.conversation_id}).toString('utf8'));
+    if(value.id!==row.id||value.workspaceId!==row.workspace_id||value.conversationId!==row.conversation_id||value.ownerUserId!==row.owner_user_id
+      ||value.taskId!==row.task_id||value.deliveryId!==row.delivery_id||value.objectId!==row.object_id||value.git?.commit!==row.commit_id
+      ||value.expectedRevision+1!==Number(row.revision)||value.revision!==Number(row.revision))fail('PUBLICATION_UNAVAILABLE');
+    return value;
+  }
+  async function publicationChain(trx,id,workspaceId,ownerUserId,conversationId){
+    const chain=[],seen=new Set();let child=null;
+    while(id){
+      if(seen.has(id)||chain.length>=64)fail('FULL_PACK_REQUIRED');seen.add(id);
+      const row=await trx.selectFrom('collaboration_shared_publications').selectAll().where('id','=',id).executeTakeFirst();
+      if(!row||row.workspace_id!==workspaceId||row.owner_user_id!==ownerUserId||row.conversation_id!==conversationId)fail('PUBLICATION_UNAVAILABLE');
+      const publication=readPublication(row);
+      if(child&&(child.expectedHead!==publication.git.commit||child.expectedRevision!==publication.revision))fail('PUBLICATION_UNAVAILABLE');
+      if(Boolean(publication.parentPublicationId)!==Boolean(publication.git.prerequisites.length))fail('PUBLICATION_UNAVAILABLE');
+      const object=await trx.selectFrom('stored_objects').selectAll().where('id','=',publication.objectId).forUpdate().executeTakeFirst();
+      if(!object||object.state!=='bound'||object.shared_workspace_id!==workspaceId||object.owner_user_id!==ownerUserId
+        ||object.conversation_id!==conversationId||object.purpose!=='workspace'||object.task_id||object.bound_message_id)fail('PACKAGE_UNAVAILABLE');
+      chain.push({publication,object});child=publication;id=publication.parentPublicationId;
+    }
+    unexpired(chain.map(entry=>entry.object),await clock(trx));
+    return chain;
+  }
+  async function authorizePublication(args){
+    const decision=await authorized(args);if(!decision.ok)return decision;
+    const {trx,input,account}=args;
+    const prior=await trx.selectFrom('collaboration_shared_publications').selectAll().where('id','=',input.publicationId).executeTakeFirst();
+    if(prior){
+      const chain=await publicationChain(trx,prior.id,input.workspaceId,account.userId,decision.task.conversationId);
+      return {...decision,prior:chain[0].publication};
+    }
+    // Reject a foreign binding before acquiring an object lock in this workspace.
+    const matches=object=>object&&object.state==='verified'&&!object.task_id&&!object.bound_message_id&&!object.shared_workspace_id
+      &&object.owner_user_id===account.userId&&object.conversation_id===decision.task.conversationId&&object.purpose==='workspace'
+      &&/^[a-f0-9]{64}$/.test(object.ciphertext_sha256||'');
+    const hint=await trx.selectFrom('stored_objects').selectAll().where('id','=',input.objectId).executeTakeFirst();
+    if(!matches(hint))fail('PACKAGE_UNAVAILABLE');
+    const object=await trx.selectFrom('stored_objects').selectAll().where('id','=',input.objectId).forUpdate().executeTakeFirst();
+    if(!matches(object))fail('PACKAGE_UNAVAILABLE');
+    const serverTime=await clock(trx);unexpired([object,{expires_at:object.orphan_expires_at}],serverTime);
+    return {...decision,object};
+  }
+  const publicationReceipt=value=>({workspaceId:value.workspaceId,publicationId:value.id,headCommit:value.git.commit,revision:value.revision});
   async function mutate(action,{account,clientCommandId,...raw}){
     available();const input=contract.leaseInput(raw,action);
     return runCollaborationCommand({account,clientCommandId,input,commandType:`integration.${action}`,database:repository.database,operations:commandOperations,
@@ -76,6 +126,71 @@ export function createIntegrationLeaseService({repository,authorize,readTask,ena
       }});
   }
   return Object.freeze({
+    async publishIntegration({account,clientCommandId,...raw}){
+      available();const input=publicationContract.publicationInput(raw);
+      return runCollaborationCommand({account,clientCommandId,input,commandType:'integration.publish',database:repository.database,operations:commandOperations,
+        authorize:authorizePublication,project:async({trx,account:actor,authorization})=>{
+          if(authorization.prior){
+            const {id,conversationId,ownerUserId,revision,parentPublicationId,...prior}=authorization.prior;
+            if(canonicalRequestJson(prior)!==canonicalRequestJson(durable(input)))fail('PUBLICATION_CONFLICT');
+            return {noEvent:true,event:{},project:async()=>{},response:publicationReceipt(authorization.prior)};
+          }
+          const row=await target(trx,input.workspaceId);holding(row,input,actor,await clock(trx));
+          const task=authorization.task,delivery=task.deliveries.find(value=>value.id===input.deliveryId);
+          if(task.inputGit.commit!==input.baselineCommit||delivery.git.commit!==input.deliveryCommit)fail('SOURCE_CHANGED');
+          if(Number(row.revision)>=Number.MAX_SAFE_INTEGER-1)fail('REVISION_LIMIT');
+          const parentPublicationId=input.git.prerequisites.length?row.head_publication_id:null;
+          if(input.git.prerequisites.length&&!parentPublicationId)fail('FULL_PACK_REQUIRED');
+          let parentObjects=[];
+          if(parentPublicationId){
+            const chain=await publicationChain(trx,parentPublicationId,input.workspaceId,actor.userId,task.conversationId);
+            if(chain.length>=64)fail('FULL_PACK_REQUIRED');
+            if(chain[0].publication.git.commit!==row.head_commit||chain[0].publication.revision!==Number(row.revision))fail('PUBLICATION_UNAVAILABLE');
+            parentObjects=chain.map(entry=>entry.object);
+          }
+          const publication={...durable(input),id:input.publicationId,conversationId:task.conversationId,ownerUserId:actor.userId,
+            revision:input.expectedRevision+1,parentPublicationId};
+          const envelope=crypto.encryptIntegrationPublication({plaintext:Buffer.from(JSON.stringify(publication)),messageId:publication.id,conversationId:publication.conversationId});
+          return {event:{id:`evt_${randomUUID()}`,conversationId:null,type:'workspace.published',payload:publicationReceipt(publication)},
+            recipientUserIds:[actor.userId],response:publicationReceipt(publication),project:async()=>{
+              const serverTime=await clock(trx);holding(row,input,actor,serverTime);
+              const requiredObjects=[...authorization.objects,...parentObjects,authorization.object];
+              unexpired([...requiredObjects,{expires_at:authorization.object.orphan_expires_at}],serverTime);
+              await trx.updateTable('stored_objects').set({state:'bound',shared_workspace_id:input.workspaceId,updated_at:new Date(serverTime)}).where('id','=',input.objectId).execute();
+              await trx.insertInto('collaboration_shared_publications').values({id:publication.id,workspace_id:input.workspaceId,conversation_id:task.conversationId,
+                owner_user_id:actor.userId,task_id:input.taskId,delivery_id:input.deliveryId,object_id:input.objectId,commit_id:input.git.commit,revision:publication.revision,
+                content_ciphertext:envelope.ciphertext,content_key_version:envelope.keyVersion}).execute();
+              const updated=await trx.updateTable('collaboration_integration_targets').set({head_commit:input.git.commit,revision:publication.revision,
+                head_publication_id:publication.id,lease_id:null,lease_device_id:null,lease_task_id:null,lease_delivery_id:null,lease_expires_at:null,updated_at:new Date(serverTime)})
+                .where('workspace_id','=',input.workspaceId).where('head_commit','=',input.expectedHead).where('revision','=',input.expectedRevision)
+                .where('generation','=',input.generation).where('lease_id','=',input.leaseId).where('lease_expires_at','>',sql`clock_timestamp()`)
+                .where(sql`NOT EXISTS (SELECT 1 FROM stored_objects WHERE id = ANY(${requiredObjects.map(object=>object.id)}::text[])
+                  AND (expires_at <= clock_timestamp() OR (id = ${input.objectId} AND orphan_expires_at <= clock_timestamp())))`).executeTakeFirst();
+              if(Number(updated.numUpdatedRows)!==1)fail('FENCED');
+            }};
+        }});
+    },
+    async getIntegrationPublication({account,workspaceId,publicationId}){
+      available();
+      if(![workspaceId,...(publicationId===undefined?[]:[publicationId])].every(value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(value)))fail('INVALID');
+      return repository.database.transaction().execute(async trx=>{
+        await sql`SET LOCAL lock_timeout = '2s'`.execute(trx);
+        await sql`SET LOCAL statement_timeout = '8s'`.execute(trx);
+        const hint=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',workspaceId).executeTakeFirst();
+        const deny=()=>{throw new CollaborationCommandError('COLLAB_TASK_ACCESS_DENIED','Workspace unavailable');};
+        if(!hint||hint.owner_user_id!==account.userId)return deny();
+        if(!(await repository.lockDevice(trx,account)).ok)return deny();
+        const context=await repository.lockConversationContext(trx,{actorUserId:account.userId,conversationId:hint.conversation_id});
+        if(context.decision||!authorizeCollaborationAction(context,'read').ok)return deny();
+        const workspace=await trx.selectFrom('collaboration_shared_workspaces').selectAll().where('id','=',workspaceId).forUpdate().executeTakeFirst();
+        if(!workspace||workspace.owner_user_id!==account.userId||workspace.conversation_id!==hint.conversation_id)return deny();
+        const row=await target(trx,workspaceId),id=publicationId??row?.head_publication_id;
+        if(!id)return {workspaceId,publication:null};
+        const chain=await publicationChain(trx,id,workspaceId,account.userId,workspace.conversation_id),publication=chain[0].publication;
+        if(publicationId===undefined&&(publication.git.commit!==row.head_commit||publication.revision!==Number(row.revision)))fail('PUBLICATION_UNAVAILABLE');
+        return {workspaceId,publication};
+      });
+    },
     async getIntegrationTarget({account,...raw}){
       available();const input=contract.leaseInput(raw,'get');
       return repository.database.transaction().execute(async trx=>{

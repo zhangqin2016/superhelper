@@ -25,12 +25,17 @@ export function createKyselyObjectRepository(database, { conversations = createK
     const scope = await lockConversation(trx, { account, conversationId: hint.conversation_id, action: "read" });
     if (!scope.ok) return denied();
     // Match task command lock order: conversation -> task -> object.
+    const workspace = hint.shared_workspace_id ? await trx.selectFrom("collaboration_shared_workspaces").selectAll().where("id","=",hint.shared_workspace_id).forUpdate().executeTakeFirst() : null;
     const task = hint.task_id ? await trx.selectFrom("collaboration_tasks").selectAll().where("id", "=", hint.task_id).forUpdate().executeTakeFirst() : null;
     const locks = await lockAuthorizationRows(trx, { messageIds: hint.bound_message_id ? [hint.bound_message_id] : [], objectIds: [objectId] });
     const object = locks.object[0];
-    if (!object || ["conversation_id", "owner_user_id", "scope_type", "organization_id", "bound_message_id", "task_id"].some((key) => object[key] !== hint[key])) return denied();
+    if (!object || ["conversation_id", "owner_user_id", "scope_type", "organization_id", "bound_message_id", "task_id", "shared_workspace_id"].some((key) => object[key] !== hint[key])) return denied();
     const { context } = scope;
     if (object.scope_type !== context.conversation.scopeType || object.organization_id !== context.conversation.organizationId || expired(object.expires_at, Number(now()))) return denied();
+    if(object.shared_workspace_id){
+      if(!workspace||workspace.conversation_id!==object.conversation_id||workspace.owner_user_id!==account.userId||object.owner_user_id!==account.userId||object.task_id||object.bound_message_id)return denied();
+      return action==='owner'||object.state==='bound'?{ok:true,object,context}:denied();
+    }
     if (object.task_id) {
       if (!task || task.conversation_id !== object.conversation_id || ["declined", "cancelled"].includes(task.state)
         || ![task.requester_user_id, task.assignee_user_id].includes(account.userId)) return denied();

@@ -79,7 +79,7 @@ try {
     create table device_public_keys(device_id text primary key,public_key text);
     create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
     create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);`);
-  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql", "041_collaboration_reply_snapshots.sql", "045_collaboration_tasks.sql", "047_collaboration_shared_workspaces.sql", "048_collaboration_task_history.sql", "049_collaboration_integration_targets.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql", "041_collaboration_reply_snapshots.sql", "045_collaboration_tasks.sql", "047_collaboration_shared_workspaces.sql", "048_collaboration_task_history.sql", "049_collaboration_integration_targets.sql", "050_collaboration_shared_publications.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   for (const user of ["a", "b", "outsider"]) {
     const pair = crypto.generateKeyPairSync("ed25519"); keys.set(user, pair);
     await pool.query("insert into users values($1)", [user]);
@@ -182,6 +182,11 @@ try {
   const downloadPage = await sync.syncAfterCursor({ userId: "b", deviceId: "device-b", afterCursor: 0 });
   assert.ok(downloadPage.events.some((event) => event.type === "object.download_authorized"));
   await verifyTransferHttp({ app, keys, createAccessToken, stableStringify, sha256, uploaded, sensitive, conversationId, pool, dropAck: (value) => { dropAckPath = value; } });
+  const publishedPage=await sync.syncAfterCursor({userId:'a',deviceId:'device-a',afterCursor:page.toCursor});
+  assert.ok(publishedPage.events.some(event=>event.type==='task.updated'&&event.scope==='task'));
+  if(process.platform==='darwin')assert.ok(publishedPage.events.some(event=>event.type==='workspace.published'&&event.scope==='workspace'));
+  const helperPage=await sync.syncAfterCursor({userId:'b',deviceId:'device-b',afterCursor:downloadPage.toCursor});
+  assert.equal(helperPage.events.some(event=>event.type==='workspace.published'),false,'source assignee never receives workspace publication metadata');
   await pool.query("update organization_members set status='disabled' where user_id='b'");
   assert.equal((await command("b", `objects/${initial.objectId}/download-ticket`, {})).status, 403);
   assert.equal(accepted(await command("a", `objects/${initial.objectId}/revoke`, {})).state, "revoked");

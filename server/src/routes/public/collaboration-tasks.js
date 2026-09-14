@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import gitContract from '../../services/collaboration/task-git-descriptor.cjs';
+import publicationContract from '../../services/collaboration/shared-publication-contract.cjs';
 const gitDescriptor=z.custom(value=>{try{gitContract.gitDescriptor(value);return true;}catch{return false;}}).transform(gitContract.gitDescriptor);
 const id=z.string().regex(/^[A-Za-z0-9_-]{1,200}$/);
 const device={deviceId:id.max(120)};
@@ -26,6 +27,10 @@ export const integrationTargetBody=z.object({...device,...integrationScope}).str
 export const integrationClaimBody=z.object({...command,...integrationScope,...integrationHead}).strict();
 export const integrationRenewBody=z.object({...command,...integrationScope,...integrationHead,leaseId:id,generation:z.number().int().positive().max(Number.MAX_SAFE_INTEGER-1)}).strict();
 export const integrationReleaseBody=integrationRenewBody;
+export const integrationPublishBody=z.object({...command,workspaceId:id,taskId:id,deliveryId:id,...integrationHead,leaseId:id,generation:z.number().int().positive(),
+  publicationId:id,objectId:id,baselineCommit:z.string(),deliveryCommit:z.string(),tree:z.string(),git:z.unknown(),validation:z.unknown()}).strict()
+  .superRefine(({deviceId,clientCommandId,...input},context)=>{try{publicationContract.publicationInput(input);}catch{context.addIssue({code:z.ZodIssueCode.custom,message:'Invalid publication'});}});
+export const integrationPublicationBody=z.object({...device,workspaceId:id,publicationId:id.optional()}).strict();
 export function registerCollaborationTaskRoutes({post,accountFor,database,service}){
   const run=(schema,fn)=>async(request,reply)=>{
     const input=schema.parse(request.body);
@@ -43,4 +48,6 @@ export function registerCollaborationTaskRoutes({post,accountFor,database,servic
   post('/api/collaboration/v1/tasks/integration/claim',integrationClaimBody,run(integrationClaimBody,(account,input)=>service.claimIntegration({account,...input})));
   post('/api/collaboration/v1/tasks/integration/renew',integrationRenewBody,run(integrationRenewBody,(account,input)=>service.renewIntegration({account,...input})));
   post('/api/collaboration/v1/tasks/integration/release',integrationReleaseBody,run(integrationReleaseBody,(account,input)=>service.releaseIntegration({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/publish',integrationPublishBody,run(integrationPublishBody,(account,input)=>service.publishIntegration({account,...input})));
+  post('/api/collaboration/v1/tasks/integration/publication',integrationPublicationBody,run(integrationPublicationBody,(account,input)=>service.getIntegrationPublication({account,...input})));
 }
