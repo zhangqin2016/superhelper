@@ -65,12 +65,22 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     assert.deepEqual((await owner.client.missingTaskGitObjects({deviceId:owner.deviceId,taskId,deliveryId:delivered.id,haveCommits:[task.inputGit.commit]})).objects,[{objectId:delivered.id,descriptor:delivered.git}]);
     const resolveSourceSession=input=>({...input,rootPath:owner.source});
     createIntegrationDiscovery({store:owner.store,assertActive(){},resolveSourceSession}).observe(task);
+    const makeHost=()=>require('./collaboration-native-turn-fixture.cjs')({root:owner.root,source:owner.source,accountId:'a',execute:(request,execution)=>service.runIntegration(request,execution)});
+    let host=makeHost(),foreground=host.orchestrator._state('source-session');foreground.phase='streaming';foreground.turnId='foreground';
     const service=createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
       policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1},
-      transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession}});
+      transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,enqueueIntegrationTurn:request=>host.enqueue(request)}});
     assert.equal(service.ok,true);service.start();
     try{
       const deadline=Date.now()+15000;
+      while(!foreground.queue.length && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
+      assert.equal(foreground.queue.length,1,'service startup admits the actual original-session background turn');
+      assert.equal(foreground.turnId,'foreground');assert.equal(owner.records.list(conversationId).some(row=>row.kind==='shared-publication'),false,'busy foreground prevents premature integration work');
+      const admissionBeforeRestart=owner.records.list(conversationId).find(row=>row.kind==='integration-admission');
+      host.close();host=makeHost();foreground=host.orchestrator._state('source-session');
+      const repeated=await host.enqueue(admissionBeforeRestart.request);assert.equal(repeated.duplicate,true);assert.equal(repeated.turnId,admissionBeforeRestart.turnId);
+      assert.equal(foreground.queue.length,1,'actual SessionManager/MessageStore reopen restores one background operation');
+      void host.orchestrator.startRecoveredTurns('source-session');
       while(owner.store.db.get('SELECT state FROM task_integration_work')?.state!=='waiting' && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
       assert.equal(owner.store.db.get('SELECT code FROM task_integration_work')?.code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED','real service startup acquires and prepares the signed encrypted delivery without UI');
       const journal=owner.records.list(conversationId).find(row=>row.kind==='shared-publication');assert.equal(journal.state,'validation_failed');
@@ -78,7 +88,12 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       assert.equal(evidence.report.commit,journal.candidate.commit);assert.equal(evidence.report.state,'required');
       assert.equal(evidence.report.checks[0].status,'passed');assert.equal(evidence.report.checks.at(-1).status,'passed','signed service delivery is materialized and rechecked before recording evidence');
       assert.equal(journal.candidate.delivery,delivered.git.commit);assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','background preparation leaves foreground/private files untouched');
-    }finally{service.stop();}
+      const admitted=owner.records.list(conversationId).find(row=>row.kind==='integration-admission');
+      while(foreground.phase!=='idle' && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
+      const turn=host.manager._store().getTurnInputByTurnId(admitted.turnId,'a');
+      assert.equal(turn.terminalType,'turn.completed');assert.equal(turn.taskCore.sessionId,'source-session');assert.equal(turn.taskCore.projectId,'source-project');
+      assert.equal(host.manager.getConversation('source-session').filter(message=>message.role==='user').length,0,'background integration never invents user instructions');
+    }finally{service.stop();host.close();}
     owner.close();owner=open('a');
     ok(await owner.tasks.submit({conversationId,taskId,action:'approve',deliveryId:delivered.id,expectedRevision:task.revision}));
     const preview=ok(await owner.run({operation:'preview',taskId,deliveryId:delivered.id}));

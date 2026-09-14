@@ -45,6 +45,11 @@ try{
  const rejected=intents.enqueue({...input,workspaceId:'rejected',targetId:'rejected'});await worker.recover();
  assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',rejected.id).code,'COLLAB_INTEGRATION_VALIDATION_FAILED','failed actual check is distinct from missing policy');
  assert.equal(intents.get(rejected.id).state,'pending');
+ const interrupted=intents.enqueue({...input,workspaceId:'interrupted',targetId:'interrupted'});let turnCancelled=false,releaseTurn;
+ pause=new Promise(resolve=>{releaseTurn=resolve;});
+ const owned=worker.runIntent({accountId:'owner',intentId:interrupted.id,sessionId:'session'},{assertActive(){if(turnCancelled)throw Object.assign(Error('turn stopped'),{code:'COLLAB_INTEGRATION_FENCED'});}});
+ await Promise.resolve();turnCancelled=true;releaseTurn();await assert.rejects(owned,/turn stopped/);pause=null;
+ assert.equal(store.db.get('SELECT state FROM task_integration_work WHERE intent_id=?',interrupted.id).state,'waiting','cancelled owning turn leaves retryable work without late publication');
  const third=intents.enqueue({...input,workspaceId:'third',targetId:'third'});let resolve;pause=new Promise(done=>{resolve=done;});
  const pending=worker.recover();await Promise.resolve();worker.stop();resolve();await pending;
  assert.equal(intents.get(third.id).state,'running','stopped late response leaves a durable lease for successor recovery');

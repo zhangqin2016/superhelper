@@ -246,6 +246,7 @@ app.whenReady().then(async () => {
   const accountManager = require("./main/account-manager");
   const serviceClient = require("./main/service-client");
   let collaborationService = null;
+  let collaborationTurnOrchestrator = null;
   let unsubscribeCollaborationService = null;
   const collaborationStateListeners = new Set();
   const notifyCollaborationState = (change) => {
@@ -290,6 +291,9 @@ app.whenReady().then(async () => {
           policy,
           taskOptions: {
             rootPath: path.join(collaborationTransferRoot(), "task-workspaces"),
+            enqueueIntegrationTurn: request => collaborationTurnOrchestrator
+              ? require("./main/collaboration/integration-turn").enqueueIntegrationTurn(collaborationTurnOrchestrator,request)
+              : {ok:false,error:"COLLAB_INTEGRATION_NOT_READY"},
             chooseDirectory: () => dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] }),
             resolveProjectDirectory: (projectId) => projectManager.find(projectId)?.path,
             resolveSourceSession: (input) => require("./main/collaboration/task-session").resolveRemoteTaskSourceSession(projectManager,sessionManager,input),
@@ -396,6 +400,10 @@ app.whenReady().then(async () => {
     get collaborationService() {
       return collaborationService;
     },
+    executeCollaborationIntegration: (request,execution) => {
+      if(!collaborationService?.ok)throw Object.assign(Error("Integration unavailable"),{code:"COLLAB_INTEGRATION_UNAVAILABLE"});
+      return collaborationService.runIntegration(request,execution);
+    },
     refreshCollaborationService,
     onCollaborationStateChange(listener) {
       if (typeof listener !== "function") return () => {};
@@ -405,6 +413,7 @@ app.whenReady().then(async () => {
   };
 
   ipcHandlers.registerAll(appContext);
+  collaborationTurnOrchestrator = appContext.turnOrchestrator || null;
   agentRuntimeControlServerRef = appContext.agentRuntimeControlServer || null;
   turnRecoveryRuntimeRef = appContext.turnOrchestrator?.turnRecoveryRuntime || null;
   publicHookBridgeRef = appContext.publicHookBridge || null;

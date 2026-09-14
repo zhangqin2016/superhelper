@@ -273,7 +273,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       }});
     const taskHistory=createTaskHistory({store,client,deviceId,protocol:policy?.taskHistoryProtocol,assertActive,onChange:()=>emitState("task"),onTask});
     const recoverTasks=()=>policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true
-      ? Promise.all([taskHydration.recover(),taskHistory.recover(),integrationWorker?.recover()]) : Promise.resolve();
+      ? Promise.all([taskHydration.recover(),taskHistory.recover(),(integrationAdmission || integrationWorker)?.recover()]) : Promise.resolve();
     let taskHydrationTimer=null;
     let workflow;
     const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,taskGitProtocol:policy?.taskGitProtocol,
@@ -281,6 +281,9 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     const integrationWorker=integrationDiscovery && taskOptions.rootPath
       ? require("./integration-worker").createIntegrationWorker({store,assertActive,getWorkflow,validateIntegration:taskOptions.validateIntegration,
         validationPolicyId:taskOptions.validationPolicyId,onChange:()=>emitState("task")}) : null;
+    const integrationAdmission=integrationWorker && typeof taskOptions.enqueueIntegrationTurn==="function"
+      ? require("./integration-admission").createIntegrationAdmission({store,assertActive,getWorkflow,worker:integrationWorker,
+        enqueue:taskOptions.enqueueIntegrationTurn,onChange:()=>emitState("task")}) : null;
     const taskOperation = (method, payload) => stopped ? stoppedResult()
       : policy?.enabled === true && policy?.tasks === true && policy?.workspaceShares === true ? tasks[method](payload) : unavailableService();
     const realtime = client && realtimeEnabled
@@ -298,6 +301,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       : null;
     return {
       ok: true, store, syncEngine, outbox, realtime,
+      runIntegration(request,execution) {
+        if(stopped || policy?.enabled!==true || policy?.tasks!==true || policy?.workspaceShares!==true || !integrationAdmission)return Promise.reject(Object.assign(Error("Integration unavailable"),{code:"COLLAB_INTEGRATION_UNAVAILABLE"}));
+        return integrationAdmission.execute(request,execution);
+      },
       taskWorkflow(payload) {
         if (stopped) return stoppedResult();
         if (payload?.operation === "recoveries" && !store.db?.get("SELECT id FROM task_local_recovery WHERE account_id = ? LIMIT 1",store.accountId)) return {ok:true,applications:[]};
@@ -518,6 +525,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         // Store operations are synchronous. Fence all async continuations
         // before closing SQLite so a hung network request cannot retain it.
         stopped = true;
+        integrationAdmission?.stop();
         if(taskHydrationTimer!=null)clearInterval(taskHydrationTimer);
         taskHydrationTimer=null;
         integrationWorker?.stop();

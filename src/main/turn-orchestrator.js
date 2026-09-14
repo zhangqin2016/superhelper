@@ -695,7 +695,7 @@ class TurnOrchestrator {
     const completedTurnId = state.turnId;
     this._finalize(session.id, integration?.failed ? "turn.failed" : "turn.completed", {
       assistant,
-      ...(integration?.failed?{failed:true,errorCode:"COLLAB_INTEGRATION_VALIDATION_FAILED",retryable:true}:{}),
+      ...(integration?.failed?{failed:true,errorCode:integration.errorCode,retryable:true}:{}),
       scheduledDraft: opts.scheduledDraft || null,
       resultFromCli: false,
     });
