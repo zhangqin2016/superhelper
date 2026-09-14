@@ -3,7 +3,7 @@ const fs=require("node:fs");
 const path=require("node:path");
 const {createHash,randomUUID}=require("node:crypto");
 const {createTaskRecords}=require("./task-records");
-const {prepareLocalCandidate}=require("./task-local-candidate");
+const {prepareLocalCandidate,LOCAL_CANDIDATE_POLICY}=require("./task-local-candidate");
 const {readTaskFile,safeTaskRoot}=require("./task-application");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail=name=>Object.assign(Error(`COLLAB_LOCAL_MATERIALIZATION_${name}`),{code:`COLLAB_LOCAL_MATERIALIZATION_${name}`});
@@ -38,7 +38,7 @@ function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActiv
     if(!Number.isSafeInteger(base.remoteRevision)||base.remoteRevision<0||published.remoteReceipt.revision<base.remoteRevision
       ||published.remoteReceipt.revision===base.remoteRevision&&published.candidate.commit!==base.revision.commit)throw fail("STALE_PUBLICATION");
     const revision={ref:published.candidate.ref,commit:published.candidate.commit,remoteRevision:published.remoteReceipt.revision};
-    const fingerprint=hash({binding,base:base.revision,baseGeneration:base.generation,baseRemoteRevision:base.remoteRevision,revision});
+    const fingerprint=hash({policy:LOCAL_CANDIDATE_POLICY,binding,base:base.revision,baseGeneration:base.generation,baseRemoteRevision:base.remoteRevision,revision});
     const previous=records.get(id);
     if(previous&&hash(previous.binding)!==hash(binding))throw fail("BINDING_CONFLICT");
     const intact=value=>{

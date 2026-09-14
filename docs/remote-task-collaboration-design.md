@@ -106,3 +106,6 @@ P5：本地预览/应用/回滚；两台客户端加真实私有对象桶验收�
 
 
 引擎退出确认（2026-09-14）：共享引擎停止现保留所属子进程句柄，避免主进程退出并清空字段后遗漏工具进程。停止调用返回可等待回执；POSIX 原进程组消失才确认该组已退出，发送信号、主进程退出、权限错误或等待超时均不等价于工具全部停止。Windows 暂无进程树完成证明，主动脱离原组的工具及独立后台作业也不在此回执范围内。现有退出调用仍为尽力清理，自动落盘还需将前台活动注册及完整静默条件接入同一写入协调器。
+
+
+Checkpoint 56: private A/W/M preparation now offers conservative DOCX part merging via the existing bundled Python resolver. Paragraphs/cells are atomic and only stable Word container positions are reconciled; opaque unchanged OPC parts retain their bytes. Relationship/content-type changes and digital signatures are outside this policy. Runtime failure remains an explicit candidate conflict, and the policy version invalidates older cached candidates. Shared-chain Office merging, rendered fidelity, other Office formats and automatic W′ application remain pending; this does not advance A.

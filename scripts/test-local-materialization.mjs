@@ -28,7 +28,7 @@ try{
   const args={intentId:'intent',input,localRoot,baseline,published};
   const {git}=await taskGit.ensure();
   const objectsBefore=await git(['cat-file','--batch-all-objects','--batch-check']);
-  const first=await worker().prepare(args);assert.equal(first.state,'ready');
+  let first=await worker().prepare(args);assert.equal(first.state,'ready');
   assert.equal(fs.readFileSync(path.join(first.candidate.snapshotRoot,'work.txt'),'utf8'),'PRIVATE\ntwo\nthree\nfour\nremote\n');
   assert.equal(fs.readFileSync(path.join(localRoot,'work.txt'),'utf8'),'PRIVATE\ntwo\nthree\nfour\nfive\n');
   assert.equal(await git(['cat-file','--batch-all-objects','--batch-check']),objectsBefore,'private W never enters shared Git object database, even as an unreachable blob');
@@ -37,6 +37,9 @@ try{
   assert.doesNotMatch(JSON.stringify(store.db.all("SELECT payload_envelope_json FROM task_workspace_records WHERE id LIKE 'local-materialization%'")),/PRIVATE|snapshotRoot|work.txt/);
   store.close();open();
   const reopened=await worker().prepare(args);assert.equal(reopened.token,first.token,'intact candidate survives database reopen');
+  createTaskRecords({store,assertActive(){}}).put(reopened.id,{...reopened,fingerprint:'previous-merge-policy'});
+  first=await worker().prepare(args);
+  assert.notEqual(first.token,reopened.token,'a changed merge policy must invalidate an otherwise intact cached candidate');
   fs.rmSync(path.dirname(first.candidate.snapshotRoot),{recursive:true});
   const rebuilt=await worker().prepare(args);assert.equal(rebuilt.state,'ready');assert.notEqual(rebuilt.token,first.token);
   fs.writeFileSync(path.join(localRoot,'work.txt'),'late private edit');

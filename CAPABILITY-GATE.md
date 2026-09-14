@@ -519,3 +519,6 @@ Version restore writer coordination (2026-09-14): Git and snapshot version resto
 
 
 Owned engine exit confirmation (2026-09-14): shared-server shutdown retains its child handle after leader exit and returns an idempotent awaitable process-group receipt. Actual Node/Electron tests prove a surviving tool writer delays confirmation until group absence; denied probes/timeouts/Windows dispatch do not claim success. Existing server/kill/reaper regressions pass. This excludes detached tools and separate job actors and does not yet serialize foreground admission with application. Automatic W′ writes/A receipts/undo and C1/C2/C3/D full acceptance remain pending. [gate: collaboration-engine-exit-confirmation]
+
+
+DOCX private candidate policy (checkpoint 56): `test_office_merge.py` and `test-office-local-candidate.mjs` cover conservative paragraph/table-cell merging through real Python, opaque part-byte preservation, conflicts, hostile packages, unavailable runtime and unchanged W. `test-local-materialization.mjs` rejects cache reuse under a changed merge policy. This is the private A/W/M chain only; shared Office merge, rendered fidelity, full format coverage and automatic application remain unaccepted. C/D stay open.

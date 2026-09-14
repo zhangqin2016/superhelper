@@ -8,6 +8,8 @@ const {WorkspaceGit}=require("../workspace-git");
 const {manifestMap}=require("./task-apply-plan");
 const {readTaskFile,safeTaskRoot}=require("./task-application");
 const {mergeJson}=require("./integration-json-merge");
+const {mergeOffice}=require("./office-merge");
+const LOCAL_CANDIDATE_POLICY="text-json-docx-parts-v1";
 const fail=code=>Object.assign(Error(`COLLAB_LOCAL_CANDIDATE_${code}`),{code:`COLLAB_LOCAL_CANDIDATE_${code}`});
 const hash=bytes=>createHash("sha256").update(bytes).digest("hex");
 const entry=(name,bytes)=>({path:name,sha256:hash(bytes),sizeBytes:bytes.length});
@@ -36,7 +38,7 @@ async function mergeFile(base,local,shared,scratch,runtime){
 /** A and M are authenticated immutable snapshots. Read only their path union
  * from W: unrelated private files remain untouched and never enter a shared
  * object DB. Output is a private candidate, not validation or a write receipt. */
-async function prepareLocalCandidate({base,shared,rootPath,destinationRoot,assertActive,gitOptions}={}){
+async function prepareLocalCandidate({base,shared,rootPath,destinationRoot,assertActive,gitOptions,officeOptions}={}){
   if(typeof assertActive!=="function")throw fail("INVALID");
   assertActive();
   const localRoot=safeTaskRoot(rootPath),aRoot=safeTaskRoot(base.rootPath),mRoot=safeTaskRoot(shared.rootPath),storage=safeTaskRoot(destinationRoot);
@@ -69,13 +71,19 @@ async function prepareLocalCandidate({base,shared,rootPath,destinationRoot,asser
       if(same(original,incoming)||same(local,incoming))bytes=local?.bytes||null;
       else if(same(original,local))bytes=incoming?.bytes||null;
       else if(original&&local&&incoming){
-        runtime ||= await new WorkspaceGit(gitOptions).runtime();assertActive();
-        bytes=await mergeFile(original.bytes,local.bytes,incoming.bytes,scratch,runtime);assertActive();
-        if(bytes===null&&file.path.endsWith(".json")){
-          const result=mergeJson(original.bytes,local.bytes,incoming.bytes);
-          if(result.state==="resolved")bytes=Buffer.from(result.text);
+        if(path.extname(file.path).toLowerCase()===".docx"){
+          const result=await mergeOffice(original.bytes,local.bytes,incoming.bytes,scratch,officeOptions);assertActive();
+          if(result.state!=="resolved"){conflicts.push({path:file.path,reason:result.state==="conflict"?"office_content":"office_unsupported"});continue;}
+          bytes=result.bytes;
+        }else{
+          runtime ||= await new WorkspaceGit(gitOptions).runtime();assertActive();
+          bytes=await mergeFile(original.bytes,local.bytes,incoming.bytes,scratch,runtime);assertActive();
+          if(bytes===null&&file.path.endsWith(".json")){
+            const result=mergeJson(original.bytes,local.bytes,incoming.bytes);
+            if(result.state==="resolved")bytes=Buffer.from(result.text);
+          }
+          if(bytes===null){conflicts.push({path:file.path,reason:"content"});continue;}
         }
-        if(bytes===null){conflicts.push({path:file.path,reason:"content"});continue;}
       }else{conflicts.push({path:file.path,reason:!incoming?"delete_modify":!local?"modify_delete":"add_add"});continue;}
       if(bytes!==null){
         outputBytes+=bytes.length;if(outputBytes>512*1024*1024)throw fail("LIMIT_EXCEEDED");
@@ -92,4 +100,4 @@ async function prepareLocalCandidate({base,shared,rootPath,destinationRoot,asser
   }catch(error){fs.rmSync(attempt,{recursive:true,force:true});throw error;}
   finally{if(fs.existsSync(scratch))fs.rmSync(scratch,{recursive:true,force:true});}
 }
-module.exports={prepareLocalCandidate};
+module.exports={prepareLocalCandidate,LOCAL_CANDIDATE_POLICY};
