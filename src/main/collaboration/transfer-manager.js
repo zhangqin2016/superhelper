@@ -5,6 +5,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { encryptFile } = require("./encrypted-container");
 const { MAX_PART_BYTES } = require("./multipart-transport");
+// Parts in flight per upload: operator policy with a hard ceiling; memory stays at concurrency × part size.
+const PART_CONCURRENCY = (() => { const value = Number(process.env.LILY_COLLAB_UPLOAD_CONCURRENCY); return Number.isSafeInteger(value) && value >= 1 && value <= 8 ? value : 1; })();
 const { downloadTransfer, verifiedDownloadFile } = require("./download-transfer");
 const fail = (code, retryable = false) => Object.assign(new Error(code), { code, retryable });
 const ensure = (value) => { if (!value) throw fail("COLLAB_TRANSFER_RESPONSE_INVALID"); };
@@ -157,20 +159,32 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
           }
           const completed = () => [...byNumber].sort((a, b) => a[0] - b[0]).map(([number, value]) => ({ number, etag: value }));
           item = save(item, { state: "uploading", completedParts: completed() });
-          for (let number = 1; number <= Math.ceil(content.ciphertextSize / MAX_PART_BYTES); number++) {
-            if (byNumber.has(number)) continue;
-            guard(item);
-            const position = (number - 1) * MAX_PART_BYTES;
-            const bytes = Buffer.alloc(Math.min(MAX_PART_BYTES, content.ciphertextSize - position));
-            for (let offset = 0; offset < bytes.length;) {
-              const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, position + offset);
-              if (!bytesRead) throw fail("COLLAB_TRANSFER_INTEGRITY_FAILED"); offset += bytesRead;
+          // Bounded concurrency: a few parts in flight, one 4 MiB buffer each,
+          // every completed etag journaled as it lands so a crash resumes from
+          // the provider's part list rather than from zero.
+          const pending = [];
+          for (let number = 1; number <= Math.ceil(content.ciphertextSize / MAX_PART_BYTES); number++) if (!byNumber.has(number)) pending.push(number);
+          let failure = null;
+          const uploadNext = async () => {
+            while (pending.length && !failure) {
+              const number = pending.shift();
+              try {
+                guard(item);
+                const position = (number - 1) * MAX_PART_BYTES;
+                const bytes = Buffer.alloc(Math.min(MAX_PART_BYTES, content.ciphertextSize - position));
+                for (let offset = 0; offset < bytes.length;) {
+                  const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, position + offset);
+                  if (!bytesRead) throw fail("COLLAB_TRANSFER_INTEGRITY_FAILED"); offset += bytesRead;
+                }
+                guard(item);
+                const result = await multipart.uploadPart({ ticket, uploadId, partNumber: number, bytes }); guard(item);
+                ensure(result?.partNumber === number && safeId(result.etag)); byNumber.set(number, result.etag);
+                item = save(item, { completedParts: completed() });
+              } catch (error) { failure ||= error; }
             }
-            guard(item);
-            const result = await multipart.uploadPart({ ticket, uploadId, partNumber: number, bytes }); guard(item);
-            ensure(result?.partNumber === number && safeId(result.etag)); byNumber.set(number, result.etag);
-            item = save(item, { completedParts: completed() });
-          }
+          };
+          await Promise.all(Array.from({ length: Math.max(1, Math.min(PART_CONCURRENCY, pending.length)) }, uploadNext));
+          if (failure) throw failure;
           const result = await multipart.complete({ ticket, uploadId, parts: completed().map(({ number, etag: value }) => ({ partNumber: number, etag: value })) });
           guard(item); etag = result?.etag;
         }
