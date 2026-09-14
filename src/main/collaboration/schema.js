@@ -251,6 +251,15 @@ const COLLABORATION_MIGRATIONS = [
     account_id TEXT NOT NULL, target_key TEXT NOT NULL, generation INTEGER NOT NULL,
     intent_id TEXT, worker_id TEXT, expires_at INTEGER NOT NULL,
     PRIMARY KEY(account_id,target_key));`),
+  // v26 — bounded, indexed recovery scheduling; encrypted intent is authority.
+  (db) => db.exec(`CREATE TABLE task_integration_work (
+    account_id TEXT NOT NULL,intent_id TEXT NOT NULL,conversation_id TEXT NOT NULL,scope_id TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',generation INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,code TEXT,
+    PRIMARY KEY(account_id,intent_id));
+    CREATE INDEX task_integration_work_due ON task_integration_work(account_id,state,next_attempt_at);
+    INSERT INTO task_integration_work(account_id,intent_id,conversation_id,scope_id)
+      SELECT account_id,id,conversation_id,scope_id FROM task_workspace_records WHERE id LIKE 'integration:%';`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

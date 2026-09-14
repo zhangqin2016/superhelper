@@ -273,10 +273,13 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       }});
     const taskHistory=createTaskHistory({store,client,deviceId,protocol:policy?.taskHistoryProtocol,assertActive,onChange:()=>emitState("task"),onTask});
     const recoverTasks=()=>policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true
-      ? Promise.all([taskHydration.recover(),taskHistory.recover()]) : Promise.resolve();
+      ? Promise.all([taskHydration.recover(),taskHistory.recover(),integrationWorker?.recover()]) : Promise.resolve();
     let taskHydrationTimer=null;
     let workflow;
     const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,sharedWorkspaceProtocol:policy?.sharedWorkspaceProtocol,taskGitProtocol:policy?.taskGitProtocol,onChange:()=>emitState("task")});
+    const integrationWorker=integrationDiscovery && taskOptions.rootPath
+      ? require("./integration-worker").createIntegrationWorker({store,assertActive,getWorkflow,validateIntegration:taskOptions.validateIntegration,
+        validationPolicyId:taskOptions.validationPolicyId,onChange:()=>emitState("task")}) : null;
     const taskOperation = (method, payload) => stopped ? stoppedResult()
       : policy?.enabled === true && policy?.tasks === true && policy?.workspaceShares === true ? tasks[method](payload) : unavailableService();
     const realtime = client && realtimeEnabled
@@ -516,6 +519,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         stopped = true;
         if(taskHydrationTimer!=null)clearInterval(taskHydrationTimer);
         taskHydrationTimer=null;
+        integrationWorker?.stop();
         candidateCache.clear();
         onlineStatus.stop();
         // Typing hints are per-session state: a stopped panel must show nobody

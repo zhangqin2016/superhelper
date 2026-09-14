@@ -52,6 +52,30 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (["cancelled", "declined"].includes(task.state)) throw fail("COLLAB_TASK_ACCESS_DENIED");
     return task;
   }
+  async function authorizeIntegration(input) {
+    if(taskGitProtocol!==1)throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
+    const task=await taskFor({conversationId:input.conversationId,taskId:input.taskId});
+    const delivery=task.deliveries.find(item=>item.id===input.deliveryId);
+    if(input.chain!=="shared" || task.requesterUserId!==store.accountId || task.sharedWorkspaceId!==input.workspaceId
+      || !["review","accepted"].includes(task.state) || task.currentDeliveryId!==input.deliveryId
+      || task.inputGit?.commit!==input.baselineCommit || delivery?.git?.commit!==input.deliveryCommit)throw fail("COLLAB_TASK_ACCESS_DENIED");
+    const source=read(`task:${task.id}`,task.conversationId);
+    if(source.sourceProjectId!==input.projectId || source.sourceSessionId!==input.sessionId
+      || source.sharedWorkspaceId!==input.workspaceId || source.gitBaseline?.commit!==input.baselineCommit)throw fail("COLLAB_TASK_BINDING_CONFLICT");
+    const session=resolveSourceSession?.({projectId:input.projectId,sessionId:input.sessionId});
+    assertActive();
+    if(!session || session.projectId!==input.projectId || session.sessionId!==input.sessionId || session.rootPath!==source.sourceRoot
+      || fs.realpathSync(source.sourceRoot)!==source.sourceRoot || !fs.statSync(source.sourceRoot).isDirectory()
+      || createHash("sha256").update(source.sourceRoot).digest("hex")!==input.targetId)throw fail("COLLAB_TASK_BINDING_CONFLICT");
+    return task;
+  }
+  async function acquireIntegrationInput(input) {
+    await ready;await authorizeIntegration(input);
+    await download({conversationId:input.conversationId,taskId:input.taskId},input.deliveryId,true);
+    const task=await authorizeIntegration(input),{repository}=await git().ensure();
+    assertActive();
+    return {taskGit:git(),baseline:{...task.inputGit,repository},delivery:{...task.deliveries.find(item=>item.id===input.deliveryId).git,repository}};
+  }
   function draftView(value) {
     return { id:value.id, name:value.name, files:value.files, warnings:value.warnings, omitted:value.omitted,
       state:value.state, ...(value.input ? { input:value.input } : {}), ...(value.taskId ? {taskId:value.taskId} : {}) };
@@ -518,7 +542,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       catch { /* durable record remains available; never report it as applied */ }
     }
   });
-  return {recoverPending:()=>ready,run(command) {
+  return {recoverPending:()=>ready,acquireIntegrationInput,authorizeIntegration:async input=>{await authorizeIntegration(input);return true;},run(command) {
     command = taskWorkflowCommand(command);
     if (!command) return Promise.resolve({ok:false,code:"COLLAB_TASK_INVALID"});
     if (["drafts","recoveries","bindingOptions","cards","sessionCards"].includes(command.operation)) return ready.then(()=>execute(command)).catch(error=>({ok:false,code:/^COLLAB_/.test(error.code || "")?error.code:"COLLAB_TASK_UNAVAILABLE"}));

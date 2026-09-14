@@ -44,6 +44,7 @@ function createIntegrationIntents({store,assertActive,now=Date.now}){
   function finish(token,state){return transaction(()=>{
     const {record,key}=checked(token);
     store.db.run("UPDATE task_integration_leases SET intent_id=NULL,worker_id=NULL,expires_at=0 WHERE account_id=? AND target_key=?",accountId,key);
+    if(state==="completed")store.db.run("UPDATE task_integration_work SET state='done',code=NULL,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=?",accountId,record.id);
     return records.put(record.id,{...record,state,updatedAt:time()});
   });}
   return Object.freeze({
@@ -51,7 +52,9 @@ function createIntegrationIntents({store,assertActive,now=Date.now}){
     enqueue(value){const binding=input(value),id=intentId(binding);return transaction(()=>{
       const prior=get(id);
       if(prior){if(fields.some(field=>prior.input[field]!==binding[field]))throw fail("CONFLICT");return prior;}
-      return records.put(id,{id,kind:"integration-intent",conversationId:binding.conversationId,input:binding,state:"pending",createdAt:time(),updatedAt:time()});
+      const record=records.put(id,{id,kind:"integration-intent",conversationId:binding.conversationId,input:binding,state:"pending",createdAt:time(),updatedAt:time()});
+      store.db.run("INSERT INTO task_integration_work(account_id,intent_id,conversation_id,scope_id) VALUES(?,?,?,?)",accountId,id,binding.conversationId,store.getConversation({conversationId:binding.conversationId}).scopeId);
+      return record;
     });},
     list(conversationId){return records.list(conversationId).filter(record=>record.kind==="integration-intent").map(record=>read(record.id));},
     claim(id,{workerId,leaseMs=30000}={}){identifier(workerId);const expiresAt=expiry(leaseMs);return transaction(()=>{
@@ -73,6 +76,7 @@ function createIntegrationIntents({store,assertActive,now=Date.now}){
       const record=read(id);if(record.state==="completed" || record.state==="cancelled")return record;
       const key=targetKey(record),lease=lock(key);
       if(lease?.intent_id===id)store.db.run("UPDATE task_integration_leases SET intent_id=NULL,worker_id=NULL,expires_at=0 WHERE account_id=? AND target_key=?",accountId,key);
+      store.db.run("UPDATE task_integration_work SET state='done' WHERE account_id=? AND intent_id=?",accountId,id);
       return records.put(id,{...record,state:"cancelled",updatedAt:time()});
     });},
   });

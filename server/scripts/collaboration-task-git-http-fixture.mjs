@@ -9,6 +9,8 @@ const {createTransferRuntime}=require('../../src/main/collaboration/transfer-run
 const {createTaskCommands}=require('../../src/main/collaboration/task-commands');
 const {createTaskWorkflow}=require('../../src/main/collaboration/task-workflow');
 const {createTaskRecords}=require('../../src/main/collaboration/task-records');
+const {createIntegrationDiscovery}=require('../../src/main/collaboration/integration-discovery');
+const {createCollaborationService}=require('../../src/main/collaboration/service');
 const ok=value=>{assert.equal(value?.ok,true,JSON.stringify(value));return value;};
 
 /** Full domain path: desktop workflow/encryption -> device-signed Fastify
@@ -26,8 +28,9 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     const transfers=createTransferRuntime({store,client,deviceId,assertActive,rootPath:path.join(root,'collaboration-transfer'),policy:{enabled:true,tasks:true,workspaceShares:true},fetchImpl});
     const workflow=createTaskWorkflow({store,client,deviceId,tasks,transfers,assertActive,rootPath:path.join(root,'managed'),taskGitProtocol:1,sharedWorkspaceProtocol:1,
       chooseDirectory:async()=>({canceled:false,filePaths:[source]}),
+      resolveProjectDirectory:()=>source,resolveSourceSession:input=>({...input,rootPath:source}),
       resolveWorkspaceBinding:input=>({projectId:input.projectId,sessionId:'fixture-session',rootPath:source})});
-    const item={client,deviceId,store,source,tasks,transfers,records:createTaskRecords({store,assertActive}),run:command=>workflow.run({conversationId,...command}),
+    const item={client,deviceId,store,source,root,tasks,transfers,workflow,records:createTaskRecords({store,assertActive}),run:command=>workflow.run({conversationId,...command}),
       close(){transfers.stop();client.stop();store.close();}};
     clients.push(item);return item;
   }
@@ -35,7 +38,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     let owner=open('a'),helper=open('b');
     fs.writeFileSync(path.join(owner.source,'unchanged.bin'),randomBytes(2*1024**2));
     fs.writeFileSync(path.join(owner.source,'work.txt'),'baseline');fs.writeFileSync(path.join(owner.source,'remove.txt'),'remove');
-    const draft=ok(await owner.run({operation:'prepare'})).draft;
+    const draft=ok(await owner.run({operation:'prepare',projectId:'source-project',sessionId:'source-session'})).draft;
     const send={operation:'send',draftId:draft.id,assigneeUserId:'b',title:'Git domain integration',objective:'Revise synthetic files',acceptanceCriteria:'Exact result and recoverable replay'};
     dropAck('/api/collaboration/v1/tasks');assert.equal(ok(await owner.run(send)).state,'confirming');
     owner.close();owner=open('a');const sent=ok(await owner.run(send)),taskId=sent.taskId;
@@ -60,6 +63,20 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     const delivered=task.deliveries[0];assert.deepEqual(delivered.git.prerequisites,[task.inputGit.commit]);
     assert.ok(delivered.git.sizeBytes<task.inputGit.sizeBytes/100);
     assert.deepEqual((await owner.client.missingTaskGitObjects({deviceId:owner.deviceId,taskId,deliveryId:delivered.id,haveCommits:[task.inputGit.commit]})).objects,[{objectId:delivered.id,descriptor:delivered.git}]);
+    const resolveSourceSession=input=>({...input,rootPath:owner.source});
+    createIntegrationDiscovery({store:owner.store,assertActive(){},resolveSourceSession}).observe(task);
+    const service=createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
+      policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1},
+      transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession}});
+    assert.equal(service.ok,true);service.start();
+    try{
+      const deadline=Date.now()+15000;
+      while(owner.store.db.get('SELECT state FROM task_integration_work')?.state!=='waiting' && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
+      assert.equal(owner.store.db.get('SELECT code FROM task_integration_work')?.code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED','real service startup acquires and prepares the signed encrypted delivery without UI');
+      const journal=owner.records.list(conversationId).find(row=>row.kind==='shared-publication');assert.equal(journal.state,'validation_failed');
+      assert.equal(journal.candidate.delivery,delivered.git.commit);assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','background preparation leaves foreground/private files untouched');
+    }finally{service.stop();}
+    owner.close();owner=open('a');
     ok(await owner.tasks.submit({conversationId,taskId,action:'approve',deliveryId:delivered.id,expectedRevision:task.revision}));
     const preview=ok(await owner.run({operation:'preview',taskId,deliveryId:delivered.id}));
     assert.deepEqual(preview.plan.entries.map(item=>item.operation).sort(),['add','delete','replace']);

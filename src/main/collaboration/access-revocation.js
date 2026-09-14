@@ -16,7 +16,7 @@ function assertScopeWritable(store, scopeId) {
 function removeConversationRows(store, conversationId, scopeId = null) {
   store.db.run(`INSERT OR IGNORE INTO revoked_conversations (account_id, conversation_id, scope_id) VALUES (?, ?, ?)`, store.accountId, conversationId, scopeId);
   let deletedOutbox = 0;
-  for (const table of ["conversation_members", "messages", "drafts", "edit_drafts", "outbox", "events", "history_hydration", "history_hydration_targets", "conversation_hydration", "social_commands", "task_commands", "task_workspace_records", "read_checkpoints", "conversation_activity", "reply_source_masks"]) {
+  for (const table of ["conversation_members", "messages", "drafts", "edit_drafts", "outbox", "events", "history_hydration", "history_hydration_targets", "conversation_hydration", "social_commands", "task_commands", "task_workspace_records", "task_integration_work", "read_checkpoints", "conversation_activity", "reply_source_masks"]) {
     const result = store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND conversation_id = ?`, store.accountId, conversationId);
     if (table === "outbox") deletedOutbox = Number(result.changes);
   }
@@ -38,7 +38,7 @@ function removeScopeRows(store, scopeId) {
   let deletedOutbox = 0;
   for (const row of ids) deletedOutbox += removeConversationRows(store, row.conversation_id, scopeId).deletedOutbox;
   pruneDirectoryProfiles(store);
-  for (const table of ["transfers", "share_mappings", "social_commands", "task_commands", "task_workspace_records"]) store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND scope_id = ?`, store.accountId, scopeId);
+  for (const table of ["transfers", "share_mappings", "social_commands", "task_commands", "task_workspace_records", "task_integration_work"]) store.db.run(`DELETE FROM ${table} WHERE account_id = ? AND scope_id = ?`, store.accountId, scopeId);
   store.db.run(`INSERT INTO revoked_scopes (account_id, scope_id, key_delete_pending) VALUES (?, ?, 1)
     ON CONFLICT(account_id, scope_id) DO UPDATE SET key_delete_pending = 1`, store.accountId, scopeId);
   return { deletedOutbox };
