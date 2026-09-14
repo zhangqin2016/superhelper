@@ -71,5 +71,34 @@ try{
  const accepting=createCandidateValidation({...jsOptions,validationPolicyId:'fixture-accept',validateIntegration:async c=>({ok:true,commit:c.commit,policyId:'fixture-accept',evidenceHash:hash('fixture')})});
  assert.equal((await accepting.validate(jsCandidate)).state,'failed','a permissive project callback cannot override a syntax failure');
  assert.doesNotMatch(JSON.stringify(store.db.all('SELECT payload_envelope_json FROM task_workspace_records')),/export const value|SyntaxError|work.js/);
+ const testsBase=snapshot('tests-base',{'acceptance.json':'{"expected":2}','value.json':'{"value":2}'});
+ const testsBaseline=await taskGit.captureBaseline({taskId:'tests',...testsBase});
+ const testsChanged=snapshot('tests-changed',{'value.json':'{"value":0}'});
+ const testsDelivery=await taskGit.captureContribution({baseline:testsBaseline,baseManifest:testsBase.manifest,materializedPaths:testsBase.manifest.map(f=>f.path),deliveryId:'tests-delivery',...testsChanged});
+ const testsHead=await shared.initialize({workspaceId:'tests',baseline:testsBaseline});
+ const testsCandidate=await shared.prepare({workspaceId:'tests',baseline:testsBaseline,delivery:testsDelivery,expectedHead:testsHead.commit});
+ let originalRead=false,retainedReader;
+ const originalValidator=createCandidateValidation({...options,store,intentId:'original-checks',
+  input:{...input,workspaceId:'tests',baselineCommit:testsBaseline.commit,deliveryCommit:testsDelivery.commit},validationPolicyId:'fixture-original-checks',
+  validateIntegration:async(c,context)=>{
+   assert.equal(fs.existsSync(path.join(context.snapshotRoot,'acceptance.json')),false);
+   retainedReader=context.originalInputs.read;
+   const original=await retainedReader({version:'baseline',path:'acceptance.json'});originalRead=true;
+   const expected=JSON.parse(original.bytes).expected,actual=JSON.parse(fs.readFileSync(path.join(context.snapshotRoot,'value.json'))).value;
+   return {ok:actual===expected,commit:c.commit,policyId:'fixture-original-checks',evidenceHash:hash(JSON.stringify({expected,actual,original:original.sha256}))};
+  }});
+ const originalResult=await originalValidator.validate(testsCandidate);
+ assert.equal(originalRead,true,'the production checker receives independently pinned original assertions');
+ assert.equal(originalResult.state,'failed','removing the original assertion from a contribution cannot make this check pass');
+ const originalCoverage=originalValidator.get(testsCandidate).report.checks.find(c=>c.id==='original-inputs');
+ assert.equal(originalCoverage.details.reads[0].commit,testsBaseline.commit);
+ assert.equal(originalCoverage.details.reads[0].sha256,testsBase.manifest[0].sha256);
+ await assert.rejects(retainedReader({version:'baseline',path:'value.json'}),/CLOSED/);
+ const ignoredFailure=createCandidateValidation({...jsOptions,validationPolicyId:'ignored-original',validateIntegration:async(c,context)=>{
+  await context.originalInputs.read({version:'private',path:'work.js'}).catch(()=>{});
+  return {ok:true,commit:c.commit,policyId:'ignored-original',evidenceHash:hash('ignored')};
+ }});
+ await ignoredFailure.validate(jsCandidate);
+ assert.equal(ignoredFailure.get(jsCandidate).report.checks.find(c=>c.id==='original-inputs').status,'failed','swallowed original input errors remain explicit failed evidence');
  console.log('candidate validation: actual Git snapshots, related-file failure, policy identity, encrypted evidence/reopen, mutation and late-result fences passed');
 }finally{store.close();fs.rmSync(root,{recursive:true,force:true});}

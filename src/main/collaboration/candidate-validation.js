@@ -5,6 +5,7 @@ const {createHash}=require("node:crypto");
 const {createTaskRecords}=require("./task-records");
 const {candidateRef}=require("./shared-git");
 const {checkCandidateJavascript}=require("./candidate-javascript");
+const {createValidationOriginalInputs}=require("./validation-original-inputs");
 const {manifestHash}=require("./task-changeset");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail=()=>Object.assign(Error("Candidate validation binding invalid"),{code:"COLLAB_INTEGRATION_VALIDATION_INVALID"});
@@ -38,7 +39,7 @@ async function unchanged(root,manifest,guard){
  * Structural integrity alone does not authorize semantic publication. */
 function createCandidateValidation({store,taskGit,assertActive,intentId,input,validationPolicyId,validateIntegration}){
   const configured=typeof validateIntegration==="function" && typeof validationPolicyId==="string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(validationPolicyId);
-  const policyId=`candidate-v2:${hash([configured?validationPolicyId:"unconfigured",process.version])}`;
+  const policyId=`candidate-v3:${hash([configured?validationPolicyId:"unconfigured",process.version])}`;
   const records=createTaskRecords({store,assertActive});
   const recordId=candidate=>`candidate-validation-latest:${hash([intentId,candidate.commit,policyId])}`;
   function get(candidate){
@@ -61,16 +62,17 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
     const gitVersion=await runtime.git(["--version"]);assertActive();
     const temporary=fs.mkdtempSync(path.join(path.dirname(taskGit.rootPath),"validation-"));
     const checks=[];
-    let state="required";
+    let state="required",originalInputs;
     try{
       const material=await taskGit.materializeSnapshot({revision:candidate,destinationRoot:path.join(temporary,"candidate"),parents:[candidate.head,candidate.delivery]});assertActive();
       checks.push({id:"git-candidate",version:"1",status:"passed",coverage:"exact candidate tree, parents and blob hashes",evidenceHash:material.gitRevision.manifestHash});
       const syntax=await checkCandidateJavascript({...material,assertActive});assertActive();checks.push(syntax);
+      originalInputs=createValidationOriginalInputs({taskGit,candidate,temporaryRoot:temporary,assertActive});
       if(configured){
         let result;
         try{result=await validateIntegration(candidate,Object.freeze({snapshotRoot:material.snapshotRoot,
           manifest:Object.freeze(material.manifest.map(file=>Object.freeze({...file}))),
-          input:Object.freeze({...input}),assertActive}));}
+          input:Object.freeze({...input}),originalInputs:Object.freeze({read:originalInputs.read}),assertActive}));}
         catch{result=null;}
         assertActive();
         const valid=result?.commit===candidate.commit&&result.policyId===validationPolicyId&&/^[a-f0-9]{64}$/.test(result.evidenceHash||"");
@@ -78,6 +80,11 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
         checks.push({id:"project-policy",version:validationPolicyId,status:state,coverage:"host-configured project checks",
           ...(valid?{evidenceHash:result.evidenceHash}:{code:"INVALID_OR_FAILED_CHECK"})});
       }else checks.push({id:"project-policy",version:"unconfigured",status:"required",coverage:"project validation is unavailable"});
+      const originalEvidence=originalInputs.close(),originalsIntact=originalEvidence.pending===0 && originalEvidence.failures===0;
+      checks.push({id:"original-inputs",version:"1",status:originalsIntact?"passed":"failed",
+        coverage:"original B/H/D files read by host checks; input provenance only, not test execution",
+        evidenceHash:originalEvidence.evidenceHash,details:originalEvidence});
+      if(!originalsIntact)state="failed";
       if(syntax.status==="failed")state="failed";
       else if(syntax.status==="required"&&state==="passed")state="required";
       let intact=false;
@@ -96,7 +103,7 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
         records.put(recordId(candidate),{kind:"candidate-validation-latest",conversationId:input.conversationId,intentId,evidenceId});
       })();
       return {ok:state==="passed",state,commit:candidate.commit,policyId,evidenceHash};
-    }finally{fs.rmSync(temporary,{recursive:true,force:true});}
+    }finally{originalInputs?.close();fs.rmSync(temporary,{recursive:true,force:true});}
   }
   return Object.freeze({policyId,validate,get,recordId});
 }
