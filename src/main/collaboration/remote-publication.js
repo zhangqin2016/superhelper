@@ -130,13 +130,33 @@ function createRemotePublication({store,taskGit,client,transfers,deviceId,input,
         const exported=await createSharedGitTransport(taskGit).exportBundle({revision:candidate,prerequisites,destination:packagePath});active();
         attempt=save(id,{descriptor:exported.descriptor,state:'prepared'});
       }
-      if(!attempt.transferId){
-        const transfer=await transfers.taskFiles.prepareUpload({conversationId:input.conversationId,inputPath:packagePath,originalName:'shared.bundle',expectedPlaintextSha256:attempt.descriptor.sha256});active();
-        if(transfer?.ok!==true)throw fail('UPLOAD_UNAVAILABLE');attempt=save(id,{transferId:transfer.id,state:'uploading'});
-      }
-      if(!attempt.objectId){
+      for(let replacement=0;replacement<2;replacement++){
+        if(!attempt.transferId){
+          const transfer=await transfers.taskFiles.prepareUpload({conversationId:input.conversationId,inputPath:packagePath,originalName:'shared.bundle',expectedPlaintextSha256:attempt.descriptor.sha256});active();
+          if(transfer?.ok!==true)throw fail('UPLOAD_UNAVAILABLE');attempt=save(id,{transferId:transfer.id,state:'uploading'});
+        }
+        // Re-probe even a previously verified upload after a long offline gap.
+        // A generic unavailable/denied response is never proof of orphan expiry.
         const uploaded=await transfers.taskFiles.upload(attempt.transferId);active();
-        if(uploaded?.ok!==true||typeof uploaded.objectId!=='string')throw fail('UPLOAD_UNAVAILABLE');attempt=save(id,{objectId:uploaded.objectId,state:'uploaded'});
+        if(uploaded?.code==='COLLAB_TRANSFER_ORPHAN_EXPIRED'){
+          if(replacement===1)throw fail('UPLOAD_UNAVAILABLE');
+          if(typeof uploaded.objectId!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(uploaded.objectId)||attempt.objectId&&attempt.objectId!==uploaded.objectId)throw fail('JOURNAL_INVALID');
+          // An older publication request cannot commit after this newer grant.
+          // Same-grant uncertainty must wait for a fresh server qualification.
+          if(attempt.request&&(!Number.isSafeInteger(attempt.request.generation)||attempt.request.generation>=held.generation||attempt.request.leaseId===held.leaseId))throw fail('FENCED');
+          await authorized();
+          attempt=store.db.transaction(()=>{
+            active();const retiredId=`retired-upload:${hash([id,attempt.transferId])}`;
+            records.put(retiredId,{kind:'retired-publication-upload',conversationId:input.conversationId,intentId,attemptId:id,transferId:attempt.transferId,
+              objectId:uploaded.objectId,descriptor:attempt.descriptor,request:attempt.request||null,reason:'orphan-expired',replacementGeneration:held.generation,createdAt:store.now()});
+            return save(id,{transferId:null,objectId:null,request:null,state:'prepared'});
+          })();
+          continue;
+        }
+        if(uploaded?.ok!==true||typeof uploaded.objectId!=='string')throw fail('UPLOAD_UNAVAILABLE');
+        if(!/^[A-Za-z0-9_-]{1,200}$/.test(uploaded.objectId)||attempt.objectId&&attempt.objectId!==uploaded.objectId)throw fail('JOURNAL_INVALID');
+        attempt=save(id,{objectId:uploaded.objectId,state:'uploaded'});
+        break;
       }
       await authorized();
       const request={...held,clientCommandId:attempt.request?.leaseId===held.leaseId&&attempt.request?.generation===held.generation?attempt.request.clientCommandId:randomUUID(),

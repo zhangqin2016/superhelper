@@ -12,6 +12,16 @@ const { decryptFile } = require("../src/main/collaboration/encrypted-container")
 let createTransferManager;
 try { ({ createTransferManager } = require("../src/main/collaboration/transfer-manager")); } catch (error) { if (error.code !== "MODULE_NOT_FOUND") throw error; }
 const unknown = () => Object.assign(new Error("secret URL must not escape"), { code: "COLLAB_RESPONSE_UNKNOWN", retryable: true });
+
+test('expired init replay retains its object identity without uploading or guessing revocation',async t=>{
+  const f=fixture(t),api=f.manager(),prepared=await f.prepare(api);
+  f.objectClient.init=async input=>({objectId:'obj',state:'expired',reason:'orphan-expired',ciphertextSize:input.ciphertextSize,ciphertextSha256:input.ciphertextSha256});
+  const result=await api.resumeUpload(prepared.id);
+  assert.equal(result.code,'COLLAB_TRANSFER_ORPHAN_EXPIRED');assert.equal(result.objectId,'obj');assert.equal(f.remote.uploads,0);
+  assert.equal(f.manifests.read(prepared.id).checkpoint.objectId,'obj');
+  f.objectClient.status=async()=>{throw Object.assign(Error('revoked'),{code:'COLLAB_OBJECT_UNAVAILABLE'});};
+  assert.equal((await api.resumeUpload(prepared.id)).code,'COLLAB_OBJECT_UNAVAILABLE');
+});
 function fixture(t) {
   assert.equal(typeof createTransferManager, "function", "a recoverable main-only transfer manager is required");
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "collab-manager-")));
@@ -65,6 +75,17 @@ function fixture(t) {
   const prepare = (api) => api.prepareUpload({ inputPath: source, conversationId: "conversation", scopeId: "team:org", purpose: "attachment", originalName: "source.txt", mimeType: "text/plain" });
   return { dir, source, keyring, manifests, remote, objectClient, multipart, options, manager, prepare };
 }
+
+test('expiry during missing multipart recovery preserves the orphan proof and does not start another session',async t=>{
+  const f=fixture(t),api=f.manager(),prepared=await f.prepare(api);
+  f.remote.drop='part';assert.equal((await api.resumeUpload(prepared.id)).state,'paused');
+  const originalStatus=f.objectClient.status;let probes=0;
+  f.objectClient.status=async()=>{const status=await originalStatus();return ++probes===2?{...status,state:'expired',reason:'orphan-expired',upload:undefined}:status;};
+  f.multipart.listParts=async()=>{throw Object.assign(Error('missing'),{code:'COLLAB_TRANSFER_SESSION_MISSING'});};
+  const result=await api.resumeUpload(prepared.id);
+  assert.equal(result.code,'COLLAB_TRANSFER_ORPHAN_EXPIRED');assert.equal(result.objectId,'obj');
+  assert.equal(f.remote.uploads,1);assert.deepEqual(f.remote.puts,[1]);
+});
 
 test("encrypt/upload/verify retains bounded parts, private credentials and authentic plaintext", async (t) => {
   const f = fixture(t), api = f.manager(), prepared = await f.prepare(api);

@@ -34,6 +34,13 @@ const app = Fastify({ logger: { level: "trace", stream: new Writable({ write(chu
 installDocOnlyCompilers(app);
 app.setErrorHandler((error, _request, reply) => { app.log.error(error); reply.code(500).send({ ok: false, code: "INTERNAL_ERROR" }); });
 let dropAckPath = null, committedAck = null;
+let expirePublicationUpload=true;
+app.addHook('preHandler',async request=>{
+  if(expirePublicationUpload&&request.url==='/api/collaboration/v1/tasks/integration/publish'&&request.body?.objectId){
+    expirePublicationUpload=false;
+    await pool.query("UPDATE stored_objects SET orphan_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1 AND state='verified' AND shared_workspace_id IS NULL",[request.body.objectId]);
+  }
+});
 app.addHook("onSend", async (request, reply, payload) => {
   if (dropAckPath === request.url && reply.statusCode === 200) {
     // The real service has committed; prevent the client from receiving its
@@ -102,6 +109,21 @@ try {
   const conversationId = accepted(await command("a", "conversations", { action: "create", scopeType: "organization", organizationId: "org", kind: "channel", visibility: "private", memberUserIds: ["b"] })).conversationId;
   const dek = crypto.randomBytes(32).toString("base64"); sensitive.add(dek);
   const metadata = { conversationId, purpose: "attachment", ciphertextSize: 100, ciphertextSha256: "a".repeat(64), mimeType: "text/plain", originalName: "notes.txt", dek };
+  const expiredCommand={...metadata,clientCommandId:'init-expired-ack'};
+  dropAckPath='/api/collaboration/v1/objects/init';
+  assert.equal((await command('a','objects/init',expiredCommand)).status,503);
+  const expiredObjectId=committedAck.objectId;
+  await pool.query("UPDATE stored_objects SET orphan_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[expiredObjectId]);
+  const expiredReplay=accepted(await command('a','objects/init',expiredCommand));
+  assert.deepEqual(expiredReplay,{objectId:expiredObjectId,state:'expired',reason:'orphan-expired',ciphertextSize:100,ciphertextSha256:metadata.ciphertextSha256},'lost init ACK can identify the expired orphan without issuing credentials');
+  assert.deepEqual(accepted(await command('a',`objects/${expiredObjectId}/status`,{})),expiredReplay);
+  assert.equal((await command('b',`objects/${expiredObjectId}/status`,{})).status,403,'orphan proof remains restricted to its owner');
+  await pool.query("UPDATE stored_objects SET expires_at=clock_timestamp()+interval '1 hour' WHERE id=$1",[expiredObjectId]);
+  assert.equal((await command('a','objects/init',expiredCommand)).status,403,'explicit object expiration policy must not be stripped by replacement');
+  assert.equal((await command('a',`objects/${expiredObjectId}/status`,{})).status,403);
+  await pool.query("UPDATE stored_objects SET expires_at=NULL,state='revoked' WHERE id=$1",[expiredObjectId]);
+  assert.equal((await command('a','objects/init',expiredCommand)).status,403,'revocation never authorizes a replacement upload');
+  assert.equal((await command('a',`objects/${expiredObjectId}/status`,{})).status,403);
   dropAckPath = "/api/collaboration/v1/objects/init";
   assert.equal((await command("a", "objects/init", { ...metadata, clientCommandId: "init-original" })).status, 503);
   const originalObjectId = committedAck.objectId;

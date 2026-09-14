@@ -83,10 +83,16 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       } else {
         file = await checkedCiphertext(path.join(manifests.directory(id), "ciphertext.lilyenc"), content); guard(item);
         const result = await objectClient.init({ deviceId, clientCommandId: item.commandIds.init, conversationId: item.conversationId, purpose: item.purpose, ...content });
-        guard(item); ensure(safeId(result?.objectId) && result.state === "uploading" && result.upload);
+        guard(item);
+        if(result?.state==='expired'&&result.reason==='orphan-expired'){
+          ensure(safeId(result.objectId)&&result.ciphertextSize===content.ciphertextSize&&result.ciphertextSha256===content.ciphertextSha256);
+          item=save(item,{objectId:result.objectId,state:'failed'});throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
+        }
+        ensure(safeId(result?.objectId) && result.state === "uploading" && result.upload);
         item = save(item, { objectId: result.objectId, state: "uploading" });
         status = { ...result, provider: { state: "missing" } };
       }
+      if(status.state==='expired'&&status.reason==='orphan-expired')throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
       if (["verified", "bound"].includes(status.state)) return view(save(item, { state: status.state }));
       ensure(status.state === "uploading" && status.upload && ["present", "missing"].includes(status.provider?.state));
       let etag = status.provider.etag;
@@ -111,6 +117,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
             const fresh = await objectClient.status({ deviceId, objectId: item.checkpoint.objectId, clientCommandId: `${item.commandIds.init}:status` });
             guard(item);
             ensure(fresh?.objectId === item.checkpoint.objectId && fresh.ciphertextSize === content.ciphertextSize && fresh.ciphertextSha256 === content.ciphertextSha256);
+            if(fresh.state==='expired'&&fresh.reason==='orphan-expired')throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
             if (["verified", "bound"].includes(fresh.state)) return view(save(item, { state: fresh.state }));
             ensure(fresh.state === "uploading" && ["present", "missing"].includes(fresh.provider?.state));
             if (fresh.provider.state === "present") etag = fresh.provider.etag;

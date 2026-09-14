@@ -6,7 +6,7 @@ const {createIntegrationIntents}=require('../src/main/collaboration/integration-
 const root=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'remote-publication-'));
 const keyring=new LocalCollaborationKeyring({filePath:path.join(root,'keys'),safeStorage:{isEncryptionAvailable:()=>true,encryptString:s=>Buffer.from(s),decryptString:b=>b.toString()}});
 const taskGit=new TaskGit({rootPath:path.join(root,'git'),gitOptions:{autoInstall:false}}),shared=createSharedGit(taskGit);
-let store,intents,remote,localLease,time=1000,validations=0,publishCalls=0,claimLost=true,publishLost=true,renewFailure=false;
+let store,intents,remote,localLease,time=1000,validations=0,publishCalls=0,claimLost=true,publishLost=true,renewFailure=false,expireUpload=true;
 const open=()=>{store=new CollaborationStore({dbPath:path.join(root,'db'),accountId:'owner',keyring,now:()=>time});intents=createIntegrationIntents({store,assertActive(){},now:()=>time});};
 const snapshot=(name,files)=>{const snapshotRoot=path.join(root,name);fs.mkdirSync(snapshotRoot);return {snapshotRoot,manifest:Object.entries(files).map(([name,bytes])=>{fs.writeFileSync(path.join(snapshotRoot,name),bytes);return {path:name,sizeBytes:Buffer.byteLength(bytes),sha256:createHash('sha256').update(bytes).digest('hex')};})};};
 const publications=new Map(),transfersById=new Map(),claims=new Map();let server;
@@ -25,6 +25,7 @@ const client={
  releaseIntegration:async()=>{server.lease=null;return view();},
  getIntegrationPublication:async({publicationId})=>{const publication=publications.get(publicationId||server.publicationId);if(!publication)throw unavailable('COLLAB_INTEGRATION_PUBLICATION_UNAVAILABLE');return {workspaceId:'workspace',publication:structuredClone(publication)};},
  publishIntegration:async request=>{
+  if(expireUpload){expireUpload=false;[...transfersById.values()].find(item=>item.objectId===request.objectId).expired=true;throw unavailable('COLLAB_INTEGRATION_PACKAGE_UNAVAILABLE');}
   publishCalls++;
   assert.equal(request.leaseId,server.lease.id);assert.equal(request.generation,server.generation);assert.equal(request.expectedHead,server.headCommit);
   const {deviceId,clientCommandId,leaseId,generation,...body}=request;
@@ -34,7 +35,7 @@ const client={
  },
 };
 const transfers={taskFiles:{prepareUpload:async({inputPath})=>{const id='transfer'+transfersById.size;transfersById.set(id,{packagePath:inputPath,objectId:'object'+transfersById.size});return {ok:true,id};},
- upload:async id=>({ok:true,objectId:transfersById.get(id).objectId})},sharedFiles:{download:async({publicationId})=>{const publication=publications.get(publicationId),transfer=[...transfersById.values()].find(item=>item.objectId===publication.objectId);return {ok:true,packagePath:transfer.packagePath,publication:structuredClone(publication)};}}};
+ upload:async id=>({ok:!transfersById.get(id).expired,...(transfersById.get(id).expired?{code:'COLLAB_TRANSFER_ORPHAN_EXPIRED'}:{}),objectId:transfersById.get(id).objectId})},sharedFiles:{download:async({publicationId})=>{const publication=publications.get(publicationId),transfer=[...transfersById.values()].find(item=>item.objectId===publication.objectId);return {ok:true,packagePath:transfer.packagePath,publication:structuredClone(publication)};}}};
 function session(input,intentId){
  const guard=()=>{remote?.assertCurrent();};
  remote=createRemotePublication({store,taskGit,client,transfers,deviceId:'device',input,intentId,assertActive:()=>{guard();intents.assertLease(localLease);},assertAccountActive(){},authorize:async()=>true});
@@ -61,7 +62,19 @@ try{
  await assert.rejects(context.publisher.run({...args,lease:localLease,remote}),{code:'COLLAB_NETWORK_UNAVAILABLE'});
  assert.equal(validations,0);assert.equal(server.generation,1,'lost claim response has one server grant');await remote.close();remote=null;
  store.close();time+=31000;server.lease.expiresAt=Date.now()-1;open();localLease=intents.claim(intent.id,{workerId:'two'});context=session(input,intent.id);
+ await assert.rejects(context.publisher.run({...args,lease:localLease,remote}),{code:'COLLAB_INTEGRATION_PACKAGE_UNAVAILABLE'});
+ const expiredJournal=context.publisher.get(intent.id);
+ const upload=transfers.taskFiles.upload;
+ transfers.taskFiles.upload=async()=>({ok:true,objectId:'another-object'});
+ await assert.rejects(remote.publish(expiredJournal.candidate,expiredJournal.validation),{code:'COLLAB_REMOTE_PUBLICATION_JOURNAL_INVALID'},'a recovery probe cannot silently replace the recorded object identity');
+ transfers.taskFiles.upload=async()=>({ok:false,code:'COLLAB_OBJECT_UNAVAILABLE'});
+ await assert.rejects(remote.publish(expiredJournal.candidate,expiredJournal.validation),{code:'COLLAB_REMOTE_PUBLICATION_UPLOAD_UNAVAILABLE'});
+ assert.equal(transfersById.size,1,'generic unavailable cannot authorize replacement');transfers.taskFiles.upload=upload;
+ await assert.rejects(remote.publish(expiredJournal.candidate,expiredJournal.validation),{code:'COLLAB_REMOTE_PUBLICATION_FENCED'},'an uncertain request in the current lease cannot be replaced');
+ assert.equal(transfersById.size,1);assert.equal(validations,1);await remote.close();remote=null;store.close();time+=31000;open();localLease=intents.claim(intent.id,{workerId:'replace-expired'});context=session(input,intent.id);
  await assert.rejects(context.publisher.run({...args,lease:localLease,remote}),{code:'COLLAB_NETWORK_UNAVAILABLE'});
+ const retired=createTaskRecords({store,assertActive(){}}).list('chat').filter(row=>row.kind==='retired-publication-upload');assert.equal(retired.length,1);assert.equal(retired[0].objectId,'object0');
+ assert.equal(transfersById.size,2,'a fenced expired orphan receives one replacement transfer with a new object identity');
  assert.equal(validations,1);assert.equal(publishCalls,1);assert.equal(intents.get(intent.id).state,'running');assert.equal(context.publisher.outbox('chat').filter(row=>row.state==='sent').length,0,'uncertain remote commit cannot complete local work');
  assert.equal(createTaskRecords({store,assertActive(){}}).get(legacy.outboxId).state,'queued');
  const before=context.publisher.get(intent.id);assert.equal((await shared.initialize({workspaceId:'workspace',baseline})).commit,baseline.commit,'a lost remote ACK does not optimistically advance local H');

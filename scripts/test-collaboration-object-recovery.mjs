@@ -35,10 +35,13 @@ test("time spent probing cannot extend credentials beyond object expiry", async 
   assert.equal(issued, false);
 });
 
-test("expired unbound verified objects cannot be recovered as usable attachments", async () => {
-  const object = { state: "verified", ciphertext_size: 100, ciphertext_sha256: "a".repeat(64), orphan_expires_at: new Date(0), provider_etag: "etag" };
+test("orphan expiry is distinguishable without restoring an object or credentials", async () => {
+  const object = { id: "obj", state: "verified", ciphertext_size: 100, ciphertext_sha256: "a".repeat(64), orphan_expires_at: new Date(0), provider_etag: "etag" };
   const repository = { withTransaction: (fn) => fn({}), authorizeObject: async () => ({ ok: true, object }) };
-  await assert.rejects(inspectObjectRecovery({ repository, account: {}, objectId: "obj", now: () => 100000 }), { code: "COLLAB_OBJECT_UNAVAILABLE" });
+  const expired=await inspectObjectRecovery({ repository, account: {}, objectId: "obj", now: () => 100000 });
+  assert.equal(expired.objectId,'obj');assert.equal(expired.state,'expired');assert.equal(expired.reason,'orphan-expired');assert.equal(expired.upload,undefined);
+  object.state='revoked';await assert.rejects(inspectObjectRecovery({repository,account:{},objectId:'obj',now:()=>100000}),{code:'COLLAB_OBJECT_UNAVAILABLE'});
+  object.state='verified';object.task_id='task';await assert.rejects(inspectObjectRecovery({repository,account:{},objectId:'obj',now:()=>100000}),{code:'COLLAB_OBJECT_UNAVAILABLE'});delete object.task_id;
   object.state = "bound";
   assert.equal((await inspectObjectRecovery({ repository, account: {}, objectId: "obj", now: () => 100000 })).state, "bound", "binding ends the orphan deadline, not the actual object expiration policy");
 });

@@ -1,4 +1,10 @@
 const fail = (code = "COLLAB_OBJECT_UNAVAILABLE", retryable = false) => Object.assign(new Error(code), { code, retryable });
+export function expiredOrphanRecovery(object,now){
+  const expires=new Date(object.orphan_expires_at).getTime();
+  if(!['uploading','verified'].includes(object.state)||object.task_id||object.bound_message_id||object.shared_workspace_id||object.expires_at!=null
+    ||object.orphan_expires_at==null||!Number.isFinite(expires)||!Number.isFinite(Number(now))||expires>Number(now))return null;
+  return {objectId:object.id,state:'expired',reason:'orphan-expired',ciphertextSize:Number(object.ciphertext_size),ciphertextSha256:object.ciphertext_sha256};
+}
 
 /** Read-only recovery: the upload owner must reauthorize on every attempt.
  * Provider inspection never advances the object state or creates a receipt;
@@ -10,6 +16,7 @@ export async function inspectObjectRecovery({ repository, objectStore, account, 
     if (!decision?.ok) throw fail();
     const object = decision.object;
     if (!["uploading", "verified", "bound"].includes(object.state)) throw fail();
+    const expired=expiredOrphanRecovery(object,now());if(expired)return expired;
     if (object.state !== "bound" && !(new Date(object.orphan_expires_at).getTime() > Number(now()))) throw fail();
     const result = { objectId, state: object.state, ciphertextSize: Number(object.ciphertext_size), ciphertextSha256: object.ciphertext_sha256, etag: object.provider_etag || null };
     if (object.state !== "uploading") return result;

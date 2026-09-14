@@ -120,6 +120,10 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
         assert.ok(published.remoteReceipt,'native completion requires a real remote publication receipt');
         assert.equal(owner.records.get(oldOutboxId).state,'superseded');assert.equal(owner.records.get(oldOutboxId).supersededBy,published.outboxId);
         assert.equal(owner.records.get(published.legacyMigrationId).state,'confirmed','startup upgrade retains and reconciles the old local publication');
+        const retired=owner.records.list(conversationId).filter(row=>row.kind==='retired-publication-upload');assert.equal(retired.length,1);
+        const orphan=(await pool.query('SELECT state,shared_workspace_id,task_id,bound_message_id FROM stored_objects WHERE id=$1',[retired[0].objectId])).rows[0];
+        assert.equal(orphan.state,'verified');assert.equal(orphan.shared_workspace_id,null);assert.equal(orphan.task_id,null);assert.equal(orphan.bound_message_id,null);
+        assert.notEqual(retired[0].objectId,(await pool.query('SELECT object_id FROM collaboration_shared_publications WHERE workspace_id=$1',[task.sharedWorkspaceId])).rows[0].object_id);
         assert.ok((await pool.query("SELECT count(*)::int n FROM command_receipts WHERE command_type='integration.renew'")).rows[0].n>=1,'actual remote lease renews while original Node checks run');
         assert.equal(owner.records.get(published.outboxId).state,'sent');
         assert.ok(owner.store.db.get('SELECT generation FROM task_integration_work').generation>=3,'lost publication ACK recovers through another native original-session attempt');
