@@ -101,7 +101,10 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
     active();execution.assertActive();row=store.db.get("SELECT * FROM task_integration_work WHERE account_id=? AND intent_id=?",accountId,intent.id);
     const final=intents.get(intent.id);
     const state=final?.state==='completed'?'published':final?.state==='cancelled'?'cancelled':row?.code==='COLLAB_INTEGRATION_VALIDATION_REQUIRED'?'validation_required':row?.code==='COLLAB_INTEGRATION_VALIDATION_FAILED'?'validation_failed':row?.code==='COLLAB_INTEGRATION_CONFLICT'?'conflict':row?.state==='waiting'?'failed':'queued';
-    return {ok:true,state};
+    const local=state==='published'&&remotePublicationEnabled
+      ? await getWorkflow().prepareIntegrationLocal?.({intentId:intent.id,assertCurrent:()=>{active();execution.assertActive();}}):null;
+    active();execution.assertActive();
+    return {ok:true,state,...(local?{localState:local.state}:{})};
   }
   return {runIntent,recoverCheckPolicies,recover(){if(stopped)return Promise.resolve();if(!running)running=drain().finally(()=>{running=null;});return running;},stop(){stopped=true;for(const timer of timers)clearInterval(timer);timers.clear();for(const remote of remotes)void remote.close();}};
 }

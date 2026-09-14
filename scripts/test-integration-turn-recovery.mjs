@@ -30,5 +30,9 @@ try{
  const host={ctx:{sessionManager:{resolveTurnOwnerScope:()=>({ok:true,ownerScope:owner})},executeCollaborationIntegration:async()=>{called++;owner='other';return {ok:true,state:'published'};}}};
  await assert.rejects(runIntegrationTurn(host,{id:'session'},state,restored.options.localAssistant.collaborationIntegration),/FENCED/);
  assert.equal(called,1);await assert.rejects(runIntegrationTurn(host,{id:'session'},state,restored.options.localAssistant.collaborationIntegration),/FENCED/);assert.equal(called,1,'changed owner cannot execute another operation');
+ owner=state.taskAdmission.ownerScope;
+ host.ctx.executeCollaborationIntegration=async()=>({ok:true,state:'published',localState:'ready'});
+ const local=await runIntegrationTurn(host,{id:'session'},state,restored.options.localAssistant.collaborationIntegration);
+ assert.match(local.assistant,/not been applied|尚未写入|لم يُطبّق/,'candidate preparation cannot be described as completed workspace application');
  console.log('integration turn recovery: actual SQLite dedupe/reopen, restored closed background operation, explicit attempts and owner fences passed');
 }finally{store?.close();fs.rmSync(root,{recursive:true,force:true});}

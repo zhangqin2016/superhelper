@@ -230,4 +230,4 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized, writer 
   }
   return {preview,apply,recover};
 }
-module.exports = { createTaskApplication };
+module.exports = { createTaskApplication, readTaskFile:readFile, safeTaskRoot:safeRoot };

@@ -129,6 +129,12 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
         published=owner.records.get(journal.id);
         assert.equal(published.state,'published');
         assert.ok(published.remoteReceipt,'native completion requires a real remote publication receipt');
+        let local;
+        while(Date.now()<upgradeDeadline){local=owner.records.list(conversationId).find(row=>row.kind==='local-materialization'&&row.intentId===published.intentId);if(['ready','conflicts','failed','baseline_required'].includes(local?.state))break;await new Promise(resolve=>setTimeout(resolve,20));}
+        assert.equal(local?.state,'ready','the original native turn prepares its independent local candidate after actual remote publication');
+        assert.equal(fs.readFileSync(path.join(local.candidate.snapshotRoot,'work.txt'),'utf8'),'reviewed');
+        assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','candidate completion is not a local application receipt');
+        assert.equal(owner.records.get(local.baseId).revision.commit,task.inputGit.commit,'shared publication cannot advance local A');
         assert.equal(owner.records.get(oldOutboxId).state,'superseded');assert.equal(owner.records.get(oldOutboxId).supersededBy,published.outboxId);
         assert.equal(owner.records.get(published.legacyMigrationId).state,'confirmed','startup upgrade retains and reconciles the old local publication');
         const retired=owner.records.list(conversationId).filter(row=>row.kind==='retired-publication-upload');assert.equal(retired.length,1);

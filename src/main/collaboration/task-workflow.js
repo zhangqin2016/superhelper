@@ -593,6 +593,18 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     }
   });
   return {recoverPending:()=>ready,acquireIntegrationInput,
+    async prepareIntegrationLocal({intentId,assertCurrent}){
+      if(sharedPublicationProtocol!==1)return null;
+      const guard=()=>{assertActive();assertCurrent();};guard();
+      const intent=require("./integration-intents").createIntegrationIntents({store,assertActive:guard}).get(intentId);
+      if(intent?.state!=="completed")throw fail("COLLAB_LOCAL_MATERIALIZATION_PUBLICATION_REQUIRED");
+      const input=intent.input,source=read(`task:${input.taskId}`,input.conversationId);
+      const published=records.get(`shared-publication:${createHash("sha256").update(JSON.stringify(intentId)).digest("hex")}`);
+      const local=require("./local-materialization").createLocalMaterialization({store,taskGit:git(),rootPath:path.join(root(),"local-materialization"),
+        deviceId,assertActive:guard,authorize:async value=>{await authorizeIntegration(value);guard();return true;}});
+      const result=await local.prepare({intentId,input,localRoot:source.sourceRoot,baseline:source.gitBaseline,published});guard();notify();
+      return {state:result.state};
+    },
     createIntegrationRemote({input,intentId,taskGit,assertCurrent,authorize}){
       if(sharedPublicationProtocol!==1)return null;
       return require('./remote-publication').createRemotePublication({store,taskGit,client,transfers,deviceId,input,intentId,
