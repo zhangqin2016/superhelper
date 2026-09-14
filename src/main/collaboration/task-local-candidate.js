@@ -9,7 +9,7 @@ const {manifestMap}=require("./task-apply-plan");
 const {readTaskFile,safeTaskRoot}=require("./task-application");
 const {mergeJson}=require("./integration-json-merge");
 const {mergeOffice}=require("./office-merge");
-const LOCAL_CANDIDATE_POLICY="text-json-docx-parts-v1";
+const LOCAL_CANDIDATE_POLICY="text-json-docx-parts-receipt-v1";
 const fail=code=>Object.assign(Error(`COLLAB_LOCAL_CANDIDATE_${code}`),{code:`COLLAB_LOCAL_CANDIDATE_${code}`});
 const hash=bytes=>createHash("sha256").update(bytes).digest("hex");
 const entry=(name,bytes)=>({path:name,sha256:hash(bytes),sizeBytes:bytes.length});

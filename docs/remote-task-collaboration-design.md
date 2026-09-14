@@ -109,3 +109,6 @@ P5：本地预览/应用/回滚；两台客户端加真实私有对象桶验收�
 
 
 Checkpoint 56: private A/W/M preparation now offers conservative DOCX part merging via the existing bundled Python resolver. Paragraphs/cells are atomic and only stable Word container positions are reconciled; opaque unchanged OPC parts retain their bytes. Relationship/content-type changes and digital signatures are outside this policy. Runtime failure remains an explicit candidate conflict, and the policy version invalidates older cached candidates. Shared-chain Office merging, rendered fidelity, other Office formats and automatic W′ application remain pending; this does not advance A.
+
+
+Checkpoint 57 connects native private validation to application through an explicitly supplied foreground-aware writer. The final applied recovery journal, candidate receipt and A generation/revision advance share one SQLite transaction after whole-candidate verification; A references shared M. Interrupted receipts retain per-file rollback evidence without advancing A. Replayed completed publication preserves later private edits. Production still needs the cross-profile foreground admission implementation; only the controlled native/HTTP fixture supplies admission today. Applied materializations require contribution-specific inverse undo, not the legacy whole-file rollback.

@@ -41,7 +41,12 @@ function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActiv
     const fingerprint=hash({policy:LOCAL_CANDIDATE_POLICY,binding,base:base.revision,baseGeneration:base.generation,baseRemoteRevision:base.remoteRevision,revision});
     const previous=records.get(id);
     if(previous&&hash(previous.binding)!==hash(binding))throw fail("BINDING_CONFLICT");
+    if(previous?.state==="applied"&&hash(previous.sharedRevision)===hash(revision)
+      &&base.receipt?.applicationId===previous.applicationId&&base.revision.commit===revision.commit)return previous;
+    const recovery=previous?.applicationId?require("./task-recovery").createTaskRecovery({store,assertActive}).get(previous.applicationId):null;
+    if(recovery?.journal&&!["rolled_back","applied"].includes(recovery.state))throw fail("RECOVERY_REQUIRED");
     const intact=value=>{
+      if(recovery?.state==="rolled_back")return false;
       if(value?.fingerprint!==fingerprint||!["ready","conflicts"].includes(value.state))return false;
       try{
         safeTaskRoot(value.candidate.snapshotRoot);
@@ -53,8 +58,8 @@ function createLocalMaterialization({store,taskGit,rootPath,deviceId,assertActiv
     if(intact(previous))return previous;
     const token=randomUUID();
     const attempt=path.join(rootPath,`local-${token}`);
-    records.put(id,{id,kind:"local-materialization",conversationId:input.conversationId,intentId,binding,baseId,
-      baseRevision:base.revision,sharedRevision:revision,fingerprint,token,attemptRoot:attempt,state:"preparing"});
+    records.put(id,{id,kind:"local-materialization",conversationId:input.conversationId,taskId:input.taskId,deliveryId:input.deliveryId,intentId,binding,baseId,
+      baseRevision:base.revision,baseGeneration:base.generation,baseRemoteRevision:base.remoteRevision,sharedRevision:revision,fingerprint,token,attemptRoot:attempt,state:"preparing"});
     const guard=()=>{
       assertActive();
       if(records.get(id)?.token!==token||hash(records.get(baseId))!==hash(base)||identity(localRoot)!==binding.rootIdentity)throw fail("FENCED");

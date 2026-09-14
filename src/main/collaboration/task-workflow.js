@@ -14,7 +14,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
-  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, sharedPublicationProtocol, integrationValidationAvailable=false, chooseValidationChecks, writerLockPath, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, sharedPublicationProtocol, integrationValidationAvailable=false, chooseValidationChecks, writerLockPath, localApplicationWriter, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const checkPolicies=require("./integration-check-policy").createIntegrationCheckPolicy({store,assertActive});
   const checkSelection=require("./integration-check-selection");
@@ -248,6 +248,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     return result;
   }
   function application(record, localRecovery = false) {
+    if(record.kind==="materialization"&&record.state==="applied")throw fail("COLLAB_LOCAL_APPLICATION_INVERSE_REQUIRED");
     const journalRoot = path.join(root(), "recovery");
     fs.mkdirSync(journalRoot,{recursive:true,mode:0o700});
     return createTaskApplication({ journalRoot:fs.realpathSync(journalRoot),
@@ -365,7 +366,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       save({...local,sharedWorkspaceId:task.sharedWorkspaceId,workspaceBindingId:id});
       return {ok:true,projectId:target.projectId,sessionId:target.sessionId};
     }
-    if (operation === "recoveries") return {ok:true,applications:recoveries.list().filter(v=>v.journal && v.state !== "rolled_back").map(v=>({
+    if (operation === "recoveries") return {ok:true,applications:recoveries.list().filter(v=>v.journal && v.state !== "rolled_back" && !(v.kind==="materialization"&&v.state==="applied")).map(v=>({
       conversationId:v.conversationId,taskId:v.taskId,applicationId:v.id,state:v.state,deliveryId:v.deliveryId,planHash:v.planHash,
       label:path.basename(v.input.rootPath),
     }))};
@@ -552,7 +553,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (operation === "preview") {
       const task = await taskFor(command);
       if (task.requesterUserId !== store.accountId || task.state !== "accepted" || task.acceptedDeliveryId !== command.deliveryId) throw fail("COLLAB_TASK_STATE_CONFLICT");
-      const previous = recoveries.list().filter(v=>v.conversationId === conversationId && v.taskId === task.id && v.journal && v.state !== "rolled_back").sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))[0];
+      const previous = recoveries.list().filter(v=>v.kind!=="materialization"&&v.conversationId === conversationId && v.taskId === task.id && v.journal && v.state !== "rolled_back").sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))[0];
       if (previous) {
         if (previous.state !== "applied") throw fail("COLLAB_TASK_APPLICATION_RECOVERY_REQUIRED");
         return {ok:true,applicationId:previous.id,planHash:previous.planHash,plan:previous.journal.plan};
@@ -577,7 +578,7 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     if (operation === "apply" || operation === "rollback") {
       const record = operation === "rollback" ? recoveries.get(command.applicationId) : read(command.applicationId,conversationId);
       if (!record || record.conversationId !== conversationId) throw fail("COLLAB_TASK_LOCAL_MISSING");
-      if (record.kind !== "application" || record.taskId !== command.taskId || (operation === "apply" && record.deliveryId !== command.deliveryId)) throw fail("COLLAB_TASK_INVALID");
+      if ((record.kind !== "application" && !(operation==="rollback"&&record.kind==="materialization")) || record.taskId !== command.taskId || (operation === "apply" && record.deliveryId !== command.deliveryId)) throw fail("COLLAB_TASK_INVALID");
       if (operation === "rollback") return application(record,true).recover({applicationId:record.id,mode:"rollback"});
       return application(record).apply({...record.input,expectedPlanHash:command.expectedPlanHash,confirmDeletions:command.confirmDeletions});
     }
@@ -607,6 +608,15 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         const validator=require("./local-candidate-validation").createLocalCandidateValidation({store,rootPath:path.join(root(),"local-validation-git"),assertActive:guard,
           getPolicy:value=>checkPolicies.current(value,checkSelection.sourceIdentity(source.sourceRoot))});
         const validation=await validator.validate({job:result,input});guard();notify();
+        // Main-owned admission must fence foreground writers across profiles.
+        // The existing broker-only lock is deliberately not a default here.
+        if(validation.state==="passed"&&localApplicationWriter){
+          const application=require("./local-materialization-application").createLocalMaterializationApplication({store,writer:localApplicationWriter,
+            journalRoot:path.join(root(),"recovery"),assertActive:guard,authorize:async value=>{await authorizeIntegration(value);guard();return true;},
+            getPolicy:value=>checkPolicies.current(value,checkSelection.sourceIdentity(source.sourceRoot))});
+          const applied=await application.apply({job:local.get(intentId),input});guard();notify();
+          return {...applied,validationState:validation.state};
+        }
         return {state:result.state,validationState:validation.state};
       }
       return {state:result.state};

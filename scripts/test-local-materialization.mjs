@@ -61,6 +61,16 @@ try{
   await assert.rejects(worker().prepare(args),/STALE_PUBLICATION/);
   liveRecords.put(first.baseId,savedBase);
   await assert.rejects(worker().prepare({...args,published:{...published,remoteReceipt:null}}),/PUBLICATION_REQUIRED/);
+  const appliedJob=worker().get('intent');
+  liveRecords.put(appliedJob.id,{...appliedJob,state:'applied',applicationId:'receipt'});
+  liveRecords.put(appliedJob.baseId,{...savedBase,generation:1,remoteRevision:1,
+    revision:{ref:appliedJob.sharedRevision.ref,commit:appliedJob.sharedRevision.commit},receipt:{applicationId:'receipt'}});
+  store.close();open();
+  fs.writeFileSync(path.join(localRoot,'work.txt'),'subsequent private change');
+  const replay=await worker().prepare(args);
+  assert.equal(replay.state,'applied','completed publication replay must retain its receipt after restart and later private edits');
+  assert.equal(replay.token,appliedJob.token);
+  assert.equal(fs.readFileSync(path.join(localRoot,'work.txt'),'utf8'),'subsequent private change');
   allowed=false;await assert.rejects(worker().prepare(args),/ACCESS_DENIED/);
   console.log('local materialization: real Git isolation, encrypted candidate/A journals, reopen, missing staging, W changes and unknown A passed');
 }finally{store?.close();fs.rmSync(root,{recursive:true,force:true});}

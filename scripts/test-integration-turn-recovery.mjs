@@ -38,5 +38,8 @@ try{
  const rejected=await runIntegrationTurn(host,{id:'session'},state,restored.options.localAssistant.collaborationIntegration);
  assert.equal(rejected.failed,true,'a published shared M does not mask failing private W prime checks');
  assert.match(rejected.assistant,/failed local checks|未通过本地检查|لم يجتز/);
+ host.ctx.executeCollaborationIntegration=async()=>({ok:true,state:'published',localState:'applied',localValidationState:'passed'});
+ const applied=await runIntegrationTurn(host,{id:'session'},state,restored.options.localAssistant.collaborationIntegration);
+ assert.match(applied.assistant,/has been applied|已写入工作空间|وتطبيق المرشح/);
  console.log('integration turn recovery: actual SQLite dedupe/reopen, restored closed background operation, explicit attempts and owner fences passed');
 }finally{store?.close();fs.rmSync(root,{recursive:true,force:true});}

@@ -522,3 +522,6 @@ Owned engine exit confirmation (2026-09-14): shared-server shutdown retains its 
 
 
 DOCX private candidate policy (checkpoint 56): `test_office_merge.py` and `test-office-local-candidate.mjs` cover conservative paragraph/table-cell merging through real Python, opaque part-byte preservation, conflicts, hostile packages, unavailable runtime and unchanged W. `test-local-materialization.mjs` rejects cache reuse under a changed merge policy. This is the private A/W/M chain only; shared Office merge, rendered fidelity, full format coverage and automatic application remain unaccepted. C/D stay open.
+
+
+Admitted local materialization (checkpoint 57): `test-local-materialization-apply.mjs` proves real broker writes and atomic encrypted applied/A receipts, refusal on stale W/base/policy and writer contention, and rollback after receipt failure. The signed HTTP/native fixture now applies independently validated W′ and advances A to M using fixture-owned writer admission. Production foreground admission is not supplied, so automatic desktop application is not enabled. Applied materialization cannot use legacy rollback; contribution-specific undo and installed-client acceptance remain pending.

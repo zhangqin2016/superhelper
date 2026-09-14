@@ -14,6 +14,7 @@ const descriptions={
   queued:"Collaboration integration remains queued.",
   failed:"Collaboration integration could not complete. See the task for retry status.",
   local_ready:"The shared version is published. A local candidate preserving private edits is ready; workspace files have not been applied.",
+  local_applied:"The shared version is published and the validated local candidate has been applied to the workspace.",
   local_conflicts:"The shared version is published. Local edits need conflict resolution before application.",
   local_baseline_required:"The shared version is published. The last synchronized local baseline must be recovered before application.",
   local_validation_passed:"The shared version is published and the private candidate passed local checks. Workspace files have not been applied.",
@@ -28,6 +29,8 @@ Object.assign(translated["zh-CN"],{local_ready:"共享版本已发布。保留�
 Object.assign(translated.ar,{local_ready:"تم نشر الإصدار المشترك. الإصدار المحلي المرشح الذي يحافظ على التعديلات الخاصة جاهز، ولم يُطبّق على ملفات مساحة العمل بعد.",local_conflicts:"تم نشر الإصدار المشترك. تحتاج التعديلات المحلية إلى حل التعارضات قبل التطبيق.",local_baseline_required:"تم نشر الإصدار المشترك. يجب استعادة آخر إصدار تمت مزامنته محليًا قبل التطبيق."});
 Object.assign(translated["zh-CN"],{local_validation_passed:"共享版本已发布，私有候选已通过本地检查，尚未写入工作空间。",local_validation_failed:"共享版本已发布。私有候选未通过本地检查，尚未写入工作空间。",local_validation_required:"共享版本已发布。私有候选仍需本地检查，之后才能应用。"});
 Object.assign(translated.ar,{local_validation_passed:"تم نشر الإصدار المشترك واجتاز المرشح الخاص الفحوص المحلية. لم تُطبّق ملفات مساحة العمل بعد.",local_validation_failed:"تم نشر الإصدار المشترك. لم يجتز المرشح الخاص الفحوص المحلية، ولم تُطبّق ملفات مساحة العمل.",local_validation_required:"تم نشر الإصدار المشترك. لا يزال المرشح الخاص يحتاج إلى فحوص محلية قبل التطبيق."});
+translated["zh-CN"].local_applied="共享版本已发布，通过验证的本地候选已写入工作空间。";
+translated.ar.local_applied="تم نشر الإصدار المشترك وتطبيق المرشح المحلي الذي اجتاز التحقق على مساحة العمل.";
 function label(key){
   let locale="en";try{locale=require("../locale-settings").getLocale();}catch{/* Embedded hosts use English. */}
   return translated[locale]?.[key] || descriptions[key] || "Integrate the shared task delivery";
@@ -63,7 +66,7 @@ async function runIntegrationTurn(orchestrator,session,state,value){
   const result=await orchestrator.ctx.executeCollaborationIntegration({...operation,sessionId:session.id},{turnId,assertActive});
   assertActive();
   if(result?.ok!==true || !Object.hasOwn(descriptions,result.state))throw fail("FAILED");
-  const local=result.state==="published"&&["ready","conflicts","baseline_required"].includes(result.localState)?`local_${result.localState}`:null;
+  const local=result.state==="published"&&["ready","applied","conflicts","baseline_required"].includes(result.localState)?`local_${result.localState}`:null;
   const localValidation=local==="local_ready"&&["passed","failed","required"].includes(result.localValidationState)?`local_validation_${result.localValidationState}`:null;
   return {assistant:label(localValidation||local||result.state),failed:["validation_failed","failed"].includes(result.state)||localValidation==="local_validation_failed",errorCode:result.state==="validation_failed"?"COLLAB_INTEGRATION_VALIDATION_FAILED":"COLLAB_INTEGRATION_FAILED"};
 }

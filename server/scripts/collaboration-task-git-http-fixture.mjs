@@ -84,6 +84,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     }}:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
       policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,...(remote?{sharedPublicationProtocol:1}:{})},
       transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,
+        ...(remote?{localApplicationWriter:require('../../src/main/collaboration/local-writer').createLocalWriter({filePath:path.join(owner.root,'writer.sqlite')})}:{}),
         chooseValidationChecks:async()=>({filePaths:[path.join(owner.source,'rule.test.cjs')]}),enqueueIntegrationTurn:request=>host.enqueue(request)}});
     let service=makeService(false);
     assert.equal(service.ok,true);service.start();
@@ -130,11 +131,12 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
         assert.equal(published.state,'published');
         assert.ok(published.remoteReceipt,'native completion requires a real remote publication receipt');
         let local;
-        while(Date.now()<upgradeDeadline){local=owner.records.list(conversationId).find(row=>row.kind==='local-materialization'&&row.intentId===published.intentId);if(['ready','conflicts','failed','baseline_required'].includes(local?.state))break;await new Promise(resolve=>setTimeout(resolve,20));}
-        assert.equal(local?.state,'ready','the original native turn prepares its independent local candidate after actual remote publication');
+        while(Date.now()<upgradeDeadline){local=owner.records.list(conversationId).find(row=>row.kind==='local-materialization'&&row.intentId===published.intentId);if(['applied','conflicts','failed','baseline_required'].includes(local?.state))break;await new Promise(resolve=>setTimeout(resolve,20));}
+        assert.equal(local?.state,'applied','the native turn applies the validated candidate under the fixture-owned writer admission');
         assert.equal(fs.readFileSync(path.join(local.candidate.snapshotRoot,'work.txt'),'utf8'),'reviewed');
-        assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','candidate completion is not a local application receipt');
-        assert.equal(owner.records.get(local.baseId).revision.commit,task.inputGit.commit,'shared publication cannot advance local A');
+        assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'reviewed','the admitted local candidate is written to the original workspace');
+        assert.equal(owner.records.get(local.baseId).revision.commit,published.candidate.commit,'A advances to shared M only with the local application receipt');
+        assert.equal(owner.records.get(local.baseId).receipt.applicationId,local.applicationId);
         while(!owner.records.get(local.id)?.validation&&Date.now()<upgradeDeadline)await new Promise(resolve=>setTimeout(resolve,20));
         const localValidation=owner.records.get(local.id)?.validation;
         assert.equal(localValidation?.state,'passed','private candidate runs the pinned project checks in its own Git repository');
@@ -161,7 +163,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       const execution=checked.report.checks.find(check=>check.id==='project-policy').execution;
       if(executable)assert.equal(execution.execution.summary.counts.tests,1);else assert.equal(execution.execution.code,'SANDBOX_UNAVAILABLE');
       assert.equal(execution.execution.state,executable?'passed':'required');
-      assert.equal(execution.executionCopyUnchanged,true);assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline');
+      assert.equal(execution.executionCopyUnchanged,true);assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),executable?'reviewed':'baseline');
       const nextAdmission=owner.records.list(conversationId).find(row=>row.kind==='integration-admission');
       assert.notEqual(nextAdmission.turnId,admitted.turnId,'configuration wakes a fresh bounded attempt in the original session');
       const finishDeadline=Date.now()+10000;
@@ -186,6 +188,11 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     await assert.rejects(helper.client.claimIntegration({...claim,deviceId:helper.deviceId,clientCommandId:'assignee-claim'}),{code:'COLLAB_TASK_ACCESS_DENIED'});
     const released=await owner.client.releaseIntegration({...held,clientCommandId:'signed-integration-release'});assert.equal(released.lease,null);
     assert.equal(released.headCommit,target.headCommit,'qualification preserves the acknowledged shared head');
+    // Separate legacy preview/apply/rollback acceptance: simulate subsequent
+    // owner edits back to the original content, without rewriting the A receipt.
+    fs.writeFileSync(path.join(owner.source,'work.txt'),'baseline');
+    fs.writeFileSync(path.join(owner.source,'remove.txt'),'remove');
+    if(fs.existsSync(path.join(owner.source,'added.txt')))fs.unlinkSync(path.join(owner.source,'added.txt'));
     await verifyPublicationHttp({owner,helper,task,conversationId,pool,dropAck,uploaded});
     ok(await owner.tasks.submit({conversationId,taskId,action:'approve',deliveryId:delivered.id,expectedRevision:task.revision}));
     const preview=ok(await owner.run({operation:'preview',taskId,deliveryId:delivered.id}));

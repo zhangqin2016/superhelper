@@ -29,7 +29,7 @@ function project(id,value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || value.id !== id) throw fail("INVALID");
   const result = Object.fromEntries(fields.filter(key=>value[key]!==undefined).map(key=>[key,value[key]]));
   for (const key of ["id","conversationId","taskId","deliveryId"]) identifier(result[key]);
-  if (result.kind !== undefined && result.kind !== "application") throw fail("INVALID");
+  if (result.kind !== undefined && !["application","materialization"].includes(result.kind)) throw fail("INVALID");
   if (result.createdAt !== undefined && (!Number.isSafeInteger(result.createdAt) || result.createdAt < 0)) throw fail("INVALID");
   if (typeof result.state !== "string" || !/^[a-z_]{1,40}$/.test(result.state)
     || typeof result.planHash !== "string" || !/^[a-f0-9]{64}$/.test(result.planHash)) throw fail("INVALID");
