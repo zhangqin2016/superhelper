@@ -27,7 +27,7 @@ function createIntegrationCheckPolicy({store,assertActive}){
       || record.id!==`validation-policy:${hash(record.policy)}` || JSON.stringify(record.policy.binding)!==JSON.stringify(bound))throw fail("INVALID");
     return record;
   }
-  async function install({input,sourceIdentity,taskGit,baseline,paths,expectedPolicyId,authorize,selectedHashes,assertCurrent=()=>{}}){
+  async function install({input,sourceIdentity,taskGit,baseline,paths,expectedPolicyId,authorize,selectedHashes,assertCurrent=()=>{},onInstalled=()=>{}}){
     const bound=binding(input,sourceIdentity);
     if(typeof authorize!=="function"||await authorize()!==true)throw fail("ACCESS");assertActive();
     if((current(input,sourceIdentity)?.id||null)!==expectedPolicyId)throw fail("CHANGED");
@@ -62,6 +62,7 @@ function createIntegrationCheckPolicy({store,assertActive}){
         if((current(input,sourceIdentity)?.id||null)!==expectedPolicyId)throw fail("CHANGED");
         const record=records.get(id)||records.put(id,{kind:"validation-policy",conversationId:input.conversationId,policy,createdAt:store.now()});
         records.put(pointerId(bound),{kind:"validation-policy-current",conversationId:input.conversationId,policyId:id});
+        onInstalled(record);
         return record;
       })();
     }finally{fs.rmSync(temporary,{recursive:true,force:true});}

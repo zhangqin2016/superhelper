@@ -302,7 +302,8 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         };
         const authorize=async()=>{await authorizeIntegration(input);assertCurrent();return true;};
         const policy=await checkPolicies.install({input,sourceIdentity:identity,taskGit:git(),baseline:source.gitBaseline,
-          paths:selected.paths,selectedHashes:selected.hashes,expectedPolicyId:previous?.id||null,authorize,assertCurrent});
+          paths:selected.paths,selectedHashes:selected.hashes,expectedPolicyId:previous?.id||null,authorize,assertCurrent,
+          onInstalled:()=>store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE account_id=? AND intent_id=? AND state='waiting' AND code IN ('COLLAB_INTEGRATION_VALIDATION_REQUIRED','COLLAB_INTEGRATION_VALIDATION_FAILED')",store.accountId,found.intent.id)});
         notify();return {ok:true,integration:{...current().status,canConfigureChecks:true,checkCount:policy.policy.files.length}};
       }
       const result=store.db.transaction(()=>{
@@ -587,7 +588,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       catch { /* durable record remains available; never report it as applied */ }
     }
   });
-  return {recoverPending:()=>ready,acquireIntegrationInput,getIntegrationCheckPolicy:async input=>{
+  return {recoverPending:()=>ready,acquireIntegrationInput,assertIntegrationCheckPolicy:(input,expectedId)=>{
+    assertActive();const source=read(`task:${input.taskId}`,input.conversationId);
+    const current=checkPolicies.current(input,checkSelection.sourceIdentity(source.sourceRoot));
+    if((current?.id||null)!==expectedId)throw fail("COLLAB_CHECK_POLICY_CHANGED");
+  },getIntegrationCheckPolicy:async input=>{
     await authorizeIntegration(input);const source=read(`task:${input.taskId}`,input.conversationId);
     return checkPolicies.current(input,checkSelection.sourceIdentity(source.sourceRoot));
   },authorizeIntegration:async input=>{await authorizeIntegration(input);return true;},run(command) {

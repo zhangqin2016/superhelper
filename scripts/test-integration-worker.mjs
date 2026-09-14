@@ -13,13 +13,13 @@ let now=1000,store,worker,acquired=0,networkFailure=false,pause=null;
 const open=()=>{store=new CollaborationStore({dbPath:path.join(root,'db'),accountId:'owner',keyring,now:()=>now});return createIntegrationIntents({store,assertActive(){},now:()=>now});};
 const write=(dir,text)=>{fs.mkdirSync(dir);fs.writeFileSync(path.join(dir,'work.txt'),text);return {path:'work.txt',sha256:createHash('sha256').update(text).digest('hex'),sizeBytes:Buffer.byteLength(text)};};
 try{
- let intents=open();store.replaceProjectionFromBootstrap({conversations:[{id:'chat',scopeId:'team:org',kind:'channel'}]});
+ let intents=open(),onAcquire;store.replaceProjectionFromBootstrap({conversations:[{id:'chat',scopeId:'team:org',kind:'channel'}]});
  const taskGit=new TaskGit({rootPath:path.join(root,'git'),gitOptions:{autoInstall:false}}),source=path.join(root,'source'),changed=path.join(root,'changed');
  const base=[write(source,'before')],manifest=[write(changed,'after')],baseline=await taskGit.captureBaseline({taskId:'task',snapshotRoot:source,manifest:base});
  const delivery=await taskGit.captureContribution({baseline,baseManifest:base,materializedPaths:['work.txt'],deliveryId:'delivery',snapshotRoot:changed,manifest});
  const input={conversationId:'chat',workspaceId:'workspace',taskId:'task',deliveryId:'delivery',targetId:'target',chain:'shared',sessionId:'session',projectId:'project',baselineCommit:baseline.commit,deliveryCommit:delivery.commit};
  const first=intents.enqueue(input);
- const workflow={authorizeIntegration:async()=>true,acquireIntegrationInput:async()=>{acquired++;if(pause)await pause;if(networkFailure)throw Object.assign(Error('offline'),{code:'COLLAB_NETWORK_UNAVAILABLE'});return {taskGit,baseline,delivery};}};
+ const workflow={authorizeIntegration:async()=>true,acquireIntegrationInput:async()=>{acquired++;onAcquire?.();if(pause)await pause;if(networkFailure)throw Object.assign(Error('offline'),{code:'COLLAB_NETWORK_UNAVAILABLE'});return {taskGit,baseline,delivery};}};
  const options={store,assertActive(){},getWorkflow:()=>workflow,now:()=>now};
  worker=createIntegrationWorker(options);await worker.recover();
  assert.equal(store.db.get('SELECT state FROM task_integration_work').state,'waiting');
@@ -51,7 +51,7 @@ try{
  await Promise.resolve();turnCancelled=true;releaseTurn();await assert.rejects(owned,/turn stopped/);pause=null;
  assert.equal(store.db.get('SELECT state FROM task_integration_work WHERE intent_id=?',interrupted.id).state,'waiting','cancelled owning turn leaves retryable work without late publication');
  const third=intents.enqueue({...input,workspaceId:'third',targetId:'third'});let resolve;pause=new Promise(done=>{resolve=done;});
- const pending=worker.recover();await Promise.resolve();worker.stop();resolve();await pending;
+ const entered=new Promise(done=>{onAcquire=done;});const pending=worker.recover();await entered;worker.stop();resolve();await pending;onAcquire=null;
  assert.equal(intents.get(third.id).state,'running','stopped late response leaves a durable lease for successor recovery');
  // A native worker must validate the resolved bytes, not stop at Git's text conflict.
  pause=null;worker.stop();
@@ -92,7 +92,7 @@ try{
  await worker.runIntent({accountId:'owner',sessionId:'session',intentId:pinned.id},{assertActive(){}});
  assert.equal(unrelatedCalled,false,'a saved original check set cannot be bypassed by an unrelated callback');
  assert.equal(intents.get(pinned.id).state,'pending');
- assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',pinned.id).code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED');
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',pinned.id).code,'COLLAB_CHECK_POLICY_INVALID');
  worker.stop();let policyReads=0;
  const changedPolicy=intents.enqueue({...jsonInput,workspaceId:'changed-policy',targetId:'changed-policy-target'});
  worker=createIntegrationWorker({...jsonOptions,getWorkflow:()=>({...jsonOptions.getWorkflow(),getIntegrationCheckPolicy:async()=>++policyReads===1?null:{id:'validation-policy:'+'c'.repeat(64)}}),

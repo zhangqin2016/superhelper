@@ -77,9 +77,10 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
         catch{result=null;}
         assertActive();
         const valid=result?.commit===candidate.commit&&result.policyId===validationPolicyId&&/^[a-f0-9]{64}$/.test(result.evidenceHash||"");
-        state=valid&&result.ok===true?"passed":"failed";
+        state=valid&&result.ok===true?"passed":valid&&result.state==="required"?"required":"failed";
+        const execution=valid&&result.report&&hash(result.report)===result.evidenceHash?result.report:null;
         checks.push({id:"project-policy",version:validationPolicyId,status:state,coverage:"host-configured project checks",
-          ...(valid?{evidenceHash:result.evidenceHash}:{code:"INVALID_OR_FAILED_CHECK"})});
+          ...(valid?{evidenceHash:result.evidenceHash}:{code:"INVALID_OR_FAILED_CHECK"}),...(execution?{execution}:{})});
       }else checks.push({id:"project-policy",version:"unconfigured",status:"required",coverage:"project validation is unavailable"});
       const originalEvidence=originalInputs.close(),originalsIntact=originalEvidence.pending===0 && originalEvidence.failures===0;
       checks.push({id:"original-inputs",version:"1",status:originalsIntact?"passed":"failed",
@@ -108,4 +109,4 @@ function createCandidateValidation({store,taskGit,assertActive,intentId,input,va
   }
   return Object.freeze({policyId,validate,get,recordId});
 }
-module.exports={createCandidateValidation};
+module.exports={createCandidateValidation,unchanged};

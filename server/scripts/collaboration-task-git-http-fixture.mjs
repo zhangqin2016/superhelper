@@ -38,6 +38,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     let owner=open('a'),helper=open('b');
     fs.writeFileSync(path.join(owner.source,'unchanged.bin'),randomBytes(2*1024**2));
     fs.writeFileSync(path.join(owner.source,'work.txt'),'baseline');fs.writeFileSync(path.join(owner.source,'remove.txt'),'remove');
+    fs.writeFileSync(path.join(owner.source,'rule.test.cjs'),"require('node:test').test('reviewed contribution',()=>require('node:assert/strict').equal(require('node:fs').readFileSync(require('node:path').join(__dirname,'work.txt'),'utf8'),'reviewed'));");
     const draft=ok(await owner.run({operation:'prepare',projectId:'source-project',sessionId:'source-session'})).draft;
     const send={operation:'send',draftId:draft.id,assigneeUserId:'b',title:'Git domain integration',objective:'Revise synthetic files',acceptanceCriteria:'Exact result and recoverable replay'};
     dropAck('/api/collaboration/v1/tasks');assert.equal(ok(await owner.run(send)).state,'confirming');
@@ -69,7 +70,8 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     let host=makeHost(),foreground=host.orchestrator._state('source-session');foreground.phase='streaming';foreground.turnId='foreground';
     const service=createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
       policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1},
-      transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,enqueueIntegrationTurn:request=>host.enqueue(request)}});
+      transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,
+        chooseValidationChecks:async()=>({filePaths:[path.join(owner.source,'rule.test.cjs')]}),enqueueIntegrationTurn:request=>host.enqueue(request)}});
     assert.equal(service.ok,true);service.start();
     try{
       const deadline=Date.now()+15000;
@@ -93,6 +95,23 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       const turn=host.manager._store().getTurnInputByTurnId(admitted.turnId,'a');
       assert.equal(turn.terminalType,'turn.completed');assert.equal(turn.taskCore.sessionId,'source-session');assert.equal(turn.taskCore.projectId,'source-project');
       assert.equal(host.manager.getConversation('source-session').filter(message=>message.role==='user').length,0,'background integration never invents user instructions');
+      const configured=ok(await service.taskWorkflow({operation:'configureIntegrationChecks',conversationId,taskId,deliveryId:delivered.id}));
+      assert.equal(configured.integration.stage,'queued');assert.equal(configured.integration.checkCount,1);
+      const checkedDeadline=Date.now()+15000;
+      const executable=process.platform==='darwin',expectedWork=executable?'done':'waiting';
+      while(owner.store.db.get('SELECT state FROM task_integration_work')?.state!==expectedWork && Date.now()<checkedDeadline)await new Promise(resolve=>setTimeout(resolve,20));
+      assert.equal(owner.store.db.get('SELECT state FROM task_integration_work')?.state,expectedWork,'selected checks execute or explicitly wait for a supported sandbox through the next real TaskCore turn');
+      const published=owner.records.get(journal.id);assert.equal(published.state,executable?'published':'validation_failed');
+      const checked=owner.records.list(conversationId).find(row=>row.kind==='candidate-validation'&&row.evidenceHash===(published.validation||published.validationAttempt).evidenceHash);
+      assert.equal(checked.report.state,executable?'passed':'required');
+      const execution=checked.report.checks.find(check=>check.id==='project-policy').execution;
+      if(executable)assert.equal(execution.execution.summary.counts.tests,1);else assert.equal(execution.execution.code,'SANDBOX_UNAVAILABLE');
+      assert.equal(execution.execution.state,executable?'passed':'required');
+      assert.equal(execution.executionCopyUnchanged,true);assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline');
+      const nextAdmission=owner.records.list(conversationId).find(row=>row.kind==='integration-admission');
+      assert.notEqual(nextAdmission.turnId,admitted.turnId,'configuration wakes a fresh bounded attempt in the original session');
+      while(foreground.phase!=='idle' && Date.now()<checkedDeadline)await new Promise(resolve=>setTimeout(resolve,20));
+      assert.equal(host.manager._store().getTurnInputByTurnId(nextAdmission.turnId,'a').terminalType,'turn.completed');
     }finally{service.stop();host.close();}
     owner.close();owner=open('a');
     ok(await owner.tasks.submit({conversationId,taskId,action:'approve',deliveryId:delivered.id,expectedRevision:task.revision}));

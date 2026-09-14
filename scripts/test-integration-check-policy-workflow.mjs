@@ -29,8 +29,13 @@ try{
  const status={operation:'integrationStatus',conversationId:'chat',taskId:'task'};
  assert.equal((await workflow.run(status)).integration.canConfigureChecks,true);
  assert.equal((await workflow.run(status)).integration.checkCount,0);
+ store.db.run("UPDATE task_integration_work SET state='waiting',code='COLLAB_INTEGRATION_VALIDATION_REQUIRED'");
  assert.equal((await workflow.run(command)).integration.checkCount,1);
+ assert.equal(store.db.get('SELECT state FROM task_integration_work').state,'pending','install atomically wakes the original intent');
+ assert.equal((await workflow.run(status)).integration.stage,'queued');
  const saved=await workflow.getIntegrationCheckPolicy(input);
+ workflow.assertIntegrationCheckPolicy(input,saved.id);
+ assert.throws(()=>workflow.assertIntegrationCheckPolicy(input,null),/COLLAB_CHECK_POLICY_CHANGED/,'active execution detects a different installed policy');
  const projected=taskWorkflowResult({...await workflow.run(status),policy:saved,sourceRoot:source});
  assert.equal(projected.integration.checkCount,1);assert.doesNotMatch(JSON.stringify(projected),/rule.test|base64|sourceRoot|validation-policy/);
  assert.equal(projected.integration.canRetry,false,'saving a policy does not pretend its executor already ran');

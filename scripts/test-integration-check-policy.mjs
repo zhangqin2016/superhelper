@@ -37,6 +37,8 @@ try{
  const nextBytes=fs.readFileSync(path.join(source,'rule.test.cjs'));
  const nextBaseline=await taskGit.captureBaseline({taskId:'next',snapshotRoot:source,manifest:[{path:'rule.test.cjs',sizeBytes:nextBytes.length,sha256:hash(nextBytes)}]});
  const nextInput={...input,baselineCommit:nextBaseline.commit};
+ await assert.rejects(policies.install({...install,input:nextInput,baseline:nextBaseline,expectedPolicyId:first.id,onInstalled(){throw Error('wakeup transaction failed');}}),/wakeup transaction failed/);
+ assert.equal(policies.current(input,identity).id,first.id,'failed wakeup rolls back the policy pointer in the same transaction');
  const concurrent=await Promise.allSettled([policies.install({...install,input:nextInput,baseline:nextBaseline,expectedPolicyId:first.id}),policies.install({...install,input:nextInput,baseline:nextBaseline,expectedPolicyId:first.id})]);
  assert.equal(concurrent.filter(r=>r.status==='fulfilled').length,1,'concurrent policy updates have one CAS winner');
  assert.match(concurrent.find(r=>r.status==='rejected').reason.code,/CHANGED/);

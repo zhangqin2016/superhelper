@@ -19,7 +19,7 @@ function createIntegrationAdmission({store,assertActive,getWorkflow,enqueue,work
   const updateWork=(row,state,code,delay,attempts=row.attempts)=>store.db.run("UPDATE task_integration_work SET state=?,code=?,next_attempt_at=?,attempts=? WHERE account_id=? AND intent_id=? AND generation=? AND state IN ('pending','running')",
     state,code,now()+delay,attempts,accountId,row.intent_id,row.generation);
   async function drain(){
-    active();
+    try{await worker.recoverCheckPolicies?.();}catch(error){if(stopped)return;throw error;}if(stopped)return;active();
     const rows=store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND state IN ('pending','running') AND next_attempt_at<=? ORDER BY next_attempt_at,intent_id LIMIT 8",accountId,now());
     for(const row of rows){
       try{
