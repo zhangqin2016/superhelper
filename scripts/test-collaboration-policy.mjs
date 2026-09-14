@@ -217,6 +217,16 @@ for (const taskGitProtocol of [1,2,'1',null]) {
 writeRemoteConfigCache({schemaVersion:1,configVersion:'task-git-disabled',expiresAt:new Date(Date.now()+60_000).toISOString(),
   effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:false,taskGitProtocol:1}}});
 assert.equal(remoteConfig.getRemoteCollaborationPolicySync().taskGitProtocol,undefined);
+for(const sharedPublicationProtocol of [1,2,'1',null]){
+  writeRemoteConfigCache({schemaVersion:1,configVersion:'publication-protocol',expiresAt:new Date(Date.now()+60_000).toISOString(),
+    effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,sharedPublicationProtocol}}});
+  assert.equal(remoteConfig.getRemoteCollaborationPolicySync().sharedPublicationProtocol,sharedPublicationProtocol===1?1:undefined);
+}
+for(const overrides of [{taskGitProtocol:2},{sharedWorkspaceProtocol:2},{tasks:false},{workspaceShares:false},{enabled:false}]){
+  writeRemoteConfigCache({schemaVersion:1,configVersion:'publication-prerequisites',expiresAt:new Date(Date.now()+60_000).toISOString(),
+    effectiveConfig:{collaboration:{enabled:true,schemaVersion:1,workspaceShares:true,tasks:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,sharedPublicationProtocol:1,...overrides}}});
+  assert.equal(remoteConfig.getRemoteCollaborationPolicySync().sharedPublicationProtocol,undefined);
+}
 fs.rmSync(remoteUserData, { recursive: true, force: true });
 
 console.log("collaboration-policy: ok");

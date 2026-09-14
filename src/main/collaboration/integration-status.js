@@ -24,7 +24,7 @@ function taskIntegration(task,records,workById,validationAvailable=false,binding
   const intent=matches[0],work=workById.get(intent.id);if(!work)return null;
   let stage;
   if(intent.state==="cancelled")stage="cancelled";
-  else if(intent.state==="completed")stage=index.sent.has(intent.id)?"published":"publication_pending";
+  else if(intent.state==="completed")stage=work.code==='COLLAB_PUBLICATION_MIGRATION_INVALID'?'failed':index.sent.has(intent.id)?"published":"publication_pending";
   else if(work.state==="running")stage="preparing";
   else if(work.code==="COLLAB_INTEGRATION_VALIDATION_REQUIRED")stage="validation_required";
   else if(work.code==="COLLAB_INTEGRATION_CONFLICT")stage="conflict";

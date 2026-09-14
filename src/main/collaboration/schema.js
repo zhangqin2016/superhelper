@@ -260,6 +260,8 @@ const COLLABORATION_MIGRATIONS = [
     CREATE INDEX task_integration_work_due ON task_integration_work(account_id,state,next_attempt_at);
     INSERT INTO task_integration_work(account_id,intent_id,conversation_id,scope_id)
       SELECT account_id,id,conversation_id,scope_id FROM task_workspace_records WHERE id LIKE 'integration:%';`),
+  // v27 — keyset pages for completed local-publication recovery.
+  (db) => db.exec(`CREATE INDEX task_integration_work_completed ON task_integration_work(account_id,state,intent_id);`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

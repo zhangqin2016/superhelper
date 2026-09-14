@@ -280,7 +280,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       integrationValidationAvailable:typeof taskOptions.validateIntegration==="function" && typeof taskOptions.validationPolicyId==="string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(taskOptions.validationPolicyId),onChange:()=>emitState("task")});
     const integrationWorker=integrationDiscovery && taskOptions.rootPath
       ? require("./integration-worker").createIntegrationWorker({store,assertActive,getWorkflow,validateIntegration:taskOptions.validateIntegration,
-        validationPolicyId:taskOptions.validationPolicyId,onChange:()=>emitState("task")}) : null;
+        validationPolicyId:taskOptions.validationPolicyId,remotePublicationEnabled:policy?.sharedPublicationProtocol===1,onChange:()=>emitState("task")}) : null;
     const integrationAdmission=integrationWorker && typeof taskOptions.enqueueIntegrationTurn==="function"
       ? require("./integration-admission").createIntegrationAdmission({store,assertActive,getWorkflow,worker:integrationWorker,
         enqueue:taskOptions.enqueueIntegrationTurn,onChange:()=>emitState("task")}) : null;

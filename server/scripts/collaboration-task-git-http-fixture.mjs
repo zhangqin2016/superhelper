@@ -70,10 +70,11 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     createIntegrationDiscovery({store:owner.store,assertActive(){},resolveSourceSession}).observe(task);
     const makeHost=()=>require('./collaboration-native-turn-fixture.cjs')({root:owner.root,source:owner.source,accountId:'a',execute:(request,execution)=>service.runIntegration(request,execution)});
     let host=makeHost(),foreground=host.orchestrator._state('source-session');foreground.phase='streaming';foreground.turnId='foreground';
-    const service=createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
-      policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,sharedPublicationProtocol:1},
+    const makeService=remote=>createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
+      policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,...(remote?{sharedPublicationProtocol:1}:{})},
       transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,
         chooseValidationChecks:async()=>({filePaths:[path.join(owner.source,'rule.test.cjs')]}),enqueueIntegrationTurn:request=>host.enqueue(request)}});
+    let service=makeService(false);
     assert.equal(service.ok,true);service.start();
     try{
       const deadline=Date.now()+15000;
@@ -104,9 +105,21 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       const executable=process.platform==='darwin',expectedWork=executable?'done':'waiting';
       while(owner.store.db.get('SELECT state FROM task_integration_work')?.state!==expectedWork && Date.now()<checkedDeadline)await new Promise(resolve=>setTimeout(resolve,20));
       assert.equal(owner.store.db.get('SELECT state FROM task_integration_work')?.state,expectedWork,'selected checks execute or explicitly wait for a supported sandbox through the next real TaskCore turn');
-      const published=owner.records.get(journal.id);assert.equal(published.state,executable?'published':'validation_failed');
+      let published=owner.records.get(journal.id);assert.equal(published.state,executable?'published':'validation_failed');
       if(executable){
+        assert.equal(published.remoteReceipt,null);const oldOutboxId=published.outboxId;
+        assert.equal(owner.records.get(oldOutboxId).state,'queued');
+        assert.equal((await pool.query('SELECT count(*)::int n FROM collaboration_shared_publications WHERE workspace_id=$1',[task.sharedWorkspaceId])).rows[0].n,0,'old native completion has no remote publication');
+        while(foreground.phase!=='idle'&&Date.now()<checkedDeadline)await new Promise(resolve=>setTimeout(resolve,20));
+        service.stop();host.close();owner.close();owner=open('a');host=makeHost();foreground=host.orchestrator._state('source-session');
+        service=makeService(true);assert.equal(service.ok,true);service.start();
+        const upgradeDeadline=Date.now()+45000;
+        while((!owner.records.get(journal.id)?.remoteReceipt||owner.records.get(journal.id)?.state!=='published')&&Date.now()<upgradeDeadline)await new Promise(resolve=>setTimeout(resolve,20));
+        published=owner.records.get(journal.id);
+        assert.equal(published.state,'published');
         assert.ok(published.remoteReceipt,'native completion requires a real remote publication receipt');
+        assert.equal(owner.records.get(oldOutboxId).state,'superseded');assert.equal(owner.records.get(oldOutboxId).supersededBy,published.outboxId);
+        assert.equal(owner.records.get(published.legacyMigrationId).state,'confirmed','startup upgrade retains and reconciles the old local publication');
         assert.ok((await pool.query("SELECT count(*)::int n FROM command_receipts WHERE command_type='integration.renew'")).rows[0].n>=1,'actual remote lease renews while original Node checks run');
         assert.equal(owner.records.get(published.outboxId).state,'sent');
         assert.ok(owner.store.db.get('SELECT generation FROM task_integration_work').generation>=3,'lost publication ACK recovers through another native original-session attempt');
@@ -119,7 +132,8 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       assert.equal(execution.executionCopyUnchanged,true);assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline');
       const nextAdmission=owner.records.list(conversationId).find(row=>row.kind==='integration-admission');
       assert.notEqual(nextAdmission.turnId,admitted.turnId,'configuration wakes a fresh bounded attempt in the original session');
-      while(foreground.phase!=='idle' && Date.now()<checkedDeadline)await new Promise(resolve=>setTimeout(resolve,20));
+      const finishDeadline=Date.now()+10000;
+      while(foreground.phase!=='idle' && Date.now()<finishDeadline)await new Promise(resolve=>setTimeout(resolve,20));
       assert.equal(host.manager._store().getTurnInputByTurnId(nextAdmission.turnId,'a').terminalType,'turn.completed');
     }finally{service.stop();host.close();}
     owner.close();owner=open('a');

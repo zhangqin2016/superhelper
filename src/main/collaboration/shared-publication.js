@@ -30,18 +30,20 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
     async run({lease,baseline,delivery,validationPolicyId,validate,remote}){
       const guard=()=>intents.assertLease(lease);
       guard();const intent=intents.get(lease.intentId),input=intent.input;
+      if(intent.remotePublicationRequired===true&&!remote)throw fail('REMOTE_REQUIRED');
       if(input.chain!=="shared" || typeof validate!=="function" || typeof validationPolicyId!=="string"
         || !/^[A-Za-z0-9_.:-]{1,160}$/.test(validationPolicyId))throw fail("INVALID");
       const authorized=async()=>{guard();if(await authorize(input)!==true)throw fail("ACCESS_DENIED");guard();};
       await authorized();
       if(baseline?.commit!==input.baselineCommit || delivery?.commit!==input.deliveryCommit)throw fail("BINDING_CONFLICT");
+      if(remote&&intent.remotePublicationRequired!==true)records.put(intent.id,{...intent,remotePublicationRequired:true,updatedAt:now()});
       let journal=get(intent.id);
       const save=patch=>{guard();journal=records.put(journalId(intent.id),{...journal,...patch,id:journalId(intent.id),kind:"shared-publication",
         conversationId:input.conversationId,intentId:intent.id,updatedAt:now()});return journal;};
       const finish=publication=>store.db.transaction(()=>{
         guard();
         if(publication.commit!==journal.candidate.commit || !validation(journal.validation,journal.candidate,journal.validation?.policyId))throw fail("VALIDATION_MISSING");
-        const id=`publication-outbox:${hash([intent.id,publication.commit])}`;
+        const id=`publication-outbox:${hash(remote?[intent.id,publication.commit,journal.validation.policyId,journal.validation.evidenceHash]:[intent.id,publication.commit])}`;
         const content={workspaceId:input.workspaceId,taskId:input.taskId,deliveryId:input.deliveryId,baselineCommit:input.baselineCommit,
           expectedHead:journal.candidate.head,commit:publication.commit,tree:journal.candidate.tree,validation:journal.validation};
         const previous=records.get(id);
@@ -49,6 +51,15 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
         if(remote&&(!journal.remoteReceipt||journal.remoteReceipt.headCommit!==publication.commit||journal.remoteReceipt.workspaceId!==input.workspaceId))throw fail('REMOTE_RECEIPT_MISSING');
         if(!previous||remote)records.put(id,{...previous,id,kind:"publication-outbox",conversationId:input.conversationId,intentId:intent.id,content,
           state:remote?'sent':'queued',...(remote?{receipt:journal.remoteReceipt}:{}),createdAt:previous?.createdAt||now()});
+        if(journal.legacyMigrationId){
+          const migration=records.get(journal.legacyMigrationId),old=migration&&records.get(migration.originalOutbox?.id);
+          if(!remote||migration?.kind!=='legacy-publication-migration'||migration.intentId!==intent.id||!old||old.intentId!==intent.id
+            ||old.kind!=='publication-outbox'||!['queued','superseded'].includes(old.state)||old.id===id
+            ||JSON.stringify(old.content)!==JSON.stringify(migration.originalOutbox.content))throw fail('MIGRATION_CONFLICT');
+          if(old.state==='superseded'&&old.supersededBy!==id)throw fail('MIGRATION_CONFLICT');
+          records.put(old.id,{...old,state:'superseded',supersededBy:id,receipt:journal.remoteReceipt,updatedAt:now()});
+          records.put(migration.id,{...migration,state:'confirmed',outboxId:id,receipt:journal.remoteReceipt,updatedAt:now()});
+        }
         save({state:"published",publication,outboxId:id});intents.complete(lease);
         return journal;
       })();

@@ -7,17 +7,19 @@ const {createNodeCheckPolicy}=require("./node-check-policy");
 
 /** Bounded background preparation. Waiting validation/conflicts are durable;
  * no default validator, engine prompt or implicit successful approval exists. */
-function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegration,validationPolicyId,now=()=>store.now(),onChange=()=>{}}){
+function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegration,validationPolicyId,remotePublicationEnabled=false,now=()=>store.now(),onChange=()=>{}}){
   const accountId=store.accountId,workerId=randomUUID(),timers=new Set();let stopped=false,running=null;
   function active(){assertActive();if(stopped || store.accountId!==accountId)throw Object.assign(Error("Integration stopped"),{code:"COLLAB_INTEGRATION_STOPPED"});}
   const intents=createIntegrationIntents({store,assertActive:active,now});
+  const legacyPublications=require('./legacy-publication-migration').createLegacyPublicationMigration({store,assertActive:active,enabled:remotePublicationEnabled,now});
   const remotes=new Set();
   const notify=()=>{try{onChange();}catch{/* Observers cannot change durable work. */}};
   const configured=typeof validateIntegration==="function" && typeof validationPolicyId==="string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(validationPolicyId);
+  if(remotePublicationEnabled===true)store.db.run("UPDATE task_integration_work SET state='pending',code=NULL,attempts=0,next_attempt_at=0 WHERE account_id=? AND state='waiting' AND code='COLLAB_PUBLICATION_REMOTE_REQUIRED'",accountId);
   if(configured)store.db.run("UPDATE task_integration_work SET state='pending',next_attempt_at=0 WHERE account_id=? AND state='waiting' AND code='COLLAB_INTEGRATION_VALIDATION_REQUIRED'",accountId);
   let policyCursor="",policyScanDone=false,policyScan=null;
   async function scanPolicies(){
-    active();if(policyScanDone)return;
+    active();await legacyPublications.recover();active();if(policyScanDone)return;
     // One bounded startup pass upgrades old validation-required work. Native
     // admission still owns execution; a wakeup is never a validation receipt.
     const rows=store.db.all("SELECT * FROM task_integration_work WHERE account_id=? AND state='waiting' AND code='COLLAB_INTEGRATION_VALIDATION_REQUIRED' AND intent_id>? ORDER BY intent_id LIMIT 8",accountId,policyCursor);

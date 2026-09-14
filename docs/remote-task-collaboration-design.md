@@ -85,3 +85,6 @@ P5：本地预览/应用/回滚；两台客户端加真实私有对象桶验收�
 本地恢复补充：远端任务授权决定下载、提交和新的文件应用；对用户已批准的本机文件事务，恢复日志单独以个人账号加密保存，组织撤权不能销毁原文件恢复能力。启动恢复未完成事务，并提供不依赖已撤销任务的本地恢复入口；退出账号后不能访问其他账号的恢复记录。
 
 验证：相关 `test-collaboration*.mjs` 与 `test-remote-task*.mjs` 共 124 个脚本通过；新增 `test-remote-task-ui.cjs` 运行真实 Electron DOM（受控 API），覆盖权限按钮、版本绑定、重复点击、未知结果恢复、语言切换失败屏保真、输入焦点、导航隔离以及 1100/420px × 浅/深主题。原 `test-collaboration-social-navigation.cjs` 通过。旧 center 生命周期测试的夹具已适配已有本地预览与串行队列，没有修改导航业务去迎合旧夹具。本轮未跑全仓测试、未部署或打安装包。
+
+
+2026-09-14 远端共享发布：新增 `COLLABORATION_SHARED_PUBLICATION_ENABLED`（默认关闭），依赖既有 IM、workspace、tasks 和 task Git 开关。服务器最终配置 gate 发布 `sharedPublicationProtocol: 1`，桌面只接受匹配的 Git/workspace 协议版本；配置的 integration API 同时检查发布开关，旧缓存策略不能绕过关闭状态。启用后的启动恢复会分批保留并重新排队旧本地已完成、outbox 尚未发送的任务，由原会话重新检查并确认远端发布；确认后才原子地标记旧 outbox 被替代。该开关与本轮代码均未部署启用，剩余私有工作区合并/撤销、Office、流式大目录和完整双客户端验收见协作核心计划及 CAPABILITY-GATE。

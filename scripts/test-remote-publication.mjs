@@ -52,16 +52,23 @@ try{
  server={workspaceId:'workspace',headCommit:baseline.commit,revision:0,generation:0,lease:null};
  const input={workspaceId:'workspace',conversationId:'chat',taskId:'task',deliveryId:'delivery1',targetId:'target',chain:'shared',projectId:'project',sessionId:'session',baselineCommit:baseline.commit,deliveryCommit:deliveries[0].commit};
  const intent=intents.enqueue(input),args={baseline,delivery:deliveries[0],validationPolicyId:'fixture',validate};
+ const oldPublisher=createSharedPublication({store,taskGit,assertActive(){},authorize:async()=>true,now:()=>time});
+ const legacy=await oldPublisher.run({...args,lease:intents.claim(intent.id,{workerId:'old-client'})});
+ assert.equal(intents.get(intent.id).state,'completed');assert.equal(oldPublisher.outbox('chat')[0].state,'queued');
+ await require('../src/main/collaboration/legacy-publication-migration').createLegacyPublicationMigration({store,assertActive(){},enabled:true,now:()=>time}).recover();
+ validations=0;
  localLease=intents.claim(intent.id,{workerId:'one'});let context=session(input,intent.id);
  await assert.rejects(context.publisher.run({...args,lease:localLease,remote}),{code:'COLLAB_NETWORK_UNAVAILABLE'});
  assert.equal(validations,0);assert.equal(server.generation,1,'lost claim response has one server grant');await remote.close();remote=null;
  store.close();time+=31000;server.lease.expiresAt=Date.now()-1;open();localLease=intents.claim(intent.id,{workerId:'two'});context=session(input,intent.id);
  await assert.rejects(context.publisher.run({...args,lease:localLease,remote}),{code:'COLLAB_NETWORK_UNAVAILABLE'});
- assert.equal(validations,1);assert.equal(publishCalls,1);assert.equal(intents.get(intent.id).state,'running');assert.equal(context.publisher.outbox('chat').length,0,'uncertain remote commit cannot complete local work');
+ assert.equal(validations,1);assert.equal(publishCalls,1);assert.equal(intents.get(intent.id).state,'running');assert.equal(context.publisher.outbox('chat').filter(row=>row.state==='sent').length,0,'uncertain remote commit cannot complete local work');
+ assert.equal(createTaskRecords({store,assertActive(){}}).get(legacy.outboxId).state,'queued');
  const before=context.publisher.get(intent.id);assert.equal((await shared.initialize({workspaceId:'workspace',baseline})).commit,baseline.commit,'a lost remote ACK does not optimistically advance local H');
  await remote.close();remote=null;store.close();time+=31000;open();localLease=intents.claim(intent.id,{workerId:'three'});context=session(input,intent.id);
  const recovered=await context.publisher.run({...args,lease:localLease,remote});assert.equal(recovered.state,'published');
  assert.equal(recovered.remoteReceipt.headCommit,before.candidate.commit);assert.equal(createTaskRecords({store,assertActive(){}}).get(recovered.outboxId).state,'sent');assert.equal(intents.get(intent.id).state,'completed');
+ assert.equal(createTaskRecords({store,assertActive(){}}).get(legacy.outboxId).state,'superseded','legacy outbox retires only with the confirmed replacement');
  assert.equal(publishCalls,1);assert.equal(validations,1,'reopening confirms the committed immutable publication without repeating checks or publication');await remote.close();remote=null;
  const secondInput={...input,deliveryId:'delivery2',deliveryCommit:deliveries[1].commit},second=intents.enqueue(secondInput);localLease=intents.claim(second.id,{workerId:'four'});context=session(secondInput,second.id);
  const secondResult=await context.publisher.run({baseline,delivery:deliveries[1],validationPolicyId:'fixture',validate,lease:localLease,remote});
@@ -75,6 +82,8 @@ try{
   validate:async c=>{await new Promise(resolve=>setTimeout(resolve,6000));return validate(c);}}),{code:'COLLAB_REMOTE_PUBLICATION_FENCED'});
  assert.equal(server.headCommit,priorHead);assert.equal(publishCalls,2,'a failed live renewal fences validation before any publication request');
  await remote.close();remote=null;assert.equal(server.lease,null,'cleanup releases only the held scope after failed validation');
+ assert.equal(intents.get(third.id).remotePublicationRequired,true,'new remote work also retains the protocol requirement');
+ await assert.rejects(createSharedPublication({store,taskGit,assertActive(){},authorize:async()=>true,now:()=>time}).run({baseline,delivery:deliveries[2],validationPolicyId:'fixture',validate,lease:localLease}),{code:'COLLAB_PUBLICATION_REMOTE_REQUIRED'});
  assert.equal(fs.readFileSync(path.join(base.snapshotRoot,'a.txt'),'utf8'),'a');
  console.log('remote-first publication: durable claim/commit ACK loss across reopen, one confirmed outbox, actual incremental packs and failed-renewal publication fence passed (server/transfer fixtures).');
 }finally{await remote?.close();store?.close();fs.rmSync(root,{recursive:true,force:true});}
