@@ -4,6 +4,7 @@ const path=require("node:path");
 const {createHash}=require("node:crypto");
 const {mergeJson,MAX_JSON_BYTES,POLICY}=require("./integration-json-merge");
 const {REPAIR_POLICY,REPAIR_LIMITS}=require("./conflict-repair");
+const {mergeOffice,OFFICE_EXTENSIONS,OFFICE_POLICY}=require("./office-merge");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const sha=value=>typeof value==="string" && /^[a-f0-9]{40}$/.test(value);
 const fail=code=>Object.assign(new Error(`COLLAB_SHARED_GIT_${code}`),{code:`COLLAB_SHARED_GIT_${code}`});
@@ -72,6 +73,29 @@ function createSharedGit(taskGit){
       return {tree:await writeResolutions(git,tree,resolutions),resolutionHash:hash([POLICY,resolutions])};
     }finally{fs.rmSync(temporary,{recursive:true,force:true});}
   }
+  /** Office packages conflicting on all three sides go through the typed
+   * part-level merger. Only fully merged (and, when available, rendered)
+   * packages become blobs; the rest stay conflicts with the merger's reason. */
+  async function resolveOffice({tree,paths,baseline,head,delivery},officeOptions){
+    const office=paths.filter(name=>OFFICE_EXTENSIONS.has(path.posix.extname(name).toLowerCase()));
+    if(!office.length)return null;
+    const trees=await Promise.all([baseline,head,delivery].map(commit=>taskGit.inspectTree(commit)));
+    const {git,writeBlob}=await runtime(),temporary=fs.mkdtempSync(path.join(taskGit.rootPath,"office-merge-"));
+    try{
+      const resolutions=[],reports=[],conflicts=[];
+      for(const [index,name] of office.entries()){
+        const sides=trees.map(entries=>entries.find(file=>file.path===name));
+        if(sides.some(file=>!file||file.sizeBytes>64*1024*1024)){conflicts.push({path:name,reason:"office_presence"});continue;}
+        const bytes=await Promise.all(sides.map(async(file,side)=>{const destination=path.join(temporary,`${index}-${side}`);await writeBlob(file.blob,destination,file);return fs.readFileSync(destination);}));
+        const scratch=path.join(temporary,`scratch-${index}`);fs.mkdirSync(scratch,{mode:0o700});
+        const result=await mergeOffice(bytes[0],bytes[1],bytes[2],scratch,{...officeOptions,extension:path.posix.extname(name).toLowerCase()});
+        if(result.state!=="resolved"){conflicts.push({path:name,reason:result.state==="conflict"?"office_content":"office_unsupported",detail:result.reason||null,part:result.part||null});continue;}
+        const output=path.join(temporary,`merged-${index}`);fs.writeFileSync(output,result.bytes,{flag:"wx",mode:0o600});
+        resolutions.push([name,await git(["hash-object","-w","--",output])]);reports.push({path:name,...result.report});
+      }
+      return {resolutions,reports,conflicts};
+    }finally{fs.rmSync(temporary,{recursive:true,force:true});}
+  }
   /** Hand the conflicted text files that exist on all three sides to the
    * caller's resolver with their diff3 view. Complete resolutions become blobs;
    * anything else stays an unresolved path with the resolver's questions. */
@@ -85,7 +109,10 @@ function createSharedGit(taskGit){
         const sides=trees.map(entries=>entries.find(file=>file.path===name));
         if(sides.some(file=>!file||file.sizeBytes>REPAIR_LIMITS.maxFileBytes)||files.length>=REPAIR_LIMITS.maxFiles)continue;
         const size=sides.reduce((sum,file)=>sum+file.sizeBytes,0);if(total+size>REPAIR_LIMITS.maxTotalBytes)continue;total+=size;
+        // Packages and other binaries are never text-repaired; they stay Office conflicts.
+        if(OFFICE_EXTENSIONS.has(path.posix.extname(name).toLowerCase()))continue;
         const [base,ours,theirs]=await Promise.all(sides.map(async(file,side)=>{const destination=path.join(temporary,`${index}-${side}`);await writeBlob(file.blob,destination,file);return destination;}));
+        if([base,ours,theirs].some(file=>fs.readFileSync(file).includes(0)))continue;
         let merged=null;
         try{merged=await git(["merge-file","-p","--diff3","-L","ours","-L","base","-L","theirs",ours,base,theirs]);}
         catch(error){if(typeof error.stdout==="string"&&Number.isInteger(error.code)&&error.code>=1&&error.code<=127)merged=error.stdout;}
@@ -161,7 +188,7 @@ function createSharedGit(taskGit){
       if(existing){await verified({ref,commit:existing});await taskGit.inspectTree(existing);return {repository,ref,commit:existing};}
       await immutable(git,ref,baseline.commit);return {repository,ref,commit:baseline.commit};
     },
-    async prepare({workspaceId,baseline,delivery,expectedHead,resolve=null}){
+    async prepare({workspaceId,baseline,delivery,expectedHead,resolve=null,officeOptions={}}){
       const {git,merge,repository}=await runtime();await verified(baseline);await verified(delivery);
       if(!sha(expectedHead) || !baseline.ref.endsWith("/baseline") || !delivery.ref.startsWith(baseline.ref.replace(/baseline$/,"deliveries/")))throw fail("INVALID");
       const parent=(await git(["rev-list","--parents","-n","1",delivery.commit])).split(" ").slice(1);
@@ -176,14 +203,25 @@ function createSharedGit(taskGit){
       let resolution={};
       if(conflicts){
         const unresolved={state:"conflicts",tree,paths:[...new Set(names.filter(Boolean))].sort(),head:expectedHead,delivery:delivery.commit,baseline:baseline.commit};
-        let resolved=await resolveJson(unresolved);
+        let resolved=await resolveJson(unresolved),office=null;
+        if(!resolved){
+          // Typed Office merge first; remaining paths (text or unresolved
+          // Office) continue to the caller's resolver.
+          office=await resolveOffice(unresolved,officeOptions);
+          if(office?.resolutions.length){
+            const resolvedPaths=new Set(office.resolutions.map(([name])=>name));
+            unresolved.tree=await writeResolutions(git,tree,office.resolutions);
+            unresolved.paths=unresolved.paths.filter(name=>!resolvedPaths.has(name));
+            if(!unresolved.paths.length)resolved={tree:unresolved.tree,resolutionHash:hash([OFFICE_POLICY,office.resolutions]),office:office.reports};
+          }
+        }
         if(!resolved&&typeof resolve==="function"){
           const outcome=await resolveWith(unresolved,resolve);
-          if(outcome?.tree)resolved=outcome;
-          else if(outcome)return {...unresolved,repair:outcome.repair,unresolvedPaths:outcome.unresolvedPaths};
+          if(outcome?.tree)resolved={...outcome,resolutionHash:office?.resolutions.length?hash([OFFICE_POLICY,office.resolutions,outcome.resolutionHash]):outcome.resolutionHash,...(office?.reports.length?{office:office.reports}:{})};
+          else if(outcome)return {...unresolved,repair:outcome.repair,unresolvedPaths:outcome.unresolvedPaths,...(office?{office:{reports:office.reports,conflicts:office.conflicts}}:{})};
         }
-        if(!resolved)return unresolved;
-        tree=resolved.tree;resolution={resolutionHash:resolved.resolutionHash,...(resolved.repair?{repair:resolved.repair}:{})};
+        if(!resolved)return {...unresolved,...(office?{office:{reports:office.reports,conflicts:office.conflicts}}:{})};
+        tree=resolved.tree;resolution={resolutionHash:resolved.resolutionHash,...(resolved.repair?{repair:resolved.repair}:{}),...(resolved.office?{office:resolved.office}:{})};
       }
       const commit=await git(["commit-tree",tree,"-p",expectedHead,"-p",delivery.commit,"-m",`Shared task integration\n\n${JSON.stringify({baseline:baseline.commit,delivery:delivery.commit,...resolution})}`]);
       const ref=candidateRef({headRef,head:expectedHead,baseline:baseline.commit,delivery:delivery.commit,...resolution});

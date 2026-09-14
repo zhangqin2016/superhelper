@@ -27,7 +27,7 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
   return Object.freeze({
     get,
     outbox(conversationId){return records.list(conversationId).filter(value=>value.kind==="publication-outbox");},
-    async run({lease,baseline,delivery,validationPolicyId,validate,remote,resolve=null,repairFailure=null,repairKey="none"}){
+    async run({lease,baseline,delivery,validationPolicyId,validate,remote,resolve=null,repairFailure=null,repairKey="none",officeOptions={}}){
       const guard=()=>intents.assertLease(lease);
       guard();const intent=intents.get(lease.intentId),input=intent.input;
       if(intent.remotePublicationRequired===true&&!remote)throw fail('REMOTE_REQUIRED');
@@ -78,7 +78,7 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
       }
       const head=remote?await remote.acquire(baseline):await sharedGit.initialize({workspaceId:input.workspaceId,baseline});guard();
       if(!journal?.candidate || journal.candidate.head!==head.commit || journal.candidate.state!=="ready"){
-        const candidate=await sharedGit.prepare({workspaceId:input.workspaceId,baseline,delivery,expectedHead:head.commit,resolve});guard();
+        const candidate=await sharedGit.prepare({workspaceId:input.workspaceId,baseline,delivery,expectedHead:head.commit,resolve,officeOptions});guard();
         save({state:candidate.state==="conflicts"?"conflicts":"candidate",candidate,validation:null,remoteReceipt:null});
       }
       if(journal.state==="conflicts"){

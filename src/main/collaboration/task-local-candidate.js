@@ -8,8 +8,8 @@ const {WorkspaceGit}=require("../workspace-git");
 const {manifestMap}=require("./task-apply-plan");
 const {readTaskFile,safeTaskRoot}=require("./task-application");
 const {mergeJson}=require("./integration-json-merge");
-const {mergeOffice}=require("./office-merge");
-const LOCAL_CANDIDATE_POLICY="text-json-docx-parts-receipt-v1";
+const {mergeOffice,OFFICE_EXTENSIONS}=require("./office-merge");
+const LOCAL_CANDIDATE_POLICY="text-json-office-parts-v2-receipt-v1";
 const fail=code=>Object.assign(Error(`COLLAB_LOCAL_CANDIDATE_${code}`),{code:`COLLAB_LOCAL_CANDIDATE_${code}`});
 const hash=bytes=>createHash("sha256").update(bytes).digest("hex");
 const entry=(name,bytes)=>({path:name,sha256:hash(bytes),sizeBytes:bytes.length});
@@ -52,7 +52,7 @@ async function prepareLocalCandidate({base,shared,rootPath,destinationRoot,asser
   const attempt=fs.mkdtempSync(path.join(storage,"candidate-")),snapshotRoot=path.join(attempt,"snapshot"),scratch=path.join(attempt,"merge");
   fs.mkdirSync(snapshotRoot,{mode:0o700});fs.mkdirSync(scratch,{mode:0o700});
   const currentManifest=[],manifest=[],conflicts=[],paths=[],pending=[];
-  let total=0,outputBytes=0,runtime,repair;
+  let total=0,outputBytes=0,runtime,repair,officeReports;
   try{
     for(const [key,file]of union){
       assertActive();sameRoot();paths.push(file.path);
@@ -72,10 +72,14 @@ async function prepareLocalCandidate({base,shared,rootPath,destinationRoot,asser
       if(same(original,incoming)||same(local,incoming))bytes=local?.bytes||null;
       else if(same(original,local))bytes=incoming?.bytes||null;
       else if(original&&local&&incoming){
-        if(path.extname(file.path).toLowerCase()===".docx"){
-          const result=await mergeOffice(original.bytes,local.bytes,incoming.bytes,scratch,officeOptions);assertActive();
-          if(result.state!=="resolved"){conflicts.push({path:file.path,reason:result.state==="conflict"?"office_content":"office_unsupported"});continue;}
-          bytes=result.bytes;
+        const extension=path.extname(file.path).toLowerCase();
+        if(OFFICE_EXTENSIONS.has(extension)){
+          const result=await mergeOffice(original.bytes,local.bytes,incoming.bytes,scratch,{...officeOptions,extension});assertActive();
+          if(result.state!=="resolved"){conflicts.push({path:file.path,reason:result.state==="conflict"?"office_content":"office_unsupported",...(result.reason?{detail:result.reason}:{}),...(result.part?{part:result.part}:{})});continue;}
+          bytes=result.bytes;(officeReports||=[]).push({path:file.path,...result.report});
+        }else if(extension===".pdf"){
+          // PDF is an export: merge the source document instead and re-export.
+          conflicts.push({path:file.path,reason:"pdf_source_preferred"});continue;
         }else{
           runtime ||= await new WorkspaceGit(gitOptions).runtime();assertActive();
           const merged=await mergeFile(original.bytes,local.bytes,incoming.bytes,scratch,runtime);assertActive();
@@ -118,7 +122,7 @@ async function prepareLocalCandidate({base,shared,rootPath,destinationRoot,asser
     assertActive();sameRoot();const current=new Map(currentManifest.map(file=>[file.path,file]));
     for(const name of paths)if((readTaskFile(localRoot,name)?.sha256||null)!==(current.get(name)?.sha256||null))throw fail("INPUT_CHANGED");
     manifestMap(manifest);
-    return {state:conflicts.length?"conflicts":"ready",snapshotRoot,manifest,currentManifest,paths,conflicts,...(repair?{repair}:{})};
+    return {state:conflicts.length?"conflicts":"ready",snapshotRoot,manifest,currentManifest,paths,conflicts,...(repair?{repair}:{}),...(officeReports?{office:officeReports}:{})};
   }catch(error){fs.rmSync(attempt,{recursive:true,force:true});throw error;}
   finally{if(fs.existsSync(scratch))fs.rmSync(scratch,{recursive:true,force:true});}
 }

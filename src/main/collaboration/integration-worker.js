@@ -84,7 +84,8 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
         if(!files.length)return null;
         const outcome=await repairer.repair({kind:"check_failure",goal:repairContext.goal,answers:repairContext.answers||[],files,failures});guard();return outcome;
       }:null;
-      const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,resolve,repairFailure,repairKey:repairContext?.answersHash||"none",
+      const officeOptions=(await workflow.integrationOfficeOptions?.(intent.input))||{};guard();
+      const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,resolve,repairFailure,repairKey:repairContext?.answersHash||"none",officeOptions,
         validationPolicyId:validation.policyId,validate:validation.validate,remote});
       guard();
       const code=result.state==="conflicts"?(result.candidate?.repair?.questions?.length?"COLLAB_INTEGRATION_DECISION_REQUIRED":"COLLAB_INTEGRATION_CONFLICT"):result.state==="published"?null:
