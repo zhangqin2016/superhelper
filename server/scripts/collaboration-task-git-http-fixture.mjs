@@ -39,7 +39,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     let owner=open('a'),helper=open('b');
     fs.writeFileSync(path.join(owner.source,'unchanged.bin'),randomBytes(2*1024**2));
     fs.writeFileSync(path.join(owner.source,'work.txt'),'baseline');fs.writeFileSync(path.join(owner.source,'remove.txt'),'remove');
-    fs.writeFileSync(path.join(owner.source,'rule.test.cjs'),"require('node:test').test('reviewed contribution',()=>require('node:assert/strict').equal(require('node:fs').readFileSync(require('node:path').join(__dirname,'work.txt'),'utf8'),'reviewed'));");
+    fs.writeFileSync(path.join(owner.source,'rule.test.cjs'),"require('node:test').test('reviewed contribution',async()=>{await new Promise(resolve=>setTimeout(resolve,6500));require('node:assert/strict').equal(require('node:fs').readFileSync(require('node:path').join(__dirname,'work.txt'),'utf8'),'reviewed');});");
     const draft=ok(await owner.run({operation:'prepare',projectId:'source-project',sessionId:'source-session'})).draft;
     const send={operation:'send',draftId:draft.id,assigneeUserId:'b',title:'Git domain integration',objective:'Revise synthetic files',acceptanceCriteria:'Exact result and recoverable replay'};
     dropAck('/api/collaboration/v1/tasks');assert.equal(ok(await owner.run(send)).state,'confirming');
@@ -70,7 +70,7 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     const makeHost=()=>require('./collaboration-native-turn-fixture.cjs')({root:owner.root,source:owner.source,accountId:'a',execute:(request,execution)=>service.runIntegration(request,execution)});
     let host=makeHost(),foreground=host.orchestrator._state('source-session');foreground.phase='streaming';foreground.turnId='foreground';
     const service=createCollaborationService({openStore:()=>({ok:true,store:owner.store}),client:owner.client,deviceId:owner.deviceId,realtimeEnabled:false,
-      policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1},
+      policy:{enabled:true,tasks:true,workspaceShares:true,taskGitProtocol:1,sharedWorkspaceProtocol:1,sharedPublicationProtocol:1},
       transferOptions:{rootPath:path.join(owner.root,'collaboration-transfer'),fetchImpl},taskOptions:{rootPath:path.join(owner.root,'managed'),resolveSourceSession,
         chooseValidationChecks:async()=>({filePaths:[path.join(owner.source,'rule.test.cjs')]}),enqueueIntegrationTurn:request=>host.enqueue(request)}});
     assert.equal(service.ok,true);service.start();
@@ -96,13 +96,20 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
       const turn=host.manager._store().getTurnInputByTurnId(admitted.turnId,'a');
       assert.equal(turn.terminalType,'turn.completed');assert.equal(turn.taskCore.sessionId,'source-session');assert.equal(turn.taskCore.projectId,'source-project');
       assert.equal(host.manager.getConversation('source-session').filter(message=>message.role==='user').length,0,'background integration never invents user instructions');
+      dropAck('/api/collaboration/v1/tasks/integration/publish');
       const configured=ok(await service.taskWorkflow({operation:'configureIntegrationChecks',conversationId,taskId,deliveryId:delivered.id}));
       assert.equal(configured.integration.stage,'queued');assert.equal(configured.integration.checkCount,1);
-      const checkedDeadline=Date.now()+15000;
+      const checkedDeadline=Date.now()+30000;
       const executable=process.platform==='darwin',expectedWork=executable?'done':'waiting';
       while(owner.store.db.get('SELECT state FROM task_integration_work')?.state!==expectedWork && Date.now()<checkedDeadline)await new Promise(resolve=>setTimeout(resolve,20));
       assert.equal(owner.store.db.get('SELECT state FROM task_integration_work')?.state,expectedWork,'selected checks execute or explicitly wait for a supported sandbox through the next real TaskCore turn');
       const published=owner.records.get(journal.id);assert.equal(published.state,executable?'published':'validation_failed');
+      if(executable){
+        assert.ok(published.remoteReceipt,'native completion requires a real remote publication receipt');
+        assert.ok((await pool.query("SELECT count(*)::int n FROM command_receipts WHERE command_type='integration.renew'")).rows[0].n>=1,'actual remote lease renews while original Node checks run');
+        assert.equal(owner.records.get(published.outboxId).state,'sent');
+        assert.ok(owner.store.db.get('SELECT generation FROM task_integration_work').generation>=3,'lost publication ACK recovers through another native original-session attempt');
+      }
       const checked=owner.records.list(conversationId).find(row=>row.kind==='candidate-validation'&&row.evidenceHash===(published.validation||published.validationAttempt).evidenceHash);
       assert.equal(checked.report.state,executable?'passed':'required');
       const execution=checked.report.checks.find(check=>check.id==='project-policy').execution;
@@ -117,19 +124,20 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
     owner.close();owner=open('a');
     const integrationScope={deviceId:owner.deviceId,workspaceId:task.sharedWorkspaceId,taskId,deliveryId:delivered.id};
     const target=await owner.client.getIntegrationTarget(integrationScope);
-    assert.equal(target.headCommit,task.inputGit.commit);assert.equal(target.initialized,false);
+    assert.equal(target.initialized,true);
+    if(process.platform==='darwin')assert.equal(target.headCommit,owner.records.list(conversationId).find(row=>row.kind==='shared-publication').candidate.commit);
     const claim={...integrationScope,clientCommandId:'signed-integration-claim',expectedHead:target.headCommit,expectedRevision:target.revision};
     dropAck('/api/collaboration/v1/tasks/integration/claim');
     await assert.rejects(owner.client.claimIntegration(claim),'the committed claim response is deliberately lost');
     const claimed=await owner.client.claimIntegration(claim);
-    assert.equal(claimed.generation,1);assert.equal(claimed.lease.deviceId,owner.deviceId);
+    assert.equal(claimed.generation,target.generation+1);assert.equal(claimed.lease.deviceId,owner.deviceId);
     await assert.rejects(owner.client.claimIntegration({...claim,clientCommandId:'signed-integration-busy'}),{code:'COLLAB_INTEGRATION_BUSY',retryable:true});
-    assert.equal(Number((await pool.query('SELECT generation FROM collaboration_integration_targets WHERE workspace_id=$1',[task.sharedWorkspaceId])).rows[0].generation),1,'signed receipt replay did not acquire twice');
+    assert.equal(Number((await pool.query('SELECT generation FROM collaboration_integration_targets WHERE workspace_id=$1',[task.sharedWorkspaceId])).rows[0].generation),claimed.generation,'signed receipt replay did not acquire twice');
     const held={...claim,leaseId:claimed.lease.id,generation:claimed.generation};
-    const renewed=await owner.client.renewIntegration({...held,clientCommandId:'signed-integration-renew'});assert.equal(renewed.generation,1);
+    const renewed=await owner.client.renewIntegration({...held,clientCommandId:'signed-integration-renew'});assert.equal(renewed.generation,claimed.generation);
     await assert.rejects(helper.client.claimIntegration({...claim,deviceId:helper.deviceId,clientCommandId:'assignee-claim'}),{code:'COLLAB_TASK_ACCESS_DENIED'});
     const released=await owner.client.releaseIntegration({...held,clientCommandId:'signed-integration-release'});assert.equal(released.lease,null);
-    assert.equal(released.headCommit,task.inputGit.commit,'qualification does not mark the local publication as remotely synced');
+    assert.equal(released.headCommit,target.headCommit,'qualification preserves the acknowledged shared head');
     await verifyPublicationHttp({owner,helper,task,conversationId,pool,dropAck,uploaded});
     ok(await owner.tasks.submit({conversationId,taskId,action:'approve',deliveryId:delivered.id,expectedRevision:task.revision}));
     const preview=ok(await owner.run({operation:'preview',taskId,deliveryId:delivered.id}));

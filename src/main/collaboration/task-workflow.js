@@ -14,7 +14,7 @@ const requireOk = value => { if (!value?.ok) throw fail(value?.code); return val
  * Upload identity, frozen bytes and original device survive ambiguous responses.
  * Imported workspaces are data: no dependency, hook or engine is auto-started. */
 function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertActive, rootPath, chooseDirectory, resolveProjectDirectory, resolveSourceSession,
-  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, integrationValidationAvailable=false, chooseValidationChecks, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
+  openWorkspace, resolveWorkspaceBinding, resolveCardSession, listWorkspaceBindings, sharedWorkspaceProtocol, taskGitProtocol, sharedPublicationProtocol, integrationValidationAvailable=false, chooseValidationChecks, onChange = () => {}, bundle = { freezeTaskBundle, unpackTaskBundle } }) {
   const records = createTaskRecords({ store, assertActive });
   const checkPolicies=require("./integration-check-policy").createIntegrationCheckPolicy({store,assertActive});
   const checkSelection=require("./integration-check-selection");
@@ -589,6 +589,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
     }
   });
   return {recoverPending:()=>ready,acquireIntegrationInput,
+    createIntegrationRemote({input,intentId,taskGit,assertCurrent,authorize}){
+      if(sharedPublicationProtocol!==1)return null;
+      return require('./remote-publication').createRemotePublication({store,taskGit,client,transfers,deviceId,input,intentId,
+        assertActive:assertCurrent,assertAccountActive:assertActive,authorize});
+    },
     async acquireIntegrationHead(input,{assertCurrent=assertActive}={}){
       assertCurrent();const context=await acquireIntegrationInput(input);assertCurrent();
       const sync=require('./shared-head-sync').createSharedHeadSync({taskGit:context.taskGit,client,sharedFiles:transfers.sharedFiles,

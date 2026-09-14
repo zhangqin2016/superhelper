@@ -31,6 +31,10 @@ try{
  const proof=await shared.publication(journal.candidate);assert.ok(proof);
  const next=await shared.prepare({workspaceId:'workspace',baseline,delivery,expectedHead:proof.commit});
  await shared.publish({candidate:next,validate:async c=>({ok:true,commit:c.commit})});
+ const runtime=await taskGit.ensure();
+ await runtime.git(['update-ref','-d',proof.receiptRef,proof.commit]);
+ await shared.publish({candidate:journal.candidate,canonicalHead:{repository:proof.repository,ref:proof.ref,commit:next.commit},validate:async c=>({ok:true,commit:c.commit})});
+ assert.equal(await runtime.git(['rev-parse',proof.ref]),next.commit,'acknowledging a historical remote publication cannot rewind a newer canonical head');
  store.close();now+=31000;intents=open();lease=intents.claim(intent.id,{workerId:'three'});
  const recovered=await publisher().run({...args,lease});assert.equal(recovered.state,'published');assert.equal(recovered.publication.commit,proof.commit);
  assert.equal(intents.get(intent.id).state,'completed');assert.equal(publisher().outbox('chat').length,1);

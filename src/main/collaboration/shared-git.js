@@ -146,7 +146,7 @@ function createSharedGit(taskGit){
       await immutable(git,ref,commit);
       return {state:"ready",repository,ref,commit,tree,headRef,head:expectedHead,delivery:delivery.commit,baseline:baseline.commit,...resolution};
     },
-    async publish({candidate,validate}){
+    async publish({candidate,validate,canonicalHead}){
       candidate=Object.freeze({...candidate});
       if(candidate.state!=="ready" || typeof validate!=="function" || !sha(candidate.head)||!sha(candidate.delivery)||!sha(candidate.tree)||!sha(candidate.baseline)
         || !/^refs\/workspaces\/[a-f0-9]{64}\/head$/.test(candidate.headRef||"")
@@ -159,7 +159,14 @@ function createSharedGit(taskGit){
       if(result?.ok!==true || result.commit!==candidate.commit)throw fail("VALIDATION_FAILED");
       const receipt=receiptRef(candidate);
       if(await git(["rev-parse","--verify",receipt]).catch(()=>null)!==candidate.commit){
-        try{await git(["update-ref","--stdin"],undefined,`start\nupdate ${candidate.headRef} ${candidate.commit} ${candidate.head}\ncreate ${receipt} ${candidate.commit}\nprepare\ncommit\n`);}
+        let headCommand=`update ${candidate.headRef} ${candidate.commit} ${candidate.head}`;
+        if(canonicalHead){
+          if(canonicalHead.ref!==candidate.headRef||canonicalHead.repository!==repository)throw fail('INVALID');
+          await verified(canonicalHead);
+          try{await git(['merge-base','--is-ancestor',candidate.commit,canonicalHead.commit]);}catch{throw fail('ANCESTRY_INVALID');}
+          headCommand=`verify ${candidate.headRef} ${canonicalHead.commit}`;
+        }
+        try{await git(["update-ref","--stdin"],undefined,`start\n${headCommand}\ncreate ${receipt} ${candidate.commit}\nprepare\ncommit\n`);}
         catch{if(await git(["rev-parse","--verify",receipt]).catch(()=>null)!==candidate.commit)throw fail("HEAD_CHANGED");}
       }
       return {repository:candidate.repository,ref:candidate.headRef,commit:candidate.commit,receiptRef:receipt};

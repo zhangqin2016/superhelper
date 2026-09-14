@@ -46,7 +46,7 @@ function createSharedHeadSync({taskGit,client,sharedFiles,accountId,deviceId,ass
     };
     const target=await readTarget();
     if(previous&&target.revision<previous.revision)throw Object.assign(Error('Remote head regressed'),{code:'COLLAB_SHARED_GIT_REMOTE_REGRESSED'});
-    let revision,publicationId=null;
+    let revision,publicationId=null,publicationDepth=0;
     if(target.revision===0){
       if(baseline?.commit!==target.commit||baseline.repository!==repository||!await taskGit.hasRevision(baseline))throw fail('BASELINE_UNAVAILABLE');
       revision=baseline;
@@ -72,6 +72,7 @@ function createSharedHeadSync({taskGit,client,sharedFiles,accountId,deviceId,ass
         await taskGit.inspectTree(imported.commit);active();revision=imported;
       }
       publicationId=chain[0].id;
+      publicationDepth=chain.length;
       // Recheck the complete server dependency chain even if its bytes were
       // cached or an earlier download overlapped administrative retirement.
       const current=await client.getIntegrationPublication({deviceId,workspaceId:input.workspaceId});active();
@@ -79,8 +80,9 @@ function createSharedHeadSync({taskGit,client,sharedFiles,accountId,deviceId,ass
     }
     await authorized();
     if(JSON.stringify(await readTarget())!==JSON.stringify(target))throw fail('HEAD_CHANGED');
-    return shared.reconcileRemote({workspaceId:input.workspaceId,revision,remoteRevision:target.revision,publicationId,
+    const head=await shared.reconcileRemote({workspaceId:input.workspaceId,revision,remoteRevision:target.revision,publicationId,
       expectedHead,expectedRemoteState:previous?.object||null,assertCurrent:active});
+    return {...head,publicationDepth};
   }});
 }
 module.exports={createSharedHeadSync};

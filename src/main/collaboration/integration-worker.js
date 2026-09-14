@@ -11,6 +11,7 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
   const accountId=store.accountId,workerId=randomUUID(),timers=new Set();let stopped=false,running=null;
   function active(){assertActive();if(stopped || store.accountId!==accountId)throw Object.assign(Error("Integration stopped"),{code:"COLLAB_INTEGRATION_STOPPED"});}
   const intents=createIntegrationIntents({store,assertActive:active,now});
+  const remotes=new Set();
   const notify=()=>{try{onChange();}catch{/* Observers cannot change durable work. */}};
   const configured=typeof validateIntegration==="function" && typeof validationPolicyId==="string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(validationPolicyId);
   if(configured)store.db.run("UPDATE task_integration_work SET state='pending',next_attempt_at=0 WHERE account_id=? AND state='waiting' AND code='COLLAB_INTEGRATION_VALIDATION_REQUIRED'",accountId);
@@ -33,9 +34,9 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
   function recoverCheckPolicies(){if(stopped)return Promise.resolve();if(!policyScan)policyScan=scanPolicies().finally(()=>{policyScan=null;});return policyScan;}
   async function runRow(row,assertCurrent=()=>{}){
     if(stopped)return;
-    let lease,timer,leaseLost=false,policyReady=false,expectedPolicyId=null;
+    let lease,timer,remote,leaseLost=false,policyReady=false,expectedPolicyId=null;
     const guard=()=>{active();assertCurrent();if(leaseLost)throw Object.assign(Error("Integration lease lost"),{code:"COLLAB_INTEGRATION_FENCED"});
-      if(policyReady)getWorkflow().assertIntegrationCheckPolicy?.(intents.get(row.intent_id).input,expectedPolicyId);};
+      if(policyReady)getWorkflow().assertIntegrationCheckPolicy?.(intents.get(row.intent_id).input,expectedPolicyId);remote?.assertCurrent();};
     try{
       guard();const intent=intents.get(row.intent_id);
       if(!intent || ["completed","cancelled"].includes(intent.state)){store.db.run("UPDATE task_integration_work SET state='done' WHERE account_id=? AND intent_id=?",accountId,row.intent_id);return;}
@@ -48,17 +49,20 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
       expectedPolicyId=checkPolicy?.id||null;policyReady=true;guard();
       const nodePolicy=checkPolicy?createNodeCheckPolicy({taskGit:context.taskGit,record:checkPolicy,input:intent.input,
         assertActive:()=>{guard();intents.assertLease(lease);}}):null;
-      const publisher=createSharedPublication({store,taskGit:context.taskGit,assertActive:guard,now,authorize:async input=>{
+      const authorize=async input=>{
         if(await workflow.authorizeIntegration(input)!==true)return false;
         const current=await workflow.getIntegrationCheckPolicy?.(input);
         if((current?.id||null)!==(checkPolicy?.id||null))throw Object.assign(Error("Check policy changed"),{code:"COLLAB_CHECK_POLICY_CHANGED"});
         return true;
-      }});
+      };
+      remote=workflow.createIntegrationRemote?.({input:intent.input,intentId:intent.id,taskGit:context.taskGit,assertCurrent:()=>{guard();intents.assertLease(lease);},authorize});
+      if(remote)remotes.add(remote);
+      const publisher=createSharedPublication({store,taskGit:context.taskGit,assertActive:guard,now,authorize});
       const validation=createCandidateValidation({store,taskGit:context.taskGit,assertActive:()=>{guard();intents.assertLease(lease);},intentId:intent.id,input:intent.input,
         validationPolicyId:nodePolicy?.policyId||validationPolicyId,checkPolicyId:checkPolicy?.id||null,
         validateIntegration:nodePolicy?.validate||validateIntegration});
       const result=await publisher.run({lease,baseline:context.baseline,delivery:context.delivery,
-        validationPolicyId:validation.policyId,validate:validation.validate});
+        validationPolicyId:validation.policyId,validate:validation.validate,remote});
       guard();
       const code=result.state==="conflicts"?"COLLAB_INTEGRATION_CONFLICT":result.state==="published"?null:
         result.validationAttempt?.state==="failed"?"COLLAB_INTEGRATION_VALIDATION_FAILED":"COLLAB_INTEGRATION_VALIDATION_REQUIRED";
@@ -69,10 +73,12 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
       active();
       if(lease){try{intents.release(lease);}catch{/* A successor or cancellation owns further state. */}}
       const code=/^COLLAB_[A-Z_]{1,80}$/.test(error.code||"")?error.code:"COLLAB_INTEGRATION_FAILED";
-      const attempts=row.attempts+1,waiting=attempts>=3 || ["COLLAB_TASK_ACCESS_DENIED","COLLAB_ACCESS_REVOKED","COLLAB_INTEGRATION_FENCED"].includes(code);
-      store.db.run("UPDATE task_integration_work SET state=?,attempts=?,code=?,next_attempt_at=? WHERE account_id=? AND intent_id=? AND generation=? AND state!='done'",waiting?"waiting":"pending",attempts,code,now()+Math.min(60000,1000*2**Math.min(attempts,5)),accountId,row.intent_id,lease?.generation??row.generation);
+      const coordination=['COLLAB_INTEGRATION_BUSY','COLLAB_INTEGRATION_HEAD_CHANGED','COLLAB_REMOTE_PUBLICATION_FENCED','COLLAB_REMOTE_PUBLICATION_HEAD_CHANGED','COLLAB_SHARED_SYNC_HEAD_CHANGED','COLLAB_SHARED_GIT_HEAD_CHANGED'].includes(code);
+      const attempts=row.attempts+1,waiting=!coordination&&(attempts>=3 || ["COLLAB_TASK_ACCESS_DENIED","COLLAB_ACCESS_REVOKED","COLLAB_INTEGRATION_FENCED"].includes(code));
+      const delay=code==='COLLAB_INTEGRATION_BUSY'?30000:Math.min(60000,1000*2**Math.min(attempts,5));
+      store.db.run("UPDATE task_integration_work SET state=?,attempts=?,code=?,next_attempt_at=? WHERE account_id=? AND intent_id=? AND generation=? AND state!='done'",waiting?"waiting":"pending",attempts,code,now()+delay,accountId,row.intent_id,lease?.generation??row.generation);
       notify();
-    }finally{if(timer){clearInterval(timer);timers.delete(timer);}}
+    }finally{if(timer){clearInterval(timer);timers.delete(timer);}if(remote){await remote.close();remotes.delete(remote);}}
   }
   const executing=new Map();
   function executeRow(row,guard){
@@ -95,6 +101,6 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
     const state=final?.state==='completed'?'published':final?.state==='cancelled'?'cancelled':row?.code==='COLLAB_INTEGRATION_VALIDATION_REQUIRED'?'validation_required':row?.code==='COLLAB_INTEGRATION_VALIDATION_FAILED'?'validation_failed':row?.code==='COLLAB_INTEGRATION_CONFLICT'?'conflict':row?.state==='waiting'?'failed':'queued';
     return {ok:true,state};
   }
-  return {runIntent,recoverCheckPolicies,recover(){if(stopped)return Promise.resolve();if(!running)running=drain().finally(()=>{running=null;});return running;},stop(){stopped=true;for(const timer of timers)clearInterval(timer);timers.clear();}};
+  return {runIntent,recoverCheckPolicies,recover(){if(stopped)return Promise.resolve();if(!running)running=drain().finally(()=>{running=null;});return running;},stop(){stopped=true;for(const timer of timers)clearInterval(timer);timers.clear();for(const remote of remotes)void remote.close();}};
 }
 module.exports={createIntegrationWorker};

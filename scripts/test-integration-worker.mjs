@@ -41,6 +41,14 @@ try{
  await worker.recover();const failed=store.db.get('SELECT * FROM task_integration_work WHERE intent_id=?',second.id);
  assert.equal(failed.state,'pending');assert.equal(failed.attempts,1);const before=acquired;await worker.recover();assert.equal(acquired,before);
  networkFailure=false;now=failed.next_attempt_at;await worker.recover();assert.equal(intents.get(second.id).state,'completed');
+ const competing=intents.enqueue({...input,workspaceId:'competing',targetId:'competing'}),acquire=workflow.acquireIntegrationInput;
+ workflow.acquireIntegrationInput=async()=>{throw Object.assign(Error('remote lease busy'),{code:'COLLAB_INTEGRATION_BUSY'});};
+ for(let attempt=0;attempt<4;attempt++){
+  await worker.recover();const row=store.db.get('SELECT * FROM task_integration_work WHERE intent_id=?',competing.id);
+  assert.equal(row.state,'pending','another device holding a workspace lease is coordination, not a permanently failed integration');
+  assert.equal(row.next_attempt_at-now,30000);now=row.next_attempt_at;
+ }
+ workflow.acquireIntegrationInput=acquire;await worker.recover();assert.equal(intents.get(competing.id).state,'completed');
  worker.stop();worker=createIntegrationWorker({...options,store,validationPolicyId:'fixture-v1',validateIntegration:checkText('expected but absent')});
  const rejected=intents.enqueue({...input,workspaceId:'rejected',targetId:'rejected'});await worker.recover();
  assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',rejected.id).code,'COLLAB_INTEGRATION_VALIDATION_FAILED','failed actual check is distinct from missing policy');

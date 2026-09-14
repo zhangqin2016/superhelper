@@ -12,10 +12,10 @@ function validation(value,candidate,policyId){
   return {ok:true,commit:value.commit,policyId,evidenceHash:value.evidenceHash};
 }
 
-/** Local publication journal and outbox. Required authorize/validate callbacks
- * belong to the production domain/validator, never renderer-supplied booleans.
- * Git atomically records the publication receipt with H->M; SQLite completion
- * and the encrypted outbound intent are a second, recoverable transaction. */
+/** Publication journal and outbox. Required guards belong to the native domain.
+ * Negotiated remote mode confirms the server publication and canonical H before
+ * recording the local Git receipt and completing SQLite work. Legacy mode keeps
+ * its outbound intent queued. Neither path accepts renderer validation claims. */
 function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGit),assertActive,authorize,now=Date.now}){
   if(typeof authorize!=="function")throw new TypeError("Publication requires fresh authorization");
   const records=createTaskRecords({store,assertActive}),intents=createIntegrationIntents({store,assertActive,now});
@@ -27,7 +27,7 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
   return Object.freeze({
     get,
     outbox(conversationId){return records.list(conversationId).filter(value=>value.kind==="publication-outbox");},
-    async run({lease,baseline,delivery,validationPolicyId,validate}){
+    async run({lease,baseline,delivery,validationPolicyId,validate,remote}){
       const guard=()=>intents.assertLease(lease);
       guard();const intent=intents.get(lease.intentId),input=intent.input;
       if(input.chain!=="shared" || typeof validate!=="function" || typeof validationPolicyId!=="string"
@@ -46,18 +46,29 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
           expectedHead:journal.candidate.head,commit:publication.commit,tree:journal.candidate.tree,validation:journal.validation};
         const previous=records.get(id);
         if(previous && JSON.stringify(previous.content)!==JSON.stringify(content))throw fail("OUTBOX_CONFLICT");
-        if(!previous)records.put(id,{id,kind:"publication-outbox",conversationId:input.conversationId,intentId:intent.id,content,state:"queued",createdAt:now()});
+        if(remote&&(!journal.remoteReceipt||journal.remoteReceipt.headCommit!==publication.commit||journal.remoteReceipt.workspaceId!==input.workspaceId))throw fail('REMOTE_RECEIPT_MISSING');
+        if(!previous||remote)records.put(id,{...previous,id,kind:"publication-outbox",conversationId:input.conversationId,intentId:intent.id,content,
+          state:remote?'sent':'queued',...(remote?{receipt:journal.remoteReceipt}:{}),createdAt:previous?.createdAt||now()});
         save({state:"published",publication,outboxId:id});intents.complete(lease);
         return journal;
       })();
-      if(journal?.candidate?.state==="ready"){
+      if(remote){
+        const recovered=await remote.recover(journal);guard();
+        if(recovered){
+          save({remoteReceipt:recovered});
+          const canonicalHead=await remote.canonical(baseline);guard();await authorized();
+          const publication=await sharedGit.publish({candidate:journal.candidate,canonicalHead,validate:async()=>{guard();return journal.validation;}});
+          guard();return finish(publication);
+        }
+      }
+      if(!remote&&journal?.candidate?.state==="ready"){
         const publication=await sharedGit.publication(journal.candidate);guard();
         if(publication)return finish(publication);
       }
-      const head=await sharedGit.initialize({workspaceId:input.workspaceId,baseline});guard();
+      const head=remote?await remote.acquire(baseline):await sharedGit.initialize({workspaceId:input.workspaceId,baseline});guard();
       if(!journal?.candidate || journal.candidate.head!==head.commit || journal.candidate.state!=="ready"){
         const candidate=await sharedGit.prepare({workspaceId:input.workspaceId,baseline,delivery,expectedHead:head.commit});guard();
-        save({state:candidate.state==="conflicts"?"conflicts":"candidate",candidate,validation:null});
+        save({state:candidate.state==="conflicts"?"conflicts":"candidate",candidate,validation:null,remoteReceipt:null});
       }
       if(journal.state==="conflicts"){
         intents.release(lease);return journal;
@@ -73,7 +84,12 @@ function createSharedPublication({store,taskGit,sharedGit=createSharedGit(taskGi
         save({state:"validated",validation:evidence});
       }
       await authorized();save({state:"publishing"});
-      const publication=await sharedGit.publish({candidate:journal.candidate,validate:async()=>{guard();return journal.validation;}});
+      let canonicalHead;
+      if(remote){
+        const remoteReceipt=await remote.publish(journal.candidate,journal.validation);guard();save({remoteReceipt});
+        canonicalHead=await remote.canonical(baseline);guard();await authorized();
+      }
+      const publication=await sharedGit.publish({candidate:journal.candidate,canonicalHead,validate:async()=>{guard();return journal.validation;}});
       guard();return finish(publication);
     },
   });
