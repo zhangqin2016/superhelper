@@ -118,3 +118,6 @@ Checkpoint 58: controlled POSIX engine/job groups register durably under the glo
 
 
 Checkpoint 59 supplies POSIX foreground admission in the desktop source path. Busy application requests advisory idle-profile retirement without interrupting active/unknown views or retained SDK work. Completed-shared local continuation persists in the existing work schedule and returns through a fresh original-session TaskCore turn after admission becomes available. Work-generation changes do not replace the current local validator's turn. Local A/application receipts remain atomic; contribution-specific undo and task-card local state are the next required steps. Existing operator protocol gates remain unchanged.
+
+
+Checkpoint 60 adds a separate persisted local stage to existing task cards and task details. Shared publication remains its own stage; applied requires the bound local receipt and validation identity. Waiting, validation failures, conflicts and baseline recovery are visible without exposing native paths or evidence contents. Contribution-specific undo remains the next implementation step.

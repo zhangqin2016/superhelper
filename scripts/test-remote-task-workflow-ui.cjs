@@ -27,6 +27,7 @@ app.whenReady().then(async()=>{
  const frozen={id:'draft1',name:'Budget',files:[{path:'<img src=x>',sizeBytes:20}],warnings:['Review secrets'],omitted:2};
  let savedBinding=null;
  const workflow=async c=>{commands.push(c);
+ if(c.operation==='integrationStatus')return{ok:true,integration:{stage:'published',deliveryId:'v1',canRetry:false,localStage:'waiting'}};
  if(c.operation==='bindingOptions')return{ok:true,projects:[{id:'existing',name:'Existing workspace',sessions:[{id:'existing-session',title:'My conversation'}]}],binding:savedBinding};
  if(c.operation==='bind'){savedBinding={projectId:c.projectId||'chosen-folder',sessionId:c.sessionId||'new-session'};return{ok:true,...savedBinding};}
  if(c.operation==='recoveries')return{ok:true,applications:localRecoveries};
@@ -49,7 +50,7 @@ app.whenReady().then(async()=>{
  await click('task-send');check(!root.querySelector('[name="title"]').disabled,'definite rejection permits correcting fields');await click('task-back');await click('task-resume');check(!root.querySelector('[name="title"]').disabled,'failed restored draft remains editable');
  await click('task-send');check(root.querySelector('[name="title"]').disabled,'unknown send freezes original intent');
  await click('task-send');const sends=commands.filter(c=>c.operation==='send');check(sends.length===3&&JSON.stringify(sends[1])===JSON.stringify(sends[2]),'retry uses identical immutable draft and fields');
- await click('task-back');await click('task-resume');check(root.querySelector('[name="title"]').value==='Budget','draft restored');await click('task-back');await click('task-open');await click('task-preview');
+ await click('task-back');await click('task-resume');check(root.querySelector('[name="title"]').value==='Budget','draft restored');await click('task-back');await click('task-open');check(root.textContent.includes('Waiting for foreground work'),'detail separates shared publication from local application');await click('task-preview');
  check(root.querySelector('[data-action="task-apply"]').disabled,'deletions require explicit consent');const consent=root.querySelector('[name="confirmDeletions"]');consent.checked=true;consent.dispatchEvent(new Event('change'));await click('task-apply');
  check(root.textContent.includes('Another local file operation'),'busy application explains retry');check(!root.querySelector('[data-action="task-apply"]').disabled,'busy admission retains a retryable reviewed plan');await click('task-apply');const retries=commands.filter(c=>c.operation==='apply');check(retries.length===2&&JSON.stringify(retries[0])===JSON.stringify(retries[1]),'retry preserves application identity, plan and consent');
  const applied=commands.find(c=>c.operation==='apply');check(applied&&applied.deliveryId==='v1'&&applied.expectedPlanHash==='a'.repeat(64)&&applied.confirmDeletions,'apply binds reviewed accepted version and plan');await click('task-back');await click('task-open');check(root.querySelector('[data-action="task-rollback"]'),'persisted application can be rolled back after reopening');await click('task-rollback');check(root.textContent.includes('rolled back'),'rollback state separate');

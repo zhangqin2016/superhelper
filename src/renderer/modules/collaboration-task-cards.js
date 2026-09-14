@@ -49,6 +49,7 @@ export function createTaskCardController({api,getContext,onChange=()=>{}}) {
 const states=new Set(["offered","active","review","changes_requested","accepted","declined","cancelled"]);
 const localStates=new Set(["preparing","preparation_failed","prepared","uploading","confirming","failed","completed"]);
 const integrationStates=new Set(["queued","preparing","validation_required","conflict","failed","publication_pending","published","cancelled","binding_required"]);
+const localIntegrationStates=new Set(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied"]);
 export function renderTaskCards(root,cards=[],onOpen) {
   const previous=new Map([...root.querySelectorAll(":scope > .collaboration-task-card")].map(row=>[row.dataset.cardId,row]));
   for(const card of cards) {
@@ -62,7 +63,8 @@ export function renderTaskCards(root,cards=[],onOpen) {
     row.querySelector("strong").textContent=card.title;
     const label=states.has(card.state)?`state.${card.state}`:`cardState.${localStates.has(card.state)?card.state:"preparing"}`;
     const integration=integrationStates.has(card.integration?.stage)?card.integration.stage:"";
-    row.querySelector("p").textContent=t(`collaboration.task.${label}`)+(integration?` · ${t(`collaboration.task.integration.${integration}`)}`:"")+(card.cached&&card.taskId?` · ${t("collaboration.task.cachedState")}`:"");
+    const local=localIntegrationStates.has(card.integration?.localStage)?card.integration.localStage:"";
+    row.querySelector("p").textContent=t(`collaboration.task.${label}`)+(integration?` · ${t(`collaboration.task.integration.${integration}`)}`:"")+(local?` · ${t(`collaboration.task.integration.local.${local}`)}`:"")+(card.cached&&card.taskId?` · ${t("collaboration.task.cachedState")}`:"");
     row.dataset.integration=integration;
     const button=row.querySelector("button");button.textContent=t(`collaboration.task.${card.taskId?"view":"resume"}`);button.onclick=()=>onOpen?.(card);
     row.dataset.revision=String(card.revision);row.dataset.taskId=card.taskId || "";

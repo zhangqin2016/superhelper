@@ -36,12 +36,18 @@ app.whenReady().then(async()=>{
   card.querySelector('button').click();await tick();check(opened.id==='draft'&&opened.conversationId==='chat','click retains exact task anchor');
   rows=[{...rows[0],taskId:'task',revision:2,state:'active'}];for(const fn of listeners)fn({type:'task'});await tick();
   check(panel.querySelector('.collaboration-task-card')===card&&card.dataset.revision==='2','ACK and progress preserve node');
+  rows=[{...rows[0],integration:{stage:'published',deliveryId:'delivery',canRetry:false,localStage:'waiting'}}];for(const fn of listeners)fn({type:'task'});await tick();
+  check(card.querySelector('p').textContent.includes('Waiting for foreground work'),'published shared state still shows local waiting');
+  rows=[{...rows[0],integration:{...rows[0].integration,localStage:'applied'}}];for(const fn of listeners)fn({type:'task'});await tick();
+  check(card.querySelector('p').textContent.includes('Applied to the local workspace'),'local receipt updates the same card');
   renderConversation('origin',{force:true});check(panel.querySelector('.collaboration-task-card')===card,'conversation rebuild preserves card');
   check(getComputedStyle(panel.querySelector('.workbench-empty')).display==='none','task content replaces empty-session onboarding');
   check(getRuntimeSession('origin').committedMessages.length===0,'task cards never become engine context');
   online=false;for(const fn of listeners)fn({type:'task'});await tick();
   check(card.querySelector('p').textContent.includes('Last saved status'),'offline card labels cached state');
   await setLocale('zh-CN',{persist:false});check(card.querySelector('p').textContent!=='Active','locale updates without losing node');
+  check(card.querySelector('p').textContent.includes('已写入本地工作空间'),'Chinese local receipt label');
+  await setLocale('ar',{persist:false});check(card.querySelector('p').textContent.includes('تم التطبيق على مساحة العمل المحلية'),'Arabic local receipt label');
   defer=true;for(const fn of listeners)fn({type:'task'});await tick();check(release,'pending request exists');
   loggedIn=false;for(const fn of listeners)fn({type:'availability'});check(!panel.querySelector('.collaboration-task-card'),'account change clears immediately');
   release({ok:true,cards:rows,conversationIds:[]});await tick();check(!panel.querySelector('.collaboration-task-card'),'late response cannot revive old account');

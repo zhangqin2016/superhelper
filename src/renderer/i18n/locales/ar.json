@@ -1,4 +1,13 @@
 {
+  "collaboration.task.integration.local.preparing": "جارٍ تجهيز التغييرات المحلية",
+  "collaboration.task.integration.local.waiting": "بانتظار انتهاء العمل في المقدمة",
+  "collaboration.task.integration.local.ready": "التغييرات المحلية جاهزة ولم تُطبّق بعد",
+  "collaboration.task.integration.local.validation_required": "يلزم إجراء الفحوص المحلية",
+  "collaboration.task.integration.local.validation_failed": "لم تنجح الفحوص المحلية",
+  "collaboration.task.integration.local.conflict": "تحتاج التغييرات المحلية إلى حل التعارضات",
+  "collaboration.task.integration.local.baseline_required": "يلزم استعادة سجل المزامنة المحلي",
+  "collaboration.task.integration.local.failed": "فشل التطبيق المحلي",
+  "collaboration.task.integration.local.applied": "تم التطبيق على مساحة العمل المحلية",
   "collaboration.task.integration.selectChecks": "اختيار فحوصات المشروع",
   "collaboration.task.integration.updateChecks": "تحديث مجموعة الفحوصات",
   "collaboration.task.integration.checksPinned": "تم تثبيت {count} من ملفات الفحص",

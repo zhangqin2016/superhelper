@@ -1,4 +1,13 @@
 {
+  "collaboration.task.integration.local.preparing": "正在准备本地修改",
+  "collaboration.task.integration.local.waiting": "等待前台任务空闲",
+  "collaboration.task.integration.local.ready": "本地修改已准备，尚未写入",
+  "collaboration.task.integration.local.validation_required": "需要本地验证",
+  "collaboration.task.integration.local.validation_failed": "本地验证未通过",
+  "collaboration.task.integration.local.conflict": "本地修改存在待解决的冲突",
+  "collaboration.task.integration.local.baseline_required": "需要恢复本地同步记录",
+  "collaboration.task.integration.local.failed": "本地写入失败",
+  "collaboration.task.integration.local.applied": "已写入本地工作空间",
   "collaboration.task.integration.selectChecks": "选择项目检查",
   "collaboration.task.integration.updateChecks": "更新检查集",
   "collaboration.task.integration.checksPinned": "已固定 {count} 个检查文件",

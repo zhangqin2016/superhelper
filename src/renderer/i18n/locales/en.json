@@ -1,4 +1,13 @@
 {
+  "collaboration.task.integration.local.preparing": "Preparing local changes",
+  "collaboration.task.integration.local.waiting": "Waiting for foreground work",
+  "collaboration.task.integration.local.ready": "Local changes ready; not yet applied",
+  "collaboration.task.integration.local.validation_required": "Local checks required",
+  "collaboration.task.integration.local.validation_failed": "Local checks failed",
+  "collaboration.task.integration.local.conflict": "Local changes need conflict resolution",
+  "collaboration.task.integration.local.baseline_required": "Local sync record needs recovery",
+  "collaboration.task.integration.local.failed": "Local application failed",
+  "collaboration.task.integration.local.applied": "Applied to the local workspace",
   "collaboration.task.integration.selectChecks": "Choose project checks",
   "collaboration.task.integration.updateChecks": "Update check set",
   "collaboration.task.integration.checksPinned": "Pinned {count} check files",

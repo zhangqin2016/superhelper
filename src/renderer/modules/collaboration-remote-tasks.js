@@ -113,6 +113,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     if(integration){
       const box=node("section","remote-task-notice remote-task-integration");box.setAttribute("role","status");
       box.append(node("p","",tr(`integration.${integration.stage}`)));
+      if(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied"].includes(integration.localStage))box.append(node("p","",tr(`integration.local.${integration.localStage}`)));
       if(integrationError)box.append(node("p","",tr(integrationError==="checks"?"integration.checksFailed":"integration.retryFailed")));
       if(integration.canConfigureChecks){
         if(integration.checkCount)box.append(node("p","",tr("integration.checksPinned",{count:integration.checkCount})));

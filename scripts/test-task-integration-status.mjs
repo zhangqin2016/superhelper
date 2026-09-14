@@ -45,6 +45,26 @@ try{
  assert.equal((await workflow.run(command)).integration.stage,'publication_pending','completed local Git work must not claim remote sync');
  records.put('outbox',{kind:'publication-outbox',conversationId:'chat',intentId:intent.id,state:'sent'});
  assert.equal((await workflow.run(command)).integration.stage,'published');
+ const local={kind:'local-materialization',conversationId:'chat',intentId:intent.id,taskId:'task',deliveryId:'delivery',
+  binding:{accountId:'owner',workspaceId:'shared',targetId:input.targetId,projectId:'project',sessionId:'session'},
+  state:'ready',token:'token',fingerprint:'fingerprint',validation:{state:'passed',evidenceHash:'e'.repeat(64)}};
+ records.put('local',local);store.db.run("UPDATE task_integration_work SET code='COLLAB_LOCAL_APPLICATION_PENDING'");
+ assert.equal((await workflow.run(command)).integration.localStage,'waiting','shared publication does not imply local application');
+ records.put('local',{...local,validation:{state:'failed'}});
+ assert.equal((await workflow.run(command)).integration.localStage,'validation_failed');
+ records.put('local',{...local,state:'applied'});
+ assert.equal((await workflow.run(command)).integration.localStage,'validation_required','an applied label requires its local receipt');
+ const revision={ref:'shared',commit:'c'.repeat(40),remoteRevision:1};
+ records.put('local',{...local,state:'applied',applicationId:'application',sharedRevision:revision,
+  receipt:{applicationId:'application',token:local.token,fingerprint:local.fingerprint,validationHash:local.validation.evidenceHash,sharedRevision:revision}});
+ const applied=(await workflow.run(command)).integration;assert.equal(applied.localStage,'applied');
+ assert.equal(taskWorkflowResult({ok:true,integration:{...applied,localStage:'private-path'}}).integration.localStage,undefined,'unknown local states cannot cross IPC');
+ const reopened=new CollaborationStore({dbPath:path.join(root,'db'),accountId:'owner',keyring});
+ try{
+  const persisted=createTaskRecords({store:reopened,assertActive(){}}).list('chat');
+  const work=new Map(reopened.db.all('SELECT * FROM task_integration_work').map(row=>[row.intent_id,row]));
+  assert.equal(require('../src/main/collaboration/integration-status').taskIntegration(task,persisted,work).status.localStage,'applied','task status survives an independent SQLite reopen');
+ }finally{reopened.close();}
  assert.equal((await workflow.run(retry)).ok,false,'completed work cannot be queued again');
  console.log('integration status/retry: closed projections, same intent, stale delivery/running/withdrawn fences and no-validator wait passed');
 }finally{store.close();fs.rmSync(root,{recursive:true,force:true});}
