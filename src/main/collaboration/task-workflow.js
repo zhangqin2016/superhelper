@@ -217,14 +217,33 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
         local = save({...local,gitBaseline,executionRoot:allocate()});
       }
       if (!local.executionRoot) local=save({...local,executionRoot:allocate()});
-      const worktree = await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.executionRoot,manifest:local.baseManifest});
+      // Inventory first, content by policy: large trees bring only files under
+      // the lazy threshold to disk; the rest stay online-only entries that the
+      // requester or an agent materializes on demand. Absence is never a deletion.
+      const lazy=lazyMaterialization(local.baseManifest);
+      const worktree = await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.executionRoot,manifest:local.baseManifest,materializePaths:lazy});
       await taskFor(command);
-      local = save({...local,workRoot:local.executionRoot,materializedPaths:local.baseManifest.map(file=>file.path),baseFileIdentities:worktree.fileIdentities});
+      local = save({...local,workRoot:local.executionRoot,materializedPaths:worktree.materializedPaths,baseFileIdentities:worktree.fileIdentities});
     } else if (local.gitBaseline) {
       await git().ensureWorktree({baseline:local.gitBaseline,workRoot:local.workRoot,manifest:local.baseManifest});
       await taskFor(command);
     }
     return local;
+  }
+  // Lazy materialization thresholds are operator policy read per receive.
+  function lazyMaterialization(manifest){
+    const setting=(name,fallback)=>{const value=Number(process.env[name]);return Number.isSafeInteger(value)&&value>0?value:fallback;};
+    const total=manifest.reduce((sum,file)=>sum+file.sizeBytes,0);
+    if(total<=setting("LILY_COLLAB_LAZY_BYTES",64*1024*1024)&&manifest.length<=setting("LILY_COLLAB_LAZY_FILES",5000))return null;
+    const perFile=setting("LILY_COLLAB_LAZY_FILE_BYTES",8*1024*1024);
+    return manifest.filter(file=>file.sizeBytes<=perFile).map(file=>file.path);
+  }
+  function inventoryView(local){
+    const present=new Set(local.materializedPaths||local.baseManifest.map(file=>file.path));
+    const files=local.baseManifest.map(file=>({path:file.path,sizeBytes:file.sizeBytes,state:present.has(file.path)?"local":"remote"}));
+    const remote=files.filter(file=>file.state==="remote");
+    return {files:[...remote,...files.filter(file=>file.state==="local")].slice(0,2000),truncated:files.length>2000,
+      counts:{total:files.length,local:files.length-remote.length,remote:remote.length,remoteBytes:remote.reduce((sum,file)=>sum+file.sizeBytes,0)}};
   }
   async function contribution(draft) {
     if (draft.gitContribution) return draft;
@@ -235,10 +254,11 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       read(local.id,draft.conversationId);
       local = save({...local,gitBaseline});
     }
-    // Existing ZIP task copies were completely materialized at receive time.
-    // Sparse inventories require the new wire protocol, not a legacy full ZIP.
+    // Existing ZIP task copies were completely materialized at receive time;
+    // Git-protocol copies carry their exact inventory, which may be sparse.
+    // A legacy full-ZIP delivery cannot represent sparse input.
     const materializedPaths = local.materializedPaths || local.baseManifest.map(file=>file.path);
-    if (materializedPaths.length !== local.baseManifest.length) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
+    if (draft.transport !== "git" && materializedPaths.length !== local.baseManifest.length) throw fail("COLLAB_TASK_PROTOCOL_UNAVAILABLE");
     const gitContribution = await git().captureContribution({baseline:local.gitBaseline,baseManifest:local.baseManifest,
       materializedPaths,deliveryId:draft.id,snapshotRoot:draft.snapshotRoot,manifest:draft.manifest,
       baseFileIdentities:local.baseFileIdentities,fileIdentities:draft.fileIdentities});
@@ -415,6 +435,23 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       return {ok:true,projectId:target.projectId,sessionId:target.sessionId};
     }
     // Completed materializations/undos are history, not recovery work; interrupted inverse attempts are.
+    if (operation === "inventory" || operation === "materialize") {
+      const task = await taskFor(command);
+      if (task.assigneeUserId !== store.accountId) throw fail("COLLAB_TASK_ACCESS_DENIED");
+      const local = read(`task:${task.id}`,conversationId);
+      if (!local.workRoot || !local.gitBaseline) throw fail("COLLAB_TASK_LOCAL_MISSING");
+      if (operation === "materialize") {
+        const present=new Set(local.materializedPaths||[]),known=new Set(local.baseManifest.map(file=>file.path));
+        const wanted=(command.paths||local.baseManifest.map(file=>file.path)).filter(name=>known.has(name)&&!present.has(name));
+        if (command.paths && command.paths.some(name=>!known.has(name))) throw fail("COLLAB_TASK_INVALID");
+        if (wanted.length) {
+          const result = await git().materializePaths({baseline:local.gitBaseline,workRoot:local.workRoot,manifest:local.baseManifest,paths:wanted});
+          await taskFor(command);read(local.id,conversationId);
+          save({...local,materializedPaths:result.materializedPaths,baseFileIdentities:result.fileIdentities});
+        }
+      }
+      return {ok:true,inventory:inventoryView(read(`task:${task.id}`,conversationId))};
+    }
     if (operation === "recoveries") return {ok:true,applications:recoveries.list().filter(v=>v.journal && !["rolled_back","undone"].includes(v.state) && !(["materialization","inverse"].includes(v.kind)&&v.state==="applied")).map(v=>({
       conversationId:v.conversationId,taskId:v.taskId,applicationId:v.id,state:v.state,deliveryId:v.deliveryId,planHash:v.planHash,
       label:path.basename(v.input.rootPath),

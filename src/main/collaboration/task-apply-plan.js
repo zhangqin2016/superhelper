@@ -8,8 +8,10 @@ function fileKey(path) {
   if (parts.some((p) => !p || p === "." || p === ".." || /[. ]$/.test(p) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p))) invalid();
   return path.toLowerCase();
 }
+// File counts are a capacity policy (see resource-policy), not a constant.
+const maxFiles = () => require("./resource-policy").collaborationLimits().maxFiles;
 function manifestMap(files) {
-  if (!Array.isArray(files) || files.length > 10000) invalid();
+  if (!Array.isArray(files) || files.length > maxFiles()) invalid();
   const map = new Map();
   for (const file of files) {
     if (!file || Object.keys(file).some((k) => !["path", "sha256", "sizeBytes"].includes(k))
@@ -30,7 +32,7 @@ function manifestMap(files) {
  *  The filesystem broker must recheck hashes and symlinks at apply time. */
 function planTaskApplication({ base, current, delivery, editablePaths }) {
   const original = manifestMap(base), local = manifestMap(current), proposed = manifestMap(delivery);
-  if (!Array.isArray(editablePaths) || editablePaths.length > 10000) invalid();
+  if (!Array.isArray(editablePaths) || editablePaths.length > maxFiles()) invalid();
   const editable = new Set(editablePaths.map(fileKey));
   if (editable.size !== editablePaths.length) invalid();
   const entries = [];

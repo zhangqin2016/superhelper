@@ -361,7 +361,8 @@ try {
   } finally {fs.chmodSync(unreadable,0o600);}
   const fullInventory=helper.records.get(`task:${shapeTask}`);
   helper.records.put(fullInventory.id,{...fullInventory,materializedPaths:fullInventory.materializedPaths.slice(1)});
-  assert.equal((await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask})).code,'COLLAB_TASK_PROTOCOL_UNAVAILABLE','legacy full-ZIP delivery cannot represent sparse input');
+  if(gitMode)ok(await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask}),'a sparse inventory is representable on the Git protocol; unchanged absent entries are not deletions');
+  else assert.equal((await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask})).code,'COLLAB_TASK_PROTOCOL_UNAVAILABLE','legacy full-ZIP delivery cannot represent sparse input');
   helper.records.put(fullInventory.id,fullInventory);
   const shapeDelivery=ok(await helper.run({operation:'prepareDelivery',conversationId:'chat',taskId:shapeTask}),'prepare file-directory changes').draft;
   const shapeContribution=helper.records.get(shapeDelivery.id).gitContribution;
@@ -408,5 +409,30 @@ try {
   ok(await owner.run({ operation: 'rollback', conversationId: 'team-chat', taskId: teamTaskId, applicationId: teamPreview.applicationId }), 'offline rollback after Team retirement');
   assert.equal(fs.readFileSync(path.join(source, 'budget.txt'), 'utf8'), 'original budget\n');
   assert.equal(ok(await owner.run({ operation: 'recoveries' }), 'rolled-back recovery projection').applications.some(item => item.applicationId === teamPreview.applicationId), false);
+  if(gitMode){
+    // Inventory-first receive: above the lazy threshold only small files come to disk; the large asset is an online-only entry until materialized.
+    const large=Buffer.alloc(4096,7);fs.writeFileSync(path.join(source,'large.bin'),large);
+    process.env.LILY_COLLAB_LAZY_BYTES='1';process.env.LILY_COLLAB_LAZY_FILE_BYTES='1024';
+    try{
+      const lazyDraft=ok(await owner.run({operation:'prepare',conversationId:'chat'}),'prepare lazy task');
+      const lazyTask=ok(await owner.run({...send,draftId:lazyDraft.draft.id}),'send lazy task').taskId;
+      ok(await helper.tasks.submit({conversationId:'chat',taskId:lazyTask,action:'accept',expectedRevision:1}),'accept lazy task');
+      ok(await helper.run({operation:'receive',conversationId:'chat',taskId:lazyTask}),'receive lazy task');
+      const lazyLocal=helper.records.get(`task:${lazyTask}`);
+      assert.equal(fs.existsSync(path.join(lazyLocal.workRoot,'large.bin')),false,'an online-only entry is never a placeholder on disk');
+      assert.ok(lazyLocal.baseManifest.some(f=>f.path==='large.bin'),'the inventory still knows the file');
+      assert.ok(lazyLocal.baseManifest.filter(f=>f.path!=='large.bin').every(f=>fs.existsSync(path.join(lazyLocal.workRoot,f.path))),'small files are materialized');
+      const inventory=ok(await helper.run({operation:'inventory',conversationId:'chat',taskId:lazyTask}),'inventory').inventory;
+      assert.equal(inventory.counts.remote,1);assert.equal(inventory.files[0].path,'large.bin');assert.equal(inventory.files[0].state,'remote');assert.equal(inventory.counts.remoteBytes,4096);
+      assert.doesNotMatch(JSON.stringify(inventory),/workRoot|\/private\//,'the inventory projection carries relative paths only');
+      const foreign=await owner.run({operation:'inventory',conversationId:'chat',taskId:lazyTask});
+      assert.equal(foreign.ok,false,'only the assignee owns the task copy inventory');assert.match(foreign.code,/COLLAB_TASK_ACCESS_DENIED|COLLAB_NETWORK_UNAVAILABLE/);
+      assert.equal((await helper.run({operation:'materialize',conversationId:'chat',taskId:lazyTask,paths:['nope.txt']})).code,'COLLAB_TASK_INVALID');
+      const materialized=ok(await helper.run({operation:'materialize',conversationId:'chat',taskId:lazyTask,paths:['large.bin']}),'materialize').inventory;
+      assert.equal(materialized.counts.remote,0);assert.deepEqual(fs.readFileSync(path.join(lazyLocal.workRoot,'large.bin')),large,'materialization writes the exact bytes');
+      assert.equal(helper.records.get(`task:${lazyTask}`).materializedPaths.includes('large.bin'),true);
+      assert.equal(ok(await helper.run({operation:'materialize',conversationId:'chat',taskId:lazyTask}),'materialize all is idempotent').inventory.counts.remote,0);
+    }finally{delete process.env.LILY_COLLAB_LAZY_BYTES;delete process.env.LILY_COLLAB_LAZY_FILE_BYTES;fs.rmSync(path.join(source,'large.bin'),{force:true});}
+  }
   console.log(`remote task workflow (${gitMode?'Git bundles':'ZIP'}): real two-account SQLite, manifests, response loss/replay, acceptance, writable import, delivery, apply and restart rollback passed (network/object fixture only)`);
 } finally { for (const user of [...opened]) user.close(); fs.rmSync(temporary, { recursive: true, force: true }); }

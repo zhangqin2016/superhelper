@@ -12,6 +12,7 @@ const fields = {
   configureIntegrationChecks:["taskId","deliveryId"],
   prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
+  inventory:["taskId"],materialize:["taskId","paths"],
   preview:["taskId","deliveryId"],apply:["taskId","deliveryId","applicationId","expectedPlanHash","confirmDeletions"],rollback:["taskId","applicationId"],
 };
 function taskWorkflowCommand(value) {
@@ -28,6 +29,11 @@ function taskWorkflowCommand(value) {
     if (value.operation === "bind" && ["projectId","sessionId"].includes(key) && !Object.hasOwn(value,key)) continue;
     const v = value[key];
     if (key === "deliveryId" && value.operation === "open" && v == null) continue;
+    if (key === "paths") {
+      if (!Object.hasOwn(value,key)) continue;
+      if (!Array.isArray(v) || !v.length || v.length > 2000 || v.some(item=>typeof item !== "string" || !item || item.length > 1024 || /[\x00-\x1f\x7f]/.test(item) || item.startsWith("/") || item.split("/").some(part=>!part||part==="."||part===".."))) return null;
+      continue;
+    }
     if (key === "answers") {
       if (!Array.isArray(v) || !v.length || v.length > 8 || v.some(item=>!item || typeof item !== "object" || Array.isArray(item) || Object.keys(item).some(k=>!["path","answer"].includes(k))
         || typeof item.path !== "string" || !item.path || item.path.length > 1024 || /[\x00-\x1f\x7f]/.test(item.path)
@@ -75,6 +81,11 @@ function taskWorkflowResult(value) {
     ...(typeof v.label === "string" ? {label:v.label.slice(0,200)} : {}),
   }));
   if (value?.plan) result.plan = {canApply:value.plan.canApply === true,entries:value.plan.entries.map(v=>({path:v.path,operation:v.operation,status:v.status}))};
+  if (value?.inventory) {
+    const counts=value.inventory.counts||{},number=v=>Number.isSafeInteger(v)&&v>=0?v:0;
+    result.inventory={files:(value.inventory.files||[]).slice(0,2000).filter(f=>typeof f.path==="string"&&["local","remote"].includes(f.state)).map(f=>({path:f.path.slice(0,1024),sizeBytes:number(f.sizeBytes),state:f.state})),
+      truncated:value.inventory.truncated===true,counts:{total:number(counts.total),local:number(counts.local),remote:number(counts.remote),remoteBytes:number(counts.remoteBytes)}};
+  }
   return result;
 }
 module.exports = {taskWorkflowCommand,taskWorkflowResult};

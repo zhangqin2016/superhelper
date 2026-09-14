@@ -20,7 +20,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   let phase = "closed", statusView = null;
   let hasUpdate = false;
   let drafts = [], workflow = null;
-  let integration=null,integrationError=false;
+  let integration=null,integrationError=false,inventory=null,inventoryError=false;
   let contextService = api();
   const applications = new Map();
   let localRecoveries = [], recoveryGeneration = 0, recoveryError = "";
@@ -169,8 +169,9 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     if (application && !["rolled_back", "undone", "preview"].includes(application.state)) body.append(button("task-rollback", tr("rollback"), () => void rollbackApplication(task, application)));
     if (api()?.taskWorkflow && ["active", "changes_requested"].includes(task.state) && context.userId === task.assigneeUserId) {
       const controls = node("div", "remote-task-workspace-controls");
-      controls.append(button("task-receive", tr("receive"), () => void receiveTask(task)), button("task-workspace-open", tr("openWorkspace"), () => void openWorkspace(task)), button("task-prepare-delivery", tr("prepareDelivery"), () => void prepareDelivery(task)));
+      controls.append(button("task-receive", tr("receive"), () => void receiveTask(task)), button("task-workspace-open", tr("openWorkspace"), () => void openWorkspace(task)), button("task-prepare-delivery", tr("prepareDelivery"), () => void prepareDelivery(task)), button("task-inventory", tr("inventory"), () => void showInventory(task)));
       body.append(controls);
+      if (inventory?.taskId === task.id) paintInventory(body, task);
       for (const draft of drafts.filter(item => item.taskId === task.id && item.state !== "completed")) body.append(button("task-resume-delivery", tr("resumeDelivery"), () => { workflow = { kind: "delivery", task, draft, locked: !!draft.state && draft.state !== "prepared" }; paintWorkflow(); }));
     }
     const recovery = pending.find(command => command.taskId === task.id);
@@ -344,6 +345,34 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     if (result.ok && result.applicationId && result.planHash && result.plan) { workflow = { kind: "apply", task, deliveryId, preview: result }; paintWorkflow(); }
     else { paintDetail(); notice(surface.querySelector(".remote-task-content"), workflowError(result)); }
   }
+  // Online-only inventory: files the task copy knows about but has not brought
+  // to disk. Nothing here is a placeholder; materializing writes exact bytes.
+  function paintInventory(body, task) {
+    const section = node("section", "remote-task-section remote-task-inventory"); section.setAttribute("role", "status");
+    section.append(node("h4", "", tr("inventory")));
+    const counts = inventory.counts;
+    if (!counts.remote) section.append(node("p", "remote-task-meta", tr("inventoryComplete", { count: counts.total })));
+    else {
+      section.append(node("p", "remote-task-meta", tr("inventoryRemote", { count: counts.remote, total: counts.total, size: formatBytes(counts.remoteBytes) })));
+      const list = node("ul", "remote-task-files");
+      for (const file of inventory.files.filter(item => item.state === "remote").slice(0, 50)) { const row = node("li", ""); row.append(node("span", "", file.path), node("span", "remote-task-meta", `${tr("inventoryOnline")} · ${formatBytes(file.sizeBytes)}`)); list.append(row); }
+      section.append(list);
+      if (inventory.truncated || counts.remote > 50) section.append(node("p", "remote-task-meta", tr("inventoryMore", { count: counts.remote })));
+      section.append(button("task-materialize", tr("materializeAll"), async () => {
+        const result = await runWorkflow({ operation: "materialize", taskId: task.id }); if (!result) return;
+        if (result.ok && result.inventory) inventory = { taskId: task.id, ...result.inventory }; else inventoryError = true;
+        paintDetail();
+      }));
+    }
+    if (inventoryError) section.append(node("p", "", tr("inventoryFailed")));
+    body.append(section);
+  }
+  function formatBytes(value) { const units = ["B", "KB", "MB", "GB"]; let size = Number(value) || 0, index = 0; while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; } return `${index ? size.toFixed(1) : size} ${units[index]}`; }
+  async function showInventory(task) {
+    const result = await runWorkflow({ operation: "inventory", taskId: task.id }); if (!result) return;
+    inventoryError = !result.ok; inventory = result.ok && result.inventory ? { taskId: task.id, ...result.inventory } : null;
+    paintDetail();
+  }
   async function rollbackApplication(task, application) {
     const result = await runWorkflow({ operation: "rollback", taskId: task.id, applicationId: application.applicationId }); if (!result) return;
     if (result.ok && ["rolled_back", "undone"].includes(result.state)) applications.set(task.id, { ...application, state: result.state });
@@ -402,7 +431,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   async function openTask(taskId) {
     const ticket = ++generation; busy = false; confirming = ""; reasonDraft = "";
     selected = null; pending = []; hasUpdate = false; showStatus("loading", { detail: true });
-    integration=null;integrationError=false;
+    integration=null;integrationError=false;inventory=null;inventoryError=false;
     try {
       const [result, recovery, local, integrationResult] = await Promise.all([api()?.getTask?.({ conversationId: context.conversationId, taskId }), api()?.getTaskCommands?.(context.conversationId), api()?.taskWorkflow?.({ operation: "drafts", conversationId: context.conversationId }),api()?.taskWorkflow?.({operation:"integrationStatus",conversationId:context.conversationId,taskId})]);
       if (!valid(ticket)) return;
