@@ -16,6 +16,9 @@ const descriptions={
   local_ready:"The shared version is published. A local candidate preserving private edits is ready; workspace files have not been applied.",
   local_conflicts:"The shared version is published. Local edits need conflict resolution before application.",
   local_baseline_required:"The shared version is published. The last synchronized local baseline must be recovered before application.",
+  local_validation_passed:"The shared version is published and the private candidate passed local checks. Workspace files have not been applied.",
+  local_validation_failed:"The shared version is published. The private candidate failed local checks; workspace files have not been applied.",
+  local_validation_required:"The shared version is published. The private candidate still requires local checks before application.",
 };
 const translated={
   "zh-CN":{start:"整合协作任务交付",validation_required:"共享候选版本已准备，等待项目验证。",validation_failed:"共享候选版本未通过项目验证。",conflict:"共享候选版本存在待解决的冲突。",published:"共享版本已在本机生成，等待同步。",cancelled:"协作集成已取消。",queued:"协作集成仍在排队。",failed:"协作集成未能完成，请查看任务中的重试状态。"},
@@ -23,6 +26,8 @@ const translated={
 };
 Object.assign(translated["zh-CN"],{local_ready:"共享版本已发布。保留本地修改的候选已准备，尚未写入工作空间。",local_conflicts:"共享版本已发布。本地修改存在冲突，解决后才能应用。",local_baseline_required:"共享版本已发布。应用前需要恢复本机上次同步的基线。"});
 Object.assign(translated.ar,{local_ready:"تم نشر الإصدار المشترك. الإصدار المحلي المرشح الذي يحافظ على التعديلات الخاصة جاهز، ولم يُطبّق على ملفات مساحة العمل بعد.",local_conflicts:"تم نشر الإصدار المشترك. تحتاج التعديلات المحلية إلى حل التعارضات قبل التطبيق.",local_baseline_required:"تم نشر الإصدار المشترك. يجب استعادة آخر إصدار تمت مزامنته محليًا قبل التطبيق."});
+Object.assign(translated["zh-CN"],{local_validation_passed:"共享版本已发布，私有候选已通过本地检查，尚未写入工作空间。",local_validation_failed:"共享版本已发布。私有候选未通过本地检查，尚未写入工作空间。",local_validation_required:"共享版本已发布。私有候选仍需本地检查，之后才能应用。"});
+Object.assign(translated.ar,{local_validation_passed:"تم نشر الإصدار المشترك واجتاز المرشح الخاص الفحوص المحلية. لم تُطبّق ملفات مساحة العمل بعد.",local_validation_failed:"تم نشر الإصدار المشترك. لم يجتز المرشح الخاص الفحوص المحلية، ولم تُطبّق ملفات مساحة العمل.",local_validation_required:"تم نشر الإصدار المشترك. لا يزال المرشح الخاص يحتاج إلى فحوص محلية قبل التطبيق."});
 function label(key){
   let locale="en";try{locale=require("../locale-settings").getLocale();}catch{/* Embedded hosts use English. */}
   return translated[locale]?.[key] || descriptions[key] || "Integrate the shared task delivery";
@@ -59,6 +64,7 @@ async function runIntegrationTurn(orchestrator,session,state,value){
   assertActive();
   if(result?.ok!==true || !Object.hasOwn(descriptions,result.state))throw fail("FAILED");
   const local=result.state==="published"&&["ready","conflicts","baseline_required"].includes(result.localState)?`local_${result.localState}`:null;
-  return {assistant:label(local||result.state),failed:["validation_failed","failed"].includes(result.state),errorCode:result.state==="validation_failed"?"COLLAB_INTEGRATION_VALIDATION_FAILED":"COLLAB_INTEGRATION_FAILED"};
+  const localValidation=local==="local_ready"&&["passed","failed","required"].includes(result.localValidationState)?`local_validation_${result.localValidationState}`:null;
+  return {assistant:label(localValidation||local||result.state),failed:["validation_failed","failed"].includes(result.state)||localValidation==="local_validation_failed",errorCode:result.state==="validation_failed"?"COLLAB_INTEGRATION_VALIDATION_FAILED":"COLLAB_INTEGRATION_FAILED"};
 }
 module.exports={enqueueIntegrationTurn,runIntegrationTurn,integrationTurnId};

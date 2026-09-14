@@ -6,7 +6,8 @@ const {unchanged}=require("./candidate-validation");
 const {executeNodeTests}=require("./node-check-execution");
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail=()=>Object.assign(Error("Invalid pinned check policy"),{code:"COLLAB_CHECK_POLICY_INVALID"});
-function createNodeCheckPolicy({taskGit,record,input,assertActive}){
+function createNodeCheckPolicy({taskGit,record,input,assertActive,candidateParents}){
+  const parents=candidateParents===undefined?null:structuredClone(candidateParents);
   // Capture the trusted registry revision before any asynchronous execution.
   const policy=structuredClone(record?.policy);
   if(policy?.version!==1 || policy.type!=="node-test" || record?.id!==`validation-policy:${hash(policy)}`
@@ -26,7 +27,7 @@ function createNodeCheckPolicy({taskGit,record,input,assertActive}){
     const temporary=fs.mkdtempSync(path.join(path.dirname(taskGit.rootPath),"node-validation-"));
     let execution,state="failed",expected;
     try{
-      const material=await taskGit.materializeSnapshot({revision:candidate,destinationRoot:path.join(temporary,"copy"),parents:[candidate.head,candidate.delivery]});guard();
+      const material=await taskGit.materializeSnapshot({revision:candidate,destinationRoot:path.join(temporary,"copy"),parents:parents||[candidate.head,candidate.delivery]});guard();
       const files=new Map(material.manifest.map(file=>[file.path,file]));
       for(const file of policy.files){
         guard();const destination=path.join(material.snapshotRoot,file.path);

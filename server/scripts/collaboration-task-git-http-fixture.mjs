@@ -135,6 +135,13 @@ export async function verifyTaskGitServiceHttp({desktop,directory,fetchImpl,conv
         assert.equal(fs.readFileSync(path.join(local.candidate.snapshotRoot,'work.txt'),'utf8'),'reviewed');
         assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','candidate completion is not a local application receipt');
         assert.equal(owner.records.get(local.baseId).revision.commit,task.inputGit.commit,'shared publication cannot advance local A');
+        while(!owner.records.get(local.id)?.validation&&Date.now()<upgradeDeadline)await new Promise(resolve=>setTimeout(resolve,20));
+        const localValidation=owner.records.get(local.id)?.validation;
+        assert.equal(localValidation?.state,'passed','private candidate runs the pinned project checks in its own Git repository');
+        assert.notEqual(localValidation.privateCommit,published.candidate.commit);
+        assert.equal(owner.records.get(localValidation.evidenceId).report.fingerprint,local.fingerprint);
+        const sharedContext=await new (require('../../src/main/collaboration/task-git').TaskGit)({rootPath:path.dirname(published.candidate.repository)}).ensure();
+        await assert.rejects(sharedContext.git(['cat-file','-e',localValidation.privateCommit]),'private validation commit must be absent from shared Git objects');
         assert.equal(owner.records.get(oldOutboxId).state,'superseded');assert.equal(owner.records.get(oldOutboxId).supersededBy,published.outboxId);
         assert.equal(owner.records.get(published.legacyMigrationId).state,'confirmed','startup upgrade retains and reconciles the old local publication');
         const retired=owner.records.list(conversationId).filter(row=>row.kind==='retired-publication-upload');assert.equal(retired.length,1);

@@ -104,7 +104,7 @@ function createIntegrationWorker({store,assertActive,getWorkflow,validateIntegra
     const local=state==='published'&&remotePublicationEnabled
       ? await getWorkflow().prepareIntegrationLocal?.({intentId:intent.id,assertCurrent:()=>{active();execution.assertActive();}}):null;
     active();execution.assertActive();
-    return {ok:true,state,...(local?{localState:local.state}:{})};
+    return {ok:true,state,...(local?{localState:local.state,...(local.validationState?{localValidationState:local.validationState}:{})}:{})};
   }
   return {runIntent,recoverCheckPolicies,recover(){if(stopped)return Promise.resolve();if(!running)running=drain().finally(()=>{running=null;});return running;},stop(){stopped=true;for(const timer of timers)clearInterval(timer);timers.clear();for(const remote of remotes)void remote.close();}};
 }

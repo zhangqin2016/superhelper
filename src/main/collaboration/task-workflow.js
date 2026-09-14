@@ -603,6 +603,12 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       const local=require("./local-materialization").createLocalMaterialization({store,taskGit:git(),rootPath:path.join(root(),"local-materialization"),
         deviceId,assertActive:guard,authorize:async value=>{await authorizeIntegration(value);guard();return true;}});
       const result=await local.prepare({intentId,input,localRoot:source.sourceRoot,baseline:source.gitBaseline,published});guard();notify();
+      if(result.state==="ready"){
+        const validator=require("./local-candidate-validation").createLocalCandidateValidation({store,rootPath:path.join(root(),"local-validation-git"),assertActive:guard,
+          getPolicy:value=>checkPolicies.current(value,checkSelection.sourceIdentity(source.sourceRoot))});
+        const validation=await validator.validate({job:result,input});guard();notify();
+        return {state:result.state,validationState:validation.state};
+      }
       return {state:result.state};
     },
     createIntegrationRemote({input,intentId,taskGit,assertCurrent,authorize}){
