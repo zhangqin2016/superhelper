@@ -69,7 +69,43 @@ function createSharedGit(taskGit){
     if(!sha(candidate?.commit)||!sha(candidate.head)||!/^refs\/workspaces\/[a-f0-9]{64}\/head$/.test(candidate.headRef||""))throw fail("INVALID");
     return candidate.headRef.replace(/head$/,`publications/${hash([candidate.head,candidate.commit])}`);
   }
+  async function remoteState(git,workspaceId){
+    const object=await git(['rev-parse','--verify',`${prefix(workspaceId)}/remote-state`]).catch(()=>null);if(!object)return null;
+    if(Number(await git(['cat-file','-s',object]))>4096)throw fail('REMOTE_INVALID');
+    let state;try{state=JSON.parse(await git(['cat-file','blob',object]));}catch{throw fail('REMOTE_INVALID');}
+    if(!state||Object.keys(state).sort().join(',')!=='commit,publicationId,revision'||!Number.isSafeInteger(state.revision)||state.revision<0||state.revision>=Number.MAX_SAFE_INTEGER
+      ||!sha(state.commit)||(state.revision===0?state.publicationId!==null:typeof state.publicationId!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(state.publicationId)))throw fail('REMOTE_INVALID');
+    return {...state,object};
+  }
   return Object.freeze({
+    async remoteState(workspaceId){
+      const {git}=await runtime();return remoteState(git,workspaceId);
+    },
+    // A verified remote snapshot replaces only the shared head. Existing local
+    // candidates and publication receipts remain reachable for outbox recovery.
+    // The remote revision and H share a Git transaction, so a crash cannot save
+    // a newer H alongside an older monotonicity checkpoint in SQLite.
+    async reconcileRemote({workspaceId,revision,remoteRevision,publicationId,expectedHead,expectedRemoteState,assertCurrent}){
+      if(typeof assertCurrent!=='function'||!Number.isSafeInteger(remoteRevision)||remoteRevision<0||remoteRevision>=Number.MAX_SAFE_INTEGER
+        ||(expectedHead!==null&&!sha(expectedHead))||(expectedRemoteState!==null&&!sha(expectedRemoteState))
+        ||(remoteRevision===0?publicationId!==null:typeof publicationId!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(publicationId)))throw fail('INVALID');
+      const {git,repository}=await runtime(),ref=`${prefix(workspaceId)}/head`,remoteRef=`${prefix(workspaceId)}/remote-state`;
+      if(revision?.repository!==repository||!(remoteRevision===0?/^refs\/tasks\/[a-f0-9]{64}\/baseline$/.test(revision.ref||''):
+        new RegExp(`^${prefix(workspaceId)}/candidates/[a-f0-9]{64}$`).test(revision.ref||'')))throw fail('INVALID');
+      await verified(revision);await taskGit.inspectTree(revision.commit);
+      if(remoteRevision===0&&await git(['rev-list','--parents','-n','1',revision.commit])!==revision.commit)throw fail('ANCESTRY_INVALID');
+      const current=await remoteState(git,workspaceId);
+      if((current?.object||null)!==expectedRemoteState)throw fail('HEAD_CHANGED');
+      if(current){
+        if(remoteRevision<current.revision)throw fail('REMOTE_REGRESSED');
+        if(remoteRevision===current.revision&&(current.commit!==revision.commit||current.publicationId!==publicationId))throw fail('REMOTE_CONFLICT');
+      }
+      const object=await git(['hash-object','-w','--stdin'],undefined,JSON.stringify({revision:remoteRevision,commit:revision.commit,publicationId}));
+      assertCurrent();
+      try{await git(['update-ref','--stdin'],undefined,`start\nupdate ${ref} ${revision.commit} ${expectedHead||'0'.repeat(40)}\nupdate ${remoteRef} ${object} ${expectedRemoteState||'0'.repeat(40)}\nprepare\ncommit\n`);}
+      catch{throw fail('HEAD_CHANGED');}
+      assertCurrent();return {repository,ref,commit:revision.commit,remoteRevision,publicationId};
+    },
     async publication(candidate){
       const {git,repository}=await runtime(),ref=receiptRef(candidate);
       const commit=await git(["rev-parse","--verify",ref]).catch(()=>null);

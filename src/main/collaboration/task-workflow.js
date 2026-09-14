@@ -588,7 +588,13 @@ function createTaskWorkflow({ store, client, tasks, transfers, deviceId, assertA
       catch { /* durable record remains available; never report it as applied */ }
     }
   });
-  return {recoverPending:()=>ready,acquireIntegrationInput,assertIntegrationCheckPolicy:(input,expectedId)=>{
+  return {recoverPending:()=>ready,acquireIntegrationInput,
+    async acquireIntegrationHead(input,{assertCurrent=assertActive}={}){
+      assertCurrent();const context=await acquireIntegrationInput(input);assertCurrent();
+      const sync=require('./shared-head-sync').createSharedHeadSync({taskGit:context.taskGit,client,sharedFiles:transfers.sharedFiles,
+        accountId:store.accountId,deviceId,assertActive:assertCurrent,authorize:async()=>{await authorizeIntegration(input);assertCurrent();return true;}});
+      return {...context,head:await sync.acquire({input,baseline:context.baseline})};
+    },assertIntegrationCheckPolicy:(input,expectedId)=>{
     assertActive();const source=read(`task:${input.taskId}`,input.conversationId);
     const current=checkPolicies.current(input,checkSelection.sourceIdentity(source.sourceRoot));
     if((current?.id||null)!==expectedId)throw fail("COLLAB_CHECK_POLICY_CHANGED");

@@ -5,6 +5,7 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const {TaskGit}=require('../../src/main/collaboration/task-git');
 const {createSharedGitTransport}=require('../../src/main/collaboration/task-git-transport');
+const {createSharedHeadSync}=require('../../src/main/collaboration/shared-head-sync');
 const ok=value=>{assert.equal(value?.ok,true,JSON.stringify(value));return value;};
 
 /** Actual signed API, encrypted object transfer and independent Git import.
@@ -48,6 +49,14 @@ export async function verifyPublicationHttp({owner,helper,task,conversationId,po
   assert.equal(await git(['rev-parse',`${imported.commit}^{tree}`]),candidate.tree);
   assert.equal(await git(['rev-list','--parents','-n','1',imported.commit]),`${candidate.commit} ${candidate.head} ${candidate.delivery}`);
   assert.equal(await git(['show',`${imported.commit}:work.txt`]),'reviewed');
+  const inputBinding=owner.records.get(journal.intentId).input;
+  const canonical=await owner.workflow.acquireIntegrationHead(inputBinding);
+  assert.equal(canonical.head.commit,candidate.commit);assert.equal(canonical.head.remoteRevision,receipt.revision);
+  const reconstructed=new TaskGit({rootPath:path.join(owner.root,'canonical-shared-receiver'),gitOptions:{autoInstall:false}});
+  const sync=createSharedHeadSync({taskGit:reconstructed,client:owner.client,sharedFiles:owner.transfers.sharedFiles,accountId:'a',deviceId:owner.deviceId,
+    assertActive(){},authorize:()=>owner.workflow.authorizeIntegration(inputBinding)});
+  const remoteHead=await sync.acquire({input:inputBinding,baseline:canonical.baseline});
+  assert.equal(remoteHead.commit,candidate.commit);assert.equal(remoteHead.publicationId,receipt.publicationId);
   assert.equal(fs.readFileSync(path.join(owner.source,'work.txt'),'utf8'),'baseline','remote publication leaves private W unchanged');
   assert.equal((await owner.client.getIntegrationTarget(scope)).lease,null);
   await pool.query("UPDATE stored_objects SET state='revoked' WHERE id=$1",[sealed.objectId]);

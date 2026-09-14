@@ -123,4 +123,4 @@ function createTransport(taskGit,validRef) {
 }
 const createTaskGitTransport=taskGit=>createTransport(taskGit,taskRef);
 const createSharedGitTransport=taskGit=>createTransport(taskGit,sharedRef);
-module.exports = {createTaskGitTransport,createSharedGitTransport,parseGitDescriptor:value=>descriptor(value)};
+module.exports = {createTaskGitTransport,createSharedGitTransport,parseGitDescriptor:value=>descriptor(value),parseSharedGitDescriptor:value=>descriptor(value,sharedRef)};
