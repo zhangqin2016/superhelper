@@ -118,7 +118,17 @@ const documentQuestion = buildTaskContract({
 assert.equal(documentQuestion.active, true, "document work should get an evidence contract");
 assert.equal(documentQuestion.kind, "content_extraction");
 assert.equal(documentQuestion.taskType, "content_extraction");
-assert(documentQuestion.evidencePolicy.requiredEvidenceKinds.includes("source_content"));
+// 2026-09-15: with NOTHING attached the source-content evidence kind is
+// unreachable (only attachment/vision/document extraction records it), so the
+// turn must require a real read instead of a verdict it can never satisfy.
+assert.deepEqual(documentQuestion.evidencePolicy.requiredEvidenceKinds, ["file_read"]);
+const attachedDocumentQuestion = buildTaskContract({
+  text: "分析这个 PDF 文档",
+  files: [{ name: "contract.pdf" }],
+  project: { path: ROOT },
+});
+assert(attachedDocumentQuestion.evidencePolicy.requiredEvidenceKinds.includes("source_content"),
+  "an actual attachment still demands that its content be read, never guessed");
 assert(documentQuestion.evidencePolicy.allowedSources.includes("document_evidence"));
 assert(documentQuestion.intentContract.deliverables.includes("extracted_or_explained_source_content"));
 

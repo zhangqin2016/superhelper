@@ -45,6 +45,47 @@ const {
   assert.equal(result.ok, true, "empty official history should not block resume");
 }
 
+// 2026-09-14 field case: a conversation of short Chinese turns ("继续",
+// "帮我优化", "现在不能用啊") was reset on every send because the engine
+// stores the LAYERED text Lily sent and the flat 6-char floor never let a
+// 4-char CJK message match. Compare the user's own words, script-aware.
+{
+  const { buildLayeredEngineText } = require("../src/main/engine-message-layers");
+  const layered = buildLayeredEngineText({
+    userText: "帮我优化",
+    platformContext: "internal lily context. current date/time: 2026-09-14 23:56 (utc+4).",
+  });
+  assert.ok(layered.includes('<lily_layer title="user_original_request">'), "fixture is layered engine text");
+  const result = classifyResumeContinuity({
+    localMessages: [
+      { role: "user", content: "继续" },
+      { role: "user", content: "帮我优化" },
+      { role: "user", content: "现在不能用啊" },
+    ],
+    officialMessages: [{ role: "user", content: layered }],
+  });
+  assert.equal(result.ok, true, `short CJK turns wrapped in lily layers must still match their local record (${result.reason})`);
+  assert.equal(result.reason, "recent_user_overlap");
+}
+
+{
+  const result = classifyResumeContinuity({
+    localMessages: [{ role: "user", content: "继续" }],
+    officialMessages: [{ role: "user", content: "请继续把报告写完" }],
+  });
+  assert.equal(result.ok, true, "a 2-character CJK follow-up contained in the engine turn is an overlap");
+  const unrelated = classifyResumeContinuity({
+    localMessages: [{ role: "user", content: "帮我优化" }],
+    officialMessages: [{ role: "user", content: "analyze stock 600171 latest fundamentals" }],
+  });
+  assert.equal(unrelated.ok, false, "unrelated CJK vs Latin history still mismatches");
+  const shortLatin = classifyResumeContinuity({
+    localMessages: [{ role: "user", content: "ok go" }],
+    officialMessages: [{ role: "user", content: "ok go ahead and analyze stock 600171" }],
+  });
+  assert.equal(shortLatin.ok, false, "Latin text keeps the 6-char floor so tiny tokens do not match by accident");
+}
+
 {
   const runner = {
     async getConversationPage() {

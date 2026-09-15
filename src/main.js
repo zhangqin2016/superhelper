@@ -35,6 +35,11 @@ let agentRuntimeControlServerRef = null;
 let publicHookBridgeRef = null;
 let runtimePackAutoRepairRef = null;
 let turnRecoveryRuntimeRef = null;
+let databaseRecoveryServiceRef = null;
+let databaseRecoveryWindowRef = null;
+let databaseBackupTimer = null;
+let databaseBackupInterval = null;
+let databaseRecoveryTransition = false;
 let shouldFocusMainWindowWhenReady = false;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
@@ -99,7 +104,8 @@ function createWindow() {
     minHeight: 640,
     title: "Lily Workbench",
     ...(appIcon ? { icon: appIcon } : {}),
-    backgroundColor: "#0f1119",
+    show: false, // revealed on first paint — see window-appearance.js
+    backgroundColor: require("./main/window-appearance").windowBackgroundColor(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -124,6 +130,10 @@ function createWindow() {
     });
   }
 
+  require("./main/window-appearance").showWhenPainted(mainWindow, {
+    onFailed: ({ errorCode, errorDescription, url }) =>
+      console.error("[window] main renderer failed to load:", errorCode, errorDescription, url),
+  });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   wireExternalLinks(mainWindow);
   wireContextMenu(mainWindow);
@@ -141,6 +151,9 @@ app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) {
     return;
   }
+
+  // This endpoint cannot depend on session storage or optional service setup.
+  require("electron").ipcMain.handle("app:get-version", () => ({ ok: true, version: app.getVersion() }));
 
   // Reap engine serves a previous ungraceful exit left behind. before-quit
   // reaps ours, but Ctrl-C in dev, a crash, or a force quit skips it and the
@@ -171,6 +184,17 @@ app.whenReady().then(async () => {
     console.info("[engine]", agentBootstrap.mode, agentBootstrap.cliPath);
   }
 
+  const { DatabaseRecoveryService } = require("./main/database-recovery-service");
+  databaseRecoveryServiceRef = new DatabaseRecoveryService(require("./main/config").messageDbPath());
+  databaseRecoveryWindowRef = await require("./main/database-recovery-window").openDatabaseRecoveryWindow({
+    service: databaseRecoveryServiceRef,
+  });
+  mainWindow = databaseRecoveryWindowRef.window;
+  const databaseAdmission = await databaseRecoveryWindowRef.ready;
+  if (!databaseAdmission) return;
+  const databaseRestoreReceipt = databaseAdmission.receipt || null;
+  let suppressAutomaticRecovery = false;
+
   require("./main/data-migration").runDataMigrations();
 
   const { getRuntimeSummary } = require("./main/runtime-python");
@@ -189,6 +213,9 @@ app.whenReady().then(async () => {
   const sessionManager = new SessionManager(projectManager);
   sessionManager.load();
   sessionManagerRef = sessionManager;
+  if (databaseRestoreReceipt) {
+    suppressAutomaticRecovery = require("./main/store/restored-task-fence").fenceRestoredTasks(sessionManager._store(), databaseRestoreReceipt);
+  }
   // Drop OpenCode engine caches left by deleted sessions / crashes (orphans).
   const gcRemoved = sessionManager.gcOrphanEngineSessions();
   if (gcRemoved) console.info("[engine] cleaned", gcRemoved, "orphan opencode session cache(s)");
@@ -331,6 +358,8 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+  databaseRecoveryWindowRef.dispose();
+  databaseRecoveryWindowRef = null;
   require("./main/startup-health").scheduleStartupHealthCheck({
     getWindow: () => mainWindow,
     getAgentBootstrap: () => agentBootstrap,
@@ -383,6 +412,7 @@ app.whenReady().then(async () => {
     stagingManager,
     runnerPool,
     scheduledTaskManager,
+    suppressAutomaticRecovery,
     characterWorldsService,
     characterWorldsRepository,
     get collaborationService() {
@@ -400,7 +430,7 @@ app.whenReady().then(async () => {
   agentRuntimeControlServerRef = appContext.agentRuntimeControlServer || null;
   turnRecoveryRuntimeRef = appContext.turnOrchestrator?.turnRecoveryRuntime || null;
   publicHookBridgeRef = appContext.publicHookBridge || null;
-  try {
+  if (!suppressAutomaticRecovery) try {
     const { longTaskDbPath } = require("./main/config");
     const { LongTaskSupervisor } = require("./main/long-task/supervisor");
     const { createLongTaskWakeHandler, createLongTaskPauseHandler } = require("./main/long-task/session-wakeup");
@@ -428,7 +458,9 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.warn("[mobile-pairing] IPC registration skipped:", err?.message || err);
   }
-  scheduledTaskManager.start(appContext);
+  // Restored queued inputs are durably outcome-unknown. Unrelated schedulers
+  // also stay paused on this first recovered boot so the user can review.
+  if (!suppressAutomaticRecovery) scheduledTaskManager.start(appContext);
 
   require("./main/update-scheduler").startBackgroundUpdateChecks({
     runnerPool,
@@ -498,9 +530,49 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
+  if (databaseRestoreReceipt) {
+    const acknowledged = await databaseRecoveryServiceRef.run("ack", databaseRestoreReceipt.id);
+    if (!acknowledged.ok) console.warn("[database-recovery] receipt retained:", acknowledged.reason);
+  }
+  const backup = async () => {
+    const result = await databaseRecoveryServiceRef.run("backup");
+    if (!result.ok && result.reason !== "closed") console.warn("[database-backup]", result.reason);
+  };
+  databaseBackupTimer = setTimeout(() => void backup(), 30_000);
+  databaseBackupTimer.unref?.();
+  databaseBackupInterval = setInterval(() => void backup(), 6 * 60 * 60 * 1000);
+  databaseBackupInterval.unref?.();
+}).catch(async error => {
+  console.error("[startup] initialization failed:", error?.message || error);
+  // Never leave a normal-looking shell whose essential handlers never loaded.
+  // At this point services might own DB handles: offer diagnostics/restart,
+  // NOT in-process database replacement. Next launch re-enters quiescent repair.
+  try { runnerPoolRef?.terminateAll(); } catch { /* continue recovery UI */ }
+  try { sessionManagerRef?.close(); } catch { /* preserve evidence */ }
+  try { scheduledTaskManagerRef?.close(); } catch { /* optional */ }
+  try { longTaskSupervisorRef?.close(); } catch { /* optional */ }
+  try { turnRecoveryRuntimeRef?.disposeParentClosureRecovery?.(); } catch { /* optional */ }
+  try { collaborationServiceRef?.stop?.(); } catch { /* optional */ }
+  databaseRecoveryTransition = true;
+  const previousWindow = mainWindow;
+  databaseRecoveryWindowRef?.dispose();
+  try {
+    databaseRecoveryWindowRef = await require("./main/database-recovery-window").openDatabaseRecoveryWindow({
+      service: databaseRecoveryServiceRef, allowRestore: false,
+    });
+    mainWindow = databaseRecoveryWindowRef.window;
+    if (previousWindow && previousWindow !== mainWindow && !previousWindow.isDestroyed()) previousWindow.destroy();
+  } catch (recoveryError) {
+    console.error("[startup] recovery window failed:", recoveryError?.message || recoveryError);
+    dialog.showErrorBox("Lily Workbench", "Startup failed. Your data has not been reset. Please keep the original data and contact support.");
+    app.quit();
+  } finally { databaseRecoveryTransition = false; }
 });
 
 app.on("before-quit", () => {
+  clearTimeout(databaseBackupTimer);
+  clearInterval(databaseBackupInterval);
+  databaseRecoveryServiceRef?.close();
   turnRecoveryRuntimeRef?.disposeParentClosureRecovery?.();
   longTaskSupervisorRef?.close();
   runtimePackAutoRepairRef?.cancel?.();
@@ -537,6 +609,7 @@ app.on("before-quit", () => {
 });
 
 app.on("window-all-closed", () => {
+  if (databaseRecoveryTransition) return;
   if (process.platform !== "darwin") {
     app.quit();
   }

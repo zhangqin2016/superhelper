@@ -1319,4 +1319,64 @@ if (restarted.taskLifecycle?.status !== "outcome_unknown" || restarted.attention
   throw new Error(`durable lifecycle must survive renderer hydration: ${JSON.stringify(restarted.taskLifecycle)}`);
 }
 
+// Agent binding traces: an `engine.notice` from source "agent_binding" carrying a
+// committed platform message (meta.agentBinding) is upserted into the committed
+// list and consumed — it is NOT an engine notice (no live-turn timeline entry,
+// no failed attention). Without meta.agentBinding nothing is committed; an
+// unrelated engine.notice still takes the normal notice path.
+{
+  const assert = await import("node:assert/strict");
+  const sid = "agent-binding-trace";
+  const committedMessage = {
+    id: "msg_ab_1", role: "assistant", turnId: null, timestamp: "2026-09-15T08:00:00.000Z",
+    content: "已启用智能体「合同审查助手」\n- 角色：法务顾问",
+    meta: { agentBinding: { kind: "activated", agentId: "agent_legal", name: "合同审查助手", icon: "🧭", bindingVersion: 4, dimensions: ["role"], degraded: [], skills: [], knowledgePacks: [], autonomy: "ask", model: "", tools: [], roleName: "法务顾问", keepsEngine: true } },
+  };
+  store.applyRuntimeEvent({ id: "ab-1", type: "engine.notice", source: "agent_binding", sessionId: sid, turnId: null, seq: 1, ts: 1000,
+    payload: { notice: { code: "agentBindingChanged", level: "info", panel: false }, committedMessage } });
+  let runtime = store.getRuntimeSession(sid);
+  assert.equal(runtime.committedMessages.length, 1, "agent binding message committed");
+  assert.equal(runtime.committedMessages[0].meta.agentBinding.kind, "activated");
+  assert.notEqual(runtime.attention, "failed", "informational: never marks the session failed");
+  assert.equal(runtime.liveTurn, null, "no live turn is created for a platform notice");
+
+  // Same message replayed (same id) → upsert, not a duplicate.
+  store.applyRuntimeEvent({ id: "ab-2", type: "engine.notice", source: "agent_binding", sessionId: sid, turnId: null, seq: 2, ts: 1001,
+    payload: { notice: { code: "agentBindingChanged", level: "info", panel: false }, committedMessage: { ...committedMessage } } });
+  assert.equal(store.getRuntimeSession(sid).committedMessages.length, 1, "replay upserts by id");
+
+  // A second binding change (deactivated) is a distinct committed message.
+  store.applyRuntimeEvent({ id: "ab-3", type: "engine.notice", source: "agent_binding", sessionId: sid, turnId: null, seq: 3, ts: 1002,
+    payload: { notice: { code: "agentBindingChanged", level: "info", panel: false }, committedMessage: {
+      id: "msg_ab_2", role: "assistant", turnId: null, timestamp: "2026-09-15T08:05:00.000Z", content: "已停用智能体「合同审查助手」",
+      meta: { agentBinding: { kind: "deactivated", agentId: "agent_legal", name: "合同审查助手", bindingVersion: 5 } },
+    } } });
+  runtime = store.getRuntimeSession(sid);
+  assert.deepEqual(runtime.committedMessages.map((m) => m.meta.agentBinding.kind), ["activated", "deactivated"]);
+
+  // Consumed even when the payload is malformed: no meta.agentBinding → nothing committed.
+  store.applyRuntimeEvent({ id: "ab-4", type: "engine.notice", source: "agent_binding", sessionId: sid, turnId: null, seq: 4, ts: 1003,
+    payload: { notice: { code: "agentBindingChanged", level: "info", panel: false }, committedMessage: { id: "msg_ab_x", role: "assistant", content: "x", meta: {} } } });
+  assert.equal(store.getRuntimeSession(sid).committedMessages.length, 2, "no agentBinding meta → not committed");
+
+  // An unrelated engine.notice during a live turn still flows into the live turn (normal path).
+  store.applyRuntimeEvent({ id: "ab-5", type: "turn.started", sessionId: sid, turnId: "t-ab", seq: 5, ts: 1004, payload: {} });
+  store.applyRuntimeEvent({ id: "ab-6", type: "engine.notice", source: "engine", sessionId: sid, turnId: "t-ab", seq: 6, ts: 1005,
+    payload: { notice: { code: "permissionDenied", level: "warning", panel: true, detail: "denied" } } });
+  runtime = store.getRuntimeSession(sid);
+  assert.equal(runtime.committedMessages.length, 2, "ordinary notices are not committed messages");
+  assert.ok(runtime.liveTurn && runtime.liveTurn.notices.length >= 1, "ordinary engine.notice still reaches the live turn");
+  // And an agent_binding notice mid-turn never lands on the live turn's notices.
+  const noticesBefore = runtime.liveTurn.notices.length;
+  store.applyRuntimeEvent({ id: "ab-7", type: "engine.notice", source: "agent_binding", sessionId: sid, turnId: null, seq: 7, ts: 1006,
+    payload: { notice: { code: "agentBindingChanged", level: "info", panel: false }, committedMessage: {
+      id: "msg_ab_3", role: "assistant", turnId: null, timestamp: "2026-09-15T08:06:00.000Z", content: "已改选角色「法务顾问」，智能体「合同审查助手」已停用",
+      meta: { agentBinding: { kind: "replaced_by_role", agentId: "agent_legal", name: "合同审查助手", bindingVersion: 6, roleName: "法务顾问" } },
+    } } });
+  runtime = store.getRuntimeSession(sid);
+  assert.equal(runtime.liveTurn.notices.length, noticesBefore, "agent binding notice bypasses the live turn");
+  assert.equal(runtime.committedMessages.at(-1).meta.agentBinding.kind, "replaced_by_role");
+  assert.notEqual(runtime.attention, "failed");
+}
+
 console.log("session-runtime-store: ok");

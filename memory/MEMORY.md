@@ -1,6 +1,14 @@
 # Memory Index
 
+- [Long-task closed loop](2026-09-15-long-task-closed-loop.md) — field audit of a real long task; fixed live-file guard placeholder-on-disk corruption, 90s first-response fuse + MODEL_NO_RESPONSE rescue + model-recovery watch, wider parent-closure eligibility, step-budget stop, delete-conversation job fence, unfinished-task list/resume, steer-first busy dialog.
+
+- [Agent Management (智能体)](2026-09-14-agent-management.md) — host-owned bundle over existing dimensions (role/skills/knowledge/autonomy/model/tools/automations), activation via existing setters with per-dimension fail-open receipts, hot vs cold paths + serve fork budget, inert `lily_agent_draft`, registry distribution + `config.agents`, `.lilyspace/agents.json`, kill switch `LILY_AGENTS=0`.
+
 - [OpenCode 1.18.30 Upgrade](2026-09-14-opencode-upgrade.md) — exact SDK/engine pins, explicit forward-only resume compatibility, actual native cross-version/Responses acceptance and release boundaries.
+
+- [Database Self-Recovery](2026-09-13-database-self-recovery.md) — independent startup repair, verified snapshots, original/journal preservation, explicit rollback confirmation and durable task-replay fencing.
+
+- [Session Database Safety](2026-09-12-session-database-safety.md) — WAL-safe migration, failed-migration source retention, interrupted compaction recovery, and non-destructive diagnostics; customer corruption still requires preserved evidence.
 
 - [Office Runtime Delegation](office-runtime-delegation.md) — never hand-roll document parsing/generation; use the bundled Python top-tier libs
 - [No UI, Natural Language](no-ui-natural-language.md) — drive operations through the agent via natural language, don't pile up UI panels

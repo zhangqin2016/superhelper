@@ -74,7 +74,7 @@ export function confirmDialog({
 /**
  * Multi-option dialog. Resolves the chosen option's `value`, or null when
  * dismissed (Escape / click outside) — null must mean "do nothing".
- * @param {{ title?: string, message?: string, options: Array<{ value: string, label: string, danger?: boolean }> }} config
+ * @param {{ title?: string, message?: string, options: Array<{ value: string, label: string, danger?: boolean, primary?: boolean }> }} config
  */
 export function chooseDialog({ title = t("confirm.defaultTitle"), message = "", options = [] } = {}) {
   if (activeDialog) {
@@ -116,9 +116,13 @@ export function chooseDialog({ title = t("confirm.defaultTitle"), message = "", 
     for (const option of options) {
       const btn = document.createElement("button");
       btn.type = "button";
+      // `primary` marks the recommended choice; it renders filled (accent) and,
+      // when listed first, also takes the initial focus (Enter picks it).
       btn.className = option.danger
         ? "choose-dialog-action choose-dialog-action-danger"
-        : "choose-dialog-action choose-dialog-action-secondary";
+        : option.primary
+          ? "choose-dialog-action choose-dialog-action-primary"
+          : "choose-dialog-action choose-dialog-action-secondary";
       btn.textContent = option.label;
       btn.addEventListener("click", () => finish(option.value));
       actionsEl.appendChild(btn);

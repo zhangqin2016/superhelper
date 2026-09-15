@@ -5,8 +5,22 @@ import {
   getRuntimeSession,
   subscribeRuntime,
 } from "./session-runtime-store.js";
+import {
+  TASK_CENTER_MAX_VISIBLE_ITEMS as MAX_VISIBLE_ITEMS,
+  bindUnfinishedTasksHost,
+  getUnfinishedTasks,
+  loadUnfinishedTasks,
+  maybeReloadUnfinished,
+  startUnfinishedTimer,
+  stopUnfinishedTimer,
+  renderUnfinishedSection,
+  unfinishedSignature,
+} from "./task-center-unfinished.js";
 
-const MAX_VISIBLE_ITEMS = 8;
+export { getUnfinishedTasks, loadUnfinishedTasks };
+
+bindUnfinishedTasksHost({ rerender: () => renderTaskCenter(), closePanel, focusSession, findProjectIdForSession });
+
 
 function sessionIndex(projects = []) {
   const byId = new Map();
@@ -205,7 +219,9 @@ function closePanel() {
   const toggle = document.getElementById("taskCenterToggle");
   if (panel) panel.hidden = true;
   if (toggle) toggle.setAttribute("aria-expanded", "false");
+  stopUnfinishedTimer();
 }
+
 
 export function renderTaskCenter() {
   const dock = document.getElementById("taskCenterDock");
@@ -220,22 +236,31 @@ export function renderTaskCenter() {
     activeSessionId: store.get("activeSessionId"),
     runtimes: collectRuntimeItems(),
   });
+  const unfinished = getUnfinishedTasks();
 
-  dock.hidden = items.length === 0;
-  if (!items.length) {
+  // The dock stays reachable while anything needs the user: live runtime items
+  // OR unfinished tasks from earlier sessions.
+  dock.hidden = items.length === 0 && unfinished.length === 0;
+  if (dock.hidden) {
     panel.hidden = true;
     toggle.setAttribute("aria-expanded", "false");
     panel.replaceChildren();
     delete panel.dataset.renderSignature;
+    stopUnfinishedTimer();
     return;
   }
 
-  summary.textContent = renderSummary(items);
-  count.textContent = String(items.length);
-  dock.dataset.severity = items[0]?.status || "running";
-  const nextSignature = renderSignature(items);
+  summary.textContent = items.length
+    ? renderSummary(items)
+    : t("taskCenter.summaryUnfinished", { count: unfinished.length });
+  count.textContent = String(items.length + unfinished.length);
+  dock.dataset.severity = items[0]?.status || "unfinished";
+  const nextSignature = `${renderSignature(items)}|${unfinishedSignature(unfinished)}`;
   if (panel.dataset.renderSignature !== nextSignature) {
-    panel.replaceChildren(...items.slice(0, MAX_VISIBLE_ITEMS).map(renderItem));
+    panel.replaceChildren(
+      ...items.slice(0, MAX_VISIBLE_ITEMS).map(renderItem),
+      renderUnfinishedSection(unfinished),
+    );
     panel.dataset.renderSignature = nextSignature;
   }
 }
@@ -248,14 +273,24 @@ export function initTaskCenter() {
     const next = panel.hidden;
     panel.hidden = !next;
     toggle.setAttribute("aria-expanded", next ? "true" : "false");
+    if (next) {
+      void loadUnfinishedTasks();
+      startUnfinishedTimer();
+    } else {
+      stopUnfinishedTimer();
+    }
   });
   document.addEventListener("click", (event) => {
     const dock = document.getElementById("taskCenterDock");
     if (!dock || dock.hidden || dock.contains(event.target)) return;
     closePanel();
   });
-  store.on("projects", renderTaskCenter);
+  store.on("projects", () => {
+    renderTaskCenter();
+    maybeReloadUnfinished();
+  });
   store.on("activeSessionId", renderTaskCenter);
   subscribeRuntime(renderTaskCenter);
   renderTaskCenter();
+  void loadUnfinishedTasks();
 }

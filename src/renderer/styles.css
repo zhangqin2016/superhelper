@@ -17,6 +17,7 @@
 @import "./styles/workspace-navigation.css";
 @import "./styles/character-worlds.css?v=20260804-character-polish";
 @import "./styles/character-library.css";
+@import "./styles/agent-library.css";
 @import "./styles/collaboration.css";
 @import "./styles/collaboration-desktop.css";
 @import "./styles/collaboration-tasks.css";

@@ -12,6 +12,8 @@ const {
 } = require("./config");
 const { LEGACY_TO_LILY } = require("./agent-env");
 
+const { mergeMessageDatabase } = require("./store/legacy-message-migration");
+
 const LEGACY_BIN_DIR = "claude-bin";
 const LEGACY_CONFIG_DIR = "claude-config";
 const LEGACY_SKILL_ID = "claude-vision";
@@ -126,7 +128,7 @@ const APP_DATA_DIRS = [
 // folder, so a signature scan can find installs under ANY past/unknown product
 // name (and in LocalAppData) without a hardcoded name list — and without the
 // false-positive risk of matching an unrelated app's folder.
-const LEGACY_MARKER_FILES = ["sessions-index.json", "messages.db", "model-settings.json", "projects.json"];
+const LEGACY_MARKER_FILES = ["sessions-index.json", "messages.db", "messages.db.precompact", "model-settings.json", "projects.json"];
 const LEGACY_MARKER_DIRS = ["opencode-sessions", "opencode-shared", "lily-config", "claude-config", "skills-cache"];
 
 function looksLikeLilyUserDataRoot(root) {
@@ -392,79 +394,6 @@ function tableExists(db, tableName) {
   }
 }
 
-function mergeMessageDatabase(srcPath, destPath) {
-  if (!fs.existsSync(srcPath)) return false;
-  if (!fs.existsSync(destPath)) return copyFileIfNeeded(srcPath, destPath, "messages.db");
-
-  let srcDb = null;
-  let destDb = null;
-  try {
-    const { openDatabase } = require("./store/sqlite-db");
-    const { MIGRATIONS } = require("./store/schema");
-    srcDb = openDatabase(srcPath);
-    destDb = openDatabase(destPath);
-    destDb.migrate(MIGRATIONS);
-    if (!tableExists(srcDb, "messages") || !tableExists(destDb, "messages")) return false;
-
-    const rows = srcDb.all(
-      `SELECT session_id, id, role, turn_id, created_at, preview, failed,
-              terminal, cost_usd, duration_ms, envelope_blob
-         FROM messages
-        ORDER BY session_id ASC, seq ASC`,
-    );
-    const copiedSessions = new Set();
-    let copied = 0;
-    const insert = destDb.transaction(() => {
-      for (const row of rows) {
-        if (!row?.id || destDb.get("SELECT 1 FROM messages WHERE id = ? LIMIT 1", row.id)) continue;
-        const next = destDb.get(
-          "SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM messages WHERE session_id = ?",
-          row.session_id,
-        )?.seq || 1;
-        destDb.run(
-          `INSERT INTO messages
-             (session_id, seq, id, role, turn_id, created_at, preview, failed,
-              terminal, cost_usd, duration_ms, envelope_blob)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          row.session_id,
-          next,
-          row.id,
-          row.role,
-          row.turn_id,
-          row.created_at,
-          row.preview,
-          row.failed,
-          row.terminal,
-          row.cost_usd,
-          row.duration_ms,
-          row.envelope_blob,
-        );
-        copiedSessions.add(row.session_id);
-        copied += 1;
-      }
-      for (const sessionId of copiedSessions) {
-        destDb.run(
-          `INSERT INTO schema_meta (key, value) VALUES (?, ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-          `imported:${sessionId}`,
-          "done:db-merge",
-        );
-      }
-    });
-    insert();
-    if (copied > 0) {
-      console.info(`[data-migration] merged ${copied} legacy message row(s) from ${srcPath}`);
-      return true;
-    }
-  } catch (err) {
-    console.warn("[data-migration] failed to merge legacy messages.db:", err?.message || err);
-  } finally {
-    try { srcDb?.close?.(); } catch {}
-    try { destDb?.close?.(); } catch {}
-  }
-  return false;
-}
-
 function mergeDirectory(srcDir, destDir) {
   if (!fs.existsSync(srcDir)) return;
   fs.mkdirSync(destDir, { recursive: true });
@@ -541,9 +470,8 @@ function migrateLegacyConfigFiles(legacyRoot, currentRoot) {
       continue;
     }
     if (file === "messages.db-wal" || file === "messages.db-shm") {
-      if (!fs.existsSync(path.join(currentRoot, "messages.db")) && copyFileIfNeeded(src, dest, file)) {
-        changed = true;
-      }
+      // The snapshot already contains committed WAL data. Sidecars belong only
+      // to the original database and must never be copied onto the snapshot.
       continue;
     }
     if (file === "skills-state.json" && fs.existsSync(src)) {
@@ -798,20 +726,28 @@ function recoverOrphanLegacyMessageSessions() {
 function migrateLegacyUserDataRoot() {
   const currentRoot = userDataPath();
   for (const legacyRoot of legacyUserDataRoots()) {
-    let changed = migrateLegacyProjectsAndSessions(legacyRoot, currentRoot);
-    changed = migrateLegacyConfigFiles(legacyRoot, currentRoot) || changed;
+    try {
+      let changed = migrateLegacyProjectsAndSessions(legacyRoot, currentRoot);
+      changed = migrateLegacyConfigFiles(legacyRoot, currentRoot) || changed;
 
-    for (const dir of APP_DATA_DIRS) {
-      const before = fs.existsSync(path.join(currentRoot, dir));
-      mergeDirectory(path.join(legacyRoot, dir), path.join(currentRoot, dir));
-      if (!before && fs.existsSync(path.join(currentRoot, dir))) changed = true;
+      for (const dir of APP_DATA_DIRS) {
+        const before = fs.existsSync(path.join(currentRoot, dir));
+        mergeDirectory(path.join(legacyRoot, dir), path.join(currentRoot, dir));
+        if (!before && fs.existsSync(path.join(currentRoot, dir))) changed = true;
+      }
+
+      if (changed) {
+        console.info(`[data-migration] migrated user data from ${legacyRoot}`);
+      }
+
+      // A WAL can belong to a still-running old client. Keep that root at its
+      // original path so late writes remain recoverable on the next startup.
+      if (!fs.existsSync(path.join(legacyRoot, "messages.db-wal"))) {
+        archiveLegacyUserDataRoot(legacyRoot);
+      }
+    } catch (err) {
+      console.warn(`[data-migration] retained legacy userData for retry ${legacyRoot}:`, err?.message || err);
     }
-
-    if (changed) {
-      console.info(`[data-migration] migrated user data from ${legacyRoot}`);
-    }
-
-    archiveLegacyUserDataRoot(legacyRoot);
   }
 }
 

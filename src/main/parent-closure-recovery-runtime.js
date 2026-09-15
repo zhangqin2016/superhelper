@@ -16,6 +16,7 @@ function persistedSource(source = {}, evidence = {}) {
     files: Array.isArray(source.files) ? source.files.slice(0, 64) : [],
     taskContract: source.taskContract || null,
     continuationHandoff: source.payload?.continuationHandoff || null,
+    workState: source.workState || null,
     executionProgressKeys: source.payload?.executionProgressKeys || [],
     // The immutable task core remains in turn_inputs. Persist only its
     // identity here; restart recovery rehydrates the full envelope by source
@@ -33,6 +34,11 @@ function createParentClosureRecoveryRuntime(options = {}) {
   const ctx = options.ctx || {};
   const emit = options.emit || (() => null);
   const emitNotice = options.emitNotice || null;
+  // Readiness probe for the model-silent lane (injectable for tests).
+  const probeModelReady = typeof options.probeModelReady === "function"
+    ? options.probeModelReady
+    : (input) => require("./model-ping").pingModel(input);
+  const modelWatchKey = (sessionId) => `parent-closure:${sessionId}`;
   const sendUserMessage = options.sendUserMessage;
   const ledger = options.parentClosureLedger || createParentClosureLedger();
   const now = options.now || Date.now;
@@ -52,6 +58,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
   function cancelPendingParentClosures(sessionId, options = {}) {
     generations.set(sessionId, (generations.get(sessionId) || 0) + 1);
     clearLease(sessionId);
+    try { require("./model-recovery-watch").cancelModelRecoveryWatch(modelWatchKey(sessionId)); } catch { /* optional */ }
     try { ctx.sessionManager?.cancelPendingParentClosureRecoveries?.(sessionId, options); }
     catch (err) { log.warn("parent closure cancellation failed: %s", err?.message || err); }
   }
@@ -93,6 +100,32 @@ function createParentClosureRecoveryRuntime(options = {}) {
       catch (err) { log.warn("parent closure lease resume failed: %s", err?.message || err); }
     }, Math.max(0, lease.expiresAt - now()));
     lease.timer?.unref?.();
+  }
+
+  function commitNotice(sessionId, sourceTurnId, reason, info = {}) {
+    return require("./parent-closure-notice").commitParentClosureNotice(ctx, sessionId, { sourceTurnId, reason, info });
+  }
+
+  // A cut-off long task (stalled / step budget / silent model) that the gate
+  // refuses to continue must say so in the conversation, not vanish.
+  // Only a turn that stopped WITHOUT already explaining itself gets this record.
+  // A classified failure (model silent, auth, connection…) has its own honest
+  // message, and a handoff/step-budget stop already carries one: adding a second
+  // card there both repeated the point and contradicted it — the failure copy
+  // says Lily will continue once the model recovers, while this one said the
+  // task is out of scope for continuation (seen 3× in production 2026-09-15).
+  function noteDenied(sessionId, source, decision) {
+    const payload = source.payload || {};
+    if (payload.failed || payload.errorCode || payload.continuationHandoff || payload.stepBudgetExhausted) return;
+    if (require("./parent-task-closure").isModelSilentFailure(payload)) return;
+    if (!payload.stalled || !source.state?.turnId) return;
+    if (["NON_EXECUTION_TASK", "NO_EXECUTION_EVIDENCE"].includes(decision.reason)) commitNotice(sessionId, source.state.turnId, decision.reason);
+  }
+
+  /** Persisted recovery source of a given turn (any status), for follow-ups. */
+  function recoverySourceForTurn(sessionId, sourceTurnId) {
+    try { return ctx.sessionManager?.getParentClosureRecovery?.(sessionId, sourceTurnId)?.source || null; }
+    catch { return null; }
   }
 
   function decisionFor(sessionId, source = {}) {
@@ -140,7 +173,11 @@ function createParentClosureRecoveryRuntime(options = {}) {
     try {
       if (disposed) return { ok: false, attempted: false, reason: "DISPOSED" };
       const decision = decisionFor(sessionId, source);
-      if (!decision.ok) return { ok: false, attempted: false, reason: decision.reason };
+      if (!decision.ok) { noteDenied(sessionId, source, decision); return { ok: false, attempted: false, reason: decision.reason }; }
+      // The model returned nothing: dispatching now would hit the same silent
+      // upstream and burn a continuation round. Wait for a successful readiness
+      // probe, then run this exact recovery once (bounded by the watch).
+      if (decision.modelSilent && !source.modelReady) return deferUntilModelReady(sessionId, source, decision);
       const manager = ctx.sessionManager;
       if (typeof manager?.claimParentClosureRecovery === "function") {
         // A claim write can succeed before its acknowledgement fails. Once
@@ -182,6 +219,9 @@ function createParentClosureRecoveryRuntime(options = {}) {
           },
           ...extra,
         }, { turnId: decision.sourceTurnId });
+        if (phase === "unavailable" && /^TASK_CONTINUATION_(NO_PROGRESS|BUDGET_EXHAUSTED|DEADLINE)$/.test(String(extra.reason || ""))) {
+          commitNotice(sessionId, decision.sourceTurnId, extra.reason);
+        }
         if (typeof emitNotice === "function") {
           const stopDetails = {
             TASK_CONTINUATION_NO_PROGRESS: "未观察到跨轮新增执行进展，已停止自动接续；原任务尚未完成。",
@@ -205,7 +245,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
         }
       };
       const rawObjective = String(source.objective || source.state?.enginePayload?.rawText || "").trim();
-      const guidance = buildParentClosurePrompt({ objective: rawObjective, evidence: decision.evidence, continuationHandoff: source.payload?.continuationHandoff });
+      const guidance = buildParentClosurePrompt({ objective: rawObjective, evidence: decision.evidence, continuationHandoff: source.payload?.continuationHandoff, workState: source.workState || null });
       if (typeof sendUserMessage !== "function" || !rawObjective) {
         if (durableClaim?.ok) {
           manager.markParentClosureRecoveryUnavailable(sessionId, {
@@ -224,6 +264,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
       if (typeof manager?.reserveTaskContinuation === "function") {
         const reservation = manager.reserveTaskContinuation(sessionId, {
           sourceTurnId: decision.sourceTurnId, continuationTurnId: recoveryTurnId,
+          minProgress: require("./store/task-continuation-budget").minProgressPerRound(),
           progressKeys: source.payload?.executionProgressKeys || [], now: now(),
         });
         if (!reservation?.ok) {
@@ -303,6 +344,36 @@ function createParentClosureRecoveryRuntime(options = {}) {
     }
   }
 
+  function deferUntilModelReady(sessionId, source, decision) {
+    const { startModelRecoveryWatch } = require("./model-recovery-watch");
+    const generation = generations.get(sessionId) || 0;
+    const stillCurrent = () => !disposed && generation === (generations.get(sessionId) || 0);
+    const notice = (level, detail) => {
+      if (typeof emitNotice !== "function") return;
+      emitNotice(sessionId, { code: "modelRecoveryWatch", level, panel: true, replace: true, replacesCode: "modelRecoveryWatch", detail });
+    };
+    const watch = startModelRecoveryWatch({
+      key: modelWatchKey(sessionId),
+      probe: () => probeModelReady({ sessionId }),
+      onReady: async ({ attempts }) => {
+        if (!stillCurrent()) return;
+        notice("progress", `模型已恢复响应（探测 ${attempts} 次），正在自动接续未完成的任务。`);
+        emit(sessionId, "turn.model_recovery", { phase: "ready", attempts, sourceTurnId: decision.sourceTurnId }, { turnId: decision.sourceTurnId });
+        await maybeParentClosureRecovery(sessionId, { ...source, modelReady: true });
+      },
+      onGiveUp: ({ attempts }) => {
+        if (!stillCurrent()) return;
+        notice("warning", `模型在 ${attempts} 次探测内没有恢复，已停止等待；任务进展已保留，换一个模型或稍后说"继续"即可接着做。`);
+        commitNotice(sessionId, decision.sourceTurnId, "MODEL_RECOVERY_GAVE_UP", { attempts });
+        emit(sessionId, "turn.model_recovery", { phase: "gave_up", attempts, sourceTurnId: decision.sourceTurnId }, { turnId: decision.sourceTurnId });
+      },
+    });
+    if (!watch) return { ok: false, attempted: false, reason: "MODEL_RECOVERY_WATCH_DISABLED" };
+    notice("progress", "模型暂时没有响应；Lily 会在它恢复后自动接续本任务（最多等待约 15 分钟）。也可以直接换一个模型继续。");
+    emit(sessionId, "turn.model_recovery", { phase: "waiting", sourceTurnId: decision.sourceTurnId, recoveryKey: decision.recoveryKey }, { turnId: decision.sourceTurnId });
+    return { ok: false, attempted: false, reason: "AWAITING_MODEL_RECOVERY", watching: true };
+  }
+
   async function resumePendingParentClosures(sessionId, lease = null) {
     const manager = ctx.sessionManager;
     const generation = lease?.generation ?? (generations.get(sessionId) || 0);
@@ -349,6 +420,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
         taskCore: sourceTurn?.taskCore || null,
         objective: source.objective,
         files: source.files,
+        workState: source.workState || null,
         state: {
           turnId: candidate.sourceTurnId,
           enginePayload: { rawText: source.objective },
@@ -376,6 +448,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
     dispose,
     cancelPendingParentClosures,
     maybeParentClosureRecovery,
+    recoverySourceForTurn,
     prepareParentClosureRecovery,
     resumePendingParentClosures,
     resumePendingParentClosuresForSessions,

@@ -38,7 +38,10 @@
   padding-block: 2px;
   max-height: min(48vh, 420px);
   overflow-y: auto;
-  scrollbar-width: none;
+  /* A long conversation scrolls this column. Hiding the scrollbar entirely left
+     no hint that older questions existed above the fold (2026-09-15:
+     "不能快速找到历史问题"), so show a thin one instead of none. */
+  scrollbar-width: thin;
   pointer-events: auto;
 }
 .conversation-minimap-ribs::-webkit-scrollbar { width: 0; height: 0; display: none; }

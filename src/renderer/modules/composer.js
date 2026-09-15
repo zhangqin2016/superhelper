@@ -4,6 +4,7 @@
 import store from "./state.js";
 import { $ } from "./dom.js";
 import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
+import { attachmentStagingInFlight, setAttachmentStagingListener, trackAttachmentStaging, whenAttachmentsSettled } from "./attachment-staging.js";
 import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
@@ -17,6 +18,7 @@ import { chooseDialog } from "./confirm-dialog.js";
 import { attachmentDisplayPayload, attachmentSendPayload } from "./attachment-payload.js";
 import { getModelSelectionSnapshot, initModelPicker } from "./model-picker.js";
 import { createComposerDrafts } from "./composer-drafts.js";
+import { clearPromptSuggestions, renderPromptSuggestions } from "./prompt-suggestions.js";
 
 const drafts = createComposerDrafts({ onRestore: () => {
   syncComposerInputHeight();
@@ -31,6 +33,21 @@ window.assistantClient?.getFeatureFlags?.()
   .then((flags) => { steerEnabled = Boolean(flags?.steer); })
   .catch(() => { steerEnabled = false; });
 
+/** Options for the send-while-busy dialog, recommended choice first.
+ *  Steer ("插话") is primary: it reaches the working turn without restarting it.
+ *  Field evidence: a user interrupted one long task 4x in 10 minutes just to add
+ *  requirements, restarting it from scratch each time. Interrupt stays last and
+ *  marked destructive. Without steer the dialog degrades to queue / interrupt. */
+export function buildBusySendOptions({ steerEnabled: steer = steerEnabled, characterAuthoringKind = null } = {}) {
+  const options = [];
+  if (steer && !characterAuthoringKind) {
+    options.push({ value: "steer", label: t("composer.busyChoiceSteer"), primary: true });
+  }
+  options.push({ value: "queue", label: t("composer.busyChoiceQueue") });
+  options.push({ value: "interrupt", label: t("composer.busyChoiceInterrupt"), danger: true });
+  return options;
+}
+
 /** Arm the send button only when there's something to send. While a turn is
  *  running the button keeps its prior behavior (enabled) so nothing regresses;
  *  when idle with an empty input it disables, lighting up the already-designed
@@ -42,13 +59,18 @@ export function refreshSendEnabled() {
   const hasText = !!$("promptInput")?.value.trim();
   const hasFiles = ((store.get("pendingFiles") || []).length) > 0;
   const hasContent = hasText || hasFiles;
+  // Preparing an attachment (or a send already under way) disables the button:
+  // the class alone had no styling and left it armed for a second Enter.
+  const preparing = attachmentStagingInFlight() || sendInFlight;
+  submit.classList.toggle("is-staging", preparing);
   // While a turn streams with nothing queued to send, the send button becomes a
   // stop control (see .send-btn.is-stop + the submit handler). With content to
   // send it stays a send button (a send-while-busy opens the queue/steer/stop
   // dialog, which is a real decision). Idle + empty → disabled.
   const stopMode = busy && !hasContent;
   submit.classList.toggle("is-stop", stopMode);
-  submit.disabled = !busy && !hasContent;
+  // Stop must stay clickable even while an attachment is being prepared.
+  submit.disabled = (!busy && !hasContent) || (preparing && !stopMode);
   const label = stopMode ? t("composer.stop") : t("composer.send");
   submit.title = label;
   submit.setAttribute("aria-label", label);
@@ -147,55 +169,6 @@ async function cancelQueuedMessage(sessionId, itemId) {
   }
 }
 
-export function renderPromptSuggestions(sessionId, suggestions = []) {
-  const bar = $("promptSuggestions");
-  if (!bar) return;
-  const activeId = store.get("activeSessionId");
-  if (sessionId !== activeId || !canSend(sessionId)) {
-    bar.hidden = true;
-    bar.replaceChildren();
-    return;
-  }
-
-  const items = (suggestions || [])
-    .map((item) => {
-      if (typeof item === "string") return item.trim();
-      if (item && typeof item.prompt === "string") return item.prompt.trim();
-      if (item && typeof item.text === "string") return item.text.trim();
-      return "";
-    })
-    .filter(Boolean)
-    .slice(0, 4);
-
-  if (!items.length) {
-    bar.hidden = true;
-    bar.replaceChildren();
-    return;
-  }
-
-  bar.hidden = false;
-  bar.replaceChildren();
-  for (const text of items) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "prompt-suggestion-btn";
-    btn.textContent = text.length > 80 ? `${text.slice(0, 77)}…` : text;
-    btn.title = text;
-    btn.addEventListener("click", () => {
-      const input = $("promptInput");
-      if (input) input.value = text;
-      bar.hidden = true;
-      bar.replaceChildren();
-      input?.focus();
-    });
-    bar.appendChild(btn);
-  }
-}
-
-export function clearPromptSuggestions() {
-  renderPromptSuggestions(store.get("activeSessionId"), []);
-}
-
 function sendErrorMessage(result) {
   if (result.detail) return result.detail;
   const key = `send.error.${result.error}`;
@@ -203,7 +176,41 @@ function sendErrorMessage(result) {
   return mapped === key ? t("send.error.GENERIC") : mapped;
 }
 
+let sendInFlight = false;
+
+export { clearPromptSuggestions, renderPromptSuggestions };
+
 export async function sendPrompt(opts = {}) {
+  // Guards the window before the draft is consumed: sendPrompt awaits (staging,
+  // busy dialog, a dynamic import) and a second Enter used to dispatch the same
+  // draft twice. Released as soon as the draft is taken.
+  if (sendInFlight) return;
+  sendInFlight = true;
+  refreshSendEnabled();
+  try {
+    return await dispatchPrompt(opts);
+  } finally {
+    releaseSendGuard();
+  }
+}
+
+/** True while a send is holding the composer draft. */
+export function isSendInFlight() { return sendInFlight; }
+
+function releaseSendGuard() {
+  if (!sendInFlight) return;
+  sendInFlight = false;
+  refreshSendEnabled();
+}
+
+async function dispatchPrompt(opts = {}) {
+  // A dropped file is staged asynchronously; without this wait, drop-then-Enter
+  // sent the message with no attachment and no warning (2026-09-15 demo).
+  // Bounded, so a stuck stage degrades to the old behaviour instead of hanging.
+  if (attachmentStagingInFlight()) {
+    showToast(t("toast.attachmentStaging"), "info");
+    await whenAttachmentsSettled();
+  }
   const promptInput = $("promptInput");
   let text = promptInput?.value.trim() || "";
   const characterAuthoringMarker = readCharacterAuthoringMarker(promptInput, text);
@@ -236,6 +243,7 @@ export async function sendPrompt(opts = {}) {
     if (result?.ok) {
       if (promptInput) promptInput.value = "";
       drafts.forget(sessionId);
+      releaseSendGuard();
       syncComposerInputHeight();
       showToast(t("composer.conventionSaved"), "success");
     } else {
@@ -276,20 +284,14 @@ export async function sendPrompt(opts = {}) {
       }
     }
   }
-  // A send while the turn is running is a real decision: queue it for later
-  // or interrupt the current answer and send now. Dismissing keeps the draft.
+  // A send while the turn is running is a real decision: steer the running
+  // turn, queue for later, or interrupt and send now. Dismissing keeps the draft.
   let sendMode = "send";
   if (!canSend(sessionId)) {
-    const options = [{ value: "queue", label: t("composer.busyChoiceQueue") }];
-    // Steer = inject into the running turn (no interrupt, no wait for the whole turn).
-    if (steerEnabled && !characterAuthoringKind) {
-      options.push({ value: "steer", label: t("composer.busyChoiceSteer") });
-    }
-    options.push({ value: "interrupt", label: t("composer.busyChoiceInterrupt"), danger: true });
     sendMode = await chooseDialog({
       title: t("composer.busyChoiceTitle"),
       message: t("composer.busyChoiceMessage"),
-      options,
+      options: buildBusySendOptions({ steerEnabled, characterAuthoringKind }),
     });
     if (!sendMode) return;
   }
@@ -299,6 +301,7 @@ export async function sendPrompt(opts = {}) {
     attachmentDisplayPayload(file, pendingFiles.find((pending) => pending.id === file.id))
   ));
   const clearedDraft = drafts.clear(sessionId, savedDraft);
+  releaseSendGuard(); // the draft is taken; another conversation may send now
 
   let result;
   try {
@@ -640,13 +643,14 @@ export function initComposer() {
     drafts.bind(promptInput);
   }
 
-  $("attachBtn")?.addEventListener("click", async () => {
+  $("attachBtn")?.addEventListener("click", () => trackAttachmentStaging(async () => {
     const result = await window.assistantClient.pickFiles();
     if (result.ok && result.files) {
       store.set("pendingFiles", [...(store.get("pendingFiles") || []), ...result.files]);
       renderFilePreview();
     }
-  });
+  }));
+  setAttachmentStagingListener(() => refreshSendEnabled());
 
   $("interruptBtn")?.addEventListener("click", async () => {
     const sessionId = store.get("activeSessionId");

@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { DatabaseRecoveryFlow } = require('../src/main/database-recovery-flow');
+const calls = []; let healthy = false, consent = false, started = 0;
+const candidate = { id: 'verified', createdAt: '2026-09-13', messageCount: 25, sessionCount: 2 };
+const service = { run: async (action,id) => {
+  calls.push({action,id});
+  if(action==='inspect') return {ok:healthy, reason: healthy?'healthy':'corrupt'};
+  if(action==='prepare') return {ok:true,candidates:[candidate]};
+  if(action==='restore') { healthy=true;return {ok:true,receipt:{id:'receipt'}}; }
+}};
+const flow = new DatabaseRecoveryFlow({service,confirm:async()=>consent,onHealthy:()=>started++});
+await flow.act('inspect'); assert.equal(flow.state.phase,'blocked'); assert.equal(started,0);
+await flow.act('prepare'); assert.equal(flow.state.candidates.length,1);
+await flow.act('restore','../../foreign'); assert.equal(calls.filter(c=>c.action==='restore').length,0);
+await flow.act('restore','verified'); assert.equal(calls.filter(c=>c.action==='restore').length,0);
+consent=true; await flow.act('restore','verified');assert.equal(flow.state.phase,'restored');assert.equal(started,0);
+await flow.act('inspect');assert.equal(started,1); assert.equal(flow.state.receipt.id,'receipt');
+await flow.act('inspect'); assert.equal(started,1, 'healthy gate resolves once');
+let release; const concurrent = new DatabaseRecoveryFlow({service:{run:()=>new Promise(r=>release=r)},confirm:async()=>true});
+const pending = concurrent.act('inspect');
+assert.equal((await concurrent.act('prepare')).reason,'busy');
+release({ok:false,reason:'locked'});await pending;assert.equal(concurrent.state.reason,'locked');
+const late = new DatabaseRecoveryFlow({service:{run:()=>new Promise(r=>release=r)},onHealthy:()=>started++});
+const check=late.act('inspect');late.close();release({ok:true});await check;assert.equal(started,1,'closed window cannot admit startup');
+const crash = new DatabaseRecoveryFlow({service,allowRestore:false});
+await crash.act('restore','verified'); await crash.act('prepare');
+assert.equal(crash.state.phase,'blocked');
+console.log('PASS recovery confirmation, stale IDs, no implicit task replay, overlap and close fencing');

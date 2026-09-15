@@ -94,7 +94,7 @@ function registerSessionHandlers(ctx) {
     });
   });
 
-  ipcMain.handle("session:create", (_event, title, projectId) => {
+  ipcMain.handle("session:create", async (_event, title, projectId) => {
     const pid = projectId || projectManager.getActive()?.id;
     if (!pid) return { ok: false, error: "NO_PROJECT" };
     const session = sessionManager.create(pid, title);
@@ -103,7 +103,14 @@ function registerSessionHandlers(ctx) {
       projectId: pid,
       source: "desktop",
     });
-    return { ok: true, session: { id: session.id, title: session.title, projectId: pid } };
+    // A distributed default 智能体 (enterprise/admin targeting) binds to new
+    // conversations at creation. Fail-open: no default → native session.
+    let agent = null;
+    try {
+      const applied = await require("./agents/agent-distribution").applyDefaultAgentToNewSession(ctx, session.id);
+      if (applied?.applied) agent = { id: applied.agentId };
+    } catch { /* native */ }
+    return { ok: true, session: { id: session.id, title: session.title, projectId: pid, ...(agent ? { agent } : {}) } };
   });
 
   ipcMain.handle("session:switch", (_event, sessionId) => {
@@ -120,8 +127,12 @@ function registerSessionHandlers(ctx) {
     return { ok: true };
   });
 
-  ipcMain.handle("session:delete", (_event, sessionId) => {
+  ipcMain.handle("session:delete", async (_event, sessionId) => {
     const session = sessionManager.findById(sessionId);
+    // Deletion is a task boundary: fence continuations and stop the session's
+    // durable process jobs BEFORE the record disappears (owner scope needs it).
+    let cleanup = null;
+    try { cleanup = await require("./session-delete-cleanup").fenceSessionWork(ctx, session); } catch { cleanup = null; }
     runnerPool.terminateSession(sessionId);
     const result = sessionManager.delete(sessionId);
     if (result !== "OK") return { ok: false, error: result };
@@ -130,7 +141,7 @@ function registerSessionHandlers(ctx) {
       projectId: session?.projectId || "",
       reason: "deleted",
     });
-    return { ok: true };
+    return { ok: true, ...(cleanup ? { cleanup: { stoppedJobs: cleanup.jobs.stopped.length, failedJobs: cleanup.jobs.failed.length, continuationsCancelled: cleanup.continuationsCancelled } } : {}) };
   });
 
   ipcMain.handle("session:archive", (_event, sessionId) => {
@@ -175,6 +186,8 @@ function registerSessionHandlers(ctx) {
     const updated = sessionManager.findById(sessionId);
     const project = projectManager.find(updated?.projectId);
     skillManager.writeSessionAgentGuide(sessionId, updated, project?.path || updated.workspacePath || "");
+    // A deliberate skill change must not cost the conversation its engine context.
+    require("./engine-skill-continuity").keepEngineAcrossSkillChange(ctx, sessionId);
     const runner = runnerPool.get(sessionId);
     if (runner?.isAlive() && !runner.isBusy()) {
       if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);

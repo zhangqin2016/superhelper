@@ -20,6 +20,8 @@ function names(context, deps) {
 }
 
 const PLATFORM_TOOLS = [
+  // 智能体 drafting is a platform tool gated only by LILY_AGENTS (default on).
+  "lily_agent_draft",
   "lily_capability_list",
   "lily_capability_status",
   "lily_intent_contract_commit",

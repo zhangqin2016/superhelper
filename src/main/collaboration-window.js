@@ -74,7 +74,7 @@ function createCollaborationWindowManager({
   rendererFile = path.join(__dirname, "..", "renderer", "index.html"),
   preload = path.join(__dirname, "..", "preload.js"),
   icon = (() => { try { return require("./app-icon").loadAppIconImage(); } catch { return null; } })(),
-  backgroundColor = "#0f1119",
+  backgroundColor = "", // empty → resolved from the active theme at open()
   readBounds = () => null,
   writeBounds = () => {},
   onClosed = () => {},
@@ -107,7 +107,8 @@ function createCollaborationWindowManager({
         minHeight: MIN_HEIGHT,
         title: "Lily",
         ...(icon ? { icon } : {}),
-        backgroundColor,
+        show: false, // revealed on first paint, never as a bare rectangle
+        backgroundColor: backgroundColor || require("./window-appearance").windowBackgroundColor(),
         webPreferences: {
           preload,
           contextIsolation: true,
@@ -118,6 +119,10 @@ function createCollaborationWindowManager({
       });
       // The flag the renderer branches on. A query rather than a separate file,
       // so there is one panel implementation.
+      require("./window-appearance").showWhenPainted(win, {
+        onFailed: ({ errorCode, errorDescription, url }) =>
+          console.error("[collaboration-window] renderer failed to load:", errorCode, errorDescription, url),
+      });
       win.loadFile(rendererFile, { query: { view: "collaboration" } });
       // The same chrome the main window gets. Without this a right-click has no
       // menu and an external link would try to navigate this window.

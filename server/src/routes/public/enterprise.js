@@ -12,6 +12,7 @@ import { verifyAccessToken, verifyWebSessionToken } from "../../services/account
 import { fetchOrgGrants } from "../../services/wallet.js";
 import { registerPublicEnterpriseMemberRoutes } from "./enterprise-members.js";
 import { registerPublicEnterpriseAccountRoutes } from "./enterprise-accounts.js";
+import { registerPublicEnterpriseAgentRoutes } from "./enterprise-agents.js";
 import { enterpriseMutationResponse, requireOrgRole } from "./enterprise-route-support.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
 
@@ -113,6 +114,7 @@ export function registerPublicEnterpriseRoutes(app) {
   });
   registerPublicEnterpriseMemberRoutes(app);
   registerPublicEnterpriseAccountRoutes(app);
+  registerPublicEnterpriseAgentRoutes(app);
 
   // GET /api/enterprise/organizations — my orgs
   app.get(

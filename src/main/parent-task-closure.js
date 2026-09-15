@@ -36,6 +36,31 @@ const CLOSURE_TASK_TYPES = new Set([
   "external_fact",
 ]);
 
+// 2026-09-14 audit: the tasks users most often run long — extraction, audits,
+// document production, investigations — lost the final synthesis to a
+// provider failure and got NO continuation attempt. They are NOT execution
+// intents (a plain "read this and summarize" stays read-only, see
+// test-task-execution-classification), so they qualify only as LONG-RUNNING
+// work that was cut off: a stall / handoff / silent model, with real progress
+// behind it. Same one-closure budget; the durable ledger still bounds retries.
+const ANALYSIS_TASK_TYPES = new Set(["content_extraction", "architecture_audit", "document_work", "bug_investigation"]);
+const ANALYSIS_MIN_EVIDENCE = 3;
+
+function isCutOffAnalysisWork(taskContract = {}, payload = {}, evidence = {}) {
+  if (!taskContract?.active || !ANALYSIS_TASK_TYPES.has(String(taskContract.taskType || ""))) return false;
+  const cutOff = Boolean(payload.stalled) || Boolean(payload.continuationHandoff) || isModelSilentFailure(payload);
+  if (!cutOff) return false;
+  return isModelSilentFailure(payload) || Number(evidence.count || 0) >= ANALYSIS_MIN_EVIDENCE;
+}
+
+// A model that returned zero bytes (first-response watchdog) leaves no tool
+// evidence by definition; that is exactly the case worth continuing once the
+// provider is back, so it must not be filtered as NO_EXECUTION_EVIDENCE.
+function isModelSilentFailure(payload = {}) {
+  const code = String(payload.errorCode || payload.failureCode || payload.code || "");
+  return Boolean(payload.noFirstResponse) || code === "MODEL_NO_RESPONSE";
+}
+
 const MUTATING_OPERATIONS = /^(?:create|change|modify|write|build|package|deploy|release|fix|repair|implement|install|migrate|convert|edit|update|publish|refactor|execute|remove|delete)$/i;
 
 function normalizedStatus(tool) {
@@ -105,7 +130,7 @@ function shouldRecoverParentClosure({
   if (!sessionId || !sourceTurnId) return fail("MISSING_TURN_IDENTITY");
   if (payload.loopDetected) return fail("CONFIRMED_LOOP");
   if (payload.continuationStopReason === "no_progress") return fail("NO_PROGRESS");
-  if (!hasExecutionIntent(taskContract)) return fail("NON_EXECUTION_TASK");
+  if (!hasExecutionIntent(taskContract) && !isCutOffAnalysisWork(taskContract, payload, evidence)) return fail("NON_EXECUTION_TASK");
   if (payload.interruptedByUser || payload.userInterrupted || payload.engineInterrupted) return fail("INTERRUPTED");
   if (
     String(payload.errorCode || payload.failureCode || "") === "TRUNCATED_TURN_END"
@@ -117,14 +142,14 @@ function shouldRecoverParentClosure({
       || (handoff.reason === "acceptance_gap" && handoff.unfinished.every(item => ["verification", "delivery", "original_requirement"].includes(item.kind) && typeof item.title === "string" && item.title.trim())));
   if (!remainingWork && !payload.stalled && !payload.failed && !payload.error && !payload.errorCode && !payload.code) return fail("NOT_INCOMPLETE");
   if (hasPendingUserInput(state)) return fail("WAITING_FOR_USER");
-  if (!evidence.count) return fail("NO_EXECUTION_EVIDENCE");
+  if (!evidence.count && !isModelSilentFailure(payload)) return fail("NO_EXECUTION_EVIDENCE");
   if (state.currentPayload?.parentClosureRecovery && !(allowProductiveContinuation
     && Array.isArray(payload.executionProgressKeys) && payload.executionProgressKeys.length > 0)) return fail("ALREADY_ATTEMPTED");
   if (recoveryLedger?.has?.(recoveryKey)) return fail("ALREADY_CLAIMED");
-  return { ok: true, reason: "ELIGIBLE", recoveryKey, sourceTurnId, evidence };
+  return { ok: true, reason: isModelSilentFailure(payload) && !evidence.count ? "ELIGIBLE_MODEL_SILENT" : "ELIGIBLE", recoveryKey, sourceTurnId, evidence, modelSilent: isModelSilentFailure(payload) };
 }
 
-function buildParentClosurePrompt({ objective = "", evidence = {}, continuationHandoff = null } = {}) {
+function buildParentClosurePrompt({ objective = "", evidence = {}, continuationHandoff = null, workState = null } = {}) {
   const boundedObjective = String(objective || "").trim().slice(0, MAX_OBJECTIVE_LENGTH);
   const counts = `已完成工具 ${Number(evidence.done?.length || 0)} 个，失败 ${Number(evidence.failed?.length || 0)} 个，运行中 ${Number(evidence.running?.length || 0)} 个。`;
   return [
@@ -133,6 +158,7 @@ function buildParentClosurePrompt({ objective = "", evidence = {}, continuationH
     `原始任务：${boundedObjective || "继续当前用户要求"}`,
     counts,
     ...(continuationHandoff?.unfinished?.length ? ["上一轮正常结束但尚有验收项未完成：", ...continuationHandoff.unfinished.slice(0, 32).map(item => `- ${String(item.title || "").slice(0, 180)}`)] : []),
+    ...require("./turn-work-state").renderWorkState(workState),
     "本次是接续剩余工作，不是重放上一轮命令。已有授权范围保持不变；需要新的权限或用户选择时提出问题，不得绕过；结果未知的写操作先核实，不得盲目重试。",
     "不要只返回计划，也不要重复已经完成的检查。先确认当前文件和状态，再完成剩余的修改、构建、打包、部署或验证步骤。",
     "如果原任务是检索、研究或分析，优先基于已有搜索和读取结果完成综合结论；只补充确实缺失的证据，不要重新抓取已经完成的来源。",
@@ -164,6 +190,8 @@ function createParentClosureLedger({ maxEntries = MAX_LEDGER_ENTRIES } = {}) {
 }
 
 module.exports = {
+  isModelSilentFailure,
+  isCutOffAnalysisWork,
   buildParentClosurePrompt,
   createParentClosureLedger,
   hasExecutionIntent,

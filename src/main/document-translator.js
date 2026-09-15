@@ -55,6 +55,27 @@ function extractorScriptPath() {
 }
 
 /**
+ * Turn an execFile outcome into a named reason. The extractor prints
+ * {"ok":false,"error":…} and THEN exits non-zero, so on failure the real cause
+ * is in stdout — reading it before `err` is what turns an opaque
+ * "Command failed" into something the user and support can act on
+ * (2026-09-15: every docx failure looked identical, so it read as random).
+ * @returns {{ text: string } | { error: string }}
+ */
+function classifyExtractionResult(err, stdout, timeoutMs = 0) {
+  let parsed = null;
+  try { parsed = JSON.parse(String(stdout || "")); } catch { parsed = null; }
+  if (parsed && parsed.ok === false) return { error: `EXTRACT_FAILED:${parsed.error || "unknown"}` };
+  if (err) {
+    const timedOut = err.killed === true || err.signal === "SIGTERM" || /timed?\s*out/i.test(String(err.message || ""));
+    return { error: timedOut ? `EXTRACT_TIMEOUT:${timeoutMs}ms` : `EXTRACT_FAILED:${err.message}` };
+  }
+  if (!parsed) return { error: "EXTRACT_BAD_OUTPUT" };
+  if (!parsed.ok) return { error: parsed.error || "EXTRACT_FAILED" };
+  return { text: String(parsed.text || "") };
+}
+
+/**
  * Extract PDF/Office content via the bundled Python libraries (python-docx,
  * openpyxl, python-pptx, pdfplumber; RapidOCR for scanned pages) — tables
  * survive as Markdown. We do not hand-parse Office XML in JS: that flattened
@@ -86,15 +107,9 @@ function extractOfficeText(filePath) {
       [script, filePath],
       { timeout: PYTHON_EXTRACT_TIMEOUT_MS, maxBuffer: MAX_EXTRACT_OUTPUT_BYTES, env },
       (err, stdout) => {
-        if (err) return reject(new Error(`EXTRACT_FAILED:${err.message}`));
-        let parsed;
-        try {
-          parsed = JSON.parse(stdout);
-        } catch {
-          return reject(new Error("EXTRACT_BAD_OUTPUT"));
-        }
-        if (!parsed.ok) return reject(new Error(parsed.error || "EXTRACT_FAILED"));
-        resolve(String(parsed.text || ""));
+        const outcome = classifyExtractionResult(err, stdout, PYTHON_EXTRACT_TIMEOUT_MS);
+        if (outcome.error) return reject(new Error(outcome.error));
+        resolve(outcome.text);
       },
     );
   });
@@ -393,6 +408,7 @@ async function extractDocuments(files, options = {}) {
       ok: false,
       reason: failed === docFiles.length ? "ALL_FAILED" : "NO_CONTENT",
       detail: "Unable to read document content at this time. Please try again later.",
+      failures: failedDocuments.map(({ label, error }) => ({ label, error })),
     };
   }
 
@@ -429,10 +445,12 @@ async function extractDocuments(files, options = {}) {
     extractedPaths,
     keepOriginal: false,
     degraded: failedDocuments.length > 0,
+    failures: failedDocuments.map(({ label, error }) => ({ label, error })),
   };
 }
 
 module.exports = {
+  classifyExtractionResult,
   buildEnrichedUserText,
   extractDocuments,
   hasDocumentInputFiles,

@@ -23,6 +23,25 @@ function characterWorldsPackFor(ctx, projectId) {
   return { repo, ownerScope, collected };
 }
 
+/** Collect the 智能体 section (agents bound to the project's sessions), or
+ *  null when unavailable. Local role cards ride along only when the caller
+ *  also opted into Character Worlds export (they are user content). */
+function agentsPackFor(ctx, projectId, { includeRoleCards = false } = {}) {
+  try {
+    const repo = ctx.agentRepository || ctx.sessionManager?._store?.()?.agents?.();
+    const ownerScope = resolveCharacterOwnerScope();
+    if (!repo || typeof ownerScope !== "string" || !ownerScope) return null;
+    const sessions = (ctx.sessionManager?.listForProject?.(projectId) || [])
+      .map((s) => ({ sessionId: s.id, ownerScope }));
+    const { collectAgentsForExport, packAgentsSection } = require("./agents/workspace-portability");
+    const collected = collectAgentsForExport(repo, ctx.characterWorldsRepository || null, sessions, { includeRoleCards });
+    return { collected, ...packAgentsSection(collected) };
+  } catch (error) {
+    console.warn("[agents] pack export skipped:", error?.message || error);
+    return null;
+  }
+}
+
 function registerWorkspaceExportHandlers(ctx) {
   const { mainWindow, projectManager } = ctx;
   const skillManager = require("./skill-manager");
@@ -39,6 +58,10 @@ function registerWorkspaceExportHandlers(ctx) {
       workspaceSkills: previewWorkspaceSkills(workspaceSkills),
       scheduledTasks: taskPortability.previewProjectTasks(ctx.scheduledTaskManager, project.id),
     };
+    const agentsPack = agentsPackFor(ctx, project.id);
+    payload.agents = agentsPack
+      ? { count: agentsPack.count, names: agentsPack.collected.agents.map((a) => a.displayName) }
+      : { count: 0, names: [] };
     if (options.includeCharacterWorlds === true) {
       const cw = characterWorldsPackFor(ctx, project.id);
       payload.characterWorlds = cw
@@ -82,6 +105,7 @@ function registerWorkspaceExportHandlers(ctx) {
           options.selectedScheduledTaskIds,
         ),
         characterWorlds: cw ? packCharacterWorldsSection(cw.collected).json : "",
+        agents: options.includeAgents === false ? "" : (agentsPackFor(ctx, project.id, { includeRoleCards: options.includeCharacterWorlds === true })?.json || ""),
         exportedAt: new Date().toISOString(),
       });
       fs.writeFileSync(result.filePath, buf);

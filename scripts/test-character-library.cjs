@@ -500,7 +500,7 @@ app.whenReady().then(async () => {
     if (!modal.hidden || !prompt.value.includes("一个沉稳的侦探")) {
       throw new Error("AI authoring should return to the CLI agent prompt");
     }
-    await libraryModule.openCharacterLibrary();
+    await libraryModule.openCharacterLibrary({ tab: "characters" });
     await new Promise((r) => setTimeout(r, 100));
     return "library open";
   })()`);
@@ -594,7 +594,7 @@ app.whenReady().then(async () => {
     const tablist = document.getElementById("characterLibraryTabs");
     if (tablist.getAttribute("role") !== "tablist") throw new Error("tabs need role=tablist");
     const tabs = [...tablist.querySelectorAll("[role='tab']")];
-    if (tabs.length !== 1 || tabs[0].dataset.libraryTab !== "characters") throw new Error("expected one character tab");
+    if (tabs.length !== 2 || tabs[0].dataset.libraryTab !== "agents" || tabs[1].dataset.libraryTab !== "characters") throw new Error("expected agents + characters tabs, got " + tabs.map((t) => t.dataset.libraryTab).join(","));
     if (!document.querySelector("[data-library-group='all']")) throw new Error("character groups should remain available");
     return "character-card-only library";
     tabs.find((t) => t.dataset.libraryTab === "personas").click();
@@ -865,7 +865,7 @@ app.whenReady().then(async () => {
   // 14. Form data-loss guards (review fix 1): re-renders never wipe edits.
   await run("empty-name-keeps-fields", `(async () => {
     const mod = await import("./modules/character-library.js");
-    await mod.openCharacterLibrary();
+    await mod.openCharacterLibrary({ tab: "characters" });
     await new Promise((r) => setTimeout(r, 250));
     (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));
@@ -1006,7 +1006,7 @@ app.whenReady().then(async () => {
   await run("confirm-focus", `(async () => {
     const mod = await import("./modules/character-library.js");
     if (document.getElementById("characterLibraryModal").hidden) {
-      await mod.openCharacterLibrary();
+      await mod.openCharacterLibrary({ tab: "characters" });
       await new Promise((r) => setTimeout(r, 250));
     }
     const list = document.getElementById("characterLibraryList");
@@ -1065,7 +1065,7 @@ app.whenReady().then(async () => {
   // 19. The dirty-form guard also covers tab switches and the New button.
   await run("dirty-form-tab-guard", `(async () => {
     const mod = await import("./modules/character-library.js");
-    await mod.openCharacterLibrary();
+    await mod.openCharacterLibrary({ tab: "characters" });
     await new Promise((r) => setTimeout(r, 250));
     (await import("./modules/character-library.js")).openCreateForTests();
     await new Promise((r) => setTimeout(r, 120));

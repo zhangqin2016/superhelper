@@ -105,7 +105,16 @@ function normalizeClipboardFilePath(value) {
   return text;
 }
 
-function extractClipboardFilePaths(clip = clipboard) {
+/**
+ * @param {object} clip electron clipboard (injectable for tests)
+ * @param {{ includePlainText?: boolean }} options When false, the clipboard's
+ *   plain TEXT flavour is not treated as a file path. A path the user pasted as
+ *   text is text they want in the box; before 2026-09-15 it was silently turned
+ *   into an attachment and the typed characters were discarded. Real file copies
+ *   still resolve through the bookmark and the OS file/filename/url formats.
+ */
+function extractClipboardFilePaths(clip = clipboard, options = {}) {
+  const includePlainText = options.includePlainText !== false;
   const paths = new Set();
   const addCandidate = (value) => {
     for (const item of clipboardTextCandidates(value)) {
@@ -121,7 +130,7 @@ function extractClipboardFilePaths(clip = clipboard) {
     /* platform clipboard format unavailable */
   }
   try {
-    addCandidate(clip?.readText?.() || "");
+    if (includePlainText) addCandidate(clip?.readText?.() || "");
   } catch {
     /* platform clipboard format unavailable */
   }
@@ -156,10 +165,10 @@ function extractClipboardFilePaths(clip = clipboard) {
   });
 }
 
-function stageClipboardFiles(stagingManager, clip = clipboard) {
+function stageClipboardFiles(stagingManager, clip = clipboard, options = {}) {
   const staged = [];
   const errors = [];
-  const paths = extractClipboardFilePaths(clip);
+  const paths = extractClipboardFilePaths(clip, options);
   for (const filePath of paths) {
     try {
       staged.push(stagingManager.stageFromPath(filePath));
@@ -244,9 +253,11 @@ function registerFileHandlers(mainWindow, stagingManager) {
     }
   });
 
-  ipcMain.handle("files:paste-clipboard", () => {
+  ipcMain.handle("files:paste-clipboard", (_event, options = {}) => {
     try {
-      return stageClipboardFiles(stagingManager);
+      return stageClipboardFiles(stagingManager, clipboard, {
+        includePlainText: options?.includePlainText !== false,
+      });
     } catch (err) {
       return { ok: false, error: err.message || "CLIPBOARD_READ_FAILED" };
     }

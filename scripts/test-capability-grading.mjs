@@ -504,11 +504,15 @@ try {
     if (previousGlobalBrokerContext === undefined) delete process.env.LILY_TOOL_BROKER_CONTEXT;
     else process.env.LILY_TOOL_BROKER_CONTEXT = previousGlobalBrokerContext;
   }
+  const { agents: sharedAgentsBlock, ...sharedBrokerContext } = JSON.parse(firstSharedBrokerServers.lily_tool_broker.env.LILY_TOOL_BROKER_CONTEXT);
   assert.deepEqual(
-    JSON.parse(firstSharedBrokerServers.lily_tool_broker.env.LILY_TOOL_BROKER_CONTEXT),
+    sharedBrokerContext,
     { platformOnly: true, activeSkillIds: [], characterWorlds: { enabled: false }, runtime: { browserAvailable: false } },
     "the app-wide serve gets explicit platform-only broker context, never one conversation's identity",
   );
+  // 智能体 drafting block: main-resolved owner scope (device/account hash), never a session id.
+  assert.equal(typeof sharedAgentsBlock?.enabled, "boolean", "agents broker block is present");
+  if (sharedAgentsBlock.enabled) assert.match(String(sharedAgentsBlock.ownerScope || ""), /^profile:/, "agents owner scope is a profile hash");
   assert.equal(
     JSON.stringify(firstSharedBrokerServers),
     JSON.stringify(secondSharedBrokerServers),

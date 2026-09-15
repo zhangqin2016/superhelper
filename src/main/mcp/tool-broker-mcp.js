@@ -19,6 +19,9 @@ function normalizeContextProvider(contextOrProvider) {
 // call; failure fails closed inside the tool handler.
 function withDraftAuthoringFallback(registryDeps) {
   const deps = { ...(registryDeps || {}) };
+  if (!deps.agentRepository && typeof deps.resolveAgentRepository !== "function") {
+    deps.resolveAgentRepository = require("../agents/agent-draft-tool").createLazyAgentRepository();
+  }
   if (!deps.characterWorldsService && !deps.characterAuthoringService
     && typeof deps.resolveDraftAuthoring !== "function") {
     deps.resolveDraftAuthoring = createLazyDraftAuthoring();

@@ -27,6 +27,9 @@ export function runtimeVisualSig(runtime = {}) {
   return [
     live.turnId,
     live.phase,
+    // A steered question arrives as a committed message mid-turn; without this
+    // the rail kept showing only the older questions until something else moved.
+    runtime.committedMessages?.length || 0,
     live.final?.type || "",
     live.assistantText?.length || 0,
     live.thinkingText?.length || 0,

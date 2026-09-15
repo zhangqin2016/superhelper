@@ -1021,7 +1021,7 @@ function buildTaskContract({
       programIntent: classification.programIntent || null,
       semanticIntent: classification.semanticIntent || null,
       priorSourceContentEvidence,
-      evidencePolicy: buildEvidencePolicy(classification),
+      evidencePolicy: buildEvidencePolicy({ ...classification, priorSourceContentEvidence }),
       sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
       intentContract,
       workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({
@@ -1056,7 +1056,7 @@ function buildTaskContract({
     programIntent: classification.programIntent || null,
     semanticIntent: classification.semanticIntent || null,
     priorSourceContentEvidence,
-    evidencePolicy: buildEvidencePolicy(classification),
+    evidencePolicy: buildEvidencePolicy({ ...classification, priorSourceContentEvidence }),
     sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
     workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({ text, classification, profile }),
     intentContract,

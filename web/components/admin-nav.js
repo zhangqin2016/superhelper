@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Activity, BarChart3, Boxes, ClipboardList, CreditCard, DownloadCloud, Gauge,
+  Activity, BarChart3, Bot, Boxes, ClipboardList, CreditCard, DownloadCloud, Gauge,
   KeyRound, Laptop, Lightbulb, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store, UsersRound,
 } from "lucide-react";
 
@@ -22,6 +22,7 @@ const ICONS = {
   "/admin/library": Store,
   "/admin/apps": Store,
   "/admin/skill-packages": PackageCheck,
+  "/admin/agents": Bot,
   "/admin/runtime-packs": Boxes,
   "/admin/config": SlidersHorizontal,
   "/admin/settings": Settings,

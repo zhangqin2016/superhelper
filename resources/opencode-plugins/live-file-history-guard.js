@@ -93,21 +93,36 @@ function sessionIDFrom(input, messages = []) {
   return "default";
 }
 
+// The wording matters: the model reads this INSIDE its own earlier tool call.
+// It must understand the call succeeded and only the body is elided, otherwise
+// it "re-writes" the file from what it sees (2026-09-14 field case: the marker
+// itself was written to disk six times).
 function historicalMarker(file) {
-  return `[lily: historical snapshot omitted because ${file} has a live filesystem version; read the current file before editing]`;
+  return `[lily: this earlier tool call succeeded; its file body is omitted from history because ${file} has since changed on disk. Never copy this marker into a file — read the current file before editing]`;
 }
 
-function sanitizeMutationInput(tool, args, files) {
-  if (!args || typeof args !== "object" || !files.length) return;
+const MARKER_PREFIX = "[lily: this earlier tool call succeeded";
+const LEGACY_MARKER_PREFIX = "[lily: historical snapshot omitted";
+
+function isMarkerText(value) {
+  const text = String(value || "");
+  return text.startsWith(MARKER_PREFIX) || text.startsWith(LEGACY_MARKER_PREFIX);
+}
+
+/** Return a sanitized COPY of the tool args; never mutates the input object. */
+function sanitizedMutationInput(tool, args, files) {
+  if (!args || typeof args !== "object" || !files.length) return args;
   const marker = historicalMarker(files[0]);
   const keys = tool === "write"
     ? ["content", "text", "data"]
     : tool === "edit" || tool === "multiedit"
       ? ["oldString", "newString", "old_string", "new_string", "content"]
       : ["patch", "input", "content"];
+  const next = { ...args };
   for (const key of keys) {
-    if (typeof args[key] === "string" && args[key]) args[key] = marker;
+    if (typeof next[key] === "string" && next[key]) next[key] = marker;
   }
+  return next;
 }
 
 function historicalMutationIsStale(tool, args, file, state, currentFingerprint) {
@@ -131,12 +146,23 @@ export const LiveFileHistoryGuardPlugin = async (ctx = {}) => {
         if (process.env.LILY_LIVE_FILE_GUARD === "0") return;
         const messages = Array.isArray(output?.messages) ? output.messages : [];
         const state = sessionState(sessionIDFrom(input, messages));
-        for (const message of messages) {
-          for (const part of Array.isArray(message?.parts) ? message.parts : []) {
+        // The engine hands us its LIVE message objects (prompt.ts does not
+        // clone them). Mutating a part in place leaks the marker into the
+        // engine's stored history and — for a tool call that has not executed
+        // yet — into the write itself. So: only COMPLETED historical calls are
+        // touched, and always by replacing the message with a sanitized copy.
+        for (let index = 0; index < messages.length; index += 1) {
+          const message = messages[index];
+          const parts = Array.isArray(message?.parts) ? message.parts : [];
+          let replacedParts = null;
+          for (let partIndex = 0; partIndex < parts.length; partIndex += 1) {
+            const part = parts[partIndex];
             if (part?.type !== "tool") continue;
             const tool = String(part.tool || "").toLowerCase();
             if (!WRITE_TOOLS.has(tool)) continue;
+            if (String(part.state?.status || "") !== "completed") continue;
             const args = part.state?.input;
+            if (!args || typeof args !== "object") continue;
             const files = targetPaths(args, directory);
             const staleFiles = [];
             for (const file of files) {
@@ -149,8 +175,13 @@ export const LiveFileHistoryGuardPlugin = async (ctx = {}) => {
                 state.stalePaths.delete(file);
               }
             }
-            if (staleFiles.length) sanitizeMutationInput(tool, args, staleFiles);
+            if (!staleFiles.length) continue;
+            const sanitized = sanitizedMutationInput(tool, args, staleFiles);
+            if (sanitized === args) continue;
+            if (!replacedParts) replacedParts = [...parts];
+            replacedParts[partIndex] = { ...part, state: { ...part.state, input: sanitized } };
           }
+          if (replacedParts) messages[index] = { ...message, parts: replacedParts };
         }
       } catch {
         /* fail open — history hygiene must never break a model call */
@@ -162,7 +193,18 @@ export const LiveFileHistoryGuardPlugin = async (ctx = {}) => {
       const tool = String(input?.tool || "").toLowerCase();
       if (!WRITE_TOOLS.has(tool)) return;
       const state = sessionState(input?.sessionID);
-      const files = targetPaths(output?.args || input?.args, directory);
+      const args = output?.args || input?.args || {};
+      const files = targetPaths(args, directory);
+      // Backstop: a body that IS the history marker is never real content.
+      for (const key of ["content", "text", "data", "newString", "new_string", "patch", "input"]) {
+        if (isMarkerText(args?.[key])) {
+          const error = new Error(
+            "LILY_LIVE_FILE_MARKER_REJECTED: the tool body is Lily's history placeholder, not file content. Read the current file and write its real content.",
+          );
+          error.code = "LILY_LIVE_FILE_MARKER_REJECTED";
+          throw error;
+        }
+      }
       for (const file of files) {
         const current = fingerprint(file);
         if (!current) continue;

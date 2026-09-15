@@ -30,6 +30,7 @@ export async function AdminShell({ children, title, subtitle }) {
         { href: "/admin/releases", label: nav.releases },
         { href: "/admin/apps", label: nav.apps },
         { href: "/admin/skill-packages", label: nav.skillPackages },
+        { href: "/admin/agents", label: nav.agents || "Agents" },
         { href: "/admin/runtime-packs", label: nav.runtimePacks },
       ],
     },

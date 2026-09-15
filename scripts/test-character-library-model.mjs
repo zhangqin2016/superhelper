@@ -11,7 +11,10 @@ const {
   reduceCharacterLibrary,
 } = await import("../src/renderer/modules/character-library-model.js");
 
-assert.deepEqual(LIBRARY_TABS, ["characters"]);
+// 智能体 (agents) is the default first tab; the character tab stays second.
+assert.deepEqual(LIBRARY_TABS, ["agents", "characters"]);
+assert.equal(initialCharacterLibraryState().tab, "agents");
+assert.equal(kindForTab("agents"), "agent");
 assert.equal(kindForTab("characters"), "character");
 assert.equal(kindForTab("personas"), "character");
 
@@ -100,7 +103,8 @@ assert.deepEqual(sortLibraryItems(ordered).map((item) => item.id), ordered.map((
 
 let state = initialCharacterLibraryState({
   open: true,
-  items: { characters: [official, local], personas: [], books: [] },
+  tab: "characters",
+  items: { agents: [], characters: [official, local], personas: [], books: [] },
 });
 assert.equal(state.groupId, "featured");
 state = reduceCharacterLibrary(state, { type: "tab.changed", tab: "personas" });

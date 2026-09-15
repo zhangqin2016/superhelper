@@ -58,7 +58,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-compact-export-"));
 const file = writeCompactionMemoryFile(dir, "ses_abc123", summary);
 assert.equal(file, compactionMemoryFilePath(dir, "ses_abc123"), "writes to the keyed path");
 const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-assert.equal(parsed.schemaVersion, 1, "file carries schemaVersion");
+assert.equal(parsed.schemaVersion, 2, "file carries schemaVersion (v2 adds the optional anchor + guidance fields)");
 assert.ok(Array.isArray(parsed.blocks) && parsed.blocks.length >= 4, "file carries the blocks");
 
 assert.equal(writeCompactionMemoryFile(dir, "ses_x", {}), "", "empty summary -> no file written");

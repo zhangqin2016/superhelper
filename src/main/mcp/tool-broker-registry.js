@@ -83,7 +83,7 @@ function isPlatformTool(tool) {
   return (
     Array.isArray(tool?.requiredSkillIds) &&
     tool.requiredSkillIds.length === 0 &&
-    (tool.group === "capabilities" || tool.group === "runtime-packs" || tool.group === "character-worlds" || tool.group === "legal-kb")
+    (tool.group === "capabilities" || tool.group === "runtime-packs" || tool.group === "character-worlds" || tool.group === "legal-kb" || tool.group === "agents")
   );
 }
 
@@ -94,6 +94,7 @@ function availabilityReason(context, tool) {
     if (tool.group === "mail") return "MAIL_BRIDGE_UNAVAILABLE";
     if (tool.group === "browser") return "BROWSER_RUNTIME_UNAVAILABLE";
     if (tool.group === "character-worlds") return "CHARACTER_WORLDS_UNAVAILABLE";
+    if (tool.group === "agents") return "AGENTS_UNAVAILABLE";
     return "RUNTIME_UNAVAILABLE";
   }
   return "";
@@ -453,6 +454,8 @@ function allToolDefinitions(context, deps = {}) {
     // policy, fail closed): absent from platform-only and native contexts via
     // the shared availabilityReason discipline.
     buildCharacterDraftTool(deps),
+    // 智能体 drafting: inert library revisions only, kill-switch gated.
+    require("../agents/agent-draft-tool").buildAgentDraftTool(deps),
     ...learnedWebSystemTools(context || {}, deps),
   ];
   registerToolDefinitions(definitions);

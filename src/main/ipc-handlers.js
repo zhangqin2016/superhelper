@@ -123,6 +123,7 @@ function registerAll(ctx) {
   runnerPool.publicHookRuntime = ctx.publicHookRuntime;
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);
   require("./ipc-agent-runtime").registerAgentRuntimeHandlers(ctx);
+  try { require("./ipc-tasks").registerTaskHandlers(ctx); } catch (error) { console.warn("[tasks] unfinished-task IPC disabled:", error?.message || error); }
   try {
     const { createAgentRuntimeControlServer } = require("./agent-runtime-control-server");
     ctx.agentRuntimeControlServer = createAgentRuntimeControlServer(ctx);
@@ -131,7 +132,9 @@ function registerAll(ctx) {
     ctx.agentRuntimeControlServer = null;
     ctx.agentRuntimeControlReady = Promise.resolve(null);
   }
-  void Promise.resolve(ctx.publicHookBridgeReady).finally(() => ctx.turnOrchestrator.startRecoveredTurns());
+  if (!ctx.suppressAutomaticRecovery) {
+    void Promise.resolve(ctx.publicHookBridgeReady).finally(() => ctx.turnOrchestrator.startRecoveredTurns());
+  }
   // Surface long async media generations even if their turn was torn down before the
   // result stdout was captured (the skill drops a result record on disk).
   try { require("./media-result-tracker").startMediaResultTracker(ctx); } catch { /* optional */ }
@@ -173,7 +176,6 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("app:get-icon-url", () => resolveRuntimeIconDataUrl());
-  ipcMain.handle("app:get-version", () => ({ ok: true, version: require("electron").app.getVersion() }));
   ipcMain.handle("app:get-edition", () => ({ ok: true, ...require("./config").appEdition() }));
   ipcMain.handle("app:get-policy", async () => {
     const serviceClient = require("./service-client");
@@ -186,6 +188,10 @@ function registerAll(ctx) {
     };
   });
   ipcMain.handle("app:get-locale", () => ({ ok: true, ...listLocalesPublic() }));
+  ipcMain.handle("app:set-theme-mode", (_event, mode) => ({
+    ok: require("./window-appearance").rememberThemeMode(mode),
+  }));
+
   ipcMain.handle("app:set-locale", (_event, locale) => {
     const result = setLocale(locale);
     return { ok: true, locale: result.locale, supported: listLocalesPublic().supported };
@@ -396,6 +402,30 @@ function registerAll(ctx) {
   registerRuntimePackHandlers(ctx);
   registerCharacterWorldsHandlers(ctx);
   registerCharacterAuthoringHandlers(ctx);
+  // 智能体: library + per-session activation. Fail-open: a wiring failure
+  // leaves every conversation exactly as it is today (no agent bound).
+  try {
+    if (!ctx.agentRepository) ctx.agentRepository = sessionManager._store().agents();
+    require("./skill-manager").setSessionGuideExtension(
+      require("./agents/session-agent-policy").createAgentGuideExtension(ctx),
+    );
+    require("./ipc-agents").registerAgentHandlers(ctx);
+    // Distributed agents: refresh the registry cache in the background at
+    // startup and whenever the signed config refreshes (targeting may change).
+    const refreshDistributed = () => {
+      const distribution = require("./agents/agent-distribution");
+      distribution.fetchAgentRegistry().then((fetched) => {
+        if (!fetched.ok) return;
+        const owner = require("./character-worlds/owner-scope").resolveCharacterOwnerScope();
+        if (!owner) return;
+        distribution.reconcileDistributedAgents(ctx.agentRepository, ctx.characterWorldsRepository || null, owner, distribution.listDistributedAgents().agents);
+      }).catch(() => {});
+    };
+    setTimeout(refreshDistributed, 8_000).unref?.();
+    require("./remote-config").onRemoteConfigRefreshed?.(refreshDistributed);
+  } catch (error) {
+    console.warn("[agents] disabled:", error?.message || error);
+  }
   createCollaborationIpc({
     ipcMain,
     getService: () => ctx.collaborationService,

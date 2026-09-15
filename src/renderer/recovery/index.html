@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>Lily Workbench</title>
+  <link rel="stylesheet" href="./recovery.css">
+  <script src="./recovery.js" defer></script>
+</head>
+<body data-phase="checking">
+  <main>
+    <header><span class="mark" aria-hidden="true">L</span><span>Lily Workbench</span><span id="version"></span></header>
+    <section aria-live="polite" aria-atomic="true">
+      <div class="eyebrow" id="eyebrow"></div>
+      <h1 id="title"></h1>
+      <p id="detail"></p>
+      <p id="safety" class="safety"></p>
+    </section>
+    <div id="candidate-area" hidden><label for="candidates" id="candidate-label"></label><select id="candidates"></select></div>
+    <div class="actions"><button id="retry" class="primary"></button><button id="prepare"></button><button id="restore" class="primary" hidden></button></div>
+    <p id="notice" role="status"></p>
+    <footer><button id="export" class="link"></button><button id="exit" class="link"></button></footer>
+  </main>
+</body>
+</html>

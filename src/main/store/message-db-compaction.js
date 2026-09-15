@@ -85,6 +85,11 @@ function compactMessageDatabase(dbPath, deps = {}) {
   const tmpPath = `${target}.compacting`;
 
   try {
+    if (target && files.existsSync(`${target}.precompact`)) {
+      // Never overwrite recovery evidence from an interrupted previous swap.
+      require("./sqlite-snapshot").restoreInterruptedMessageCompaction(target);
+      return { compacted: false, reason: "recovery_backup_present" };
+    }
     if (!target || !files.existsSync(target)) return { compacted: false, reason: "missing" };
     // A WAL belongs to the source page layout, never to the VACUUM copy.
     // Leave recovery/checkpointing to the owning store before a future attempt.

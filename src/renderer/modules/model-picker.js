@@ -70,6 +70,19 @@ function modelOption(model, mode) {
   copy.className = "model-selection-option-copy";
   const name = document.createElement("strong");
   name.textContent = model.label;
+  // Silent-model mark: main flags a model that produced zero bytes within the
+  // first-response window. Informational only — the option stays selectable.
+  if (model.unavailable?.reason === "no_response") {
+    const badge = document.createElement("span");
+    badge.className = "model-selection-option-badge";
+    badge.textContent = t("composer.modelSilentBadge");
+    name.append(badge);
+    row.classList.add("is-unavailable");
+    row.title = t("composer.modelSilentTitle", {
+      n: Math.max(1, Number(model.unavailable.count) || 1),
+      s: Math.max(1, Math.round((Number(model.unavailable.silentMs) || 0) / 1000)),
+    });
+  }
   const detail = document.createElement("small");
   detail.textContent = model.modelID;
   copy.append(name, detail);

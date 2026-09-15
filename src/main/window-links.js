@@ -58,14 +58,58 @@ function openLocalFileUrl(url) {
   return true;
 }
 
+/**
+ * Candidates for an address that does not parse as written, best first.
+ *
+ * A model can write a URL that runs into the following punctuation
+ * ("http://127.0.0.1:5173，88") — and before 2026-09-15 a click on it did
+ * NOTHING: the navigation was cancelled and every open path rejected the
+ * malformed string, so the user got silence. Even a wrong address should reach
+ * the browser and be allowed to 404. Percent-encoding rescues stray characters;
+ * the longest parseable prefix rescues a URL whose tail is not part of it.
+ */
+function openableCandidates(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  const seen = new Set();
+  const candidates = [];
+  const add = (value) => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    candidates.push(value);
+  };
+  add(text);
+  try {
+    // eslint-disable-next-line no-new
+    new URL(text);
+    return candidates; // it already parses; nothing to repair
+  } catch { /* fall through to the repairs */ }
+  try { add(encodeURI(text)); } catch { /* not encodable */ }
+  for (let end = text.length - 1; end > "https://".length; end -= 1) {
+    try {
+      const prefix = text.slice(0, end);
+      // eslint-disable-next-line no-new
+      new URL(prefix);
+      add(prefix);
+      break;
+    } catch { /* keep shrinking */ }
+  }
+  return candidates;
+}
+
 function openExternalUrl(url) {
-  if (isHttpOrMailto(url)) {
-    void shell.openExternal(url);
-    return true;
+  for (const candidate of openableCandidates(url)) {
+    if (isHttpOrMailto(candidate)) {
+      if (candidate !== url) console.warn("[window] opening a repaired address:", url, "->", candidate);
+      void shell.openExternal(candidate);
+      return true;
+    }
+    if (isFileUrl(candidate)) return openLocalFileUrl(candidate);
   }
-  if (isFileUrl(url)) {
-    return openLocalFileUrl(url);
-  }
+  // Nothing parsed. Hand the raw string to the OS anyway so the browser can show
+  // its own error instead of the click being swallowed in silence.
+  console.warn("[window] address could not be parsed; handing it to the OS as-is:", url);
+  try { void shell.openExternal(String(url || "")); } catch { /* the OS refused it too */ }
   return false;
 }
 
@@ -83,4 +127,4 @@ function wireExternalLinks(win) {
   });
 }
 
-module.exports = { wireExternalLinks, openExternalUrl, openLocalFileUrl };
+module.exports = { wireExternalLinks, openExternalUrl, openLocalFileUrl, openableCandidates };

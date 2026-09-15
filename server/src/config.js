@@ -65,11 +65,12 @@ export const config = {
   // models its key supports, augmenting the configured list. Off by default —
   // when off (or on failure) the configured/built-in list is used unchanged.
   modelDiscoveryEnabled: process.env.MODEL_DISCOVERY_ENABLED === "true",
-  // Character Worlds rollout policy (design spec §16/§18). Conservative
-  // default: disabled — the signed client config gates compilation/selection
-  // until ops explicitly enables the rollout. Local character data and
-  // bindings are never touched by this flag.
-  characterWorldsEnabled: process.env.CHARACTER_WORLDS_ENABLED === "true",
+  // Character Worlds rollout policy (design spec §16/§18). Default flipped to
+  // ENABLED on 2026-09-14: 智能体 (agents) use roles as their voice layer, so
+  // the role system must be on for the agent library to work. Set
+  // CHARACTER_WORLDS_ENABLED=false to switch the rollout off. Local character
+  // data and bindings are never touched by this flag.
+  characterWorldsEnabled: process.env.CHARACTER_WORLDS_ENABLED !== "false",
   characterWorldsCompatibilityProfile: process.env.CHARACTER_WORLDS_COMPATIBILITY_PROFILE || "lily-character-compat-1",
   characterWorldsMinimumClientVersion: process.env.CHARACTER_WORLDS_MINIMUM_CLIENT_VERSION || "0.1.145",
   // Collaboration Center is opt-in and separately keyed. The policy block is

@@ -10,6 +10,7 @@ const importSelection = require("./workspace-import-selection");
 const { safeJoin } = require("./workspace-import-paths");
 const taskPortability = require("./scheduled-task-portability");
 const portability = require("./character-worlds/workspace-portability");
+const agentPortability = require("./agents/workspace-portability");
 
 /**
  * Workspace capability packs (.lilyspace.zip): export a workspace as a
@@ -377,7 +378,7 @@ function previewExport(rootPath) {
  * @param {string} opts.exportedAt ISO timestamp; [opts.characterWorlds] packed character-worlds.json section
  * @returns {Promise<Buffer>} zip bytes
  */
-async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, automationTemplates, exportedAt, characterWorlds }) {
+async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, automationTemplates, exportedAt, characterWorlds, agents }) {
   if (!rootPath || !fs.existsSync(rootPath)) throw new Error("WORKSPACE_NOT_FOUND");
   const zip = new JSZip();
   const exportPlan = collectShareableFiles(rootPath);
@@ -446,6 +447,7 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     zip.file(`${FILES_PREFIX}${file.relPath}`, content);
   }
   portability.writePackEntry(zip, characterWorlds);
+  agentPortability.writePackEntry(zip, agents);
   if (conv) {
     if (addLegacyMirror) zip.file(PACK_CONVENTIONS_ENTRY, conv);
     zip.file(CONVENTIONS_ENTRY, conv);
@@ -581,7 +583,11 @@ async function importWorkspacePack(zipBuffer, targetDir, options = {}) {
   if (convEntry) conventions = await convEntry.async("string");
   const workspaceSkills = await importWorkspaceSkills(zip, manifest, targetDir);
   const automations = await taskPortability.readAutomationEntry(zip.file(AUTOMATIONS_ENTRY));
-  return { manifest, conventions, workspaceSkills, ...automations, characterWorlds: await portability.readPackEntry(zip) };
+  return {
+    manifest, conventions, workspaceSkills, ...automations,
+    characterWorlds: await portability.readPackEntry(zip),
+    agents: await agentPortability.readPackEntry(zip),
+  };
 }
 
 module.exports = {

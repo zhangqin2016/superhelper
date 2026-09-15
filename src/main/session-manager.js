@@ -13,7 +13,6 @@ const {
   legacySessionsBackupPath,
   sessionsConfigPath,
   sessionsIndexPath,
-  deletedSessionsPath,
   messageDbPath,
   blobStoreDir,
 } = require("./config");
@@ -75,43 +74,6 @@ function mergeInlineMessages(currentMessages, legacyMessages) {
     counts.set(key, (counts.get(key) || 0) + 1);
   }
   return merged;
-}
-
-function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function writeJson(filePath, value) {
-  try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
-  } catch (err) {
-    console.warn("[sessions] failed to write", filePath, err?.message || err);
-  }
-}
-
-function markDeletedSession(session) {
-  if (!session?.id) return;
-  const filePath = deletedSessionsPath();
-  const existing = readJson(filePath);
-  const sessions = existing?.sessions && typeof existing.sessions === "object" && !Array.isArray(existing.sessions)
-    ? existing.sessions
-    : {};
-  sessions[session.id] = {
-    id: session.id,
-    projectId: session.projectId || null,
-    title: session.title || null,
-    deletedAt: new Date().toISOString(),
-  };
-  writeJson(filePath, {
-    schemaVersion: 1,
-    updatedAt: new Date().toISOString(),
-    sessions,
-  });
 }
 
 class SessionManager {
@@ -902,8 +864,12 @@ class SessionManager {
       skillCustomized: s.enabledSkillIds != null && Array.isArray(s.enabledSkillIds),
       permissionModeId: normalizeSessionPermissionMode(s.permissionModeId) || null,
       permissionCustomized: Boolean(normalizeSessionPermissionMode(s.permissionModeId)),
+      ...require("./session-agent-binding").sessionAgentProjection(s),
     }));
   }
+
+  /** 智能体 display mirror (truth lives in messages.db); see session-agent-binding.js. */
+  setAgentBinding(sessionId, mirror) { return require("./session-agent-binding").setSessionAgentBinding(this, sessionId, mirror); }
 
   iterateSessions() {
     const all = [];
@@ -993,7 +959,7 @@ class SessionManager {
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = list[Math.max(0, idx - 1)].id;
     }
-    markDeletedSession(session);
+    require("./session-deleted-index").markDeletedSession(session);
     this._deleteMessageFile(sessionId);
     this._deleteSummaryFile(sessionId);
     this._deleteOpencodeSession(sessionId);

@@ -44,7 +44,7 @@ try {
   await transform({ sessionID }, { messages });
   const historicalContent = messages[0].parts[0].state.input.content;
   assert.doesNotMatch(historicalContent, /old paragraph the user removed/, "stale historical file body is removed before the model call");
-  assert.match(historicalContent, /historical snapshot.*read the current file/i, "sanitized history explains how to recover current content");
+  assert.match(historicalContent, /omitted from history.*read the current file/i, "sanitized history explains how to recover current content");
 
   await assert.rejects(
     before(
@@ -142,6 +142,41 @@ try {
     { args: { filePath: unchangedPath, content: "allowed while disabled" } },
   );
   delete process.env.LILY_LIVE_FILE_GUARD;
+
+  // 2026-09-14 field case: the engine hands the transform its LIVE message
+  // objects; a pending (not yet executed) write must never be touched, and a
+  // completed one must be sanitized on a COPY so the engine's stored history
+  // and the original objects stay intact.
+  const livePath = path.join(dir, "live.js");
+  fs.writeFileSync(livePath, "export const v = 2;\n");
+  const pendingPart = {
+    type: "tool", tool: "write", callID: "write-pending",
+    state: { status: "pending", input: { filePath: livePath, content: "export const v = 3;\n" } },
+  };
+  const completedPart = {
+    type: "tool", tool: "write", callID: "write-old",
+    state: { status: "completed", input: { filePath: livePath, content: "export const v = 1;\n" }, output: "wrote" },
+  };
+  const originalCompletedInput = completedPart.state.input;
+  const liveMessage = { info: { role: "assistant", sessionID: "session-live-objects" }, parts: [completedPart, pendingPart] };
+  const liveMessages = [liveMessage];
+  await transform({ sessionID: "session-live-objects" }, { messages: liveMessages });
+  assert.equal(pendingPart.state.input.content, "export const v = 3;\n", "a pending write keeps its real body (it has not executed yet)");
+  assert.equal(originalCompletedInput.content, "export const v = 1;\n", "the original completed part object is never mutated in place");
+  assert.equal(liveMessage.parts[0], completedPart, "the original message object is left untouched");
+  assert.notEqual(liveMessages[0], liveMessage, "the model-bound list receives a sanitized COPY of the message");
+  assert.match(liveMessages[0].parts[0].state.input.content, /^\[lily: this earlier tool call succeeded/, "sanitized history says the call succeeded and forbids copying the marker");
+  assert.equal(liveMessages[0].parts[1].state.input.content, "export const v = 3;\n", "the pending part is carried over unchanged in the copy");
+
+  // Backstop: the marker itself can never become file content.
+  await assert.rejects(
+    before(
+      { tool: "write", sessionID: "session-live-objects" },
+      { args: { filePath: path.join(dir, "brand-new.js"), content: "[lily: historical snapshot omitted because x has a live filesystem version; read the current file before editing]" } },
+    ),
+    /LILY_LIVE_FILE_MARKER_REJECTED/,
+    "writing the history placeholder to disk is refused even for a new file",
+  );
 
   const runnerPool = fs.readFileSync(new URL("../src/main/session-runner-pool.js", import.meta.url), "utf8");
   assert.match(runnerPool, /live-file-history-guard\.js/, "the production runner loads the live-file guard");

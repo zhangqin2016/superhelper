@@ -297,6 +297,54 @@ function createTaskLifecycleStoreMethods() {
       ));
     },
 
+    /**
+     * Cross-session "what did not finish" view for the task center. A row
+     * counts as unfinished while it sits in a non-success status and no later
+     * turn has claimed it (metadata.resumedByTurnId). Joined with the original
+     * user text so the user recognizes the task without opening the chat.
+     */
+    /**
+     * Tasks the user has NOT moved past: only the LATEST turn of a conversation
+     * counts (a later message means the user already continued or redirected),
+     * a completed-but-unverified answer is not unfinished, a turn the user
+     * interrupted was their decision, and anything older than maxAgeMs is
+     * history. Field check 2026-09-15: without these rules 20 rows showed, 14 of
+     * them finished answers and every failure had later turns; with them, 1.
+     */
+    listUnfinishedTaskLifecycles(ownerScope, { limit = 50, maxAgeMs = 48 * 60 * 60 * 1000, now = Date.now() } = {}) {
+      if (!ownerScope) return [];
+      const statuses = ["outcome_unknown", "failed", "blocked", "waiting_user"];
+      return this.db.all(
+        `SELECT l.*, t.user_text AS user_text, t.created_at AS turn_created_at, t.terminal_type AS turn_terminal_type
+         FROM task_lifecycles l
+         LEFT JOIN turn_inputs t ON t.session_id = l.session_id AND t.turn_id = l.turn_id
+         WHERE l.owner_scope = ? AND l.status IN (${statuses.map(() => "?").join(",")})
+           AND l.metadata_json NOT LIKE '%"resumedByTurnId"%'
+           AND COALESCE(t.terminal_type, '') <> 'turn.interrupted'
+           AND l.updated_at >= ?
+           AND NOT EXISTS (SELECT 1 FROM turn_inputs n WHERE n.session_id = l.session_id AND n.created_at > COALESCE(t.created_at, l.created_at))
+         ORDER BY l.updated_at DESC LIMIT ?`,
+        ownerScope, ...statuses, Math.max(0, now - Math.max(0, Number(maxAgeMs) || 0)), Math.max(1, Math.min(Number(limit) || 50, 200)),
+      ).map((row) => ({
+        ...hydrate(row),
+        userText: String(row.user_text || ""),
+        turnCreatedAt: Number(row.turn_created_at || 0),
+        turnTerminalType: String(row.turn_terminal_type || ""),
+      }));
+    },
+
+    /** Merge fields into a lifecycle row's metadata without a status change. */
+    annotateTaskLifecycle({ sessionId, ownerScope, turnId, metadata } = {}) {
+      if (!sessionId || !ownerScope || !turnId || !metadata || typeof metadata !== "object") return { ok: false, reason: "INVALID_TASK_LIFECYCLE" };
+      const existing = this.db.get(`SELECT * FROM task_lifecycles WHERE session_id=? AND owner_scope=? AND turn_id=?`, sessionId, ownerScope, turnId);
+      if (!existing) return { ok: false, reason: "TASK_LIFECYCLE_NOT_FOUND" };
+      const merged = { ...parseJson(existing.metadata_json), ...metadata };
+      const json = JSON.stringify(merged);
+      if (Buffer.byteLength(json, "utf8") > MAX_JSON_BYTES) return { ok: false, reason: "TASK_LIFECYCLE_METADATA_TOO_LARGE" };
+      this.db.run(`UPDATE task_lifecycles SET metadata_json=?, updated_at=? WHERE session_id=? AND owner_scope=? AND turn_id=?`, json, Date.now(), sessionId, ownerScope, turnId);
+      return { ok: true, lifecycle: hydrate(this.db.get(`SELECT * FROM task_lifecycles WHERE session_id=? AND owner_scope=? AND turn_id=?`, sessionId, ownerScope, turnId)) };
+    },
+
     listTaskLifecycles(sessionId, ownerScope, { limit = 100, activeOnly = false } = {}) {
       if (!sessionId || !ownerScope) return [];
       const statuses = activeOnly ? [...TERMINAL_STATUSES] : [];

@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getAppPolicy: () => ipcRenderer.invoke("app:get-policy"),
   getLocale: () => ipcRenderer.invoke("app:get-locale"),
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
+  // Mirrors the renderer's theme choice so the next window paints the matching
+  // colour before any renderer runs (otherwise it flashes the other theme).
+  setThemeMode: (mode) => ipcRenderer.invoke("app:set-theme-mode", mode),
   sendRendererHeartbeat: (payload) => ipcRenderer.send("app:renderer-heartbeat", payload || {}),
   getWatchdogSnapshot: () => ipcRenderer.invoke("app:watchdog-snapshot"),
   sendMessage: (text, files, sessionId, displayFiles, options = null) =>
@@ -188,6 +191,34 @@ contextBridge.exposeInMainWorld("assistantClient", {
   setSessionPermission: (sessionId, modeId) =>
     ipcRenderer.invoke("session:set-permission", { sessionId, modeId }),
 
+  // Unfinished tasks (task center): list across conversations + one-click resume.
+  tasks: Object.freeze({
+    listUnfinished: (options = {}) => ipcRenderer.invoke("tasks:list-unfinished", { limit: Number.isInteger(options?.limit) ? options.limit : undefined }),
+    resume: (payload = {}) => ipcRenderer.invoke("tasks:resume", { sessionId: payload?.sessionId, turnId: payload?.turnId }),
+  }),
+
+  // 智能体 (agents): same narrow-facade discipline as Character Worlds —
+  // payloads are whitelisted field-by-field, owner scope is derived main-side.
+  agents: Object.freeze({
+    list: (options = {}) => ipcRenderer.invoke("agents:list", { includeArchived: options?.includeArchived === true }),
+    get: (agentId) => ipcRenderer.invoke("agents:get", { agentId }),
+    create: (definition) => ipcRenderer.invoke("agents:create", { definition }),
+    revise: (payload = {}) => ipcRenderer.invoke("agents:revise", {
+      agentId: payload?.agentId, expectedBaseRevisionId: payload?.expectedBaseRevisionId, definition: payload?.definition,
+    }),
+    archive: (agentId, action = "archive") => ipcRenderer.invoke("agents:archive", { agentId, action }),
+    installOfficial: (officialId) => ipcRenderer.invoke("agents:install-official", { officialId }),
+    getSession: (sessionId) => ipcRenderer.invoke("agents:get-session", { sessionId }),
+    activate: (payload = {}) => ipcRenderer.invoke("agents:activate", {
+      sessionId: payload?.sessionId, agentId: payload?.agentId, officialId: payload?.officialId,
+      expectedBindingVersion: payload?.expectedBindingVersion,
+    }),
+    deactivate: (sessionId, expectedBindingVersion) => ipcRenderer.invoke("agents:deactivate", { sessionId, expectedBindingVersion }),
+    knowledgePacks: () => ipcRenderer.invoke("agents:knowledge-packs", {}),
+    exportAgent: (agentId) => ipcRenderer.invoke("agents:export", { agentId }),
+    importAgent: () => ipcRenderer.invoke("agents:import", {}),
+  }),
+
   // Character Worlds: narrow facade — payloads are whitelisted field-by-field
   // so owner scope, account IDs, and filesystem paths can never ride along
   // (design spec §15). Owner is derived in the main process on every call.
@@ -335,7 +366,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   },
   stageFile: (filePath, fileName) => ipcRenderer.invoke("files:stage", filePath, fileName),
   pasteFile: (buffer, fileName) => ipcRenderer.invoke("files:paste", buffer, fileName),
-  pasteClipboardFiles: () => ipcRenderer.invoke("files:paste-clipboard"),
+  pasteClipboardFiles: (options = {}) => ipcRenderer.invoke("files:paste-clipboard", {
+    includePlainText: options?.includePlainText !== false,
+  }),
   pasteImage: (buffer, fileName) => ipcRenderer.invoke("files:paste", buffer, fileName),
   getFileThumbnail: (fileId) => ipcRenderer.invoke("files:thumbnail", fileId),
   getImageDimensions: (fileId) => ipcRenderer.invoke("files:dimensions", fileId),

@@ -59,7 +59,7 @@ function lastAssistantCompletion(messages = []) {
   return { known: false, incomplete: false, terminal: "" };
 }
 
-function buildShortFollowupContext({ userText = "", messages = [], summary = null } = {}) {
+function buildShortFollowupContext({ userText = "", messages = [], summary = null, recovery = null } = {}) {
   if (!isTerseFollowup(userText)) return "";
   const recentMessages = Array.isArray(messages) ? messages.slice(-8) : [];
   const recent = formatRecentMessages(recentMessages);
@@ -88,6 +88,12 @@ function buildShortFollowupContext({ userText = "", messages = [], summary = nul
     "The user's last substantive request and explicit corrections outrank any topic or subsystem invented by a previous assistant answer.",
     "Do not continue a substituted neighboring subsystem unless the user's own words or workspace evidence prove it belongs to the requested scope.",
   );
+  if (status.known && status.incomplete && recovery) {
+    const unfinished = Array.isArray(recovery.continuationHandoff?.unfinished) ? recovery.continuationHandoff.unfinished.slice(0, 16) : [];
+    if (unfinished.length) parts.push("", "Unfinished items recorded when the previous turn stopped:", ...unfinished.map((item) => `- ${trimText(item?.title, 180)}`));
+    const workState = require("./turn-work-state").renderWorkState(recovery.workState);
+    if (workState.length) parts.push("", ...workState);
+  }
   if (summaryText) parts.push("", "Session summary:", summaryText);
   if (recent) parts.push("", "Recent visible conversation:", recent);
   parts.push("", `Current short follow-up: ${trimText(userText, 200)}`, "[End short follow-up continuity]");
@@ -95,8 +101,8 @@ function buildShortFollowupContext({ userText = "", messages = [], summary = nul
   return text.length <= MAX_CONTEXT_CHARS ? text : `${text.slice(0, MAX_CONTEXT_CHARS - 1)}…`;
 }
 
-function withShortFollowupContext({ userText = "", engineText = "", messages = [], summary = null } = {}) {
-  const context = buildShortFollowupContext({ userText, messages, summary });
+function withShortFollowupContext({ userText = "", engineText = "", messages = [], summary = null, recovery = null } = {}) {
+  const context = buildShortFollowupContext({ userText, messages, summary, recovery });
   if (!context) return { text: engineText || userText, applied: false };
   const { addLayersToEngineText } = require("./engine-message-layers");
   return {

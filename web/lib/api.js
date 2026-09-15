@@ -37,6 +37,20 @@ export async function apiPost(path, body) {
   return json;
 }
 
+// Non-throwing POST: returns { ok, status, json } so callers can surface the
+// server's structured validation body (code / field / issues) instead of a
+// flattened message. Additive — apiPost keeps its throwing contract.
+export async function apiPostResult(path, body) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: await adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+  const json = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, json };
+}
+
 export async function apiPostForm(path, formData) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",

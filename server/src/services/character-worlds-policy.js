@@ -1,5 +1,6 @@
-// Character Worlds rollout policy (design spec §16/§18). Conservative default:
-// DISABLED. The block rides inside the existing signed client-config payload —
+// Character Worlds rollout policy (design spec §16/§18). Default ENABLED since
+// 2026-09-14 (agents need the role layer); CHARACTER_WORLDS_ENABLED=false turns
+// it off. The block rides inside the existing signed client-config payload —
 // there are deliberately NO character CRUD endpoints, no private content
 // upload, no card analytics, and no server-side user libraries. The client
 // treats an absent/invalid/stale policy as disabled and validates the profile
@@ -7,7 +8,7 @@
 // turn the feature OFF, never weaken the local hard limits.
 
 export const CHARACTER_WORLDS_DEFAULT_POLICY = Object.freeze({
-  enabled: false,
+  enabled: true,
   compatibilityProfile: "lily-character-compat-1",
   minimumClientVersion: "0.1.145",
 });
@@ -22,7 +23,7 @@ export function resolveCharacterWorldsPolicy(serverConfig = {}) {
   const profile = String(serverConfig.characterWorldsCompatibilityProfile || "");
   const minimumClientVersion = String(serverConfig.characterWorldsMinimumClientVersion || "");
   return {
-    enabled: serverConfig.characterWorldsEnabled === true,
+    enabled: serverConfig.characterWorldsEnabled !== false,
     compatibilityProfile: CHARACTER_WORLDS_PROFILE_PATTERN.test(profile)
       ? profile
       : CHARACTER_WORLDS_DEFAULT_POLICY.compatibilityProfile,

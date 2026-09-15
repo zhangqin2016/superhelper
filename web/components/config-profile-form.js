@@ -72,6 +72,12 @@ const labels = {
     mediaVideo: "视频生成",
     mediaSpeech: "语音生成",
     mediaDefault: "默认：",
+    agentsTitle: "可用智能体",
+    agentsDesc: "为本范围勾选客户端可以使用的已发布智能体（可多选），并可指定一个默认智能体（新对话自动套用）。留空＝沿用今天的行为（注册表里的全部可用、无默认）。服务器只会下发本范围实际能收到的那些。",
+    agentsDefault: "默认智能体（单选）",
+    agentsNoDefault: "不设默认",
+    agentsEmpty: "还没有发布任何智能体。先去「智能体」页面发布一个。",
+    agentsPreview: "可用智能体",
     providerModels: "已选供应商的模型",
     providerModelsHelp: "只读预览。每个已选供应商都会下发自己的模型列表；要改模型列表或默认模型，请去「模型供应商」页面配置。",
     toolsTitle: "技能包和客户端策略",
@@ -118,6 +124,12 @@ const labels = {
     mediaVideo: "Video generation",
     mediaSpeech: "Speech generation",
     mediaDefault: "Default:",
+    agentsTitle: "Available agents",
+    agentsDesc: "Pick which published agents clients in this scope may use (multi-select) and optionally one default (applied to new conversations). Empty = today's behavior (everything in the registry, no default). The server only delivers the ones this scope can actually receive.",
+    agentsDefault: "Default agent (single choice)",
+    agentsNoDefault: "No default",
+    agentsEmpty: "No agents published yet. Publish one on the Agents page first.",
+    agentsPreview: "Available agents",
     providerModels: "Models from selected providers",
     providerModelsHelp: "Read-only preview. Every selected provider delivers its own model list. Edit model names and provider defaults under “Model providers”.",
     toolsTitle: "Skill packages and client policy",
@@ -164,6 +176,12 @@ const labels = {
     mediaVideo: "توليد الفيديو",
     mediaSpeech: "توليد الصوت",
     mediaDefault: "الافتراضي:",
+    agentsTitle: "الوكلاء المتاحون",
+    agentsDesc: "اختر الوكلاء المنشورين المسموح بهم لهذا النطاق (اختيار متعدد) ووكيلاً افتراضياً اختيارياً (يُطبق على المحادثات الجديدة). فارغ = سلوك اليوم (كل ما في السجل، بلا افتراضي). يرسل الخادم فقط ما يمكن لهذا النطاق استلامه فعلاً.",
+    agentsDefault: "الوكيل الافتراضي (اختيار واحد)",
+    agentsNoDefault: "بلا افتراضي",
+    agentsEmpty: "لم يُنشر أي وكيل بعد. انشر واحداً من صفحة الوكلاء أولاً.",
+    agentsPreview: "الوكلاء المتاحون",
     providerModels: "نماذج المزوّدين المحددين",
     providerModelsHelp: "معاينة فقط. كل مزوّد محدد يرسل قائمة نماذجه. عدّل أسماء النماذج والافتراضي من صفحة «مزوّدو النماذج».",
     toolsTitle: "حزم المهارات وسياسة العميل",
@@ -229,6 +247,8 @@ function defaultDraft(copy, templates) {
     videoDefault: "",
     speechProviders: [],
     speechDefault: "",
+    agentIds: [],
+    agentDefault: "",
     disabled: false,
   };
 }
@@ -272,6 +292,17 @@ function buildMedia(draft) {
   return { ...(image ? { image } : {}), ...(video ? { video } : {}), ...(speech ? { speech } : {}) };
 }
 
+// Build the per-scope agent selection (`config.agents = { available, default? }`), or null
+// when nothing is selected (→ omitted from config → old behavior). The server intersects
+// `available` with what this scope can actually receive (resolveAgentSelection) and drops
+// a default that is not in the intersection, so listing ids here is always safe.
+function buildAgents(draft) {
+  const available = [...new Set((Array.isArray(draft.agentIds) ? draft.agentIds : []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!available.length) return null;
+  const def = String(draft.agentDefault || "").trim();
+  return available.includes(def) ? { available, default: def } : { available };
+}
+
 function deliveryProviderIds(draft, template) {
   const menu = Array.isArray(draft.menuProviders) ? draft.menuProviders.filter(Boolean) : [];
   const defaultProvider = draft.selectedTemplateId || template.provider || template.id || "";
@@ -295,6 +326,8 @@ function buildConfig(draft, template) {
   };
   const media = buildMedia(draft);
   const mediaPart = media ? { media } : {};
+  const agents = buildAgents(draft);
+  const agentsPart = agents ? { agents } : {};
 
   // Delivery rules record only a provider directive. The server expands it into
   // a signed gateway model menu at client-config time, so profiles never carry
@@ -318,6 +351,7 @@ function buildConfig(draft, template) {
     policy,
     runtime,
     ...mediaPart,
+    ...agentsPart,
   };
 }
 
@@ -338,7 +372,7 @@ function ConfigField({ label, children, help }) {
   );
 }
 
-export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) {
+export function ConfigProfileForm({ providers = [], skillPackageOptions = [], agentPackageOptions = [] }) {
   const [state, action, pending] = useActionState(createConfigProfileAction, initialState);
   const { locale, t } = useI18n();
   const adminCopy = t.admin.configProfiles;
@@ -427,6 +461,18 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
   function setMediaDefault(modality, id) {
     const { defaultKey } = mediaDraftKeys(modality);
     setDraft((current) => ({ ...current, [defaultKey]: id }));
+  }
+
+  // Agents: the multi-select owns `available`; the default radio is kept valid
+  // (cleared when its agent is deselected). buildAgents turns this into config.agents.
+  function setAgentIds(ids) {
+    setDraft((current) => {
+      const list = [...new Set((ids || []).filter(Boolean))];
+      return { ...current, agentIds: list, agentDefault: list.includes(current.agentDefault) ? current.agentDefault : "" };
+    });
+  }
+  function setAgentDefault(id) {
+    setDraft((current) => ({ ...current, agentDefault: id }));
   }
 
   return (
@@ -652,6 +698,36 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
             })}
           </div>
 
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-slate-950">{copy.agentsTitle}</h3>
+              <p className="mt-1 text-sm text-slate-500">{copy.agentsDesc}</p>
+            </div>
+            <MultiSelectField
+              options={agentPackageOptions}
+              value={draft.agentIds || []}
+              onChange={setAgentIds}
+              emptyHint={copy.agentsEmpty}
+            />
+            {(draft.agentIds || []).length > 0 ? (
+              <fieldset className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <legend className="px-1 text-sm font-semibold text-slate-800">{copy.agentsDefault}</legend>
+                <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-700">
+                  <label className="flex items-center gap-2">
+                    <input type="radio" name="agentDefaultPick" value="" checked={!draft.agentDefault} onChange={() => setAgentDefault("")} />
+                    <span>{copy.agentsNoDefault}</span>
+                  </label>
+                  {(draft.agentIds || []).map((id) => (
+                    <label key={id} className="flex items-center gap-2">
+                      <input type="radio" name="agentDefaultPick" value={id} checked={draft.agentDefault === id} onChange={() => setAgentDefault(id)} />
+                      <span>{agentPackageOptions.find((option) => option.id === id)?.label || id}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
+          </div>
+
           <details className="group rounded-2xl border border-slate-200 p-4">
             <summary className="cursor-pointer list-none">
               <span className="text-lg font-semibold text-slate-950">{t.admin.configAdvanced.title}</span>
@@ -736,6 +812,13 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
                 <dt className="text-slate-400">{copy.permissionMode}</dt>
                 <dd className="mt-1 font-mono text-xs">{draft.permissionMode}</dd>
               </div>
+              {(draft.agentIds || []).length > 0 ? (
+                <div className="rounded-xl bg-white/5 p-3">
+                  <dt className="text-slate-400">{copy.agentsPreview}</dt>
+                  <dd className="mt-1 break-all font-mono text-xs">{(draft.agentIds || []).join(" · ")}</dd>
+                  {draft.agentDefault ? <dd className="mt-1 text-xs text-slate-400">{copy.agentsDefault}: <span className="font-mono">{draft.agentDefault}</span></dd> : null}
+                </div>
+              ) : null}
             </dl>
 
             <details className="mt-5 rounded-xl border border-white/10 bg-black/20 p-3">

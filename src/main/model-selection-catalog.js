@@ -97,8 +97,11 @@ function catalogState() {
 
 function listModelSelectionPublic(sessionId = "") {
   const { models, activeId, fallbackModelId, aliases, status } = catalogState();
+  // Silent-model marks (first-response watchdog) ride along as information.
+  let annotated = models;
+  try { annotated = require("./model-availability").annotateModelOptions(models); } catch { annotated = models; }
   return {
-    models, catalogStatus: status, selection: normalizeSelection(migrateSelection(readStoredSelection(sessionId), aliases), models, activeId),
+    models: annotated, catalogStatus: status, selection: normalizeSelection(migrateSelection(readStoredSelection(sessionId), aliases), models, activeId),
     recommendedModelIds: models.map(model => model.id), fallbackModelId,
   };
 }
@@ -161,4 +164,31 @@ function matchesLegacyModelReceipt(receipt, model) {
   } catch { return false; }
 }
 
-module.exports = { listModelSelectionPublic, setModelSelectionPreference, resolveTurnModel, listRuntimeModelIds, matchesLegacyModelReceipt };
+/** The raw per-session override, or null when the session inherits the default. */
+function getSessionModelSelection(sessionId = "") {
+  const stored = readStore();
+  if (stored?.schemaVersion !== 1 || !sessionId) return null;
+  return Object.hasOwn(stored.sessions || {}, sessionId) ? stored.sessions[sessionId] : null;
+}
+
+/** Drop a per-session override so the session inherits the default again. */
+function clearSessionModelSelection(sessionId = "") {
+  const stored = readStore();
+  if (stored?.schemaVersion !== 1 || !sessionId || !Object.hasOwn(stored.sessions || {}, sessionId)) return false;
+  const sessions = { ...stored.sessions };
+  delete sessions[sessionId];
+  const file = userDataPath("model-selection.json");
+  const temp = `${file}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temp, JSON.stringify({ ...stored, sessions }, null, 2), { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(temp, file);
+  } finally {
+    try { fs.unlinkSync(temp); } catch { /* rename consumed the temporary file */ }
+  }
+  return true;
+}
+
+module.exports = {
+  listModelSelectionPublic, setModelSelectionPreference, resolveTurnModel, listRuntimeModelIds, matchesLegacyModelReceipt,
+  getSessionModelSelection, clearSessionModelSelection,
+};

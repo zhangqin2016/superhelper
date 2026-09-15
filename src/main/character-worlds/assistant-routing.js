@@ -6,15 +6,17 @@ const {
 } = require("../web-system-learning-intent");
 const { buildCharacterAuthoringEngineText, inferCharacterAuthoringIntent } = require("./authoring-intent");
 
+const LIBRARY_KINDS = ["character", "persona", "worldBook", "agent"];
+
 function resolveEngineRouting(text, files, explicitKind, adjustment = null) {
-  const allowedKind = ["character", "persona", "worldBook"].includes(explicitKind) ? explicitKind : null;
+  const allowedKind = LIBRARY_KINDS.includes(explicitKind) ? explicitKind : null;
   const characterAuthoring = adjustment?.active
     ? adjustment
     : allowedKind ? { active: true, kind: allowedKind } : inferCharacterAuthoringIntent(text);
   if (characterAuthoring.active) {
     return {
       engineText: buildCharacterAuthoringEngineText(text, characterAuthoring),
-      requiredSuccessfulTools: ["lily_character_draft"],
+      requiredSuccessfulTools: [characterAuthoring.kind === "agent" ? "lily_agent_draft" : "lily_character_draft"],
       webLearningIntent: false,
     };
   }
@@ -27,7 +29,17 @@ function resolveEngineRouting(text, files, explicitKind, adjustment = null) {
 }
 
 async function ensureRoutingAvailable(ctx, routing) {
-  if (!routing?.requiredSuccessfulTools?.includes("lily_character_draft")) return { ok: true };
+  const required = routing?.requiredSuccessfulTools || [];
+  if (required.includes("lily_agent_draft")) {
+    // Agents need no remote policy — only the local kill switch. A role card
+    // inside the draft additionally needs Character Worlds, which the tool
+    // reports per call (CHARACTER_WORLDS_UNAVAILABLE + repair hint).
+    const { agentsEnabled } = require("../agents/constants");
+    return agentsEnabled()
+      ? { ok: true }
+      : { ok: false, error: "AGENTS_UNAVAILABLE", detail: "智能体功能已被本机开关关闭（LILY_AGENTS=0），无法创建智能体。" };
+  }
+  if (!required.includes("lily_character_draft")) return { ok: true };
   const { ensureCharacterAuthoringAvailable } = require("./authoring-availability");
   const { characterWorldsPolicyFor } = require("../ipc-character-guards");
   const availability = await ensureCharacterAuthoringAvailable({

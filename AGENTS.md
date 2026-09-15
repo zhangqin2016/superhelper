@@ -61,6 +61,7 @@ Bias toward caution over speed on non-trivial work.
 | `deploy/baota/` | Production deploy (docker-compose + scripts). See `memory/server-deploy-flow.md`. | ✅ source |
 | `docs/` | Design docs / plans / PRDs. Background, not always current — trust code + `memory/` over docs on conflicts. | 🔶 reference |
 | `memory/` | Curated project knowledge for agents (the "why"). Start at `MEMORY.md`. | ✅ read |
+| `monthly-reports/` | Monthly project reports (Chinese). One `YYYY-MM.md` per month, generated at month end with `npm run report:monthly`. See its `README.md`. | ✅ read |
 | `fixtures/` | Test fixtures (e.g. `fixtures/office/` sample docs). | ✅ source |
 | `bundles/` | **3.9 GB** generated Python+LibreOffice runtime per platform. Built by `scripts/build-runtime-bundle.mjs`. | ⛔ generated — don't read |
 | `dist/`, `release/`, `release-keys/`, `generated-assets/`, `node_modules/`, `.lily-work/`, `.cache/` | Build output / deps / keys / scratch. `dist/` alone is ~75 GB. | ⛔ don't read |

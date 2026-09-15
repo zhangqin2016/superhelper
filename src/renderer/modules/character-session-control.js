@@ -23,10 +23,12 @@ import { monogram, renderCharacterImportPreview } from "./character-import-previ
 import { createCharacterImportOpener } from "./character-import-opener.js";
 import { createSceneSectionController } from "./character-scene-section.js";
 import { openCharacterLibrary } from "./character-library.js";
-import { appendCharacterOptionCopy, createOfficialCharacterLoader, installOfficialCharacter } from "./official-character-picker.js";
+import { createOfficialCharacterLoader, installOfficialCharacter } from "./official-character-picker.js";
+import { createRoleListRenderer } from "./character-role-list-view.js";
 import { createCharacterPreviewController } from "./character-preview-controller.js";
 import { bindCharacterPopoverPosition, positionCharacterPopover } from "./character-popover-position.js";
 import { getRuntimeSession, subscribeRuntime } from "./session-runtime-store.js";
+import { wireAgentSessionSection } from "./character-session-agent-wiring.js";
 export {
   initialCharacterControlState,
   reduceCharacterControl,
@@ -41,8 +43,6 @@ export function getCharacterControlState() {
 }
 /** Test hook: drive the controller's reducer directly (node tests). */
 export const dispatchCharacterControl = (action) => dispatch(action);
-const USER_ROUND_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>';
-const MAX_LISTED_CHARACTERS = 8;
 
 const facade = () => window.assistantClient?.characterWorlds || null;
 const btn = () => $("sessionRoleBanner");
@@ -111,94 +111,9 @@ function openPopover() {
   positionCharacterPopover({ panel: p, trigger: b });
   void loadCharacters();
   // Refresh binding + update hint on open (library edits show up).
-  if (controlState.sessionId) void loadBinding(controlState.sessionId);
+  if (controlState.sessionId) { void loadBinding(controlState.sessionId); void agentSection.load(controlState.sessionId); }
   renderPopover();
   focusableItems()[0]?.focus();
-}
-
-function optionRow({ mode, character, checked }) {
-  const row = el("button", "character-option", {
-    type: "button",
-    role: "menuitemradio",
-    "aria-checked": checked ? "true" : "false",
-  });
-  if (mode === "native") {
-    row.dataset.characterMode = "native";
-    row.appendChild(el("span", "character-option-icon", { innerHTML: USER_ROUND_SVG }));
-    row.appendChild(el("span", "character-option-name", { textContent: t("character.nativeOption") }));
-  } else {
-    if (character.officialId) row.dataset.characterOfficialId = character.officialId;
-    if (character.currentRevisionId) row.dataset.characterRevisionId = character.currentRevisionId;
-    const swatch = el("span", "character-option-swatch", { textContent: monogram(character.displayName) });
-    swatch.setAttribute("aria-hidden", "true");
-    row.appendChild(swatch);
-    const name = character.displayName || t("character.unnamed");
-    appendCharacterOptionCopy(row, character, name, el);
-    if (character.official) {
-      row.appendChild(el("span", "character-option-official", { textContent: t("character.officialBadge") }));
-    }
-  }
-  row.appendChild(el("span", "character-option-check", { textContent: "✓" }));
-  return row;
-}
-
-function renderList() {
-  const list = $("characterList");
-  if (!list) return;
-  // Remember the focused row's key so focus survives the re-render.
-  const active = document.activeElement;
-  const focusKey = active && list.contains(active)
-    ? active.dataset?.characterMode
-      ? `mode:${active.dataset.characterMode}`
-      : active.dataset?.characterRevisionId
-        ? `rev:${active.dataset.characterRevisionId}`
-        : active.dataset?.characterOfficialId
-          ? `official:${active.dataset.characterOfficialId}`
-        : null
-    : null;
-  list.textContent = "";
-  const isCharacter = effectiveCharacterMode(controlState) === "character" && controlState.characterRevisionId;
-  list.appendChild(optionRow({ mode: "native", checked: !isCharacter }));
-  const official = controlState.characters.filter((character) => character.official);
-  const characters = controlState.characters.filter((character) => !character.official).slice(0, MAX_LISTED_CHARACTERS);
-  if (official.length) {
-    const groups = new Map();
-    for (const character of official) {
-      const groupId = character.categoryId || "uncategorized";
-      if (!groups.has(groupId)) groups.set(groupId, []);
-      groups.get(groupId).push(character);
-    }
-    for (const [groupId, groupCharacters] of groups) {
-      const categoryKey = `character.library.category.${groupId}`;
-      const categoryLabel = t(categoryKey) === categoryKey ? t("character.officialHeading") : t(categoryKey);
-      list.appendChild(el("div", "character-list-heading", { textContent: categoryLabel }));
-      for (const character of groupCharacters) {
-        list.appendChild(optionRow({
-          character,
-          checked: controlState.characterRevisionId === character.currentRevisionId,
-        }));
-      }
-    }
-  }
-  if (!characters.length) {
-    if (!official.length) list.appendChild(el("div", "character-list-empty", { textContent: t("character.emptyLibrary") }));
-  } else {
-    list.appendChild(el("div", "character-list-heading", { textContent: t("character.recentHeading") }));
-    for (const character of characters) {
-      list.appendChild(optionRow({
-        character,
-        checked: controlState.characterRevisionId === character.currentRevisionId,
-      }));
-    }
-  }
-  if (focusKey && !list.contains(document.activeElement)) {
-    const selector = focusKey.startsWith("mode:")
-      ? `[data-character-mode="${focusKey.slice(5)}"]`
-      : focusKey.startsWith("official:")
-        ? `[data-character-official-id="${CSS.escape(focusKey.slice(9))}"]`
-        : `[data-character-revision-id="${CSS.escape(focusKey.slice(4))}"]`;
-    list.querySelector(selector)?.focus();
-  }
 }
 
 function renderNotice() {
@@ -238,7 +153,7 @@ function renderPopover() {
 
 function render() {
   renderPopover();
-  renderRoleBanner();
+  renderRoleBanner(); agentWiring.decorateBanner(); // agent label wins over the role name when bound
   previewController.render();
 }
 
@@ -319,12 +234,16 @@ async function selectMode(mode, character = null) {
     if (res?.ok) {
       dispatch({ type: "selection.settled", sessionId, seq, binding: res.binding,
         characterName: mode === "character" ? resolvedCharacter?.displayName || "" : "" });
-      announce(mode === "character"
-        ? t("character.status.selected", { name: controlState.characterName || t("character.unnamed") })
-        : t("character.status.native"));
+      const roleName = mode === "character" ? controlState.characterName || t("character.unnamed") : t("character.nativeOption");
+      // A role change can release the bound agent (main reports it): say so,
+      // re-read the agent section and let the banner drop the agent chip.
+      announce(res.agentDeactivated
+        ? t("character.agent.replacedByRole", { role: roleName, agent: res.agentDeactivated.name || "" })
+        : mode === "character" ? t("character.status.selected", { name: roleName }) : t("character.status.native"));
       closePopover();
       // Refresh the update hint + switch notices from the committed state.
       void loadBinding(sessionId);
+      if (res.agentDeactivated) void agentSection.load(sessionId);
     } else if (res?.error === "CHARACTER_BINDING_CONFLICT") {
       // Reconcile from the server's currentBinding; the popover stays open.
       dispatch({ type: "binding.conflict", sessionId, seq, currentBinding: res.currentBinding });
@@ -342,6 +261,13 @@ async function selectMode(mode, character = null) {
 const sceneSection = createSceneSectionController({ getState: () => controlState, getFacade: facade, getElement: $, t });
 const renderRoleBanner = createRoleBannerRenderer({ getState: () => controlState, getElement: $, monogram, el, t });
 const previewController = createCharacterPreviewController({ getState: () => controlState, dispatch, getFacade: facade, getElement: $, refreshBinding: loadBinding });
+
+const agentWiring = wireAgentSessionSection({
+  getState: () => controlState, getElement: $, el, t, announce, loadBinding, closePopover, renderRoleBanner, btn, popover, openLibrary: openCharacterLibrary,
+  renderRoleList: () => { if (popover() && !popover().hidden && !controlState.importPreview) renderList(); },
+}), agentSection = agentWiring.section;
+export const getAgentSessionSectionState = () => agentSection.getState(); // test/inspection hook
+const renderList = createRoleListRenderer({ getState: () => controlState, getElement: $, el, t, monogram, getActiveAgent: () => agentSection.activeAgent() });
 
 export const applyBindingUpdates = createBindingUpdateApplier({
   getState: () => controlState,
@@ -411,11 +337,12 @@ export function initCharacterSessionControl() {
     b.hidden = true;
     return;
   }
-  bindCharacterPopoverPosition({ panel: p, trigger: b });
+  bindCharacterPopoverPosition({ panel: p, trigger: b }); agentSection.bind();
   subscribeRuntime(() => {
     if (!controlState.sessionId) return;
-    const application = getRuntimeSession(controlState.sessionId).characterApplication;
-    dispatch({ type: "application.updated", sessionId: controlState.sessionId, application });
+    const runtime = getRuntimeSession(controlState.sessionId);
+    dispatch({ type: "application.updated", sessionId: controlState.sessionId, application: runtime.characterApplication });
+    agentWiring.observeRuntime(runtime);
   });
   b.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -504,11 +431,11 @@ export function initCharacterSessionControl() {
     if (sid) {
       dispatch({ type: "session.changed", sessionId: sid });
       void loadBinding(sid);
-      void previewController.load(sid);
+      void previewController.load(sid); void agentSection.load(sid);
     } else {
       // Active session went away (deleted/none): reset the control so no
       // stale character keeps showing.
-      dispatch({ type: "session.changed", sessionId: null });
+      dispatch({ type: "session.changed", sessionId: null }); void agentSection.load(null);
     }
   });
 
@@ -516,7 +443,7 @@ export function initCharacterSessionControl() {
   if (initial) {
     dispatch({ type: "session.changed", sessionId: initial });
     void loadBinding(initial);
-    void previewController.load(initial);
+    void previewController.load(initial); void agentSection.load(initial);
   }
   render();
 }

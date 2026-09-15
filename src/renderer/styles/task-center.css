@@ -171,9 +171,164 @@
   font-size: var(--text-sm);
 }
 
+/* Unfinished tasks: second block inside the panel, one row per task + resume. */
+.task-center-unfinished {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
+
+.task-center-item + .task-center-unfinished {
+  margin-top: 6px;
+}
+
+.task-center-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.task-center-section-head strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.task-center-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.task-center-empty {
+  margin: 0;
+  padding: 6px 10px 4px;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.task-center-task {
+  display: grid;
+  grid-template-areas: "status main resume";
+  grid-template-columns: minmax(68px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.task-center-task-status {
+  grid-area: status;
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.task-center-task.is-failed .task-center-task-status,
+.task-center-task.is-outcome_unknown .task-center-task-status {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.task-center-task.is-blocked .task-center-task-status,
+.task-center-task.is-waiting_user .task-center-task-status {
+  background: var(--warning-bg);
+  color: var(--warning-text-soft);
+}
+
+.task-center-task-main {
+  grid-area: main;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.task-center-task-main.is-link {
+  cursor: pointer;
+}
+
+.task-center-task-main.is-link:hover .task-center-task-text {
+  color: var(--accent);
+}
+
+.task-center-task-text,
+.task-center-task-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-center-task-text {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.task-center-task-meta {
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.task-center-task-resume {
+  grid-area: resume;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-center-task-resume:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.task-center-task-resume:disabled {
+  border-color: var(--border);
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
 @media (max-width: 760px) {
   .task-center-item {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .task-center-task {
+    grid-template-areas:
+      "status resume"
+      "main main";
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
   }
 }

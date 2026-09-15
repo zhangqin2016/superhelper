@@ -8,6 +8,7 @@ import { initScheduledTasks } from "./modules/scheduled-tasks.js";
 import { initSessionSkills, refreshSessionSkillsUi } from "./modules/session-skills.js";
 import { initCharacterSessionControl, refreshCharacterControlUi } from "./modules/character-session-control.js";
 import { initCharacterLibrary, refreshCharacterLibraryUi } from "./modules/character-library.js";
+import { initAgentStarters, refreshAgentStarters } from "./modules/agent-starters.js";
 import { initFileHandler } from "./modules/file-handler.js";
 import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
 import { wireMessageIpc, initMessageUi, syncComposerForActiveSession } from "./modules/message.js";
@@ -142,9 +143,11 @@ async function updateAboutVersion() {
   if (!el) return;
   try {
     const result = await window.assistantClient?.getAppVersion?.();
-    el.textContent = t("settings.aboutVersion", { version: result?.version || "0.1.0" });
+    el.textContent = result?.version
+      ? t("settings.aboutVersion", { version: result.version })
+      : t("settings.versionUnavailable");
   } catch {
-    el.textContent = t("settings.aboutVersion", { version: "0.1.0" });
+    el.textContent = t("settings.versionUnavailable");
   }
 }
 
@@ -186,6 +189,7 @@ function wireLocaleRefresh() {
     await refreshSessionSkillsUi();
     refreshCharacterControlUi();
     refreshCharacterLibraryUi();
+    void refreshAgentStarters();
     syncComposerForActiveSession();
     syncCustomSelects();
   });
@@ -269,6 +273,7 @@ async function init() {
   initSessionSkills();
   initCharacterSessionControl();
   initCharacterLibrary();
+  initAgentStarters();
 
   initDiffPanel();
   initFindBar();

@@ -339,6 +339,7 @@ function buildSharedBaseConfig(opts = {}) {
 }
 
 module.exports = {
+  stepBudget,
   buildOpencodeConfig,
   buildSharedBaseConfig,
   baseSharedPermission,

@@ -768,6 +768,9 @@
 .model-selection-option-copy { min-width: 0; display: grid; gap: 3px; }
 .model-selection-option-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: var(--text-sm); }
 .model-selection-option-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--text-xs); }
+/* Silent-model mark: the option stays selectable; the badge only warns. */
+.model-selection-option-badge { display: inline-block; margin-inline-start: 6px; padding: 0 6px; border: 1px solid var(--warning-border); border-radius: var(--radius-pill); background: var(--warning-bg); color: var(--warning-text-soft); font-size: var(--text-xs); font-weight: 600; line-height: 16px; vertical-align: 1px; }
+.model-selection-option.is-unavailable .model-selection-option-copy strong { color: var(--text-secondary); }
 .model-selection-empty { padding: 12px; border-radius: var(--radius-md); background: var(--bg-input); color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
 .model-selection-footnote { margin: 12px 2px 0; color: var(--text-secondary); font-size: var(--text-xs); line-height: 1.4; }
 
@@ -1584,4 +1587,11 @@ textarea:disabled { opacity: 0.5; }
   .composer-toolbar {
     flex-wrap: wrap;
   }
+}
+
+/* The send button while an attachment is being staged or a send is under way:
+   visibly busy, not silently armed for a second Enter. */
+.send-btn.is-staging:not(.is-stop) {
+  opacity: 0.6;
+  cursor: progress;
 }

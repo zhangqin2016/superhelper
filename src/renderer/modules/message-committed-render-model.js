@@ -1,3 +1,5 @@
+import { messageKey } from "./message-render-keys.js";
+
 export const COMMITTED_RENDER_CHUNK = 5;
 export const COMMITTED_INITIAL_WINDOW = 80;
 export const COMMITTED_WINDOW_THRESHOLD = 160;
@@ -165,9 +167,14 @@ export function rewindActionTarget(message = {}) {
 
 export function buildMinimapItems(runtime = {}) {
   try {
+    // A steered ("插话") message is a SECOND user message inside the same turn.
+    // Keying a rib by turnId alone made both ribs resolve to the first bubble —
+    // two questions stacked on one target, the newer one unreachable. The render
+    // key is the same discriminator the DOM article carries.
     return orderCommittedMessages(runtime?.committedMessages || [])
-      .filter((message) => message && message.role === "user")
-      .map((message) => ({ role: "user", turnId: message.turnId || "", label: message.content || "" }));
+      .map((message, index) => ({ message, key: messageKey(message, index) }))
+      .filter(({ message }) => message && message.role === "user")
+      .map(({ message, key }) => ({ role: "user", turnId: message.turnId || "", key, label: message.content || "" }));
   } catch {
     return [];
   }

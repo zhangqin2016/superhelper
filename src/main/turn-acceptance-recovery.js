@@ -36,7 +36,12 @@ function completeWithAcceptance({ ctx = {}, sessionId, state, type, payload, tas
   for (const requirement of coverage?.requirements || []) {
     if (requirement.status === "missing") unfinished.push({ title: requirement.title, status: "pending", kind: "original_requirement" });
   }
-  const handoff = unfinished.length ? { schemaVersion: 1, reason: "acceptance_gap", unfinished: unfinished.slice(0, 32) } : payload.continuationHandoff;
+  // Field data (2026-09-08): re-dispatching a COMPLETED turn on an acceptance gap
+  // replayed the original request up to 7× in 3 minutes while the model kept
+  // answering "done". Off by default; LILY_ACCEPTANCE_GAP_CONTINUATION=1 restores it.
+  // The verdict itself (coverage → lifecycle) is unaffected.
+  const acceptanceGap = process.env.LILY_ACCEPTANCE_GAP_CONTINUATION === "1" && unfinished.length;
+  const handoff = acceptanceGap ? { schemaVersion: 1, reason: "acceptance_gap", unfinished: unfinished.slice(0, 32) } : payload.continuationHandoff;
   if (!handoff) return null;
   const source = captureParentClosureSource(state, { ...payload, code: 0, continuationHandoff: handoff });
   if (!shouldRecoverParentClosure({ sessionId, ...source, allowProductiveContinuation: typeof ctx.sessionManager?.reserveTaskContinuation === "function" }).ok) return null;

@@ -19,7 +19,7 @@
 
 const zlib = require("node:zlib");
 const crypto = require("node:crypto");
-const { openDatabase } = require("./sqlite-db");
+const { openMessageDatabase } = require("./sqlite-db");
 const { BlobStore } = require("./blob-store");
 const { MIGRATIONS } = require("./schema");
 const { externalize, collectRefs } = require("./record-blobs");
@@ -163,7 +163,7 @@ class MessageStore {
    * @param {string} blobDir   directory for the content-addressed blob tree
    */
   constructor(dbPath, blobDir) {
-    this.db = openDatabase(dbPath);
+    this.db = openMessageDatabase(dbPath);
     this.db.migrate(MIGRATIONS);
     this.db.run(
       `UPDATE turn_inputs
@@ -969,10 +969,8 @@ class MessageStore {
       key, String(value),
     );
   }
-  characterWorlds() {
-    const { CharacterWorldsRepository } = require("../character-worlds/repository");
-    return this._characterWorlds ||= new CharacterWorldsRepository(this);
-  }
+  agents() { return this._agents ||= new (require("../agents/agent-repository").AgentRepository)(this); }
+  characterWorlds() { return this._characterWorlds ||= new (require("../character-worlds/repository").CharacterWorldsRepository)(this); }
   close() {
     this.db.close();
   }

@@ -9,8 +9,28 @@ import { $, el } from "./dom.js";
 import { t } from "../i18n/index.js";
 import { deriveLibraryGroups, filterLibraryItems, sortLibraryItems } from "./character-library-model.js";
 import { renderLibraryDetail } from "./character-library-detail-view.js";
+import {
+  AGENT_GROUP_LABEL_KEYS,
+  deriveAgentGroups,
+  filterAgentItems,
+  sortAgentItems,
+} from "./agent-library-model.js";
+import { renderAgentCard } from "./agent-library-view.js";
 
 const NOTICE_KEYS = {
+  agent_unavailable: "character.agent.unavailable",
+  agent_disabled: "character.agent.disabled",
+  agent_busy: "character.agent.busy",
+  agent_conflict: "character.agent.conflict",
+  agent_activated: "character.agent.activated",
+  agent_activated_degraded: "character.agent.activatedDegraded",
+  agent_removed: "character.agent.removed",
+  agent_distributed_pending: "character.agent.distributedPending",
+  agent_exported: "character.agent.exported",
+  agent_imported: "character.agent.imported",
+  agent_import_failed: "character.agent.importFailed",
+  agent_archived: "character.agent.archived",
+  agent_restored: "character.agent.restored",
   load_failed: "character.library.loadFailed",
   action_failed: "character.library.actionFailed",
   name_required: "character.library.nameRequired",
@@ -73,16 +93,21 @@ function renderToolbar(state) {
       tabBtn.classList.toggle("is-active", selected);
     }
   }
-  const onCharacters = true;
+  const onAgents = state.tab === "agents";
   const tagFilter = $("characterLibraryTagFilter");
-  if (tagFilter) tagFilter.hidden = !onCharacters;
+  if (tagFilter) tagFilter.hidden = false;
   const sourceFilter = $("characterLibrarySourceFilter");
   if (sourceFilter) {
     sourceFilter.value = state.source || "";
-    sourceFilter.hidden = false;
+    // The agents rail already splits 官方 / 企业分发 / 我的; a second
+    // official/local select would disagree with the distributed group.
+    sourceFilter.hidden = onAgents;
   }
   const importBtn = $("characterLibraryImportBtn");
-  if (importBtn) importBtn.hidden = !onCharacters;
+  if (importBtn) {
+    importBtn.hidden = false;
+    importBtn.textContent = t(onAgents ? "character.agent.import" : "character.importCard");
+  }
   const createBtn = $("characterLibraryCreateBtn");
   if (createBtn) {
     const key = "character.library.aiCreate";
@@ -90,7 +115,7 @@ function renderToolbar(state) {
   }
   const hint = $("characterLibraryFacetHint");
   if (hint) {
-    hint.textContent = t("character.library.facetHintCharacter");
+    hint.textContent = t(onAgents ? "character.library.facetHintAgent" : "character.library.facetHintCharacter");
   }
 }
 
@@ -134,6 +159,17 @@ function renderList(state) {
   if (!list) return;
   const grid = $("characterLibraryGrid") || list;
   grid.textContent = "";
+  if (state.tab === "agents") {
+    const agents = sortAgentItems(filterAgentItems(state.items.agents, {
+      query: state.query, tag: state.tag, groupId: state.groupId,
+    }));
+    if (!agents.length) {
+      grid.appendChild(el("div", "character-library-empty", { textContent: t("character.agent.emptyList") }));
+      return;
+    }
+    for (const item of agents) grid.appendChild(renderAgentCard(state, item));
+    return;
+  }
   const items = sortLibraryItems(filterLibraryItems(state.items[state.tab], {
     query: state.query,
     tag: state.tag,
@@ -219,7 +255,7 @@ function renderList(state) {
 }
 
 function groupLabel(group) {
-  const key = GROUP_LABEL_KEYS[group.id] || `character.library.category.${group.id}`;
+  const key = group.labelKeyOverride || GROUP_LABEL_KEYS[group.id] || `character.library.category.${group.id}`;
   const translated = t(key);
   return translated === key ? group.id : translated;
 }
@@ -229,7 +265,10 @@ function renderGroups(state) {
   if (!rail) return;
   rail.hidden = state.view !== "list";
   rail.textContent = "";
-  for (const group of deriveLibraryGroups(state.tab, state.items[state.tab])) {
+  const groups = state.tab === "agents"
+    ? deriveAgentGroups(state.items.agents).map((group) => ({ ...group, labelKeyOverride: AGENT_GROUP_LABEL_KEYS[group.id] }))
+    : deriveLibraryGroups(state.tab, state.items[state.tab]);
+  for (const group of groups) {
     const button = el("button", "character-library-group", {
       type: "button",
       "data-library-group": group.id,

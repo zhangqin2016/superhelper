@@ -269,6 +269,28 @@ async function importWorkspacePackagePath(ctx, payload = {}) {
       }
     }
 
+    // 智能体 section: agents land in the local library (new ids, `imported`
+    // provenance, duplicates skipped). A failure degrades the section only.
+    let agents = null;
+    if (imported.agents) {
+      try {
+        const repo = ctx.agentRepository || ctx.sessionManager?._store?.()?.agents?.();
+        const ownerScope = resolveCharacterOwnerScope();
+        if (!repo || typeof ownerScope !== "string" || !ownerScope) {
+          agents = { ok: false, error: "OWNER_SCOPE_UNAVAILABLE" };
+        } else {
+          const agentPortability = require("./agents/workspace-portability");
+          agents = agentPortability.importAgentsPack(
+            repo, ctx.characterWorldsRepository || null, ownerScope,
+            agentPortability.unpackAgentsSection(imported.agents),
+            { importedFrom: imported.manifest.name || "workspace-pack" },
+          );
+        }
+      } catch (error) {
+        agents = { ok: false, error: error?.code || error?.message || "IMPORT_FAILED" };
+      }
+    }
+
     return {
       ok: true,
       state: ctx.projectManager.getAppState(),
@@ -276,6 +298,7 @@ async function importWorkspacePackagePath(ctx, payload = {}) {
       projectName: imported.manifest.name || project.name,
       sessionId: session.id,
       characterWorlds,
+      agents,
       workspacePath: targetDir,
       missingSkills,
       restoredWorkspaceSkills,

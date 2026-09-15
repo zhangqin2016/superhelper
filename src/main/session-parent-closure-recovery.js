@@ -15,6 +15,7 @@ function reserveTaskContinuation(sessionId, input = {}) {
   return reserveBudget(this._store().db, {
     ...identity, continuationTurnId: input.continuationTurnId,
     progressKeys: input.progressKeys, now: input.now,
+    ...(input.minProgress ? { minProgress: input.minProgress } : {}),
   });
 }
 

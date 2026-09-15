@@ -68,6 +68,9 @@ function saveThemeMode(mode) {
     // Theme still applies for this runtime even if persistence is unavailable.
   }
   applyThemeMode(normalized);
+  // Tell main, so the next window (and the next launch) paints this theme's
+  // colour instead of flashing the other one before the renderer draws.
+  try { void window.assistantClient?.setThemeMode?.(normalized); } catch { /* cosmetic only */ }
   return normalized;
 }
 

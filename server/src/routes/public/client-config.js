@@ -28,6 +28,7 @@ import {
   validLicenseScope,
 } from "../../services/device-identity.js";
 import { registerDeviceSchema } from "./devices.js";
+import { listAvailableAgentIds, resolveAgentSelection } from "../../services/agent-packages.js";
 import { zodBody, okResponse } from "../../openapi.js";
 
 const clientConfigSchema = registerDeviceSchema.extend({
@@ -180,6 +181,18 @@ export function registerPublicClientConfigRoutes(app) {
       baselineEffectiveConfig,
       accountContext: { userId: account?.userId || "", organizationIds },
     });
+    // Per-scope agent selection (`config.agents = {available, default}`), resolved
+    // against the packages published for this caller (global ∪ active orgs).
+    // Additive + fail-open: a profile without `agents` costs no query and the
+    // config is untouched; a DB error leaves the config exactly as resolved.
+    if (resolved.effectiveConfig?.agents) {
+      try {
+        const availableAgentIds = await listAvailableAgentIds(db, { organizationIds });
+        resolved.effectiveConfig = resolveAgentSelection(resolved.effectiveConfig, availableAgentIds);
+      } catch (error) {
+        request.log.warn({ error }, "agent selection resolution skipped");
+      }
+    }
     const collaborationGatedConfig = applyCollaborationPolicyGate(resolved.effectiveConfig, {
       collaborationEnabled: config.collaborationEnabled,
       killSwitch: config.collaborationKillSwitch,

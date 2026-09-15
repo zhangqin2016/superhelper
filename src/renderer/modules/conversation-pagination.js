@@ -1,14 +1,32 @@
 export function conversationMessageKey(message, index = 0) {
   const id = String(message?.id || message?.engineMessageId || "").trim();
   if (id) return `id:${id}`;
-  if (message?.turnId && message?.role) return `turn:${message.role}:${message.turnId}`;
+  if (message?.turnId && message?.role) {
+    // Two user messages can share a turn (插话). Without the discriminator the
+    // second overwrote the first when an older page was merged in, so a question
+    // disappeared from the transcript and the rail.
+    if (message.steer || message.meta?.steer) {
+      const seq = message.steerSeq ?? message.meta?.steerSeq ?? String(message.content || "").replace(/\s+/g, " ").trim();
+      return `turn:${message.role}:${message.turnId}:steer:${seq}`;
+    }
+    return `turn:${message.role}:${message.turnId}`;
+  }
   return ["fallback", message?.role || "", message?.timestamp || "", message?.content || "", index].join(":");
 }
 
 function stableConversationMessageKey(message) {
   const id = String(message?.id || message?.engineMessageId || "").trim();
   if (id) return `id:${id}`;
-  if (message?.turnId && message?.role) return `turn:${message.role}:${message.turnId}`;
+  if (message?.turnId && message?.role) {
+    // Two user messages can share a turn (插话). Without the discriminator the
+    // second overwrote the first when an older page was merged in, so a question
+    // disappeared from the transcript and the rail.
+    if (message.steer || message.meta?.steer) {
+      const seq = message.steerSeq ?? message.meta?.steerSeq ?? String(message.content || "").replace(/\s+/g, " ").trim();
+      return `turn:${message.role}:${message.turnId}:steer:${seq}`;
+    }
+    return `turn:${message.role}:${message.turnId}`;
+  }
   return "";
 }
 
@@ -95,6 +113,13 @@ function findEquivalentMessageIndex(messages, message) {
   const messageTime = timestampMs(message.timestamp);
   return messages.findIndex((item) => {
     if (item?.role !== message.role) return false;
+    // Different turns are different messages, whatever they say. The text+time
+    // fallback exists to reconcile the SAME message arriving from two sources
+    // (the local copy has a turnId, the engine copy does not); letting it also
+    // match across turns merged two real questions with the same wording —
+    // "继续" asked twice collapsed into one, and an unparsable timestamp merged
+    // them at any distance (2026-09-15: 历史问题堆在一起).
+    if (message?.turnId && item?.turnId && item.turnId !== message.turnId) return false;
     const itemText = comparableMessageText(item);
     if (itemText !== text) {
       if (message.role !== "assistant" || !contentOverlaps(itemText, text)) return false;

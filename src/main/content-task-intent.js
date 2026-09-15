@@ -40,7 +40,10 @@ const INSTRUCTIONAL_RE = /怎么|如何|教程|方法|原理|能不能|是否可
 const MENTION_PATTERNS = Object.freeze({
   image: /图片|图像|照片|截图|产品图|海报|封面|image|picture|photo|screenshot|poster|cover/i,
   pdf: /\bpdf\b/i,
-  document: /文档|合同|报告|简历|文件|word|docx|document|contract|report|resume/i,
+  // "文件夹"/"文件目录" is a directory the model reads with tools, not a document
+  //  to extract. The bare 文件 substring used to match it and route the turn to
+  //  content_extraction, whose evidence can only come from an attachment.
+  document: /文档|合同|报告|简历|文件(?!夹|目录)|word|docx|document|contract|report|resume/i,
   spreadsheet: /表格|工作簿|电子表格|excel|xlsx|csv|spreadsheet|workbook|worksheet/i,
   presentation: /幻灯片|演示文稿|pptx?|powerpoint|presentation|slides?/i,
   audio: /音频|语音|录音|audio|voice|recording/i,

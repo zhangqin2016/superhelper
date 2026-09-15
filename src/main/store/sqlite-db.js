@@ -142,4 +142,9 @@ function openDatabase(filePath) {
   return new Db(filePath);
 }
 
-module.exports = { Db, openDatabase };
+function openMessageDatabase(filePath) {
+  require("./sqlite-snapshot").restoreInterruptedMessageCompaction(filePath);
+  return openDatabase(filePath);
+}
+
+module.exports = { Db, openDatabase, openMessageDatabase };

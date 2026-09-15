@@ -20,7 +20,13 @@ function isExternalFactContract(taskContract = null) {
 }
 
 function isSourceContentContract(taskContract = null) {
-  return taskContract?.taskType === "content_extraction";
+  if (taskContract?.taskType !== "content_extraction") return false;
+  // 2026-09-15: a folder/workspace question routed here has NOTHING attached, so
+  // the source-content verdict can never pass and the canned "I could not read
+  // the attachment" line replaced real, tool-grounded analysis. With no source
+  // there is no attachment to confabulate about — ordinary evidence rules apply.
+  try { return require("./task-evidence-policy").hasExtractableContentSource(taskContract); }
+  catch { return true; }
 }
 
 function shouldBufferAssistantAnswer(taskContract = null) {

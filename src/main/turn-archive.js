@@ -183,6 +183,8 @@ class TurnArchive {
         failure: failureMeta,
         ...(payload.loopDetected ? { loopDetected: payload.loopDetected } : {}),
         resultFromCli: Boolean(payload.resultFromCli),
+        // Which agent answered (renderer shows it on the message); null = native Lily.
+        ...(state.agentLabel ? { agent: state.agentLabel } : {}),
         toolsSummary: { count: tools.length },
         taskContract: state.taskContract
           ? {

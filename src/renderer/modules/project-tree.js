@@ -195,6 +195,19 @@ export function renderProjectTree() {
         applySessionStatusDot(status, s.id);
         item.appendChild(status);
 
+        // A session bound to a 智能体 carries `agent: {id, name, icon}` from
+        // session:list; show its icon (or a small dot) before the title.
+        if (s.agent?.id) {
+          const mark = document.createElement("span");
+          const icon = typeof s.agent.icon === "string" ? s.agent.icon.trim() : "";
+          mark.className = `session-agent-mark${icon ? "" : " is-dot"}`;
+          mark.textContent = icon;
+          mark.dataset.agentId = s.agent.id;
+          mark.setAttribute("aria-hidden", "true");
+          mark.title = t("character.agent.sidebarMark", { name: s.agent.name || "" });
+          item.appendChild(mark);
+        }
+
         const title = document.createElement("span");
         title.className = "session-title session-title-editable";
         title.textContent = s.title;
@@ -493,11 +506,15 @@ function showSessionMenu(x, y, sessionId, title) {
   del.textContent = t("ctx.delete");
   del.addEventListener("click", async () => {
     menu.remove();
-    await window.assistantClient.deleteSession(sessionId);
+    const deleted = await window.assistantClient.deleteSession(sessionId);
     removeSessionMessages(sessionId);
     await refreshState();
     renderProjectTree();
     updateTopbarTitles();
+    // Main fences and stops detached background jobs of a deleted chat; say so
+    // only when it actually stopped something.
+    const stoppedJobs = Number(deleted?.cleanup?.stoppedJobs) || 0;
+    if (stoppedJobs > 0) showToast(t("toast.sessionDeletedStoppedJobs", { n: stoppedJobs }), "info");
   });
 
   menu.append(rename, archive, del);

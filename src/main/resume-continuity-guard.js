@@ -29,12 +29,40 @@ function messageText(message = {}) {
   return "";
 }
 
+// The engine stores what Lily SENT: the user's text wrapped in lily_layer
+// blocks (platform context, memory, the user_original_request anchor). Compare
+// the user's own words, never the wrapper — otherwise every layered turn
+// looks foreign to its own local record.
+function unwrapEngineText(text) {
+  const value = String(text || "");
+  try {
+    const layers = require("./engine-message-layers");
+    if (!layers.hasLayeredEngineText(value)) return value;
+    const original = layers.extractUserOriginalRequest(value);
+    if (original) return original;
+  } catch {
+    /* fall through to a plain strip */
+  }
+  return value.replace(/<lily_layer\s+title="[^"]+">[\s\S]*?<\/lily_layer>/g, " ");
+}
+
 function userTexts(messages = []) {
   return (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.role === "user")
     .map(messageText)
+    .map(unwrapEngineText)
     .map(normalizedText)
     .filter(Boolean);
+}
+
+const CJK_PATTERN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
+
+// Minimum length before a containment match counts. Latin text needs a few
+// words; CJK carries a whole word per character, so "帮我优化" (4 chars) is
+// already specific enough — the old flat 6-char floor made every short
+// Chinese turn a false "history mismatch" and reset the engine session.
+function containmentFloor(text) {
+  return CJK_PATTERN.test(text) ? 2 : 6;
 }
 
 function textsOverlap(a = "", b = "") {
@@ -42,7 +70,7 @@ function textsOverlap(a = "", b = "") {
   if (a === b) return true;
   const short = a.length <= b.length ? a : b;
   const long = a.length <= b.length ? b : a;
-  if (short.length >= 6 && long.includes(short)) return true;
+  if (short.length >= containmentFloor(short) && long.includes(short)) return true;
   return false;
 }
 

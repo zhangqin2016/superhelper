@@ -133,9 +133,18 @@ assert.equal(isCommittedRenderCurrent({
 assert.deepEqual(
   buildMinimapItems({ committedMessages: messages }),
   [
-    { role: "user", turnId: "t1", label: "u1" },
-    { role: "user", turnId: "t2", label: "u2" },
+    // The render key distinguishes a steered second question inside one turn.
+    { role: "user", turnId: "t1", key: "user:t1", label: "u1" },
+    { role: "user", turnId: "t2", key: "user:t2", label: "u2" },
   ],
+);
+assert.deepEqual(
+  buildMinimapItems({ committedMessages: [
+    { role: "user", turnId: "t9", content: "first", timestamp: "2026-01-01T00:00:01.000Z" },
+    { role: "user", turnId: "t9", steer: true, steerSeq: 1, content: "second", timestamp: "2026-01-01T00:00:02.000Z" },
+  ] }).map((item) => item.key),
+  ["user:t9", "user:t9:steer:1"],
+  "two questions in one turn get two distinct rail targets",
 );
 assert.deepEqual(buildMinimapItems(null), []);
 

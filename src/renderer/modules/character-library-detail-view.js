@@ -1,5 +1,6 @@
 import { $, el } from "./dom.js";
 import { t } from "../i18n/index.js";
+import { renderAgentDetail } from "./agent-library-view.js";
 
 const ACTION_LABEL_KEYS = {
   edit: "character.library.edit",
@@ -36,7 +37,7 @@ export function renderLibraryDetail(state) {
   detail.dataset.libraryDetailActive = item?.active ? "true" : "false";
   if (!item) {
     detail.appendChild(el("div", "character-library-detail-empty", {
-      textContent: t("character.library.selectHint"),
+      textContent: t(state.tab === "agents" ? "character.library.selectHintAgent" : "character.library.selectHint"),
     }));
     return;
   }
@@ -44,6 +45,10 @@ export function renderLibraryDetail(state) {
     detail.appendChild(el("div", "character-library-detail-empty", {
       textContent: t("character.library.loadingDetail"),
     }));
+    return;
+  }
+  if (item.kind === "agent") {
+    renderAgentDetail(state, state.detail?.kind === "agent" ? state.detail : item, detail);
     return;
   }
   const data = state.detail || item;

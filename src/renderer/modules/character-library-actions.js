@@ -2,13 +2,14 @@
 
 import { kindForTab, initialFormValues } from "./character-library-model.js";
 import { installOfficialCharacter } from "./official-character-picker.js";
+import { createAgentLibraryActions } from "./agent-library-actions.js";
 function isRevisionConflict(error) {
   return typeof error === "string" && error.endsWith("REVISION_CONFLICT");
 }
 
 export function createLibraryActions(ctx) {
   const {
-    facade,
+    facade, agentFacade, translate,
     getState,
     dispatch,
     setNotice,
@@ -20,10 +21,13 @@ export function createLibraryActions(ctx) {
     onActivated,
   } = ctx;
 
+  const agentActions = createAgentLibraryActions({ facade: typeof agentFacade === "function" ? agentFacade : () => null, getState, dispatch, setNotice, settle, getActiveSessionId, onActivated, translate });
+
   async function loadCurrentTab() {
+    const tab = getState().tab;
+    if (tab === "agents") return agentActions.loadAgents();
     const api = facade();
     if (!api) return;
-    const tab = getState().tab;
     const current = () => getState().open && getState().tab === tab;
     try {
       let items = [];
@@ -131,6 +135,7 @@ export function createLibraryActions(ctx) {
   }
 
   async function openDetail(item) {
+    if (item?.kind === "agent") return agentActions.openDetail(item);
     const api = facade();
     if (!api || !item?.id || item.kind !== "character") return;
     dispatch({ type: "detail.selected", itemId: item.id });
@@ -221,6 +226,7 @@ export function createLibraryActions(ctx) {
   }
 
   async function activateItem(item) {
+    if (item?.kind === "agent") return agentActions.activateItem(item);
     const api = facade();
     const sessionId = getActiveSessionId?.();
     if (!api || !sessionId || !item || item.kind !== "character" || getState().activation.status === "running") return;
@@ -455,6 +461,7 @@ export function createLibraryActions(ctx) {
   // Export delegates to the existing flow: a main-process save dialog plus an
   // opaque broker reservation — the renderer never supplies a path (§15).
   async function exportItem(item) {
+    if (item?.kind === "agent") return agentActions.exportItem(item);
     const api = facade();
     if (!api) return;
     try {
@@ -467,6 +474,7 @@ export function createLibraryActions(ctx) {
   }
 
   async function confirmAction() {
+    if (getState().confirm?.kind === "agent") return agentActions.confirmAction();
     const api = facade();
     const confirm = getState().confirm;
     if (!api || !confirm || confirm.kind !== "character" || getState().busy) return;
@@ -519,6 +527,7 @@ export function createLibraryActions(ctx) {
   // Import through the existing preview/commit flow, then report preserved vs
   // unsupported inert counts (§13.2). The file picker stays main-side.
   async function startImport() {
+    if (getState().tab === "agents") return agentActions.startImport();
     const api = facade();
     if (!api || getState().busy) return;
     dispatch({ type: "busy.set", busy: true });
@@ -562,5 +571,6 @@ export function createLibraryActions(ctx) {
     startImport,
     openDetail,
     activateItem,
+    deactivateItem: (item) => agentActions.deactivateItem(item),
   };
 }

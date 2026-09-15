@@ -47,6 +47,15 @@ function harness(failureMode = "result", blockedStage = "model") {
       if (name === "./project-tree.js") return { touchSessionUsage: noop };
       throw Error(`Unexpected import: ${name}`);
     },
+    // Attachment staging tracker (composer waits for a dropped file before it
+    // snapshots the attachment list); inert in this harness.
+    // Prompt-suggestion bar (extracted to prompt-suggestions.js); inert here.
+    clearPromptSuggestions: noop,
+    renderPromptSuggestions: noop,
+    attachmentStagingInFlight: () => false,
+    whenAttachmentsSettled: async () => true,
+    trackAttachmentStaging: (run) => run(),
+    setAttachmentStagingListener: noop,
     setTimeout: () => 0, clearTimeout: noop,
     getTurnPhase: () => "idle", canSend: () => true, subscribeRuntime: noop,
     renderFilePreview: () => previews.push(input.value),

@@ -165,6 +165,20 @@
   outline: none;
 }
 
+/* The recommended choice: filled accent, no glow (see premium-visual-language). */
+.choose-dialog-action-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+.choose-dialog-action-primary:hover,
+.choose-dialog-action-primary:focus-visible {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  outline: none;
+}
+
 .choose-dialog-action-danger {
   border-color: var(--danger-border);
   background: var(--danger-bg);

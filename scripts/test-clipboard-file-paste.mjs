@@ -44,6 +44,18 @@ try {
   const paths = extractClipboardFilePaths(clip);
   assert.deepEqual(new Set(paths), new Set([pdf, docx, exe, folder]), "clipboard file and directory paths are parsed across platform formats");
 
+  // 2026-09-15: a path the user pasted as TEXT is text they want in the box. The
+  // plain-text flavour is opt-out so the composer's text paste never turns the
+  // characters into an attachment; real file copies still resolve here.
+  const withoutText = extractClipboardFilePaths(clip, { includePlainText: false });
+  assert.deepEqual(new Set(withoutText), new Set([pdf, docx, exe]), "the plain-text path is not treated as a file");
+  assert.equal(withoutText.includes(folder), false);
+  assert.equal(
+    stageClipboardFiles({ stageFromPath: (p) => ({ id: p, path: p }) }, clip, { includePlainText: false }).files.some((f) => f.path === folder),
+    false,
+    "staging honours the same opt-out",
+  );
+
   const staged = [];
   const result = stageClipboardFiles({
     stageFromPath(filePath) {

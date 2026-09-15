@@ -43,7 +43,7 @@ export function buildMinimapModel(items = [], opts = {}) {
   (Array.isArray(items) ? items : []).forEach((item, itemIndex) => {
     if (!item || (item.role !== "user" && item.role !== "assistant")) return;
     if (item.role === "user") {
-      entries.push({ kind: "prompt", level: 0, label: clampText(item.label), itemIndex, turnId: item.turnId || "" });
+      entries.push({ kind: "prompt", level: 0, label: clampText(item.label), itemIndex, turnId: item.turnId || "", key: item.key || "" });
       return;
     }
     // assistant

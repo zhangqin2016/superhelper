@@ -494,7 +494,7 @@ const MIGRATIONS = [
   migrateRuntimeCheckpointSchema,
   migratePublicHookSchema,
   migrateMessageRecoveryIndex, migrateRuntimeEventCompactionIndex,
-  migrateTaskCoreSchema, migrateTaskLifecycleSchema, migrateTaskContextRegistrySchema, migrateParentClosureSchema,
+  migrateTaskCoreSchema, migrateTaskLifecycleSchema, migrateTaskContextRegistrySchema, migrateParentClosureSchema, require("./agent-schema-migration").migrateAgentSchema, // 智能体 (docs/agent-management-design.md)
 ];
 
 module.exports = { MIGRATIONS };

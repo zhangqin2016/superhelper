@@ -10,6 +10,7 @@ import { openAttachmentPreview } from "./attachment-preview-card.js";
 import { t } from "../i18n/index.js";
 import { routeDroppedFiles } from "./workspace-package-drop.js";
 import { reviewWorkspacePackage } from "./workspace-package-review.js";
+import { trackAttachmentStaging } from "./attachment-staging.js";
 
 const filePreviewArea = () => $("filePreviewArea");
 const LARGE_PASTE_MIN_CHARS = 6000;
@@ -122,7 +123,9 @@ async function addBrowserFiles(files) {
       const result = filePath
         ? await window.assistantClient.stageFile(filePath, name)
         : browserFile.size > MAX_PATHLESS_FILE_BYTES
-          ? { ok: false, error: "FILE_TOO_LARGE" }
+          // Dragged from an app that exposes no disk path (Mail, WeChat, a
+          // browser). The paste-oriented copy read as nonsense for a drag.
+          ? { ok: false, error: "DRAG_FILE_TOO_LARGE" }
           : await window.assistantClient.pasteFile(new Uint8Array(await browserFile.arrayBuffer()), name);
       if (result.ok) {
         staged.push(result.file);
@@ -159,10 +162,10 @@ async function routeBrowserDrop(files) {
   });
 }
 
-async function addSystemClipboardFiles() {
+async function addSystemClipboardFiles(options = {}) {
   if (!window.assistantClient?.pasteClipboardFiles) return 0;
   try {
-    const result = await window.assistantClient.pasteClipboardFiles();
+    const result = await window.assistantClient.pasteClipboardFiles(options);
     if (!result?.ok) {
       if (result?.error) showToast(fileErrorMessage(result.error), "warning");
       return 0;
@@ -267,7 +270,7 @@ export function initFileHandler() {
     composer.classList.remove("drag-over");
     if (dropOverlay) dropOverlay.hidden = true;
     const dtFiles = e.dataTransfer?.files;
-    if (dtFiles?.length) await routeBrowserDrop(dtFiles);
+    if (dtFiles?.length) await trackAttachmentStaging(() => routeBrowserDrop(dtFiles));
   });
 
   // Global drag overlay
@@ -288,11 +291,11 @@ export function initFileHandler() {
     composer?.classList.remove("drag-over");
     if (dropOverlay) dropOverlay.hidden = true;
     const dtFiles = e.dataTransfer?.files;
-    if (dtFiles?.length) await routeBrowserDrop(dtFiles);
+    if (dtFiles?.length) await trackAttachmentStaging(() => routeBrowserDrop(dtFiles));
   });
 
   // Clipboard paste
-  document.addEventListener("paste", async (e) => {
+  document.addEventListener("paste", (e) => trackAttachmentStaging(async () => {
     const items = e.clipboardData?.items;
     if (!items) return;
     const files = [...items]
@@ -315,8 +318,11 @@ export function initFileHandler() {
     if (!isComposerTextPaste(e)) return;
     const text = e.clipboardData?.getData("text/plain") || "";
     e.preventDefault();
-    const systemFileCount = await addSystemClipboardFiles();
-    if (systemFileCount > 0) return;
+    // A path pasted as TEXT stays text (2026-09-15: it was staged as a file and
+    // the characters vanished, so a path to a .png became an image chip). Real
+    // file copies still attach through the OS file formats, and the text is
+    // inserted either way — a paste never loses what the user pasted.
+    await addSystemClipboardFiles({ includePlainText: false });
     if (!shouldStagePastedText(text)) {
       insertPlainTextAtCursor(e.target, text);
       return;
@@ -324,5 +330,5 @@ export function initFileHandler() {
     const ok = await addFileFromBuffer(pastedTextToBuffer(text), buildPastedTextFileName());
     if (ok) showToast(t("toast.largePasteAttached"), "info");
     if (!ok) insertPlainTextAtCursor(e.target, text);
-  });
+  }));
 }

@@ -59,7 +59,9 @@ import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
 import { appendSwitchNoticeArticle } from "./character-switch-notices.js";
 import { appendTaskContinuationNotice } from "./task-continuation-notice.js";
-import { collectUnrenderedCommittedMessages, collectEvictedMessageKeys, removeCommittedArticlesByKeys } from "./message-render-keys.js";
+import { agentBindingOf, appendAgentBindingNotice, decorateAgentAnswerLabel } from "./agent-binding-notice-view.js";
+import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
+import { isCommittedDomOrderCurrent, renderCommittedWindow } from "./committed-window-renderer.js";
 import {
   liveTurnRenderMode,
   runtimeVisualSig,
@@ -105,6 +107,10 @@ function clearStackMinimaps() {
   const root = stackEl();
   if (!root?.querySelectorAll) return;
   for (const old of root.querySelectorAll(":scope > .conversation-minimap")) old.remove();
+  // The rail is gone from the DOM, so every cached "nothing changed" verdict is
+  // now wrong: without this, switching away and back left the rail missing until
+  // the next message arrived (2026-09-15 "时有时没有").
+  lastRuntimeVisualSig.clear();
 }
 
 function isActiveSession(sessionId) {
@@ -206,7 +212,7 @@ export function shouldPreserveSessionView(sessionId) {
 }
 
 export function resumeLiveSessionUi(sessionId, opts = {}) {
-  renderRuntimeSession(sessionId);
+  renderRuntimeSession(sessionId, { force: !isConversationRenderCurrent(sessionId) });
   const runtime = getRuntimeSession(sessionId);
   if (runtime.liveTurn || !canSend(sessionId)) {
     void refreshRuntimeSnapshot(sessionId);
@@ -282,7 +288,7 @@ export function isConversationRenderCurrent(sessionId) {
   const unrendered = keys
     ? collectUnrenderedCommittedMessages(renderMessages, new Set(keys)).length
     : renderMessages.length;
-  return isCommittedRenderCurrent({
+  return isCommittedDomOrderCurrent(v?.listEl, renderMessages) && isCommittedRenderCurrent({
     hasSessionView,
     hasRenderedContent: Boolean(v?.listEl?.firstChild),
     renderedKeyCount: keys?.size || 0,
@@ -368,36 +374,25 @@ function renderCommittedMessages(sessionId, opts = {}) {
   renderedMessageKeys.set(sessionId, keys);
 
   const renderMessages = committedMessagesForRender(mergeSwitchNotices(runtime.committedMessages, runtime.switchNotices), { sessionId, windowCount: opts.windowCount });
-  const pending = collectUnrenderedCommittedMessages(renderMessages, keys);
-  if (opts.allowEvict) removeCommittedArticlesByKeys(view(sessionId).listEl, collectEvictedMessageKeys(renderMessages, keys));
-  if (pending.length === 0) return 0;
-
-  if (pending.length <= COMMITTED_RENDER_CHUNK || renderMessages.length <= COMMITTED_INITIAL_WINDOW || opts.preserveScroll) {
-    for (const { key, message } of pending) {
-      appendCommittedMessage(sessionId, runtime, message, key);
-    }
-    opts.onComplete?.();
-    return pending.length;
-  }
-
-  let cursor = 0;
-  const generation = view(sessionId).renderGeneration;
-  const pump = () => {
-    if (view(sessionId).renderGeneration !== generation) return;
-    const end = Math.min(cursor + COMMITTED_RENDER_CHUNK, pending.length);
-    for (; cursor < end; cursor++) {
-      const { key, message } = pending[cursor];
-      appendCommittedMessage(sessionId, runtime, message, key);
-    }
-    if (cursor < pending.length) {
-      scheduleCommittedRenderPump(pump);
-    } else {
-      syncWorkbenchEmptyState(ensurePanel(sessionId).listEl);
+  const v = view(sessionId);
+  const generation = v.renderGeneration;
+  return renderCommittedWindow({
+    listEl: v.listEl,
+    messages: renderMessages,
+    skip: (message) => shouldSkipCommittedAssistantForLiveTurn(runtime, message),
+    keys,
+    append: (message, key) => appendCommittedMessage(sessionId, runtime, message, key),
+    anchor: () => committedInsertAnchor(sessionId, runtime),
+    schedule: scheduleCommittedRenderPump,
+    isCurrent: () => sessionViews.get(sessionId) === v && v.renderGeneration === generation,
+    chunkSize: renderMessages.length <= COMMITTED_INITIAL_WINDOW || opts.preserveScroll
+      ? Infinity : COMMITTED_RENDER_CHUNK,
+    allowEvict: opts.allowEvict,
+    onComplete: () => {
+      syncWorkbenchEmptyState(v.listEl);
       opts.onComplete?.();
-    }
-  };
-  pump();
-  return pending.length;
+    },
+  });
 }
 
 function appendUserMessage(sessionId, message, beforeNode = null, key = "") {
@@ -451,6 +446,10 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
     appendTaskContinuationNotice(ensurePanel(sessionId).listEl, message, beforeNode, key);
     return;
   }
+  if (agentBindingOf(message)) { // platform card: an agent took over / was released
+    appendAgentBindingNotice(ensurePanel(sessionId).listEl, message, beforeNode, key);
+    return;
+  }
   if (message?.meta?.scheduledDraft) {
     appendScheduledDraftArticle(sessionId, message, beforeNode, key);
     return;
@@ -461,6 +460,7 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
     : legacyLiveTurnFromMessage(message);
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed), sessionId);
   if (key) article.dataset.messageKey = key; // lets window eviction locate this article
+  decorateAgentAnswerLabel(article, message); // only when record.meta.agent says an agent answered
   appendArticleActions(article, sessionId, message);
   if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
   else v.listEl?.appendChild(article);

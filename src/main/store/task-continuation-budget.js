@@ -10,6 +10,13 @@ const { MAX_CHARACTER_BINDING_BYTES } = require("../character-worlds/constants")
 const MAX_ROUNDS = 8;
 const MAX_ELAPSED_MS = 24 * 60 * 60 * 1000;
 const MAX_PROGRESS_KEYS = 128;
+// Parent-closure lane floor: a follow-up round must show real new work, not one
+// incidental tool call (2026-09-08: 10-second rounds each earned a fresh claim).
+// Process-job wakes pass their own (one key per batch) and keep the baseline.
+function minProgressPerRound() {
+  const raw = Number.parseInt(process.env.LILY_CONTINUATION_MIN_PROGRESS || "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 3;
+}
 const MAX_SOURCE_ANCESTORS = 128;
 
 function ensureSchema(db) {
@@ -165,7 +172,7 @@ function resolveRoot(db, sessionId, ownerScope, sourceTurnId) {
 }
 
 function reserveTaskContinuation(db, input = {}) {
-  const { sessionId, ownerScope, sourceTurnId, continuationTurnId, progressKeys = [] } = input;
+  const { sessionId, ownerScope, sourceTurnId, continuationTurnId, progressKeys = [], minProgress = 1 } = input;
   const now = input.now === undefined ? Date.now() : input.now;
   let rootTurnId = sourceTurnId || null;
   let rounds = 0;
@@ -229,7 +236,7 @@ function reserveTaskContinuation(db, input = {}) {
     }
     const keys = [...new Set(progressKeys.map((key) => key.toLowerCase()))];
     const seen = new Set(JSON.parse(chain.progress_json).flatMap((json) => JSON.parse(json)));
-    if (rounds && !keys.some((key) => !seen.has(key))) return deny("TASK_CONTINUATION_NO_PROGRESS");
+    if (rounds && keys.filter((key) => !seen.has(key)).length < Math.max(1, Number(minProgress) || 1)) return deny("TASK_CONTINUATION_NO_PROGRESS");
     rounds += 1;
     db.run(
       `INSERT INTO task_continuation_claims
@@ -260,4 +267,4 @@ function validateTaskContinuation(db, input = {}) {
   });
 }
 
-module.exports = { reserveTaskContinuation, cancelTaskContinuations, validateTaskContinuation, recordTaskContinuationSource };
+module.exports = { reserveTaskContinuation, cancelTaskContinuations, validateTaskContinuation, recordTaskContinuationSource, minProgressPerRound, MAX_ROUNDS, MAX_ELAPSED_MS };

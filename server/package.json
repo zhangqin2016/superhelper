@@ -9,6 +9,7 @@
     "migrate": "node scripts/migrate.mjs",
     "smoke": "node scripts/smoke.mjs",
     "integration": "node scripts/integration.mjs",
+    "test:agent-packages": "node scripts/test-agent-packages-logic.mjs",
     "e2e:mobile": "node scripts/mobile-command-e2e.mjs"
   },
   "dependencies": {

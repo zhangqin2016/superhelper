@@ -95,6 +95,7 @@ function verifyResumeBinding(session, expected = {}) {
 
 module.exports = {
   buildResumeBinding,
+  skillSetHash,
   stableHash,
   verifyResumeBinding,
 };

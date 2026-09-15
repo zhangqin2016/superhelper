@@ -269,8 +269,16 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
 
   const resumeSessionId = session.agentResumeId || null;
   const runtimeIdentityOwner = sessionManager.resolveTurnOwnerScope?.(sessionId);
+  // 智能体 tool policy (cold dimension): a bound agent's tools.disallow joins
+  // the serve permission map. Fail-open: no agent / any error → empty list.
+  let agentDisallowedTools = [];
+  try {
+    agentDisallowedTools = require("./agents/session-agent-policy").resolveSessionAgentPolicy(ctx, sessionId).disallowedTools || [];
+  } catch {
+    agentDisallowedTools = [];
+  }
   const extra = {
-    disallowedTools: [...new Set([...skillManager.getDisallowedTools(), ...(opts.disallowedTools || [])])],
+    disallowedTools: [...new Set([...skillManager.getDisallowedTools(), ...(opts.disallowedTools || []), ...agentDisallowedTools])],
     // Skills active for THIS session — scopes which learned web-system MCP
     // servers get loaded, so a disabled/unselected workspace skill no longer
     // exposes its tools (and the assistant no longer "sees" a system the user

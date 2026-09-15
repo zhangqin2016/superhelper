@@ -218,6 +218,7 @@
             <ol class="live-task-strip-items"></ol>
           </div>
           <div id="promptSuggestions" class="prompt-suggestions" hidden></div>
+          <div id="agentStarters" class="agent-starters" role="group" data-i18n-aria-label="character.agent.startersLabel" aria-label="智能体开场提示" hidden></div>
           <div id="permissionDock" class="permission-dock" hidden></div>
           <div id="messageQueueArea" class="message-queue-area" hidden></div>
           <div class="composer-row">
@@ -249,7 +250,7 @@
                   <span id="modelSelectionLabel">自动</span>
                   <svg class="composer-model-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
-                <button id="sessionRoleBanner" class="session-role-banner" type="button" data-i18n-title="character.roleBannerTitle" data-i18n-aria-label="character.roleBannerTitle" title="当前对话角色，点击切换" aria-label="当前对话角色，点击切换" aria-haspopup="dialog" aria-expanded="false" aria-controls="characterPopover" hidden>
+                <button id="sessionRoleBanner" class="session-role-banner" type="button" data-i18n-title="character.roleBannerTitle" data-i18n-aria-label="character.roleBannerTitle" title="当前对话角色 / 智能体，点击切换" aria-label="当前对话角色 / 智能体，点击切换" aria-haspopup="dialog" aria-expanded="false" aria-controls="characterPopover" hidden>
                   <span class="session-role-banner-avatar" aria-hidden="true"></span>
                   <span class="session-role-banner-name"></span>
                   <span class="session-role-banner-badges" aria-hidden="true"></span>
@@ -323,15 +324,16 @@
             <button id="modelSelectionReset" class="model-selection-reset" type="button"><span aria-hidden="true">↺</span><span data-i18n="composer.modelReset">恢复推荐</span></button>
             <p id="modelSelectionStatus" class="model-selection-footnote" role="status" aria-live="polite" data-i18n="composer.modelSelectionSaved">选择会自动保存，并从下一轮开始生效。</p>
           </div>
-          <div id="characterPopover" class="character-popover" hidden role="dialog" data-i18n-aria-label="character.popoverTitle" aria-label="对话角色" tabindex="-1">
+          <div id="characterPopover" class="character-popover" hidden role="dialog" data-i18n-aria-label="character.popoverTitle" aria-label="角色与智能体" tabindex="-1">
             <div class="character-popover-header">
-              <span data-i18n="character.popoverTitle">对话角色</span>
+              <span data-i18n="character.popoverTitle">角色与智能体</span>
               <button id="characterPopoverClose" type="button" class="character-popover-close" data-i18n-aria-label="composer.close" aria-label="关闭">×</button>
             </div>
             <div id="characterPopoverNotice" class="character-popover-notice" hidden></div>
             <div id="characterPopoverMain">
+              <div id="characterAgentSection" class="character-agent-section" data-i18n-aria-label="character.agent.sectionHeading" aria-label="智能体" hidden></div>
               <div id="characterUpdateRow" class="character-update-row" hidden></div>
-              <div id="characterList" class="character-list" role="menu" data-i18n-aria-label="character.popoverTitle" aria-label="对话角色"></div>
+              <div id="characterList" class="character-list" role="menu" data-i18n-aria-label="character.popoverTitle" aria-label="角色与智能体"></div>
               <div class="character-popover-footer">
                 <button id="characterEditCurrentBtn" type="button" class="character-footer-btn" data-i18n="character.editCurrent" hidden>编辑当前角色</button>
                 <button id="characterImportBtn" type="button" class="character-footer-btn" data-i18n="character.importCard">导入角色卡</button>
@@ -418,7 +420,8 @@
         </header>
         <div class="character-library-toolbar">
           <div id="characterLibraryTabs" class="character-library-tabs" role="tablist" data-i18n-aria-label="character.library.title" aria-label="角色库">
-            <button type="button" role="tab" data-library-tab="characters" aria-selected="true" data-i18n="character.library.tabCharacters">角色</button>
+            <button type="button" role="tab" data-library-tab="agents" aria-selected="true" data-i18n="character.library.tabAgents">智能体</button>
+            <button type="button" role="tab" data-library-tab="characters" aria-selected="false" data-i18n="character.library.tabCharacters">角色</button>
           </div>
           <label class="character-library-search-field">
             <span class="character-sr-only" data-i18n="character.library.searchPlaceholder">搜索名称</span>

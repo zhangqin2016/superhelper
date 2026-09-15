@@ -7,6 +7,7 @@ function captureParentClosureSource(state, payload = {}) {
     objective: String(state.enginePayload?.rawText || state.currentPayload?.rawText || "").trim(),
     files: Array.isArray(state.enginePayload?.files) ? state.enginePayload.files.slice() : [],
     payload,
+    workState: require("./turn-work-state").summarizeWorkState(state),
     state: {
       turnId: state.turnId,
       enginePayload: { rawText: String(state.enginePayload?.rawText || "") },

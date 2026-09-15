@@ -292,6 +292,7 @@ function createTurnRecoveryRuntime(options = {}) {
     cancelPendingParentClosures: parentClosureRuntime.cancelPendingParentClosures,
     maybeSelfHealAndRetry,
     maybeParentClosureRecovery: parentClosureRuntime.maybeParentClosureRecovery,
+    recoverySourceForTurn: parentClosureRuntime.recoverySourceForTurn,
     prepareParentClosureRecovery: parentClosureRuntime.prepareParentClosureRecovery,
     resumePendingParentClosures: parentClosureRuntime.resumePendingParentClosures,
     resumePendingParentClosuresForSessions: parentClosureRuntime.resumePendingParentClosuresForSessions,

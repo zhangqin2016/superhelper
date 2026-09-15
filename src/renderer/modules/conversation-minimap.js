@@ -11,7 +11,9 @@ import { t } from "../i18n/index.js";
 import { buildMinimapModel, computeActiveIndex } from "./conversation-minimap-model.js";
 import { detachAutoFollowForUserNavigation, scrollToBottom } from "./dom.js";
 
-const MIN_RIBS = 4; // below this the rail is noise — hide it
+// 2 questions + terminus. At 4 the rail only appeared from the third question,
+// which read as "sometimes there, sometimes not".
+const MIN_RIBS = 3;
 // Dock-style "mountain peak" hover: ticks near the cursor grow — most under it,
 // less toward the edges of the radius — a smooth peak rather than one tick popping.
 // Both width AND height grow so the hovered tick becomes a comfortably large click
@@ -72,6 +74,12 @@ function cssEscape(value) {
 // DOM-sourced entries fall back to the extracted refs.
 function resolveTarget(entry, refs, listEl) {
   if (entry.kind === "terminus") return listEl.lastElementChild || listEl;
+  // The render key distinguishes a steered second question from the turn's
+  // original one; turnId remains the fallback for entries built from the DOM.
+  if (entry.key) {
+    const keyed = listEl.querySelector(`[data-message-key="${cssEscape(entry.key)}"]`);
+    if (keyed) return keyed;
+  }
   if (entry.turnId) return listEl.querySelector(`[data-turn-id="${cssEscape(entry.turnId)}"]`) || null;
   if (refs) return targetFor(entry, refs, listEl);
   return null;
@@ -230,11 +238,54 @@ function bindScroll(panel, s) {
   }, { passive: true });
 }
 
+// Offsets are captured once per build against the current layout. A window
+// resize re-wraps the chat column and invalidates every one of them, and the
+// render path short-circuits on an unchanged signature, so nothing rebuilt them:
+// the rail stayed on screen but stopped tracking. Recompute on resize instead.
+// Keyed by panel, NOT a Set of fresh {panel, opts} objects: updateMinimap runs
+// on every render (throttled to 150ms during a live turn), so a Set would grow
+// one entry per render and then rebuild the rail once per entry on resize.
+const resizeTargets = new Map();
+let resizeBound = false;
+let resizeTimer = 0;
+
+function bindResizeRebuild(panel, opts) {
+  resizeTargets.set(panel, opts);
+  for (const known of [...resizeTargets.keys()]) {
+    if (!known?.isConnected) resizeTargets.delete(known);
+  }
+  if (resizeBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  resizeBound = true;
+  window.addEventListener("resize", () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resizeTimer = 0;
+      for (const [target, targetOpts] of [...resizeTargets]) {
+        if (!target?.isConnected) { resizeTargets.delete(target); continue; }
+        try { updateMinimap(target, targetOpts); } catch { /* the chat keeps working */ }
+      }
+    }, 150);
+  }, { passive: true });
+}
+
+/** Number of panels registered for a resize rebuild. Test hook. */
+export function minimapResizeTargetCount() {
+  return resizeTargets.size;
+}
+
+/** Test hook. */
+export function resetMinimapResizeForTests() {
+  resizeTargets.clear();
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = 0;
+}
+
 /** Rebuild the rail for a panel. Safe to call on every render; cheap and idempotent. */
 export function updateMinimap(panel, opts = {}) {
   if (!panel || typeof document === "undefined") return;
   let s;
   try {
+    bindResizeRebuild(panel, opts);
     s = panelState(panel);
     const listEl = panel.querySelector(".messages");
     if (!listEl) { teardownMinimap(panel); removeHostRails(panel); return; }
@@ -303,6 +354,7 @@ export function updateMinimap(panel, opts = {}) {
 }
 
 export function teardownMinimap(panel) {
+  resizeTargets.delete(panel);
   const s = state.get(panel);
   if (s?.rail?.parentElement) s.rail.parentElement.removeChild(s.rail);
   if (s) { s.rail = null; s.ribsEl = null; s.previewEl = null; }

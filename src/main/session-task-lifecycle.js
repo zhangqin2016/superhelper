@@ -54,10 +54,27 @@ function listTaskLifecycles(sessionId, options = {}) {
   return this._store().listTaskLifecycles(session.id, ownerScope, options);
 }
 
+/** Unfinished tasks across ALL sessions of the current owner (task center). */
+function listUnfinishedTasks(options = {}) {
+  let ownerScope = null;
+  try { ownerScope = this._resolveCharacterOwnerScope(); } catch { ownerScope = null; }
+  if (typeof ownerScope !== "string" || !ownerScope) return [];
+  return this._store().listUnfinishedTaskLifecycles(ownerScope, options);
+}
+
+function annotateTaskLifecycle(sessionId, input = {}) {
+  const session = this._find(sessionId);
+  const ownerScope = ownerFor(this, sessionId);
+  if (!session || !ownerScope) return Object.freeze({ ok: false, reason: "OWNER_SCOPE_UNAVAILABLE", lifecycle: null });
+  return this._store().annotateTaskLifecycle({ sessionId: session.id, ownerScope, turnId: String(input.turnId || ""), metadata: input.metadata });
+}
+
 module.exports = {
   ensureTaskLifecycle,
   getTaskLifecycle,
   listTaskLifecycles,
+  listUnfinishedTasks,
+  annotateTaskLifecycle,
   markTaskLifecycleDelivered,
   transitionTaskLifecycle,
 };

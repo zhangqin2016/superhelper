@@ -27,6 +27,7 @@ const source = fs
   .replace('import { renderStreamBlocks } from "./markdown-stream-blocks.js";', "")
   .replace('import { markLongInlineCode } from "./markdown-inline-code.js";', "")
   .replace('import { CODE_COLLAPSE_MIN_LINES, countCodeLines, wireCodeCollapse } from "./markdown-code-collapse.js";', "")
+  .replace('import { trimAutolinkedPunctuation } from "./markdown-link-trim.js";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
@@ -96,7 +97,12 @@ const context = {
   },
 };
 vm.createContext(context);
-vm.runInContext(`${segmentsSource}\n${streamBlocksSource}\n${codeCollapseSource}\n${inlineCodeSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
+// The link-trim pass lives in its own module; the renderer pipeline calls it,
+// and it is covered by scripts/test-markdown-link-trim.mjs.
+const linkTrimSource = fs
+  .readFileSync(new URL("../src/renderer/modules/markdown-link-trim.js", import.meta.url), "utf8")
+  .replaceAll("export function", "function");
+vm.runInContext(`${linkTrimSource}\n${segmentsSource}\n${streamBlocksSource}\n${codeCollapseSource}\n${inlineCodeSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
 
 function fakeElement() {
   const classes = new Set();

@@ -24,6 +24,8 @@ import {
   kindForTab,
   initialFormValues,
   isFormDirty,
+  LIBRARY_TABS,
+  DEFAULT_LIBRARY_TAB,
 } from "./character-library-model.js";
 import { renderCharacterLibrary, libraryNoticeText } from "./character-library-view.js";
 import { createLibraryActions } from "./character-library-actions.js";
@@ -38,19 +40,29 @@ export function getCharacterLibraryState() {
 }
 
 const facade = () => window.assistantClient?.characterWorlds || null;
+const agentFacade = () => window.assistantClient?.agents || null;
 const modal = () => $("characterLibraryModal");
 
 const AI_AUTHORING_PROMPTS = Object.freeze({
   characters: "character.library.aiCreateCharacterPrompt",
+  agents: "character.library.aiCreateAgentPrompt",
 });
+// Tab → authoring kind the main-side router keys on (assistant-routing.js).
+const AI_AUTHORING_KINDS = Object.freeze({ characters: "character", agents: "agent" });
+
+/** The tab the dialog opens on when the caller does not ask for one. */
+function defaultLibraryTab() {
+  return agentFacade() ? DEFAULT_LIBRARY_TAB : "characters";
+}
 
 /**
  * Creation is an agent task, not a renderer-side CRUD operation. The prompt
  * stays in the current conversation so the OpenCode CLI agent can use its
- * context, skills, validation, and lily_character_draft tool.
+ * context, skills, validation, and lily_character_draft / lily_agent_draft
+ * tools. There is deliberately no manual form for agents.
  */
 export function startAiAuthoring(kind = "characters") {
-  if (kind !== "characters") return false;
+  if (!AI_AUTHORING_KINDS[kind]) return false;
   const input = $("promptInput");
   if (!input) return false;
   const m = modal();
@@ -59,7 +71,7 @@ export function startAiAuthoring(kind = "characters") {
   const current = input.value.trim();
   input.value = current ? `${starter}\n${current}` : starter;
   input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dataset.characterAuthoringKind = "character";
+  input.dataset.characterAuthoringKind = AI_AUTHORING_KINDS[kind];
   input.dataset.characterAuthoringStarter = starter;
   if (m && !m.hidden) {
     m.hidden = true;
@@ -127,6 +139,8 @@ function settle(actionType, notice, params) {
 
 const actions = createLibraryActions({
   facade,
+  agentFacade,
+  translate: t,
   getState: () => libraryState,
   dispatch,
   setNotice,
@@ -168,9 +182,13 @@ export function openCreateForTests() {
 
 export async function openCharacterLibrary(opts = {}) {
   const m = modal();
-  if (!m || !facade()) return;
+  if (!m || (!facade() && !agentFacade())) return;
   if (!m.hidden && dirtyFormGuard()) return;
-  const requestedTab = "characters";
+  // Callers that come from a role affordance ask for "characters"; the
+  // generic entry (and the popover's 管理智能体库) lands on the agents tab.
+  const requestedTab = LIBRARY_TABS.includes(opts.tab)
+    ? opts.tab
+    : (opts.editCharacterId || opts.entityId || opts.revisionId || opts.characterId) ? "characters" : defaultLibraryTab();
   dispatch({ type: "opened" });
   m.hidden = false;
   $("sessionRoleBanner")?.setAttribute("aria-expanded", "true");
@@ -180,6 +198,14 @@ export async function openCharacterLibrary(opts = {}) {
   renderCharacterLibrary(libraryState);
   $("characterLibrarySearch")?.focus();
   await actions.loadCurrentTab();
+  if (requestedTab === "agents") {
+    if (opts.agentId) {
+      const item = (libraryState.items.agents || [])
+        .find((entry) => entry.id === opts.agentId || entry.installedAgentId === opts.agentId || entry.officialId === opts.agentId);
+      if (item) await actions.openDetail(item);
+    }
+    return;
+  }
   const requestedEntityId = opts.entityId || opts.revisionId || opts.characterId;
   if (requestedEntityId) {
     const item = findCharacterLibraryItem(libraryState.items, requestedEntityId);
@@ -217,9 +243,12 @@ function dirtyFormGuard() {
   return true;
 }
 
-function closeCharacterLibrary() {
+function closeCharacterLibrary(detail) {
   const m = modal();
   if (!m || m.hidden) return;
+  // A degraded agent activation keeps the dialog open so the "部分能力未生效"
+  // notice stays visible (never hide degradation); everything else closes.
+  if (detail?.keepOpen === true) return;
   // A dirty form is never silently discarded by backdrop-click or Escape:
   // the close becomes an inline notice and the dialog stays open. The form's
   // own Cancel button remains the explicit discard path.
@@ -383,12 +412,21 @@ export function initCharacterLibrary() {
       else if (action === "history") void actions.openHistory(item);
       else if (action === "duplicate") void actions.duplicateItem(item);
       else if (action === "export") void actions.exportItem(item);
-      else if (action === "archive") {
+      else if (action === "archive" || (action === "restore" && item.kind === "agent")) {
         dispatch({
           type: "confirm.requested",
-          confirm: { action: "archive", kind: kindForTab(libraryState.tab), entityId: item.id, name: item.name },
+          confirm: { action, kind: kindForTab(libraryState.tab), entityId: item.installedAgentId || item.id, name: item.name },
         });
+        $("characterLibraryDetail")?.querySelector("[data-library-confirm='yes']")?.focus();
       }
+      return;
+    }
+    // Agents only: an active agent's primary action removes it from the
+    // conversation (deactivate), restoring today's native defaults.
+    if (event.target.closest("[data-library-deactivate]")) {
+      const item = (libraryState.items[libraryState.tab] || [])
+        .find((entry) => entry.id === libraryState.selectedItemId);
+      if (item?.kind === "agent") void actions.deactivateItem(item);
       return;
     }
     if (event.target.closest("[data-library-detail-close]")) {

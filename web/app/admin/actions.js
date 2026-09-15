@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { API_BASE, apiDelete, apiPatch, apiPost, apiPostForm } from "../../lib/api";
+import { API_BASE, apiDelete, apiPatch, apiPost, apiPostForm, apiPostResult } from "../../lib/api";
 
 function text(formData, key) {
   const value = formData.get(key);
@@ -300,6 +300,72 @@ export async function setRuntimePackEnabledAction(formData) {
 export async function setSkillPackageEnabledAction(formData) {
   await apiPatch(`/api/admin/skill-packages/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
   revalidatePath("/admin/skill-packages");
+}
+
+// --- Agent packages (智能体分发) -------------------------------------------------
+// The definition is authored as JSON. The server is the validator; we only
+// pre-parse so an obvious JSON typo is caught without a round trip, and we pass
+// the server's structured body (code / field / issues) through untouched so the
+// form can highlight the offending field.
+export async function saveAgentPackageAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  const parseJson = (key, label) => {
+    const raw = text(formData, key);
+    if (!raw) return { value: null };
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return { error: `${label} must be a JSON object.` };
+      return { value: parsed };
+    } catch (error) {
+      return { error: `${label}: ${error instanceof Error ? error.message : "invalid JSON"}` };
+    }
+  };
+  try {
+    const definition = parseJson("definition", "Definition");
+    if (definition.error) return { ok: false, message: definition.error, field: "definition", issues: [] };
+    if (!definition.value) return { ok: false, message: "Definition JSON is required.", field: "definition", issues: [] };
+    const roleCard = parseJson("roleCard", "Role card");
+    if (roleCard.error) return { ok: false, message: roleCard.error, field: "roleCard", issues: [] };
+    const scopeType = text(formData, "scopeType") || "global";
+    const result = await apiPostResult("/api/admin/agent-packages", {
+      agentId: text(formData, "agentId"),
+      version: text(formData, "version"),
+      channel: text(formData, "channel") || "stable",
+      scopeType,
+      organizationId: scopeType === "organization" ? text(formData, "organizationId") : null,
+      publisher: text(formData, "publisher") || null,
+      minAppVersion: text(formData, "minAppVersion") || null,
+      featured: bool(formData, "featured"),
+      displayInCatalog: !bool(formData, "hideFromCatalog"),
+      enabled: !bool(formData, "disabled"),
+      definition: definition.value,
+      roleCard: roleCard.value,
+    });
+    if (!result.ok) {
+      const body = result.json || {};
+      return {
+        ok: false,
+        code: body.code || `HTTP_${result.status}`,
+        message: body.message || body.code || `API failed: ${result.status}`,
+        field: body.field || null,
+        issues: Array.isArray(body.issues) ? body.issues : [],
+      };
+    }
+    revalidatePath("/admin/agents");
+    return { ok: true, message: `Agent package ${result.json.agentId} ${result.json.created ? "published" : "updated"}.`, id: result.json.id, issues: [] };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to save agent package.", issues: [] };
+  }
+}
+
+export async function setAgentPackageEnabledAction(formData) {
+  await apiPatch(`/api/admin/agent-packages/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
+  revalidatePath("/admin/agents");
+}
+
+export async function setAgentPackageFeaturedAction(formData) {
+  await apiPatch(`/api/admin/agent-packages/${text(formData, "id")}`, { featured: text(formData, "featured") === "true" });
+  revalidatePath("/admin/agents");
 }
 
 export async function setWorkspaceAppEnabledAction(formData) {

@@ -15,33 +15,92 @@
       ]
     },
     {
+      "id": "upstream-model-auth-failure",
+      "protects": "Explicit upstream credential refresh rejection cannot be hidden inside retryable gateway errors or loop indefinitely.",
+      "baseline": "Ordinary transient provider failures retain bounded recovery and unrelated sessions remain unaffected.",
+      "failureFallback": "Surface confirmed session-owned non-retryable auth failures without replay; preserve distinction from Lily gateway credentials.",
+      "tests": [
+        "scripts/test-upstream-auth-failure.mjs"
+      ]
+    },
+    {
+      "id": "database-self-recovery",
+      "protects": "Damaged local history cannot silently become empty history or disable the independent recovery entry point.",
+      "baseline": "Healthy startup and new user tasks remain available; ordinary SQLite transaction recovery does not disable normal task continuity.",
+      "failureFallback": "Preserve original database and journals, require confirmation for older snapshots, bound repair workers and keep ambiguous outcomes visible without automatic replay.",
+      "tests": [
+        "scripts/test-database-recovery.mjs",
+        "scripts/test-database-recovery-service.mjs",
+        "scripts/test-database-recovery-flow.mjs",
+        "scripts/test-database-recovery-startup.mjs",
+        "scripts/test-restored-task-fence.mjs",
+        "scripts/test-database-recovery-ui.cjs",
+        "scripts/test-database-recovery-native-boot.cjs"
+      ]
+    },
+    {
+      "id": "conversation-render-order",
+      "protects": "Committed conversation articles retain chronological order across interleaved history and live updates.",
+      "baseline": "Existing article identity, detached reading and per-panel rendering remain available.",
+      "failureFallback": "Invalidate stale render jobs and rebuild the owning window without discarding committed messages.",
+      "tests": [
+        "scripts/test-conversation-render-order.cjs",
+        "scripts/test-markdown-link-trim.mjs"
+      ]
+    },
+    {
+      "id": "session-database-safety",
+      "protects": "Committed local history survives legacy migration and interrupted database compaction without silent empty-store replacement.",
+      "baseline": "Healthy stores, existing history merging and WAL compaction refusal remain available; diagnostics do not mutate customer data.",
+      "failureFallback": "Keep source databases, backups and journals on ambiguity or I/O failure; retry migration later, refuse destructive replacement and report the actual error category.",
+      "tests": [
+        "scripts/test-session-db-safety.mjs",
+        "scripts/test-message-db-compaction.mjs",
+        "scripts/test-data-migration.mjs",
+        "scripts/test-message-store.mjs",
+        "scripts/test-session-load-recovery.mjs",
+        "scripts/test-support-diagnostics.mjs"
+      ]
+    },
+    {
       "id": "task-completion-integrity",
       "protects": "Task verification and durable completion cannot hide outstanding work or invent successful checks.",
       "baseline": "Answers remain deliverable without machine-verifiable evidence; existing bounded engine and parent recovery remain available.",
       "failureFallback": "Unknown, stale, failed or incomplete evidence remains unverified or observed. Automatic continuation requires durable shared limits and never bypasses user input or cancellation.",
       "tests": [
-        "scripts/test-task-completion-integrity.mjs",
-        "scripts/test-task-request-continuity.mjs",
-        "scripts/test-task-execution-classification.mjs",
-        "scripts/test-task-source-resolution.mjs",
+        "scripts/test-compaction-continuity-plugin.mjs",
+        "scripts/test-compaction-summary-not-answer.mjs",
+        "scripts/test-first-response-watchdog.mjs",
+        "scripts/test-gateway-stream-completion.mjs",
+        "scripts/test-long-task-session-wakeup.mjs",
+        "scripts/test-model-recovery-watch.mjs",
+        "scripts/test-opencode-agent-session.mjs",
         "scripts/test-parent-closure-lease-resume.mjs",
         "scripts/test-parent-closure-live-failure.mjs",
-        "scripts/test-task-original-acceptance.mjs",
-        "scripts/test-task-objective-coverage.mjs",
+        "scripts/test-parent-closure-notice.mjs",
+        "scripts/test-parent-closure-work-state.mjs",
+        "scripts/test-parent-task-closure-persistence.mjs",
+        "scripts/test-session-delete-cleanup.mjs",
+        "scripts/test-status-scaffold.mjs",
+        "scripts/test-step-budget-exhaustion.mjs",
         "scripts/test-task-acceptance-recovery.mjs",
-        "scripts/test-task-execution-progress.mjs",
-        "scripts/test-task-long-progress.mjs",
+        "scripts/test-task-center-unfinished.cjs",
+        "scripts/test-task-completion-integrity.mjs",
+        "scripts/test-task-completion-multistage.mjs",
         "scripts/test-task-continuation-budget-store.mjs",
         "scripts/test-task-continuation-dispatch.mjs",
-        "scripts/test-task-continuity-integration.mjs",
-        "scripts/test-long-task-session-wakeup.mjs",
-        "scripts/test-gateway-stream-completion.mjs",
-        "scripts/test-task-verification-shell.mjs",
-        "scripts/test-task-summary-localization.mjs",
-        "scripts/test-task-completion-multistage.mjs",
         "scripts/test-task-continuation-handoff.mjs",
-        "scripts/test-parent-task-closure-persistence.mjs",
-        "scripts/test-opencode-agent-session.mjs"
+        "scripts/test-task-continuity-integration.mjs",
+        "scripts/test-task-execution-classification.mjs",
+        "scripts/test-task-execution-progress.mjs",
+        "scripts/test-task-long-progress.mjs",
+        "scripts/test-task-objective-coverage.mjs",
+        "scripts/test-task-original-acceptance.mjs",
+        "scripts/test-task-request-continuity.mjs",
+        "scripts/test-task-source-resolution.mjs",
+        "scripts/test-task-summary-localization.mjs",
+        "scripts/test-task-verification-shell.mjs",
+        "scripts/test-unfinished-tasks.mjs"
       ]
     },
     {
@@ -232,7 +291,10 @@
         "scripts/test-evidence-ledger.mjs",
         "scripts/test-evidence-gate.mjs",
         "scripts/test-answer-evidence-finalizer.mjs",
-        "scripts/test-task-run-policy.mjs"
+        "scripts/test-task-run-policy.mjs",
+        "scripts/test-content-source-gate.mjs",
+        "scripts/test-attachment-staging-race.mjs",
+        "scripts/test-paste-keeps-text.mjs"
       ]
     },
     {
@@ -305,7 +367,8 @@
       "tests": [
         "scripts/test-scroll-geometry.mjs",
         "scripts/test-scroll-autofollow.cjs",
-        "scripts/test-message-live-render-model.mjs"
+        "scripts/test-message-live-render-model.mjs",
+        "scripts/test-conversation-minimap-continuity.mjs"
       ]
     },
     {
@@ -678,7 +741,8 @@
       "baseline": "Purely additive. The docked panel is unchanged; the detached window reuses the same renderer entry, the same modules and the same IPC. No service change was needed: `collaboration:subscribe` already keyed its subscriptions by `sender` and handed each one its own unsubscribe, so a second window subscribes independently.",
       "failureFallback": "One window at a time — opening again focuses the existing one rather than making a second view of the same list. A remembered position is only reused when part of the window would still be reachable on a display that exists; that predicate is exported and tested directly, because macOS clamps an off-screen window by itself and a test that reads bounds back could not tell whether the check ran. Bounds failing to persist costs a remembered position, never an error. The detached window skips the workbench boot rather than hiding it, so a second window does not duplicate its pollers, model lists and session UI.",
       "tests": [
-        "scripts/test-collaboration-detached-window.cjs"
+        "scripts/test-collaboration-detached-window.cjs",
+        "scripts/test-window-appearance.mjs"
       ]
     },
     {
@@ -1001,6 +1065,27 @@
       "failureFallback": "Purely additive: a new opt-in Fetch-models button + discovery module; the manual model-id field is unchanged and remains the fallback whenever discovery fails. Mutation-verified 2026-09-11: making discovery throw instead of returning ok:false, and dropping the auth header, each fail the test by name. Verified live against the real relay (37 models).",
       "tests": [
         "scripts/test-model-endpoint-discovery.mjs"
+      ]
+    },
+    {
+      "id": "agent-management",
+      "protects": "智能体 (agents) bind Lily's existing behaviour dimensions — role card, skills, knowledge packs, autonomy, model, tool policy, automations — to a conversation as HOST configuration, applied through the existing per-dimension setters, with an inert natural-language drafting tool and an official catalog that replaces the hard-coded legal-counsel knowledge coupling with data.",
+      "baseline": "Sessions without an agent binding behave exactly as before: same skill resolution, permission mode, model selection, character binding, knowledge preparation (the official legal role still requires the legal pack) and broker tool list plus lily_agent_draft. Role cards remain a lower-authority narrative suffix; the role activation contract is untouched.",
+      "failureFallback": "Every dimension applies independently and fails open to today's default with a named reason in the activation receipt; cold dimensions (model, tools.disallow) degrade to inherit beyond the serve fork budget; deactivate restores the exact pre-activation snapshot; unknown knowledge packs are reported by id; the kill switch LILY_AGENTS=0 hides the library, refuses activation and makes every agent-derived policy read inactive while stored bindings stay readable.",
+      "tests": [
+        "scripts/test-agent-definition.mjs",
+        "scripts/test-agent-repository.mjs",
+        "scripts/test-agent-activation.mjs",
+        "scripts/test-agent-binding-continuity.mjs",
+        "scripts/test-agent-draft-tool.mjs",
+        "scripts/test-agent-knowledge-preparation.mjs",
+        "scripts/test-agent-guidance.mjs",
+        "scripts/test-official-agent-catalog.mjs",
+        "scripts/test-agent-routing.mjs",
+        "scripts/test-agent-workspace-portability.mjs",
+        "scripts/test-agent-distribution.mjs",
+        "scripts/test-agent-library-model.mjs",
+        "scripts/test-agent-library-ui.cjs"
       ]
     }
   ]

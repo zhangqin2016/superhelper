@@ -19,6 +19,9 @@ async function scenario({ type = 'turn.completed', interrupted = false, unknown 
   const result = await finalizer.finalize('s', type, { assistant: 'Implementation done, not tested.' });
   return { state, result, prepared };
 }
+// Default (2026-09-15): a completed turn is NOT re-dispatched on an acceptance gap.
+assert.equal((await scenario()).prepared.length, 0, 'acceptance-gap re-dispatch of a completed turn is opt-in');
+process.env.LILY_ACCEPTANCE_GAP_CONTINUATION = '1';
 const outcome = await scenario();
 assert.equal((await scenario({ unknown: true })).prepared.length, 0, 'generic unobserved criteria cannot invent an unfinished user obligation when the judge is unavailable');
 assert.ok(outcome.result?.parentClosureSource, 'clean end with missing test returns an acceptance continuation');

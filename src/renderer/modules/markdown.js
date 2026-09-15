@@ -3,6 +3,7 @@
  * Uses highlight.js via dynamic ESM import.
  */
 import { revealLocalFileInFolder } from "./file-reveal.js";
+import { trimAutolinkedPunctuation } from "./markdown-link-trim.js";
 import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";
 import { t } from "../i18n/index.js";
 import { mapPlainSegments } from "./markdown-math-segments.js";
@@ -614,6 +615,7 @@ function autolinkLocalFilePaths(element) {
 
 function enhanceRenderedMarkdown(element, { interactive = false } = {}) {
   wireMarkdownImages(element);
+  trimAutolinkedPunctuation(element);
   autolinkLocalFilePaths(element);
   wireMarkdownLocalFileLinks(element);
   normalizeTaskLists(element);

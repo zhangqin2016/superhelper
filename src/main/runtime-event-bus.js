@@ -6,6 +6,10 @@ const POST_TERMINAL_ALLOWED = new Set([
   "queue.updated",
   "user.committed",
   "turn.started",
+  // Continuation lanes annotate a turn that has ALREADY ended; before 2026-09-15
+  // these were dropped here in-process and threw after a restart (unknown type).
+  "turn.parent_closure_recovery",
+  "turn.model_recovery",
   "engine.notice",
   "engine.warning",
   "engine.stderr",

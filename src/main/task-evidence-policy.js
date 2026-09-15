@@ -98,13 +98,17 @@ function evidenceSourcesForTaskType(taskType) {
   }
 }
 
-function requiredEvidenceKindsForTaskType(taskType) {
+function requiredEvidenceKindsForTaskType(taskType, options = {}) {
   switch (taskType) {
     case "architecture_audit":
     case "agent_quality":
       return ["file_search", "file_read"];
     case "content_extraction":
-      return ["source_content"];
+      // source_content can ONLY be produced by attachment/vision/document
+      // extraction. When this turn has nothing attached (and inherits nothing),
+      // the user is asking about files on disk: require a real read instead of
+      // an evidence kind that can never be recorded.
+      return options.hasExtractableSource === false ? ["file_read"] : ["source_content"];
     case "document_work":
       return ["document_output"];
     case "release_deploy":
@@ -116,11 +120,23 @@ function requiredEvidenceKindsForTaskType(taskType) {
   }
 }
 
+/**
+ * Does this turn actually have source content to extract? True when something is
+ * attached now, or when a prior turn's source content is inherited. Accepts a
+ * classification or a built task contract (both carry contentIntent).
+ */
+function hasExtractableContentSource(input = {}) {
+  const kinds = input?.contentIntent?.attachmentKinds;
+  if (Array.isArray(kinds) && kinds.length > 0) return true;
+  return Boolean(input?.priorSourceContentEvidence);
+}
+
 function buildEvidencePolicy(classification = {}) {
   const taskType = classification.taskType || "general";
   const active = Boolean(classification.active);
   const externalFact = buildExternalFactPolicy(classification.externalFactIntent);
-  const requiredEvidenceKinds = active ? requiredEvidenceKindsForTaskType(taskType) : [];
+  const hasExtractableSource = hasExtractableContentSource(classification);
+  const requiredEvidenceKinds = active ? requiredEvidenceKindsForTaskType(taskType, { hasExtractableSource }) : [];
   if (externalFact.required && !requiredEvidenceKinds.includes("external")) requiredEvidenceKinds.push("external");
   const allowedSources = evidenceSourcesForTaskType(taskType);
   if (externalFact.required) {
@@ -187,6 +203,7 @@ function withExternalFactPolicy(evidencePolicy = null, externalFact = null) {
 }
 
 module.exports = {
+  hasExtractableContentSource,
   buildEvidencePolicy,
   evidenceSourcesForTaskType,
   requiredEvidenceKindsForTaskType,

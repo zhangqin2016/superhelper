@@ -182,9 +182,10 @@ function compactQueueItem(item) {
   };
 }
 
-function appendPreflightFallback(text, context, title) {
-  return require("./engine-message-layers").appendExtractedContext(text, context, title);
-}
+const { applyPreflightContexts, lastRealTurnId } = require("./turn-preflight-context");
+const VISION_CONTEXT_LABEL = "Image recognition result";
+const DOCUMENT_CONTEXT_LABEL = "Document extraction result";
+const appendPreflightFallback = (text, context, title) => applyPreflightContexts(text, [{ label: title, content: context }]);
 
 class TurnOrchestrator {
   static QUEUE_RETRY_DELAY_MS = 80;
@@ -291,10 +292,12 @@ class TurnOrchestrator {
       claimAgentResumeId: (sessionId, agentResumeId) => this._claimAgentResumeId(sessionId, agentResumeId),
       handleRuntimeControl: (sessionId, payload) => this._handleRuntimeControl(sessionId, payload),
     });
-    for (const session of this.ctx.sessionManager?.iterateSessions?.() || []) {
-      this.restorePendingTurns(session.id);
+    if (!this.ctx.suppressAutomaticRecovery) {
+      for (const session of this.ctx.sessionManager?.iterateSessions?.() || []) {
+        this.restorePendingTurns(session.id);
+      }
+      queueMicrotask(() => void this.turnRecoveryRuntime.resumePendingParentClosuresForSessions(this.ctx.sessionManager?.iterateSessions?.() || []));
     }
-    queueMicrotask(() => void this.turnRecoveryRuntime.resumePendingParentClosuresForSessions(this.ctx.sessionManager?.iterateSessions?.() || []));
     // Safety net for phases no engine watchdog covers ("starting"/"finalizing").
     this.stuckPhaseGuard = require("./turn-start-guard").startStuckPhaseGuard(this);
   }
@@ -623,8 +626,9 @@ class TurnOrchestrator {
     state.usage = null;
     state.lastStopReason = "";
     state.sawRecognizedStopReason = false;
+    state.stepCount = 0;
     state.taskContract = null;
-    state.turnPolicy = null;
+    state.turnPolicy = null; state.agentLabel = require("./agents/session-agent-policy").agentLabelFor(this.ctx, session.id);
     initializeTurnEvidenceState(state);
     state.taskRun = null; state.lifecycleTaskId = null; state.contextSnapshot = null; state.contextRegistryId = null; state.taskCore = null;
     state.enginePayload = null; state.turnModelRoute = null;
@@ -790,8 +794,9 @@ class TurnOrchestrator {
     state.usage = null;
     state.lastStopReason = "";
     state.sawRecognizedStopReason = false;
+    state.stepCount = 0;
     state.taskContract = null;
-    state.turnPolicy = null;
+    state.turnPolicy = null; state.agentLabel = require("./agents/session-agent-policy").agentLabelFor(this.ctx, session.id);
     initializeTurnEvidenceState(state, opts.recovery);
     state.taskRun = null; state.lifecycleTaskId = null; state.contextSnapshot = null; state.contextRegistryId = null; state.taskCore = null;
     state.enginePayload = null; state.turnModelRoute = modelRuntime.routeTrace(modelRoute);
@@ -855,14 +860,9 @@ class TurnOrchestrator {
     });
     if (!isCurrentStart()) return staleStartResult();
     if (legalKnowledge.required && !legalKnowledge.ready) {
-      const detail = "官方法律角色需要授权的法律知识库，当前未能准备完成。请检查账号权限和网络后重试。";
-      this._finalize(session.id, "turn.failed", {
-        failed: true,
-        assistant: detail,
-        code: "LEGAL_KB_UNAVAILABLE",
-        errorCode: legalKnowledge.error || "LEGAL_KB_UNAVAILABLE",
-      });
-      return { ok: false, error: "LEGAL_KB_UNAVAILABLE", detail, legalKnowledge };
+      const { code, detail } = require("./legal-kb/turn-preparation").knowledgeFailure(legalKnowledge);
+      this._finalize(session.id, "turn.failed", { failed: true, assistant: detail, code, errorCode: legalKnowledge.error || code });
+      return { ok: false, error: code, detail, legalKnowledge };
     }
     state.legalKnowledge = legalKnowledge;
     const sourceTaskCore = sourceTaskCoreForTurn(this.ctx, session, state, opts);
@@ -1009,6 +1009,7 @@ class TurnOrchestrator {
         log.warn("opencode resume continuity check failed open: %s", err?.message || String(err));
       }
     }
+    const preflightContexts = []; // see turn-preflight-context.js
     if (!opts.skipVision) {
       const vision = await runVisionPreflight(text, files, {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
@@ -1026,6 +1027,7 @@ class TurnOrchestrator {
           vision.error || "",
           vision.detail || "",
         );
+        preflightContexts.push({ label: VISION_CONTEXT_LABEL, content: buildVisionFailureContext(files, vision.detail || vision.error || "VISION_FAILED") });
         text = appendPreflightFallback(
           text,
           buildVisionFailureContext(files, vision.detail || vision.error || "VISION_FAILED"),
@@ -1033,6 +1035,7 @@ class TurnOrchestrator {
         );
         state.currentPayload = { ...state.currentPayload, rawText: rawUserText, text, files, displayFiles };
       } else {
+        if (vision.extractedContext) preflightContexts.push({ label: VISION_CONTEXT_LABEL, content: vision.extractedContext });
         text = vision.text;
         files = vision.files;
         state.currentPayload = { ...state.currentPayload, rawText: rawUserText, text, files, displayFiles };
@@ -1051,6 +1054,7 @@ class TurnOrchestrator {
           document.error || "",
           document.detail || "",
         );
+        preflightContexts.push({ label: DOCUMENT_CONTEXT_LABEL, content: buildDocumentFailureContext(files, document.detail || document.error || "DOCUMENT_FAILED") });
         text = appendPreflightFallback(
           text,
           buildDocumentFailureContext(files, document.detail || document.error || "DOCUMENT_FAILED"),
@@ -1064,6 +1068,7 @@ class TurnOrchestrator {
         });
         state.currentPayload = { ...state.currentPayload, rawText: rawUserText, text, files, displayFiles };
       } else {
+        if (document.extractedContext) preflightContexts.push({ label: DOCUMENT_CONTEXT_LABEL, content: document.extractedContext });
         text = document.text;
         files = document.files;
         state.evidenceLedger?.recordDocumentExtraction?.(document.documentEvidence);
@@ -1101,10 +1106,9 @@ class TurnOrchestrator {
       }
     }
 
-    let engineText =
-      typeof opts.engineText === "string" && opts.engineText.trim()
-        ? opts.engineText.trim()
-        : text;
+    // Routing replaces the user text; preflight extraction is re-applied on top.
+    const routedText = typeof opts.engineText === "string" && opts.engineText.trim() ? opts.engineText.trim() : "";
+    let engineText = routedText ? applyPreflightContexts(routedText, preflightContexts) : text;
     const preRehydrateText = engineText;
     let rehydrated = false;
     let shortFollowupContext = false;
@@ -1142,6 +1146,7 @@ class TurnOrchestrator {
         engineText,
         messages: historySession.messages,
         summary,
+        recovery: this.turnRecoveryRuntime.recoverySourceForTurn?.(session.id, lastRealTurnId(historySession.messages)),
       });
       engineText = followup.text;
       shortFollowupContext = Boolean(followup.applied);
@@ -1296,6 +1301,7 @@ class TurnOrchestrator {
       model: modelRoute.model || null,
       taskContract: state.taskContract,
       turnPolicy: state.turnPolicy,
+      compactionAnchor: require("./compaction-anchor").buildCompactionAnchor(state, rawUserText),
       nonInteractive: Boolean(opts.nonInteractive || state.wasRescueAttempt || state.documentDeliveryRecovery),
       requiredSuccessfulTools: normalizeRequiredTools(opts.requiredSuccessfulTools),
       trace: {
@@ -1661,14 +1667,15 @@ class TurnOrchestrator {
 
     const normalized = normalizeAssistantOutput(payload?.output || state.assistantText);
     const interrupted = Boolean(payload?.interruptedByUser || payload?.userInterrupted);
-    const stalled = Boolean(payload?.stalled);
+    const stepBudget = require("./turn-step-budget").evaluateStepBudget(state, payload);
+    const stalled = Boolean(payload?.stalled) || stepBudget.exhausted;
     const failure = interrupted || stalled
       ? null
       : classifyTurnFailure(payload, normalized, state);
     const failed = Boolean(failure); const blockingProcessJobs = interrupted || stalled || failed
       ? []
       : findBlockingRunningProcessJobs([...state.tools.values()]);
-    const parentClosureSource = captureParentClosureSource(state, { ...payload, failed, stalled: stalled || Boolean(blockingProcessJobs.length), errorCode: failure?.code || "" }); if (failed || stalled || blockingProcessJobs.length) this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource);
+    const parentClosureSource = captureParentClosureSource(state, { ...payload, ...stepBudget.terminalMeta, failed, stalled: stalled || Boolean(blockingProcessJobs.length), errorCode: failure?.code || "" }); const closurePrepared = failed || stalled || blockingProcessJobs.length ? this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource) : null;
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
     let finalizeDone = null;
@@ -1678,6 +1685,7 @@ class TurnOrchestrator {
       ...(payload?.continuationHandoff ? { continuationHandoff: payload.continuationHandoff } : {}),
       ...(["no_progress", "turn_budget_exhausted"].includes(payload?.continuationStopReason)
         ? { continuationStopReason: payload.continuationStopReason, unfinishedTodoCount: Number(payload.unfinishedTodoCount) || 0 } : {}),
+      ...stepBudget.terminalMeta,
       durationMs: state.durationMs ?? null,
       totalCostUsd: state.totalCostUsd ?? null,
       // Rewind anchor: the engine message id of this turn (session:rewind reverts
@@ -1691,7 +1699,7 @@ class TurnOrchestrator {
         ...terminalMeta,
       });
     } else if (stalled) {
-      const stalledText = normalized.text || state.assistantText;
+      const stalledText = [normalized.text || state.assistantText, closurePrepared?.prepared ? stepBudget.notice : stepBudget.noticeIneligible].filter(Boolean).join("\n\n");
       finalizeDone = this._finalize(sessionId, "turn.stalled", {
         stalled: true,
         assistant: appendIncompleteTurnSummary(stalledText, state, payload, {

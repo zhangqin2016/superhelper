@@ -10,6 +10,7 @@ import { registerPublicEnterpriseRoutes } from "./public/enterprise.js";
 import { registerPublicLicenseRoutes } from "./public/licenses.js";
 import { registerPublicMobileRoutes } from "./public/mobile.js";
 import { registerPublicSkillRoutes } from "./public/skills.js";
+import { registerPublicAgentRoutes } from "./public/agents.js";
 import { registerPublicTelemetryRoutes } from "./public/telemetry.js";
 import { registerPublicWishRoutes } from "./public/wishes.js";
 import { registerCollaborationRoutes } from "./public/collaboration.js";
@@ -39,6 +40,7 @@ export async function publicRoutes(app) {
   registerPublicLicenseRoutes(app);
   registerPublicMobileRoutes(app);
   registerPublicSkillRoutes(app);
+  registerPublicAgentRoutes(app);
   registerPublicTelemetryRoutes(app);
   registerPublicWishRoutes(app);
   registerCollaborationRoutes(app);

@@ -187,6 +187,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
     return {
       ok: true,
       text: buildEnrichedUserText(text, fallbackText),
+      extractedContext: fallbackText,
       files,
       visionDegraded: true,
       visionEvidence: sourceContentEvidence({
@@ -213,6 +214,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
     return {
       ok: true,
       text: buildEnrichedUserText(text, fallbackText),
+      extractedContext: fallbackText,
       files,
       visionDegraded: true,
       visionEvidence: sourceContentEvidence({
@@ -248,10 +250,8 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
   // confidently answer follow-ups about detail it never saw. The layer intro
   // already frames this as evidence, so keep it to the one fact it omits.
   const bridgeProvenance = "You did NOT see these images — the text below came from a separate image-recognition model. Do not claim to have viewed them; if the user asks about detail the description omits, say so instead of guessing.";
-  const enrichedText = buildEnrichedUserText(
-    text,
-    [bridgeProvenance, result.text, partialFailureContext].filter(Boolean).join("\n\n"),
-  );
+  const visionContext = [bridgeProvenance, result.text, partialFailureContext].filter(Boolean).join("\n\n");
+  const enrichedText = buildEnrichedUserText(text, visionContext);
   const outboundFiles = result.keepOriginal || failedFiles.length
     ? files
     : withoutVisionFiles(files);
@@ -261,6 +261,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
   return {
     ok: true,
     text: enrichedText,
+    extractedContext: visionContext,
     files: outboundFiles,
     visionEvidence: sourceContentEvidence({
       sourceType: "image",
@@ -272,6 +273,17 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
       extractedChars: String(result.text || "").length,
     }),
   };
+}
+
+// Why the document could not be read, in the user's language. A bare
+// "skipped" chip made every cause look identical (2026-09-15).
+function documentFailureDetail(failures) {
+  try {
+    const locale = require("./locale-settings").getLocale?.() || "zh-CN";
+    return require("./document-failure-copy").describeDocumentFailures(failures, locale);
+  } catch {
+    return "";
+  }
 }
 
 async function runDocumentPreflight(text, files, { emitNotice } = {}) {
@@ -350,11 +362,13 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
       replace: true,
       replacesCode: "documentPreparing",
       done: true,
+      detail: documentFailureDetail(result.failures),
     });
     const fallbackText = buildDocumentFailureContext(files, result.detail || result.reason || "DOCUMENT_FAILED");
     return {
       ok: true,
       text: buildEnrichedUserText(text, fallbackText),
+      extractedContext: fallbackText,
       files,
       documentEvidence: {
         index: null,
@@ -381,6 +395,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
       replace: true,
       replacesCode: "documentPreparing",
       done: true,
+      detail: documentFailureDetail(result.failures),
     });
   } else {
     notify({
@@ -399,6 +414,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
     : (files || []).filter((file) => !extracted.has(resolveLiveFilePath(file)));
   const documentContext = [result.text, result.documentIndexText].filter(Boolean).join("\n\n");
   const enrichedText = buildEnrichedUserText(text, documentContext);
+  const extractedContext = documentContext;
   const extractedCount = (result.extractedPaths || []).length;
   const coverageLimited = /\[Content truncated, original length:/i.test(String(result.text || ""));
   const status = extractedCount <= 0
@@ -409,6 +425,10 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
   return {
     ok: true,
     text: enrichedText,
+    // The extracted body on its own, so a caller that overrides the user text
+    // (character/agent authoring routing) can re-apply it instead of silently
+    // discarding the document the user attached.
+    extractedContext,
     files: outboundFiles,
     documentEvidence: {
       index: result.documentIndex || null,

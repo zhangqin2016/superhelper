@@ -3,7 +3,9 @@ export function readCharacterAuthoringMarker(input, text) {
   if (adjustmentHandle) return { kind: "characterWorldsAdjustment", adjustmentHandle };
   const starter = input?.dataset?.characterAuthoringStarter || "";
   const kind = input?.dataset?.characterAuthoringKind || "";
-  return starter && String(text || "").startsWith(starter) && ["character", "persona", "worldBook"].includes(kind)
+  // "agent" routes to the main-side agent authoring intent (lily_agent_draft);
+  // creation is a conversation, not a form (memory/no-ui-natural-language.md).
+  return starter && String(text || "").startsWith(starter) && ["character", "persona", "worldBook", "agent"].includes(kind)
     ? { kind, starter }
     : null;
 }

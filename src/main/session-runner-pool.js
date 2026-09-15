@@ -411,7 +411,12 @@ class SessionRunnerPool {
       // and risk reusing the wrong session in another view. Keep this transport
       // explicitly platform-only. Callers with an actually isolated transport
       // can still pass real context directly to writeActiveMcpConfig.
-      const sharedBrokerContext = { platformOnly: true, activeSkillIds: [], characterWorlds: require("./character-worlds/agent-draft-tools").assembleCharacterWorldsBrokerBlock() };
+      const sharedBrokerContext = {
+        platformOnly: true,
+        activeSkillIds: [],
+        characterWorlds: require("./character-worlds/agent-draft-tools").assembleCharacterWorldsBrokerBlock(),
+        agents: require("./agents/agent-draft-tool").assembleAgentsBrokerBlock(),
+      };
       const written = writeActiveMcpConfig(
         bundleRuntimeDir(),
         out,
@@ -463,7 +468,7 @@ class SessionRunnerPool {
         candidates.push(path.join(PROJECT_ROOT, rel));
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
-      return ["runtime-dependency-hint.js", "runtime-identity.js", "public-hooks-bridge.js", "verify-edit.js", "compaction-memory.js", "loop-detector.js", "todo-progress-nudge.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "empty-assistant-history-guard.js", "context-window-guard.js", "live-file-history-guard.js"].map(resolve).filter(Boolean);
+      return ["runtime-dependency-hint.js", "runtime-identity.js", "public-hooks-bridge.js", "verify-edit.js", "compaction-memory.js", "compaction-continuity.js", "loop-detector.js", "todo-progress-nudge.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "empty-assistant-history-guard.js", "context-window-guard.js", "live-file-history-guard.js"].map(resolve).filter(Boolean);
     } catch {
       return [];
     }

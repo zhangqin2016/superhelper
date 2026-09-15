@@ -274,13 +274,29 @@ function registerCharacterWorldsHandlers(ctx) {
       return failure("INVALID_INPUT");
     }
     try {
-      const binding = repo.setBinding({
-        sessionId: session.sessionId,
-        ownerScope: session.ownerScope,
-        expectedBindingVersion: payload.expectedBindingVersion,
-        next,
-      });
-      return { ok: true, binding };
+      // An agent owns the role dimension. An explicit role choice wins: release
+      // the agent first (restoring its snapshot), then bind against the CURRENT
+      // version so the user's stale expectedBindingVersion does not conflict.
+      const roleName = next.mode === "character" ? resolveBindingCharacterName(repo, session.ownerScope, next) : "";
+      const released = await require("./agents/role-binding-with-agent").releaseAgentForRoleChange(ctx, session.sessionId, { roleName });
+      const expectedBindingVersion = released
+        ? repo.getBinding(session.sessionId, session.ownerScope)?.bindingVersion ?? payload.expectedBindingVersion
+        : payload.expectedBindingVersion;
+      let binding;
+      try {
+        binding = repo.setBinding({
+          sessionId: session.sessionId,
+          ownerScope: session.ownerScope,
+          expectedBindingVersion,
+          next,
+        });
+      } catch (error) {
+        // The agent was already released above. Never report a bare failure that
+        // hides it — the user would silently lose the agent AND the role change.
+        if (released) return { ...mapDomainError(error), agentDeactivated: released };
+        throw error;
+      }
+      return { ok: true, binding, ...(released ? { agentDeactivated: released } : {}) };
     } catch (error) {
       return mapDomainError(error);
     }

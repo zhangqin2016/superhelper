@@ -39,6 +39,8 @@
     "turn.steered",
     "turn.self_heal_retry",
     "turn.self_heal_notice",
+    "turn.parent_closure_recovery",
+    "turn.model_recovery",
     "task.created",
     "task.plan.updated",
     "task.step.started",

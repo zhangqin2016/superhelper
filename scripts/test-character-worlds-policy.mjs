@@ -43,24 +43,26 @@ async function check(name, fn) {
   console.log(`  ok - ${name}`);
 }
 
+// Default flipped to ENABLED on 2026-09-14: 智能体 (agents) use roles as their
+// voice layer. CHARACTER_WORLDS_ENABLED=false switches the rollout off.
 const EXPECTED_DEFAULT_POLICY = {
-  enabled: false,
+  enabled: true,
   compatibilityProfile: "lily-character-compat-1",
   minimumClientVersion: "0.1.145",
 };
 
 // --- server: conservative defaults -------------------------------------------
 
-await check("server config emits a disabled characterWorlds policy by default", async () => {
+await check("server config emits an enabled characterWorlds policy by default", async () => {
   assert.deepEqual(
     DEFAULT_EFFECTIVE_CONFIG.characterWorlds,
     EXPECTED_DEFAULT_POLICY,
-    "packaged effective-config defaults must carry the conservative disabled policy",
+    "packaged effective-config defaults must carry the enabled-by-default policy",
   );
   assert.deepEqual(
     resolveCharacterWorldsPolicy({}),
     EXPECTED_DEFAULT_POLICY,
-    "an unconfigured server must resolve to the conservative disabled policy",
+    "an unconfigured server must resolve to the enabled-by-default policy",
   );
 });
 

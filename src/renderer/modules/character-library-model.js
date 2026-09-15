@@ -10,7 +10,13 @@
  * revision N+1 through the validated authoring bridge (§8).
  */
 
-export const LIBRARY_TABS = ["characters"];
+import { buildAgentLibraryItems } from "./agent-library-model.js";
+
+// "agents" is the default tab (智能体); the character tab stays second. An
+// agent card is a host-owned configuration bundle whose items come from
+// ./agent-library-model.js — the reducer only stores them.
+export const LIBRARY_TABS = ["agents", "characters"];
+export const DEFAULT_LIBRARY_TAB = "agents";
 
 const MAX_ID_CHARS = 128;
 const MAX_NAME_CHARS = 256;
@@ -55,18 +61,18 @@ export const LIBRARY_GROUPS = Object.freeze({
 
 /** Domain kind served by the authoring bridge for a library tab. */
 export function kindForTab(tab) {
-  return "character";
+  return tab === "agents" ? "agent" : "character";
 }
 
 export function initialCharacterLibraryState(overrides = {}) {
   return {
     open: false,
-    tab: "characters",
+    tab: DEFAULT_LIBRARY_TAB,
     query: "",
     tag: "",
     source: "",
     groupId: "featured",
-    items: { characters: [], personas: [], books: [] },
+    items: { agents: [], characters: [], personas: [], books: [] },
     selectedItemId: null,
     detail: null,
     detailLoading: false,
@@ -163,7 +169,14 @@ export function normalizeLibraryItem(tab, entry = {}) {
   };
 }
 
-function sanitizeItems(tab, raw) {
+function sanitizeItems(tab, raw, action = {}) {
+  if (tab === "agents") {
+    // Agent rows arrive as the raw `agents:list` payload plus the session's
+    // bound agent id; the pure agent model merges the three catalog sources.
+    return Array.isArray(raw)
+      ? raw.filter((item) => item && item.kind === "agent" && item.id)
+      : buildAgentLibraryItems(raw && typeof raw === "object" ? raw : {}, { activeAgentId: action.activeAgentId || "" });
+  }
   if (!Array.isArray(raw)) return [];
   return raw.map((entry) => normalizeLibraryItem(tab, entry)).filter((item) => item.id);
 }
@@ -327,7 +340,7 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
         query: "",
         tag: "",
         source: "",
-        groupId: tab === "characters" ? "featured" : "all",
+        groupId: tab === "characters" || tab === "agents" ? "featured" : "all",
         selectedItemId: null,
         detail: null,
         detailLoading: false,
@@ -361,7 +374,7 @@ export function reduceCharacterLibrary(state, action) {  switch (action?.type) {
       if (!LIBRARY_TABS.includes(action.tab)) return state;
       return {
         ...state,
-        items: { ...state.items, [action.tab]: sanitizeItems(action.tab, action.items) },
+        items: { ...state.items, [action.tab]: sanitizeItems(action.tab, action.items, action) },
       };
     }
     case "detail.selected":

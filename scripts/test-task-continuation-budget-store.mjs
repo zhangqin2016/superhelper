@@ -53,6 +53,8 @@ try {
   db.close();
   db = openDatabase(file);
   denied(reserve('c2', 'repeat-after-reopen', [key('one')]), 'TASK_CONTINUATION_NO_PROGRESS');
+  // Parent-closure lane floor (opt-in per call): a follow-up round with fewer new receipts than minProgress is no progress.
+  denied(reserve('c2', 'thin-round', [key('thin-1'), key('thin-2')], { minProgress: 3 }), 'TASK_CONTINUATION_NO_PROGRESS');
   for (let i = 3; i <= 8; i++) {
     assert.deepEqual(reserve(`c${i - 1}`, `c${i}`, [key(i)]),
       { ok: true, rootTurnId: 'root', rounds: i });

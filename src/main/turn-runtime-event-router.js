@@ -364,6 +364,7 @@ function createTurnRuntimeEventRouter(options = {}) {
           break;
         case "usage.updated": {
           state.usage = payload.usage || payload;
+          state.stepCount = (Number(state.stepCount) || 0) + 1; // one usage event per model step
           const stopReason = String(payload.stopReason || "");
           if (stopReason) {
             state.lastStopReason = stopReason;

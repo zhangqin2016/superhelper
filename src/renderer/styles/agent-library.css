@@ -1,0 +1,380 @@
+/* 智能体 (agent) surfaces: library tab cards + detail, composer popover
+   section, starter chips, sidebar mark. Tokens only (base.css); the
+   character library owns the shared card/badge/detail chrome. */
+
+/* --- Library cards ------------------------------------------------------- */
+
+.character-library-card-marker.is-agent-icon,
+.character-option-swatch.is-agent-icon,
+.session-role-banner-avatar.is-agent-icon {
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.character-library-card-marker.is-agent-icon {
+  font-size: var(--text-xl);
+}
+
+.character-library-card-marker.is-agent-icon.is-large {
+  font-size: calc(var(--text-xl) * 1.25);
+}
+
+.agent-library-row-description {
+  color: var(--text-secondary);
+}
+
+.agent-badge-distributed,
+.agent-badge-default {
+  border-color: var(--info-border-soft, var(--border-light));
+  color: var(--info-text, var(--text-secondary));
+}
+
+/* --- Detail: read-only capabilities -------------------------------------- */
+
+.agent-capability-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-capability-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.agent-capability-label {
+  padding-top: 3px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.agent-capability-chips {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.agent-capability-chip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-muted);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-capability-chip.is-inherit {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+/* --- Composer popover: 智能体 section ------------------------------------ */
+
+.character-agent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-subtle);
+}
+
+.character-agent-section[hidden] {
+  display: none;
+}
+
+.character-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.character-agent-option {
+  min-height: 48px;
+  padding: 6px 10px;
+}
+
+.character-agent-swatch.is-none {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.character-agent-notice {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--warning-border-soft, var(--border-light));
+  border-radius: var(--radius-xs);
+  background: var(--warning-bg-soft, var(--bg-surface));
+  color: var(--warning-text, var(--text-secondary));
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.character-agent-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.character-agent-manage {
+  width: auto;
+  padding-inline: 12px;
+}
+
+/* --- Composer banner when an agent is bound ------------------------------ */
+
+.session-role-banner.is-agent .session-role-banner-avatar {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+/* --- Starter chips above the composer ------------------------------------ */
+
+.agent-starters {
+  width: min(100%, var(--chat-col));
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.agent-starters[hidden] {
+  display: none;
+}
+
+.agent-starter-chip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 6px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.agent-starter-chip:hover,
+.agent-starter-chip:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+}
+
+/* --- Sidebar session mark ------------------------------------------------- */
+
+.session-agent-mark {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: 14px;
+  height: 14px;
+  margin-inline-end: 2px;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.session-agent-mark.is-dot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* --- Popover agent section: explainer, full list, capability chips ------- */
+
+.character-agent-explainer {
+  margin: -2px 0 2px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* Every agent is listed; the list scrolls inside the popover so the role list
+   below stays reachable at ~800px window height. */
+.character-agent-list {
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.character-agent-option {
+  min-height: 56px;
+}
+
+.character-agent-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.character-agent-cap {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.character-agent-cap.is-autonomy {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+/* Role list ↔ agent cross-reference note (sits above the native row). */
+.character-role-agent-note {
+  grid-column: 1 / -1;
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--accent-subtle);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.character-role-agent-note::after {
+  display: none;
+}
+
+/* --- In-conversation traces ---------------------------------------------- */
+
+/* Platform card for an agent binding change (activated / deactivated /
+   replaced by a role pick). Muted: it is a status, not an answer. */
+.agent-binding-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-block: 10px;
+  max-width: min(560px, 100%);
+  padding: 10px 14px;
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border-light));
+  background: color-mix(in srgb, var(--accent-subtle) 60%, var(--bg-surface-raised));
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.agent-binding-notice.is-deactivated,
+.agent-binding-notice.is-replaced_by_role {
+  border-color: color-mix(in srgb, var(--border-light) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-surface-raised) 88%, transparent);
+}
+
+.agent-binding-notice-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-binding-notice-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #ffffff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.agent-binding-notice-avatar.is-agent-icon {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  font-size: var(--text-sm);
+}
+
+.agent-binding-notice-title {
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.agent-binding-notice-lines {
+  margin: 0;
+  padding-inline-start: 30px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.agent-binding-notice-lines li {
+  overflow-wrap: anywhere;
+}
+
+/* "由智能体「X」回答" — rides in the sealed article's speaker row. */
+.assistant-turn-agent-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  margin-inline-start: 2px;
+  padding: 0 8px 0 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.assistant-turn-agent-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: #ffffff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.assistant-turn-agent-glyph.is-agent-icon {
+  background: transparent;
+  font-size: var(--text-sm);
+}
+
+.assistant-turn-agent-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
