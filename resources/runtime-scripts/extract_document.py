@@ -12,6 +12,12 @@ no text layer (scans) are rendered with pypdfium2 and OCR'd with RapidOCR
 (onnxruntime). The OCR engine is imported lazily, so digital PDFs and Office
 files never pay for it.
 
+Content that exists ONLY as pixels — a pasted invoice, a chart screenshot, a
+stamped page — used to vanish here: Office extraction walked paragraphs and
+cells, and a PDF page was OCR'd only when it had no text at all. Embedded
+pictures now go through document_images.py, which OCRs them in document order
+under a bounded, deduplicated budget and says so when one cannot be read.
+
 Usage: python extract_document.py <file_path>
 Emits a single JSON object on stdout: {"ok": true, "text": "..."} or
 {"ok": false, "error": "..."}.
@@ -151,27 +157,32 @@ def extract_docx(path):
 
     doc = Document(path)
     parts = []
+    harvest = _image_harvest()
     for child in doc.element.body.iterchildren():
         if isinstance(child, CT_P):
             para = Paragraph(child, doc)
             text = para.text.strip()
-            if not text:
-                continue
-            style = (para.style.name or "").lower() if para.style else ""
-            if style.startswith("heading"):
-                level = "".join(ch for ch in style if ch.isdigit()) or "1"
-                parts.append("#" * min(int(level), 6) + " " + text)
-            else:
-                parts.append(text)
+            if text:
+                style = (para.style.name or "").lower() if para.style else ""
+                if style.startswith("heading"):
+                    level = "".join(ch for ch in style if ch.isdigit()) or "1"
+                    parts.append("#" * min(int(level), 6) + " " + text)
+                else:
+                    parts.append(text)
+            # A picture keeps its place in the prose: an invoice pasted
+            # between two paragraphs must read as being between them.
+            parts.extend(_read_images(harvest, child, doc.part))
         elif isinstance(child, CT_Tbl):
             table = Table(child, doc)
             rows = [[cell.text for cell in row.cells] for row in table.rows]
             md = _rows_to_markdown(rows)
             if md:
                 parts.append(md)
+            parts.extend(_read_images(harvest, child, doc.part))
     comments = _format_docx_comments(extract_docx_comments(path))
     if comments:
         parts.append(comments)
+    _harvest_footer(harvest, parts)
     return "\n\n".join(parts)
 
 
@@ -180,11 +191,19 @@ def extract_xlsx(path):
 
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     parts = []
+    harvest = _image_harvest()
     for sheet in wb.worksheets:
         rows = list(sheet.iter_rows(values_only=True))
         table = _rows_to_markdown(rows)
         if table:
             parts.append(f"## Sheet: {sheet.title}\n\n{table}")
+    if harvest is not None:
+        from document_images import zip_media
+
+        lines = [line for line in (harvest.read(blob) for _, blob in zip_media(path, "xl/media/")) if line]
+        if lines:
+            parts.append("## Images\n\n" + "\n\n".join(lines))
+    _harvest_footer(harvest, parts)
     wb.close()
     return "\n\n".join(parts)
 
@@ -194,6 +213,10 @@ def extract_pptx(path):
 
     prs = Presentation(path)
     parts = []
+    harvest = _image_harvest()
+    picture = None
+    if harvest is not None:
+        from document_images import pptx_shape_image as picture
     for index, slide in enumerate(prs.slides, start=1):
         lines = []
         for shape in slide.shapes:
@@ -202,12 +225,17 @@ def extract_pptx(path):
                 table = _rows_to_markdown(rows)
                 if table:
                     lines.append(table)
-            elif shape.has_text_frame:
-                text = shape.text_frame.text.strip()
-                if text:
-                    lines.append(text)
+            elif shape.has_text_frame and shape.text_frame.text.strip():
+                lines.append(shape.text_frame.text.strip())
+            # A slide is often ONE screenshot with no text frame at all; that
+            # deck used to extract as an empty document.
+            if picture is not None:
+                marker = harvest.read(picture(shape))
+                if marker:
+                    lines.append(marker)
         if lines:
             parts.append(f"## Slide {index}\n\n" + "\n\n".join(lines))
+    _harvest_footer(harvest, parts)
     return "\n\n".join(parts)
 
 
@@ -235,6 +263,42 @@ def _ocr(image):
     return "\n".join(line[1] for line in result)
 
 
+def _image_harvest():
+    """Picture recognizer for one document, or None when OCR is unavailable.
+
+    Fail-open by construction: if the OCR engine cannot be imported (a runtime
+    without the pack), extraction continues exactly as before and simply does
+    not report pictures.
+    """
+    try:
+        from document_images import ImageHarvest
+
+        return ImageHarvest(_ocr)
+    except Exception:  # noqa: BLE001 — no OCR runtime is a normal base case
+        return None
+
+
+def _read_images(harvest, element, part):
+    """Marker lines for the pictures referenced by one docx element."""
+    if harvest is None:
+        return []
+    try:
+        from document_images import docx_element_images
+
+        blobs = docx_element_images(part, element)
+    except Exception:  # noqa: BLE001
+        return []
+    return [line for line in (harvest.read(blob) for blob in blobs) if line]
+
+
+def _harvest_footer(harvest, parts):
+    if harvest is None:
+        return
+    note = harvest.footer()
+    if note:
+        parts.append(note)
+
+
 def _ocr_pdf_pages(path, indices):
     # Render only the text-less pages with pypdfium2 (PDFium, Apache) and OCR
     # them. One PdfDocument for the whole batch. scale=2 ≈ 144 dpi — enough for
@@ -251,6 +315,33 @@ def _ocr_pdf_pages(path, indices):
     finally:
         pdf.close()
     return out
+
+
+def _pdf_page_pictures(harvest, pdf_path, page, index):
+    """Marker lines for the picture objects on a page that already has text.
+
+    The old rule OCR'd a page only when it had NO text, so the most common
+    mixed page — prose plus a chart or a pasted screenshot — silently lost the
+    picture. Only that page is rendered, and only its picture regions are
+    cropped, so a 200-page report does not turn into 200 page renders.
+    """
+    if harvest is None:
+        return []
+    try:
+        from document_images import pdf_page_pictures
+
+        def render():
+            import pypdfium2 as pdfium
+
+            document = pdfium.PdfDocument(pdf_path)
+            try:
+                return document[index].render(scale=2).to_pil().convert("RGB")
+            finally:
+                document.close()
+
+        return [line for line in (harvest.read(blob) for blob in pdf_page_pictures(page, render)) if line]
+    except Exception:  # noqa: BLE001 — a picture that cannot be cropped is not an extraction failure
+        return []
 
 
 def _pro_pdf_enabled():
@@ -286,6 +377,7 @@ def extract_pdf(path):
 
     import pdfplumber
 
+    harvest = _image_harvest()
     page_texts = []
     empty_pages = []
     with pdfplumber.open(path) as pdf:
@@ -299,7 +391,8 @@ def extract_pdf(path):
                 if md:
                     chunks.append(md)
             if chunks:
-                page_texts.append("\n\n".join(chunks))
+                pictures = _pdf_page_pictures(harvest, pdf_path=path, page=page, index=index)
+                page_texts.append("\n\n".join(chunks + pictures))
             else:
                 page_texts.append(None)
                 empty_pages.append(index)
@@ -309,7 +402,9 @@ def extract_pdf(path):
             if text.strip():
                 page_texts[index] = text.strip()
 
-    return "\n\n".join(part for part in page_texts if part)
+    parts = [part for part in page_texts if part]
+    _harvest_footer(harvest, parts)
+    return "\n\n".join(parts)
 
 
 def extract_image(path):

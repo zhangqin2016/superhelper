@@ -294,7 +294,8 @@
         "scripts/test-task-run-policy.mjs",
         "scripts/test-content-source-gate.mjs",
         "scripts/test-attachment-staging-race.mjs",
-        "scripts/test-paste-keeps-text.mjs"
+        "scripts/test-paste-keeps-text.mjs",
+        "scripts/test-document-image-recognition.mjs"
       ]
     },
     {
