@@ -48,8 +48,14 @@ def _limit_int(name, fallback):
 class ImageHarvest:
     """Bounded, deduplicated OCR over the pictures found in one document."""
 
-    def __init__(self, ocr):
+    def __init__(self, ocr, export_dir=None):
         self._ocr = ocr
+        # When the caller wants a second opinion (a vision model reads charts
+        # and photos that OCR can only spell), every recognized picture is
+        # written here so the caller can upgrade it without re-parsing the
+        # document. OCR text stays authoritative for exact strings.
+        self._export_dir = export_dir
+        self.exported = []
         self._seen = {}
         self._started = time.monotonic()
         self._index = 0
@@ -124,8 +130,25 @@ class ImageHarvest:
             self.failed += 1
             self._seen[digest] = index
             return f"[Image {index}: not readable]"
+        self._export(index, data, text)
         self._seen[digest] = index if text else 0
         return f"[Image {index}] {text}" if text else f"[Image {index}: no readable text]"
+
+    def _export(self, index, data, text):
+        """Write one recognized picture for the caller. Failure is silent: an
+        export is an optional upgrade, never a reason to lose the OCR text."""
+        if not self._export_dir:
+            return
+        try:
+            os.makedirs(self._export_dir, exist_ok=True)
+            target = os.path.join(self._export_dir, f"image-{index}.png")
+            from PIL import Image
+
+            with Image.open(io.BytesIO(data)) as image:
+                image.convert("RGB").save(target, format="PNG")
+            self.exported.append({"index": index, "path": target, "text": text})
+        except Exception:  # noqa: BLE001
+            return
 
     def footer(self):
         """One honest line about what was not read, or "" when nothing was lost."""

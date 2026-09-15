@@ -263,6 +263,11 @@ def _ocr(image):
     return "\n".join(line[1] for line in result)
 
 
+# One document per process: the active harvest is published so main() can
+# report the pictures it exported without threading it through every extractor.
+_ACTIVE_HARVEST = []
+
+
 def _image_harvest():
     """Picture recognizer for one document, or None when OCR is unavailable.
 
@@ -273,7 +278,9 @@ def _image_harvest():
     try:
         from document_images import ImageHarvest
 
-        return ImageHarvest(_ocr)
+        harvest = ImageHarvest(_ocr, export_dir=os.environ.get("LILY_DOC_IMAGE_EXPORT_DIR") or None)
+        _ACTIVE_HARVEST.append(harvest)
+        return harvest
     except Exception:  # noqa: BLE001 — no OCR runtime is a normal base case
         return None
 
@@ -443,7 +450,8 @@ def main():
     except Exception as exc:  # noqa: BLE001 — surface the cause, never crash silently
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
         return 1
-    print(json.dumps({"ok": True, "text": text}))
+    images = [item for harvest in _ACTIVE_HARVEST for item in harvest.exported]
+    print(json.dumps({"ok": True, "text": text, "images": images}))
     return 0
 
 

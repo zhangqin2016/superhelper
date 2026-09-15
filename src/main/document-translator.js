@@ -72,7 +72,7 @@ function classifyExtractionResult(err, stdout, timeoutMs = 0) {
   }
   if (!parsed) return { error: "EXTRACT_BAD_OUTPUT" };
   if (!parsed.ok) return { error: parsed.error || "EXTRACT_FAILED" };
-  return { text: String(parsed.text || "") };
+  return { text: String(parsed.text || ""), images: Array.isArray(parsed.images) ? parsed.images : [] };
 }
 
 /**
@@ -82,7 +82,7 @@ function classifyExtractionResult(err, stdout, timeoutMs = 0) {
  * structure and broke on real files. Throws a clear reason if the runtime or
  * script is unavailable.
  */
-function extractOfficeText(filePath) {
+function extractOfficeText(filePath, options = {}) {
   const python = resolveVenvPython();
   if (!python) throw new Error("RUNTIME_UNAVAILABLE");
   const script = extractorScriptPath();
@@ -101,6 +101,10 @@ function extractOfficeText(filePath) {
     env.PATH = [...packPathEntries, env.PATH].filter(Boolean).join(path.delimiter);
   }
 
+  // Embedded pictures are exported here only when the caller intends to give
+  // them a second opinion; otherwise nothing is written to disk.
+  if (options.imageExportDir) env.LILY_DOC_IMAGE_EXPORT_DIR = String(options.imageExportDir);
+
   return new Promise((resolve, reject) => {
     execFile(
       python,
@@ -109,7 +113,7 @@ function extractOfficeText(filePath) {
       (err, stdout) => {
         const outcome = classifyExtractionResult(err, stdout, PYTHON_EXTRACT_TIMEOUT_MS);
         if (outcome.error) return reject(new Error(outcome.error));
-        resolve(outcome.text);
+        resolve(options.withImages ? outcome : outcome.text);
       },
     );
   });
@@ -250,6 +254,39 @@ function buildDocumentFailureSection(item) {
   ].join("\n");
 }
 
+/**
+ * Office/PDF text, with the pictures inside it described when a vision
+ * recognizer is configured. The description is an upgrade layered on top of
+ * OCR: every failure here returns the plain extracted text, so a document is
+ * never worse off than before this path existed.
+ */
+async function extractOfficeWithImages(filePath, file = {}) {
+  const os = require("node:os");
+  let exportDir = null;
+  try {
+    exportDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-doc-images-"));
+  } catch {
+    return extractOfficeText(filePath);
+  }
+  try {
+    const outcome = await extractOfficeText(filePath, { withImages: true, imageExportDir: exportDir });
+    const text = String(outcome?.text || "");
+    if (!outcome?.images?.length) return text;
+    const { describeDocumentImages } = require("./document-image-vision");
+    const upgraded = await describeDocumentImages({
+      text,
+      images: outcome.images,
+      userText: file.userText || "",
+    });
+    return upgraded.text || text;
+  } catch (err) {
+    if (/^(EXTRACT_|RUNTIME_UNAVAILABLE|EXTRACTOR_MISSING)/.test(String(err?.message || ""))) throw err;
+    return extractOfficeText(filePath);
+  } finally {
+    try { fs.rmSync(exportDir, { recursive: true, force: true }); } catch { /* temp dir */ }
+  }
+}
+
 async function extractDocumentFile(file) {
   const filePath = file.path;
   const ext = path.extname(filePath).toLowerCase();
@@ -266,7 +303,7 @@ async function extractDocumentFile(file) {
   if (TEXT_EXTENSIONS.has(ext)) {
     text = readPlainTextFile(filePath);
   } else if (OFFICE_EXTENSIONS.has(ext)) {
-    text = await extractOfficeText(filePath);
+    text = await extractOfficeWithImages(filePath, file);
   } else {
     throw new Error(`UNSUPPORTED:${ext}`);
   }

@@ -295,7 +295,8 @@
         "scripts/test-content-source-gate.mjs",
         "scripts/test-attachment-staging-race.mjs",
         "scripts/test-paste-keeps-text.mjs",
-        "scripts/test-document-image-recognition.mjs"
+        "scripts/test-document-image-recognition.mjs",
+        "scripts/test-document-image-vision.mjs"
       ]
     },
     {
