@@ -851,12 +851,26 @@ function getActiveLocale() {
   }
 }
 
+// Optional per-session guide extension (智能体 guidance). Registered by the
+// IPC layer once ctx exists; absent or throwing → guide is exactly as before.
+let sessionGuideExtension = null;
+function setSessionGuideExtension(extension) {
+  sessionGuideExtension = extension && typeof extension.build === "function" ? extension : null;
+}
+function sessionGuideExtensionSignature(session) {
+  try { return sessionGuideExtension?.signature?.(session) || ""; } catch { return ""; }
+}
+function sessionGuideExtensionSection(session, locale) {
+  try { return String(sessionGuideExtension?.build?.(session, locale) || ""); } catch { return ""; }
+}
+
 function sessionGuideWriteSignature(session, workspacePath = "", workspaceFingerprint = "") {
   const skillSig = resolveSessionSkillIds(session).slice().sort().join("\0");
   const locale = getActiveLocale();
   const learnedSig = learnedContext.contextSignature(session?.projectId, workspacePath);
   const providerSig = configuredProviderContextSignature();
-  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}\0${workspacePath}\0${learnedSig}\0${providerSig}\0${workspaceFingerprint}`;
+  const extensionSig = sessionGuideExtensionSignature(session);
+  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}\0${workspacePath}\0${learnedSig}\0${providerSig}\0${workspaceFingerprint}\0${extensionSig}`;
 }
 
 function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
@@ -877,7 +891,8 @@ function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
     learnedContext.buildWorkspaceDigestSection(workspacePath) +
     learnedContext.buildWorkspaceRulesSection(workspacePath) +
     learnedContext.buildLearnedSection(session?.projectId) +
-    buildCrystallizationSection();
+    buildCrystallizationSection() +
+    sessionGuideExtensionSection(session, locale);
   fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale, { workspaceSkills: workspace.skills, reservedBytes: utf8Bytes(learnedSections) }) + learnedSections, "utf8");
   sessionGuideWriteCache.set(sessionId, signature);
   return configDir;
@@ -1834,6 +1849,8 @@ module.exports = {
   restoreBundledSkill,
   refreshSkillsConfig,
   mergeAgentGuide,
+  setSessionGuideExtension,
+  getAllInstalledSkillIds,
   getDisallowedTools,
   ensureBundledPresent,
   getServiceRegistryUrl,

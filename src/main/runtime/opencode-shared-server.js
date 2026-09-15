@@ -562,4 +562,5 @@ function resetSharedServer() {
   _singleton = null;
 }
 
-module.exports = { OpencodeSharedServer, getSharedServer, resetSharedServer, parseListeningPort, killProcessTree };
+// countSharedServerProfiles: live serve profiles (智能体 cold-dimension fork budget).
+module.exports = { OpencodeSharedServer, getSharedServer, resetSharedServer, parseListeningPort, killProcessTree, countSharedServerProfiles: () => [..._profiles.values()].filter((server) => !server._terminated).length };

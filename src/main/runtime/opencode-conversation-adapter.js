@@ -20,8 +20,20 @@ function textFromParts(parts = [], type) {
 function assistantTextFromOpenCodeMessageItem(item = {}) {
   const info = item?.info || {};
   if (roleOf(info) !== "assistant") return "";
+  // A pre-turn compaction writes its handoff summary as an ordinary assistant
+  // message in the SAME engine session. Turn-output recovery scans that session
+  // for "the newest assistant text" and would adopt the summary as the user's
+  // answer — the 2026-09-15 field case, where a question was answered with the
+  // summary's file list and the question itself never ran. Chat history already
+  // hides these (adaptOpencodeMessageItem); every reader must agree.
+  if (isCompactionSummaryInfo(info)) return "";
   const parts = Array.isArray(item?.parts) ? item.parts : [];
   return textFromParts(parts, "text").trim();
+}
+
+/** Engine-marked compaction/summary message (never user-facing turn output). */
+function isCompactionSummaryInfo(info = {}) {
+  return info?.summary === true || info?.agent === "compaction";
 }
 
 // Project an OpenCode `tool` part into the tool shape the renderer/record expect.
@@ -234,7 +246,7 @@ function adaptOpencodeMessageItem(item = {}, opts = {}) {
   const info = item.info || {};
   // Compaction summary messages are internal handoff text (Objective/Work
   // State/…) — never shown in the chat history.
-  if (info.summary === true) return null;
+  if (isCompactionSummaryInfo(info)) return null;
   const parts = Array.isArray(item.parts) ? item.parts : [];
   const role = roleOf(info);
   const content = textFromParts(parts, "text");
@@ -330,5 +342,6 @@ module.exports = {
   adaptOpencodeMessageItem,
   adaptOpencodeMessagesPage,
   assistantTextFromOpenCodeMessageItem,
+  isCompactionSummaryInfo,
   coalesceAssistantMessageRuns,
 };

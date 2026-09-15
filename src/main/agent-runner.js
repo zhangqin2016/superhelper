@@ -1,6 +1,7 @@
 "use strict";
 
 const ERROR_PATTERNS = [
+  require("./upstream-model-auth").UPSTREAM_AUTH_FAILURE,
   {
     code: "RUNTIME_SKILL_TOO_MANY",
     category: "runtime_diagnostic",
@@ -148,6 +149,18 @@ const ERROR_PATTERNS = [
     // broad request-failed catch called it a network interruption.
     test: /model provider not configured|provider not configured|model provider not found|model gateway disabled|no model provider|selected model|pick a different model|model .*does not exist|model .*not found|model .*not supported|invalid model|may not have access to it|supported (?:API )?model names?|but you passed|\b404\b/i,
     message: "The selected model is no longer available. Configuration has been refreshed and the default model restored — please retry.",
+    retryable: true,
+  },
+  {
+    code: "MODEL_NO_RESPONSE",
+    category: "model",
+    // First-response watchdog (2026-09-14 field case: DeepSeek flash returned
+    // zero bytes for 10 minutes twice). The turn is ended fast, retried
+    // silently on a fresh engine, and the model is marked silent in the
+    // picker. MUST precede MODEL_CONNECTION_FAILED. Chinese copy: this is a
+    // user-facing terminal message on a Chinese-first product.
+    test: /MODEL_NO_RESPONSE|no model response within/i,
+    message: "模型在限定时间内没有返回任何内容（已自动重试）。可能是该模型服务暂时不可用；可以换一个模型继续，模型恢复后 Lily 也会自动接续未完成的任务。",
     retryable: true,
   },
   {

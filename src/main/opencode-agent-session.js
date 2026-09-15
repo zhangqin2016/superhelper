@@ -20,11 +20,12 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { OpencodeServerManager } = require("./runtime/opencode-server-manager");
 const {
-  createOpencodeRuntimeState,
+  createOpencodeRuntimeState, hasActiveCompaction,
   reduceOpencodeRuntimeEvent,
   resetOpencodeRuntimeState,
 } = require("./runtime/opencode-runtime-reducer");
 const { decidePermission } = require("./runtime/opencode-permission-policy");
+const { permissionAutoDeniedNotice } = require("./permission-denial-copy");
 const { truncateToolResultForUi } = require("./cli-process-payload");
 const { getLogger } = require("./logger");
 const { isReplaySafeTool } = require("./tool-semantics");
@@ -157,7 +158,7 @@ class OpencodeAgentSession extends EventEmitter {
       pendingQuestions: this._pendingQuestions,
       ingest: (drafts) => this._ingest(drafts),
       onProgress: () => {
-        this._sawActivity = true;
+        if (!this._sawActivity) require("./opencode-first-response").clearModelSilenceMark(this); this._sawActivity = true;
         this._armResponseTimer();
         this._armProgressNoticeTimer();
         this._armIdleProbe();
@@ -168,13 +169,13 @@ class OpencodeAgentSession extends EventEmitter {
       activeTools: this._activeTools,
       getState: () => ({
         busy: this.busy,
-        turnSettled: this._turnSettled,
+        turnSettled: this._turnSettled, sawActivity: this._sawActivity,
         collectedOutput: this.collectedOutput,
         pendingUserInput: Boolean(this._pendingPermissions.size || this._pendingQuestions.size),
         pendingUserInputSince: earliestPendingRequestAt(this._pendingPermissions, this._pendingQuestions),
       }),
       getConfig: () => ({
-        responseTimeoutMs: OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS,
+        responseTimeoutMs: OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS, firstResponseTimeoutMs: OpencodeAgentSession.FIRST_RESPONSE_TIMEOUT_MS,
         activeToolLeaseMs: OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS,
         progressNoticeMs: OpencodeAgentSession.PROGRESS_NOTICE_MS,
         turnWatchdogMs: OpencodeAgentSession.TURN_WATCHDOG_MS,
@@ -182,10 +183,10 @@ class OpencodeAgentSession extends EventEmitter {
         healthMaxFails: OpencodeAgentSession.HEALTH_MAX_FAILS,
       }),
       getServer: () => this._server,
-      hasKnownSubagents: () => this._subagentRuntime.hasKnownSubagents(),
+      hasKnownSubagents: () => this._subagentRuntime.hasKnownSubagents(), hasActiveCompaction: () => hasActiveCompaction(this._eventState),
       ingest: (drafts) => this._ingest(drafts),
       recoverStalledFinal: () => this._recoverStalledFinalFromOfficialState(),
-      completeTurn: (payload) => this._completeTurn(payload),
+      completeTurn: (payload) => this._completeTurn(payload), onNoFirstResponse: (info) => require("./opencode-first-response").handleNoFirstResponse(this, info),
       onServerError: (err) => this._onServerError(err),
     });
     this._historyRecovery = createOpencodeHistoryRecovery({
@@ -357,13 +358,13 @@ class OpencodeAgentSession extends EventEmitter {
         cwd: this.cwd,
         dataDir: this._dataDir(),
         env: spawnOptions.env || {},
-        model: spawnOptions.model || null,
+        model: (this._activeModel = spawnOptions.model || null),
         agent: spawnOptions.agent || null,
         resumeSessionID: this.agentResumeId || null,
         configContent: spawnOptions.opencodeConfig || "",
       });
       server.on("event", (ev) => this._handleEvent(ev));
-      server.on("diagnostic", (info) => this._turnLiveness.noteEngineRetry(info));
+      server.on("diagnostic", (info) => require("./upstream-model-auth").handleServeDiagnostic(this, info));
       server.on("exit", ({ code }) => this._onServerExit(code));
       server.on("error", (err) => this._onServerError(err));
       await server.start();
@@ -518,7 +519,7 @@ class OpencodeAgentSession extends EventEmitter {
         // Refresh the cross-session memory the compaction plugin injects, keyed by
         // the engine session id (now that the server is started). Snapshotting at
         // turn start means a mid-turn compaction sees the latest durable facts.
-        this._refreshCompactionMemory(server);
+        this._refreshCompactionMemory(server, payload);
         // Skill guidance rides every user turn as hidden engine context. This
         // keeps resumed/migrated sessions and skill changes aligned with Lily's
         // current rules instead of relying on stale OpenCode history.
@@ -635,15 +636,14 @@ class OpencodeAgentSession extends EventEmitter {
   // (resources/opencode-plugins/compaction-memory.js), keyed by the engine session
   // id. Fail-safe: any error just means the plugin finds nothing and the engine
   // compacts as usual — never breaks a turn.
-  _refreshCompactionMemory(server) {
+  _refreshCompactionMemory(server, payload = null) {
     try {
-      const engineSessionId = server?.sessionID || this._server?.sessionID || "";
-      if (!engineSessionId) return;
-      const { userDataPath } = require("./config");
-      const { COMPACTION_MEMORY_DIRNAME, writeCompactionMemoryFile } = require("./compaction-memory-export");
-      const summary = require("./session-memory").readSessionSummary(this.sessionId);
-      if (!summary) return;
-      writeCompactionMemoryFile(userDataPath(COMPACTION_MEMORY_DIRNAME), engineSessionId, summary);
+      require("./compaction-memory-refresh").refreshCompactionMemoryForSession({
+        sessionId: this.sessionId,
+        engineSessionId: server?.sessionID || this._server?.sessionID || "",
+        anchor: typeof payload === "object" ? payload?.compactionAnchor || null : null,
+        guidance: this.spawnOptions?.guidance || "",
+      });
     } catch (err) {
       log.warn("compaction memory refresh failed: %s", err?.message || String(err));
     }
@@ -952,14 +952,14 @@ class OpencodeAgentSession extends EventEmitter {
         // enforced HERE (host-side), mirroring the official client. Auto-allow /
         // auto-deny without bothering the user; only "ask" surfaces the dialog.
         const mode = this.spawnOptions?.permissionMode || "ask";
-        const verdict = decidePermission(mode, effect.toolName, effect.input || {}, {
-          cwd: this.cwd, taskContract: this._activeTaskContract, nonInteractive: this._nonInteractiveTurn === true,
-        });
+        const nonInteractive = this._nonInteractiveTurn === true;
+        const verdict = decidePermission(mode, effect.toolName, effect.input || {}, { cwd: this.cwd, taskContract: this._activeTaskContract, nonInteractive });
         if (verdict === "allow") {
           this._autoRespondPermission(effect.requestId, "once");
           break;
         }
-        if (verdict === "deny") {
+        if (verdict === "deny") { // a silent rejection reached the model as a generic "Unable to read"
+          this._ingest([permissionAutoDeniedNotice({ toolName: effect.toolName, mode, nonInteractive })]);
           this._autoRespondPermission(effect.requestId, "reject");
           break;
         }
@@ -1568,7 +1568,7 @@ class OpencodeAgentSession extends EventEmitter {
           `(or correct your statement if no file was meant), then confirm. Do not claim done until it is real.`;
         (async () => {
           try {
-            await this._server.sendPrompt({ text: note, files: [] });
+            await this._server.sendPrompt({ text: note, files: [], guidance: this.spawnOptions?.guidance || "" });
           } catch (err) {
             // If the corrective prompt can't land, settle on the original result
             // rather than hang the turn.
@@ -1620,7 +1620,7 @@ class OpencodeAgentSession extends EventEmitter {
     const note = buildTodoContinuationPrompt(snapshot, gate.attempts, TODO_COMPLETION_GATE_MAX_ATTEMPTS);
     (async () => {
       try {
-        await this._server.sendPrompt({ text: note, files: [] });
+        await this._server.sendPrompt({ text: note, files: [], guidance: this.spawnOptions?.guidance || "" });
       } catch (err) {
         log.warn("unfinished todo continuation failed: %s", err?.message || String(err));
         if (this.busy && !this._turnSettled) this._settleTurn(payload);
@@ -1715,6 +1715,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   _failTurn(message, cause = null, opts = {}) {
     if (this._turnSettled) return false;
+    if (!opts.upstreamAuthHandled && require("./upstream-model-auth").settleUpstreamAuthFailure(this, message, cause)) return true;
     if (!opts.force && this._shouldDeferTransientFailure(message, cause)) {
       this._scheduleTransientFailureRecovery(message, cause);
       return true;
@@ -1871,9 +1872,7 @@ class OpencodeAgentSession extends EventEmitter {
   _armHealthProbe() { this._turnLiveness.armHealthProbe(); }
 
   _clearHealthProbe() { this._turnLiveness.clearHealthProbe(); }
-  _sanitize(message) {
-    return require("./agent-runner").sanitizeError(message);
-  }
+  _sanitize(message) { return require("./agent-runner").sanitizeError(message); }
 
   _logFingerprint(value) {
     return String(value || "-").replace(/[\r\n\t]/g, " ").slice(0, 80);
@@ -1893,6 +1892,7 @@ class OpencodeAgentSession extends EventEmitter {
 // only pinging "busy" with no active tool is still caught.
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
   Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 600_000;
+OpencodeAgentSession.FIRST_RESPONSE_TIMEOUT_MS = require("./opencode-first-response").FIRST_RESPONSE_TIMEOUT_MS; // zero-byte fuse (see opencode-first-response.js)
 // A tool that emitted "running" but never emits output/completion must not keep
 // the whole turn alive forever. Keep this lease longer than the no-progress
 // window: silent foreground tools are allowed one full watchdog extension before

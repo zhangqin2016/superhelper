@@ -169,10 +169,33 @@ function openSqliteReadOnly(dbPath) {
   const { DatabaseSync } = require("node:sqlite");
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    db.prepare("SELECT 1").get();
+    db.exec("PRAGMA busy_timeout=250;");
+    db.prepare("SELECT name FROM sqlite_schema LIMIT 1").get();
   } finally {
     db.close();
   }
+}
+
+function storageFailure(name, err) {
+  const code = Number(err?.errcode) & 0xff;
+  const message = String(err?.message || err);
+  const detail = `${name}（${message}）`;
+  if ([5, 6].includes(code) || /database (?:is )?(?:locked|busy)|SQLITE_(?:BUSY|LOCKED)/i.test(message)) {
+    return { status: "warning", detail: `${detail}：数据库正在被占用，请完全退出重复运行的客户端后重试。` };
+  }
+  if ([11, 26].includes(code) || /database disk image is malformed|file is not a database|SQLITE_(?:CORRUPT|NOTADB)/i.test(message)) {
+    return { status: "error", detail: `${detail}：检测到数据库损坏或格式异常。请完全退出客户端后备份整个用户数据目录，保留数据库及配套日志，联系支持恢复记录。` };
+  }
+  if (code === 13 || err?.code === "ENOSPC") {
+    return { status: "error", detail: `${detail}：存储空间不足，请释放其他文件占用的空间后重试。` };
+  }
+  if ([3, 8, 14].includes(code) || ["EACCES", "EPERM", "EROFS"].includes(err?.code)) {
+    return { status: "warning", detail: `${detail}：无法访问会话数据，请检查用户数据目录权限及安全软件拦截后重试。` };
+  }
+  if (code === 10 || err?.code === "EIO") {
+    return { status: "error", detail: `${detail}：存储读写失败，请检查磁盘状态并保留原文件供支持排查。` };
+  }
+  return { status: "warning", detail: `${detail}：暂时无法读取，尚不能确认文件损坏，请保留原文件并重试或联系支持。` };
 }
 
 /** Corrupted session storage leaves the app "normal" until every send fails. */
@@ -188,42 +211,53 @@ function sessionStoreCheck(options = {}) {
     };
     const problems = [];
     let checkedAny = false;
+    let skippedSqlite = false;
 
     const sessionsPath = paths["sessions.json"];
     if (sessionsPath && fs.existsSync(sessionsPath)) {
       checkedAny = true;
       try {
         JSON.parse(fs.readFileSync(sessionsPath, "utf8") || "null");
-      } catch {
-        problems.push("sessions.json 已损坏（JSON 解析失败）");
+      } catch (err) {
+        problems.push(err instanceof SyntaxError
+          ? { status: "error", detail: "sessions.json 格式异常（JSON 解析失败），请保留原文件及备份供支持恢复。" }
+          : storageFailure("sessions.json", err));
       }
     }
 
     const sqliteAvailable = safeCall(() => Boolean(require("node:sqlite").DatabaseSync), false);
     for (const name of ["messages.db", "opencode.db"]) {
       const dbPath = paths[name];
-      if (!dbPath || !fs.existsSync(dbPath)) continue;
+      if (!dbPath) continue;
+      if (!fs.existsSync(dbPath)) {
+        if ([".precompact", "-wal", "-shm", "-journal"].some(suffix => fs.existsSync(dbPath + suffix))) {
+          problems.push({ status: "warning", detail: `${name} 主文件缺失，但仍有恢复备份或日志。请保留整个数据目录，重新启动后若仍未恢复，请联系支持。` });
+        }
+        continue;
+      }
       checkedAny = true;
-      if (!sqliteAvailable) continue; // cannot verify on this Node — skip silently
+      if (!sqliteAvailable) { skippedSqlite = true; continue; }
       try {
-        openSqliteReadOnly(dbPath);
+        (options.openSqliteReadOnly || openSqliteReadOnly)(dbPath);
       } catch (err) {
-        problems.push(`${name} 无法打开（${err?.message || err}）`);
+        problems.push(storageFailure(name, err));
       }
     }
 
     if (problems.length) {
       return check(
-        "error",
+        problems.some(problem => problem.status === "error") ? "error" : "warning",
         id,
         label,
-        `会话数据文件损坏：${problems.join("；")}。会话记录可能无法读写，建议备份后删除损坏文件让其重建。`,
+        `会话数据检查发现问题：${problems.map(problem => problem.detail).join("；")}`,
       );
     }
     if (!checkedAny) {
       return check("ok", id, label, "尚无会话数据文件（新安装），无需检查。");
     }
-    return check("ok", id, label, "会话数据文件完整可读。");
+    return check("ok", id, label, skippedSqlite
+      ? "当前运行时不支持数据库检查，数据库状态尚未验证。"
+      : "会话数据基础读取检查通过（未执行全库完整性检查）。");
   } catch (err) {
     return check("ok", id, label, `会话数据检查跳过：${err?.message || err}`);
   }

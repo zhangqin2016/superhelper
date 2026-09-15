@@ -37,6 +37,8 @@ const TRANSIENT_ERROR_RE = new RegExp([
   "\\b429\\b", "\\b50[0234]\\b", "\\b529\\b",
 ].join("|"), "i");
 
+const { UPSTREAM_AUTH_RE } = require("../upstream-model-auth");
+
 const LOGFMT_PAIR_RE = /([A-Za-z][\w.]*)=(?:"((?:[^"\\]|\\.)*)"|(\S+))/g;
 
 function parseLogfmt(line) {
@@ -62,8 +64,10 @@ function parseServeDiagnostic(line) {
   if (!sessionID.startsWith("ses_")) return null;
   const error = String(fields["error.error"] || fields.error || "").trim();
   const message = String(fields.message || "").trim();
-  if (!TRANSIENT_ERROR_RE.test(error)) return null;
+  const upstreamAuth = UPSTREAM_AUTH_RE.test(error);
+  if (!upstreamAuth && !TRANSIENT_ERROR_RE.test(error)) return null;
   return {
+    ...(upstreamAuth ? { kind: "upstream_auth", ts: Date.parse(fields.timestamp || "") } : {}),
     sessionID,
     message,
     error,

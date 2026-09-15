@@ -32,14 +32,19 @@ function createOpencodeTurnLiveness(options = {}) {
   const getConfig = options.getConfig || (() => ({}));
   const getServer = options.getServer || (() => null);
   const hasKnownSubagents = options.hasKnownSubagents || (() => false);
+  // True while the engine is generating a pre-turn compaction summary in this
+  // session: real model work that produces no TURN output.
+  const hasActiveCompaction = options.hasActiveCompaction || (() => false);
   const ingest = options.ingest || (() => {});
   const recoverStalledFinal = options.recoverStalledFinal || (() => Promise.resolve(null));
   const completeTurn = options.completeTurn || (() => {});
   const onServerError = options.onServerError || (() => {});
+  const onNoFirstResponse = options.onNoFirstResponse || ((info) => forceEndTurn(`no first response within ${info?.timeoutMs || 0}ms`));
   const now = options.now || (() => Date.now());
   const scheduleTimer = options.setTimeout || setTimeout;
   const cancelTimer = options.clearTimeout || clearTimeout;
   let responseTimer = null;
+  let firstResponseTimer = null;
   let turnWatchdogTimer = null;
   let progressNoticeTimer = null;
   let healthTimer = null;
@@ -65,6 +70,44 @@ function createOpencodeTurnLiveness(options = {}) {
   function clearResponseTimer() {
     if (responseTimer) cancelTimer(responseTimer);
     responseTimer = null;
+  }
+
+  function clearFirstResponseTimer() {
+    if (firstResponseTimer) cancelTimer(firstResponseTimer);
+    firstResponseTimer = null;
+  }
+
+  // First-response watchdog: the no-progress window (10 min) is sized for a
+  // model that is WORKING quietly. A model that has said nothing at all is a
+  // different failure — an upstream that hangs — and deserves a short fuse
+  // (default 90s, LILY_OPENCODE_FIRST_RESPONSE_TIMEOUT_MS, 0 disables). It
+  // arms only while the turn has seen no activity and is cleared by the first
+  // progress action; a pending user card pauses it like the other timers.
+  function armFirstResponseTimer() {
+    clearFirstResponseTimer();
+    if (!isRunning()) return;
+    const timeoutMs = Number(getConfig().firstResponseTimeoutMs || 0);
+    if (!(timeoutMs > 0)) return;
+    if (getState().sawActivity) return;
+    firstResponseTimer = scheduleTimer(() => {
+      firstResponseTimer = null;
+      if (!isRunning()) return;
+      const state = getState() || {};
+      if (state.sawActivity || String(state.collectedOutput || "").trim()) return;
+      if (hasPendingUserInput() || hasActiveToolLease()) return;
+      // Silence DURING a compaction is not a silent model — the engine is busy
+      // summarizing this very session. Killing the turn here also aborts the
+      // compaction, so the user loses both (2026-09-15 field case). Wait and
+      // give the turn a full fresh window once the summary lands.
+      if (hasActiveCompaction()) {
+        log.info("opencode first-response window extended for an active compaction", { sessionId });
+        armFirstResponseTimer();
+        return;
+      }
+      log.warn("opencode turn got no first response within %dms", timeoutMs, { sessionId });
+      onNoFirstResponse({ timeoutMs });
+    }, timeoutMs);
+    firstResponseTimer?.unref?.();
   }
 
   function hasActiveToolLease() {
@@ -235,6 +278,7 @@ function createOpencodeTurnLiveness(options = {}) {
     if (hasPendingUserInput()) {
       log.info("opencode turn is waiting for user input; watchdog paused", { sessionId, reason });
       clearResponseTimer();
+      clearFirstResponseTimer();
       clearProgressNoticeTimer();
       clearTurnWatchdog();
       return;
@@ -265,6 +309,8 @@ function createOpencodeTurnLiveness(options = {}) {
   function armResponseTimer() {
     clearResponseTimer();
     if (!isRunning()) return;
+    if (getState().sawActivity) clearFirstResponseTimer();
+    else armFirstResponseTimer();
     responseTimer = scheduleTimer(() => {
       if (hasActiveToolLease()) {
         log.info("opencode no-progress window extended for active tool", {
@@ -324,13 +370,16 @@ function createOpencodeTurnLiveness(options = {}) {
     armHealthProbe,
     armProgressNoticeTimer,
     armResponseTimer,
+    armFirstResponseTimer,
     armTurnWatchdog,
     clearHealthProbe,
     clearProgressNoticeTimer,
     clearResponseTimer,
+    clearFirstResponseTimer,
     clearTurnWatchdog,
     diagnostics: () => ({
       response: Boolean(responseTimer),
+      firstResponse: Boolean(firstResponseTimer),
       progressNotice: Boolean(progressNoticeTimer),
       health: Boolean(healthTimer),
     }),

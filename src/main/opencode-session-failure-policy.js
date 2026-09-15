@@ -133,6 +133,7 @@ function isRecoverableModelConnectionFailure(classified, raw = "") {
 }
 
 function isManagedGatewayAuthFailure(classified, raw = "", spawnOptions = null) {
+  if (classified?.code === "UPSTREAM_MODEL_AUTH_FAILED") return false;
   const text = String(raw || "");
   if (classified?.code === "MANAGED_MODEL_AUTH_INVALID" || classified?.code === "MANAGED_MODEL_AUTH_MISSING") return true;
   if (/MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)/i.test(text)) return true;

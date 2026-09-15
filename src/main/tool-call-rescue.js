@@ -208,6 +208,17 @@ const RESCUE_STRATEGIES = Object.freeze({
   // hot-refreshes the model env before each attempt. Multi-attempt because a
   // gateway restart loop outlasts a single retry — bounded so a genuinely
   // dead service still ends in an honest, blame-free message.
+  // Zero bytes from the model within the first-response window. Two silent
+  // attempts on a fresh engine (each bounded by the same window), then the
+  // honest MODEL_NO_RESPONSE message + model-recovery watch take over.
+  MODEL_NO_RESPONSE: Object.freeze({
+    kind: "model_connection_retry",
+    hint: "",
+    recycleEngine: true,
+    delayMs: 2000,
+    maxAttempts: 2,
+    enabled: () => process.env.LILY_MODEL_CONNECTION_RETRY !== "0" && process.env.LILY_FIRST_RESPONSE_RETRY !== "0",
+  }),
   MODEL_CONNECTION_FAILED: Object.freeze({
     kind: "model_connection_retry",
     hint: "",

@@ -112,7 +112,13 @@ const FIELD_SCAFFOLD = [
 //    remainder once the boundary is known, and fails open past the hold limit.
 {
   assert.equal(scaffoldStreamGate("").action, "hold", "empty head holds");
-  assert.equal(scaffoldStreamGate("Obj").action, "flush", "a non-header first line can never become scaffold");
+  // A first line that has not finished arriving may still become a header, so it
+  // holds for those few characters; anything that can no longer become one
+  // streams at once (2026-09-15: judging "## Obje" as prose leaked the scaffold).
+  assert.equal(scaffoldStreamGate("Obj").action, "hold", "an unfinished line that could become a header holds");
+  assert.equal(scaffoldStreamGate("## Obje").action, "hold", "the markdown form holds too");
+  assert.equal(scaffoldStreamGate("Object 存储怎么配置？").action, "flush", "a real reply that merely starts like a header streams");
+  assert.equal(scaffoldStreamGate("88 个工具里只剩 5 个").action, "flush", "ordinary prose streams immediately");
   assert.equal(scaffoldStreamGate("Objective\n用户最初要求").action, "hold", "one header still holds");
 
   let acc = "";
@@ -147,6 +153,111 @@ const FIELD_SCAFFOLD = [
   const strip = stripStatusScaffoldPrefix(text);
   assert.equal(strip.stripped, true);
   assert.equal(strip.text, "回答。");
+}
+
+// 11. 2026-09-15 field case: the compaction summary's "Relevant Files" body was
+// written as markdown code spans (`- `/Users/a/b.js`：说明`). The file-line
+// matcher did not allow the opening backtick, so the stripper decided the file
+// list WAS the real reply and published it as the answer to the user's question.
+// It must now be recognised as ENTIRELY scaffold (honest note, nothing faked).
+{
+  const quoted = [
+    "## Objective",
+    "- 原始请求（原样保留）：「为啥很多还是展示待接入」",
+    "## Important Details",
+    "- 88 个工具中 83 个可用",
+    "## Work State",
+    "### Completed",
+    "- 第五批已接入",
+    "### Active",
+    "- 继续排查",
+    "### Blocked",
+    "（无）",
+    "## Next Move",
+    "1. 直接回答「为啥很多还是展示待接入」：只剩 5 个需要 GPU / 模型下载。",
+    "## Relevant Files",
+    "- `/Users/zhangqin/toolhub/`：项目根",
+    "- `/Users/zhangqin/toolhub/backend/caps.js`：能力探测",
+    "- `catalog/tools-inherited.js`：剩余 5 项",
+    '- "C:\\\\work\\\\notes.md"：Windows 引号写法',
+  ].join("\n");
+  const strip = stripStatusScaffoldPrefix(quoted);
+  assert.equal(strip.analysis.startsWithScaffold, true, "quoted-path summary is still recognised");
+  assert.equal(strip.pure, true, "a backticked file list is scaffold body, not the reply");
+  assert.equal(strip.text, "", "nothing from the summary is published as an answer");
+
+  // The same scaffold followed by a real reply still keeps ONLY the reply.
+  const withReply = `${quoted}\n\n只剩 5 个待接入。`;
+  assert.equal(stripStatusScaffoldPrefix(withReply).text, "只剩 5 个待接入。");
+
+  // A normal answer that merely quotes file paths is never touched.
+  const answer = "88 个工具里只剩 5 个待接入。\n\n- `catalog/tools-inherited.js` 列出这 5 项";
+  assert.equal(stripStatusScaffoldPrefix(answer).text, answer, "a real answer with quoted paths is untouched");
+}
+
+// 12. Streaming the same field case: no chunk size may leak scaffold text. The
+// boundary is trusted only inside the TERMINAL section and only on lines that
+// have fully arrived — a half-arrived "- " once looked like reply prose and
+// flushed the rest of the summary live.
+{
+  const scaffold = [
+    "## Objective", "- 目标", "## Important Details", "- 细节",
+    "## Work State", "### Completed", "- 完成", "## Next Move",
+    "1. 直接回答这个问题：只剩 5 个。", "## Relevant Files",
+    "- `/Users/a/one.js`：说明一", "- `/Users/a/two.js`：说明二",
+  ].join("\n");
+  for (const size of [1, 7, 20, 200, 5000]) {
+    let acc = "", open = false;
+    const emitted = [];
+    for (let i = 0; i < scaffold.length; i += size) {
+      const piece = scaffold.slice(i, i + size);
+      acc += piece;
+      if (open) { emitted.push(piece); continue; }
+      const gate = scaffoldStreamGate(acc);
+      if (gate.action === "flush") { open = true; if (gate.text) emitted.push(gate.text); }
+    }
+    assert.equal(emitted.join(""), "", `chunk=${size}: a pure scaffold streams nothing`);
+  }
+  // …and the real reply after it still streams live, without the scaffold.
+  const withReply = `${scaffold}\n\n只剩 5 个待接入。`;
+  let acc = "", open = false;
+  const emitted = [];
+  for (let i = 0; i < withReply.length; i += 9) {
+    const piece = withReply.slice(i, i + 9);
+    acc += piece;
+    if (open) { emitted.push(piece); continue; }
+    const gate = scaffoldStreamGate(acc);
+    if (gate.action === "flush") { open = true; if (gate.text) emitted.push(gate.text); }
+  }
+  assert.equal(emitted.join("").trim(), "只剩 5 个待接入。", "only the reply streams");
+}
+
+// 13. RED LINE: widening the file-line matcher to quoted paths must never eat a
+// real reply. A reply may legitimately OPEN with a quoted path ("`/etc/hosts`
+// 里少了一行"); only a BULLETED line may use the quoted form, because that is how
+// these templates write file lists.
+{
+  const scaffold = [
+    "## Objective", "- 目标", "## Important Details", "- 细节",
+    "## Work State", "### Completed", "- 完成", "## Next Move", "1. 下一步",
+    "## Relevant Files", "- `/Users/a/one.js`：说明", "- `backend/caps.js`：说明",
+  ].join("\n");
+  const replies = [
+    "`/etc/hosts` 里少了一行，补上即可。",
+    "\"/etc/hosts\" 少了一行。",
+    "「/etc/hosts」少了一行。",
+    "（详见 /Users/a/report.md）原因是缓存没刷新。",
+    "(see /Users/a/report.md) the cache was stale.",
+    "`config.json` 写错了。",
+    "只剩 5 个待接入。",
+  ];
+  for (const reply of replies) {
+    const strip = stripStatusScaffoldPrefix(`${scaffold}\n\n${reply}`);
+    assert.equal(strip.text, reply, `a real reply must survive: ${reply}`);
+    assert.equal(strip.pure, false, `and must never be replaced by the note: ${reply}`);
+  }
+  // The bulleted file list itself is still recognised as scaffold body.
+  assert.equal(stripStatusScaffoldPrefix(scaffold).pure, true, "a pure quoted file list is still scaffold");
 }
 
 console.log("status-scaffold: ok");

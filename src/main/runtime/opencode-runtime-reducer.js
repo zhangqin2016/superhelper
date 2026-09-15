@@ -43,6 +43,11 @@ function createOpencodeRuntimeState() {
     roles: new Map(),
     // Compaction summary messages: internal handoff text, deltas/parts suppressed.
     summaryMessages: new Set(),
+    // Compaction summaries currently generating in this session, id -> start ms.
+    // A pre-turn compaction is real model work that produces NO turn output, so
+    // the first-response watchdog reads it as a dead model unless it can see
+    // this (2026-09-15 field case: turn + compaction were both killed at 90s).
+    activeCompactions: new Map(),
     textParts: new Map(),
     pendingDeltas: new Map(),
     pendingTextSnapshots: new Map(),
@@ -59,12 +64,29 @@ function sessionScopedId(prefix, payload = {}) {
   return `${prefix}_${payload.sessionID || payload.sessionId || "current"}`;
 }
 
+// A compaction that never reported completion must not disable the watchdog
+// forever; past this it is treated as gone (the no-progress and turn watchdogs
+// remain the backstop either way).
+const COMPACTION_WINDOW_MAX_MS = 5 * 60_000;
+
+/** True while this session is generating a compaction summary. */
+function hasActiveCompaction(state, now = Date.now()) {
+  const started = state?.activeCompactions;
+  if (!started?.size) return false;
+  for (const at of started.values()) if (now - at < COMPACTION_WINDOW_MAX_MS) return true;
+  return false;
+}
+
 function resetOpencodeRuntimeState(state) {
   state?.tools?.clear?.();
   state?.parts?.clear?.();
   state?.partMessages?.clear?.();
   state?.roles?.clear?.();
   state?.summaryMessages?.clear?.();
+  // activeCompactions is deliberately NOT cleared: a pre-turn compaction is
+  // dispatched BEFORE the turn and keeps generating across this reset, so
+  // clearing here would hide it from the first-response watchdog again. Entries
+  // close on completion/abort/removal, and expire below if none of those arrive.
   state?.textParts?.clear?.();
   state?.pendingDeltas?.clear?.();
   state?.pendingTextSnapshots?.clear?.();
@@ -489,48 +511,16 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
         terminal: false,
       });
 
-    case "message.updated": {
-      const info = p.info || {};
-      if (info.id && info.role && state.roles) state.roles.set(info.id, info.role);
-      if (info.id && (info.summary === true || info.agent === "compaction")) state.summaryMessages?.add(info.id);
-      if (info.id && info.role && state.pendingTextSnapshots?.size && !state.summaryMessages?.has(info.id)) {
-        const drafts = [];
-        const effects = [];
-        for (const [partID, snapshot] of state.pendingTextSnapshots.entries()) {
-          if (snapshot.messageID !== info.id) continue;
-          state.pendingTextSnapshots.delete(partID);
-          if (info.role === "user") {
-            state.textParts?.set(partID, snapshot.text || "");
-            continue;
-          }
-          if (info.role !== "assistant") continue;
-          const text = snapshot.text || "";
-          const previous = state.textParts?.get(partID) || "";
-          let missing = "";
-          if (text && text.startsWith(previous)) missing = text.slice(previous.length);
-          else if (text && !previous) missing = text;
-          if (!missing) continue;
-          state.textParts?.set(partID, text);
-          drafts.push(runtimeDraft("assistant.delta", { text: missing }));
-          effects.push({ kind: "assistant_text", text: missing });
-        }
-        if (drafts.length) {
-          return withProcessEvent(ev, {
-            drafts,
-            effects,
-            progress: true,
-            terminal: false,
-          });
-        }
-      }
-      return emptyResult(ev);
-    }
+    case "message.updated":
+      return require("./opencode-message-update").reduceMessageUpdate(ev, state, {
+        emptyResult, withProcessEvent, runtimeDraft, errorMessage,
+      });
 
     case "session.deleted":
       return emptyResult(ev);
 
     case "message.removed":
-      if (p.messageID) { state.roles?.delete(p.messageID); state.summaryMessages?.delete(p.messageID); }
+      if (p.messageID) { state.roles?.delete(p.messageID); state.summaryMessages?.delete(p.messageID); state.activeCompactions?.delete(p.messageID); }
       if (p.messageID && state.partMessages) {
         for (const [partID, messageID] of state.partMessages.entries()) {
           if (messageID !== p.messageID) continue;
@@ -838,6 +828,8 @@ module.exports = {
   SILENT_EVENTS,
   createOpencodeRuntimeState,
   resetOpencodeRuntimeState,
+  hasActiveCompaction,
+  COMPACTION_WINDOW_MAX_MS,
   reduceOpencodeRuntimeEvent,
   stringifyToolOutput,
 };

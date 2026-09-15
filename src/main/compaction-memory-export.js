@@ -95,9 +95,15 @@ function writeCompactionMemoryFile(dir, engineSessionId, summary, opts = {}) {
     const file = compactionMemoryFilePath(dir, engineSessionId);
     if (!file) return "";
     const blocks = buildCompactionMemoryBlocks(summary, opts);
-    if (!blocks.length) return "";
+    // v2 (2026-09-15): the current turn's task anchor (request + acceptance) and
+    // per-turn guidance travel with the navigation blocks so the continuity
+    // plugin can re-attach them after an in-turn compaction. Readers of v1
+    // (blocks only) keep working — the extra fields are additive.
+    const anchor = opts.anchor && typeof opts.anchor === "object" ? opts.anchor : null;
+    const guidance = typeof opts.guidance === "string" ? opts.guidance : "";
+    if (!blocks.length && !anchor && !guidance) return "";
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, blocks }));
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, blocks, ...(anchor ? { anchor } : {}), ...(guidance ? { guidance } : {}) }));
     return file;
   } catch {
     return "";

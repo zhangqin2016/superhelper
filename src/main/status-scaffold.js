@@ -48,7 +48,25 @@ const STREAM_HOLD_CHAR_LIMIT = 4096;
 
 const NONE_LINE_RE = /^[（(]\s*(?:无|none|n\/a)\s*[)）]$/i;
 const PLACEHOLDER_LINE_RE = /^(?:…|\.{3}|-{3,}|\*{3,})$/;
-const FILE_LINE_RE = /^(?:[-*•]\s*)?(?:\/|~\/|[A-Za-z]:[\\/]|\S+\.(?:md|markdown|json|js|mjs|cjs|py|ts|tsx|jsx|css|html|txt|gz|zip|tar|yaml|yml|toml|sh|docx|xlsx|pptx|png|jpe?g|webp|svg|mp4|pdf)(?:\s|$|[—:：-]))/i;
+// Paths in these sections are usually markdown code spans or quoted
+// (`/a/b.js`, "C:\\x"). A quote must not hide that the line is a file path:
+// missing it makes the stripper mistake the file list for the real reply and
+// publish it as the answer (2026-09-15 field case). The quote form is accepted
+// ONLY after a bullet marker, which is how these templates write file lists —
+// a bare quoted path at the start of a line is ordinary prose ("`/etc/hosts`
+// 里少了一行"), and swallowing it would delete a real reply.
+const QUOTE_OPEN = "[`'\"\u201c\u2018\u300c\u300e\uff08(]";
+const QUOTE_CLOSE = "[`'\"\u201d\u2019\u300d\u300f\uff09)]";
+const PATH_START = "(?:\\/|~\\/|[A-Za-z]:[\\\\/])";
+const FILE_EXT = "(?:md|markdown|json|js|mjs|cjs|py|ts|tsx|jsx|css|html|txt|gz|zip|tar|yaml|yml|toml|sh|docx|xlsx|pptx|png|jpe?g|webp|svg|mp4|pdf)";
+const REL_FILE = (close) => `\\S+\\.${FILE_EXT}(?:\\s|$|${close ? `${QUOTE_CLOSE}|` : ""}[\u2014:\uff1a-])`;
+const FILE_LINE_RE = new RegExp(
+  "^(?:"
+    + `[-*\u2022]\\s*(?:${QUOTE_OPEN}\\s*)?(?:${PATH_START}|${REL_FILE(true)})`
+    + `|(?:${PATH_START}|${REL_FILE(false)})`
+  + ")",
+  "i",
+);
 
 function headerOfLine(line) {
   const m = String(line).match(/^\s*(?:#{1,6}\s+)?(.+?)\s*$/);
@@ -61,9 +79,28 @@ function headerOfLine(line) {
   return SCAFFOLD_HEADERS.has(norm) ? norm : null;
 }
 
+// True while a not-yet-complete FIRST line could still grow into a scaffold
+// header ("#", "## Obje"). Without this the gate decides on a fragment that is
+// not yet a header, fails open, and streams the whole scaffold. Normal replies
+// are not prefixes of these headers, so they still stream immediately.
+function couldBecomeHeader(line) {
+  const m = String(line).match(/^\s*(#{0,6}\s*)(.*)$/);
+  if (!m) return false;
+  const marker = (m[1] || "").trim();
+  const body = (m[2] || "").replace(/\*\*/g, "").trim().toLowerCase();
+  if (!body) return Boolean(marker);
+  return [...SCAFFOLD_HEADERS].some((header) => header.startsWith(body));
+}
+
 function isBlank(line) {
   return !String(line).trim();
 }
+
+// A half-arrived last line that is still only a bullet and/or an opening quote
+// ("- ", "- `") can still become a file path; judging it as prose would put the
+// boundary inside the file list. Anything with real content after the marker is
+// already decidable, so the gate judges it normally and keeps streaming live.
+const PARTIAL_FILE_PREFIX_RE = new RegExp("^[-*\u2022]?\\s*(?:" + QUOTE_OPEN + "\\s*)?$");
 
 function isTerminalBodyLine(line) {
   const t = String(line).trim();
@@ -79,6 +116,10 @@ function isTerminalBodyLine(line) {
  *   stripIndex: number|null,        // char offset where the real reply begins
  *                                    // (src.length when the message is entirely scaffold;
  *                                    // null when the boundary is ambiguous — fail open)
+ *   terminalBoundary: boolean,      // stripIndex came from the template's LAST
+ *                                    // section (file-list body), so it cannot move
+ *                                    // as more text arrives — the only boundary a
+ *                                    // STREAMING caller may trust
  *   headers: string[],
  * }}
  */
@@ -89,6 +130,7 @@ function analyzeStatusScaffold(text) {
     firstLineHeader: false,
     startsWithScaffold: false,
     stripIndex: null,
+    terminalBoundary: false,
     headers: [],
   };
   if (!src.trim()) return result;
@@ -128,6 +170,7 @@ function analyzeStatusScaffold(text) {
     // is the real reply even with NO blank separator (the field case).
     while (i < lines.length && isTerminalBodyLine(lines[i])) i += 1;
     result.stripIndex = i >= lines.length ? src.length : offsets[i];
+    result.terminalBoundary = true;
     return result;
   }
   // Non-terminal last header (a truncated dump): the body is arbitrary prose,
@@ -172,20 +215,38 @@ function stripStatusScaffoldPrefix(text) {
  * as-is — but a CONFIRMED scaffold never fails open, it holds for the
  * finalize strip (a false flush would leak exactly what this gate exists
  * to hide).
+ *
+ * Mid-stream only a TERMINAL-section boundary may be trusted. A boundary found
+ * after a non-terminal header is just "the first blank line so far", and the
+ * next chunk can turn that gap into another scaffold section — flushing there
+ * streams scaffold text to the user (2026-09-15 field case: "## Next Move" and
+ * its body were shown live). Holding costs nothing: the finalizer strips the
+ * completed message and emits the real reply.
  */
 function scaffoldStreamGate(accumulated) {
   const acc = String(accumulated || "");
   if (!acc) return { action: "hold", text: "" };
-  const analysis = analyzeStatusScaffold(acc);
+  // The last line of a live stream may be half-arrived ("- " before its path).
+  // While it is still only a bullet/quote marker it could become either a file
+  // line or the reply, so it is withheld from the decision and re-judged when
+  // more of it lands; once it carries content the gate judges it immediately so
+  // a real reply after the scaffold still streams live.
+  const lineEnd = acc.lastIndexOf("\n") + 1;
+  const tail = acc.slice(lineEnd);
+  const complete = lineEnd > 0 && PARTIAL_FILE_PREFIX_RE.test(tail) ? acc.slice(0, lineEnd) : acc;
+  const analysis = analyzeStatusScaffold(complete);
   if (analysis.startsWithScaffold) {
-    if (analysis.stripIndex == null) return { action: "hold", text: "" };
+    if (analysis.stripIndex == null || !analysis.terminalBoundary) return { action: "hold", text: "" };
+    if (analysis.stripIndex >= complete.length) return { action: "hold", text: "" };
     const rest = acc.slice(analysis.stripIndex).replace(/^\s+/, "");
     return rest ? { action: "flush", text: rest } : { action: "hold", text: "" };
   }
-  // First line is a header but <4 distinct headers so far: could still grow
-  // into a scaffold — keep holding (bounded by the fail-open limit). Anything
-  // else can never become one.
-  if (analysis.firstLineHeader && acc.length <= STREAM_HOLD_CHAR_LIMIT) {
+  // First line is a header (or is still arriving and could become one) but <4
+  // distinct headers so far: it could still grow into a scaffold — keep holding
+  // (bounded by the fail-open limit). Anything else can never become one.
+  const firstLineIncomplete = !acc.includes("\n");
+  if ((analysis.firstLineHeader || (firstLineIncomplete && couldBecomeHeader(acc)))
+    && acc.length <= STREAM_HOLD_CHAR_LIMIT) {
     return { action: "hold", text: "" };
   }
   return { action: "flush", text: acc };
