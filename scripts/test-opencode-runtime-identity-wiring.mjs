@@ -27,7 +27,7 @@ class FakeServer extends EventEmitter {
   }
 
   async start() {}
-  async createSession() { this.sessionID = "engine-session-1"; return this.sessionID; }
+  async createSession() { this.sessionID = this.sessionIDToCreate || "engine-session-1"; return this.sessionID; }
   subscribe() {}
   async sendPrompt(payload) { this.sent.push(payload); }
   async getSessionStatus() { return "busy"; }
@@ -91,6 +91,36 @@ try {
 
   runner.terminate();
   assert.equal(registry.resolve("engine-session-1"), "", "terminating a runner revokes its engine grant");
+
+  // A PRE-TURN compaction runs before the turn is dispatched, so the engine
+  // session has no grant yet. Hook-bridge plugins resolve this registry on every
+  // engine event and fail closed without a token: the 2026-09-15 field case where
+  // every first compaction of a resumed session died with
+  // PUBLIC_HOOK_BRIDGE_IDENTITY_UNAVAILABLE. The token must exist BEFORE
+  // summarize runs, not after the prompt is sent.
+  const compactServer = new FakeServer();
+  compactServer.sessionIDToCreate = "engine-session-2";
+  let tokenDuringSummarize = null;
+  compactServer.summarize = async () => {
+    tokenDuringSummarize = createRuntimeIdentityRegistry({ filePath: registryPath }).resolve("engine-session-2");
+  };
+  const compactRunner = new OpencodeAgentSession("lily-session-2", { createServer: () => compactServer });
+  compactRunner.ensureProcess(dir, {
+    agentCommand: "/fake/opencode",
+    opencodeConfig: "{}",
+    runtimeIdentity: {
+      secret, registryPath, audience: "tool-broker", principalId: "owner:user-1",
+      workspaceId: "workspace-1", projectId: "project-1", sessionId: "lily-session-2",
+      workspacePath: dir, permissionMode: "ask", activeSkillIds: [],
+    },
+  }, { lazy: true });
+
+  assert.equal(await compactRunner.compactContext({ reason: "pre_turn_token_pressure" }), true);
+  assert.ok(tokenDuringSummarize, "pre-turn compaction grants the engine identity BEFORE summarize runs");
+  const compactIdentity = verifyRuntimeIdentity(tokenDuringSummarize, { secret, audience: "tool-broker" });
+  assert.equal(compactIdentity.sessionId, "lily-session-2");
+  assert.equal(compactIdentity.agentId, "compaction", "the grant is attributed to compaction, not a turn");
+  compactRunner.terminate();
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

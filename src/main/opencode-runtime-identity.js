@@ -66,6 +66,29 @@ function grantOpencodeRuntimeIdentity(runner, server, payload = {}) {
   return token;
 }
 
+/**
+ * Grant the engine session its identity for a PRE-TURN compaction.
+ *
+ * The ordinary grant happens when the turn is dispatched, but a pre-turn
+ * compaction runs BEFORE that: the orchestrator compacts, and only then sends
+ * the prompt. Hook-bridge plugins resolve this registry on every engine event,
+ * so during that window they found no token and failed closed — the 2026-09-15
+ * field case, where every first compaction of a resumed session died with
+ * PUBLIC_HOOK_BRIDGE_IDENTITY_UNAVAILABLE and the context never shrank.
+ * Compaction is Lily-initiated work on this session, so it gets the same
+ * short-lived scoped identity; the turn re-grants moments later.
+ */
+function grantOpencodeRuntimeIdentityForCompaction(runner, server) {
+  try {
+    return grantOpencodeRuntimeIdentity(runner, server, { agentId: "compaction" });
+  } catch (err) {
+    // Never let identity issuance itself break compaction: without a token the
+    // bridge decides, exactly as before this grant existed.
+    log.warn("compaction runtime identity grant failed: %s", err?.message || err);
+    return "";
+  }
+}
+
 function revokeOpencodeRuntimeIdentity(runner, engineSessionId, reason = "runner_recycled") {
   const config = runner?.spawnOptions?.runtimeIdentity;
   const id = String(engineSessionId || "").trim();
@@ -81,5 +104,6 @@ function revokeOpencodeRuntimeIdentity(runner, engineSessionId, reason = "runner
 module.exports = {
   buildOpencodeRuntimeIdentityConfig,
   grantOpencodeRuntimeIdentity,
+  grantOpencodeRuntimeIdentityForCompaction,
   revokeOpencodeRuntimeIdentity,
 };

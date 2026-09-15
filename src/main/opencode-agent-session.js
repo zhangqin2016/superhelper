@@ -33,7 +33,7 @@ const { createOpencodeSubagentRuntime } = require("./opencode-subagent-runtime")
 const { createOpencodeTurnLiveness } = require("./opencode-turn-liveness");
 const { pauseForPendingUserInput, resumeAfterUserInput } = require("./opencode-user-input-guard");
 const { createOpencodeHistoryRecovery } = require("./opencode-history-recovery");
-const { grantOpencodeRuntimeIdentity, revokeOpencodeRuntimeIdentity } = require("./opencode-runtime-identity");
+const { grantOpencodeRuntimeIdentity, grantOpencodeRuntimeIdentityForCompaction, revokeOpencodeRuntimeIdentity } = require("./opencode-runtime-identity");
 const {
   buildAttachmentFallbackPromptPayload,
   enrichPermissionFailureMessage,
@@ -653,7 +653,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (this.isBusy()) return false;
     try {
       const server = this._server || (await this._ensureStarted());
-      if (!server?.summarize) return false;
+      if (!server?.summarize) return false; grantOpencodeRuntimeIdentityForCompaction(this, server);
       // Pre-turn compaction calls the model to summarize a large context. If that
       // call HANGS (slow/stuck gateway, oversized context), an unbounded await
       // freezes the turn forever at "Preparing to compact…". Bound it and let the
@@ -959,8 +959,8 @@ class OpencodeAgentSession extends EventEmitter {
           break;
         }
         if (verdict === "deny") { // a silent rejection reached the model as a generic "Unable to read"
-          this._ingest([permissionAutoDeniedNotice({ toolName: effect.toolName, mode, nonInteractive })]);
           this._autoRespondPermission(effect.requestId, "reject");
+          this._ingest([permissionAutoDeniedNotice({ toolName: effect.toolName, mode, nonInteractive })]);
           break;
         }
         this._pendingPermissions.set(effect.requestId, {
