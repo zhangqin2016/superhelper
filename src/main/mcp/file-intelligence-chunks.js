@@ -52,6 +52,64 @@ function chunksForText(filePath, text, linesPerChunk, options = {}) {
   return chunks;
 }
 
+// The document extractors mark their own structure: "## Page 7" for PDF pages,
+// "## Slide 3" for presentations, "## Sheet: 汇总" for workbooks. Splitting on a
+// fixed line window ignored all of it, so a 300-page PDF became 39 chunks of
+// roughly eight pages each and nothing could cite a page. Chunking on the
+// document's own boundaries makes a chunk mean something.
+// Line numbers and rangeType are unchanged, so every existing consumer of a
+// chunk keeps working; what changes is WHERE the boundaries fall.
+// Acceptance 2026-09-17 DEF-08. [gate: document-content-index]
+const SECTION_MARKER_RE = /^##\s+(?:Page\s+\d+|Slide\s+\d+|Sheet:\s*\S)/;
+
+function sectionStarts(lines) {
+  const starts = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (SECTION_MARKER_RE.test(lines[index])) starts.push(index);
+  }
+  return starts;
+}
+
+function chunksForDocumentText(filePath, text, linesPerChunk, options = {}) {
+  const lines = String(text || "").split(/\r?\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  const starts = sectionStarts(lines);
+  // No structure to follow, or a single section covering everything: the fixed
+  // window is already the right answer.
+  if (starts.length < 2) return chunksForText(filePath, text, linesPerChunk, options);
+
+  const chunks = [];
+  // A very long section is still split by the line window, so one enormous page
+  // cannot produce one enormous chunk.
+  const maxSectionLines = Math.max(linesPerChunk, linesPerChunk * 2);
+  const bounds = [...starts, lines.length];
+  if (starts[0] > 0) bounds.unshift(0);
+  for (let index = 0; index < bounds.length - 1; index += 1) {
+    const from = bounds[index];
+    const to = bounds[index + 1];
+    for (let offset = from; offset < to; offset += maxSectionLines) {
+      const end = Math.min(to, offset + maxSectionLines);
+      const raw = lines.slice(offset, end).join("\n").trim();
+      if (!raw) continue;
+      chunks.push({
+        chunkId: "",
+        sourcePath: filePath,
+        sourceType: String(options.sourceType || "text"),
+        indexPolicy: String(options.indexPolicy || ""),
+        rangeType: "lines",
+        rangeStart: offset + 1,
+        rangeEnd: end,
+        coverage: "indexed",
+        confidence: "exact",
+        excerpt: excerpt(raw),
+        text: raw,
+        tokens: tokenize(`${path.basename(filePath)} ${raw}`),
+      });
+    }
+  }
+  return chunks.length ? chunks : chunksForText(filePath, text, linesPerChunk, options);
+}
+
 function isMetadataIndexable(info = {}) {
   return ["pdf", "spreadsheet", "document", "presentation", "image", "video", "audio", "archive"].includes(info.kind);
 }
@@ -97,6 +155,7 @@ function chunksForMetadata(info = {}) {
 }
 
 module.exports = {
+  chunksForDocumentText,
   chunksForMetadata,
   chunksForText,
   excerpt,

@@ -9,6 +9,8 @@ const {
   listArchive,
 } = require("./archive-intelligence");
 const { readDirectoryEntriesBounded } = require("./workspace-index-source");
+const { capResultText, resultByteBudget, truncationFields } = require("./file-intelligence-result-budget");
+const { signatureAdvisory } = require("./file-signature");
 
 const DEFAULT_LARGE_THRESHOLD_BYTES = 20 * 1024 * 1024;
 const DEFAULT_MAX_SAMPLE_LINES = 40;
@@ -302,14 +304,21 @@ function inspectPath(input = {}, options = {}) {
       : { archiveListError: archive.error, archiveListMessage: archive.message || "" };
   }
   const dependencyRoute = dependencyRouteFor(kind);
+  const extension = path.extname(filePath).toLowerCase();
+  // Advisory only: `kind` stays extension-derived because indexing, extraction
+  // routing and the binary guards all depend on it. What changes is that a file
+  // whose bytes contradict its name says so here, instead of being trusted and
+  // then failing later with an opaque extractor error. [gate: file-type-honesty]
+  const signature = signatureAdvisory(filePath, extension);
   return {
     ...okBase(filePath, stat),
     kind,
     sourceType: kind,
-    extension: path.extname(filePath).toLowerCase(),
+    extension,
     large,
     coverage: "metadata",
     confidence: "exact",
+    ...signature,
     ...typeSpecificInfo,
     ...dependencyRoute,
     ...lineInfo,
@@ -387,6 +396,11 @@ function samplePath(input = {}, options = {}) {
   if (strategy === "tail") start = Math.max(1, lines.length - requested + 1);
   else if (strategy === "middle") start = Math.max(1, Math.floor((lines.length - requested) / 2) + 1);
   const end = Math.min(lines.length, start + requested - 1);
+  const capped = capResultText(lines.slice(start - 1, end).join("\n"), {
+    maxBytes: resultByteBudget(input, options),
+    rangeStart: start,
+    rangeEnd: end,
+  });
   return {
     ok: true,
     sourcePath: info.sourcePath,
@@ -395,10 +409,13 @@ function samplePath(input = {}, options = {}) {
     confidence: "exact",
     rangeType: "lines",
     rangeStart: start,
-    rangeEnd: end,
+    rangeEnd: capped.rangeEnd,
     totalLines: lines.length,
-    text: lines.slice(start - 1, end).join("\n"),
-    warning: "Sampled evidence is not full-file coverage.",
+    text: capped.text,
+    ...truncationFields(capped),
+    warning: capped.truncated
+      ? "Sampled evidence is not full-file coverage, and this sample was cut to a byte budget — continue from nextLine."
+      : "Sampled evidence is not full-file coverage.",
   };
 }
 
@@ -425,6 +442,11 @@ function extractPath(input = {}, options = {}) {
     const sliced = info.byteSize > DEFAULT_MAX_TEXT_BYTES
       ? extractLineRange(info.sourcePath, range.start, range.end)
       : lineSlice(splitTextLines(text), range.start, range.end);
+    const capped = capResultText(sliced.text, {
+      maxBytes: resultByteBudget(input, options),
+      rangeStart: sliced.start,
+      rangeEnd: sliced.end,
+    });
     return {
       ok: true,
       sourcePath: info.sourcePath,
@@ -433,22 +455,27 @@ function extractPath(input = {}, options = {}) {
       confidence: "exact",
       rangeType: "lines",
       rangeStart: sliced.start,
-      rangeEnd: sliced.end,
+      rangeEnd: capped.rangeEnd,
       totalLines: sliced.totalLines || undefined,
       totalLinesSeen: sliced.totalLinesSeen || undefined,
-      text: sliced.text,
+      text: capped.text,
+      ...truncationFields(capped),
     };
   }
+  const capped = capResultText(text, { maxBytes: resultByteBudget(input, options), rangeStart: 1, rangeEnd: 1 });
   return {
     ok: true,
     sourcePath: info.sourcePath,
     sourceType: info.kind,
-    coverage: "full",
+    // "full" was asserted even when readAllText had already cut the file at its
+    // own read cap. Coverage now tells the truth about what is in `text`.
+    coverage: capped.truncated || Buffer.byteLength(text, "utf8") < info.byteSize ? "partial" : "full",
     confidence: "exact",
     rangeType: "file",
     rangeStart: 1,
     rangeEnd: 1,
-    text,
+    text: capped.text,
+    ...truncationFields(capped),
   };
 }
 

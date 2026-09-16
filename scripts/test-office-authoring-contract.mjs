@@ -88,6 +88,10 @@ assert.match(officeIntent, /split across the break/i);
 assert.match(officeIntent, /never the Title style/);
 assert.match(officeIntent, /--standalone/);
 assert.match(officeIntent, /configure_matplotlib_cjk\(\)/);
+// Acceptance 2026-09-17 DEF-04 / DEF-06.
+assert.match(officeIntent, /lily_office_convert\.py/);
+assert.match(officeIntent, /EXITS 0 and writes nothing/);
+assert.match(officeIntent, /PDF\/A/);
 assert.match(officeIntent, /## Authoring Quality Contract/);
 assert.match(officeIntent, /small design system/i);
 assert.match(officeIntent, /render the final artifact/i);

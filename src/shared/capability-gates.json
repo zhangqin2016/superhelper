@@ -1144,6 +1144,55 @@
         "scripts/test-office-style-helper.mjs",
         "scripts/test-office-authoring-contract.mjs"
       ]
+    },
+    {
+      "id": "office-conversion-no-silent-failure",
+      "protects": "A LibreOffice conversion never reports success without producing a file.",
+      "baseline": "Every conversion that worked before still works, through the same single code path; the renderer keeps its behaviour.",
+      "failureFallback": "A conversion that produces nothing raises with LibreOffice's own stderr instead of returning a path that does not exist.",
+      "tests": [
+        "scripts/test-office-conversion-guard.mjs",
+        "scripts/test-office-authoring-contract.mjs"
+      ]
+    },
+    {
+      "id": "tool-result-context-budget",
+      "protects": "A file tool's result is bounded by BYTES, so a few very long lines cannot flood the model's context.",
+      "baseline": "Results that already fit keep their exact previous shape, with no new fields and no changed coverage.",
+      "failureFallback": "A cut is always reported and resumable (truncatedBytes + nextLine), never silent, and never returns nothing — a single oversized line is cut mid-line on a character boundary.",
+      "tests": [
+        "scripts/test-tool-result-budget.mjs",
+        "scripts/test-file-intelligence-core.mjs"
+      ]
+    },
+    {
+      "id": "file-type-honesty",
+      "protects": "A file whose bytes contradict its extension is flagged before anything trusts the type.",
+      "baseline": "`kind` stays extension-derived — indexing, extraction routing and the binary guards are unchanged; the signature result is additive.",
+      "failureFallback": "An unreadable header, an unchecked extension, or bytes that declare no format produce no advisory at all rather than a false accusation.",
+      "tests": [
+        "scripts/test-file-type-honesty.mjs",
+        "scripts/test-file-intelligence-core.mjs"
+      ]
+    },
+    {
+      "id": "pdf-form-cjk-visible",
+      "protects": "A Chinese value written into a PDF form is verified visible by rasterising the field, not assumed from /NeedAppearances.",
+      "baseline": "A Latin-only fill runs nothing extra and is byte-for-byte what it was; flattening is opt-in.",
+      "failureFallback": "When the rasteriser is unavailable the result says RASTERIZER_UNAVAILABLE rather than claiming verification; a failed probe reports unknown, never a false blank.",
+      "tests": [
+        "scripts/test-pdf-form-cjk-render.mjs",
+        "scripts/test-pdf-form.mjs"
+      ]
+    },
+    {
+      "id": "runtime-image-pdf-save",
+      "protects": "The bundled image library can still save a multi-page PDF by filename, so an image-to-PDF path cannot break on a dependency bump.",
+      "baseline": "Build-time only; no runtime behaviour changes.",
+      "failureFallback": "The bundle verifier warns (or fails under strict smoke) with the fix named, instead of the defect reaching users.",
+      "tests": [
+        "scripts/test-office-authoring-contract.mjs"
+      ]
     }
   ]
 }

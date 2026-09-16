@@ -14,7 +14,7 @@ already does docx → pdf) — far more faithful than drawing a PDF by hand.
 Subcommands (single JSON object on stdout):
   inspect <form.pdf>
       → {"ok": true, "fields": ["full_name", "city", ...]}
-  fill <form.pdf> <data.json> <output.pdf>
+  fill <form.pdf> <data.json> <output.pdf> [--flatten-cjk]
       → {"ok": true, "output": "<path>", "missing": [...], "provided": [...]}
         `missing` lists form fields absent from the data — surfaced, never
         hidden, so an empty field is visible rather than silently shipped.
@@ -81,7 +81,184 @@ def _force_need_appearances(writer):
     acro[NameObject("/NeedAppearances")] = BooleanObject(True)
 
 
-def fill(form, data_path, output):
+
+def _cjk_field_rects(output, cjk_names):
+    """[(page_index, rect)] for every widget whose value we wrote with CJK text."""
+    from pypdf import PdfReader
+
+    found = []
+    reader = PdfReader(output)
+    for page_index, page in enumerate(reader.pages):
+        for ref in page.get("/Annots", []) or []:
+            try:
+                annot = ref.get_object()
+            except Exception:  # noqa: BLE001 — a broken annot must not fail the fill
+                continue
+            name = annot.get("/T")
+            # A widget may inherit its name from the field parent.
+            parent = annot.get("/Parent")
+            if name is None and parent is not None:
+                try:
+                    name = parent.get_object().get("/T")
+                except Exception:  # noqa: BLE001
+                    name = None
+            if name is None or str(name) not in cjk_names:
+                continue
+            rect = annot.get("/Rect")
+            if rect is None or len(rect) != 4:
+                continue
+            found.append((page_index, [float(v) for v in rect], str(name)))
+    return found
+
+
+def _rect_has_ink(output, page_index, rect, scale=2.0):
+    """True when the field's box actually contains drawn pixels.
+
+    /NeedAppearances asks the VIEWER to regenerate a field's appearance with a
+    font that can draw the value. A renderer that ignores the flag draws nothing,
+    or tofu — which is invisible to a check that only reads /V back. Rasterising
+    the box is the only way to know what a reader will see.
+    Acceptance 2026-09-17 DEF-02. Returns None when rasterising is unavailable.
+    """
+    try:
+        import pypdfium2 as pdfium
+    except Exception:  # noqa: BLE001 — verification is an enhancement, never a gate
+        return None
+    try:
+        doc = pdfium.PdfDocument(output)
+        try:
+            page = doc[page_index]
+            height = page.get_height()
+            bitmap = page.render(scale=scale).to_pil().convert("L")
+            x0, y0, x1, y1 = rect
+            box = (
+                max(0, int(min(x0, x1) * scale)),
+                max(0, int((height - max(y0, y1)) * scale)),
+                min(bitmap.width, int(max(x0, x1) * scale)),
+                min(bitmap.height, int((height - min(y0, y1)) * scale)),
+            )
+            if box[2] - box[0] < 1 or box[3] - box[1] < 1:
+                return None
+            crop = bitmap.crop(box)
+            dark = sum(count for value, count in zip(range(256), crop.histogram()) if value < 200)
+            return dark > 0
+        finally:
+            doc.close()
+    except Exception:  # noqa: BLE001 — a failed probe reports "unknown", never False
+        return None
+
+
+def _verify_cjk_render(output, data):
+    """Did the CJK values actually come out visible? {"checked": n, "blank": [...]}"""
+    cjk_names = {str(k) for k, v in data.items() if v is not None and _has_cjk(v)}
+    if not cjk_names:
+        return None
+    try:
+        rects = _cjk_field_rects(output, cjk_names)
+    except Exception:  # noqa: BLE001
+        return None
+    checked = 0
+    blank = []
+    for page_index, rect, name in rects:
+        ink = _rect_has_ink(output, page_index, rect)
+        if ink is None:
+            continue
+        checked += 1
+        if not ink:
+            blank.append({"page": page_index + 1, "rect": rect, "field": name, "value": str(data.get(name, ""))})
+    if not checked:
+        return {"checked": 0, "verified": False, "reason": "RASTERIZER_UNAVAILABLE"}
+    return {
+        "checked": checked,
+        "verified": not blank,
+        "blankFields": blank,
+        **({"warning": (
+            "A CJK value was written but its field renders blank. The reader is not "
+            "honouring /NeedAppearances. Flatten the values onto the page (the "
+            "annotation filler) or deliver a Word template converted to PDF instead."
+        )} if blank else {}),
+    }
+
+
+def _resolve_cjk_font():
+    """The platform's verified CJK font, or None. Never raises.
+
+    lily_office_style checks that the font's glyph outlines are ones ReportLab can
+    actually embed, which an exists()-only chain does not."""
+    import importlib.util
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    helper = os.path.normpath(os.path.join(here, "..", "..", "..", "runtime-scripts", "lily_office_style.py"))
+    try:
+        if os.path.exists(helper):
+            spec = importlib.util.spec_from_file_location("lily_office_style", helper)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            path, _outline = module.resolve_cjk_font()
+            if path:
+                return path
+    except Exception:  # noqa: BLE001 — fall through to the env hint
+        pass
+    env = os.environ.get("LILY_CJK_FONT_PATH")
+    return env if env and os.path.exists(env) else None
+
+
+def _flatten_values(output, data, blank_fields_by_name):
+    """Draw CJK values onto the page itself, for readers that ignore /NeedAppearances.
+
+    The field keeps its value in /V — this ADDS the visible text a compliant
+    viewer would have drawn. Opt-in, because a viewer that does honour the flag
+    would then draw the value twice. Returns the number of values drawn, or 0.
+    """
+    if not blank_fields_by_name:
+        return 0
+    font_path = _resolve_cjk_font()
+    if not font_path:
+        return 0
+    try:
+        from io import BytesIO
+
+        from pypdf import PdfReader, PdfWriter
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.pdfgen import canvas as rl_canvas
+    except Exception:  # noqa: BLE001
+        return 0
+
+    try:
+        pdfmetrics.registerFont(TTFont("LilyFormCJK", font_path, subfontIndex=0))
+    except Exception:  # noqa: BLE001 — an unusable font must not break the fill
+        return 0
+
+    reader = PdfReader(output)
+    writer = PdfWriter(clone_from=output)
+    drawn = 0
+    for page_index, page in enumerate(reader.pages):
+        entries = [item for item in blank_fields_by_name if item["page"] == page_index + 1]
+        if not entries:
+            continue
+        box = page.mediabox
+        width, height = float(box.width), float(box.height)
+        buffer = BytesIO()
+        overlay = rl_canvas.Canvas(buffer, pagesize=(width, height))
+        for entry in entries:
+            x0, y0, x1, y1 = entry["rect"]
+            size = max(6.0, min(14.0, (max(y0, y1) - min(y0, y1)) * 0.62))
+            overlay.setFont("LilyFormCJK", size)
+            overlay.drawString(min(x0, x1) + 2, min(y0, y1) + (abs(y1 - y0) - size) / 2 + 1, str(entry["value"]))
+            drawn += 1
+        overlay.showPage()
+        overlay.save()
+        buffer.seek(0)
+        writer.pages[page_index].merge_page(PdfReader(buffer).pages[0])
+    if not drawn:
+        return 0
+    with open(output, "wb") as handle:
+        writer.write(handle)
+    return drawn
+
+
+def fill(form, data_path, output, flatten_cjk=False):
     from pypdf import PdfReader, PdfWriter
 
     with open(data_path, "r", encoding="utf-8") as handle:
@@ -120,6 +297,13 @@ def fill(form, data_path, output):
 
     with open(output, "wb") as handle:
         writer.write(handle)
+
+    render_report = _verify_cjk_render(output, data) if has_cjk else None
+    if flatten_cjk and render_report and render_report.get("blankFields"):
+        drawn = _flatten_values(output, data, render_report["blankFields"])
+        if drawn:
+            render_report = _verify_cjk_render(output, data) or render_report
+            render_report["flattened"] = drawn
     return _emit(
         {
             "ok": True,
@@ -127,9 +311,11 @@ def fill(form, data_path, output):
             "missing": missing,
             "provided": sorted(provided),
             # Signals a CJK value was written: NeedAppearances is set so the
-            # viewer re-renders with a CJK font. Occlusion/tofu must still be
-            # verified by rendering the output — treat as a delivery gate.
+            # viewer re-renders with a CJK font. That is a HINT to the reader,
+            # not a guarantee, so the output is rasterised and the field boxes
+            # are checked for actual ink rather than trusting the flag.
             "cjk": has_cjk,
+            **({"cjkRender": render_report} if has_cjk else {}),
         }
     )
 
@@ -141,8 +327,10 @@ def main(argv):
     try:
         if cmd == "inspect" and len(argv) == 3:
             return inspect(argv[2])
-        if cmd == "fill" and len(argv) == 5:
-            return fill(argv[2], argv[3], argv[4])
+        if cmd == "fill" and len(argv) >= 5:
+            # --flatten-cjk also DRAWS a CJK value onto the page when the field
+            # itself renders blank, for readers that ignore /NeedAppearances.
+            return fill(argv[2], argv[3], argv[4], flatten_cjk="--flatten-cjk" in argv[5:])
         return _emit({"ok": False, "error": "USAGE"}, 1)
     except FileNotFoundError as exc:
         return _emit({"ok": False, "error": f"NOT_FOUND: {exc.filename or exc}"}, 1)

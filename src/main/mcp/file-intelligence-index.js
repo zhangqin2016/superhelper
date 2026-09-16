@@ -24,6 +24,7 @@ const {
   isContentExtractable,
 } = require("./file-intelligence-content");
 const {
+  chunksForDocumentText,
   chunksForMetadata,
   chunksForText,
   excerpt,
@@ -160,7 +161,7 @@ function indexPath(input = {}) {
       const extracted = contentExtractor.extract(file, info);
       let contentChunks = [];
       if (extracted.text) {
-        contentChunks = chunksForText(file, extracted.text, linesPerChunk, {
+        contentChunks = chunksForDocumentText(file, extracted.text, linesPerChunk, {
           sourceType: info.kind,
           indexPolicy: info.indexPolicy || "",
         });

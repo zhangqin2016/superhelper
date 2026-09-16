@@ -57,38 +57,15 @@ def _profile_uri(path):
 
 
 def _office_to_pdf(path, out_dir):
-    soffice = _soffice()
-    # --convert-to writes <basename>.pdf into out_dir. headless + a throwaway
-    # user profile so it never collides with a real LibreOffice session.
-    profile = os.path.join(out_dir, ".lo-profile")
-    subprocess.run(
-        [
-            soffice,
-            "--headless",
-            "--invisible",
-            "--nologo",
-            "--nodefault",
-            "--nofirststartwizard",
-            "--nolockcheck",
-            "--norestore",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            out_dir,
-            f"-env:UserInstallation={_profile_uri(profile)}",
-            path,
-        ],
-        check=True,
-        capture_output=True,
-        timeout=180,
-        env=_office_env(),
-        **_subprocess_options(),
-    )
-    base = os.path.splitext(os.path.basename(path))[0]
-    pdf = os.path.join(out_dir, base + ".pdf")
-    if not os.path.exists(pdf):
-        raise RuntimeError("LibreOffice produced no PDF")
-    return pdf
+    # One conversion path for the whole platform, and it cannot fail silently:
+    # soffice exits 0 with no output when it has no export filter for the target.
+    # See lily_office_convert. [gate: office-conversion-no-silent-failure]
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from lily_office_convert import ConversionError, convert
+    try:
+        return convert(path, out_dir, "pdf")
+    except ConversionError as error:
+        raise RuntimeError(str(error)) from error
 
 
 def _render_pdf(pdf, out_dir, scale):

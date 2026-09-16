@@ -409,7 +409,12 @@ def extract_pdf(path):
             if text.strip():
                 page_texts[index] = text.strip()
 
-    parts = [part for part in page_texts if part]
+    # Keep the page boundary. It used to be flattened away here, which left a
+    # 300-page PDF as one undifferentiated blob: the indexer could not split on
+    # pages, and nothing could cite a page number. Same marker convention the
+    # spreadsheet and presentation extractors already use ("## Sheet: ", "##
+    # Slide "). Acceptance 2026-09-17 DEF-08.
+    parts = [f"## Page {index + 1}\n\n{part}" for index, part in enumerate(page_texts) if part]
     _harvest_footer(harvest, parts)
     return "\n\n".join(parts)
 
@@ -418,6 +423,13 @@ def extract_image(path):
     # Standalone scan/photo: OCR the file directly (RapidOCR reads the path).
     return _ocr(path)
 
+
+# Formats that ARE their own text. Not supported here on purpose, but the caller
+# is told to read them directly rather than concluding the file is unreadable.
+PLAIN_TEXT_EXTS = {
+    ".txt", ".text", ".log", ".md", ".markdown", ".csv", ".tsv",
+    ".html", ".htm", ".xml", ".json", ".yaml", ".yml", ".ini", ".rst",
+}
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp", ".gif"}
 
@@ -442,7 +454,19 @@ def main():
     elif ext in OFFICE_EXTRACTORS:
         extractor = OFFICE_EXTRACTORS[ext]
     else:
-        print(json.dumps({"ok": False, "error": f"UNSUPPORTED:{ext}"}))
+        # Acceptance 2026-09-17 DEF-05: a bare UNSUPPORTED told the caller nothing,
+        # so a plain-text file read as "this file cannot be read". The error string
+        # is unchanged for anything matching on it; the hint says what to do
+        # instead. This extractor exists for formats whose text is NOT the bytes
+        # on disk — a text file needs no extractor at all.
+        payload = {"ok": False, "error": f"UNSUPPORTED:{ext}"}
+        if ext in PLAIN_TEXT_EXTS:
+            payload["hint"] = (
+                f"{ext} is already plain text — read the file directly instead of extracting it. "
+                "This tool is for formats whose text is not the bytes on disk (PDF, Office, images)."
+            )
+            payload["readDirectly"] = True
+        print(json.dumps(payload))
         return 1
 
     try:

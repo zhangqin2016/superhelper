@@ -35,10 +35,22 @@ prevent this:
   the values are written (the fill step resets the flag) and is fail-open and
   harmless for ASCII-only fills. The `fill` result includes `"cjk": true` when a
   CJK value was written.
-- After filling a form with any Chinese value, VERIFY the rendered PDF
-  (render → look at the pixels), do not trust the write alone. Occluded, blank,
-  or tofu Chinese text is a delivery gate: do not ship a form whose Chinese
-  fields show as boxes or blanks.
+- The script now DOES this check itself: after writing, it rasterises the output
+  and looks for ink inside each CJK field's box. The result carries
+  `cjkRender: {checked, verified, blankFields[], warning}`. `verified: false`
+  means a reader that ignores `/NeedAppearances` shows nothing there — that is the
+  defect, reported per field with its name and rectangle, not a guess.
+- To repair it, re-run `fill` with `--flatten-cjk`. The value is drawn onto the
+  page itself with the platform's verified CJK font, and the check is re-run to
+  confirm it is now visible. It is opt-in because a reader that DOES honour
+  `/NeedAppearances` would then draw the value twice.
+- Still look at the rendered PDF before delivering. The ink check proves
+  something was drawn in the box; only your eyes prove it is the right text, not
+  clipped, and not overlapping the form's own labels.
+- Do NOT build a fillable form with Chinese default values using reportlab's
+  `canvas.acroForm`. Its PDF string escape is a 0-255 lookup table, so any CJK
+  character raises `KeyError`. Fill an EXISTING form with this script, or produce
+  a designed PDF from a Word template through LibreOffice.
 - Long values can be clipped by a small field box. Field boxes must be large
   enough for the text; where the form allows, prefer multiline or auto-size
   fields. If a value overruns its box, shorten it or flag the form as unsuitable

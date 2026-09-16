@@ -148,6 +148,37 @@ if (canRunSmokeTest) {
     }
     console.warn(`[verify-runtime] warning: venv smoke test failed: ${detail}`);
   }
+
+  // Acceptance 2026-09-17 DEF-03: Pillow 12 added a lazy "import only the plugin
+  // for this extension" step, so saving a multi-page PDF by FILENAME never loads
+  // JpegImagePlugin and dies with KeyError: 'JPEG'. Our bundled Pillow 11 does
+  // not have it, so this is a forward guard: a Pillow bump must not bring the
+  // bug in unnoticed. [gate: runtime-image-pdf-save]
+  const pillowProbe = spawnSync(
+    venvPython,
+    ["-c", [
+      "import tempfile, os, random",
+      "from PIL import Image",
+      "random.seed(3)",
+      "pages = []",
+      "for _ in range(2):",
+      "    im = Image.new('RGB', (160, 160))",
+      "    im.putdata([(random.randrange(256),) * 3 for _ in range(160 * 160)])",
+      "    pages.append(im)",
+      "out = os.path.join(tempfile.mkdtemp(), 'probe.pdf')",
+      "pages[0].save(out, save_all=True, append_images=pages[1:])",
+      "assert os.path.getsize(out) > 0",
+      "print('ok')",
+    ].join("\n")],
+    { encoding: "utf8", timeout: 60_000 },
+  );
+  if (pillowProbe.status !== 0) {
+    const detail = pillowProbe.error?.message || pillowProbe.stderr || pillowProbe.stdout || "unknown error";
+    const message = `bundled Pillow cannot save a multi-page PDF by filename: ${detail.trim().split("\n").pop()}. `
+      + "Pin Pillow back, or make every caller pass format=\"PDF\" explicitly.";
+    if (strictSmoke) fail(`venv image smoke test failed: ${message}`);
+    console.warn(`[verify-runtime] warning: ${message}`);
+  }
 } else {
   if (strictSmoke && !allowCrossHostSmokeSkip) {
     fail("strict smoke requested, but win32-x64 runtime smoke must run on Windows");

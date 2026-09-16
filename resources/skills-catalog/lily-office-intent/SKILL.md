@@ -92,7 +92,15 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    reporting it as lost. For a chart IMAGE (for an HTML/Markdown/PDF report, as
    opposed to a workbook's own native chart) use matplotlib, and call
    `configure_matplotlib_cjk()` first so Chinese labels are not tofu boxes.
-6. Reopen the generated file with its deterministic library and validate its
+6. Converting with LibreOffice: a `soffice --convert-to` that has no export
+   filter for the target EXITS 0 and writes nothing, so never treat the return
+   code as success. Use `convert()` from
+   `resources/runtime-scripts/lily_office_convert.py`, which verifies a non-empty
+   output file, retries HTML through the Writer input filter, and raises with
+   LibreOffice's own reason. A ReportLab-drawn PDF also leaves an un-embedded
+   Helvetica in its page resources; harmless to read, but clean it up when the
+   deliverable must be PDF/A.
+7. Reopen the generated file with its deterministic library and validate its
    structure. Recalculate formula workbooks, render the final artifact, inspect
    the required pages, fix observed defects, and repeat until the delivery gate
    passes or the remaining blocker is explicitly reported.
