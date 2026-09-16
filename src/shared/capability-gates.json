@@ -534,7 +534,8 @@
         "scripts/test-turn-queue-recovery-task-core.mjs",
         "scripts/test-turn-terminal-cas-recovery.mjs",
         "scripts/test-renderer-import.cjs",
-        "scripts/test-turn-archive.mjs"
+        "scripts/test-turn-archive.mjs",
+        "scripts/test-model-pin-override.mjs"
       ]
     },
     {

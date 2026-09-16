@@ -46,11 +46,25 @@ const CLOSURE_TASK_TYPES = new Set([
 const ANALYSIS_TASK_TYPES = new Set(["content_extraction", "architecture_audit", "document_work", "bug_investigation"]);
 const ANALYSIS_MIN_EVIDENCE = 3;
 
+/**
+ * Work that was CUT OFF mid-flight and has earned another round.
+ *
+ * Eligibility used to be decided by how the request TEXT was classified, which
+ * is the wrong signal for a follow-up: 2026-09-16 a turn that ran 120 successful
+ * tool calls and ended stalled with an unfinished command was refused as
+ * NON_EXECUTION_TASK, because the user had typed "可以 继续做" and no task
+ * contract was built for those four characters. What the turn DID is the
+ * evidence; what the request looked like is not. A cut-off turn with real
+ * execution behind it continues whatever (if anything) it was classified as.
+ */
 function isCutOffAnalysisWork(taskContract = {}, payload = {}, evidence = {}) {
-  if (!taskContract?.active || !ANALYSIS_TASK_TYPES.has(String(taskContract.taskType || ""))) return false;
   const cutOff = Boolean(payload.stalled) || Boolean(payload.continuationHandoff) || isModelSilentFailure(payload);
   if (!cutOff) return false;
-  return isModelSilentFailure(payload) || Number(evidence.count || 0) >= ANALYSIS_MIN_EVIDENCE;
+  if (isModelSilentFailure(payload)) {
+    // A silent model leaves no receipts by definition; it is gated separately.
+    return Boolean(taskContract?.active) && ANALYSIS_TASK_TYPES.has(String(taskContract.taskType || ""));
+  }
+  return Number(evidence.count || 0) >= ANALYSIS_MIN_EVIDENCE;
 }
 
 // A model that returned zero bytes (first-response watchdog) leaves no tool

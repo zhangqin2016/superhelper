@@ -7,6 +7,27 @@ function resolveModelForTurn({ selection, text, files } = {}) {
   return catalog.resolveTurnModel({ selection, text, files });
 }
 
+/**
+ * A retry / continuation replays the SOURCE turn's model so continued work stays
+ * on the model that produced it. But a manual pick made AFTER that turn is the
+ * user overruling it — typically to escape the very model that just failed
+ * (2026-09-16: switched away from the company DeepSeek, pressed 重试, and got the
+ * same "no available service channel" because the dead model was still pinned).
+ * The later explicit choice wins; automatic selections keep the pin.
+ */
+function manualOverrideAfterSource(sessionId, receipt) {
+  if (!receipt || !sessionId) return null;
+  try {
+    const current = catalog.getSessionModelSelection(sessionId);
+    if (current?.mode !== "manual") return null;
+    const pinnedId = receipt.selectionId || receipt.selection?.manualModelId || "";
+    const chosenId = current.manualModelId || "";
+    return chosenId && chosenId !== pinnedId ? current : null;
+  } catch {
+    return null;
+  }
+}
+
 function resolveTurnModel(opts, text, files, context = {}) {
   let receipt = null;
   if (opts?.sourceTurnId && context.sessionId) {
@@ -16,6 +37,7 @@ function resolveTurnModel(opts, text, files, context = {}) {
     } catch {
       return { ok: false, error: "MODEL_SNAPSHOT_UNAVAILABLE" };
     }
+    if (manualOverrideAfterSource(context.sessionId, receipt)) receipt = null;
   }
   let retained = 0;
   try {

@@ -94,7 +94,13 @@ await check("eligibility: CUT-OFF long analysis/extraction/document work may con
     const silent = shouldRecoverParentClosure({ sessionId: "s", taskContract: contract, state: { ...baseState, tools: new Map() }, payload: { failed: true, errorCode: "MODEL_NO_RESPONSE" } });
     assert.equal(silent.reason, "ELIGIBLE_MODEL_SILENT", `${taskType} killed by a silent model waits for recovery`);
   }
-  assert.equal(shouldRecoverParentClosure({ sessionId: "s", taskContract: { active: true, taskType: "general", categories: [] }, state: { ...baseState, tools }, payload: { stalled: true } }).reason, "NON_EXECUTION_TASK");
+  // 2026-09-16: eligibility follows the EVIDENCE, not the request's classification.
+  // A turn cut off after real tool work continues even when the request text was
+  // a bare follow-up that produced no contract — the field case was 120 successful
+  // tool calls refused because the user had typed "可以 继续做".
+  assert.equal(shouldRecoverParentClosure({ sessionId: "s", taskContract: { active: true, taskType: "general", categories: [] }, state: { ...baseState, tools }, payload: { stalled: true } }).ok, true);
+  assert.equal(shouldRecoverParentClosure({ sessionId: "s", taskContract: null, state: { ...baseState, tools }, payload: { stalled: true } }).ok, true, "no contract at all is still continuable work");
+  assert.equal(shouldRecoverParentClosure({ sessionId: "s", taskContract: null, state: { ...baseState, tools: new Map([["a", { id: "a", name: "read", status: "done" }]]) }, payload: { stalled: true } }).reason, "NON_EXECUTION_TASK", "one tool call is not a cut-off long task");
   assert.equal(hasExecutionIntent({ active: false, taskType: "code_change" }), false);
 });
 
