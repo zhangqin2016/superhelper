@@ -24,7 +24,9 @@ function tokenize(value = "") {
   return [...tokens];
 }
 
-function chunksForText(filePath, text, linesPerChunk) {
+function chunksForText(filePath, text, linesPerChunk, options = {}) {
+  const sourceType = String(options.sourceType || "text");
+  const indexPolicy = String(options.indexPolicy || "");
   const lines = String(text || "").split(/\r?\n/);
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
   const chunks = [];
@@ -35,7 +37,8 @@ function chunksForText(filePath, text, linesPerChunk) {
     chunks.push({
       chunkId: "",
       sourcePath: filePath,
-      sourceType: "text",
+      sourceType,
+      indexPolicy,
       rangeType: "lines",
       rangeStart: start,
       rangeEnd: end,

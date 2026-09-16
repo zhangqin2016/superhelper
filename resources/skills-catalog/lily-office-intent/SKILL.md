@@ -82,7 +82,17 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    `style_pptx`, `LIGHT_THEME`, `contrast_ok`) applies the defaults
    deterministically; decks default to light backgrounds. Apply the system
    consistently instead of formatting elements one at a time.
-5. Reopen the generated file with its deterministic library and validate its
+5. A workbook and a document are also PRINTED objects. Before saving a workbook
+   call `style_xlsx_print()` from the same helper: a sheet with no page setup
+   paginates on default paper and a floating chart is split across the break,
+   which exports a near-empty page carrying only the chart's axis title. Title a
+   Word document with Heading 1, never the Title style — Title becomes document
+   metadata and disappears from the body of a pandoc conversion; when converting
+   someone else's file, pass `--standalone` or re-state the title rather than
+   reporting it as lost. For a chart IMAGE (for an HTML/Markdown/PDF report, as
+   opposed to a workbook's own native chart) use matplotlib, and call
+   `configure_matplotlib_cjk()` first so Chinese labels are not tofu boxes.
+6. Reopen the generated file with its deterministic library and validate its
    structure. Recalculate formula workbooks, render the final artifact, inspect
    the required pages, fix observed defects, and repeat until the delivery gate
    passes or the remaining blocker is explicitly reported.

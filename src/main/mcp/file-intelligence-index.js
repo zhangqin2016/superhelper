@@ -19,6 +19,11 @@ const {
 } = require("./workspace-index-source");
 const { createArchiveIndexInspector } = require("./archive-index-policy");
 const {
+  contentIndexEnabled,
+  createContentExtractor,
+  isContentExtractable,
+} = require("./file-intelligence-content");
+const {
   chunksForMetadata,
   chunksForText,
   excerpt,
@@ -92,8 +97,22 @@ function indexPath(input = {}) {
   let coverage = files.truncated ? "sampled" : "indexed";
   const chunks = [];
   const skipped = [];
+  const metadataOnly = [];
+  const contentIndexed = [];
   const onProgress = input.onProgress;
   const inspectIndexCandidate = createArchiveIndexInspector(input, inspectPath);
+  // Content extraction spawns Python per file, so it is OPT-IN: the index_path
+  // MCP tool asks for it (it runs in its own subprocess, where a bounded
+  // blocking spawn is fine), while callers on the main process — the
+  // large-document notice, auto-index, reconcile — leave it off and keep the
+  // metadata-only behaviour they have always had. Bounded on every axis and
+  // fails open to the metadata chunk either way.
+  const contentExtractor = createContentExtractor({
+    // Opt-in AND the kill switch: LILY_INDEX_DOCUMENT_CONTENT=0 restores the
+    // exact metadata-only behaviour even for callers that asked for content.
+    enabled: input.extractContent === true && contentIndexEnabled(),
+    ...(input.contentExtractor || {}),
+  });
   let processed = 0;
   reportProgress(onProgress, {
     phase: "started",
@@ -132,15 +151,38 @@ function indexPath(input = {}) {
       continue;
     }
     if (isMetadataIndexable(info)) {
+      // The metadata chunk always stays — it is what makes the file findable by
+      // name and type. What was missing is the content beside it: a .docx used
+      // to be counted as indexed while none of its text was searchable, so a
+      // query for words that really were in the document came back empty and
+      // read as "the document does not say that". [gate: document-content-index]
       const fileChunks = chunksForMetadata(info);
-      chunks.push(...fileChunks);
+      const extracted = contentExtractor.extract(file, info);
+      let contentChunks = [];
+      if (extracted.text) {
+        contentChunks = chunksForText(file, extracted.text, linesPerChunk, {
+          sourceType: info.kind,
+          indexPolicy: info.indexPolicy || "",
+        });
+      }
+      if (contentChunks.length) {
+        contentIndexed.push(file);
+      } else if (isContentExtractable(info)) {
+        // Only documents can be metadata-only in a way that misleads: an image
+        // or a video has no text, so its metadata chunk IS its whole index.
+        // Coverage is deliberately left alone — this list is the honest signal,
+        // and degrading coverage would change unrelated callers' confidence.
+        metadataOnly.push({ sourcePath: file, kind: info.kind, reason: extracted.reason || "no_content_extracted" });
+      }
+      chunks.push(...fileChunks, ...contentChunks);
       processed += 1;
       reportProgress(onProgress, {
         phase: "file-indexed",
         sourcePath: file,
         sourceType: info.kind,
         indexPolicy: info.indexPolicy || "",
-        chunkCount: fileChunks.length,
+        contentIndexed: contentChunks.length > 0,
+        chunkCount: fileChunks.length + contentChunks.length,
         total: files.length,
         processed,
       });
@@ -216,6 +258,11 @@ function indexPath(input = {}) {
     filesSeen: files.length,
     filesIndexed: new Set(chunks.map((chunk) => chunk.sourcePath)).size,
     filesSkipped: skipped.length,
+    filesContentIndexed: new Set(contentIndexed).size,
+    filesMetadataOnly: metadataOnly.length,
+    // Persisted so a later query can say WHY it found nothing in a document,
+    // instead of letting an empty result read as "the document does not say that".
+    metadataOnly: metadataOnly.slice(0, 50),
     skipped,
     chunks,
   };
@@ -240,6 +287,8 @@ function indexPath(input = {}) {
     processed,
     filesIndexed: record.filesIndexed,
     filesSkipped: record.filesSkipped,
+    filesContentIndexed: record.filesContentIndexed,
+    filesMetadataOnly: record.filesMetadataOnly,
     chunkCount: chunks.length,
     indexId,
   });
@@ -255,6 +304,9 @@ function indexPath(input = {}) {
     filesSeen: record.filesSeen,
     filesIndexed: record.filesIndexed,
     filesSkipped: record.filesSkipped,
+    filesContentIndexed: record.filesContentIndexed,
+    filesMetadataOnly: record.filesMetadataOnly,
+    metadataOnly: record.metadataOnly,
     chunkCount: chunks.length,
     skipped: skipped.slice(0, 20),
   };

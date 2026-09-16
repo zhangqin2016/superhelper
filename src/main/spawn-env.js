@@ -128,13 +128,27 @@ function buildAgentSpawnEnv(options = {}) {
     /* browser runtime is optional; never block spawn env on it */
   }
 
+  // The Playwright runtime is a SET: the module tree and the browser directory
+  // must come from ONE installation, or playwright demands a Chromium build that
+  // is not there. Acceptance 2026-09-16 DEF-005 caught exactly the mixed pair —
+  // NODE_PATH from the dev tree's playwright 1.59.1 (which wants chromium 1217)
+  // beside PLAYWRIGHT_BROWSERS_PATH from the installed pack (which ships 1228).
+  // When the Web Automation pack supplies the set it wins whole; the base bundle
+  // and the dev tree fill in only when it does not. [gate: browser-runtime-availability]
+  const runtimeExtras = getRuntimeEnvExtras();
+  if (runtimeExtras.LILY_PLAYWRIGHT_NODE_MODULES) {
+    for (const key of ["NODE_PATH", "LILY_PLAYWRIGHT_NODE_MODULES", "PLAYWRIGHT_BROWSERS_PATH"]) {
+      delete webRuntimeEnv[key];
+    }
+  }
+
   const executablePath = sanitizeExecutablePathEntries(pathSegments, { platform: process.platform });
 
   const env = {
     ...pickInheritedEnv(process.env),
     ...engineEnv,
     ...getSearchSpawnEnv(),
-    ...getRuntimeEnvExtras(),
+    ...runtimeExtras,
     // Model-driven image generation (active preset flagged imageGen): before both
     // the server default and the explicit media choice below, so either overrides.
     ...activePresetImageGenEnv(),

@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { emptyResultHint, fetchMatchingRows } = require("./workspace-knowledge-query");
 const { openDatabase } = require("./store/sqlite-db");
 const { migrateContentHash, readSourceStamps, upsertSourceStamp } = require("./workspace-source-stamps");
 
@@ -391,30 +392,7 @@ class WorkspaceKnowledgeStore {
       return { ok: false, error: "EMPTY_QUERY", indexId: record.indexId, workspaceKey: this.workspaceKey };
     }
     const max = Math.max(1, Math.min(Number(limit || 8), 50));
-    let rows = [];
-    try {
-      rows = this.db.all(
-        `SELECT c.*, bm25(chunks_fts) AS rank
-           FROM chunks_fts
-           JOIN chunks c ON c.id = chunks_fts.rowid
-          WHERE chunks_fts MATCH ?
-            AND c.index_id = ?
-          ORDER BY rank ASC, c.chunk_id ASC
-          LIMIT ?`,
-        ftsQuery,
-        record.indexId,
-        max,
-      );
-    } catch {
-      const terms = tokenize(query);
-      rows = this.db.all(
-        "SELECT * FROM chunks WHERE index_id = ? ORDER BY id",
-        record.indexId,
-      ).filter((row) => {
-        const haystack = String(row.search_text || "").toLowerCase();
-        return terms.some((term) => haystack.includes(term));
-      }).slice(0, max);
-    }
+    const rows = fetchMatchingRows(this.db, { indexId: record.indexId, ftsQuery, query, max, tokenize });
     let matches = rows.map((row) => {
       const chunk = hydrateChunk(row);
       return {
@@ -465,6 +443,8 @@ class WorkspaceKnowledgeStore {
       sourcePath: record.sourcePath,
       ...(evicted ? { evictedStale: evicted } : {}),
       ...(staleSourcePaths.length ? { staleSourcePaths } : {}),
+      // "Found nothing" must not be mistaken for "the document does not say that".
+      ...(matches.length ? {} : emptyResultHint(this.db, record.indexId)),
       matches,
     };
   }

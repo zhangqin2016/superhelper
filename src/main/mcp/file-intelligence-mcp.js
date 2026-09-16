@@ -101,7 +101,7 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "index_path",
     {
-      description: "Build a reusable local evidence index for a text-like file, metadata-indexable document/media file, or bounded directory. Returns an index id; it does not answer the user's question by itself. Example call: {\"path\":\"/data/contracts\"}",
+      description: "Build a reusable local evidence index for a text-like file, Office/PDF document, media file, or bounded directory. Word, Excel, PowerPoint and PDF files are indexed by their CONTENT, not only their metadata; any file whose content could not be read is listed in metadataOnly with the reason. Returns an index id; it does not answer the user's question by itself. Example call: {\"path\":\"/data/contracts\"}",
       inputSchema: {
         path: z.string().describe("Absolute or workspace-relative local file/directory path"),
         workspacePath: z.string().optional().describe("Current workspace root for workspace-scoped index partitioning"),
@@ -110,7 +110,9 @@ function createFileIntelligenceMcpServer() {
         maxArchives: z.number().int().min(1).max(100).optional().describe("Maximum archives to inspect during one directory index build"),
       },
     },
-    async (args) => asTextJson(indexPath(args || {})),
+    // This server runs in its own subprocess, so a bounded blocking document
+    // extraction is safe here. [gate: document-content-index]
+    async (args) => asTextJson(indexPath({ ...(args || {}), extractContent: true })),
   );
 
   server.registerTool(

@@ -13,8 +13,8 @@ const SKILL_PLATFORM_OVERLAYS = Object.freeze({
     zh: "anthropics-pptx：Lily 内置的 python-pptx 是从零生成演示文稿的标准路线；缺少 pptxgenjs 不代表平台没有 PPT 能力。幻灯片默认使用浅色背景；只有背景色与浅色文字成对设置并通过对比度自检时才允许深色背景（见 resources/runtime-scripts/lily_office_style.py 的 LIGHT_THEME / contrast_ok）。每个文本 run 都要成对设置西文 + 东亚字体（同文件的 style_pptx）。子代理 QA 可用则用，否则在当前会话内联执行同样的视觉检查，绝不能跳过。",
   }),
   "anthropics-pdf": Object.freeze({
-    en: "anthropics-pdf: probe ReportLab and use it for direct drawn PDFs when importable; stale runtimes without it must fall back to a structured DOCX/source plus managed LibreOffice export. Use pypdf for deterministic manipulation and LILY_CJK_FONT_PATH for non-Latin drawing. Never ad-hoc install dependencies; report a managed-runtime blocker explicitly.",
-    zh: "anthropics-pdf：先探测 ReportLab，可导入时用于直接绘制型 PDF；旧运行时缺少它时，回落到结构化 DOCX/源文档经受管 LibreOffice 导出。确定性编辑使用 pypdf，非拉丁文字使用 LILY_CJK_FONT_PATH。禁止临时安装依赖；缺少受管运行时要明确报告。",
+    en: "anthropics-pdf: probe ReportLab and use it for direct drawn PDFs when importable; stale runtimes without it must fall back to a structured DOCX/source plus managed LibreOffice export. Use pypdf for deterministic manipulation, and register_cjk_font() from lily_office_style.py for non-Latin drawing (an exists()-only chain picks a font ReportLab cannot embed). Never ad-hoc install dependencies; report a managed-runtime blocker explicitly.",
+    zh: "anthropics-pdf：先探测 ReportLab，可导入时用于直接绘制型 PDF；旧运行时缺少它时，回落到结构化 DOCX/源文档经受管 LibreOffice 导出。确定性编辑使用 pypdf，非拉丁绘制用 lily_office_style.py 的 register_cjk_font()，不要自己写只判存在的字体链（会选中嵌不进去的字体）。禁止临时安装依赖；缺少受管运行时要明确报告。",
   }),
 });
 

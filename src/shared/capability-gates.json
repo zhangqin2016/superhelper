@@ -1101,6 +1101,49 @@
         "scripts/test-turn-artifacts.mjs",
         "scripts/test-turn-artifact-model.mjs"
       ]
+    },
+    {
+      "id": "cjk-pdf-font",
+      "protects": "A drawn PDF keeps its Chinese text: the CJK font handed to the Python runtime is one ReportLab can actually embed.",
+      "baseline": "Font preference order is unchanged, and an unreadable probe is no opinion rather than a rejection.",
+      "failureFallback": "When nothing embeddable exists the first font that merely exists is still returned, exactly as before the probe existed; with no CJK font at all the skill falls open to Helvetica.",
+      "tests": [
+        "scripts/test-document-fonts.mjs",
+        "scripts/test-office-style-helper.mjs",
+        "scripts/test-office-authoring-contract.mjs"
+      ]
+    },
+    {
+      "id": "document-content-index",
+      "protects": "An empty search result over a Word/Excel/PowerPoint/PDF file never masquerades as 'the document does not contain that'.",
+      "baseline": "Metadata chunks, filesIndexed counts and coverage are unchanged; content extraction is opt-in and every background/main-process caller keeps the old behaviour.",
+      "failureFallback": "Extraction is bounded by file size, per-file timeout, run file count and run wall clock, and every failure falls open to the metadata chunk plus a named reason in metadataOnly. LILY_INDEX_DOCUMENT_CONTENT=0 restores the previous behaviour exactly.",
+      "tests": [
+        "scripts/test-document-content-index.mjs",
+        "scripts/test-file-intelligence-index.mjs",
+        "scripts/test-workspace-knowledge-store.mjs"
+      ]
+    },
+    {
+      "id": "browser-runtime-availability",
+      "protects": "A healthy Web Automation pack makes browser tools actually usable, and the Playwright module tree always matches the browsers beside it.",
+      "baseline": "A bundled Node interpreter still wins over the app binary, and a build with neither a pack nor a bundled runtime stays a clean no-op.",
+      "failureFallback": "No pack and no bundled playwright means no playwright MCP server at all, the same silent no-op as before.",
+      "tests": [
+        "scripts/test-browser-runtime-availability.mjs",
+        "scripts/test-mcp-config.mjs",
+        "scripts/test-spawn-env-web-runtime.mjs"
+      ]
+    },
+    {
+      "id": "office-delivery-completeness",
+      "protects": "A delivered Office document is whole: a chart is not split across a page break, a document title survives conversion, and a chart image can actually be produced.",
+      "baseline": "Print setup is additive polish that never fails a workbook, and the chart renderer is a declared runtime dependency checked at build time.",
+      "failureFallback": "style_xlsx_print never raises and returns an empty list for anything that is not a workbook; a runtime without matplotlib degrades to the workbook's own native chart.",
+      "tests": [
+        "scripts/test-office-style-helper.mjs",
+        "scripts/test-office-authoring-contract.mjs"
+      ]
     }
   ]
 }

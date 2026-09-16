@@ -47,28 +47,46 @@ function bundledNodeModulesDir(runtimeDir) {
   return path.join(runtimeDir, "web", "node_modules");
 }
 
+// The app binary IS a Node interpreter in ELECTRON_RUN_AS_NODE mode — four other
+// built-in MCP servers already launch through it. So a build whose base bundle
+// ships no node/ directory does not have to disable browser automation: an
+// installed Web Automation pack carries @playwright/mcp, playwright and the
+// browsers, and only ever lacked an interpreter. Acceptance 2026-09-16 DEF-004:
+// the pack self-reported installed/ready/healthy while the broker answered
+// BROWSER_RUNTIME_UNAVAILABLE, because this guard returned before the pack was
+// ever consulted. [gate: browser-runtime-availability]
+function resolveNodeCommand(runtimeDir) {
+  const bundled = runtimeDir ? nodeBinaryPath(runtimeDir) : "";
+  if (bundled) return { command: bundled, runAsNode: false };
+  if (process.execPath) return { command: process.execPath, runAsNode: true };
+  return null;
+}
+
 function resolvePlaywrightRuntime(runtimeDir, { webAutomationPackDir = "" } = {}) {
-  if (!runtimeDir) return null;
-  const command = nodeBinaryPath(runtimeDir);
-  if (!command) return null;
+  const node = resolveNodeCommand(runtimeDir);
+  if (!node) return null;
 
   if (webAutomationPackDir) {
-    const cliPath = path.join(webAutomationPackDir, "node_modules", "@playwright", "mcp", "cli.js");
+    const nodeModulesPath = path.join(webAutomationPackDir, "node_modules");
+    const cliPath = path.join(nodeModulesPath, "@playwright", "mcp", "cli.js");
     if (fs.existsSync(cliPath)) {
       return {
-        command,
+        ...node,
         cliPath,
+        nodeModulesPath,
         browsersPath: path.join(webAutomationPackDir, "browsers"),
         source: "web-automation-pack",
       };
     }
   }
 
+  if (!runtimeDir) return null;
   const cliPath = playwrightMcpEntry(runtimeDir);
   if (!fs.existsSync(cliPath)) return null;
   return {
-    command,
+    ...node,
     cliPath,
+    nodeModulesPath: bundledNodeModulesDir(runtimeDir),
     browsersPath: bundledBrowsersDir(runtimeDir),
     source: "base-runtime",
   };
@@ -90,6 +108,14 @@ function buildPlaywrightMcpConfig(runtimeDir, options) {
   const hasBundledChromium = fs.existsSync(browsers);
   const env = {};
   if (hasBundledChromium) env.PLAYWRIGHT_BROWSERS_PATH = browsers;
+  // Launching the app binary as Node needs the mode flag.
+  if (resolved.runAsNode) env.ELECTRON_RUN_AS_NODE = "1";
+  // Pin module resolution to the SAME installation the cli came from. Without
+  // this the server inherits whatever NODE_PATH the engine was spawned with and
+  // can load a different playwright than the browsers beside it were built for.
+  if (resolved.nodeModulesPath && fs.existsSync(resolved.nodeModulesPath)) {
+    env.NODE_PATH = resolved.nodeModulesPath;
+  }
   // Prefer the bundled Chromium. If the bundle ships node + @playwright/mcp but
   // no browser pack, fall back to the user's installed Chrome (the same channel
   // the web-system scanner uses via channel="chrome"), so the accessibility-tree

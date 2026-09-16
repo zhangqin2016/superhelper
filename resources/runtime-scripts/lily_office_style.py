@@ -149,6 +149,191 @@ def contrast_ok(fg_hex, bg_hex, minimum=4.5):
     return contrast_ratio(fg_hex, bg_hex) >= minimum
 
 
+# ------------------------------------------------------------- xlsx printing
+
+def style_xlsx_print(workbook, landscape_charts=True):
+    """Keep exported worksheets whole.
+
+    Acceptance 2026-09-16 DEF-006: rendering a budget workbook to PDF put the
+    table and its bar chart on page 3 and left page 4 almost empty, carrying only
+    the chart's vertical axis title. A floating chart straddled a horizontal page
+    break because the sheet declared no page setup at all, so LibreOffice paginated
+    on default paper.
+
+    A sheet that carries a chart is fitted to ONE page in both directions, which
+    makes a split impossible; a plain data sheet is fitted to one page WIDE and
+    allowed to flow down as many pages as it needs. Returns the sheet names that
+    were treated as chart sheets. Never raises."""
+    chart_sheets = []
+    try:
+        worksheets = list(workbook.worksheets)
+    except Exception:
+        return chart_sheets
+    for sheet in worksheets:
+        try:
+            has_chart = bool(getattr(sheet, "_charts", []) or getattr(sheet, "_images", []))
+            setup_pr = sheet.sheet_properties.pageSetUpPr
+            if setup_pr is not None:
+                setup_pr.fitToPage = True
+            sheet.page_setup.fitToWidth = 1
+            sheet.page_setup.fitToHeight = 1 if has_chart else 0
+            if has_chart:
+                if landscape_charts:
+                    sheet.page_setup.orientation = "landscape"
+                chart_sheets.append(sheet.title)
+        except Exception:
+            # Print setup is a polish step; never fail a workbook over it.
+            continue
+    return chart_sheets
+
+
+# ------------------------------------------------------------- CJK PDF font
+
+# ReportLab embeds TrueType glyph outlines only. A font carrying PostScript
+# (CFF) outlines raises "postscript outlines are not supported", and macOS ships
+# CFF for PingFang and Hiragino Sans GB while Linux ships CFF for Noto CJK — so
+# "the file exists" was never a strong enough test, and a drawn PDF silently
+# lost every Chinese character to the Helvetica fallback.
+
+OUTLINE_TRUETYPE = "truetype"
+OUTLINE_POSTSCRIPT = "postscript"
+OUTLINE_UNKNOWN = "unknown"
+
+# Same order as src/main/document-fonts.js. The host normally hands a verified
+# path down as LILY_CJK_FONT_PATH; this list is what keeps a bare `python3`
+# invocation outside the managed runtime working too.
+CJK_FONT_CANDIDATES = (
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/Supplemental/Songti.ttc",
+    "C:\\Windows\\Fonts\\msyh.ttc",
+    "C:\\Windows\\Fonts\\msyhbd.ttc",
+    "C:\\Windows\\Fonts\\simhei.ttf",
+    "C:\\Windows\\Fonts\\simsun.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/truetype/arphic/uming.ttc",
+)
+
+
+def font_outline_format(path):
+    """Which glyph outlines a font file carries, read from its sfnt table
+    directory. Returns 'truetype', 'postscript' or 'unknown'. Never raises —
+    'unknown' means no opinion and must never be treated as a rejection."""
+    import struct
+
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(16)
+            if len(header) < 16:
+                return OUTLINE_UNKNOWN
+            offset_table = 0
+            if header[:4] == b"ttcf":
+                if struct.unpack(">I", header[8:12])[0] < 1:
+                    return OUTLINE_UNKNOWN
+                offset_table = struct.unpack(">I", header[12:16])[0]
+            handle.seek(offset_table)
+            directory = handle.read(12)
+            if len(directory) < 12:
+                return OUTLINE_UNKNOWN
+            count = struct.unpack(">H", directory[4:6])[0]
+            if not 1 <= count <= 512:
+                return OUTLINE_UNKNOWN
+            records = handle.read(count * 16)
+            if len(records) < count * 16:
+                return OUTLINE_UNKNOWN
+            tags = {records[i * 16:i * 16 + 4] for i in range(count)}
+    except Exception:
+        return OUTLINE_UNKNOWN
+    if b"glyf" in tags:
+        return OUTLINE_TRUETYPE
+    if b"CFF " in tags or b"CFF2" in tags:
+        return OUTLINE_POSTSCRIPT
+    return OUTLINE_UNKNOWN
+
+
+def resolve_cjk_font(env_path=None):
+    """Return (path, outline) for a CJK font ReportLab can embed.
+
+    Falls back to the first font that merely exists when nothing embeddable is
+    found, so behaviour is never worse than a plain existence check. Returns
+    (None, 'unknown') when no candidate exists at all. Never raises."""
+    import os
+
+    configured = env_path if env_path is not None else os.environ.get("LILY_CJK_FONT_PATH")
+    seen = set()
+    candidates = []
+    for candidate in (configured,) + CJK_FONT_CANDIDATES:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            candidates.append(candidate)
+
+    fallback = None
+    for candidate in candidates:
+        try:
+            if not os.path.exists(candidate):
+                continue
+        except Exception:
+            continue
+        if fallback is None:
+            fallback = candidate
+        if font_outline_format(candidate) != OUTLINE_POSTSCRIPT:
+            return candidate, font_outline_format(candidate)
+    if fallback is not None:
+        return fallback, OUTLINE_POSTSCRIPT
+    return None, OUTLINE_UNKNOWN
+
+
+def register_cjk_font(name="LilyCJK"):
+    """Register an embeddable CJK font with ReportLab and return the font name to
+    draw with, or 'Helvetica' when none is available. Never raises."""
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except Exception:
+        return "Helvetica"
+
+    path, _outline = resolve_cjk_font()
+    if not path:
+        return "Helvetica"
+    kwargs = {"subfontIndex": 0} if path.lower().endswith(".ttc") else {}
+    try:
+        pdfmetrics.registerFont(TTFont(name, path, **kwargs))
+        return name
+    except Exception:
+        return "Helvetica"
+
+
+def configure_matplotlib_cjk():
+    """Point matplotlib at a real CJK face so Chinese labels are not tofu boxes.
+
+    Returns the family name in use, or None when matplotlib is unavailable or no
+    CJK font exists. Never raises — a chart with Latin-only labels still renders."""
+    try:
+        import matplotlib
+        from matplotlib import font_manager
+    except Exception:
+        return None
+    path, _outline = resolve_cjk_font()
+    if not path:
+        return None
+    try:
+        font_manager.fontManager.addfont(path)
+        family = font_manager.FontProperties(fname=path).get_name()
+        matplotlib.rcParams["font.sans-serif"] = [family] + list(
+            matplotlib.rcParams.get("font.sans-serif", [])
+        )
+        # A CJK face usually has no ASCII minus glyph; without this every
+        # negative tick label renders as a box.
+        matplotlib.rcParams["axes.unicode_minus"] = False
+        return family
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------- self-test
 
 def _selftest():
@@ -184,8 +369,64 @@ def _selftest():
     ea = title_run._r.get_or_add_rPr().find(pqn("a:ea"))
     assert ea is not None and ea.get("typeface") == DEFAULT_CJK_FONT, "pptx run must carry a:ea typeface"
 
+    # A chart sheet must be fitted to ONE page in both directions, or LibreOffice
+    # splits the chart across a page break and leaves a near-empty page carrying
+    # just the axis title. A plain data sheet keeps flowing downward.
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.chart import BarChart, Reference
+    wb = Workbook()
+    grid = wb.active
+    grid.title = "数据"
+    grid.append(["区域", "金额"])
+    for index in range(12):
+        grid.append(["区域%d" % index, 1000 + index])
+    charts = wb.create_sheet("图表")
+    bar = BarChart()
+    bar.y_axis.title = "金额"
+    bar.add_data(Reference(grid, min_col=2, min_row=1, max_row=13), titles_from_data=True)
+    charts.add_chart(bar, "B2")
+    assert style_xlsx_print(wb) == ["图表"], "only the chart sheet is treated as a chart sheet"
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as book:
+        wb.save(book.name)
+    reopened = load_workbook(book.name)
+    chart_sheet = reopened["图表"]
+    assert chart_sheet.sheet_properties.pageSetUpPr.fitToPage is True, "fitToPage must persist"
+    assert chart_sheet.page_setup.fitToWidth == 1 and chart_sheet.page_setup.fitToHeight == 1, "a chart sheet is one page"
+    assert chart_sheet.page_setup.orientation == "landscape"
+    data_sheet = reopened["数据"]
+    assert data_sheet.page_setup.fitToWidth == 1 and data_sheet.page_setup.fitToHeight == 0, "data flows down"
+    assert style_xlsx_print(object()) == [], "a non-workbook never raises"
+
     assert contrast_ok(LIGHT_THEME["text"], LIGHT_THEME["background"]), "theme text/bg must pass AA"
     assert not contrast_ok("1F2328", "1E2761"), "dark-on-dark must fail the guard"
+
+    # The CJK PDF font must be one ReportLab can actually embed, and the outline
+    # probe must agree with ReportLab itself on every candidate that exists.
+    import os
+    path, outline = resolve_cjk_font()
+    if path:
+        assert outline in (OUTLINE_TRUETYPE, OUTLINE_UNKNOWN, OUTLINE_POSTSCRIPT)
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+        except Exception:
+            pdfmetrics = None
+        if pdfmetrics is not None:
+            for index, candidate in enumerate(CJK_FONT_CANDIDATES):
+                if not os.path.exists(candidate):
+                    continue
+                probed = font_outline_format(candidate)
+                kwargs = {"subfontIndex": 0} if candidate.lower().endswith(".ttc") else {}
+                try:
+                    pdfmetrics.registerFont(TTFont("selftest%d" % index, candidate, **kwargs))
+                    embeddable = True
+                except Exception:
+                    embeddable = False
+                if probed == OUTLINE_POSTSCRIPT:
+                    assert not embeddable, "probe called %s unusable but ReportLab embedded it" % candidate
+                elif probed == OUTLINE_TRUETYPE:
+                    assert embeddable, "probe called %s usable but ReportLab rejected it" % candidate
+            assert register_cjk_font() != "Helvetica", "a machine with a CJK font must not fall back to Helvetica"
     print("lily_office_style selftest ok")
 
 

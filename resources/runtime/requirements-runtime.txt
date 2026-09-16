@@ -22,6 +22,14 @@ playwright>=1.40,<2
 # NOT bundled — they raise RAM/CPU beyond an ordinary consumer laptop.
 pypdfium2>=4.0,<5
 rapidocr-onnxruntime>=1.3,<2
+# Chart images for reports. Acceptance 2026-09-16 DEF-002: the document and data
+# skills promised "generate a chart" while no Python chart path existed at all —
+# openpyxl's native chart lives inside a workbook and cannot be embedded in an
+# HTML/Markdown/PDF report. matplotlib rides the numpy and Pillow already here,
+# so it adds a chart renderer rather than a new heavy stack. Chinese labels need
+# a real CJK face: use configure_matplotlib_cjk() from
+# resources/runtime-scripts/lily_office_style.py before plotting.
+matplotlib>=3.8,<4
 # Template fill: render .docx templates with {{ }} / {% %} placeholders (Jinja2)
 # from structured data. Light — docxtpl rides python-docx + jinja2, no new heavy
 # deps. Powers the lily-template-fill skill.
