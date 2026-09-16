@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { resolveToolSemantics } = require("./tool-semantics");
 const { fileURLToPath } = require("node:url");
@@ -136,6 +137,61 @@ function isInternalSupportArtifactPath(filePath) {
     normalized.includes("/.codex/skills/") ||
     normalized.includes("/.agents/skills/")
   );
+}
+
+// Working space, not deliverables. The rest of the workspace layer already
+// carries this knowledge (workspace-index DEFAULT_IGNORES, workspace-export-
+// planner SCRATCH_DIRS, workspace-grounding-gate, workspace-document-mentions,
+// learned-context); turn-artifacts was the one consumer that never got a copy,
+// so the ffmpeg intermediates a turn rendered into .lily-work/ listed as
+// deliverables beside the finished video in output/.
+// Deliberately conservative: dist/build/release stay deliverable, because a
+// turn asked to "package this" really does deliver a build output.
+const SCRATCH_DIR_SEGMENTS = new Set([
+  ".lily-work",
+  ".git",
+  "node_modules",
+  ".cache",
+  ".next",
+  ".turbo",
+  ".gradle",
+  ".pytest_cache",
+  "__pycache__",
+  ".venv",
+  "venv",
+]);
+
+function tempRoots() {
+  const roots = new Set([
+    "/tmp",
+    "/private/tmp",
+    "/var/tmp",
+    "/private/var/tmp",
+    "/var/folders",
+    "/private/var/folders",
+  ]);
+  try { roots.add(path.resolve(os.tmpdir())); } catch { /* no temp dir on this platform */ }
+  for (const key of ["TMPDIR", "TEMP", "TMP"]) {
+    const value = process.env[key];
+    if (!value) continue;
+    try { roots.add(path.resolve(value)); } catch { /* unusable env value */ }
+  }
+  return [...roots];
+}
+
+// A file the turn really did create, but as working material rather than as the
+// thing that was asked for: a scratch directory inside the workspace, or the OS
+// temp dir outside it. An export the user asked for by absolute path (a file on
+// the Desktop, say) is not process material and stays a deliverable.
+function isProcessArtifactPath(filePath, workspacePath, temps = tempRoots()) {
+  const absolute = path.resolve(filePath || "");
+  if (!absolute) return false;
+  if (workspacePath && isInsidePath(workspacePath, absolute)) {
+    const relative = path.relative(path.resolve(workspacePath), absolute);
+    return relative.split(path.sep).some((segment) => SCRATCH_DIR_SEGMENTS.has(segment));
+  }
+  if (temps.some((root) => isInsidePath(root, absolute))) return true;
+  return absolute.split(path.sep).some((segment) => SCRATCH_DIR_SEGMENTS.has(segment));
 }
 
 function toArtifact(filePath, source, workspacePath, { minimumModifiedAt = 0 } = {}) {
@@ -358,7 +414,18 @@ function buildTurnArtifacts({
     }
   }
 
-  return [...artifacts.values()].sort((a, b) => {
+  // Relevance pass. A turn's deliverables are what the user asked for, not every
+  // file the turn created on the way there. Process material is dropped when the
+  // turn produced anything else; when it produced nothing else it is kept and
+  // marked compact, so a turn never shows an empty hand.
+  const temps = tempRoots();
+  const collected = [...artifacts.values()];
+  const deliverables = collected.filter((artifact) => !isProcessArtifactPath(artifact.path, root, temps));
+  const kept = deliverables.length
+    ? deliverables
+    : collected.map((artifact) => ({ ...artifact, display: "compact" }));
+
+  return kept.sort((a, b) => {
     const rank = (item) => (item.kind === "image" ? 0 : item.kind === "video" || item.kind === "audio" ? 1 : 2);
     const aRank = rank(a);
     const bRank = rank(b);
@@ -382,5 +449,6 @@ function toolInputMayCreateArtifacts(toolName = "") {
 module.exports = {
   buildTurnArtifacts,
   isInsidePath,
+  isProcessArtifactPath,
   resolveCandidatePath,
 };

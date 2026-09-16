@@ -3,7 +3,10 @@
 const { buildTurnArtifacts } = require("./turn-artifacts");
 const { buildTurnResultBlocks, RESULT_BLOCK_SCHEMA_VERSION } = require("./turn-result-blocks");
 
-const ARTIFACT_SCHEMA_VERSION = 4;
+// 5 (2026-09-16): artifact lists are re-derived so conversations recorded
+// before the deliverable-relevance pass stop showing Lily's own scratch
+// files and OS temp files as products. [gate: deliverable-relevance]
+const ARTIFACT_SCHEMA_VERSION = 5;
 
 function backfillMessageArtifacts(message, workspacePath = "") {
   const record = message?.record;

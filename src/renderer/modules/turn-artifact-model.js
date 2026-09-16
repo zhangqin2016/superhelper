@@ -97,7 +97,7 @@ function blockTextOf(block = {}) {
 
 export function turnResultBlockKey(block = {}) {
   const text = blockTextOf(block);
-  return [
+  const key = [
     block.id || "",
     block.type || "",
     block.artifactType || "",
@@ -106,6 +106,11 @@ export function turnResultBlockKey(block = {}) {
     block.bytes || "",
     `${text.length}:${hashStr(text)}`,
   ].join(":");
+  // Appended only when a display mode is actually set, so the key for every
+  // block that existed before stays byte-identical to the legacy DOM
+  // reconciliation key, while a file that changes between deliverable and
+  // working material still re-renders instead of reusing the wrong card.
+  return block.display ? `${key}:display=${block.display}` : key;
 }
 
 export function artifactBlocksFromArtifacts(artifacts = []) {
@@ -123,6 +128,9 @@ export function artifactBlocksFromArtifacts(artifacts = []) {
       bytes: artifact.bytes || 0,
       updatedAt: artifact.updatedAt || 0,
       source: artifact.source || "",
+      // Set by the main process when a file is working material rather than a
+      // deliverable — the block renderer reads it to pick the compact card.
+      display: artifact.display || "",
     }));
 }
 

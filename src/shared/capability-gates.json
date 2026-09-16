@@ -1090,6 +1090,17 @@
         "scripts/test-agent-library-model.mjs",
         "scripts/test-agent-library-ui.cjs"
       ]
+    },
+    {
+      "id": "deliverable-relevance",
+      "protects": "A turn's artifact list shows the files the user asked for, not the working material the turn created on the way there.",
+      "baseline": "Every produced path is still discovered, registered and downloadable; only what the turn presents as a deliverable is narrowed.",
+      "failureFallback": "If narrowing would leave nothing, the working material is kept and shown compact, so the list is never emptied.",
+      "tests": [
+        "scripts/test-turn-artifact-relevance.mjs",
+        "scripts/test-turn-artifacts.mjs",
+        "scripts/test-turn-artifact-model.mjs"
+      ]
     }
   ]
 }

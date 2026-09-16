@@ -37,7 +37,20 @@ assert.deepEqual(
     bytes: 12,
     updatedAt: 0,
     source: "",
+    display: "",
   }],
+);
+
+// Working material the main process marked compact keeps that marking through
+// the view model, and the block key changes with it so a reused DOM node is not
+// rendered by the wrong renderer. [gate: deliverable-relevance]
+assert.equal(
+  artifactBlocksFromArtifacts([{ id: "a2", path: "/w/.lily-work/shot.webm", display: "compact" }])[0].display,
+  "compact",
+);
+assert.notEqual(
+  turnResultBlockKey({ type: "artifact", path: "/w/x.webm" }),
+  turnResultBlockKey({ type: "artifact", path: "/w/x.webm", display: "compact" }),
 );
 
 const merged = mergeTurnResultBlocks(
