@@ -4,6 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+
+// The round ceiling is OFF by default since 2026-09-16 (progress + the 24h
+// deadline are the real guards). These cases exercise the ceiling itself, so
+// they re-arm it explicitly at the value they were written against.
+process.env.LILY_CONTINUATION_MAX_ROUNDS = "8";
 const require = createRequire(import.meta.url);
 const { openDatabase } = require('../src/main/store/sqlite-db');
 const { createQueueRecoveryEnvelope } = require('../src/main/turn-queue-recovery-envelope');

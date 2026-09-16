@@ -630,6 +630,32 @@ app.whenReady().then(async () => {
     return "tabs switch";
   })()`);
 
+  // 5b. Agents tab with nothing selected: the right panel used to strand one
+  // sentence in a tall empty column. It now answers the question a first-time
+  // user actually has — what IS an agent — with the 4-part formula.
+  await run("agents-tab-anatomy", `(async () => {
+    const tabs = [...document.querySelectorAll("#characterLibraryTabs [role='tab']")];
+    tabs.find((t) => t.dataset.libraryTab === "agents").click();
+    await new Promise((r) => setTimeout(r, 300));
+    const detail = document.getElementById("characterLibraryDetail");
+    const card = detail.querySelector("[data-agent-anatomy]");
+    if (!card) throw new Error("agents tab with no selection must explain what an agent is: " + detail.textContent.trim().slice(0, 100));
+    if (!card.querySelector(".character-agent-anatomy-title")?.textContent.includes("智能体 = 角色卡 + 技能 + 知识库 + 执行模式")) {
+      throw new Error("the formula titles the card: " + card.querySelector(".character-agent-anatomy-title")?.textContent);
+    }
+    const rows = [...card.querySelectorAll(".character-agent-anatomy-row")];
+    if (rows.length !== 4) throw new Error("four definition rows (角色卡/技能/知识库/执行模式), got " + rows.length);
+    const terms = rows.map((r) => r.querySelector("dt")?.textContent.trim());
+    if (terms.join(",") !== "角色卡,技能,知识库,执行模式") throw new Error("terms in formula order: " + terms.join(","));
+    for (const row of rows) {
+      if (!row.querySelector("dd")?.textContent.trim()) throw new Error("every term needs a one-line meaning");
+    }
+    if (card.querySelector("img") || card.querySelector("svg")) throw new Error("the card stays compact: no images");
+    tabs.find((t) => t.dataset.libraryTab === "characters").click();
+    await new Promise((r) => setTimeout(r, 200));
+    return "anatomy rows=" + rows.length;
+  })()`);
+
   // 6. Create a blank character: minimal form, save creates revision 1.
   await run("create-blank", `(async () => {
     (await import("./modules/character-library.js")).openCreateForTests();

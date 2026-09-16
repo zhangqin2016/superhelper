@@ -225,7 +225,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
         if (typeof emitNotice === "function") {
           const stopDetails = {
             TASK_CONTINUATION_NO_PROGRESS: "未观察到跨轮新增执行进展，已停止自动接续；原任务尚未完成。",
-            TASK_CONTINUATION_BUDGET_EXHAUSTED: "本任务已达到 8 次自动接续上限；已保留进展，剩余工作尚未完成。",
+            TASK_CONTINUATION_BUDGET_EXHAUSTED: `本任务已达到 ${require("./store/task-continuation-budget").maxRounds()} 次自动接续上限；已保留进展，剩余工作尚未完成。`,
             TASK_CONTINUATION_DEADLINE: "本任务已达到 24 小时自动接续时限；已保留进展，剩余工作尚未完成。",
             TASK_CONTINUATION_CANCELLED: "任务已停止，不再自动接续。",
           };

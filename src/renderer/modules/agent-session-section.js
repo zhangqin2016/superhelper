@@ -248,11 +248,14 @@ export function createAgentSessionSection({ getFacade, getElement, el, t, getSes
     banner.classList.toggle("is-agent", Boolean(active));
     if (!active || !active.name) {
       delete banner.dataset.agentId;
+      // The role banner renderer already painted 角色卡 as the kind label.
       return;
     }
     banner.dataset.agentId = active.id;
     const avatar = banner.querySelector(".session-role-banner-avatar");
+    const kind = banner.querySelector(".session-role-banner-kind");
     const name = banner.querySelector(".session-role-banner-name");
+    if (kind) kind.textContent = t("character.bannerKindAgent");
     if (avatar) {
       avatar.textContent = active.icon || agentMonogram(active.name);
       avatar.classList.toggle("is-agent-icon", Boolean(active.icon));

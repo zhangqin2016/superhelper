@@ -166,22 +166,36 @@ ipcMain.handle("agents:install-official", () => ({ ok: false, error: "AGENTS_UNA
 ipcMain.handle("agents:knowledge-packs", () => ({ ok: true, packs: agentsState.knowledgePacks }));
 
 // --- Minimal character-worlds mocks (role control must keep working) ---------
-ipcMain.handle("character:list", () => ({ ok: true, characters: [] }));
+// One local 角色卡 so the collapsed disclosure has something to list.
+const cwCharacters = [{
+  schemaVersion: 1, id: "char_editor", ownerScope: "owner", displayName: "夜班编辑",
+  currentRevisionId: "rev_editor_1", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z", archivedAt: null,
+}];
+ipcMain.handle("character:list", () => ({ ok: true, characters: cwCharacters }));
 ipcMain.handle("character:list-official", () => ({ ok: true, characters: [] }));
 ipcMain.handle("character:get", () => ({ ok: false, error: "CHARACTER_NOT_FOUND" }));
 ipcMain.handle("character:get-revision", () => ({ ok: false, error: "CHARACTER_REVISION_NOT_FOUND" }));
+// The role binding is stateful so the 角色卡 summary row can be asserted after
+// a pick (it reads back through get-binding, like the real main process).
+let cwBindingVersion = 0;
+let cwMode = "native";
+let cwRevisionId = null;
+const cwNameOf = (revisionId) => cwCharacters.find((c) => c.currentRevisionId === revisionId)?.displayName || "";
 ipcMain.handle("session-character:get-binding", (_e, payload) => ({
   ok: true,
-  binding: { schemaVersion: 1, sessionId: payload?.sessionId || "", mode: "native", bindingVersion: 0, characterRevisionId: null, compatibilityProfile: null },
+  binding: { schemaVersion: 1, sessionId: payload?.sessionId || "", mode: cwMode, bindingVersion: cwBindingVersion, characterRevisionId: cwRevisionId, compatibilityProfile: null },
+  characterName: cwNameOf(cwRevisionId),
 }));
 // A role pick releases the bound agent: main reports it as `agentDeactivated`.
-let cwBindingVersion = 0;
 ipcMain.handle("session-character:set-binding", (_e, payload) => {
   record("session-character:set-binding", payload);
   cwBindingVersion += 1;
+  cwMode = payload?.mode || "native";
+  cwRevisionId = cwMode === "character" ? payload?.characterRevisionId || null : null;
   const res = {
     ok: true,
-    binding: { schemaVersion: 1, sessionId: payload?.sessionId || "", mode: payload?.mode || "native", bindingVersion: cwBindingVersion, characterRevisionId: payload?.characterRevisionId || null, compatibilityProfile: null },
+    binding: { schemaVersion: 1, sessionId: payload?.sessionId || "", mode: cwMode, bindingVersion: cwBindingVersion, characterRevisionId: cwRevisionId, compatibilityProfile: null },
+    characterName: cwNameOf(cwRevisionId),
   };
   const agent = agentsState.agents.find((a) => a.id === agentsState.binding.agentId);
   if (agent) {
@@ -272,9 +286,24 @@ app.whenReady().then(async () => {
     }
     check("locales-resolve-new-keys", keys.length >= 40 && missing.length === 0, missing.length ? missing.join(", ") : `${keys.length} keys × 3 locales`);
     const zh = JSON.parse(fs.readFileSync(path.join(root, "src/renderer/i18n/locales/zh-CN.json"), "utf8"));
-    check("popover-title-copy", zh["character.popoverTitle"] === "角色与智能体" && zh["character.buttonTitle"] === "角色与智能体" && zh["character.roleBannerTitle"].includes("智能体"), `${zh["character.popoverTitle"]} / ${zh["character.roleBannerTitle"]}`);
+    // One primary axis: the popover (and the composer command that opens it) is
+    // named 智能体. 角色卡 is the secondary property named inside it.
+    check("popover-title-copy", zh["character.popoverTitle"] === "智能体" && zh["character.buttonTitle"] === "智能体"
+      && zh["character.roleBannerTitle"].includes("智能体") && zh["character.roleBannerTitle"].includes("角色卡"), `${zh["character.popoverTitle"]} / ${zh["character.roleBannerTitle"]}`);
+    check("role-card-copy", zh["character.roleCard.label"] === "角色卡" && zh["character.roleCard.fromAgent"] === "由智能体设定"
+      && zh["character.bannerKindAgent"] === "智能体" && zh["character.bannerKindRole"] === "角色卡"
+      && !/角色(?!卡|库)/.test(zh["character.agent.roleHeadingNote"]),
+    `${zh["character.roleCard.label"]} / ${zh["character.agent.roleHeadingNote"]}`);
+    check("agent-anatomy-copy", zh["character.agent.anatomyTitle"] === "智能体 = 角色卡 + 技能 + 知识库 + 执行模式"
+      && ["role", "skills", "knowledge", "mode"].every((part) => zh[`character.agent.anatomy.${part}`] && zh[`character.agent.anatomyTerm.${part}`]),
+    zh["character.agent.anatomyTitle"]);
     const html = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
-    check("popover-title-html-fallback", html.includes('data-i18n="character.popoverTitle">角色与智能体<') && !html.includes(">对话角色<"), "static fallback copy renamed");
+    check("popover-title-html-fallback", html.includes('data-i18n="character.popoverTitle">智能体<') && !html.includes(">对话角色<")
+      && html.includes('data-i18n="character.roleCard.label">角色卡<'), "static fallback copy renamed");
+    check("role-disclosure-html", /id="characterRoleSummary"[^>]*aria-expanded="false"[^>]*aria-controls="characterRoleDisclosure"/.test(html)
+      && html.includes('<div id="characterRoleDisclosure" class="character-role-disclosure" hidden>')
+      && html.indexOf('id="characterAgentSection"') < html.indexOf('id="characterRoleSummary"')
+      && html.indexOf('id="characterRoleSummary"') < html.indexOf('id="characterList"'), "collapsed 角色卡 disclosure after the agent section");
   }
 
   // 1. Modules load.
@@ -504,17 +533,85 @@ app.whenReady().then(async () => {
   for (let i = 3; i <= 8; i += 1) {
     agentsState.official.push({ id: `lily-extra-${i}`, version: 1, locale: "zh-CN", categoryId: "work-delivery", category: "工作与交付", editorialOrder: i, featured: i === 3, roleOfficialId: null, official: true, summary: summary(`官方助手${i}`, { icon: "", knowledge: { packs: [], guidance: "" }, tools: { mcpAllow: [], connectors: [], disallow: [] } }) });
   }
+  // Geometry, measured in the real DOM: a height-capped flex column used to
+  // shrink each row below its own content while `overflow: visible` let the
+  // capability chips and the monogram bleed into the row below, and the tick's
+  // auto margin stretched every row by ~35px so only three agents fitted
+  // (2026-09-16 "都积压了，展示不全"). The row is now an explicit grid.
+  await run("agent-row-geometry", `(async () => {
+    const banner = document.getElementById("sessionRoleBanner");
+    const popover = document.getElementById("characterPopover");
+    if (popover.hidden) { banner.click(); await new Promise((r) => setTimeout(r, 400)); }
+    if (popover.hidden) throw new Error("popover must be open to measure it");
+    const section = document.getElementById("characterAgentSection");
+    const listEl = section.querySelector(".character-agent-list");
+    const rows = Array.prototype.slice.call(section.querySelectorAll(".character-agent-list > .character-agent-option"));
+    if (rows.length < 3) throw new Error("need rows to measure, got " + rows.length);
+    if (getComputedStyle(rows[1]).display !== "grid") throw new Error("the row must be an explicit grid, not a flex row");
+    rows.forEach(function (row, i) {
+      const rr = row.getBoundingClientRect();
+      const cs = getComputedStyle(row);
+      if (cs.flexShrink !== "0") throw new Error("row " + i + " may shrink below its content: flex-shrink=" + cs.flexShrink);
+      Array.prototype.forEach.call(row.querySelectorAll("*"), function (child) {
+        const cr = child.getBoundingClientRect();
+        if (cr.height === 0) return;
+        if (cr.bottom - rr.bottom > 1) throw new Error("row " + i + " spills " + Math.round(cr.bottom - rr.bottom) + "px via " + child.className);
+        if (rr.top - cr.top > 1) throw new Error("row " + i + " spills above via " + child.className);
+      });
+      // Nothing beside the text column may drive the height.
+      const copy = row.querySelector(".character-option-copy");
+      if (copy) {
+        const budget = copy.getBoundingClientRect().height + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 2;
+        if (rr.height > Math.max(budget, parseFloat(cs.minHeight))) {
+          throw new Error("row " + i + " is " + Math.round(rr.height) + "px but its text needs only " + Math.round(budget));
+        }
+      }
+    });
+    // Enough agents stay on screen to be scannable.
+    const perRow = rows[1].getBoundingClientRect().height + parseFloat(getComputedStyle(listEl).rowGap || "0");
+    const visible = Math.floor(listEl.getBoundingClientRect().height / perRow);
+    if (visible < 4) throw new Error("only " + visible + " agents visible at once");
+
+    // Expanding the 角色卡 list must not push the role cards or their actions
+    // off the bottom edge: the panel's height is shared, so the agent list
+    // gives room back (2026-09-16 screenshot: the disclosure was clipped).
+    const summary = document.getElementById("characterRoleSummary");
+    const disclosure = document.getElementById("characterRoleDisclosure");
+    summary.click();
+    await new Promise((r) => setTimeout(r, 250));
+    if (disclosure.hidden) throw new Error("clicking the summary must expand the role list");
+    const panel = document.getElementById("characterPopover");
+    if (!panel.classList.contains("is-role-expanded")) throw new Error("the panel must record the expanded state");
+    const shrunk = listEl.getBoundingClientRect().height;
+    if (!(shrunk < perRow * 4)) throw new Error("the agent list did not give room back: " + Math.round(shrunk));
+    const pr = panel.getBoundingClientRect();
+    for (const sel of ["#characterList", ".character-popover-footer"]) {
+      const node = panel.querySelector(sel);
+      const nr = node.getBoundingClientRect();
+      if (nr.height <= 0) throw new Error(sel + " is not rendered while expanded");
+      if (nr.bottom - pr.bottom > 1) throw new Error(sel + " is clipped by " + Math.round(nr.bottom - pr.bottom) + "px");
+    }
+    summary.click();
+    await new Promise((r) => setTimeout(r, 200));
+    if (!disclosure.hidden || panel.classList.contains("is-role-expanded")) throw new Error("clicking again must collapse it");
+
+    // Leave the panel as this step found it: the next step opens it itself.
+    document.getElementById("characterPopoverClose").click();
+    await new Promise((r) => setTimeout(r, 150));
+    return true;
+  })()`);
+
   await run("popover-agent-section-complete", `(async () => {
     const btn = document.getElementById("sessionRoleBanner");
     btn.click();
     await new Promise((r) => setTimeout(r, 400));
     const popover = document.getElementById("characterPopover");
     if (popover.hidden) throw new Error("popover should open");
-    if (!popover.querySelector(".character-popover-header span")?.textContent.includes("角色与智能体")) throw new Error("popover title renamed: " + popover.querySelector(".character-popover-header span")?.textContent);
-    if (!btn.title.includes("智能体")) throw new Error("banner title mentions agents: " + btn.title);
+    if (popover.querySelector(".character-popover-header span")?.textContent.trim() !== "智能体") throw new Error("popover title is the one axis 智能体: " + popover.querySelector(".character-popover-header span")?.textContent);
+    if (!btn.title.includes("智能体") || !btn.title.includes("角色卡")) throw new Error("banner title names both kinds: " + btn.title);
     const section = document.getElementById("characterAgentSection");
     const explainer = section.querySelector("[data-agent-explainer]");
-    if (!explainer || !explainer.textContent.includes("智能体 = 角色 + 技能 + 知识库 + 执行模式")) throw new Error("explainer under the heading: " + explainer?.textContent);
+    if (!explainer || !explainer.textContent.includes("智能体 = 角色卡 + 技能 + 知识库 + 执行模式")) throw new Error("explainer under the heading: " + explainer?.textContent);
     if (section.querySelector(".character-agent-heading").nextElementSibling !== explainer) throw new Error("explainer sits directly under the heading");
     const rows = [...section.querySelectorAll("[data-agent-id], [data-agent-official-id], [data-agent-package-id]")];
     if (rows.length !== 10) throw new Error("all 10 agents listed (no 6 cap), got " + rows.length);
@@ -540,9 +637,23 @@ app.whenReady().then(async () => {
     if (caps("agent_local").includes("继承") || caps("agent_local").includes("自主")) throw new Error("inherited autonomy never shows a chip: " + caps("agent_local"));
     const extra = rows.find((r) => r.dataset.agentOfficialId === "lily-extra-4").querySelector("[data-agent-caps]")?.textContent || "";
     if (extra.includes("知识") || extra.includes("工具")) throw new Error("no chip for empty knowledge/tools: " + extra);
+    // The 角色卡 is a secondary property: collapsed behind its summary row, which
+    // still states the value and says the agent is what set it.
+    const summary = document.getElementById("characterRoleSummary");
+    const disclosure = document.getElementById("characterRoleDisclosure");
+    if (!disclosure.hidden || summary.getAttribute("aria-expanded") !== "false") throw new Error("the 角色卡 list stays collapsed while an agent is bound");
+    if (!summary.textContent.includes("角色卡")) throw new Error("summary is labelled 角色卡: " + summary.textContent);
+    if (document.getElementById("characterRoleSummaryValue").textContent !== "Lily 原声") throw new Error("native 角色卡 reads Lily 原声: " + document.getElementById("characterRoleSummaryValue").textContent);
+    const from = document.getElementById("characterRoleSummaryFrom");
+    if (from.hidden || !from.textContent.includes("由智能体设定")) throw new Error("bound agent adds the 由智能体设定 suffix: " + from.textContent);
+    summary.click();
+    await new Promise((r) => setTimeout(r, 80));
+    if (disclosure.hidden || summary.getAttribute("aria-expanded") !== "true") throw new Error("clicking the summary expands the 角色卡 list");
     const note = document.getElementById("characterList").querySelector("[data-role-agent-note]");
-    if (!note || !note.textContent.includes("我的助理") || !note.textContent.includes("改选其他角色会停用该智能体")) throw new Error("role heading note names the active agent: " + note?.textContent);
+    if (!note || !note.textContent.includes("我的助理") || !note.textContent.includes("换成别的角色卡会停用该智能体")) throw new Error("role heading note names the active agent: " + note?.textContent);
     if (!popover.querySelector("[data-character-mode='native']") || popover.querySelector("[data-character-mode='native']").disabled) throw new Error("role rows stay clickable");
+    const kindLabel = document.getElementById("sessionRoleBanner").querySelector(".session-role-banner-kind");
+    if (kindLabel?.textContent !== "智能体") throw new Error("banner kind label says which axis is active: " + kindLabel?.textContent);
     popover.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     await new Promise((r) => setTimeout(r, 100));
     return "rows=" + rows.length;
@@ -572,6 +683,7 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 500));
     if (!popover.hidden) throw new Error("a successful switch closes the popover");
     if (btn.querySelector(".session-role-banner-name").textContent !== "合同审查助手") throw new Error("banner shows the switched agent");
+    if (btn.querySelector(".session-role-banner-kind").textContent !== "智能体") throw new Error("banner kind label stays 智能体 after a switch");
     return "switched";
   })()`);
   {
@@ -614,6 +726,11 @@ app.whenReady().then(async () => {
     if (!btn.classList.contains("is-agent") || btn.querySelector(".session-role-banner-name").textContent !== "合同审查助手") throw new Error("precondition: agent bound on the banner");
     btn.click();
     await new Promise((r) => setTimeout(r, 400));
+    const summary = document.getElementById("characterRoleSummary");
+    if (!document.getElementById("characterRoleDisclosure").hidden) throw new Error("the 角色卡 list opens collapsed on every popover open");
+    if (document.getElementById("characterRoleSummaryFrom").hidden) throw new Error("the summary credits the bound agent");
+    summary.click();
+    await new Promise((r) => setTimeout(r, 80));
     const note = document.getElementById("characterList").querySelector("[data-role-agent-note]");
     if (!note || !note.textContent.includes("合同审查助手")) throw new Error("role note names the bound agent: " + note?.textContent);
     document.getElementById("characterList").querySelector("[data-character-mode='native']").click();
@@ -623,10 +740,14 @@ app.whenReady().then(async () => {
     if (!document.getElementById("characterPopover").hidden) throw new Error("a successful role pick closes the popover");
     if (btn.classList.contains("is-agent") || btn.dataset.agentId) throw new Error("banner un-decorated after the agent was released");
     if (!btn.querySelector(".session-role-banner-name").textContent.includes("Lily")) throw new Error("banner falls back to the role: " + btn.querySelector(".session-role-banner-name").textContent);
+    if (btn.querySelector(".session-role-banner-kind").textContent !== "角色卡") throw new Error("banner kind label falls back to 角色卡: " + btn.querySelector(".session-role-banner-kind").textContent);
     const control = await import("./modules/character-session-control.js");
     if (control.getAgentSessionSectionState().session?.active) throw new Error("agent section reloaded to no agent");
     btn.click();
     await new Promise((r) => setTimeout(r, 400));
+    if (document.getElementById("characterRoleSummaryFrom").hidden === false) throw new Error("the 由智能体设定 suffix disappears once no agent is bound");
+    document.getElementById("characterRoleSummary").click();
+    await new Promise((r) => setTimeout(r, 80));
     if (document.getElementById("characterList").querySelector("[data-role-agent-note]")) throw new Error("role note disappears once no agent is bound");
     if (document.getElementById("characterAgentSection").querySelector("[data-agent-mode='none']").getAttribute("aria-checked") !== "true") throw new Error("none row checked after release");
     document.getElementById("characterPopover").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
@@ -639,6 +760,34 @@ app.whenReady().then(async () => {
     check("role-pick-reloads-agent-section", calls.filter((c) => c.channel === "agents:get-session").length > getSessionBefore + 1, `get-session calls before=${getSessionBefore}`);
     check("role-pick-cleared-binding", agentsState.binding.agentId === null, String(agentsState.binding.agentId));
   }
+
+  // 11b-2. The 角色卡 summary is the whole story of the conversation's role: it
+  // names the bound card, drops the 由智能体设定 suffix once no agent owns it,
+  // and — for a role-only conversation — opens expanded so that user still
+  // lands directly on their list.
+  await run("role-card-summary-when-bound", `(async () => {
+    const btn = document.getElementById("sessionRoleBanner");
+    btn.click();
+    await new Promise((r) => setTimeout(r, 400));
+    if (!document.getElementById("characterRoleDisclosure").hidden) throw new Error("a native conversation opens collapsed");
+    document.getElementById("characterRoleSummary").click();
+    await new Promise((r) => setTimeout(r, 80));
+    const row = document.getElementById("characterList").querySelector("[data-character-revision-id='rev_editor_1']");
+    if (!row) throw new Error("the local 角色卡 must be listed inside the disclosure");
+    row.click();
+    await new Promise((r) => setTimeout(r, 700));
+    if (!document.getElementById("characterPopover").hidden) throw new Error("a successful 角色卡 pick closes the popover");
+    if (btn.querySelector(".session-role-banner-name").textContent !== "夜班编辑") throw new Error("banner shows the bound 角色卡: " + btn.querySelector(".session-role-banner-name").textContent);
+    if (btn.querySelector(".session-role-banner-kind").textContent !== "角色卡") throw new Error("banner kind label reads 角色卡: " + btn.querySelector(".session-role-banner-kind").textContent);
+    btn.click();
+    await new Promise((r) => setTimeout(r, 400));
+    if (document.getElementById("characterRoleSummaryValue").textContent !== "夜班编辑") throw new Error("summary names the bound 角色卡: " + document.getElementById("characterRoleSummaryValue").textContent);
+    if (!document.getElementById("characterRoleSummaryFrom").hidden) throw new Error("no agent bound: no 由智能体设定 suffix");
+    if (document.getElementById("characterRoleDisclosure").hidden || document.getElementById("characterRoleSummary").getAttribute("aria-expanded") !== "true") throw new Error("a 角色卡 with no agent opens expanded");
+    document.getElementById("characterList").querySelector("[data-character-mode='native']").click();
+    await new Promise((r) => setTimeout(r, 700));
+    return "bound 夜班编辑";
+  })()`);
 
   // 11c. In-conversation traces: the agentBinding platform card (live runtime event
   // → committed message) and the "由智能体「X」回答" label (only with meta.agent).

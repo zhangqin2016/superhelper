@@ -344,6 +344,29 @@ app.whenReady().then(async () => {
     if (popover.hidden) throw new Error("popover should open on click");
     if (btn.getAttribute("aria-expanded") !== "true") throw new Error("aria-expanded should track the popover");
     if (!popover.contains(document.activeElement)) throw new Error("focus must move into the popover");
+    // The popover asks ONE question — 智能体 — so the 角色卡 list starts
+    // collapsed behind its summary row (a real button with aria-expanded /
+    // aria-controls) and the disclosure below it is hidden.
+    const summary = document.getElementById("characterRoleSummary");
+    const disclosure = document.getElementById("characterRoleDisclosure");
+    if (!summary || summary.tagName !== "BUTTON") throw new Error("角色卡 summary must be a real button");
+    if (summary.getAttribute("aria-controls") !== "characterRoleDisclosure") throw new Error("summary must control the disclosure");
+    if (!disclosure || !disclosure.hidden) throw new Error("角色卡 list starts collapsed");
+    if (summary.getAttribute("aria-expanded") !== "false") throw new Error("aria-expanded must track the collapsed state");
+    if (!summary.querySelector(".character-role-summary-label")?.textContent.includes("角色卡")) throw new Error("summary is labelled 角色卡, got " + summary.textContent);
+    if (document.getElementById("characterRoleSummaryValue").textContent !== "Lily 原声") throw new Error("native conversations show Lily 原声: " + document.getElementById("characterRoleSummaryValue").textContent);
+    if (!document.getElementById("characterRoleSummaryFrom").hidden) throw new Error("no agent bound: no 由智能体设定 suffix");
+    if (disclosure.previousElementSibling !== summary || summary.previousElementSibling !== document.getElementById("characterAgentSection")) {
+      throw new Error("order inside the popover: agents, then the 角色卡 summary, then its disclosure");
+    }
+    if (!disclosure.contains(document.getElementById("characterList"))
+      || !disclosure.contains(document.getElementById("characterUpdateRow"))
+      || !disclosure.contains(document.querySelector(".character-popover-footer"))) {
+      throw new Error("the update row, role list and footer moved inside the disclosure");
+    }
+    summary.click();
+    await new Promise((r) => setTimeout(r, 60));
+    if (disclosure.hidden || summary.getAttribute("aria-expanded") !== "true") throw new Error("clicking the summary expands the 角色卡 list");
     const native = popover.querySelector('[data-character-mode="native"]');
     if (!native || !/Lily/.test(native.textContent)) throw new Error("native Lily option missing");
     const items = popover.querySelectorAll('[data-character-revision-id]');
@@ -378,6 +401,11 @@ app.whenReady().then(async () => {
   // 4. Keyboard navigation + focus trapping.
   await run("popover-keyboard", `(async () => {
     const popover = document.getElementById("characterPopover");
+    // The collapsed disclosure hides its rows from the roving focus ring on
+    // purpose; expand it so this test still walks the full role list.
+    const summary = document.getElementById("characterRoleSummary");
+    if (document.getElementById("characterRoleDisclosure").hidden) summary.click();
+    await new Promise((r) => setTimeout(r, 60));
     const focusables = () => [...popover.querySelectorAll("button:not([disabled])")].filter((b) => !b.closest("[hidden]"));
     const items = focusables();
     if (items.length < 3) throw new Error("need several focusable rows, got " + items.length);

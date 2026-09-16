@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   buildOpencodeConfig,
+  stepBudget,
   buildSharedBaseConfig,
   translateMcpServers,
   translatePermission,
@@ -156,11 +157,18 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   // even with the MINIMAL env (no subagent/haiku override), or compaction 500s.
   assert(cfg.agent.compaction.model === "lily/deepseek-chat", "shared serve -> compaction agent pinned to resolvable main model (summarize-500 fix)");
   assert(cfg.agent.title.model === "lily/deepseek-chat", "shared serve -> title agent pinned to resolvable main model");
-  // Runaway backstop: finite per-agent step budget (caps loops AND fan-out width,
-  // since each subagent spawn is a step). Default is Infinity in OpenCode.
-  assert(Number.isInteger(cfg.agent.build.steps) && cfg.agent.build.steps > 0, "build agent has a finite step budget");
-  assert(Number.isInteger(cfg.agent.plan.steps) && cfg.agent.plan.steps > 0, "plan agent has a finite step budget");
-  assert(cfg.agent.general.steps > 0 && cfg.agent.general.steps <= cfg.agent.build.steps, "subagent step budget set and not larger than primary");
+  // 2026-09-16: the PRIMARY step cap is gone. It was added as a runaway backstop
+  // but acted as a wall — the engine's MAX_STEPS prompt disables tools and forces
+  // a summary, so a long task stopped in the same place every round. A stuck
+  // model is caught by evidence (loop detector, no-progress watchdog, the stop
+  // button), not by a count. Subagents keep a cap: their loop is invisible and
+  // each spawn multiplies cost.
+  assert(cfg.agent.build?.steps === undefined, "build agent inherits the engine's own Infinity");
+  assert(cfg.agent.plan?.steps === undefined, "plan agent inherits the engine's own Infinity");
+  assert(Number.isInteger(cfg.agent.general.steps) && cfg.agent.general.steps > 0, "subagent fan-out stays bounded");
+  assert(stepBudget({}).primary === 0, "no primary cap by default");
+  assert(stepBudget({ LILY_OPENCODE_MAX_STEPS: "250" }).primary === 250, "an explicit cap is still honoured");
+  assert(stepBudget({}).subagent > 0, "subagent fan-out keeps a default cap");
   // WHY: without basePrompt, build/plan have no agent.prompt, so OpenCode's
   // request.ts ternary falls back to SystemPrompt.provider() = the coding-CLI
   // baseline (default.txt). That baseline ("answer in <4 lines, one-word answers

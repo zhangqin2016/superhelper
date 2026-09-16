@@ -7,6 +7,11 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 
+// The round ceiling is OFF by default since 2026-09-16 (progress + the 24h
+// deadline are the real guards). These cases exercise the ceiling itself, so
+// they re-arm it explicitly at the value they were written against.
+process.env.LILY_CONTINUATION_MAX_ROUNDS = "8";
+
 const require = createRequire(import.meta.url);
 const { MessageStore } = require("../src/main/store/message-store");
 const { LongTaskStore } = require("../src/main/long-task/store");

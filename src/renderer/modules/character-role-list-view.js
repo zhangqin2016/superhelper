@@ -1,12 +1,14 @@
 /**
- * Role (角色) list of the conversation popover.
+ * 角色卡 (role card) list of the conversation popover.
  *
  * Extracted from character-session-control.js (architecture ratchet). Renders
- * the native row, official roles grouped by category, and the recent local
- * roles; when an agent is bound to the conversation, a note above the list
- * says the agent set the current role and that picking another role releases
- * the agent (the rows stay clickable — the main process reports the release
- * through `agentDeactivated` and the control announces it).
+ * the native row, official cards grouped by category, and the recent local
+ * cards; when an agent is bound to the conversation, a note above the list
+ * says the agent set the current 角色卡 and that swapping it releases the
+ * agent (the rows stay clickable — the main process reports the release
+ * through `agentDeactivated` and the control announces it). The list itself
+ * lives inside #characterRoleDisclosure (character-role-disclosure.js), which
+ * only relocates the container: nothing here knows about the collapse.
  */
 import { effectiveCharacterMode } from "./character-control-model.js";
 import { appendCharacterOptionCopy } from "./official-character-picker.js";

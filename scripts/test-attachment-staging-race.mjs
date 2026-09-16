@@ -88,7 +88,11 @@ await check("a failed document extraction reports the extractor's own reason, an
     { error: "EXTRACT_TIMEOUT:180000ms" });
   assert.deepEqual(classifyExtractionResult({ message: "spawn ENOENT" }, ""), { error: "EXTRACT_FAILED:spawn ENOENT" });
   assert.deepEqual(classifyExtractionResult(null, "not json"), { error: "EXTRACT_BAD_OUTPUT" });
-  assert.deepEqual(classifyExtractionResult(null, JSON.stringify({ ok: true, text: "hello" })), { text: "hello" });
+  // Success carries the extracted text; other fields (e.g. embedded images) may
+  // be added by the extractor without weakening the failure contract above.
+  const ok = classifyExtractionResult(null, JSON.stringify({ ok: true, text: "hello" }));
+  assert.equal(ok.error, undefined);
+  assert.equal(ok.text, "hello");
   const src = fs.readFileSync(new URL("../src/main/document-translator.js", import.meta.url), "utf8");
   assert.ok(src.includes("classifyExtractionResult(err, stdout, PYTHON_EXTRACT_TIMEOUT_MS)"), "the exec callback delegates to the tested classifier");
 });
@@ -135,14 +139,17 @@ await check("one send at a time: a second Enter during the staging wait cannot d
   assert.match(css, /\.send-btn\.is-staging:not\(\.is-stop\)/, "the staging state is visible, not a dead class");
 });
 
-await check("the step-budget guard uses the SAME budget the engine was configured with", async () => {
+await check("the step-budget guard uses the SAME budget the engine was configured with, and there is no cap by default", async () => {
   const { configuredStepBudget } = require("../src/main/turn-step-budget.js");
   const { stepBudget } = require("../src/main/runtime/opencode-config-builder.js");
-  assert.equal(typeof stepBudget, "function", "it was not exported, so the guard silently used the literal default");
-  assert.equal(configuredStepBudget({}), 160);
+  assert.equal(typeof stepBudget, "function", "it was not exported, so the guard silently used a literal default");
+  // 2026-09-16: there is no primary cap by default — 0 means the engine keeps
+  // its own Infinity and the guard stays inert.
+  assert.equal(configuredStepBudget({}), 0);
+  assert.equal(stepBudget({}).primary, 0);
   assert.equal(configuredStepBudget({ LILY_OPENCODE_MAX_STEPS: "40" }), 40, "a lowered budget must be detected, not ignored");
-  assert.equal(configuredStepBudget({ LILY_OPENCODE_MAX_STEPS: "300" }), 300, "a raised budget must not stall a healthy turn at 160");
-  assert.equal(configuredStepBudget({ LILY_OPENCODE_MAX_STEPS: "abc" }), 160);
+  assert.equal(configuredStepBudget({ LILY_OPENCODE_MAX_STEPS: "300" }), 300, "a raised budget must be honoured, not overridden by a literal");
+  assert.equal(configuredStepBudget({ LILY_OPENCODE_MAX_STEPS: "abc" }), 0);
   assert.equal(stepBudget({ LILY_OPENCODE_MAX_STEPS: "40" }).primary, 40);
 });
 

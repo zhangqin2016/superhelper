@@ -88,6 +88,10 @@
   padding: 10px 14px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface-subtle);
+  /* The panel's height is shared: when the 角色卡 list opens below, the agent
+     list gives room back instead of pushing it off the bottom edge. */
+  min-height: 0;
+  flex: 0 1 auto;
 }
 
 .character-agent-section[hidden] {
@@ -98,11 +102,49 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Height-capped + scrolling: see the sibling rule below. */
 }
 
 .character-agent-option {
-  min-height: 48px;
-  padding: 6px 10px;
+  /* An explicit grid, not a flex row: the row's height is exactly its text
+     column plus padding, so nothing can stretch it and nothing can be squashed.
+     Flex gave the tick an auto margin and let a height-capped column shrink the
+     row below its content — the chips then spilled into the next row
+     (2026-09-16 "都积压了，展示不全"). */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  column-gap: 10px;
+  row-gap: 0;
+  flex: none;
+  min-height: 56px;
+  padding: 8px 10px;
+  align-items: start;
+}
+
+.character-agent-option > .character-option-swatch {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+}
+
+.character-agent-option > .character-option-copy {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* Badge and tick sit beside the NAME; they must never drive the row height. */
+.character-agent-option > .character-option-official {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+  margin-top: 1px;
+}
+
+.character-agent-option > .character-option-check {
+  grid-column: 4;
+  grid-row: 1;
+  align-self: start;
+  margin: 1px 0 0;
 }
 
 .character-agent-swatch.is-none {
@@ -210,15 +252,24 @@
 
 /* Every agent is listed; the list scrolls inside the popover so the role list
    below stays reachable at ~800px window height. */
+/* A picker row is scanned, not read: one line of blurb plus the capability
+   chips says what the agent IS, and more rows stay on screen. The full text is
+   in the row's title and in the library's detail panel. */
+.character-agent-option .character-option-tagline {
+  -webkit-line-clamp: 1;
+}
+
+/* Expanded 角色卡 list: the agent list keeps a scannable window, the rest of
+   the panel belongs to the role cards the user just asked to see. */
+#characterPopover.is-role-expanded .character-agent-list {
+  max-height: min(26vh, 220px);
+}
+
 .character-agent-list {
-  max-height: min(42vh, 360px);
+  max-height: min(50vh, 440px);
   overflow-y: auto;
   padding-right: 2px;
   scrollbar-gutter: stable;
-}
-
-.character-agent-option {
-  min-height: 56px;
 }
 
 .character-agent-caps {
@@ -377,4 +428,67 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* --- Library detail: the "what is an agent" card ------------------------- */
+/* Shown on the agents tab while nothing is selected, in place of a single
+   sentence stranded in a tall empty column. Compact, static, no images. */
+
+.character-library-detail-empty.character-agent-anatomy {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+  align-self: start;
+  min-height: 0;
+  margin: 22px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-muted);
+  place-items: stretch;
+  text-align: start;
+}
+
+.character-agent-anatomy-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.character-agent-anatomy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.character-agent-anatomy-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.character-agent-anatomy-term {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.character-agent-anatomy-meaning {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.character-agent-anatomy-hint {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  line-height: 1.5;
 }

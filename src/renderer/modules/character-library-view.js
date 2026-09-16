@@ -94,6 +94,10 @@ function renderToolbar(state) {
     }
   }
   const onAgents = state.tab === "agents";
+  // The dialog said 角色库 while the agent tab was open. The heading follows the
+  // tab, so the window always names what it is actually showing.
+  const title = $("characterLibraryTitle");
+  if (title) title.textContent = t(onAgents ? "character.library.titleAgents" : "character.library.titleRoles");
   const tagFilter = $("characterLibraryTagFilter");
   if (tagFilter) tagFilter.hidden = false;
   const sourceFilter = $("characterLibrarySourceFilter");

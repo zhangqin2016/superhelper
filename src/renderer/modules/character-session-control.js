@@ -25,6 +25,7 @@ import { createSceneSectionController } from "./character-scene-section.js";
 import { openCharacterLibrary } from "./character-library.js";
 import { createOfficialCharacterLoader, installOfficialCharacter } from "./official-character-picker.js";
 import { createRoleListRenderer } from "./character-role-list-view.js";
+import { createRoleDisclosure } from "./character-role-disclosure.js";
 import { createCharacterPreviewController } from "./character-preview-controller.js";
 import { bindCharacterPopoverPosition, positionCharacterPopover } from "./character-popover-position.js";
 import { getRuntimeSession, subscribeRuntime } from "./session-runtime-store.js";
@@ -109,6 +110,9 @@ function openPopover() {
   b.setAttribute("aria-expanded", "true");
   b.classList.add("is-open");
   positionCharacterPopover({ panel: p, trigger: b });
+  // The role card is a secondary property: every open starts on 智能体 with the
+  // 角色卡 row collapsed (except for a role-only conversation, see the module).
+  roleDisclosure.resetForOpen();
   void loadCharacters();
   // Refresh binding + update hint on open (library edits show up).
   if (controlState.sessionId) { void loadBinding(controlState.sessionId); void agentSection.load(controlState.sessionId); }
@@ -145,6 +149,7 @@ function renderPopover() {
     renderCharacterImportPreview(previewEl, controlState.importPreview, { committing: controlState.importCommitting }); } else {
     previewEl.hidden = true;
     main.hidden = false;
+    roleDisclosure.render();
     renderList();
     sceneSection.load();
   }
@@ -264,10 +269,15 @@ const previewController = createCharacterPreviewController({ getState: () => con
 
 const agentWiring = wireAgentSessionSection({
   getState: () => controlState, getElement: $, el, t, announce, loadBinding, closePopover, renderRoleBanner, btn, popover, openLibrary: openCharacterLibrary,
-  renderRoleList: () => { if (popover() && !popover().hidden && !controlState.importPreview) renderList(); },
+  renderRoleList: () => { if (popover() && !popover().hidden && !controlState.importPreview) { roleDisclosure.render(); renderList(); } },
 }), agentSection = agentWiring.section;
 export const getAgentSessionSectionState = () => agentSection.getState(); // test/inspection hook
 const renderList = createRoleListRenderer({ getState: () => controlState, getElement: $, el, t, monogram, getActiveAgent: () => agentSection.activeAgent() });
+const roleDisclosure = createRoleDisclosure({
+  getState: () => controlState, getElement: $, t, getActiveAgent: () => agentSection.activeAgent(),
+  onToggled: () => { const p = popover(); if (p && !p.hidden) requestAnimationFrame(() => positionCharacterPopover({ panel: p, trigger: btn() })); },
+});
+export const isRoleDisclosureExpanded = () => roleDisclosure.isExpanded(); // test/inspection hook
 
 export const applyBindingUpdates = createBindingUpdateApplier({
   getState: () => controlState,
@@ -337,7 +347,7 @@ export function initCharacterSessionControl() {
     b.hidden = true;
     return;
   }
-  bindCharacterPopoverPosition({ panel: p, trigger: b }); agentSection.bind();
+  bindCharacterPopoverPosition({ panel: p, trigger: b }); agentSection.bind(); roleDisclosure.bind();
   subscribeRuntime(() => {
     if (!controlState.sessionId) return;
     const runtime = getRuntimeSession(controlState.sessionId);

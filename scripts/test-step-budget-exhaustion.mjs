@@ -15,8 +15,14 @@ const { evaluateStepBudget, configuredStepBudget } = require("../src/main/turn-s
 let checks = 0;
 function check(name, fn) { fn(); checks += 1; console.log(`ok - ${name}`); }
 
-check("configured budget defaults to the engine's 160 primary steps", () => {
-  assert.equal(configuredStepBudget(), 160);
+check("there is NO primary step cap by default; the guard only arms when one is set", () => {
+  // 2026-09-16: the 160-step cap was removed. It read as a runaway backstop but
+  // behaved as a wall — the engine's MAX_STEPS prompt disables tools and forces
+  // a summary, so a long task stopped in the same place every round.
+  assert.equal(configuredStepBudget({}), 0, "0 means the engine keeps its own Infinity");
+  assert.equal(evaluateStepBudget({ stepCount: 100000 }, { code: 0 }, {}).exhausted, false,
+    "with no cap the guard never fires, whatever the step count");
+  assert.equal(configuredStepBudget({ LILY_OPENCODE_MAX_STEPS: "250" }), 250, "an explicit cap is honoured");
 });
 
 check("under budget → not exhausted, no meta", () => {

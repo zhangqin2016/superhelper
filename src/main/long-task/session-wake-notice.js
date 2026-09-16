@@ -2,9 +2,14 @@
 
 const crypto = require("node:crypto");
 
+/** The real cap, never a number written twice. */
+function rounds() {
+  try { return require("../store/task-continuation-budget").maxRounds(); } catch { return 24; }
+}
+
 const DETAILS = {
   TASK_CONTINUATION_NO_PROGRESS: "未观察到新的跨轮执行进展，为避免重复执行，已暂停自动接续。",
-  TASK_CONTINUATION_BUDGET_EXHAUSTED: "本次任务已达到 8 次自动接续上限。",
+  TASK_CONTINUATION_BUDGET_EXHAUSTED: `本次任务已达到 ${rounds()} 次自动接续上限。`,
   TASK_CONTINUATION_DEADLINE: "本次任务已达到 24 小时自动接续时限。",
   TASK_CONTINUATION_SOURCE_UNAVAILABLE: "暂时无法确认原任务的完整要求，未自动继续执行。",
 };

@@ -136,6 +136,10 @@ export function createRoleBannerRenderer({ getState, getElement, monogram, el: c
       ? state.characterName || translate("character.unnamed")
       : translate("character.nativeOption");
     banner.querySelector(".session-role-banner-avatar").textContent = monogram(name);
+    // The kind label keeps 智能体 and 角色卡 apart at a glance: agent-session-section
+    // overwrites it with 智能体 when an agent is bound (it decorates after us).
+    const kind = banner.querySelector(".session-role-banner-kind");
+    if (kind) kind.textContent = translate("character.bannerKindRole");
     banner.querySelector(".session-role-banner-name").textContent = name;
     banner.classList.toggle("is-character", Boolean(isCharacter));
     const badges = banner.querySelector(".session-role-banner-badges");

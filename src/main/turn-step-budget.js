@@ -17,15 +17,16 @@
 
 const MAX_OBJECTIVE_CHARS = 400;
 
-const DEFAULT_STEP_BUDGET = 160;
+const DEFAULT_STEP_BUDGET = 0; // 0 = no cap, matching opencode-config-builder.stepBudget
 
 /**
  * The SAME budget the engine is configured with, or the guard fires at the
- * wrong step count. `stepBudget` was not exported until 2026-09-15, so this
- * silently fell back to the literal default: with a lowered
- * LILY_OPENCODE_MAX_STEPS exhaustion was never detected, and with a raised one
- * a healthy turn was declared stalled at 160. The process env is read first
- * because `resolveLilyEnv` needs the Electron app context.
+ * wrong step count. Zero means the engine has no cap (the default since
+ * 2026-09-16), and `evaluateStepBudget` then never fires — the guard exists for
+ * installations that re-arm the cap with LILY_OPENCODE_MAX_STEPS, where
+ * exhausting it must hand off and continue rather than end the task. The
+ * process env is read first because `resolveLilyEnv` needs the Electron app
+ * context.
  */
 function configuredStepBudget(env = process.env) {
   const direct = Number(env?.LILY_OPENCODE_MAX_STEPS);

@@ -109,14 +109,12 @@ await check("recovery runtime: a refused cut-off task and an exhausted budget bo
   // card: a classified failure, a silent model (whose own copy promises Lily
   // will continue once it recovers), and a handoff/step-budget stop all carry
   // their own message. Seen 3× in production on 2026-09-15.
-  const silentish = [
+  const alreadyExplained = [
     { failed: true, errorCode: "AUTH_FAILED" },
     { failed: true, errorCode: "MODEL_NO_RESPONSE" },
     { noFirstResponse: true },
-    { stalled: true, stepBudgetExhausted: { count: 160, budget: 160 } },
-    { code: 0, continuationHandoff: { schemaVersion: 1, reason: "budget_exhausted", progress: 2, unfinished: [] } },
   ];
-  for (const [index, payload] of silentish.entries()) {
+  for (const [index, payload] of alreadyExplained.entries()) {
     await runtime.maybeParentClosureRecovery("s", { ...base, state: { ...base.state, turnId: `src-quiet-${index}` }, taskContract: { active: true, taskType: "general", categories: [] }, payload });
   }
   assert.equal(manager.messages.size, 1, "no second card on a turn that already said why it stopped");
@@ -175,6 +173,37 @@ await check("the stop record speaks the user's language and only names a real ki
     assert.equal(commitAgentBindingNotice(inert, "s", { kind, agent: { name: "X" }, bindingVersion: 1 }).skipped,
       "not_applicable", `${kind} is a copy label, not a binding kind`);
   }
+});
+
+await check("a turn that exhausted an ARMED step cap continues whatever its task type, and says so when it cannot", async () => {
+  const { shouldRecoverParentClosure } = require("../src/main/parent-task-closure.js");
+  const tools = new Map([["a", { id: "a", name: "edit", status: "done" }], ["b", { id: "b", name: "bash", status: "done" }]]);
+  const state = { turnId: "t-cap", tools, pendingPermissions: new Map(), pendingQuestions: new Map(), pendingHooks: new Map() };
+  const payload = {
+    stalled: true, code: 0, stepBudgetExhausted: { count: 250, budget: 250 },
+    continuationStopReason: "step_budget_exhausted",
+    continuationHandoff: { schemaVersion: 1, reason: "budget_exhausted", progress: 250, unfinished: [{ kind: "original_requirement", title: "把整个工程做完" }] },
+  };
+  // 2026-09-16: running a whole step budget of tool calls IS execution, so the
+  // task-type gate must not refuse it — that refusal is what made a customer's
+  // long task stop in the same place every round.
+  for (const taskType of ["code_change", "general", "content_extraction", "document_work"]) {
+    const verdict = shouldRecoverParentClosure({ sessionId: "s", taskContract: { active: true, taskType, categories: [] }, state, payload });
+    assert.equal(verdict.ok, true, `${taskType} must continue after exhausting the cap`);
+  }
+  // A plain stall on the same non-execution task is still refused.
+  assert.equal(shouldRecoverParentClosure({ sessionId: "s", taskContract: { active: true, taskType: "general", categories: [] }, state, payload: { stalled: true } }).reason, "NON_EXECUTION_TASK");
+  // And when the shared budget genuinely stops such a chain, the conversation
+  // is told — silence is what "总是自动停止" felt like.
+  const manager = fakeManager();
+  manager.reserveTaskContinuation = () => ({ ok: false, reason: "TASK_CONTINUATION_BUDGET_EXHAUSTED" });
+  const runtime = createTurnRecoveryRuntime({ ctx: { sessionManager: manager, eventBus: { emit: () => {} } }, sendUserMessage: async () => { throw new Error("must not send"); } });
+  await runtime.maybeParentClosureRecovery("s", {
+    objective: "把整个工程做完", taskContract: { active: true, taskType: "general", categories: [] },
+    state: { ...state, enginePayload: { rawText: "把整个工程做完" } }, payload,
+  });
+  const card = [...manager.messages.values()].pop();
+  assert.match(card.content, /自动接续已停止/);
 });
 
 console.log(`\n${checks} checks passed (parent closure notice)`);

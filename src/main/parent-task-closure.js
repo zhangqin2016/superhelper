@@ -130,7 +130,13 @@ function shouldRecoverParentClosure({
   if (!sessionId || !sourceTurnId) return fail("MISSING_TURN_IDENTITY");
   if (payload.loopDetected) return fail("CONFIRMED_LOOP");
   if (payload.continuationStopReason === "no_progress") return fail("NO_PROGRESS");
-  if (!hasExecutionIntent(taskContract) && !isCutOffAnalysisWork(taskContract, payload, evidence)) return fail("NON_EXECUTION_TASK");
+  // Exhausting the step budget IS execution: the engine ran a full budget of
+  // tool calls and was then forced to stop and summarize (its MAX_STEPS prompt
+  // disables tools). Such a turn continues regardless of how the request was
+  // classified — the alternative is the 2026-09-16 report, a long task that
+  // "总是自动停止" at the same place every round.
+  const stepExhausted = Boolean(payload.stepBudgetExhausted) || payload.continuationStopReason === "step_budget_exhausted";
+  if (!stepExhausted && !hasExecutionIntent(taskContract) && !isCutOffAnalysisWork(taskContract, payload, evidence)) return fail("NON_EXECUTION_TASK");
   if (payload.interruptedByUser || payload.userInterrupted || payload.engineInterrupted) return fail("INTERRUPTED");
   if (
     String(payload.errorCode || payload.failureCode || "") === "TRUNCATED_TURN_END"

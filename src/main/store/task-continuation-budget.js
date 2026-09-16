@@ -7,7 +7,16 @@ const { MAX_CHARACTER_BINDING_BYTES } = require("../character-worlds/constants")
 // already have effects. Each original source gets at most 8 automatic claims,
 // within 24 hours measured from its FIRST reservation, not source creation.
 // Retries of the same admission reuse its claim; user turns start a new root.
-const MAX_ROUNDS = 8;
+// Rounds of AUTOMATIC continuation per root task. There is no count by default
+// (2026-09-16): a task that keeps producing NEW execution receipts and is still
+// inside its 24h window has earned the next round, and a task that is spinning
+// is stopped by the progress requirement below — by evidence, not by a number.
+// Set LILY_CONTINUATION_MAX_ROUNDS to re-arm a hard ceiling.
+function maxRounds() {
+  const raw = Number.parseInt(process.env.LILY_CONTINUATION_MAX_ROUNDS || "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : Infinity;
+}
+const MAX_ROUNDS = Infinity;
 const MAX_ELAPSED_MS = 24 * 60 * 60 * 1000;
 const MAX_PROGRESS_KEYS = 128;
 // Parent-closure lane floor: a follow-up round must show real new work, not one
@@ -227,7 +236,7 @@ function reserveTaskContinuation(db, input = {}) {
     // after its deadline merely because a crash left the reservation behind.
     if (targetClaim && !target && now - targetClaim.root_started_at >= MAX_ELAPSED_MS) return deny("TASK_CONTINUATION_DEADLINE");
     if (targetClaim) return { ok: true, rootTurnId, rounds, duplicate: true };
-    if (rounds >= MAX_ROUNDS) return deny("TASK_CONTINUATION_BUDGET_EXHAUSTED");
+    if (rounds >= maxRounds()) return deny("TASK_CONTINUATION_BUDGET_EXHAUSTED");
     const startedAt = rounds ? chain.started_at : now;
     if (now - startedAt >= MAX_ELAPSED_MS) return deny("TASK_CONTINUATION_DEADLINE");
     if (!Array.isArray(progressKeys) || progressKeys.length > MAX_PROGRESS_KEYS
@@ -267,4 +276,4 @@ function validateTaskContinuation(db, input = {}) {
   });
 }
 
-module.exports = { reserveTaskContinuation, cancelTaskContinuations, validateTaskContinuation, recordTaskContinuationSource, minProgressPerRound, MAX_ROUNDS, MAX_ELAPSED_MS };
+module.exports = { reserveTaskContinuation, cancelTaskContinuations, validateTaskContinuation, recordTaskContinuationSource, minProgressPerRound, maxRounds, MAX_ROUNDS, MAX_ELAPSED_MS };

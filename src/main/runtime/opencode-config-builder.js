@@ -29,28 +29,38 @@ const SUBAGENT_AGENTS = ["general", "explore"];
 const HELPER_PRIMARY_AGENTS = ["compaction", "title"];
 const MODEL_PINNED_AGENTS = [...SUBAGENT_AGENTS, ...HELPER_PRIMARY_AGENTS];
 
-// Per-agent step budget (OpenCode agent.steps; default is Infinity). A runaway
-// BACKSTOP, not a tight leash — normal turns use far fewer. Caps both runaway
-// loops AND fan-out width (each subagent spawn is a step). Primary agents
-// (build/plan) get a generous cap; focused subagents get a tighter one. Override
-// with LILY_OPENCODE_MAX_STEPS / LILY_OPENCODE_SUBAGENT_MAX_STEPS.
+// Per-agent step budget (OpenCode agent.steps; the engine default is Infinity).
+//
+// 2026-06-26 added a 160-step "runaway backstop" for the PRIMARY agent. In the
+// field it was not a backstop, it was a wall: the engine's MAX_STEPS prompt
+// disables tools and forces a summary, so a long task stopped at the same place
+// every round (2026-09-16 customer report). Codex CLI and the engine itself set
+// no such cap. The primary cap is therefore OFF by default — a stuck model is
+// caught by the loop detector, the no-progress watchdog and the user's own stop
+// button, all of which react to EVIDENCE of being stuck rather than to a count.
+// Set LILY_OPENCODE_MAX_STEPS to re-arm it (then exhausting it hands off and
+// Lily continues automatically instead of ending the task).
+//
+// Subagents keep a cap: a child task's loop is invisible to the user and each
+// spawn multiplies cost, so fan-out stays bounded
+// (LILY_OPENCODE_SUBAGENT_MAX_STEPS).
 function stepBudget(lilyEnv = {}) {
   const num = (v, d) => {
     const n = Number(v);
     return Number.isInteger(n) && n > 0 ? n : d;
   };
   return {
-    primary: num(lilyEnv.LILY_OPENCODE_MAX_STEPS, 160),
-    subagent: num(lilyEnv.LILY_OPENCODE_SUBAGENT_MAX_STEPS, 60),
+    primary: num(lilyEnv.LILY_OPENCODE_MAX_STEPS, 0), // 0 = no cap
+    subagent: num(lilyEnv.LILY_OPENCODE_SUBAGENT_MAX_STEPS, 120),
   };
 }
 
-/** Apply the step budget to primary + subagent agents (config.agent.<name>.steps). */
 function applyStepBudget(config, lilyEnv) {
   const budget = stepBudget(lilyEnv);
   config.agent = config.agent || {};
   for (const name of ["build", "plan"]) {
-    config.agent[name] = { ...(config.agent[name] || {}), steps: budget.primary };
+    // Leaving `steps` unset is what gives the engine its own Infinity.
+    if (budget.primary > 0) config.agent[name] = { ...(config.agent[name] || {}), steps: budget.primary };
   }
   for (const name of SUBAGENT_AGENTS) {
     config.agent[name] = { ...(config.agent[name] || {}), steps: budget.subagent };

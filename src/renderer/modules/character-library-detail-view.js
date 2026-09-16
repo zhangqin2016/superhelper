@@ -28,6 +28,26 @@ function confirmBar(text) {
   return bar;
 }
 
+const AGENT_ANATOMY_PARTS = ["role", "skills", "knowledge", "mode"];
+
+/** The "智能体 = 角色卡 + 技能 + 知识库 + 执行模式" formula, spelled out. */
+function renderAgentAnatomy() {
+  const card = el("div", "character-library-detail-empty character-agent-anatomy", {
+    "data-agent-anatomy": "true",
+  });
+  card.appendChild(el("p", "character-agent-anatomy-title", { textContent: t("character.agent.anatomyTitle") }));
+  const list = el("dl", "character-agent-anatomy-list");
+  for (const part of AGENT_ANATOMY_PARTS) {
+    const row = el("div", "character-agent-anatomy-row");
+    row.appendChild(el("dt", "character-agent-anatomy-term", { textContent: t(`character.agent.anatomyTerm.${part}`) }));
+    row.appendChild(el("dd", "character-agent-anatomy-meaning", { textContent: t(`character.agent.anatomy.${part}`) }));
+    list.appendChild(row);
+  }
+  card.appendChild(list);
+  card.appendChild(el("p", "character-agent-anatomy-hint", { textContent: t("character.library.selectHintAgent") }));
+  return card;
+}
+
 export function renderLibraryDetail(state) {
   const detail = $("characterLibraryDetail");
   if (!detail) return;
@@ -36,8 +56,16 @@ export function renderLibraryDetail(state) {
   detail.dataset.libraryDetailSource = item?.source || "";
   detail.dataset.libraryDetailActive = item?.active ? "true" : "false";
   if (!item) {
+    // The agents tab used to leave a bare sentence in a tall empty column.
+    // Nothing is selected yet, so the panel answers the question a first-time
+    // user actually has — what IS an agent — with the 4-part formula as a
+    // compact definition list. Static copy only; no images, no fetches.
+    if (state.tab === "agents") {
+      detail.appendChild(renderAgentAnatomy());
+      return;
+    }
     detail.appendChild(el("div", "character-library-detail-empty", {
-      textContent: t(state.tab === "agents" ? "character.library.selectHintAgent" : "character.library.selectHint"),
+      textContent: t("character.library.selectHint"),
     }));
     return;
   }

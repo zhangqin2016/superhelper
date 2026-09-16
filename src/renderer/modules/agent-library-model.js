@@ -194,8 +194,10 @@ export function buildAgentLibraryItems(rawPayload = {}, { activeAgentId = "" } =
 
 export const AGENT_GROUP_IDS = Object.freeze(["featured", "all", "official", "distributed", "my", "recent", "archived"]);
 export const AGENT_GROUP_LABEL_KEYS = Object.freeze({
-  featured: "character.library.groupFeatured",
-  all: "character.library.groupAll",
+  // The agent tab used the ROLE labels, so it read "精选角色 / 全部角色" while
+  // listing agents — the single loudest source of the role/agent confusion.
+  featured: "character.agent.groupFeatured",
+  all: "character.agent.groupAll",
   official: "character.library.groupOfficial",
   distributed: "character.library.groupDistributed",
   my: "character.library.groupMy",
