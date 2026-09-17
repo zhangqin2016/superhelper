@@ -1305,6 +1305,17 @@
         "scripts/test-turn-view-renderer.mjs",
         "scripts/test-runtime-event-retention.mjs"
       ]
+    },
+    {
+      "id": "internal-prompt-provenance",
+      "protects": "A prompt the platform sends to itself never reads as the user's, and a self-check's answer never reads as the assistant volunteering.",
+      "baseline": "The prompt text the model receives is unchanged apart from the tag, and every prompt recognised before is still recognised — including history written before the tag existed.",
+      "failureFallback": "An untagged or unknown-kind prompt falls back to the safe reading (self-check), and a recovery prompt's ANSWER is always kept because it is the work the user asked for.",
+      "tests": [
+        "scripts/test-internal-prompt-provenance.mjs",
+        "scripts/test-opencode-conversation-source.mjs",
+        "scripts/test-todo-progress-overlay.mjs"
+      ]
     }
   ]
 }

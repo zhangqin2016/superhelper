@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const { markInternalPrompt } = require("./internal-prompt-marker");
 
 // Max CONSECUTIVE continuation nudges that produced no progress. The caller only
 // resets its counter on unique completed execution or a shrinking todo set, bounding
@@ -79,14 +80,17 @@ function buildTodoContinuationPrompt(snapshot = {}, attempt = 1, maxAttempts = T
     `${index + 1}. [${todo.status || "pending"}] ${todo.title}`
   ));
   if (unfinished.length > listed.length) listed.push(`...and ${unfinished.length - listed.length} more`);
-  return [
+  // The platform is nudging itself, not relaying the user. Tagged here so the
+  // conversation can hide this turn without having to recognise its wording.
+  // [gate: internal-prompt-provenance]
+  return markInternalPrompt([
     "Task continuity check: the native todo list still has unfinished todo items.",
     `Progress: ${snapshot.completed || 0}/${snapshot.total || 0} completed. Continue from the current unfinished item and do not stop after a partial todo update.`,
     "Use tools as needed. When the requested work is genuinely complete, update every todo item to completed, then provide the final answer.",
     `Continuation attempt: ${attempt}/${maxAttempts}.`,
     "Unfinished todo items:",
     ...listed,
-  ].join("\n");
+  ].join("\n"));
 }
 
 /**

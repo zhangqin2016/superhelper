@@ -17,9 +17,6 @@ const INJECTED_USER_PROMPT_MARKERS = [
   "LILY_TASK_CONTRACT",
 ];
 
-const INTERNAL_ONLY_USER_PROMPTS = new Set([
-  "continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
-]);
 function timestampMs(value) {
   const parsed = Date.parse(value || "");
   return Number.isFinite(parsed) ? parsed : null;
@@ -39,6 +36,7 @@ function timestampMs(value) {
 // salvage case); a message that is entirely scaffold, or an unstripable
 // mid-text dump, is dropped as before.
 const { analyzeStatusScaffold, stripStatusScaffoldPrefix } = require("./status-scaffold");
+const { isMarkedInternalPrompt, isSelfCheckPromptText } = require("./internal-prompt-marker");
 
 function stripInternalContinuationTurns(conversation = []) {
   const list = Array.isArray(conversation) ? conversation.slice() : [];
@@ -95,9 +93,9 @@ function normalizedText(value) {
     .trim();
 }
 
-function isInternalOnlyUserPromptText(text) {
-  return INTERNAL_ONLY_USER_PROMPTS.has(normalizedText(text).toLowerCase());
-}
+// Owned by internal-prompt-marker: the tag written when a prompt is built, plus
+// legacy recognition for history that predates it. [gate: internal-prompt-provenance]
+const isInternalOnlyUserPromptText = isSelfCheckPromptText;
 
 function timeDistanceMs(a, b) {
   const at = timestampMs(a);
@@ -109,6 +107,7 @@ function timeDistanceMs(a, b) {
 function isInjectedUserPromptText(text) {
   const value = String(text || "");
   if (!value.trim()) return false;
+  if (isMarkedInternalPrompt(value)) return true;
   if (isInternalOnlyUserPromptText(value)) return true;
   if (hasLayeredEngineText(value)) return true;
   return INJECTED_USER_PROMPT_MARKERS.some((marker) => value.includes(marker));
