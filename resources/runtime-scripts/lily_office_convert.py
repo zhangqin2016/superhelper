@@ -31,6 +31,7 @@ import sys
 import tempfile
 import shutil
 import subprocess
+from pathlib import Path
 
 # Input filters to retry with when the default module cannot reach the target.
 # A hint table, not a routing table: a source not listed here simply gets one
@@ -95,7 +96,7 @@ def _subprocess_options():
 
 
 def _profile_uri(path):
-    return "file://" + os.path.abspath(path).replace(os.sep, "/")
+    return Path(path).absolute().as_uri()
 
 
 def _run(source, out_dir, target, infilter, timeout):
@@ -222,6 +223,13 @@ def convert(source, out_dir, target, timeout=DEFAULT_TIMEOUT_SECONDS, infilter=N
 
 def _selftest():
     import tempfile
+    from urllib.parse import unquote, urlsplit
+
+    profile = os.path.abspath(os.path.join(tempfile.gettempdir(), "profile space #\u4e2d\u6587"))
+    uri = urlsplit(_profile_uri(profile))
+    assert uri.scheme == "file" and not uri.netloc
+    assert unquote(uri.path).lstrip("/") == profile.replace(os.sep, "/").lstrip("/")
+    assert not uri.fragment and " " not in uri.path
 
     work = tempfile.mkdtemp()
     html = os.path.join(work, "page.html")
