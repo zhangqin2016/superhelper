@@ -64,8 +64,17 @@ if (!String(env.LANG || "").includes("UTF-8") || !String(env.LC_ALL || "").inclu
 if (tlsEnv.NODE_TLS_REJECT_UNAUTHORIZED !== "0") {
   throw new Error("TLS skip must be applied only as a child-process TLS env flag");
 }
-if (!String(env.PYTHONPATH || "").split(path.delimiter).includes(rembgPackDir)) {
-  throw new Error(`spawn-env PYTHONPATH missing runtime-pack entry: ${rembgPackDir}`);
+// A runtime pack is NOT on the general PYTHONPATH: each pack carries a whole
+// dependency closure that disagrees with the runtime and with the other packs,
+// so sharing one path made every Python process use a numpy and a Pillow we
+// never tested. The pack is attached to the one process actually using it, and
+// its location is still exported for deliberate callers and the repair hint.
+// [gate: runtime-pack-isolation]
+if (String(env.PYTHONPATH || "").split(path.delimiter).includes(rembgPackDir)) {
+  throw new Error(`spawn-env PYTHONPATH must not carry runtime-pack entry: ${rembgPackDir}`);
+}
+if (!String(env.LILY_RUNTIME_PACK_DIRS || "").split(path.delimiter).includes(rembgPackDir)) {
+  throw new Error(`spawn-env must still say where the pack is: ${rembgPackDir}`);
 }
 
 if (!runtimePython.getRuntimeSummary().available) {

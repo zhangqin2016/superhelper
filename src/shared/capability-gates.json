@@ -1243,6 +1243,17 @@
         "scripts/test-office-style-helper.mjs",
         "scripts/test-office-authoring-contract.mjs"
       ]
+    },
+    {
+      "id": "runtime-pack-isolation",
+      "protects": "A Python process gets the dependency set it was meant to have: the declared runtime, plus at most the one pack that is actually doing the work.",
+      "baseline": "Pack engines keep working — the document extractor attaches the pro-pdf engine exactly when the caller selects it, and every pack stays reachable through its own environment.",
+      "failureFallback": "An unknown or uninstalled pack contributes nothing rather than failing the call, and LILY_RUNTIME_PACK_GLOBAL_PYTHONPATH=1 restores the previous global behaviour exactly.",
+      "tests": [
+        "scripts/test-runtime-pack-isolation.mjs",
+        "scripts/test-document-extractor-pro-pdf-gating.mjs",
+        "scripts/test-runtime-packs.mjs"
+      ]
     }
   ]
 }

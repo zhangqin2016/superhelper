@@ -88,14 +88,13 @@ function extractOfficeText(filePath, options = {}) {
   const script = extractorScriptPath();
   if (!script) throw new Error("EXTRACTOR_MISSING");
 
-  const env = getBundledPythonEnv();
-  // Put any installed runtime packs (e.g. the pro-pdf Docling engine) on
-  // PYTHONPATH so extract_document.py's lazy import upgrades automatically.
+  // Attach the ONE pack this extraction needs, not every installed pack. The
+  // heavy engine lives in pro-pdf and is only imported when the caller selects
+  // it; attaching all of them put docling's numpy and rembg's numba on the same
+  // path, where whichever sorted first won. [gate: runtime-pack-isolation]
+  const packRunner = require("./runtime-pack-runner");
+  const env = packRunner.pythonEnvForPacks(packRunner.packsForPdfEngine(process.env));
   const runtimePacks = require("./runtime-packs");
-  const packPaths = runtimePacks.getRuntimePackPythonPaths();
-  if (packPaths.length) {
-    env.PYTHONPATH = [...packPaths, env.PYTHONPATH].filter(Boolean).join(path.delimiter);
-  }
   const packPathEntries = runtimePacks.getRuntimePackPathEntries();
   if (packPathEntries.length) {
     env.PATH = [...packPathEntries, env.PATH].filter(Boolean).join(path.delimiter);

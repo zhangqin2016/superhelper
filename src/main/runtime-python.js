@@ -306,9 +306,22 @@ function getRuntimeEnvExtras() {
   const extras = {};
   if (root) extras.LILY_RUNTIME_ROOT = root;
   const runtimePacks = require("./runtime-packs");
+  const packRunner = require("./runtime-pack-runner");
+  // Runtime packs are NOT on the general PYTHONPATH. Each pack carries a whole
+  // dependency closure that disagrees with the runtime and with the other packs,
+  // so putting them all on one path made every Python process the agent ran use
+  // a numpy and a Pillow we never tested. A pack is attached to the one process
+  // that is actually using it — see runtime-pack-runner. The dirs stay exported
+  // so the repair hint and any deliberate caller can still reach them.
+  // [gate: runtime-pack-isolation]
   const packPythonPaths = runtimePacks.getRuntimePackPythonPaths();
-  const pythonPaths = [...packPythonPaths, ...getBundledPythonPathsAtRoot(root)];
+  const globalPacks = packRunner.globalPackPythonPathEnabled();
+  const pythonPaths = [
+    ...(globalPacks ? packPythonPaths : []),
+    ...getBundledPythonPathsAtRoot(root),
+  ];
   if (pythonPaths.length) extras.PYTHONPATH = pythonPaths.join(path.delimiter);
+  if (packPythonPaths.length) extras.LILY_RUNTIME_PACK_DIRS = packPythonPaths.join(path.delimiter);
   Object.assign(extras, runtimePacks.getRuntimePackEnvExtras());
   const packLibreOfficeDir = runtimePacks.getRuntimePackLibreOfficeDirs()[0];
   const sofficeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDir || null;

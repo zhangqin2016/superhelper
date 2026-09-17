@@ -10,15 +10,28 @@ function repairability(pack) {
     ? { repairSupported: false, repairLimitation: "BUNDLED_RUNTIME_PACK_READ_ONLY: the current installer cannot replace a bundled artifact. Report the health failure; an app/runtime distribution repair is required, not repeated install attempts." }
     : { repairSupported: true };
 }
-function executionHint(deps) {
+function executionHint(deps, packId = "") {
   const runtime = deps.runtimePython || require("../runtime-python");
-  const env = runtime.getBundledPythonEnv({ ...runtime.getRuntimeEnvExtras() });
+  // A pack runs with ITS OWN dependencies and no other pack's. Handing back one
+  // environment carrying every installed pack is what made a numpy and a Pillow
+  // nobody chose win in every Python process. [gate: runtime-pack-isolation]
+  const runner = deps.packRunner || require("../runtime-pack-runner");
+  const env = packId
+    ? runner.pythonEnvForPacks([packId], { ...runtime.getRuntimeEnvExtras() })
+    : runtime.getBundledPythonEnv({ ...runtime.getRuntimeEnvExtras() });
   env.PATH = [...runtime.getRuntimePathEntries(), process.env.PATH].filter(Boolean).join(path.delimiter);
   const safe = {};
   for (const key of ["PATH", "PYTHONPATH", "NODE_PATH", "PLAYWRIGHT_BROWSERS_PATH", "LILY_LIBREOFFICE_PROGRAM", "UNO_PATH", "SAL_USE_VCLPLUGIN"]) {
     if (typeof env[key] === "string") safe[key] = env[key];
   }
-  return { python: runtime.resolveVenvPython(), env: safe, instruction: "Apply these environment values explicitly to the failed operation in the current shell; use python for Python operations. Retry only that operation after health.ok is true. No shared-server restart is needed." };
+  return {
+    python: runtime.resolveVenvPython(),
+    ...(packId ? { packId } : {}),
+    env: safe,
+    instruction: packId
+      ? `Apply these environment values explicitly to the failed operation in the current shell; use python for Python operations. They expose ONLY the ${packId} pack, which is deliberate — packs carry conflicting dependency sets and must not share a process. Retry only that operation after health.ok is true. No shared-server restart is needed.`
+      : "Apply these environment values explicitly to the failed operation in the current shell; use python for Python operations. Retry only that operation after health.ok is true. No shared-server restart is needed.",
+  };
 }
 async function listRuntimePackTool({ packId, verify = false } = {}, _context, deps = {}) {
   if (packId && !Object.hasOwn(PACK_SPECS, packId)) return { ok: false, error: "INVALID_RUNTIME_PACK" };
@@ -32,7 +45,7 @@ async function listRuntimePackTool({ packId, verify = false } = {}, _context, de
       pack.health = await (deps.checkRuntimePackHealth || require("../runtime-health").checkRuntimePackHealth)(packId);
       pack.ready = pack.health?.ok === true;
       pack.status = pack.ready ? "ready" : pack.progress?.phase === "failed" ? "failed" : pack.installed ? "unhealthy" : "missing";
-      if (pack.ready) pack.execution = executionHint(deps);
+      if (pack.ready) pack.execution = executionHint(deps, pack.id);
     } catch (error) {
       pack.ready = false;
       pack.status = "verification_failed";
