@@ -116,11 +116,14 @@ function buildPlaywrightMcpConfig(runtimeDir, options) {
   if (resolved.nodeModulesPath && fs.existsSync(resolved.nodeModulesPath)) {
     env.NODE_PATH = resolved.nodeModulesPath;
   }
-  // Prefer the bundled Chromium. If the bundle ships node + @playwright/mcp but
-  // no browser pack, fall back to the user's installed Chrome (the same channel
-  // the web-system scanner uses via channel="chrome"), so the accessibility-tree
-  // exploration path still activates without a ~150MB per-platform Chromium.
-  const browserArg = hasBundledChromium ? "chromium" : "chrome";
+  // Always chromium. The old fallback passed "chrome", which @playwright/mcp
+  // resolves to chrome-for-testing — a browser nobody has installed — so the
+  // failure read as "Browser chrome-for-testing is not installed. Run npx
+  // @playwright/mcp install-browser", which is neither true nor actionable.
+  // Acceptance 2026-09-17 P29. With no bundled browsers we simply leave
+  // PLAYWRIGHT_BROWSERS_PATH unset and let Playwright use its own cache, which
+  // is where a developer machine's Chromium already lives.
+  const browserArg = "chromium";
   return {
     mcpServers: {
       playwright: {

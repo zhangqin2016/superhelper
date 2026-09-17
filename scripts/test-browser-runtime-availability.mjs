@@ -60,6 +60,11 @@ try {
     assert.equal(server.env.PLAYWRIGHT_BROWSERS_PATH, path.join(pack, "browsers"));
     assert.equal(server.env.NODE_PATH, path.join(pack, "node_modules"), "modules are pinned to the pack the cli came from");
     assert.ok(!/authorization|cookie|password|token/i.test(JSON.stringify(server)), "no credentials in the config");
+    // Acceptance 2026-09-17 P29: "chrome" resolves to chrome-for-testing inside
+    // @playwright/mcp, so the old no-bundled-browser fallback failed with an
+    // instruction to install a browser nobody meant to use.
+    assert.ok(server.args.includes("chromium"), "the browser is always chromium");
+    assert.ok(!JSON.stringify(server.args).includes("\"chrome\""), "never the chrome-for-testing channel");
   });
 
   check("a bundled Node still wins over the app binary, and nothing anywhere is still a clean no-op", () => {
@@ -70,6 +75,10 @@ try {
     fs.writeFileSync(path.join(bundle, "web", "node_modules", "@playwright", "mcp", "cli.js"), "");
     const server = buildPlaywrightMcpConfig(bundle).mcpServers.playwright;
     assert.ok(server.command.includes(path.join("node", "bin")), "the bundled interpreter is preferred");
+    // No browsers directory: ask for chromium and leave the path unset so
+    // Playwright uses its own cache, instead of naming a channel that is absent.
+    assert.equal(server.env.PLAYWRIGHT_BROWSERS_PATH, undefined);
+    assert.ok(server.args.includes("chromium"));
     assert.equal(server.env.ELECTRON_RUN_AS_NODE, undefined, "a real node binary needs no mode flag");
 
     const nothing = path.join(tmp, "bundle-empty");

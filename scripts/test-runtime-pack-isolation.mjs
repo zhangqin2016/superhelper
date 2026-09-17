@@ -85,6 +85,16 @@ check("the extractor and the repair hint each attach one pack, not all of them",
   assert.match(tools, /pythonEnvForPacks\(\[packId\]/);
 });
 
+check("the skill tells an agent how to reach a pack, so absence is not read as breakage", () => {
+  // Acceptance 2026-09-17 P01: the isolation is deliberate, but nothing said so.
+  // A ModuleNotFoundError for duckdb was read as "the pack install is broken".
+  const skill = fs.readFileSync(path.join(ROOT, "resources/skills-catalog/lily-runtime-packs/SKILL.md"), "utf8");
+  assert.match(skill, /LILY_RUNTIME_PACK_DIRS/);
+  assert.match(skill, /DELIBERATELY not importable/);
+  assert.match(skill, /NOT "the pack is broken"/);
+  assert.match(skill, /never fall back to a weaker parser/);
+});
+
 // Live half: only meaningful on a machine that actually has packs installed.
 const python = resolveVenvPython();
 const installed = getRuntimePackPythonPaths();

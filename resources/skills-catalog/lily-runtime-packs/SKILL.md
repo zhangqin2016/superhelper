@@ -70,3 +70,14 @@ they finish quickly.
 3. If no artifact exists for the platform, say so plainly.
 4. Explain download and disk cost before installing large packs.
 5. Once install succeeds, subsequent matching tasks can use the pack without restart.
+6. A pack's Python modules are DELIBERATELY not importable from a plain
+   `python3 script.py`. Each pack carries a complete dependency closure that
+   disagrees with the runtime and with the other packs, so a pack is attached
+   only to the process actually using it. `ModuleNotFoundError` for `duckdb`,
+   `fitz`, `pikepdf`, `polars`, `docling` or `rembg` means "not attached here",
+   NOT "the pack is broken" — never conclude an install failed on that basis,
+   and never fall back to a weaker parser because of it.
+   To use one, put `$LILY_RUNTIME_PACK_DIRS` (os.pathsep-separated, exported by
+   the host) on `sys.path` or ahead of `PYTHONPATH`, or take the `execution.env`
+   block `runtime_pack_list(verify=true)` returns for that pack — it exposes that
+   one pack and nothing else, which is what keeps the versions coherent.

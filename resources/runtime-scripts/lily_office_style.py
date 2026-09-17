@@ -102,8 +102,27 @@ def _set_theme_fonts(doc, latin, cjk):
         return False
 
 
-def style_docx(doc, latin=DEFAULT_LATIN_FONT, cjk=DEFAULT_CJK_FONT):
+def _default_cjk():
+    """The CJK family to declare when the caller did not name one.
+
+    Acceptance 2026-09-17 P16: the hard default is a Windows font, so on macOS
+    and Linux LibreOffice substituted it PER MODULE and one set of deliverables
+    came out in two different typefaces. Resolving to a family the machine really
+    has costs nothing on Windows — Microsoft YaHei is installed there, so it is
+    returned unchanged — and makes every local export agree.
+    Pass `cjk=` explicitly when the deliverable is the Office FILE and the reader
+    is on a machine whose fonts you know. [gate: cjk-theme-font-chain]
+    """
+    try:
+        family, _substituted = resolve_cjk_document_family()
+        return family or DEFAULT_CJK_FONT
+    except Exception:
+        return DEFAULT_CJK_FONT
+
+
+def style_docx(doc, latin=DEFAULT_LATIN_FONT, cjk=None):
     """Apply the latin+CJK font pair to document defaults and every style."""
+    cjk = cjk or _default_cjk()
     qn = _docx_qn()
     styles_el = doc.styles.element
     doc_defaults = styles_el.find(qn("w:docDefaults"))
@@ -136,8 +155,9 @@ def _pptx_qn():
     return qn
 
 
-def apply_ea_font(run, cjk=DEFAULT_CJK_FONT, latin=DEFAULT_LATIN_FONT):
+def apply_ea_font(run, cjk=None, latin=DEFAULT_LATIN_FONT):
     """Set latin (a:latin) + East-Asian (a:ea) typefaces on one pptx run."""
+    cjk = cjk or _default_cjk()
     qn = _pptx_qn()
     rPr = run._r.get_or_add_rPr()
     if latin:
@@ -224,8 +244,9 @@ def _set_chart_fonts(prs, latin, cjk):
     return changed
 
 
-def style_pptx(prs, latin=DEFAULT_LATIN_FONT, cjk=DEFAULT_CJK_FONT):
+def style_pptx(prs, latin=DEFAULT_LATIN_FONT, cjk=None):
     """Apply the latin+CJK font pair to every run in the presentation."""
+    cjk = cjk or _default_cjk()
     for slide in prs.slides:
         for shape in slide.shapes:
             try:
@@ -701,7 +722,8 @@ def _selftest():
     reopened = ReopenDoc(tmp.name)
     rpr = reopened.styles["Normal"].element.find(qn("w:rPr"))
     rfonts = rpr.find(qn("w:rFonts"))
-    assert rfonts.get(qn("w:eastAsia")) == DEFAULT_CJK_FONT, "docx eastAsia must persist after save/reopen"
+    expected_cjk = _default_cjk()
+    assert rfonts.get(qn("w:eastAsia")) == expected_cjk, "docx eastAsia must persist after save/reopen"
     assert rfonts.get(qn("w:ascii")) == DEFAULT_LATIN_FONT, "docx latin must persist after save/reopen"
 
     prs = Presentation()
@@ -715,7 +737,7 @@ def _selftest():
     pqn = _pptx_qn()
     title_run = slide.shapes.title.text_frame.paragraphs[0].runs[0]
     ea = title_run._r.get_or_add_rPr().find(pqn("a:ea"))
-    assert ea is not None and ea.get("typeface") == DEFAULT_CJK_FONT, "pptx run must carry a:ea typeface"
+    assert ea is not None and ea.get("typeface") == expected_cjk, "pptx run must carry a:ea typeface"
 
     # A chart sheet must be fitted to ONE page in both directions, or LibreOffice
     # splits the chart across a page break and leaves a near-empty page carrying
@@ -760,7 +782,7 @@ def _selftest():
     # The theme must not out-vote the font we just set, in either direction.
     theme_doc = Document()
     theme_doc.add_heading("一、关键指标摘要", 1)
-    style_docx(theme_doc, cjk=DEFAULT_CJK_FONT)
+    style_docx(theme_doc)
     for style_obj in theme_doc.styles:
         rpr = style_obj.element.find(qn("w:rPr"))
         if rpr is None:

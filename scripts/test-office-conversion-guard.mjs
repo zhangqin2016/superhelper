@@ -36,6 +36,12 @@ check("the contract is stated in code, not left to the caller", () => {
   assert.match(source, /RETRY_INPUT_FILTERS/, "a second attempt with an explicit input filter");
   assert.match(source, /HTML \(StarWriter\)/);
   assert.match(source, /class ConversionError/, "failure raises, never returns a phantom path");
+  // Acceptance 2026-09-17 P21: `报告.docx` and `报告.pptx` both wanted 报告.pdf,
+  // and the second call silently destroyed the first while returning success.
+  assert.match(source, /def _publish_path/, "the output name must be checked before it is written");
+  assert.match(source, /MANIFEST_NAME/, "provenance is what tells a re-run from a collision");
+  assert.match(source, /tempfile\.mkdtemp\(prefix="\.lily-convert-"/, "conversion lands in staging, never on an existing deliverable");
+  assert.match(source, /would have overwritten a different source's output/, "a changed name is reported, not silent");
 });
 
 check("the one conversion path is shared — the renderer does not keep its own", () => {
