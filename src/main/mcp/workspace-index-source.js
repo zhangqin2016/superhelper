@@ -5,11 +5,52 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 function readTextFile(filePath, maxBytes) {
-  const stat = fs.statSync(filePath);
-  if (stat.size > maxBytes) return null;
-  const buffer = fs.readFileSync(filePath);
-  if (buffer.includes(0)) return null;
-  return buffer.toString("utf8");
+  const outcome = readIndexableText(filePath, maxBytes);
+  return outcome.ok ? outcome.text : null;
+}
+
+/**
+ * Text for the index, with the head of an oversized file rather than nothing.
+ *
+ * A 24 MB JSONL used to produce NO searchable evidence at all, and the reason
+ * given could not tell "too large" from "binary" — so a caller could not even
+ * suggest splitting the file. Acceptance 2026-09-17 DEF-02.
+ * [gate: large-text-index-coverage]
+ *
+ * @returns {{ ok: boolean, text?: string, truncated?: boolean, bytesRead?: number,
+ *   byteSize?: number, reason?: string }}
+ */
+function readIndexableText(filePath, maxBytes) {
+  const limit = Math.max(1024, Number(maxBytes) || 0);
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch (error) {
+    return { ok: false, reason: `unreadable: ${error?.code || "error"}` };
+  }
+  const truncated = stat.size > limit;
+  let buffer;
+  if (!truncated) {
+    buffer = fs.readFileSync(filePath);
+  } else {
+    buffer = Buffer.alloc(limit);
+    let handle = null;
+    try {
+      handle = fs.openSync(filePath, "r");
+      const read = fs.readSync(handle, buffer, 0, limit, 0);
+      buffer = buffer.subarray(0, read);
+    } catch (error) {
+      return { ok: false, reason: `unreadable: ${error?.code || "error"}` };
+    } finally {
+      if (handle !== null) {
+        try { fs.closeSync(handle); } catch { /* best effort */ }
+      }
+    }
+  }
+  if (buffer.includes(0)) return { ok: false, reason: "binary_content", byteSize: stat.size };
+  // Never split a multi-byte character across the cut.
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(buffer).replace(/\uFFFD+$/, "");
+  return { ok: true, text, truncated, bytesRead: buffer.length, byteSize: stat.size };
 }
 
 function contentHash(value) {
@@ -103,6 +144,7 @@ function candidateFiles(rootPath, opts = {}) {
 }
 
 module.exports = {
+  readIndexableText,
   candidateFiles,
   contentHash,
   readDirectoryEntriesBounded,

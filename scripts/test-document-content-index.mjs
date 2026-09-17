@@ -122,6 +122,41 @@ try {
     assert.match(extractor, /f"UNSUPPORTED:\{ext\}"/);
   });
 
+  check("a text file larger than the cap is indexed by its head, not refused outright", () => {
+    // Acceptance 2026-09-17 DEF-02: a 24 MB JSONL produced NO searchable evidence
+    // at all, and the reason could not tell "too large" from "binary", so nobody
+    // could even be told to split the file.
+    const { readIndexableText } = require("../src/main/mcp/workspace-index-source.js");
+    const big = path.join(workspace, "events.jsonl");
+    const line = `${JSON.stringify({ trace: "trace-marker", msg: "x".repeat(60) })}\n`;
+    fs.writeFileSync(big, line.repeat(90_000));
+    assert.ok(fs.statSync(big).size > 6 * 1024 * 1024, "the fixture must exceed the cap");
+
+    const read = readIndexableText(big, 5 * 1024 * 1024);
+    assert.equal(read.ok, true, "the head is readable even when the whole file is not");
+    assert.equal(read.truncated, true);
+    assert.ok(read.bytesRead <= 5 * 1024 * 1024 && read.byteSize > read.bytesRead);
+
+    const binary = path.join(workspace, "blob.bin");
+    fs.writeFileSync(binary, Buffer.from([1, 2, 0, 3]));
+    assert.deepEqual(
+      { ok: readIndexableText(binary, 1024).ok, reason: readIndexableText(binary, 1024).reason },
+      { ok: false, reason: "binary_content" },
+      "too large and binary are different answers now",
+    );
+
+    const indexed = indexPath({ path: big, workspacePath: workspace, storeRoot });
+    assert.equal(indexed.ok, true, "a large log yields evidence instead of NO_INDEXABLE_CONTENT");
+    assert.ok(indexed.chunkCount > 0);
+    assert.equal(indexed.coverage, "sampled", "and says the coverage is partial");
+    assert.equal(indexed.filesTruncated, 1);
+    assert.match(indexed.truncatedSources[0].reason, /split the file or raise maxFileBytes/);
+    const hit = queryIndex({ indexId: indexed.indexId, query: "trace-marker", storeRoot, workspacePath: workspace });
+    assert.ok(hit.matches.length > 0, "the indexed head is searchable");
+    fs.rmSync(big, { force: true });
+    fs.rmSync(binary, { force: true });
+  });
+
   const python = resolveVenvPython();
   let docx = "";
   if (python) {

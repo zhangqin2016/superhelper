@@ -15,9 +15,11 @@ const {
 const {
   candidateFiles,
   contentHash,
+  readIndexableText,
   readTextFile,
 } = require("./workspace-index-source");
 const { createArchiveIndexInspector } = require("./archive-index-policy");
+const { noteTruncatedSource, skippedEntry } = require("./file-intelligence-coverage");
 const {
   contentIndexEnabled,
   createContentExtractor,
@@ -100,6 +102,7 @@ function indexPath(input = {}) {
   const skipped = [];
   const metadataOnly = [];
   const contentIndexed = [];
+  const truncatedSources = [];
   const onProgress = input.onProgress;
   const inspectIndexCandidate = createArchiveIndexInspector(input, inspectPath);
   // Content extraction spawns Python per file, so it is OPT-IN: the index_path
@@ -202,10 +205,12 @@ function indexPath(input = {}) {
       });
       continue;
     }
-    const text = readTextFile(file, maxFileBytes);
+    // Oversized text: head indexed, marked partial. [gate: large-text-index-coverage]
+    const read = readIndexableText(file, maxFileBytes);
+    const text = read.ok ? read.text : null;
     if (text == null) {
       processed += 1;
-      const item = { sourcePath: file, reason: "too large or binary for Phase 2 text index" };
+      const item = skippedEntry(file, read);
       skipped.push(item);
       reportProgress(onProgress, {
         phase: "file-skipped",
@@ -217,12 +222,17 @@ function indexPath(input = {}) {
       continue;
     }
     const fileChunks = chunksForText(file, text, linesPerChunk);
+    if (read.truncated) {
+      coverage = "sampled";
+      truncatedSources.push(noteTruncatedSource(file, read, fileChunks));
+    }
     chunks.push(...fileChunks);
     processed += 1;
     reportProgress(onProgress, {
       phase: "file-indexed",
       sourcePath: file,
       sourceType: "text",
+      truncated: read.truncated || undefined,
       chunkCount: fileChunks.length,
       total: files.length,
       processed,
@@ -261,6 +271,8 @@ function indexPath(input = {}) {
     filesSkipped: skipped.length,
     filesContentIndexed: new Set(contentIndexed).size,
     filesMetadataOnly: metadataOnly.length,
+    filesTruncated: truncatedSources.length,
+    truncatedSources: truncatedSources.slice(0, 50),
     // Persisted so a later query can say WHY it found nothing in a document,
     // instead of letting an empty result read as "the document does not say that".
     metadataOnly: metadataOnly.slice(0, 50),
@@ -308,6 +320,8 @@ function indexPath(input = {}) {
     filesContentIndexed: record.filesContentIndexed,
     filesMetadataOnly: record.filesMetadataOnly,
     metadataOnly: record.metadataOnly,
+    filesTruncated: record.filesTruncated,
+    truncatedSources: record.truncatedSources,
     chunkCount: chunks.length,
     skipped: skipped.slice(0, 20),
   };

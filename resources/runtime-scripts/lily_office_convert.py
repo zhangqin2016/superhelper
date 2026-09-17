@@ -26,6 +26,7 @@ Three rules, all general:
 
 import json
 import os
+import re
 import sys
 import tempfile
 import shutil
@@ -41,6 +42,26 @@ RETRY_INPUT_FILTERS = {
 }
 
 DEFAULT_TIMEOUT_SECONDS = 180
+
+
+# The host runs this through an Electron binary in Node mode, so Chromium's own
+# logger writes a line into every child's stderr before soffice says anything:
+#   [0917/080937.774442:ERROR:electron/.../codesign_util.cc:79] task_name_for_pid...
+# It is harmless and constant, but it is also the first thing a reader sees in a
+# failure message, and "stderr is not empty" is how most callers judge a
+# conversion. Acceptance 2026-09-17 DEF-04. Narrow on purpose: only the host
+# logger's own line format matches, so real soffice output is never hidden.
+# [gate: office-conversion-no-silent-failure]
+_HOST_DIAGNOSTIC_RE = re.compile(r"^\[\d{4}/\d{6}\.\d+:(?:ERROR|WARNING|INFO|VERBOSE\d*|FATAL):[^\]]+\]")
+
+
+def _without_host_noise(text):
+    """Drop host-logger lines from captured output. Never raises."""
+    try:
+        lines = [line for line in str(text or "").splitlines() if not _HOST_DIAGNOSTIC_RE.match(line.lstrip())]
+        return "\n".join(lines).strip()
+    except Exception:
+        return str(text or "").strip()
 
 
 class ConversionError(RuntimeError):
@@ -188,8 +209,8 @@ def convert(source, out_dir, target, timeout=DEFAULT_TIMEOUT_SECONDS, infilter=N
                         "wrote %s instead\n" % (os.path.basename(source), os.path.basename(final))
                     )
                 return final
-            detail = (result.stderr or b"").decode("utf-8", "replace").strip() \
-                or (result.stdout or b"").decode("utf-8", "replace").strip()
+            detail = _without_host_noise((result.stderr or b"").decode("utf-8", "replace")) \
+                or _without_host_noise((result.stdout or b"").decode("utf-8", "replace"))
             reasons.append("%s -> rc=%s %s" % (attempt or "default filter", result.returncode, detail or "no output, no message"))
     finally:
         shutil.rmtree(staging, ignore_errors=True)

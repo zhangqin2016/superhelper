@@ -419,9 +419,45 @@ def extract_pdf(path):
     return "\n\n".join(parts)
 
 
+# A page rendered to PNG often lands in palette mode (mode "P"), and RapidOCR
+# reads such a file as having no text at all — a full business licence came back
+# as the empty string with ok:true. The PDF page path already normalised to RGB
+# before OCR; the standalone image path did not. Acceptance 2026-09-17 DEF-01.
+# [gate: image-ocr-colour-normalisation]
+_LAST_IMAGE_OCR_NOTE = []
+
+
+def _image_has_content(path):
+    """True when the image plainly is not blank, so empty OCR is worth reporting."""
+    try:
+        from PIL import Image
+        with Image.open(path) as handle:
+            grey = handle.convert("L")
+            extrema = grey.getextrema()
+        return bool(extrema and (extrema[1] - extrema[0]) > 24)
+    except Exception:
+        return False
+
+
 def extract_image(path):
-    # Standalone scan/photo: OCR the file directly (RapidOCR reads the path).
-    return _ocr(path)
+    """Standalone scan or photo. Normalise the colour space, then OCR."""
+    _LAST_IMAGE_OCR_NOTE.clear()
+    target = path
+    try:
+        import numpy as np
+        from PIL import Image
+        with Image.open(path) as handle:
+            target = np.asarray(handle.convert("RGB"))
+    except Exception:
+        # Normalisation is an enhancement; fall back to letting OCR read the file.
+        target = path
+    text = _ocr(target)
+    if not str(text or "").strip() and _image_has_content(path):
+        _LAST_IMAGE_OCR_NOTE.append(
+            "OCR found no text in an image that is not blank. It may be a photo without "
+            "writing, or the text may be too small or too faint to read at this resolution."
+        )
+    return text
 
 
 # Formats that ARE their own text. Not supported here on purpose, but the caller
@@ -438,6 +474,30 @@ OFFICE_EXTRACTORS = {
     ".xlsx": extract_xlsx,
     ".pptx": extract_pptx,
 }
+
+
+def _diagnose_failure(path, ext, exc):
+    """Name the cause when the raw exception says nothing usable.
+
+    Acceptance 2026-09-17 DEF-03: a password-protected PDF failed with
+    "PdfminerException: " — an empty message that cannot tell encryption from
+    corruption, so neither a person nor an automation knows whether to supply a
+    password. Never raises; an unknown cause simply adds nothing.
+    [gate: extraction-failure-diagnosis]
+    """
+    if ext != ".pdf":
+        return {}
+    try:
+        from pypdf import PdfReader
+        if PdfReader(path).is_encrypted:
+            return {
+                "errorCode": "PDF_ENCRYPTED",
+                "hint": "This PDF is password-protected. Decrypt it with the password first; "
+                        "the file is not corrupt and re-extracting will not help.",
+            }
+    except Exception:
+        pass
+    return {}
 
 
 def main():
@@ -472,10 +532,17 @@ def main():
     try:
         text = (extractor(path) or "").strip()
     except Exception as exc:  # noqa: BLE001 — surface the cause, never crash silently
-        print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
+        payload = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        payload.update(_diagnose_failure(path, ext, exc))
+        print(json.dumps(payload))
         return 1
     images = [item for harvest in _ACTIVE_HARVEST for item in harvest.exported]
-    print(json.dumps({"ok": True, "text": text, "images": images}))
+    payload = {"ok": True, "text": text, "images": images}
+    # An empty result from a page that clearly has ink is a finding, not a fact
+    # about the document. Say so instead of letting "" read as "no text here".
+    if _LAST_IMAGE_OCR_NOTE:
+        payload["warning"] = _LAST_IMAGE_OCR_NOTE[0]
+    print(json.dumps(payload))
     return 0
 
 

@@ -1254,6 +1254,36 @@
         "scripts/test-document-extractor-pro-pdf-gating.mjs",
         "scripts/test-runtime-packs.mjs"
       ]
+    },
+    {
+      "id": "image-ocr-colour-normalisation",
+      "protects": "OCR reads a scan whatever colour space it arrived in, and an empty result from a page that plainly has ink is reported rather than passed off as 'no text here'.",
+      "baseline": "Images that already read correctly are unchanged; the PDF page path keeps its existing normalisation.",
+      "failureFallback": "If the image cannot be opened for normalisation, OCR still reads the file directly exactly as before; a genuinely blank image produces no warning.",
+      "tests": [
+        "scripts/test-extraction-honesty.mjs",
+        "scripts/test-document-image-recognition.mjs"
+      ]
+    },
+    {
+      "id": "extraction-failure-diagnosis",
+      "protects": "A failed extraction names a cause the caller can act on instead of an empty exception message.",
+      "baseline": "The original exception type and message are preserved verbatim; the diagnosis is an added field.",
+      "failureFallback": "An unrecognised cause adds nothing at all, so corruption is never mislabelled as encryption.",
+      "tests": [
+        "scripts/test-extraction-honesty.mjs",
+        "scripts/test-document-translator.mjs"
+      ]
+    },
+    {
+      "id": "large-text-index-coverage",
+      "protects": "A text file larger than the index cap yields searchable evidence from its head instead of no evidence at all, and says how much was covered.",
+      "baseline": "Files within the cap are indexed byte-for-byte as before, with unchanged coverage.",
+      "failureFallback": "Binary content is still refused, now under its own reason so 'too large' and 'binary' are distinguishable, and the truncation is reported with the bytes indexed and what to do about it.",
+      "tests": [
+        "scripts/test-document-content-index.mjs",
+        "scripts/test-file-intelligence-index.mjs"
+      ]
     }
   ]
 }
