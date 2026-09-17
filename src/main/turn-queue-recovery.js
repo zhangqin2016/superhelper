@@ -35,6 +35,20 @@ function recoveredQueueOptions(admitted, queueDispatchOptions, sourceTaskCore = 
 
 function createTurnQueueRecoveryMethods({ log, queueDispatchOptions }) {
   return {
+    /**
+     * An outcome-unknown turn becomes visible, and is ANNOUNCED exactly once.
+     *
+     * The in-memory guard below is a within-process cache, and the thing it has
+     * to survive is a restart — which empties it. So the durable row is the fact
+     * and memory is its projection: a row that already reads `outcome_unknown`
+     * was announced by an earlier run and is adopted in silence, while a turn
+     * still in flight is a genuinely new outcome, announced and written down.
+     *
+     * Measured before this: 228 announcements for 10 turns, one from 09-01
+     * re-announced 52 times over four days, each restart telling the user to
+     * re-send something from a conversation they had long finished.
+     * [gate: announce-once-across-restart]
+     */
     _recordDispatchOutcomeUnknown(sessionId, admitted, reason = "restart") {
       if (!admitted?.turnId) return null;
       const state = this._state(sessionId);
@@ -43,6 +57,7 @@ function createTurnQueueRecoveryMethods({ log, queueDispatchOptions }) {
       if (state.outcomeUnknownTurnIds.has(admitted.turnId)) {
         return state.outcomeUnknownTurns.find((turn) => turn.turnId === admitted.turnId) || null;
       }
+      const alreadyAnnounced = String(admitted.status || "") === "outcome_unknown";
       const recovery = normalizeQueueRecoveryEnvelope(
         admitted.metadata?.queueRecovery,
       );
@@ -81,9 +96,25 @@ function createTurnQueueRecoveryMethods({ log, queueDispatchOptions }) {
           admittedTurnInput: admitted,
         });
       }
-      this._emit(sessionId, "turn.dispatch_outcome_unknown", info, {
-        turnId: admitted.turnId,
-      });
+      if (!alreadyAnnounced) {
+        // Write the fact down BEFORE announcing, so a crash between the two
+        // repeats the announcement at most once more rather than forever.
+        try {
+          this.ctx.sessionManager?.markTurnInputOutcomeUnknown?.(sessionId, admitted.turnId);
+        } catch (err) {
+          // Fail open to the in-memory guard, which is exactly the previous
+          // behaviour — never block the notice on bookkeeping.
+          log.warn(
+            "outcome-unknown persistence failed open: session=%s turn=%s error=%s",
+            sessionId,
+            admitted.turnId,
+            err?.message || err,
+          );
+        }
+        this._emit(sessionId, "turn.dispatch_outcome_unknown", info, {
+          turnId: admitted.turnId,
+        });
+      }
       return info;
     },
 

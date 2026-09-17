@@ -1284,6 +1284,27 @@
         "scripts/test-document-content-index.mjs",
         "scripts/test-file-intelligence-index.mjs"
       ]
+    },
+    {
+      "id": "announce-once-across-restart",
+      "protects": "A turn whose dispatch outcome is unknown is announced once, not once per app restart for the rest of the conversation's life.",
+      "baseline": "The notice itself, its wording, and the list the user sees are unchanged; a genuinely new unknown outcome is still announced immediately.",
+      "failureFallback": "If the durable transition cannot be written the notice is still emitted, which is exactly the previous behaviour — bookkeeping never silences a warning.",
+      "tests": [
+        "scripts/test-announce-once-across-restart.mjs",
+        "scripts/test-turn-queue-recovery-task-core.mjs"
+      ]
+    },
+    {
+      "id": "answer-survives-reload",
+      "protects": "Reopening a conversation shows a turn's ANSWER in the answer slot, with the narration written while working kept where it belongs.",
+      "baseline": "The full stream is still stored and still shown; only which part lands in which slot changes, and the answer text is passed through byte-identical.",
+      "failureFallback": "A record saved before the boundary existed renders exactly as it does today, and a real timeline always wins over the reconstruction.",
+      "tests": [
+        "scripts/test-answer-survives-reload.mjs",
+        "scripts/test-turn-view-renderer.mjs",
+        "scripts/test-runtime-event-retention.mjs"
+      ]
     }
   ]
 }

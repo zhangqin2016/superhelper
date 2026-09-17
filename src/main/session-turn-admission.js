@@ -152,6 +152,15 @@ function outcomeUnknownTurnInputs(sessionId) {
   return this._store().outcomeUnknownTurnInputs(session.id, ownerScope);
 }
 
+function markTurnInputOutcomeUnknown(sessionId, turnId) {
+  const session = this._find(sessionId);
+  if (!session) return false;
+  this._ensureImported(session);
+  const ownerScope = resolvedOwnerScope(this, session);
+  if (!ownerScope) return false;
+  return this._store().markTurnInputOutcomeUnknown(session.id, turnId, ownerScope);
+}
+
 function resolveTurnOwnerScope(sessionId) {
   const session = this._find(sessionId);
   if (!session) {
@@ -225,6 +234,7 @@ module.exports = {
   markTurnInputPromoted,
   markTurnInputTerminal,
   persistTurnTaskCore,
+  markTurnInputOutcomeUnknown,
   outcomeUnknownTurnInputs,
   pendingTurnInputs,
   resolveTurnOwnerScope,

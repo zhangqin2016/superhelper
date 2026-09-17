@@ -1629,7 +1629,10 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
   const beforeSendTurn = store.getTurnInputByTurnId(
     beforeSendItem.admittedTurnInput.turnId,
   );
-  assert.equal(beforeSendTurn.status, "dispatching");
+  // Announcing the unknown outcome now writes it on the row. Leaving it at
+  // "dispatching" is what made every later restart rediscover it as new.
+  // [gate: announce-once-across-restart]
+  assert.equal(beforeSendTurn.status, "outcome_unknown");
   assert.ok(beforeSendTurn.dispatchAttemptId);
   assert.equal(beforeSendRuntime.runners.get(beforeSendSession.id).sentPayloads.length, 0);
 
@@ -1641,6 +1644,11 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
   beforeSendRecovered.orchestrator.restorePendingTurns(beforeSendSession.id);
   beforeSendRecovered.orchestrator.restorePendingTurns(beforeSendSession.id);
   assert.equal(beforeSendRecoveredState.queue.length, 0);
+  // The turn is still restored into the list the user reads — that part is
+  // unchanged. What the restarted run must NOT do is announce it again: it was
+  // announced before the restart, and re-announcing is how a conversation
+  // finished weeks ago sprouts a fresh "please re-send" every time the app
+  // starts. [gate: announce-once-across-restart]
   assert.equal(beforeSendRecoveredState.outcomeUnknownTurns.length, 1);
   assert.equal(
     beforeSendRecovered.emittedEvents.filter(
@@ -1649,7 +1657,7 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
         && event.type === "turn.dispatch_outcome_unknown"
       ),
     ).length,
-    1,
+    0,
   );
   const scheduledReplay = await beforeSendRecovered.orchestrator.sendUserMessage(
     beforeSendSession.id,
@@ -1669,7 +1677,7 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
     sessionId: beforeSendSession.id,
     turnId: beforeSendTurn.turnId,
     dispatchAttemptId: beforeSendTurn.dispatchAttemptId,
-    fromStatuses: ["dispatching"],
+    fromStatuses: ["dispatching", "promoted", "accepted", "outcome_unknown"],
   }, "turn.interrupted");
 
   const acceptedSession = addSession(
@@ -1719,7 +1727,8 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
   const acceptedTurn = store.getTurnInputByTurnId(
     acceptedItem.admittedTurnInput.turnId,
   );
-  assert.equal(acceptedTurn.status, "dispatching");
+  // Same as above: announcing the unknown outcome records it on the row.
+  assert.equal(acceptedTurn.status, "outcome_unknown");
   assert.equal(acceptedRuntime.runners.get(acceptedSession.id).sentPayloads.length, 1);
 
   reopenStore();
@@ -1739,7 +1748,7 @@ await check("durable dispatch crash matrix is at-most-once and ledger-deduplicat
     sessionId: acceptedSession.id,
     turnId: acceptedTurn.turnId,
     dispatchAttemptId: acceptedTurn.dispatchAttemptId,
-    fromStatuses: ["dispatching"],
+    fromStatuses: ["dispatching", "promoted", "accepted", "outcome_unknown"],
   }, "turn.interrupted");
 
   const promotedSession = addSession(

@@ -9,6 +9,8 @@ const PROCESS_TEXT_LIMIT = 500;
 const SUBAGENT_TEXT_LIMIT = 1_200;
 const SUBAGENT_TOOL_RESULT_LIMIT = 800;
 
+const ANSWER_LIMIT = 24_000;
+
 function truncateString(value, limit = DEFAULT_STRING_LIMIT) {
   const text = String(value ?? "");
   if (text.length <= limit) return text;
@@ -268,6 +270,17 @@ function compactTaskPayload(payload = {}) {
   };
 }
 
+/** The last text block a turn streamed — its answer, as opposed to the running
+ * narration before it. Mirrors lastTimelineText in the renderer's narrative
+ * policy, which is the rule the live view already uses. */
+function lastTimelineText(record = {}) {
+  const timeline = Array.isArray(record.timeline) ? record.timeline : [];
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    if (timeline[index]?.kind === "text") return String(timeline[index].text || "").trim();
+  }
+  return "";
+}
+
 function compactRecord(record = {}, assistant = "") {
   if (!record || typeof record !== "object") return null;
   return {
@@ -277,6 +290,15 @@ function compactRecord(record = {}, assistant = "") {
     endedAt: record.endedAt || null,
     terminal: record.terminal || "",
     assistantText: truncateString(record.assistantText || assistant || "", ASSISTANT_LIMIT),
+    // Where the answer starts. Separating the answer from the narration that
+    // preceded it is a property of the in-memory timeline, and the timeline is
+    // dropped here — so a reloaded turn used to show the whole concatenated
+    // stream, blank runs and all, in the slot meant for the answer. Persisting
+    // the last text block costs one string and restores the layout the user
+    // actually watched. It also survives the truncation above, which keeps the
+    // head and would otherwise cut exactly the conclusion away.
+    // [gate: answer-survives-reload]
+    answerText: truncateString(lastTimelineText(record), ANSWER_LIMIT),
     thinkingText: truncateString(record.thinkingText || "", DEFAULT_STRING_LIMIT),
     activityLabel: record.activityLabel || null,
     durationMs: Number.isFinite(record.durationMs) ? record.durationMs : null,

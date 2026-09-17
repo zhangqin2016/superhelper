@@ -1,3 +1,5 @@
+import { timelineFromRecord } from "./turn-record-timeline.js";
+
 /** Minimal liveTurn for assistant messages saved before TurnRecord existed. */
 export function legacyLiveTurnFromMessage(message) {
   const ts = message?.timestamp ? Date.parse(message.timestamp) : Date.now();
@@ -59,7 +61,7 @@ export function liveTurnFromRecord(record) {
     resultBlocks: record.resultBlocks || [],
     protocolUnknown: record.protocolUnknown || [],
     processEvents,
-    timeline: record.timeline || [],
+    timeline: timelineFromRecord(record),
     activityLabel: record.activityLabel || null,
     durationMs: record.durationMs ?? null,
     totalCostUsd: record.totalCostUsd ?? null,

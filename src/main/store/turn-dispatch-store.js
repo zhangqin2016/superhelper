@@ -164,6 +164,41 @@ function createTurnDispatchStoreMethods({
       })();
     },
 
+    /**
+     * Record that a turn's dispatch outcome was announced as unknown.
+     *
+     * Without this the row stays at its dispatch status forever, so every
+     * restart rediscovers it as a NEW unknown outcome and announces it again —
+     * measured 2026-09-17: 228 announcements for 10 turns, one of them from
+     * 09-01 announced 52 times across four days, each time asking the user to
+     * re-send something from a conversation they finished weeks ago.
+     *
+     * A guarded transition like the others here: only a turn still in flight
+     * moves, so a second call changes nothing and reports it.
+     * [gate: announce-once-across-restart]
+     *
+     * @returns {boolean} true when THIS call performed the transition.
+     */
+    markTurnInputOutcomeUnknown(sessionId, turnId, ownerScope = null) {
+      const tid = String(turnId || "");
+      if (!tid) return false;
+      const owner = typeof ownerScope === "string" && ownerScope ? ownerScope : null;
+      const updated = this.db.run(
+        `UPDATE turn_inputs
+            SET status = 'outcome_unknown'
+          WHERE turn_id = ? AND session_id = ?
+            AND status IN ('dispatching', 'promoted', 'accepted')
+            AND migration_status = ?
+            AND (? IS NULL OR owner_scope = ?)`,
+        tid,
+        String(sessionId || ""),
+        TURN_INPUT_MIGRATION_OWNED,
+        owner,
+        owner,
+      );
+      return updated.changes === 1;
+    },
+
     pendingTurnInputs(sessionId, ownerScope = null) {
       const owner = typeof ownerScope === "string" && ownerScope ? ownerScope : null;
       return this.db.all(
