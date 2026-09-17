@@ -68,7 +68,14 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     "runtime-packs": { bundledPacksRootCandidates: () => [] },
     "locale-settings": { getLocale: () => "en" },
     "account-manager": { getCurrentOrganizationId: () => null },
-    "opencode-runtime-identity": { buildOpencodeRuntimeIdentityConfig: () => null, revokeOpencodeRuntimeIdentity: noop },
+    "opencode-runtime-identity": {
+      buildOpencodeRuntimeIdentityConfig: () => null,
+      grantOpencodeRuntimeIdentityForCompaction: runner => {
+        assert.equal(runner.spawnOptions.runtimeIdentity, null);
+        return "";
+      },
+      revokeOpencodeRuntimeIdentity: noop,
+    },
     "opencode-turn-liveness": { createOpencodeTurnLiveness: () => serviceStub },
     "opencode-history-recovery": { createOpencodeHistoryRecovery: () => ({}) },
     "required-tool-completion-gate": { reset: noop },
