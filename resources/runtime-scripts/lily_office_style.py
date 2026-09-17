@@ -39,16 +39,67 @@ def _docx_qn():
     return qn
 
 
+# A theme reference BEATS an explicit font name in LibreOffice's resolver, and the
+# default theme's East Asian slot is empty — so setting w:eastAsia while leaving
+# w:eastAsiaTheme in place changed nothing for headings. Acceptance 2026-09-17 D1:
+# body text came out STSongti while every heading fell back to ArialUnicodeMS in
+# the same document. [gate: cjk-theme-font-chain]
+_RFONT_THEME_ATTRS = ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme")
+
+
 def _set_rfonts(rpr, latin, cjk):
     qn = _docx_qn()
     rfonts = rpr.find(qn("w:rFonts"))
     if rfonts is None:
         rfonts = rpr.makeelement(qn("w:rFonts"), {})
         rpr.insert(0, rfonts)
+    for attr in _RFONT_THEME_ATTRS:
+        # An explicit name only wins once the theme reference is gone.
+        rfonts.attrib.pop(qn("w:%s" % attr), None)
     rfonts.set(qn("w:ascii"), latin)
     rfonts.set(qn("w:hAnsi"), latin)
     rfonts.set(qn("w:eastAsia"), cjk)
     rfonts.set(qn("w:cs"), latin)
+
+
+def _set_theme_fonts(doc, latin, cjk):
+    """Fill the document theme's major/minor East Asian slots.
+
+    Anything the platform does not reach run by run — and anything a later edit
+    adds — still resolves through the theme, so an empty <a:ea> there is a second
+    way to lose the CJK face. Never raises."""
+    ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    try:
+        part = doc.part.package.part_related_by(
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
+        )
+    except Exception:
+        try:
+            part = next((p for p in doc.part.package.iter_parts()
+                         if p.partname.endswith("theme1.xml")), None)
+        except Exception:
+            part = None
+    if part is None:
+        return False
+    try:
+        from lxml import etree
+        root = etree.fromstring(part.blob)
+        changed = False
+        for scheme in ("majorFont", "minorFont"):
+            node = root.find(".//%s%s" % (ns, scheme))
+            if node is None:
+                continue
+            for tag, value in (("latin", latin), ("ea", cjk), ("cs", latin)):
+                element = node.find("%s%s" % (ns, tag))
+                if element is None:
+                    element = etree.SubElement(node, "%s%s" % (ns, tag))
+                element.set("typeface", value)
+                changed = True
+        if changed:
+            part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+        return changed
+    except Exception:
+        return False
 
 
 def style_docx(doc, latin=DEFAULT_LATIN_FONT, cjk=DEFAULT_CJK_FONT):
@@ -74,6 +125,7 @@ def style_docx(doc, latin=DEFAULT_LATIN_FONT, cjk=DEFAULT_CJK_FONT):
             _set_rfonts(rpr, latin, cjk)
         except Exception:
             continue  # a style that rejects rPr edits must not block authoring
+    _set_theme_fonts(doc, latin, cjk)
     return doc
 
 
@@ -107,6 +159,71 @@ def _style_text_frame(tf, latin, cjk):
             apply_ea_font(run, cjk=cjk, latin=latin)
 
 
+# Chart text is not a run. It lives in the chart PART, resolves through the
+# presentation theme, and the default theme's East Asian slot is empty — so a
+# native chart's axis labels, legend and title fell back to a system CJK face
+# while every real run obeyed. Acceptance 2026-09-17 D2 also proved that filling
+# the THEME alone is not enough: the font has to be written into the chart part.
+# [gate: cjk-theme-font-chain]
+_CHART_TEXT_TAGS = ("defRPr", "endParaRPr", "rPr")
+
+
+def _set_chart_fonts(prs, latin, cjk):
+    """Write explicit fonts into every native chart part. Returns how many parts
+    were changed. Never raises — a chart that resists editing keeps its text."""
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    C = "{http://schemas.openxmlformats.org/drawingml/2006/chart}"
+    changed = 0
+    try:
+        from lxml import etree
+        parts = list(prs.part.package.iter_parts())
+    except Exception:
+        return 0
+
+    def apply_fonts(node):
+        for tag, value in (("latin", latin), ("ea", cjk), ("cs", latin)):
+            child = node.find("%s%s" % (A, tag))
+            if child is None:
+                child = etree.SubElement(node, "%s%s" % (A, tag))
+            child.set("typeface", value)
+
+    for part in parts:
+        try:
+            name = str(getattr(part, "partname", ""))
+            if "/charts/chart" not in name or not name.endswith(".xml"):
+                continue
+            root = getattr(part, "_element", None)
+            if root is None:
+                continue
+            # Existing text properties, wherever the chart already has them.
+            for tag in _CHART_TEXT_TAGS:
+                for node in root.iter("%s%s" % (A, tag)):
+                    apply_fonts(node)
+            # A chart usually carries almost none, so also set the chart-wide
+            # default: c:txPr on chartSpace covers axis labels, legend and title.
+            tx_pr = root.find("%stxPr" % C)
+            if tx_pr is None:
+                tx_pr = etree.SubElement(root, "%stxPr" % C)
+                etree.SubElement(tx_pr, "%sbodyPr" % A)
+                etree.SubElement(tx_pr, "%slstStyle" % A)
+                paragraph = etree.SubElement(tx_pr, "%sp" % A)
+                p_pr = etree.SubElement(paragraph, "%spPr" % A)
+                etree.SubElement(p_pr, "%sdefRPr" % A)
+                etree.SubElement(paragraph, "%sendParaRPr" % A)
+                # chartSpace order is chart, spPr, txPr, externalData.
+                external = root.find("%sexternalData" % C)
+                if external is not None:
+                    root.remove(tx_pr)
+                    external.addprevious(tx_pr)
+            for tag in ("defRPr", "endParaRPr"):
+                for node in tx_pr.iter("%s%s" % (A, tag)):
+                    apply_fonts(node)
+            changed += 1
+        except Exception:
+            continue
+    return changed
+
+
 def style_pptx(prs, latin=DEFAULT_LATIN_FONT, cjk=DEFAULT_CJK_FONT):
     """Apply the latin+CJK font pair to every run in the presentation."""
     for slide in prs.slides:
@@ -120,6 +237,7 @@ def style_pptx(prs, latin=DEFAULT_LATIN_FONT, cjk=DEFAULT_CJK_FONT):
                             _style_text_frame(cell.text_frame, latin, cjk)
             except Exception:
                 continue
+    _set_chart_fonts(prs, latin, cjk)
     return prs
 
 
@@ -306,7 +424,80 @@ def resolve_cjk_document_family(preferred=DEFAULT_CJK_FONT, fallbacks=CJK_DOCUME
 
 # ------------------------------------------------------------- xlsx printing
 
-def style_xlsx_print(workbook, landscape_charts=True):
+# A column narrower than its own number renders as ### once the sheet is printed
+# or exported — the value is simply unreadable, and nothing reports it.
+# Acceptance 2026-09-17 D8. [gate: office-delivery-completeness]
+_MIN_COLUMN_WIDTH = 8.0
+_MAX_COLUMN_WIDTH = 60.0
+
+
+def _rendered_cell_width(cell):
+    """Roughly how many characters this cell needs, honouring its number format."""
+    value = cell.value
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return 5
+    if isinstance(value, (int, float)):
+        fmt = str(cell.number_format or "")
+        digits = len(str(abs(int(value))))
+        width = digits
+        if "," in fmt:
+            width += max(0, (digits - 1) // 3)
+        if "." in fmt:
+            width += 1 + fmt.split(".")[-1].count("0")
+        if value < 0:
+            width += 1
+        if "%" in fmt:
+            width += 1
+        if fmt.strip().startswith(("¥", "$", "€", "£")) or "\"" in fmt:
+            width += 2
+        return width
+    text = str(value)
+    # A CJK glyph occupies about two character widths.
+    wide = sum(1 for ch in text if ord(ch) > 0x2E7F)
+    return len(text) + wide
+
+
+def fit_column_widths(sheet, minimum=_MIN_COLUMN_WIDTH, maximum=_MAX_COLUMN_WIDTH, padding=2.0):
+    """Widen columns so their own content is readable after export.
+
+    Only ever widens, and only where no explicit width was set, so a deliberate
+    layout is preserved. Returns the columns changed. Never raises."""
+    widened = []
+    try:
+        from openpyxl.utils import get_column_letter
+    except Exception:
+        return widened
+    try:
+        # Neither `width` nor `customWidth` distinguishes "nobody set this":
+        # openpyxl hands back a default ColumnDimension with width 13.0 and
+        # customWidth True, and merely ACCESSING one materialises it into the
+        # file. So presence before we touch anything is the only honest signal.
+        preset = set(sheet.column_dimensions.keys())
+        needed = {}
+        for row in sheet.iter_rows():
+            for cell in row:
+                width = _rendered_cell_width(cell)
+                if width and width > needed.get(cell.column, 0):
+                    needed[cell.column] = width
+        for index, width in needed.items():
+            letter = get_column_letter(index)
+            if letter in preset:
+                continue  # a width someone chose is a decision; respect it
+            dimension = sheet.column_dimensions[letter]
+            target = max(minimum, min(maximum, width + padding))
+            # customWidth is derived from width and has no setter; assigning it
+            # raised, the fail-open except swallowed it, and this whole function
+            # became a silent no-op. Setting width is what openpyxl wants.
+            dimension.width = target
+            widened.append(letter)
+    except Exception:
+        return widened
+    return widened
+
+
+def style_xlsx_print(workbook, landscape_charts=True, fit_widths=True):
     """Keep exported worksheets whole.
 
     Acceptance 2026-09-16 DEF-006: rendering a budget workbook to PDF put the
@@ -332,6 +523,8 @@ def style_xlsx_print(workbook, landscape_charts=True):
                 setup_pr.fitToPage = True
             sheet.page_setup.fitToWidth = 1
             sheet.page_setup.fitToHeight = 1 if has_chart else 0
+            if fit_widths:
+                fit_column_widths(sheet)
             if has_chart:
                 if landscape_charts:
                     sheet.page_setup.orientation = "landscape"
@@ -551,6 +744,32 @@ def _selftest():
     data_sheet = reopened["数据"]
     assert data_sheet.page_setup.fitToWidth == 1 and data_sheet.page_setup.fitToHeight == 0, "data flows down"
     assert style_xlsx_print(object()) == [], "a non-workbook never raises"
+
+    # A column narrower than its own number exports as ###.
+    money = wb.create_sheet("金额")
+    money.append(["项目", "金额"])
+    money.append(["营收合计", 218377010.0])
+    money["B2"].number_format = "#,##0.00"
+    widened = fit_column_widths(money)
+    assert "B" in widened, "a wide number must widen its column"
+    assert money.column_dimensions["B"].width >= 14
+    money.column_dimensions["C"].width = 4.0
+    money["C1"] = 123456789
+    assert "C" not in fit_column_widths(money), "an explicit width is a decision, not a defect"
+
+    # The theme must not out-vote the font we just set, in either direction.
+    theme_doc = Document()
+    theme_doc.add_heading("一、关键指标摘要", 1)
+    style_docx(theme_doc, cjk=DEFAULT_CJK_FONT)
+    for style_obj in theme_doc.styles:
+        rpr = style_obj.element.find(qn("w:rPr"))
+        if rpr is None:
+            continue
+        rfonts = rpr.find(qn("w:rFonts"))
+        if rfonts is None:
+            continue
+        for attr in _RFONT_THEME_ATTRS:
+            assert rfonts.get(qn("w:%s" % attr)) is None, "a theme reference beats the explicit font"
 
     # Declaring a family the machine does not have is what makes LibreOffice
     # substitute differently per module, so the same content leaves Word and

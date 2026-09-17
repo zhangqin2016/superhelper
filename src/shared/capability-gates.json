@@ -1233,6 +1233,16 @@
         "scripts/test-office-style-helper.mjs",
         "scripts/test-office-authoring-contract.mjs"
       ]
+    },
+    {
+      "id": "cjk-theme-font-chain",
+      "protects": "Every piece of Chinese text in a generated document uses the font that was set for it, including headings and native chart labels.",
+      "baseline": "Runs and styles are set exactly as before; the theme reference is removed and the theme and chart parts are filled in addition, never instead.",
+      "failureFallback": "A theme or chart part that cannot be edited is skipped and the document still authors and saves; the previous behaviour is the floor.",
+      "tests": [
+        "scripts/test-office-style-helper.mjs",
+        "scripts/test-office-authoring-contract.mjs"
+      ]
     }
   ]
 }

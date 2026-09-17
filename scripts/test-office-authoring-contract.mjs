@@ -68,6 +68,9 @@ for (const symbol of [
   "def register_cjk_font",
   "def configure_matplotlib_cjk",
   "def style_xlsx_print",
+  "def fit_column_widths",
+  "def _set_theme_fonts",
+  "def _set_chart_fonts",
   "--selftest",
 ]) {
   assert.ok(officeStyleHelper.includes(symbol), `lily_office_style.py must provide ${symbol}`);
@@ -88,6 +91,9 @@ assert.match(officeIntent, /split across the break/i);
 assert.match(officeIntent, /never the Title style/);
 assert.match(officeIntent, /--standalone/);
 assert.match(officeIntent, /configure_matplotlib_cjk\(\)/);
+// Acceptance 2026-09-17 D7: a TOC field exports empty through the command line.
+assert.match(officeIntent, /TOC written as a FIELD exports empty/);
+assert.match(officeIntent, /static table of\n   contents/);
 // Acceptance 2026-09-17 DEF-04 / DEF-06.
 assert.match(officeIntent, /lily_office_convert\.py/);
 assert.match(officeIntent, /EXITS 0 and writes nothing/);

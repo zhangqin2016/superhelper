@@ -100,7 +100,12 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    ArialUnicodeMS and PowerPoint as SimSong. Pass one family from
    `resolve_cjk_document_family()` (same helper) to `style_docx`, `style_pptx`
    and the workbook, and every export embeds the identical font.
-7. Converting with LibreOffice: a `soffice --convert-to` that has no export
+7. A Word TOC written as a FIELD exports empty. Command-line conversion does not
+   update fields, so the PDF shows only the placeholder ("在 Word 中更新目录") and
+   no entries, and text extraction reports no error. Write a static table of
+   contents when the deliverable is the PDF, and check the output for the
+   placeholder before delivering.
+8. Converting with LibreOffice: a `soffice --convert-to` that has no export
    filter for the target EXITS 0 and writes nothing, so never treat the return
    code as success. Use `convert()` from
    `$LILY_RUNTIME_SCRIPTS/lily_office_convert.py`, which verifies a non-empty
@@ -108,7 +113,7 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    LibreOffice's own reason. A ReportLab-drawn PDF also leaves an un-embedded
    Helvetica in its page resources; harmless to read, but clean it up when the
    deliverable must be PDF/A.
-8. Reopen the generated file with its deterministic library and validate its
+9. Reopen the generated file with its deterministic library and validate its
    structure. Recalculate formula workbooks, render the final artifact, inspect
    the required pages, fix observed defects, and repeat until the delivery gate
    passes or the remaining blocker is explicitly reported.
