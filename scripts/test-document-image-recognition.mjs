@@ -38,8 +38,13 @@ from PIL import Image, ImageDraw, ImageFont
 W = pathlib.Path(sys.argv[1])
 def draw(text, name, size=(900, 220)):
     img = Image.new("RGB", size, "white"); d = ImageDraw.Draw(img)
-    try: font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 46)
-    except Exception: font = ImageFont.load_default()
+    font = ImageFont.load_default(size=46)
+    for candidate in ("C:/Windows/Fonts/arial.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf"):
+        try:
+            font = ImageFont.truetype(candidate, 46)
+            break
+        except OSError:
+            pass
     d.text((30, 80), text, fill="black", font=font)
     img.save(W / name); return str(W / name)
 invoice = draw("INVOICE 85321", "invoice.png")
