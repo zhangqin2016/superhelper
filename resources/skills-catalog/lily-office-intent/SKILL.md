@@ -78,7 +78,7 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    headers/footers, and image treatment. Font choices mean the PAIR: a latin
    typeface plus an East Asian one (`w:eastAsia` in Word, `a:ea` in PowerPoint)
    — a latin-only setting guarantees per-machine CJK fallback drift. The shared
-   helper `resources/runtime-scripts/lily_office_style.py` (`style_docx`,
+   helper `$LILY_RUNTIME_SCRIPTS/lily_office_style.py` (`style_docx`,
    `style_pptx`, `LIGHT_THEME`, `contrast_ok`) applies the defaults
    deterministically; decks default to light backgrounds. Apply the system
    consistently instead of formatting elements one at a time.
@@ -92,15 +92,23 @@ For create, redesign, or substantial edit tasks, use this adaptive contract:
    reporting it as lost. For a chart IMAGE (for an HTML/Markdown/PDF report, as
    opposed to a workbook's own native chart) use matplotlib, and call
    `configure_matplotlib_cjk()` first so Chinese labels are not tofu boxes.
-6. Converting with LibreOffice: a `soffice --convert-to` that has no export
+6. Cross-format CJK consistency. The default CJK face is `Microsoft YaHei`,
+   which is right when the DELIVERABLE IS THE OFFICE FILE and the reader is on
+   Windows. When the deliverable is instead a set of PDFs exported on this
+   machine, a family the machine does not have gets substituted differently by
+   each LibreOffice module — measured: the same content left Word as
+   ArialUnicodeMS and PowerPoint as SimSong. Pass one family from
+   `resolve_cjk_document_family()` (same helper) to `style_docx`, `style_pptx`
+   and the workbook, and every export embeds the identical font.
+7. Converting with LibreOffice: a `soffice --convert-to` that has no export
    filter for the target EXITS 0 and writes nothing, so never treat the return
    code as success. Use `convert()` from
-   `resources/runtime-scripts/lily_office_convert.py`, which verifies a non-empty
+   `$LILY_RUNTIME_SCRIPTS/lily_office_convert.py`, which verifies a non-empty
    output file, retries HTML through the Writer input filter, and raises with
    LibreOffice's own reason. A ReportLab-drawn PDF also leaves an un-embedded
    Helvetica in its page resources; harmless to read, but clean it up when the
    deliverable must be PDF/A.
-7. Reopen the generated file with its deterministic library and validate its
+8. Reopen the generated file with its deterministic library and validate its
    structure. Recalculate formula workbooks, render the final artifact, inspect
    the required pages, fix observed defects, and repeat until the delivery gate
    passes or the remaining blocker is explicitly reported.

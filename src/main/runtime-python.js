@@ -279,6 +279,28 @@ function getRuntimePathEntries() {
  * Extra env vars for agent subprocesses (LibreOffice UNO paths, runtime root marker).
  * @returns {Record<string, string>}
  */
+/**
+ * Absolute path to the running build's resources/runtime-scripts, or "" when it
+ * cannot be found. Same resolution order the document extractor already uses:
+ * the packaged resources directory first, the repo second.
+ */
+function resolveRuntimeScriptsDir() {
+  const relative = path.join("resources", "runtime-scripts");
+  const candidates = [];
+  if (typeof process.resourcesPath === "string" && process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, relative));
+  }
+  candidates.push(path.join(PROJECT_ROOT, relative));
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // Discovery is an enhancement; a broken probe must not block a spawn.
+    }
+  }
+  return "";
+}
+
 function getRuntimeEnvExtras() {
   const root = resolveBundledRuntimeRoot();
   const extras = {};
@@ -297,6 +319,17 @@ function getRuntimeEnvExtras() {
     extras.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION =
       process.env.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION || "1";
   }
+  // The platform's shared Python helpers, as an ABSOLUTE path the agent can
+  // actually use. Every skill and overlay that names one of these helpers used to
+  // give a repo-relative path, which does not resolve from a workspace: the agent
+  // had to guess where the file was. Acceptance 2026-09-17 D-S06-01 caught the
+  // consequence — a probe found a STALE INSTALLED COPY of lily_office_style.py
+  // from an older build, concluded the function the contract names does not
+  // exist, and filed it as a platform defect. The contract and the module it
+  // names must come from the same build, and this is what ties them together.
+  // [gate: runtime-helper-path]
+  const runtimeScriptsDir = resolveRuntimeScriptsDir();
+  if (runtimeScriptsDir) extras.LILY_RUNTIME_SCRIPTS = runtimeScriptsDir;
   const cjkFontPath = resolveCjkFontPath();
   if (cjkFontPath) extras.LILY_CJK_FONT_PATH = cjkFontPath;
   return extras;
@@ -314,6 +347,7 @@ function getRuntimeSummary() {
 }
 
 module.exports = {
+  resolveRuntimeScriptsDir,
   platformBundleKeys,
   resolveBundledRuntimeRoot,
   resolveVenvPython,

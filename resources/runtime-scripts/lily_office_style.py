@@ -18,6 +18,8 @@ Import from skills:
 Self-test:  python3 lily_office_style.py --selftest
 """
 
+import os
+
 DEFAULT_LATIN_FONT = "Arial"
 DEFAULT_CJK_FONT = "Microsoft YaHei"  # 微软雅黑 — present on every Windows; macOS viewers substitute PingFang automatically
 
@@ -147,6 +149,159 @@ def contrast_ratio(fg_hex, bg_hex):
 
 def contrast_ok(fg_hex, bg_hex, minimum=4.5):
     return contrast_ratio(fg_hex, bg_hex) >= minimum
+
+
+# ---------------------------------------------------------- document families
+
+# Acceptance 2026-09-17 D-S06-03: the declared CJK font is "Microsoft YaHei",
+# which does not exist on macOS, so LibreOffice substitutes — and substitutes
+# DIFFERENTLY per module. The same source content came out as ArialUnicodeMS from
+# Word and SimSong from PowerPoint. Measured: declaring a family the machine
+# actually HAS makes every format embed the identical font.
+#
+# This is a capability, not a new default. Keeping "Microsoft YaHei" is right when
+# the deliverable is the Office file itself and the reader is on Windows; pass an
+# installed family instead when the deliverable is a set of PDFs exported here and
+# they must look the same.
+
+CJK_DOCUMENT_FALLBACKS = (
+    "Microsoft YaHei",
+    "Songti SC",
+    "PingFang SC",
+    "Heiti SC",
+    "Arial Unicode MS",
+    "Noto Sans CJK SC",
+    "WenQuanYi Zen Hei",
+    "SimSun",
+    "SimHei",
+)
+
+_FONT_DIRECTORIES = (
+    "/System/Library/Fonts",
+    "/System/Library/Fonts/Supplemental",
+    "/Library/Fonts",
+    os.path.join(os.path.expanduser("~"), "Library", "Fonts"),
+    "/usr/share/fonts",
+    "/usr/local/share/fonts",
+    os.path.join(os.path.expanduser("~"), ".fonts"),
+    os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts"),
+)
+
+_MAX_FONT_FILES = 4000
+_installed_families_cache = None
+
+
+def _sfnt_family_names(path):
+    """Family names (name ID 1) declared inside one font file. Never raises."""
+    import struct
+
+    names = set()
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(16)
+            if len(head) < 16:
+                return names
+            offsets = []
+            if head[:4] == b"ttcf":
+                count = struct.unpack(">I", head[8:12])[0]
+                if not 1 <= count <= 64:
+                    return names
+                handle.seek(12)
+                raw = handle.read(4 * count)
+                offsets = [struct.unpack(">I", raw[i * 4:i * 4 + 4])[0] for i in range(count)]
+            else:
+                offsets = [0]
+            for offset in offsets:
+                handle.seek(offset)
+                directory = handle.read(12)
+                if len(directory) < 12:
+                    continue
+                tables = struct.unpack(">H", directory[4:6])[0]
+                if not 1 <= tables <= 512:
+                    continue
+                records = handle.read(tables * 16)
+                name_offset = name_length = 0
+                for index in range(tables):
+                    record = records[index * 16:index * 16 + 16]
+                    if record[:4] == b"name":
+                        name_offset = struct.unpack(">I", record[8:12])[0]
+                        name_length = struct.unpack(">I", record[12:16])[0]
+                        break
+                if not name_offset or name_length < 6:
+                    continue
+                handle.seek(name_offset)
+                table = handle.read(min(name_length, 64 * 1024))
+                if len(table) < 6:
+                    continue
+                count = struct.unpack(">H", table[2:4])[0]
+                strings_at = struct.unpack(">H", table[4:6])[0]
+                for index in range(min(count, 256)):
+                    entry = table[6 + index * 12:18 + index * 12]
+                    if len(entry) < 12:
+                        break
+                    platform_id, encoding_id, _lang, name_id, length, string_off = struct.unpack(">HHHHHH", entry)
+                    if name_id != 1:
+                        continue
+                    raw = table[strings_at + string_off:strings_at + string_off + length]
+                    if not raw:
+                        continue
+                    try:
+                        if platform_id == 3 or (platform_id == 0) or encoding_id == 1 and platform_id == 3:
+                            text = raw.decode("utf-16-be", "ignore")
+                        else:
+                            text = raw.decode("latin-1", "ignore")
+                    except Exception:
+                        continue
+                    text = text.strip()
+                    if text:
+                        names.add(text)
+    except Exception:
+        return names
+    return names
+
+
+def installed_font_families(refresh=False):
+    """Every font family name this machine declares. Empty when it cannot be read,
+    which callers must treat as "unknown", never as "not installed". Never raises."""
+    global _installed_families_cache
+    if _installed_families_cache is not None and not refresh:
+        return _installed_families_cache
+    families = set()
+    seen = 0
+    for directory in _FONT_DIRECTORIES:
+        try:
+            if not os.path.isdir(directory):
+                continue
+            for root, _dirs, files in os.walk(directory):
+                for name in files:
+                    if not name.lower().endswith((".ttf", ".ttc", ".otf", ".otc")):
+                        continue
+                    seen += 1
+                    if seen > _MAX_FONT_FILES:
+                        break
+                    families |= _sfnt_family_names(os.path.join(root, name))
+                if seen > _MAX_FONT_FILES:
+                    break
+        except Exception:
+            continue
+    _installed_families_cache = families
+    return families
+
+
+def resolve_cjk_document_family(preferred=DEFAULT_CJK_FONT, fallbacks=CJK_DOCUMENT_FALLBACKS):
+    """A CJK family this machine really has, so an export does not substitute.
+
+    Returns (family, substituted). When the installed set cannot be read, the
+    preferred family is returned unchanged — behaviour is exactly as before."""
+    installed = installed_font_families()
+    if not installed:
+        return preferred, False
+    if preferred in installed:
+        return preferred, False
+    for family in fallbacks:
+        if family != preferred and family in installed:
+            return family, True
+    return preferred, False
 
 
 # ------------------------------------------------------------- xlsx printing
@@ -396,6 +551,22 @@ def _selftest():
     data_sheet = reopened["数据"]
     assert data_sheet.page_setup.fitToWidth == 1 and data_sheet.page_setup.fitToHeight == 0, "data flows down"
     assert style_xlsx_print(object()) == [], "a non-workbook never raises"
+
+    # Declaring a family the machine does not have is what makes LibreOffice
+    # substitute differently per module, so the same content leaves Word and
+    # PowerPoint wearing different fonts.
+    families = installed_font_families()
+    assert isinstance(families, set)
+    if families:
+        assert len(families) > 20, "a machine with fonts should report more than a handful"
+        present = next(iter(families))
+        assert resolve_cjk_document_family(preferred=present) == (present, False), "an installed family is kept"
+        chosen, substituted = resolve_cjk_document_family(preferred="No Such Font Family ZZZ")
+        assert chosen != "No Such Font Family ZZZ" and substituted is True, "a missing family is replaced by one that exists"
+        assert chosen in families
+    # Unknowable installed set must behave exactly as before: keep the preferred.
+    assert resolve_cjk_document_family(preferred="Whatever", fallbacks=()) [0] in ("Whatever", *CJK_DOCUMENT_FALLBACKS)
+    assert _sfnt_family_names("/definitely/not/a/font.ttc") == set(), "an unreadable file is silence"
 
     assert contrast_ok(LIGHT_THEME["text"], LIGHT_THEME["background"]), "theme text/bg must pass AA"
     assert not contrast_ok("1F2328", "1E2761"), "dark-on-dark must fail the guard"

@@ -1193,6 +1193,46 @@
       "tests": [
         "scripts/test-office-authoring-contract.mjs"
       ]
+    },
+    {
+      "id": "runtime-helper-path",
+      "protects": "A contract only names a helper the agent can actually reach in the RUNNING build, and only promises functions that helper really defines.",
+      "baseline": "The helpers and their contents are unchanged; what changes is that the path is absolute and exported instead of repo-relative.",
+      "failureFallback": "If the runtime-scripts directory cannot be resolved the variable is simply absent, and a skill script falls back to its previous relative lookup.",
+      "tests": [
+        "scripts/test-runtime-helper-path.mjs",
+        "scripts/test-office-authoring-contract.mjs"
+      ]
+    },
+    {
+      "id": "job-stderr-host-noise",
+      "protects": "A managed job's stderr shows what the JOB wrote, so a successful job is not mistaken for a failed one.",
+      "baseline": "The stderr log file is never rewritten, real job output is never filtered, and a job that truly failed still reads as failed.",
+      "failureFallback": "Only the host logger's own line format matches; anything else is passed through untouched, and what was removed is reported alongside.",
+      "tests": [
+        "scripts/test-job-observation.mjs",
+        "scripts/test-process-jobs-core.mjs"
+      ]
+    },
+    {
+      "id": "job-work-evidence",
+      "protects": "A job that exits 0 having processed nothing is distinguishable from one that did the work.",
+      "baseline": "Additive fields only; no job status, exit code or existing field changes, and nothing calls a success a failure.",
+      "failureFallback": "The fields state what was OBSERVED (a positive progress count, a percent, or output files) and never infer a verdict, so a legitimately fast job is not accused.",
+      "tests": [
+        "scripts/test-job-observation.mjs",
+        "scripts/test-process-job-observability.mjs"
+      ]
+    },
+    {
+      "id": "cross-format-cjk-consistency",
+      "protects": "A set of PDFs exported from one source can be made to embed the same CJK font instead of a different substitute per format.",
+      "baseline": "The default declared family is unchanged, so an Office file delivered to a Windows reader still names Microsoft YaHei.",
+      "failureFallback": "When the installed font set cannot be read the preferred family is returned unchanged, which is exactly the previous behaviour.",
+      "tests": [
+        "scripts/test-office-style-helper.mjs",
+        "scripts/test-office-authoring-contract.mjs"
+      ]
     }
   ]
 }

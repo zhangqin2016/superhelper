@@ -187,8 +187,12 @@ def _resolve_cjk_font():
     actually embed, which an exists()-only chain does not."""
     import importlib.util
 
-    here = os.path.dirname(os.path.abspath(__file__))
-    helper = os.path.normpath(os.path.join(here, "..", "..", "..", "runtime-scripts", "lily_office_style.py"))
+    # The host exports where its own helpers live; walking up from a skill
+    # directory is a guess that can land on a different build.
+    scripts_dir = os.environ.get("LILY_RUNTIME_SCRIPTS") or os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "runtime-scripts")
+    )
+    helper = os.path.join(scripts_dir, "lily_office_style.py")
     try:
         if os.path.exists(helper):
             spec = importlib.util.spec_from_file_location("lily_office_style", helper)

@@ -8,6 +8,7 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { isHostNoiseOnlyFile, jobWorkEvidence, withoutHostNoise } = require("./job-observation");
 const { stopPid } = require("../process-tree-kill");
 const { latestWorkProgress } = require("../work-progress-protocol");
 const { sameJobGeneration, updateJobGeneration } = require("./process-job-generation").createJobGenerationGuard({ readRegistry, writeRegistry });
@@ -449,6 +450,8 @@ async function statusLegacyJob(input = {}, options = {}) {
     alive: isPidAlive(found.record.pid),
     stdoutBytes: fileSize(found.record.stdoutPath),
     stderrBytes: fileSize(found.record.stderrPath),
+    stderrHostNoiseOnly: isHostNoiseOnlyFile(found.record.stderrPath, { readRange, fileSize, tailBytes: DEFAULT_LOG_TAIL_BYTES }),
+    ...jobWorkEvidence({ progress, outputFiles: observed.outputFiles }),
     progress,
   };
 }
@@ -467,7 +470,8 @@ function logsLegacyJob(input = {}, options = {}) {
     jobId: found.id,
     ...withProgressObservability(compactJob(observed), latestProgressForRecord(observed)),
     stdout: readRange(observed.stdoutPath, { offset: input.stdoutOffset, tailBytes }),
-    stderr: readRange(observed.stderrPath, { offset: input.stderrOffset, tailBytes }),
+    // Host noise is not the job's output. The log file itself is untouched.
+    stderr: withoutHostNoise(readRange(observed.stderrPath, { offset: input.stderrOffset, tailBytes })),
     progress: latestProgressForRecord(observed),
   };
 }
