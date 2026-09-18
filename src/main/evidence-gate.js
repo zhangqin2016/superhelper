@@ -426,7 +426,15 @@ function assessFinalAnswerEvidence({
   };
 }
 
+/** Does this answer state that only part of the source was read? The single
+ *  definition of that question; the finalizer asks it rather than keeping a
+ *  second copy of the pattern. */
+function disclosesPartialSourceScope(text = "") {
+  return PARTIAL_SOURCE_DISCLOSURE_RE.test(String(text || ""));
+}
+
 module.exports = {
+  disclosesPartialSourceScope,
   assessFinalAnswerEvidence,
   extractHttpUrls,
   hasEvidenceKind,

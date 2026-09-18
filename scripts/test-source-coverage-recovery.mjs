@@ -120,4 +120,40 @@ check("the finalizer asks for the round and still delivers an answer either way"
   }
 });
 
+check("only an actual overclaim is erased — a negated or self-disclosing answer is not", () => {
+  const userText = "这份文档讲了什么";
+  const taskContract = buildTaskContract({ text: userText, files: [{ name: "proposal.docx", isImage: false }] });
+  const run = (assistant) => evaluateAnswerEvidence({
+    assistant,
+    taskContract,
+    turnPolicy: buildTurnPolicy({ text: userText, taskContract }),
+    evidenceSummary: partialSummary(12, 40),
+    inputFiles: [{ name: "proposal.docx", isImage: false }],
+    userText,
+  }).assistant;
+
+  // The claim this branch exists for: totality asserted over pages nobody saw.
+  assert.ok(!run("图片完整展示了三个产品及全部价格。").includes("三个产品"), "an overclaim is still replaced");
+
+  // A totality word NEGATED is the opposite of an overclaim, and an answer that
+  // already states its own scope cannot be claiming the whole source. Matching
+  // the word alone erased both — the second one is an answer being honest about
+  // the very shortfall the branch exists to catch, which is worse than the
+  // confabulation it was written to stop.
+  for (const honest of [
+    "文档没有完整列出所有字段，我只看到前 12 页。",
+    "这份材料未能完整解析，以下只覆盖读到的部分。",
+    "文档里我读到的章节提出了三阶段架构。",
+  ]) {
+    assert.ok(run(honest).includes(honest.slice(0, 8)), `an honest answer survives: ${honest}`);
+  }
+
+  // The disclosure question has one definition, asked of the gate rather than
+  // kept as a second copy of its pattern.
+  const gate = require("../src/main/evidence-gate.js");
+  assert.equal(typeof gate.disclosesPartialSourceScope, "function");
+  assert.equal(gate.disclosesPartialSourceScope("只解析了部分内容"), true);
+  assert.equal(gate.disclosesPartialSourceScope("全文已完整解析"), false);
+});
+
 console.log(`\n${checks} checks passed (source coverage recovery)`);

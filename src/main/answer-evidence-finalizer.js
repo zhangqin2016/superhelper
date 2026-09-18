@@ -135,11 +135,24 @@ function unverifiedHonestyNote(userText = "") {
  * PARTIAL_SOURCE_DISCLOSURE_RE in evidence-gate.js on purpose — a disclosure
  * that the gate would not recognise is not a disclosure.
  */
+// A totality word NEGATED is the opposite of an overclaim — "未能完整解析",
+// "没有完整列出", "could not read the whole file" are answers being honest about
+// the very shortfall this branch exists to catch. Matching the word alone erased
+// them, which is worse than the confabulation it was written to stop.
+const NEGATED_WHOLE_CLAIM_RE =
+  /(?:没有?|未能?|不曾|无法|尚未|cannot|could not|couldn't|did not|didn't|not)\s*[^。.!?；;]{0,8}(?:完整|全部|所有|整份|entire|whole|complete|all)/i;
+
 // The answer asserting it covered the whole source. Narrow on purpose: it only
 // has to catch a totality claim, because anything short of one is compatible
 // with a partial read once the scope note is appended.
 const WHOLE_SOURCE_CLAIM_RE =
   /(完整(?:展示|列出|包含|覆盖|呈现|解析|读取)|全部(?:内容|页面|条目|价格|数据|字段|章节)|所有(?:页面|条目|内容|字段|章节)|整份(?:文档|文件|报告)|\b(?:the )?(?:entire|whole|complete) (?:document|file|image|attachment|report)\b|\ball (?:pages|items|entries|prices|fields|sections)\b)/i;
+
+/** The gate's own definition of "this answer states its scope", reused rather than re-invented. */
+function disclosesPartialScope(text = "") {
+  try { return require("./evidence-gate").disclosesPartialSourceScope(String(text || "")); }
+  catch { return false; }
+}
 
 function partialSourceScopeNote(evidenceSummary = null, userText = "") {
   const language = answerLanguage(userText);
@@ -338,7 +351,12 @@ function evaluateAnswerEvidence({
       // itself reports hasEvidence: true, failing only on the missing scope
       // sentence. Supply the sentence; never erase the work.
       const partial = evidenceSummary?.sourceContentCoverage?.status === "partial";
-      const overclaimsWholeSource = WHOLE_SOURCE_CLAIM_RE.test(original);
+      // An answer that already discloses partial scope cannot be claiming the
+      // whole source, whatever words it used — that relation is structural, so
+      // the gate's own disclosure test settles it rather than more prose rules.
+      const overclaimsWholeSource = WHOLE_SOURCE_CLAIM_RE.test(original)
+        && !NEGATED_WHOLE_CLAIM_RE.test(original)
+        && !disclosesPartialScope(original);
       // Before deciding how to word a shortfall, ask whether it can simply be
       // removed: sources that were never opened can be opened. The scope note
       // below stays as the honest fallback for when they cannot.
