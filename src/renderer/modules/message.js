@@ -50,7 +50,7 @@ import {
   liveTurnFromRecord,
 } from "./turn-view-model.js";
 import { createLiveTurnArticleShell } from "./turn-article-shell.js";
-import { mountTurnArticle, reconcileLiveArticles } from "./turn-article-mount.js";
+import { findLiveArticle, hasLiveArticle, mountTurnArticle, reconcileLiveArticles } from "./turn-article-mount.js";
 import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { patchLiveToolClocks } from "./turn-live-clock-patch.js";
 import { touchSessionUsage, updateSessionRunningIndicators } from "./project-tree.js";
@@ -124,7 +124,6 @@ function view(sessionId) {
       sessionId,
       panel: null,
       listEl: null,
-      liveArticles: new Map(),
       renderGeneration: 0,
       savedScrollTop: null,
     });
@@ -208,7 +207,7 @@ export function removeSessionMessages(sessionId) {
 
 export function shouldPreserveSessionView(sessionId) {
   const v = view(sessionId);
-  if ([...v.liveArticles.values()].some((article) => article?.isConnected)) return true;
+  if (hasLiveArticle(v.listEl)) return true;
   return Boolean(v.listEl?.querySelector(".runtime-user-message, .assistant-turn-article"));
 }
 
@@ -256,7 +255,6 @@ export function renderConversation(sessionId, opts = {}) {
   if (opts.force) {
     v.renderGeneration += 1;
     v.listEl.replaceChildren();
-    v.liveArticles.clear();
     renderedMessageKeys.set(sessionId, new Set());
     lastRuntimeVisualSig.delete(sessionId);
   }
@@ -365,7 +363,7 @@ function committedInsertAnchor(sessionId, runtime) {
   // message before the old assistant answer.
   const turnId = liveInsertAnchorTurnId(runtime);
   if (!turnId) return null;
-  const article = view(sessionId).liveArticles.get(turnId);
+  const article = findLiveArticle(view(sessionId).listEl, turnId);
   return article?.isConnected ? article : null;
 }
 
@@ -465,7 +463,7 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
   appendArticleActions(article, sessionId, message);
   // One turn, one article: a committed card replaces whatever already stands
   // for this turn, in place, instead of being appended beside it.
-  mountTurnArticle(v.listEl, article, { kind: "sealed", beforeNode, liveArticles: v.liveArticles });
+  mountTurnArticle(v.listEl, article, { kind: "sealed", beforeNode });
 }
 
 const COPY_ICON_SVG =
@@ -657,16 +655,14 @@ function appendScheduledDraftRow(container, label, value) {
 
 function ensureLiveArticle(sessionId, liveTurn) {
   const v = ensurePanel(sessionId);
-  let article = v.liveArticles.get(liveTurn.turnId);
-  if (article) return article;
+  const existing = findLiveArticle(v.listEl, liveTurn.turnId);
+  if (existing) return existing;
 
-  article = createLiveTurnArticleShell(liveTurn);
+  const article = createLiveTurnArticleShell(liveTurn);
   // Refused when the committed card for this turn is already standing: the
   // stored record is the finished answer, and a live shell over it would be a
   // strictly emptier view of the same turn.
-  if (!mountTurnArticle(v.listEl, article, { kind: "live", liveArticles: v.liveArticles })) return null;
-  v.liveArticles.set(liveTurn.turnId, article);
-  return article;
+  return mountTurnArticle(v.listEl, article, { kind: "live" });
 }
 
 function renderRuntimeSession(sessionId, opts = {}) {
@@ -690,16 +686,13 @@ function renderRuntimeSession(sessionId, opts = {}) {
   // Sweep the whole live set, not just the turn currently holding the slot:
   // a turn that ended while another was starting leaves its article behind
   // with nothing that would ever look at it again.
-  reconcileLiveArticles(view(sessionId).listEl, view(sessionId).liveArticles);
+  reconcileLiveArticles(view(sessionId).listEl);
   const liveMode = liveTurnRenderMode(runtime);
   if (runtime.liveTurn) {
     if (liveMode === "remove-duplicate") {
       // The committed card already represents this turn — drop the duplicate
       // live text article instead of rendering it after the card.
-      const v = view(sessionId);
-      const stale = v.liveArticles.get(runtime.liveTurn.turnId);
-      if (stale?.isConnected) stale.remove();
-      v.liveArticles.delete(runtime.liveTurn.turnId);
+      findLiveArticle(view(sessionId).listEl, runtime.liveTurn.turnId)?.remove();
     } else if (liveMode === "render") {
       renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
     }
@@ -761,7 +754,7 @@ function refreshLiveStatusOnly(sessionId) {
   const runtime = getRuntimeSession(sessionId);
   const live = runtime.liveTurn;
   if (!live || live.final) return;
-  const article = view(sessionId).liveArticles.get(live.turnId);
+  const article = findLiveArticle(view(sessionId).listEl, live.turnId);
   if (!article?.isConnected) return;
   // Heartbeat tick: status line + running tool clocks only. Full renders stay
   // event-driven (visual signature) so a long-running tool never costs a

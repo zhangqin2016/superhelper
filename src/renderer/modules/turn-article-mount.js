@@ -49,23 +49,53 @@ function isSealed(article) {
   return Boolean(article?.classList?.contains("is-sealed"));
 }
 
+function isLive(article) {
+  return Boolean(article?.classList?.contains("is-live"));
+}
+
+/**
+ * The live article for a turn, read from the list itself.
+ *
+ * There is deliberately no second index of these. A Map of live articles kept
+ * beside the DOM is a copy of state the DOM already holds, and the two drift:
+ * the reported empty cards were exactly that drift — entries that outlived the
+ * node they described, or nodes no entry pointed at any more. `is-live` and
+ * `is-sealed` are toggled from the view model on every render, so the list is
+ * both the display and the record of what is live.
+ */
+export function findLiveArticle(listEl, turnId) {
+  if (!listEl || !turnId) return null;
+  for (const child of listEl.children || []) {
+    if (child?.dataset?.turnId === turnId && isLive(child)) return child;
+  }
+  return null;
+}
+
+/** Whether any turn is still rendering live in this list. */
+export function hasLiveArticle(listEl) {
+  if (!listEl) return false;
+  for (const child of listEl.children || []) {
+    if (isLive(child) && child.isConnected) return true;
+  }
+  return false;
+}
+
 /**
  * @param {Element} listEl the session's conversation list
  * @param {Element} article the article to mount
- * @param {{ kind?: "live"|"sealed", beforeNode?: Node|null, liveArticles?: Map }} options
+ * @param {{ kind?: "live"|"sealed", beforeNode?: Node|null }} options
  * @returns {Element|null} the mounted article, or null when a live shell was
  *   refused because the committed card for that turn is already standing.
  */
 export function mountTurnArticle(listEl, article, options = {}) {
   if (!listEl || !article) return null;
-  const { kind = "sealed", beforeNode = null, liveArticles = null } = options;
+  const { kind = "sealed", beforeNode = null } = options;
   const turnId = article.dataset?.turnId || "";
   const existing = findMountedTurn(listEl, turnId, article);
 
   if (existing) {
     if (kind === "live" && isSealed(existing)) return null;
     listEl.replaceChild(article, existing);
-    if (liveArticles?.get(turnId) === existing) liveArticles.delete(turnId);
     return article;
   }
   if (article.parentNode === listEl) return article;
@@ -76,44 +106,42 @@ export function mountTurnArticle(listEl, article, options = {}) {
 }
 
 /**
- * The live-article set may only hold turns that are still live.
+ * A live article is only ever a duplicate once the same turn has a committed
+ * card in the list.
  *
- * `runtime.liveTurn` is a single slot, so at most one turn per session is live
- * at a time — yet the map that tracks live articles had no rule saying so, and
- * the only cleanup ran against whichever turn happened to occupy that slot when
- * a render pass fired. The real event order leaves no room for it:
+ * `runtime.liveTurn` is a single slot, and the old cleanup ran against whichever
+ * turn happened to occupy it when a render pass fired. The real event order
+ * leaves no room for that:
  *
- *   assistant.final (turn A) → turn.completed (A) → user.committed (B)
+ *   assistant.final (A) → turn.completed (A) → user.committed (B)
  *   → turn.started (B), which overwrites the slot
  *
- * Miss that window and A's live article is orphaned in the DOM with nothing
- * left that will ever look at it again — standing under the NEXT user message,
- * because the new bubble is inserted before whatever article held the slot. It
- * survives until a reload, which is why quitting made it disappear.
+ * Miss the window and A's live article is orphaned with nothing left that will
+ * ever look at it again — standing under the NEXT user message, because a new
+ * bubble is inserted before whatever article holds the slot. The same gap shows
+ * at the END of a turn, when the committed card lands while the live article is
+ * still the current one. Both disappeared on restart, because a reload builds no
+ * live articles at all.
  *
- * The test is one thing only: is a committed card for this same turn already
- * in the list? Whether the turn still holds the live slot is irrelevant — the
- * duplicate is just as visible at the moment a turn ENDS, when the committed
- * card lands while the live article is still the current one. And a running
- * turn has no committed card by definition, so this can never take down an
- * article that is still doing its job.
+ * So the test is one thing, independent of the slot and of any bookkeeping: is a
+ * committed card for this same turn already in the list? A running turn has no
+ * committed card by definition, so this can only ever de-duplicate — never take
+ * down an article still doing its job, and never make an answer disappear when
+ * the live article is its only copy. A duplicate is a display bug; a
+ * disappearing answer is a lost one. [gate: one-turn-one-article]
  *
- * Removal is therefore only ever a de-duplication: a turn whose live article is
- * its only copy is kept, answer intact, even though it is no longer live. A
- * duplicate is a display bug; a disappearing answer is a lost one.
- * [gate: one-turn-one-article]
- *
- * @returns {number} how many stale articles were dropped
+ * @returns {number} how many duplicate live articles were dropped
  */
-export function reconcileLiveArticles(listEl, liveArticles) {
-  if (!listEl || !liveArticles?.forEach) return 0;
+export function reconcileLiveArticles(listEl) {
+  if (!listEl?.children) return 0;
   let dropped = 0;
-  for (const [turnId, article] of [...liveArticles]) {
-    if (!article?.isConnected) { liveArticles.delete(turnId); continue; }
+  for (const article of [...listEl.children]) {
+    if (!isLive(article)) continue;
+    const turnId = article.dataset?.turnId || "";
+    if (!turnId) continue;
     const committed = findMountedTurn(listEl, turnId, article);
     if (!committed || !isSealed(committed)) continue; // its only copy — keep it
     article.remove();
-    liveArticles.delete(turnId);
     dropped += 1;
   }
   return dropped;

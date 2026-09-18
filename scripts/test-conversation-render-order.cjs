@@ -23,16 +23,19 @@ app.whenReady().then(async () => {
     const keyModel = await import('${moduleBase}message-render-keys.js');
     let windowRenderer = {};
     try { windowRenderer = await import('${moduleBase}committed-window-renderer.js'); } catch {}
+    // A live article is now identified from the list itself (class + turn id),
+    // not from a Map kept beside it, so the harness exercises the real lookup.
+    const mount = await import('${moduleBase}turn-article-mount.js');
     const failures = [];
     const check = (ok, label) => { if (!ok) failures.push(label); };
     const make = n => ({role:'user',turnId:'t'+n,content:'m'+n,timestamp:new Date(1700000000000+n*1000).toISOString()});
     function harness(messages) {
       const listEl = document.createElement('section'); document.body.append(listEl);
-      const panel = {listEl, renderGeneration:0, liveArticles:new Map()};
+      const panel = {listEl, renderGeneration:0};
       const runtime = {committedMessages:messages};
       const frames = [], keys = new Map(), views = new Map([['audit',panel]]);
       const append = (_id,m,anchor,key) => { const el=document.createElement('article'); el.dataset.messageKey=key; el.textContent=m.content; listEl.insertBefore(el,anchor); };
-      const scope = {...model,...keyModel,...windowRenderer,
+      const scope = {...model,...keyModel,...windowRenderer,...mount,
         getRuntimeSession:()=>runtime, renderedMessageKeys:keys, sessionViews:views,
         view:()=>panel,ensurePanel:()=>panel,
         appendUserMessage:append,appendFinalAssistantArticle:append,appendSwitchNoticeArticle:append,
@@ -59,8 +62,9 @@ app.whenReady().then(async () => {
     reset.panel.renderGeneration++;reset.listEl.replaceChildren();reset.keys.set('audit',new Set());
     reset.runtime.committedMessages=[make(200)];reset.render();reset.drain();
     check(reset.order().join(',')==='m200','old pump cannot resurrect history after rebuild');
-    const live=harness([make(0)]);const article=document.createElement('article');live.listEl.append(article);
-    live.panel.liveArticles.set('t0',article);live.runtime.turnId='t0';live.runtime.liveTurn={turnId:'t0'};
+    const live=harness([make(0)]);const article=document.createElement('article');
+    article.className='assistant-turn-article is-live';article.dataset.turnId='t0';live.listEl.append(article);
+    live.runtime.turnId='t0';live.runtime.liveTurn={turnId:'t0'};
     live.runtime.committedMessages.push({...make(0),role:'assistant',content:'answer'});live.render();
     check(live.listEl.lastChild===article && live.order().join(',')==='m0','active answer stays live and last');
     live.runtime.liveTurn.final={type:'turn.completed'};live.render();live.drain();
@@ -82,8 +86,9 @@ app.whenReady().then(async () => {
     removed.panel.renderGeneration++;removed.listEl.remove();removed.drain();
     check(removed.order().length===5,'invalidated detached panel stops its old pump');
     const boundary=harness([make(0)]);boundary.render();
-    const finalArticle=document.createElement('article');finalArticle.textContent='previous final';boundary.listEl.append(finalArticle);
-    boundary.panel.liveArticles.set('t0',finalArticle);boundary.runtime.liveTurn={turnId:'t0',final:{type:'turn.completed'}};
+    const finalArticle=document.createElement('article');finalArticle.textContent='previous final';
+    finalArticle.className='assistant-turn-article is-live';finalArticle.dataset.turnId='t0';boundary.listEl.append(finalArticle);
+    boundary.runtime.liveTurn={turnId:'t0',final:{type:'turn.completed'}};
     boundary.runtime.committedMessages.push(make(1));boundary.render();
     check([...boundary.listEl.children].map(el=>el.textContent).join(',')==='m0,previous final,m1','completed live answer retains its position before the next turn starts');
     const duplicate=harness([make(0),make(0),make(1)]);duplicate.render();duplicate.drain();
