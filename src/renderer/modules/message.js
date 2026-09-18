@@ -50,7 +50,7 @@ import {
   liveTurnFromRecord,
 } from "./turn-view-model.js";
 import { createLiveTurnArticleShell } from "./turn-article-shell.js";
-import { mountTurnArticle } from "./turn-article-mount.js";
+import { mountTurnArticle, reconcileLiveArticles } from "./turn-article-mount.js";
 import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { patchLiveToolClocks } from "./turn-live-clock-patch.js";
 import { touchSessionUsage, updateSessionRunningIndicators } from "./project-tree.js";
@@ -687,6 +687,10 @@ function renderRuntimeSession(sessionId, opts = {}) {
     nearBottom: isNearBottom(panel),
   });
   renderCommittedMessages(sessionId, { allowEvict: shouldFollow });
+  // Sweep the whole live set, not just the turn currently holding the slot:
+  // a turn that ended while another was starting leaves its article behind
+  // with nothing that would ever look at it again.
+  reconcileLiveArticles(view(sessionId).listEl, view(sessionId).liveArticles);
   const liveMode = liveTurnRenderMode(runtime);
   if (runtime.liveTurn) {
     if (liveMode === "remove-duplicate") {

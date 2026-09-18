@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
 
   const moduleUrl = "./modules/turn-article-mount.js";
   const result = await win.webContents.executeJavaScript(`(async () => {
-    const { mountTurnArticle } = await import(${JSON.stringify(moduleUrl)});
+    const { mountTurnArticle, reconcileLiveArticles } = await import(${JSON.stringify(moduleUrl)});
     const failures = [];
     const ok = [];
     const expect = (name, condition, detail) => {
@@ -172,6 +172,75 @@ app.whenReady().then(async () => {
       const el = list();
       expect("a beforeNode from another list is ignored, not thrown on",
         mountTurnArticle(el, make("t1", "sealed", "x"), { kind: "sealed", beforeNode: document.createElement("div") }) !== null);
+    }
+
+    // --- the stale-live-article cases, from the real event order ---
+
+    // 11. A turn that ENDS: the committed card lands while the live article is
+    //     still the current one. That is the "结束的时候也多一个" report.
+    {
+      const el = list();
+      const live = make("t1", "live", "live");
+      const liveArticles = new Map([["t1", live]]);
+      el.appendChild(live);
+      const sealed = make("t1", "sealed", "answer");
+      el.appendChild(sealed);
+      const dropped = reconcileLiveArticles(el, liveArticles);
+      expect("a finished turn's live article goes once its committed card is shown",
+        dropped === 1 && ids(el).join(",") === "t1:answer", ids(el).join(","));
+      expect("and the map forgets it", liveArticles.size === 0);
+    }
+
+    // 12. The orphan: turn A ended, turn B took the live slot, A's article was
+    //     left behind under B's user message. Nothing ever looked at it again.
+    {
+      const el = list();
+      const a = make("tA", "live", "orphan");
+      const b = make("tB", "live", "current");
+      const liveArticles = new Map([["tA", a], ["tB", b]]);
+      el.append(make("tA", "sealed", "A-answer"), a, b);
+      const dropped = reconcileLiveArticles(el, liveArticles);
+      expect("the orphan from the previous turn is swept even though B holds the slot",
+        dropped === 1 && ids(el).join(",") === "tA:A-answer,tB:current", ids(el).join(","));
+      expect("and the running turn's article is untouched", liveArticles.get("tB") === b);
+    }
+
+    // 13. Never a disappearing answer: with no committed card, a live article is
+    //     the turn's only copy and must survive, live slot or not.
+    {
+      const el = list();
+      const running = make("t1", "live", "running");
+      const finished = make("t2", "live", "only-copy");
+      const liveArticles = new Map([["t1", running], ["t2", finished]]);
+      el.append(running, finished);
+      expect("nothing is dropped while no committed card exists",
+        reconcileLiveArticles(el, liveArticles) === 0 && el.children.length === 2, ids(el).join(","));
+      expect("and both stay in the map", liveArticles.size === 2);
+    }
+
+    // 14. A live article for a turn whose only other card is ALSO live is not a
+    //     committed duplicate — precedence must not be inferred from presence.
+    {
+      const el = list();
+      const one = make("t1", "live", "one");
+      const two = make("t1", "live", "two");
+      el.append(one, two);
+      const liveArticles = new Map([["t1", two]]);
+      expect("a live sibling is not grounds for removal", reconcileLiveArticles(el, liveArticles) === 0, ids(el).join(","));
+    }
+
+    // 15. Detached entries are forgotten without touching the DOM.
+    {
+      const el = list();
+      const gone = make("t1", "live", "detached");
+      const liveArticles = new Map([["t1", gone]]);
+      expect("a detached article leaves the map", reconcileLiveArticles(el, liveArticles) === 0 && liveArticles.size === 0);
+    }
+
+    // 16. Bad input never throws inside a render pass.
+    {
+      expect("null list sweeps nothing", reconcileLiveArticles(null, new Map()) === 0);
+      expect("null map sweeps nothing", reconcileLiveArticles(list(), null) === 0);
     }
 
     return { ok: ok.length, failures };

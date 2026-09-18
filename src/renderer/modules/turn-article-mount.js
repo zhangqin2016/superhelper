@@ -75,4 +75,48 @@ export function mountTurnArticle(listEl, article, options = {}) {
   return article;
 }
 
+/**
+ * The live-article set may only hold turns that are still live.
+ *
+ * `runtime.liveTurn` is a single slot, so at most one turn per session is live
+ * at a time — yet the map that tracks live articles had no rule saying so, and
+ * the only cleanup ran against whichever turn happened to occupy that slot when
+ * a render pass fired. The real event order leaves no room for it:
+ *
+ *   assistant.final (turn A) → turn.completed (A) → user.committed (B)
+ *   → turn.started (B), which overwrites the slot
+ *
+ * Miss that window and A's live article is orphaned in the DOM with nothing
+ * left that will ever look at it again — standing under the NEXT user message,
+ * because the new bubble is inserted before whatever article held the slot. It
+ * survives until a reload, which is why quitting made it disappear.
+ *
+ * The test is one thing only: is a committed card for this same turn already
+ * in the list? Whether the turn still holds the live slot is irrelevant — the
+ * duplicate is just as visible at the moment a turn ENDS, when the committed
+ * card lands while the live article is still the current one. And a running
+ * turn has no committed card by definition, so this can never take down an
+ * article that is still doing its job.
+ *
+ * Removal is therefore only ever a de-duplication: a turn whose live article is
+ * its only copy is kept, answer intact, even though it is no longer live. A
+ * duplicate is a display bug; a disappearing answer is a lost one.
+ * [gate: one-turn-one-article]
+ *
+ * @returns {number} how many stale articles were dropped
+ */
+export function reconcileLiveArticles(listEl, liveArticles) {
+  if (!listEl || !liveArticles?.forEach) return 0;
+  let dropped = 0;
+  for (const [turnId, article] of [...liveArticles]) {
+    if (!article?.isConnected) { liveArticles.delete(turnId); continue; }
+    const committed = findMountedTurn(listEl, turnId, article);
+    if (!committed || !isSealed(committed)) continue; // its only copy — keep it
+    article.remove();
+    liveArticles.delete(turnId);
+    dropped += 1;
+  }
+  return dropped;
+}
+
 export { findMountedTurn };

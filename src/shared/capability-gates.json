@@ -1338,9 +1338,9 @@
     },
     {
       "id": "one-turn-one-article",
-      "protects": "A finished answer stays finished: one turn occupies exactly one card in the conversation, whatever sequence of live events, commits, re-renders or pagination passes led there.",
+      "protects": "A finished answer stays finished and a running one shows once: a turn occupies exactly one card in the conversation, whatever sequence of live events, commits, re-renders, pagination passes or turn handovers led there.",
       "baseline": "Nothing is suppressed. Identity decides placement, not content: an article carrying a turn id replaces the one already standing for that turn, in place, so position and every block of the newest render are kept. Articles without a turn id — notices, scheduled drafts, binding cards — are never reconciled and keep the plain append/insert behaviour, and reconciliation is scoped to one session's list.",
-      "failureFallback": "A missing or empty turn id means no identity, so the article is appended exactly as before; a null list or article returns null instead of throwing inside a render pass; a beforeNode from another list falls back to append. A live shell is refused over a committed card because the stored record is the finished answer — never the other way round, so a real answer can never be replaced by an emptier view of itself.",
+      "failureFallback": "A missing or empty turn id means no identity, so the article is appended exactly as before; a null list or article returns null instead of throwing inside a render pass; a beforeNode from another list falls back to append. A live shell is refused over a committed card because the stored record is the finished answer — never the other way round, so a real answer can never be replaced by an emptier view of itself. The stale-article sweep removes a live card ONLY when a committed card for the same turn is already in the list, so it is always a de-duplication and never a removal: a running turn has no committed card by definition, and a finished turn whose live article is its only copy keeps it. A null list or map sweeps nothing instead of throwing inside a render pass.",
       "tests": [
         "scripts/test-one-turn-one-article.cjs",
         "scripts/test-turn-view-model.mjs"
