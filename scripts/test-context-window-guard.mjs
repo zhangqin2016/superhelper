@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+const elision = createRequire(import.meta.url)("../resources/opencode-plugins/lib/history-elision.cjs");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginUrl = pathToFileURL(path.join(__dirname, "../resources/opencode-plugins/context-window-guard.js")).href;
@@ -43,7 +45,15 @@ const MARKER = "content trimmed to fit the model context window";
   await transform({}, { messages: msgs });
   const input = msgs[1].parts[0].state.input;
   assert.ok(input.content.length < huge.length, "the giant write INPUT is bounded (engine never trims tool input)");
-  assert.ok(input.content.includes(MARKER), "trimmed input carries the marker");
+  // Contract change, 2026-09-18: a write INPUT is a file body the model may be
+  // asked to reproduce, so it is replaced WHOLE by a pointer rather than
+  // excerpted. An excerpt reads as the whole file and the model completes the
+  // middle from imagination — observed in a long-task run, where a regenerated
+  // script was internally consistent but its supplier names had drifted.
+  assert.ok(elision.isElidedBody(input.content), "a file body becomes a pointer, not an excerpt");
+  assert.ok(input.content.includes("/points/data.json"), "and the pointer says where the real content is");
+  assert.ok(/read .*before editing or rewriting/i.test(input.content), "and what to do about it");
+  assert.ok(input.content.length < 400, `a pointer costs a line: ${input.content.length}`);
   assert.equal(input.filePath, "/points/data.json", "small input fields are preserved");
   assert.equal(msgs[0].parts[0].text, "build the data file", "small text parts are untouched");
 }

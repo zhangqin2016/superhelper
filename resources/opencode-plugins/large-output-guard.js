@@ -14,9 +14,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import elision from "./lib/history-elision.cjs";
 
 const MAX_CHARS = Math.max(8_000, Number(process.env.LILY_TOOL_OUTPUT_MAX_CHARS) || 32_000);
-const MARKER = "[lily: large tool output externalized]";
+// Kept as its own sentence — a tool OUTPUT is referential, so an excerpt still
+// helps — but under the shared prefix so every consumer recognises it.
+const MARKER = `${elision.CANONICAL_PREFIX} large tool output`;
 
 // NOTE: only the plugin factory is exported. The OpenCode plugin loader
 // instantiates EVERY export of a plugin file as a plugin, so exporting helper
@@ -54,7 +57,7 @@ function writeSidecar(baseDir, tool, text) {
 // Returns null when the text is within budget (no change needed). INTERNAL.
 function boundToolOutput(text, { maxChars = MAX_CHARS, ref = "" } = {}) {
   if (typeof text !== "string" || text.length <= maxChars) return null;
-  if (text.includes(MARKER)) return null; // already bounded — idempotent
+  if (elision.containsElision(text)) return null; // already bounded — idempotent
   const headLen = Math.floor(maxChars * 0.7);
   const tailLen = Math.max(0, maxChars - headLen - 400);
   const head = text.slice(0, headLen);
@@ -72,7 +75,7 @@ export const LargeOutputGuardPlugin = async (ctx = {}) => ({
       if (process.env.LILY_TOOL_OUTPUT_GUARD === "0") return;
       if (!output || typeof output !== "object") return;
       const text = resultText(output);
-      if (typeof text !== "string" || text.length <= MAX_CHARS || text.includes(MARKER)) return;
+      if (typeof text !== "string" || text.length <= MAX_CHARS || elision.containsElision(text)) return;
 
       const baseDir = String(
         (ctx && (ctx.directory || ctx.worktree)) ||

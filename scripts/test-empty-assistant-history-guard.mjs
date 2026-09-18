@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -29,7 +30,13 @@ const hooks = await EmptyAssistantHistoryGuardPlugin({});
 const transform = hooks["experimental.chat.messages.transform"];
 assert.equal(typeof transform, "function", "registers the messages.transform hook");
 
-const REPAIR_MARKER = "[lily: previous assistant turn contained no provider-visible response]";
+// Built from the shared contract (lib/history-elision.cjs) since 2026-09-18, so
+// the write backstop recognises it like every other placeholder Lily writes.
+const REPAIR_MARKER = createRequire(import.meta.url)("../resources/opencode-plugins/lib/history-elision.cjs").elide({
+  what: "an assistant turn with no provider-visible response",
+  why: "because the provider returned nothing to store",
+  action: "Treat it as an empty turn and continue from the user's request.",
+});
 
 // The customer failure: one persisted empty assistant row poisons every retry.
 {

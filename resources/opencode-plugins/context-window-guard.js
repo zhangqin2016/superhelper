@@ -25,6 +25,16 @@
 // so it never makes a healthy session dumber. The trimmed file/output already
 // lives on disk; the model can re-read it with file tools if it needs the rest.
 //
+// NOT ALL CONTENT MAY BE EXCERPTED. A tool output or an earlier answer survives
+// head+tail trimming — the model reasons about it and some text beats none. The
+// INPUT of a write/edit call does not: it is a file body the model may be asked
+// to REPRODUCE, and head+tail reads as a whole file, so the model completes the
+// middle from imagination and writes that back. Those slots are replaced by a
+// pointer to the file on disk instead — which cannot be mistaken for the whole,
+// says where the whole is, and costs a line instead of thousands of characters,
+// leaving that budget to parts that are still worth keeping. See
+// lib/history-elision.cjs.
+//
 // FAIL OPEN: never throws. Kill switch: LILY_CONTEXT_GUARD=0.
 // Budgets: LILY_CONTEXT_PART_MAX_CHARS (per part, default 48000),
 //          LILY_CONTEXT_TOKEN_BUDGET (whole request estimate, default 700000).
@@ -32,6 +42,8 @@
 // NOTE: only the plugin factory is exported (named + default) — the OpenCode
 // loader instantiates every export as a plugin factory, so a helper export would
 // crash. Keep all helpers INTERNAL.
+
+import elision from "./lib/history-elision.cjs";
 
 const PART_MAX_CHARS = Math.max(4_000, Number(process.env.LILY_CONTEXT_PART_MAX_CHARS) || 48_000);
 // Lily sets LILY_CONTEXT_TOKEN_BUDGET per-run from the ACTIVE model's real
@@ -41,7 +53,7 @@ const PART_MAX_CHARS = Math.max(4_000, Number(process.env.LILY_CONTEXT_PART_MAX_
 // CONSERVATIVE (safe for a ~128k model) so an unknown window never overflows;
 // it is never a large guess that could break a small model.
 const TOKEN_BUDGET = Math.max(1_000, Number(process.env.LILY_CONTEXT_TOKEN_BUDGET) || 110_000);
-const MARKER = "[lily: content trimmed to fit the model context window]";
+const MARKER = elision.elide({ what: "content", action: "Re-read the source if you need the rest." });
 
 // Rough, CJK-aware token estimate (no tokenizer in a plugin). CJK ~1 token/char,
 // other text ~0.28 token/char. Deliberately conservative so we act early enough.
@@ -74,6 +86,14 @@ function trim(text, maxChars) {
 
 // The large string fields carried by a stored part. Returns [{get,set}] accessors
 // so we can measure and rewrite in place without knowing every part variant.
+function filePathFromInput(input) {
+  for (const key of ["filePath", "file_path", "path", "filename", "file"]) {
+    const value = input && input[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function stringSlots(part) {
   const slots = [];
   if (!part || typeof part !== "object") return slots;
@@ -82,12 +102,20 @@ function stringSlots(part) {
   }
   if (part.type === "tool" && part.state && typeof part.state === "object") {
     const st = part.state;
+    const tool = String(part.tool || "");
     if (typeof st.output === "string") slots.push({ get: () => st.output, set: (v) => { st.output = v; } });
     if (typeof st.error === "string") slots.push({ get: () => st.error, set: (v) => { st.error = v; } });
     if (st.input && typeof st.input === "object") {
+      const path = filePathFromInput(st.input);
       for (const key of Object.keys(st.input)) {
         if (typeof st.input[key] === "string") {
-          slots.push({ get: () => st.input[key], set: (v) => { st.input[key] = v; } });
+          slots.push({
+            get: () => st.input[key],
+            set: (v) => { st.input[key] = v; },
+            // A file body may be reproduced, so it is pointed at rather than excerpted.
+            reproducible: elision.isReproducible(tool, key),
+            path,
+          });
         }
       }
     }
@@ -118,7 +146,8 @@ export const ContextWindowGuardPlugin = async () => ({
       // tool-output blobs). This alone resolves the common concentrated-blob case.
       for (const slot of slots) {
         const value = slot.get();
-        if (value.length > PART_MAX_CHARS) slot.set(trim(value, PART_MAX_CHARS));
+        if (value.length <= PART_MAX_CHARS) continue;
+        slot.set(slot.reproducible ? elision.elideFileBody({ path: slot.path, bytes: value.length }) : trim(value, PART_MAX_CHARS));
       }
 
       // Pass 2: if the whole request still exceeds the token budget (many medium
@@ -131,7 +160,8 @@ export const ContextWindowGuardPlugin = async () => ({
           .map((s) => ({ s, len: s.get().length }))
           .sort((a, b) => b.len - a.len);
         for (const { s, len } of ranked) {
-          if (len > cap) s.set(trim(s.get(), cap));
+          if (len <= cap) continue;
+          s.set(s.reproducible ? elision.elideFileBody({ path: s.path, bytes: len }) : trim(s.get(), cap));
         }
         total = slots.reduce((sum, sl) => sum + estimateTokens(sl.get()), 0);
       }

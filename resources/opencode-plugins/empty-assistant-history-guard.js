@@ -12,7 +12,17 @@
 //
 // Only the plugin factory is exported: OpenCode instantiates every export.
 
-const REPAIR_MARKER = "[lily: previous assistant turn contained no provider-visible response]";
+// Built from the shared contract like every other placeholder Lily puts in
+// history. This one stands in for content that never existed rather than content
+// that was removed, but the rule the model must follow is the same: it is not
+// material, and it must never become the body of a file.
+import elision from "./lib/history-elision.cjs";
+
+const REPAIR_MARKER = elision.elide({
+  what: "an assistant turn with no provider-visible response",
+  why: "because the provider returned nothing to store",
+  action: "Treat it as an empty turn and continue from the user's request.",
+});
 
 function isAssistant(message) {
   return (message?.info?.role || message?.role) === "assistant";

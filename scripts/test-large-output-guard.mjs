@@ -30,7 +30,10 @@ const huge = "H".repeat(50_000);
 const out1 = { output: huge };
 await hook({ tool: "read" }, out1);
 assert.ok(out1.output.length < huge.length, "large {output} tool result is capped for the model");
-assert.ok(out1.output.includes("[lily: large tool output externalized]"), "capped output carries the marker");
+// The sentence moved under the shared prefix (lib/history-elision.cjs) so every
+// consumer recognises it; a tool OUTPUT stays excerpted, because the model
+// reasons about it rather than reproducing it.
+assert.ok(out1.output.includes("[lily: elided large tool output"), "capped output carries the marker");
 const sidecarDir = path.join(tmp, ".lily-work", "tool-output");
 const files = fs.readdirSync(sidecarDir);
 assert.equal(files.length, 1, "full output is written to exactly one sidecar file");
@@ -40,7 +43,7 @@ assert.equal(fs.readFileSync(path.join(sidecarDir, files[0]), "utf8"), huge, "si
 const out2 = { content: [{ type: "text", text: "T".repeat(50_000) }, { type: "image", data: "x" }] };
 await hook({ tool: "bash" }, out2);
 const joined = out2.content.filter((c) => c.type === "text").map((c) => c.text).join("");
-assert.ok(joined.includes("[lily: large tool output externalized]"), "{content} text is capped");
+assert.ok(joined.includes("[lily: elided large tool output"), "{content} text is capped");
 assert.ok(out2.content.some((c) => c.type === "image"), "non-text parts survive");
 
 // small output untouched
@@ -51,7 +54,7 @@ assert.equal(out3.output, "tiny", "small output is untouched");
 // fail-open: bad input never throws / never mutates
 const out4 = { output: "S".repeat(50_000) };
 await hook(null, out4); // input null still fine
-assert.ok(out4.output.includes("[lily: large tool output externalized]") || out4.output.length === 50_000, "null input is handled fail-open");
+assert.ok(out4.output.includes("[lily: elided large tool output") || out4.output.length === 50_000, "null input is handled fail-open");
 await hook({ tool: "x" }, null); // null output must not throw
 await hook({ tool: "x" }, "raw-string-output"); // non-object output must not throw
 

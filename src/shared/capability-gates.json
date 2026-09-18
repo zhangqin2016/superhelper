@@ -1347,6 +1347,19 @@
         "scripts/test-one-turn-one-article.cjs",
         "scripts/test-turn-view-model.mjs"
       ]
+    },
+    {
+      "id": "history-elision-contract",
+      "protects": "Content Lily removes from history before a model call can never be mistaken for the real thing: a file body the model may be asked to reproduce is replaced by a pointer to it, never by an excerpt, and every placeholder says what was removed, where the real content is, and what to do about it.",
+      "baseline": "Nothing the model needs is lost. Referential content - a tool output, an earlier answer - is still excerpted head+tail, because the model reasons about it and some text beats none; only content it may be asked to REPRODUCE is replaced whole. The real content is on disk and the marker names the path, so a re-read restores everything. The pointer is also far smaller than the excerpt it replaces, which leaves context budget for parts still worth keeping.",
+      "failureFallback": "Recognition is anchored at the start of a body, so a real file that merely quotes a marker is never refused; a marker with no path still tells the model to read the file before rewriting; an unknown or legacy marker is still recognised, because every sentence written before this contract is listed. If the contract module cannot be loaded, the guards fail open exactly as before - they never throw and never break a turn.",
+      "tests": [
+        "scripts/test-history-elision.mjs",
+        "scripts/test-context-window-guard.mjs",
+        "scripts/test-live-file-history-guard.mjs",
+        "scripts/test-large-output-guard.mjs",
+        "scripts/test-empty-assistant-history-guard.mjs"
+      ]
     }
   ]
 }

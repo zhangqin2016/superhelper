@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import elision from "./lib/history-elision.cjs";
 
 const MAX_HASH_BYTES = 8 * 1024 * 1024;
 const MAX_SESSIONS = 128;
@@ -97,16 +98,16 @@ function sessionIDFrom(input, messages = []) {
 // It must understand the call succeeded and only the body is elided, otherwise
 // it "re-writes" the file from what it sees (2026-09-14 field case: the marker
 // itself was written to disk six times).
+// Built from the shared contract, so every marker Lily writes says the same
+// three things: what was removed, where the real content is, and what to do.
+// Recognition is shared too: this file used to know two of the four markers, so
+// a body carrying either of the other two was accepted as real file content.
 function historicalMarker(file) {
-  return `[lily: this earlier tool call succeeded; its file body is omitted from history because ${file} has since changed on disk. Never copy this marker into a file — read the current file before editing]`;
+  return elision.elideFileBody({ path: file, why: "because it has since changed on disk" });
 }
 
-const MARKER_PREFIX = "[lily: this earlier tool call succeeded";
-const LEGACY_MARKER_PREFIX = "[lily: historical snapshot omitted";
-
 function isMarkerText(value) {
-  const text = String(value || "");
-  return text.startsWith(MARKER_PREFIX) || text.startsWith(LEGACY_MARKER_PREFIX);
+  return elision.isElidedBody(String(value || ""));
 }
 
 /** Return a sanitized COPY of the tool args; never mutates the input object. */

@@ -44,7 +44,11 @@ try {
   await transform({ sessionID }, { messages });
   const historicalContent = messages[0].parts[0].state.input.content;
   assert.doesNotMatch(historicalContent, /old paragraph the user removed/, "stale historical file body is removed before the model call");
-  assert.match(historicalContent, /omitted from history.*read the current file/i, "sanitized history explains how to recover current content");
+  // Built from the shared contract since 2026-09-18: same three things as every
+  // other placeholder — what was removed, where the real content is, what to do.
+  assert.match(historicalContent, /removed from history/i, "sanitized history says what happened");
+  assert.match(historicalContent, /read .*before editing or rewriting/i, "and how to recover the current content");
+  assert.match(historicalContent, /never copy this text into a file/i, "and that it is not material");
 
   await assert.rejects(
     before(
@@ -165,7 +169,7 @@ try {
   assert.equal(originalCompletedInput.content, "export const v = 1;\n", "the original completed part object is never mutated in place");
   assert.equal(liveMessage.parts[0], completedPart, "the original message object is left untouched");
   assert.notEqual(liveMessages[0], liveMessage, "the model-bound list receives a sanitized COPY of the message");
-  assert.match(liveMessages[0].parts[0].state.input.content, /^\[lily: this earlier tool call succeeded/, "sanitized history says the call succeeded and forbids copying the marker");
+  assert.match(liveMessages[0].parts[0].state.input.content, /^\[lily: elided the body of /, "sanitized history says the call succeeded and forbids copying the marker");
   assert.equal(liveMessages[0].parts[1].state.input.content, "export const v = 3;\n", "the pending part is carried over unchanged in the copy");
 
   // Backstop: the marker itself can never become file content.
