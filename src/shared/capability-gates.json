@@ -283,7 +283,7 @@
     {
       "id": "attachment-content-grounding",
       "protects": "Image and document reading requests cannot be routed as generation or answered without readable source content.",
-      "baseline": "The platform resolves operation, source kind, and expected output before routing, then records source coverage separately from tool activity.",
+      "baseline": "The platform resolves operation, source kind, and expected output before routing, then records source coverage separately from tool activity. A PARTIAL read no longer erases the answer. Bytes were read, and evidence-gate says so itself — it reports hasEvidence: true and fails only when the answer does not disclose the partial scope — so the analysis of what was read stands and the missing sentence is appended, with how much was observed. The decision is three-way: nothing read is replaced (any content claim is fabricated by construction), an answer claiming to cover the whole source while only part was read is replaced (a false statement about pages nobody saw), and an honestly partial answer is kept with its scope disclosed in wording the gate itself accepts as a disclosure.",
       "failureFallback": "Preserve the original attachment and strong model path, disclose the read failure, and replace unsupported source claims before projection.",
       "tests": [
         "scripts/test-content-task-intent.mjs",
