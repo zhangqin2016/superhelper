@@ -89,12 +89,16 @@ check("the field case: the turn and its answer both leave the conversation", () 
 });
 
 check("history written before the tag existed is healed too", () => {
-  // The user's own session carries no tag — it predates this. A prefix rule
-  // reaches it, because the prompt embeds live counters and never matches whole.
-  const legacy = [
-    "Task continuity check: the native todo list still has unfinished todo items.",
-    "Progress: 7/12 completed. Continue from the current unfinished item.",
-  ].join("\n");
+  // The user's own session carries no tag — it predates this. The legacy rule
+  // reaches it by signature, because the prompt embeds live counters and never
+  // matches whole. The fixture is the REAL prompt with its tag stripped, rather
+  // than an abbreviation of it: a hand-written sample can drift from what the
+  // platform actually sent, and then the rule is tested against fiction.
+  const { buildTodoContinuationPrompt } = require("../src/main/opencode-todo-completion-policy.js");
+  const { stripInternalPromptMarker } = require("../src/main/internal-prompt-marker.js");
+  const legacy = stripInternalPromptMarker(
+    buildTodoContinuationPrompt({ completed: 7, total: 12, unfinished: [{ title: "ship it", status: "pending" }] }, 1, 3),
+  );
   assert.equal(isMarkedInternalPrompt(legacy), false, "it really has no tag");
   assert.equal(isInternalOnlyUserPromptText(legacy), true, "and is still recognised");
   const kept = stripInternalContinuationTurns([
@@ -154,6 +158,40 @@ check("history written before the tag existed is healed too", () => {
   assert.match(gate, /session\.sendPlatformPrompt\(\{ text: message \}\)/, "the required-tool nudge uses the seam");
   checks += 1;
   console.log("ok - every platform-composed prompt goes through the one stamped seam");
+}
+
+// Prose recognition is two different things wearing one name, and telling them
+// apart is what lets one of them be tightened:
+//   - the ENGINE's auto-continue prompt is upstream text we cannot tag, so
+//     matching its wording is a permanent interface, not legacy healing;
+//   - OUR old prompt is genuinely legacy — every copy sent since carries the tag.
+// The legacy entry is matched on two fixed fragments instead of a prefix,
+// because a prefix hid a user's message the moment they pasted that sentence
+// with anything after it.
+{
+  const marker = await import("../src/main/internal-prompt-marker.js");
+  const { ENGINE_AUTO_CONTINUE_PROMPTS, LEGACY_SELF_CHECK_SIGNATURES, isSelfCheckPromptText } = marker.default || marker;
+  const todo = [
+    "Task continuity check: the native todo list still has unfinished todo items.",
+    "Progress: 1/3 completed. Continue from the current unfinished item.",
+    "Continuation attempt: 1/3.",
+  ].join("\n");
+  assert.equal(isSelfCheckPromptText(todo), true, "history written before the tag is still recognised");
+  assert.equal(
+    isSelfCheckPromptText("Task continuity check: the native todo list still has unfinished todo items. 这是什么意思?"),
+    false,
+    "a user pasting that sentence and asking about it keeps their message",
+  );
+  const engine = "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.";
+  assert.equal(isSelfCheckPromptText(engine), true, "the engine's own auto-continue prompt is recognised whole");
+  assert.equal(isSelfCheckPromptText(`${engine} 帮我解释下`), false, "but quoting it never costs the user their message");
+  assert.equal(ENGINE_AUTO_CONTINUE_PROMPTS.size, 1, "upstream prompts are matched whole, so the set stays exact");
+  assert.ok(
+    LEGACY_SELF_CHECK_SIGNATURES.every((fragments) => fragments.length >= 2),
+    "a legacy signature is never a single fragment — prose is a weak signal and is asked to be specific",
+  );
+  checks += 1;
+  console.log("ok - upstream recognition and legacy healing are separate, and neither can swallow a user's message");
 }
 
 console.log(`\n${checks} checks passed (internal prompt provenance)`);

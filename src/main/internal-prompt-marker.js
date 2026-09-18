@@ -77,12 +77,33 @@ function stripInternalPromptMarker(text) {
 // whole sentence, because these prompts embed live counters. New internal
 // prompts must NOT be added here — tag them where they are built, or the next
 // reworded one leaks again.
-const LEGACY_SELF_CHECK_EXACT = new Set([
+/**
+ * The ENGINE's own auto-continue prompt.
+ *
+ * Upstream text we neither compose nor can tag, so recognising it by its wording
+ * is not legacy healing — it is the interface to a third party, and unlike the
+ * entries below it never goes away. Matched WHOLE, never as a prefix, so a user
+ * who quotes it cannot lose their message.
+ */
+const ENGINE_AUTO_CONTINUE_PROMPTS = new Set([
   "continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
 ]);
 
-const LEGACY_SELF_CHECK_PREFIXES = [
-  "task continuity check: the native todo list still has unfinished todo items.",
+/**
+ * OUR prompts as they were written before the tag existed.
+ *
+ * Every copy sent since carries the tag, so these reach stored history only.
+ * Each entry is a set of fixed fragments that must ALL appear, rather than a
+ * prefix: a prefix match hides a user's message the moment they paste that
+ * sentence with anything after it, and losing the user's own words is the one
+ * failure this gate exists to prevent. Prose is a weak signature, so it is
+ * asked to be specific.
+ */
+const LEGACY_SELF_CHECK_SIGNATURES = [
+  [
+    "task continuity check: the native todo list still has unfinished todo items.",
+    "continuation attempt:",
+  ],
 ];
 
 function normalizedPromptText(value) {
@@ -98,8 +119,10 @@ function normalizedPromptText(value) {
 function isSelfCheckPromptText(text) {
   if (isSelfCheckPrompt(text)) return true;
   const normalized = normalizedPromptText(text);
-  if (LEGACY_SELF_CHECK_EXACT.has(normalized)) return true;
-  return LEGACY_SELF_CHECK_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  if (ENGINE_AUTO_CONTINUE_PROMPTS.has(normalized)) return true;
+  return LEGACY_SELF_CHECK_SIGNATURES.some(
+    (fragments) => fragments.every((fragment) => normalized.includes(fragment)),
+  );
 }
 
 module.exports = {
@@ -108,6 +131,8 @@ module.exports = {
   internalPromptKind,
   isMarkedInternalPrompt,
   isSelfCheckPrompt,
+  ENGINE_AUTO_CONTINUE_PROMPTS,
+  LEGACY_SELF_CHECK_SIGNATURES,
   isSelfCheckPromptText,
   markInternalPrompt,
   stripInternalPromptMarker,
