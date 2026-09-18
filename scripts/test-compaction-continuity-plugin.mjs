@@ -160,10 +160,16 @@ try {
     assert.match(orchestrator, /compactionAnchor: require\("\.\/compaction-anchor"\)\.buildCompactionAnchor\(state, rawUserText\)/);
     const session = fs.readFileSync(new URL("../src/main/opencode-agent-session.js", import.meta.url), "utf8");
     assert.match(session, /_refreshCompactionMemory\(server, payload\)/);
-    assert.equal((session.match(/sendPrompt\(\{ text: note, files: \[\], guidance: this\.spawnOptions\?\.guidance \|\| "" \}\)/g) || []).length, 2, "both bare nudges now carry guidance");
+    // The two nudges still carry the session's guidance; since 2026-09-18 they get
+  // it from the one stamped seam instead of each writing the payload out.
+  assert.equal((session.match(/nudgePlatformPrompt\(this, \{ text: note/g) || []).length, 2, "both nudges go through the seam");
+  const seam = fs.readFileSync(new URL("../src/main/platform-prompt.js", import.meta.url), "utf8");
+  assert.match(seam, /guidance: session\.spawnOptions\?\.guidance \|\| ""/, "and the seam carries guidance");
     assert.doesNotMatch(session, /sendPrompt\(\{ text: note, files: \[\] \}\)/);
     const gate = fs.readFileSync(new URL("../src/main/required-tool-completion-gate.js", import.meta.url), "utf8");
-    assert.match(gate, /guidance: session\.spawnOptions\?\.guidance/);
+    // Guidance for this nudge now comes from the seam, asserted above, rather
+    // than from this file writing the payload out for itself.
+    assert.match(gate, /session\.sendPlatformPrompt\(\{ text: message \}\)/);
   });
 
   console.log(`\n${checks} checks passed (compaction continuity plugin)`);

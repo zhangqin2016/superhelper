@@ -20,6 +20,7 @@
  * Run: node scripts/test-internal-prompt-provenance.mjs
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -108,5 +109,51 @@ check("history written before the tag existed is healed too", () => {
     "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
   ), true);
 });
+
+// The rule that keeps provenance from rotting: every prompt the PLATFORM
+// composes goes through the session's one stamped seam. Text the USER typed —
+// the pending payload, a steer, the retries that re-deliver the same request
+// after an engine rebuild — is carried verbatim and must NEVER be stamped, or
+// the user's own message would be hidden from their conversation.
+//
+// This is enforced structurally rather than by review, because the field defect
+// was exactly a review miss: of three places the platform nudged itself, two
+// sent bare text and their questions surfaced as if the user had asked them.
+{
+  const files = [
+    "../src/main/opencode-agent-session.js",
+    "../src/main/platform-prompt.js",
+    "../src/main/required-tool-completion-gate.js",
+    "../src/main/opencode-todo-completion-policy.js",
+  ];
+  const USER_TEXT_PAYLOADS = /sendPrompt\((?:this\._pendingPromptPayload|retryPayload)\)/;
+  for (const file of files) {
+    const src = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    const lines = src.split("\n");
+    for (const [index, line] of lines.entries()) {
+      if (!/\.sendPrompt\(/.test(line)) continue;
+      const inSeam = /text: markInternalPrompt\(/.test(lines.slice(index, index + 6).join("\n"));
+      const userText = USER_TEXT_PAYLOADS.test(line) || /^\s*await server\.sendPrompt\(\{$/.test(line);
+      assert.ok(
+        inSeam || userText,
+        `${file}:${index + 1} sends a prompt outside the stamped seam: ${line.trim()}\n` +
+        "Platform-composed text must go through session.sendPlatformPrompt({ text, kind }).",
+      );
+    }
+  }
+  const seam = fs.readFileSync(new URL("../src/main/platform-prompt.js", import.meta.url), "utf8");
+  assert.match(seam, /kind = INTERNAL_PROMPT_KINDS\.RECOVERY/,
+    "the seam defaults to recovery: a platform prompt hides its question but keeps the model's answer, which is the user's work");
+  assert.match(seam, /text: markInternalPrompt\(text, kind\)/, "and it is the place the stamp goes on");
+  const session = fs.readFileSync(new URL("../src/main/opencode-agent-session.js", import.meta.url), "utf8");
+  assert.match(session, /nudgePlatformPrompt\(this, \{ text: note, reason: "completion gate follow-up"/,
+    "the incomplete-deliverable nudge uses the seam");
+  assert.match(session, /kind: INTERNAL_PROMPT_KINDS\.SELF_CHECK, reason: "unfinished todo continuation"/,
+    "the todo continuation keeps the self_check kind it shipped with");
+  const gate = fs.readFileSync(new URL("../src/main/required-tool-completion-gate.js", import.meta.url), "utf8");
+  assert.match(gate, /session\.sendPlatformPrompt\(\{ text: message \}\)/, "the required-tool nudge uses the seam");
+  checks += 1;
+  console.log("ok - every platform-composed prompt goes through the one stamped seam");
+}
 
 console.log(`\n${checks} checks passed (internal prompt provenance)`);

@@ -103,9 +103,29 @@ export function createCommittedMessageProjection(equivalentMessageIndex) {
     runtime.committedMessages[index] = mergeCommittedMessage(runtime.committedMessages[index], message);
   }
 
+  /**
+   * Place a message at the position its turn gives it, rather than at the end.
+   *
+   * A late or replayed `user.committed` for a turn that has already finished
+   * cannot simply be appended — the question would stand below its own answer.
+   * It was previously dropped instead, which is worse than either: an answer
+   * with no visible question, and no trace of what happened. A duplicate is
+   * visible and fixable; a vanished user message is neither.
+   */
+  function placeCommittedMessageInTurn(runtime, message, turnId) {
+    if (equivalentMessageIndex(runtime.committedMessages, message) >= 0) return false;
+    const answerIndex = runtime.committedMessages.findIndex(
+      (item) => item?.role === "assistant" && (item.turnId || item.record?.turnId) === turnId,
+    );
+    if (answerIndex < 0) runtime.committedMessages.push(message);
+    else runtime.committedMessages.splice(answerIndex, 0, message);
+    return true;
+  }
+
   return {
     dedupeCommittedMessages,
     mergeIncomingCommittedMessages,
+    placeCommittedMessageInTurn,
     upsertCommittedMessage,
   };
 }

@@ -1,4 +1,5 @@
 import store from "./state.js";
+import { createTurnMemory, isTerminalTurn, rememberTerminalTurn } from "./session-turn-memory.js";
 import { sanitizeNoticeForIngest } from "./engine-notice-policy.js";
 import { ingestPlatformNoticeEvent } from "./platform-notice-ingest.js";
 import { alertTaskDone } from "./task-alert.js";
@@ -29,8 +30,7 @@ const sessions = new Map();
 const sessionAccessOrder = new Set();
 const batchSeqBySession = new Map();
 const eventSeqBySession = new Map();
-const terminalTurns = new Set();
-const recoveryTurns = new Set();
+
 const listeners = new Set();
 let notifyQueued = false;
 export const SESSION_RUNTIME_CACHE_LIMIT = 40;
@@ -47,6 +47,7 @@ function emptySession(sessionId) {
     phase: "idle",
     turnId: null,
     liveTurn: null,
+    ...createTurnMemory(), // terminalTurns / recoveryTurns — see session-turn-memory.js
     taskLifecycle: null,
     taskLifecycles: [],
     queue: [],
@@ -85,12 +86,6 @@ function dropRuntimeSessionCache(sessionId) {
   batchSeqBySession.delete(sessionId);
   eventSeqBySession.delete(sessionId);
   sessionAccessOrder.delete(sessionId);
-  for (const key of [...terminalTurns]) {
-    if (key.startsWith(`${sessionId}:`)) terminalTurns.delete(key);
-  }
-  for (const key of [...recoveryTurns]) {
-    if (key.startsWith(`${sessionId}:`)) recoveryTurns.delete(key);
-  }
 }
 
 export function evictRuntimeSessionCaches(limit = SESSION_RUNTIME_CACHE_LIMIT) {
@@ -274,6 +269,7 @@ function equivalentCommittedMessageIndex(messages, message) {
 const {
   dedupeCommittedMessages,
   mergeIncomingCommittedMessages,
+  placeCommittedMessageInTurn,
   upsertCommittedMessage,
 } = createCommittedMessageProjection(equivalentCommittedMessageIndex);
 
@@ -516,7 +512,7 @@ export function applyRuntimeBatch(batch, opts = {}) {
       recoveryEvents.set(`${event.sessionId}:${event.turnId}`, event);
     }
   }
-  for (const [turnKey, event] of recoveryEvents) {
+  for (const event of recoveryEvents.values()) {
     const runtime = getRuntimeSession(event.sessionId);
     const live = runtime.liveTurn;
     if (!live || live.turnId !== event.turnId || live.final || live.recoveryEvent !== event) continue;
@@ -524,8 +520,9 @@ export function applyRuntimeBatch(batch, opts = {}) {
       runtime,
       live,
       event,
-      turnKey,
-      recoveryTurns,
+      // Keyed by turn alone now that the memory lives on the session it describes.
+      turnKey: event.turnId,
+      recoveryTurns: runtime.recoveryTurns,
       upsertCommittedMessage,
     });
   }
@@ -541,10 +538,8 @@ export function applyRuntimeEvent(event, opts = {}) {
   if (ingestPlatformNoticeEvent(event, runtime, upsertCommittedMessage)) return;
   if (event.type === "assistant.supersedes") return void removeSupersededAssistant(runtime, String(event.payload?.supersedes || ""));
   if (event.type === "user.committed") {
-    const turnKey = event.turnId ? `${event.sessionId}:${event.turnId}` : "";
-    if (turnKey && terminalTurns.has(turnKey)) return;
     const isSteer = Boolean(event.payload.steer);
-    upsertCommittedMessage(runtime, {
+    const committed = {
       role: "user",
       content: event.payload.text || "",
       files: event.payload.files || undefined,
@@ -552,7 +547,17 @@ export function applyRuntimeEvent(event, opts = {}) {
       timestamp: new Date(event.ts).toISOString(),
       ...(isSteer ? { steer: true, steerSeq: event.payload.steerSeq } : {}),
       meta: isSteer ? { steer: true, steerSeq: event.payload.steerSeq } : undefined,
-    });
+    };
+    // A turn that already finished cannot take an appended question: it would
+    // stand below its own answer. This used to be answered by dropping the
+    // event, which trades a visible ordering bug for an invisible loss — an
+    // answer with no question above it and nothing in the record to say why.
+    // Place it where the turn puts it instead.
+    if (isTerminalTurn(runtime, event.turnId)) {
+      placeCommittedMessageInTurn(runtime, committed, event.turnId);
+      return;
+    }
+    upsertCommittedMessage(runtime, committed);
     return;
   }
   if (event.type === "queue.updated") {
@@ -564,7 +569,7 @@ export function applyRuntimeEvent(event, opts = {}) {
     return;
   }
   if (event.type === "turn.started") {
-    if (terminalTurns.has(`${event.sessionId}:${event.turnId}`)) return;
+    if (isTerminalTurn(runtime, event.turnId)) return;
     const live = ensureLiveTurn(runtime, event);
     applyTurnStarted(runtime, live);
     return;
@@ -576,8 +581,8 @@ export function applyRuntimeEvent(event, opts = {}) {
   }
   if (!event.turnId) return;
   const turnKey = `${event.sessionId}:${event.turnId}`;
-  if (terminalTurns.has(turnKey)) return;
-  if (recoveryTurns.has(turnKey) && !TERMINAL_TYPES.has(event.type)) return;
+  if (isTerminalTurn(runtime, event.turnId)) return;
+  if (runtime.recoveryTurns.has(event.turnId) && !TERMINAL_TYPES.has(event.type)) return;
 
   const live = ensureLiveTurn(runtime, event);
   live.updatedAt = event.ts || Date.now();
@@ -825,8 +830,8 @@ export function applyRuntimeEvent(event, opts = {}) {
         }
         runtime.phase = "idle";
         runtime.turnId = null;
-        recoveryTurns.delete(turnKey);
-        terminalTurns.add(turnKey);
+        runtime.recoveryTurns.delete(event.turnId);
+        rememberTerminalTurn(runtime, event.turnId);
         // Flag the session list when a BACKGROUND session finishes (not the one
         // being viewed) on a LIVE event — so the user knows to come look. Skips
         // load-time replay (allowReplay) and the active session. An interrupt is

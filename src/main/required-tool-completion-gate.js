@@ -64,7 +64,9 @@ function continueBeforeCompletion(session, payload) {
     "Repair validation errors and retry the tool. Do not claim success until the tool confirms persistence.",
     `Correction attempt: ${state.attempts}/2.`,
   ].join(" ");
-  session._server.sendPrompt({ text: message, files: [], guidance: session.spawnOptions?.guidance || "" }).catch((error) => {
+  // Platform-composed text always goes through the session's one stamped seam,
+  // so a correction nudge never reads as something the user asked.
+  session.sendPlatformPrompt({ text: message }).catch((error) => {
     log.warn("required tool completion follow-up failed: %s", error?.message || String(error));
     if (session.busy && !session._turnSettled) {
       state.attempts = 2;

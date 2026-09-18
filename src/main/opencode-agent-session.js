@@ -53,6 +53,7 @@ const {
   buildTodoGiveUpPayload, detectIncompleteDeliverable,
   nativeTodoSnapshot, todoContinuationDecision,
 } = require("./opencode-todo-completion-policy");
+const { INTERNAL_PROMPT_KINDS, nudgePlatformPrompt, sendPlatformPrompt } = require("./platform-prompt");
 const { claimContinuation, createTurnGateState } = require("./turn-continuation-budget");
 const { earliestPendingRequestAt } = require("./turn-user-wait");
 const requiredToolCompletion = require("./required-tool-completion-gate");
@@ -1566,16 +1567,7 @@ class OpencodeAgentSession extends EventEmitter {
           `Completion check: you indicated the deliverable "${violation.path}" ` +
           `but it ${violation.reason}. Actually produce a valid file at that path ` +
           `(or correct your statement if no file was meant), then confirm. Do not claim done until it is real.`;
-        (async () => {
-          try {
-            await this._server.sendPrompt({ text: note, files: [], guidance: this.spawnOptions?.guidance || "" });
-          } catch (err) {
-            // If the corrective prompt can't land, settle on the original result
-            // rather than hang the turn.
-            log.warn("completion gate follow-up failed: %s", err?.message || String(err));
-            if (this.busy && !this._turnSettled) this._settleTurn(payload);
-          }
-        })();
+        nudgePlatformPrompt(this, { text: note, reason: "completion gate follow-up", settlePayload: payload, log });
         return; // keep the turn open for the corrective round
       }
     }
@@ -1618,16 +1610,13 @@ class OpencodeAgentSession extends EventEmitter {
     this._armResponseTimer();
     this._armProgressNoticeTimer();
     const note = buildTodoContinuationPrompt(snapshot, gate.attempts, TODO_COMPLETION_GATE_MAX_ATTEMPTS);
-    (async () => {
-      try {
-        await this._server.sendPrompt({ text: note, files: [], guidance: this.spawnOptions?.guidance || "" });
-      } catch (err) {
-        log.warn("unfinished todo continuation failed: %s", err?.message || String(err));
-        if (this.busy && !this._turnSettled) this._settleTurn(payload);
-      }
-    })();
+    nudgePlatformPrompt(this, { text: note, kind: INTERNAL_PROMPT_KINDS.SELF_CHECK, reason: "unfinished todo continuation", settlePayload: payload, log });
     return true;
   }
+
+  /** @see src/main/platform-prompt.js — the one stamped seam for platform-composed prompts. */
+  sendPlatformPrompt(input) { return sendPlatformPrompt(this, input); }
+
 
   _settleTurn(payload) {
     if (this._turnSettled) return;

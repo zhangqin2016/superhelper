@@ -283,8 +283,23 @@ runtime = store.getRuntimeSession("s1");
 if (runtime.committedMessages.filter((m) => m.role === "assistant" && m.turnId === "t1").length !== 1) {
   throw new Error(`duplicate terminal must not append another assistant: ${JSON.stringify(runtime.committedMessages)}`);
 }
-if (runtime.committedMessages.some((m) => m.content === "late user for completed turn")) {
-  throw new Error(`late user.committed for completed turn must be ignored: ${JSON.stringify(runtime.committedMessages)}`);
+// Contract change, 2026-09-18: a late user.committed for a finished turn used to
+// be DROPPED. That kept the order right by losing the message — an answer with
+// no question above it and nothing in the record to say why, which is what a
+// user reported seeing. It is now placed where its turn puts it: before its own
+// answer. Order is preserved and nothing is lost.
+{
+  const late = runtime.committedMessages.findIndex((m) => m.content === "late user for completed turn");
+  const answer = runtime.committedMessages.findIndex((m) => m.role === "assistant" && m.turnId === "t1");
+  if (late < 0) {
+    throw new Error(`a late user message must be kept, not dropped: ${JSON.stringify(runtime.committedMessages)}`);
+  }
+  if (!(late < answer)) {
+    throw new Error(`a late user message must sit above its own answer: ${JSON.stringify(runtime.committedMessages)}`);
+  }
+  if (runtime.committedMessages.filter((m) => m.content === "late user for completed turn").length !== 1) {
+    throw new Error(`and only once: ${JSON.stringify(runtime.committedMessages)}`);
+  }
 }
 
 store.applyRuntimeBatch({
