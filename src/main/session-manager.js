@@ -263,6 +263,10 @@ class SessionManager {
       workspacePathFor: (session) => this.pm?.find?.(session.projectId)?.path || "",
       backfill: backfillMessageArtifacts,
       versions: { artifact: ARTIFACT_SCHEMA_VERSION, resultBlock: RESULT_BLOCK_SCHEMA_VERSION },
+      // The same channel the legacy import uses. A customer once watched a
+      // frozen window with no idea the app was re-deriving 1450 records; the
+      // pipe and the bar already existed, this pass just never used them.
+      onProgress: (payload) => this._progressNotifier?.(payload),
     });
   }
 

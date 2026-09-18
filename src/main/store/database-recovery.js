@@ -10,7 +10,7 @@ function hasEvidence(dbPath) {
     || [".backups", ".recovery"].some(s => exists(dbPath + s) && fs.readdirSync(dbPath + s).length > 0)
     || exists(dbPath + ".recovery-receipt.json");
 }
-function inspectDatabase(dbPath) {
+function inspectDatabase(dbPath, { verify = true } = {}) {
   try {
     let receipt;
     if (exists(dbPath + ".recovery-intent.json")) {
@@ -24,7 +24,7 @@ function inspectDatabase(dbPath) {
       else return { ok: true, exists: false, reason: "new_install" };
     }
     let counts;
-    try { counts = inspectFile(dbPath); }
+    try { counts = inspectFile(dbPath, true, { verify }); }
     catch (error) {
       // SQLITE_READONLY_ROLLBACK (776) specifically means SQLite has a hot
       // rollback journal. Ordinary permissions/I/O errors never enter repair.

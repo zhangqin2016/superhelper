@@ -4,7 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const { DatabaseRecoveryFlow } = require("./database-recovery-flow");
 
-async function openDatabaseRecoveryWindow({ service, locale, allowRestore = true, confirm } = {}) {
+async function openDatabaseRecoveryWindow({ service, locale, allowRestore = true, confirm, admitAction = "inspect" } = {}) {
   const { app, BrowserWindow, ipcMain, dialog } = require("electron");
   locale ||= require("./locale-settings").getLocale();
   if (!["zh-CN", "en", "ar"].includes(locale)) locale = "en";
@@ -35,7 +35,7 @@ async function openDatabaseRecoveryWindow({ service, locale, allowRestore = true
       ({ id, createdAt, messageCount, sessionCount, sourceKind })),
   });
   const flow = new DatabaseRecoveryFlow({
-    service, allowRestore,
+    service, allowRestore, admitAction,
     confirm: confirm || (async candidate => {
       const sourceLabel = candidate.sourceKind === "auto_backup"
         ? (zh ? "自动备份" : ar ? "نسخة احتياطية تلقائية" : "Automatic backup")
@@ -94,7 +94,7 @@ async function openDatabaseRecoveryWindow({ service, locale, allowRestore = true
     if (userClosed) app.quit();
   });
   await window.loadFile(path.join(__dirname, "../renderer/recovery/index.html"));
-  if (allowRestore) void flow.act("inspect");
+  if (allowRestore) void flow.act(admitAction);
   else window.show();
   return { window, ready, flow, dispose() { cleanup(); if (!window.isDestroyed()) window.destroy(); } };
 }

@@ -1248,6 +1248,8 @@
   "connectors.appPasswordTip": "此邮箱需使用「授权码 / 应用专用密码」，而非登录密码。",
   "connectors.viewGuide": "查看图文步骤",
   "migration.done": "历史会话优化完成",
+  "migration.progressEnrichment": "正在整理历史记录… {done}/{total}（可继续使用）",
+  "migration.doneEnrichment": "历史记录整理完成",
   "migration.progress": "正在优化历史会话… {done}/{total}",
   "settings.connectors.tabLabel": "连接器类型",
   "settings.connectors.tab.mail": "邮箱",

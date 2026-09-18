@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { fork } = require("node:child_process");
-const ACTIONS = new Set(["inspect", "prepare", "restore", "backup", "receipt", "ack"]);
+const ACTIONS = new Set(["inspect", "probe", "prepare", "restore", "backup", "receipt", "ack"]);
 
 /** One worker at a time, including the interval between timeout and process exit.
  * The main process never opens a database on behalf of the repair window.

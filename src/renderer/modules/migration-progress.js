@@ -1,12 +1,18 @@
-// Non-blocking migration progress indicator. Shown only when there is a real
-// backlog of legacy sessions to migrate (the main process gates by count); the
-// app stays fully usable while it ticks. Auto-hides shortly after completion.
+// Non-blocking indicator for one-time startup maintenance: the legacy session
+// import, and the artifact backfill a schema bump triggers. Shown only when
+// there is a real backlog (the main process gates by count); the app stays
+// fully usable while it ticks, and it auto-hides shortly after completion.
+//
+// The backfill reports here because of what its silence cost: a customer saw a
+// window Windows labelled 未响应 and had no way to know the app was re-deriving
+// 1450 records. Naming the work is what turns a freeze into a wait.
 
 import { t } from "../i18n/index.js";
 
-function label(done, total) {
-  if (done >= total) return t("migration.done");
-  return t("migration.progress", { done, total });
+function label(done, total, kind) {
+  const suffix = kind === "enrichment" ? "Enrichment" : "";
+  if (done >= total) return t(`migration.done${suffix}`);
+  return t(`migration.progress${suffix}`, { done, total });
 }
 
 let el = null;
@@ -35,10 +41,10 @@ function ensureEl() {
   return el;
 }
 
-function render({ phase, done, total }) {
+function render({ phase, done, total, kind }) {
   if (!total) return;
   ensureEl();
-  textNode.textContent = label(done, total);
+  textNode.textContent = label(done, total, kind);
   barFill.style.width = `${Math.min(100, Math.round((done / total) * 100))}%`;
   el.hidden = false;
   if (hideTimer) {

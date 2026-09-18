@@ -50,6 +50,7 @@ import {
   liveTurnFromRecord,
 } from "./turn-view-model.js";
 import { createLiveTurnArticleShell } from "./turn-article-shell.js";
+import { mountTurnArticle } from "./turn-article-mount.js";
 import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { patchLiveToolClocks } from "./turn-live-clock-patch.js";
 import { touchSessionUsage, updateSessionRunningIndicators } from "./project-tree.js";
@@ -462,8 +463,9 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
   if (key) article.dataset.messageKey = key; // lets window eviction locate this article
   decorateAgentAnswerLabel(article, message); // only when record.meta.agent says an agent answered
   appendArticleActions(article, sessionId, message);
-  if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
-  else v.listEl?.appendChild(article);
+  // One turn, one article: a committed card replaces whatever already stands
+  // for this turn, in place, instead of being appended beside it.
+  mountTurnArticle(v.listEl, article, { kind: "sealed", beforeNode, liveArticles: v.liveArticles });
 }
 
 const COPY_ICON_SVG =
@@ -659,8 +661,11 @@ function ensureLiveArticle(sessionId, liveTurn) {
   if (article) return article;
 
   article = createLiveTurnArticleShell(liveTurn);
+  // Refused when the committed card for this turn is already standing: the
+  // stored record is the finished answer, and a live shell over it would be a
+  // strictly emptier view of the same turn.
+  if (!mountTurnArticle(v.listEl, article, { kind: "live", liveArticles: v.liveArticles })) return null;
   v.liveArticles.set(liveTurn.turnId, article);
-  v.listEl?.appendChild(article);
   return article;
 }
 
@@ -724,6 +729,7 @@ function renderRuntimeSession(sessionId, opts = {}) {
 
 function renderLiveTurn(sessionId, liveTurn, queue) {
   const article = ensureLiveArticle(sessionId, liveTurn);
+  if (!article) return; // the committed card for this turn is already shown
   renderLiveTurnArticle(article, liveTurn, { sessionId, queue });
 }
 

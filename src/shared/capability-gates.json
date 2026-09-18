@@ -1325,6 +1325,26 @@
       "tests": [
         "scripts/test-resumable-enrichment.mjs"
       ]
+    },
+    {
+      "id": "startup-admission",
+      "protects": "The launch gate blocks on the message database's page-by-page verification only when there is reason to doubt the file, so a large history does not cost seconds of staring at a check screen on every cold launch.",
+      "baseline": "Verification coverage per launch is unchanged — the full PRAGMA integrity_check still runs every launch, in the background once the window is open, and its result is persisted. The fast admission is the SAME decision minus that one scan: header, schema, hot-journal rollback, restore-receipt resume and the message/session counts are all still made before the app opens, and a probe and a full inspect return identical results on a healthy database.",
+      "failureFallback": "Every uncertainty answers \"verify\": a missing, truncated, corrupt or wrong-version marker, a previous run that never reached before-quit (crash, force quit, power loss), a background verification that failed or never finished, and the kill switch LILY_STARTUP_FAST_ADMIT=0 all restore the old always-blocking gate. A background failure is recorded so the next launch blocks and reaches the repair flow with its candidates.",
+      "tests": [
+        "scripts/test-startup-admission.mjs",
+        "scripts/test-database-recovery.mjs"
+      ]
+    },
+    {
+      "id": "one-turn-one-article",
+      "protects": "A finished answer stays finished: one turn occupies exactly one card in the conversation, whatever sequence of live events, commits, re-renders or pagination passes led there.",
+      "baseline": "Nothing is suppressed. Identity decides placement, not content: an article carrying a turn id replaces the one already standing for that turn, in place, so position and every block of the newest render are kept. Articles without a turn id — notices, scheduled drafts, binding cards — are never reconciled and keep the plain append/insert behaviour, and reconciliation is scoped to one session's list.",
+      "failureFallback": "A missing or empty turn id means no identity, so the article is appended exactly as before; a null list or article returns null instead of throwing inside a render pass; a beforeNode from another list falls back to append. A live shell is refused over a committed card because the stored record is the finished answer — never the other way round, so a real answer can never be replaced by an emptier view of itself.",
+      "tests": [
+        "scripts/test-one-turn-one-article.cjs",
+        "scripts/test-turn-view-model.mjs"
+      ]
     }
   ]
 }

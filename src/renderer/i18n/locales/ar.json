@@ -1249,6 +1249,8 @@
   "connectors.appPasswordTip": "يتطلب هذا البريد كلمة مرور تطبيق، وليست كلمة مرور تسجيل الدخول.",
   "connectors.viewGuide": "عرض دليل الإعداد",
   "migration.done": "تم تحسين السجل",
+  "migration.progressEnrichment": "جارٍ تنظيم السجل… {done}/{total} (يمكنك متابعة العمل)",
+  "migration.doneEnrichment": "اكتمل تنظيم السجل",
   "migration.progress": "جارٍ تحسين السجل… {done}/{total}",
   "settings.connectors.tabLabel": "نوع الموصل",
   "settings.connectors.tab.mail": "البريد",

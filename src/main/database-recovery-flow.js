@@ -4,8 +4,8 @@
  * older snapshot is not permission to execute any of its pending operations.
  */
 class DatabaseRecoveryFlow {
-  constructor({ service, confirm = async () => false, onHealthy = () => {}, onChange = () => {}, allowRestore = true }) {
-    Object.assign(this, { service, confirm, onHealthy, onChange, allowRestore });
+  constructor({ service, confirm = async () => false, onHealthy = () => {}, onChange = () => {}, allowRestore = true, admitAction = "inspect" }) {
+    Object.assign(this, { service, confirm, onHealthy, onChange, allowRestore, admitAction });
     this.closed = false;
     this.admitted = false;
     this.state = { phase: allowRestore ? "checking" : "blocked", reason: "startup_failed", candidates: [], busy: false, allowRestore };
@@ -19,7 +19,7 @@ class DatabaseRecoveryFlow {
   async act(action, id) {
     if (this.closed || this.admitted) return this.state;
     if (this.state.busy) return { ok: false, reason: "busy" };
-    if (!["inspect", "prepare", "restore"].includes(action)) return { ok: false, reason: "invalid_action" };
+    if (!["inspect", "probe", "prepare", "restore"].includes(action)) return { ok: false, reason: "invalid_action" };
     if (!this.allowRestore) return this.state;
     const candidate = this.state.candidates.find(item => item.id === id);
     if (action === "restore" && !candidate) return { ok: false, reason: "invalid_candidate" };
@@ -32,7 +32,11 @@ class DatabaseRecoveryFlow {
       if (this.closed) return this.state;
       const result = await this.service.run(action, id);
       if (this.closed) return this.state;
-      if (action === "inspect" && result.ok) {
+      // Both actions are admission checks; "probe" is "inspect" minus the page
+      // scan, which the caller re-runs in the background once the app is open.
+      // The window's own retry button always sends "inspect": a user looking at
+      // this page has a reason to want the thorough answer.
+      if ((action === "inspect" || action === "probe") && result.ok) {
         this.admitted = true;
         this.update({ phase: "ready", reason: null, receipt: result.restoreReceipt || this.state.receipt });
         this.onHealthy(this.state);

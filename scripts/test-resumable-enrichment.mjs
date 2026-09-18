@@ -477,6 +477,51 @@ try {
     }
   });
 
+  check("progress is reported in messages, and a resumed launch counts only what is left", () => {
+    store.deleteMeta(flagKey("small", V5));
+    store.deleteMeta(cursorKey("small", V5));
+    const events = [];
+    const scheduler = manualScheduler();
+    startResumableEnrichment({
+      store, sessions: [{ id: "small", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }],
+      schedule: scheduler.schedule, workspacePathFor: () => WORKSPACE, versions: V5, batchSize: 3,
+      backfill: () => false, onProgress: (payload) => events.push(payload),
+    });
+    scheduler.runTicks(40);
+    assert.equal(events[0].total, 7, "the unit is messages — a 1450-message conversation is exactly the case a session counter would not move for");
+    assert.equal(events[0].kind, "enrichment", "the renderer picks its wording from the kind");
+    assert.ok(events.every((e, i) => i === 0 || e.done >= events[i - 1].done), "done never goes backwards");
+    assert.equal(events[events.length - 1].phase, "done");
+    assert.equal(events[events.length - 1].done, 7);
+
+    // Resume: three messages are already behind the cursor, so the bar must
+    // start from the remaining four rather than re-announcing the whole session.
+    store.deleteMeta(flagKey("small", V5));
+    store.setMeta(cursorKey("small", V5), "3");
+    const resumed = [];
+    const later = manualScheduler();
+    const started = startResumableEnrichment({
+      store, sessions: [{ id: "small", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }],
+      schedule: later.schedule, workspacePathFor: () => WORKSPACE, versions: V5, batchSize: 3,
+      backfill: () => false, onProgress: (payload) => resumed.push(payload),
+    });
+    assert.equal(started.total, 4, `a resumed pass counts only the tail: ${started.total}`);
+    later.runTicks(40);
+    assert.equal(resumed[resumed.length - 1].done, 4);
+
+    // A progress listener is never allowed to affect the work.
+    store.deleteMeta(flagKey("small", V5));
+    store.deleteMeta(cursorKey("small", V5));
+    const hostile = manualScheduler();
+    startResumableEnrichment({
+      store, sessions: [{ id: "small", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }],
+      schedule: hostile.schedule, workspacePathFor: () => WORKSPACE, versions: V5, batchSize: 3,
+      backfill: () => false, onProgress: () => { throw new Error("listener blew up"); },
+    });
+    hostile.runTicks(40);
+    assert.ok(store.meta(flagKey("small", V5)), "a throwing listener does not stop the pass");
+  });
+
   check("the bounded read pages without gaps or overlap and clamps its limit", () => {
     const seen = [];
     let cursor = 0;

@@ -1248,6 +1248,8 @@
   "connectors.appPasswordTip": "This mailbox needs an app password, not your login password.",
   "connectors.viewGuide": "View setup guide",
   "migration.done": "History optimized",
+  "migration.progressEnrichment": "Tidying history… {done}/{total} (you can keep working)",
+  "migration.doneEnrichment": "History tidied",
   "migration.progress": "Optimizing history… {done}/{total}",
   "settings.connectors.tabLabel": "Connector type",
   "settings.connectors.tab.mail": "Mail",

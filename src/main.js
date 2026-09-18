@@ -186,8 +186,30 @@ app.whenReady().then(async () => {
 
   const { DatabaseRecoveryService } = require("./main/database-recovery-service");
   databaseRecoveryServiceRef = new DatabaseRecoveryService(require("./main/config").messageDbPath());
+  // The launch gate's whole cost is one page scan of the message database
+  // (measured cold on 918 MB: 3973 ms for the full check against 33 ms for the
+  // same admission decision without it). After a clean exit whose background
+  // verification passed, admit on the cheap decision and re-verify behind the
+  // open window; anything else — a crash, a failed or missing verification, a
+  // first launch — still blocks. [gate: startup-admission]
+  // Bookkeeping must never be able to stop the app from starting: any failure
+  // here falls back to the old always-blocking gate, which is merely slower.
+  let startupIntegrity = null;
+  let userDataDir = "";
+  let admission = { verify: true, reason: "integrity_marker_unavailable" };
+  try {
+    startupIntegrity = require("./main/startup-integrity");
+    userDataDir = app.getPath("userData");
+    admission = startupIntegrity.decideStartupVerification(userDataDir);
+    startupIntegrity.markLaunchInProgress(userDataDir);
+  } catch (error) {
+    startupIntegrity = null;
+    console.warn("[startup] integrity marker unavailable, verifying:", error?.message || error);
+  }
+  console.info("[startup] database admission:", admission.verify ? `blocking (${admission.reason})` : "fast");
   databaseRecoveryWindowRef = await require("./main/database-recovery-window").openDatabaseRecoveryWindow({
     service: databaseRecoveryServiceRef,
+    admitAction: admission.verify ? "inspect" : "probe",
   });
   mainWindow = databaseRecoveryWindowRef.window;
   const databaseAdmission = await databaseRecoveryWindowRef.ready;
@@ -364,6 +386,19 @@ app.whenReady().then(async () => {
     getWindow: () => mainWindow,
     getAgentBootstrap: () => agentBootstrap,
   });
+  // Coverage per launch is unchanged — the page scan still runs, just not with
+  // the user waiting on it. A failure is recorded so the NEXT launch blocks on
+  // it and reaches the repair flow with its candidates.
+  if (!admission.verify) {
+    setTimeout(() => {
+      databaseRecoveryServiceRef?.run("inspect").then((result) => {
+        startupIntegrity?.recordVerification(userDataDir, { ok: result?.ok === true, reason: result?.reason });
+        if (result?.ok !== true) console.error("[startup] background database verification failed:", result?.reason);
+      }).catch(() => { startupIntegrity?.recordVerification(userDataDir, { ok: false, reason: "verify_failed" }); });
+    }, 3_000).unref?.();
+  } else if (startupIntegrity) {
+    startupIntegrity.recordVerification(userDataDir, { ok: true, reason: "blocking_gate" });
+  }
   // Surface legacy-message migration progress to the renderer (non-blocking).
   sessionManager.setProgressNotifier((payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -570,6 +605,9 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  // Reaching here is what makes the next launch's gate cheap; a crash or a
+  // force quit never gets here, and the marker stays dirty on purpose.
+  try { require("./main/startup-integrity").markCleanExit(app.getPath("userData")); } catch { /* next launch verifies */ }
   clearTimeout(databaseBackupTimer);
   clearInterval(databaseBackupInterval);
   databaseRecoveryServiceRef?.close();
