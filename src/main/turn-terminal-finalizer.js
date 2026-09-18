@@ -361,7 +361,11 @@ function createTurnTerminalFinalizer(options = {}) {
         };
       }
     }
-    const evidenceRecoveryContext = triggerVerifyRetry
+    // The coverage round inherits it too. Without it the follow-up starts blind:
+    // it re-reads the sources already read and, if the shortfall came from a hard
+    // limit (size, pages, timeout), stops in exactly the same place — the user
+    // pays a round for nothing and gets the same scope note anyway.
+    const evidenceRecoveryContext = triggerVerifyRetry || triggerSourceCoverageRetry
       ? buildEvidenceRecoveryContext({ sourceTurnId: completedTurnId, tools: evidenceTools })
       : null;
     if (shouldBufferAssistantAnswer(state.taskContract) && assistant) {

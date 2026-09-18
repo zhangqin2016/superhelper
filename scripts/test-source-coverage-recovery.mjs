@@ -96,6 +96,20 @@ check("it rides the existing retry route — one more code, not a second mechani
 
   const runtime = fs.readFileSync(new URL("../src/main/turn-recovery-runtime.js", import.meta.url), "utf8");
   assert.match(runtime, /strategy\.kind === "source_coverage_retry"/, "the runtime selects its hint");
+  // The round must CONTINUE, not restart. Without the inherited evidence it
+  // re-reads the sources already read and, when the shortfall came from a hard
+  // limit, stops in exactly the same place — a round spent to arrive back where
+  // it started, after which the user gets the same scope note anyway.
+  assert.match(
+    runtime,
+    /evidenceContext: strategy\.kind === "evidence_verify_retry" \|\| strategy\.kind === "source_coverage_retry"/,
+    "and passes the inherited evidence through",
+  );
+  assert.match(finalizer, /triggerVerifyRetry \|\| triggerSourceCoverageRetry\n?\s*\? buildEvidenceRecoveryContext/, "which the terminal finalizer builds for it");
+  for (const language of ["zh", "en"]) {
+    const hint = recovery.buildSourceCoverageHint({ language, observed: 12, total: 40 });
+    assert.match(hint, language === "zh" ? /不要重读/ : /do not read it again/i, "and the instruction says not to redo it");
+  }
   assert.match(runtime, /strategy\.kind === "source_coverage_retry" \|\| documentRecovery/, "and keeps the prior answer until the round supersedes it");
 });
 

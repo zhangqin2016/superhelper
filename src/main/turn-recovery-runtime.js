@@ -244,7 +244,7 @@ function createTurnRecoveryRuntime(options = {}) {
             kind: strategy.kind,
             mode: continueInstead ? "continuation" : "replay",
             guidance: hint || "",
-            evidenceContext: strategy.kind === "evidence_verify_retry"
+            evidenceContext: strategy.kind === "evidence_verify_retry" || strategy.kind === "source_coverage_retry"
               ? failure?.evidenceRecoveryContext || null
               : null,
           },

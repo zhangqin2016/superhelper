@@ -22,6 +22,12 @@
  * uses (finalizer flag → turn-terminal-finalizer code → rescue strategy →
  * hint → one follow-up round), so there is no second retry mechanism.
  *
+ * The round inherits what the previous pass already read (the same
+ * evidenceRecoveryContext the external-fact retry uses), so it continues rather
+ * than restarts. Without that it would re-read the same sources and, if the
+ * shortfall came from a hard limit, stop in exactly the same place — a round
+ * spent to arrive back where it started.
+ *
  * Deliberately narrow, because a retry costs the user a round:
  *   - only a content_extraction turn whose source coverage is partial;
  *   - only when sources actually remain (observed < total), from the STRUCTURED
@@ -70,14 +76,14 @@ function buildSourceCoverageHint({ language = "en", observed = 0, total = 0 } = 
   return language === "zh"
     ? [
       `[系统纠正：附件未读完] 上一轮只解析了附件的一部分${span ? `（${span}）` : ""}，回答因此只覆盖了读到的内容。`,
-      "1. 先把剩余部分读完，再作答：对同一批附件继续调用抽取/解析工具，直到覆盖完整或工具明确报告无法继续。",
+      "1. 上一轮已读到的内容随本次一并给你，不要重读它们——把**剩余**部分读完再作答：对同一批附件继续调用抽取/解析工具（换页码区间、换解析方式），直到覆盖完整或工具明确报告无法继续。",
       "2. 不要凭文件名、目录或已读部分推测未读内容。",
       "3. 读完后给出针对用户原问题的完整回答；若确实有读不到的部分，明确写出哪些没读到及原因，其余照常作答。",
       "4. 不要只回复过程叙述或笼统拒绝——已经读到的结论必须保留。",
     ].join("\n")
     : [
       `[system correction: attachment not fully read] The prior pass parsed only part of the attachment${span ? ` (${span})` : ""}, so the answer covered only what was read.`,
-      "1. Read the rest before answering: keep calling the extraction/parsing tools on the same attachments until coverage is complete or a tool clearly reports it cannot continue.",
+      "1. What the previous pass already read is carried over with this message — do not read it again. Read the REMAINDER before answering: keep calling the extraction/parsing tools on the same attachments (different page ranges or a different parse mode) until coverage is complete or a tool clearly reports it cannot continue.",
       "2. Do not infer unread content from the filename, the directory, or the part already read.",
       "3. Then answer the user's original question over the whole source. If some part genuinely cannot be read, say which and why, and answer from the rest.",
       "4. Do not return only process narration or a blanket refusal — conclusions already supported must be kept.",
