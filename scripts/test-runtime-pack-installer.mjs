@@ -370,4 +370,35 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// A repair swaps the new pack in with two renames, and between them the pack's
+// path does not exist. The window is sub-millisecond and only a process
+// resolving that path AT that instant is affected, but a long-task run once saw
+// `python3` briefly unavailable and the only way to attribute it afterwards was
+// to line up timestamps by hand. The gap is not engineered away — a replacement
+// only happens after a pack fails its health probe twice, so the alternative is
+// leaving a broken pack broken — but it is now recognisable in a log.
+{
+  const { replacePackDirectory } = createRequire(import.meta.url)("../src/main/fs-transient-retry.js");
+  const swapDir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-swap-"));
+  try {
+    const target = path.join(swapDir, "pack");
+    const staging = path.join(swapDir, "staging");
+    fs.mkdirSync(target); fs.writeFileSync(path.join(target, "old.txt"), "old");
+    fs.mkdirSync(staging); fs.writeFileSync(path.join(staging, "new.txt"), "new");
+    const logged = [];
+    const realInfo = console.info;
+    console.info = (...args) => logged.push(args.join(" "));
+    try { await replacePackDirectory(staging, target); } finally { console.info = realInfo; }
+    assert.deepEqual(fs.readdirSync(target), ["new.txt"], "the new pack is in place");
+    assert.equal(fs.readdirSync(swapDir).filter((name) => name.includes("previous")).length, 0, "and the backup is cleaned up");
+    const line = logged.find((text) => text.includes("[runtime-pack] replaced"));
+    assert.ok(line, `the swap is attributable: ${logged.join(" | ")}`);
+    assert.ok(line.includes(target), "the log names the path that briefly vanished");
+    assert.match(line, /absent for \d+ ms/, "and how long it was gone, which is the number that matters");
+    assert.match(line, /ENOENT/, "and what a process hitting the window would see");
+  } finally {
+    fs.rmSync(swapDir, { recursive: true, force: true });
+  }
+}
+
 console.log("runtime-pack-installer: ok");
