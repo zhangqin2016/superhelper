@@ -41,12 +41,36 @@ export function collectEvictedMessageKeys(messages, keys) {
   return evicted;
 }
 
-// Drop the DOM articles whose message keys were evicted from the window. Keyed
-// lookup only — live-turn articles carry no data-message-key and are untouched.
+/** The turn a message key belongs to, for keys of the form `role:turnId`. */
+function turnIdFromKey(key = "") {
+  const parts = String(key).split(":");
+  return parts.length >= 2 ? parts[1] : "";
+}
+
+/**
+ * Drop the DOM articles that left the render window.
+ *
+ * Eviction works on TURN identity, not only on message keys. A live-turn
+ * article carries no message key, so a key-only sweep left it behind when its
+ * committed card was evicted — a card stranded in the middle of history with
+ * nothing left pointing at it. Every article that stands for a turn declares
+ * that turn, so evicting a turn evicts all of it. [gate: one-turn-one-article]
+ */
 export function removeCommittedArticlesByKeys(listEl, evictedKeys = []) {
   if (!listEl?.querySelectorAll || !evictedKeys.length) return;
   const evicted = new Set(evictedKeys);
+  const evictedTurns = new Set([...evicted].map(turnIdFromKey).filter(Boolean));
+  const surviving = new Set();
   for (const node of listEl.querySelectorAll("[data-message-key]")) {
     if (evicted.has(node.dataset?.messageKey)) node.remove();
+    else if (node.dataset?.turnId) surviving.add(node.dataset.turnId);
+  }
+  if (!evictedTurns.size) return;
+  for (const node of listEl.querySelectorAll("[data-turn-id]")) {
+    const turnId = node.dataset?.turnId || "";
+    // Only turns with nothing left in the window: a turn whose committed card
+    // survived still owns its place, and a running turn sits at the bottom of
+    // the window, never in the evicted range.
+    if (evictedTurns.has(turnId) && !surviving.has(turnId)) node.remove();
   }
 }

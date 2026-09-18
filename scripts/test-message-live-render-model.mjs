@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  hasCommittedScheduledDraftTurn,
-  liveTurnRenderMode,
   runtimeVisualSig,
   shouldFollowLiveRender,
   shouldUpdateConversationMinimap,
@@ -113,46 +111,13 @@ assert.equal(shouldFollowLiveRender({
   nearBottom: false,
 }), false);
 
-assert.equal(hasCommittedScheduledDraftTurn({
-  committedMessages: [
-    { role: "assistant", turnId: "turn_1", meta: { scheduledDraft: { title: "Run later" } } },
-  ],
-}, "turn_1"), true);
-assert.equal(hasCommittedScheduledDraftTurn({
-  committedMessages: [
-    { role: "assistant", turnId: "turn_1", meta: {} },
-  ],
-}, "turn_1"), false);
-assert.equal(hasCommittedScheduledDraftTurn({ committedMessages: [] }, ""), false);
-
-assert.equal(
-  liveTurnRenderMode({
-    liveTurn: { turnId: "turn_1", final: { type: "turn.completed" } },
-    committedMessages: [
-      { role: "assistant", turnId: "turn_1", meta: { scheduledDraft: { title: "Run later" } } },
-    ],
-  }),
-  "remove-duplicate",
-  "scheduled draft committed cards should remove the duplicate live article",
-);
-assert.equal(
-  liveTurnRenderMode({
-    liveTurn: { turnId: "turn_1", final: { type: "turn.completed" } },
-    committedMessages: [{ role: "assistant", turnId: "turn_1", meta: {} }],
-  }),
-  "remove-duplicate",
-  "completed live turns should be removed once the committed assistant for the same turn exists",
-);
-assert.equal(
-  liveTurnRenderMode({
-    liveTurn: { turnId: "turn_1" },
-    committedMessages: [{ role: "assistant", turnId: "turn_1", meta: {} }],
-  }),
-  "render",
-  "active live turns keep rendering; committed duplicates are skipped elsewhere until the turn is final",
-);
-assert.equal(liveTurnRenderMode({ liveTurn: null, committedMessages: [] }), "none");
-assert.equal(liveTurnRenderMode({ committedMessages: [] }), "none");
+// liveTurnRenderMode / hasCommittedAssistantTurn / hasCommittedScheduledDraftTurn
+// were deleted on 2026-09-18. Whether a live shell may stand is no longer a
+// second opinion computed from runtime.committedMessages — it is decided by the
+// list itself at the one mount point, and proven against a real DOM in
+// scripts/test-one-turn-one-article.cjs. The state-based version could remove a
+// live article while its committed card was still unrendered, i.e. while
+// nothing on screen held that answer.
 
 assert.equal(shouldUpdateConversationMinimap({
   activeSession: true,
@@ -190,7 +155,6 @@ const messageSource = readFileSync(
   "utf8",
 );
 assert.match(messageSource, /from "\.\/message-live-render-model\.js"/);
-assert.match(messageSource, /liveTurnRenderMode\(runtime\)/);
 assert.match(messageSource, /shouldUpdateConversationMinimap\(/);
 assert.doesNotMatch(messageSource, /function runtimeVisualSig\s*\(/);
 assert.doesNotMatch(messageSource, /function shouldThrottleLiveRender\s*\(/);

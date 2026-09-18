@@ -22,10 +22,12 @@
  * already standing for that turn, in place, so position is kept and no
  * producer can add a second.
  *
- * Precedence: a committed ("sealed") article outranks a live one. A sealed
- * article replaces a live one; a live shell is never mounted over a sealed
- * card, because the committed record is the finished answer and the live shell
- * would be a strictly emptier view of the same turn.
+ * Precedence: any committed representation of a turn outranks the live shell.
+ * A committed article replaces a live one; a live shell is never mounted over a
+ * committed card, because the stored record is the finished answer and the
+ * shell would be a strictly emptier view of the same turn. "Committed" is
+ * simply "not live" — a scheduled-draft card stands for its turn just as a
+ * sealed answer does, and neither should have to be listed here by name.
  *
  * Deliberately narrow: an article without a turn id — a notice, a scheduled
  * draft, a binding card — has no identity to reconcile and keeps the plain
@@ -33,20 +35,32 @@
  * one session's list, so two sessions showing the same turn never interfere.
  */
 
-/** The article already standing for this turn, if any. */
+const TURN_ARTICLE_CLASS = "assistant-turn-article";
+
+/**
+ * A turn id alone is NOT identity here.
+ *
+ * The user's own message carries the same turn id — it is stamped on the bubble
+ * so the minimap can find the prompt — so matching on the id alone makes a
+ * turn's question and its answer look like the same object. Measured
+ * consequence: the answer's card replaces the question, or the live shell is
+ * refused because "something for this turn is already there" and no assistant
+ * card renders at all. Identity is (turn id AND this is a turn article).
+ */
+function isTurnArticle(node) {
+  return Boolean(node?.classList?.contains(TURN_ARTICLE_CLASS));
+}
+
+/** The turn article already standing for this turn, if any. */
 function findMountedTurn(listEl, turnId, exclude) {
   if (!turnId) return null;
   // A scan rather than a selector: turn ids come from the engine and must never
   // need CSS escaping to be matched correctly.
   for (const child of listEl.children || []) {
-    if (child === exclude) continue;
+    if (child === exclude || !isTurnArticle(child)) continue;
     if (child?.dataset?.turnId === turnId) return child;
   }
   return null;
-}
-
-function isSealed(article) {
-  return Boolean(article?.classList?.contains("is-sealed"));
 }
 
 function isLive(article) {
@@ -66,7 +80,7 @@ function isLive(article) {
 export function findLiveArticle(listEl, turnId) {
   if (!listEl || !turnId) return null;
   for (const child of listEl.children || []) {
-    if (child?.dataset?.turnId === turnId && isLive(child)) return child;
+    if (isTurnArticle(child) && child.dataset?.turnId === turnId && isLive(child)) return child;
   }
   return null;
 }
@@ -75,7 +89,7 @@ export function findLiveArticle(listEl, turnId) {
 export function hasLiveArticle(listEl) {
   if (!listEl) return false;
   for (const child of listEl.children || []) {
-    if (isLive(child) && child.isConnected) return true;
+    if (isTurnArticle(child) && isLive(child) && child.isConnected) return true;
   }
   return false;
 }
@@ -94,7 +108,7 @@ export function mountTurnArticle(listEl, article, options = {}) {
   const existing = findMountedTurn(listEl, turnId, article);
 
   if (existing) {
-    if (kind === "live" && isSealed(existing)) return null;
+    if (kind === "live" && !isLive(existing)) return null;
     listEl.replaceChild(article, existing);
     return article;
   }
@@ -136,11 +150,11 @@ export function reconcileLiveArticles(listEl) {
   if (!listEl?.children) return 0;
   let dropped = 0;
   for (const article of [...listEl.children]) {
-    if (!isLive(article)) continue;
+    if (!isTurnArticle(article) || !isLive(article)) continue;
     const turnId = article.dataset?.turnId || "";
     if (!turnId) continue;
     const committed = findMountedTurn(listEl, turnId, article);
-    if (!committed || !isSealed(committed)) continue; // its only copy — keep it
+    if (!committed || isLive(committed)) continue; // its only copy — keep it
     article.remove();
     dropped += 1;
   }

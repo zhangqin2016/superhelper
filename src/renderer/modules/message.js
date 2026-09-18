@@ -64,7 +64,6 @@ import { agentBindingOf, appendAgentBindingNotice, decorateAgentAnswerLabel } fr
 import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
 import { isCommittedDomOrderCurrent, renderCommittedWindow } from "./committed-window-renderer.js";
 import {
-  liveTurnRenderMode,
   runtimeVisualSig,
   shouldFollowLiveRender,
   shouldThrottleLiveRender,
@@ -585,6 +584,10 @@ function appendScheduledDraftArticle(sessionId, message, beforeNode = null, key 
   const article = document.createElement("article");
   article.className = "assistant-turn-article scheduled-draft-article";
   article.dataset.messageId = preview.messageId;
+  // Every article that stands for a turn declares it, so one rule covers them
+  // all instead of each producer being named somewhere as a special case.
+  const draftTurnId = message?.turnId || message?.record?.turnId || "";
+  if (draftTurnId) article.dataset.turnId = draftTurnId;
   if (key) article.dataset.messageKey = key; // lets window eviction locate this article
 
   const shell = document.createElement("div");
@@ -637,8 +640,7 @@ function appendScheduledDraftArticle(sessionId, message, beforeNode = null, key 
   shell.appendChild(actions);
 
   article.appendChild(shell);
-  if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
-  else v.listEl?.appendChild(article);
+  mountTurnArticle(v.listEl, article, { kind: "sealed", beforeNode });
 }
 
 function appendScheduledDraftRow(container, label, value) {
@@ -687,16 +689,12 @@ function renderRuntimeSession(sessionId, opts = {}) {
   // a turn that ended while another was starting leaves its article behind
   // with nothing that would ever look at it again.
   reconcileLiveArticles(view(sessionId).listEl);
-  const liveMode = liveTurnRenderMode(runtime);
-  if (runtime.liveTurn) {
-    if (liveMode === "remove-duplicate") {
-      // The committed card already represents this turn — drop the duplicate
-      // live text article instead of rendering it after the card.
-      findLiveArticle(view(sessionId).listEl, runtime.liveTurn.turnId)?.remove();
-    } else if (liveMode === "render") {
-      renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
-    }
-  }
+  // No second opinion on whether to render: renderLiveTurn asks the list, and
+  // the list refuses a shell for a turn that already has a committed card. The
+  // decision used to be taken here from runtime.committedMessages instead —
+  // which could remove a live article while its committed card was still
+  // unrendered, i.e. while nothing on screen held that answer.
+  if (runtime.liveTurn) renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
   syncWorkbenchEmptyState(view(sessionId).listEl);
   syncComposerForActiveSession();
   updateSessionRunningIndicators();

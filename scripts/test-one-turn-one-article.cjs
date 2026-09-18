@@ -236,6 +236,61 @@ app.whenReady().then(async () => {
       expect("an empty list sweeps nothing", reconcileLiveArticles(document.createElement("span")) === 0);
     }
 
+    // --- identity is (turn id AND turn article), never the id alone ---
+
+    // 17. The user's own bubble carries the same turn id, stamped there for the
+    //     minimap. Treating that as "this turn already has a card" refused the
+    //     assistant shell outright — no answer rendered at all.
+    {
+      const el = list();
+      const bubble = document.createElement("article");
+      bubble.className = "runtime-user-message";
+      bubble.dataset.turnId = "t1";
+      bubble.textContent = "question";
+      el.appendChild(bubble);
+      const live = make("t1", "live", "answer");
+      expect("a user bubble never blocks its own turn's answer", mountTurnArticle(el, live, { kind: "live" }) === live);
+      expect("and both stand, question above answer",
+        [...el.children].map((c) => c.className.split(" ")[0]).join(",") === "runtime-user-message,assistant-turn-article",
+        [...el.children].map((c) => c.className).join(" | "));
+
+      const sealed = make("t1", "sealed", "final");
+      mountTurnArticle(el, sealed, { kind: "sealed" });
+      expect("the committed card replaces the live one, not the question",
+        el.children.length === 2 && el.children[0] === bubble && el.children[1] === sealed,
+        [...el.children].map((c) => c.className).join(" | "));
+      expect("the question's text is untouched", bubble.textContent === "question");
+    }
+
+    // 18. Any non-live article that stands for the turn outranks the shell —
+    //     a scheduled-draft card is not named anywhere as a special case.
+    {
+      const el = list();
+      const draft = document.createElement("article");
+      draft.className = "assistant-turn-article scheduled-draft-article";
+      draft.dataset.turnId = "t1";
+      el.appendChild(draft);
+      expect("a live shell yields to a scheduled-draft card for the same turn",
+        mountTurnArticle(el, make("t1", "live", "shell"), { kind: "live" }) === null && el.children.length === 1);
+    }
+
+    // 19. Eviction takes the whole turn, including the article that has no
+    //     message key — the stranded-card case.
+    {
+      const keys = await import("./modules/message-render-keys.js");
+      const el = list();
+      const committed = make("tOld", "sealed", "old-answer");
+      committed.dataset.messageKey = "assistant:tOld";
+      const live = make("tOld", "live", "old-live");
+      const keptCommitted = make("tNew", "sealed", "new-answer");
+      keptCommitted.dataset.messageKey = "assistant:tNew";
+      const keptLive = make("tNew", "live", "new-live");
+      el.append(committed, live, keptCommitted, keptLive);
+      keys.removeCommittedArticlesByKeys(el, ["assistant:tOld"]);
+      expect("an evicted turn leaves nothing behind, keyed or not",
+        ids(el).join(",") === "tNew:new-answer,tNew:new-live", ids(el).join(","));
+    }
+
     return { ok: ok.length, failures };
   })()`);
 
