@@ -115,6 +115,45 @@ function unverifiedHonestyNote(userText = "") {
   }[language];
 }
 
+/**
+ * The scope sentence a partially-read source needs — appended, never substituted.
+ *
+ * A partial read means bytes WERE read, so the model's analysis of what it saw
+ * is real work. The gate that flags it says so itself: it reports
+ * `hasEvidence: true` and fails only when the answer does not disclose the
+ * partial scope. What was missing is therefore one sentence, not the answer.
+ *
+ * The exception is an answer that claims to have covered the WHOLE source while
+ * only part was read: "完整展示了…全部价格" is a false statement about the pages
+ * nobody saw, and appending a scope note would leave the contradiction standing.
+ * That one is still replaced. So the decision is three-way, not two: nothing
+ * read, overclaimed, or honestly partial.
+ *
+ * Erasing it was the observed behaviour on a 3 MB .docx: 23 tool steps and 18
+ * reasoning segments ran, and the user was handed a refusal instead of the
+ * analysis of the pages that had been read. Wording matches
+ * PARTIAL_SOURCE_DISCLOSURE_RE in evidence-gate.js on purpose — a disclosure
+ * that the gate would not recognise is not a disclosure.
+ */
+// The answer asserting it covered the whole source. Narrow on purpose: it only
+// has to catch a totality claim, because anything short of one is compatible
+// with a partial read once the scope note is appended.
+const WHOLE_SOURCE_CLAIM_RE =
+  /(完整(?:展示|列出|包含|覆盖|呈现|解析|读取)|全部(?:内容|页面|条目|价格|数据|字段|章节)|所有(?:页面|条目|内容|字段|章节)|整份(?:文档|文件|报告)|\b(?:the )?(?:entire|whole|complete) (?:document|file|image|attachment|report)\b|\ball (?:pages|items|entries|prices|fields|sections)\b)/i;
+
+function partialSourceScopeNote(evidenceSummary = null, userText = "") {
+  const language = answerLanguage(userText);
+  const coverage = evidenceSummary?.sourceContentCoverage || {};
+  const seen = Number(coverage.observedCount) || 0;
+  const total = Number(coverage.sourceCount) || 0;
+  const span = seen && total && total >= seen ? `${seen}/${total}` : "";
+  return {
+    zh: `\n\n备注：本次只解析了附件的部分内容${span ? `（${span}）` : ""}，以上结论仅覆盖已读到的部分，未读部分未作推测。`,
+    ar: `\n\nملاحظة: تمت قراءة جزء فقط من المرفق${span ? ` (${span})` : ""}؛ ما سبق يغطي الجزء المقروء فقط ولم يُخمَّن الباقي (partial read).`,
+    en: `\n\nNote: only part of the attachment was read${span ? ` (${span})` : ""}; the above covers only the observed portion and nothing beyond it was guessed.`,
+  }[language];
+}
+
 function documentDeliveryNote(delivery, userText = "") {
   const language = answerLanguage(userText);
   const labels = missingLabels(delivery?.missing || [], language);
@@ -292,7 +331,16 @@ function evaluateAnswerEvidence({
     let finalAssistant = original;
     let finalAssessment = assessment;
     if (sourceContent) {
-      finalAssistant = safeSourceContentFallback({ evidenceSummary, userText });
+      // Two different situations shared one outcome. "Nothing was read" justifies
+      // replacement — any content claim is fabricated by construction. "Part was
+      // read" does not: the analysis of what WAS read is real work, and the gate
+      // itself reports hasEvidence: true, failing only on the missing scope
+      // sentence. Supply the sentence; never erase the work.
+      const partial = evidenceSummary?.sourceContentCoverage?.status === "partial";
+      const overclaimsWholeSource = WHOLE_SOURCE_CLAIM_RE.test(original);
+      finalAssistant = partial && original && !overclaimsWholeSource
+        ? `${original}${partialSourceScopeNote(evidenceSummary, userText)}`
+        : safeSourceContentFallback({ evidenceSummary, userText });
     } else if (externalFact && riskTier !== "advisory" && !(externalFactRetry && !recoveryAttempt)) {
       finalAssistant = `${original}${unverifiedHonestyNote(userText)}`;
       finalAssessment = { ...assessment, deliveredUnverifiedWithNote: true };

@@ -149,4 +149,32 @@ assert.equal(partialImage.assessment.reason, "partial_source_content_without_dis
 assert(!partialImage.assistant.includes("三个产品"));
 assert.match(partialImage.assistant, /只成功读取了部分/);
 
+// 2026-09-18 field case: a 3 MB .docx, 23 tool steps and 18 reasoning segments,
+// and the user was handed a refusal instead of the analysis of the pages that
+// HAD been read. A partial read means bytes were read — the gate itself reports
+// hasEvidence: true and fails only on the missing scope sentence — so the answer
+// is real work and the sentence is what was missing. Three-way, not two: nothing
+// read is replaced, an answer overclaiming the whole source is replaced, an
+// honestly partial answer stands with its scope disclosed.
+const partialHonest = evaluateAnswerEvidence({
+  assistant: "文档里我读到的章节提出了三阶段架构：接入层、编排层、执行层。",
+  taskContract: imageContract,
+  turnPolicy: buildTurnPolicy({ text: imageText, taskContract: imageContract }),
+  evidenceSummary: {
+    counts: { sourceContentSources: 2 },
+    hasSourceContentEvidence: true,
+    sourceContentCoverage: { status: "partial", observedCount: 12, sourceCount: 40 },
+  },
+  inputFiles: [{ name: "proposal.docx", isImage: false }],
+  userText: imageText,
+});
+assert.match(partialHonest.assistant, /三阶段架构/, "the analysis of what WAS read survives");
+assert.match(partialHonest.assistant, /只解析了附件的部分内容/, "and the scope it covers is stated");
+assert.match(partialHonest.assistant, /12\/40/, "with how much was actually read");
+// A disclosure the gate would not recognise is not a disclosure.
+const { __testables } = createRequire(import.meta.url)("../src/main/evidence-gate.js");
+if (__testables?.PARTIAL_SOURCE_DISCLOSURE_RE) {
+  assert.match(partialHonest.assistant, __testables.PARTIAL_SOURCE_DISCLOSURE_RE, "and the gate accepts it as one");
+}
+
 console.log("answer-evidence-finalizer: ok");
