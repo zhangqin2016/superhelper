@@ -115,6 +115,11 @@ function shouldContinueInsteadOfReplay(code, tools = []) {
   return !isSideEffectFreeToolRun(tools);
 }
 
+function sourceCoverageHintFor(recipes = {}, context = {}) {
+  const language = recipes?.instructionLanguage === "zh" ? "zh" : "en";
+  return require("./source-coverage-recovery").buildSourceCoverageHint({ language, ...context });
+}
+
 function evidenceVerifyHintFor(recipes = {}, context = {}) {
   const language = recipes?.instructionLanguage === "zh" ? "zh" : "en";
   return buildEvidenceRecoveryHint({ language, ...context });
@@ -150,6 +155,15 @@ const RESCUE_STRATEGIES = Object.freeze({
     hint: "",
     preflight: true,
     enabled: () => process.env.LILY_DOCUMENT_DELIVERY_RETRY !== "0",
+  }),
+  // An attachment the model only got part-way through. Same route as
+  // DOCUMENT_DELIVERY_UNVERIFIED — one follow-up round — because the shortfall
+  // is recoverable by reading, not by rewording. See source-coverage-recovery.js.
+  SOURCE_COVERAGE_INCOMPLETE: Object.freeze({
+    kind: "source_coverage_retry",
+    hint: "",
+    preflight: true,
+    enabled: () => process.env.LILY_SOURCE_COVERAGE_RETRY !== "0",
   }),
   EMPTY_ASSISTANT_COMPLETION: Object.freeze({
     kind: "empty_completion_retry",
@@ -319,6 +333,7 @@ module.exports = {
   continuationHintFor,
   shouldContinueInsteadOfReplay,
   evidenceVerifyHintFor,
+  sourceCoverageHintFor,
   rescueStrategyFor,
   isRescuableFailureCode,
   isSideEffectFreeToolRun,

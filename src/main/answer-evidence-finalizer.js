@@ -330,6 +330,7 @@ function evaluateAnswerEvidence({
     // any content claim is fabricated by construction — a literal fact).
     let finalAssistant = original;
     let finalAssessment = assessment;
+    let sourceCoverageRetry = { ok: false, reason: "not_evaluated" };
     if (sourceContent) {
       // Two different situations shared one outcome. "Nothing was read" justifies
       // replacement — any content claim is fabricated by construction. "Part was
@@ -338,6 +339,12 @@ function evaluateAnswerEvidence({
       // sentence. Supply the sentence; never erase the work.
       const partial = evidenceSummary?.sourceContentCoverage?.status === "partial";
       const overclaimsWholeSource = WHOLE_SOURCE_CLAIM_RE.test(original);
+      // Before deciding how to word a shortfall, ask whether it can simply be
+      // removed: sources that were never opened can be opened. The scope note
+      // below stays as the honest fallback for when they cannot.
+      sourceCoverageRetry = require("./source-coverage-recovery").shouldReadRemainingSources({
+        taskContract, evidenceSummary, assistant: original, recoveryAttempt,
+      });
       finalAssistant = partial && original && !overclaimsWholeSource
         ? `${original}${partialSourceScopeNote(evidenceSummary, userText)}`
         : safeSourceContentFallback({ evidenceSummary, userText });
@@ -355,6 +362,8 @@ function evaluateAnswerEvidence({
       evidenceSummary: effectiveEvidenceSummary,
       triggerVerifyRetry: externalFactRetry || legacyOptInRetry,
       triggerDocumentVerifyRetry: false,
+      triggerSourceCoverageRetry: sourceCoverageRetry.ok === true,
+      sourceCoverage: sourceCoverageRetry.ok ? { observed: sourceCoverageRetry.observed, total: sourceCoverageRetry.total } : null,
       evidenceText,
     };
   } catch (error) {

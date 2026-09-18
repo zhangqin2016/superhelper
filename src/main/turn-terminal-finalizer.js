@@ -326,6 +326,8 @@ function createTurnTerminalFinalizer(options = {}) {
     let evidenceGateAssessment = null;
     let triggerVerifyRetry = false;
     let triggerDocumentVerifyRetry = false;
+    let triggerSourceCoverageRetry = false;
+    let sourceCoverage = null;
     let documentDelivery = null;
 
     if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
@@ -345,6 +347,8 @@ function createTurnTerminalFinalizer(options = {}) {
       evidenceGateAssessment = guarded.assessment;
       triggerVerifyRetry = guarded.triggerVerifyRetry;
       triggerDocumentVerifyRetry = guarded.triggerDocumentVerifyRetry;
+      triggerSourceCoverageRetry = Boolean(guarded.triggerSourceCoverageRetry);
+      sourceCoverage = guarded.sourceCoverage || null;
       documentDelivery = guarded.documentDelivery || guarded.assessment?.documentDelivery || null;
       effectiveEvidenceSummary = guarded.evidenceSummary || evidenceSummary;
       if (record) {
@@ -458,10 +462,13 @@ function createTurnTerminalFinalizer(options = {}) {
     }
     clearTurnState(state);
 
-    if (triggerVerifyRetry || triggerDocumentVerifyRetry) {
+    if (triggerVerifyRetry || triggerDocumentVerifyRetry || triggerSourceCoverageRetry) {
       try {
         void attemptVerifyRetry(sessionId, {
-          code: triggerDocumentVerifyRetry ? "DOCUMENT_DELIVERY_UNVERIFIED" : "EVIDENCE_UNVERIFIED",
+          code: triggerSourceCoverageRetry
+            ? "SOURCE_COVERAGE_INCOMPLETE"
+            : triggerDocumentVerifyRetry ? "DOCUMENT_DELIVERY_UNVERIFIED" : "EVIDENCE_UNVERIFIED",
+          sourceCoverage,
           supersedesTurnId: completedTurnId,
           documentDelivery,
           evidenceReason: evidenceGateAssessment?.reason || "",
@@ -475,7 +482,7 @@ function createTurnTerminalFinalizer(options = {}) {
       }
     }
     if (type === "turn.completed") scheduleBackgroundCompaction(sessionId);
-    return { parentClosureSource, suppressParentClosure: !terminalPersisted || triggerVerifyRetry || triggerDocumentVerifyRetry };
+    return { parentClosureSource, suppressParentClosure: !terminalPersisted || triggerVerifyRetry || triggerDocumentVerifyRetry || triggerSourceCoverageRetry };
   }
 
   return { finalize };

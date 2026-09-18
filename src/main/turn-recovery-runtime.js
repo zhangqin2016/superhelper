@@ -195,7 +195,8 @@ function createTurnRecoveryRuntime(options = {}) {
         }
       }
 
-      const deferAssistantRemoval = strategy.kind === "evidence_verify_retry" || documentRecovery || sourceTurnId;
+      const deferAssistantRemoval = strategy.kind === "evidence_verify_retry"
+        || strategy.kind === "source_coverage_retry" || documentRecovery || sourceTurnId;
       if (!deferAssistantRemoval) transcriptStore?.removeLastAssistantMessage?.(sessionId);
       const content = documentRecovery
         ? documentRecovery.content
@@ -213,6 +214,11 @@ function createTurnRecoveryRuntime(options = {}) {
         ? rescue.continuationHintFor(recipes)
         : strategy.kind === "tool_call_rescue"
         ? rescue.correctiveHintFor(recipes)
+        : strategy.kind === "source_coverage_retry"
+        ? rescue.sourceCoverageHintFor(recipes, {
+            observed: failure?.sourceCoverage?.observed,
+            total: failure?.sourceCoverage?.total,
+          })
         : strategy.kind === "evidence_verify_retry"
           ? rescue.evidenceVerifyHintFor(recipes, {
               reason: failure?.evidenceReason,
