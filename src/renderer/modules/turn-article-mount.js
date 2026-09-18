@@ -119,46 +119,4 @@ export function mountTurnArticle(listEl, article, options = {}) {
   return article;
 }
 
-/**
- * A live article is only ever a duplicate once the same turn has a committed
- * card in the list.
- *
- * `runtime.liveTurn` is a single slot, and the old cleanup ran against whichever
- * turn happened to occupy it when a render pass fired. The real event order
- * leaves no room for that:
- *
- *   assistant.final (A) → turn.completed (A) → user.committed (B)
- *   → turn.started (B), which overwrites the slot
- *
- * Miss the window and A's live article is orphaned with nothing left that will
- * ever look at it again — standing under the NEXT user message, because a new
- * bubble is inserted before whatever article holds the slot. The same gap shows
- * at the END of a turn, when the committed card lands while the live article is
- * still the current one. Both disappeared on restart, because a reload builds no
- * live articles at all.
- *
- * So the test is one thing, independent of the slot and of any bookkeeping: is a
- * committed card for this same turn already in the list? A running turn has no
- * committed card by definition, so this can only ever de-duplicate — never take
- * down an article still doing its job, and never make an answer disappear when
- * the live article is its only copy. A duplicate is a display bug; a
- * disappearing answer is a lost one. [gate: one-turn-one-article]
- *
- * @returns {number} how many duplicate live articles were dropped
- */
-export function reconcileLiveArticles(listEl) {
-  if (!listEl?.children) return 0;
-  let dropped = 0;
-  for (const article of [...listEl.children]) {
-    if (!isTurnArticle(article) || !isLive(article)) continue;
-    const turnId = article.dataset?.turnId || "";
-    if (!turnId) continue;
-    const committed = findMountedTurn(listEl, turnId, article);
-    if (!committed || isLive(committed)) continue; // its only copy — keep it
-    article.remove();
-    dropped += 1;
-  }
-  return dropped;
-}
-
 export { findMountedTurn };

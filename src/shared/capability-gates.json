@@ -1308,13 +1308,14 @@
     },
     {
       "id": "internal-prompt-provenance",
-      "protects": "A prompt the platform sends to itself never reads as the user's, and a self-check's answer never reads as the assistant volunteering.",
+      "protects": "A prompt the platform sends to itself never reads as the user's, and a self-check's answer never reads as the assistant volunteering. Provenance is stamped where the platform composes the prompt, not recognised downstream from its wording.",
       "baseline": "The prompt text the model receives is unchanged apart from the tag, and every prompt recognised before is still recognised — including history written before the tag existed.",
-      "failureFallback": "An untagged or unknown-kind prompt falls back to the safe reading (self-check), and a recovery prompt's ANSWER is always kept because it is the work the user asked for.",
+      "failureFallback": "An untagged or unknown-kind prompt falls back to the safe reading (self_check), and a recovery prompt's ANSWER is always kept because it is the work the user asked for. The seam defaults to recovery, so a new nudge added without thinking about kinds hides only the platform's question. Text the user typed — the pending payload, a steer, and the retries that re-deliver the same request after an engine rebuild — never passes through the seam and is never stamped, so a user's own message can never be hidden from their conversation.",
       "tests": [
         "scripts/test-internal-prompt-provenance.mjs",
         "scripts/test-opencode-conversation-source.mjs",
-        "scripts/test-todo-progress-overlay.mjs"
+        "scripts/test-todo-progress-overlay.mjs",
+        "scripts/test-compaction-continuity-plugin.mjs"
       ]
     },
     {
@@ -1340,7 +1341,7 @@
       "id": "one-turn-one-article",
       "protects": "A finished answer stays finished and a running one shows once: a turn occupies exactly one card in the conversation, whatever sequence of live events, commits, re-renders, pagination passes or turn handovers led there.",
       "baseline": "Nothing is suppressed, and there is no second index of what is live: the list itself is both the display and the record, since is-live/is-sealed are toggled from the view model on every render. Identity decides placement, not content — an article carrying a turn id replaces the one already standing for that turn, in place, keeping position and every block of the newest render. Articles without a turn id — notices, scheduled drafts, binding cards — are never reconciled, and reconciliation is scoped to one session's list.",
-      "failureFallback": "A missing or empty turn id means no identity, so the article is appended exactly as before; a null list or article returns null instead of throwing inside a render pass; a beforeNode from another list falls back to append. A live shell is refused over a committed card because the stored record is the finished answer — never the other way round, so a real answer can never be replaced by an emptier view of itself. The stale-article sweep removes a live card ONLY when a committed card for the same turn is already in the list, so it is always a de-duplication and never a removal: a running turn has no committed card by definition, and a finished turn whose live article is its only copy keeps it. A null list or map sweeps nothing instead of throwing inside a render pass.",
+      "failureFallback": "Identity is (turn id AND assistant-turn-article), so the user's own bubble — which carries the same turn id for the minimap — is never mistaken for the answer. An article with no turn id has no identity and is appended as before; a null list or article returns null instead of throwing inside a render pass; a live shell is refused over any committed card for the same turn but never the reverse, so an answer is never replaced by an emptier view of itself. There is no runtime repair pass: a source rule in the test keeps every producer of a turn article going through the mount point, so a duplicate cannot be created rather than being tidied up afterwards.",
       "tests": [
         "scripts/test-one-turn-one-article.cjs",
         "scripts/test-turn-view-model.mjs"

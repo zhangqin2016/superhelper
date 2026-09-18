@@ -50,7 +50,7 @@ import {
   liveTurnFromRecord,
 } from "./turn-view-model.js";
 import { createLiveTurnArticleShell } from "./turn-article-shell.js";
-import { findLiveArticle, hasLiveArticle, mountTurnArticle, reconcileLiveArticles } from "./turn-article-mount.js";
+import { findLiveArticle, hasLiveArticle, mountTurnArticle } from "./turn-article-mount.js";
 import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { patchLiveToolClocks } from "./turn-live-clock-patch.js";
 import { touchSessionUsage, updateSessionRunningIndicators } from "./project-tree.js";
@@ -685,10 +685,6 @@ function renderRuntimeSession(sessionId, opts = {}) {
     nearBottom: isNearBottom(panel),
   });
   renderCommittedMessages(sessionId, { allowEvict: shouldFollow });
-  // Sweep the whole live set, not just the turn currently holding the slot:
-  // a turn that ended while another was starting leaves its article behind
-  // with nothing that would ever look at it again.
-  reconcileLiveArticles(view(sessionId).listEl);
   // No second opinion on whether to render: renderLiveTurn asks the list, and
   // the list refuses a shell for a turn that already has a committed card. The
   // decision used to be taken here from runtime.committedMessages instead —

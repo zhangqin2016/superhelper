@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
 
   const moduleUrl = "./modules/turn-article-mount.js";
   const result = await win.webContents.executeJavaScript(`(async () => {
-    const { mountTurnArticle, reconcileLiveArticles, findLiveArticle, hasLiveArticle } = await import(${JSON.stringify(moduleUrl)});
+    const { mountTurnArticle, findLiveArticle, hasLiveArticle } = await import(${JSON.stringify(moduleUrl)});
     const failures = [];
     const ok = [];
     const expect = (name, condition, detail) => {
@@ -172,68 +172,39 @@ app.whenReady().then(async () => {
         mountTurnArticle(el, make("t1", "sealed", "x"), { kind: "sealed", beforeNode: document.createElement("div") }) !== null);
     }
 
-    // --- the stale-live-article cases, from the real event order ---
+    // --- the cases the deleted runtime sweep used to clean up, now prevented ---
 
     // 11. A turn that ENDS: the committed card lands while the live article is
-    //     still the current one. That is the "结束的时候也多一个" report.
+    //     still the current one. That was the "结束的时候也多一个" report.
     {
       const el = list();
-      const live = make("t1", "live", "live");
-      el.appendChild(live);
-      const sealed = make("t1", "sealed", "answer");
-      el.appendChild(sealed);
-      const dropped = reconcileLiveArticles(el);
-      expect("a finished turn's live article goes once its committed card is shown",
-        dropped === 1 && ids(el).join(",") === "t1:answer", ids(el).join(","));
-      expect("and nothing is left claiming to be live for it", hasLiveArticle(el) === false);
+      mountTurnArticle(el, make("t1", "live", "live"), { kind: "live" });
+      mountTurnArticle(el, make("t1", "sealed", "answer"), { kind: "sealed" });
+      expect("a finished turn never leaves its live article beside the answer",
+        ids(el).join(",") === "t1:answer", ids(el).join(","));
+      expect("and nothing claims to be live for it", findLiveArticle(el, "t1") === null);
     }
 
-    // 12. The orphan: turn A ended, turn B took the live slot, A's article was
-    //     left behind under B's user message. Nothing ever looked at it again.
+    // 12. The handover: turn A ends and turn B takes the live slot. A's article
+    //     used to be orphaned under B's user message with nothing looking at it.
     {
       const el = list();
-      const a = make("tA", "live", "orphan");
-      const b = make("tB", "live", "current");
-      el.append(make("tA", "sealed", "A-answer"), a, b);
-      const dropped = reconcileLiveArticles(el);
-      expect("the orphan from the previous turn is swept even though B holds the slot",
-        dropped === 1 && ids(el).join(",") === "tA:A-answer,tB:current", ids(el).join(","));
-      expect("and the running turn's article is untouched", findLiveArticle(el, "tB") === b);
+      mountTurnArticle(el, make("tA", "live", "A-live"), { kind: "live" });
+      mountTurnArticle(el, make("tA", "sealed", "A-answer"), { kind: "sealed" });
+      mountTurnArticle(el, make("tB", "live", "B-live"), { kind: "live" });
+      expect("the previous turn leaves one card and the new one starts clean",
+        ids(el).join(",") === "tA:A-answer,tB:B-live", ids(el).join(","));
+      expect("and B is the one that is live", findLiveArticle(el, "tB") !== null && findLiveArticle(el, "tA") === null);
     }
 
-    // 13. Never a disappearing answer: with no committed card, a live article is
-    //     the turn's only copy and must survive, live slot or not.
+    // 13. Never a disappearing answer: a turn whose live article is its only
+    //     copy keeps it, because no committed card ever replaced it.
     {
       const el = list();
-      const running = make("t1", "live", "running");
-      const finished = make("t2", "live", "only-copy");
-      el.append(running, finished);
-      expect("nothing is dropped while no committed card exists",
-        reconcileLiveArticles(el) === 0 && el.children.length === 2, ids(el).join(","));
-      expect("and both are still live", findLiveArticle(el, "t1") === running && findLiveArticle(el, "t2") === finished);
-    }
-
-    // 14. A live article for a turn whose only other card is ALSO live is not a
-    //     committed duplicate — precedence must not be inferred from presence.
-    {
-      const el = list();
-      const one = make("t1", "live", "one");
-      const two = make("t1", "live", "two");
-      el.append(one, two);
-      expect("a live sibling is not grounds for removal", reconcileLiveArticles(el) === 0, ids(el).join(","));
-    }
-
-    // 15. Detached entries are forgotten without touching the DOM.
-    {
-      const el = list();
-      const gone = make("t1", "live", "detached");
-      expect("a detached article is simply not in the list", reconcileLiveArticles(el) === 0 && hasLiveArticle(el) === false && gone.isConnected === false);
-    }
-
-    // 16. Bad input never throws inside a render pass.
-    {
-      expect("null list sweeps nothing", reconcileLiveArticles(null) === 0);
-      expect("an empty list sweeps nothing", reconcileLiveArticles(document.createElement("span")) === 0);
+      mountTurnArticle(el, make("t1", "live", "only-copy"), { kind: "live" });
+      mountTurnArticle(el, make("t2", "live", "running"), { kind: "live" });
+      expect("two different turns each keep their own live card",
+        ids(el).join(",") === "t1:only-copy,t2:running", ids(el).join(","));
     }
 
     // --- identity is (turn id AND turn article), never the id alone ---
@@ -294,11 +265,40 @@ app.whenReady().then(async () => {
     return { ok: ok.length, failures };
   })()`);
 
+  // --- the rule that makes the runtime sweep unnecessary ---
+  //
+  // A reconciliation pass that repairs duplicates at runtime is remedial: it
+  // lets the wrong state exist and tidies it afterwards, which also hides the
+  // producer that created it. The invariant is structural instead — every
+  // article that stands for a turn enters the list through mountTurnArticle,
+  // which replaces by identity — and this rule is what keeps it that way when
+  // someone adds the next producer.
+  const fs = require("node:fs");
+  const modules = path.join(root, "src/renderer/modules");
+  const sourceFailures = [];
+  const BUILDS_TURN_ARTICLE = /className\s*=\s*[`"'][^`"']*assistant-turn-article/;
+  for (const file of fs.readdirSync(modules).filter((name) => name.endsWith(".js"))) {
+    if (file === "turn-article-mount.js") continue;
+    const src = fs.readFileSync(path.join(modules, file), "utf8");
+    if (!BUILDS_TURN_ARTICLE.test(src)) continue;
+    // A pure factory builds the article and hands it back; it never sees a list,
+    // so it cannot put anything in the wrong place.
+    if (!/listEl/.test(src)) continue;
+    if (!/mountTurnArticle\(/.test(src)) {
+      sourceFailures.push(`${file} builds a turn article and touches the list without going through mountTurnArticle`);
+    }
+  }
+  const mount = fs.readFileSync(path.join(modules, "turn-article-mount.js"), "utf8");
+  if (/reconcileLiveArticles/.test(mount)) {
+    sourceFailures.push("turn-article-mount.js still ships a runtime sweep; the mount point is the invariant, not a repair pass");
+  }
+  for (const failure of sourceFailures) console.error("FAIL -", failure);
+
   clearTimeout(hardTimeout);
   for (const failure of result.failures) console.error("FAIL -", failure);
-  console.log(`${result.ok} checks passed (one turn, one article — real DOM)`);
+  console.log(`${result.ok + 1} checks passed (one turn, one article — real DOM + the mounting rule)`);
   win.destroy();
-  app.exit(result.failures.length ? 1 : 0);
+  app.exit(result.failures.length || sourceFailures.length ? 1 : 0);
 }).catch((error) => {
   console.error("test-one-turn-one-article:", error?.message || error);
   app.exit(1);
