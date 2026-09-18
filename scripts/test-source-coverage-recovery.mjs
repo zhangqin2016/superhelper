@@ -196,4 +196,25 @@ check("the round actually inherits what was read — the previous fix was a no-o
   assert.equal(buildEvidenceRecoveryContext({ sourceTurnId: "t1", tools, evidenceScope: "external" }), null);
 });
 
+check("it can actually fire: a turn that read a document is never side-effect-free", () => {
+  // The dispatch refuses a REPLAY whenever the turn was not side-effect-free,
+  // and the extraction tools are not classified replay-safe — so a coverage
+  // round dispatched as a replay could never fire for the one case it exists
+  // for. Measured before the fix: shouldContinueInsteadOfReplay was false and
+  // isSideEffectFreeToolRun was false, which is a guaranteed early return.
+  const ran = [{ name: "read", status: "done" }, { name: "lily_file_intelligence", status: "done" }];
+  assert.equal(rescue.isSideEffectFreeToolRun(ran), false, "reading a document is not side-effect-free");
+  assert.equal(rescue.shouldContinueInsteadOfReplay("SOURCE_COVERAGE_INCOMPLETE", ran), true,
+    "so the round continues the session instead of replaying the request");
+  assert.equal(rescue.shouldContinueInsteadOfReplay("EVIDENCE_UNVERIFIED", ran), false, "other codes are unchanged");
+  assert.equal(rescue.shouldContinueInsteadOfReplay("SOURCE_COVERAGE_INCOMPLETE", []), true,
+    "and it continues whether or not the turn had side effects — there is nothing to replay, only more to read");
+
+  // Continuing must not cost it its own instruction: the generic continuation
+  // hint says only "carry on", losing the one thing that makes the round useful.
+  const runtime = fs.readFileSync(new URL("../src/main/turn-recovery-runtime.js", import.meta.url), "utf8");
+  assert.match(runtime, /const hint = strategy\.kind === "source_coverage_retry"/, "its own hint wins over the generic one");
+  assert.match(runtime, /: strategy\.kind === "source_coverage_retry"\n\s*\? rescue\.sourceCoverageHintFor/, "and rides the message body too");
+});
+
 console.log(`\n${checks} checks passed (source coverage recovery)`);

@@ -109,9 +109,20 @@ function continuationHintFor(recipes = {}) {
  * that already had side effects. Kill switch: LILY_TOOL_CALL_CONTINUATION=0
  * restores the previous behaviour, where such a turn simply failed.
  */
+// Codes whose follow-up must CONTINUE the session rather than replay the user's
+// request. Replay is refused whenever the turn was not side-effect-free, which
+// is every turn that read a document: the extraction tools are not classified
+// replay-safe, so a coverage round dispatched as a replay could never fire at
+// all. Continuing is also the better shape for it — the model keeps what it
+// already read and is asked only for the missing next action.
+const CONTINUE_INSTEAD_CODES = new Set(["MALFORMED_TOOL_CALL_TEXT", "SOURCE_COVERAGE_INCOMPLETE"]);
+
 function shouldContinueInsteadOfReplay(code, tools = []) {
   if (process.env.LILY_TOOL_CALL_CONTINUATION === "0") return false;
-  if (String(code || "") !== "MALFORMED_TOOL_CALL_TEXT") return false;
+  if (!CONTINUE_INSTEAD_CODES.has(String(code || ""))) return false;
+  // A coverage round is a continuation by nature, side effects or not: there is
+  // nothing to replay, only more of the source to read.
+  if (String(code) === "SOURCE_COVERAGE_INCOMPLETE") return true;
   return !isSideEffectFreeToolRun(tools);
 }
 

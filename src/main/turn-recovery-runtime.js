@@ -200,9 +200,14 @@ function createTurnRecoveryRuntime(options = {}) {
       if (!deferAssistantRemoval) transcriptStore?.removeLastAssistantMessage?.(sessionId);
       const content = documentRecovery
         ? documentRecovery.content
-        : continueInstead
-          ? rescue.continuationHintFor(modelRecipes())
-          : String(lastUser.content || "").trim();
+        : strategy.kind === "source_coverage_retry"
+          ? rescue.sourceCoverageHintFor(modelRecipes(), {
+              observed: failure?.sourceCoverage?.observed,
+              total: failure?.sourceCoverage?.total,
+            })
+          : continueInstead
+            ? rescue.continuationHintFor(modelRecipes())
+            : String(lastUser.content || "").trim();
       const replaySourceTurnId = sourceTurnId
         || lastUser?.turnId
         || lastUser?.record?.turnId
@@ -210,15 +215,18 @@ function createTurnRecoveryRuntime(options = {}) {
       const replaySource = sourceTurn || (replaySourceTurnId
         ? ctx.sessionManager?.getTurnInputByTurnId?.(sessionId, replaySourceTurnId) : null);
       const recipes = modelRecipes();
-      const hint = continueInstead
-        ? rescue.continuationHintFor(recipes)
-        : strategy.kind === "tool_call_rescue"
-        ? rescue.correctiveHintFor(recipes)
-        : strategy.kind === "source_coverage_retry"
+      // A strategy that knows what it needs says so, even when continuing: the
+      // generic continuation hint would tell a coverage round only to "carry on",
+      // losing the one instruction that makes it useful — read the REMAINDER.
+      const hint = strategy.kind === "source_coverage_retry"
         ? rescue.sourceCoverageHintFor(recipes, {
             observed: failure?.sourceCoverage?.observed,
             total: failure?.sourceCoverage?.total,
           })
+        : continueInstead
+        ? rescue.continuationHintFor(recipes)
+        : strategy.kind === "tool_call_rescue"
+        ? rescue.correctiveHintFor(recipes)
         : strategy.kind === "evidence_verify_retry"
           ? rescue.evidenceVerifyHintFor(recipes, {
               reason: failure?.evidenceReason,

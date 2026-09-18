@@ -97,8 +97,9 @@ assert.match(
 // swapping the content back to the user's message passed the gate.
 assert.match(
   runtime,
-  /const content = documentRecovery[\s\S]{0,160}continueInstead[\s\S]{0,80}rescue\.continuationHintFor/,
-  "the SENT CONTENT of a continuation must be the continuation text, not the user's original message",
+  /const content = documentRecovery[\s\S]{0,520}continueInstead[\s\S]{0,120}rescue\.continuationHintFor/,
+  "the SENT CONTENT of a continuation must be the continuation text, not the user's original message"
+  + " (a strategy with its own instruction — source_coverage_retry — supplies that instead of the generic one)",
 );
 assert.match(runtime, /documentRecovery \|\| continueInstead \? \[\] : \(lastUser\.files/, "a continuation must not resend the user's attachments");
 assert.match(runtime, /mode: continueInstead \? "continuation" : "replay"/, "the recovery record must say which mode ran, or the logs cannot tell them apart");
