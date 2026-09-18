@@ -170,4 +170,30 @@ check("only an actual overclaim is erased — a negated or self-disclosing answe
   assert.equal(gate.disclosesPartialSourceScope("全文已完整解析"), false);
 });
 
+check("the round actually inherits what was read — the previous fix was a no-op", () => {
+  const { buildEvidenceRecoveryContext } = require("../src/main/turn-recovery-context.js");
+  const tools = [
+    { name: "lily_file_intelligence", status: "done", result: { output: "pages 1-12 …" }, input: { action: "extract" } },
+    { name: "write", status: "done", result: { output: "wrote" }, input: { filePath: "/a.txt", content: "x" } },
+    { name: "bash", status: "done", result: { output: "done" }, input: { command: "rm -rf /tmp/x" } },
+  ];
+  const inherited = buildEvidenceRecoveryContext({ sourceTurnId: "t1", tools, evidenceScope: "source_content" });
+  // Measured before the fix: null. sanitizeEvidenceTool required replay-safety,
+  // which answers "is it safe to RUN again" — the wrong question when nothing is
+  // re-run — and the extraction tools are not classified replay-safe, so every
+  // observation was dropped before its kind was looked at.
+  assert.ok(inherited, "the coverage round inherits something at all");
+  assert.deepEqual(inherited.tools.map((t) => t.name), ["lily_file_intelligence"], "namely the read, and only the read");
+  assert.equal(inherited.mode, "source_coverage_retry");
+  assert.ok(/pages 1-12/.test(inherited.tools[0].result), "with the content it actually observed");
+
+  // An ACTION's result must never ride along: inheriting a write would let the
+  // model believe this turn already wrote the file.
+  for (const name of ["write", "bash"]) {
+    assert.ok(!inherited.tools.some((t) => t.name === name), `${name} is not an observation`);
+  }
+  // The external path keeps its stricter test, unchanged.
+  assert.equal(buildEvidenceRecoveryContext({ sourceTurnId: "t1", tools, evidenceScope: "external" }), null);
+});
+
 console.log(`\n${checks} checks passed (source coverage recovery)`);

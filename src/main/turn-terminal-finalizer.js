@@ -366,7 +366,14 @@ function createTurnTerminalFinalizer(options = {}) {
     // limit (size, pages, timeout), stops in exactly the same place — the user
     // pays a round for nothing and gets the same scope note anyway.
     const evidenceRecoveryContext = triggerVerifyRetry || triggerSourceCoverageRetry
-      ? buildEvidenceRecoveryContext({ sourceTurnId: completedTurnId, tools: evidenceTools })
+      ? buildEvidenceRecoveryContext({
+        sourceTurnId: completedTurnId,
+        tools: evidenceTools,
+        // What to inherit follows from why the round runs: the coverage round
+        // needs what was read OUT of the attachment, which the external-evidence
+        // filter discards entirely.
+        evidenceScope: triggerSourceCoverageRetry && !triggerVerifyRetry ? "source_content" : "external",
+      })
       : null;
     if (shouldBufferAssistantAnswer(state.taskContract) && assistant) {
       appendTimelineText(state, assistant, Date.now());

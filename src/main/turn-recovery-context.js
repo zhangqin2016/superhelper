@@ -13,6 +13,16 @@ const MAX_EVIDENCE_CHARS = 40_000;
 const MAX_TOOL_EVIDENCE_CHARS = 12_000;
 const MAX_GUIDANCE_CHARS = 16_000;
 const EXTERNAL_EVIDENCE_KINDS = new Set(["web_search", "web_fetch", "external_observation"]);
+// What a round inherits depends on WHY it is running. An external-fact retry
+// inherits what was fetched from the outside world; a round that exists to
+// finish reading an attachment inherits what was already read OUT of it —
+// filtering that to web evidence leaves nothing at all, and the follow-up then
+// re-reads from the start and stops at the same limit.
+const SOURCE_CONTENT_EVIDENCE_KINDS = new Set(["file_read", "file_search", "tool_observation", "knowledge_base"]);
+const EVIDENCE_KIND_SETS = Object.freeze({
+  external: EXTERNAL_EVIDENCE_KINDS,
+  source_content: SOURCE_CONTENT_EVIDENCE_KINDS,
+});
 
 function boundedText(value, limit) {
   const text = String(value || "").trim();
@@ -48,13 +58,25 @@ function recoveryToolInput(tool, event) {
   return query ? { query } : {};
 }
 
-function sanitizeEvidenceTool(tool, sourceTurnId, index, remainingChars) {
+function sanitizeEvidenceTool(tool, sourceTurnId, index, remainingChars, allowedKinds = EXTERNAL_EVIDENCE_KINDS) {
   if (!tool || typeof tool !== "object" || remainingChars <= 0) return null;
   const status = String(tool.status || "").toLowerCase();
   if (tool.isError || status === "failed" || status === "error") return null;
-  if (!isReplaySafeTool(tool)) return null;
+  // Replay-safety answers "is it safe to RUN this again". Inheriting a result
+  // runs nothing, so it is the wrong question here — and it is the question that
+  // silently emptied the source-content scope: the extraction tools are not
+  // classified replay-safe (lily_file_intelligence also has an indexing action
+  // that writes), so every observation they produced was dropped before its kind
+  // was even looked at, and the round meant to continue a read inherited nothing.
+  //
+  // Kind alone is the right gate for what may be QUOTED: the allowed sets below
+  // contain observations only — no file_write, no command — so an action's result
+  // can never be inherited and be mistaken for something this turn did. The
+  // external scope keeps the stricter test, because a replayed web call is also
+  // re-run elsewhere on that path.
+  if (allowedKinds === EXTERNAL_EVIDENCE_KINDS && !isReplaySafeTool(tool)) return null;
   const event = normalizeToolEvidence(tool);
-  if (!event.success || !EXTERNAL_EVIDENCE_KINDS.has(event.kind)) return null;
+  if (!event.success || !allowedKinds.has(event.kind)) return null;
   const result = boundedText(resultText(tool), Math.min(MAX_TOOL_EVIDENCE_CHARS, remainingChars));
   if (!result) return null;
   const name = String(tool.name || tool.tool || "unknown").trim() || "unknown";
@@ -74,14 +96,15 @@ function sanitizeEvidenceTool(tool, sourceTurnId, index, remainingChars) {
   };
 }
 
-function buildEvidenceRecoveryContext({ sourceTurnId = "", tools = [] } = {}) {
+function buildEvidenceRecoveryContext({ sourceTurnId = "", tools = [], evidenceScope = "external" } = {}) {
+  const allowedKinds = EVIDENCE_KIND_SETS[evidenceScope] || EXTERNAL_EVIDENCE_KINDS;
   const origin = String(sourceTurnId || "").trim();
   if (!origin || !Array.isArray(tools)) return null;
   const inherited = [];
   let totalChars = 0;
   for (const tool of tools) {
     if (inherited.length >= MAX_EVIDENCE_TOOLS || totalChars >= MAX_EVIDENCE_CHARS) break;
-    const item = sanitizeEvidenceTool(tool, origin, inherited.length, MAX_EVIDENCE_CHARS - totalChars);
+    const item = sanitizeEvidenceTool(tool, origin, inherited.length, MAX_EVIDENCE_CHARS - totalChars, allowedKinds);
     if (!item) continue;
     totalChars += item.result.length;
     inherited.push(item);
@@ -89,7 +112,7 @@ function buildEvidenceRecoveryContext({ sourceTurnId = "", tools = [] } = {}) {
   if (!inherited.length) return null;
   return {
     schemaVersion: CONTEXT_SCHEMA_VERSION,
-    mode: "evidence_verify_retry",
+    mode: evidenceScope === "source_content" ? "source_coverage_retry" : "evidence_verify_retry",
     sourceTurnId: origin,
     tools: inherited,
     summary: { toolCount: inherited.length, totalChars },
