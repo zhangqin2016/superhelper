@@ -1316,6 +1316,15 @@
         "scripts/test-opencode-conversation-source.mjs",
         "scripts/test-todo-progress-overlay.mjs"
       ]
+    },
+    {
+      "id": "resumable-enrichment",
+      "protects": "Launching with a large history stays responsive, and an artifact/result-block schema bump cannot wedge the app: the backfill it triggers is bounded per tick and resumes where it stopped.",
+      "baseline": "Every record still reaches the same re-derived state it would have reached before — the pass is the same derivation over the same messages, only sliced; nothing is skipped and nothing is derived twice.",
+      "failureFallback": "A store without the bounded read does no enrichment at all rather than an unbounded one; a throwing or workspace-less session is abandoned unflagged for the next launch; records then display from their stored artifacts, which is the 0.1.176 baseline.",
+      "tests": [
+        "scripts/test-resumable-enrichment.mjs"
+      ]
     }
   ]
 }

@@ -30,7 +30,7 @@
     "src/main/session-manager.js": 1314,
     "src/main/session-runner-pool.js": 586,
     "src/main/skill-manager.js": 1936,
-    "src/main/store/message-store.js": 1014,
+    "src/main/store/message-store.js": 913,
     "src/main/task-contract.js": 1264,
     "src/main/turn-orchestrator.js": 2050,
     "src/main/update-manager.js": 587,

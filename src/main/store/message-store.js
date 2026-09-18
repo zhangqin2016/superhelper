@@ -17,7 +17,6 @@
  * for blob refs. A page read decompresses only the rows it returns.
  */
 
-const zlib = require("node:zlib");
 const crypto = require("node:crypto");
 const { openMessageDatabase } = require("./sqlite-db");
 const { BlobStore } = require("./blob-store");
@@ -37,13 +36,12 @@ const TERMINAL_TURN_EVENT_TYPES = new Set([
   "turn.dispatch_blocked",
 ]);
 const { listSessionSummaries } = require("./message-store-session-inventory");
+const { pack, unpack } = require("./message-envelope");
 const {
   DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
   DISPATCH_BLOCKED_ASSISTANT,
 } = require("../turn-recovery-projection");
 const PREVIEW_MAX = 500;
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
 
 function fingerprintMessage(message) {
   const hash = crypto.createHash("sha256");
@@ -58,16 +56,6 @@ function fingerprintMessage(message) {
   };
   hash.update(JSON.stringify(stable));
   return hash.digest("hex");
-}
-
-function pack(envelope) {
-  return zlib.gzipSync(Buffer.from(JSON.stringify(envelope), "utf8"));
-}
-
-function unpack(blob) {
-  if (!blob) return null;
-  const buf = Buffer.isBuffer(blob) ? blob : Buffer.from(blob);
-  return JSON.parse(zlib.gunzipSync(buf).toString("utf8"));
 }
 
 function stringifyJson(value, fallback) {
@@ -719,108 +707,15 @@ class MessageStore {
     })();
   }
 
-  count(sessionId) {
-    const row = this.db.get(`SELECT COUNT(*) AS c FROM messages WHERE session_id = ?`, sessionId);
-    return row ? row.c : 0;
-  }
 
   listSessionSummaries() {
     return listSessionSummaries(this.db);
   }
-  /**
-   * Keyset pagination. `before` is an exclusive seq cursor (omit for the newest
-   * page); the returned `nextBefore` feeds the next (older) call. Conversation
-   * is returned in chronological (ascending) order.
-   */
-  getPage(sessionId, { before, limit } = {}) {
-    const lim = Math.max(1, Math.min(Number(limit) || DEFAULT_LIMIT, MAX_LIMIT));
-    const total = this.count(sessionId);
-    const rows = Number.isInteger(before)
-      ? this.db.all(
-          `SELECT seq, envelope_blob FROM messages
-           WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
-          sessionId,
-          before,
-          lim,
-        )
-      : this.db.all(
-          `SELECT seq, envelope_blob FROM messages
-           WHERE session_id = ? ORDER BY seq DESC LIMIT ?`,
-          sessionId,
-          lim,
-        );
-    rows.reverse(); // chronological
-    const conversation = rows.map((r) => unpack(r.envelope_blob));
-    const minSeq = rows.length ? rows[0].seq : 0;
-    const older = rows.length
-      ? this.db.get(
-          `SELECT 1 AS x FROM messages WHERE session_id = ? AND seq < ? LIMIT 1`,
-          sessionId,
-          minSeq,
-        )
-      : null;
-    return {
-      conversation,
-      total,
-      hasMore: Boolean(older),
-      before: Number.isInteger(before) ? before : null,
-      nextBefore: minSeq,
-    };
-  }
 
-  /** Full chronological history (used to build model context). */
-  getAll(sessionId) {
-    const rows = this.db.all(
-      `SELECT envelope_blob FROM messages WHERE session_id = ? ORDER BY seq ASC`,
-      sessionId,
-    );
-    return rows.map((r) => unpack(r.envelope_blob));
-  }
 
-  /**
-   * Newest `limit` committed messages WITH canonical sequence numbers, in
-   * ascending seq order: [{seq, role, speakerName, text}]. This is the
-   * world-book scan-corpus projection (§10.4.1): user text comes from
-   * envelope.content, assistant text from envelope.record.assistantText, and
-   * the speaker name falls back to the role.
-   */
-  getRecentWithSeq(sessionId, limit = 100) {
-    const lim = Math.max(1, Math.min(Number(limit) || DEFAULT_LIMIT, MAX_LIMIT));
-    const rows = this.db.all(
-      `SELECT seq, envelope_blob FROM messages
-       WHERE session_id = ? ORDER BY seq DESC LIMIT ?`,
-      sessionId,
-      lim,
-    );
-    rows.reverse(); // chronological
-    return rows.map((row) => {
-      const envelope = unpack(row.envelope_blob) || {};
-      const role = typeof envelope.role === "string" && envelope.role ? envelope.role : "assistant";
-      const text = typeof envelope.content === "string" && envelope.content
-        ? envelope.content
-        : String(envelope.record?.assistantText || "");
-      const speakerName = typeof envelope.speakerName === "string" && envelope.speakerName
-        ? envelope.speakerName
-        : role;
-      return { seq: row.seq, role, speakerName, text };
-    });
-  }
 
-  getById(id) {
-    const row = this.db.get(`SELECT envelope_blob FROM messages WHERE id = ?`, id);
-    return row ? unpack(row.envelope_blob) : null;
-  }
 
-  /** Most recent message of a given role (e.g. last user message for retry). */
-  lastOfRole(sessionId, role) {
-    const row = this.db.get(
-      `SELECT envelope_blob FROM messages WHERE session_id = ? AND role = ?
-       ORDER BY seq DESC LIMIT 1`,
-      sessionId,
-      role,
-    );
-    return row ? unpack(row.envelope_blob) : null;
-  }
+
 
   /**
    * Mutate a stored message in place. `updater(envelope)` returns the new
@@ -946,18 +841,6 @@ class MessageStore {
     return runtimeEventRetention.countOrphanRuntimeEvents(this.db);
   }
 
-  /** Full-text search over previews. Returns lightweight hits, newest first. */
-  search(query, { limit = 50 } = {}) {
-    const q = String(query || "").trim();
-    if (!q) return [];
-    return this.db.all(
-      `SELECT m.session_id, m.id, m.role, m.created_at, m.preview
-       FROM messages_fts f JOIN messages m ON m.rowid = f.rowid
-       WHERE f.preview MATCH ? ORDER BY m.created_at DESC LIMIT ?`,
-      q,
-      Math.max(1, Math.min(Number(limit) || 50, MAX_LIMIT)),
-    );
-  }
   meta(key) {
     const row = this.db.get(`SELECT value FROM schema_meta WHERE key = ?`, key);
     return row ? row.value : null;
@@ -968,6 +851,16 @@ class MessageStore {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       key, String(value),
     );
+  }
+  deleteMeta(key) {
+    this.db.run(`DELETE FROM schema_meta WHERE key = ?`, key);
+  }
+  /** Meta keys under a prefix — for sweeping bookkeeping left by an earlier schema version. */
+  metaKeys(prefix = "") {
+    const like = `${String(prefix).replace(/[\\%_]/g, "\\$&")}%`;
+    return this.db
+      .all(`SELECT key FROM schema_meta WHERE key LIKE ? ESCAPE '\\' ORDER BY key ASC`, like)
+      .map((row) => row.key);
   }
   agents() { return this._agents ||= new (require("../agents/agent-repository").AgentRepository)(this); }
   characterWorlds() { return this._characterWorlds ||= new (require("../character-worlds/repository").CharacterWorldsRepository)(this); }
@@ -1004,6 +897,14 @@ const taskContextRegistryMethods = require("./task-context-registry-store").crea
 Object.defineProperties(
   MessageStore.prototype,
   Object.fromEntries(Object.entries(taskContextRegistryMethods).map(([name, value]) => [
+    name,
+    { configurable: true, writable: true, value },
+  ])),
+);
+const messageReadMethods = require("./message-read-store").createMessageReadMethods();
+Object.defineProperties(
+  MessageStore.prototype,
+  Object.fromEntries(Object.entries(messageReadMethods).map(([name, value]) => [
     name,
     { configurable: true, writable: true, value },
   ])),
