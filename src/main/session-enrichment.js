@@ -40,6 +40,12 @@ const DEFAULT_TICK_DELAY_MS = 8;
 // headroom is what let an early version grow to 200 and spend 214 ms in one.)
 const TARGET_TICK_MS = 50;
 const MIN_BATCH_SIZE = 5;
+// Compressed size above which a record gets a tick to itself. Measured on one
+// real database: the median record costs 5 ms to inflate, re-derive and re-pack,
+// while a single 13 MB envelope costs 1022 ms (67 + 397 + 558). A single
+// record's rewrite cannot be split, so that is the design floor — but it can at
+// least be kept from landing on top of a tick that has already spent its budget.
+const BIG_RECORD_BYTES = 512 * 1024;
 const MAX_BATCH_SIZE = 200;
 const FLAG_PREFIX = "enriched:";
 const CURSOR_PREFIX = "enriching:";
@@ -98,7 +104,11 @@ function enrichSessionSlice(input = {}) {
   let cursor = from;
   let enriched = 0;
   let scanned = 0;
+  const bigRecordBytes = Number(input.bigRecordBytes) > 0 ? Number(input.bigRecordBytes) : BIG_RECORD_BYTES;
   for (const row of slice) {
+    // Give a pathological record its own tick instead of appending a second's
+    // worth of work to a tick that has already done its share.
+    if (scanned > 0 && Number(row?.bytes) >= bigRecordBytes) break;
     if (Number.isFinite(Number(row?.seq))) cursor = Number(row.seq);
     scanned += 1;
     const message = row?.message;
@@ -240,6 +250,7 @@ function startResumableEnrichment(input = {}) {
 }
 
 module.exports = {
+  BIG_RECORD_BYTES,
   DEFAULT_BATCH_SIZE,
   MAX_BATCH_SIZE,
   MIN_BATCH_SIZE,

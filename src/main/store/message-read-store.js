@@ -96,6 +96,9 @@ function createMessageReadMethods() {
         let loaded = false;
         return {
           seq: row.seq,
+          // The compressed size, free from the row — a caller can tell a
+          // pathological record from an ordinary one without inflating it.
+          bytes: row.envelope_blob?.length || 0,
           get message() {
             if (!loaded) { message = unpack(row.envelope_blob); loaded = true; }
             return message;

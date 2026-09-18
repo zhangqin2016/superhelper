@@ -23,6 +23,7 @@ const {
   sweepStaleCursors,
   nextBatchSize,
   observeSliceCost,
+  BIG_RECORD_BYTES,
   sessionTime,
   DEFAULT_BATCH_SIZE,
   MAX_BATCH_SIZE,
@@ -276,6 +277,39 @@ try {
     });
     thrower.runTicks(10);
     assert.equal(store.meta(flagKey("small", V5)), null, "a throwing backfill abandons the session unflagged for a retry");
+  });
+
+  check("an oversized record gets a tick to itself and the read reports size without inflating", () => {
+    assert.ok(BIG_RECORD_BYTES > 0);
+    const rows = store.messageSlice("small", 0, 5);
+    assert.ok(rows.every((row) => Number.isFinite(row.bytes) && row.bytes > 0), "every row carries its compressed size");
+
+    // A slice where row #3 is pathological: the first two are processed, then
+    // the slice ends so the big one starts the next tick alone.
+    store.deleteMeta(flagKey("wide", V5));
+    store.deleteMeta(cursorKey("wide", V5));
+    seed("wide", 6);
+    const order = [];
+    const patched = store.messageSlice.bind(store);
+    store.messageSlice = (sessionId, after, limit) => patched(sessionId, after, limit)
+      .map((row, i) => ({ seq: row.seq, bytes: i === 2 ? BIG_RECORD_BYTES + 1 : 100, get message() { return row.message; } }));
+    try {
+      const first = enrichSessionSlice({
+        store, sessionId: "wide", workspacePath: WORKSPACE, versions: V5, batchSize: 6,
+        backfill: (message) => { order.push(message.id); return false; },
+      });
+      assert.equal(first.scanned, 2, `the slice stops before the oversized record: ${first.scanned}`);
+      assert.equal(first.done, false, "and the session is not finished");
+      const second = enrichSessionSlice({
+        store, sessionId: "wide", workspacePath: WORKSPACE, versions: V5, batchSize: 6,
+        backfill: (message) => { order.push(message.id); return false; },
+      });
+      assert.ok(second.scanned >= 1, "the next tick starts with it");
+      assert.equal(order[2], "wide-m2", "and it is the one that was deferred, in order");
+      assert.equal(new Set(order).size, order.length, "nothing is processed twice across the boundary");
+    } finally {
+      store.messageSlice = patched;
+    }
   });
 
   check("the bounded read pages without gaps or overlap and clamps its limit", () => {
