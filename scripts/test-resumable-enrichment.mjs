@@ -24,6 +24,11 @@ const {
   nextBatchSize,
   observeSliceCost,
   BIG_RECORD_BYTES,
+  versionsUsable,
+  nextBigRecordBytes,
+  observeByteCost,
+  MIN_BIG_RECORD_BYTES,
+  MAX_BIG_RECORD_BYTES,
   sessionTime,
   DEFAULT_BATCH_SIZE,
   MAX_BATCH_SIZE,
@@ -270,13 +275,24 @@ try {
     scheduler.runTicks(10);
     assert.equal(store.meta(flagKey("small", V5)), null, "a session with no workspace is left for a later launch, not flagged");
 
+    // Contract change, 2026-09-18: a throwing backfill used to abandon the whole
+    // session with its cursor unpersisted, so every launch re-read the same slice
+    // and failed on the same record — that session was never enriched again.
+    // Failure is now per record: the bad one keeps its stored artifacts (the
+    // baseline) and the rest of the history still gets done.
+    store.deleteMeta(flagKey("small", V5));
+    store.deleteMeta(cursorKey("small", V5));
     const thrower = manualScheduler();
+    let summary = null;
     startResumableEnrichment({
-      store, sessions: [{ id: "small", projectId: "p", updatedAt: 1 }], schedule: thrower.schedule,
+      store, sessions: [{ id: "small", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }], schedule: thrower.schedule,
       workspacePathFor: () => WORKSPACE, backfill: () => { throw new Error("boom"); }, versions: V5, batchSize: 40,
+      onDone: (s) => { summary = s; },
     });
     thrower.runTicks(10);
-    assert.equal(store.meta(flagKey("small", V5)), null, "a throwing backfill abandons the session unflagged for a retry");
+    assert.ok(store.meta(flagKey("small", V5)), "the session still completes rather than retrying the same record every launch");
+    assert.equal(summary.skipped, 7, "every skip is counted");
+    assert.equal(summary.enriched, 0, "and nothing is claimed as enriched");
   });
 
   check("an oversized record gets a tick to itself and the read reports size without inflating", () => {
@@ -309,6 +325,155 @@ try {
       assert.equal(new Set(order).size, order.length, "nothing is processed twice across the boundary");
     } finally {
       store.messageSlice = patched;
+    }
+  });
+
+  check("a slice that cannot advance its cursor stops the session instead of spinning forever", () => {
+    // Every key and the resume itself hang off the sequence number. A row whose
+    // seq cannot be read would leave the cursor where it was, so the next tick
+    // reads the same rows — a busy loop for the life of the process.
+    store.deleteMeta(flagKey("small", V5));
+    store.deleteMeta(cursorKey("small", V5));
+    const real = store.messageSlice.bind(store);
+    store.messageSlice = (sid, after, limit) => real(sid, after, limit)
+      .map((row) => (sid === "small" ? { seq: undefined, bytes: row.bytes, get message() { return row.message; } } : row));
+    try {
+      const slice = enrichSessionSlice({ store, sessionId: "small", workspacePath: WORKSPACE, versions: V5, batchSize: 3, backfill: () => true });
+      assert.equal(slice.stalled, true, "the slice reports that it could not advance");
+      assert.equal(slice.done, true, "and asks the scheduler to move on");
+      assert.equal(store.meta(flagKey("small", V5)), null, "without claiming the session is finished");
+      assert.equal(store.meta(cursorKey("small", V5)), null, "and without writing a cursor that would not move");
+
+      store.deleteMeta(flagKey("tail", V5));
+      seed("tail", 3);
+      const scheduler = manualScheduler();
+      let ticks = 0;
+      startResumableEnrichment({
+        store,
+        sessions: [{ id: "small", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }, { id: "tail", projectId: "p", updatedAt: "2026-09-17T00:00:00.000Z" }],
+        schedule: scheduler.schedule, workspacePathFor: () => WORKSPACE, versions: V5, batchSize: 3, backfill: () => false,
+      });
+      while (scheduler.depth && ticks < 200) { scheduler.runTicks(1); ticks += 1; }
+      assert.ok(ticks < 200, `the scheduler terminates: ${ticks} ticks`);
+      assert.ok(store.meta(flagKey("tail", V5)), "and the next session is still worked — one bad session is not contagious");
+    } finally {
+      store.messageSlice = real;
+    }
+  });
+
+  check("missing schema versions refuse to build or delete a single key", () => {
+    // Keys embed both versions, so a missing one yields "aundefined:bundefined":
+    // no live cursor matches it, the sweep would delete every one of them, and
+    // every session would re-queue from zero — the exact restart-forever
+    // behaviour this module exists to remove.
+    assert.equal(versionsUsable(V5), true);
+    assert.equal(versionsUsable({ artifact: 5 }), false, "half a version is not a version");
+    assert.equal(versionsUsable({}), false);
+    assert.equal(versionsUsable(null), false);
+    assert.equal(versionsUsable({ artifact: "5", resultBlock: "2" }), true, "strings are fine — they are only key material");
+    assert.equal(versionsUsable({ artifact: Number.NaN, resultBlock: 2 }), false);
+
+    store.setMeta(cursorKey("big", V5), "40");
+    assert.equal(sweepStaleCursors(store, {}), 0, "a malformed version sweeps nothing");
+    assert.equal(store.meta(cursorKey("big", V5)), "40", "the live cursor is untouched");
+    assert.equal(startResumableEnrichment({
+      store, sessions: [{ id: "big", projectId: "p" }], schedule: () => {},
+      workspacePathFor: () => WORKSPACE, backfill: () => false, versions: {},
+    }).reason, "NO_SCHEMA_VERSIONS");
+    const refused = enrichSessionSlice({ store, sessionId: "big", workspacePath: WORKSPACE, versions: {}, batchSize: 5, backfill: () => true });
+    assert.equal(refused.reason, "NO_SCHEMA_VERSIONS");
+    assert.equal(refused.enriched, 0);
+    store.deleteMeta(cursorKey("big", V5));
+  });
+
+  check("one unreadable record is skipped, not allowed to cost the session its remaining history", () => {
+    store.deleteMeta(flagKey("poison", V5));
+    store.deleteMeta(cursorKey("poison", V5));
+    seed("poison", 6);
+    const seen = [];
+    const scheduler = manualScheduler();
+    let summary = null;
+    startResumableEnrichment({
+      store, sessions: [{ id: "poison", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }],
+      schedule: scheduler.schedule, workspacePathFor: () => WORKSPACE, versions: V5, batchSize: 4,
+      backfill: (message) => { seen.push(message.id); if (message.id === "poison-m2") throw new Error("corrupt envelope"); return false; },
+      onDone: (s) => { summary = s; },
+    });
+    scheduler.runTicks(60);
+    assert.deepEqual(seen, ["poison-m0", "poison-m1", "poison-m2", "poison-m3", "poison-m4", "poison-m5"], `the pass walks past the bad record: ${seen.join(",")}`);
+    assert.ok(store.meta(flagKey("poison", V5)), "and the session finishes");
+    assert.equal(summary?.skipped, 1, "the skip is counted, not swallowed");
+  });
+
+  check("a pathological record does not teach the cost controller about ordinary ones", () => {
+    store.deleteMeta(flagKey("wide", V5));
+    store.deleteMeta(cursorKey("wide", V5));
+    const real = store.messageSlice.bind(store);
+    store.messageSlice = (sid, after, limit) => real(sid, after, limit)
+      .map((row) => ({ seq: row.seq, bytes: BIG_RECORD_BYTES + 1, get message() { return row.message; } }));
+    try {
+      let visited = 0;
+      let summary = null;
+      const scheduler = manualScheduler();
+      startResumableEnrichment({
+        store, sessions: [{ id: "wide", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }],
+        schedule: scheduler.schedule, workspacePathFor: () => WORKSPACE, versions: V5,
+        batchSize: 40, backfill: () => { visited += 1; return false; },
+        // Every record "costs" 900 ms, far over the budget.
+        now: () => visited * 900, onDone: (s) => { summary = s; },
+      });
+      scheduler.runTicks(60);
+      assert.equal(summary.costMs, 0, "an oversized slice contributes no cost sample");
+      assert.equal(summary.batchSize, 40, `so the batch is not dragged to the floor by it: ${summary.batchSize}`);
+    } finally {
+      store.messageSlice = real;
+    }
+  });
+
+  check("the oversized threshold is measured too, not a number from the developer's machine", () => {
+    assert.equal(nextBigRecordBytes(0), BIG_RECORD_BYTES, "until something is measured, the documented default");
+    // Cost per byte on the machine this was written on is ~1e-4 ms; a 50 ms tick
+    // therefore holds about half a megabyte.
+    assert.ok(Math.abs(nextBigRecordBytes(0.0001, 50) - 500_000) < 60_000, nextBigRecordBytes(0.0001, 50));
+    assert.ok(nextBigRecordBytes(0.001, 50) < nextBigRecordBytes(0.0001, 50), "a slower machine isolates smaller records");
+    assert.equal(nextBigRecordBytes(1, 50), MIN_BIG_RECORD_BYTES, "clamped below");
+    assert.equal(nextBigRecordBytes(1e-9, 50), MAX_BIG_RECORD_BYTES, "clamped above");
+    assert.equal(observeByteCost(0, 0, 900), 0, "a slice with no bytes is not a sample");
+    assert.equal(observeByteCost(0, 1000, 50), 0.05);
+
+    // End to end: a machine 10x slower than this one converges to a smaller
+    // threshold than the default it started from.
+    store.deleteMeta(flagKey("big", V5));
+    store.deleteMeta(cursorKey("big", V5));
+    let visited = 0;
+    let summary = null;
+    const scheduler = manualScheduler();
+    startResumableEnrichment({
+      store, sessions: [{ id: "big", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }],
+      schedule: scheduler.schedule, workspacePathFor: () => WORKSPACE, versions: V5, batchSize: 40,
+      backfill: () => { visited += 1; return false; },
+      now: () => visited * 8, onDone: (s) => { summary = s; },
+    });
+    scheduler.runTicks(4000);
+    assert.ok(summary.costPerByteMs > 0, "a byte cost was measured");
+    assert.ok(summary.bigRecordBytes < BIG_RECORD_BYTES, `and it moved the threshold off the default: ${summary.bigRecordBytes}`);
+    assert.ok(summary.bigRecordBytes >= MIN_BIG_RECORD_BYTES, "never below the floor");
+  });
+
+  check("the kill switch leaves records on their stored artifacts, the pre-backfill baseline", () => {
+    store.deleteMeta(flagKey("small", V5));
+    process.env.LILY_SESSION_ENRICHMENT = "0";
+    try {
+      const off = startResumableEnrichment({
+        store, sessions: [{ id: "small", projectId: "p", updatedAt: "2026-09-18T00:00:00.000Z" }],
+        schedule: () => { throw new Error("must not schedule"); },
+        workspacePathFor: () => WORKSPACE, backfill: () => true, versions: V5,
+      });
+      assert.equal(off.reason, "DISABLED");
+      assert.equal(off.pending, 0);
+      assert.equal(store.meta(flagKey("small", V5)), null, "and nothing is marked done");
+    } finally {
+      delete process.env.LILY_SESSION_ENRICHMENT;
     }
   });
 

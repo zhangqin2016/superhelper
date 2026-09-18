@@ -40,18 +40,38 @@ const DEFAULT_TICK_DELAY_MS = 8;
 // headroom is what let an early version grow to 200 and spend 214 ms in one.)
 const TARGET_TICK_MS = 50;
 const MIN_BATCH_SIZE = 5;
-// Compressed size above which a record gets a tick to itself. Measured on one
-// real database: the median record costs 5 ms to inflate, re-derive and re-pack,
-// while a single 13 MB envelope costs 1022 ms (67 + 397 + 558). A single
-// record's rewrite cannot be split, so that is the design floor — but it can at
-// least be kept from landing on top of a tick that has already spent its budget.
+// Compressed size above which a record gets a tick to itself, used only until
+// the pass has measured this machine. Measured on one real database: the median
+// record costs 5 ms to inflate, re-derive and re-pack, while a single 13 MB
+// envelope costs 1022 ms (67 + 397 + 558). A single record's rewrite cannot be
+// split, so that is the design floor — but it can at least be kept from landing
+// on top of a tick that has already spent its budget. The live threshold is
+// derived from the measured cost per byte, so it is this machine's answer rather
+// than the developer's; these bounds only keep that answer sane.
 const BIG_RECORD_BYTES = 512 * 1024;
+const MIN_BIG_RECORD_BYTES = 64 * 1024;
+const MAX_BIG_RECORD_BYTES = 8 * 1024 * 1024;
 const MAX_BATCH_SIZE = 200;
 const FLAG_PREFIX = "enriched:";
 const CURSOR_PREFIX = "enriching:";
 
 function versionSuffix(versions = {}) {
   return `a${versions.artifact}:b${versions.resultBlock}`;
+}
+
+/**
+ * Both schema versions must be present before a single key is built.
+ *
+ * Every key here embeds them, so a missing one produces `aundefined:bundefined`:
+ * no existing cursor matches it, the sweep deletes them all, and every session
+ * re-queues from zero — which is precisely the restart-forever behaviour this
+ * module exists to remove. Refuse to run instead of quietly resurrecting it.
+ */
+function versionsUsable(versions) {
+  return ["artifact", "resultBlock"].every((key) => {
+    const value = versions?.[key];
+    return (typeof value === "number" && Number.isFinite(value)) || (typeof value === "string" && value.length > 0);
+  });
 }
 
 function flagKey(sessionId, versions) {
@@ -92,6 +112,7 @@ function readCursor(store, key) {
 function enrichSessionSlice(input = {}) {
   const { store, sessionId, workspacePath, backfill, versions } = input;
   const batchSize = Math.max(1, Number(input.batchSize) || DEFAULT_BATCH_SIZE);
+  if (!versionsUsable(versions)) return { done: true, scanned: 0, enriched: 0, cursor: 0, reason: "NO_SCHEMA_VERSIONS" };
   const flag = flagKey(sessionId, versions);
   if (store.meta(flag)) return { done: true, scanned: 0, enriched: 0, cursor: 0 };
 
@@ -100,21 +121,37 @@ function enrichSessionSlice(input = {}) {
   const now = input.now || monotonicNow;
   const startedAt = now();
   const budgetMs = Number(input.budgetMs) > 0 ? Number(input.budgetMs) : 0;
+  const bigRecordBytes = Number(input.bigRecordBytes) > 0 ? Number(input.bigRecordBytes) : BIG_RECORD_BYTES;
   const slice = store.messageSlice(sessionId, from, batchSize);
   let cursor = from;
   let enriched = 0;
   let scanned = 0;
-  const bigRecordBytes = Number(input.bigRecordBytes) > 0 ? Number(input.bigRecordBytes) : BIG_RECORD_BYTES;
+  let failed = 0;
+  let bytes = 0;
+  let oversized = false;
   for (const row of slice) {
     // Give a pathological record its own tick instead of appending a second's
     // worth of work to a tick that has already done its share.
     if (scanned > 0 && Number(row?.bytes) >= bigRecordBytes) break;
+    if (Number(row?.bytes) >= bigRecordBytes) oversized = true;
     if (Number.isFinite(Number(row?.seq))) cursor = Number(row.seq);
     scanned += 1;
-    const message = row?.message;
-    if (message?.record && message.id && backfill(message, workspacePath)) {
-      store.updateById(message.id, () => message);
-      enriched += 1;
+    bytes += Math.max(0, Number(row?.bytes) || 0);
+    try {
+      const message = row?.message;
+      if (message?.record && message.id && backfill(message, workspacePath)) {
+        store.updateById(message.id, () => message);
+        enriched += 1;
+      }
+    } catch (error) {
+      // One record must not cost the session its remaining history. Before this
+      // was per-record, a corrupt envelope or an unwritable row abandoned the
+      // whole session with its cursor unpersisted — so every launch re-read the
+      // same slice and failed on the same record, and that session was never
+      // enriched again. A skipped record keeps its stored artifacts, which is
+      // the baseline.
+      failed += 1;
+      console.warn("[sessions] enrichment skipped a record in", sessionId, error?.message || error);
     }
     // Re-derivation cost is heavy-tailed: most records are cheap, a few stat
     // dozens of paths. A count alone cannot bound a tail, so the slice also
@@ -123,8 +160,16 @@ function enrichSessionSlice(input = {}) {
     if (budgetMs && scanned < slice.length && now() - startedAt >= budgetMs) break;
   }
 
-  const done = scanned >= slice.length && slice.length < batchSize;
-  if (done) {
+  // No cursor progress means the next tick would read these same rows again,
+  // forever. Stop the session instead of spinning; unflagged, so it still
+  // displays from its stored artifacts and costs one slice per launch, not a
+  // busy loop.
+  if (slice.length > 0 && cursor <= from) {
+    return { done: true, stalled: true, scanned, enriched, failed, bytes, cursor: from };
+  }
+
+  const reachedTail = scanned >= slice.length && slice.length < batchSize;
+  if (reachedTail) {
     // The terminal marker, written only once the tail is actually reached: an
     // interrupted pass must come back to its cursor, never to a flag that
     // claims work it did not do.
@@ -133,7 +178,7 @@ function enrichSessionSlice(input = {}) {
   } else {
     store.setMeta(cursorAt, String(cursor));
   }
-  return { done, scanned, enriched, cursor };
+  return { done: reachedTail, scanned, enriched, failed, bytes, cursor, oversized };
 }
 
 function clampBatch(size) {
@@ -147,6 +192,14 @@ function nextBatchSize(costMs, targetMs = TARGET_TICK_MS) {
   return clampBatch(Math.max(1, Number(targetMs) || TARGET_TICK_MS) / cost);
 }
 
+/** The compressed size that fills one tick on its own, at the measured cost per byte. */
+function nextBigRecordBytes(costPerByteMs, targetMs = TARGET_TICK_MS) {
+  const cost = Number(costPerByteMs);
+  if (!(cost > 0)) return BIG_RECORD_BYTES; // nothing measured yet
+  const bytes = Math.round(Math.max(1, Number(targetMs) || TARGET_TICK_MS) / cost);
+  return Math.max(MIN_BIG_RECORD_BYTES, Math.min(MAX_BIG_RECORD_BYTES, bytes));
+}
+
 /** Exponentially-smoothed ms-per-message, so one slow slice neither sets nor is ignored. */
 function observeSliceCost(costMs, scanned, elapsedMs) {
   if (!(scanned > 0)) return costMs; // an early tail says nothing about cost
@@ -154,10 +207,18 @@ function observeSliceCost(costMs, scanned, elapsedMs) {
   return costMs > 0 ? costMs * 0.6 + sample * 0.4 : sample;
 }
 
+/** The same smoothing, per byte — what sizes the oversized-record threshold. */
+function observeByteCost(costPerByteMs, bytes, elapsedMs) {
+  if (!(bytes > 0)) return costPerByteMs;
+  const sample = Math.max(0, Number(elapsedMs) || 0) / bytes;
+  return costPerByteMs > 0 ? costPerByteMs * 0.6 + sample * 0.4 : sample;
+}
+
 const monotonicNow = () => Number(process.hrtime.bigint() / 1000n) / 1000;
 
 /** Drop cursors left by earlier schema versions; a resumed pass only ever reads its own. */
 function sweepStaleCursors(store, versions) {
+  if (!versionsUsable(versions)) return 0;
   if (typeof store.metaKeys !== "function" || typeof store.deleteMeta !== "function") return 0;
   const keep = `:${versionSuffix(versions)}`;
   let removed = 0;
@@ -181,7 +242,11 @@ function sweepStaleCursors(store, versions) {
  */
 function startResumableEnrichment(input = {}) {
   const { store, schedule, workspacePathFor, backfill, versions } = input;
+  // Kill switch: records then display from their stored artifacts, which is
+  // exactly what shipped before any backfill existed.
+  if (process.env.LILY_SESSION_ENRICHMENT === "0") return { pending: 0, reason: "DISABLED" };
   if (typeof store?.messageSlice !== "function") return { pending: 0, reason: "NO_BOUNDED_READ" };
+  if (!versionsUsable(versions)) return { pending: 0, reason: "NO_SCHEMA_VERSIONS" };
   const batchSize = Math.max(1, Number(input.batchSize) || DEFAULT_BATCH_SIZE);
   const tickDelayMs = Math.max(0, Number(input.tickDelayMs ?? DEFAULT_TICK_DELAY_MS));
 
@@ -197,7 +262,7 @@ function startResumableEnrichment(input = {}) {
   }
   if (!pending.length) return { pending: 0 };
 
-  const summary = { sessions: 0, slices: 0, enriched: 0, failed: 0, batchSize, slowestTickMs: 0, costMs: 0 };
+  const summary = { sessions: 0, slices: 0, enriched: 0, failed: 0, skipped: 0, stalled: 0, batchSize, slowestTickMs: 0, costMs: 0, costPerByteMs: 0, bigRecordBytes: BIG_RECORD_BYTES };
   const now = input.now || monotonicNow;
   const targetTickMs = Math.max(1, Number(input.targetTickMs) || TARGET_TICK_MS);
   let index = 0;
@@ -221,13 +286,22 @@ function startResumableEnrichment(input = {}) {
         const result = enrichSessionSlice({
           store, sessionId: session.id, workspacePath, backfill, versions,
           batchSize: summary.batchSize, budgetMs: targetTickMs, now,
+          bigRecordBytes: summary.bigRecordBytes,
         });
         const elapsed = now() - startedAt;
         summary.slices += 1;
         summary.enriched += result.enriched;
+        summary.skipped += Number(result.failed) || 0;
+        if (result.stalled) summary.stalled += 1;
         summary.slowestTickMs = Math.max(summary.slowestTickMs, elapsed);
-        summary.costMs = observeSliceCost(summary.costMs, result.scanned, elapsed);
-        summary.batchSize = nextBatchSize(summary.costMs, targetTickMs);
+        // An oversized record is not evidence about ordinary ones: letting it
+        // set the estimate would drop every following slice to the floor.
+        if (!result.oversized) {
+          summary.costMs = observeSliceCost(summary.costMs, result.scanned, elapsed);
+          summary.batchSize = nextBatchSize(summary.costMs, targetTickMs);
+          summary.costPerByteMs = observeByteCost(summary.costPerByteMs, result.bytes, elapsed);
+          summary.bigRecordBytes = nextBigRecordBytes(summary.costPerByteMs, targetTickMs);
+        }
         sessionEnriched += result.enriched;
         advance = result.done;
       }
@@ -251,11 +325,16 @@ function startResumableEnrichment(input = {}) {
 
 module.exports = {
   BIG_RECORD_BYTES,
+  MAX_BIG_RECORD_BYTES,
+  MIN_BIG_RECORD_BYTES,
   DEFAULT_BATCH_SIZE,
   MAX_BATCH_SIZE,
   MIN_BATCH_SIZE,
   TARGET_TICK_MS,
   nextBatchSize,
+  nextBigRecordBytes,
+  observeByteCost,
+  versionsUsable,
   sessionTime,
   observeSliceCost,
   DEFAULT_TICK_DELAY_MS,
