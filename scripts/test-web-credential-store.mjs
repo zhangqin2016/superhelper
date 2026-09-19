@@ -6,9 +6,10 @@
  * via the explicit main-process getCredentialWithSecret(). Domain matching is what
  * lets a stale-session re-login find the right credential for a request URL.
  *
- * (No Electron here, so safeStorage is unavailable and protectSecret uses its
- *  base64 fallback — the plaintext is still NOT stored verbatim, which is what we
- *  assert; real builds add OS-keychain encryption on top.)
+ * (No Electron here, so safeStorage is unavailable. Storing a NEW password then
+ *  requires the explicit plaintext opt-in — the store never falls back to Base64
+ *  on its own; the last check proves the refusal. Real builds encrypt with the
+ *  OS keychain.)
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -17,6 +18,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
 const { WebCredentialStore } = require("../src/main/web-credential-store.js");
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-webcred-"));
@@ -67,5 +69,14 @@ assert.equal(store.deleteCredential("erp.example.com"), true, "delete reports su
 assert.equal(store.listCredentialsPublic().length, 0, "credential removed");
 assert.equal(store.getCredentialWithSecret("erp.example.com"), null, "nothing to retrieve after delete");
 
+// Without the opt-in and without a keyring, a NEW password has nowhere safe to
+// go: refused by name, and the file keeps only what was already protected.
+delete process.env.LILY_ALLOW_PLAINTEXT_SECRETS;
+const before = fs.readFileSync(filePath, "utf8");
+assert.throws(() => store.saveCredential({ domain: "erp.example.com", password: "never-written-plain" }), (error) => error?.code === "SECRET_STORAGE_UNAVAILABLE");
+assert.equal(fs.readFileSync(filePath, "utf8"), before, "a refused save changes nothing on disk");
+assert.doesNotMatch(before, /never-written-plain/);
+
 fs.rmSync(dir, { recursive: true, force: true });
+
 console.log("web-credential-store: ok");

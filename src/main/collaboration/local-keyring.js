@@ -24,13 +24,7 @@ function hashId(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-function getSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
+const { getSafeStorage } = require("../secret-storage");
 
 function aad(...parts) {
   return Buffer.from([AAD_PREFIX, ...parts].join("\0"), "utf8");

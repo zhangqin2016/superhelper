@@ -13,6 +13,9 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
+// No keyring in this fixture; storing the website password is an explicit opt-in, never a silent Base64.
+process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
+
 const require = createRequire(import.meta.url);
 const { handleWebSystemRelogin } = require("../src/main/connector-bridge.js");
 const { WebCredentialStore } = require("../src/main/web-credential-store.js");

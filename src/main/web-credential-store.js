@@ -12,14 +12,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { userDataPath } = require("./config");
-
-function getSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
+const { protectSecret, unprotectSecret } = require("./secret-storage");
 
 function defaultCredentialsPath() {
   return userDataPath("web-system-credentials.json");
@@ -42,31 +35,6 @@ function writeJson(filePath, data) {
     fs.chmodSync(filePath, 0o600); // best-effort: tighten perms like capture_session
   } catch {
     /* non-fatal (e.g. Windows) */
-  }
-}
-
-// Same shape as mail-accounts.protectSecret: safeStorage when available, else a
-// base64 fallback. Either way the on-disk value is NOT the plaintext.
-function protectSecret(value) {
-  const text = String(value || "");
-  if (!text) return null;
-  const safeStorage = getSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return { encrypted: true, data: safeStorage.encryptString(text).toString("base64") };
-  }
-  return { encrypted: false, data: Buffer.from(text, "utf8").toString("base64") };
-}
-
-function unprotectSecret(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(String(record.data), "base64");
-  if (!record.encrypted) return buf.toString("utf8");
-  const safeStorage = getSafeStorage();
-  if (!safeStorage?.isEncryptionAvailable?.()) return "";
-  try {
-    return safeStorage.decryptString(buf);
-  } catch {
-    return "";
   }
 }
 

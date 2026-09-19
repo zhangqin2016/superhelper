@@ -12,6 +12,9 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 
+// This fixture has no keyring; persisting the license is an explicit opt-in, never a silent Base64.
+process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-clock-rollback-"));
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {

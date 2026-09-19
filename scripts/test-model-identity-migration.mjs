@@ -8,6 +8,9 @@ import { createHash } from "node:crypto";
 import { canonicalModelId } from "../src/main/model-identity.js";
 import { stableStringify } from "../src/main/crypto-signing.js";
 
+// The remote-config cache carries credentials; without a keyring this fixture opts into plaintext explicitly.
+process.env.LILY_ALLOW_PLAINTEXT_SECRETS = "1";
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "lily-model-identity-"));
 const config = { userDataPath: file => path.join(root, file), PROJECT_ROOT: root, isPackaged: () => false };
 function isolated(name, mocks) {

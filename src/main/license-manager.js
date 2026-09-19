@@ -371,9 +371,18 @@ function activateLicense(token) {
   }
 
   const state = readState();
+  let protectedLicense;
+  try {
+    protectedLicense = protectText(String(token || "").trim());
+  } catch (error) {
+    // No keyring and no opt-in: the license is not written in Base64. The
+    // caller sees why, the same way a model key or mail password is refused.
+    if (error?.code === "SECRET_STORAGE_UNAVAILABLE") return { ok: false, error: "SECRET_STORAGE_UNAVAILABLE" };
+    throw error;
+  }
   writeState({
     ...state,
-    license: protectText(String(token || "").trim()),
+    license: protectedLicense,
     serverLicense: null,
     serverTrial: null,
     activatedAt: nowIso(),

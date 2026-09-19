@@ -1019,12 +1019,15 @@
     },
     {
       "id": "secret-storage-no-silent-plaintext",
-      "protects": "A model API key or mail password is never written as plain Base64 by accident. When the OS secure storage is unavailable, saving a NEW secret is refused with SECRET_STORAGE_UNAVAILABLE (shown to the user in words), the operator can opt in explicitly with LILY_ALLOW_PLAINTEXT_SECRETS=1, and operations that merely re-serialize an already stored secret (switch active preset, relabel) keep working by reusing the stored record. Existing plaintext records still read back.",
+      "protects": "A model API key or mail password is never written as plain Base64 by accident. When the OS secure storage is unavailable, saving a NEW secret is refused with SECRET_STORAGE_UNAVAILABLE (shown to the user in words), the operator can opt in explicitly with LILY_ALLOW_PLAINTEXT_SECRETS=1, and operations that merely re-serialize an already stored secret (switch active preset, relabel) keep working by reusing the stored record. Existing plaintext records still read back. Since 2026-09-19 the rule has one home: secret-storage.js is the only module that touches safeStorage, and the device signing key, account refresh token, remote-config cache, license and web credentials go through it — a machine without a keyring keeps working for the run (identity in memory, session in memory, config in memory) but never writes a secret in Base64 without the explicit opt-in.",
       "baseline": "Before 2026-09-08 protectSecret() silently fell back to Base64 (encrypted:false) in model-presets.js and mail-accounts.js — an encoding presented as storage. Found during the request-shape audit; the collaboration keyring already refused in the same situation, so the repo had the safer precedent.",
       "failureFallback": "The read path is unchanged (legacy records decode). The device keypair in service-client.js keeps its fallback because the app cannot start without one — noted, not changed. Test harnesses without Electron opt in explicitly. Mutation-verified 2026-09-08: restoring the silent fallback and removing the stored-record reuse each fail by name.",
       "tests": [
         "scripts/test-secret-storage-guard.mjs",
-        "scripts/test-model-settings-secret-storage.mjs"
+        "scripts/test-model-settings-secret-storage.mjs",
+        "scripts/test-web-credential-store.mjs",
+        "scripts/test-license-clock-rollback.mjs",
+        "scripts/test-collaboration-local-keyring.mjs"
       ]
     },
     {

@@ -7,14 +7,10 @@ const { userDataPath } = require("./config");
 
 const LICENSE_FILE = "license-state.json";
 const LICENSE_BACKUP_FILE = `${LICENSE_FILE}.bak`;
-
-function electronSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
+const secretStorage = require("./secret-storage");
+// Names kept for license-manager; the policy (no silent Base64) is the seam's.
+const protectText = (text) => secretStorage.protectSecret(text);
+const unprotectText = (record) => secretStorage.unprotectSecret(record);
 
 function statePath() {
   return userDataPath(LICENSE_FILE);
@@ -22,29 +18,6 @@ function statePath() {
 
 function backupStatePath() {
   return userDataPath(LICENSE_BACKUP_FILE);
-}
-
-function protectText(text) {
-  const buf = Buffer.from(text, "utf8");
-  const safeStorage = electronSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return { encrypted: true, data: safeStorage.encryptString(text).toString("base64") };
-  }
-  return { encrypted: false, data: buf.toString("base64") };
-}
-
-function unprotectText(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(record.data, "base64");
-  if (!record.encrypted) return buf.toString("utf8");
-  const safeStorage = electronSafeStorage();
-  if (!safeStorage?.isEncryptionAvailable?.()) return "";
-  try {
-    return safeStorage.decryptString(buf);
-  } catch (error) {
-    console.warn("[license] stored license could not be decrypted:", error?.message || error);
-    return "";
-  }
 }
 
 function readState() {

@@ -12,11 +12,21 @@ let accessToken = "";
 let accessExpiresAt = 0;
 let accessUserId = "";
 let accountGeneration = 0;
+const secretStorage = require("./secret-storage");
+const unprotectText = (record) => secretStorage.unprotectSecret(record);
 
-function electronSafeStorage() {
+/**
+ * The refresh token for disk, or null when the OS cannot protect it and
+ * plaintext was not opted into. The session still works for this run (the
+ * access token is in memory); the next launch asks for a login again. That is
+ * the honest outcome — a token written in Base64 would only look kept.
+ */
+function protectRefreshToken(refreshToken) {
   try {
-    return require("electron").safeStorage || null;
-  } catch {
+    return secretStorage.protectSecret(refreshToken);
+  } catch (error) {
+    if (!secretStorage.isSecretStorageRefusal(error)) throw error;
+    console.warn("[account] session not persisted: secure secret storage unavailable (LILY_ALLOW_PLAINTEXT_SECRETS=1 to opt into plaintext)");
     return null;
   }
 }
@@ -39,27 +49,6 @@ function writeState(state) {
   const file = statePath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(state, null, 2), "utf8");
-}
-
-function protectText(text) {
-  const safeStorage = electronSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return { encrypted: true, data: safeStorage.encryptString(String(text || "")).toString("base64") };
-  }
-  return { encrypted: false, data: Buffer.from(String(text || ""), "utf8").toString("base64") };
-}
-
-function unprotectText(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(record.data, "base64");
-  if (!record.encrypted) return buf.toString("utf8");
-  const safeStorage = electronSafeStorage();
-  if (!safeStorage?.isEncryptionAvailable?.()) return "";
-  try {
-    return safeStorage.decryptString(buf);
-  } catch {
-    return "";
-  }
 }
 
 function tokenFresh() {
@@ -179,7 +168,7 @@ async function loginWithSms({ phone, code } = {}) {
   writeState({
     user: result.json?.user || null,
     entitlements: result.json?.entitlements || null,
-    refreshToken: protectText(refreshToken),
+    refreshToken: protectRefreshToken(refreshToken),
     loggedInAt: new Date().toISOString(),
     entitlementsRefreshedAt: new Date().toISOString(),
   });
@@ -203,7 +192,7 @@ async function loginWithPassword({ loginName, password } = {}) {
   writeState({
     user: result.json?.user || null,
     entitlements: result.json?.entitlements || null,
-    refreshToken: protectText(refreshToken),
+    refreshToken: protectRefreshToken(refreshToken),
     loggedInAt: new Date().toISOString(),
     entitlementsRefreshedAt: new Date().toISOString(),
   });

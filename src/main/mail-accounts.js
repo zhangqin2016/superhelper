@@ -7,14 +7,7 @@ const { userDataPath } = require("./config");
 
 const PROVIDERS = new Set(["imap-smtp", "gmail", "outlook", "microsoft-365"]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function getSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
+const { protectSecret, unprotectSecret, protectJson, unprotectJson } = require("./secret-storage");
 
 function defaultMailAccountsPath() {
   return userDataPath("mail-accounts.json");
@@ -33,53 +26,6 @@ function readJson(filePath, fallback) {
 function writeJson(filePath, data) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-}
-
-function protectSecret(value) {
-  const text = String(value || "").trim();
-  if (!text) return null;
-  const safeStorage = getSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return {
-      encrypted: true,
-      data: safeStorage.encryptString(text).toString("base64"),
-    };
-  }
-  // Base64 is not encryption. Only an explicit operator opt-in
-  // (LILY_ALLOW_PLAINTEXT_SECRETS=1) writes a mail password that way; existing
-  // records still read back.
-  if (process.env.LILY_ALLOW_PLAINTEXT_SECRETS === "1") {
-    return { encrypted: false, data: Buffer.from(text, "utf8").toString("base64") };
-  }
-  throw Object.assign(new Error("Secure secret storage is unavailable"), { code: "SECRET_STORAGE_UNAVAILABLE" });
-}
-
-function unprotectSecret(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(String(record.data), "base64");
-  if (!record.encrypted) return buf.toString("utf8");
-  const safeStorage = getSafeStorage();
-  if (!safeStorage?.isEncryptionAvailable?.()) return "";
-  try {
-    return safeStorage.decryptString(buf);
-  } catch {
-    return "";
-  }
-}
-
-function protectJson(value) {
-  return protectSecret(JSON.stringify(value || {}));
-}
-
-function unprotectJson(record) {
-  const text = unprotectSecret(record);
-  if (!text) return null;
-  try {
-    const parsed = JSON.parse(text);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 function normalizeHost(value, field) {

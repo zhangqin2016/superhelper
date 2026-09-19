@@ -5,16 +5,9 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { PROJECT_ROOT, userDataPath, isPackaged } = require("./config");
 
-// safeStorage is electron-only; lazy-require it so this module loads in plain
-// node (tests). Absent → graceful plaintext fallback via the `?.` guards.
-function electronSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
 const { stableStringify, verifyDetached } = require("./crypto-signing");
+const secretStorage = require("./secret-storage");
+const unprotectText = (record) => secretStorage.unprotectSecret(record);
 
 const CACHE_FILE = "remote-config-cache.json";
 const DISABLED_COLLABORATION_POLICY = Object.freeze({
@@ -65,33 +58,6 @@ function loadPublicKey() {
   return "";
 }
 
-function protectText(text) {
-  const safeStorage = electronSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return {
-      encrypted: true,
-      data: safeStorage.encryptString(text).toString("base64"),
-    };
-  }
-  return {
-    encrypted: false,
-    data: Buffer.from(text, "utf8").toString("base64"),
-  };
-}
-
-function unprotectText(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(record.data, "base64");
-  if (!record.encrypted) return buf.toString("utf8");
-  const safeStorage = electronSafeStorage();
-  if (!safeStorage?.isEncryptionAvailable?.()) return "";
-  try {
-    return safeStorage.decryptString(buf);
-  } catch {
-    return "";
-  }
-}
-
 function hashPayload(payload) {
   return crypto.createHash("sha256").update(stableStringify(payload)).digest("hex");
 }
@@ -112,12 +78,18 @@ function verifyConfigResponse(json) {
     : { ok: false };
 }
 
+// A refreshed config the OS could not protect: served from memory for this run.
+// Consumers call reloadRemoteConfigCache() after a refresh (model-presets does),
+// which drops the memoised state and re-reads the file — so without this the
+// refused write would have thrown the fresh config away a moment later.
+let unpersistedState = null;
+
 function readCache() {
   if (cachedState) return cachedState;
   const record = readJson(cachePath(), {});
   const text = unprotectText(record.config);
   if (!text) {
-    cachedState = {};
+    cachedState = unpersistedState || {};
     return cachedState;
   }
   try {
@@ -131,8 +103,20 @@ function readCache() {
 function writeCache(state) {
   const aliases = getRemoteModelIdentityAliasesSync();
   cachedState = { ...(state || {}), modelIdentityAliases: require("./model-identity").legacyAliases(state?.effectiveConfig?.models?.presets, aliases) };
+  let config;
+  try {
+    config = secretStorage.protectSecret(JSON.stringify(cachedState));
+  } catch (error) {
+    if (!secretStorage.isSecretStorageRefusal(error)) throw error;
+    // The cache carries gateway credentials. Without a keyring it stays in
+    // memory for this run and is fetched again next launch — never Base64.
+    console.warn("[remote-config] config cache not persisted: secure secret storage unavailable (LILY_ALLOW_PLAINTEXT_SECRETS=1 to opt into plaintext)");
+    unpersistedState = cachedState;
+    return;
+  }
+  unpersistedState = null;
   writeJson(cachePath(), {
-    config: protectText(JSON.stringify(cachedState)),
+    config,
     updatedAt: new Date().toISOString(),
   });
 }

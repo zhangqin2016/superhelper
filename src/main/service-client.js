@@ -6,17 +6,12 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { userDataPath, appVersion, appEdition } = require("./config");
 
-// safeStorage is electron-only; lazy-require it inside the crypto functions so
-// this module loads in plain node (tests/CLIs). Absent → graceful plaintext
-// fallback via the `?.` guards below.
-function electronSafeStorage() {
-  try {
-    return require("electron").safeStorage || null;
-  } catch {
-    return null;
-  }
-}
 const { base64urlEncode, stableStringify } = require("./crypto-signing");
+const secretStorage = require("./secret-storage");
+const protectText = (text) => secretStorage.protectSecret(text);
+const unprotectText = (record) => secretStorage.unprotectSecret(record);
+// A keypair the OS could not protect lives only as long as this process.
+let unpersistedKeypair = null;
 const DEVICE_FILE = "device-state.json";
 const CLIENT_POLICY_FILE = "client-bootstrap-policy.json";
 const FETCH_TIMEOUT_MS = 15_000;
@@ -50,33 +45,6 @@ function readJson(filePath, fallback = {}) {
 function writeJson(filePath, data) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
-}
-
-function protectText(text) {
-  const safeStorage = electronSafeStorage();
-  if (safeStorage?.isEncryptionAvailable?.()) {
-    return {
-      encrypted: true,
-      data: safeStorage.encryptString(text).toString("base64"),
-    };
-  }
-  return {
-    encrypted: false,
-    data: Buffer.from(text, "utf8").toString("base64"),
-  };
-}
-
-function unprotectText(record) {
-  if (!record?.data) return "";
-  const buf = Buffer.from(record.data, "base64");
-  if (!record.encrypted) return buf.toString("utf8");
-  const safeStorage = electronSafeStorage();
-  if (!safeStorage?.isEncryptionAvailable?.()) return "";
-  try {
-    return safeStorage.decryptString(buf);
-  } catch {
-    return "";
-  }
 }
 
 function normalizeBaseUrl(value) {
@@ -375,6 +343,7 @@ function getDeviceId() {
 }
 
 function getDeviceKeypair() {
+  if (unpersistedKeypair) return unpersistedKeypair;
   const state = readJson(devicePath(), {});
   const existingPrivateKey = unprotectText(state.privateKey);
   if (state.publicKey && existingPrivateKey) {
@@ -401,11 +370,24 @@ function createDeviceKeypair() {
 
 function storeDeviceKeypair(keypair, existingState = readJson(devicePath(), {})) {
   const state = existingState || {};
+  let privateKey;
+  try {
+    privateKey = protectText(keypair.privateKey);
+  } catch (error) {
+    if (!secretStorage.isSecretStorageRefusal(error)) throw error;
+    // No keyring and no opt-in: the private key is never written in Base64.
+    // The identity stays valid for this process; the next launch mints a new
+    // one, which the service treats as a new device — visible, not silent.
+    unpersistedKeypair = { publicKey: keypair.publicKey, privateKey: keypair.privateKey, keyAlg: keypair.keyAlg || "ed25519" };
+    console.warn("[service-client] device key not persisted: secure secret storage unavailable (LILY_ALLOW_PLAINTEXT_SECRETS=1 to opt into plaintext)");
+    return;
+  }
+  unpersistedKeypair = null;
   writeJson(devicePath(), {
     ...state,
     deviceId: state.deviceId || newDeviceId(),
     publicKey: keypair.publicKey,
-    privateKey: protectText(keypair.privateKey),
+    privateKey,
     keyAlg: keypair.keyAlg || "ed25519",
     createdAt: state.createdAt || new Date().toISOString(),
     keyCreatedAt: new Date().toISOString(),
