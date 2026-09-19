@@ -1,5 +1,7 @@
 "use strict";
 
+const { renameSyncWithRetryOrThrow } = require("./fs-transient-retry");
+
 const fs = require("node:fs");
 const jsonFile = require("./json-file");
 const path = require("node:path");
@@ -46,7 +48,7 @@ function migrateLegacyCliBinaries() {
       if (!fs.existsSync(primaryTarget)) {
         fs.mkdirSync(path.dirname(primaryTarget), { recursive: true });
         try {
-          fs.renameSync(legacyPath, primaryTarget);
+          renameSyncWithRetryOrThrow(legacyPath, primaryTarget);
           console.info(`[data-migration] renamed ${legacyPath} -> ${primaryTarget}`);
         } catch (err) {
           console.warn(
@@ -499,11 +501,11 @@ function archiveLegacyUserDataRoot(legacyRoot) {
   try {
     if (fs.existsSync(backupRoot)) {
       const stamped = `${backupRoot}.${Date.now()}`;
-      fs.renameSync(legacyRoot, stamped);
+      renameSyncWithRetryOrThrow(legacyRoot, stamped);
       console.info(`[data-migration] archived legacy userData ${legacyRoot} -> ${stamped}`);
       return true;
     }
-    fs.renameSync(legacyRoot, backupRoot);
+    renameSyncWithRetryOrThrow(legacyRoot, backupRoot);
     console.info(`[data-migration] archived legacy userData ${legacyRoot} -> ${backupRoot}`);
     return true;
   } catch (err) {
@@ -759,9 +761,9 @@ function renameDirIfNeeded(fromName, toName) {
       const src = path.join(from, entry.name);
       const dst = path.join(to, entry.name);
       if (entry.isDirectory()) {
-        if (!fs.existsSync(dst)) fs.renameSync(src, dst);
+        if (!fs.existsSync(dst)) renameSyncWithRetryOrThrow(src, dst);
       } else if (!fs.existsSync(dst)) {
-        fs.renameSync(src, dst);
+        renameSyncWithRetryOrThrow(src, dst);
       }
     }
     try {
@@ -771,7 +773,7 @@ function renameDirIfNeeded(fromName, toName) {
     }
     return;
   }
-  fs.renameSync(from, to);
+  renameSyncWithRetryOrThrow(from, to);
 }
 
 function migrateSettingsEnvKeys() {
@@ -839,7 +841,7 @@ function migrateInstalledSkillDir() {
     }
     return;
   }
-  fs.renameSync(from, to);
+  renameSyncWithRetryOrThrow(from, to);
 }
 
 function forEachPersistedSession(raw, fn) {
@@ -991,7 +993,7 @@ function migrateLegacyGuideFile() {
   if (!fs.existsSync(legacyGuide)) return;
   if (!fs.existsSync(agentGuide)) {
     clearLegacyGuideFileAttributes(legacyGuide);
-    fs.renameSync(legacyGuide, agentGuide);
+    renameSyncWithRetryOrThrow(legacyGuide, agentGuide);
     return;
   }
   try {

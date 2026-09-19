@@ -824,7 +824,7 @@ async function runRuntimePackInstall(id, job) {
       return { ...downloaded, id };
     }
     fs.rmSync(archivePath, { force: true });
-    fs.renameSync(partPath, archivePath);
+    await renameWithRetry(partPath, archivePath); // a fresh download is exactly what a Windows AV scanner holds
     if (artifact.sha256) {
       publishProgress(job, id, "verifying", { sha256: String(artifact.sha256).toLowerCase() });
       const actual = sha256File(archivePath);

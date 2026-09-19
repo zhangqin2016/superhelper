@@ -38,6 +38,31 @@ function rmDirWithRetry(dir, attempts = 4) {
   }
 }
 
+/** The retry schedule Windows AV/indexer locks are absorbed by: 300 ms, 600 ms,
+ *  900 ms … — the same for every helper here, so "how long do we wait for a
+ *  lock" is decided once. */
+function transientBackoffMs(attempt) {
+  return 300 * (attempt + 1);
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Sync rename with the transient-lock retry; throws after the schedule is
+ *  exhausted (for callers that must know the write did not land). */
+function renameSyncWithRetryOrThrow(from, to, attempts = 6) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (error) {
+      if (attempt >= attempts - 1 || !TRANSIENT_FS_CODES.has(error?.code)) throw error;
+      sleepSync(transientBackoffMs(attempt));
+    }
+  }
+}
+
 /** Sync rename-with-retry that NEVER throws: transient errors get short
  *  retries; persistent ones are logged and swallowed so a filesystem blip
  *  can't crash the main process from a timer callback. Callers must tolerate
@@ -107,6 +132,9 @@ async function replacePackDirectory(stagingPath, targetPath) {
 }
 
 module.exports = {
+  TRANSIENT_FS_CODES,
+  renameSyncWithRetryOrThrow,
+  transientBackoffMs,
   TRANSIENT_FS_CODES,
   renameWithRetry,
   rmDirWithRetry,

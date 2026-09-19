@@ -13,22 +13,16 @@
  * temporary file in the same directory, then renamed over the target, so a
  * reader ever sees either the previous content or the new one.
  *
- * Dependency-free on purpose (node builtins only): MCP servers and long-task
- * workers use it from their own processes.
+ * Node builtins plus the app's one transient-lock policy: MCP servers and
+ * long-task workers use it from their own processes.
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
-
-const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EBUSY", "EACCES"]);
-
-function sleepSync(ms) {
-  try {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-  } catch {
-    // Nothing to wait with; the retry loop simply spins less.
-  }
-}
+// Windows AV scanners and indexers hold freshly written files for a moment;
+// the codes that mean "held, try again" and how long to keep trying are
+// decided once, in fs-transient-retry.js, for every rename in the app.
+const { renameSyncWithRetryOrThrow } = require("./fs-transient-retry");
 
 function serializeJson(value, { indent = 2, newline = false } = {}) {
   const text = indent ? JSON.stringify(value, null, indent) : JSON.stringify(value);
@@ -69,23 +63,16 @@ function readJsonObject(file, fallback = null) {
  *              missing home means "this profile does not exist")
  */
 function writeJson(file, value, options = {}) {
-  const { indent = 2, newline = false, mode, createDir = true, renameAttempts = 4 } = options;
+  const { indent = 2, newline = false, mode, createDir = true, renameAttempts = 6 } = options;
   const dir = path.dirname(file);
   if (createDir) fs.mkdirSync(dir, { recursive: true });
   const temp = path.join(dir, `.${path.basename(file)}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`);
   try {
     fs.writeFileSync(temp, serializeJson(value, { indent, newline }), mode ? { encoding: "utf8", mode } : "utf8");
-    // Windows: a reader or an indexer can hold the target for a moment; the
-    // rename is retried briefly instead of failing the write outright.
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        fs.renameSync(temp, file);
-        break;
-      } catch (error) {
-        if (attempt >= renameAttempts - 1 || !TRANSIENT_RENAME_CODES.has(error?.code)) throw error;
-        sleepSync(25 * (attempt + 1));
-      }
-    }
+    // Windows: a reader or an indexer can hold the target (or the temp file)
+    // for a moment; the rename is retried on the app-wide schedule instead of
+    // failing the write outright.
+    renameSyncWithRetryOrThrow(temp, file, renameAttempts);
     if (mode) {
       try { fs.chmodSync(file, mode); } catch { /* Windows ACLs are inherited */ }
     }

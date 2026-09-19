@@ -85,6 +85,23 @@ try {
     assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".locked")), [], "and cleaned its temp");
   });
 
+  check("the lock-retry policy is the app's one policy, not a second schedule", () => {
+    const retry = require("../src/main/fs-transient-retry.js");
+    const src = fs.readFileSync(path.join(ROOT, "src/main/json-file.js"), "utf8");
+    assert.match(src, /renameSyncWithRetryOrThrow\(temp, file, renameAttempts\)/, "json-file renames through fs-transient-retry");
+    assert.ok(!/new Set\(\["EPERM"/.test(src), "and keeps no code list of its own");
+    assert.ok(retry.TRANSIENT_FS_CODES.has("EPERM") && retry.TRANSIENT_FS_CODES.has("EBUSY") && retry.TRANSIENT_FS_CODES.has("ENOTEMPTY"));
+    assert.equal(retry.transientBackoffMs(0), 300, "the first wait is long enough for a Windows AV scan, as the session index always used");
+    // Exhausting the schedule throws, so a caller that must know is told.
+    const original = fs.renameSync;
+    fs.renameSync = () => { throw Object.assign(new Error("held"), { code: "EPERM" }); };
+    try {
+      assert.throws(() => retry.renameSyncWithRetryOrThrow("/nope/a", "/nope/b", 2), /held/);
+    } finally {
+      fs.renameSync = original;
+    }
+  });
+
   check("no module writes a JSON file on its own — json-file.js is the only implementation", () => {
     // Two documented exceptions: a create-only marker (flag "wx", a different
     // contract) and a store that takes an injected fs for Playwright state.

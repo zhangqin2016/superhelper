@@ -797,7 +797,7 @@ class SessionManager {
     const backupPath = legacySessionsBackupPath();
     try {
       if (this._legacyMigrationPending && !fs.existsSync(backupPath)) {
-        fs.renameSync(legacyPath, backupPath);
+        require("./fs-transient-retry").renameSyncWithRetryOrThrow(legacyPath, backupPath);
         console.info(`[sessions] migrated ${legacyPath} -> ${backupPath}`);
       } else {
         fs.rmSync(legacyPath, { force: true });
