@@ -1,8 +1,10 @@
 "use strict";
+
+const net = require("../../shared/network-errors.mjs");
 const { captureHistoryFence } = require("./history-fence");
 
 const PAGE_SIZE = 200;
-const OFFLINE_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_RESPONSE_UNKNOWN"]);
+const OFFLINE_CODES = new Set([...net.TRANSIENT_NETWORK_CODES, "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_RESPONSE_UNKNOWN"]);
 function invalidHistory() { return Object.assign(new Error("Invalid collaboration history page"), { code: "COLLAB_HISTORY_INVALID" }); }
 function sequence(row) { return Number(row.createSeq ?? row.create_seq ?? row.seq); }
 function pageCursor(messages) {

@@ -1,5 +1,7 @@
 "use strict";
 
+const net = require("../../shared/network-errors.mjs");
+
 /**
  * Make the engine's silent retries visible.
  *
@@ -32,8 +34,7 @@
 const TRANSIENT_ERROR_RE = new RegExp([
   "overload", "too busy", "rate.?limit", "quota",
   "service unavailable", "temporarily unavailable", "maintenance",
-  "timeout", "timed out", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED",
-  "EAI_AGAIN", "socket hang", "fetch failed", "network",
+  "timeout", net.TRANSIENT_NETWORK_SIGNATURE, "network",
   "\\b429\\b", "\\b50[0234]\\b", "\\b529\\b",
 ].join("|"), "i");
 

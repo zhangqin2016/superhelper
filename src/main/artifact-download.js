@@ -1,5 +1,7 @@
 "use strict";
 
+const net = require("../shared/network-errors.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const proxyAwareFetch = require("./proxy-aware-fetch");
@@ -11,15 +13,7 @@ function sleep(ms) {
 }
 
 function isRetryableError(error) {
-  const code = error?.cause?.code || error?.code || "";
-  if (error?.name === "AbortError") return true;
-  return [
-    "ECONNRESET",
-    "ETIMEDOUT",
-    "EAI_AGAIN",
-    "UND_ERR_SOCKET",
-    "UND_ERR_CONNECT_TIMEOUT",
-  ].includes(code);
+  return net.isTransientNetworkError(error);
 }
 
 async function fetchArtifactBuffer(url, options = {}) {

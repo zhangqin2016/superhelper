@@ -1,24 +1,8 @@
 "use strict";
 
-const { createRuntimeEvent, isTerminalEvent, TERMINAL_EVENT_TYPES } = require("./runtime-event-schema");
+const { createRuntimeEvent, isTerminalEvent, TERMINAL_EVENT_TYPES, POST_TERMINAL_EVENT_TYPES } = require("./runtime-event-schema");
 
-const POST_TERMINAL_ALLOWED = new Set([
-  "queue.updated",
-  "user.committed",
-  "turn.started",
-  // Continuation lanes annotate a turn that has ALREADY ended; before 2026-09-15
-  // these were dropped here in-process and threw after a restart (unknown type).
-  "turn.parent_closure_recovery",
-  "turn.model_recovery",
-  "engine.notice",
-  "engine.warning",
-  "engine.stderr",
-  "context.compactionDecision",
-  "memory.proposal",
-  "resume.updated",
-  "resume.invalid",
-  "prompt_suggestions.updated",
-]);
+const POST_TERMINAL_ALLOWED = POST_TERMINAL_EVENT_TYPES;
 
 class RuntimeEventBus {
   constructor(mainWindowProvider, options = {}) {

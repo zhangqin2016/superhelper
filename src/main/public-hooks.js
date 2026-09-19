@@ -1,5 +1,7 @@
 "use strict";
 
+const { codedError } = require("./coded-error");
+
 const crypto = require("node:crypto");
 const { getLogger } = require("./logger");
 const log = getLogger("public-hooks");
@@ -15,11 +17,6 @@ const EVENTS = new Set([
 const TYPES = new Set(["command", "http", "prompt", "agent", "mcp"]);
 const SECRET_KEY = /(token|secret|password|authorization|api[-_]?key|cookie)/i;
 
-function codedError(code, message = code) {
-  const error = new Error(`${code}: ${message}`);
-  error.code = code;
-  return error;
-}
 
 function bounded(value, name, max = 256) {
   const text = String(value || "").trim();

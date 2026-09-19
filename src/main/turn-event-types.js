@@ -1,30 +1,11 @@
 "use strict";
 
-const TERMINAL_TYPES = new Set([
-  "turn.completed",
-  "turn.failed",
-  "turn.interrupted",
-  "turn.stalled",
-]);
-
-const TURN_OPTIONAL_TYPES = new Set([
-  "session.hydrated",
-  "resume.updated",
-  "resume.invalid",
-  "queue.updated",
-  "user.committed",
-  "turn.steered",
-  "turn.self_heal_retry",
-  "turn.self_heal_notice",
-  "turn.parent_closure_recovery",
-  "engine.notice",
-  "engine.warning",
-  "engine.stderr",
-  "context.compactionDecision",
-  "prompt_suggestions.updated",
-]);
+// Which event types end a turn and which may be emitted with no turn active
+// are facts of the runtime contract (src/shared/runtime-contract.json), not of
+// this file. The hand-kept lists here had drifted from it in both directions.
+const { TERMINAL_EVENT_TYPES, TURN_OPTIONAL_TYPES } = require("./runtime-event-schema");
 
 module.exports = {
-  TERMINAL_TYPES,
+  TERMINAL_TYPES: TERMINAL_EVENT_TYPES,
   TURN_OPTIONAL_TYPES,
 };

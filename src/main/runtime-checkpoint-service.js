@@ -1,15 +1,12 @@
 "use strict";
 
+const { codedError } = require("./coded-error");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { checkpointHash } = require("./runtime-checkpoint");
 
-function codedError(code, message = code) {
-  const error = new Error(`${code}: ${message}`);
-  error.code = code;
-  return error;
-}
 
 function resolveOwnedPath(workspacePath, relativePath) {
   const root = path.resolve(String(workspacePath || ""));

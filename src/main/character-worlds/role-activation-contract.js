@@ -1,5 +1,7 @@
 "use strict";
 
+const { isPlainObject } = require("../plain-object");
+
 const crypto = require("node:crypto");
 const { stableJson } = require("./persistence-codec");
 
@@ -49,11 +51,6 @@ const PROFILE_CLAUSES = Object.freeze({
   ],
 });
 
-function isPlainObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
 function sha256(text) {
   return `sha256:${crypto.createHash("sha256").update(text).digest("hex")}`;

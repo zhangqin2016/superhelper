@@ -1,15 +1,12 @@
 "use strict";
 
+const { codedError } = require("./coded-error");
+
 const crypto = require("node:crypto");
 
 const MAX_COMPONENTS = 256;
 const MAX_EFFECTS = 512;
 
-function codedError(code, message = code) {
-  const error = new Error(`${code}: ${message}`);
-  error.code = code;
-  return error;
-}
 
 function bounded(value, name, max = 256) {
   const text = String(value || "").trim();

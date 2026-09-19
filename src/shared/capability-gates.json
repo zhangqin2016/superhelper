@@ -1467,6 +1467,35 @@
         "scripts/test-turn-start-guard.mjs",
         "scripts/test-tool-call-rescue.mjs"
       ]
+    },
+    {
+      "id": "event-type-lists-from-contract",
+      "protects": "Which runtime events end a turn, which may be emitted with no turn active, and which may still be recorded after a turn ended are facts of src/shared/runtime-contract.json; the schema derives the sets and every module reads them from there. The two hand-kept copies had drifted from the contract in both directions.",
+      "baseline": "The effective sets are the union of the copies that existed: nothing that was allowed is dropped, and the two events each copy had forgotten (turn.parent_closure_recovery, context.compactionDecision) are allowed everywhere.",
+      "failureFallback": "An event type outside the contract is still rejected by the schema as before. The manifest test asserts the derived sets equal the contract and that no module keeps a list of its own.",
+      "tests": [
+        "scripts/test-runtime-contract-manifest.mjs"
+      ]
+    },
+    {
+      "id": "transient-network-signature",
+      "protects": "What a transient network failure looks like (socket, DNS, timeout, undici codes and phrases) is spelled once in src/shared/network-errors.mjs; download retry, the model probe, serve diagnostics, the failure classifier, the session failure policy and collaboration offline detection compose their own scope on top of it.",
+      "baseline": "Every site classifies everything it classified before; the shared base adds the undici header/body timeouts and EHOSTUNREACH/ENETUNREACH everywhere at once. Domain scopes (HTTP 5xx, overload, auth) are unchanged.",
+      "failureFallback": "An unknown error is not transient (no retry) as before; a permission error is never transient. A source-scan rule forbids a second list of network codes in either process.",
+      "tests": [
+        "scripts/test-network-errors.mjs",
+        "scripts/test-turn-error-classify.mjs",
+        "scripts/test-serve-diagnostics.mjs"
+      ]
+    },
+    {
+      "id": "helper-single-copies",
+      "protects": "Helpers that were copied verbatim have one home: codedError (coded-error.js) and isPlainObject (plain-object.js). A caller that checks error.code relies on one shape.",
+      "baseline": "Identical behaviour: the same message format, the same code property, the same plain-object test. Three codedError variants that build a different message on purpose stay where they are.",
+      "failureFallback": "A source-scan rule forbids the verbatim copies from returning.",
+      "tests": [
+        "scripts/test-shared-helpers.mjs"
+      ]
     }
   ]
 }

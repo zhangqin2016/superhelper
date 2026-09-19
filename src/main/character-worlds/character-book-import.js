@@ -1,5 +1,7 @@
 "use strict";
 
+const { isPlainObject } = require("../plain-object");
+
 /**
  * Embedded `character_book` (SillyTavern lorebook) mapping for V2/V3 cards.
  *
@@ -95,11 +97,6 @@ const {
   STRUCTURAL_ENTRY_KEYS,
 } = require("./character-book-fields");
 
-function isPlainObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);

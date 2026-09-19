@@ -1,5 +1,7 @@
 "use strict";
 
+const { codedError } = require("./coded-error");
+
 const crypto = require("node:crypto");
 
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
@@ -7,11 +9,6 @@ const MAX_TASKS = 256;
 const MAX_OBJECTIVE_CHARS = 2_000;
 const MAX_HANDOFF_CHARS = 16_000;
 
-function codedError(code, message = code) {
-  const error = new Error(`${code}: ${message}`);
-  error.code = code;
-  return error;
-}
 
 function bounded(value, name, max = 256) {
   const text = String(value || "").trim();

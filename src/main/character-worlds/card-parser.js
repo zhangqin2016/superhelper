@@ -1,5 +1,7 @@
 "use strict";
 
+const { isPlainObject } = require("../plain-object");
+
 const { CompatibilityReport } = require("./compatibility-report");
 const { mapEmbeddedCharacterBook } = require("./character-book-import");
 const {
@@ -67,11 +69,6 @@ const FIELD_DEFINITIONS = [
   ]],
 ].map(([canonical, kind, sources]) => ({ canonical, kind, sources }));
 
-function isPlainObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);

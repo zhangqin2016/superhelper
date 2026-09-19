@@ -25,7 +25,8 @@
     "engine.warning",
     "engine.stderr",
     "context.compactionDecision",
-    "prompt_suggestions.updated"
+    "prompt_suggestions.updated",
+    "turn.parent_closure_recovery"
   ],
   "eventTypes": [
     "session.hydrated",
@@ -111,7 +112,9 @@
   ],
   "payloadContracts": {
     "character.application": {
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
         "status": "string",
         "reason": "string",
@@ -122,39 +125,83 @@
       }
     },
     "assistant.delta": {
-      "required": ["text"],
-      "properties": { "text": "string" }
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": "string"
+      }
     },
     "assistant.thinking.delta": {
-      "required": ["text"],
-      "properties": { "text": "string" }
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": "string"
+      }
     },
     "assistant.supersedes": {
-      "required": ["supersedes"],
-      "properties": { "supersedes": "string" }
+      "required": [
+        "supersedes"
+      ],
+      "properties": {
+        "supersedes": "string"
+      }
     },
     "assistant.final": {
-      "required": ["assistant"],
-      "properties": { "assistant": "string" }
+      "required": [
+        "assistant"
+      ],
+      "properties": {
+        "assistant": "string"
+      }
     },
     "tool.started": {
-      "required": ["id", "name"],
-      "properties": { "id": "string", "name": "string", "input": "object" }
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": "string",
+        "name": "string",
+        "input": "object"
+      }
     },
     "tool.done": {
-      "required": ["id", "status"],
-      "properties": { "id": "string", "status": "string" }
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": "string",
+        "status": "string"
+      }
     },
     "task.created": {
-      "required": ["taskRun"],
-      "properties": { "taskRun": "object" }
+      "required": [
+        "taskRun"
+      ],
+      "properties": {
+        "taskRun": "object"
+      }
     },
     "task.plan.updated": {
-      "required": ["taskRunId", "plan"],
-      "properties": { "taskRunId": "string", "plan": "array" }
+      "required": [
+        "taskRunId",
+        "plan"
+      ],
+      "properties": {
+        "taskRunId": "string",
+        "plan": "array"
+      }
     },
     "task.completed": {
-      "required": ["taskRunId", "status", "completionStatus", "taskRun"],
+      "required": [
+        "taskRunId",
+        "status",
+        "completionStatus",
+        "taskRun"
+      ],
       "properties": {
         "taskRunId": "string",
         "status": "string",
@@ -163,7 +210,12 @@
       }
     },
     "task.lifecycle.updated": {
-      "required": ["taskId", "status", "version", "deliveryStatus"],
+      "required": [
+        "taskId",
+        "status",
+        "version",
+        "deliveryStatus"
+      ],
       "properties": {
         "taskId": "string",
         "status": "string",
@@ -178,10 +230,16 @@
       }
     },
     "turn.started": {
-      "properties": { "text": "string" }
+      "properties": {
+        "text": "string"
+      }
     },
     "turn.dispatch_outcome_unknown": {
-      "required": ["status", "automaticReplay", "manualRecoveryRequired"],
+      "required": [
+        "status",
+        "automaticReplay",
+        "manualRecoveryRequired"
+      ],
       "properties": {
         "status": "string",
         "automaticReplay": "boolean",
@@ -189,14 +247,20 @@
       }
     },
     "turn.dispatch_blocked": {
-      "required": ["reason", "automaticReplay"],
+      "required": [
+        "reason",
+        "automaticReplay"
+      ],
       "properties": {
         "reason": "string",
         "automaticReplay": "boolean"
       }
     },
     "turn.completed": {
-      "properties": { "assistant": "string", "toolsSummary": "object" }
+      "properties": {
+        "assistant": "string",
+        "toolsSummary": "object"
+      }
     }
   },
   "taskRunFields": [
@@ -227,5 +291,20 @@
     "updatedAt",
     "lastActivityAt",
     "endedAt"
+  ],
+  "postTerminalEventTypes": [
+    "queue.updated",
+    "user.committed",
+    "turn.started",
+    "turn.parent_closure_recovery",
+    "turn.model_recovery",
+    "engine.notice",
+    "engine.warning",
+    "engine.stderr",
+    "context.compactionDecision",
+    "memory.proposal",
+    "resume.updated",
+    "resume.invalid",
+    "prompt_suggestions.updated"
   ]
 }

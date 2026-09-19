@@ -11,6 +11,8 @@ const USER_BLOCKING_EVENT_TYPES = new Set(RUNTIME_CONTRACT.userBlockingEventType
 const RUNTIME_EVENT_TYPES = new Set(RUNTIME_CONTRACT.eventTypes);
 
 const TURN_OPTIONAL_TYPES = new Set(RUNTIME_CONTRACT.turnOptionalEventTypes);
+// Events that may still be recorded for a turn that has already ended.
+const POST_TERMINAL_EVENT_TYPES = new Set(RUNTIME_CONTRACT.postTerminalEventTypes);
 
 function payloadValueMatchesType(value, expectedType) {
   if (expectedType === "array") return Array.isArray(value);
@@ -135,6 +137,8 @@ module.exports = {
   RUNTIME_EVENT_SCHEMA_VERSION,
   TERMINAL_EVENT_TYPES,
   USER_BLOCKING_EVENT_TYPES,
+  TURN_OPTIONAL_TYPES,
+  POST_TERMINAL_EVENT_TYPES,
   RUNTIME_EVENT_TYPES,
   createRuntimeEvent,
   assertRuntimeEvent,

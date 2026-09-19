@@ -1,5 +1,7 @@
 "use strict";
 
+const net = require("../shared/network-errors.mjs");
+
 const script = require("../shared/script.mjs");
 
 const { capabilitiesEntry } = require("./model-preset-capabilities");
@@ -1009,7 +1011,7 @@ function updateCustomPreset(presetId, {
  *  tool support) are NOT transient and still hard-fail. */
 function isTransientProbeError(error) {
   const e = String(error || "");
-  if (/TIMEOUT|ABORT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network|fetch failed|socket hang|overload/i.test(e)) {
+  if (net.TRANSIENT_NETWORK_RE.test(e) || /TIMEOUT|ABORT|network|overload/i.test(e)) {
     return true;
   }
   const m = e.match(/HTTP_(\d+)/);

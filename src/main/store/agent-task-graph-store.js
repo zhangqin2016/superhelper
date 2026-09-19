@@ -1,5 +1,7 @@
 "use strict";
 
+const { codedError } = require("../coded-error");
+
 const crypto = require("node:crypto");
 const {
   addAgentTask,
@@ -12,11 +14,6 @@ const {
   renewAgentTaskLease,
 } = require("../agent-task-graph");
 
-function codedError(code, message = code) {
-  const error = new Error(`${code}: ${message}`);
-  error.code = code;
-  return error;
-}
 
 function migrateAgentTaskGraphSchema(db) {
   db.exec(`

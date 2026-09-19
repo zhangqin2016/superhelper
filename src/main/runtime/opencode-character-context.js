@@ -1,5 +1,7 @@
 "use strict";
 
+const { isPlainObject } = require("../plain-object");
+
 /**
  * Character Worlds injection boundary for the OpenCode prompt body (spec
  * §10.2). The compiled lower-authority character context rides ONLY as a
@@ -36,11 +38,6 @@ function characterBuildFailureApplication(characterContext) {
   };
 }
 
-function isPlainObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
 /** Structural validation of the compiled contract; anything else is ignored. */
 function normalizeCompiledCharacterContext(value) {

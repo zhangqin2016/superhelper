@@ -1,5 +1,7 @@
 "use strict";
 
+const net = require("../shared/network-errors.mjs");
+
 const ERROR_PATTERNS = [
   require("./upstream-model-auth").UPSTREAM_AUTH_FAILURE,
   {
@@ -166,7 +168,7 @@ const ERROR_PATTERNS = [
   {
     code: "MODEL_CONNECTION_FAILED",
     category: "model",
-    test: /API Error:|Connection to the model service was interrupted|model service .*interrupted|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|bad gateway|gateway time?out|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
+    test: new RegExp(`API Error:|Connection to the model service was interrupted|model service .*interrupted|${net.TRANSIENT_NETWORK_SIGNATURE}|timed? out|timeout|502|503|504|500\\b|Internal Server Error|bad gateway|gateway time?out|upstream.*error|backend.*error|aborted|request.*failed|SSL|TLS|certificate|DNS`, "i"),
     // Fact-only copy (2026-07-21 auto-repair): this is almost always an
     // upstream/transient flake the platform retries silently — never instruct
     // the user to check their network or settings.

@@ -1,5 +1,7 @@
 "use strict";
 
+const { codedError } = require("../coded-error");
+
 const crypto = require("node:crypto");
 const {
   checkpointHash,
@@ -8,11 +10,6 @@ const {
   verifyRuntimeCheckpointManifest,
 } = require("../runtime-checkpoint");
 
-function codedError(code, message = code) {
-  const error = new Error(`${code}: ${message}`);
-  error.code = code;
-  return error;
-}
 
 function migrateRuntimeCheckpointSchema(db) {
   db.exec(`

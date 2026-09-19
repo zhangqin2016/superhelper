@@ -1,5 +1,7 @@
 "use strict";
 
+const { isPlainObject } = require("../plain-object");
+
 /**
  * Character Worlds context compiler (spec §6, §10). Compiles the immutable
  * character revision named by an admitted turn snapshot into a bounded,
@@ -111,11 +113,6 @@ function nativeResult() {
   return { status: "native", text: "", fingerprint: null, warnings: [] };
 }
 
-function isPlainObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
 function profileOf(revision) {
   for (const candidate of [revision?.canonical?.profile, revision?.canonical, revision?.profile]) {

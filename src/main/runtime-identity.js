@@ -1,5 +1,7 @@
 "use strict";
 
+const { codedError } = require("./coded-error");
+
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -20,11 +22,6 @@ const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 let processSecret = "";
 
-function codedError(code, message = code) {
-  const error = new Error(`${code}: ${message}`);
-  error.code = code;
-  return error;
-}
 
 function requireSecret(secret) {
   const value = Buffer.isBuffer(secret) ? secret : Buffer.from(String(secret || ""));

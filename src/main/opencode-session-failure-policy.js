@@ -1,11 +1,13 @@
 "use strict";
 
+const net = require("../shared/network-errors.mjs");
+
 const fileKinds = require("../shared/file-kinds.mjs");
 
 const fs = require("node:fs");
 const path = require("node:path");
 
-const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
+const TRANSIENT_ERROR_RE = new RegExp(`unreachable|interrupted|socket|fetch|connection|network|${net.TRANSIENT_NETWORK_SIGNATURE}|timeout|temporarily unavailable|unexpected response`, "i");
 const DOCUMENT_RECOVERY_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument]);
 
 function formatBytes(bytes) {
