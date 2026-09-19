@@ -15,6 +15,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -34,11 +35,7 @@ function parseArgs(argv) {
 }
 
 function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(file, null);
 }
 
 function slugifySystem(value) {
@@ -64,7 +61,7 @@ function runViaExecutor(draftDir, action, plan, { storageState, authRecipe, conf
       return;
     }
     const planPath = path.join(os.tmpdir(), `lily-mcp-plan-${crypto.randomUUID()}.json`);
-    fs.writeFileSync(planPath, JSON.stringify(plan));
+    jsonFile.writeJson(planPath, plan, { indent: 0 });
     const argv = [
       executor,
       "--playbook", path.join(draftDir, "web-system-playbook.json"),

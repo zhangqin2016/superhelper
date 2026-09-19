@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { userDataPath, agentConfigDir } = require("./config");
@@ -228,7 +229,7 @@ async function installFromRegistryEntry(entry) {
       manifest,
       fs.readFileSync(skillMdPath, "utf8"),
     );
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    jsonFile.writeJson(manifestPath, manifest, { newline: true });
     const validated = validateManifest(manifest, entry.id);
     if (!validated.ok) return validated;
 

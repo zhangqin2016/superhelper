@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const WORKSPACE_APP_MANIFEST = "lily-app.json";
@@ -60,11 +61,7 @@ function isUnderAny(relPath, paths) {
 }
 
 function safeReadJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(filePath, null);
 }
 
 function readWorkspaceAppManifest(rootPath) {

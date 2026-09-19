@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { execFileSync, spawn } = require("node:child_process");
 const { PROJECT_ROOT } = require("./config");
@@ -44,8 +45,7 @@ function readState() {
 }
 
 function writeState(state) {
-  fs.mkdirSync(path.dirname(statePath()), { recursive: true });
-  fs.writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  jsonFile.writeJson(statePath(), state, { newline: true });
 }
 
 function isValidPackId(id) {

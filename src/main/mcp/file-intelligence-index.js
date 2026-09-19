@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const os = require("node:os");
 const path = require("node:path");
 const {
@@ -74,10 +75,7 @@ function indexRecordPath(storeRoot, indexId) {
   return path.join(storeRoot || defaultStoreRoot(), `${safeId(indexId)}.json`);
 }
 
-function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = (file, value) => jsonFile.writeJson(file, value, { newline: true });
 
 function indexPath(input = {}) {
   const rawRoot = String(input.path || "");

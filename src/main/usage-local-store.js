@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 const { DEFAULT_PRICING_ID } = require("./usage-cost-estimate");
@@ -66,8 +67,7 @@ function readStore() {
 function writeStore() {
   const store = readStore();
   pruneOldDays(store);
-  fs.mkdirSync(path.dirname(storePath()), { recursive: true });
-  fs.writeFileSync(storePath(), JSON.stringify(store, null, 2), "utf8");
+  jsonFile.writeJson(storePath(), store);
 }
 
 function pruneOldDays(store) {

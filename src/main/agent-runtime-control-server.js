@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
@@ -173,11 +174,7 @@ function createAgentRuntimeControlServer(ctx, options = {}) {
     server.unref?.();
     const address = server.address();
     url = `http://127.0.0.1:${address.port}`;
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const temporary = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify({ protocolVersion: 1, url, token, pid: process.pid, updatedAt: Date.now() })}\n`, { mode: 0o600, flag: "wx" });
-    fs.renameSync(temporary, filePath);
-    try { fs.chmodSync(filePath, 0o600); } catch { /* Windows ACLs are inherited */ }
+    jsonFile.writeJson(filePath, { protocolVersion: 1, url, token, pid: process.pid, updatedAt: Date.now() }, { indent: 0, newline: true, mode: 0o600 });
     return { url, token, discoveryPath: filePath };
   }
 

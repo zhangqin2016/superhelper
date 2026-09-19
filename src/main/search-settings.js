@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath } = require("./config");
 
@@ -53,19 +54,9 @@ function readBundledSettingsEnv() {
   return {};
 }
 
-function readJson(filePath, fallback) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return fallback;
-  }
-}
+const readJson = (filePath, fallback) => jsonFile.readJson(filePath, fallback);
 
-function writeJson(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
-}
+const writeJson = (filePath, data) => jsonFile.writeJson(filePath, data);
 
 function isValidProvider(providerId) {
   return SEARCH_PROVIDERS.some((item) => item.id === providerId);

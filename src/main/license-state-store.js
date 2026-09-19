@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
@@ -34,27 +35,11 @@ function readState() {
   return {};
 }
 
-function atomicWrite(file, text) {
-  const temp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temp, text, { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temp, file);
-  } finally {
-    try {
-      if (fs.existsSync(temp)) fs.unlinkSync(temp);
-    } catch {
-      // The canonical state was not replaced, so a stale temp file is harmless.
-    }
-  }
-}
-
 function writeState(state) {
   const primary = statePath();
-  fs.mkdirSync(path.dirname(primary), { recursive: true });
-  const serialized = JSON.stringify(state, null, 2);
-  atomicWrite(primary, serialized);
+  jsonFile.writeJson(primary, state, { mode: 0o600 });
   try {
-    atomicWrite(backupStatePath(), serialized);
+    jsonFile.writeJson(backupStatePath(), state, { mode: 0o600 });
   } catch (error) {
     console.warn("[license] backup snapshot write failed:", error?.message || error);
   }

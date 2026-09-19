@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { compareSemver } = require("./skill-version");
 const {
@@ -124,7 +125,7 @@ function syncManifestI18nFromBundled(skillId) {
   }
   if (!changed) return;
   try {
-    fs.writeFileSync(installedPath, JSON.stringify(installed, null, 2), "utf8");
+    jsonFile.writeJson(installedPath, installed);
   } catch {
     // Startup remains fail-open when an installed manifest is not writable.
   }

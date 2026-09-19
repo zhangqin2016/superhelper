@@ -23,6 +23,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 function nodeBinaryPath(runtimeDir) {
@@ -333,7 +334,7 @@ function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, conte
   // for the learned skills active in this session — see learnedWebSystemDirs.
   Object.assign(mcpServers, buildWebSystemMcpEntries(learnedWebSystemDirs(allowedSkillIds)));
   if (!Object.keys(mcpServers).length) return null;
-  fs.writeFileSync(outPath, `${JSON.stringify({ mcpServers }, null, 2)}\n`);
+  jsonFile.writeJson(outPath, { mcpServers }, { newline: true });
   return outPath;
 }
 

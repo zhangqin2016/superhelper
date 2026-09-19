@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { userDataPath } = require("./config");
@@ -13,20 +14,9 @@ function defaultMailAccountsPath() {
   return userDataPath("mail-accounts.json");
 }
 
-function readJson(filePath, fallback) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
+const readJson = (filePath, fallback) => jsonFile.readJsonObject(filePath, fallback);
 
-function writeJson(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-}
+const writeJson = (filePath, data) => jsonFile.writeJson(filePath, data, { newline: true });
 
 function normalizeHost(value, field) {
   const host = String(value || "").trim();

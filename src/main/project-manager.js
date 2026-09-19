@@ -6,6 +6,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { projectsConfigPath } = require("./config");
@@ -146,33 +147,11 @@ class ProjectManager {
   }
 
   save() {
-    const configPath = projectsConfigPath();
-    const dir = path.dirname(configPath);
-    const tempPath = `${configPath}.tmp`;
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        tempPath,
-        JSON.stringify(
-          {
-            workspaceOrderVersion: this.workspaceOrderVersion,
-            activeProjectId: this.activeProjectId,
-            projects: this.projects,
-          },
-          null,
-          2,
-        ),
-        "utf8",
-      );
-      fs.renameSync(tempPath, configPath);
-    } catch (error) {
-      try {
-        fs.unlinkSync(tempPath);
-      } catch {
-        // The temporary file may not have been created.
-      }
-      throw error;
-    }
+    jsonFile.writeJson(projectsConfigPath(), {
+      workspaceOrderVersion: this.workspaceOrderVersion,
+      activeProjectId: this.activeProjectId,
+      projects: this.projects,
+    });
   }
 
   getActive() {

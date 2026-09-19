@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { userDataPath } = require("./config");
@@ -27,15 +28,7 @@ function writeStoredSelection(selection, sessionId) {
   const data = stored?.schemaVersion === 1 ? stored : { schemaVersion: 1, defaultSelection: stored, sessions: {} };
   if (sessionId) data.sessions = { ...data.sessions, [sessionId]: selection };
   else data.defaultSelection = selection;
-  const file = userDataPath("model-selection.json");
-  const temp = `${file}.${crypto.randomUUID()}.tmp`;
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(temp, JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temp, file);
-  } finally {
-    try { fs.unlinkSync(temp); } catch { /* rename consumed the temporary file */ }
-  }
+  jsonFile.writeJson(userDataPath("model-selection.json"), data, { mode: 0o600 });
 }
 
 function catalogState() {
@@ -177,14 +170,7 @@ function clearSessionModelSelection(sessionId = "") {
   if (stored?.schemaVersion !== 1 || !sessionId || !Object.hasOwn(stored.sessions || {}, sessionId)) return false;
   const sessions = { ...stored.sessions };
   delete sessions[sessionId];
-  const file = userDataPath("model-selection.json");
-  const temp = `${file}.${crypto.randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temp, JSON.stringify({ ...stored, sessions }, null, 2), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temp, file);
-  } finally {
-    try { fs.unlinkSync(temp); } catch { /* rename consumed the temporary file */ }
-  }
+  jsonFile.writeJson(userDataPath("model-selection.json"), { ...stored, sessions }, { mode: 0o600 });
   return true;
 }
 

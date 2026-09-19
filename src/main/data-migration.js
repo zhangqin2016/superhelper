@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const {
   userDataPath,
@@ -189,16 +190,11 @@ function legacyUserDataRoots() {
 }
 
 function readJsonSafe(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(filePath, null);
 }
 
 function writeJsonSafe(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  jsonFile.writeJson(filePath, data);
 }
 
 /** Union workspaces by folder path; current entry wins when paths match. */
@@ -805,7 +801,7 @@ function migrateSettingsEnvKeys() {
   if (!changed) return;
 
   raw.env = env;
-  fs.writeFileSync(settingsPath, JSON.stringify(raw, null, 2), "utf8");
+  jsonFile.writeJson(settingsPath, raw);
 }
 
 function migrateSkillsState() {
@@ -827,7 +823,7 @@ function migrateSkillsState() {
     raw.skills[CURRENT_SKILL_ID] = { ...entry, id: CURRENT_SKILL_ID };
   }
   delete raw.skills[LEGACY_SKILL_ID];
-  fs.writeFileSync(statePath, JSON.stringify(raw, null, 2), "utf8");
+  jsonFile.writeJson(statePath, raw);
 }
 
 function migrateInstalledSkillDir() {
@@ -879,7 +875,7 @@ function migrateSessionsResumeId() {
     }
   });
   if (!changed) return;
-  fs.writeFileSync(sessionsPath, JSON.stringify(raw, null, 2), "utf8");
+  jsonFile.writeJson(sessionsPath, raw);
 }
 
 const ENGINE_IDENTITY_FILE = "engine-identity.json";

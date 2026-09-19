@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { stable } = require("./skill-registry-revision.js");
 
@@ -81,14 +82,7 @@ function validateCandidate(candidate, baseline) {
 }
 
 function writeJsonAtomically(targetPath, value) {
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  const tempPath = `${targetPath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    fs.renameSync(tempPath, targetPath);
-  } finally {
-    if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
-  }
+  jsonFile.writeJson(targetPath, value, { newline: true });
 }
 
 function applyCatalogTransaction({ catalogDir, stagedCatalogDir, registryPath, registry }) {

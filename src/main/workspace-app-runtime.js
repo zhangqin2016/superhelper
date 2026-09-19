@@ -1,16 +1,13 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const WORKSPACE_MANIFEST = "lily-workspace.json";
 
 function safeReadJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(filePath, null);
 }
 
 function safeRelativePath(baseDir, relPath) {

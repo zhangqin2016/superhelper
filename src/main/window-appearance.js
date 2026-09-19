@@ -1,5 +1,7 @@
 "use strict";
 
+const jsonFile = require("./json-file");
+
 /**
  * The colour a window paints BEFORE its renderer has drawn anything.
  *
@@ -116,8 +118,7 @@ function rememberThemeMode(mode) {
     let data = {};
     try { if (fs.existsSync(file)) data = JSON.parse(fs.readFileSync(file, "utf8")) || {}; } catch { data = {}; }
     if (data.themeMode === mode) return true;
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ ...data, themeMode: mode }, null, 2), "utf8");
+    jsonFile.writeJson(file, { ...data, themeMode: mode });
     return true;
   } catch {
     return false; // the OS preference remains the fallback

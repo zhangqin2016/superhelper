@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { LongTaskStore, TERMINAL_LONG_TASK_STATUSES } = require("./store");
@@ -18,7 +19,7 @@ const LEASE_MS = 3_000;
 
 function fail(error, detail = {}) { return { ok: false, error, ...detail }; }
 function safeId(value) { return String(value || "").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120); }
-function readJson(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } }
+function readJson(file) { return jsonFile.readJson(file, null); }
 async function waitForJson(file, timeoutMs = 5_000) {
   const deadline = Date.now() + timeoutMs;
   do {
@@ -183,10 +184,10 @@ class DurableProcessJobRuntime {
       const heartbeatPath = path.join(this.jobsDir, `${job.id}.heartbeat.json`);
       const markerPath = this._marker(job);
       const launchNonce = crypto.randomBytes(24).toString("base64url");
-      fs.writeFileSync(specPath, `${JSON.stringify({
+      jsonFile.writeJson(specPath, {
         command, args: job.args, cwd, env: bounded.env, shell: input.shell === undefined ? job.args.length === 0 : input.shell,
         markerPath, startMarkerPath, heartbeatPath, launchNonce,
-      })}\n`, { encoding: "utf8", mode: 0o600 });
+      }, { indent: 0, newline: true, mode: 0o600 });
       const outFd = fs.openSync(stdoutPath, "a");
       const errFd = fs.openSync(stderrPath, "a");
       let child;

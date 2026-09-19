@@ -1,5 +1,7 @@
 "use strict";
 
+const jsonFile = require("./json-file");
+
 const path = require("node:path");
 const { BrowserWindow, screen } = require("electron");
 
@@ -35,7 +37,7 @@ function boundsStore() {
       try {
         const target = file();
         fs.mkdirSync(require("node:path").dirname(target), { recursive: true });
-        fs.writeFileSync(target, JSON.stringify(bounds, null, 2), "utf8");
+        jsonFile.writeJson(target, bounds);
       } catch { /* a forgotten position is not worth an error */ }
     },
   };

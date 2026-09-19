@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { deletedSessionsPath } = require("./config");
 
@@ -10,17 +11,12 @@ const { deletedSessionsPath } = require("./config");
  * from "lost". Extracted from session-manager.js (architecture ratchet).
  */
 function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(filePath, null);
 }
 
 function writeJson(filePath, value) {
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+    jsonFile.writeJson(filePath, value);
   } catch (err) {
     console.warn("[sessions] failed to write", filePath, err?.message || err);
   }

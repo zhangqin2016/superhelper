@@ -1,5 +1,7 @@
 "use strict";
 
+const jsonFile = require("./json-file");
+
 /**
  * macOS legacy-install healing (改名遗留) — the mac counterpart of
  * windows-legacy-installs.js.
@@ -112,7 +114,7 @@ async function maybeHealLegacyInstallsMac({ mainWindow } = {}) {
         : `${names}\n\nLegacy apps cannot reach the current service and cause the "licensed but never works" symptom when launched by mistake. Moving them to the Trash does not touch your data or this installation, and you can restore them from the Trash anytime.`,
     });
     if (choice.response !== 0) {
-      try { fs.writeFileSync(statePath, JSON.stringify({ handledSignature: signature, dismissedAt: new Date().toISOString() })); } catch {}
+      try { jsonFile.writeJson(statePath, { handledSignature: signature, dismissedAt: new Date().toISOString() }, { indent: 0 }); } catch {}
       return { checked: true, found: found.length, action: "dismissed" };
     }
 
@@ -125,7 +127,7 @@ async function maybeHealLegacyInstallsMac({ mainWindow } = {}) {
         results.push({ install, ok: false, error: err?.message || String(err) });
       }
     }
-    try { fs.writeFileSync(statePath, JSON.stringify({ handledSignature: signature, healedAt: new Date().toISOString(), results: results.map((r) => ({ name: r.install.displayName, ok: r.ok })) })); } catch {}
+    try { jsonFile.writeJson(statePath, { handledSignature: signature, healedAt: new Date().toISOString(), results: results.map((r) => ({ name: r.install.displayName, ok: r.ok })) }, { indent: 0 }); } catch {}
 
     const failed = results.filter((r) => !r.ok);
     await dialog.showMessageBox(mainWindow || null, {

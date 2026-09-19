@@ -9,6 +9,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const path = require("node:path");
 const { z } = require("zod");
 const { buildIntentContractToolDefinition } = require("./intent-contract-tool-definition");
@@ -409,11 +410,7 @@ const STATIC_TOOL_DEFINITIONS = [
 ];
 
 function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(file, null);
 }
 
 function learnedWebSystemTools(context, deps = {}) {

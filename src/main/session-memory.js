@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { sessionSummariesDir } = require("./config");
 
@@ -47,7 +48,7 @@ function writeSessionSummary(sessionId, summary) {
   const filePath = summaryPath(sessionId);
   if (!filePath) return false;
   fs.mkdirSync(sessionSummariesDir(), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(summary, null, 2), "utf8");
+  jsonFile.writeJson(filePath, summary);
   return true;
 }
 

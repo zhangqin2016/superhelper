@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const path = require("node:path");
 const { LongTaskStore } = require("./store");
 
@@ -63,7 +64,7 @@ function migrateLegacyProcessJobs({ legacyPath, dbPath } = {}) {
       if (terminal.ok) imported += 1;
     }
   } finally { store.close(); }
-  fs.writeFileSync(marker, `${JSON.stringify({ version: 1, imported, migratedAt: Date.now() })}\n`, { mode: 0o600 });
+  jsonFile.writeJson(marker, { version: 1, imported, migratedAt: Date.now() }, { indent: 0, newline: true, mode: 0o600 });
   return { ok: true, imported };
 }
 

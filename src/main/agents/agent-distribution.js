@@ -23,6 +23,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const path = require("node:path");
 const { agentsEnabled, AGENT_SOURCE_KINDS } = require("./constants");
 const { normalizeAgentDefinition } = require("./agent-definition");
@@ -51,10 +52,7 @@ function writeCache(state) {
   const file = cachePath();
   if (!file) return false;
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const temp = `${file}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify(state, null, 2), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temp, file);
+    jsonFile.writeJson(file, state, { mode: 0o600 });
     return true;
   } catch {
     return false;

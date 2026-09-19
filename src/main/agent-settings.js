@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { agentConfigDir } = require("./config");
 const { resolveRuntimeNodePath } = require("./runtime-node");
@@ -96,7 +97,7 @@ function ensureSettingsPresent() {
     }
     if (changed) {
       raw.env = env;
-      fs.writeFileSync(settingsPath, JSON.stringify(raw, null, 2), "utf8");
+      jsonFile.writeJson(settingsPath, raw);
     }
   } catch {
     // keep existing file if merge fails

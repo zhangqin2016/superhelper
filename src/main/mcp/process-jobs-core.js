@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const http = require("node:http");
 const https = require("node:https");
 const net = require("node:net");
@@ -51,11 +52,7 @@ function readRegistry(options = {}) {
 }
 
 function writeRegistry(registry, options = {}) {
-  const file = registryPath(options);
-  ensureDir(path.dirname(file));
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmp, `${JSON.stringify(registry, null, 2)}\n`);
-  fs.renameSync(tmp, file);
+  jsonFile.writeJson(registryPath(options), registry, { newline: true });
 }
 
 function fail(error, detail = {}) {

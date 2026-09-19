@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
@@ -38,17 +39,10 @@ function normalizeIndex(index = {}) {
   };
 }
 
-function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = (file, value) => jsonFile.writeJson(file, value, { newline: true });
 
 function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(file, null);
 }
 
 function persistDocumentQueryIndex({

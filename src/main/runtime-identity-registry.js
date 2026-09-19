@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const SCHEMA_VERSION = 1;
@@ -38,15 +39,7 @@ function readState(filePath) {
 }
 
 function atomicWrite(filePath, state) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const temp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  try {
-    fs.writeFileSync(temp, `${JSON.stringify(state)}\n`, { mode: 0o600 });
-    fs.renameSync(temp, filePath);
-    try { fs.chmodSync(filePath, 0o600); } catch { /* best effort on Windows */ }
-  } finally {
-    try { if (fs.existsSync(temp)) fs.unlinkSync(temp); } catch { /* best effort */ }
-  }
+  jsonFile.writeJson(filePath, state, { indent: 0, newline: true, mode: 0o600 });
 }
 
 function createRuntimeIdentityRegistry({ filePath, now = () => Date.now() } = {}) {

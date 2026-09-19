@@ -23,6 +23,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { intentOverlapScore } = require("./runtime/intent-relevance");
 const { getLogger } = require("./logger");
@@ -70,8 +71,7 @@ function readCards(projectId) {
 function writeCards(projectId, cards) {
   try {
     const file = cardsPath(projectId);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify({ version: 1, cards }, null, 2)}\n`);
+    jsonFile.writeJson(file, { version: 1, cards }, { newline: true });
     return true;
   } catch (err) {
     log.warn(`procedure card write failed open: ${err?.message || String(err)}`);

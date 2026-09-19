@@ -2,13 +2,12 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 function atomicJson(file, value) {
-  const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600 });
-  fs.renameSync(tmp, file);
+  jsonFile.writeJson(file, value, { indent: 0, newline: true, mode: 0o600 });
 }
 
 function main() {

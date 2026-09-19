@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
@@ -97,8 +98,7 @@ function readProposalFile(projectId) {
 
 function writeProposalFile(projectId, proposals) {
   const filePath = proposalsPath(projectId);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify({ schemaVersion: 1, proposals }, null, 2), "utf8");
+  jsonFile.writeJson(filePath, { schemaVersion: 1, proposals });
 }
 
 function listMemoryProposals(projectId, { includeDismissed = false } = {}) {

@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 /** Identifies our managed hook entry inside the user's hooks array. */
@@ -55,8 +56,7 @@ function ensureVerificationHooks({ settingsPath, nodePath, scriptPath }) {
 
   hooks.PostToolUse = post;
   settings.hooks = hooks;
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+  jsonFile.writeJson(settingsPath, settings, { newline: true });
   return true;
 }
 

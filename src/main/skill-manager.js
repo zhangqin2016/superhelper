@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath, agentConfigDir, agentGuidePath, sessionGuideDir } = require("./config");
 const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-node");
@@ -916,7 +917,7 @@ function registerLearnedSkillDir(srcDir, manifest, context = {}) {
       const manifestPath = path.join(target, "skill.manifest.json");
       installedManifest = { ...JSON.parse(fs.readFileSync(manifestPath, "utf8")), id };
       const updated = installedManifest;
-      fs.writeFileSync(manifestPath, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
+      jsonFile.writeJson(manifestPath, updated, { newline: true });
     } catch {
       return null;
     }
@@ -1017,7 +1018,7 @@ function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false, projectId
     workspaceOnly: true,
     publisher: installedManifest.publisher || "Workspace",
   };
-  fs.writeFileSync(installedManifestPath, `${JSON.stringify(installedManifest, null, 2)}\n`, "utf8");
+  jsonFile.writeJson(installedManifestPath, installedManifest, { newline: true });
   try {
     if (fs.existsSync(target)) fs.renameSync(target, backup);
     fs.renameSync(staging, target);

@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const SCHEMA_VERSION = 1;
@@ -49,13 +50,12 @@ function writeManifest(workspacePath = "", manifest = emptyManifest()) {
   const manifestPath = workspaceManifestPath(workspacePath);
   if (!manifestPath) return false;
   try {
-    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-    fs.writeFileSync(manifestPath, JSON.stringify({
+    jsonFile.writeJson(manifestPath, {
       schemaVersion: SCHEMA_VERSION,
       artifacts: manifest.artifacts || {},
       aliases: manifest.aliases || {},
       updatedAt: new Date().toISOString(),
-    }, null, 2));
+    });
     return true;
   } catch {
     return false;

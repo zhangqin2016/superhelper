@@ -1,5 +1,7 @@
 "use strict";
 
+const jsonFile = require("./json-file");
+
 /**
  * Windows legacy-install healing (改名遗留).
  *
@@ -235,7 +237,7 @@ async function maybeHealLegacyInstallsWindows({ mainWindow } = {}) {
         : `${names}\n\nLegacy versions cannot reach the current service and cause the "licensed but never works" symptom when launched by stale shortcuts. Uninstalling them does not touch your data or this installation.`,
     });
     if (choice.response !== 0) {
-      try { fs.writeFileSync(statePath, JSON.stringify({ handledSignature: signature, dismissedAt: new Date().toISOString() })); } catch {}
+      try { jsonFile.writeJson(statePath, { handledSignature: signature, dismissedAt: new Date().toISOString() }, { indent: 0 }); } catch {}
       return { checked: true, found: found.length, action: "dismissed" };
     }
 
@@ -256,7 +258,7 @@ async function maybeHealLegacyInstallsWindows({ mainWindow } = {}) {
     // reported success can still leave residue; that residue keeps matching
     // the SAME signature only if files remain, which re-scans will catch.)
     if (!failed.length) {
-      try { fs.writeFileSync(statePath, JSON.stringify({ handledSignature: signature, healedAt: new Date().toISOString(), results: results.map((r) => ({ name: r.install.displayName, ok: r.ok })) })); } catch {}
+      try { jsonFile.writeJson(statePath, { handledSignature: signature, healedAt: new Date().toISOString(), results: results.map((r) => ({ name: r.install.displayName, ok: r.ok })) }, { indent: 0 }); } catch {}
     }
     await dialog.showMessageBox(mainWindow || null, {
       type: failed.length ? "warning" : "info",

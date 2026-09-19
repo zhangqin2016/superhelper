@@ -1,16 +1,14 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const SAFE_ENV_KEYS = new Set(["PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "SystemRoot", "WINDIR"]);
 
 function atomicWrite(filePath, value) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const temporary = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temporary, filePath);
+  jsonFile.writeJson(filePath, value, { newline: true, mode: 0o600 });
 }
 
 class PublicHookConfigStore {

@@ -12,6 +12,7 @@
 // ever deleted — this only re-weights.
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const MAX_BOOST = 8; // ceiling of the reinforcement term (base relevance is up to ~43)
@@ -87,8 +88,7 @@ function recordUsage(projectKey, entryKeys = [], now = Date.now()) {
       entries.sort((a, b) => Number(b[1].lastUsedAt || 0) - Number(a[1].lastUsedAt || 0));
       entries = entries.slice(0, MAX_ENTRIES);
     }
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, entries: Object.fromEntries(entries) }), "utf8");
+    jsonFile.writeJson(file, { schemaVersion: 1, entries: Object.fromEntries(entries) }, { indent: 0 });
     return true;
   } catch {
     return false;

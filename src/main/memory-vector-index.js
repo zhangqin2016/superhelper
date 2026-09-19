@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const DEFAULT_DIMENSIONS = 128;
@@ -123,16 +124,12 @@ function readIndex(filePath) {
 function writeIndex(filePath, index) {
   if (!filePath) return false;
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    // §14.5 immutable index generations: write a temp file then rename so a
-    // crash mid-write can never expose a torn index. Readers either see the
-    // previous generation or the new one — never a half-written file.
-    const tmpPath = `${filePath}.${process.pid}.tmp`;
-    fs.writeFileSync(tmpPath, JSON.stringify(index), "utf8");
-    fs.renameSync(tmpPath, filePath);
+    // §14.5 immutable index generations: the write is atomic (temp + rename),
+    // so a crash mid-write can never expose a torn index. Readers either see
+    // the previous generation or the new one — never a half-written file.
+    jsonFile.writeJson(filePath, index, { indent: 0 });
     return true;
   } catch {
-    try { fs.rmSync(`${filePath}.${process.pid}.tmp`, { force: true }); } catch { /* best-effort */ }
     return false;
   }
 }

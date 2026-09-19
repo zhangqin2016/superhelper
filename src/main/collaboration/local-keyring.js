@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const path = require("node:path");
 const { userDataPath } = require("../config");
 
@@ -80,15 +81,7 @@ class LocalCollaborationKeyring {
   }
 
   _write(value) {
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    const temp = `${this.filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-    try {
-      fs.writeFileSync(temp, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temp, this.filePath);
-      try { fs.chmodSync(this.filePath, 0o600); } catch { /* Windows */ }
-    } finally {
-      try { if (fs.existsSync(temp)) fs.unlinkSync(temp); } catch { /* harmless */ }
-    }
+    jsonFile.writeJson(this.filePath, value, { indent: 0, newline: true, mode: 0o600 });
   }
 
   _protectKey(key) {

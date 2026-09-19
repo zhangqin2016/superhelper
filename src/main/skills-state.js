@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath, agentConfigDir } = require("./config");
 const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-node");
@@ -55,11 +56,7 @@ function installedSkillDir(skillId) {
 }
 
 function readJsonFile(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(filePath, null);
 }
 
 function copyDirRecursive(source, target) {
@@ -133,7 +130,7 @@ function saveSkillsState() {
   const state = loadSkillsState();
   const dir = path.dirname(skillsStatePath());
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(skillsStatePath(), JSON.stringify(state, null, 2), "utf8");
+  jsonFile.writeJson(skillsStatePath(), state);
 }
 
 function ensureSkillsStateDefaults() {

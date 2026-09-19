@@ -1401,6 +1401,17 @@
         "scripts/test-model-compatibility-probe.mjs",
         "scripts/test-evidence-entailment-judge.mjs"
       ]
+    },
+    {
+      "id": "json-file-atomic-write",
+      "protects": "Every JSON state file the app keeps is written atomically through json-file.js: the bytes land in a temporary file next to the target and are renamed over it, so a crash, kill or power cut mid-write can never leave a truncated file that reads back as empty. Reading never throws; a missing or malformed file is the caller's fallback.",
+      "baseline": "Every file has exactly the bytes its writer produced before (indent, trailing newline, owner-only mode preserved per call site); readers are unchanged; MCP servers and long-task workers use the same dependency-free module from their own processes. Transient Windows rename locks are retried briefly, as the session index already did.",
+      "failureFallback": "A write that fails leaves the previous file intact and no temporary behind; the error reaches the caller exactly as a failed writeFileSync did. A source-scan rule forbids a second implementation (two documented exceptions: a create-only marker with flag wx, and a store with an injected fs), so no new state file can regress to a plain write unnoticed.",
+      "tests": [
+        "scripts/test-json-file.mjs",
+        "scripts/test-license-update.mjs",
+        "scripts/test-model-settings-secret-storage.mjs"
+      ]
     }
   ]
 }

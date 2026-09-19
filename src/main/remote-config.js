@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { PROJECT_ROOT, userDataPath, isPackaged } = require("./config");
@@ -29,19 +30,9 @@ function cachePath() {
   return userDataPath(CACHE_FILE);
 }
 
-function readJson(filePath, fallback = {}) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return fallback;
-  }
-}
+const readJson = (filePath, fallback = {}) => jsonFile.readJson(filePath, fallback);
 
-function writeJson(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
-}
+const writeJson = (filePath, data) => jsonFile.writeJson(filePath, data);
 
 function loadPublicKey() {
   const envKey = process.env.LILY_CONFIG_PUBLIC_KEY || process.env.LILY_LICENSE_PUBLIC_KEY;

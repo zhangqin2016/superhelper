@@ -104,6 +104,9 @@ function catalogFixture({ custom = false, failWrite = false, stored = null, cata
   };
   const mocks = {
     "node:fs": mockFs,
+    // The catalog writes through the atomic JSON seam; in this fixture the seam
+    // is the same in-memory write+rename the mock fs models.
+    "./json-file": { writeJson: (file, value) => { mockFs.writeFileSync(file, JSON.stringify(value)); mockFs.renameSync(); } },
     "./config": { userDataPath: () => { if (noProfile) throw Error("no desktop profile"); return "/virtual/selection.json"; } },
     "./model-presets": {
       listPresetsPublic: () => { if (catalogUnavailable) throw Error("catalog offline"); return { activePresetId: "fast", presets }; },

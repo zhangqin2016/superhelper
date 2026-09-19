@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 function config() {
@@ -57,12 +58,7 @@ function setRuntimePackLocation(root) {
       .filter((item) => item !== resolved)
       .filter((item) => item !== path.resolve(current.legacyRoot))
       .filter((item, index, list) => list.indexOf(item) === index);
-    fs.mkdirSync(path.dirname(cfg.runtimePackRootConfigPath()), { recursive: true });
-    fs.writeFileSync(
-      cfg.runtimePackRootConfigPath(),
-      `${JSON.stringify({ root: resolved, fallbackRoots, updatedAt: new Date().toISOString() }, null, 2)}\n`,
-      "utf8",
-    );
+    jsonFile.writeJson(cfg.runtimePackRootConfigPath(), { root: resolved, fallbackRoots, updatedAt: new Date().toISOString() }, { newline: true });
     return locationPayload();
   } catch (err) {
     return { ok: false, error: err?.message || "RUNTIME_PACK_ROOT_NOT_WRITABLE" };
@@ -84,12 +80,7 @@ function resetRuntimePackLocation() {
       .filter((item) => item !== path.resolve(current.legacyRoot))
       .filter((item, index, list) => list.indexOf(item) === index);
     if (fallbackRoots.length) {
-      fs.mkdirSync(path.dirname(cfg.runtimePackRootConfigPath()), { recursive: true });
-      fs.writeFileSync(
-        cfg.runtimePackRootConfigPath(),
-        `${JSON.stringify({ fallbackRoots, updatedAt: new Date().toISOString() }, null, 2)}\n`,
-        "utf8",
-      );
+      jsonFile.writeJson(cfg.runtimePackRootConfigPath(), { fallbackRoots, updatedAt: new Date().toISOString() }, { newline: true });
     } else {
       fs.rmSync(cfg.runtimePackRootConfigPath(), { force: true });
     }

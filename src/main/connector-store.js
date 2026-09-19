@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 const {
@@ -25,7 +26,7 @@ function createConnectorStore(options = {}) {
   function savePlaybook(input) {
     const playbook = normalizePlaybookSpec(input);
     fs.mkdirSync(rootDir, { recursive: true });
-    fs.writeFileSync(fileFor(playbook.id), JSON.stringify(playbook, null, 2) + "\n", "utf8");
+    jsonFile.writeJson(fileFor(playbook.id), playbook, { newline: true });
     return playbook;
   }
 

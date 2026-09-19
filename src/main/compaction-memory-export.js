@@ -11,6 +11,7 @@
 // Keyed by the ENGINE session id because that is all the plugin's hook input knows.
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 // Both the writer (here / opencode-agent-session) and the serve env
@@ -103,7 +104,7 @@ function writeCompactionMemoryFile(dir, engineSessionId, summary, opts = {}) {
     const guidance = typeof opts.guidance === "string" ? opts.guidance : "";
     if (!blocks.length && !anchor && !guidance) return "";
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, blocks, ...(anchor ? { anchor } : {}), ...(guidance ? { guidance } : {}) }));
+    jsonFile.writeJson(file, { schemaVersion: 2, blocks, ...(anchor ? { anchor } : {}), ...(guidance ? { guidance } : {}) }, { indent: 0 });
     return file;
   } catch {
     return "";

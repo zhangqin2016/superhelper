@@ -3,6 +3,7 @@
 // Persisted user preference for task-completion alerts (sound + OS notification).
 // Tiny JSON in userData, mirroring the other per-feature settings modules.
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const { userDataPath } = require("./config");
 
 const DEFAULTS = { sound: true, notify: true };
@@ -32,7 +33,7 @@ function setNotificationSettings(patch = {}) {
   if (typeof patch.notify === "boolean") next.notify = patch.notify;
   cache = next;
   try {
-    fs.writeFileSync(file(), JSON.stringify(next, null, 2));
+    jsonFile.writeJson(file(), next);
   } catch {
     /* preference is best-effort; never block on disk */
   }

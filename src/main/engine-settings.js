@@ -6,6 +6,7 @@
 // set, overrides the stored choice (dev/CI escape hatch).
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
@@ -53,8 +54,7 @@ function setEngine(engine) {
   cached = next;
   try {
     const file = settingsPath();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ engine: next }, null, 2), "utf8");
+    jsonFile.writeJson(file, { engine: next });
   } catch {
     /* best effort; cached value still applies for this session */
   }

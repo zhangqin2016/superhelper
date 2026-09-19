@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
@@ -47,8 +48,7 @@ function writeMemoryPreferences(projectId, preferences = {}) {
     disabledKinds: normalizeDisabledKinds(preferences.disabledKinds),
   };
   const filePath = preferencesPath(projectId);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(next, null, 2), "utf8");
+  jsonFile.writeJson(filePath, next);
   return next;
 }
 

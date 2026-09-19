@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { userDataPath } = require("./config");
@@ -47,16 +48,11 @@ function cacheCatalogResult(result) {
   const apps = result?.json?.apps;
   if (!result?.ok || !Array.isArray(apps)) return result;
   try {
-    fs.mkdirSync(path.dirname(catalogCachePath()), { recursive: true });
-    fs.writeFileSync(
-      catalogCachePath(),
-      `${JSON.stringify({
-        schemaVersion: STATE_SCHEMA_VERSION,
-        cachedAt: new Date().toISOString(),
-        json: result.json,
-      }, null, 2)}\n`,
-      "utf8",
-    );
+    jsonFile.writeJson(catalogCachePath(), {
+      schemaVersion: STATE_SCHEMA_VERSION,
+      cachedAt: new Date().toISOString(),
+      json: result.json,
+    }, { newline: true });
   } catch {
     // Cache is a UI fallback only; live catalog success should still render.
   }
@@ -92,13 +88,12 @@ function withCatalogCacheFallback(result) {
 }
 
 function writeState(state) {
-  fs.mkdirSync(path.dirname(statePath()), { recursive: true });
-  fs.writeFileSync(statePath(), `${JSON.stringify({
+  jsonFile.writeJson(statePath(), {
     schemaVersion: STATE_SCHEMA_VERSION,
     apps: state.apps || {},
     instances: state.instances || {},
     history: Array.isArray(state.history) ? state.history.slice(-100) : [],
-  }, null, 2)}\n`, "utf8");
+  }, { newline: true });
 }
 
 function installRoot(defaultWorkspacePath) {

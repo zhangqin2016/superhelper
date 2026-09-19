@@ -11,6 +11,7 @@
 
 const { dialog, ipcMain } = require("electron");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const {
   failure,
   isTrustedSender,
@@ -433,7 +434,7 @@ function registerAgentHandlers(ctx) {
         filters: AGENT_FILE_FILTERS,
       });
       if (picked.canceled || !picked.filePath) return { ok: false, error: "CANCELED" };
-      fs.writeFileSync(picked.filePath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+      jsonFile.writeJson(picked.filePath, file, { newline: true });
       return { ok: true, fileName: require("node:path").basename(picked.filePath) };
     } catch (error) {
       return mapAgentError(error);

@@ -7,6 +7,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const {
@@ -717,9 +718,13 @@ class SessionManager {
         if (current && this._countSessions(current) > 0) fs.copyFileSync(indexPath, `${indexPath}.bak`);
       }
     } catch { /* best effort */ }
-    const tmp = `${indexPath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
-    require("./fs-transient-retry").renameSyncWithRetry(tmp, indexPath); // retries transient locks, never throws (timer path)
+    try {
+      jsonFile.writeJson(indexPath, next); // atomic; retries transient Windows locks on the rename
+    } catch (error) {
+      // Timer path: an index that could not be written is retried on the next
+      // save, never thrown into a timer callback.
+      console.warn("[session-manager] index write failed:", error?.message || error);
+    }
     this._backupLegacySessionsFileIfNeeded();
   }
 

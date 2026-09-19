@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const os = require("node:os");
 const path = require("node:path");
 const { emptyResultHint, fetchMatchingRows } = require("./workspace-knowledge-query");
@@ -47,17 +48,10 @@ function registryPath(rootDir) {
 }
 
 function readJson(file, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return fallback;
-  }
+  return jsonFile.readJson(file, fallback);
 }
 
-function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = (file, value) => jsonFile.writeJson(file, value, { newline: true });
 
 function readIndexRegistry(rootDir) {
   const registry = readJson(registryPath(rootDir), null);

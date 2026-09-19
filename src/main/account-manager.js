@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 const serviceClient = require("./service-client");
@@ -47,8 +48,7 @@ function readState() {
 
 function writeState(state) {
   const file = statePath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(state, null, 2), "utf8");
+  jsonFile.writeJson(file, state);
 }
 
 function tokenFresh() {

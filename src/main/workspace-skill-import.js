@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const os = require("node:os");
 const path = require("node:path");
 const JSZip = require("jszip");
@@ -69,11 +70,7 @@ function normalizeSkillForImport(skillRoot, targetRoot) {
     publisher: validated.manifest.publisher || "Workspace",
     version: String(validated.manifest.version || "0.1.0"),
   };
-  fs.writeFileSync(
-    path.join(target, "skill.manifest.json"),
-    `${JSON.stringify(normalizedManifest, null, 2)}\n`,
-    "utf8",
-  );
+  jsonFile.writeJson(path.join(target, "skill.manifest.json"), normalizedManifest, { newline: true });
   return {
     ok: true,
     id: validated.id,

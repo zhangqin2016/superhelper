@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath, isPackaged } = require("./config");
 const { isAppVersionCompatible } = require("./skill-version");
@@ -194,7 +195,7 @@ function finalizeInstalledSkill(entry, extractDir) {
     ...normalizeRuntimePackIds(manifest.requiredRuntimePacks),
     ...normalizeRuntimePackIds(entry.requiredRuntimePacks),
   ]);
-  fs.writeFileSync(existingManifestPath, JSON.stringify(manifest, null, 2), "utf8");
+  jsonFile.writeJson(existingManifestPath, manifest);
 
   const target = installedSkillDir(entry.id);
   if (fs.existsSync(target)) {

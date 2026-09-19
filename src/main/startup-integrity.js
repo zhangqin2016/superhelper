@@ -32,6 +32,7 @@
  */
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const FILE_NAME = "startup-integrity.json";
@@ -55,10 +56,9 @@ function writeMarker(userDataDir, patch) {
   try {
     const current = readMarker(userDataDir) || { version: VERSION };
     const next = { ...current, version: VERSION, ...patch };
-    const file = markerPath(userDataDir);
-    const temp = `${file}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify(next), { mode: 0o600 });
-    fs.renameSync(temp, file);
+    // A marker never creates the user data directory: a missing home means the
+    // profile does not exist, and that launch must verify.
+    jsonFile.writeJson(markerPath(userDataDir), next, { indent: 0, mode: 0o600, createDir: false });
     return next;
   } catch {
     // A marker that cannot be written simply means the next launch verifies.

@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const jsonFile = require("../json-file");
 const path = require("node:path");
 const JSZip = require("jszip");
 const {
@@ -33,10 +34,7 @@ function readLegalKnowledgePackState(rootDir = "") {
 }
 
 function writeJsonAtomic(filePath, value) {
-  const temp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  fs.renameSync(temp, filePath);
+  jsonFile.writeJson(filePath, value, { newline: true });
 }
 
 function sha256File(filePath) {

@@ -10,6 +10,7 @@
 // renderer, the executor, playbooks, or logs. See [[web-system-executor-reliability]].
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 const { protectSecret, unprotectSecret } = require("./secret-storage");
@@ -18,19 +19,10 @@ function defaultCredentialsPath() {
   return userDataPath("web-system-credentials.json");
 }
 
-function readJson(filePath, fallback) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
+const readJson = (filePath, fallback) => jsonFile.readJsonObject(filePath, fallback);
 
 function writeJson(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  jsonFile.writeJson(filePath, data, { newline: true });
   try {
     fs.chmodSync(filePath, 0o600); // best-effort: tighten perms like capture_session
   } catch {

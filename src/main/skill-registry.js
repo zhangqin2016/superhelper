@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath, PROJECT_ROOT } = require("./config");
 const { normalizeSkillCapabilityContract } = require("./skill-capability-contract");
@@ -179,19 +180,7 @@ function cacheRegistry(registry, sourceUrl) {
   const cacheDir = path.dirname(registryCachePath());
   fs.mkdirSync(cacheDir, { recursive: true });
   const fetchedAt = new Date().toISOString();
-  fs.writeFileSync(
-    registryCachePath(),
-    JSON.stringify(
-      {
-        fetchedAt,
-        sourceUrl,
-        ...registry,
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
+  jsonFile.writeJson(registryCachePath(), { fetchedAt, sourceUrl, ...registry });
   return fetchedAt;
 }
 

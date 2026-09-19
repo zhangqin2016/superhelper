@@ -1,22 +1,16 @@
 "use strict";
 
 const fs = require("node:fs");
+const jsonFile = require("./json-file");
 const path = require("node:path");
 
 const INDEXED_ORPHAN_RECOVERY_LIMIT = 3;
 
 function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
+  return jsonFile.readJson(filePath, null);
 }
 
-function writeJson(filePath, value) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = (filePath, value) => jsonFile.writeJson(filePath, value, { newline: true });
 
 /**
  * Rebuild a small number of missing sidebar records from the durable message
