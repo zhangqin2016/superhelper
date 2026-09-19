@@ -59,4 +59,22 @@ archive.commit("s1", {
 assert.equal(pushed.length, 2);
 assert.equal(pushed[1].extra.meta.canonicalSource, undefined, "non-OpenCode turns stay canonical in Lily fallback store");
 
+// The engine reported durationMs: 0 for every turn of a real session, including
+// one with 20 tool calls and 42 s of visible thinking, so a record that trusted
+// it alone said the turn took no time at all. Both ends of the turn are already
+// in the record; there is no reason to store nothing.
+{
+  const archive = new TurnArchive({});
+  const state = () => ({
+    turnId: "t-duration", sessionId: "s", startedAt: Date.now() - 42_000,
+    tools: new Map(), timeline: [], assistantText: "x", contentBlocks: [], fileChanges: [],
+  });
+  const measured = archive.buildRecord(state(), "turn.completed", { durationMs: 0 }).durationMs;
+  assert.ok(measured >= 41_000 && measured <= 45_000, `a zero from the engine falls back to the turn's own clock: ${measured}`);
+  assert.equal(archive.buildRecord(state(), "turn.completed", { durationMs: 1234 }).durationMs, 1234, "a real engine number still wins");
+  const noStart = archive.buildRecord({ ...state(), startedAt: undefined }, "turn.completed", {}).durationMs;
+  assert.ok(Number.isFinite(noStart) && noStart >= 0, "and a turn with no recorded start still reports a number, never a negative one");
+  console.log("ok - a turn's duration is its own clock when the engine reports none");
+}
+
 console.log("turn-archive: ok");

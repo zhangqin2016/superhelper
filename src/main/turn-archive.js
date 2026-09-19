@@ -1,5 +1,14 @@
 "use strict";
 
+function durationFromPayloadOrClock(payload, state, startedAt, endedAt) {
+  for (const candidate of [payload?.durationMs, state?.durationMs]) {
+    if (Number.isFinite(candidate) && candidate > 0) return candidate;
+  }
+  const measured = Number(endedAt) - Number(startedAt);
+  return Number.isFinite(measured) && measured >= 0 ? measured : null;
+}
+
+
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -168,7 +177,12 @@ class TurnArchive {
       resultBlockSchemaVersion: RESULT_BLOCK_SCHEMA_VERSION,
       timeline: (state.timeline || []).slice(-100),
       activityLabel: state.activityLabel || null,
-      durationMs: payload.durationMs ?? state.durationMs ?? null,
+      // The engine's number when it reports one, otherwise the turn's own clock.
+      // It reported 0 for every turn of a real session — including one with 20
+      // tool calls and 42 s of visible thinking — so a record that trusted it
+      // alone said the turn took no time at all. Both ends of this turn are
+      // right here; there is no reason to record nothing.
+      durationMs: durationFromPayloadOrClock(payload, state, startedAt, endedAt),
       totalCostUsd: payload.totalCostUsd ?? state.totalCostUsd ?? null,
       // Engine message id for session:rewind (revert the engine to this turn).
       engineMessageId: payload.engineMessageId ?? null,
