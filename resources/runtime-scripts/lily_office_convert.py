@@ -176,13 +176,40 @@ def _produced(path):
         return False
 
 
+def _resolve_source(source):
+    """Resolve a source path the way the caller meant it.
+
+    A relative path was resolved against the process cwd, which is not the
+    workspace, so a file that plainly exists was reported as missing and the
+    agent concluded the file was gone. Relative paths are resolved against the
+    workspace root when one is known (LILY_WORKSPACE, set for runtime scripts),
+    and the error names every root that was searched instead of only the string
+    it was handed — "does not exist" is a claim about the filesystem, so it has
+    to say where it looked.
+    """
+    raw = str(source or "")
+    if os.path.isabs(raw):
+        return raw, [raw]
+    roots = [r for r in (os.environ.get("LILY_WORKSPACE"), os.getcwd()) if r]
+    tried = []
+    for root in roots:
+        candidate = os.path.normpath(os.path.join(root, raw))
+        tried.append(candidate)
+        if os.path.isfile(candidate):
+            return candidate, tried
+    return (tried[0] if tried else raw), tried
+
+
 def convert(source, out_dir, target, timeout=DEFAULT_TIMEOUT_SECONDS, infilter=None):
     """Convert one file and return the output path, or raise ConversionError.
 
     Never returns a path that does not exist. `infilter` forces a specific input
     filter and disables the retry."""
+    source, tried = _resolve_source(source)
     if not os.path.isfile(source):
-        raise ConversionError("source file does not exist: %s" % source)
+        raise ConversionError(
+            "source file does not exist: %s (looked in: %s)" % (source, ", ".join(tried) or "-")
+        )
     os.makedirs(out_dir, exist_ok=True)
 
     # Convert into a private staging directory so LibreOffice can never land on

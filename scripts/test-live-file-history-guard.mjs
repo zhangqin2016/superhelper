@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 
 const pluginUrl = new URL("../resources/opencode-plugins/live-file-history-guard.js", import.meta.url);
 assert.ok(fs.existsSync(pluginUrl), "live-file history guard plugin must exist");
@@ -42,13 +43,23 @@ try {
   }];
 
   await transform({ sessionID }, { messages });
-  const historicalContent = messages[0].parts[0].state.input.content;
-  assert.doesNotMatch(historicalContent, /old paragraph the user removed/, "stale historical file body is removed before the model call");
-  // Built from the shared contract since 2026-09-18: same three things as every
-  // other placeholder — what was removed, where the real content is, what to do.
-  assert.match(historicalContent, /removed from history/i, "sanitized history says what happened");
-  assert.match(historicalContent, /read .*before editing or rewriting/i, "and how to recover the current content");
-  assert.match(historicalContent, /never copy this text into a file/i, "and that it is not material");
+  const historicalState = messages[0].parts[0].state;
+  // Contract change, 2026-09-19: the stale body is REMOVED, not replaced with an
+  // explanation. Prose in the content slot is a plausible file body sitting
+  // where file bodies go, and a field case has a `write` whose content is this
+  // module's own placeholder copied verbatim — including its closing sentence,
+  // the one that says never to copy it. An instruction inside the content slot
+  // is read as content, because that is what the slot means.
+  assert.equal(historicalState.input.content, undefined, "there is no body left in the content slot to copy");
+  assert.equal("content" in historicalState.input, false, "the key itself is gone");
+  assert.doesNotMatch(JSON.stringify(historicalState.input), /old paragraph the user removed/, "and the stale body is nowhere in the input");
+
+  // What happened is said in the RESULT, where the model reads about a call
+  // rather than reads its payload — and the original result is kept.
+  const historicalOutput = String(historicalState.output || "");
+  assert.match(historicalOutput, /removed from history/i, "the result says what happened");
+  assert.match(historicalOutput, /read .*before editing or rewriting/i, "and how to recover the current content");
+  assert.match(historicalOutput, /never copy this text into a file/i, "and that it is not material");
 
   await assert.rejects(
     before(
@@ -169,7 +180,8 @@ try {
   assert.equal(originalCompletedInput.content, "export const v = 1;\n", "the original completed part object is never mutated in place");
   assert.equal(liveMessage.parts[0], completedPart, "the original message object is left untouched");
   assert.notEqual(liveMessages[0], liveMessage, "the model-bound list receives a sanitized COPY of the message");
-  assert.match(liveMessages[0].parts[0].state.input.content, /^\[lily: elided the body of /, "sanitized history says the call succeeded and forbids copying the marker");
+  assert.equal(liveMessages[0].parts[0].state.input.content, undefined, "the sanitized copy has no body to copy");
+  assert.match(String(liveMessages[0].parts[0].state.output || ""), /^[\s\S]*\[lily: elided the body of /, "and its result says what happened and forbids copying the marker");
   assert.equal(liveMessages[0].parts[1].state.input.content, "export const v = 3;\n", "the pending part is carried over unchanged in the copy");
 
   // Backstop: the marker itself can never become file content.
@@ -185,7 +197,42 @@ try {
   const runnerPool = fs.readFileSync(new URL("../src/main/session-runner-pool.js", import.meta.url), "utf8");
   assert.match(runnerPool, /live-file-history-guard\.js/, "the production runner loads the live-file guard");
 
-  console.log("live-file-history-guard: ok");
+  // A guard that cannot be satisfied is worse than no guard. The field report was
+// an agent reading a script it had just written, being refused the edit anyway,
+// and falling back to rewriting the file from a Python script — exactly the
+// unchecked write this guard exists to prevent.
+//
+// The refusal used a hand-maintained list of two tool names while the platform
+// classifies tools centrally, and that list was both too narrow (notebookread,
+// a real file read, was missing) and partly fictional (read_file is not a tool
+// of this engine). This keeps the two definitions from drifting apart again.
+{
+  const readTools = createRequire(import.meta.url)("../resources/opencode-plugins/lib/file-read-tools.cjs");
+  const { resolveToolSemantics } = createRequire(import.meta.url)("../src/main/tool-semantics.js");
+  const semanticsSource = fs.readFileSync(new URL("../src/main/tool-semantics.js", import.meta.url), "utf8");
+  const declared = [...new Set((semanticsSource.match(/\["([a-z_0-9]+)",\s*\{/g) || [])
+    .map((entry) => entry.match(/"([a-z_0-9]+)"/)[1]))];
+  const platformReads = declared.filter((name) => resolveToolSemantics(name).evidenceKind === "file_read").sort();
+  assert.deepEqual([...readTools.FILE_READ_TOOLS].sort(), platformReads,
+    "the guard's idea of a file read must be the platform's — add it in tool-semantics and it is honoured here");
+  assert.ok(readTools.isFileReadTool("notebookread"), "reading a notebook counts, and used to not");
+  assert.ok(!readTools.isFileReadTool("read_file"), "a tool this engine does not have is not on the list");
+
+  // bash can read a file, but the same tool writes; an extraction tool returns a
+  // derived projection, not the bytes an edit must be written against.
+  for (const name of ["bash", "lily_file_intelligence", "lily_document", "grep"]) {
+    assert.ok(!readTools.isFileReadTool(name), `${name} is not proof the model saw the current bytes`);
+  }
+
+  // Being refused must also say how to stop being refused.
+  const guard = fs.readFileSync(new URL("../resources/opencode-plugins/live-file-history-guard.js", import.meta.url), "utf8");
+  assert.match(guard, /Read it with the .{0,2}\$\{SUGGESTED_READ_TOOL\}.{0,2} tool/, "the refusal names a tool that satisfies it");
+  assert.match(guard, /does not clear this/, "and says which ways do not");
+  assert.ok(readTools.FILE_READ_TOOLS.has(readTools.SUGGESTED_READ_TOOL), "and that tool is actually accepted");
+  console.log("ok - the guard's read-tool set is the platform's, and a refusal names the way out");
+}
+
+console.log("live-file-history-guard: ok");
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

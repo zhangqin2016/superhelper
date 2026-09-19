@@ -14,10 +14,14 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import elision from "./lib/history-elision.cjs";
+import readTools from "./lib/file-read-tools.cjs";
 
 const MAX_HASH_BYTES = 8 * 1024 * 1024;
 const MAX_SESSIONS = 128;
-const READ_TOOLS = new Set(["read", "read_file"]);
+// Which tools count as having read the file — mirrored from the platform's own
+// classification rather than kept as a second, narrower list here.
+// See lib/file-read-tools.cjs.
+const { FILE_READ_TOOLS: READ_TOOLS, SUGGESTED_READ_TOOL } = readTools;
 const WRITE_TOOLS = new Set(["write", "edit", "multiedit", "apply_patch", "patch"]);
 const sessions = new Map();
 
@@ -110,20 +114,34 @@ function isMarkerText(value) {
   return elision.isElidedBody(String(value || ""));
 }
 
-/** Return a sanitized COPY of the tool args; never mutates the input object. */
+/**
+ * Return a sanitized COPY of the tool args; never mutates the input object.
+ *
+ * The stale body is REMOVED, not replaced with an explanation. Filling the
+ * content slot with prose put a plausible file body where a file body goes, and
+ * the model did the obvious thing with it: a field case has a `write` whose
+ * content is this module's own placeholder, copied verbatim — closing sentence
+ * included, the one that says never to copy it. An instruction living inside the
+ * content slot is read as content, because that is what that slot means.
+ *
+ * With the key gone there is nothing in that position to copy, and what happened
+ * is said in the tool's RESULT, which is where the model reads about a call
+ * rather than reads its payload. The write backstop stays as defence in depth
+ * for history written before this change.
+ */
 function sanitizedMutationInput(tool, args, files) {
   if (!args || typeof args !== "object" || !files.length) return args;
-  const marker = historicalMarker(files[0]);
   const keys = tool === "write"
     ? ["content", "text", "data"]
     : tool === "edit" || tool === "multiedit"
       ? ["oldString", "newString", "old_string", "new_string", "content"]
       : ["patch", "input", "content"];
   const next = { ...args };
+  let removed = false;
   for (const key of keys) {
-    if (typeof next[key] === "string" && next[key]) next[key] = marker;
+    if (typeof next[key] === "string" && next[key]) { delete next[key]; removed = true; }
   }
-  return next;
+  return removed ? next : args;
 }
 
 function historicalMutationIsStale(tool, args, file, state, currentFingerprint) {
@@ -180,7 +198,14 @@ export const LiveFileHistoryGuardPlugin = async (ctx = {}) => {
             const sanitized = sanitizedMutationInput(tool, args, staleFiles);
             if (sanitized === args) continue;
             if (!replacedParts) replacedParts = [...parts];
-            replacedParts[partIndex] = { ...part, state: { ...part.state, input: sanitized } };
+            // The explanation rides the RESULT, where the model reads what a call
+            // did — not the input, where it reads what to send.
+            const note = historicalMarker(staleFiles[0]);
+            const priorOutput = typeof part.state?.output === "string" && part.state.output ? `${part.state.output}\n\n` : "";
+            replacedParts[partIndex] = {
+              ...part,
+              state: { ...part.state, input: sanitized, output: `${priorOutput}${note}` },
+            };
           }
           if (replacedParts) messages[index] = { ...message, parts: replacedParts };
         }
@@ -200,7 +225,8 @@ export const LiveFileHistoryGuardPlugin = async (ctx = {}) => {
       for (const key of ["content", "text", "data", "newString", "new_string", "patch", "input"]) {
         if (isMarkerText(args?.[key])) {
           const error = new Error(
-            "LILY_LIVE_FILE_MARKER_REJECTED: the tool body is Lily's history placeholder, not file content. Read the current file and write its real content.",
+            `LILY_LIVE_FILE_MARKER_REJECTED: the tool body is Lily's history placeholder, not file content. `
+            + `Read ${files[0] || "the target file"} with the \`${SUGGESTED_READ_TOOL}\` tool, then write its real content.`,
           );
           error.code = "LILY_LIVE_FILE_MARKER_REJECTED";
           throw error;
@@ -212,7 +238,10 @@ export const LiveFileHistoryGuardPlugin = async (ctx = {}) => {
         const readFingerprint = state.freshReads.get(file);
         if (state.stalePaths.has(file) || readFingerprint !== current) {
           const error = new Error(
-            `LILY_LIVE_FILE_READ_REQUIRED: ${file} exists and may have changed since its historical snapshot. Read the current file in this turn before editing it.`,
+            `LILY_LIVE_FILE_READ_REQUIRED: ${file} exists and may have changed since its historical snapshot. `
+            + `Read it with the \`${SUGGESTED_READ_TOOL}\` tool in this turn, then edit. `
+            + "Reading it another way — a shell command, or an extraction/outline tool — does not clear this: "
+            + "those do not show the current bytes an edit must be written against.",
           );
           error.code = "LILY_LIVE_FILE_READ_REQUIRED";
           throw error;

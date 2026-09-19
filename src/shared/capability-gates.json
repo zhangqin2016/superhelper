@@ -304,7 +304,7 @@
       "id": "live-file-authority",
       "protects": "User edits to a generated or attached file cannot be overwritten from stale attachment snapshots, knowledge-index excerpts, or historical write/edit tool inputs.",
       "baseline": "The readable live filesystem path is authoritative; unchanged history remains available and missing live files retain their recoverable historical content.",
-      "failureFallback": "Use the staged copy only when the original is unavailable, drop fingerprint-mismatched index hits, and require a successful live read before modifying an existing changed file.",
+      "failureFallback": "Use the staged copy only when the original is unavailable, drop fingerprint-mismatched index hits, and require a successful live read before modifying an existing changed file. A refusal always names a tool that satisfies it and says which ways do not, because a guard that cannot be satisfied is worse than no guard: the field case was an agent refused an edit to a file it had just read, falling back to rewriting it from a script — the unchecked write this gate exists to prevent. What counts as having read a file mirrors the platform's own classification (evidenceKind file_read) instead of a second, narrower list.",
       "tests": [
         "scripts/test-live-file-history-guard.mjs",
         "scripts/test-opencode-message-parts.mjs",
