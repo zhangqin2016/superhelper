@@ -64,5 +64,58 @@ try {
   assert.equal(upd.ok, true, JSON.stringify(upd));
   const mp2 = presets.listPresetsPublic().presets.find((p) => p.id === mp.id);
   assert.equal(mp2?.capabilities?.vision, true, "a rename does not silently clear vision");
+
+  // 6. The probe image itself must be a VALID PNG. A strict endpoint decodes it
+  // and rejects a malformed one, so a corrupt constant silently turned every
+  // image-capable preset into vision:false (2026-09-19 field case: the previous
+  // constant was truncated and carried a wrong IDAT CRC).
+  const { TINY_PNG_DATA_URL } = require("../src/main/model-probe-vision.js");
+  const png = Buffer.from(String(TINY_PNG_DATA_URL).split(",")[1] || "", "base64");
+  assert.ok(png.length > 0, "the probe image must decode from base64");
+  assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", "PNG signature");
+  const table = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc32 = (buf) => { let c = 0xffffffff; for (const byte of buf) c = table[(c ^ byte) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  let at = 8; const seen = [];
+  while (at + 12 <= png.length) {
+    const len = png.readUInt32BE(at);
+    const type = png.subarray(at + 4, at + 8).toString("latin1");
+    assert.ok(at + 12 + len <= png.length, `chunk ${type} is truncated`);
+    const stored = png.readUInt32BE(at + 8 + len);
+    assert.equal(stored, crc32(png.subarray(at + 4, at + 8 + len)), `chunk ${type} CRC must match`);
+    seen.push(type); at += 12 + len;
+  }
+  assert.equal(at, png.length, "no trailing bytes after the last chunk");
+  assert.ok(seen.includes("IHDR") && seen.includes("IDAT") && seen.includes("IEND"), `probe PNG chunks: ${seen.join(",")}`);
+
+  // And the same image must survive an endpoint that actually decodes it.
+  const strictSrv = http.createServer((req, res) => {
+    let body = ""; req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      const p = JSON.parse(body || "{}");
+      const send = (s, o) => { res.writeHead(s, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
+      const part = (p.messages || []).flatMap((m) => (Array.isArray(m.content) ? m.content : [])).find((c) => c?.type === "image_url");
+      if (part) {
+        const bytes = Buffer.from(String(part.image_url?.url || "").split(",")[1] || "", "base64");
+        let valid = bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a";
+        let i = 8; const kinds = [];
+        while (valid && i + 12 <= bytes.length) {
+          const len = bytes.readUInt32BE(i); const type = bytes.subarray(i + 4, i + 8).toString("latin1");
+          if (i + 12 + len > bytes.length || bytes.readUInt32BE(i + 8 + len) !== crc32(bytes.subarray(i + 4, i + 8 + len))) { valid = false; break; }
+          kinds.push(type); i += 12 + len;
+        }
+        if (!valid || i !== bytes.length || !kinds.includes("IEND")) {
+          return send(400, { error: { message: "The image data you provided does not represent a valid image.", type: "invalid_request_error", code: "invalid_value" } });
+        }
+      }
+      send(200, { choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }], usage: {} });
+    });
+  });
+  const strictUrl = await listen(strictSrv);
+  try {
+    const { probeVision } = require("../src/main/model-probe-vision.js");
+    const detected = await probeVision({ baseUrl: strictUrl, apiKey: "k", model: "strict", timeoutMs: 10_000 });
+    assert.equal(detected, true, "an endpoint that truly decodes images must still be detected as vision-capable");
+  } finally { strictSrv.close(); }
+
   console.log("model vision capability: ok");
 } finally { visionSrv.close(); textSrv.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
