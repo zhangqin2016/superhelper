@@ -408,6 +408,7 @@ function compactRuntimeEventForPersistence(event = {}) {
 }
 
 module.exports = {
+  compactProcessEvent,
   compactTaskRun,
   compactRuntimeEventForPersistence,
   truncateString,

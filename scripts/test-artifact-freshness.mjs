@@ -93,7 +93,7 @@ try {
   check("display no longer depends on the background pass having run", () => {
     const src = fs.readFileSync(new URL("../src/main/session-manager.js", import.meta.url), "utf8");
     assert.match(src, /withFreshArtifacts\(page\.conversation/, "the conversation read path derives");
-    assert.match(src, /conversation: fresh\.conversation/, "and returns what it derived");
+    assert.match(src, /conversation: projectConversationForDisplay\(fresh\.conversation\)/, "and returns what it derived, sized for display");
     // The background pass may still run — it keeps the cache warm — but nothing
     // may depend on it, which is what stopped a schema bump from wedging launch.
     assert.match(src, /_startBackgroundEnrichment\(\)/, "the cache warm-up is still scheduled");

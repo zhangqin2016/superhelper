@@ -28,6 +28,7 @@ const { MessageStore } = require("./store/message-store");
 const { startRuntimeEventMaintenance } = require("./store/runtime-event-maintenance");
 const { startResumableEnrichment } = require("./session-enrichment");
 const { withFreshArtifacts } = require("./artifact-freshness");
+const { projectConversationForDisplay } = require("./conversation-display-projection");
 const legacyImport = require("./store/legacy-import");
 const {
   resolveCharacterOwnerScope,
@@ -1117,6 +1118,28 @@ class SessionManager {
     return this._store().getProjectedConversation(session.id, opts);
   }
 
+  /**
+   * The newest `limit` messages, chronological. Every hot-path reader of a
+   * conversation (turn intent, engine-history merge, resume checks, media
+   * dedupe) wants a tail — none wants the whole session — and unpacking a
+   * 1,400-message session costs ~0.6 s per call. getConversation() stays for
+   * readers that genuinely need everything (exports, collaboration).
+   */
+  getRecentConversation(sessionId, { limit = 120 } = {}) {
+    const session = this._find(sessionId);
+    if (!session) return [];
+    this._ensureImported(session);
+    return this._store().getPage(session.id, { limit }).conversation;
+  }
+
+  /** The first user message of a session, or null — without unpacking the rest. */
+  getFirstUserMessage(sessionId) {
+    const session = this._find(sessionId);
+    if (!session) return null;
+    this._ensureImported(session);
+    return this._store().getFirstUserMessage(session.id);
+  }
+
   /** Most recent message in this session, or null. */
   getLastMessage(sessionId) {
     const session = this._find(sessionId);
@@ -1208,7 +1231,9 @@ class SessionManager {
       sessionId: session.id,
       projectId: session.projectId,
       ...page,
-      conversation: fresh.conversation,
+      // The page is what the screen shows, not the archive: records written
+      // before process events were compacted at archive time are compacted here.
+      conversation: projectConversationForDisplay(fresh.conversation),
     };
   }
 

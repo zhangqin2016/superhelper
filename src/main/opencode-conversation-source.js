@@ -544,7 +544,8 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
 
   try {
     const page = await runner.getConversationPage(opts);
-    const localConversation = stripInternalContinuationTurns(ctx.sessionManager.getConversation(session.id));
+    // Metadata for an official PAGE lives in the local tail (three pages of slack), never the whole session.
+    const localConversation = stripInternalContinuationTurns((ctx.sessionManager.getRecentConversation || ctx.sessionManager.getConversation).call(ctx.sessionManager, session.id, { limit: Math.max(150, 3 * (Number.isInteger(opts.limit) ? opts.limit : 50)) }));
     const metadata = buildMetadataIndex(localConversation);
     const mergedOfficial = mergeUserDisplayText(stripInternalContinuationTurns(page.conversation || []), localConversation).map((message) => {
       const keys = [metadataKey(message), ...(message.record?.meta?.opencode?.mergedAssistantMessageIds || [])];

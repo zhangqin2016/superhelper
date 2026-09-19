@@ -15,6 +15,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { buildTurnArtifacts } = require("./turn-artifacts");
+const { compactProcessEvents } = require("./conversation-display-projection");
 const { ARTIFACT_SCHEMA_VERSION } = require("./session-artifact-backfill");
 const { buildTurnResultBlocks, RESULT_BLOCK_SCHEMA_VERSION } = require("./turn-result-blocks");
 const { estimateTokensForText } = require("./context-budget-manager");
@@ -188,7 +189,9 @@ class TurnArchive {
       totalCostUsd: payload.totalCostUsd ?? state.totalCostUsd ?? null,
       // Engine message id for session:rewind (revert the engine to this turn).
       engineMessageId: payload.engineMessageId ?? null,
-      processEvents: (state.processEvents || []).slice(-100),
+      // Display-sized from the start: a raw process event carries whole stdout
+      // chunks the panel never shows (see conversation-display-projection).
+      processEvents: compactProcessEvents((state.processEvents || []).slice(-100)),
       notices: (state.notices || []).slice(-20),
       usage: state.usage || null,
       meta: {

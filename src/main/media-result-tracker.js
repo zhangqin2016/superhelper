@@ -33,7 +33,7 @@ function alreadyShown(ctx, sessionId, paths) {
   if (!paths.length) return false;
   let messages = [];
   try {
-    messages = ctx.sessionManager.getConversation(sessionId) || [];
+    messages = ctx.sessionManager.getRecentConversation?.(sessionId, { limit: 12 }) || ctx.sessionManager.getConversation(sessionId) || [];
   } catch {
     return false;
   }

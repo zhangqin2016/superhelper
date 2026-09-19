@@ -1496,6 +1496,20 @@
       "tests": [
         "scripts/test-shared-helpers.mjs"
       ]
+    },
+    {
+      "id": "conversation-read-budget",
+      "protects": "Opening or continuing a conversation costs the page, not the session. Every hot-path reader (turn intent, engine-history merge, resume binding and continuity, media dedupe, agent runtime) reads a bounded tail or one indexed message through getRecentConversation / getFirstUserMessage; getConversation() remains only for readers that genuinely need everything. A conversation page carries display-sized process events: compacted at archive time and, for records archived before, on read.",
+      "baseline": "Every reader sees the same messages it used: the tails are wider than any rule looks back (turn intent 120 messages ≈ 60 turns; resume continuity compares the last 8 user texts from a 40-message tail; media dedupe scans 12). The process panel renders the same summary lines and effects it rendered for a live turn, which already used the compact form.",
+      "failureFallback": "A stand-in session manager without the bounded read falls back to the full read, so nothing is dropped; a record whose events are already compact passes through by identity; the stored record is never mutated. A source-scan rule forbids a plain getConversation() call in the hot-path modules.",
+      "tests": [
+        "scripts/test-conversation-read-budget.mjs",
+        "scripts/test-turn-archive.mjs",
+        "scripts/test-resume-binding.mjs",
+        "scripts/test-resume-continuity-guard.mjs",
+        "scripts/test-media-result-tracker.mjs",
+        "scripts/test-opencode-conversation-source.mjs"
+      ]
     }
   ]
 }

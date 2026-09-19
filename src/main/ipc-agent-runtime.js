@@ -29,7 +29,7 @@ async function createRuntimeCheckpointForSession(ctx, sessionId, payload = {}) {
   if (!ctx.runtimeCheckpointService || !scoped) throw Object.assign(new Error("NOT_FOUND"), { code: "NOT_FOUND" });
   if (isSessionBusy(ctx.runnerPool, sessionId)) throw Object.assign(new Error("BUSY"), { code: "BUSY" });
   const state = ctx.turnOrchestrator?._state?.(sessionId) || {};
-  const conversation = [...ctx.sessionManager.getConversation(sessionId)].reverse();
+  const conversation = [...(ctx.sessionManager.getRecentConversation?.(sessionId, { limit: 60 }) || ctx.sessionManager.getConversation(sessionId))].reverse();
   const latestRecordedTurn = conversation.find((message) => message?.record?.turnId);
   const turnId = String(payload.turnId || state.turnId || state.taskRun?.turnId || latestRecordedTurn?.record?.turnId || "");
   if (!turnId) throw Object.assign(new Error("TURN_REQUIRED"), { code: "TURN_REQUIRED" });

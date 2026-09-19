@@ -29,10 +29,9 @@ function opencodeVersion() {
 }
 
 function firstUserMessageHash(sessionManager, sessionId) {
-  const messages = typeof sessionManager?.getConversation === "function"
-    ? sessionManager.getConversation(sessionId) || []
-    : [];
-  const first = messages.find((message) => message?.role === "user");
+  const first = typeof sessionManager?.getFirstUserMessage === "function"
+    ? sessionManager.getFirstUserMessage(sessionId)
+    : (typeof sessionManager?.getConversation === "function" ? sessionManager.getConversation(sessionId) || [] : []).find((message) => message?.role === "user");
   const text = String(first?.content || first?.text || "").replace(/\s+/g, " ").trim();
   return text ? stableHash(text) : "";
 }

@@ -28,6 +28,15 @@ function createMessageReadMethods() {
       return row ? row.c : 0;
     },
 
+    /** The first user message of a session (resume binding hashes it), or null. */
+    getFirstUserMessage(sessionId) {
+      const row = this.db.get(
+        `SELECT envelope_blob FROM messages WHERE session_id = ? AND role = 'user' ORDER BY seq ASC LIMIT 1`,
+        sessionId,
+      );
+      return row ? unpack(row.envelope_blob) : null;
+    },
+
     /**
      * Keyset pagination. `before` is an exclusive seq cursor (omit for the newest
      * page); the returned `nextBefore` feeds the next (older) call. Conversation
