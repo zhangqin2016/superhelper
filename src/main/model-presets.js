@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const { capabilitiesEntry } = require("./model-preset-capabilities");
 const requestShapeModule = require("./openai-request-shape");
 const { getSafeStorage, secretStorageAvailable, protectSecret, unprotectSecret, hydrateSecret } = require("./model-preset-secrets");
@@ -455,7 +457,7 @@ function slugifyLabel(label) {
     String(label)
       .trim()
       .toLowerCase()
-      .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+      .replace(new RegExp(`[^a-z0-9${script.HAN_RANGES}]+`, "g"), "-")
       .replace(/^-+|-+$/g, "") || "model"
   );
 }

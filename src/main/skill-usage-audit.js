@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -58,7 +60,7 @@ function localizedField(manifest = {}, field = "") {
 function tokenize(text = "") {
   const source = String(text || "").toLowerCase();
   const tokens = new Set();
-  for (const match of source.matchAll(/[a-z0-9][a-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}/g)) {
+  for (const match of source.matchAll(new RegExp(`[a-z0-9][a-z0-9_-]{2,}|[${script.HAN_RANGES}]{2,}`, "g"))) {
     const token = match[0];
     if (!STOPWORDS.has(token)) tokens.add(token);
   }

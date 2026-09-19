@@ -1441,6 +1441,19 @@
         "scripts/test-turn-user-wait.mjs",
         "scripts/test-content-source-gate.mjs"
       ]
+    },
+    {
+      "id": "script-detection-single-definition",
+      "protects": "Which writing system a text is in is decided by one definition (src/shared/script.mjs) for both processes: one Han character class (Extension A, the unified block, the compatibility block), one answerLanguage (zh | ar | en), one instructionLanguage. The answer language, the honesty notes, the search bigrams and the token estimates all agree about the same sentence.",
+      "baseline": "Every site answers the question it answered before; the only change is that sites which used the basic Han block alone now also recognise Extension A and compatibility ideographs, as most sites already did. Kana still counts as East Asian text where it did.",
+      "failureFallback": "Empty or non-string input is English / not Han, as before. The ranges are written as \\u escapes so no normalising editor can widen the class. A source-scan rule forbids a hand-spelled Han class, a second answerLanguage, or a bare instructionLanguage comparison in either process.",
+      "tests": [
+        "scripts/test-script-detection.mjs",
+        "scripts/test-tool-call-rescue.mjs",
+        "scripts/test-document-delivery-gate.mjs",
+        "scripts/test-context-budget-manager.mjs",
+        "scripts/test-memory-vector-index.mjs"
+      ]
     }
   ]
 }

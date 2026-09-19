@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const jsonFile = require("./json-file");
@@ -32,11 +34,11 @@ function lexicalFeatures(value) {
   const compact = text.replace(/\s+/g, "");
   for (let i = 0; i < compact.length - 1; i += 1) {
     const pair = compact.slice(i, i + 2);
-    if (/[\u3400-\u9fff\uf900-\ufaff]/.test(pair)) features.push(pair);
+    if (script.hasHan(pair)) features.push(pair);
   }
   for (let i = 0; i < compact.length - 2; i += 1) {
     const tri = compact.slice(i, i + 3);
-    if (/[\u3400-\u9fff\uf900-\ufaff]/.test(tri)) features.push(tri);
+    if (script.hasHan(tri)) features.push(tri);
   }
   for (const group of CONCEPT_ALIASES) {
     if (group.some((alias) => text.includes(alias.toLowerCase()))) {

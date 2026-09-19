@@ -1,11 +1,8 @@
 "use strict";
 
-function answerLanguage(value = "") {
-  const text = String(value || "");
-  if (/[\u3400-\u9fff]/u.test(text)) return "zh";
-  if (/[\u0600-\u06ff]/u.test(text)) return "ar";
-  return "en";
-}
+const script = require("../shared/script.mjs");
+
+const answerLanguage = script.answerLanguage;
 
 function planFlags(value = null) {
   const plan = value && typeof value === "object" && !Array.isArray(value) ? value : {};

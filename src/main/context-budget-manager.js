@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const DEFAULT_MIN_TURNS_BEFORE_COMPACT = 24;
 const DEFAULT_MIN_COMPACTION_INTERVAL_MS = 20 * 60 * 1000;
 const DEFAULT_TOKEN_PRESSURE_THRESHOLD = 0.72;
@@ -72,7 +74,7 @@ function estimateTokensForText(text, opts = {}) {
   // worst-case ~1 token/point on every provider, never at the latin rate.
   const nonSpacePoints = (compact.match(/\S/gu) || []).length;
   const nonBmpPoints = (compact.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g) || []).length;
-  const cjkChars = (compact.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+  const cjkChars = script.hanCount(compact);
   // Full-width / CJK punctuation & forms (U+3000-U+303F, U+FF00-U+FFEF) take a
   // full token like an ideograph, not the 0.2 latin-punctuation rate.
   const fullWidthChars = (compact.match(/[\u3000-\u303f\uff00-\uffef]/g) || []).length;

@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../../shared/script.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const readline = require("node:readline");
@@ -18,7 +20,7 @@ function tokenize(value) {
   const words = text.match(/[\p{L}\p{N}_-]+/gu) || [];
   const tokens = new Set(words.filter((word) => word.length > 1));
   for (const word of words) {
-    if (!/[\u3400-\u9fff]/.test(word) || word.length < 2) continue;
+    if (!script.hasHan(word) || word.length < 2) continue;
     for (let i = 0; i < word.length - 1; i += 1) tokens.add(word.slice(i, i + 2));
   }
   return [...tokens].slice(0, 64);

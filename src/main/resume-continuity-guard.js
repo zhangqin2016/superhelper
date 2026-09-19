@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 function normalizedText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -55,7 +57,7 @@ function userTexts(messages = []) {
     .filter(Boolean);
 }
 
-const CJK_PATTERN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
+const CJK_PATTERN = script.EAST_ASIAN_CHAR_RE;
 
 // Minimum length before a containment match counts. Latin text needs a few
 // words; CJK carries a whole word per character, so "帮我优化" (4 chars) is

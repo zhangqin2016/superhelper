@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const path = require("node:path");
 const { PROJECT_ROOT } = require("./config");
 const { fileFacts } = require("./attachment-facts");
@@ -107,7 +109,7 @@ function hintMatchesText(hint, text) {
   const normalizedHint = normalizedQueryText(hint);
   const normalizedText = normalizedQueryText(text);
   if (!normalizedHint || !normalizedText) return false;
-  if (/[\u4e00-\u9fff]/.test(normalizedHint)) {
+  if (script.hasHan(normalizedHint)) {
     return normalizedText.includes(normalizedHint);
   }
   const terms = normalizedHint.split(" ").filter((term) => term.length >= 3);

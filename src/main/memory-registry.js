@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const crypto = require("node:crypto");
 const { rankWithDurableVectorIndex, entryKey, makeEmbeddingCaller, resolveEmbeddingConfig, semanticRelevanceMap } = require("./memory-vector-index");
 
@@ -26,7 +28,7 @@ function tokenizeForRetrieval(value) {
   const compact = text.replace(/\s+/g, "");
   for (let i = 0; i < compact.length - 1; i += 1) {
     const pair = compact.slice(i, i + 2);
-    if (/[\u4e00-\u9fff]/.test(pair)) tokens.add(pair);
+    if (script.hasHan(pair)) tokens.add(pair);
   }
   return [...tokens].slice(0, 80);
 }

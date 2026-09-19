@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const fileKinds = require("../shared/file-kinds.mjs");
 
 const fs = require("node:fs");
@@ -311,12 +313,7 @@ function withDocumentOutputEvidence(summary = null, artifacts = [], delivery = n
   };
 }
 
-function answerLanguage(value = "") {
-  const text = String(value || "");
-  if (/[\u3400-\u9fff]/u.test(text)) return "zh";
-  if (/[\u0600-\u06ff]/u.test(text)) return "ar";
-  return "en";
-}
+const answerLanguage = script.answerLanguage;
 
 // Missing-check identifiers are internal — users get plain-language labels.
 const MISSING_LABELS = {

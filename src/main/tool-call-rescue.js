@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const { buildEvidenceRecoveryHint } = require("./external-evidence-recovery");
 const { isSideEffectFreeToolRun } = require("./tool-semantics");
 
@@ -65,7 +67,7 @@ const CORRECTIVE_HINT_ZH = [
 /** The corrective hint in the language the PROBE showed this model actually
  *  follows (capability.recipes.instructionLanguage). Default: English. */
 function correctiveHintFor(recipes = {}) {
-  return recipes?.instructionLanguage === "zh" ? CORRECTIVE_HINT_ZH : CORRECTIVE_HINT;
+  return script.instructionLanguage(recipes) === "zh" ? CORRECTIVE_HINT_ZH : CORRECTIVE_HINT;
 }
 
 // CONTINUATION, not replay. The corrective hints above ride a REPLAY of the
@@ -98,7 +100,7 @@ const CONTINUATION_HINT_ZH = [
 ].join("\n");
 
 function continuationHintFor(recipes = {}) {
-  return recipes?.instructionLanguage === "zh" ? CONTINUATION_HINT_ZH : CONTINUATION_HINT;
+  return script.instructionLanguage(recipes) === "zh" ? CONTINUATION_HINT_ZH : CONTINUATION_HINT;
 }
 
 /**
@@ -127,12 +129,12 @@ function shouldContinueInsteadOfReplay(code, tools = []) {
 }
 
 function sourceCoverageHintFor(recipes = {}, context = {}) {
-  const language = recipes?.instructionLanguage === "zh" ? "zh" : "en";
+  const language = script.instructionLanguage(recipes);
   return require("./source-coverage-recovery").buildSourceCoverageHint({ language, ...context });
 }
 
 function evidenceVerifyHintFor(recipes = {}, context = {}) {
-  const language = recipes?.instructionLanguage === "zh" ? "zh" : "en";
+  const language = script.instructionLanguage(recipes);
   return buildEvidenceRecoveryHint({ language, ...context });
 }
 

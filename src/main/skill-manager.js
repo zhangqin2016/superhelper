@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../shared/script.mjs");
+
 const fs = require("node:fs");
 const jsonFile = require("./json-file");
 const path = require("node:path");
@@ -1120,7 +1122,7 @@ function manifestGuide(manifest, localeOverride = null) {
 }
 
 function containsCjk(value) {
-  return /[\u4e00-\u9fff]/.test(typeof value === "string" ? value : JSON.stringify(value || ""));
+  return script.hasHan(typeof value === "string" ? value : JSON.stringify(value || ""));
 }
 
 /**

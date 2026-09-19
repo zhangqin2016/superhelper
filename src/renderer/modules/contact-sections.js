@@ -1,3 +1,4 @@
+import { HAN_CHAR_RE } from "../../shared/script.mjs";
 /**
  * A–Z sectioning for a contact list, the way an address book is expected to
  * work: 李知遥 belongs under L, not under a "#" bucket or at the end.
@@ -43,7 +44,7 @@ export function sectionLetter(name) {
   if (/[A-Za-z]/.test(first)) return first.toUpperCase();
   // Only Han characters get a pinyin section. Kana, Cyrillic, digits and
   // symbols have no meaningful letter and must not be forced into one.
-  if (!/[㐀-䶿一-鿿豈-﫿]/.test(first)) return OTHER;
+  if (!HAN_CHAR_RE.test(first)) return OTHER;
   let letter = OTHER;
   for (const [candidate, boundary] of PINYIN_BOUNDARIES) {
     if (compare(first, boundary) >= 0) letter = candidate;

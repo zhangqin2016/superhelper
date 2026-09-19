@@ -1,5 +1,7 @@
 "use strict";
 
+const script = require("../../shared/script.mjs");
+
 /**
  * Deterministic, model-free intent relevance: token overlap between a request
  * text and a candidate text (guide section, procedure card). Latin words plus
@@ -19,7 +21,7 @@ function intentTokens(value) {
   for (const word of text.match(/[a-z0-9_./-]{2,}/g) || []) {
     if (!STOPWORDS.has(word)) tokens.add(word);
   }
-  const cjk = text.match(/[一-鿿㐀-䶿]/g) || [];
+  const cjk = script.hanChars(text);
   for (let i = 0; i < cjk.length - 1; i += 1) {
     tokens.add(cjk[i] + cjk[i + 1]);
   }
