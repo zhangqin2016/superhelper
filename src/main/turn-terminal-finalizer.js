@@ -1,5 +1,7 @@
 "use strict";
 
+const { failureCodeOf, turnFailure } = require("./turn-failure");
+
 const crypto = require("node:crypto");
 const { evaluateAnswerEvidenceWithJudge, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const { clearDocumentDeliveryTurnState } = require("./document-delivery-turn");
@@ -170,7 +172,7 @@ function createTurnTerminalFinalizer(options = {}) {
           terminalClaim,
           type,
           {
-            errorCode: payload.errorCode || payload.code || "", metadata: state.turnModelRoute ? { modelRoute: state.turnModelRoute } : {},
+            errorCode: failureCodeOf(payload), metadata: state.turnModelRoute ? { modelRoute: state.turnModelRoute } : {},
           },
         );
         if (terminalResult?.ok === false) {
@@ -247,14 +249,13 @@ function createTurnTerminalFinalizer(options = {}) {
           // row keeps its pre-terminal status, so restart recovery can still
           // surface this turn through the outcome-unknown path.
           type = "turn.failed";
-          payload = {
-            failed: true,
-            assistant: DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
-            errorCode: "DISPATCH_OUTCOME_UNKNOWN",
-            errorCategory: "durability",
+          payload = turnFailure({
+            code: "DISPATCH_OUTCOME_UNKNOWN",
+            category: "durability",
             retryable: false,
+            assistant: DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
             recoveryId,
-          };
+          });
         }
       }
       if (!casLost) terminalPersisted = true;

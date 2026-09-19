@@ -1,5 +1,7 @@
 "use strict";
 
+const { turnFailure } = require("./turn-failure");
+
 const { getLogger } = require("./logger");
 const {
   bindTaskAdmission,
@@ -85,12 +87,10 @@ function captureAndPersistTaskCore(orchestrator, session, state, options = {}) {
   }
   const result = persistTaskCoreEnvelope(orchestrator, session, state, { ...options, recoveryContext });
   if (!result.ok) {
-    orchestrator._finalize(session.id, "turn.failed", {
-      failed: true,
-      assistant: "任务上下文保存失败，未开始执行。请重试。",
+    orchestrator._finalize(session.id, "turn.failed", turnFailure({
       code: result.reason,
-      errorCode: result.reason,
-    });
+      assistant: "任务上下文保存失败，未开始执行。请重试。",
+    }));
     return { ...result, result: { ok: false, error: result.reason } };
   }
   return result;

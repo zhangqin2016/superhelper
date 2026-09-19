@@ -1,5 +1,7 @@
 "use strict";
 
+const { turnFailure } = require("./turn-failure");
+
 const { engineNotice } = require("../shared/engine-notices.mjs");
 
 const crypto = require("node:crypto");
@@ -366,12 +368,10 @@ class TurnOrchestrator {
       });
       const state = this._state(sessionId);
       if (state.turnId && !state.terminalEmitted) {
-        this._finalize(sessionId, "turn.failed", {
-          failed: true,
+        this._finalize(sessionId, "turn.failed", turnFailure({
           code: "RESUME_INVALID",
-          retryable: true,
           assistant: "Connection refreshed. Please resend your message.",
-        });
+        }));
       }
     });
 
@@ -863,7 +863,7 @@ class TurnOrchestrator {
     if (!isCurrentStart()) return staleStartResult();
     if (legalKnowledge.required && !legalKnowledge.ready) {
       const { code, detail } = require("./legal-kb/turn-preparation").knowledgeFailure(legalKnowledge);
-      this._finalize(session.id, "turn.failed", { failed: true, assistant: detail, code, errorCode: legalKnowledge.error || code });
+      this._finalize(session.id, "turn.failed", turnFailure({ code: legalKnowledge.error || code, assistant: detail }));
       return { ok: false, error: code, detail, legalKnowledge };
     }
     state.legalKnowledge = legalKnowledge;
@@ -950,11 +950,7 @@ class TurnOrchestrator {
       const sourceTurnId = state.turnId;
       const detail = ensured.detail
         || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
-      this._finalize(session.id, "turn.failed", {
-        failed: true,
-        assistant: detail || error,
-        code: error,
-      });
+      this._finalize(session.id, "turn.failed", turnFailure({ code: error, assistant: detail || error }));
       // Engine-start failures never reached a model — side-effect-free by
       // construction, so the rescue table may quietly wait + resend once
       // (RUNNER_ERROR strategy). Codes without a strategy (e.g. the engine
@@ -1000,7 +996,7 @@ class TurnOrchestrator {
             const sourceTurnId = state.turnId;
             const detail = ensured.detail
               || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
-            this._finalize(session.id, "turn.failed", { failed: true, assistant: detail || error, code: error });
+            this._finalize(session.id, "turn.failed", turnFailure({ code: error, assistant: detail || error }));
             if (!opts.rescueAttempt) {
               void this._maybeSelfHealAndRetry(session.id, { code: error, retryable: true, sourceTurnId });
             }
@@ -1471,12 +1467,11 @@ class TurnOrchestrator {
       });
       if (!isCurrentStart()) return staleStartResult();
       if (!hookDecision.allow) {
-        this._finalize(session.id, "turn.failed", {
-          assistant: "",
+        this._finalize(session.id, "turn.failed", turnFailure({
           code: "PUBLIC_HOOK_DENIED",
-          errorCode: "PUBLIC_HOOK_DENIED",
+          assistant: "",
           error: hookDecision.reason || "A configured security hook denied this turn.",
-        });
+        }));
         return { ok: false, error: "PUBLIC_HOOK_DENIED", hookDecision };
       }
       if (hookDecision.contextAppend) {
@@ -1551,14 +1546,11 @@ class TurnOrchestrator {
         // CAS succeeded, tell the finalizer the durable row is already
         // terminal so it does not lose a second CAS to its own mark and
         // strip the user-facing payload (see terminalAlreadyRecorded).
-        this._finalize(session.id, "turn.failed", {
-          failed: true,
+        this._finalize(session.id, "turn.failed", turnFailure({
+          code: dispatch.error === "PRE_SEND_THROW" ? "PRE_SEND_THROW" : "RUNNER_REJECTED",
           assistant: "The assistant engine did not accept the message. Please retry.",
-          code: dispatch.error === "PRE_SEND_THROW"
-            ? "PRE_SEND_THROW"
-            : "RUNNER_REJECTED",
           ...(dispatch.terminal?.ok ? { terminalAlreadyRecorded: true } : {}),
-        });
+        }));
         return {
           ok: false,
           error: "RUNNER_ERROR",
@@ -1718,16 +1710,15 @@ class TurnOrchestrator {
       friendly += this.turnRecoveryRuntime.rescueRetryNotice(sessionId, state.wasRescueAttempt);
       const rawFailureText = collectFailureTextFromState(state) || normalized.text || payload?.error || payload?.message || friendly;
       const failedTurnId = state.turnId;
-      finalizeDone = this._finalize(sessionId, "turn.failed", {
-        failed: true,
-        assistant: failure.suppressIncompleteSummary ? friendly : appendIncompleteTurnSummary(friendly, state, payload),
-        errorCode: failure.code,
-        errorCategory: failure.category || "",
+      finalizeDone = this._finalize(sessionId, "turn.failed", turnFailure({
+        code: failure.code,
+        category: failure.category,
         retryable: failure.retryable !== false,
+        assistant: failure.suppressIncompleteSummary ? friendly : appendIncompleteTurnSummary(friendly, state, payload),
         source: payload?.source || "",
         exitCode: payload?.exitCode ?? null,
         ...terminalMeta,
-      });
+      }));
       void reportModelFailureDiagnostic(this.ctx, sessionId, {
         source: "terminal_failed",
         turnId: failedTurnId,
@@ -1819,14 +1810,13 @@ Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParen
       raw,
       classified,
     });
-    const finalizeDone = this._finalize(sessionId, "turn.failed", {
-      failed: true,
-      assistant: text,
-      errorCode: classified?.code || "ENGINE_ERROR",
-      errorCategory: classified?.category || "",
+    const finalizeDone = this._finalize(sessionId, "turn.failed", turnFailure({
+      code: classified?.code || "ENGINE_ERROR",
+      category: classified?.category,
       retryable: classified?.retryable !== false,
+      assistant: text,
       error: raw,
-    });
+    }));
     Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed: true, failure: { ...classified, sourceTurnId: parentClosureSource.state.turnId }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
   _finalize(sessionId, type, payload = {}) {

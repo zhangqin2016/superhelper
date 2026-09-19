@@ -1454,6 +1454,19 @@
         "scripts/test-context-budget-manager.mjs",
         "scripts/test-memory-vector-index.mjs"
       ]
+    },
+    {
+      "id": "turn-failure-shape",
+      "protects": "A failed turn has one payload shape, built by turnFailure(): failed, assistant, errorCode, errorCategory, retryable, plus whatever the site knows. Every reader of a failure code — the finalizer's durable record, the archive, the terminal store, the fallback finalizer, parent-task closure — uses failureCodeOf(), the one place that still understands records written with the old field names.",
+      "baseline": "Every site emits the same code and text it emitted before; the only shape changes are additions (failed:true on a hook-denied turn, retryable and errorCategory always present). The renderer, which already read only errorCode, sees nothing new.",
+      "failureFallback": "A missing code becomes TURN_FAILED rather than an empty string; a numeric process exit code on a payload is never read as a failure code. A source-scan rule forbids a hand-built turn.failed payload literal and a second errorCode||code fallback anywhere in src/main.",
+      "tests": [
+        "scripts/test-turn-failure.mjs",
+        "scripts/test-turn-orchestrator.mjs",
+        "scripts/test-turn-archive.mjs",
+        "scripts/test-turn-start-guard.mjs",
+        "scripts/test-tool-call-rescue.mjs"
+      ]
     }
   ]
 }

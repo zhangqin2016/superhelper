@@ -1,5 +1,7 @@
 "use strict";
 
+const { failureCodeOf } = require("./turn-failure");
+
 // Parent-task closure is deliberately small and pure. It decides whether an
 // incomplete execution turn deserves one continuation; it never starts a
 // process or performs a tool call itself.
@@ -71,7 +73,7 @@ function isCutOffAnalysisWork(taskContract = {}, payload = {}, evidence = {}) {
 // evidence by definition; that is exactly the case worth continuing once the
 // provider is back, so it must not be filtered as NO_EXECUTION_EVIDENCE.
 function isModelSilentFailure(payload = {}) {
-  const code = String(payload.errorCode || payload.failureCode || payload.code || "");
+  const code = failureCodeOf(payload);
   return Boolean(payload.noFirstResponse) || code === "MODEL_NO_RESPONSE";
 }
 
@@ -153,7 +155,7 @@ function shouldRecoverParentClosure({
   if (!stepExhausted && !hasExecutionIntent(taskContract) && !isCutOffAnalysisWork(taskContract, payload, evidence)) return fail("NON_EXECUTION_TASK");
   if (payload.interruptedByUser || payload.userInterrupted || payload.engineInterrupted) return fail("INTERRUPTED");
   if (
-    String(payload.errorCode || payload.failureCode || "") === "TRUNCATED_TURN_END"
+    failureCodeOf(payload) === "TRUNCATED_TURN_END"
     && !state.wasRescueAttempt
   ) return fail("SPECIALIZED_RESCUE");
   const handoff = payload.continuationHandoff;

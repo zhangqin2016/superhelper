@@ -1,5 +1,7 @@
 "use strict";
 
+const { failureCodeOf } = require("./turn-failure");
+
 /**
  * Step-budget exhaustion — make "the model ran out of steps" a named, visible
  * stop instead of a clean completion.
@@ -62,7 +64,7 @@ function evaluateStepBudget(state = {}, payload = {}, options = {}) {
     if (process.env.LILY_STEP_BUDGET_GUARD === "0") return none;
     if (!(budget > 0) || count < budget) return none;
     if (payload?.interruptedByUser || payload?.userInterrupted || payload?.engineInterrupted || payload?.stalled) return none;
-    if (payload?.failed || payload?.error || payload?.errorCode || payload?.failureCode) return none;
+    if (payload?.failed || payload?.error || failureCodeOf(payload)) return none;
     const objective = objectiveOf(state);
     const handoff = payload?.continuationHandoff?.schemaVersion === 1
       ? payload.continuationHandoff

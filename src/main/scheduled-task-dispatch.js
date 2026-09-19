@@ -1,5 +1,7 @@
 "use strict";
 
+const { turnFailure } = require("./turn-failure");
+
 const { buildTaskPrompt } = require("./schedule-parser");
 
 function reconcileScheduledRunWithTurn(run, result = {}) {
@@ -102,13 +104,13 @@ function dispatchScheduledRun({
       queueVisibility: "background",
     });
   } catch (err) {
-    finishRun(run, "turn.failed", { error: err?.message });
+    finishRun(run, "turn.failed", turnFailure({ code: "SCHEDULED_DISPATCH_FAILED", error: err?.message }));
     onSettled();
     return;
   }
   Promise.resolve(resultPromise).then((result) => {
     if (!result?.ok) {
-      finishRun(run, "turn.failed", { error: result?.detail || result?.error });
+      finishRun(run, "turn.failed", turnFailure({ code: result?.error || "SCHEDULED_DISPATCH_REJECTED", error: result?.detail || result?.error }));
       return;
     }
     if (result.duplicate) {
@@ -119,7 +121,7 @@ function dispatchScheduledRun({
     if (result.queued) run.queueItemId = result.itemId || null;
     else markRunStarted(run.id, result.turnId);
     saveRun(run);
-  }).catch((err) => finishRun(run, "turn.failed", { error: err?.message }))
+  }).catch((err) => finishRun(run, "turn.failed", turnFailure({ code: "SCHEDULED_DISPATCH_FAILED", error: err?.message })))
     .finally(onSettled);
 }
 

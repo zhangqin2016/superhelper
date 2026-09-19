@@ -1,5 +1,7 @@
 "use strict";
 
+const { turnFailure } = require("./turn-failure");
+
 const crypto = require("node:crypto");
 const { DISPATCH_BLOCKED_ASSISTANT } = require("./turn-recovery-projection");
 
@@ -257,17 +259,15 @@ function createTurnDispatchMethods({ log }) {
             fromStatuses: ["dispatching"],
           },
           "turn.failed",
-          {
-            errorCode: reason === "pre_send_throw"
-              ? "PRE_SEND_THROW"
-              : "PRE_SEND_REJECTED",
+          turnFailure({
+            code: reason === "pre_send_throw" ? "PRE_SEND_THROW" : "PRE_SEND_REJECTED",
             metadata: {
               dispatchFailureReason: reason,
               ...(err?.message
                 ? { dispatchFailureDetail: String(err.message).slice(0, 500) }
                 : {}),
             },
-          },
+          }),
         ) || null;
         if (result?.turn) state.admittedTurnInput = result.turn;
         return result || {

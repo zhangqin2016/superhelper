@@ -1,5 +1,7 @@
 "use strict";
 
+const { turnFailure } = require("./turn-failure");
+
 /**
  * Turn-start safety net + stuck-phase watchdog.
  *
@@ -94,13 +96,11 @@ function resetPhaseHard(orchestrator, sessionId, state, payload) {
     log.warn("stuck-phase hard reset fell back to minimal clear: %s", err?.message || err);
   }
   try {
-    orchestrator._emit(sessionId, "turn.failed", {
-      failed: true,
+    orchestrator._emit(sessionId, "turn.failed", turnFailure({
+      code: payload.errorCode,
+      category: "environment",
       assistant: payload.assistant,
-      errorCode: payload.errorCode,
-      errorCategory: "environment",
-      retryable: true,
-    }, { turnId });
+    }), { turnId });
   } catch (err) {
     log.warn("stuck-phase terminal emit failed: %s", err?.message || err);
   }
@@ -130,14 +130,12 @@ async function recoverStuckTurnOwned(orchestrator, sessionId, {
   const hadTurn = Boolean(state.turnId) && !state.terminalEmitted;
   if (hadTurn) {
     try {
-      await orchestrator._finalize(sessionId, "turn.failed", {
-        failed: true,
+      await orchestrator._finalize(sessionId, "turn.failed", turnFailure({
+        code: errorCode,
+        category: "environment",
         assistant,
-        errorCode,
-        errorCategory: "environment",
-        retryable: true,
         error: String(err?.message || err || ""),
-      });
+      }));
     } catch (finalizeErr) {
       log.warn("stuck-turn finalize threw (recovering hard): %s", finalizeErr?.message || finalizeErr);
     }

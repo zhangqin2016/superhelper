@@ -1,5 +1,7 @@
 "use strict";
 
+const { failureCodeOf } = require("./turn-failure");
+
 function durationFromPayloadOrClock(payload, state, startedAt, endedAt) {
   for (const candidate of [payload?.durationMs, state?.durationMs]) {
     if (Number.isFinite(candidate) && candidate > 0) return candidate;
@@ -145,7 +147,7 @@ class TurnArchive {
     const failureMeta = terminalType === "turn.failed"
       ? {
           error: typeof payload.error === "string" ? payload.error : "",
-          errorCode: payload.errorCode || payload.code || "",
+          errorCode: failureCodeOf(payload),
           errorCategory: payload.errorCategory || payload.category || "",
           retryable: payload.retryable !== false,
           source: payload.source || "",

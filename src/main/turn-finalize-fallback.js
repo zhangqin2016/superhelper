@@ -1,5 +1,7 @@
 "use strict";
 
+const { failureCodeOf } = require("./turn-failure");
+
 const { DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("./turn-recovery-projection");
 const FINALIZE_RECOVERY_ASSISTANT = "本次任务在收尾时遇到内部错误，已停止继续执行。请核对结果后手动重试。";
 
@@ -21,7 +23,7 @@ function recoverFinalizationFailure({ sessionId, type, payload, state, clearStat
   emit(sessionId, fallbackType, {
     ...payload,
     assistant,
-    errorCode: payload.errorCode || payload.code || "TURN_FINALIZE_FAILED",
+    errorCode: failureCodeOf(payload) || "TURN_FINALIZE_FAILED",
     finalizationRecovered: true,
   }, { turnId });
 }

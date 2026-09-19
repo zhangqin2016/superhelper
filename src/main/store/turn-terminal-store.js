@@ -1,5 +1,7 @@
 "use strict";
 
+const { failureCodeOf } = require("../turn-failure");
+
 const {
   TURN_INPUT_MIGRATION_OWNED,
 } = require("./turn-admission-migration");
@@ -121,7 +123,7 @@ function createTurnTerminalStoreMethods({
           status,
           Number.isFinite(patch.terminalAt) ? patch.terminalAt : Date.now(),
           terminalType,
-          patch.errorCode || patch.code || null,
+          failureCodeOf(patch) || null,
           mergeTurnMetadata(row.metadata_json, patch.metadata),
           ownerScope,
           sessionId,
