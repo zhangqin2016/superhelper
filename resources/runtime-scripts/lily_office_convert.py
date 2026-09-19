@@ -312,9 +312,45 @@ def _selftest():
     print("lily_office_convert selftest ok")
 
 
+def main(argv=None):
+    """Convert one file from the command line.
+
+    The module was importable but had no CLI, so a caller outside Python had to
+    write a wrapper to reach it — while the neighbouring runtime scripts all
+    speak the same JSON-on-stdout contract. Failures print the same JSON shape
+    with ok=false rather than a traceback, so a caller never has to parse a
+    Python stack to learn what went wrong.
+    """
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(prog="lily_office_convert", description="Convert a document with LibreOffice.")
+    parser.add_argument("source", help="file to convert; a relative path resolves against LILY_WORKSPACE")
+    parser.add_argument("--out-dir", required=True, help="directory to write the converted file into")
+    parser.add_argument("--to", required=True, help="target extension, e.g. pdf, docx, html")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--infilter", default=None, help="force a specific input filter and disable the retry")
+    parser.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+
+    if args.selftest:
+        _selftest()
+        return 0
+    try:
+        output = convert(args.source, args.out_dir, args.to, timeout=args.timeout, infilter=args.infilter)
+    except ConversionError as error:
+        print(json.dumps({"ok": False, "error": str(error)}))
+        return 1
+    # convert() never returns a path that does not exist, so ok=true already
+    # means the file is there; the size is reported because "produced a file"
+    # and "produced a usable file" are different claims.
+    print(json.dumps({"ok": True, "output": output, "bytes": os.path.getsize(output)}))
+    return 0
+
+
 if __name__ == "__main__":
     import sys
-    if "--selftest" in sys.argv:
+    if "--selftest" in sys.argv and len(sys.argv) == 2:
         _selftest()
-    else:
-        print(__doc__)
+        sys.exit(0)
+    sys.exit(main())
