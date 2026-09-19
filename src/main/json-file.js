@@ -62,13 +62,34 @@ function readJsonObject(file, fallback = null) {
  *              that must not conjure its directory into being (a marker whose
  *              missing home means "this profile does not exist")
  */
+/**
+ * Is `text` exactly what `file` already holds? A writer that regenerates a
+ * derived file on every pass (a session's AGENT.md, the MCP config) asks this
+ * first, so an unchanged pass costs a read and no rename — which on Windows is
+ * the difference between a session switch and a Defender scan plus a
+ * transient-lock retry per switch.
+ */
+function unchangedOnDisk(file, text) {
+  try {
+    return fs.readFileSync(file, "utf8") === text;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @returns {boolean} whether the file was written — `false` only with
+ *   `onlyIfChanged` when the serialized value is already on disk.
+ */
 function writeJson(file, value, options = {}) {
-  const { indent = 2, newline = false, mode, createDir = true, renameAttempts = 6 } = options;
+  const { indent = 2, newline = false, mode, createDir = true, renameAttempts = 6, onlyIfChanged = false } = options;
+  const text = serializeJson(value, { indent, newline });
+  if (onlyIfChanged && unchangedOnDisk(file, text)) return false;
   const dir = path.dirname(file);
   if (createDir) fs.mkdirSync(dir, { recursive: true });
   const temp = path.join(dir, `.${path.basename(file)}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`);
   try {
-    fs.writeFileSync(temp, serializeJson(value, { indent, newline }), mode ? { encoding: "utf8", mode } : "utf8");
+    fs.writeFileSync(temp, text, mode ? { encoding: "utf8", mode } : "utf8");
     // Windows: a reader or an indexer can hold the target (or the temp file)
     // for a moment; the rename is retried on the app-wide schedule instead of
     // failing the write outright.
@@ -79,6 +100,7 @@ function writeJson(file, value, options = {}) {
   } finally {
     try { if (fs.existsSync(temp)) fs.unlinkSync(temp); } catch { /* the target was not replaced; a stray temp is harmless */ }
   }
+  return true;
 }
 
-module.exports = { readJson, readJsonObject, serializeJson, writeJson };
+module.exports = { readJson, readJsonObject, serializeJson, unchangedOnDisk, writeJson };

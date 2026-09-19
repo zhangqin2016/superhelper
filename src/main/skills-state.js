@@ -71,10 +71,40 @@ function applyPlaceholders(content, replacements) {
   return out;
 }
 
+// Manifest text keyed by path and validated by the file's own identity
+// (mtime + size), so a catalog read costs one stat per skill instead of an
+// open+read+parse — and a manifest edited on disk is seen on the very next
+// read, without any writer having to remember to invalidate anything.
+// Measured on a real profile (45 skills): resolving one session's skills read
+// 831 files; every session switch re-ran it. Windows pays for each open twice
+// (Defender scans on open), which is where a switch turned into seconds.
+/** @type {Map<string, { mtimeMs: number, size: number, text: string }>} */
+const manifestTextCache = new Map();
+
+function manifestText(manifestPath) {
+  let stat;
+  try {
+    stat = fs.statSync(manifestPath);
+  } catch (err) {
+    if (err?.code === "ENOENT" || err?.code === "ENOTDIR") { manifestTextCache.delete(manifestPath); return null; }
+    // A mocked or restricted fs without a usable stat: read the old way, uncached.
+    return fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, "utf8") : null;
+  }
+  const cached = manifestTextCache.get(manifestPath);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.text;
+  let text;
+  try { text = fs.readFileSync(manifestPath, "utf8"); } catch { manifestTextCache.delete(manifestPath); return null; }
+  manifestTextCache.set(manifestPath, { mtimeMs: stat.mtimeMs, size: stat.size, text });
+  return text;
+}
+
 function loadManifestFromDir(skillDir) {
-  const manifestPath = path.join(skillDir, "skill.manifest.json");
-  if (!fs.existsSync(manifestPath)) return null;
-  const raw = readJsonFile(manifestPath);
+  const text = manifestText(path.join(skillDir, "skill.manifest.json"));
+  if (text == null) return null;
+  // Every caller gets its own object: a mutation (bundled-skill-sync edits the
+  // installed manifest before writing it back) can never leak into the cache.
+  let raw;
+  try { raw = JSON.parse(text); } catch { return null; }
   if (!raw || raw.schemaVersion !== 1 || !raw.id) return null;
   return raw;
 }
@@ -133,11 +163,27 @@ function saveSkillsState() {
   jsonFile.writeJson(skillsStatePath(), state);
 }
 
+// Bundled skills ship inside the application and cannot change while it runs,
+// so their versions are read once per process. The state normalisation below
+// still runs on every call — it is in-memory and is what keeps a mandatory
+// skill enabled and a bundled entry present whatever the state file said.
+/** @type {Map<string, string | null> | null} skillId → bundled version */
+let bundledVersions = null;
+
+function bundledVersionOf(skillId) {
+  if (!bundledVersions) bundledVersions = new Map();
+  if (!bundledVersions.has(skillId)) {
+    const manifest = readBundledManifest(skillId);
+    bundledVersions.set(skillId, manifest ? { version: manifest.version } : null);
+  }
+  return bundledVersions.get(skillId);
+}
+
 function ensureSkillsStateDefaults() {
   const state = loadSkillsState();
   let changed = false;
   for (const skillId of BUNDLED_SKILL_IDS) {
-    const manifest = readBundledManifest(skillId);
+    const manifest = bundledVersionOf(skillId);
     if (!manifest) continue;
     if (!state.skills[skillId]) {
       state.skills[skillId] = {

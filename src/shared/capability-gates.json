@@ -1510,6 +1510,18 @@
         "scripts/test-media-result-tracker.mjs",
         "scripts/test-opencode-conversation-source.mjs"
       ]
+    },
+    {
+      "id": "session-switch-cost",
+      "protects": "Switching to a session costs the page, not the session's setup. The write-free runner warm-up scheduled after a switch resolves the session's skill set from a stat-validated manifest catalog (one stat per skill, no re-read while unchanged; bundled versions read once per process), and rewrites the session's AGENT.md and the MCP config only when their content moved. Field diagnosis of a slow warm-up is one env flag (LILY_PROFILE_RUNNER_ENSURE=1) through the shared stage profiler, and any warm-up over 100 ms is logged with its duration. In the renderer, deciding whether an incoming message is one already cached derives each message's text facets once and checks the 30-minute window before any text, so merging a page into a thousand-message history costs milliseconds.",
+      "baseline": "Every reader sees the same catalog it saw: a manifest edited, added or removed on disk is visible on the very next read because validation is the file's own mtime+size, not a writer's memory; every caller gets its own manifest object so a mutation cannot leak; the per-call state reconciliation (mandatory skills forced on, bundled entries present) still runs on every call. Guide and MCP config content are byte-identical to what an unconditional write would have produced. The equivalence predicates give the same answers as before (key, projection duplicate, near-identical assistant turn, scheduled draft), and a message edited in place is re-read.",
+      "failureFallback": "A filesystem whose stat throws for anything but absence falls back to the uncached read; an unreadable existing file counts as changed and is rewritten; the profiler is a frozen no-op unless the flag is exactly \"1\".",
+      "tests": [
+        "scripts/test-session-switch-warmup.mjs",
+        "scripts/test-committed-message-equivalence.mjs",
+        "scripts/test-session-runtime-store.mjs",
+        "scripts/test-json-file.mjs"
+      ]
     }
   ]
 }

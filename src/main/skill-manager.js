@@ -896,7 +896,9 @@ function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
     learnedContext.buildLearnedSection(session?.projectId) +
     buildCrystallizationSection() +
     sessionGuideExtensionSection(session, locale);
-  fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale, { workspaceSkills: workspace.skills, reservedBytes: utf8Bytes(learnedSections) }) + learnedSections, "utf8");
+  const guide = buildAgentGuideContent(skills, locale, { workspaceSkills: workspace.skills, reservedBytes: utf8Bytes(learnedSections) }) + learnedSections;
+  // The in-process signature cache is empty after a restart; the file is not.
+  if (!jsonFile.unchangedOnDisk(guidePath, guide)) fs.writeFileSync(guidePath, guide, "utf8");
   sessionGuideWriteCache.set(sessionId, signature);
   return configDir;
 }

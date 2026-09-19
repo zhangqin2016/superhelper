@@ -211,10 +211,13 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     console.warn("[runner] could not create staging dir:", err.message);
   }
 
+  const profile = require("./stage-profile").stageProfile("LILY_PROFILE_RUNNER_ENSURE");
   const configDir = skillManager.writeSessionAgentGuide(sessionId, session, project.path);
+  profile.mark("writeSessionAgentGuide");
   const existingRunner = runnerPool.get(sessionId);
   let wasAlive = Boolean(existingRunner?.isAlive?.());
   const activeSkillIds = skillManager.resolveSessionSkillIds(session);
+  profile.mark("resolveSessionSkillIds");
   const { buildResumeBinding, verifyResumeBinding } = require("./resume-binding");
   if (session.agentResumeId) {
     const owner = typeof sessionManager.findAgentResumeOwner === "function"
@@ -320,9 +323,12 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     }
   }
 
+  profile.mark("resumeBinding+extra");
   try {
     const lazy = opts.spawn !== true;
     const runner = runnerPool.ensure(sessionId, project.path, extra, { lazy });
+    profile.mark("runnerPool.ensure");
+    profile.report(`[runner] ensureSessionRunner profile session=${sessionId}`);
     if (!runner) {
       return {
         runner: null,

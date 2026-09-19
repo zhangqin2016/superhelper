@@ -334,7 +334,9 @@ function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, conte
   // for the learned skills active in this session — see learnedWebSystemDirs.
   Object.assign(mcpServers, buildWebSystemMcpEntries(learnedWebSystemDirs(allowedSkillIds)));
   if (!Object.keys(mcpServers).length) return null;
-  jsonFile.writeJson(outPath, { mcpServers }, { newline: true });
+  // Rebuilt on every runner ensure — including the write-free warm-up after a
+  // session switch — so the file is only replaced when its content moved.
+  jsonFile.writeJson(outPath, { mcpServers }, { newline: true, onlyIfChanged: true });
   return outPath;
 }
 

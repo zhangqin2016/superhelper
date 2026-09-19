@@ -50,7 +50,9 @@ class SessionRunnerPool {
     const { resolveLilyEnv, buildAgentSpawnEnv } = require("./spawn-env");
     const { buildSharedBaseConfig } = require("./runtime/opencode-config-builder");
     const permissionMode = extra.permissionMode || getActivePermissionMode();
+    const profile = require("./stage-profile").stageProfile("LILY_PROFILE_RUNNER_ENSURE", log);
     const lilyEnv = extra.modelExecution?.env || resolveLilyEnv();
+    profile.mark("lilyEnv");
     const runtimeIdentity = buildOpencodeRuntimeIdentityConfig(sessionId, cwd, {
       ...extra,
       permissionMode,
@@ -70,6 +72,7 @@ class SessionRunnerPool {
     //     (see `guidance` below)
     // This is what lets ONE serve host every session/directory without config
     // bleed (a single global OPENCODE_CONFIG can only hold one session's config).
+    profile.mark("identity+persona");
     const cfg = buildSharedBaseConfig({
       lilyEnv,
       mcpServers: this._opencodeMcpServers(extra.activeSkillIds || [], {
@@ -111,6 +114,7 @@ class SessionRunnerPool {
       runner.publicHookRuntime = this.publicHookRuntime || null;
       this._sessions.set(sessionId, runner);
     }
+    profile.mark("buildSharedBaseConfig");
     const { modelConfigFingerprint, toolConfigFingerprint } = configFingerprints(cfg.configContent);
     const modelConfigDiagnostics = getModelConfigDiagnostics(cfg.configContent);
     const modelRouteAudit = cfg.diagnostics?.modelRoute || null;
@@ -229,6 +233,7 @@ class SessionRunnerPool {
       /* guard keeps its own conservative default */
     }
 
+    profile.report(`runner ensure profile session=${sessionId}`);
     runner.ensureProcess(cwd, {
       agentCommand,
       permissionMode,

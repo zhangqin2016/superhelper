@@ -33,7 +33,13 @@ function scheduleSessionRunnerWarmup(ctx, sessionId) {
       .then(() => {
         if (ctx.sessionManager?.activeSessionId !== sessionId) return null;
         const ensure = ctx.ensureSessionRunner || ensureSessionRunner;
-        return ensure(ctx, sessionId, { spawn: false });
+        // The warm-up runs on the main thread right after a switch; a slow one
+        // is what makes the conversation page IPC stall behind it. Say so.
+        const startedAt = Date.now();
+        const result = ensure(ctx, sessionId, { spawn: false });
+        const ms = Date.now() - startedAt;
+        if (ms >= 100) console.info(`[session] runner warm-up took ${ms}ms on switch (session=${sessionId})`);
+        return result;
       })
       .catch((err) => {
         console.warn("[session] background runner warmup failed:", err?.message || err);

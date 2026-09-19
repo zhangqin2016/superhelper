@@ -128,6 +128,19 @@ try {
     assert.deepEqual(offenders, [], `write JSON through json-file.js:\n${offenders.join("\n")}`);
   });
 
+  check("onlyIfChanged: an unchanged value is not rewritten, so a derived file keeps its timestamp", () => {
+    const file = path.join(dir, "derived.json");
+    assert.equal(jsonFile.writeJson(file, { a: 1 }, { newline: true, onlyIfChanged: true }), true, "first write lands");
+    const stamp = fs.statSync(file).mtimeMs;
+    assert.equal(jsonFile.writeJson(file, { a: 1 }, { newline: true, onlyIfChanged: true }), false, "same content → nothing written");
+    assert.equal(fs.statSync(file).mtimeMs, stamp);
+    assert.equal(jsonFile.writeJson(file, { a: 2 }, { newline: true, onlyIfChanged: true }), true, "changed content → written");
+    assert.deepEqual(jsonFile.readJson(file), { a: 2 });
+    assert.equal(jsonFile.unchangedOnDisk(file, jsonFile.serializeJson({ a: 2 }, { newline: true })), true);
+    assert.equal(jsonFile.unchangedOnDisk(path.join(dir, "absent.json"), ""), false, "a missing file is never 'unchanged'");
+    assert.equal(jsonFile.writeJson(path.join(dir, "fresh.json"), { b: 1 }), true, "the default is still an unconditional write");
+  });
+
   console.log(`\n${checks} checks passed (json file)`);
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
