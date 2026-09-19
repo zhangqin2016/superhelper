@@ -250,6 +250,28 @@ async function bridgeGuards() {
     throw new Error("expected null when no images");
   }
 
+  // Through the REAL transport (only fetch stubbed): the reply's text must reach
+  // the bridge. This is the seam the 2026-09-08 refactor broke while every bridge
+  // test stayed green by injecting `translate`. [gate: vision-bridge-reply]
+  {
+    const realFetch = globalThis.fetch;
+    const replyWith = (body) => async () => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    try {
+      globalThis.fetch = replyWith({ id: "r1", choices: [{ index: 0, message: { role: "assistant", content: [{ type: "text", text: "一只橘猫坐在窗台上" }] }, finish_reason: "stop" }], usage: {} });
+      const bridged = await translateImages([{ path: largeImage, name: "cat.png" }], { userText: "这是什么" });
+      assert.equal(bridged?.ok, true, `a well-formed reply is recognised: ${JSON.stringify(bridged)}`);
+      assert.equal(bridged.recognizedCount, 1);
+      assert.ok(bridged.text.includes("一只橘猫坐在窗台上"), "and its text is what the answering model gets");
+
+      globalThis.fetch = replyWith({ id: "r2", choices: [{ index: 0, message: { role: "assistant", content: "" }, finish_reason: "content_filter" }] });
+      const refused = await translateImages([{ path: largeImage, name: "cat.png" }], { userText: "这是什么" });
+      assert.equal(refused?.ok, false);
+      assert.match(refused.detail, /content_filter/, `an empty reply names the server's reason: ${refused.detail}`);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({ env: {} }), "utf8");
   delete require.cache[require.resolve("../src/main/agent-settings.js")];
   delete require.cache[require.resolve("../src/main/vision-translator.js")];

@@ -388,7 +388,30 @@ async function callVisionApi(config, payload) {
     if (!sent.status) throw new Error(`Vision API request failed: ${sent.error?.message || "network"}`);
     throw new Error(`Vision API ${sent.status}: ${sent.error?.message || ""}`.slice(0, 320));
   }
-  return sent.json;
+  return visionReplyText(sent.json);
+}
+
+/**
+ * The assistant text of a chat-completions reply — the one thing the bridge exists
+ * to obtain. Extracted HERE, at the transport seam, so every caller (the chat
+ * bridge, document-embedded images) reads the same field the same way.
+ *
+ * Regression 2026-09-08 → 2026-09-19: the request-shape refactor returned the whole
+ * reply object instead of `choices[0].message.content`; the readability check then
+ * judged `{id, choices, usage}` as "no readable image content" for every image,
+ * which silently disabled the platform's own vision bridge for models that cannot
+ * read images. The bridge tests injected `translate` directly and so never crossed
+ * this seam. [gate: vision-bridge-reply]
+ */
+function visionReplyText(json) {
+  const choice = json?.choices?.[0];
+  const text = normalizeVisionContent(choice?.message?.content ?? choice?.text);
+  if (text) return text;
+  // An empty reply with a stated finish reason (content_filter, length) is a
+  // different situation from a malformed one; the user needs to know which.
+  const reason = choice?.finish_reason;
+  const why = reason && reason !== "stop" ? ` (server finish_reason: ${reason})` : "";
+  throw new Error(`Vision API returned no readable image content${why}`);
 }
 
 /**
@@ -533,4 +556,5 @@ module.exports = {
   normalizeVisionModel,
   translateImage,
   translateImages,
+  visionReplyText,
 };

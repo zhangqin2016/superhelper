@@ -175,6 +175,11 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
     },
   });
   if (result === null) {
+    // The chip alone said only that the image was skipped; the reason lived in a
+    // transient progress notice and never reached the user, who then read the
+    // main model's gateway error and was told to re-probe the wrong service.
+    // The renderer already shows notice.detail — it was simply never filled.
+    const nullDetail = "No readable local image file was available to the vision bridge.";
     notify({
       code: "visionSkipped",
       level: "warning",
@@ -182,8 +187,9 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
       replace: true,
       replacesCode: "visionPreparing",
       done: true,
+      detail: nullDetail,
     });
-    const fallbackText = buildVisionFailureContext(files, "No readable local image file was available to the vision bridge.");
+    const fallbackText = buildVisionFailureContext(files, nullDetail);
     return {
       ok: true,
       text: buildEnrichedUserText(text, fallbackText),
@@ -201,6 +207,8 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
   }
 
   if (!result.ok) {
+    const detail = result.detail || result.reason || "VISION_FAILED";
+    // Same reason the vision bridge itself recorded — surfaced, not re-worded.
     notify({
       code: "visionSkipped",
       level: "warning",
@@ -208,8 +216,8 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
       replace: true,
       replacesCode: "visionPreparing",
       done: true,
+      detail,
     });
-    const detail = result.detail || result.reason || "VISION_FAILED";
     const fallbackText = buildVisionFailureContext(files, detail);
     return {
       ok: true,

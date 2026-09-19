@@ -1361,6 +1361,17 @@
         "scripts/test-large-output-guard.mjs",
         "scripts/test-empty-assistant-history-guard.mjs"
       ]
+    },
+    {
+      "id": "vision-bridge-reply",
+      "protects": "When the active model cannot read images, Lily's own vision bridge still delivers the picture's content to it: the reply text is extracted once, at the transport seam, from choices[0].message.content, and every caller (chat attachments, document-embedded images) reads it there. An empty reply names the server's finish reason, and the user-facing 'image skipped' notice carries the bridge's actual reason instead of a bare chip.",
+      "baseline": "Image questions to DeepSeek and other text-only models are answered from the vision model's description, exactly as before the 2026-09-08 request-shape refactor. The bridge is exercised end-to-end through the real transport with only fetch stubbed, so a change to what the transport returns can no longer stay invisible behind tests that inject the translate function.",
+      "failureFallback": "A vision reply that is genuinely empty still fails the image with a reason (content_filter, length) rather than a generic sentence; the chip still says the image was skipped and the answering model still receives the fallback context naming the file. Transport errors keep their HTTP status. Nothing about which model is used, or the key resolution order, changes.",
+      "tests": [
+        "scripts/test-vision-translator.mjs",
+        "scripts/test-send-preflight.mjs",
+        "scripts/test-document-image-vision.mjs"
+      ]
     }
   ]
 }
