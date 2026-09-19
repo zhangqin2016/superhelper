@@ -345,6 +345,20 @@ function getRuntimeEnvExtras() {
   if (runtimeScriptsDir) extras.LILY_RUNTIME_SCRIPTS = runtimeScriptsDir;
   const cjkFontPath = resolveCjkFontPath();
   if (cjkFontPath) extras.LILY_CJK_FONT_PATH = cjkFontPath;
+  // Charts are written to files and never shown, but matplotlib does not know
+  // that: on macOS it defaults to the `macosx` backend, which links AppKit and
+  // creates an NSApplication — so every Python process that imports pyplot is
+  // promoted to a GUI app and takes a Dock icon for as long as it lives. A user
+  // generating a batch of charts watched fifteen of them appear at once.
+  //
+  // Agg is the headless raster backend and costs nothing: matplotlib renders
+  // through Agg to save a file anyway, so the output is identical, it is faster
+  // without the window-server round trip, and plt.show() becomes a no-op rather
+  // than something that pops a window or blocks in a place with no user. Set on
+  // the runtime env rather than inside our own helpers so it also covers the
+  // scripts the agent writes itself, which is where the batch comes from.
+  // An explicit MPLBACKEND from the environment still wins.
+  extras.MPLBACKEND = process.env.MPLBACKEND || "Agg";
   return extras;
 }
 

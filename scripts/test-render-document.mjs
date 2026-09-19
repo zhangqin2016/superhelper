@@ -69,4 +69,20 @@ try {
 assert(rejected, "unsupported extension should exit non-zero");
 
 fs.rmSync(tmp, { recursive: true, force: true });
+// Charts are written to files and never shown, but matplotlib does not know
+// that: on macOS it defaults to the `macosx` backend, which links AppKit and
+// creates an NSApplication, so every Python process importing pyplot takes a
+// Dock icon for as long as it lives — a user generating a batch watched fifteen
+// appear at once. Agg is the headless backend matplotlib already renders through
+// when saving, so the output is identical and nothing is lost.
+{
+  const extras = getRuntimeEnvExtras();
+  assert(extras.MPLBACKEND === "Agg", "the runtime env forces the headless backend");
+  // On the runtime env rather than inside our own helpers, so it also covers
+  // scripts the agent writes itself — which is where the batch comes from.
+  const src = fs.readFileSync(new URL("../src/main/runtime-python.js", import.meta.url), "utf8");
+  assert(/extras\.MPLBACKEND = process\.env\.MPLBACKEND \|\| "Agg"/.test(src), "and an explicit choice from the environment still wins");
+  console.log("ok - matplotlib runs headless, so charts no longer take a Dock icon each");
+}
+
 console.log("test-render-document: ok (runtime-backed)");
