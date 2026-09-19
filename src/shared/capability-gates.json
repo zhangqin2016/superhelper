@@ -1412,6 +1412,22 @@
         "scripts/test-license-update.mjs",
         "scripts/test-model-settings-secret-storage.mjs"
       ]
+    },
+    {
+      "id": "file-kinds-single-table",
+      "protects": "What kind of file an extension names is decided by one table (src/shared/file-kinds.mjs) for both processes, with groups named by purpose: what is an image, what the browser can display, what the vision bridge can read, what is an office document. A format added once is known everywhere; a file is never one kind in one module and another kind in the next.",
+      "baseline": "Every consumer answers the question it answered before; the only membership changes are consistent additions (.avif displayable wherever .svg was, .xlsm an office workbook wherever .xlsx was, .m4v a video wherever .mkv was). Mime types and file-name regexes are derived from the same table. Main-process code require()s the ESM table (Node ≥ 22.12) and the renderer imports it; the MCP and long-task processes use the same file.",
+      "failureFallback": "An unknown extension has no kind, no group and the caller's mime fallback — exactly what an unlisted extension meant before. Two documented exceptions keep their own tables because they answer different questions: magic-byte signatures keyed by extension, and the extractors' capability lists. A source-scan rule forbids a new list of media or office extensions anywhere else.",
+      "tests": [
+        "scripts/test-file-kinds.mjs",
+        "scripts/test-vision-translator.mjs",
+        "scripts/test-send-preflight.mjs",
+        "scripts/test-turn-artifacts.mjs",
+        "scripts/test-turn-artifact-model.mjs",
+        "scripts/test-attachment-preview-model.mjs",
+        "scripts/test-content-task-intent.mjs",
+        "scripts/test-capability-broker.mjs"
+      ]
     }
   ]
 }

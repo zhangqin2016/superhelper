@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 // Status-report SCAFFOLD stripper (2026-07-22 field case): after a compaction /
 // resume the model sometimes echoes the internal handoff summary — "Objective /
 // Important Details / Work State / Completed / Active / Blocked / Next Move /
@@ -58,7 +60,7 @@ const PLACEHOLDER_LINE_RE = /^(?:…|\.{3}|-{3,}|\*{3,})$/;
 const QUOTE_OPEN = "[`'\"\u201c\u2018\u300c\u300e\uff08(]";
 const QUOTE_CLOSE = "[`'\"\u201d\u2019\u300d\u300f\uff09)]";
 const PATH_START = "(?:\\/|~\\/|[A-Za-z]:[\\\\/])";
-const FILE_EXT = "(?:md|markdown|json|js|mjs|cjs|py|ts|tsx|jsx|css|html|txt|gz|zip|tar|yaml|yml|toml|sh|docx|xlsx|pptx|png|jpe?g|webp|svg|mp4|pdf)";
+const FILE_EXT = `(?:md|markdown|json|js|mjs|cjs|py|ts|tsx|jsx|css|html|txt|gz|zip|tar|yaml|yml|toml|sh|${fileKinds.alternation(fileKinds.EXTENSIONS.ooxml)}|${fileKinds.alternation(fileKinds.EXTENSIONS.browserImage)}|mp4|pdf)`;
 const REL_FILE = (close) => `\\S+\\.${FILE_EXT}(?:\\s|$|${close ? `${QUOTE_CLOSE}|` : ""}[\u2014:\uff1a-])`;
 const FILE_LINE_RE = new RegExp(
   "^(?:"

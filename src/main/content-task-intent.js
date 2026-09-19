@@ -1,14 +1,16 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const path = require("node:path");
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".svg"]);
-const PDF_EXTENSIONS = new Set([".pdf"]);
-const DOCUMENT_EXTENSIONS = new Set([".doc", ".docx", ".odt", ".rtf", ".txt", ".md", ".html", ".xml"]);
-const SPREADSHEET_EXTENSIONS = new Set([".xls", ".xlsx", ".xlsm", ".csv", ".tsv"]);
-const PRESENTATION_EXTENSIONS = new Set([".ppt", ".pptx", ".odp"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".mkv", ".avi", ".webm"]);
+const IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.image]);
+const PDF_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pdf]);
+const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.wordDocument, ".txt", ".md", ".html", ".xml"]);
+const SPREADSHEET_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.spreadsheet]);
+const PRESENTATION_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.presentation]);
+const AUDIO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.audio]);
+const VIDEO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.video]);
 
 const OPERATION_SIGNALS = Object.freeze({
   extract: [

@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const VALID_MODES = new Set(["auto", "manual"]);
 const idOf = value => typeof value === "string" ? value.trim().slice(0, 256) : "";
 const nonnegative = value => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
@@ -68,7 +70,7 @@ function estimateWorkload(text, files = []) {
   const fileCount = Array.isArray(files) ? files.length : 0;
   const hasImages = (Array.isArray(files) ? files : []).some((file) => {
     const value = `${file?.mime || ""} ${file?.type || ""} ${file?.path || ""}`.toLowerCase();
-    return value.includes("image/") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(value);
+    return value.includes("image/") || fileKinds.isVisionRaster(value);
   });
   return {
     contentLength,

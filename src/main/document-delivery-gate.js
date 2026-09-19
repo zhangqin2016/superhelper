@@ -1,23 +1,13 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 
-const DOCUMENT_EXTENSIONS = new Set([
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".pdf",
-  ".odt",
-  ".ods",
-  ".odp",
-  ".rtf",
-]);
-const OOXML_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx"]);
+const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument]);
+const OOXML_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml]);
 const DOCUMENT_OPERATIONS = new Set(["create", "modify", "convert"]);
 const MAX_DEEP_STRUCTURE_BYTES = 20 * 1024 * 1024;
 const MAX_SCAN_CHARS = 64 * 1024;
@@ -64,7 +54,7 @@ function collectImagePaths(value, output = new Set(), depth = 0) {
   if (depth > 8 || value == null || output.size >= 200) return output;
   if (typeof value === "string") {
     const source = value.replace(/\\\\/g, "\\").slice(0, MAX_SCAN_CHARS);
-    const pattern = /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/])[^\s"'`<>|\]]+?\.(?:png|jpe?g|webp))/gi;
+    const pattern = new RegExp(String.raw`((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/])[^\s"'\`<>|\]]+?\.(?:${fileKinds.alternation(fileKinds.EXTENSIONS.visionRaster)}))`, "gi");
     for (const match of source.matchAll(pattern)) {
       output.add(normalizedPath(match[1]));
       if (output.size >= 200) break;

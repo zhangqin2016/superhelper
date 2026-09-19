@@ -5,6 +5,7 @@
 import { renderMarkdownContent } from "./content-blocks.js";
 import { t } from "../i18n/index.js";
 import { revealLocalFileInFolder } from "./file-reveal.js";
+import { isPlaceholderGeneratedPath, looksLikeGeneratedFilePath } from "./generated-file-path.js";
 
 const FILE_PATH_KEYS = ["file_path", "path", "target_file"];
 const LONG_TEXT_KEYS = new Set([
@@ -110,21 +111,6 @@ function parseAttributes(raw = "") {
   return attrs;
 }
 
-function isPlaceholderGeneratedPath(filePath = "") {
-  const raw = String(filePath || "").trim();
-  if (!raw) return true;
-  let normalized = raw.replace(/\\/g, "/");
-  try { normalized = decodeURIComponent(normalized); } catch { /* keep raw */ }
-  const lower = normalized.toLowerCase();
-  return (
-    /^\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
-    /^[a-z]:\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
-    lower.includes("/\u7edd\u5bf9\u8def\u5f84/") ||
-    /^\/?\u7edd\u5bf9\u8def\u5f84\//.test(normalized) ||
-    /(^|\/)(?:your|example|sample)-?path\//.test(lower)
-  );
-}
-
 function validGeneratedFiles(files = []) {
   return files.filter((file) => file?.path && !isPlaceholderGeneratedPath(file.path));
 }
@@ -211,19 +197,6 @@ export function generatedMediaFromPayload(payload) {
     if (typeof payload[key] === "string") out.push(...collectGeneratedMedia(payload[key]));
   }
   return out;
-}
-
-// Skill scripts (template-fill, pdf-form, render_document, the office skills)
-// run via Bash and print JSON like {ok:true, output:"…/x.docx"} or
-// {ok:true, images:["…/page-1.png", …]}. Detect those output paths so the file
-// gets a "reveal in folder" affordance — the model never edited it via Write,
-// so it isn't in the changed-files group.
-const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|mp4|webm|mov|m4v|mkv|mp3|wav|m4a|aac|ogg|flac|html?|json|zip)$/i;
-
-function looksLikeGeneratedFilePath(value) {
-  if (typeof value !== "string") return false;
-  const text = value.trim();
-  return text.length > 3 && /[\\/]/.test(text) && GENERATED_FILE_EXTS.test(text) && !isPlaceholderGeneratedPath(text);
 }
 
 function generatedFilesFromPayload(payload) {

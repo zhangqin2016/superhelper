@@ -7,14 +7,11 @@
  */
 import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
 import { t } from "../i18n/index.js";
+import { EXTENSIONS as FILE_EXTENSIONS, bare } from "../../shared/file-kinds.mjs";
 
 // Curated deliverable extensions only — NOT any "word.ext" token, so version
 // numbers ("v1.2"), sizes ("3.6"), and prose dots never get an icon.
-const PREVIEWABLE_EXT = new Set([
-  "svg", "png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf",
-  "html", "htm", "md", "txt", "csv", "json", "mp4", "webm", "mp3", "wav",
-  "docx", "xlsx", "pptx", "doc", "xls", "ppt",
-]);
+const PREVIEWABLE_EXT = new Set([...bare(FILE_EXTENSIONS.browserImage), ...bare(FILE_EXTENSIONS.legacyOffice), ...bare(FILE_EXTENSIONS.ooxml), ...bare(FILE_EXTENSIONS.pdf), "html", "htm", "md", "txt", "csv", "json", "mp4", "webm", "mp3", "wav"]);
 const REVEAL_EXT = new Set(["zip", "gz", "tar", "tgz", "7z", "rar", "db", "sqlite", "exe", "dmg", "bin", "iso"]);
 
 const FILE_TOKEN_RE = /^[^\s<>|:"*?]+\.([a-z0-9]{1,8})$/i;

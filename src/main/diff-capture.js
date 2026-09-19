@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const Diff = require("diff");
-const { isTextFile } = require("./file-kinds");
+const { isTextFile } = require("./text-file-kinds");
 
 const MAX_LINES = 5000;
 

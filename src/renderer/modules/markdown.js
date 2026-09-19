@@ -11,6 +11,7 @@ import { renderStreamBlocks } from "./markdown-stream-blocks.js";
 import { markLongInlineCode } from "./markdown-inline-code.js";
 import { CODE_COLLAPSE_MIN_LINES, countCodeLines, wireCodeCollapse } from "./markdown-code-collapse.js";
 import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
+import { EXTENSIONS as FILE_EXTENSIONS, alternation } from "../../shared/file-kinds.mjs";
 
 let hljsReady = false;
 let hljs = null;
@@ -21,7 +22,7 @@ let mermaid = null;
 
 const MARKED_OPTIONS = { gfm: true, breaks: false };
 const DIFF_LANGUAGES = new Set(["diff", "patch"]);
-const LOCAL_FILE_EXTENSIONS = "png|jpe?g|gif|webp|bmp|svg|pdf|docx?|xlsx?|pptx?|csv|txt|md|json|html?|zip|tar|gz|mp4|mov|mp3|wav";
+const LOCAL_FILE_EXTENSIONS = `${alternation(FILE_EXTENSIONS.browserImage)}|pdf|${alternation(FILE_EXTENSIONS.office)}|csv|txt|md|json|html?|zip|tar|gz|${alternation(FILE_EXTENSIONS.browserVideo)}|${alternation(FILE_EXTENSIONS.audio)}`;
 const LOCAL_FILE_PATH_RE = new RegExp(
   "(^|[\\s([{：:，,])((?:/|[A-Za-z]:[\\\\/])[^<>\\n\"'`]*?\\.(?:" + LOCAL_FILE_EXTENSIONS + "))(?![A-Za-z0-9._-])",
   "gi",

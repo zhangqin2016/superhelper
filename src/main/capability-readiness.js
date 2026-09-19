@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const path = require("node:path");
 
 function unique(values) {
@@ -18,10 +20,7 @@ function planCapabilityReadiness({ text = "", files = [], intentContract = null,
   const browser = /localhost|截图|控制台|浏览器|playwright|browser|responsive|响应式/i.test(body);
   const pdf = extensions.has(".pdf") || /\bpdf\b/i.test(body);
   const complexPdf = pdf && /复杂|版面|阅读顺序|表格结构|layout|reading order|table structure/i.test(body);
-  const mediaFile = [...extensions].some((ext) => [
-    ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg",
-    ".mp4", ".mov", ".mkv", ".avi", ".webm",
-  ].includes(ext));
+  const mediaFile = [...extensions].some((ext) => fileKinds.EXTENSIONS.audio.has(ext) || fileKinds.EXTENSIONS.video.has(ext));
   const mediaTransform = /转码|转换视频|裁剪视频|压缩视频|提取音频|合并音频|合并视频|ffmpeg|transcode|convert video|trim video|compress video|extract audio/i.test(body);
   const media = mediaTransform || (mediaFile && /转换|转码|裁剪|压缩|合并|提取|convert|trim|compress|merge|extract/i.test(body));
 

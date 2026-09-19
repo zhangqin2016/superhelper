@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -257,12 +259,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       if (item.direction !== "download" || checkpoint.state !== "ready") throw fail("COLLAB_TRANSFER_NOT_READY", true);
       const originalName = checkpoint.plaintext?.originalName || checkpoint.content?.originalName || "";
       const extension = path.extname(originalName || "").toLowerCase();
-      const byExtension = extension === ".png" ? "image/png"
-        : extension === ".jpg" || extension === ".jpeg" ? "image/jpeg"
-        : extension === ".webp" ? "image/webp"
-        : extension === ".gif" ? "image/gif"
-        : extension === ".bmp" ? "image/bmp"
-        : extension === ".svg" ? "image/svg+xml" : "";
+      const byExtension = fileKinds.EXTENSIONS.browserImage.has(extension) ? fileKinds.mimeOf(extension) : "";
       return { ok: true, path: path.join(manifests.directory(item.id), "plaintext.verified"),
         mimeType: byExtension || checkpoint.content?.mimeType || "application/octet-stream", originalName };
     },

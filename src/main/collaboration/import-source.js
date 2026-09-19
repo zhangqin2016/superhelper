@@ -1,4 +1,6 @@
 "use strict";
+
+const fileKinds = require("../../shared/file-kinds.mjs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { MAX_PLAINTEXT_BYTES } = require("./encrypted-container-format");
@@ -25,7 +27,7 @@ async function withImportSource(source, rootPath, operation) {
     if (!stat.isFile()) throw invalid();
     if (stat.size > MAX_PLAINTEXT_BYTES) throw Object.assign(new Error("COLLAB_OBJECT_SIZE_INVALID"), {code:"COLLAB_OBJECT_SIZE_INVALID"});
     const ext = path.extname(source.path).toLowerCase();
-    const mimeType = ({".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".webp":"image/webp",".gif":"image/gif",".pdf":"application/pdf"})[ext] || "application/octet-stream";
+    const mimeType = ((fileKinds.EXTENSIONS.browserImage.has(ext) || fileKinds.EXTENSIONS.pdf.has(ext)) ? fileKinds.mimeOf(ext) : undefined) || "application/octet-stream";
     return operation({ inputPath: source.path, originalName: path.basename(source.path), mimeType });
   }
   const bytes = Buffer.from(source.bytes);

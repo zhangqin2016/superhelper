@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 /**
  * Local document text extraction before send — enriches user text so models
  * without native document blocks can still read PDF/Office uploads.
@@ -20,13 +22,9 @@ const TEXT_EXTENSIONS = new Set([
   ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".rtf",
 ]);
 
-const OFFICE_EXTENSIONS = new Set([
-  ".pdf", ".docx", ".xlsx", ".pptx",
-]);
+const OFFICE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml, ...fileKinds.EXTENSIONS.pdf]);
 
-const LEGACY_OFFICE_EXTENSIONS = new Set([
-  ".doc", ".xls", ".ppt",
-]);
+const LEGACY_OFFICE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.legacyOffice]);
 
 const EXTRACTABLE_EXTENSIONS = new Set([
   ...TEXT_EXTENSIONS,

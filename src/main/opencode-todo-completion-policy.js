@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const { markInternalPrompt } = require("./internal-prompt-marker");
 
@@ -13,7 +15,7 @@ const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 2;
 // can be pushed back into the same turn indefinitely (a field turn burned 7
 // nudges / 13 minutes re-asking for the same 2 user-blocked items).
 const TODO_COMPLETION_GATE_MAX_TOTAL_ATTEMPTS = 6;
-const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip|json|md";
+const DELIVERABLE_EXT = `${fileKinds.alternation(fileKinds.EXTENSIONS.ooxml)}|pdf|${fileKinds.alternation(fileKinds.EXTENSIONS.browserImage)}|mp3|wav|mp4|webm|html|csv|zip|json|md`;
 const DELIVERABLE_PATH_RE = new RegExp(
   String.raw`(?:^|[\s"'` + "`" + String.raw`(>])((?:/|[A-Za-z]:\\)[^\s"'` + "`" + String.raw`)<>|]+\.(?:${DELIVERABLE_EXT}))`,
   "gi",

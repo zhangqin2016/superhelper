@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 /**
  * Serves LOCAL workspace files (generated images/videos/SVG/audio) to the renderer over
  * a privileged `app-file://` scheme. Raw `file://` is unreliable from a `file://` page
@@ -26,15 +28,10 @@ const {
 
 const SCHEME = "app-file";
 
-const MIME = {
-  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
-  ".gif": "image/gif", ".svg": "image/svg+xml", ".bmp": "image/bmp", ".avif": "image/avif",
-  ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".m4v": "video/mp4", ".mkv": "video/x-matroska",
-  ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".flac": "audio/flac",
-};
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".bmp", ".avif"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
+const MIME = Object.fromEntries([...fileKinds.EXTENSIONS.browserMedia].map((ext) => [ext, fileKinds.mimeOf(ext)]));
+const IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.browserImage]);
+const VIDEO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.browserVideo]);
+const AUDIO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.audio]);
 const MEDIA_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS]);
 const GENERATED_ASSETS_DIR = "generated-assets";
 const GENERATED_MEDIA_RECOVERY_WINDOW_MS = 6 * 60 * 60 * 1000;

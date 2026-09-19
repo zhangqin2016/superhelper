@@ -1,24 +1,11 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 
-const DOCUMENT_EXTENSIONS = new Set([
-  ".pdf",
-  ".docx",
-  ".xlsx",
-  ".pptx",
-  ".txt",
-  ".md",
-  ".csv",
-  ".json",
-  ".yaml",
-  ".yml",
-  ".xml",
-  ".html",
-  ".htm",
-  ".rtf",
-]);
+const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml, ...fileKinds.EXTENSIONS.pdf, ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".rtf"]);
 
 const DEFAULT_IGNORES = new Set([
   ".cache",

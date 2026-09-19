@@ -1,26 +1,17 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const path = require("node:path");
 
 const { PACK_SPECS } = require("./runtime-pack-specs");
 const { planCapabilityReadiness } = require("./capability-readiness");
 
-const OFFICE_EXTENSIONS = new Set([
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".odt",
-  ".ods",
-  ".odp",
-  ".rtf",
-]);
+const OFFICE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.office]);
 
-const PDF_EXTENSIONS = new Set([".pdf"]);
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".heic"]);
-const MEDIA_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".mov", ".mkv", ".avi", ".webm"]);
+const PDF_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pdf]);
+const IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.rasterImage]);
+const MEDIA_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.audio, ...fileKinds.EXTENSIONS.video]);
 
 const OFFICE_PATTERNS = [
   /(?:word|excel|powerpoint|ppt|docx|xlsx|office|spreadsheet|worksheet|presentation)/i,

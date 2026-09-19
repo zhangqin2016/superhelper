@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { marked } from "marked";
+import { EXTENSIONS as FILE_EXTENSIONS, alternation } from "../src/shared/file-kinds.mjs";
 
 const segmentsSource = fs
   .readFileSync(new URL("../src/renderer/modules/markdown-math-segments.js", import.meta.url), "utf8")
@@ -28,6 +29,7 @@ const source = fs
   .replace('import { markLongInlineCode } from "./markdown-inline-code.js";', "")
   .replace('import { CODE_COLLAPSE_MIN_LINES, countCodeLines, wireCodeCollapse } from "./markdown-code-collapse.js";', "")
   .replace('import { trimAutolinkedPunctuation } from "./markdown-link-trim.js";', "")
+  .replace('import { EXTENSIONS as FILE_EXTENSIONS, alternation } from "../../shared/file-kinds.mjs";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
@@ -48,6 +50,9 @@ const MERMAID_LANGUAGES = new Set([
 const context = {
   console,
   URL,
+  // the shared file-kind table, as the module would import it
+  FILE_EXTENSIONS,
+  alternation,
   // markdown.js patches streaming output in place via morphdom; stub it to the
   // observable result (childrenOnly → element HTML becomes the next HTML).
   morphdom(fromEl, toEl, opts) {

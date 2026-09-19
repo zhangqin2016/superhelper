@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
@@ -15,9 +17,7 @@ const ARCHIVE_SUFFIXES = [
   ".gz", ".bz2", ".xz", ".jar", ".war", ".ear", ".apk", ".ipa", ".epub",
   ".cbz", ".xpi", ".cab", ".iso", ".deb", ".rpm",
 ];
-const SEMANTIC_ZIP_CONTAINER_EXTENSIONS = new Set([
-  ".docx", ".xlsx", ".xlsm", ".pptx", ".odt", ".ods", ".odp",
-]);
+const SEMANTIC_ZIP_CONTAINER_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.semanticZipContainer]);
 
 function fail(error, detail = {}, sourcePath = "") {
   return {

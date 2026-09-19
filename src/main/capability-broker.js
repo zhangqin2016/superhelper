@@ -2,6 +2,7 @@
 
 const path = require("node:path");
 const { PROJECT_ROOT } = require("./config");
+const { fileFacts } = require("./attachment-facts");
 
 const BASE_CAPABILITIES = [
   {
@@ -174,20 +175,6 @@ function listSkillCapabilityGraph(opts = {}) {
   } catch {
     return [];
   }
-}
-
-function fileFacts(files = []) {
-  const names = (Array.isArray(files) ? files : [])
-    .map((file) => String(file?.name || file?.path || "").toLowerCase())
-    .filter(Boolean);
-  return {
-    pdf: names.some((name) => name.endsWith(".pdf")),
-    xlsx: names.some((name) => /\.(xlsx|xlsm|xls|csv|tsv)$/.test(name)),
-    pptx: names.some((name) => /\.(pptx|ppt)$/.test(name)),
-    docx: names.some((name) => /\.(docx|doc|rtf|odt)$/.test(name)),
-    image: names.some((name) => /\.(png|jpe?g|webp|bmp|tiff?|heic)$/.test(name)),
-    media: names.some((name) => /\.(mp4|mov|mkv|avi|webm|mp3|wav|m4a|aac|flac|ogg)$/.test(name)),
-  };
 }
 
 function queryFacts(opts = {}) {

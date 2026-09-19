@@ -1,21 +1,25 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 const { ipcMain } = require("electron");
 
+const iconFor = (group, icon) => Object.fromEntries([...fileKinds.EXTENSIONS[group]].map((ext) => [ext, icon]));
 const ICON_MAP = {
   ".md": "doc", ".txt": "doc", ".json": "json",
   ".js": "code", ".ts": "code", ".py": "code",
   ".html": "code", ".css": "code",
-  ".jpg": "img", ".jpeg": "img", ".png": "img", ".gif": "img", ".svg": "img", ".webp": "img",
-  ".xlsx": "sheet", ".xls": "sheet", ".csv": "sheet",
-  ".docx": "doc", ".doc": "doc", ".pdf": "pdf",
+  ...iconFor("browserImage", "img"),
+  ...iconFor("spreadsheet", "sheet"),
+  ...iconFor("wordDocument", "doc"),
+  ...iconFor("pdf", "pdf"),
   ".zip": "archive", ".tar": "archive", ".gz": "archive",
 };
 
-const { isTextFile } = require("./file-kinds");
+const { isTextFile } = require("./text-file-kinds");
 const { findDiffEntry, removeAcceptedDiff, revertTurnChanges, undoRevertTurn } = require("./diff-capture");
 const { resolveContainedPath } = require("./path-guard");
 const { inspectLocalMediaPath } = require("./local-media-protocol");

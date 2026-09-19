@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 /**
  * Manages file references for AI provider attachments.
  *
@@ -22,14 +24,9 @@ const {
 // File type detection
 // ---------------------------------------------------------------------------
 
-const IMAGE_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
-]);
+const IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.browserImage]);
 
-const DOCUMENT_EXTENSIONS = new Set([
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".csv", ".txt", ".md", ".rtf",
-]);
+const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.legacyOffice, ...fileKinds.EXTENSIONS.ooxml, ...fileKinds.EXTENSIONS.pdf, ".csv", ".txt", ".md", ".rtf"]);
 
 const CODE_EXTENSIONS = new Set([
   ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".rs",
@@ -48,16 +45,7 @@ const ALL_SUPPORTED = new Set([
 const COPY_INTO_STAGING_MAX_BYTES = 20 * 1024 * 1024;
 const MAX_PATHLESS_BUFFER_BYTES = 20 * 1024 * 1024;
 
-const MIME_TYPES = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".svg": "image/svg+xml",
-  ".bmp": "image/bmp",
-  ".pdf": "application/pdf",
-};
+const MIME_TYPES = Object.fromEntries([...fileKinds.EXTENSIONS.browserImage, ...fileKinds.EXTENSIONS.pdf].map((ext) => [ext, fileKinds.mimeOf(ext)]));
 
 const ARCHIVE_SUFFIXES = [
   ".tar.gz", ".tar.bz2", ".tar.xz",

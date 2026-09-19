@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -23,8 +25,8 @@ const TEXT_EXTENSIONS = new Set([
   ".py", ".java", ".go", ".rs", ".rb", ".php", ".css", ".scss", ".sql", ".sh",
 ]);
 
-const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"]);
+const VIDEO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.video]);
+const AUDIO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.audio]);
 
 function okBase(filePath, stat) {
   return {
@@ -68,7 +70,7 @@ function extensionKind(filePath) {
   if ([".xlsx", ".xlsm", ".xls"].includes(ext)) return "spreadsheet";
   if ([".docx", ".doc"].includes(ext)) return "document";
   if ([".pptx", ".ppt"].includes(ext)) return "presentation";
-  if ([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"].includes(ext)) return "image";
+  if (fileKinds.EXTENSIONS.rasterImage.has(ext)) return "image";
   if (VIDEO_EXTENSIONS.has(ext)) return "video";
   if (AUDIO_EXTENSIONS.has(ext)) return "audio";
   return "binary";

@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 /**
  * Typed result-block protocol — the single contract between what the agent
  * runtime PRODUCES and what the UI RENDERS.
@@ -38,9 +40,9 @@ const BLOCK_TYPES = Object.freeze({
 
 const KNOWN_TYPES = new Set(Object.values(BLOCK_TYPES));
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
+const IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.browserImage]);
+const VIDEO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.browserVideo]);
+const AUDIO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.audio]);
 
 function normalizeExtension(value = "") {
   const text = String(value || "").trim().toLowerCase();

@@ -1,10 +1,11 @@
+import { EXTENSIONS as FILE_EXTENSIONS, bare } from "../../shared/file-kinds.mjs";
 const TEXT_EXTENSIONS = new Set([
   "md", "markdown", "txt", "csv", "json", "yaml", "yml", "toml", "xml",
   "js", "ts", "jsx", "tsx", "py", "java", "go", "rs", "c", "cpp", "h", "hpp",
   "html", "htm", "css", "scss", "less", "sql", "sh", "bash", "swift", "kt", "scala",
   "lua", "r", "m", "rb", "php", "vue", "svelte",
 ]);
-const OFFICE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf"]);
+const OFFICE_EXTENSIONS = new Set([...bare(FILE_EXTENSIONS.legacyOffice), ...bare(FILE_EXTENSIONS.ooxml), "rtf"]);
 
 function extensionFor(file = {}) {
   const explicit = String(file.extension || "").trim().replace(/^\./, "").toLowerCase();

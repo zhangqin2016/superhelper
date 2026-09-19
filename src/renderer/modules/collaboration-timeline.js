@@ -3,6 +3,7 @@ import { openContextMenu } from "./context-menu.js";
 import { formatBytes } from "./format-bytes.js";
 import { replyDisplay } from "./collaboration-reply-view.js";
 import { avatarHue } from "./collaboration-social-ui.js";
+import { isBrowserImage } from "../../shared/file-kinds.mjs";
 
 function messageFingerprint(message) {
   const text = String(message.bodyText || "");
@@ -362,7 +363,7 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
         card.dataset.action = "download-attachment"; card.dataset.objectId = objectId;
         const name = typeof info.originalName === "string" && info.originalName ? info.originalName : "";
         const mimeType = typeof info.mimeType === "string" ? info.mimeType : "";
-        const isImage = mimeType.startsWith("image/") || /\.(?:png|jpe?g|webp|gif|bmp)$/i.test(name);
+        const isImage = mimeType.startsWith("image/") || isBrowserImage(name);
         let thumb = card.querySelector(".collaboration-attachment-thumb");
         if (!thumb) { thumb = document.createElement("span"); thumb.className = "collaboration-attachment-thumb"; card.append(thumb); }
         let text = card.querySelector(".collaboration-attachment-text");

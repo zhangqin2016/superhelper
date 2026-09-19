@@ -2,10 +2,11 @@ import {
   generatedMediaFromPayload,
   parseToolResult,
 } from "./tool-payload-renderer.js";
+import { EXTENSIONS as FILE_EXTENSIONS, bare } from "../../shared/file-kinds.mjs";
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
+const IMAGE_EXTENSIONS = new Set([...FILE_EXTENSIONS.browserImage]);
+const VIDEO_EXTENSIONS = new Set([...FILE_EXTENSIONS.browserVideo]);
+const AUDIO_EXTENSIONS = new Set([...FILE_EXTENSIONS.audio]);
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 
 export function stripGeneratedMediaMarkers(text = "") {

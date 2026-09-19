@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 /**
  * Pre-send enrichment: turn images into recognized text (vision) and documents
  * into extracted text (document) BEFORE the message reaches the engine. Factored
@@ -16,8 +18,8 @@
 const path = require("node:path");
 const { resolveLiveFilePath } = require("./live-file-source");
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
-const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".xlsx", ".pptx", ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".rtf"]);
+const IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.visionRaster]);
+const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml, ...fileKinds.EXTENSIONS.pdf, ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".rtf"]);
 
 function isVisionRasterFile(file) {
   if (!file) return false;

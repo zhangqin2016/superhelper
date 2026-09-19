@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 /**
  * Vision translation — enriches image files with task-aware text evidence via DashScope.
  * The send pipeline sends this structured evidence to the main model. Original images
@@ -25,10 +27,9 @@ const DEFAULT_MAX_EDGE = 1800;
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_JPEG_QUALITY = 88;
 
-const MIME_MAP = {
-  jpg: "jpeg", jpeg: "jpeg", png: "png",
-  gif: "gif", webp: "webp", bmp: "bmp",
-};
+// What the bridge can send today, with the data-URL subtype for each — one
+// table with everything else that asks "is this an image".
+const MIME_MAP = Object.fromEntries([...fileKinds.EXTENSIONS.visionRaster].map((ext) => [ext.slice(1), fileKinds.mimeOf(ext).replace(/^image\//, "")]));
 
 function isVisionInputFile(file) {
   file = withLiveFilePath(file);

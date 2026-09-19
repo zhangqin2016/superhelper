@@ -1,22 +1,12 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 
 const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
-const DOCUMENT_RECOVERY_EXTENSIONS = new Set([
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".odt",
-  ".ods",
-  ".odp",
-  ".rtf",
-]);
+const DOCUMENT_RECOVERY_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument]);
 
 function formatBytes(bytes) {
   const value = Number(bytes || 0);

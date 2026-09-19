@@ -1,4 +1,6 @@
 "use strict";
+
+const fileKinds = require("../../shared/file-kinds.mjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const { resolveLiveFilePath } = require("../live-file-source");
@@ -12,20 +14,8 @@ const { isArchiveFilePath } = require("../mcp/archive-intelligence");
 const { escapeLocalPathText } = require("../safe-local-path-text");
 const { applyCharacterContextToBody, characterApplicationOf, characterBuildFailureApplication } = require("./opencode-character-context");
 const FILE_MIME = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".bmp": "image/bmp",
-  ".svg": "image/svg+xml",
-  ".pdf": "application/pdf",
-  ".doc": "application/msword",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xls": "application/vnd.ms-excel",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ...Object.fromEntries([...fileKinds.EXTENSIONS.browserImage, ...fileKinds.EXTENSIONS.pdf, ...fileKinds.EXTENSIONS.ooxml, ...fileKinds.EXTENSIONS.legacyOffice]
+    .map((ext) => [ext, fileKinds.mimeOf(ext)])),
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".json": "application/json",
@@ -58,20 +48,8 @@ const STRUCTURED_TEXT_EXTENSIONS = new Set([
 function isInlineTextExtension(ext) {
   return TEXT_ATTACHMENT_EXTENSIONS.has(ext) || STRUCTURED_TEXT_EXTENSIONS.has(ext);
 }
-const RASTER_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
-const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".odt",
-  ".ods",
-  ".odp",
-  ".rtf",
-]);
+const RASTER_IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.visionRaster]);
+const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument]);
 
 function truncateAttachmentText(text, limit = DEFAULT_MAX_TEXT_ATTACHMENT_CHARS) {
   const value = String(text || "");

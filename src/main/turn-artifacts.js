@@ -1,5 +1,7 @@
 "use strict";
 
+const fileKinds = require("../shared/file-kinds.mjs");
+
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -8,54 +10,28 @@ const { resolveToolSemantics } = require("./tool-semantics");
 const { fileURLToPath } = require("node:url");
 const { registerArtifactPath } = require("./artifact-registry");
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
+const IMAGE_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.browserImage]);
+const VIDEO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.browserVideo]);
+const AUDIO_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.audio]);
 const FILE_EXTENSIONS = new Set([
   ...IMAGE_EXTENSIONS,
   ...VIDEO_EXTENSIONS,
   ...AUDIO_EXTENSIONS,
-  ".pdf",
+  ...fileKinds.EXTENSIONS.pdf,
   ".md",
   ".markdown",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
+  ...fileKinds.EXTENSIONS.ooxml,
+  ...fileKinds.EXTENSIONS.legacyOffice,
   ".csv",
   ".html",
   ".htm",
 ]);
 
 const MIME_BY_EXT = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp",
-  ".gif": "image/gif",
-  ".svg": "image/svg+xml",
-  ".mp4": "video/mp4",
-  ".webm": "video/webm",
-  ".mov": "video/quicktime",
-  ".m4v": "video/mp4",
-  ".mkv": "video/x-matroska",
-  ".mp3": "audio/mpeg",
-  ".wav": "audio/wav",
-  ".m4a": "audio/mp4",
-  ".aac": "audio/aac",
-  ".ogg": "audio/ogg",
-  ".flac": "audio/flac",
-  ".pdf": "application/pdf",
+  ...Object.fromEntries([...fileKinds.EXTENSIONS.browserMedia, ...fileKinds.EXTENSIONS.pdf, ...fileKinds.EXTENSIONS.ooxml, ...fileKinds.EXTENSIONS.legacyOffice]
+    .map((ext) => [ext, fileKinds.mimeOf(ext)])),
   ".md": "text/markdown",
   ".markdown": "text/markdown",
-  ".doc": "application/msword",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xls": "application/vnd.ms-excel",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".csv": "text/csv",
   ".html": "text/html",
   ".htm": "text/html",
@@ -66,7 +42,7 @@ const MIME_BY_EXT = {
 // The previous `(?:…+[\\/])*…+?` form had catastrophic backtracking that made
 // scanning large records take seconds per record.
 const PATH_LIKE_RE =
-  /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[^\s"'`<>|]*?\.(?:png|jpe?g|webp|gif|svg|mp4|webm|mov|m4v|mkv|mp3|wav|m4a|aac|ogg|flac|pdf|md|markdown|docx?|xlsx?|pptx?|csv|html?))/gi;
+  new RegExp(String.raw`((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[^\s"'\`<>|]*?\.(?:${fileKinds.alternation(fileKinds.EXTENSIONS.browserMedia)}|pdf|md|markdown|docx?|xlsx?|pptx?|csv|html?))`, "gi");
 
 // Bounds so artifact derivation stays cheap even over large/many records:
 // a single huge tool result (e.g. a file dump) is only scanned up to a cap, and
