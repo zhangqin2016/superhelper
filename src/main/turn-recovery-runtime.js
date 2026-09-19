@@ -204,6 +204,7 @@ function createTurnRecoveryRuntime(options = {}) {
           ? rescue.sourceCoverageHintFor(modelRecipes(), {
               observed: failure?.sourceCoverage?.observed,
               total: failure?.sourceCoverage?.total,
+              truncated: failure?.sourceCoverage?.truncated === true,
             })
           : continueInstead
             ? rescue.continuationHintFor(modelRecipes())
@@ -222,6 +223,7 @@ function createTurnRecoveryRuntime(options = {}) {
         ? rescue.sourceCoverageHintFor(recipes, {
             observed: failure?.sourceCoverage?.observed,
             total: failure?.sourceCoverage?.total,
+            truncated: failure?.sourceCoverage?.truncated === true,
           })
         : continueInstead
         ? rescue.continuationHintFor(recipes)

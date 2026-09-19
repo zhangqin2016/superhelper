@@ -969,4 +969,71 @@ delete process.env.LILY_RESCUE_DELAY_MS;
   assert(startRetry.delayMs >= 1000, "the retry waits for the transient start failure to clear");
 }
 
+// --- the coverage round, end to end: a partially-read attachment is read on,
+// in the SAME session, with the first pass's answer kept. Until now this round
+// was proven piecewise (decision, hint, dispatch mode); twice a green unit test
+// hid that it could never fire. This drives the real orchestrator, finalizer,
+// rescue table and recovery runtime with only the engine faked, and asserts the
+// one effect that matters: the engine receives a second prompt that says
+// "read the REMAINDER", carrying what was already read.
+// [gate: attachment-content-grounding]
+{
+  const report = path.join(tempUserData, "report.pdf");
+  fs.writeFileSync(report, "%PDF-1.4 stub");
+  const payloadsBefore = runner.sentPayloads.length;
+  const turn = await ctx.turnOrchestrator.sendUserMessage("s1", "提取这份报告的全部内容", [
+    { path: report, name: "report.pdf" },
+  ], { spawnEngine: false, skipPreflight: true, skipDocument: true, skipVision: true });
+  assert.equal(turn.ok, true, `extraction turn must start: ${JSON.stringify(turn)}`);
+  assert.equal(runner.sentPayloads.length, payloadsBefore + 1);
+  const state = ctx.turnOrchestrator._state("s1");
+  assert.equal(state.taskContract?.taskType, "content_extraction", "an attached report with '提取' is an extraction task");
+  assert.equal(state.evidenceLedger.sourceContent.length, 0, "with the preflight skipped, nothing is recorded yet");
+  // The document preflight is skipped in this harness; record EXACTLY what it
+  // records in the app when the extractor cuts one long PDF at its budget:
+  // counts are in files (1 of 1), and the shortfall is the truncation flag.
+  state.evidenceLedger.recordDocumentExtraction({
+    documents: [{ id: "report", label: "report.pdf", charLength: 4000 }],
+    chunks: [],
+    status: "partial",
+    sourceCount: 1,
+    observedCount: 1,
+    coverageLimited: true,
+    complete: false,
+  });
+  flushEvents();
+  const firstAnswer = "报告前 12 页的要点如下：一、营收同比增长 8%；二、毛利率 31%。";
+  ctx.turnOrchestrator.ingest("s1", [{ type: "assistant.delta", payload: { text: firstAnswer } }]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: firstAnswer });
+  await settle();
+  const coverageEvents = flushEvents();
+  const completed = coverageEvents.find((event) => event.type === "turn.completed");
+  assert(completed, `the first pass completes with its answer: ${coverageEvents.map((e) => e.type).join(",")}`);
+  assert.match(String(completed.payload.assistant || ""), /营收同比增长 8%/, "what was read is delivered, not erased");
+  assert.match(String(completed.payload.assistant || ""), /只解析了附件的开头部分（内容被截断）/, "and says honestly which shortfall it was");
+  assert.doesNotMatch(String(completed.payload.assistant || ""), /\d+\/\d+/, "no file count masquerading as a page count");
+  const coverageRetry = coverageEvents.find((event) => event.type === "turn.self_heal_retry");
+  assert.equal(coverageRetry?.payload?.kind, "source_coverage_retry",
+    `the coverage round fires: ${JSON.stringify(coverageEvents.map((e) => [e.type, e.payload?.kind || e.payload?.errorCode || ""]))}`);
+  assert.equal(runner.sentPayloads.length, payloadsBefore + 2, "and the engine receives exactly one continuation");
+  const continuation = JSON.stringify(runner.sentPayloads.at(-1));
+  // The harness's model recipe carries no instruction language, so the hint is
+  // in English; the app picks Chinese from the recipe. Either says the same.
+  assert.match(continuation, /附件未读完|attachment not fully read/, "the continuation says the attachment was not fully read");
+  assert.match(continuation, /被截断|cut short/, "naming the shortfall the model has to act on");
+  assert.doesNotMatch(continuation, /[（(]1\/1/, "and no 1/1 that reads as fully read");
+  assert.match(continuation, /剩余|REMAINDER/, "and asks for the remainder, not a re-read");
+  const engineText = String(runner.sentPayloads.at(-1)?.text || "");
+  assert.match(engineText, /<lily_internal_turn kind="source_coverage_retry">/, "marked as the platform's own round, not a user request");
+  assert.equal(messages.filter((m) => m.role === "user" && /提取这份报告/.test(m.content)).length, 1, "the transcript gains no second user message");
+  const secondAnswer = "完整报告要点：营收增长 8%，毛利率 31%，第 13-30 页为附录与审计意见。";
+  ctx.turnOrchestrator.ingest("s1", [{ type: "assistant.delta", payload: { text: secondAnswer } }]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: secondAnswer });
+  await settle();
+  const secondEvents = flushEvents();
+  assert.equal(secondEvents.filter((event) => event.type === "turn.self_heal_retry").length, 0, "one round, not a loop");
+}
+
 console.log("tool-call-rescue: ok");

@@ -297,7 +297,8 @@
         "scripts/test-paste-keeps-text.mjs",
         "scripts/test-document-image-recognition.mjs",
         "scripts/test-document-image-vision.mjs",
-        "scripts/test-source-coverage-recovery.mjs"
+        "scripts/test-source-coverage-recovery.mjs",
+        "scripts/test-tool-call-rescue.mjs"
       ]
     },
     {
@@ -1383,6 +1384,19 @@
         "scripts/test-runner-live-config.mjs",
         "scripts/test-turn-orchestrator.mjs",
         "scripts/test-opencode-agent-session.mjs"
+      ]
+    },
+    {
+      "id": "chat-completion-reply-seam",
+      "protects": "Every chat-completion reply is read through one module: the assistant text (string or content parts), reasoning, tool calls, finish reason, and whether the reply is a completion at all. A probe judges the reply, never the HTTP status, so a gateway that answers 200 with an HTML error page or an error envelope is not mistaken for a model that read the image.",
+      "baseline": "Every consumer reads exactly what it read before, in every shape it handled before, plus the shapes it mishandled (content-part arrays in the compatibility probe). The vision probe still returns true for a 200 completion and false for a 4xx that names images or for a network failure; the only change is that a 200 without a completion is now false instead of true.",
+      "failureFallback": "A reply that cannot be read yields '' / [] / false, never a throw; callers keep their own empty-handling. If the seam module failed to load the callers would fail at require time in tests, not silently at runtime. A source-scan rule forbids reading choices[0] by hand anywhere else, so a new caller cannot regress to a status-code verdict unnoticed.",
+      "tests": [
+        "scripts/test-chat-completion-reply.mjs",
+        "scripts/test-vision-translator.mjs",
+        "scripts/test-model-vision-capability.mjs",
+        "scripts/test-model-compatibility-probe.mjs",
+        "scripts/test-evidence-entailment-judge.mjs"
       ]
     }
   ]

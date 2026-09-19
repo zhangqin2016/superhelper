@@ -170,10 +170,14 @@ const RESCUE_STRATEGIES = Object.freeze({
   // An attachment the model only got part-way through. Same route as
   // DOCUMENT_DELIVERY_UNVERIFIED — one follow-up round — because the shortfall
   // is recoverable by reading, not by rewording. See source-coverage-recovery.js.
+  // No preflight: the round continues on the runner that answered a moment ago
+  // (proven alive) and sends no files, so there is nothing for the vision or
+  // document preflight to do — and a managed-config refresh it does not need
+  // was the one step that could still fail it (SERVICE_MODEL_CONFIG_UNAVAILABLE).
   SOURCE_COVERAGE_INCOMPLETE: Object.freeze({
     kind: "source_coverage_retry",
     hint: "",
-    preflight: true,
+    preflight: false,
     enabled: () => process.env.LILY_SOURCE_COVERAGE_RETRY !== "0",
   }),
   EMPTY_ASSISTANT_COMPLETION: Object.freeze({

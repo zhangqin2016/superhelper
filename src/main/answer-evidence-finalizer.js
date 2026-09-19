@@ -159,11 +159,18 @@ function partialSourceScopeNote(evidenceSummary = null, userText = "") {
   const coverage = evidenceSummary?.sourceContentCoverage || {};
   const seen = Number(coverage.observedCount) || 0;
   const total = Number(coverage.sourceCount) || 0;
-  const span = seen && total && total >= seen ? `${seen}/${total}` : "";
+  // The counts are in files: a span is only meaningful when files went unopened.
+  // A single file cut at the extractor's budget is 1/1 — printing that would
+  // claim it was fully read while explaining that it was not.
+  const span = seen && total > seen ? `${seen}/${total}` : "";
+  const truncated = coverage.truncated === true;
+  const scopeZh = span ? `附件的部分内容（${span}）` : truncated ? "附件的开头部分（内容被截断）" : "附件的部分内容";
+  const scopeEn = span ? `part of the attachment (${span})` : truncated ? "the beginning of the attachment (the content was cut short)" : "part of the attachment";
+  const scopeAr = span ? `جزء فقط من المرفق (${span})` : truncated ? "بداية المرفق فقط (تم اقتطاع المحتوى)" : "جزء فقط من المرفق";
   return {
-    zh: `\n\n备注：本次只解析了附件的部分内容${span ? `（${span}）` : ""}，以上结论仅覆盖已读到的部分，未读部分未作推测。`,
-    ar: `\n\nملاحظة: تمت قراءة جزء فقط من المرفق${span ? ` (${span})` : ""}؛ ما سبق يغطي الجزء المقروء فقط ولم يُخمَّن الباقي (partial read).`,
-    en: `\n\nNote: only part of the attachment was read${span ? ` (${span})` : ""}; the above covers only the observed portion and nothing beyond it was guessed.`,
+    zh: `\n\n备注：本次只解析了${scopeZh}，以上结论仅覆盖已读到的部分，未读部分未作推测。`,
+    ar: `\n\nملاحظة: تمت قراءة ${scopeAr}؛ ما سبق يغطي الجزء المقروء فقط ولم يُخمَّن الباقي (partial read).`,
+    en: `\n\nNote: only ${scopeEn} was read; the above covers only the observed portion and nothing beyond it was guessed.`,
   }[language];
 }
 
@@ -381,7 +388,9 @@ function evaluateAnswerEvidence({
       triggerVerifyRetry: externalFactRetry || legacyOptInRetry,
       triggerDocumentVerifyRetry: false,
       triggerSourceCoverageRetry: sourceCoverageRetry.ok === true,
-      sourceCoverage: sourceCoverageRetry.ok ? { observed: sourceCoverageRetry.observed, total: sourceCoverageRetry.total } : null,
+      sourceCoverage: sourceCoverageRetry.ok
+        ? { observed: sourceCoverageRetry.observed, total: sourceCoverageRetry.total, truncated: sourceCoverageRetry.truncated === true }
+        : null,
       evidenceText,
     };
   } catch (error) {

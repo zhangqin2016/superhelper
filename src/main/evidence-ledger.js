@@ -247,8 +247,17 @@ class EvidenceLedger {
     const documentCount = this.documents.reduce((count, event) => count + event.documents.length, 0);
     const documentChunkCount = this.documents.reduce((count, event) => count + Number(event.chunkCount || 0), 0);
     const successfulSourceContent = this.sourceContent.filter((event) => event.success);
-    const sourceCount = this.sourceContent.reduce((count, event) => count + event.sourceCount, 0);
-    const observedSourceCount = this.sourceContent.reduce((count, event) => count + event.observedCount, 0);
+    // "available" is context carried over from an earlier turn, not a source
+    // with parts left to read; counting it made a fully-read new attachment
+    // report "1/2" and a truncated one "1/2" for the wrong reason.
+    const countable = this.sourceContent.filter((event) => event.status !== "available");
+    const sourceCount = countable.reduce((count, event) => count + event.sourceCount, 0);
+    const observedSourceCount = countable.reduce((count, event) => count + event.observedCount, 0);
+    // Counts are in FILES. A single file the extractor cut at its budget is
+    // 1/1 by count and still has most of itself unread — that shortfall is a
+    // separate fact, or the coverage round can never fire for the one case it
+    // was built for (a long PDF read to its first pages).
+    const truncated = successfulSourceContent.some((event) => event.coverageLimited);
     const hasUnavailableSource = this.sourceContent.some((event) => !event.success);
     const hasAvailableOnlySource = successfulSourceContent.some((event) => event.status === "available");
     const sourceContentStatus = !this.sourceContent.length
@@ -314,6 +323,7 @@ class EvidenceLedger {
         status: sourceContentStatus,
         sourceCount,
         observedCount: observedSourceCount,
+        truncated,
         complete: sourceContentStatus === "complete",
       },
       sourceContent: this.sourceContent.slice(-20),

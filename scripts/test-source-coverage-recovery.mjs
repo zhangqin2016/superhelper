@@ -46,6 +46,25 @@ check("the decision uses the structured counts, never the answer's wording", () 
   }
 });
 
+check("one long file cut at the extractor's budget has more to read, even though it counts 1/1", () => {
+  // The real preflight counts in FILES: a 30-page PDF read to page 12 is
+  // sourceCount 1, observedCount 1, coverageLimited true. By count alone the
+  // round could never fire for the one case it was built for.
+  const truncatedSummary = { hasSourceContentEvidence: true, sourceContentCoverage: { status: "partial", observedCount: 1, sourceCount: 1, truncated: true } };
+  const go = recovery.shouldReadRemainingSources({ taskContract: { taskType: "content_extraction" }, assistant: "前 12 页的要点。", evidenceSummary: truncatedSummary });
+  assert.equal(go.ok, true, "a truncated source is unfinished");
+  assert.equal(go.reason, "truncated_source");
+  assert.equal(go.truncated, true);
+  const hint = recovery.buildSourceCoverageHint({ language: "zh", observed: 1, total: 1, truncated: true });
+  assert.ok(!hint.includes("1/1"), `no misleading count for a single file: ${hint}`);
+  assert.match(hint, /被截断|开头部分/, "it names the shortfall the model has to act on");
+  const hintEn = recovery.buildSourceCoverageHint({ language: "en", observed: 1, total: 1, truncated: true });
+  assert.match(hintEn, /cut short/);
+  // A source that merely counts complete and is not truncated is still refused.
+  const done = recovery.shouldReadRemainingSources({ taskContract: { taskType: "content_extraction" }, assistant: "x", evidenceSummary: { sourceContentCoverage: { status: "partial", observedCount: 1, sourceCount: 1 } } });
+  assert.equal(done.reason, "nothing_left_to_read");
+});
+
 check("a retry costs the user a round, so it is refused whenever it cannot help", () => {
   const base = {
     taskContract: { taskType: "content_extraction" },
@@ -130,7 +149,7 @@ check("the finalizer asks for the round and still delivers an answer either way"
   assert.match(result.assistant, /只解析了附件的部分内容/, "with the scope stated");
   assert.equal(typeof result.triggerSourceCoverageRetry, "boolean", "and the trigger is always reported");
   if (result.triggerSourceCoverageRetry) {
-    assert.deepEqual(result.sourceCoverage, { observed: 12, total: 40 }, "with the counts the instruction needs");
+    assert.deepEqual(result.sourceCoverage, { observed: 12, total: 40, truncated: false }, "with the facts the instruction needs");
   }
 });
 
