@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../../shared/engine-notices.mjs");
+
 /**
  * Durable, in-conversation record of an agent binding change.
  *
@@ -125,7 +127,7 @@ function commitAgentBindingNotice(ctx, sessionId, input = {}) {
     if (typeof ctx?.eventBus?.emit === "function") {
       ctx.eventBus.emit(sessionId, {
         type: "engine.notice", turnId: null, source: "agent_binding",
-        payload: { notice: { code: "agentBindingChanged", level: "info", panel: false }, committedMessage: message },
+        payload: { notice: engineNotice("agentBindingChanged"), committedMessage: message },
       });
     }
     return { ok: true, message };

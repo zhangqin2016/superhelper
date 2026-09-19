@@ -1,53 +1,14 @@
 "use strict";
 
-/** Notices that must never appear in the chat process panel (CLI proxy mode). */
-const PANEL_HIDDEN_CODES = new Set([
-  "sentToCli",
-  "cliOutputReceived",
-  "thinkingProgress",
-  "rateLimit",
-  "apiRetry",
-  "shellDetached",
-  "sessionReady",
-  "orphanRuntimeEvent",
-  "controlRequest",
-  "unknownEvent",
-  "toolSummary",
-]);
+// The notice catalogue and its visibility policy live in
+// src/shared/engine-notices.mjs, shared with the renderer — one policy, not
+// two kept in sync by hand. Re-exported name by name so ESM importers of this
+// CommonJS module still see named exports.
+const shared = require("../shared/engine-notices.mjs");
 
-const LIVE_PROGRESS_PANEL_CODES = new Set([
-  "compactBoundary",
-  "waitingForFirstResponse",
-  "longWait",
-  "taskProgress",
-  "taskCompleted",
-  "subagentSlow",
-  "subagentVerySlow",
-  "subagentCompleted",
-  "toolProgress",
-  "workProgress",
-  "shellLongRunning",
-  "documentPreparing",
-]);
-
-function noticeVisibleInPanel(notice) {
-  if (!notice || typeof notice !== "object") return false;
-  if (notice.panel === false) return false;
-  const code = String(notice.code || "");
-  if (PANEL_HIDDEN_CODES.has(code)) return false;
-  if (notice.level === "progress" && !LIVE_PROGRESS_PANEL_CODES.has(code)) return false;
-  return notice.panel === true || notice.level === "warning";
-}
-
-function sanitizeNoticeForIngest(notice) {
-  if (!notice || typeof notice !== "object") return notice;
-  if (noticeVisibleInPanel(notice)) return notice;
-  return { ...notice, panel: false };
-}
-
-module.exports = {
-  LIVE_PROGRESS_PANEL_CODES,
-  PANEL_HIDDEN_CODES,
-  noticeVisibleInPanel,
-  sanitizeNoticeForIngest,
-};
+exports.NOTICE_CODES = shared.NOTICE_CODES;
+exports.engineNotice = shared.engineNotice;
+exports.LIVE_PROGRESS_PANEL_CODES = shared.LIVE_PROGRESS_PANEL_CODES;
+exports.PANEL_HIDDEN_CODES = shared.PANEL_HIDDEN_CODES;
+exports.noticeVisibleInPanel = shared.noticeVisibleInPanel;
+exports.sanitizeNoticeForIngest = shared.sanitizeNoticeForIngest;

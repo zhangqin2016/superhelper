@@ -1,5 +1,6 @@
 import { appendTimelineNotice } from "./turn-notice-timeline.js";
 import { closeStreamingBlocks } from "./turn-streaming-blocks.js";
+import { engineNotice } from "../../shared/engine-notices.mjs";
 
 // Small non-terminal turn-lifecycle projections for the runtime store.
 
@@ -18,10 +19,7 @@ export function applyTurnStarted(runtime, live) {
 export function applyTurnPaused(runtime, live, event) {
   live.phase = "paused";
   closeStreamingBlocks(live, event.ts || Date.now());
-  appendTimelineNotice(live, {
-    code: "turnPaused",
-    level: "info",
-  }, event.ts || Date.now());
+  appendTimelineNotice(live, engineNotice("turnPaused"), event.ts || Date.now());
   runtime.phase = "idle";
   runtime.turnId = null;
   runtime._turnStartedAt = 0;
@@ -29,9 +27,5 @@ export function applyTurnPaused(runtime, live, event) {
 
 // turn.steered: the user injected a message into the CURRENT turn.
 export function applyTurnSteered(live, event) {
-  appendTimelineNotice(live, {
-    code: "turnSteered",
-    level: "info",
-    detail: event.payload?.text ? String(event.payload.text).trim() : "",
-  }, event.ts || Date.now());
+  appendTimelineNotice(live, engineNotice("turnSteered", { detail: event.payload?.text ? String(event.payload.text).trim() : "" }), event.ts || Date.now());
 }

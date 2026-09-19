@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const crypto = require("node:crypto");
 const { getLogger } = require("./logger");
 const {
@@ -234,14 +236,11 @@ function createParentClosureRecoveryRuntime(options = {}) {
             : phase === "dispatched"
               ? "已在原会话中继续执行，并将完成剩余验证"
               : "自动续跑未启动，本轮将保留失败原因并等待用户处理");
-          emitNotice(sessionId, {
-            code: "parentTaskClosureRecovery",
+          emitNotice(sessionId, engineNotice("parentTaskClosureRecovery", {
             level: phase === "unavailable" ? "warning" : "progress",
-            panel: true,
-            replace: true,
-            replacesCode: "parentTaskClosureRecovery",
+            replaces: "parentTaskClosureRecovery",
             detail,
-          });
+          }));
         }
       };
       const rawObjective = String(source.objective || source.state?.enginePayload?.rawText || "").trim();
@@ -350,7 +349,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
     const stillCurrent = () => !disposed && generation === (generations.get(sessionId) || 0);
     const notice = (level, detail) => {
       if (typeof emitNotice !== "function") return;
-      emitNotice(sessionId, { code: "modelRecoveryWatch", level, panel: true, replace: true, replacesCode: "modelRecoveryWatch", detail });
+      emitNotice(sessionId, engineNotice("modelRecoveryWatch", { level, replaces: "modelRecoveryWatch", detail }));
     };
     const watch = startModelRecoveryWatch({
       key: modelWatchKey(sessionId),

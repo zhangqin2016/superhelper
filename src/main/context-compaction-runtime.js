@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const {
   decideBackgroundCompaction,
   decidePreTurnCompaction,
@@ -23,15 +25,7 @@ function compactOptions(model, reason) {
 
 function failureNotice(detail = "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.") {
   return {
-    notice: {
-      code: "compactFailed",
-      level: "info",
-      panel: true,
-      done: true,
-      replace: true,
-      replacesCode: "compactBoundary",
-      detail,
-    },
+    notice: engineNotice("compactFailed", { replaces: "compactBoundary", detail }),
   };
 }
 
@@ -120,13 +114,7 @@ function createContextCompactionRuntime(options = {}) {
       if (decision.action !== "compact") return event;
 
       emit(sessionId, "engine.notice", {
-        notice: {
-          code: "compactBoundary",
-          level: "progress",
-          panel: true,
-          done: false,
-          detail: "Preparing to compact conversation context before this turn.",
-        },
+        notice: engineNotice("compactBoundary", { detail: "Preparing to compact conversation context before this turn." }),
       }, { turnId: null });
       const compacted = await runner.compactContext(compactOptions(model, decision.reason));
       if (!compacted) {
@@ -135,14 +123,7 @@ function createContextCompactionRuntime(options = {}) {
         return { ...event, compacted: false };
       }
       emit(sessionId, "engine.notice", {
-        notice: {
-          code: "compactBoundary",
-          level: "info",
-          panel: true,
-          done: true,
-          replace: true,
-          detail: "Conversation context was compacted before this turn.",
-        },
+        notice: engineNotice("compactBoundary", { level: "info", done: true, detail: "Conversation context was compacted before this turn." }),
       }, { turnId: null });
       return { ...event, compacted: true };
     } catch (err) {
@@ -201,13 +182,7 @@ function createContextCompactionRuntime(options = {}) {
       if (decision.action !== "compact") return;
 
       emit(sessionId, "engine.notice", {
-        notice: {
-          code: "compactBoundary",
-          level: "progress",
-          panel: true,
-          done: false,
-          detail: "Preparing to compact conversation context.",
-        },
+        notice: engineNotice("compactBoundary", { detail: "Preparing to compact conversation context." }),
       }, { turnId: null });
       const compacted = await runner.compactContext(compactOptions(model, decision.reason));
       if (!compacted) {

@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const { shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const { scaffoldStreamGate } = require("./status-scaffold");
 const {
@@ -356,7 +358,7 @@ function createTurnRuntimeEventRouter(options = {}) {
               type: "engine.stderr",
               turnId: state.turnId,
               source: draft.source || "runtime",
-              payload: { notice: { code: "stderr", level: "warning", message: text, panel: true, done: false } },
+              payload: { notice: engineNotice("stderr", { message: text }) },
               ts: now(),
             });
           }
@@ -404,11 +406,7 @@ function createTurnRuntimeEventRouter(options = {}) {
         default:
           if (TERMINAL_TYPES.has(type)) break;
           emit(sessionId, "engine.warning", {
-            notice: {
-              code: "unknownRuntimeDraft",
-              level: "warning",
-              detail: `Unhandled runtime draft ${type}`,
-            },
+            notice: engineNotice("unknownRuntimeDraft", { detail: `Unhandled runtime draft ${type}` }),
           });
       }
     } catch (err) {

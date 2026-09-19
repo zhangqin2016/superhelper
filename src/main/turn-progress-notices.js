@@ -1,15 +1,13 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 function emitRuntimePackProgress(orchestrator, sessionId, progress = {}) {
   const totalBytes = Number(progress.totalBytes || 0);
   const writtenBytes = Number(progress.writtenBytes || 0);
   const detail = String(progress.detail || progress.phase || "Preparing task capability").trim();
-  orchestrator._emitEngineNotice(sessionId, {
-    code: "workProgress",
-    level: "progress",
-    panel: true,
-    replace: true,
-    replacesCode: "runtimePackPreparing",
+  orchestrator._emitEngineNotice(sessionId, engineNotice("workProgress", {
+    replaces: "runtimePackPreparing",
     detail,
     progress: {
       domain: "runtime-pack",
@@ -18,7 +16,7 @@ function emitRuntimePackProgress(orchestrator, sessionId, progress = {}) {
       writtenBytes,
       totalBytes,
     },
-  });
+  }));
 }
 
 function emitLegalKnowledgeProgress(orchestrator, sessionId, progress = {}) {
@@ -30,15 +28,11 @@ function emitLegalKnowledgeProgress(orchestrator, sessionId, progress = {}) {
     : phase === "verifying" ? "正在校验法律知识库"
       : phase === "indexing" ? "正在建立本地检索索引"
         : phase === "installing" ? "正在安装法律知识库" : "正在加载法律知识库";
-  orchestrator._emitEngineNotice(sessionId, {
-    code: "legalKnowledgePackProgress",
-    level: "progress",
-    panel: true,
-    replace: true,
-    replacesCode: "legalKnowledgePackProgress",
+  orchestrator._emitEngineNotice(sessionId, engineNotice("legalKnowledgePackProgress", {
+    replaces: "legalKnowledgePackProgress",
     detail,
     progress: { domain: "legal-kb", phase, id: "legal-cn-enterprise", writtenBytes, totalBytes },
-  });
+  }));
 }
 
 module.exports = { emitRuntimePackProgress, emitLegalKnowledgeProgress };

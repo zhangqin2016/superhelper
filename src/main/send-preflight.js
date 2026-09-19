@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const fileKinds = require("../shared/file-kinds.mjs");
 
 /**
@@ -136,11 +138,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
   try {
     visionAdvice = require("./vision-model-advice").buildVisionFallbackAdvice({ sessionId });
   } catch { /* advice is optional; never block a turn on it */ }
-  notify({
-    code: "visionPreparing",
-    level: "progress",
-    panel: true,
-    replace: true,
+  notify(engineNotice("visionPreparing", {
     detail: [
       activeModelLabel
         ? `当前模型（${activeModelLabel}）不能直接读图，正在用视觉桥把 ${visionFiles.length} 张图片转成文字`
@@ -148,7 +146,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
       "这会多花一些时间，图中未被描述到的细节可能丢失",
       visionAdvice,
     ].filter(Boolean).join(" · "),
-  });
+  }));
 
   const result = await translateImages(files, {
     userText: text,
@@ -158,12 +156,8 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
       const label = String(event.label || "").trim();
       const error = String(event.error || "").trim();
       const suffix = total > 0 ? `${processed}/${total}` : "";
-      notify({
-        code: "workProgress",
-        level: "progress",
-        panel: true,
-        replace: true,
-        replacesCode: "visionPreparing",
+      notify(engineNotice("workProgress", {
+        replaces: "visionPreparing",
         detail: [label, suffix, error ? `· ${error}` : ""].filter(Boolean).join(" "),
         progress: {
           domain: "image",
@@ -173,7 +167,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
           label,
           error,
         },
-      });
+      }));
     },
   });
   if (result === null) {
@@ -182,15 +176,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
     // main model's gateway error and was told to re-probe the wrong service.
     // The renderer already shows notice.detail — it was simply never filled.
     const nullDetail = "No readable local image file was available to the vision bridge.";
-    notify({
-      code: "visionSkipped",
-      level: "warning",
-      panel: true,
-      replace: true,
-      replacesCode: "visionPreparing",
-      done: true,
-      detail: nullDetail,
-    });
+    notify(engineNotice("visionSkipped", { replaces: "visionPreparing", detail: nullDetail }));
     const fallbackText = buildVisionFailureContext(files, nullDetail);
     return {
       ok: true,
@@ -211,15 +197,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
   if (!result.ok) {
     const detail = result.detail || result.reason || "VISION_FAILED";
     // Same reason the vision bridge itself recorded — surfaced, not re-worded.
-    notify({
-      code: "visionSkipped",
-      level: "warning",
-      panel: true,
-      replace: true,
-      replacesCode: "visionPreparing",
-      done: true,
-      detail,
-    });
+    notify(engineNotice("visionSkipped", { replaces: "visionPreparing", detail }));
     const fallbackText = buildVisionFailureContext(files, detail);
     return {
       ok: true,
@@ -237,14 +215,7 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision, activ
     };
   }
 
-  notify({
-    code: "visionReady",
-    level: "info",
-    panel: true,
-    replace: true,
-    replacesCode: "visionPreparing",
-    done: true,
-  });
+  notify(engineNotice("visionReady", { replaces: "visionPreparing" }));
 
   const failedFiles = Array.isArray(result.failedFiles) ? result.failedFiles : [];
   const partialFailureContext = failedFiles.length
@@ -310,7 +281,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
     return { ok: true, text, files };
   }
 
-  notify({ code: "documentPreparing", level: "progress", panel: true, replace: true });
+  notify(engineNotice("documentPreparing"));
 
   const result = await extractDocuments(files, {
     onProgress: (event = {}) => {
@@ -323,12 +294,8 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
       const detail = [label, suffix, event.indexPolicy ? `· ${event.indexPolicy}` : "", error ? `· ${error}` : ""]
         .filter(Boolean)
         .join(" ");
-      notify({
-        code: "workProgress",
-        level: "progress",
-        panel: true,
-        replace: true,
-        replacesCode: "documentPreparing",
+      notify(engineNotice("workProgress", {
+        replaces: "documentPreparing",
         detail,
         progress: {
           domain: "document",
@@ -339,7 +306,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
           indexPolicy: event.indexPolicy || "",
           error,
         },
-      });
+      }));
     },
   });
   if (result === null) {
@@ -365,15 +332,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
   }
 
   if (!result.ok) {
-    notify({
-      code: "documentSkipped",
-      level: "warning",
-      panel: true,
-      replace: true,
-      replacesCode: "documentPreparing",
-      done: true,
-      detail: documentFailureDetail(result.failures),
-    });
+    notify(engineNotice("documentSkipped", { replaces: "documentPreparing", detail: documentFailureDetail(result.failures) }));
     const fallbackText = buildDocumentFailureContext(files, result.detail || result.reason || "DOCUMENT_FAILED");
     return {
       ok: true,
@@ -398,24 +357,9 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
   }
 
   if (result.degraded) {
-    notify({
-      code: "documentSkipped",
-      level: "warning",
-      panel: true,
-      replace: true,
-      replacesCode: "documentPreparing",
-      done: true,
-      detail: documentFailureDetail(result.failures),
-    });
+    notify(engineNotice("documentSkipped", { replaces: "documentPreparing", detail: documentFailureDetail(result.failures) }));
   } else {
-    notify({
-      code: "documentReady",
-      level: "info",
-      panel: true,
-      replace: true,
-      replacesCode: "documentPreparing",
-      done: true,
-    });
+    notify(engineNotice("documentReady", { replaces: "documentPreparing" }));
   }
 
   const extracted = new Set(result.extractedPaths || []);

@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../../shared/engine-notices.mjs");
+
 const crypto = require("node:crypto");
 
 /** The real cap, never a number written twice. */
@@ -54,7 +56,7 @@ function createLongTaskPauseHandler(ctx) {
     }
     ctx.eventBus.emit(wake.sessionId, {
       type: "engine.warning", turnId: null, source: "long_task_supervisor",
-      payload: { notice: { code: "taskContinuationPaused", level: "warning", panel: true }, committedMessage: message },
+      payload: { notice: engineNotice("taskContinuationPaused"), committedMessage: message },
     });
     return { ok: true };
   };

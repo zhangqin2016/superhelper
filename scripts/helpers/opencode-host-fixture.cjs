@@ -108,6 +108,9 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
       if (id === "electron") return { app: { isPackaged: true, getPath: () => home } };
       if (!id.startsWith(".")) throw new Error(`External dependency forbidden: ${id}`);
       const resolved = path.relative(sourceRoot, path.resolve(path.dirname(filename), id)).split(path.sep).join("/").replace(/\.js$/, "");
+      // src/shared holds the dependency-free tables both processes read (file
+      // kinds, the notice catalogue); they are real, never stubbed.
+      if (/^\.\.\/shared\//.test(resolved)) return require(path.join(sourceRoot, resolved));
       if (resolved.startsWith("..")) throw new Error(`Source outside main forbidden: ${id}`);
       return load(resolved);
     };

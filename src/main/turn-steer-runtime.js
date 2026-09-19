@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const { isActiveTurnPhase } = require("./turn-active-phase");
 const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
 
@@ -122,11 +124,7 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
       } catch (err) {
         log.warn("steer user message commit failed: %s", err?.message || err);
       }
-      appendTimelineNotice(state, {
-        code: "turnSteered",
-        level: "info",
-        detail: String(text || "").trim(),
-      }, Date.now());
+      appendTimelineNotice(state, engineNotice("turnSteered", { detail: String(text || "").trim() }), Date.now());
       this._emit(
         sessionId,
         "user.committed",

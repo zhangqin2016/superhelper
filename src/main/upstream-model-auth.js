@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 // Match explicit upstream refresh rejection, not a customer's ordinary API-key
 // error or a refresh attempt that failed transiently (e.g. timeout/503).
 const UPSTREAM_AUTH_RE = /token refresh failed\s*\(\s*401\s*\)|UPSTREAM_MODEL_AUTH_FAILED|模型网关的上游账号认证已失效/i;
@@ -21,10 +23,7 @@ function settleUpstreamAuthFailure(session, message, cause) {
   session._clearIdleSettleTimer();
   session._pendingCompletePayload = null;
   session._clearTransientFailureTimer();
-  session._ingest([{ type: "engine.notice", payload: { notice: {
-    code: "upstreamAuthFailed", level: "warning", panel: true,
-    detail: UPSTREAM_AUTH_FAILURE.message,
-  } } }]);
+  session._ingest([{ type: "engine.notice", payload: { notice: engineNotice("upstreamAuthFailed", { detail: UPSTREAM_AUTH_FAILURE.message }) } }]);
   // Keep the turn busy until its abort settles, so a new prompt cannot race the
   // old abort. Never terminate the shared server or interrupt another session.
   // The SDK abort already has a bounded 10s control-plane timeout.

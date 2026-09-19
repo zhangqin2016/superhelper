@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -1881,12 +1883,7 @@ Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParen
       const state = this._state(sessionId);
       const compact = String(message || "").replace(/\s+/g, " ").trim().slice(0, 260);
       log.warn(`subagent engine error: session=${sessionId} child=${childSessionId} msg=${compact.slice(0, 200)}`);
-      this._emitEngineNotice(sessionId, {
-        code: "subagentEngineError",
-        level: "warning",
-        detail: compact,
-        replacesCode: `subagentEngineError:${childSessionId}`,
-      });
+      this._emitEngineNotice(sessionId, engineNotice("subagentEngineError", { detail: compact, replaces: `subagentEngineError:${childSessionId}` }));
       const classified = classifyAssistantError(message);
       void reportModelFailureDiagnostic(this.ctx, sessionId, {
         source: "subagent_engine_error",

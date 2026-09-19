@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const { getLogger } = require("./logger");
 const { appendTimelineNotice } = require("./turn-timeline");
 const log = getLogger("turn-terminal-finalizer");
@@ -31,12 +33,7 @@ function collectLearnedSkills(ctx, sessionId, state) {
         log.warn("learned skill guide refresh failed: %s", err?.message || err);
       }
     }
-    appendTimelineNotice(state, {
-      code: "learnedSkillDraft",
-      level: "info",
-      panel: true,
-      done: true,
-    }, Date.now());
+    appendTimelineNotice(state, engineNotice("learnedSkillDraft"), Date.now());
   } catch (err) {
     log.warn("learned skill collection failed: %s", err?.message || err);
   }

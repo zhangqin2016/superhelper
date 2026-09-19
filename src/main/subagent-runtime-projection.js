@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const { getLogger } = require("./logger");
 const {
   isSubagentTool,
@@ -170,14 +172,12 @@ function createSubagentRuntimeProjection(options = {}) {
           try {
             const current = stateFor(sessionId).tools.get(toolId);
             if (!current || current.status !== "running") return;
-            emitEngineNotice(sessionId, {
-              code,
+            emitEngineNotice(sessionId, engineNotice(code, {
               level: "progress",
               panel: true,
-              replace: true,
-              replacesCode: `subagent:${toolId}`,
+              replaces: `subagent:${toolId}`,
               detail: `子任务仍在运行：${title}（已 ${Math.round(ms / 1000)} 秒）。正在等待 Lily 子任务回传结果。`,
-            });
+            }));
           } catch (err) {
             failOpen("watch notification", err);
           }
@@ -206,15 +206,7 @@ function createSubagentRuntimeProjection(options = {}) {
       const durationMs = Number(tool.durationMs || 0);
       if (durationMs < SLOW_SUBAGENT_MS) return;
       const seconds = Math.max(1, Math.round(durationMs / 1000));
-      emitEngineNotice(sessionId, {
-        code: "subagentCompleted",
-        level: "progress",
-        panel: true,
-        replace: true,
-        replacesCode: `subagent:${tool.id}`,
-        done: true,
-        detail: `子任务完成：${subagentTitle(tool)}（${seconds} 秒）。`,
-      });
+      emitEngineNotice(sessionId, engineNotice("subagentCompleted", { replaces: `subagent:${tool.id}`, detail: `子任务完成：${subagentTitle(tool)}（${seconds} 秒）。` }));
     } catch (err) {
       failOpen("completion notification", err);
     }

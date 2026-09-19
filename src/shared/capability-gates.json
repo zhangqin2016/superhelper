@@ -1428,6 +1428,19 @@
         "scripts/test-content-task-intent.mjs",
         "scripts/test-capability-broker.mjs"
       ]
+    },
+    {
+      "id": "engine-notice-catalogue",
+      "protects": "What the platform tells the user about a running turn has one catalogue (src/shared/engine-notices.mjs): a notice's level, panel visibility, replace slot and phase-ending are declared once per code, a site names the code and its detail, and both processes read one visibility policy. A phase that begins (vision/document preparing) is always ended by its ready/skipped notice in the same slot, with its reason.",
+      "baseline": "Every notice keeps the shape it had, field for field, except two consistent corrections: visionPreparing is a live panel line like documentPreparing already was, and the compaction 'done' line replaces its 'preparing' line by catalogue rather than by a flag at the site. Dynamic replace slots (per tool call, per subagent) are still supplied by the site.",
+      "failureFallback": "An uncatalogued code still yields a plain informational notice at runtime — the test suite, not the running app, is where an unknown code fails. The legacy field name replacesCode is accepted by the builder so no caller can half-migrate. A source-scan rule forbids a hand-built notice literal anywhere in either process.",
+      "tests": [
+        "scripts/test-engine-notices.mjs",
+        "scripts/test-engine-notice-policy.mjs",
+        "scripts/test-send-preflight.mjs",
+        "scripts/test-turn-user-wait.mjs",
+        "scripts/test-content-source-gate.mjs"
+      ]
     }
   ]
 }

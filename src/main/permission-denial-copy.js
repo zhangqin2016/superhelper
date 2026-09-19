@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 /**
  * Why an operation was refused without asking.
  *
@@ -72,11 +74,7 @@ function describePermissionDenial({ toolName = "", mode = "", nonInteractive = f
 function permissionAutoDeniedNotice(input = {}) {
   let locale = input.locale;
   if (!locale) { try { locale = require("./locale-settings").getLocale() || "zh-CN"; } catch { locale = "zh-CN"; } }
-  return { type: "engine.notice", payload: { notice: {
-    code: "permissionAutoDenied", level: "warning", panel: true,
-    replace: true, replacesCode: "permissionAutoDenied",
-    detail: describePermissionDenial({ ...input, locale }),
-  } } };
+  return { type: "engine.notice", payload: { notice: engineNotice("permissionAutoDenied", { replaces: "permissionAutoDenied", detail: describePermissionDenial({ ...input, locale }) }) } };
 }
 
 module.exports = { describePermissionDenial, permissionAutoDeniedNotice };

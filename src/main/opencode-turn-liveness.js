@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 const { getLogger } = require("./logger");
 const { buildRetryNoticeDetail } = require("./runtime/opencode-serve-diagnostics");
@@ -181,17 +183,11 @@ function createOpencodeTurnLiveness(options = {}) {
     ingest([{
       type: "engine.notice",
       payload: {
-        notice: {
-          // A distinct code so the panel can style "waiting on you" differently
-          // from "working", and so telemetry can tell the two apart. Both share
-          // one replace slot, so they swap in place instead of stacking.
-          code: awaiting ? "awaitingUser" : "toolProgress",
-          level: "progress",
-          panel: true,
-          replace: true,
-          replacesCode: "genericToolProgress",
-          detail,
-        },
+        // A distinct code so the panel can style "waiting on you" differently
+        // from "working", and so telemetry can tell the two apart. Both share
+        // one replace slot (the catalogue's genericToolProgress), so they swap
+        // in place instead of stacking.
+        notice: engineNotice(awaiting ? "awaitingUser" : "toolProgress", { detail }),
       },
     }]);
     return true;
@@ -211,14 +207,7 @@ function createOpencodeTurnLiveness(options = {}) {
     ingest([{
       type: "engine.notice",
       payload: {
-        notice: {
-          code: "engineRetry",
-          level: "progress",
-          panel: true,
-          replace: true,
-          replacesCode: "genericToolProgress",
-          detail,
-        },
+        notice: engineNotice("engineRetry", { replaces: "genericToolProgress", detail }),
       },
     }]);
     return true;
@@ -258,13 +247,7 @@ function createOpencodeTurnLiveness(options = {}) {
     ingest([{
       type: "engine.notice",
       payload: {
-        notice: {
-          code: "longWait",
-          level: "progress",
-          panel: true,
-          replace: true,
-          replacesCode: "longWait",
-        },
+        notice: engineNotice("longWait", { replaces: "longWait" }),
       },
     }]);
     armProgressNoticeTimer({ reset: true });

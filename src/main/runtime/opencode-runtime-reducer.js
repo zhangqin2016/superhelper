@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../../shared/engine-notices.mjs");
+
 /**
  * OpenCode INSTANCE API event reducer.
  *
@@ -123,19 +125,15 @@ function toolProgressNoticeFromProgress(callID, progress, state) {
   if (state.toolProgressNotices?.get(key) === detail) return null;
   state.toolProgressNotices?.set(key, detail);
   return runtimeDraft("engine.notice", {
-    notice: {
-      code: "workProgress",
-      level: "progress",
-      panel: true,
+    notice: engineNotice("workProgress", {
       done: false,
-      replace: true,
-      replacesCode: key,
+      replaces: key,
       detail,
       progress: {
         domain: String(progress.domain || progress.source || progress.label || "tool").trim() || "tool",
         ...progress,
       },
-    },
+    }),
   });
 }
 
@@ -247,14 +245,7 @@ function platformCapabilitySkillFallbackText(skillId) {
 
 function platformCapabilitySkillFallbackNotice(skillId) {
   return runtimeDraft("engine.notice", {
-    notice: {
-      code: "platformCapabilitySkillFallback",
-      level: "warning",
-      panel: true,
-      done: true,
-      detail: platformCapabilitySkillFallbackText(skillId),
-      skillId,
-    },
+    notice: engineNotice("platformCapabilitySkillFallback", { detail: platformCapabilitySkillFallbackText(skillId), skillId }),
   });
 }
 

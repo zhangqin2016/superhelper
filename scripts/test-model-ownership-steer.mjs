@@ -51,6 +51,7 @@ function harness(blockedStage, accepted = true) {
     module,
     require(id) {
       if (id === "./turn-active-phase") return require("../src/main/turn-active-phase.js");
+      if (id === "../shared/engine-notices.mjs") return require("../src/shared/engine-notices.mjs"); // the real catalogue, never stubbed
       if (id === "./send-preflight") return {
         runVisionPreflight: preflight("vision"), runDocumentPreflight: preflight("document"),
       };

@@ -1,5 +1,7 @@
 "use strict";
 
+const { engineNotice } = require("../shared/engine-notices.mjs");
+
 /**
  * Durable "the continuation stopped / did not start" record for a long task.
  *
@@ -117,7 +119,7 @@ function commitParentClosureNotice(ctx, sessionId, { sourceTurnId = "", reason =
     if (typeof ctx?.eventBus?.emit === "function") {
       ctx.eventBus.emit(sessionId, {
         type: "engine.warning", turnId: null, source: "parent_closure_recovery",
-        payload: { notice: { code: "parentClosureStopped", level: "warning", panel: true }, committedMessage: message },
+        payload: { notice: engineNotice("parentClosureStopped"), committedMessage: message },
       });
     }
     return { ok: true, message };
