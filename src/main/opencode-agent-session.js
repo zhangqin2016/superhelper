@@ -34,6 +34,7 @@ const { createOpencodeTurnLiveness } = require("./opencode-turn-liveness");
 const { pauseForPendingUserInput, resumeAfterUserInput } = require("./opencode-user-input-guard");
 const { createOpencodeHistoryRecovery } = require("./opencode-history-recovery");
 const { grantOpencodeRuntimeIdentity, grantOpencodeRuntimeIdentityForCompaction, revokeOpencodeRuntimeIdentity } = require("./opencode-runtime-identity");
+const idleLifecycle = require("./runner-idle-lifecycle");
 const {
   buildAttachmentFallbackPromptPayload,
   enrichPermissionFailureMessage,
@@ -277,33 +278,9 @@ class OpencodeAgentSession extends EventEmitter {
     if (callOpts.lazy || this.spawnOptions !== options) return;
     void this._ensureStarted();
   }
-
   _restartIdleEngineForModelConfigChange(previousFingerprint = "", nextFingerprint = "") {
-    const server = this._server;
-    const previousResumeId = this.agentResumeId || server?.sessionID || "";
-    log.warn(
-      "opencode model config changed — restarting idle engine session: %s -> %s",
-      this._logFingerprint(previousFingerprint || "-"),
-      this._logFingerprint(nextFingerprint || "-"),
-    );
-    try {
-      server?.terminate?.();
-    } catch {
-      // best effort; the next prompt will create a fresh server view.
-    }
-    if (this._server === server) this._server = null;
-    this._starting = null;
-    this.agentResumeId = null;
-    this._engineSessionWasResumed = false;
-    this._activeModelConfigFingerprint = "";
-    this.emit("engine-session-invalidated", {
-      reason: "model_config_changed",
-      errorCode: "",
-      previousResumeId,
-      resetResume: true,
-    });
+    idleLifecycle.restartIdleEngineForModelConfigChange(this, previousFingerprint, nextFingerprint);
   }
-
   /** App-level SQLite path for the shared OpenCode serve. OpenCode session rows
    *  are already keyed by their `ses_...` id; using a per-Lily-session DB with a
    *  shared serve made multi-session resume depend on whichever session started
@@ -416,34 +393,14 @@ class OpencodeAgentSession extends EventEmitter {
     return this.busy || this._abortSettling;
   }
 
-  /** Drop the idle engine server so the NEXT send spawns a fresh serve
-   *  process — fresh gateway sockets — and resumes the same engine session.
-   *  Field case: a load-balanced gateway with connection affinity pinned the
-   *  engine's keep-alive pool to a dead backend pod during a rolling swap, so
-   *  every request (and every same-runner rescue retry) rode the same dead
-   *  socket and came back empty, while NEW connections reached healthy pods.
-   *  Preserves agentResumeId (unlike a config-change restart) — the recycled
-   *  engine continues the same conversation. */
+  // Idleness and the turn's claim on an idle runner live in runner-idle-lifecycle.js.
+  reserveForTurn(turnId, held) { idleLifecycle.reserveForTurn(this, turnId, held); }
+  isReserved() { return idleLifecycle.isReserved(this); }
+  isIdle() { return idleLifecycle.isIdle(this); }
+  /** Fresh serve on the NEXT send, same engine session (see runner-idle-lifecycle.js). */
   recycleIdleEngine(reason = "") {
-    if (this.isBusy()) return false;
-    const server = this._server;
-    const resumeId = this.agentResumeId || server?.sessionID || null;
-    revokeOpencodeRuntimeIdentity(this, resumeId, "runner_recycled");
-    if (server) {
-      try {
-        server.terminate();
-      } catch {
-        // Best effort; a dead process object is dropped either way.
-      }
-      if (this._server === server) this._server = null;
-    }
-    this._starting = null;
-    this._activeModelConfigFingerprint = this._activeToolConfigFingerprint = "";
-    if (resumeId) this.agentResumeId = resumeId;
-    log.info("idle engine recycled (%s): next send gets fresh gateway connections", reason || "-");
-    return true;
+    return idleLifecycle.recycleIdleEngine(this, reason);
   }
-
   diagnostics() {
     const livenessTimers = this._turnLiveness.diagnostics();
     return {
@@ -483,6 +440,7 @@ class OpencodeAgentSession extends EventEmitter {
 
     this.busy = true;
     this._turnSettled = false;
+    this._turnReservation = null; // busy now covers what the claim covered
     this._sawActivity = false;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
@@ -550,7 +508,17 @@ class OpencodeAgentSession extends EventEmitter {
         // before declaring the prompt lost.
         log.warn("opencode prompt dispatch failed: %s", err?.message || String(err));
         if (this.busy && !this._turnSettled && !this._sawActivity && !this._sawEngineEvent) {
-          this._scheduleDispatchFailure(err);
+          // Only HERE — the prompt never left because the start itself rejected
+          // (a recycled runner, a spawn failure). With no engine and no start in
+          // flight nothing can deliver the SSE proof the grace window waits for,
+          // so confirm now. The acceptance checks keep their grace: their engine
+          // exists and may still answer.
+          if (!this._server && !this._starting) {
+            this._pendingDispatchFailure = err;
+            void this._confirmDispatchFailure();
+          } else {
+            this._scheduleDispatchFailure(err);
+          }
         }
       }
     })();
@@ -755,6 +723,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._server = null;
     }
     this._starting = null;
+    this._turnReservation = null;
     this.busy = false;
     this._abortSettling = false;
     this._turnSettled = true;

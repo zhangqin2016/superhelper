@@ -1372,6 +1372,18 @@
         "scripts/test-send-preflight.mjs",
         "scripts/test-document-image-vision.mjs"
       ]
+    },
+    {
+      "id": "runner-turn-reservation",
+      "protects": "A runner the orchestrator has claimed for a turn is never terminated under that turn by a configuration change. The runner owns one idleness predicate (alive, not busy, not claimed), every idle-termination path asks it, and the claim is the turn's own liveness rather than a flag that must be released. A dispatch failure with no engine at all confirms immediately instead of waiting out the SSE grace window.",
+      "baseline": "Every configuration change still reaches every idle runner exactly as before: a runner with no turn in flight is terminated on settings save, login, permission-mode change, skill sync and runtime-pack refresh. A claimed runner receives the same change at its next send, because ensureProcess already recycles on a model/tool config change. Genuinely idle runners, dead runners and the pre-turn refresh for the current turn behave identically to before.",
+      "failureFallback": "A claim predicate that throws cannot hold a claim, so the runner reads as idle (the old behaviour). A stand-in runner without isIdle gets the pre-reservation baseline. If the claim were somehow never made, the turn is exactly as exposed as before and the rescue table still retries RUNNER_TERMINATED. Busy runners are never terminated by a skill change any more — previously a skill toggle could kill an in-flight turn.",
+      "tests": [
+        "scripts/test-runner-turn-reservation.mjs",
+        "scripts/test-runner-live-config.mjs",
+        "scripts/test-turn-orchestrator.mjs",
+        "scripts/test-opencode-agent-session.mjs"
+      ]
     }
   ]
 }

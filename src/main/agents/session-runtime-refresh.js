@@ -18,9 +18,11 @@ function refreshSessionRuntime(ctx, sessionId) {
     skillManager.writeSessionAgentGuide(sessionId, session, project?.path || session.workspacePath || "");
     const continuity = require("../engine-skill-continuity").keepEngineAcrossSkillChange(ctx, sessionId);
     const runner = runnerPool.get(sessionId);
-    if (runner?.isAlive() && !runner.isBusy()) {
+    if (require("../runner-live-config").runnerIsIdle(runner)) {
       if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);
-    } else if (runner) {
+    } else if (runner && !runner.isAlive()) {
+      // Dead → drop. Busy or turn-claimed → keep its turn; the next send
+      // rebuilds the config with the new agent runtime.
       runnerPool.terminateSession(sessionId);
     }
     return { ok: true, continuity };

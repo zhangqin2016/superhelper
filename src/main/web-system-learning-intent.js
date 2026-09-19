@@ -100,11 +100,12 @@ async function ensureWebSystemLearningSkillForSession(ctx, sessionId) {
   skillManager.writeSessionAgentGuide(sessionId, updated, project?.path || "");
 
   const runner = runnerPool.get(sessionId);
-  if (runner?.isAlive?.() && !runner.isBusy?.()) {
+  const idle = require("./runner-live-config").runnerIsIdle(runner);
+  if (idle) {
     if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);
   }
 
-  return { ok: true, changed: true, needsReloadBeforeNextTurn: Boolean(runner?.isBusy?.()) };
+  return { ok: true, changed: true, needsReloadBeforeNextTurn: Boolean(runner && !idle) };
 }
 
 module.exports = {

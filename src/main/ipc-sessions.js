@@ -189,9 +189,12 @@ function registerSessionHandlers(ctx) {
     // A deliberate skill change must not cost the conversation its engine context.
     require("./engine-skill-continuity").keepEngineAcrossSkillChange(ctx, sessionId);
     const runner = runnerPool.get(sessionId);
-    if (runner?.isAlive() && !runner.isBusy()) {
+    if (require("./runner-live-config").runnerIsIdle(runner)) {
       if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);
-    } else {
+    } else if (runner && !runner.isAlive()) {
+      // Only a dead runner is dropped here. A busy or turn-claimed one keeps
+      // its turn; the next send rebuilds the config (ensureProcess recycles on
+      // a tool/skill config change), so the change is not lost either.
       runnerPool.terminateSession(sessionId);
     }
     return {
@@ -276,7 +279,7 @@ function registerSessionHandlers(ctx) {
     const updated = sessionManager.findById(sessionId);
     const effectiveMode = resolveSessionPermissionMode(updated);
     const runner = runnerPool.get(sessionId);
-    if (runner?.isAlive() && !runner.isBusy() && !runner.setPermissionMode(effectiveMode)) {
+    if (require("./runner-live-config").runnerIsIdle(runner) && !runner.setPermissionMode(effectiveMode)) {
       runnerPool.terminateSession(sessionId);
     }
     return {

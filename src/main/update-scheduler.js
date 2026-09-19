@@ -70,7 +70,7 @@ async function runSkillPackageSync(ctx = {}, reason = "scheduled") {
         if (ctx.sessionManager) skillManager.syncInheritedSessionGuides(ctx.sessionManager);
         for (const sessionId of ctx.runnerPool?.getSessionIds?.() || []) {
           const runner = ctx.runnerPool.get(sessionId);
-          if (runner?.isAlive() && !runner.isBusy() && !runner.reloadSkills()) {
+          if (require("./runner-live-config").runnerIsIdle(runner) && !runner.reloadSkills()) {
             runner.terminate();
           }
         }

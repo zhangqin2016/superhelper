@@ -44,12 +44,27 @@ function applyLiveEnvToPool(runnerPool, envPatch) {
 /**
  * @param {import("./session-runner-pool").SessionRunnerPool} runnerPool
  */
+/**
+ * Is this runner safe to terminate for a configuration change?
+ *
+ * The runner owns the answer (`isIdle`: alive, not busy, not claimed by a turn
+ * that has not sent yet). Nothing outside the runner may recompute it from
+ * `isAlive() && !isBusy()` — that hand-rolled form is what let a settings save
+ * terminate a runner the orchestrator was still preparing a turn on. A stand-in
+ * without `isIdle` gets the pre-reservation baseline.
+ */
+function runnerIsIdle(runner) {
+  if (!runner) return false;
+  if (typeof runner.isIdle === "function") return Boolean(runner.isIdle());
+  return Boolean(runner.isAlive?.() && !runner.isBusy?.());
+}
+
 function terminateIdleRunners(runnerPool) {
   /** @type {string[]} */
   const terminated = [];
   for (const sessionId of [...runnerPool.getSessionIds()]) {
     const runner = runnerPool.get(sessionId);
-    if (runner?.isAlive() && !runner.isBusy()) {
+    if (runnerIsIdle(runner)) {
       runnerPool.terminateSession(sessionId);
       terminated.push(sessionId);
     }
@@ -74,7 +89,7 @@ function reloadSkillsForIdleRunners(runnerPool) {
   const restarted = [];
   for (const sessionId of [...runnerPool.getSessionIds()]) {
     const runner = runnerPool.get(sessionId);
-    if (!runner?.isAlive() || runner.isBusy()) continue;
+    if (!runnerIsIdle(runner)) continue;
     if (runner.reloadSkills()) {
       reloaded.push(sessionId);
     } else {
@@ -89,6 +104,7 @@ module.exports = {
   buildLiveEngineEnvPatch,
   applyLiveEnvToPool,
   refreshPreparedRuntimeForTurn,
+  runnerIsIdle,
   terminateIdleRunners,
   reloadSkillsForIdleRunners,
 };

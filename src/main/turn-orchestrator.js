@@ -942,6 +942,7 @@ class TurnOrchestrator {
           turnId: state.turnId,
         });
     runner = ensured.runner;
+    require("./runner-idle-lifecycle").claimForTurn(runner, state.turnId, () => this.states.get(session.id));
     if (!runner) {
       const error = ensured.error || "RUNNER_ERROR";
       const sourceTurnId = state.turnId;
@@ -991,6 +992,7 @@ class TurnOrchestrator {
             turnId: state.turnId,
           });
           runner = ensured.runner;
+          require("./runner-idle-lifecycle").claimForTurn(runner, state.turnId, () => this.states.get(session.id));
           if (!runner) {
             const error = ensured.error || "RUNNER_ERROR";
             const sourceTurnId = state.turnId;

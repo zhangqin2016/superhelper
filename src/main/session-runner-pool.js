@@ -537,7 +537,7 @@ class SessionRunnerPool {
       // the new mode applies immediately; leave a busy runner alone — its current
       // turn finishes uninterrupted and the next send rebuilds the config with the
       // new mode (ensureProcess/_ensureStarted restarts on the config change).
-      if (runner.isAlive() && !runner.isBusy()) {
+      if (require("./runner-live-config").runnerIsIdle(runner)) {
         runner.terminate();
         restarted.push(sessionId);
       }
