@@ -346,27 +346,9 @@ function buildVisionPrompt({ userText = "", mode = "general" } = {}) {
 // string, while others return an array of content parts. Only text parts are
 // useful to the downstream model; an image-only or malformed response must be
 // treated as a failed recognition instead of a successful empty result.
-function normalizeVisionContent(content) {
-  if (typeof content === "string") return content.trim();
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part.trim();
-        if (!part || typeof part !== "object") return "";
-        if (typeof part.text === "string") return part.text.trim();
-        if (part.content !== undefined) return normalizeVisionContent(part.content);
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-  }
-  if (content && typeof content === "object") {
-    if (content.text !== undefined) return normalizeVisionContent(content.text);
-    if (content.content !== undefined) return normalizeVisionContent(content.content);
-  }
-  return "";
-}
+// Vision replies are chat completions; they are read like every other one.
+const chatReply = require("./chat-completion-reply");
+const normalizeVisionContent = chatReply.normalizeContent;
 
 async function callVisionApi(config, payload) {
   const url = new URL(`${config.baseUrl.replace(/\/?$/, "/")}chat/completions`);
@@ -397,19 +379,18 @@ async function callVisionApi(config, payload) {
  * bridge, document-embedded images) reads the same field the same way.
  *
  * Regression 2026-09-08 → 2026-09-19: the request-shape refactor returned the whole
- * reply object instead of `choices[0].message.content`; the readability check then
+ * reply object instead of the assistant text; the readability check then
  * judged `{id, choices, usage}` as "no readable image content" for every image,
  * which silently disabled the platform's own vision bridge for models that cannot
  * read images. The bridge tests injected `translate` directly and so never crossed
  * this seam. [gate: vision-bridge-reply]
  */
 function visionReplyText(json) {
-  const choice = json?.choices?.[0];
-  const text = normalizeVisionContent(choice?.message?.content ?? choice?.text);
+  const text = chatReply.replyText(json);
   if (text) return text;
   // An empty reply with a stated finish reason (content_filter, length) is a
   // different situation from a malformed one; the user needs to know which.
-  const reason = choice?.finish_reason;
+  const reason = chatReply.finishReason(json);
   const why = reason && reason !== "stop" ? ` (server finish_reason: ${reason})` : "";
   throw new Error(`Vision API returned no readable image content${why}`);
 }

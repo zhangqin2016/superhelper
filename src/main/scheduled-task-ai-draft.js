@@ -70,10 +70,7 @@ function extractText(responseJson) {
       .join("")
       .trim();
   }
-  if (typeof responseJson?.choices?.[0]?.message?.content === "string") {
-    return responseJson.choices[0].message.content;
-  }
-  return "";
+  return require("./chat-completion-reply").replyText(responseJson);
 }
 
 function parseJsonObject(text) {

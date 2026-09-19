@@ -7,21 +7,15 @@ const { probeVision } = require("./model-probe-vision");
 
 
 function messageShape(json) {
-  const choice = json?.choices?.[0] || {};
-  const message = choice.message || {};
-  const content = typeof message.content === "string" ? message.content : "";
   // Reasoning models expose their chain under `reasoning` OR `reasoning_content`
-  // (DeepSeek/OpenAI-compat). Recognize both so a thinking model is classified as
-  // reasoning, not mistaken for a dead no-content endpoint.
-  const reasoning = typeof message.reasoning === "string"
-    ? message.reasoning
-    : typeof message.reasoning_content === "string" ? message.reasoning_content : "";
-  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  // (DeepSeek/OpenAI-compat); the shared reader knows both, so a thinking model
+  // is classified as reasoning, not mistaken for a dead no-content endpoint.
+  const reply = require("./chat-completion-reply");
   return {
-    hasContent: content.trim().length > 0,
-    hasReasoning: reasoning.trim().length > 0,
-    hasToolCalls: toolCalls.length > 0,
-    finishReason: typeof choice.finish_reason === "string" ? choice.finish_reason : "",
+    hasContent: reply.replyText(json).length > 0,
+    hasReasoning: reply.replyReasoning(json).trim().length > 0,
+    hasToolCalls: reply.replyToolCalls(json).length > 0,
+    finishReason: reply.finishReason(json),
   };
 }
 
@@ -42,13 +36,11 @@ function streamShape(text) {
         hasContent ||= evt.hasContent; hasToolCalls ||= evt.hasToolCalls; hasReasoning ||= evt.hasReasoning; if (evt.finishReason) finishReason = evt.finishReason;
         continue;
       }
-      const choice = json?.choices?.[0] || {};
-      const delta = choice.delta || {};
-      if (typeof delta.content === "string" && delta.content.trim()) hasContent = true;
-      if ((typeof delta.reasoning === "string" && delta.reasoning.trim()) ||
-          (typeof delta.reasoning_content === "string" && delta.reasoning_content.trim())) hasReasoning = true;
-      if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) hasToolCalls = true;
-      if (typeof choice.finish_reason === "string" && choice.finish_reason) finishReason = choice.finish_reason;
+      const delta = require("./chat-completion-reply").streamDelta(json);
+      if (delta.content.trim()) hasContent = true;
+      if (delta.reasoning.trim()) hasReasoning = true;
+      if (delta.toolCalls.length) hasToolCalls = true;
+      if (delta.finishReason) finishReason = delta.finishReason;
     } catch {
       // Ignore malformed chunks; the caller handles no-content as failure.
     }
@@ -354,7 +346,8 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
     timeoutMs,
   });
   if (!fidelity.ok) return null;
-  let instructionFidelity = String(fidelity.json?.choices?.[0]?.message?.content || "").trim() === "PONG";
+  const replyText = (json) => require("./chat-completion-reply").replyText(json);
+  let instructionFidelity = replyText(fidelity.json) === "PONG";
   if (!instructionFidelity) {
     const fidelityZh = await postChat({
       baseUrl,
@@ -365,7 +358,7 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
       maxTokens: 8,
       timeoutMs,
     });
-    if (fidelityZh.ok && String(fidelityZh.json?.choices?.[0]?.message?.content || "").trim() === "PONG") {
+    if (fidelityZh.ok && replyText(fidelityZh.json) === "PONG") {
       instructionFidelity = true;
       recipes.instructionLanguage = "zh";
     }

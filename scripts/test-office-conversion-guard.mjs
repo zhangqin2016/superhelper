@@ -69,4 +69,28 @@ if (!python) {
   });
 }
 
+if (python) {
+  check("the CLI speaks the runtime-script contract: JSON on stdout, ok=false with a reason, never a traceback", () => {
+    const { spawnSync } = require("node:child_process");
+    const os = require("node:os");
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "lily-office-cli-"));
+    try {
+      const run = spawnSync(python, [path.join(ROOT, "resources/runtime-scripts/lily_office_convert.py"), "missing/报告.docx", "--out-dir", workspace, "--to", "pdf"], {
+        encoding: "utf8",
+        timeout: 60_000,
+        env: { ...getBundledPythonEnv(), LILY_WORKSPACE: workspace },
+      });
+      assert.equal(run.status, 1, `a failed conversion exits 1: ${run.stderr}`);
+      assert.ok(!/Traceback/.test(run.stderr + run.stdout), "no Python stack for the caller to parse");
+      const line = run.stdout.trim().split("\n").at(-1);
+      const result = JSON.parse(line);
+      assert.equal(result.ok, false);
+      assert.match(result.error, /报告\.docx/, "the error names the file");
+      assert.ok(result.error.includes(workspace), `a relative path is resolved against LILY_WORKSPACE and the error says where it looked: ${result.error}`);
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+}
+
 console.log(`\n${checks} checks passed (office conversion guard)`);

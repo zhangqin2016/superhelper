@@ -136,12 +136,11 @@ async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics }) {
       if (diagnostics) diagnostics.reason = sent.status ? `http_${sent.status}${sent.error?.code ? `:${sent.error.code}` : ""}` : `network:${sent.error?.message || ""}`;
       return "";
     }
-    const json = sent.json;
-    const message = json?.choices?.[0]?.message || {};
     // Thinking models may spend the budget on reasoning_content and leave
     // content empty — the verdict JSON is often written there. The verdict
     // parser extracts the JSON block wherever it lives.
-    return [message.content, message.reasoning_content, message.reasoning]
+    const reply = require("./chat-completion-reply");
+    return [reply.replyText(sent.json), reply.replyReasoning(sent.json)]
       .filter((part) => typeof part === "string" && part.trim())
       .join("\n");
   } catch (error) {
