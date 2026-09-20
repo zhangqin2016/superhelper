@@ -73,6 +73,8 @@
         "scripts/test-first-response-watchdog.mjs",
         "scripts/test-gateway-stream-completion.mjs",
         "scripts/test-long-task-session-wakeup.mjs",
+        "scripts/test-long-turn-recovery-ownership.mjs",
+        "scripts/test-long-turn-virtual-clock.mjs",
         "scripts/test-model-recovery-watch.mjs",
         "scripts/test-opencode-agent-session.mjs",
         "scripts/test-parent-closure-lease-resume.mjs",

@@ -121,7 +121,8 @@ function createOpencodeHistoryRecovery(options = {}) {
     const timeoutMs = getSyncTimeoutMs();
     const latest = await withTimeout(latestAssistant({ requireCurrentPrompt: true }), timeoutMs, null);
     if (!String(latest?.output || "").trim()) return null;
-    if (latest.completed) return latest;
+    // A tool-call step has a completion timestamp while the task still runs.
+    // Only an authoritative idle session can turn history into terminal output.
     const status = await withTimeout(getSessionStatus(), timeoutMs, "unknown");
     return status === "idle" ? latest : null;
   }

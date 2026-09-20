@@ -101,4 +101,43 @@ waitingLiveness.armTurnWatchdog();
 await waitingClock.advance(10_000);
 assert.equal(waitingCompletions.length, 0, "pending user input is never force-ended by liveness watchdogs");
 
-console.log("long-turn-virtual-clock: ok");
+for (const scenario of ["progress", "new-turn", "question", "stalled", "explicit-cap"]) {
+  for (const recovered of [null, { output: "old recovery result" }]) {
+    const raceClock = fakeClock();
+    const raceState = { busy: true, turnSettled: false, sawActivity: true, collectedOutput: "" };
+    let resolveHistory;
+    let aborts = 0;
+    const results = [];
+    const race = createOpencodeTurnLiveness({
+      getState: () => raceState,
+      getConfig: () => ({ responseTimeoutMs: 1000, turnWatchdogMs: scenario === "explicit-cap" ? 500 : 0 }),
+      now: raceClock.now, setTimeout: raceClock.setTimeout, clearTimeout: raceClock.clearTimeout,
+      getServer: () => ({ abort: async () => { aborts += 1; } }),
+      recoverStalledFinal: () => new Promise(resolve => { resolveHistory = resolve; }),
+      completeTurn: payload => results.push(payload),
+    });
+    race.armResponseTimer();
+    race.armTurnWatchdog();
+    await raceClock.advance(scenario === "explicit-cap" ? 500 : 1000);
+    assert.equal(typeof resolveHistory, "function", `${scenario}: recovery began`);
+    if (scenario === "new-turn") {
+      race.clearResponseTimer();
+      race.clearTurnWatchdog();
+      race.armResponseTimer();
+      race.armTurnWatchdog();
+    } else if (scenario === "progress" || scenario === "explicit-cap") {
+      race.armResponseTimer();
+    } else if (scenario === "question") {
+      raceState.pendingUserInput = true;
+    }
+    resolveHistory(recovered);
+    await new Promise(resolve => setImmediate(resolve));
+    const shouldSettle = scenario === "stalled" || scenario === "explicit-cap";
+    assert.equal(results.length, shouldSettle ? 1 : 0, `${scenario}: stale checks must not complete live work`);
+    assert.equal(aborts, shouldSettle && !recovered ? 1 : 0, `${scenario}: stale checks must not abort the engine`);
+    race.clearResponseTimer();
+    race.clearTurnWatchdog();
+  }
+}
+
+console.log("long-turn-virtual-clock: ok (48h progress and asynchronous watchdog races)");

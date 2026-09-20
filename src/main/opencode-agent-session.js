@@ -1322,7 +1322,7 @@ class OpencodeAgentSession extends EventEmitter {
       log.warn("opencode transient recovery history read failed: %s", err?.message || String(err));
       return null;
     });
-    if (!this.busy || this._turnSettled) return;
+    if (!this.busy || this._turnSettled || this._pendingTransientFailure !== pending) return;
     if (recovered?.output) {
       this._pendingTransientFailure = null;
       this._completeTurn({
@@ -1335,7 +1335,7 @@ class OpencodeAgentSession extends EventEmitter {
     }
 
     const status = await this._getSessionStatus();
-    if (!this.busy || this._turnSettled) return;
+    if (!this.busy || this._turnSettled || this._pendingTransientFailure !== pending) return;
     if (status === "idle" && this.collectedOutput.trim()) {
       this._pendingTransientFailure = null;
       this._completeTurn({ code: 0, output: this.collectedOutput.trim(), interrupted: false });
@@ -1346,7 +1346,7 @@ class OpencodeAgentSession extends EventEmitter {
     }
 
     const elapsed = Date.now() - pending.startedAt;
-    if (elapsed < OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS) {
+    if (status === "busy" || elapsed < OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS) {
       this._scheduleTransientFailureRecovery(pending.message, pending.cause);
       return;
     }
@@ -1486,8 +1486,8 @@ class OpencodeAgentSession extends EventEmitter {
     }
   }
 
-  async _recoverCompletedAssistantFromHistory(opts = {}) {
-    return this._historyRecovery.latestAssistant(opts);
+  async _recoverCompletedAssistantFromHistory() {
+    return this._historyRecovery.recoverStalledFinal();
   }
 
   async _latestAssistantFromOfficialHistory(opts = {}) {

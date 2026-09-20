@@ -53,6 +53,8 @@ function createOpencodeTurnLiveness(options = {}) {
   let healthFails = 0;
   let lastGenericToolProgressNotice = "";
   let engineRetryCount = 0;
+  let responseGeneration = 0;
+  let watchdogGeneration = 0;
 
   function isRunning() {
     const state = getState() || {};
@@ -70,6 +72,7 @@ function createOpencodeTurnLiveness(options = {}) {
   }
 
   function clearResponseTimer() {
+    responseGeneration += 1;
     if (responseTimer) cancelTimer(responseTimer);
     responseTimer = null;
   }
@@ -253,8 +256,10 @@ function createOpencodeTurnLiveness(options = {}) {
     armProgressNoticeTimer({ reset: true });
   }
 
-  function forceEndTurn(reason) {
+  function forceEndTurn(reason, { absoluteDeadline = false } = {}) {
     if (!isRunning()) return;
+    const responseOwner = responseGeneration;
+    const watchdogOwner = watchdogGeneration;
     // A permission/question is intentional backpressure. The user may leave the
     // card open for hours; treating that silence as a dead engine loses the
     // parent turn and produces the misleading "question" incomplete summary.
@@ -266,13 +271,17 @@ function createOpencodeTurnLiveness(options = {}) {
       clearTurnWatchdog();
       return;
     }
-    log.warn("opencode turn force-ended: %s", reason, { sessionId });
+    log.warn("opencode turn watchdog checking history: %s", reason, { sessionId });
     void (async () => {
       const recovered = await recoverStalledFinal().catch((err) => {
         log.warn("opencode stalled history sync failed: %s", err?.message || err);
         return null;
       });
-      if (!isRunning()) return;
+      // History reads can outlive a progress event, a user card or even a turn.
+      // Only the still-current check may abort or publish its recovered answer.
+      if (!isRunning() || watchdogOwner !== watchdogGeneration
+        || (!absoluteDeadline && responseOwner !== responseGeneration)
+        || hasPendingUserInput()) return;
       if (recovered?.output) {
         completeTurn({
           code: 0,
@@ -284,6 +293,7 @@ function createOpencodeTurnLiveness(options = {}) {
         });
         return;
       }
+      log.warn("opencode turn force-ended: %s", reason, { sessionId });
       try { void getServer()?.abort?.().catch(() => {}); } catch { /* best effort */ }
       completeTurn({ code: 0, output: String(getState().collectedOutput || "").trim(), stalled: true });
     })();
@@ -310,6 +320,7 @@ function createOpencodeTurnLiveness(options = {}) {
   }
 
   function clearTurnWatchdog() {
+    watchdogGeneration += 1;
     if (turnWatchdogTimer) cancelTimer(turnWatchdogTimer);
     turnWatchdogTimer = null;
   }
@@ -319,7 +330,7 @@ function createOpencodeTurnLiveness(options = {}) {
     if (!isRunning()) return;
     const cap = Number(getConfig().turnWatchdogMs || 0);
     if (!(cap > 0)) return;
-    turnWatchdogTimer = scheduleTimer(() => forceEndTurn("turn exceeded the maximum time budget"), cap);
+    turnWatchdogTimer = scheduleTimer(() => forceEndTurn("turn exceeded the maximum time budget", { absoluteDeadline: true }), cap);
   }
 
   function clearHealthProbe() {
