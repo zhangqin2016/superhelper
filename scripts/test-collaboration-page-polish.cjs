@@ -8,7 +8,7 @@ app.whenReady().then(async () => {
   const base = pathToFileURL(path.resolve('src/renderer') + '/').href;
   const html = fs.readFileSync('src/renderer/index.html', 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replace('<head>', '<head><base href="' + base + '">');
   const fixture = path.join(temp, 'index.html'); fs.writeFileSync(fixture, html);
-  win = new BrowserWindow({ show: false, width: 1100, height: 800, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
+  win = new BrowserWindow({ show: true, width: 1100, height: 800, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
   win.webContents.on('console-message', (event) => console.log(event.message));
   await win.loadFile(fixture, { query: { view: 'collaboration' } });
   await win.webContents.executeJavaScript(`(async()=>{

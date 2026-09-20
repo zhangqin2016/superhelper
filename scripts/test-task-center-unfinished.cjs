@@ -70,7 +70,7 @@ app.whenReady().then(async () => {
   const body = source.match(/<body\b[^>]*>([\s\S]*)<\/body>/i)[1].replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
   const fixture = path.join(temp, "fixture.html");
   fs.writeFileSync(fixture, `<html><head><meta charset="utf-8"><link rel="stylesheet" href="${pathToFileURL(path.join(RENDERER, "styles.css")).href}"><style>*{transition:none!important;animation:none!important}</style></head><body>${body}</body></html>`);
-  win = new BrowserWindow({ show: false, width: 1100, height: 820, webPreferences: { sandbox: true, contextIsolation: true } });
+  win = new BrowserWindow({ show: true, width: 1100, height: 820, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
   await win.loadFile(fixture);
 
   // Fake facade + module bootstrap. Everything the modules touch at import time
