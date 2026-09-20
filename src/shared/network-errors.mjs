@@ -21,6 +21,7 @@ export const TRANSIENT_NETWORK_CODES = Object.freeze([
 /** Phrases the same failures carry when only a message survives. */
 export const TRANSIENT_NETWORK_PHRASES = Object.freeze([
   "fetch failed", "socket hang up", "socket connection was closed", "timed out", "network error", "connection reset", "connection refused",
+  "Cannot connect to API", "Unable to connect. Is the computer able to access the url?",
 ]);
 
 const CODE_SET = new Set(TRANSIENT_NETWORK_CODES);

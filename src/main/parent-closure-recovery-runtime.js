@@ -20,6 +20,11 @@ function persistedSource(source = {}, evidence = {}) {
     continuationHandoff: source.payload?.continuationHandoff || null,
     workState: source.workState || null,
     executionProgressKeys: source.payload?.executionProgressKeys || [],
+    failure: source.payload?.failed ? {
+      failed: true,
+      errorCode: require("./turn-failure").failureCodeOf(source.payload),
+      retryable: source.payload.retryable !== false,
+    } : null,
     // The immutable task core remains in turn_inputs. Persist only its
     // identity here; restart recovery rehydrates the full envelope by source
     // turn id instead of duplicating a potentially large context snapshot.
@@ -429,7 +434,7 @@ function createParentClosureRecoveryRuntime(options = {}) {
           pendingHooks: new Map(),
           currentPayload: { parentClosureRecovery: false },
         },
-        payload: { executionProgressKeys: source.executionProgressKeys || [], ...(source.continuationHandoff ? { code: 0, continuationHandoff: source.continuationHandoff } : { stalled: true }) },
+        payload: { executionProgressKeys: source.executionProgressKeys || [], ...(source.continuationHandoff ? { code: 0, continuationHandoff: source.continuationHandoff } : source.failure || { stalled: true }) },
       });
       if (result.ok) resumed += 1;
     }

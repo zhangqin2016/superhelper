@@ -49,7 +49,6 @@ const {
   shouldDropResumeAfterVisibleFailure,
   shouldIsolateAttachmentFallback,
   shouldRebuildEngineForRetry,
-  transientClassificationText,
 } = require("./opencode-session-failure-policy");
 const {
   TODO_COMPLETION_GATE_MAX_ATTEMPTS, buildTodoContinuationPrompt, rememberTodoProgress,
@@ -1101,8 +1100,7 @@ class OpencodeAgentSession extends EventEmitter {
 
     if (this._dispatchRetryCount < 1 && this._server && this._pendingPromptPayload) {
       this._dispatchRetryCount += 1;
-      const raw = transientClassificationText(pending?.message, pending);
-      const classified = require("./agent-runner").classifyAssistantError(raw);
+      const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(pending?.message, pending);
       const refreshManagedConfig = isManagedModelConfigStale(classified, raw, this.spawnOptions);
       const retryPayload = buildAttachmentFallbackPromptPayload(
         this._pendingPromptPayload,
@@ -1335,8 +1333,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._sawUnsafeToolActivity || this.collectedOutput.trim()) return false;
     if (this._pendingPermissions.size || this._pendingQuestions.size) return false;
 
-    const raw = transientClassificationText(pending?.message, pending?.cause);
-    const classified = require("./agent-runner").classifyAssistantError(raw);
+    const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(pending?.message, pending?.cause);
     if (!isSafeReplayableModelFailure(classified, raw, this.spawnOptions)) return false;
 
     this._transientReplayCount += 1;
@@ -1664,6 +1661,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._scheduleTransientFailureRecovery(message, cause);
       return true;
     }
+    const progressKeys = executionProgressKeys(this._turnGates.todo);
     this._invalidateEngineSessionAfterVisibleFailure(message, cause);
     if (cause) log.warn("opencode turn failed: %s", cause?.message || String(cause));
     this._clearIdleSettleTimer();
@@ -1696,13 +1694,12 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnStartedAt = 0;
     this._latestTodos = [];
     this._turnGates = createTurnGateState();
-    this._orchestrator?.notifyRunnerError(this.sessionId, enrichPermissionFailureMessage({ message, cause, workspacePath: this.cwd || "" }));
+    this._orchestrator?.notifyRunnerError(this.sessionId, enrichPermissionFailureMessage({ message, cause, workspacePath: this.cwd || "" }), cause, { executionProgressKeys: progressKeys });
     return false;
   }
 
   _invalidateEngineSessionAfterVisibleFailure(message, cause) {
-    const raw = transientClassificationText(message, cause);
-    const classified = require("./agent-runner").classifyAssistantError(raw);
+    const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(message, cause);
     const recoverable = isVisibleFailureRecoverable(classified, raw, this.spawnOptions);
     const dropResume = shouldDropResumeAfterVisibleFailure({
       classified,
@@ -1729,7 +1726,7 @@ class OpencodeAgentSession extends EventEmitter {
     this.agentResumeId = null;
     this._engineSessionWasResumed = false;
     this.emit("engine-session-invalidated", {
-      reason: this._sanitize(raw || "recoverable engine failure"),
+      reason: classified?.message || this._sanitize(raw || "recoverable engine failure"),
       errorCode: classified?.code || "",
       previousResumeId,
       resetResume: true,
@@ -1741,14 +1738,16 @@ class OpencodeAgentSession extends EventEmitter {
     if (!this.busy || this._turnSettled || !this._server) return false;
     if (!this._sawEngineEvent || this.collectedOutput.trim()) return false;
     if (!cause) return false;
-    const raw = transientClassificationText(message, cause);
-    const classified = require("./agent-runner").classifyAssistantError(raw);
+    const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(message, cause);
     return isSafeReplayableModelFailure(classified, raw);
   }
 
   _onServerExit(code) {
     if (this.busy && !this._turnSettled) {
-      this._failTurn(`The assistant engine stopped unexpectedly (code ${code}).`);
+      const error = Object.assign(new Error(`The assistant engine stopped unexpectedly (code ${code}).`), {
+        name: "EngineExitError", code: "ENGINE_UNAVAILABLE", retryable: true,
+      });
+      this._failTurn(error.message, error, { force: true });
     }
     this._server = null;
     this._starting = null;

@@ -1,5 +1,14 @@
 # Capability Gate — 防止"变笨"硬门槛
 
+Structured transport recovery (2026-09-20): `test-runner-failure-contract.mjs`
+and `test-transport-closure-restart.mjs` retain native causes, explicit
+non-retryability and execution progress through terminal cleanup and SQLite
+restart. Interrupted tool work continues through the existing durable owner;
+unknown writes are not replayed. Cancellation, questions, permissions, duplicate
+claims, specialized context repair and old string-error paths remain intact.
+No model/tool/context changes; acceptance-gap auto-repair remains opt-in.
+Scope and remaining UI acceptance: `docs/2026-09-20-structured-task-recovery.md`.
+
 Terminal ownership follow-up (2026-09-20): `test-opencode-terminal-ownership.mjs`
 guards normal idle settlement across superseded status/history/replay reads,
 unknown status, stale supplemental output and health probe cancellation.

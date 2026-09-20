@@ -60,6 +60,9 @@ const ANALYSIS_MIN_EVIDENCE = 3;
  * execution behind it continues whatever (if anything) it was classified as.
  */
 function isCutOffAnalysisWork(taskContract = {}, payload = {}, evidence = {}) {
+  // Transport failure is mechanical evidence of interruption, independent of
+  // task labels or how many tools happened to finish before the disconnect.
+  if (payload.retryable !== false && ["MODEL_CONNECTION_FAILED", "ENGINE_UNAVAILABLE", "MODEL_OVERLOADED", "RATE_LIMITED"].includes(failureCodeOf(payload))) return Number(evidence.count || 0) > 0;
   const cutOff = Boolean(payload.stalled) || Boolean(payload.continuationHandoff) || isModelSilentFailure(payload);
   if (!cutOff) return false;
   if (isModelSilentFailure(payload)) {
@@ -144,6 +147,7 @@ function shouldRecoverParentClosure({
   const evidence = toolEvidenceSnapshot(state);
   const fail = (reason) => ({ ok: false, reason, recoveryKey, sourceTurnId, evidence });
   if (!sessionId || !sourceTurnId) return fail("MISSING_TURN_IDENTITY");
+  if (payload.retryable === false) return fail("NON_RETRYABLE_FAILURE");
   if (payload.loopDetected) return fail("CONFIRMED_LOOP");
   if (payload.continuationStopReason === "no_progress") return fail("NO_PROGRESS");
   // Exhausting the step budget IS execution: the engine ran a full budget of

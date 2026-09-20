@@ -96,6 +96,7 @@ function createTurnRecoveryRuntime(options = {}) {
   }
 
   async function maybeSelfHealAndRetry(sessionId, failure) {
+    if (failure?.retryable === false) return;
     try {
       if (typeof attemptRescue === "function" && await attemptRescue(sessionId, failure)) return;
       const { attemptModelSelfHeal, isHealableFailureCode } = require("./model-self-heal");
@@ -130,6 +131,7 @@ function createTurnRecoveryRuntime(options = {}) {
   }
 
   async function maybeToolCallRescueRetry(sessionId, failure) {
+    if (failure?.retryable === false) return false;
     try {
       const rescue = require("./tool-call-rescue");
       const strategy = rescue.rescueStrategyFor(failure?.code);

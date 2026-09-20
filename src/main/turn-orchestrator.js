@@ -450,8 +450,8 @@ class TurnOrchestrator {
     void this._handleDone(sessionId, payload);
   }
 
-  notifyRunnerError(sessionId, message) {
-    void this._handleError(sessionId, message);
+  notifyRunnerError(sessionId, message, cause = null, terminalMeta = {}) {
+    void this._handleError(sessionId, message, cause, terminalMeta);
   }
 
   _handleRuntimeControl(sessionId, payload = {}) {
@@ -1677,7 +1677,7 @@ class TurnOrchestrator {
     const failed = Boolean(failure); const blockingProcessJobs = interrupted || stalled || failed
       ? []
       : findBlockingRunningProcessJobs([...state.tools.values()]);
-    const parentClosureSource = captureParentClosureSource(state, { ...payload, ...stepBudget.terminalMeta, failed, stalled: stalled || Boolean(blockingProcessJobs.length), errorCode: failure?.code || "" }); const closurePrepared = failed || stalled || blockingProcessJobs.length ? this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource) : null;
+    const parentClosureSource = captureParentClosureSource(state, { ...payload, ...stepBudget.terminalMeta, failed, stalled: stalled || Boolean(blockingProcessJobs.length), errorCode: failure?.code || "", ...(failure ? { retryable: failure.retryable !== false } : {}) }); const closurePrepared = failed || stalled || blockingProcessJobs.length ? this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource) : null;
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
     let finalizeDone = null;
@@ -1802,14 +1802,14 @@ Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParen
     }
   }
 
-  async _handleError(sessionId, message) {
+  async _handleError(sessionId, message, cause = null, terminalMeta = {}) {
     const state = this._state(sessionId);
     if (!state.turnId || state.terminalEmitted) return;
 
-    const raw = String(message || "");
-    const classified = classifyAssistantError(raw);
+    const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(message, cause);
+    const progressKeys = Array.isArray(terminalMeta.executionProgressKeys) ? terminalMeta.executionProgressKeys.slice(-128) : [];
     const text = classified?.message || sanitizeError(raw);
-    const parentClosureSource = captureParentClosureSource(state, { failed: true, errorCode: classified?.code || "ENGINE_ERROR", error: raw }); this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource);
+    const parentClosureSource = captureParentClosureSource(state, { failed: true, errorCode: classified?.code || "ENGINE_ERROR", retryable: classified?.retryable !== false, executionProgressKeys: progressKeys, error: raw }); this.turnRecoveryRuntime.prepareParentClosureRecovery(sessionId, parentClosureSource);
     void reportModelFailureDiagnostic(this.ctx, sessionId, {
       source: "runner_error",
       turnId: state.turnId,
@@ -1822,6 +1822,7 @@ Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParen
       retryable: classified?.retryable !== false,
       assistant: text,
       error: raw,
+      executionProgressKeys: progressKeys,
     }));
     Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed: true, failure: { ...classified, sourceTurnId: parentClosureSource.state.turnId }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
