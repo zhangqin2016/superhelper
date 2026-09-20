@@ -7,7 +7,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collaboration-mentions-ui-"))
 app.setPath("userData", path.join(dir, "userData")); app.disableHardwareAcceleration();
 let win;
 const deadline = setTimeout(() => { console.error("mentions UI timed out"); finish(1); }, 30_000);
-function finish(code) { clearTimeout(deadline); if (win && !win.isDestroyed()) win.destroy(); fs.rmSync(dir, { recursive: true, force: true }); app.exit(code); }
+function finish(code) { require('./electron-test-cleanup.cjs').exitAndRemove({ app, window: win, directory: dir, timer: deadline, code }); }
 async function exerciseAuthorizationRefresh(moduleUrl) {
   const { initCollaborationCenter: init } = await import(new URL('./collaboration-center.js',moduleUrl));
   const { t } = await import(new URL('../i18n/index.js',moduleUrl));

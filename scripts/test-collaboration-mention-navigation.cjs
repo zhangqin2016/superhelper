@@ -12,7 +12,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collaboration-mention-navigat
 app.setPath("userData", path.join(dir, "data")); app.disableHardwareAcceleration();
 let win;
 const deadline = setTimeout(() => { console.error("mention navigation timed out"); finish(1); }, 35_000);
-function finish(code) { clearTimeout(deadline); if (win && !win.isDestroyed()) win.destroy(); fs.rmSync(dir, { recursive: true, force: true }); app.exit(code); }
+function finish(code) { require('./electron-test-cleanup.cjs').exitAndRemove({ app, window: win, directory: dir, timer: deadline, code }); }
 
 async function exercise(moduleUrl) {
   const { initCollaborationCenter } = await import(moduleUrl);

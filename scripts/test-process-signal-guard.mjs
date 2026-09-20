@@ -69,7 +69,7 @@ check("every stop path that signals a recorded pid goes through the guard — no
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(file); continue; }
       if (!file.endsWith(".js")) continue;
-      const rel = path.relative(ROOT, file);
+      const rel = path.relative(ROOT, file).split(path.sep).join("/");
       if (allowed.has(rel)) continue;
       const src = fs.readFileSync(file, "utf8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
       // A raw signal to a number is the defect; kill(pid, 0) is a liveness probe and a
