@@ -315,6 +315,7 @@ function adaptOpencodeMessageItem(item = {}, opts = {}) {
         toolsSummary: { count: tools.length },
         opencode: {
           messageId: info.id || "",
+          parentMessageId: info.parentID || "",
           providerID: info.providerID || "",
           modelID: info.modelID || "",
           agent: info.agent || "",

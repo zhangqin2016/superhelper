@@ -70,9 +70,10 @@ check("the main process and the renderer read the same table", () => {
 });
 
 check("no module keeps its own list of media or office extensions", () => {
-  // .csv/.tsv/.svg are text to most modules (fence languages, text lists) and
+  // Text documents and .svg are text to most modules (fence languages, text lists) and
   // do not by themselves mark a list as a media list.
-  const MEDIA = new Set(Object.keys(kinds.FILE_KIND_TABLE).map((ext) => ext.slice(1)).filter((e) => !["csv", "tsv", "svg"].includes(e)));
+  const MEDIA = new Set(Object.entries(kinds.FILE_KIND_TABLE)
+    .filter(([ext, entry]) => !entry.text && ext !== ".svg").map(([ext]) => ext.slice(1)));
   const allowed = new Map([
     ["src/main/mcp/file-signature.js", "magic-byte signatures keyed by extension — a different table"],
     ["src/main/mcp/file-intelligence-core.js", "what the extractors can open — a capability list, not a kind"],

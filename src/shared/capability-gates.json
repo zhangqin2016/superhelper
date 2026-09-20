@@ -74,6 +74,7 @@
         "scripts/test-gateway-stream-completion.mjs",
         "scripts/test-long-task-session-wakeup.mjs",
         "scripts/test-long-turn-recovery-ownership.mjs",
+        "scripts/test-opencode-terminal-ownership.mjs",
         "scripts/test-long-turn-virtual-clock.mjs",
         "scripts/test-model-recovery-watch.mjs",
         "scripts/test-opencode-agent-session.mjs",

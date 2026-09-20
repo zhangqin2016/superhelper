@@ -1,6 +1,6 @@
 "use strict";
 
-const { assistantTextFromOpenCodeMessageItem } = require("./runtime/opencode-conversation-adapter");
+const { assistantTextFromOpenCodeMessageItem, isCompactionSummaryInfo } = require("./runtime/opencode-conversation-adapter");
 const { getLogger } = require("./logger");
 
 const log = getLogger("opencode-history-recovery");
@@ -42,20 +42,22 @@ function createOpencodeHistoryRecovery(options = {}) {
   const getSessionStatus = options.getSessionStatus || (() => Promise.resolve("unknown"));
   const getSyncTimeoutMs = options.getSyncTimeoutMs || (() => 2_500);
   const onSupplementalOutput = options.onSupplementalOutput || (() => {});
+  const captureScope = options.captureScope || (() => () => true);
 
   async function latestAssistant(opts = {}) {
+    const isCurrent = captureScope();
     const server = getServer();
     const turnStartedAt = Number(getTurnStartedAt() || 0);
     if (!server?.messages || !turnStartedAt) return null;
+    const expectedText = typeof server.lastPromptText === "string"
+      ? server.lastPromptText : String(getPendingPromptPayload()?.text || "");
     const raw = await server.messages({ limit: 16 });
+    if (!isCurrent()) return null;
     const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
     const requireCurrentPrompt = Boolean(opts.requireCurrentPrompt);
     let currentUser = null;
 
     if (requireCurrentPrompt) {
-      const expectedText = typeof server.lastPromptText === "string"
-        ? server.lastPromptText
-        : String(getPendingPromptPayload()?.text || "");
       if (!expectedText.trim()) return null;
       for (const item of items) {
         const info = item?.info || {};
@@ -75,6 +77,7 @@ function createOpencodeHistoryRecovery(options = {}) {
         const parentID = candidates[0]?.info?.parentID;
         if (parentID) {
           const rawParent = await withTimeout(server.message(parentID), getSyncTimeoutMs(), null);
+          if (!isCurrent()) return null;
           const parent = rawParent?.data || rawParent;
           const info = parent?.info;
           const createdAt = createdMs(info || {});
@@ -93,17 +96,19 @@ function createOpencodeHistoryRecovery(options = {}) {
     for (const item of items) {
       const info = item?.info || {};
       if (info.role !== "assistant") continue;
+      if (isCompactionSummaryInfo(info)) continue;
       if (requireCurrentPrompt && info.parentID && info.parentID !== currentUser.id) continue;
       const createdAt = createdMs(info);
       if (createdAt && createdAt < minCreatedAt) continue;
       const output = assistantTextFromOpenCodeMessageItem(item);
-      if (!output) continue;
       const completedAt = completedMs(info);
-      const rank = completedAt || createdAt || 0;
+      const rank = createdAt || completedAt || 0;
       if (requireCurrentPrompt && rank < currentUser.rank) continue;
       if (!best || rank >= best.rank) {
         best = {
           output,
+          ...(info.error ? { error: info.error } : {}),
+          ...(info.finish ? { finish: info.finish } : {}),
           engineMessageId: typeof info.id === "string" ? info.id : null,
           completed: Boolean(completedAt),
           completedAt,
@@ -118,16 +123,18 @@ function createOpencodeHistoryRecovery(options = {}) {
   }
 
   async function recoverStalledFinal() {
+    const isCurrent = captureScope();
     const timeoutMs = getSyncTimeoutMs();
     const latest = await withTimeout(latestAssistant({ requireCurrentPrompt: true }), timeoutMs, null);
-    if (!String(latest?.output || "").trim()) return null;
+    if (!isCurrent() || latest?.error || latest?.finish === "tool-calls" || !String(latest?.output || "").trim()) return null;
     // A tool-call step has a completion timestamp while the task still runs.
     // Only an authoritative idle session can turn history into terminal output.
     const status = await withTimeout(getSessionStatus(), timeoutMs, "unknown");
-    return status === "idle" ? latest : null;
+    return isCurrent() && status === "idle" ? latest : null;
   }
 
   async function syncFinalOutput(payload) {
+    const isCurrent = captureScope();
     const current = String(payload?.output || "").trim();
     let latest = null;
     try {
@@ -135,6 +142,14 @@ function createOpencodeHistoryRecovery(options = {}) {
     } catch (err) {
       log.warn("opencode final history sync failed: %s", err?.message || String(err));
       return payload;
+    }
+    if (!isCurrent()) return payload;
+    if (latest?.error) {
+      const error = latest.error;
+      return { ...payload, code: 1, error: String(error.data?.message || error.message || error.name || "Engine history contains a failed response"), engineMessageId: latest.engineMessageId };
+    }
+    if (latest && (!latest.output?.trim() || latest.finish === "tool-calls")) {
+      return { ...payload, stalled: true, engineMessageId: latest.engineMessageId };
     }
     const official = String(latest?.output || "").trim();
     if (!official) return payload;

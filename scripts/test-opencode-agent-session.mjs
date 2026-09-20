@@ -1809,7 +1809,7 @@ async function newSession() {
   }
 }
 
-// --- explicit idle: unknown status still settles from the authoritative event -
+// --- idle event with unavailable status waits for current confirmation ---
 {
   const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
   OpencodeAgentSession.IDLE_SETTLE_MS = 20;
@@ -1822,9 +1822,12 @@ async function newSession() {
     await tick();
     fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "CURRENT LIVE OUTPUT" } });
     fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
-    await waitFor(() => orch.calls.done.length === 1, "explicit idle must settle once even when status is unknown", 160);
-    assert(orch.calls.done[0].stalled !== true, "explicit idle with unknown status is not marked stalled");
-    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "explicit idle with unknown status preserves live output");
+    await sleep(60);
+    assert(orch.calls.done.length === 0, "unknown status cannot confirm completion");
+    fake.getSessionStatus = async () => "idle";
+    await waitFor(() => orch.calls.done.length === 1, "confirmed idle must settle once", 160);
+    assert(orch.calls.done[0].stalled !== true, "confirmed idle is not marked stalled");
+    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "status outage preserves live output");
     session.terminate();
   } finally {
     OpencodeAgentSession.IDLE_SETTLE_MS = saved;

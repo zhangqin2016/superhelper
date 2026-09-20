@@ -78,6 +78,9 @@ try {
   server.subscribe();
   await server.sendPrompt({ text: "runtime-parent-fixture: delegate once, then finish", model });
   await waitUntil(() => events.some(event => event.type === "session.idle" && event.properties.sessionID === sessionID), "parent completion");
+  assert.equal(Object.hasOwn(await server._sdkSession.status(), sessionID), false,
+    "shipped engine removes completed sessions from the sparse status map");
+  assert.equal(await server.getSessionStatus(), "idle", "host recognizes native idle without a status row");
   const beforeSummary = events.length;
   await server.summarize(model);
   await waitUntil(() => events.slice(beforeSummary).some(event => event.type === "session.compacted"), "idle compaction");

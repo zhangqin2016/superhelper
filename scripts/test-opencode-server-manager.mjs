@@ -330,8 +330,12 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   manager._sdkSession = {
     status: async () => ({}),
   };
-  assert((await manager.getSessionStatus()) === "unknown", "missing status row is unknown");
-  assert((await manager.isSessionIdle()) === false, "missing status row cannot prove the session is idle");
+  assert((await manager.getSessionStatus()) === "idle", "successful sparse status map omits idle sessions");
+  assert((await manager.isSessionIdle()) === true, "missing row in a successful map means idle");
+  for (const invalid of [null, undefined, [], "invalid", { ses_busy: null }, { ses_busy: { type: "unexpected" } }]) {
+    manager._sdkSession = { status: async () => invalid };
+    assert((await manager.getSessionStatus()) === "unknown", "malformed status is not idle");
+  }
   manager._sdkSession = {
     status: async () => { throw new Error("status unavailable"); },
   };

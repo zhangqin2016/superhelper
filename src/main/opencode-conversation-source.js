@@ -154,7 +154,7 @@ function buildMetadataIndex(messages = []) {
 }
 
 function mergeMetadata(opencodeMessage, metadataMessage) {
-  if (!metadataMessage) return opencodeMessage;
+  if (!metadataMessage || metadataMessage.role !== opencodeMessage.role) return opencodeMessage;
   if (opencodeMessage.role === "assistant" && metadataMessage.meta?.superseded === true) return null;
   const merged = { ...opencodeMessage };
   const guardedAssistant = metadataMessage.record?.meta?.evidenceGate ? messageText(metadataMessage).trim() : "";
@@ -547,10 +547,10 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     // Metadata for an official PAGE lives in the local tail (three pages of slack), never the whole session.
     const localConversation = stripInternalContinuationTurns(await (ctx.sessionManager.getRecentConversationAsync || ctx.sessionManager.getRecentConversation || ctx.sessionManager.getConversation).call(ctx.sessionManager, session.id, { limit: Math.max(150, 3 * (Number.isInteger(opts.limit) ? opts.limit : 50)) }));
     const metadata = buildMetadataIndex(localConversation);
-    const mergedOfficial = mergeUserDisplayText(stripInternalContinuationTurns(page.conversation || []), localConversation).map((message) => {
+    const mergedOfficial = require("./opencode-history-ownership").bindHistoryOwnership(mergeUserDisplayText(stripInternalContinuationTurns(page.conversation || []), localConversation).map((message) => {
       const keys = [metadataKey(message), ...(message.record?.meta?.opencode?.mergedAssistantMessageIds || [])];
       return mergeMetadata(message, keys.map(key => metadata.get(key)).find(Boolean));
-    });
+    }), localConversation, mergeMetadata);
     const projections = projectedConversationFor(ctx, session.id, {
       ...opts,
       includeOpen: true,

@@ -36,6 +36,20 @@ const renderTool = {
 };
 
 try {
+  const textPath = path.join(workspace, "report.md");
+  fs.writeFileSync(textPath, "# Report\n\nTotal: 520000\n");
+  const textArtifact = { path: textPath, ext: ".md", source: "file_change" };
+  const textDelivery = assessDocumentDelivery({ taskContract: contract, artifacts: [textArtifact] });
+  assert.deepEqual(textDelivery.missing, ["content_verification"]);
+  assert.equal(textDelivery.retryRecommended, false, "text output must not enter Office render recovery");
+  const textAnswer = evaluateAnswerEvidence({ assistant: "Created report.md with total 520000.", taskContract: contract,
+    artifacts: [textArtifact], tools: [], evidenceSummary: { counts: {} }, userText: "Create report.md" });
+  assert(textAnswer.assistant.includes("Created report.md"), "text artifact delivery preserves the real answer");
+  assert(!textAnswer.assistant.includes("No generated Office"));
+  const mixed = assessDocumentDelivery({ taskContract: contract, artifacts: [textArtifact, artifact] });
+  assert(mixed.missing.includes("render"), "a Markdown sidecar cannot bypass PDF verification");
+  assert.equal(mixed.retryRecommended, true);
+
   assert.equal(shouldBufferAssistantAnswer(contract), true, "document delivery is buffered until QA is assessed");
 
   const renderedOnly = assessDocumentDelivery({

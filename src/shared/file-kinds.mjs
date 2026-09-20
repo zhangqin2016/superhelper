@@ -60,6 +60,9 @@ const TABLE = {
   ".rtf": { kind: "document", mime: "application/rtf" },
   ".csv": { kind: "spreadsheet", mime: "text/csv", text: true },
   ".tsv": { kind: "spreadsheet", mime: "text/tab-separated-values", text: true },
+  ".md": { kind: "text", mime: "text/markdown", text: true },
+  ".markdown": { kind: "text", mime: "text/markdown", text: true },
+  ".txt": { kind: "text", mime: "text/plain", text: true },
 };
 
 const exts = (predicate) => Object.freeze(new Set(Object.keys(TABLE).filter((ext) => predicate(TABLE[ext], ext))));
@@ -91,6 +94,7 @@ const GROUPS = {
   office: exts((e) => e.ooxml || e.legacyOffice || e.openDocument || e.mime === "application/rtf"),
   wordDocument: exts((e) => e.kind === "document"),
   spreadsheet: exts((e) => e.kind === "spreadsheet"),
+  textDocument: exts((e) => e.text),
   presentation: exts((e) => e.kind === "presentation"),
   /** ZIP containers with a document inside — an archive tool must not unpack them. */
   semanticZipContainer: exts((e) => e.ooxml || e.openDocument),

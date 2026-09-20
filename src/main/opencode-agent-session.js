@@ -33,6 +33,8 @@ const { createOpencodeSubagentRuntime } = require("./opencode-subagent-runtime")
 const { createOpencodeTurnLiveness } = require("./opencode-turn-liveness");
 const { pauseForPendingUserInput, resumeAfterUserInput } = require("./opencode-user-input-guard");
 const { createOpencodeHistoryRecovery } = require("./opencode-history-recovery");
+const { captureExecutionScope } = require("./opencode-execution-scope");
+const idleCompletion = require("./opencode-idle-completion");
 const { grantOpencodeRuntimeIdentity, grantOpencodeRuntimeIdentityForCompaction, revokeOpencodeRuntimeIdentity } = require("./opencode-runtime-identity");
 const idleLifecycle = require("./runner-idle-lifecycle");
 const {
@@ -192,6 +194,7 @@ class OpencodeAgentSession extends EventEmitter {
       onServerError: (err) => this._onServerError(err),
     });
     this._historyRecovery = createOpencodeHistoryRecovery({
+      captureScope: () => captureExecutionScope(this),
       getServer: () => this._server,
       getTurnStartedAt: () => this._turnStartedAt,
       getPendingPromptPayload: () => this._pendingPromptPayload,
@@ -455,6 +458,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._transientReplayCount = 0;
     this._engineSessionWasResumed = Boolean(this._server?.wasResumed || this._engineSessionWasResumed);
     this.collectedOutput = "";
+    this._executionEpoch = {};
     this._turnStartedAt = Date.now();
     this._pendingTransientFailure = null;
     this._promptDispatchPending = false;
@@ -1035,21 +1039,7 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   async _confirmIdleAndComplete() {
-    const next = this._pendingCompletePayload;
-    if (!next || this._turnSettled) return;
-    const status = await this._getSessionStatus();
-    if (!this._pendingCompletePayload || this._turnSettled) return;
-    if (status === "busy") {
-      this._scheduleCompleteTurn(next);
-      return;
-    }
-    this._pendingCompletePayload = null;
-    const synced = await this._syncFinalOutputFromOfficialHistory({
-      ...next,
-      output: this.collectedOutput.trim(),
-    });
-    if (await this._replayEmptyCompletionIfSafe(synced)) return;
-    this._completeTurn(synced);
+    return idleCompletion.confirmIdleAndComplete(this);
   }
 
   _clearIdleSettleTimer() {
@@ -1078,27 +1068,7 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   async _probeOfficialIdleAndComplete() {
-    if (!this.busy || this._turnSettled || this._pendingCompletePayload) return;
-    if (this._pendingPermissions.size || this._pendingQuestions.size) {
-      this._armIdleProbe();
-      return;
-    }
-    const status = await this._getSessionStatus();
-    if (!this.busy || this._turnSettled || this._pendingCompletePayload) return;
-    if (status !== "idle") {
-      this._armIdleProbe();
-      return;
-    }
-    // The SSE stream is a live feed, but official session status/history is the
-    // source of truth. If `session.idle` was dropped during reconnect or could
-    // not be safely routed, a quiet idle status after real progress must still
-    // settle the turn instead of waiting for the long no-progress watchdog.
-    this._scheduleCompleteTurn({
-      code: 0,
-      output: this.collectedOutput.trim(),
-      interrupted: false,
-      completedByIdleProbe: true,
-    });
+    return idleCompletion.probeOfficialIdleAndComplete(this);
   }
 
   _scheduleDispatchFailure(cause) {
@@ -1313,6 +1283,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   async _recoverOrContinueAfterTransientFailure() {
     const pending = this._pendingTransientFailure;
+    const isCurrent = captureExecutionScope(this);
     if (!pending || !this.busy || this._turnSettled) {
       this._pendingTransientFailure = null;
       return;
@@ -1322,7 +1293,7 @@ class OpencodeAgentSession extends EventEmitter {
       log.warn("opencode transient recovery history read failed: %s", err?.message || String(err));
       return null;
     });
-    if (!this.busy || this._turnSettled || this._pendingTransientFailure !== pending) return;
+    if (!isCurrent() || !this.busy || this._pendingTransientFailure !== pending) return;
     if (recovered?.output) {
       this._pendingTransientFailure = null;
       this._completeTurn({
@@ -1335,15 +1306,18 @@ class OpencodeAgentSession extends EventEmitter {
     }
 
     const status = await this._getSessionStatus();
-    if (!this.busy || this._turnSettled || this._pendingTransientFailure !== pending) return;
+    if (!isCurrent() || !this.busy || this._pendingTransientFailure !== pending) return;
     if (status === "idle" && this.collectedOutput.trim()) {
+      const synced = await this._syncFinalOutputFromOfficialHistory({ code: 0, output: this.collectedOutput.trim(), interrupted: false });
+      if (!isCurrent() || this._pendingTransientFailure !== pending) return;
       this._pendingTransientFailure = null;
-      this._completeTurn({ code: 0, output: this.collectedOutput.trim(), interrupted: false });
+      this._completeTurn(synced);
       return;
     }
     if (status === "idle" && await this._replayTransientPromptIfSafe(pending)) {
       return;
     }
+    if (!isCurrent() || this._pendingTransientFailure !== pending) return;
 
     const elapsed = Date.now() - pending.startedAt;
     if (status === "busy" || elapsed < OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS) {
@@ -1371,12 +1345,15 @@ class OpencodeAgentSession extends EventEmitter {
     resetOpencodeRuntimeState(this._eventState);
     this._subagentRuntime.reset();
     this.collectedOutput = "";
+    this._executionEpoch = {};
     this._turnStartedAt = Date.now();
     this._sawActivity = false;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
+    // This retry may deliberately replace its engine, but never its execution.
+    const isCurrent = captureExecutionScope(this, { allowServerReplacement: true });
     try {
       const originalPayload = this._pendingPromptPayload;
       const retryPayload = buildAttachmentFallbackPromptPayload(
@@ -1388,6 +1365,7 @@ class OpencodeAgentSession extends EventEmitter {
       if (refreshManagedConfig && !(await this._refreshManagedModelConfigForRetry(raw))) {
         throw new Error(raw || "managed model config refresh failed");
       }
+      if (!isCurrent()) return true;
       const isolateDocumentAttachment =
         retryPayload.attachmentFallback && shouldIsolateAttachmentFallback(originalPayload);
       const isolateLegacyResume =
@@ -1395,14 +1373,18 @@ class OpencodeAgentSession extends EventEmitter {
       if (shouldRebuildEngineForRetry({ refreshManagedConfig, classified, raw, isolateAttachmentFallback: isolateDocumentAttachment, isolateLegacyResume })) {
         await this._restartEngineSessionForSafeReplay(raw || "transient model transport failure");
       }
+      if (!isCurrent()) return true;
       const server = await this._ensureStarted();
+      if (!isCurrent()) return true;
       await server.sendPrompt(retryPayload);
+      if (!isCurrent()) return true;
       this._armResponseTimer();
       this._armProgressNoticeTimer();
       this._armHealthProbe();
       this._armPromptAcceptanceCheck();
       return true;
     } catch (err) {
+      if (!isCurrent()) return true;
       this._pendingTransientFailure = {
         message: this._sanitize(err?.message || err),
         cause: err,
@@ -1424,12 +1406,14 @@ class OpencodeAgentSession extends EventEmitter {
     resetOpencodeRuntimeState(this._eventState);
     this._subagentRuntime.reset();
     this.collectedOutput = "";
+    this._executionEpoch = {};
     this._turnStartedAt = Date.now();
     this._sawActivity = false;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
+    const isCurrent = captureExecutionScope(this);
     try {
       const retryPayload = buildAttachmentFallbackPromptPayload(
         this._pendingPromptPayload,
@@ -1437,12 +1421,14 @@ class OpencodeAgentSession extends EventEmitter {
       );
       this._pendingPromptPayload = retryPayload;
       await this._server.sendPrompt(retryPayload);
+      if (!isCurrent()) return true;
       this._armResponseTimer();
       this._armProgressNoticeTimer();
       this._armHealthProbe();
       this._armPromptAcceptanceCheck();
       return true;
     } catch (err) {
+      if (!isCurrent()) return true;
       this._failTurn(this._sanitize(err?.message || err), err, { force: true });
       return true;
     }

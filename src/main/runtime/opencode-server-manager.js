@@ -363,9 +363,13 @@ class OpencodeServerManager extends EventEmitter {
     if (!this.sessionID || !this._sdkSession?.status) return "unknown";
     try {
       const status = await this._sdkSession.status();
+      if (!status || typeof status !== "object" || Array.isArray(status)) return "unknown";
       const item = status?.[this.sessionID];
-      if (!item) return "unknown";
-      return item.type === "idle" ? "idle" : "busy";
+      // OpenCode removes idle sessions from its sparse status map.
+      // A successful empty map is authoritative idle, not a failed query.
+      if (!Object.hasOwn(status, this.sessionID)) return "idle";
+      if (item?.type === "idle") return "idle";
+      return ["busy", "retry"].includes(item?.type) ? "busy" : "unknown";
     } catch (err) {
       log.warn("session status check failed (%s); status unknown", err?.message || err);
       return "unknown";

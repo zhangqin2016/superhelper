@@ -59,6 +59,30 @@ assert.equal(stopMerged[0].record.terminal, 'turn.interrupted', 'host cancellati
 assert.equal(stopMerged[0].record.turnId, 'stop-turn');
 assert.equal(Boolean(stopMerged[0].failed), false);
 
+const { bindHistoryOwnership } = require("../src/main/opencode-history-ownership");
+const parentStop = { ...interruptedLocal, record: { ...interruptedLocal.record, engineMessageId: "engine-user" } };
+const engineStop = { ...interruptedOfficial, record: { ...interruptedOfficial.record,
+  meta: { opencode: { parentMessageId: "engine-user" } } } };
+const ownedStop = bindHistoryOwnership([
+  { id: "engine-user", role: "user", content: "Read the workbook", turnId: "stop-turn" }, engineStop,
+], [parentStop], mergeMetadata);
+const stopHistory = mergeProjectionConversation(ownedStop, [parentStop]);
+assert.equal(stopHistory.length, 2, "parent identity deduplicates an empty cancellation");
+assert.equal(stopHistory[1].record.terminal, "turn.interrupted");
+assert.equal(mergeMetadata({ role: "user", id: "engine-user" }, parentStop).record, undefined,
+  "assistant metadata must never attach to its parent user");
+const unknownParent = bindHistoryOwnership([engineStop], [parentStop], mergeMetadata);
+assert.equal(unknownParent[0].turnId, undefined, "missing parent page cannot guess by time or empty text");
+const failedProjection = { role: "assistant", turnId: "stop-turn", content: "Connection failed", failed: true,
+  record: { terminal: "turn.failed", assistantText: "Connection failed" } };
+const ownedFailure = bindHistoryOwnership([
+  { id: "engine-user", role: "user", content: "Read the workbook", turnId: "stop-turn" }, engineStop,
+], [], mergeMetadata);
+const failureHistory = mergeProjectionConversation(ownedFailure, [failedProjection]);
+assert.equal(failureHistory.length, 2, "failed projection and empty engine error share the explicit parent turn");
+assert.equal(failureHistory[1].content, "Connection failed");
+assert.equal(failureHistory[1].failed, true);
+
 for (const terminal of ["turn.dispatch_outcome_unknown", "turn.dispatch_blocked"]) {
   const recovery = { role: "assistant", turnId: "recovery", content: "Result could not be confirmed; verify before retrying.",
     record: { terminal, assistantText: "Result could not be confirmed; verify before retrying.",

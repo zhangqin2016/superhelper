@@ -22,8 +22,8 @@ for (status of ["busy", "unknown"]) {
   assert.equal(await recovery.recoverStalledFinal(), null, `${status}: watchdog must not declare success`);
 }
 status = "idle";
-assert.equal((await runner._recoverCompletedAssistantFromHistory({ requireCurrentPrompt: true })).engineMessageId, "a",
-  "confirmed idle still recovers missing terminal delivery");
+assert.equal(await runner._recoverCompletedAssistantFromHistory({ requireCurrentPrompt: true }), null,
+  "idle does not turn a tool-call step into a final answer");
 
 for (const boundary of ["history", "status"]) {
   let release;

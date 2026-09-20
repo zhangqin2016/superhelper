@@ -9,7 +9,7 @@ const path = require("node:path");
 const zlib = require("node:zlib");
 const { visionInspectionPaths } = require("./vision-inspection-receipt.js");
 
-const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument]);
+const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument, ...fileKinds.EXTENSIONS.textDocument]);
 const OOXML_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml]);
 const DOCUMENT_OPERATIONS = new Set(["create", "modify", "convert"]);
 const MAX_DEEP_STRUCTURE_BYTES = 20 * 1024 * 1024;
@@ -223,6 +223,15 @@ function requiresDocumentDelivery(taskContract = null, artifacts = []) {
 
 function assessArtifact(artifact, tools) {
   const structure = structureCheck(artifact);
+  if (fileKinds.EXTENSIONS.textDocument.has(String(artifact.ext || path.extname(artifact.path || "")).toLowerCase())) {
+    // Text delivery has no Office page-rendering requirement. A file existing
+    // does not certify its content; the independent content checks stay pending.
+    return {
+      path: artifact.path, ext: artifact.ext || path.extname(artifact.path || ""),
+      ok: false, missing: structure.ok ? ["content_verification"] : ["structure"],
+      checks: { structure, rendered: false, pageCount: 0, visual: { applicable: false }, recalculated: false },
+    };
+  }
   const successful = tools.map((tool, index) => ({ tool, index })).filter(({ tool }) => successfulTool(tool));
   const renderEntry = successful.find(({ tool }) => {
     const text = toolText(tool);
@@ -301,7 +310,7 @@ function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [
     reason: missing.length ? `document_delivery_missing:${missing.join(",")}` : "document_delivery_verified",
     artifacts: results,
     missing,
-    retryRecommended: missing.length > 0,
+    retryRecommended: missing.some((item) => item !== "content_verification"),
   };
 }
 
@@ -333,7 +342,7 @@ const MISSING_LABELS = {
 };
 
 function missingLabels(missing = [], language = "en") {
-  const labels = MISSING_LABELS[language] || MISSING_LABELS.en;
+  const labels = { ...(MISSING_LABELS[language] || MISSING_LABELS.en), content_verification: { zh: "内容核验", en: "content verification", ar: "التحقق من المحتوى" }[language] || "content verification" };
   const separator = language === "zh" ? "、" : ", ";
   return (Array.isArray(missing) ? missing : []).map((item) => labels[item] || item).join(separator);
 }

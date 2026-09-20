@@ -51,6 +51,7 @@ function createOpencodeTurnLiveness(options = {}) {
   let progressNoticeTimer = null;
   let healthTimer = null;
   let healthFails = 0;
+  let healthGeneration = 0;
   let lastGenericToolProgressNotice = "";
   let engineRetryCount = 0;
   let responseGeneration = 0;
@@ -334,6 +335,7 @@ function createOpencodeTurnLiveness(options = {}) {
   }
 
   function clearHealthProbe() {
+    healthGeneration += 1;
     if (healthTimer) cancelTimer(healthTimer);
     healthTimer = null;
     healthFails = 0;
@@ -341,11 +343,14 @@ function createOpencodeTurnLiveness(options = {}) {
 
   function armHealthProbe() {
     clearHealthProbe();
+    const generation = healthGeneration;
     const tick = async () => {
+      if (generation !== healthGeneration) return;
       healthTimer = null;
       if (!isRunning() || !getServer()) return;
-      const ok = await getServer().checkHealth().catch(() => false);
-      if (!isRunning() || !getServer()) return;
+      const server = getServer();
+      const ok = await server.checkHealth().catch(() => false);
+      if (generation !== healthGeneration || !isRunning() || getServer() !== server) return;
       if (ok) {
         healthFails = 0;
       } else if (++healthFails >= getConfig().healthMaxFails) {
