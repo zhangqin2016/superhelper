@@ -5,10 +5,11 @@ const { failureCodeOf, turnFailure } = require("./turn-failure");
 const crypto = require("node:crypto");
 const { evaluateAnswerEvidenceWithJudge, shouldBufferAssistantAnswer } = require("./answer-evidence-finalizer");
 const { clearDocumentDeliveryTurnState } = require("./document-delivery-turn");
+const { requiresDocumentDelivery } = require("./document-delivery-gate");
 const { getLogger } = require("./logger"); const { markTerminalTaskResultDelivered, persistTerminalTaskResult } = require("./task-result-runtime");
 const { compactTaskRun } = require("./task-run-state");
 const { buildEvidenceRecoveryContext } = require("./turn-recovery-context");
-const { TERMINAL_TYPES } = require("./turn-event-types");
+const { TERMINAL_TYPES, terminalTypeForWinner } = require("./turn-event-types");
 const { recoverFinalizationFailure, DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("./turn-finalize-fallback");
 const { promoteTerminalNarrative } = require("./turn-terminal-narrative");
 const { collectLearnedSkills } = require("./turn-learned-skills");
@@ -30,22 +31,12 @@ const TERMINAL_RECORD_STATUSES = new Set([
   "cancelled",
   "stalled",
 ]);
-function terminalTypeForWinner(winner, fallback) {
-  if (TERMINAL_TYPES.has(winner?.terminalType)) return winner.terminalType;
-  switch (winner?.status) {
-    case "completed": return "turn.completed";
-    case "interrupted":
-    case "cancelled": return "turn.interrupted";
-    case "stalled": return "turn.stalled";
-    case "failed": return "turn.failed";
-    default: return fallback;
-  }
-}
 function clearTurnState(state) {
   state.phase = "idle";
   state.turnId = null;
   state.finalizing = false;
   state.steerCount = 0;
+  state.userRevisions = [];
   state.admittedSeq = null;
   state.admittedTurnInput = null; state.taskAdmission = null;
   state.dispatchAttemptId = null;
@@ -308,7 +299,7 @@ function createTurnTerminalFinalizer(options = {}) {
     } catch (err) {
       log.warn("status scaffold strip failed open: %s", err?.message || err);
     }
-    const finalizerUserText = String(state.enginePayload?.rawText || "");
+    const finalizerUserText = require("./turn-user-context").effectiveUserRequest(state);
     const evidenceTools = [
       ...(Array.isArray(state.inheritedEvidenceTools) ? state.inheritedEvidenceTools : []),
       ...(state.tools?.values?.() || []),
@@ -331,16 +322,18 @@ function createTurnTerminalFinalizer(options = {}) {
     let sourceCoverage = null;
     let documentDelivery = null;
 
-    if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
+    if (type === "turn.completed" && (state.taskContract?.evidencePolicy?.required
+      || requiresDocumentDelivery(state.taskContract, record?.artifacts))) {
       const guarded = await evaluateAnswerEvidenceWithJudge({
         assistant,
+        modelRoute: state.turnModelRoute,
         taskContract: state.taskContract,
         turnPolicy: state.turnPolicy,
         evidenceSummary,
         tools: evidenceTools,
         fileChangeCount: record?.fileChanges?.length || 0,
         userText: finalizerUserText,
-        inputFiles: Array.isArray(state.enginePayload?.files) ? state.enginePayload.files : [],
+        inputFiles: require("./turn-user-context").effectiveInputFiles(state),
         artifacts: record?.artifacts || [],
         recoveryAttempt: Boolean(state.wasRescueAttempt),
       });

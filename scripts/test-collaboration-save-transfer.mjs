@@ -49,7 +49,13 @@ test("symlink and hardlinked source files are rejected", async (t) => {
   const f = fixture(t), linked = path.join(f.dir, "linked");
   fs.linkSync(f.options.sourcePath, linked);
   await assert.rejects(saveVerifiedDownload(f.options), { code: "COLLAB_TRANSFER_UNSAFE_PATH" });
-  fs.unlinkSync(linked); fs.symlinkSync(f.options.sourcePath, linked);
+  fs.unlinkSync(linked);
+  try { fs.symlinkSync(f.options.sourcePath, linked); }
+  catch (error) {
+    if (process.platform !== "win32" || error.code !== "EPERM") throw error;
+    t.diagnostic("SKIP file-symlink subcase: Windows symlink privilege unavailable; hardlink rejection passed");
+    return;
+  }
   await assert.rejects(saveVerifiedDownload({ ...f.options, sourcePath: linked }), { code: "LILYENC_PATH_INVALID" });
   assert.equal(fs.existsSync(f.options.destinationPath), false);
 });

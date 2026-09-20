@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
@@ -65,7 +66,7 @@ assert.equal(gateway.ok, false); assert.equal(gateway.error, "SECRET_STORAGE_UNA
 // 5. The rule has one home. Nothing else may touch safeStorage or define its
 //    own protect/unprotect — that is how six copies kept the old behaviour.
 {
-  const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
+  const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
   const allowed = new Set(["src/main/secret-storage.js", "src/main/collaboration/local-keyring.js"]);
   const offenders = [];
   const walk = (dir) => {
@@ -73,7 +74,7 @@ assert.equal(gateway.ok, false); assert.equal(gateway.error, "SECRET_STORAGE_UNA
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!entry.name.endsWith(".js")) continue;
-      const rel = path.relative(ROOT, full);
+      const rel = path.relative(ROOT, full).split(path.sep).join("/");
       if (allowed.has(rel)) continue;
       const code = fs.readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
       if (/encryptString|decryptString|isEncryptionAvailable|\.safeStorage\b/.test(code)) offenders.push(`${rel}: touches safeStorage`);

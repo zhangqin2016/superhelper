@@ -66,6 +66,21 @@ assert.equal(classifyExternalFactIntent("班级学生成绩排行榜").detected,
 assert.equal(classifyExternalFactIntent("我们公司在全球行业排名第几").detected, true, "explicit global/industry scope is external");
 assert.equal(buildTaskContract({ text: null }).active, false, "malformed/missing text must fail open to baseline chat");
 
+for (const text of [
+  "用虚构数据制作 DOCX 和 XLSX，不联网、不安装依赖。",
+  "不要联网，生成本地销售报告。",
+  "Create a DOCX report with fictional data. Do not browse the web.",
+  "Do not search online. Create a local spreadsheet.",
+]) {
+  assert.equal(classifyExternalFactIntent(text).explicitResearch, false, text);
+  assert.equal(buildTaskContract({ text }).externalFactPolicy.required, false, text);
+}
+const offlineFacts = classifyExternalFactIntent("不联网，告诉我全球大学排名前十。");
+assert.equal(offlineFacts.researchProhibited, true);
+assert.equal(offlineFacts.explicitResearch, false);
+assert.equal(offlineFacts.detected, true, "offline does not waive genuine external-fact evidence needs");
+assert.equal(classifyExternalFactIntent("请联网查一下全球大学排名前十").explicitResearch, true);
+
 const rawIntent = classifyExternalFactIntent("查一下今天黄金价格");
 assert.equal(rawIntent.detected, true);
 assert.equal(rawIntent.explicitResearch, true);

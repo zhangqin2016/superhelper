@@ -49,6 +49,14 @@ export function permissionActionViews() {
   ];
 }
 
+export function permissionOperationDetails(item = {}) {
+  const input = item.input || {};
+  // Render only operation fields, never arbitrary metadata (which may contain credentials).
+  const values = [input.command, input.cmd, input.filePath, input.file_path, input.path,
+    ...(Array.isArray(input.permissionPatterns) ? input.permissionPatterns : [])];
+  return [...new Set(values.filter(v => typeof v === "string" && v.trim()))].join("\n");
+}
+
 export function planApprovalActionViews(keepPlanningMessage) {
   return [
     { labelKey: "plan.approve", response: { approved: true } },

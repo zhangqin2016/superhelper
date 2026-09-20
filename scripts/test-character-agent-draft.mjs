@@ -815,6 +815,7 @@ try {
         0,
         "no session binding was written by the draft tool",
       );
+      second.close();
     } finally {
       fs.rmSync(userData, { recursive: true, force: true });
     }
@@ -910,6 +911,7 @@ try {
             "profile:account:injected",
             "the draft lands in the injected account scope, never device scope",
           );
+          second.close();
         },
       );
     } finally {
@@ -978,5 +980,6 @@ try {
   console.error("FAIL:", error);
   process.exitCode = 1;
 } finally {
+  store.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 }

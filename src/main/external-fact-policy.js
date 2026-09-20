@@ -26,7 +26,7 @@ const SUPERLATIVE_PATTERNS = [
 const EXPLICIT_WEB_RE =
   /(?:联网|上网|网上查|网络搜索|browse\s+(?:the\s+)?web|search\s+(?:the\s+)?web|search\s+online|verify\s+online|check\s+online|ابحث\s*(?:في|على)\s*(?:الإنترنت|الويب|الشبكة)|تحقق\s*عبر\s*الإنترنت)/i;
 const RESEARCH_PROHIBITED_RE =
-  /(?:不要|不用|无需|禁止|不许|不可以|别)(?:联网|上网|搜索|检索|查资料|找来源)|(?:不要|不用|无需)(?:给|提供|附)(?:来源|链接|引用)|\b(?:do\s+not|don't|dont|without)\s+(?:search(?:ing)?|brows(?:e|ing)|look(?:ing)?\s+up)|\bno\s+(?:search|sources?|citations?)\b|(?:بدون|دون|لا)\s*(?:بحث|تبحث|إنترنت|مصادر)/i;
+  /(?:不要|不用|无需|禁止|不许|不可以|别|不)\s*(?:联网|上网|搜索|检索|查资料|找来源)|(?:不要|不用|无需)(?:给|提供|附)(?:来源|链接|引用)|\b(?:do\s+not|don't|dont|without)\s+(?:search(?:ing)?|brows(?:e|ing)|look(?:ing)?\s+up)|\bno\s+(?:search|sources?|citations?)\b|(?:بدون|دون|لا)\s*(?:بحث|تبحث|إنترنت|مصادر)/i;
 const RESEARCH_ALLOWED_RE =
   /(?:可以|允许|请|现在)(?:我|你|系统)?(?:联网|上网|搜索|检索|查资料|找来源)|\b(?:you\s+may|please|now)\s+(?:search|browse|look\s+up)|\bsearch\s+(?:the\s+)?web\s+now\b|يمكنك\s*البحث|ابحث\s*الآن/i;
 const CONTEXTUAL_LOOKUP_RE = /(?:搜索一下|查一下|查证|核实|找来源|官网查询|look\s+it\s+up|look\s+up|ابحث\s*عن|تحقق\s*من|تأكد\s*من)/i;
@@ -134,9 +134,9 @@ function classifyExternalFactIntent(text = "") {
   const verificationPlan = emptyVerificationPlan();
   const creativeOnly = CREATIVE_ONLY_RE.test(source);
   const assistantSelfRef = ASSISTANT_SELF_RE.test(source);
-  const explicitResearch =
+  const explicitResearch = !researchProhibited && (
     researchAllowed || EXPLICIT_WEB_RE.test(source) ||
-    (CONTEXTUAL_LOOKUP_RE.test(source) && (ranking || superlative || freshness || hasUrl || dynamicReasons.length > 0));
+    (CONTEXTUAL_LOOKUP_RE.test(source) && (ranking || superlative || freshness || hasUrl || dynamicReasons.length > 0)));
 
   if (ranking) reasonCodes.push("ranking");
   if (superlative) reasonCodes.push("superlative_comparison");

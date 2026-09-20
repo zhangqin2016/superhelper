@@ -10,6 +10,7 @@ import {
   hookActionViews,
   hookResponseForAction,
   permissionActionViews,
+  permissionOperationDetails,
   permissionResponseForAction,
   planApprovalActionViews,
   planApprovalViewForItem,
@@ -43,6 +44,13 @@ export function permissionCard(sessionId, item, deps = {}) {
     permissionLabel: fullDeps.permissionLabel,
   });
   const card = fullDeps.createCard(view.title, view.detail);
+  const operation = permissionOperationDetails(item);
+  if (operation) {
+    const details = document.createElement("pre");
+    details.className = "assistant-permission-operation";
+    details.textContent = operation;
+    card.appendChild(details);
+  }
   const actions = fullDeps.createActions();
   for (const action of permissionActionViews()) {
     actions.appendChild(permissionActionButton(sessionId, item, action, fullDeps));

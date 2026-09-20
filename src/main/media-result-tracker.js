@@ -13,6 +13,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { deliverMediaResult, containsMediaPaths } = require("./media-result-delivery");
 
 const RESULTS_SUBPATH = path.join("generated-assets", ".lily-results");
 // Let the live turn surface the media first; only sweep records older than this so the
@@ -38,22 +39,34 @@ function alreadyShown(ctx, sessionId, paths) {
     return false;
   }
   const recent = messages.slice(-12);
-  return recent.some((message) => {
-    let blob = "";
-    try { blob = JSON.stringify(message?.content ?? message?.text ?? message ?? ""); } catch { blob = ""; }
-    return paths.some((p) => blob.includes(p));
-  });
+  return containsMediaPaths(recent.filter((message) => message?.role === "assistant"
+    && !message.meta?.mediaResult).map((message) => ({
+    content: message.content || message.text,
+    artifacts: message.record?.artifacts,
+    results: message.record?.resultBlocks,
+    outputs: message.record?.tools?.filter((t) => !t.isError && t.status === "done").map((t) => t.result),
+  })), paths);
 }
 
-function sessionForProject(ctx, project) {
-  const active = ctx.sessionManager.activeSessionId;
-  try {
-    const a = active && ctx.sessionManager.findById?.(active);
-    if (a && a.projectId === project.id) return active;
-  } catch { /* fall through */ }
+function sessionForProject(ctx, project, record = {}) {
+  if (record.sessionId) {
+    const owner = ctx.sessionManager.findById?.(record.sessionId);
+    return owner?.projectId === project.id ? owner.id : null;
+  }
   let list = [];
   try { list = ctx.sessionManager.listForProject(project.id) || []; } catch { list = []; }
-  return list.length ? list[list.length - 1].id : null;
+  if (list.length === 1) return list[0].id;
+  const paths = extractPaths(record.content);
+  if (!paths.length) return null;
+  const matches = list.filter((session) => {
+    try {
+      const messages = ctx.sessionManager.getRecentConversation?.(session.id, { limit: 12 }) || [];
+      return messages.some((m) => m.role === "assistant" && containsMediaPaths(m.record || m.content, paths));
+    } catch { return false; }
+  });
+  // An old record with ambiguous ownership stays pending, never sent to whichever
+  // conversation happens to be open when the timer fires.
+  return matches.length === 1 ? matches[0].id : null;
 }
 
 function safeRm(p) {
@@ -76,21 +89,17 @@ function sweep(ctx, now = Date.now()) {
     for (const file of files) {
       const full = path.join(dir, file);
       let record;
-      try { record = JSON.parse(fs.readFileSync(full, "utf8")); } catch { safeRm(full); continue; }
+      try { record = JSON.parse(fs.readFileSync(full, "utf8")); } catch { continue; }
       if (record.createdAt && now - record.createdAt < GRACE_MS) continue; // give the live turn a chance
-      const sessionId = sessionForProject(ctx, project);
+      const sessionId = sessionForProject(ctx, project, record);
       if (!sessionId) continue; // no session to attach to yet — leave for a later sweep
       const paths = extractPaths(record.content);
+      if (!paths.length) continue;
       if (alreadyShown(ctx, sessionId, paths)) { safeRm(full); continue; } // dedup vs the live turn
       if (!sessionCanReceiveFallback(ctx, sessionId)) continue; // never surface fallback media as a queued user message
       try {
-        const label = record.type === "video" ? "🎬 视频已生成" : "🖼️ 图片已生成";
-        ctx.turnOrchestrator.completeLocalAssistantTurn(sessionId, label, [], {
-          recordUser: false,
-          assistant: `${label}\n${record.content || ""}`,
-        });
-      } catch { /* swallow — try again next sweep is avoided by the delete below only on success... */ }
-      safeRm(full);
+        if (deliverMediaResult(ctx, sessionId, record, paths)) safeRm(full);
+      } catch { /* Retain the receipt for retry after persistence or event failure. */ }
     }
   }
 }

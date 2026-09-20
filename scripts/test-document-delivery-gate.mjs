@@ -47,6 +47,16 @@ try {
   assert.deepEqual(renderedOnly.missing, ["visual_inspection"]);
   assert.equal(renderedOnly.retryRecommended, true);
 
+  const receipt = (image, ok = true) => ({ name: "bash", status: "done", input: { command: "node $vision $image" },
+    result: "actual description\nLILY_VISION_RECEIPT " + JSON.stringify({ version: 1, kind: "image_inspection", ok, path: image }) });
+  const withReceipts = (tools) => assessDocumentDelivery({ taskContract: contract, artifacts: [artifact], tools });
+  assert.equal(withReceipts([renderTool, receipt(page1), receipt(page2)]).ok, true);
+  assert.equal(withReceipts([renderTool, receipt(page1)]).ok, false, "receipt does not bypass all-page coverage");
+  assert.equal(withReceipts([receipt(page1), receipt(page2), renderTool]).ok, false, "stale inspections do not count");
+  assert.equal(withReceipts([renderTool, receipt(page1), receipt(page2, false)]).ok, false);
+  assert.equal(withReceipts([renderTool, receipt(page1), { ...receipt(page2), status: "error" }]).ok, false);
+  assert.equal(withReceipts([renderTool, receipt(path.join(workspace, "unrelated.png"))]).ok, false);
+
   const failedRender = assessDocumentDelivery({
     taskContract: contract,
     artifacts: [artifact],
@@ -231,6 +241,18 @@ try {
   assert(zhFallback.includes("视觉检查、公式重算"), "zh fallback uses plain labels");
   assert(!zhFallback.includes("visual_inspection"), "no internal identifiers leak to users");
 
+  const generalOutput = assessDocumentDelivery({
+    taskContract: { taskType: "general" },
+    artifacts: [{ ...plainArtifact, source: "tool_output" }],
+    tools: [],
+  });
+  assert.equal(generalOutput.required, true, "real outputs trigger QA even for short general follow-ups");
+  assert.equal(generalOutput.status, "unverified");
+  for (const artifact of [plainArtifact, { ...plainArtifact, source: "assistant_text" },
+    { ...plainArtifact, source: "tool_output", display: "compact" }]) {
+    assert.equal(assessDocumentDelivery({ taskContract: { taskType: "general" }, artifacts: [artifact] }).required,
+      false, "references and scratch files do not turn ordinary questions into document tasks");
+  }
   console.log("document-delivery-gate: ok");
 } finally {
   fs.rmSync(workspace, { recursive: true, force: true });

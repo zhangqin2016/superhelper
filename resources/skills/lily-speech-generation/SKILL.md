@@ -13,6 +13,12 @@ dubbing, or TTS audio, run:
 echo '{"text":"text to read aloud","format":"wav"}' | "{{NODE_BIN}}" "{{SPEECH_GENERATION_SCRIPT}}"
 ```
 
+On Windows, save the request object with the Write tool as UTF-8 JSON first,
+then use PowerShell: `& "{{NODE_BIN}}" "{{SPEECH_GENERATION_SCRIPT}}" --input-file "request.json"`.
+Do not pipe non-ASCII text through `echo`: Windows PowerShell's default encoding
+can replace the prompt with question marks. The file option also works on other
+platforms (without PowerShell's `&`); stdin remains supported.
+
 Optional parameters:
 
 - `model`: defaults to `DASHSCOPE_TTS_MODEL`, otherwise `cosyvoice-v3-flash`

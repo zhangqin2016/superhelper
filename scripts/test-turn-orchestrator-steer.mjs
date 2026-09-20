@@ -94,6 +94,7 @@ function putBusy() {
   st.turnId = "turn_live";
   st.turnGeneration = (st.turnGeneration || 0) + 1;
   st.finalizing = false;
+  st.userRevisions = [];
   st.admittedTurnInput = {
     turnId: "turn_live",
     ownerScope: "owner-steer",
@@ -115,6 +116,7 @@ if (!res?.ok || !res.steered) throw new Error(`steer should succeed: ${JSON.stri
 if (res.turnId !== "turn_live") throw new Error(`steer must reuse the live turnId, got ${res.turnId}`);
 if (runner.steerCalls.length !== 1) throw new Error("engine steer must be invoked exactly once");
 if (orch._state("s1").queue.length !== 0) throw new Error("a successful steer must NOT queue");
+if (orch._state("s1").userRevisions?.[0]?.text !== "也顺便查一下昨天的数据") throw new Error("accepted steer must update the request revision ledger");
 const committed = eventsFor("user.committed");
 if (!committed.some((e) => e.payload?.steer === true && e.turnId === "turn_live")) {
   throw new Error(`steer must commit a user message into the live turn: ${JSON.stringify(committed)}`);
@@ -164,6 +166,7 @@ if (!res?.queued || !res.steerFellBack) {
   throw new Error(`engine-rejected steer must fall back to queue: ${JSON.stringify(res)}`);
 }
 if (orch._state("s1").queue.length !== 1) throw new Error("fallback must enqueue exactly one item");
+if (orch._state("s1").userRevisions.length) throw new Error("rejected steer cannot revise the active task");
 if (eventsFor("turn.steered").length !== 0) throw new Error("a failed steer must NOT emit turn.steered");
 console.log("steer: engine-reject fallback ok");
 
@@ -224,6 +227,7 @@ if (eventsFor("turn.steer_orphaned").length !== 0) {
 }
 runner.steerResult = true;
 console.log("steer: delayed orphan validator path ok");
+if (replacementState.userRevisions.length) throw new Error("orphan steer cannot revise a replacement turn");
 
 // --- 6. runtime control: native Lily skill failure auto-steers once ----------
 delete process.env.LILY_ENABLE_STEER;

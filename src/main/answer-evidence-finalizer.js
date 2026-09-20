@@ -204,7 +204,7 @@ function evaluateAnswerEvidence({
   const original = String(assistant || "").trim();
   const externalFact = isExternalFactContract(taskContract);
   const sourceContent = isSourceContentContract(taskContract);
-  const documentDeliveryRequired = requiresDocumentDelivery(taskContract);
+  const documentDeliveryRequired = requiresDocumentDelivery(taskContract, artifacts);
   try {
     const evidenceText = toolEvidenceText(tools);
     const documentDelivery = assessDocumentDelivery({
@@ -449,11 +449,14 @@ function evaluateAnswerEvidence({
  * windowless claims are never judged; judge-ruled conflicts are final; judge
  * unavailable → the deterministic delivery applies. Kill: LILY_EVIDENCE_LLM_JUDGE=0.
  */
-async function evaluateAnswerEvidenceWithJudge(params = {}, { judge } = {}) {
+async function evaluateAnswerEvidenceWithJudge(params = {}, { judge, pendingDocumentJudge } = {}) {
   let params_ = params;
   let result = evaluateAnswerEvidence(params_);
   try {
     if (process.env.LILY_EVIDENCE_LLM_JUDGE === "0") return result;
+    const documentResponse = await require("./document-delivery-response").applyDocumentResponse(params_, result, evaluateAnswerEvidence, pendingDocumentJudge);
+    ({ params: params_, result } = documentResponse);
+    if (documentResponse.terminal) return result;
     let assessment = result.assessment;
     let citationRepairMeta = null;
     // Round 1: citation repair (deterministic) — a citation-DISCIPLINE failure

@@ -65,6 +65,11 @@ visible calculations, and reproducible outputs over opaque one-shot answers.
 7. Verify the output:
    - reopen the workbook or exported file;
    - recalculate formulas when formulas were added or changed;
+     On Windows use `python "{{RUNTIME_SCRIPTS_DIR}}/lily_xlsx_recalc.py" input.xlsx
+     --out-dir separate-review-directory --timeout 60`, not the vendored
+     macro-based `recalc.py`. Keep the original; review the recalculated copy's
+     charts and layout before delivery. Do not treat conversion alone as proof
+     of correct business formulas or preservation of every Excel feature.
    - check chart ranges and that summary numbers match source data.
 
 ## Formulas, Charts, and Reviewability

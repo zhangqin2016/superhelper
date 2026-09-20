@@ -28,6 +28,12 @@ Write the prompt in whatever language fits the user's request; the structure abo
 echo '{"prompt":"<structured shot prompt>","ratio":"16:9","resolution":"720P","duration":5}' | "{{NODE_BIN}}" "{{VIDEO_GENERATION_SCRIPT}}"
 ```
 
+On Windows, save the request object with the Write tool as UTF-8 JSON first,
+then use PowerShell: `& "{{NODE_BIN}}" "{{VIDEO_GENERATION_SCRIPT}}" --input-file "request.json"`.
+Do not pipe non-ASCII text through `echo`: Windows PowerShell's default encoding
+can replace the prompt with question marks. The file option also works on other
+platforms (without PowerShell's `&`); stdin remains supported.
+
 Optional parameters:
 
 - `model`: defaults to `DASHSCOPE_VIDEO_MODEL`, otherwise `wan2.7-t2v`

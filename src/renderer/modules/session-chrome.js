@@ -31,6 +31,7 @@ import {
   shouldContinueLoadingOlder,
 } from "./conversation-pagination.js";
 import { resetCommittedWindowCount } from "./message-committed-render-model.js";
+import { beginConversationLoad, finishConversationLoad } from "./conversation-load-state.js";
 
 const CONVERSATION_PAGE_SIZE = 50;
 const conversationPages = new Map();
@@ -155,6 +156,7 @@ function patchSessionMessagesInStore(sessionId, messages, total) {
 
 async function loadSessionConversation(sessionId, opts = {}) {
   if (!sessionId) return [];
+  const loadRequest = beginConversationLoad(sessionId);
   let result;
   try {
     result = await window.assistantClient.getSessionConversation(sessionId, {
@@ -162,14 +164,17 @@ async function loadSessionConversation(sessionId, opts = {}) {
       preferLocal: true,
     });
   } catch (err) {
+    finishConversationLoad(sessionId, loadRequest, false);
     console.warn("[session] failed to load conversation:", err);
     return getRuntimeSession(sessionId).committedMessages;
   }
   if (!result?.ok) {
+    finishConversationLoad(sessionId, loadRequest, false);
     console.warn("[session] failed to load conversation:", result?.error || result);
     return getRuntimeSession(sessionId).committedMessages;
   }
   const officialMessages = (result.conversation || []).map(hydrateBlobRefs);
+  if (!finishConversationLoad(sessionId, loadRequest, true)) return getRuntimeSession(sessionId).committedMessages;
   const localMessages = getRuntimeSession(sessionId).committedMessages || [];
   const messages = mergeLatestConversationPage(localMessages, officialMessages);
   conversationPages.set(sessionId, {
@@ -330,6 +335,9 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
   store.set("activeSessionId", nextSessionId);
   clearSessionAttention(nextSessionId); // viewing it clears the list "finished" flag
   const switchSeq = ++sessionSwitchSeq;
+  const load = loadSessionConversation(nextSessionId, {
+    isCurrent: () => sessionSwitchSeq === switchSeq && store.get("activeSessionId") === nextSessionId,
+  });
 
   // Reveal immediately from the in-memory/runtime cache. The canonical page can
   // be slower (SQLite/OpenCode IPC/blob hydration), and should not block the
@@ -345,11 +353,9 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
   void refreshSessionSkillsUi();
   void import("./permission-settings.js").then((m) => m.refreshSessionPermissionSelect());
 
-  void loadSessionConversation(nextSessionId, {
-    isCurrent: () => sessionSwitchSeq === switchSeq && store.get("activeSessionId") === nextSessionId,
-  }).then((messages) => {
+  void load.then(() => {
     if (sessionSwitchSeq !== switchSeq || store.get("activeSessionId") !== nextSessionId) return;
-    if (messages?.length) revealSessionView(nextSessionId, { forceScrollBottom: true });
+    revealSessionView(nextSessionId, { forceScrollBottom: true });
   });
 }
 

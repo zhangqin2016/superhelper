@@ -17,6 +17,12 @@ import { buildTimelineFromLegacy } from "../src/renderer/modules/turn-legacy-tim
 import { getRenderableTimeline } from "../src/renderer/modules/turn-renderable-timeline.js";
 
 const writeBody = "function hello() {\n  return 1;\n}";
+for (const type of ["turn.dispatch_outcome_unknown", "turn.dispatch_blocked"]) {
+  const recovery = { final: { type, payload: { assistant: "Result could not be confirmed. Verify before retrying." } } };
+  assert.equal(shouldShowNarrative(recovery), true, "recovery explanations must remain visible after restart");
+  assert.equal(resolveAssistantStreamText(recovery), recovery.final.payload.assistant);
+  assert.equal(shouldShowFinal(recovery), false, "recovery is not a successful completion");
+}
 const writeTurn = {
   assistantText: writeBody,
   final: {

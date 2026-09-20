@@ -220,7 +220,7 @@ try {
   assert.equal(fs.readFileSync(path.join(existing, "keep.txt"), "utf8"), "keep", "existing target remains untouched");
 
   const symlinkTarget = path.join(dir, "symlink-target");
-  fs.symlinkSync(existing, symlinkTarget);
+  fs.symlinkSync(existing, symlinkTarget, process.platform === "win32" ? "junction" : "dir");
   await assert.rejects(() => extractCollaborationWorkspacePackage({ zipBuffer: root, targetDir: symlinkTarget }), { code: "COLLAB_WORKSPACE_TARGET_EXISTS" });
   assert.equal(fs.existsSync(path.join(existing, "README.md")), false, "target symlink is never followed");
 
@@ -238,7 +238,7 @@ try {
 
   const externalTarget = path.join(dir, "external-target"); fs.mkdirSync(externalTarget); fs.writeFileSync(path.join(externalTarget, "keep.txt"), "external");
   const replacedTarget = path.join(dir, "replaced-reservation");
-  await assert.rejects(() => extractCollaborationWorkspacePackage({ zipBuffer: root, targetDir: replacedTarget, beforePublish() { fs.rmdirSync(replacedTarget); fs.symlinkSync(externalTarget, replacedTarget); } }),
+  await assert.rejects(() => extractCollaborationWorkspacePackage({ zipBuffer: root, targetDir: replacedTarget, beforePublish() { fs.rmdirSync(replacedTarget); fs.symlinkSync(externalTarget, replacedTarget, process.platform === "win32" ? "junction" : "dir"); } }),
     { code: "COLLAB_WORKSPACE_TARGET_INVALID" });
   assert.equal(fs.lstatSync(replacedTarget).isSymbolicLink(), true, "a replacement symlink remains untouched after rejection");
   assert.equal(fs.readFileSync(path.join(externalTarget, "keep.txt"), "utf8"), "external", "a replacement symlink never exposes or changes external data");

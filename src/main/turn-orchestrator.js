@@ -615,6 +615,7 @@ class TurnOrchestrator {
     state.wasRescueAttempt = Boolean(opts.rescueAttempt || (opts.recovery && opts.recovery.kind !== "parent_task_closure"));
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
+    state.userRevisions = [];
     state.admittedSeq = null;
     state.admittedTurnInput = null;
     state.dispatchAttemptId = opts.dispatchAttemptId || null;
@@ -783,6 +784,7 @@ class TurnOrchestrator {
     state.wasRescueAttempt = Boolean(opts.rescueAttempt || (opts.recovery && opts.recovery.kind !== "parent_task_closure"));
     applyDocumentDeliveryTurnState(state, opts);
     state.steerCount = 0;
+    state.userRevisions = [];
     state.admittedSeq = null;
     state.admittedTurnInput = null;
     state.dispatchAttemptId = opts.dispatchAttemptId || null;
@@ -886,7 +888,10 @@ class TurnOrchestrator {
         files: displayFiles.length ? displayFiles : null,
       }, { turnId: state.turnId });
     }
+    const history = await this.ctx.sessionManager.getRecentConversationAsync?.(session.id, { limit: 120 });
+    if (!isCurrentStart()) return staleStartResult();
     const turnIntelligence = resolveTurnIntelligence({
+      history,
       ctx: this.ctx,
       session,
       project,
@@ -1290,6 +1295,7 @@ class TurnOrchestrator {
     }
     engineText = applyInternalRecoveryLayer(engineText, opts.recovery);
     engineText = withTaskContractPrefix(engineText, taskContract);
+    engineText = require("./turn-user-context").withAttachmentManifest(engineText, displayFiles);
     state.enginePayload = {
       rawText: rawUserText,
       text: engineText,

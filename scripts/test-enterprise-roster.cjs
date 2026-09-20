@@ -26,6 +26,6 @@ app.whenReady().then(async () => {
  return {calls,searched,filtered,expired:memberPresence({presence:'online',onlineUntil:'2000-01-01'}),inert:roster.textContent.includes('小莉 🌸')}; })()`);
  assert.deepEqual(result,{calls:['peer'],searched:1,filtered:['peer'],expired:'unknown',inert:true});
  await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
- fs.writeFileSync('/tmp/lily-enterprise-roster-acceptance.png',(await win.webContents.capturePage()).toPNG());
+ fs.writeFileSync(path.join(os.tmpdir(), 'lily-enterprise-roster-acceptance.png'),(await win.webContents.capturePage()).toPNG());
  console.log('enterprise roster Electron UI: nickname, search, online filter, direct chat and expiry passed');
-}).then(()=>{clearTimeout(timeout);win?.destroy();fs.rmSync(temp,{recursive:true,force:true});app.exit(0);}).catch(e=>{console.error(e);clearTimeout(timeout);win?.destroy();app.exit(1);});
+}).then(()=>{clearTimeout(timeout);win?.destroy();require('./lib/electron-test-cleanup.cjs')(temp);app.exit(0);}).catch(e=>{console.error(e);clearTimeout(timeout);win?.destroy();app.exit(1);});

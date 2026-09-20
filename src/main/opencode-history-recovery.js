@@ -63,7 +63,26 @@ function createOpencodeHistoryRecovery(options = {}) {
         const createdAt = createdMs(info);
         if (!createdAt || createdAt < turnStartedAt || messageText(item) !== expectedText) continue;
         if (!currentUser || createdAt >= currentUser.rank) {
-          currentUser = { createdAt, rank: createdAt };
+          currentUser = { id: info.id, createdAt, rank: createdAt };
+        }
+      }
+      // A long tool run pushes its user message out of the recent page. Resolve
+      // the engine's parent identity directly; never guess from timestamps alone.
+      if (!currentUser && typeof server.message === "function") {
+        const candidates = items.filter((item) => item?.info?.role === "assistant"
+          && item.info.parentID && createdMs(item.info) >= turnStartedAt)
+          .sort((a, b) => (createdMs(b.info) || 0) - (createdMs(a.info) || 0));
+        const parentID = candidates[0]?.info?.parentID;
+        if (parentID) {
+          const rawParent = await withTimeout(server.message(parentID), getSyncTimeoutMs(), null);
+          const parent = rawParent?.data || rawParent;
+          const info = parent?.info;
+          const createdAt = createdMs(info || {});
+          if (info?.id === parentID && info.role === "user" && createdAt >= turnStartedAt
+            && (!server.sessionID || info.sessionID === server.sessionID)
+            && messageText(parent) === expectedText) {
+            currentUser = { id: parentID, createdAt, rank: createdAt };
+          }
         }
       }
       if (!currentUser) return null;
@@ -74,6 +93,7 @@ function createOpencodeHistoryRecovery(options = {}) {
     for (const item of items) {
       const info = item?.info || {};
       if (info.role !== "assistant") continue;
+      if (requireCurrentPrompt && info.parentID && info.parentID !== currentUser.id) continue;
       const createdAt = createdMs(info);
       if (createdAt && createdAt < minCreatedAt) continue;
       const output = assistantTextFromOpenCodeMessageItem(item);

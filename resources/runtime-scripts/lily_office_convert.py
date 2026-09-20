@@ -86,6 +86,12 @@ def _env():
     env = os.environ.copy()
     env.setdefault("SAL_USE_VCLPLUGIN", "svp")
     env.setdefault("SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION", "1")
+    if os.name == "nt":
+        # File conversion needs no physical printer. These are the shared VCL
+        # gates in LO 25.2 vcl/source/gdi/print.cxx, unlike the Unix sync flag.
+        # Scope them to this child; never alter the user's printing environment.
+        env["SAL_DISABLE_PRINTERLIST"] = "1"
+        env["SAL_DISABLE_DEFAULTPRINTER"] = "1"
     return env
 
 
@@ -100,12 +106,19 @@ def _profile_uri(path):
 
 
 def _run(source, out_dir, target, infilter, timeout):
+    # LO creates deeply nested profile files; nesting its profile in a Windows
+    # deliverable directory can crash the process even when the output fits.
+    with tempfile.TemporaryDirectory(prefix="lily-lo-") as profile:
+        return _run_with_profile(source, out_dir, target, infilter, timeout, profile)
+
+
+def _run_with_profile(source, out_dir, target, infilter, timeout, profile):
     args = [soffice_command(), "--headless", "--invisible", "--nologo", "--nodefault",
             "--nofirststartwizard", "--nolockcheck", "--norestore"]
     if infilter:
         args.append("--infilter=%s" % infilter)
     args += ["--convert-to", target, "--outdir", out_dir,
-             "-env:UserInstallation=%s" % _profile_uri(os.path.join(out_dir, ".lo-profile")), source]
+             "-env:UserInstallation=%s" % _profile_uri(profile), source]
     # check=False on purpose: the interesting failure exits 0. The output file is
     # the verdict, and stderr is the explanation.
     return subprocess.run(args, check=False, capture_output=True, timeout=timeout,

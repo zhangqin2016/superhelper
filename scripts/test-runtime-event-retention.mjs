@@ -21,16 +21,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-retention-"));
 process.env.LILY_USER_DATA_DIR ||= userData;
 process.env.LILY_HOME ||= userData;
-process.on("exit", () => fs.rmSync(userData, { recursive: true, force: true }));
 
 const { MessageStore } = require("../src/main/store/message-store.js");
 const store = new MessageStore(path.join(userData, "messages.db"));
+process.on("exit", () => { store.close(); fs.rmSync(userData, { recursive: true, force: true }); });
 
 function events(sessionId, count, type, startSeq = 1) {
   return Array.from({ length: count }, (_, i) => ({
@@ -93,7 +94,7 @@ assert.equal(store.pruneOrphanRuntimeEvents({ maxSessions: 10 }), 0, "pruning an
 
 // The regression that caused the freeze must not come back: no per-row delete.
 const retention = fs.readFileSync(
-  path.join(path.dirname(new URL(import.meta.url).pathname), "..", "src/main/store/runtime-event-retention.js"),
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src/main/store/runtime-event-retention.js"),
   "utf8",
 );
 const pruneSource = retention.slice(retention.indexOf("function pruneOrphanRuntimeEvents"), retention.indexOf("function countOrphanRuntimeEvents"));
@@ -114,7 +115,7 @@ assert.equal(
 // --- wired into startup maintenance -------------------------------------
 // A prune method nothing calls is the same defect as a message nothing renders,
 // so assert the whole chain: the loop schedules it, and something starts the loop.
-const ROOT_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
+const ROOT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const maintenance = fs.readFileSync(path.join(ROOT_DIR, "src/main/store/runtime-event-maintenance.js"), "utf8");
 assert.match(maintenance, /pruneOrphanRuntimeEvents\(\{[\s\S]{0,120}maxSessions: ORPHAN_SESSION_BATCH/, "the prune must actually be scheduled, bounded by session");
 assert.match(maintenance, /rounds < MAX_ROUNDS/, "maintenance must keep going while there is still a backlog to work off, and stop at a bound");
@@ -340,7 +341,7 @@ assert.match(manager, /require\("\.\/store\/runtime-event-maintenance"\)/, "and 
   // verify with the planner that this really is an index range scan.
   {
     const source = fs.readFileSync(
-      path.join(path.dirname(new URL(import.meta.url).pathname), "..", "src/main/store/runtime-event-retention.js"),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src/main/store/runtime-event-retention.js"),
       "utf8",
     );
     const fn = source.slice(source.indexOf("function pruneHistoricalEphemeralEvents"), source.indexOf("function countOrphanRuntimeEvents"));

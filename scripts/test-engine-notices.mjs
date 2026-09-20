@@ -65,7 +65,7 @@ check("every notice the app emits is in the catalogue, and none is built by hand
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!entry.name.endsWith(".js")) continue;
-      const rel = path.relative(ROOT, full);
+      const rel = path.relative(ROOT, full).split(path.sep).join("/");
       const code = fs.readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
       for (const m of code.matchAll(/\{[^{}]*\bcode:\s*"[A-Za-z]+"[^{}]*\blevel:\s*"(?:progress|warning|info|error)"[^{}]*\}/g)) {
         offenders.push(`${rel}:${code.slice(0, m.index).split("\n").length}`);

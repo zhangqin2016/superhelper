@@ -69,6 +69,8 @@ for (const [locale, patterns] of Object.entries(REQUIRED)) {
 // --- locale fallback is English, never Chinese ---------------------------
 
 const unknown = buildAutonomyGuidance("full", "pt-BR");
+assert.match(buildAutonomyGuidance("full", "en"), /necessary attachment is missing/);
+assert.match(buildAutonomyGuidance("full", "zh-CN"), /缺少必要附件/);
 assert.equal(unknown, buildAutonomyGuidance("full", "en"), "an unlisted locale must fall back to English");
 assert.doesNotMatch(unknown, /[一-鿿]/, "an unlisted locale must never receive Chinese text");
 assert.equal(buildAutonomyGuidance("full", "zh-TW"), buildAutonomyGuidance("full", "zh-CN"), "zh variants resolve to zh-CN");

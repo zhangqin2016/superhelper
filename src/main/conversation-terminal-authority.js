@@ -12,4 +12,23 @@ function preserveHostInterruption(merged, local) {
   return merged;
 }
 
-module.exports = { preserveHostInterruption };
+function preserveHostRecovery(merged, local) {
+  const terminal = local.record?.terminal;
+  if (merged.role !== "assistant" || !["turn.dispatch_outcome_unknown", "turn.dispatch_blocked"].includes(terminal)) return merged;
+  const explanation = String(local.content || local.record?.assistantText || "").trim();
+  const existing = String(merged.content || merged.record?.assistantText || "").trim();
+  const text = explanation && !existing.includes(explanation)
+    ? [existing, explanation].filter(Boolean).join("\n\n") : existing;
+  merged.content = text;
+  merged.failed = true;
+  merged.record = {
+    ...(merged.record || {}),
+    terminal,
+    assistantText: text,
+    meta: { ...(merged.record?.meta || {}), ...local.record.meta, terminal, failed: true },
+  };
+  merged.meta = { ...(merged.meta || {}), ...local.meta, terminal };
+  return merged;
+}
+
+module.exports = { preserveHostInterruption, preserveHostRecovery };

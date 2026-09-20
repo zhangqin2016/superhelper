@@ -1073,6 +1073,8 @@ function buildTaskContract({
 function withTaskContractPrefix(text, contract) {
   if (!contract?.active) return String(text || "");
   const { addLayersToEngineText } = require("./engine-message-layers");
+  const sourceGuidance = require("./source-resolution-guidance").sourceResolutionGuidance(contract);
+  if (sourceGuidance) return addLayersToEngineText(text, { executionConstraints: sourceGuidance });
   const intentRelation = contract.intentContract?.relation || "new";
   const newTaskIsolation = intentRelation === "new"
     ? [
@@ -1088,6 +1090,7 @@ function withTaskContractPrefix(text, contract) {
     "<lily_task_contract>",
     "This internal contract improves execution quality. Do not quote it back unless the user asks about process.",
     "The user's original request remains the highest-priority instruction, especially explicit negations.",
+    "Task type, operation, expected output and checklists below are inferred planning hints, not additional user requirements. Resolve source identity and the requested result from the user's actual words and attachment manifest first. A source document does not itself imply a downloadable output file; an in-chat answer is valid when that is what was requested. Never fabricate a deliverable or select unrelated source data to satisfy these hints.",
     `task_kind: ${contract.kind}`,
     `task_type: ${contract.taskType || "general"}`,
     `categories: ${contract.categories.join(", ") || "general"}`,
@@ -1153,7 +1156,7 @@ function withTaskContractPrefix(text, contract) {
     "This is the platform's durable baseline for the task. The current user instruction outranks inherited fields. Treat assumptions as provisional, not as facts.",
     JSON.stringify(compactIntentContract(contract.intentContract)),
     ...newTaskIsolation,
-    "Ask a clarification only when criticalUnknowns is non-empty or when acting would be irreversible and materially ambiguous. For reversible research or analysis, choose a reasonable scope, disclose the assumption, verify it, and proceed; a question-only response does not complete the task.",
+    "Ask when a necessary user-provided input is missing, the requested source cannot be identified, or acting would be irreversible and materially ambiguous. The inferred criticalUnknowns list may be incomplete. For reversible research or analysis with an identified source, choose a reasonable scope, disclose assumptions, verify and proceed. Waiting for necessary input is an honest pending outcome, not completed delivery; do not manufacture work to avoid asking.",
     "Do not claim the task complete until every deliverable and machine-verifiable success criterion has supporting evidence.",
     "If the session exposes lily_intent_contract_commit and your semantic interpretation materially improves the objective, deliverables, success criteria, assumptions, critical unknowns, or an unfamiliar external claim's verification plan, call it once before the first side effect. It is optional: if unavailable or rejected, continue immediately with this host baseline.",
     "",

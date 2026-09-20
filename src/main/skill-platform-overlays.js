@@ -25,6 +25,11 @@ function buildSkillOverlaySection(enabledSkills, locale) {
     .filter(Boolean)
     .map((overlay) => `- ${zh ? overlay.zh : overlay.en}`);
   if (!lines.length) return "";
+  let runtimeScripts = "";
+  try { runtimeScripts = require("./runtime-python").resolveRuntimeScriptsDir(); } catch { /* Retain environment-based discovery on older runtimes. */ }
+  if (runtimeScripts) lines.unshift(zh
+    ? `- 当前版本运行时脚本目录：${JSON.stringify(runtimeScripts)}。直接从此目录读取所需脚本，不要递归搜索其他安装包。PowerShell 环境变量写法是 $env:LILY_RUNTIME_SCRIPTS；Python 使用 os.environ['LILY_RUNTIME_SCRIPTS']。`
+    : `- Current-build runtime scripts: ${JSON.stringify(runtimeScripts)}. Read helpers directly here, not by recursively searching other installations. PowerShell: $env:LILY_RUNTIME_SCRIPTS; Python: os.environ['LILY_RUNTIME_SCRIPTS'].`);
   return ["## Tool Protocol Overrides", "", ...lines].join("\n");
 }
 

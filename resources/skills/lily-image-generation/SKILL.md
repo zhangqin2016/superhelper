@@ -36,6 +36,12 @@ product shot, or visual concept, run:
 echo '{"prompt":"image description","size":"2048*2048"}' | "{{NODE_BIN}}" "{{IMAGE_GENERATION_SCRIPT}}"
 ```
 
+On Windows, save the request object with the Write tool as UTF-8 JSON first,
+then use PowerShell: `& "{{NODE_BIN}}" "{{IMAGE_GENERATION_SCRIPT}}" --input-file "request.json"`.
+Do not pipe non-ASCII text through `echo`: Windows PowerShell's default encoding
+can replace the prompt with question marks. The file option also works on other
+platforms (without PowerShell's `&`); stdin remains supported.
+
 Optional parameters:
 
 - `size`: output size, for example `1664*928`, `1328*1328`, or `928*1664`

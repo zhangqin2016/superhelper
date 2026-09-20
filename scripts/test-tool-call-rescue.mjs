@@ -70,7 +70,7 @@ const { resetRescueStateForTests, correctiveHintFor, evidenceVerifyHintFor, resc
       return message;
     },
   });
-  assert.ok(durableStore.supersedeAssistantTurn("s1", "turn_old", "turn_recovery"));
+  assert.ok(await durableStore.supersedeAssistantTurn("s1", "turn_old", "turn_recovery"));
   assert.deepEqual(durableMessages[0].meta, { superseded: true, supersededByTurnId: "turn_recovery" });
 }
 

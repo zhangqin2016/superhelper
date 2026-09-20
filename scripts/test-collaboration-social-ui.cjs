@@ -10,7 +10,11 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'social-dom-'));
 app.setPath('userData', path.join(dir, 'data')); app.disableHardwareAcceleration();
 let win;
 const deadline = setTimeout(() => finish(1), 40000);
-function finish(code) { clearTimeout(deadline); win?.destroy(); fs.rmSync(dir, { recursive: true, force: true }); app.exit(code); }
+function finish(code) {
+  clearTimeout(deadline); win?.destroy();
+  try { require('./lib/electron-test-cleanup.cjs')(dir); } catch (error) { console.error(error); code = 1; }
+  app.exit(code);
+}
 app.whenReady().then(async () => {
   const page = path.join(dir, 'index.html');
   fs.writeFileSync(page, '<!doctype html><div id="friends"></div><div id="teams"></div>');

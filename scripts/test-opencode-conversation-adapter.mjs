@@ -278,4 +278,22 @@ assert.deepEqual(
   "the surviving TodoWrite snapshot is the final task list",
 );
 
+const stagedItems = [
+  { info: { id: "process", role: "assistant", finish: "tool-calls" },
+    parts: [{ type: "text", text: "Checking the file." },
+      { type: "tool", tool: "read", callID: "read-file", state: { status: "completed", output: "data" } }] },
+  { info: { id: "final", role: "assistant", finish: "stop" },
+    parts: [{ type: "text", text: "The file is ready." }] },
+];
+const separated = adaptOpencodeMessagesPage({ items: stagedItems }).conversation[0];
+assert.equal(separated.content, "The file is ready.");
+assert.equal(separated.record.assistantText, separated.content);
+assert.equal(separated.record.timeline.find((e) => e.id === "opencode-narrative:process").text, "Checking the file.");
+assert.equal(separated.record.tools.length, 1);
+assert.equal(adaptOpencodeMessagesPage({ items: stagedItems.slice(0, 1) }).conversation[0].content,
+  "Checking the file.", "an interrupted turn retains its partial output");
+assert.equal(adaptOpencodeMessagesPage({ items: [stagedItems[0], {
+  ...stagedItems[1], info: { ...stagedItems[1].info, finish: "length" },
+}] }).conversation[0].content, "Checking the file.\n\nThe file is ready.", "unknown/incomplete finality fails open");
+
 console.log("opencode-conversation-adapter: ok");

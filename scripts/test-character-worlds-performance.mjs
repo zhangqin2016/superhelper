@@ -145,5 +145,6 @@ try {
 
   console.log(`PASS: test-character-worlds-performance (${checks} checks, binding p95 ${snapshotP95.toFixed(3)}ms, compile p95 ${compileP95.toFixed(1)}ms)`);
 } finally {
+  store.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 }

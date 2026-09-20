@@ -8,7 +8,8 @@ app.whenReady().then(async () => {
   const base = pathToFileURL(path.resolve('src/renderer') + '/').href;
   const html = fs.readFileSync('src/renderer/index.html', 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replace('<head>', '<head><base href="' + base + '">');
   const fixture = path.join(temp, 'index.html'); fs.writeFileSync(fixture, html);
-  win = new BrowserWindow({ show: false, width: 1100, height: 800, webPreferences: { sandbox: true, contextIsolation: true } });
+  win = new BrowserWindow({ show: false, width: 1100, height: 800, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
+  win.webContents.on('console-message', (event) => console.log(event.message));
   await win.loadFile(fixture, { query: { view: 'collaboration' } });
   await win.webContents.executeJavaScript(`(async()=>{
     const {initCollaborationCenter}=await import('${base}modules/collaboration-center.js');
@@ -24,7 +25,7 @@ app.whenReady().then(async () => {
     window.polish={center,api,setLocale};
   })()`);
   const tick = () => new Promise(r => setTimeout(r, 100));
-  const js = code => win.webContents.executeJavaScript(code);
+  const js = code => win.webContents.executeJavaScript(code).catch(error => { console.error('Failed renderer check:', code); throw error; });
   await tick();
   await js(`document.getElementById('collaborationTeamsTab').click()`); await tick();
   const team = await js(`(()=>{const roster=document.querySelector('.enterprise-roster'),channels=document.querySelector('.collaboration-team-channels');return {collapsed:!roster.open,channelsFirst:!!(channels.compareDocumentPosition(roster)&Node.DOCUMENT_POSITION_FOLLOWING)};})()`);
@@ -48,6 +49,7 @@ app.whenReady().then(async () => {
   assert.equal(await js(`!!document.querySelector('dialog:modal')&&document.querySelector('[data-field=greeting]').value==='一起协作'&&!!document.querySelector('.collaboration-dialog-status').textContent`),true,'rejected request preserves greeting and displays a retryable error');
   await js(`window.polish.api.friend=async()=>({ok:true,state:'completed'});document.querySelector('[data-action="send-request"]').click()`);await tick();
   assert.equal(await js(`!document.querySelector('dialog:modal')`),true,'successful request closes contact dialog');
+  assert.equal(await js(`document.querySelector('[data-form=contact]').closest('details').open`), false, 'successful close synchronizes the disclosure before reopening');
   await js(`(()=>{const f=document.querySelector('[data-form=contact]');f.closest('details').querySelector('summary').click();window.polish.api.lookupFriend=()=>new Promise(r=>window.polish.releaseLookup=r);})()`);await tick();
   await js(`(()=>{const f=document.querySelector('[data-form=contact]');f.querySelector('[name=lilyId]').value='late';f.requestSubmit();})()`);await tick();
   await js(`document.querySelector('dialog:modal [data-dialog-dismiss]').click()`);await tick();

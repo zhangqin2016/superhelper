@@ -224,6 +224,10 @@ async function checkLibreOfficePack(id, spec, packDir) {
       SAL_USE_VCLPLUGIN: process.env.SAL_USE_VCLPLUGIN || "svp",
       SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION:
         process.env.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION || "1",
+      ...(process.platform === "win32" ? {
+        SAL_DISABLE_PRINTERLIST: "1",
+        SAL_DISABLE_DEFAULTPRINTER: "1",
+      } : {}),
     }, { timeoutMs: LIBREOFFICE_CHECK_TIMEOUT_MS });
     return {
       id,

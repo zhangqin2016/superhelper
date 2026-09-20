@@ -170,7 +170,14 @@ function mergeAssistantGroup(group = []) {
   const endedAt = Math.max(
     ...group.map((m) => recordTimeRange(m.record, m).end).filter((n) => Number.isFinite(n)),
   );
-  const assistantText = mergeTextParts(group.map((m) => m.content || m.record?.assistantText || ""));
+  // Only protocol-confirmed tool narration moves into the process timeline.
+  // Missing/unknown finish metadata and partial answers remain visible.
+  const hasFinalAnswer = group.some((m) => m.record?.meta?.opencode?.finish === "stop"
+    && (m.content || m.record?.assistantText || "").trim());
+  const processMessages = new Set(hasFinalAnswer
+    ? group.filter((m) => m.record?.meta?.opencode?.finish === "tool-calls") : []);
+  const assistantText = mergeTextParts(group.filter((m) => !processMessages.has(m))
+    .map((m) => m.content || m.record?.assistantText || ""));
   const thinkingText = mergeTextParts(group.map((m) => m.record?.thinkingText || ""));
   const usage = sumUsage(group.map((m) => m.record?.usage));
   const durationMs = Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt
@@ -181,7 +188,16 @@ function mergeAssistantGroup(group = []) {
     return Number.isFinite(cost) ? sum + cost : sum;
   }, 0);
   const hasCost = group.some((message) => Number.isFinite(message.record?.totalCostUsd));
-  const timeline = normalizeCompletedTimeline(group.flatMap((m) => m.record?.timeline || []));
+  const timeline = normalizeCompletedTimeline(group.flatMap((m) => {
+    const entries = m.record?.timeline || [];
+    const text = m.content || m.record?.assistantText || "";
+    if (!processMessages.has(m) || !text.trim()) return entries;
+    const id = `opencode-narrative:${m.engineMessageId || m.id}`;
+    return entries.some((entry) => entry.id === id) ? entries : [
+      { kind: "text", id, text, status: "done", ts: recordTimeRange(m.record, m).start },
+      ...entries,
+    ];
+  }));
   const tools = group.flatMap((m) => m.record?.tools || []);
   const processEvents = group.flatMap((m) => m.record?.processEvents || []);
   const notices = group.flatMap((m) => m.record?.notices || []);

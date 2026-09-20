@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const mod = await import(path.join(__dirname, "../resources/opencode-plugins/large-output-guard.js"));
+const mod = await import("../resources/opencode-plugins/large-output-guard.js");
 const { LargeOutputGuardPlugin } = mod;
 
 // The plugin file must export ONLY the factory (named + default) — the OpenCode

@@ -700,7 +700,10 @@ function buildAgentGuideContent(enabledSkills, locale, { workspaceSkills = [], r
       hasBundledRuntime = false;
     }
     if (hasBundledRuntime) {
-      sections.push(`## ${guide.envTitle}`, "", ...guide.envNote, "");
+      const runtimeNotes = process.platform === "win32"
+        ? guide.envNote.map((note) => note.replaceAll("python3", "python").replaceAll("command -v ...", "Get-Command ..."))
+        : guide.envNote;
+      sections.push(`## ${guide.envTitle}`, "", ...runtimeNotes, "");
     }
   }
 
@@ -841,7 +844,7 @@ function buildAgentSubagentPersona(locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 25;
+const AGENT_GUIDE_STATIC_VERSION = 26;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

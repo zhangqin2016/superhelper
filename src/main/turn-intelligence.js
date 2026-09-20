@@ -10,13 +10,13 @@ const log = getLogger("turn-intelligence");
 // reading further only costs (0.6 s per call on a 1,400-message session).
 const RECENT_CONTEXT_MESSAGES = 120;
 
-function resolveTurnIntelligence({ ctx, session, project = null, text = "", files = [], turnId = "", previousIntentContract = null, missingRecoverySource = false } = {}) {
+function resolveTurnIntelligence({ ctx, session, project = null, text = "", files = [], turnId = "", previousIntentContract = null, missingRecoverySource = false, history } = {}) {
   let committedMessages = Array.isArray(session?.messages) ? session.messages : [];
   let sessionSummary = null;
   try {
     // A tail is all intent continuity ever reads; the whole session is not.
     committedMessages =
-      typeof ctx?.sessionManager?.getRecentConversation === "function"
+      Array.isArray(history) ? history : typeof ctx?.sessionManager?.getRecentConversation === "function"
         ? ctx.sessionManager.getRecentConversation(session.id, { limit: RECENT_CONTEXT_MESSAGES })
         : typeof ctx?.sessionManager?.getConversation === "function"
           ? ctx.sessionManager.getConversation(session.id)

@@ -30,8 +30,9 @@ let checks = 0;
 function check(name, fn) { fn(); checks += 1; console.log(`ok - ${name}`); }
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "read-budget-"));
+let store;
 try {
-  const store = new MessageStore(path.join(dir, "messages.db"), path.join(dir, "blobs"));
+  store = new MessageStore(path.join(dir, "messages.db"), path.join(dir, "blobs"));
   const sid = "s-budget";
   for (let i = 1; i <= 300; i += 1) {
     store.append(sid, { id: `m${i}`, role: i % 2 ? "user" : "assistant", content: `message ${i}`, timestamp: new Date(1700000000000 + i * 1000).toISOString() });
@@ -70,7 +71,7 @@ try {
   check("new records are archived compact, and the page projection is wired into the read path", () => {
     const archive = fs.readFileSync(path.join(ROOT, "src/main/turn-archive.js"), "utf8");
     assert.match(archive, /processEvents: compactProcessEvents\(\(state\.processEvents \|\| \[\]\)\.slice\(-100\)\)/, "archive time");
-    const manager = fs.readFileSync(path.join(ROOT, "src/main/session-manager.js"), "utf8");
+    const manager = fs.readFileSync(path.join(ROOT, "src/main/session-conversation-reads.js"), "utf8");
     assert.match(manager, /conversation: projectConversationForDisplay\(fresh\.conversation\)/, "read time, for records archived before");
   });
 
@@ -94,5 +95,6 @@ try {
 
   console.log(`\n${checks} checks passed (conversation read budget)`);
 } finally {
+  store?.close();
   fs.rmSync(dir, { recursive: true, force: true });
 }

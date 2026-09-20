@@ -86,7 +86,7 @@ try {
   makeExecutable(
     sofficeExe,
     process.platform === "win32"
-      ? "@echo %* > \"%LILY_TEST_SOFFICE_ARGS%\"\r\n"
+      ? "@echo %* > \"%LILY_TEST_SOFFICE_ARGS%\"\r\n@echo printerlist=%SAL_DISABLE_PRINTERLIST% defaultprinter=%SAL_DISABLE_DEFAULTPRINTER% >> \"%LILY_TEST_SOFFICE_ARGS%\"\r\n"
       : "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$LILY_TEST_SOFFICE_ARGS\"\necho LibreOffice health ok\n",
   );
 
@@ -147,6 +147,9 @@ try {
     );
   }
   const sofficeArgs = fs.readFileSync(sofficeArgsPath, "utf8");
+  if (process.platform === "win32") {
+    assert(sofficeArgs.includes("printerlist=1 defaultprinter=1"), "health child must disable printer discovery");
+  }
   for (const arg of ["--headless", "--invisible", "--nofirststartwizard", "--terminate_after_init", "-env:UserInstallation="]) {
     assert(sofficeArgs.includes(arg), `libreoffice health must include ${arg}: ${sofficeArgs}`);
   }
