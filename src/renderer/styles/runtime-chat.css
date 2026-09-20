@@ -2495,6 +2495,16 @@
   box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
+.assistant-permission-operation {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
 .assistant-prompt-card strong {
   display: block;
   margin-bottom: 6px;

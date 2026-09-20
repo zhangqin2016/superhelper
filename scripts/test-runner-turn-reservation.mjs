@@ -96,7 +96,7 @@ check("no module outside the runner recomputes idleness by hand", () => {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!entry.name.endsWith(".js")) continue;
-      const rel = path.relative(ROOT, full);
+      const rel = path.relative(ROOT, full).split(path.sep).join("/");
       if (rel === "src/main/opencode-agent-session.js" || rel === "src/main/runner-idle-lifecycle.js") continue; // the owner
       // Comments may describe the forbidden form; only code is judged.
       const src = fs.readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");

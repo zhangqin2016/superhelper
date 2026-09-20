@@ -26,7 +26,10 @@ const code = [
   "(program / 'soffice.com').touch()",
   "(program / 'soffice.exe').touch()",
   "os.environ['LILY_LIBREOFFICE_PROGRAM'] = str(program)",
-  "print(json.dumps({'uri': module._profile_uri(str(profile)), 'command': module._soffice(), 'env': module._office_env(), 'options': module._subprocess_options()}))",
+  "before = dict(os.environ)",
+  "env = module._office_env()",
+  "assert dict(os.environ) == before, 'conversion must not change the parent environment'",
+  "print(json.dumps({'uri': module._profile_uri(str(profile)), 'command': module._soffice(), 'env': env, 'options': module._subprocess_options()}))",
 ].join("\n");
 const result = JSON.parse(execFileSync(python, ["-c", code], {
   encoding: "utf8",
@@ -41,6 +44,8 @@ assert.equal(
   "document rendering must not block on an unavailable default printer",
 );
 if (process.platform === "win32") {
+  assert.equal(result.env.SAL_DISABLE_PRINTERLIST, "1", "conversion must not enumerate Windows printers");
+  assert.equal(result.env.SAL_DISABLE_DEFAULTPRINTER, "1", "conversion must not query the Windows default printer");
   assert.match(result.command, /soffice\.exe$/i, "Windows document rendering must use soffice.exe, not soffice.com");
   assert.equal(
     result.options.creationflags > 0,

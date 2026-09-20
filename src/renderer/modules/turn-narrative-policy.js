@@ -78,6 +78,7 @@ export function shouldShowNarrative(liveTurn = {}) {
   const text = resolveAssistantStreamText(liveTurn);
   if (!text) return false;
   if (Boolean(liveTurn.final)) {
+    if (["turn.dispatch_outcome_unknown", "turn.dispatch_blocked"].includes(liveTurn.final.type)) return true;
     if (liveTurn.final.type === "turn.completed") {
       if (hasCliResult(liveTurn)) return false;
       return !textMatchesFileToolBody(text, liveTurn);

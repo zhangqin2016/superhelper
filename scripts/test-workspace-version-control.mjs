@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.dirname(rootDir);
-const { WorkspaceVersionService } = await import(path.join(projectDir, "src/main/workspace-version-service.js"));
-const { isIgnoredRelativePath, isSafeRelativePath } = await import(path.join(projectDir, "src/main/workspace-version-policy.js"));
-const { isProjectBusy, isVersionId } = await import(path.join(projectDir, "src/main/ipc-projects.js"));
+const { WorkspaceVersionService } = await import("../src/main/workspace-version-service.js");
+const { isIgnoredRelativePath, isSafeRelativePath } = await import("../src/main/workspace-version-policy.js");
+const { isProjectBusy, isVersionId } = await import("../src/main/ipc-projects.js");
 
 function tempWorkspace() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "lily-version-test-"));

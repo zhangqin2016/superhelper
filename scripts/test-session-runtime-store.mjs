@@ -1394,4 +1394,18 @@ if (restarted.taskLifecycle?.status !== "outcome_unknown" || restarted.attention
   assert.notEqual(runtime.attention, "failed");
 }
 
+{
+  const assert = await import("node:assert/strict");
+  const sid = "media-supplement";
+  store.applyRuntimeEvent({ id: "media-start", type: "turn.started", sessionId: sid, turnId: "live", seq: 1, ts: 1, payload: {} });
+  const message = { id: "msg_media_stable", role: "assistant", content: "image ready", meta: { mediaResult: { paths: ["D:/work/image.png"] } } };
+  for (let seq = 2; seq <= 3; seq++) store.applyRuntimeEvent({
+    id: `media-${seq}`, sessionId: sid, seq, ts: seq, turnId: null, type: "engine.notice", source: "media_result",
+    payload: { notice: { code: "mediaResultDelivered" }, committedMessage: message },
+  });
+  const runtime = store.getRuntimeSession(sid);
+  assert.equal(runtime.committedMessages.length, 1, "replayed delivery is idempotent");
+  assert.equal(runtime.liveTurn.turnId, "live", "delivery cannot replace an active task");
+  assert.equal(runtime.committedMessages[0].record?.user, undefined, "no invented user input");
+}
 console.log("session-runtime-store: ok");

@@ -1715,6 +1715,8 @@
   "workbench.emptyTitle": "Start a work task",
   "workbench.emptyLead": "Describe what you need below. The assistant can draft documents, summarize information, and handle everyday office work.",
   "workbench.emptyHint": "You can also attach images or files",
+  "workbench.historyLoading": "Loading conversation history…",
+  "workbench.historyFailed": "Could not load conversation history. Reopen this conversation to retry.",
   "workbench.example1": "Summarize today's meeting notes with decisions and action items",
   "workbench.example2": "Write a weekly report summary from this data",
   "workbench.example3": "Turn the attached spreadsheet into a clear bullet list",

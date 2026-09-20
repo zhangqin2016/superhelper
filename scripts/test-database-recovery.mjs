@@ -134,7 +134,7 @@ test('snapshot publication collisions retain previous backup and original', () =
   const p = file('collision'); seed(p); const first = api.createRecoveryBackup(p);
   const original = fs.linkSync;
   fs.linkSync = (...args) => {
-    if (String(args[1]).includes('/backup-')) throw Object.assign(new Error('occupied'), { code: 'EEXIST' });
+    if (path.basename(String(args[1])).startsWith('backup-')) throw Object.assign(new Error('occupied'), { code: 'EEXIST' });
     return original(...args);
   };
   try { assert.equal(api.createRecoveryBackup(p).ok, false); }
@@ -201,7 +201,7 @@ test('candidate directory symlinks cannot redirect recovery to arbitrary files',
   const p = file('symlink'); seed(p);
   const other = file('symlink-target'); seed(other);
   const { candidate } = api.createRecoveryBackup(other);
-  fs.symlinkSync(other + '.backups', p + '.backups', 'dir');
+  fs.symlinkSync(other + '.backups', p + '.backups', process.platform === 'win32' ? 'junction' : 'dir');
   assert.equal(api.prepareRecovery(p).candidates.length, 0);
   assert.equal(api.restoreRecoveryCandidate(p, candidate.id).ok, false);
   assert.equal(api.createRecoveryBackup(p).ok, false);
@@ -320,7 +320,9 @@ test('torn header with a genuine hot journal uses native rollback before proposi
     const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);
     db.exec('PRAGMA journal_mode=DELETE; PRAGMA cache_size=5; BEGIN IMMEDIATE; UPDATE messages SET envelope_blob=zeroblob(65536)');
     process.kill(process.pid,'SIGKILL');`,p]);
-  assert.equal(killed.signal,'SIGKILL');
+  assert.equal(killed.error, undefined);
+  if (process.platform === 'win32') assert.notEqual(killed.status, 0);
+  else assert.equal(killed.signal,'SIGKILL');
   const fd=fs.openSync(p,'r+');fs.writeSync(fd,Buffer.alloc(16),0,16,0);fs.closeSync(fd);
   const bytes=fs.readFileSync(p),journal=fs.readFileSync(p+'-journal');
   const result=api.inspectDatabase(p);

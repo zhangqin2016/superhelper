@@ -122,5 +122,6 @@ try {
   console.error("FAIL:", error?.message || error);
   process.exitCode = 1;
 } finally {
+  store.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 }

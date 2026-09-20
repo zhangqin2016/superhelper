@@ -47,14 +47,23 @@ function judgeEnabled() {
  *  relative /llm/<provider> base, which is resolved against the service API
  *  base. Anything unresolved (expired token cache, placeholder) skips cleanly —
  *  the deterministic verdict stands (fail-open, never a crash). */
-function resolveJudgeConnectionDetailed() {
+function resolveJudgeConnectionDetailed(modelRoute = null) {
   try {
     const presets = require("./model-presets");
-    const preset = presets.getActivePreset?.();
+    let routed = null;
+    if (modelRoute?.selectionId) {
+      routed = require("./model-selection-catalog").resolveTurnModel({
+        selection: { mode: "manual", manualModelId: modelRoute.selectionId },
+        pinnedModelId: modelRoute.selectionId,
+      });
+      if (!routed?.ok || !routed.execution?.env || routed.model?.modelID !== modelRoute.modelId
+        || routed.model?.providerID !== modelRoute.providerId) return { connection: null, reason: "turn_model_unavailable" };
+    }
+    const preset = routed ? { model: routed.model.modelID } : presets.getActivePreset?.();
     if (!preset) return { connection: null, reason: "no_active_preset" };
-    const env = preset.custom
+    const env = routed?.execution?.env || (preset.custom
       ? (typeof presets.getUserApiEnv === "function" ? presets.getUserApiEnv() : null)
-      : (typeof presets.getActivePresetEnv === "function" ? presets.getActivePresetEnv() : null);
+      : (typeof presets.getActivePresetEnv === "function" ? presets.getActivePresetEnv() : null));
     let baseUrl = String(env?.LILY_API_BASE_URL || "").trim();
     const apiKey = String(env?.LILY_API_KEY || "").trim();
     const model = String(env?.LILY_MODEL || preset.model || "").trim();
@@ -91,7 +100,7 @@ function trimUrl(value = "") {
   return String(value || "").replace(/\/+$/, "");
 }
 
-async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics }) {
+async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics, responseTextOnly = false }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("JUDGE_TIMEOUT")), timeoutMs);
   try {
@@ -140,6 +149,7 @@ async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics }) {
     // content empty — the verdict JSON is often written there. The verdict
     // parser extracts the JSON block wherever it lives.
     const reply = require("./chat-completion-reply");
+    if (responseTextOnly) return reply.replyText(sent.json);
     return [reply.replyText(sent.json), reply.replyReasoning(sent.json)]
       .filter((part) => typeof part === "string" && part.trim())
       .join("\n");

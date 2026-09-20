@@ -205,4 +205,17 @@ assert.throws(
   assert(statusResult?.ses_1 || Object.keys(statusResult || {}).length >= 0);
 }
 
+{
+  let params;
+  const item = { info: { id: "parent", role: "user" }, parts: [{ type: "text", text: "original" }] };
+  const exact = createOpencodeSdkSession({ session: { message: async (value) => {
+    params = value;
+    return { data: item };
+  } } }, "/workspace/long-task");
+  assert.deepEqual(await exact.message("ses_long", "parent"), item);
+  assert.deepEqual(params, { directory: "/workspace/long-task", sessionID: "ses_long", messageID: "parent" });
+  const missing = createOpencodeSdkSession({ session: { message: async () => ({ error: { message: "not found" } }) } }, "/w");
+  await assert.rejects(missing.message("ses_long", "missing"), /not found/);
+}
+
 console.log("opencode-sdk-session: ok");

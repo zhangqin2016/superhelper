@@ -28,7 +28,8 @@ class Db {
     }
     this.raw = new DatabaseSync(filePath);
     this._stmts = new Map();
-    this._applyPragmas();
+    try { this._applyPragmas(); }
+    catch (error) { this.raw.close(); throw error; }
   }
 
   _applyPragmas() {

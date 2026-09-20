@@ -116,7 +116,7 @@ async function verifyRunnerResumeContinuity({ runner, sessionManager, sessionId,
   if (page?.timedOut) return { ok: true, reason: "official_history_timeout" };
   return classifyResumeContinuity({
     // The classifier compares the last 8 user texts; two pages of tail cover it.
-    localMessages: sessionManager.getRecentConversation?.(sessionId, { limit: 40 }) || sessionManager.getConversation(sessionId) || [],
+    localMessages: await (sessionManager.getRecentConversationAsync || sessionManager.getRecentConversation || sessionManager.getConversation).call(sessionManager, sessionId, { limit: 40 }) || [],
     officialMessages: page?.conversation || [],
   });
 }

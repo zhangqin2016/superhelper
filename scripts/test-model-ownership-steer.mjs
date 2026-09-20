@@ -50,6 +50,7 @@ function harness(blockedStage, accepted = true) {
   vm.runInNewContext(source, {
     module,
     require(id) {
+      if (id === "./turn-user-context") return require("../src/main/turn-user-context.js");
       if (id === "./turn-active-phase") return require("../src/main/turn-active-phase.js");
       if (id === "../shared/engine-notices.mjs") return require("../src/shared/engine-notices.mjs"); // the real catalogue, never stubbed
       if (id === "./send-preflight") return {
@@ -135,7 +136,7 @@ test("unchanged claim preserves enriched delivery, evidence and original history
   const result = await h.ctx._trySteer(h.session, "correction for A", files);
   assert.equal(result.steered, true);
   assert.equal(result.turnId, "turn-A");
-  assert.equal(h.injections[0].payload.text, "correction for A:vision:document");
+  assert.equal(h.injections[0].payload.text, require("../src/main/turn-user-context.js").withAttachmentManifest("correction for A:vision:document", files));
   assert.deepEqual(plain(h.injections[0].payload.files), []);
   assert.equal(h.injections[0].payload.allowImageFileParts, false);
   assert.equal(h.evidence.length, 2);

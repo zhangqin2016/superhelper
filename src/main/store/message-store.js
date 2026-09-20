@@ -901,13 +901,6 @@ Object.defineProperties(
     { configurable: true, writable: true, value },
   ])),
 );
-const messageReadMethods = require("./message-read-store").createMessageReadMethods();
-Object.defineProperties(
-  MessageStore.prototype,
-  Object.fromEntries(Object.entries(messageReadMethods).map(([name, value]) => [
-    name,
-    { configurable: true, writable: true, value },
-  ])),
-);
+require("./message-read-store").attachMessageReadMethods(MessageStore);
 require("./parent-closure-recovery-attach")(MessageStore);
 module.exports = { MessageStore };

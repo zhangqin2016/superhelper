@@ -1,5 +1,78 @@
 # Capability Gate — 防止"变笨"硬门槛
 
+Novice UI source/intent follow-up (2026-09-20): tests
+`test-source-resolution-guidance.mjs`, `test-turn-user-context.mjs`,
+`test-document-delivery-response.mjs`, `test-turn-orchestrator-steer.mjs`,
+`test-agent-autonomy-guidance.mjs` and `test-workbench-empty.mjs` guard input
+events, attachment provenance, turn-owned accepted revisions, source-first
+planning, same-model judgement and structured replies with reasoning content.
+No tools/model/context are removed. Pending input never becomes verified file
+delivery; chat-only applicability reruns source/fact checks. Unavailable/invalid
+applicability preserves the model answer with an unverified-file note, never
+verified delivery or automatic file creation. Valid delivery verdicts retain
+literal file validation. Native evidence and remaining scope are tracked in
+`docs/2026-09-20-novice-ui-acceptance.md`; this is not all-platform acceptance.
+
+Ten-round follow-up: `test-conversation-load-state.mjs` guards request-owned
+loading/error/ready states and cached history; `test-turn-replay-input.mjs`,
+`test-large-message-reader.mjs` and `test-task-continuity-integration.mjs` guard
+exact-turn accepted revisions during replay after store reopen. Reader failures
+are explicit and cannot silently discard a user's later restrictions. No full
+history scan, model downgrade, tool removal or context truncation is introduced.
+See `docs/2026-09-20-ten-round-native-qa.md` for per-round evidence and boundaries.
+
+Windows Office resolution follow-up: `test-runtime-system-office.mjs` guards
+real executable discovery without assuming a shim is usable, keeps Lily Python
+ahead of LibreOffice's private Python and real Office ahead of stale bin shims.
+Printer enumeration suppression is child-environment scoped, not a Windows
+setting. `test-office-authoring-contract.mjs` and `test-agent-guide-headroom.mjs`
+guard literal current-build helper paths and unchanged authoring capabilities.
+
+Vision delivery follow-up: the first-party vision CLI emits an ASCII-safe
+local-image receipt only after a successful nonempty visual response. Delivery
+assessment consumes these receipts after rendering and matches actual page
+paths; it retains native image tools and rejects failed, stale, unrelated and
+partial-page evidence. `test-vision-inspection-receipt.mjs` exercises the real
+CLI against a local transport; `test-document-delivery-gate.mjs` guards coverage.
+This is inspection provenance, not a claim that every visual defect was found.
+
+Windows office follow-up: `test-xlsx-recalc.mjs` exercises real LibreOffice
+recalculation in deep output paths, formula caches, source preservation and
+formula-error rejection. Conversion profiles are temporary and independent of
+the delivery directory; failed conversions remain errors. The first-party XLSX
+helper never overwrites the original or claims full Excel feature fidelity.
+Other formats retain their existing routes. Native UI conversion/rendering was
+retested; installed skill refresh and all-capability acceptance remain separate.
+
+Large-history responsiveness (2026-09-20): `test-large-message-reader.mjs`
+checks queued worker reads, exact display parity, complete answers/tools,
+untouched archived diagnostics, WAL visibility, dispatch/close failures and
+indexed recovery without full-history reads. `test-message-enrichment-worker.mjs`
+checks off-main derivation/compression, conditional writes preserving concurrent
+edits/deletions, unchanged evidence/hot columns/FTS, cursor resume and corrupt-row
+isolation. Recovery still selects the newest unsuperseded assistant of the exact
+session/turn; no model, context, tool or retry capability is removed. Reader
+failures surface; maintenance failures leave stored evidence and read-time
+artifact derivation available, never synchronous full-history retries.
+Production enrichment uses a read-only worker and the existing main-process
+writer for conditional compressed commits. A foreground read/write-transaction
+regression guards against the independent-writer SQLITE_BUSY snapshot race
+observed in the 2GiB desktop test.
+Evidence and remaining gaps: `docs/2026-09-20-large-history-responsiveness.md`.
+This is not acceptance of every startup path or the customer's exact 66s stall.
+
+Windows native follow-up (2026-09-20): `test-media-input-encoding.mjs` guards
+UTF-8/BOM file transport for all three media CLIs while retaining stdin and
+exercises Windows PowerShell character loss. `test-windows-office-cli.mjs`
+guards plugin-factory exports and a narrow existing-sibling CLI substitution
+for literal Windows LibreOffice informational commands; printing, conversion,
+unknown paths and other platforms retain baseline behavior. `test-runtime-health.mjs`
+and `test-render-document-profile-uri.mjs` guard child-scoped printer discovery
+isolation. Recovery projection and renderer tests retain host outcome-unknown
+explanations without replacing partial work. Native evidence and explicit gaps:
+`docs/2026-09-20-windows-native-acceptance.md`. These are not all-capability,
+installed-release, arbitrary long-task or all-provider acceptance.
+
 智能体管理 (2026-09-14): `test-agent-definition.mjs`, `test-agent-repository.mjs`, `test-agent-activation.mjs`, `test-agent-draft-tool.mjs`, `test-agent-knowledge-preparation.mjs`, `test-agent-guidance.mjs`, `test-official-agent-catalog.mjs`, `test-agent-routing.mjs`, `test-agent-workspace-portability.mjs`, `test-agent-distribution.mjs`, `test-agent-library-model.mjs`, and `test-agent-library-ui.cjs` guard the 智能体 bundle: one validated definition model with field-level coded rejections; owner-scoped immutable revisions + CAS session bindings + append-only events in messages.db; activation through the EXISTING setters (character binding, session skills, permission mode, model selection, paused automation import) where every dimension fails open independently with a named receipt reason, cold dimensions (model, tools.disallow) degrade beyond the serve fork budget (`LILY_AGENT_SERVE_FORK_LIMIT`, default 3), and deactivation restores the exact pre-activation snapshot; the inert `lily_agent_draft` broker tool (platform-scoped, metadata-only, never binds); knowledge preparation where the official legal ROLE rule is preserved verbatim and a bound agent's `knowledge.packs` join it (unknown pack ids block by name, never guessed); the bounded hot-path guidance section; and an official catalog whose every role/skill/pack reference is verified against the shipped catalogs. `LILY_AGENTS=0` hides the library, refuses activation and makes every agent-derived policy read inactive while stored bindings stay readable. Unbound sessions are byte-for-byte today's behaviour. Natural-language creation routes 智能体 intents to the draft tool (engineering uses of "agent" do not); `.lilyspace` packs carry an `agents.json` section (definitions only, local role cards embedded on opt-in, imports deduped and re-validated); distributed agents from the server registry are validated, narrowed by the signed `config.agents` targeting, installed as `distributed` revisions and a targeted default binds to new conversations fail-open. The renderer reuses the character library dialog (agents tab default, roles second), the session banner popover and composer starters over the narrow `assistantClient.agents` facade with CAS retries and honest degradation notices; the role features stay intact. Loop closure (2026-09-15, user report "只看到表相"): `test-agent-binding-continuity.mjs` — every binding change (activate / deactivate / role chosen under an agent) leaves an idempotent durable in-conversation record listing what the agent brings (renderer card via `meta.agentBinding`); a deliberate skill change (agent activation or manual toggle) re-pins the engine resume binding so the next spawn RESUMES with context instead of starting fresh (`LILY_KEEP_ENGINE_ON_SKILL_CHANGE=0` restores the reset); an explicit role choice releases the bound agent first, restores its snapshot and reports `agentDeactivated` to the renderer; each assistant record carries `meta.agent` naming the agent that answered. Renderer: the picker lists every agent with capability chips and an explainer, the role list notes when an agent owns the role, and messages show the binding card and "由智能体「X」回答". These are deterministic mechanism checks, not installed-client or real-model acceptance. [gate: agent-management]
 
 OpenCode upgrade continuity (2026-09-14): `test-resume-binding.mjs`, `test-ensure-session-runner-resume-reset.mjs`, `test-resume-continuity-guard.mjs`, `test-opencode-version-alignment.mjs`, and opt-in `test-opencode-upgrade-native.mjs` guard the explicit 1.18.29 to 1.18.30 forward transition, strict ownership and unknown-version rejection. Native acceptance requires `LILY_TEST_OLD_OPENCODE_BIN`; default skip is not cross-version verification. No arbitrary semver compatibility or historical metadata rewrite is permitted. Continuity comparison (2026-09-14 field case): the engine stores Lily's LAYERED text, so `test-resume-continuity-guard.mjs` now pins that the guard compares the user's own words (user_original_request unwrapped) with a script-aware containment floor (CJK ≥2 chars, Latin ≥6) — a chat of short Chinese turns ("继续"/"帮我优化") must not be reset as a history mismatch, while unrelated histories still are. [gate: opencode-upgrade-continuity]

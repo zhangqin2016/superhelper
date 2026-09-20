@@ -1,4 +1,5 @@
 import { createEnterpriseRoster } from "./enterprise-roster.js";
+import { closeCreateDialog } from "./collaboration-create-dialog.js";
 import { presenceBadge } from "./collaboration-presence-view.js";
 import { t, getLocale } from "../i18n/index.js";
 import { createSocialUi, socialEmptyState, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName, resolvePerson, conversationDisplayTitle, preserveScroll } from "./collaboration-social-ui.js";
@@ -68,7 +69,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       if (dialogEpoch !== groupForm.dataset.dialogEpoch) return;
       if (groupTitle.value.trim() === title) groupTitle.value = "";
       groupMembers.reset();
-      if (result.conversationId && origin.isCurrentNavigation() && dialogEpoch === groupForm.dataset.dialogEpoch) { groupForm.closest("dialog")?.close(); await onOpen(result.conversationId); }
+      if (result.conversationId && origin.isCurrentNavigation() && dialogEpoch === groupForm.dataset.dialogEpoch) { closeCreateDialog(groupForm.closest("dialog")); await onOpen(result.conversationId); }
     });
   });
   /** `showScope` is false wherever the row already sits under a heading that
@@ -126,7 +127,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
         if (dialogEpoch !== form.dataset.dialogEpoch) return;
         const current = [...list.querySelectorAll("section.collaboration-team[data-team-id]")].find((node) => node.dataset.teamId === team.id)?.querySelector('[name="title"]');
         if (current?.value.trim() === value) current.value = "";
-        if (result.conversationId && origin.isCurrentNavigation() && dialogEpoch === form.dataset.dialogEpoch) { form.closest("dialog")?.close(); await onOpen(result.conversationId); }
+        if (result.conversationId && origin.isCurrentNavigation() && dialogEpoch === form.dataset.dialogEpoch) { closeCreateDialog(form.closest("dialog")); await onOpen(result.conversationId); }
       });
     });
     return socialDisclosure(`＋ ${t("collaboration.social.createChannel")}`, form);
@@ -402,7 +403,7 @@ export function initCollaborationTeams(root, { api = window.assistantClient?.col
       renderDetails(result);
     },
     reset() {
-      for (const dialog of root.querySelectorAll("dialog[open]")) dialog.close();
+      for (const dialog of root.querySelectorAll("dialog[open]")) closeCreateDialog(dialog);
       lastFingerprint = ""; rosterState.clear(); detailsGeneration += 1; detailsConversation = null; pendingDetailsId = ""; ui.reset(); directory = { contacts: [], teams: [] }; conversations = []; groupTitle.value = ""; groupMembers.setPeople([]); groupMembers.reset(); list.replaceChildren(); personal.replaceChildren(); closeDetailSurface(); },
   };
   return controller;

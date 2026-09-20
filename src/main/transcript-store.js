@@ -21,13 +21,14 @@ class TranscriptStore {
     return this.sessionManager.popLastAssistantMessage(sessionId);
   }
 
-  supersedeAssistantTurn(sessionId, turnId, supersededByTurnId = "") {
-    const messages = this.sessionManager.getConversation?.(sessionId) || [];
-    const target = [...messages].reverse().find(
+  async supersedeAssistantTurn(sessionId, turnId, supersededByTurnId = "") {
+    const target = this.sessionManager.getAssistantForTurnAsync
+      ? await this.sessionManager.getAssistantForTurnAsync(sessionId, turnId)
+      : [...(this.sessionManager.getConversation?.(sessionId) || [])].reverse().find(
       (message) => message?.role === "assistant" && message?.turnId === turnId && !message?.meta?.superseded,
     );
     if (!target?.id || typeof this.sessionManager.updateMessageMeta !== "function") return null;
-    return this.sessionManager.updateMessageMeta(sessionId, target.id, (meta) => ({
+    return this.sessionManager.updateMessageMeta(sessionId, target.id, (meta) => meta?.superseded ? null : ({
       ...meta,
       superseded: true,
       supersededByTurnId: String(supersededByTurnId || ""),

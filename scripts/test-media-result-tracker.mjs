@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { sweep, extractPaths, GRACE_MS } = require("../src/main/media-result-tracker.js");
+const { sweep, extractPaths, alreadyShown, sessionForProject, GRACE_MS } = require("../src/main/media-result-tracker.js");
 
 function assert(c, m) { if (!c) throw new Error(m); }
 
@@ -25,18 +25,22 @@ function writeRecord(name, { createdAt, content = VIDEO, type = "video" }) {
 }
 function makeCtx(conversation = [], snapshot = { phase: "idle", queueLength: 0 }) {
   const injected = [];
+  const stored = new Map();
   return {
     injected,
+    eventBus: { emit: (sessionId, event) => injected.push({ sessionId, assistant: event.payload.committedMessage.content, event }) },
     projectManager: { projects: [{ id: "p1", path: root }] },
     sessionManager: {
       activeSessionId: "s1",
       findById: (id) => (id === "s1" ? { id: "s1", projectId: "p1" } : null),
       listForProject: () => [{ id: "s1" }],
       getConversation: () => conversation,
+      findMessage: (_s, id) => stored.get(id),
+      pushMessageTo: (_s, role, content, _files, extra) => stored.set(extra.id, { role, content, ...extra }),
     },
     turnOrchestrator: {
       snapshot: () => snapshot,
-      completeLocalAssistantTurn: (sessionId, text, files, opts) => { injected.push({ sessionId, text, assistant: opts?.assistant }); return { ok: true }; },
+      completeLocalAssistantTurn: () => { throw new Error("Media must not create a task"); },
     },
   };
 }
@@ -81,6 +85,37 @@ sweep(ctx);
 assert(ctx.injected.length === 1, "idle session should receive deferred fallback media");
 assert(fs.readdirSync(resultsDir).length === 1, "deferred fallback record deleted after surfacing");
 console.log("media-tracker: busy session defers fallback media ok");
+
+const winPath = "D:\\work\\generated-assets\\image.png";
+assert(alreadyShown(makeCtx([{ role: "assistant", content: winPath }]), "s1", [winPath]), "Windows path dedup");
+assert(!alreadyShown(makeCtx([{ role: "user", content: winPath }]), "s1", [winPath]), "A user mention is not delivery");
+assert(!alreadyShown(makeCtx([{ role: "assistant", content: winPath + ".backup" }]), "s1", [winPath]), "A filename prefix is not delivery");
+assert(alreadyShown(makeCtx([{ role: "assistant", content: winPath.toLowerCase() }]), "s1", [winPath]), "Windows path case is equivalent");
+assert(!alreadyShown(makeCtx([{ role: "assistant", content: winPath }]), "s1", [winPath, "D:/other.png"]), "Every image must be delivered");
+assert(alreadyShown(makeCtx([{ role: "assistant", record: { tools: [{ status: "done", result: { content: winPath } }] } }]), "s1", [winPath]), "Media in tool output survives dedup");
+ctx = makeCtx();
+ctx.sessionManager.listForProject = () => [{ id: "s1" }, { id: "s2" }];
+assert(sessionForProject(ctx, { id: "p1" }, {}) === null, "Do not guess ownership from active tab");
+assert(sessionForProject(ctx, { id: "p1" }, { sessionId: "s1" }) === "s1", "Explicit owner wins");
+writeRecord("retry.json", { createdAt: Date.now() - GRACE_MS - 1000 });
+ctx = makeCtx();
+ctx.sessionManager.pushMessageTo = () => { throw new Error("disk unavailable"); };
+sweep(ctx);
+assert(fs.existsSync(path.join(resultsDir, "retry.json")), "Persistence failure keeps receipt");
+ctx = makeCtx();
+sweep(ctx);
+assert(ctx.injected[0].event.turnId === null, "Supplement is not a turn");
+assert(!ctx.injected[0].event.payload.committedMessage.record?.user, "Supplement has no synthetic user");
+writeRecord("event-retry.json", { createdAt: Date.now() - GRACE_MS - 1000 });
+ctx = makeCtx();
+const emit = ctx.eventBus.emit;
+ctx.eventBus.emit = () => { throw new Error("event unavailable"); };
+sweep(ctx);
+assert(fs.existsSync(path.join(resultsDir, "event-retry.json")), "Event failure retains receipt");
+ctx.eventBus.emit = emit;
+sweep(ctx);
+assert(ctx.injected.length === 1, "Persisted supplement can be re-emitted without another task");
+console.log("media-tracker: Windows, ownership, partial delivery and durable failure regressions ok");
 
 fs.rmSync(root, { recursive: true, force: true });
 console.log("test-media-result-tracker: ALL_OK");

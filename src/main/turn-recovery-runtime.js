@@ -10,6 +10,7 @@ const { prepareDocumentDeliveryRecovery } = require("./document-delivery-turn");
 const { createParentClosureRecoveryRuntime } = require("./parent-closure-recovery-runtime");
 
 const log = getLogger("turn-recovery-runtime");
+const { turnReplayInput } = require("./turn-replay-input");
 
 function modelRecipes() {
   try {
@@ -67,7 +68,14 @@ function createTurnRecoveryRuntime(options = {}) {
       || typeof sourceTurn.userText !== "string" || !sourceTurn.userText.trim())) {
       return { ok: false, error: "TASK_CONTINUATION_SOURCE_UNAVAILABLE" };
     }
-    const replay = explicitSource ? { content: sourceTurn.userText, files: sourceTurn.files } : lastUser;
+    let replay = lastUser;
+    if (sourceTurn) {
+      try { replay = await turnReplayInput(ctx.sessionManager, sessionId, sourceTurn); }
+      catch (error) {
+        log.warn("retry source revisions unavailable: %s", error?.message || error);
+        return { ok: false, error: "TASK_CONTINUATION_SOURCE_UNAVAILABLE" };
+      }
+    }
     if (!replay) return { ok: false, error: "NO_USER_MESSAGE" };
     if (!explicitSource) transcriptStore?.removeLastAssistantMessage?.(sessionId);
     const result = await sendUserMessage(sessionId, replay.content, replay.files || [], {
@@ -81,7 +89,7 @@ function createTurnRecoveryRuntime(options = {}) {
       newTaskAttempt: retryOptions.userInitiated === true,
     });
     if (result?.ok && explicitSource) {
-      transcriptStore?.supersedeAssistantTurn?.(sessionId, sourceTurnId, result.turnId);
+      await transcriptStore?.supersedeAssistantTurn?.(sessionId, sourceTurnId, result.turnId);
       emit(sessionId, "assistant.supersedes", { supersedes: sourceTurnId }, { turnId: sourceTurnId });
     }
     return result;
@@ -165,7 +173,7 @@ function createTurnRecoveryRuntime(options = {}) {
       const lastUser = documentRecovery || continueInstead
         ? null
         : sourceTurn && failure?.sourceTurnId
-          ? { content: sourceTurn.userText, files: sourceTurn.files, turnId: sourceTurnId }
+          ? await turnReplayInput(ctx.sessionManager, sessionId, sourceTurn)
         : ctx.sessionManager?.getLastUserMessage?.(sessionId);
       if (!documentRecovery && !continueInstead && !lastUser) return false;
       rescue.markRescueAttempt(sessionId, failure.code);
@@ -264,7 +272,7 @@ function createTurnRecoveryRuntime(options = {}) {
       if (retried?.ok && deferAssistantRemoval) {
         let superseded = null;
         try {
-          superseded = transcriptStore?.supersedeAssistantTurn?.(
+          superseded = await transcriptStore?.supersedeAssistantTurn?.(
             sessionId,
             sourceTurnId,
             retried.turnId,

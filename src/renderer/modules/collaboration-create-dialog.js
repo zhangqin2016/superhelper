@@ -1,5 +1,14 @@
 import { t, onLocaleChange } from "../i18n/index.js";
 
+export function closeCreateDialog(dialog) {
+  if (!dialog) return;
+  const form = dialog.querySelector("form");
+  if (form) form.dataset.dialogEpoch = String(Number(form.dataset.dialogEpoch || 0) + 1);
+  const disclosure = dialog.closest("details");
+  if (disclosure) disclosure.open = false;
+  if (dialog.open) dialog.close();
+}
+
 /** Native top-layer modal: list entries remain navigation, never a form column. */
 export function enhanceCreateDisclosure(disclosure, summary, form) {
   if (!["channel", "group", "contact"].includes(form.dataset.form)) return;
@@ -39,10 +48,11 @@ export function enhanceCreateDisclosure(disclosure, summary, form) {
     form.dispatchEvent(new Event("dialog-locale"));
   };
   const invalidate = () => { form.dataset.dialogEpoch = String(Number(form.dataset.dialogEpoch || 0) + 1); };
-  const dismiss = () => { if (dialog.open) { invalidate(); dialog.close(); } disclosure.open = false; };
+  const dismiss = () => closeCreateDialog(dialog);
   dialog.addEventListener("cancel", invalidate);
   close.addEventListener("click", dismiss); cancel.addEventListener("click", dismiss);
   dialog.addEventListener("close", () => {
+    if (dialog.open) return; // Ignore a queued close event after reopening.
     status.removeAttribute("role");
     observer?.disconnect(); observer = null; disclosure.open = false;
     unsubscribeLocale?.(); unsubscribeLocale = null;

@@ -20,7 +20,13 @@ const ADAPTERS = {
   "codex-relay": require("./providers/codex-relay.cjs"),
 };
 
-function readStdin() {
+async function readStdin() {
+  const inputIndex = process.argv.indexOf("--input-file");
+  if (inputIndex >= 0) {
+    const file = process.argv[inputIndex + 1];
+    if (!file || file.startsWith("--")) throw new Error("--input-file requires a UTF-8 JSON file path");
+    return (await fs.promises.readFile(file, "utf8")).replace(/^\uFEFF/, "").trim();
+  }
   return new Promise((resolve) => {
     let data = "";
     process.stdin.setEncoding("utf8");

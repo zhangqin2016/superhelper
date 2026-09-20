@@ -119,6 +119,7 @@ try {
   assert.equal(peerReadWatermark(store, ""), 0);
   assert.doesNotThrow(() => forgetPeerReads({ accountId: "a", db: { run() { throw new Error("x"); } } }, "direct"));
 } finally {
+  store.close();
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

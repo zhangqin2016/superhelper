@@ -20,6 +20,12 @@ const {
 } = require("../src/main/engine-message-layers.js");
 const { applyInternalRecoveryLayer } = require("../src/main/turn-recovery-context.js");
 
+const mediaNotice = { id: "msg_media_owned", role: "assistant", content: "media ready",
+  meta: { mediaResult: { paths: ["D:/work/image.png"] } } };
+assert.deepEqual(mergeProjectionConversation([], [mediaNotice]), [mediaNotice],
+  "persisted media supplements survive official history without a synthetic turn");
+assert.equal(mergeProjectionConversation([mediaNotice], [mediaNotice]).length, 1);
+
 const legacy = {
   id: "legacy_msg",
   role: "assistant",
@@ -52,6 +58,23 @@ assert.equal(stopMerged.length, 1, 'empty interrupted messages match on identity
 assert.equal(stopMerged[0].record.terminal, 'turn.interrupted', 'host cancellation remains authoritative over engine abort');
 assert.equal(stopMerged[0].record.turnId, 'stop-turn');
 assert.equal(Boolean(stopMerged[0].failed), false);
+
+for (const terminal of ["turn.dispatch_outcome_unknown", "turn.dispatch_blocked"]) {
+  const recovery = { role: "assistant", turnId: "recovery", content: "Result could not be confirmed; verify before retrying.",
+    record: { terminal, assistantText: "Result could not be confirmed; verify before retrying.",
+      meta: { outcomeUnknown: terminal.endsWith("unknown"), manualRecoveryRequired: true } } };
+  const engine = { role: "assistant", turnId: "recovery", content: "",
+    record: { terminal: "turn.failed", assistantText: "", tools: [{ id: "t1" }],
+      timeline: [{ kind: "tool", id: "t1" }], meta: { opencode: { finish: "error" } } } };
+  const [recovered] = mergeProjectionConversation([engine], [recovery]);
+  assert.equal(recovered.content, recovery.content);
+  assert.equal(recovered.record.assistantText, recovery.content, "rich engine records cannot hide the recovery explanation");
+  assert.equal(recovered.record.terminal, terminal);
+  assert.deepEqual(recovered.record.tools, engine.record.tools);
+  const [partial] = mergeProjectionConversation([{ ...engine, content: "Already produced a file." }], [recovery]);
+  assert.equal(partial.content, "Already produced a file.\n\n" + recovery.content, "preserve existing progress");
+  assert.deepEqual(mergeProjectionConversation([partial], [recovery]), [partial], "recovery merge is idempotent");
+}
 
 const merged = mergeMetadata({
   id: "msg_engine",
@@ -834,3 +857,17 @@ assert.equal(
 }
 
 console.log("opencode-conversation-source: ok");
+
+{
+  const session = { id: "async-read", projectId: "p" };
+  const ctx = { sessionManager: {
+    findById: () => session,
+    getConversationPage: () => { throw new Error("sync history path must not run"); },
+    getConversationPageAsync: async () => ({ conversation: [{ id: "async-user", role: "user", content: "retained" }], total: 1 }),
+  }, runnerPool: { get: () => null } };
+  const page = await getConversationPageFromSource(ctx, session.id, { preferLocal: true, allowEngineSpawn: false });
+  assert.equal(page.conversation[0].content, "retained");
+  assert.equal(page.source, "lily-local-first");
+  ctx.sessionManager.getConversationPageAsync = async () => { throw new Error("worker failed visibly"); };
+  await assert.rejects(getConversationPageFromSource(ctx, session.id, { preferLocal: true, allowEngineSpawn: false }), /worker failed visibly/);
+}

@@ -75,7 +75,7 @@ check("no module reads choices[0] by hand — the seam and the shape producer ar
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!entry.name.endsWith(".js")) continue;
-      const rel = path.relative(ROOT, full);
+      const rel = path.relative(ROOT, full).split(path.sep).join("/");
       if (allowed.has(rel)) continue;
       const code = fs.readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
       if (/\.choices\b|\bchoices\?\.\[|\bchoices\[/.test(code)) offenders.push(rel);

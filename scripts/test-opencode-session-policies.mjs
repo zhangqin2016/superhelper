@@ -145,6 +145,24 @@ try {
   assert.equal(synced.resultFromOfficialHistory, true);
   assert.deepEqual(supplemental, [{ official: "final answer", missing: " answer" }]);
 
+  let parentReads = 0;
+  let parent = { info: { id: "user", sessionID: "engine", role: "user", time: { created: 1100 } },
+    parts: [{ type: "text", text: "question" }] };
+  const longRecovery = createOpencodeHistoryRecovery({
+    getServer: () => ({ sessionID: "engine", lastPromptText: "question",
+      messages: async () => ({ data: [{ info: { id: "long-final", parentID: "user", role: "assistant",
+        time: { created: 2000, completed: 2100 } }, parts: [{ type: "text", text: "Final only" }] }] }),
+      message: async id => { assert.equal(id, "user"); parentReads++; return parent; },
+    }),
+    getTurnStartedAt: () => turnStartedAt,
+  });
+  assert.equal((await longRecovery.syncFinalOutput({ output: "All process narration" })).output, "Final only");
+  assert.equal(parentReads, 1, "long runs resolve exact parent, not unbounded history pages");
+  parent = { ...parent, parts: [{ type: "text", text: "another question" }] };
+  assert.equal(await longRecovery.latestAssistant({ requireCurrentPrompt: true }), null);
+  parent = { ...parent, parts: [{ type: "text", text: "question" }], info: { ...parent.info, sessionID: "other" } };
+  assert.equal(await longRecovery.latestAssistant({ requireCurrentPrompt: true }), null);
+
   const incompleteMessages = messages.map((item) => item.info.id === "answer"
     ? { ...item, info: { ...item.info, time: { created: 1_200 } } }
     : item);

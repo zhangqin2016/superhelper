@@ -63,6 +63,7 @@ export const NOTICE_CODES = Object.freeze({
   turnSteered: { level: "info" },
   turnPaused: { level: "info" },
   agentBindingChanged: { level: "info", panel: false },
+  mediaResultDelivered: { level: "info", panel: false },
   // ---- never shown in the process panel (CLI proxy / engine chatter) ----------
   sentToCli: { level: "info", hidden: true },
   cliOutputReceived: { level: "info", hidden: true },

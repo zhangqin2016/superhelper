@@ -23,6 +23,25 @@ const MAX_LIMIT = 200;
 
 function createMessageReadMethods() {
   return {
+    getPageAsync(sessionId, opts = {}) {
+      if (this._readerClosed) return Promise.reject(new Error("MESSAGE_READER_CLOSED"));
+      return this._messageReader().page(sessionId, opts);
+    },
+    getAssistantForTurnAsync(sessionId, turnId) {
+      if (this._readerClosed) return Promise.reject(new Error("MESSAGE_READER_CLOSED"));
+      return this._messageReader().assistantForTurn(sessionId, turnId);
+    },
+    getTurnUserRevisionsAsync(sessionId, turnId) {
+      if (this._readerClosed) return Promise.reject(new Error("MESSAGE_READER_CLOSED"));
+      return this._messageReader().userRevisionsForTurn(sessionId, turnId);
+    },
+    _messageReader() {
+      if (!this._readWorker) {
+        const { MessageReadWorker } = require("./message-read-worker-client");
+        this._readWorker = new MessageReadWorker(this.db.filePath);
+      }
+      return this._readWorker;
+    },
     count(sessionId) {
       const row = this.db.get(`SELECT COUNT(*) AS c FROM messages WHERE session_id = ?`, sessionId);
       return row ? row.c : 0;
@@ -203,4 +222,15 @@ function createMessageReadMethods() {
   };
 }
 
-module.exports = { createMessageReadMethods, DEFAULT_LIMIT, MAX_LIMIT };
+function attachMessageReadMethods(Store) {
+  Object.assign(Store.prototype, createMessageReadMethods());
+  const close = Store.prototype.close;
+  Store.prototype.close = function () {
+    this._readerClosed = true;
+    const closing = this._readWorker?.close();
+    close.call(this);
+    return closing;
+  };
+}
+
+module.exports = { createMessageReadMethods, attachMessageReadMethods, DEFAULT_LIMIT, MAX_LIMIT };

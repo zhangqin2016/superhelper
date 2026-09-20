@@ -419,7 +419,7 @@ function mergeProjectionConversation(messages = [], projections = []) {
   }
 
   for (const projected of normalizeVisibleConversationMessages(projections)) {
-    if (!projected?.role || !projected?.turnId) continue;
+    if (!projected?.role || (!projected?.turnId && !projected?.meta?.mediaResult)) continue;
     const key = messageKey(projected);
     const existingIndex = byKey.get(key) ?? findEquivalentProjectionIndex(out, projected);
     if (existingIndex < 0) {
@@ -429,7 +429,7 @@ function mergeProjectionConversation(messages = [], projections = []) {
     }
     const existing = out[existingIndex];
     if (projected.role !== "assistant") continue;
-    out[existingIndex] = {
+    out[existingIndex] = require("./conversation-terminal-authority").preserveHostRecovery({
       ...existing,
       content: existing.content || projected.content || "",
       record: mergeAssistantRecords(existing.record, projected.record),
@@ -438,7 +438,7 @@ function mergeProjectionConversation(messages = [], projections = []) {
         ...(projected.meta || {}),
         ...(existing.meta || {}),
       },
-    };
+    }, projected);
   }
 
   return out.sort((a, b) => {
@@ -480,8 +480,8 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     };
   }
 
-  const fallback = () => {
-    const page = ctx.sessionManager.getConversationPage(session.id, opts);
+  const fallback = async () => {
+    const page = await (ctx.sessionManager.getConversationPageAsync || ctx.sessionManager.getConversationPage).call(ctx.sessionManager, session.id, opts);
     if (page && Array.isArray(page.conversation)) {
       page.conversation = stripInternalContinuationTurns(page.conversation);
     }
@@ -515,7 +515,7 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
   const runnerAlive = Boolean(runner?.getConversationPage && runner?.isAlive?.());
   if (!runnerAlive && opts.before == null && (opts.preferLocal || !allowEngineSpawn)) {
     return {
-      ...fallback(),
+      ...await fallback(),
       source: "lily-local-first",
       // Only recommend a follow-up official refresh when a spawn is actually
       // permitted; otherwise the refresh would just no-op and re-render.
@@ -545,7 +545,7 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
   try {
     const page = await runner.getConversationPage(opts);
     // Metadata for an official PAGE lives in the local tail (three pages of slack), never the whole session.
-    const localConversation = stripInternalContinuationTurns((ctx.sessionManager.getRecentConversation || ctx.sessionManager.getConversation).call(ctx.sessionManager, session.id, { limit: Math.max(150, 3 * (Number.isInteger(opts.limit) ? opts.limit : 50)) }));
+    const localConversation = stripInternalContinuationTurns(await (ctx.sessionManager.getRecentConversationAsync || ctx.sessionManager.getRecentConversation || ctx.sessionManager.getConversation).call(ctx.sessionManager, session.id, { limit: Math.max(150, 3 * (Number.isInteger(opts.limit) ? opts.limit : 50)) }));
     const metadata = buildMetadataIndex(localConversation);
     const mergedOfficial = mergeUserDisplayText(stripInternalContinuationTurns(page.conversation || []), localConversation).map((message) => {
       const keys = [metadataKey(message), ...(message.record?.meta?.opencode?.mergedAssistantMessageIds || [])];

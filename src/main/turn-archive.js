@@ -205,6 +205,7 @@ class TurnArchive {
         // Which agent answered (renderer shows it on the message); null = native Lily.
         ...(state.agentLabel ? { agent: state.agentLabel } : {}),
         toolsSummary: { count: tools.length },
+        userRevisions: require("./turn-user-context").acceptedUserRevisions(state),
         taskContract: state.taskContract
           ? {
               active: true,

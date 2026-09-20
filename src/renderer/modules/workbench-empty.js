@@ -4,6 +4,7 @@
 
 import { $ } from "./dom.js";
 import { t } from "../i18n/index.js";
+import { conversationLoadStatus } from "./conversation-load-state.js";
 
 export const WORKBENCH_EXAMPLE_KEYS = [
   "workbench.example1",
@@ -14,7 +15,7 @@ export const WORKBENCH_EXAMPLE_KEYS = [
 /** @param {HTMLElement | null | undefined} listEl */
 export function listHasWorkbenchContent(listEl) {
   if (!listEl) return false;
-  return [...listEl.children].some((el) => !el.classList.contains("workbench-empty"));
+  return [...listEl.children].some((el) => !el.classList.contains("workbench-empty") && !el.classList.contains("conversation-load-status"));
 }
 
 export function buildWorkbenchEmpty() {
@@ -46,6 +47,7 @@ export function buildWorkbenchEmpty() {
       const input = $("promptInput");
       if (!input) return;
       input.value = t(key);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
       input.focus();
     });
     examples.append(btn);
@@ -64,11 +66,27 @@ export function syncWorkbenchEmptyState(listEl) {
   if (!listEl) return;
   const hasContent = listHasWorkbenchContent(listEl);
   let empty = listEl.querySelector(".workbench-empty");
+  let statusEl = listEl.querySelector(".conversation-load-status");
+  const status = conversationLoadStatus(listEl.closest?.(".session-messages")?.dataset?.sessionId);
 
   if (hasContent) {
     empty?.remove();
+    statusEl?.remove();
     return;
   }
+
+  if (status !== "ready") {
+    empty?.remove();
+    if (!statusEl) {
+      statusEl = document.createElement("p");
+      statusEl.className = "conversation-load-status";
+      statusEl.setAttribute("role", "status");
+      listEl.appendChild(statusEl);
+    }
+    statusEl.textContent = t(status === "error" ? "workbench.historyFailed" : "workbench.historyLoading");
+    return;
+  }
+  statusEl?.remove();
 
   if (!empty) {
     empty = buildWorkbenchEmpty();

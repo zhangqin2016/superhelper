@@ -272,6 +272,21 @@ function getRuntimePathEntries() {
     if (!entries.includes(dir)) entries.push(dir);
   }
 
+  // A stale runtime/bin/soffice.cmd must not shadow an existing executable.
+  const officeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDirs[0] || require("./runtime-system-office").resolveSystemOfficeDir();
+  if (officeDir && process.platform === "win32") {
+    const index = entries.indexOf(officeDir);
+    if (index >= 0) entries.splice(index, 1);
+    const python = root && resolveRuntimePythonAtRoot(root);
+    const pythonDirs = [...new Set([python && path.dirname(python), root && venvBinDir(root)].filter(dir => dir && fs.existsSync(dir)))];
+    for (const dir of pythonDirs) {
+      const pythonIndex = entries.indexOf(dir);
+      if (pythonIndex >= 0) entries.splice(pythonIndex, 1);
+    }
+    // LibreOffice ships its own python.exe; keep the full Lily runtime first.
+    entries.unshift(...pythonDirs, officeDir);
+  }
+
   return entries;
 }
 
@@ -324,13 +339,17 @@ function getRuntimeEnvExtras() {
   if (packPythonPaths.length) extras.LILY_RUNTIME_PACK_DIRS = packPythonPaths.join(path.delimiter);
   Object.assign(extras, runtimePacks.getRuntimePackEnvExtras());
   const packLibreOfficeDir = runtimePacks.getRuntimePackLibreOfficeDirs()[0];
-  const sofficeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDir || null;
+  const sofficeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDir || require("./runtime-system-office").resolveSystemOfficeDir();
   if (sofficeDir) {
     extras.LILY_LIBREOFFICE_PROGRAM = sofficeDir;
     extras.UNO_PATH = resolveUnoPath(sofficeDir);
     extras.SAL_USE_VCLPLUGIN = process.env.SAL_USE_VCLPLUGIN || "svp";
     extras.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION =
       process.env.SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION || "1";
+    if (process.platform === "win32") {
+      extras.SAL_DISABLE_PRINTERLIST = "1";
+      extras.SAL_DISABLE_DEFAULTPRINTER = "1";
+    }
   }
   // The platform's shared Python helpers, as an ABSOLUTE path the agent can
   // actually use. Every skill and overlay that names one of these helpers used to

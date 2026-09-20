@@ -37,9 +37,7 @@ const timer = setTimeout(() => finish(1, new Error("timeout")), 45000);
 function finish(code, error) {
   clearTimeout(timer);
   if (error) console.error(error);
-  win?.destroy();
-  fs.rmSync(temp, { recursive: true, force: true });
-  app.exit(code);
+  require('./electron-test-cleanup.cjs').exitAndRemove({ app, window: win, directory: temp, timer, code });
 }
 
 // --- i18n: every new key must exist in all three dictionaries -----------------
@@ -70,7 +68,7 @@ app.whenReady().then(async () => {
   const body = source.match(/<body\b[^>]*>([\s\S]*)<\/body>/i)[1].replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
   const fixture = path.join(temp, "fixture.html");
   fs.writeFileSync(fixture, `<html><head><meta charset="utf-8"><link rel="stylesheet" href="${pathToFileURL(path.join(RENDERER, "styles.css")).href}"><style>*{transition:none!important;animation:none!important}</style></head><body>${body}</body></html>`);
-  win = new BrowserWindow({ show: false, width: 1100, height: 820, webPreferences: { sandbox: true, contextIsolation: true } });
+  win = new BrowserWindow({ show: true, width: 1100, height: 820, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
   await win.loadFile(fixture);
 
   // Fake facade + module bootstrap. Everything the modules touch at import time
@@ -174,7 +172,9 @@ app.whenReady().then(async () => {
   // Narrow width + both themes: layout stays inside the panel, pill stays legible.
   for (const [width, theme] of [[420, "light"], [420, "dark"], [1100, "dark"]]) {
     win.setSize(width, 760);
-    await win.webContents.executeJavaScript(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+    // The real main window is >=1024px; isolate the task surface below that
+    // width instead of leaving its fixed-width desktop sidebar in the fixture.
+    await win.webContents.executeJavaScript(`document.documentElement.dataset.theme=${JSON.stringify(theme)};document.getElementById('appShell').classList.toggle('left-collapsed', ${width < 1024})`);
     await tick(150);
     const geo = await win.webContents.executeJavaScript(`(() => {
       const panel = document.getElementById("taskCenterPanel");
@@ -182,13 +182,14 @@ app.whenReady().then(async () => {
       const pill = rows[0].querySelector(".task-center-task-status");
       const pr = panel.getBoundingClientRect();
       return {
+        bounds: { panel: pr.toJSON(), rows: rows.map(row => row.getBoundingClientRect().toJSON()), viewport: innerWidth },
         inside: rows.every((row) => { const r = row.getBoundingClientRect(); return r.left >= pr.left - 1 && r.right <= pr.right + 1; }),
         overflow: rows.some((row) => row.scrollWidth > row.clientWidth + 1) || panel.scrollWidth > panel.clientWidth + 1,
         pillColor: getComputedStyle(pill).color, pillBg: getComputedStyle(pill).backgroundColor,
         btnVisible: rows[0].querySelector(".task-center-task-resume").getClientRects().length > 0,
       };
     })()`);
-    assert.equal(geo.inside, true, `${width}/${theme}: rows inside panel`);
+    assert.equal(geo.inside, true, `${width}/${theme}: rows inside panel ${JSON.stringify(geo.bounds)}`);
     assert.equal(geo.overflow, false, `${width}/${theme}: no horizontal overflow`);
     assert.notEqual(geo.pillColor, geo.pillBg, `${width}/${theme}: pill legible`);
     assert.equal(geo.btnVisible, true);

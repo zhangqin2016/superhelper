@@ -47,7 +47,8 @@ const server = createAgentRuntimeControlServer(ctx, {
 });
 try {
   await server.start();
-  assert.equal(fs.statSync(controlFile).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(fs.statSync(controlFile).mode & 0o777, 0o600);
+  else console.log("SKIP POSIX mode assertion: Windows uses ACLs, not Unix permission bits");
   const transport = createDesktopRuntimeTransport({ controlFile });
   assert.equal(await transport.available(), true);
   const client = createLilyClient({ transport });

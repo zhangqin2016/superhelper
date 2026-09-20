@@ -86,6 +86,12 @@ await permission.children[0].children[0].action();
 assert.deepEqual(calls.at(-1), ["permission", "session_1", "perm_1", true, undefined]);
 
 const hook = hookCard("session_1", { requestId: "hook_1", title: "Hook" }, deps);
+const scopedPermission = permissionCard("session_1", {
+  requestId: "perm_scope", input: { command: "echo <safe>", permissionPatterns: ["C:/Skills/*"], apiKey: "not-for-display" },
+}, deps);
+assert.equal(scopedPermission.children[0].tagName, "pre");
+assert.equal(scopedPermission.children[0].textContent, "echo <safe>\nC:/Skills/*");
+assert.equal(scopedPermission.children[1].children.length, 3);
 await hook.children[0].children[0].action();
 assert.deepEqual(calls.at(-1), ["hook", "session_1", "hook_1", true]);
 

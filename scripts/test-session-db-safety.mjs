@@ -9,6 +9,10 @@ import { DatabaseSync } from 'node:sqlite';
 
 const require = createRequire(import.meta.url);
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lily-db-safety-'));
+const originalAppData = { APPDATA: process.env.APPDATA, LOCALAPPDATA: process.env.LOCALAPPDATA };
+// Discovery must scan fixture roots, never the developer's installed profiles.
+process.env.APPDATA = root;
+process.env.LOCALAPPDATA = root;
 const ep = require.resolve('electron');
 require.cache[ep] = { id: ep, filename: ep, loaded: true, exports: { app: { getPath: () => root } } };
 const { migrateLegacyUserDataRoot } = require('../src/main/data-migration');
@@ -221,6 +225,9 @@ try {
     catch (err) { failures++; console.error('FAIL', name, err.message); }
   }
 } finally {
+  for (const [key, value] of Object.entries(originalAppData)) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
   if (oldEnv === undefined) delete process.env.LILY_USER_DATA_DIR; else process.env.LILY_USER_DATA_DIR = oldEnv;
   fs.rmSync(root, { recursive: true, force: true });
 }

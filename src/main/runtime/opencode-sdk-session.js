@@ -60,6 +60,7 @@ const SDK_CALL_TIMEOUTS_MS = Object.freeze({
   promptAsync: 30_000,
   summarize: 30_000,
   messages: 15_000,
+  message: 10_000,
   abort: 10_000,
   revert: 15_000,
   unrevert: 15_000,
@@ -144,6 +145,13 @@ function createOpencodeSdkSession(client, directory, options = {}) {
           ...(opts.before ? { before: opts.before } : {}),
         }))),
         "session.messages",
+      );
+    },
+
+    async message(sessionID, messageID) {
+      return unwrapSdkResult(
+        await call("message", client.session.message(withDirectory(directory, { sessionID, messageID }))),
+        "session.message",
       );
     },
 

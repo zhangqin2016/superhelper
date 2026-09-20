@@ -39,7 +39,7 @@ check("no verbatim copy of either helper remains", () => {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!entry.name.endsWith(".js")) continue;
-      const rel = path.relative(ROOT, full);
+      const rel = path.relative(ROOT, full).split(path.sep).join("/");
       if (rel === "src/main/coded-error.js" || rel === "src/main/plain-object.js") continue;
       const code = fs.readFileSync(full, "utf8");
       if (CE.test(code)) offenders.push(`${rel}: codedError copy`);

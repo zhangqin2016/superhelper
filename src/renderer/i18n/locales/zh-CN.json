@@ -1715,6 +1715,8 @@
   "workbench.emptyTitle": "开始处理一项工作",
   "workbench.emptyLead": "在下方描述任务即可。助手会整理文档、汇总信息并完成日常办公事项。",
   "workbench.emptyHint": "也可添加图片或文件作为附件",
+  "workbench.historyLoading": "正在读取会话记录…",
+  "workbench.historyFailed": "会话记录读取失败，请重新打开此会话重试。",
   "workbench.example1": "帮我整理今天会议的纪要，列出决议和待办",
   "workbench.example2": "根据这份数据写一份周报摘要",
   "workbench.example3": "把附件里的表格转成清晰的要点列表",

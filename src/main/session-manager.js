@@ -22,13 +22,10 @@ const { getLocale } = require("./locale-settings");
 const {
   ARTIFACT_SCHEMA_VERSION,
   RESULT_BLOCK_SCHEMA_VERSION,
-  backfillMessageArtifacts,
 } = require("./session-artifact-backfill");
 const { MessageStore } = require("./store/message-store");
 const { startRuntimeEventMaintenance } = require("./store/runtime-event-maintenance");
-const { startResumableEnrichment } = require("./session-enrichment");
-const { withFreshArtifacts } = require("./artifact-freshness");
-const { projectConversationForDisplay } = require("./conversation-display-projection");
+const { startEnrichmentWorker } = require("./session-enrichment-worker-host");
 const legacyImport = require("./store/legacy-import");
 const {
   resolveCharacterOwnerScope,
@@ -111,6 +108,7 @@ class SessionManager {
 
   close() {
     this._closed = true;
+    this._enrichmentWorker?.stop().catch(() => {});
     for (const timer of this._timers) clearTimeout(timer);
     this._timers.clear();
     if (this._saveTimer) {
@@ -253,18 +251,14 @@ class SessionManager {
 
   /**
    * After migration, re-derive artifacts for records written by an older
-   * artifact/result-block schema — off the hot path, ONE BOUNDED SLICE of one
-   * session per tick, with the cursor persisted after each slice so a force-quit
-   * resumes instead of restarting. See session-enrichment.js for why the old
-   * whole-session-per-tick shape froze the window on large histories.
+   * artifact/result-block schema in a worker. Even one record may take seconds
+   * to decode/repack; yielding between records cannot protect the main thread.
    */
   _startBackgroundEnrichment() {
-    startResumableEnrichment({
+    this._enrichmentWorker = startEnrichmentWorker({
       store: this._store(),
       sessions: this.iterateSessions(),
-      schedule: (fn, delay) => this._setTimer(fn, delay),
       workspacePathFor: (session) => this.pm?.find?.(session.projectId)?.path || "",
-      backfill: backfillMessageArtifacts,
       versions: { artifact: ARTIFACT_SCHEMA_VERSION, resultBlock: RESULT_BLOCK_SCHEMA_VERSION },
       // The same channel the legacy import uses. A customer once watched a
       // frozen window with no idea the app was re-deriving 1450 records; the
@@ -1132,6 +1126,7 @@ class SessionManager {
     return this._store().getPage(session.id, { limit }).conversation;
   }
 
+
   /** The first user message of a session, or null — without unpacking the rest. */
   getFirstUserMessage(sessionId) {
     const session = this._find(sessionId);
@@ -1220,22 +1215,9 @@ class SessionManager {
       before: Number.isInteger(opts.before) ? opts.before : undefined,
       limit: opts.limit,
     });
-    // Keep the cached count fresh for listForProject without a separate query.
-    session.messageCount = page.total;
-    // Displayed at the current schema whether or not the background pass has
-    // reached these records — 13 ms for a 50-record page, against the 205 ms it
-    // costs to write them back, which is why only persistence is deferred.
-    const fresh = withFreshArtifacts(page.conversation, this.pm?.find?.(session.projectId)?.path || "");
-    return {
-      ok: true,
-      sessionId: session.id,
-      projectId: session.projectId,
-      ...page,
-      // The page is what the screen shows, not the archive: records written
-      // before process events were compacted at archive time are compacted here.
-      conversation: projectConversationForDisplay(fresh.conversation),
-    };
+    return this._conversationPageFromRead(session, page);
   }
+
 
   findById(sessionId) { return this._find(sessionId); }
 
@@ -1274,7 +1256,7 @@ const turnAdmissionMethods = require("./session-turn-admission");
 const taskResultMethods = require("./session-task-results"), taskLifecycleMethods = require("./session-task-lifecycle"), taskContextRegistryMethods = require("./session-task-context-registry"), parentClosureRecoveryMethods = require("./session-parent-closure-recovery");
 Object.defineProperties(
   SessionManager.prototype,
-  Object.fromEntries(Object.entries({ ...turnAdmissionMethods, ...taskResultMethods, ...taskLifecycleMethods, ...taskContextRegistryMethods, ...parentClosureRecoveryMethods }).map(([name, value]) => [
+  Object.fromEntries(Object.entries({ ...require("./session-conversation-reads"), ...turnAdmissionMethods, ...taskResultMethods, ...taskLifecycleMethods, ...taskContextRegistryMethods, ...parentClosureRecoveryMethods }).map(([name, value]) => [
     name,
     { configurable: true, writable: true, value },
   ])),

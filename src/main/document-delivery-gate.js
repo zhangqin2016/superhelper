@@ -7,6 +7,7 @@ const fileKinds = require("../shared/file-kinds.mjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
+const { visionInspectionPaths } = require("./vision-inspection-receipt.js");
 
 const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument]);
 const OOXML_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml]);
@@ -208,7 +209,12 @@ function documentArtifacts(artifacts = []) {
     .slice(0, 20);
 }
 
-function requiresDocumentDelivery(taskContract = null) {
+function requiresDocumentDelivery(taskContract = null, artifacts = []) {
+  // Output provenance survives short follow-ups whose intent is "general".
+  // Merely citing/reading an existing document must not start delivery QA.
+  if (documentArtifacts(artifacts).some((artifact) => artifact.display !== "compact"
+    && String(artifact.source || "").split(",").some((source) =>
+      ["file_change", "tool_write", "tool_output", "inherited_delivery"].includes(source)))) return true;
   if (taskContract?.taskType !== "document_work") return false;
   const operation = taskContract?.semanticIntent?.operation || taskContract?.contentIntent?.operation || "unknown";
   const outputMode = taskContract?.semanticIntent?.outputMode || taskContract?.contentIntent?.outputMode || "unknown";
@@ -228,6 +234,9 @@ function assessArtifact(artifact, tools) {
   if (renderEntry) {
     for (const { tool, index } of successful) {
       if (index <= renderEntry.index) continue;
+      for (const image of visionInspectionPaths(tool)) {
+        if (renderedImages.some((rendered) => imagePathMatches(rendered, image))) inspectedImages.push(image);
+      }
       if (IMAGE_INSPECTION_TOOL_RE.test(String(tool.name || ""))) {
         for (const image of [...collectImagePaths(tool.input)]) {
           if (!renderedImages.length || renderedImages.some((rendered) => imagePathMatches(rendered, image))) {
@@ -268,9 +277,10 @@ function assessArtifact(artifact, tools) {
 }
 
 function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [], userText = "" } = {}) {
-  const required = requiresDocumentDelivery(taskContract);
+  const required = requiresDocumentDelivery(taskContract, artifacts);
   if (!required) return { required: false, ok: true, status: "not_required", artifacts: [], missing: [] };
-  const documents = documentArtifacts(artifacts);
+  const documents = documentArtifacts(artifacts).filter((artifact) =>
+    requiresDocumentDelivery(taskContract) || requiresDocumentDelivery(null, [artifact]));
   if (!documents.length) {
     return {
       required: true,

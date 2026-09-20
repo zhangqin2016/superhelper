@@ -40,10 +40,9 @@ def _soffice():
 
 
 def _office_env():
-    env = os.environ.copy()
-    env.setdefault("SAL_USE_VCLPLUGIN", "svp")
-    env.setdefault("SAL_DISABLE_SYNCHRONOUS_PRINTER_DETECTION", "1")
-    return env
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from lily_office_convert import _env
+    return _env()
 
 
 def _subprocess_options():

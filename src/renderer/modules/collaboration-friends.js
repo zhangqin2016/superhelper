@@ -1,4 +1,5 @@
 import { t } from "../i18n/index.js";
+import { closeCreateDialog } from "./collaboration-create-dialog.js";
 import { createSocialUi, socialEmptyState, socialNode, socialButton, socialIconButton, socialRowButton, socialField, socialPerson, socialAvatar, socialDisclosure, identityName } from "./collaboration-social-ui.js";
 import { groupByLetter } from "./contact-sections.js";
 import { presenceBadge } from "./collaboration-presence-view.js";
@@ -127,7 +128,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
         if (dialogEpoch !== addForm.dataset.dialogEpoch) return;
         if (lilyId.value.trim().toLowerCase() === target) lilyId.value = "";
         clearLookup();
-        contactDialog?.close();
+        closeCreateDialog(contactDialog);
       });
     });
     foundBox.append(greeting);
@@ -324,7 +325,7 @@ export function initCollaborationFriends(root, { api = window.assistantClient?.c
     },
     setFilter(value) { filter = String(value || ""); paint(); },
     reset() {
-      contactDialog?.close();
+      closeCreateDialog(contactDialog);
       ui.reset(); lilyId.value = ""; clearLookup(); filter = "";
       if (requestsOpen) detail?.close?.();
       clearRequests();

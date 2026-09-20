@@ -282,6 +282,27 @@ test("automatic retry pairs the captured task identity with its own text and att
   assert.equal(calls.length, 2, "missing source must not substitute a different request");
 });
 
+test("retry after store reopen preserves accepted user revisions and attachments", async (t) => {
+  const f = fixture(t);
+  f.admit("original");
+  f.messages.append(f.sessionId, { id: "steer-durable", role: "user", turnId: "original", content: "Wait for my data; do not generate files", files: [{ path: "new-input.txt" }], meta: { steer: true, steerSeq: 1 } });
+  f.reopen();
+  f.manager.getTurnUserRevisionsAsync = (sid, tid) => f.messages.getTurnUserRevisionsAsync(sid, tid);
+  const calls = [];
+  const recovery = createTurnRecoveryRuntime({ ctx: { sessionManager: f.manager },
+    sendUserMessage: async (...args) => { calls.push(args); return { ok: true, turnId: "replacement" }; },
+  });
+  t.after(() => recovery.disposeParentClosureRecovery());
+  const result = await recovery.retryLastMessage(f.sessionId, { sourceTurnId: "original", userInitiated: true });
+  assert.equal(result.ok, true);
+  assert.ok(calls[0][1].includes("Process all 22280 records"));
+  assert.ok(calls[0][1].includes("Wait for my data; do not generate files"));
+  assert.deepEqual(calls[0][2], [{ path: "new-input.txt" }]);
+  f.manager.getTurnUserRevisionsAsync = async () => { throw Error("reader unavailable"); };
+  assert.equal((await recovery.retryLastMessage(f.sessionId, { sourceTurnId: "original" })).error, "TASK_CONTINUATION_SOURCE_UNAVAILABLE");
+  assert.equal(calls.length, 1, "never replay an incomplete request when revisions cannot be read");
+});
+
 test("stale or unpersisted terminal decisions cannot trigger any automatic recovery", async (t) => {
   const f = fixture(t);
   let retries = 0;

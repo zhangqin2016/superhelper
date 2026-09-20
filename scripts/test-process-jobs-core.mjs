@@ -53,7 +53,7 @@ try {
   fs.writeFileSync(mediaFile, "RIFFfakeWAVE");
   const mediaJob = await startJob({
     command: process.execPath,
-    args: ["-e", `console.log('<generated_media type=\"speech\">\\n  <file path=\"${mediaFile}\" bytes=\"12\" />\\n</generated_media>');`],
+    args: ["-e", `console.log(${JSON.stringify(`<generated_media type="speech">\n  <file path="${mediaFile}" bytes="12" />\n</generated_media>`)});`],
     cwd: tmp,
     healthcheck: { type: "process" },
   }, { registryDir: tmp });

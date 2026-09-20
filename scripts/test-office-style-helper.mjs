@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { resolveVenvPython } = require("../src/main/runtime-python.js");
+const { resolveVenvPython, getRuntimeEnvExtras } = require("../src/main/runtime-python.js");
 
 const python = resolveVenvPython();
 if (!python) {
@@ -17,6 +17,8 @@ if (!python) {
 
 const out = execFileSync(python, ["resources/runtime-scripts/lily_office_style.py", "--selftest"], {
   encoding: "utf8",
+  env: { ...process.env, ...getRuntimeEnvExtras() },
+  windowsHide: true,
   timeout: 120_000,
 });
 if (!out.includes("lily_office_style selftest ok")) {

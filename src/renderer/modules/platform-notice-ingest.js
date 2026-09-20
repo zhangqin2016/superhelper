@@ -15,6 +15,12 @@
 export function ingestPlatformNoticeEvent(event, runtime, upsertCommittedMessage) {
   const code = event?.payload?.notice?.code;
   const message = event?.payload?.committedMessage;
+  if (event?.type === "engine.notice" && event.source === "media_result" && code === "mediaResultDelivered") {
+    if (message?.role === "assistant" && message.id && message.meta?.mediaResult) {
+      upsertCommittedMessage(runtime, message);
+    }
+    return true;
+  }
   if (event?.type === "engine.warning" && ["long_task_supervisor", "parent_closure_recovery"].includes(event.source)
     && ["taskContinuationPaused", "parentClosureStopped"].includes(code)) {
     if (message?.role === "assistant" && typeof message.id === "string"

@@ -15,6 +15,13 @@ Text extraction tells you what a document says; it cannot prove the document loo
 1. Reopen the output with a deterministic library and confirm that its structure
    is valid. For formula-bearing workbooks, run the managed recalculation route
    and check for formula errors before visual QA.
+   On Windows, use `python "{{RUNTIME_SCRIPTS_DIR}}/lily_xlsx_recalc.py" input.xlsx
+   --out-dir separate-review-directory --timeout 60`. It preserves the original
+   and verifies a recalculated copy using an isolated LibreOffice profile.
+   Do not use the vendored macro-based `recalc.py` on Windows: its macro profile
+   and process timeout are not Windows-compatible. Recheck charts and formatting
+   before choosing the recalculated copy for delivery; unsupported formats and
+   failed/missing caches remain explicitly unverified, never silently accepted.
 2. Render each final document to page images with
    `{{RUNTIME_SCRIPTS_DIR}}/render_document.py`.
 3. Actually open the rendered images with an image-reading tool. Inspect every

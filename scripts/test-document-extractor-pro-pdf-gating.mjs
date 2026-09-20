@@ -10,7 +10,7 @@ import { assert } from "./lib/test-assert.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { resolveVenvPython } = require("../src/main/runtime-python.js");
+const { resolveVenvPython, getRuntimeEnvExtras } = require("../src/main/runtime-python.js");
 
 const python = resolveVenvPython();
 const script = path.join(ROOT, "resources", "runtime-scripts", "extract_document.py");
@@ -47,7 +47,8 @@ function run(extraEnv = {}) {
     encoding: "utf8",
     env: {
       ...process.env,
-      PYTHONPATH: fakeRoot,
+      ...getRuntimeEnvExtras(),
+      PYTHONPATH: [fakeRoot, getRuntimeEnvExtras().PYTHONPATH].filter(Boolean).join(path.delimiter),
       ...extraEnv,
     },
     timeout: 30_000,

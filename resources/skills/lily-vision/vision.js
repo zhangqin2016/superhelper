@@ -145,6 +145,11 @@ async function main() {
       max_tokens: 1024,
     });
     console.log(result);
+    // ASCII-safe provenance survives Windows shell encoding and variable paths.
+    if (!isUrl) {
+      const receipt = JSON.stringify({ version: 1, kind: "image_inspection", ok: true, path: path.resolve(imageSource) });
+      console.log("LILY_VISION_RECEIPT " + receipt.replace(/[\u007f-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")));
+    }
   } catch (err) {
     console.error("识图失败:", err.message);
     process.exit(1);

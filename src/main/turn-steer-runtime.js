@@ -4,6 +4,7 @@ const { engineNotice } = require("../shared/engine-notices.mjs");
 
 const { isActiveTurnPhase } = require("./turn-active-phase");
 const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
+const { withAttachmentManifest } = require("./turn-user-context");
 
 function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMetadata }) {
   return {
@@ -86,7 +87,7 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
       let accepted = false;
       try {
         accepted = await runner.steer({
-          text: engineText,
+          text: withAttachmentManifest(engineText, mergeDisplayFileMetadata(files, opts.displayFiles)),
           files: engineFiles,
           allowImageFileParts,
         });
@@ -113,6 +114,7 @@ function createTurnSteerMethods({ appendTimelineNotice, log, mergeDisplayFileMet
       const steerSeq = (state.steerCount || 0) + 1;
       state.steerCount = steerSeq;
       const displayFiles = mergeDisplayFileMetadata(files, opts.displayFiles);
+      state.userRevisions = [...(state.userRevisions || []), { turnId, steerSeq, text: String(text || ""), files: displayFiles || [] }];
       try {
         this.transcriptStore.commitUserMessage(sessionId, {
           text,

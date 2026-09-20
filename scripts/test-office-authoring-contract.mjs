@@ -39,6 +39,15 @@ assert.match(overlays, /w:eastAsia/);
 assert.match(overlays, /East-Asian typefaces as a pair/);
 assert.match(overlays, /LIGHT slide backgrounds/);
 assert.match(overlays, /lily_office_style\.py/);
+const runtimePython = require("../src/main/runtime-python.js");
+assert.ok(overlays.includes(JSON.stringify(runtimePython.resolveRuntimeScriptsDir())), "pass the current build's literal path to the model");
+assert.ok(overlays.includes("$env:LILY_RUNTIME_SCRIPTS"), "Windows environment syntax is explicit");
+const savedResolver = runtimePython.resolveRuntimeScriptsDir;
+try {
+  runtimePython.resolveRuntimeScriptsDir = () => "";
+  assert.match(buildSkillOverlaySection([{ id: "anthropics-docx" }], "en"), /python-docx/);
+  assert.equal(buildSkillOverlaySection([], "en"), "");
+} finally { runtimePython.resolveRuntimeScriptsDir = savedResolver; }
 
 // Acceptance 2026-09-16 repairs, each pinned to the overlay that carries it.
 // DEF-001: ReportLab cannot embed PostScript/CFF outlines, and macOS ships CFF

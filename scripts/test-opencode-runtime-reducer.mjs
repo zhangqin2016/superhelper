@@ -546,6 +546,7 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   const p = oneEffect("permission.asked", {
     id: "perm_1",
     permission: "bash",
+    patterns: ["C:/example/*", null, 3],
     metadata: { command: "rm", description: "remove" },
     tool: { callID: "c9", messageID: "m1" },
   });
@@ -553,6 +554,7 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   assert(p.toolName === "bash", "toolName from permission field");
   assert(p.callId === "c9", "callID from tool.callID");
   assert(p.input.command === "rm" && p.description === "remove", "metadata surfaced");
+  assert(JSON.stringify(p.input.permissionPatterns) === '["C:/example/*"]', "request scope preserved without malformed entries");
 
   const resolved = oneDraft("permission.replied", { id: "perm_1", allow: true });
   assert(resolved.type === "permission.resolved" && resolved.payload.requestId === "perm_1",
