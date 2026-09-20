@@ -54,45 +54,89 @@ function windowBackgroundColor({ mode = storedThemeMode(), prefersDark = null } 
  * leaves a bare coloured rectangle on screen. Always resolves: a window that
  * never paints is shown anyway after `fallbackMs` so it can never be invisible.
  */
-function showWhenPainted(win, { fallbackMs = 4000, blankAfterMs = 12000, onFailed = null, locale = null } = {}) {
+function showWhenPainted(win, {
+  fallbackMs = 4000, blankAfterMs = 12000, onFailed = null, onGone = null, locale = null,
+  role = "secondary", recoverBudget = 2, recoverWindowMs = 60_000, now = Date.now,
+  // Loading a page from inside the render-process-gone handler trips Electron
+  // itself (SIGTRAP in the main process, seen live on 41.7): the dead host is
+  // still being torn down. Recovery always runs on a later tick.
+  defer = (fn) => setTimeout(fn, 0),
+} = {}) {
   if (!win || win.isDestroyed?.()) return;
   let shown = false;
   let painted = false;
   let explained = false;
+  // The last real page this window was asked to show — what a recovery reloads.
+  let lastUrl = "";
+  const recoveries = [];
   const reveal = () => {
     if (shown || !win || win.isDestroyed?.()) return;
     shown = true;
     try { win.show(); } catch { /* the window may be gone */ }
+  };
+  const fallback = (reason, detail) => {
+    const { fallbackDataUrl } = require("./window-blank-guard");
+    const mode = storedThemeMode();
+    const dark = mode === "dark" || (mode !== "light" && systemPrefersDark());
+    const resolved = locale || (() => {
+      try { return require("./locale-settings").getLocale() || "zh-CN"; } catch { return "zh-CN"; }
+    })();
+    return fallbackDataUrl({ reason, detail, locale: resolved, dark, role });
   };
   // Whatever went wrong, the window says so instead of sitting there blank.
   const explain = (reason, detail) => {
     if (explained || painted || !win || win.isDestroyed?.()) return;
     explained = true;
     reveal();
-    try {
-      const { fallbackDataUrl } = require("./window-blank-guard");
-      const mode = storedThemeMode();
-      const dark = mode === "dark" || (mode !== "light" && systemPrefersDark());
-      const resolved = locale || (() => {
-        try { return require("./locale-settings").getLocale() || "zh-CN"; } catch { return "zh-CN"; }
-      })();
-      void win.webContents?.loadURL?.(fallbackDataUrl({ reason, detail, locale: resolved, dark }));
-    } catch { /* the bare background is still better than a hang */ }
+    try { void win.webContents?.loadURL?.(fallback(reason, detail)); } catch { /* the bare background is still better than a hang */ }
     try { onFailed?.({ reason, detail }); } catch { /* reporting is best effort */ }
+  };
+  // Load the real page again. Used after a renderer exit and by the fallback
+  // page's button; both must end on the app, never on another explanation.
+  const recover = () => {
+    if (!lastUrl || !win || win.isDestroyed?.()) return false;
+    painted = false;
+    explained = false;
+    const url = lastUrl;
+    defer(() => { try { if (!win.isDestroyed?.()) void win.webContents?.loadURL?.(url); } catch { /* the next exit is explained */ } });
+    return true;
   };
   try {
     win.once("ready-to-show", reveal);
     win.webContents?.once?.("paint", () => { painted = true; });
-    win.webContents?.once?.("did-finish-load", () => { painted = true; reveal(); });
+    win.webContents?.on?.("did-finish-load", () => {
+      const url = String(win.webContents?.getURL?.() || "");
+      if (url && !url.startsWith("data:")) lastUrl = url;
+      painted = true;
+      reveal();
+    });
     win.webContents?.on?.("did-fail-load", (_event, errorCode, errorDescription, url, isMainFrame) => {
       if (!isMainFrame) return;
       // A data: fallback that itself fails must not loop.
       if (String(url || "").startsWith("data:")) { reveal(); return; }
+      if (url && !lastUrl) lastUrl = String(url);
       explain("load_failed", [errorDescription, errorCode, url].filter(Boolean).join(" · "));
     });
+    // The renderer process ended. A page that had been running is brought
+    // back by itself: the customer sees a brief reload, not a dead window
+    // (2026-09-20: `killed · 15` after hours of use, with nothing they did).
+    // Only a renderer that keeps dying gets the explanation.
     win.webContents?.on?.("render-process-gone", (_event, details) => {
-      painted = false;
-      explain("crashed", [details?.reason, details?.exitCode].filter((v) => v !== undefined && v !== null).join(" · "));
+      const detail = [details?.reason, details?.exitCode].filter((v) => v !== undefined && v !== null).join(" · ");
+      const at = now();
+      while (recoveries.length && at - recoveries[0] > recoverWindowMs) recoveries.shift();
+      const eligible = painted && Boolean(lastUrl) && details?.reason !== "clean-exit" && recoveries.length < recoverBudget;
+      let recovered = false;
+      if (eligible) { recoveries.push(at); recovered = recover(); }
+      try { onGone?.({ reason: details?.reason, exitCode: details?.exitCode, recovered, attempt: recoveries.length, role }); } catch { /* best effort */ }
+      if (!recovered) { painted = false; explain("crashed", detail); }
+    });
+    win.webContents?.on?.("will-navigate", (event, url) => {
+      if (String(url || "").startsWith(require("./window-blank-guard").RECOVER_URL)) {
+        event?.preventDefault?.();
+        recoveries.length = 0;
+        recover();
+      }
     });
   } catch { /* fall through to the timers */ }
   const revealTimer = setTimeout(reveal, Math.max(0, fallbackMs));

@@ -124,6 +124,7 @@ function createCollaborationWindowManager({
       require("./window-appearance").showWhenPainted(win, {
         onFailed: ({ errorCode, errorDescription, url }) =>
           console.error("[collaboration-window] renderer failed to load:", errorCode, errorDescription, url),
+        onGone: (info) => require("./renderer-process-gone").recordRendererGone(info, { window: "collaboration" }),
       });
       win.loadFile(rendererFile, { query: { view: "collaboration" } });
       // The same chrome the main window gets. Without this a right-click has no

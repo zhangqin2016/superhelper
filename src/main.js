@@ -131,8 +131,10 @@ function createWindow() {
   }
 
   require("./main/window-appearance").showWhenPainted(mainWindow, {
+    role: "main",
     onFailed: ({ errorCode, errorDescription, url }) =>
       console.error("[window] main renderer failed to load:", errorCode, errorDescription, url),
+    onGone: (info) => require("./main/renderer-process-gone").recordRendererGone(info, { window: "main" }),
   });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   wireExternalLinks(mainWindow);

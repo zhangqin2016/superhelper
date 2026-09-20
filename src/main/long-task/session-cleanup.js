@@ -11,7 +11,7 @@
  */
 
 const { LongTaskStore } = require("./store");
-const { stopPidTree } = require("../process-tree-kill");
+const { stopRecordedProcess } = require("../process-tree-kill");
 
 const HOLDER = "lily-session-cleanup";
 const ACTIVE = ["starting", "running", "stopping"];
@@ -54,8 +54,12 @@ async function stopJobsForSession(input = {}) {
         const claim = store.claimLease(scope, job.id, { holder: HOLDER, ttlMs: 60_000, forceTakeover: true });
         if (!claim.ok) { result.failed.push({ jobId: job.id, error: claim.error || "LEASE_FAILED" }); continue; }
         if (job.pid) {
-          stopPidTree(job.pid, "SIGTERM");
-          if (!(await waitExit(job.pid, Math.max(200, Number(input.graceMs) || 3_000), sleep))) stopPidTree(job.pid, "SIGKILL");
+          // A refusal means the recorded pid is no longer this job's process
+          // (reused, or one of our own) — nothing to wait for, never signal it.
+          const term = stopRecordedProcess({ pid: job.pid, identity: job.processIdentity, signal: "SIGTERM" });
+          if (term.ok && !(await waitExit(job.pid, Math.max(200, Number(input.graceMs) || 3_000), sleep))) {
+            stopRecordedProcess({ pid: job.pid, identity: job.processIdentity, signal: "SIGKILL" });
+          }
         }
         const terminal = store.markTerminal(scope, job.id, {
           holder: HOLDER, fencingEpoch: claim.job.fencingEpoch, status: "cancelled", signal: "SIGTERM", error: "SESSION_DELETED",
