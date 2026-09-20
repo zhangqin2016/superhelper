@@ -10,7 +10,7 @@ const { verifyProcessJobScope } = require("./turn-scope");
 const { matchesProcessIdentity } = require("./process-identity");
 const { enforceLogQuota } = require("./log-policy");
 const { recordJobProgress } = require("./job-progress");
-const { stopPidTree } = require("../process-tree-kill");
+const { stopRecordedProcess } = require("../process-tree-kill");
 const { ensureLaunchDiskSpace } = require("./disk-policy");
 
 const TERMINAL = TERMINAL_LONG_TASK_STATUSES;
@@ -205,7 +205,7 @@ class DurableProcessJobRuntime {
       const capturedIdentity = await waitForJson(startMarkerPath);
       const identity = capturedIdentity ? { ...capturedIdentity, observerPid: process.pid } : null;
       if (!identity) {
-        try { stopPidTree(child.pid, "SIGKILL"); } catch { /* best effort */ }
+        try { stopRecordedProcess({ pid: child.pid, signal: "SIGKILL" }); } catch { /* best effort */ }
         return fail("PROCESS_IDENTITY_UNAVAILABLE");
       }
       const attached = store.attachProcess(auth.scope, job.id, {
@@ -275,16 +275,19 @@ class DurableProcessJobRuntime {
       if (!claim.ok) return fail(claim.error);
       job = claim.job;
       const signal = input.signal || "SIGTERM";
-      const error = stopPidTree(job.pid, signal);
-      if (error) return fail("STOP_FAILED", { message: error.message });
+      const term = stopRecordedProcess({ pid: job.pid, identity: job.processIdentity, signal });
+      if (!term.ok && term.error === "SIGNAL_FAILED") return fail("STOP_FAILED", { message: term.message });
+      // Refused (pid reused or our own process): the job's process is already
+      // gone, so there is nothing to wait for and nothing to escalate to.
+      const gone = !term.ok;
       const deadline = Date.now() + Math.max(100, Math.min(Number(input.timeoutMs) || 5_000, 60_000));
-      while (this._alive(job) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
-      if (this._alive(job) && input.force !== false) {
-        stopPidTree(job.pid, "SIGKILL");
+      while (!gone && this._alive(job) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!gone && this._alive(job) && input.force !== false) {
+        stopRecordedProcess({ pid: job.pid, identity: job.processIdentity, signal: "SIGKILL" });
         const killDeadline = Date.now() + 2_000;
         while (this._alive(job) && Date.now() < killDeadline) await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      if (this._alive(job)) {
+      if (!gone && this._alive(job)) {
         return fail("STOP_TIMEOUT", { jobId: job.id, pid: job.pid, ...this._compact(job), alive: true });
       }
       const terminal = store.markTerminal(auth.scope, job.id, {

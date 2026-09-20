@@ -10,7 +10,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { isHostNoiseOnlyFile, jobWorkEvidence, withoutHostNoise } = require("./job-observation");
-const { stopPid } = require("../process-tree-kill");
+const { stopRecordedProcess } = require("../process-tree-kill");
+const { captureProcessIdentity } = require("../long-task/process-identity");
 const { latestWorkProgress } = require("../work-progress-protocol");
 const { sameJobGeneration, updateJobGeneration } = require("./process-job-generation").createJobGenerationGuard({ readRegistry, writeRegistry });
 
@@ -384,6 +385,8 @@ async function startLegacyJob(input = {}, options = {}) {
     jobId,
     generationId: crypto.randomUUID(),
     pid: child.pid || null,
+    // Who this pid IS right now (start time + command), so a later stop can tell the job's process from whatever reuses its number.
+    identity: child.pid ? captureProcessIdentity(child.pid, { command: [command, ...args].join(" ") }) : null,
     status: child.pid ? "running" : "failed",
     command,
     args,
@@ -477,15 +480,15 @@ async function stopLegacyJob(input = {}, options = {}) {
   const found = findJob(input.jobId, options);
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const pid = Number(found.record.pid);
-  if (!isPidAlive(pid)) {
+  const signal = input.signal || "SIGTERM";
+  // Windows: the recorded pid is usually the cmd.exe wrapper, so the guard tree-kills there. A refusal means the pid is no longer this job's process (reused, or one of our own): the job is over, the stranger is left alone.
+  const term = isPidAlive(pid) ? stopRecordedProcess({ pid, identity: found.record.identity || null, signal, tree: process.platform === "win32" }) : { ok: false, error: "EXITED" };
+  if (!term.ok && term.error === "SIGNAL_FAILED") return fail("STOP_FAILED", { jobId: found.id, pid, message: term.message });
+  if (!term.ok) {
     found.registry.jobs[found.id] = { ...found.record, status: "exited", updatedAt: nowIso() };
     writeRegistry(found.registry, options);
     return { ok: true, stopped: true, alreadyExited: true, ...compactJob(found.registry.jobs[found.id]) };
   }
-  const signal = input.signal || "SIGTERM";
-  // Windows has no signal semantics and the recorded pid is usually the cmd.exe wrapper — stopPid tree-kills there.
-  const killErr = stopPid(pid, signal);
-  if (killErr) return fail("STOP_FAILED", { jobId: found.id, pid, message: killErr?.message || String(killErr) });
   const deadline = Date.now() + Number(input.timeoutMs || DEFAULT_STOP_TIMEOUT_MS);
   while (isPidAlive(pid) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -493,7 +496,7 @@ async function stopLegacyJob(input = {}, options = {}) {
   const latest = readRegistry(options);
   if (!sameJobGeneration(latest.jobs[found.id], found.record)) return fail("JOB_REPLACED", { jobId: found.id });
   if (isPidAlive(pid) && input.force !== false) {
-    try { process.kill(pid, "SIGKILL"); } catch { /* best effort */ }
+    stopRecordedProcess({ pid, identity: found.record.identity || null, signal: "SIGKILL", tree: process.platform === "win32" });
   }
   const stopped = !isPidAlive(pid);
   latest.jobs[found.id] = {

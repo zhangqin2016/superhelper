@@ -32,7 +32,7 @@ function fixture() {
       requests.push((statusCode = 200) => callback({ statusCode, resume() {} }));
       return req;
     } };
-    if (id === "../process-tree-kill") return { stopPid: () => null };
+    if (id === "../process-tree-kill") return { stopPid: () => null, stopRecordedProcess: () => ({ ok: true }) };
     return coreRequire(id);
   };
   // Real production code and registry IO; only OS child/health boundaries are controlled.

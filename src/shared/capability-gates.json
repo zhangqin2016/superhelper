@@ -1524,6 +1524,26 @@
         "scripts/test-session-runtime-store.mjs",
         "scripts/test-json-file.mjs"
       ]
+    },
+    {
+      "id": "process-signal-identity",
+      "protects": "A pid written down earlier (job registry, a session's long tasks) is only ever signalled through stopRecordedProcess, which refuses this app's own process tree (main, parent, every Electron helper via app.getAppMetrics) and, when the record carries a process identity, a live process that no longer matches it. New lily_process_jobs records capture their identity at spawn. A refusal means the job is over: callers mark it exited and leave the stranger alone.",
+      "baseline": "A job whose process is still its own is stopped exactly as before (SIGTERM to its group, SIGKILL after the grace period); held ChildProcess objects and the orphan reaper's ps-verified kills are unchanged.",
+      "failureFallback": "Identity inspection failing or throwing counts as a mismatch (no signal), never as permission; outside Electron the own set is self + parent; a source-scan rule forbids raw stopPid/stopPidTree/killPidTreeBestEffort/process.kill(pid, signal) anywhere else under src/main.",
+      "tests": [
+        "scripts/test-process-signal-guard.mjs",
+        "scripts/test-process-jobs-core.mjs"
+      ]
+    },
+    {
+      "id": "renderer-process-recovery",
+      "protects": "A window whose renderer process ends while a page was running loads that page again by itself (two recoveries per minute); only a renderer that keeps dying, a clean exit, or a crash before first paint shows the explanation page. The explanation's button navigates to lily-recover://reload, which the guard intercepts to load the real page, and the main window has its own wording. Every renderer exit is logged unconditionally and reported to runtime diagnostics with reason, exit code (the signal on POSIX), uptime and whether it recovered.",
+      "baseline": "Load failures and never-painted windows are explained exactly as before; the collaboration window keeps its hint; the fallback page stays a self-contained data: URL.",
+      "failureFallback": "A recovery that cannot load falls through to the explanation; the diagnostics report is fire-and-forget and a throwing or rejecting reporter never affects the window.",
+      "tests": [
+        "scripts/test-renderer-process-recovery.mjs",
+        "scripts/test-window-appearance.mjs"
+      ]
     }
   ]
 }

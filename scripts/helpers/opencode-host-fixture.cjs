@@ -15,7 +15,7 @@ const root = path.resolve(__dirname, "../..");
 const sourceRoot = path.join(root, "src/main");
 const real = new Set([
   "ipc-utils", "turn-orchestrator", "session-runner-pool", "opencode-agent-session",
-  "runner-idle-lifecycle", "runner-live-config", "stage-profile",
+  "runner-idle-lifecycle", "runner-live-config", "stage-profile", "engine-npm-registry",
   "spawn-env", "agent-env", "opencode-config-freshness", "model-route-audit",
   "context-budget-manager", "opencode-subagent-runtime", "usage-reporter",
   "runtime/opencode-shared-server", "runtime/opencode-server-manager",
