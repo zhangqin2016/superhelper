@@ -1,4 +1,8 @@
 node_modules/
+# also the symlink form: a worktree that borrows the install must not commit the link.
+node_modules
+web/node_modules
+server/node_modules
 dist/
 **/.next/
 .cache/
