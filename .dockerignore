@@ -14,3 +14,14 @@ release-keys
 .DS_Store
 Archive.zip
 npm-debug.log*
+
+# The server and web images copy only server/ and web/. Everything below is
+# irrelevant to them and dwarfs what is: the engine bundles and vendored
+# opencode tree alone are ~10 GB, which every image build would otherwise ship
+# to the daemon as build context before copying a few megabytes out of it.
+bundles
+opencode
+generated-assets
+output
+tmp
+dist
