@@ -34,6 +34,20 @@ export function createPrivateQiniuObjectStore({ config, fetchImpl = fetch, now =
   }
   return Object.freeze({
     createObjectKey: () => `collaboration/${randomBytes(32).toString("hex")}`,
+    // Dedicated private-bucket management; never accept a caller-supplied host.
+    async delete({ objectKey }) {
+      const pathname = `/delete/${base64(`${config.bucket}:${validKey(objectKey)}`)}`;
+      const host = 'rs.qiniuapi.com', contentType = 'application/x-www-form-urlencoded';
+      const date = new Date(Number(now())).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+      const signing = `POST ${pathname}\nHost: ${host}\nContent-Type: ${contentType}\nX-Qiniu-Date: ${date}\n\n`;
+      const token = `${config.accessKey}:${base64(createHmac('sha1',config.secretKey).update(signing).digest())}`;
+      try {
+        const response = await fetchImpl(`https://${host}${pathname}`, {method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),
+          headers:{'Content-Type':contentType,'X-Qiniu-Date':date,Authorization:`Qiniu ${token}`},body:''});
+        await response.body?.cancel().catch(()=>{});
+        if (![200,612].includes(response.status)) throw fail();
+      } catch { throw fail(); }
+    },
     createUploadTicket({ objectKey, ciphertextSize, ttlSeconds = 900 }) {
       if (!Number.isSafeInteger(ciphertextSize) || ciphertextSize < 1 || ciphertextSize > 1024 ** 3) throw fail("COLLAB_OBJECT_SIZE_INVALID");
       const expiry = deadline(ttlSeconds, 900);

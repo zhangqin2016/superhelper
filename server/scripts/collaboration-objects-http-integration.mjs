@@ -7,6 +7,7 @@ import { Writable } from "node:stream";
 import pg from "pg";
 import Fastify from "fastify";
 import { verifyTransferHttp } from "./collaboration-transfer-http-fixture.mjs";
+import { verifyObjectCleanup } from './collaboration-object-cleanup-http-fixture.mjs';
 
 if (!process.env.DATABASE_URL) { console.log("collaboration objects signed HTTP: skipped (DATABASE_URL not configured)"); process.exit(0); }
 const schema = `collab_objects_http_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -19,6 +20,7 @@ Object.assign(process.env, {
   DATABASE_URL: scoped.href, SESSION_SECRET: crypto.randomBytes(32).toString("hex"),
   COLLABORATION_ENABLED: "true", COLLABORATION_KILL_SWITCH: "false", COLLABORATION_ROLLOUT_ORGANIZATIONS: "",
   COLLABORATION_ATTACHMENTS_ENABLED: "true", COLLABORATION_WORKSPACE_SHARES_ENABLED: "true",
+  COLLABORATION_TASKS_ENABLED: "true", COLLABORATION_TASK_GIT_ENABLED: "true", COLLABORATION_SHARED_PUBLICATION_ENABLED: "true",
   COLLAB_MESSAGE_KEK: crypto.randomBytes(32).toString("hex"), COLLAB_MESSAGE_KEK_VERSION: "v1",
   COLLAB_OBJECT_KEK: crypto.randomBytes(32).toString("hex"), COLLAB_OBJECT_KEK_VERSION: "v1", COLLAB_OBJECT_KEKS: "",
   COLLAB_QINIU_ACCESS_KEY: "test-private-ak", COLLAB_QINIU_SECRET_KEY: "test-private-sk", COLLAB_QINIU_BUCKET: "test-private-bucket",
@@ -33,6 +35,13 @@ const app = Fastify({ logger: { level: "trace", stream: new Writable({ write(chu
 installDocOnlyCompilers(app);
 app.setErrorHandler((error, _request, reply) => { app.log.error(error); reply.code(500).send({ ok: false, code: "INTERNAL_ERROR" }); });
 let dropAckPath = null, committedAck = null;
+let expirePublicationUpload=true;
+app.addHook('preHandler',async request=>{
+  if(expirePublicationUpload&&request.url==='/api/collaboration/v1/tasks/integration/publish'&&request.body?.objectId){
+    expirePublicationUpload=false;
+    await pool.query("UPDATE stored_objects SET orphan_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1 AND state='verified' AND shared_workspace_id IS NULL",[request.body.objectId]);
+  }
+});
 app.addHook("onSend", async (request, reply, payload) => {
   if (dropAckPath === request.url && reply.statusCode === 200) {
     // The real service has committed; prevent the client from receiving its
@@ -78,7 +87,7 @@ try {
     create table device_public_keys(device_id text primary key,public_key text);
     create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
     create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);`);
-  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql", "041_collaboration_reply_snapshots.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of ["033_collaboration_core.sql", "035_collaboration_bootstrap_completion.sql", "037_collaboration_relationship_events.sql", "038_collaboration_conversations.sql", "039_collaboration_objects.sql", "041_collaboration_reply_snapshots.sql", "045_collaboration_tasks.sql", "047_collaboration_shared_workspaces.sql", "048_collaboration_task_history.sql", "049_collaboration_integration_targets.sql", "050_collaboration_shared_publications.sql","051_collaboration_shared_baselines.sql","052_collaboration_object_cleanup.sql"]) await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   for (const user of ["a", "b", "outsider"]) {
     const pair = crypto.generateKeyPairSync("ed25519"); keys.set(user, pair);
     await pool.query("insert into users values($1)", [user]);
@@ -101,6 +110,21 @@ try {
   const conversationId = accepted(await command("a", "conversations", { action: "create", scopeType: "organization", organizationId: "org", kind: "channel", visibility: "private", memberUserIds: ["b"] })).conversationId;
   const dek = crypto.randomBytes(32).toString("base64"); sensitive.add(dek);
   const metadata = { conversationId, purpose: "attachment", ciphertextSize: 100, ciphertextSha256: "a".repeat(64), mimeType: "text/plain", originalName: "notes.txt", dek };
+  const expiredCommand={...metadata,clientCommandId:'init-expired-ack'};
+  dropAckPath='/api/collaboration/v1/objects/init';
+  assert.equal((await command('a','objects/init',expiredCommand)).status,503);
+  const expiredObjectId=committedAck.objectId;
+  await pool.query("UPDATE stored_objects SET orphan_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[expiredObjectId]);
+  const expiredReplay=accepted(await command('a','objects/init',expiredCommand));
+  assert.deepEqual(expiredReplay,{objectId:expiredObjectId,state:'expired',reason:'orphan-expired',ciphertextSize:100,ciphertextSha256:metadata.ciphertextSha256},'lost init ACK can identify the expired orphan without issuing credentials');
+  assert.deepEqual(accepted(await command('a',`objects/${expiredObjectId}/status`,{})),expiredReplay);
+  assert.equal((await command('b',`objects/${expiredObjectId}/status`,{})).status,403,'orphan proof remains restricted to its owner');
+  await pool.query("UPDATE stored_objects SET expires_at=clock_timestamp()+interval '1 hour' WHERE id=$1",[expiredObjectId]);
+  assert.equal((await command('a','objects/init',expiredCommand)).status,403,'explicit object expiration policy must not be stripped by replacement');
+  assert.equal((await command('a',`objects/${expiredObjectId}/status`,{})).status,403);
+  await pool.query("UPDATE stored_objects SET expires_at=NULL,state='revoked' WHERE id=$1",[expiredObjectId]);
+  assert.equal((await command('a','objects/init',expiredCommand)).status,403,'revocation never authorizes a replacement upload');
+  assert.equal((await command('a',`objects/${expiredObjectId}/status`,{})).status,403);
   dropAckPath = "/api/collaboration/v1/objects/init";
   assert.equal((await command("a", "objects/init", { ...metadata, clientCommandId: "init-original" })).status, 503);
   const originalObjectId = committedAck.objectId;
@@ -181,6 +205,12 @@ try {
   const downloadPage = await sync.syncAfterCursor({ userId: "b", deviceId: "device-b", afterCursor: 0 });
   assert.ok(downloadPage.events.some((event) => event.type === "object.download_authorized"));
   await verifyTransferHttp({ app, keys, createAccessToken, stableStringify, sha256, uploaded, sensitive, conversationId, pool, dropAck: (value) => { dropAckPath = value; } });
+  await verifyObjectCleanup({db,pool,conversationId,messageId:sent.message.id,command,accepted});
+  const publishedPage=await sync.syncAfterCursor({userId:'a',deviceId:'device-a',afterCursor:page.toCursor});
+  assert.ok(publishedPage.events.some(event=>event.type==='task.updated'&&event.scope==='task'));
+  if(process.platform==='darwin')assert.ok(publishedPage.events.some(event=>event.type==='workspace.published'&&event.scope==='workspace'));
+  const helperPage=await sync.syncAfterCursor({userId:'b',deviceId:'device-b',afterCursor:downloadPage.toCursor});
+  assert.equal(helperPage.events.some(event=>event.type==='workspace.published'),false,'source assignee never receives workspace publication metadata');
   await pool.query("update organization_members set status='disabled' where user_id='b'");
   assert.equal((await command("b", `objects/${initial.objectId}/download-ticket`, {})).status, 403);
   assert.equal(accepted(await command("a", `objects/${initial.objectId}/revoke`, {})).state, "revoked");

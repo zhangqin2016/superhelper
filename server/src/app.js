@@ -21,6 +21,8 @@ import { createCollaborationWsTicketService } from "./services/collaboration/ws-
 import { COLLABORATION_NOTIFY_CHANNEL, createRealtimeDispatcher, createRealtimeNotifyLifecycle } from "./services/collaboration/realtime-dispatcher.js";
 import { registerCollaborationRealtimeGateway } from "./services/collaboration/realtime-gateway.js";
 import { createPresenceRedisLifecycle } from "./services/collaboration/presence-redis.js";
+import { createConfiguredObjectCleanup } from './services/collaboration/object-config.js';
+import { startObjectCleanup } from './services/collaboration/object-cleanup.js';
 
 import { createRequestRateLimiter } from "./services/request-rate-limit.js";
 
@@ -32,6 +34,14 @@ export async function buildApp() {
     // Vision requests carry base64 images, and admin catalog uploads can carry workspace apps.
     bodyLimit: ADMIN_UPLOAD_LIMIT_BYTES,
   });
+  if (config.collaborationObjectCleanupEnabled) {
+    let cleanupLifecycle;
+    app.addHook('onReady', async () => {
+      cleanupLifecycle = startObjectCleanup({cleanup:createConfiguredObjectCleanup({database:db,config}),
+        onError:code=>app.log.warn({code},'collaboration object cleanup failed')});
+    });
+    app.addHook('onClose', async () => cleanupLifecycle?.stop());
+  }
 
   await app.register(cors, {
     origin: true,

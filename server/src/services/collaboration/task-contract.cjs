@@ -1,4 +1,5 @@
 "use strict";
+const {gitDescriptor} = require("./task-git-descriptor.cjs");
 
 // Canonical server contract. Callers must resolve current authorization in a server
 // transaction before invoking it; payload roles are never authority.
@@ -19,12 +20,16 @@ function exact(value, allowed) {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((k) => !allowed.includes(k))) fail("COLLAB_TASK_INVALID");
 }
 function createTask(input, { actorUserId, authorizedParticipantIds, now } = {}) {
-  exact(input, ["id", "conversationId", "assigneeUserId", "inputSnapshotId", "title", "objective", "acceptanceCriteria"]);
+  exact(input, ["id", "conversationId", "assigneeUserId", "inputSnapshotId", "title", "objective", "acceptanceCriteria", "sharedWorkspaceId", "inputGit"]);
+  const inputGit = Object.hasOwn(input,"inputGit") ? gitDescriptor(input.inputGit) : null;
+  if (inputGit && (inputGit.prerequisites.length || !inputGit.ref.endsWith("/baseline"))) fail("COLLAB_TASK_INVALID");
   const requesterUserId = identifier(actorUserId), assigneeUserId = identifier(input.assigneeUserId);
   if (requesterUserId === assigneeUserId) fail("COLLAB_TASK_SELF_ASSIGNMENT");
   if (!Array.isArray(authorizedParticipantIds) || ![requesterUserId, assigneeUserId].every((id) => authorizedParticipantIds.includes(id))) fail("COLLAB_TASK_ACCESS_DENIED");
   if (!Number.isSafeInteger(now) || now < 0) fail("COLLAB_TASK_INVALID");
   return { id: identifier(input.id), conversationId: identifier(input.conversationId), requesterUserId, assigneeUserId,
+    ...(Object.hasOwn(input,"sharedWorkspaceId") ? {sharedWorkspaceId:identifier(input.sharedWorkspaceId)} : {}),
+    ...(inputGit ? {inputGit} : {}),
     inputSnapshotId: identifier(input.inputSnapshotId), title: bounded(input.title, 200, true),
     objective: bounded(input.objective, 12000, true), acceptanceCriteria: bounded(input.acceptanceCriteria, 12000, true),
     state: "offered", revision: 1, currentDeliveryId: null, acceptedDeliveryId: null,
@@ -39,7 +44,8 @@ const ACTIONS = {
   cancel: { role: "requesterUserId", from: ["offered", "active", "review", "changes_requested"], to: "cancelled" },
 };
 function transitionTask(task, command, { actorUserId, authorizedParticipantIds, now, verifiedDelivery } = {}) {
-  exact(command, ["action", "expectedRevision", "deliveryId", "reason"]);
+  exact(command, ["action", "expectedRevision", "deliveryId", "reason", "deliveryGit"]);
+  if (command.action !== "submit" && Object.hasOwn(command,"deliveryGit")) fail("COLLAB_TASK_INVALID");
   const rule = Object.hasOwn(ACTIONS, command.action) ? ACTIONS[command.action] : null;
   if (!rule) fail("COLLAB_TASK_INVALID");
   if (!Array.isArray(authorizedParticipantIds) || ![task.requesterUserId, task.assigneeUserId].every((id) => authorizedParticipantIds.includes(id)) || actorUserId !== task[rule.role]) fail("COLLAB_TASK_ACCESS_DENIED");
@@ -53,6 +59,10 @@ function transitionTask(task, command, { actorUserId, authorizedParticipantIds, 
     if (identifier(command.deliveryId) !== task.currentDeliveryId) fail("COLLAB_TASK_DELIVERY_CONFLICT");
   } else if (command.action !== "submit" && command.deliveryId != null) fail("COLLAB_TASK_INVALID");
   if (command.action === "submit") {
+    const deliveryGit = Object.hasOwn(command,"deliveryGit") ? gitDescriptor(command.deliveryGit) : null;
+    if (Boolean(task.inputGit) !== Boolean(deliveryGit)) fail("COLLAB_TASK_INVALID");
+    if (deliveryGit && (!deliveryGit.ref.includes("/deliveries/") || deliveryGit.commit === task.inputGit.commit
+      || deliveryGit.prerequisites.length !== 1 || deliveryGit.prerequisites[0] !== task.inputGit.commit)) fail("COLLAB_TASK_INVALID");
     // verifiedDelivery is supplied by the server object broker, never spread
     // from the request: all objects have passed task ACL + completion checks.
     const id = identifier(command.deliveryId);
@@ -60,7 +70,8 @@ function transitionTask(task, command, { actorUserId, authorizedParticipantIds, 
       || verifiedDelivery.inputSnapshotId !== task.inputSnapshotId || verifiedDelivery.actorUserId !== actorUserId
       || verifiedDelivery.complete !== true || !/^[a-f0-9]{64}$/.test(verifiedDelivery.manifestHash || "")) fail("COLLAB_TASK_DELIVERY_UNVERIFIED");
     if (task.deliveries.some((d) => d.id === id)) fail("COLLAB_TASK_DELIVERY_CONFLICT");
-    next.deliveries.push({ id, inputSnapshotId: task.inputSnapshotId, manifestHash: verifiedDelivery.manifestHash, submittedAt: now, number: task.deliveries.length + 1 });
+    next.deliveries.push({ id, inputSnapshotId: task.inputSnapshotId, manifestHash: verifiedDelivery.manifestHash, submittedAt: now, number: task.deliveries.length + 1,
+      ...(deliveryGit ? {git:deliveryGit} : {}) });
     next.currentDeliveryId = id;
   }
   if (command.action === "approve") next.acceptedDeliveryId = command.deliveryId;

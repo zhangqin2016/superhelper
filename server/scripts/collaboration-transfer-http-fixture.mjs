@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { verifyAttachmentServiceHttp } from "./collaboration-attachment-send-http-fixture.mjs";
+import { verifyTaskGitServiceHttp } from "./collaboration-task-git-http-fixture.mjs";
 const require = createRequire(import.meta.url);
 const { createCollaborationClient } = require("../../src/main/collaboration/client");
 const { createTransferManager } = require("../../src/main/collaboration/transfer-manager");
@@ -89,6 +90,13 @@ export async function verifyTransferHttp({ app, keys, createAccessToken, stableS
   }
   try {
     const sender = desktop("a"); let sending = sender.manager();
+    const missing = await sending.prepareUpload({ inputPath: source, conversationId, scopeId: "team:org", purpose: "attachment", mimeType: "text/plain", originalName: "missing.txt" });
+    dropAck("/api/collaboration/v1/objects/init");assert.equal((await sending.resumeUpload(missing.id)).state,"paused");sending.stop();
+    const unknown = sender.manifests.read(missing.id);assert.equal(unknown.checkpoint.objectId,undefined);
+    fs.unlinkSync(path.join(sender.manifests.directory(missing.id),"ciphertext.lilyenc"));sending=sender.manager();
+    const identified=await sending.resumeUpload(missing.id);assert.equal(identified.code,"COLLAB_TRANSFER_STAGING_MISSING");assert.ok(identified.objectId);assert.equal(starts,0);
+    const recoveredReceipt=(await pool.query("SELECT response_payload FROM command_receipts WHERE command_type='object.init' AND client_command_id=$1",[unknown.commandIds.init])).rows;
+    assert.equal(recoveredReceipt.length,1);assert.equal(recoveredReceipt[0].response_payload.objectId,identified.objectId,"lost init ACK and missing ciphertext retain the original committed object");
     const prepared = await sending.prepareUpload({ inputPath: source, conversationId, scopeId: "team:org", purpose: "attachment", mimeType: "text/plain", originalName: "handoff.txt" });
     dropAck("/api/collaboration/v1/objects/init");
     assert.equal((await sending.resumeUpload(prepared.id)).state, "paused"); sending.stop(); sending = sender.manager();
@@ -99,6 +107,10 @@ export async function verifyTransferHttp({ app, keys, createAccessToken, stableS
     assert.equal((await sending.resumeUpload(prepared.id)).state, "paused"); sending.stop(); sending = sender.manager();
     assert.equal((await sending.resumeUpload(prepared.id)).state, "verified");
     assert.equal(starts, 1); assert.deepEqual(puts, [1, 2]);
+    const verified=sender.manifests.read(prepared.id),{objectId:verifiedId,...withoutId}=verified.checkpoint;
+    sender.manifests.update({id:prepared.id,expectedRevision:verified.revision,checkpoint:withoutId});
+    fs.unlinkSync(path.join(sender.manifests.directory(prepared.id),"ciphertext.lilyenc"));sending.stop();sending=sender.manager();
+    const verifiedReplay=await sending.resumeUpload(prepared.id);assert.equal(verifiedReplay.state,"verified");assert.equal(verifiedReplay.objectId,verifiedId);assert.equal(starts,1);
     for (const action of ["init", "complete"]) assert.equal((await pool.query("select count(*)::int n from command_receipts where client_command_id=$1", [journal.commandIds[action]])).rows[0].n, 1);
     const message = await sender.client.submitMessage({ action: "send", deviceId: sender.deviceId, clientCommandId: journal.commandIds.send, conversationId, attachmentIds: [journal.checkpoint.objectId], attachmentPurpose: "attachment" });
     assert.ok(message.result.message.id);
@@ -111,5 +123,6 @@ export async function verifyTransferHttp({ app, keys, createAccessToken, stableS
     assert.deepEqual(fs.readFileSync(await receiving.verifiedFile(inbound.id)), fs.readFileSync(source));
     sending.stop(); receiving.stop(); sender.client.stop(); recipient.client.stop();
     await verifyAttachmentServiceHttp({ desktop, directory, source, fetchImpl, conversationId, pool, dropAck });
+    await verifyTaskGitServiceHttp({ desktop, directory, fetchImpl, conversationId, pool, dropAck, uploaded });
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }

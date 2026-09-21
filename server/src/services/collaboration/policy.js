@@ -35,6 +35,10 @@ export function resolveCollaborationPolicy(input = {}, options = {}) {
     attachments: input.attachments === true,
     workspaceShares: input.workspaceShares === true,
     ...(input.enabled === true && input.workspaceShares === true && input.tasks === true ? { tasks: true } : {}),
+    ...(input.enabled === true && input.workspaceShares === true && input.tasks === true && input.sharedWorkspaceProtocol === 1 ? {sharedWorkspaceProtocol:1} : {}),
+    ...(input.enabled === true && input.workspaceShares === true && input.tasks === true && input.taskHistoryProtocol === 1 ? {taskHistoryProtocol:1} : {}),
+    ...(input.enabled === true && input.workspaceShares === true && input.tasks === true && input.taskGitProtocol === 1 ? {taskGitProtocol:1} : {}),
+    ...(input.enabled === true && input.workspaceShares === true && input.tasks === true && input.taskGitProtocol === 1 && input.sharedWorkspaceProtocol === 1 && input.sharedPublicationProtocol === 1 ? {sharedPublicationProtocol:1} : {}),
     aiTools: input.aiTools === true,
   };
 }
@@ -47,6 +51,10 @@ export function resolveServerCollaborationPolicy(serverConfig = {}, options = {}
     attachments: serverConfig.collaborationAttachmentsEnabled === true,
     workspaceShares: serverConfig.collaborationWorkspaceSharesEnabled === true,
     tasks: serverConfig.collaborationTasksEnabled === true,
+    sharedWorkspaceProtocol: 1,
+    taskHistoryProtocol: 1,
+    taskGitProtocol: serverConfig.collaborationTaskGitEnabled === true ? 1 : undefined,
+    sharedPublicationProtocol: serverConfig.collaborationSharedPublicationEnabled === true ? 1 : undefined,
     aiTools: serverConfig.collaborationAiToolsEnabled === true,
   }, options);
 }
@@ -63,14 +71,18 @@ export function applyCollaborationPolicyGate(effectiveConfig = {}, options = {})
   const bounded = resolveCollaborationPolicy(profilePolicy, {
     killSwitch: options.killSwitch === true || options.organizationEligible === false,
   });
+  const {sharedWorkspaceProtocol: profileProtocol, taskHistoryProtocol: historyProtocol, taskGitProtocol: gitProtocol, sharedPublicationProtocol: publicationProtocol, ...boundedPolicy} = bounded;
   return {
     ...(effectiveConfig && typeof effectiveConfig === "object" ? effectiveConfig : {}),
     collaboration: {
-      ...bounded,
+      ...boundedPolicy,
       realtime: bounded.realtime && options.realtime !== false,
       attachments: bounded.attachments && options.attachments === true,
       workspaceShares: bounded.workspaceShares && options.workspaceShares === true,
       ...(bounded.tasks === true ? { tasks: options.tasks === true && options.workspaceShares === true } : {}),
+      ...(bounded.enabled && bounded.workspaceShares && bounded.tasks === true && options.tasks === true && options.workspaceShares === true ? {sharedWorkspaceProtocol:1,taskHistoryProtocol:1} : {}),
+      ...(bounded.enabled && bounded.workspaceShares && bounded.tasks === true && options.tasks === true && options.workspaceShares === true && options.taskGit === true ? {taskGitProtocol:1} : {}),
+      ...(bounded.enabled && bounded.workspaceShares && bounded.tasks === true && options.tasks === true && options.workspaceShares === true && options.taskGit === true && options.sharedPublication === true ? {sharedPublicationProtocol:1} : {}),
       aiTools: bounded.aiTools && options.aiTools === true,
     },
   };

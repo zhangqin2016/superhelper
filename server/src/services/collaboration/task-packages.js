@@ -7,7 +7,7 @@ const fail=()=>{throw new CollaborationCommandError('COLLAB_TASK_PACKAGE_UNAVAIL
 export function createTaskPackageBroker({now=Date.now}={}){
   async function bind({trx,task,account,objectId}){
     const object=await trx.selectFrom('stored_objects').selectAll().where('id','=',objectId).forUpdate().executeTakeFirst();
-    if(!object || object.state!=='verified' || object.task_id || object.bound_message_id || object.owner_user_id!==account.userId
+    if(!object || object.state!=='verified' || object.task_id || object.shared_workspace_id || object.bound_message_id || object.owner_user_id!==account.userId
       || object.conversation_id!==task.conversationId || object.purpose!=='workspace'
       || !/^[a-f0-9]{64}$/.test(object.ciphertext_sha256||''))return fail();
     for(const expires of [object.expires_at,object.orphan_expires_at])if(expires!=null && (!Number.isFinite(new Date(expires).getTime()) || new Date(expires).getTime()<=now()))return fail();
@@ -17,6 +17,12 @@ export function createTaskPackageBroker({now=Date.now}={}){
   return Object.freeze({
     verifyInput:async({trx,task,account})=>bind({trx,task,account,objectId:task.inputSnapshotId}),
     verifyDelivery:async({trx,task,account,deliveryId})=>{
+      if(task.inputGit){
+        const input=await trx.selectFrom('stored_objects').selectAll().where('id','=',task.inputSnapshotId).forUpdate().executeTakeFirst();
+        if(!input || input.state!=='bound' || input.task_id!==task.id || input.purpose!=='workspace'
+          || input.owner_user_id!==task.requesterUserId || input.conversation_id!==task.conversationId
+          || (input.expires_at!=null && (!Number.isFinite(new Date(input.expires_at).getTime()) || new Date(input.expires_at).getTime()<=now())))return fail();
+      }
       const object=await bind({trx,task,account,objectId:deliveryId});
       return {id:deliveryId,taskId:task.id,inputSnapshotId:task.inputSnapshotId,actorUserId:account.userId,complete:true,manifestHash:object.ciphertext_sha256};
     },
