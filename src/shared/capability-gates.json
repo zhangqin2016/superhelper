@@ -2084,6 +2084,15 @@
         "scripts/test-engine-exit-confirmation.mjs",
         "scripts/test-shared-server-exit-confirmation.mjs"
       ]
+    },
+    {
+      "id": "announced-continuation",
+      "protects": "A turn that ends on the model's own announcement of the next step is pushed back into the model once, quoting that sentence, instead of settling. Three gates already re-enter a cleanly ended turn (required tool, unfinished todos, claimed deliverable); all read the platform's record of the work, none read the strongest statement of intent there is.",
+      "baseline": "Everything the existing gates catch is unchanged, and the 24.6% of turns that end by addressing the user — a question, an offer, handing control back — never re-enter. Measured on 399 real assistant turns the rule fires on 0.5%, exactly the two genuine announcements in that corpus; negated (\"我验证不了\"), completed (\"已经补上了\"), past-tense, structural (list/markdown) and long narrative sentences are refused.",
+      "failureFallback": "It runs at most once per turn and claims from the shared turn-continuation budget, so exhausting the budget settles the turn as before rather than spending a round another gate needs. It never fires on an interrupted, stalled or non-zero exit, with permissions or questions pending, or on a turn that ran no tools. The nudge tells the model it may answer that the step is unnecessary, so a false positive costs one short round and never manufactures work. Kill switch LILY_ANNOUNCED_CONTINUATION_GATE=0.",
+      "tests": [
+        "scripts/test-announced-continuation.mjs"
+      ]
     }
   ]
 }
