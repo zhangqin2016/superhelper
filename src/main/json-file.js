@@ -78,6 +78,21 @@ function unchangedOnDisk(file, text) {
 }
 
 /**
+ * Create a JSON file that must not already exist.
+ *
+ * A different contract from writeJson: the caller needs "mine, or fail" — a
+ * marker claiming a directory, a lock nobody else may take — so the create
+ * itself is the exclusive act and there is no temp+rename to make atomic.
+ * It lives here so that every JSON write still has one implementation.
+ *
+ * @throws {Error} EEXIST when the file is already there.
+ */
+function writeJsonExclusive(file, value, { indent = 2, newline = false, mode, createDir = true } = {}) {
+  if (createDir) fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, serializeJson(value, { indent, newline }), mode ? { flag: "wx", encoding: "utf8", mode } : { flag: "wx", encoding: "utf8" });
+}
+
+/**
  * @returns {boolean} whether the file was written — `false` only with
  *   `onlyIfChanged` when the serialized value is already on disk.
  */
@@ -103,4 +118,4 @@ function writeJson(file, value, options = {}) {
   return true;
 }
 
-module.exports = { readJson, readJsonObject, serializeJson, unchangedOnDisk, writeJson };
+module.exports = { readJson, readJsonObject, serializeJson, unchangedOnDisk, writeJson, writeJsonExclusive };

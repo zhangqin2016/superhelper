@@ -1,7 +1,10 @@
 import { t, getLocale, onLocaleChange } from "../i18n/index.js";
+import { createRemoteTaskRecoveries } from "./collaboration-remote-task-recoveries.js";
+import { createTaskInventoryView } from "./collaboration-task-inventory.js";
+import { createTaskDetailParts } from "./collaboration-task-detail-parts.js";
 
 const tr = (key, params) => t(`collaboration.task.${key}`, params);
-const workflowError = (result, fallback = "workflowFailed") => ({ COLLAB_TASK_DELIVERY_OMITTED: "deliveryOmitted", COLLAB_TASK_BUNDLE_CHANGED: "bundleChanged", COLLAB_TASK_APPLICATION_RECOVERY_REQUIRED: "recoveryRequired" }[result?.code] || fallback);
+const workflowError = (result, fallback = "workflowFailed") => ({ COLLAB_TASK_DELIVERY_OMITTED: "deliveryOmitted", COLLAB_TASK_BUNDLE_CHANGED: "bundleChanged", COLLAB_TASK_APPLICATION_RECOVERY_REQUIRED: "recoveryRequired", COLLAB_TASK_APPLICATION_BUSY: "writerBusy" }[result?.code] || fallback);
 const node = (tag, className, text) => { const el = document.createElement(tag); el.className = className; if (text != null) el.textContent = text; return el; };
 const date = value => new Intl.DateTimeFormat(getLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 function actions(task, userId) {
@@ -20,15 +23,13 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   let phase = "closed", statusView = null;
   let hasUpdate = false;
   let drafts = [], workflow = null;
+  let integration=null,integrationError=false;
   let contextService = api();
   const applications = new Map();
-  let localRecoveries = [], recoveryGeneration = 0, recoveryError = "";
   const inertNodes = new Map();
   const entry = node("button", "collaboration-icon-button remote-task-entry");
   entry.type = "button"; entry.dataset.action = "task-entry"; entry.hidden = true; entry.setAttribute("aria-expanded", "false");
   header.append(entry);
-  const recoveryEntry = node("button", "collaboration-icon-button remote-task-entry");
-  recoveryEntry.type = "button"; recoveryEntry.dataset.action = "task-local-recovery-entry"; recoveryEntry.hidden = true; recoveryHeader.append(recoveryEntry);
   const surface = node("section", "remote-tasks"); surface.hidden = true; surface.tabIndex = -1; surface.setAttribute("role", "region"); root.append(surface);
   function button(action, label, callback, primary = false) {
     const el = node("button", `remote-task-button${primary ? " is-primary" : ""}`, label);
@@ -40,6 +41,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   function close({ restoreFocus = true } = {}) {
     generation++; busy = false; selected = null; confirming = ""; rows = []; pending = []; reasonDraft = "";
     phase = "closed"; statusView = null; workflow = null; drafts = []; applications.clear();
+    integration=null;integrationError=false;
     hasUpdate = false;
     surface.hidden = true; surface.removeAttribute("aria-busy"); surface.replaceChildren(); entry.setAttribute("aria-expanded", "false");
     for (const [el, value] of inertNodes) el.inert = value; inertNodes.clear();
@@ -108,6 +110,45 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     hero.append(node("span", `remote-task-status is-${task.state}`, tr(`state.${task.state}`)), node("h3", "", task.title));
     hero.append(node("p", "remote-task-meta", tr("participants", { requester: resolveName(task.requesterUserId) || tr("person"), assignee: resolveName(task.assigneeUserId) || tr("person") })));
     body.append(hero);
+    if(integration){
+      const box=node("section","remote-task-notice remote-task-integration");box.setAttribute("role","status");
+      box.append(node("p","",tr(`integration.${integration.stage}`)));
+      if(["preparing","waiting","ready","validation_required","validation_failed","conflict","baseline_required","failed","applied","undone"].includes(integration.localStage))box.append(node("p","",tr(`integration.local.${integration.localStage}`)));
+      if(integrationError)box.append(node("p","",tr(integrationError==="checks"?"integration.checksFailed":"integration.retryFailed")));
+      if(integration.questions?.length){
+        // The model could not settle these from the goal; the requester's answer
+        // is recorded as evidence and re-admits the same integration.
+        box.append(node("p","",tr("integration.questions")));
+        const list=node("ul","remote-task-questions"),inputs=[];
+        for(const item of integration.questions){
+          const row=node("li","remote-task-question");row.append(node("strong","",item.path),node("p","",item.question));
+          const area=node("textarea","remote-task-reason");area.rows=2;area.maxLength=4000;area.dataset.path=item.path;area.setAttribute("aria-label",item.question);area.placeholder=tr("integration.answerPlaceholder");
+          row.append(area);inputs.push(area);list.append(row);
+        }
+        box.append(list,button("task-answer-integration",tr("integration.answer"),async()=>{
+          const answers=inputs.filter(area=>area.value.trim()).map(area=>({path:area.dataset.path,answer:area.value.trim().slice(0,4000)}));
+          if(!answers.length)return;
+          const result=await runWorkflow({operation:"answerIntegration",taskId:task.id,deliveryId:integration.deliveryId,answers});
+          if(!result)return;
+          integrationError=!result.ok;if(result.ok)integration=result.integration||null;paintDetail();
+        }));
+      }
+      if(integration.canConfigureChecks){
+        if(integration.checkCount)box.append(node("p","",tr("integration.checksPinned",{count:integration.checkCount})));
+        box.append(node("p","",tr("integration.checksTrust")));
+        box.append(button("task-configure-checks",tr(integration.checkCount?"integration.updateChecks":"integration.selectChecks"),async()=>{
+          const result=await runWorkflow({operation:"configureIntegrationChecks",taskId:task.id,deliveryId:integration.deliveryId});
+          if(!result||result.cancelled)return;
+          integrationError=result.ok?false:"checks";if(result.ok)integration=result.integration||null;paintDetail();
+        }));
+      }
+      if(integration.canRetry)box.append(button("task-retry-integration",tr("integration.retry"),async()=>{
+        const result=await runWorkflow({operation:"retryIntegration",taskId:task.id,deliveryId:integration.deliveryId});
+        if(!result)return;
+        integrationError=!result.ok;if(result.ok)integration=result.integration || null;paintDetail();
+      }));
+      body.append(box);
+    }
     for (const [label, value] of [["objective", task.objective], ["criteria", task.acceptanceCriteria], ["feedback", task.reason]]) {
       if (!value) continue;
       const section = node("section", "remote-task-section"); section.append(node("h4", "", tr(label)), node("p", "remote-task-prose", value)); body.append(section);
@@ -124,12 +165,13 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     }
     body.append(deliveries);
     const application = applications.get(task.id);
-    if (task.state === "accepted") notice(body, application?.state === "applied" ? "applied" : application?.state === "rolled_back" ? "rolledBack" : application ? "applicationRecovery" : "notApplied");
-    if (application && !["rolled_back", "preview"].includes(application.state)) body.append(button("task-rollback", tr("rollback"), () => void rollbackApplication(task, application)));
+    if (task.state === "accepted") notice(body, application?.state === "applied" ? "applied" : application?.state === "undone" ? "undone" : application?.state === "rolled_back" ? "rolledBack" : application ? "applicationRecovery" : "notApplied");
+    if (application && !["rolled_back", "undone", "preview"].includes(application.state)) body.append(button("task-rollback", tr("rollback"), () => void rollbackApplication(task, application)));
     if (api()?.taskWorkflow && ["active", "changes_requested"].includes(task.state) && context.userId === task.assigneeUserId) {
       const controls = node("div", "remote-task-workspace-controls");
-      controls.append(button("task-receive", tr("receive"), () => void receiveTask(task)), button("task-workspace-open", tr("openWorkspace"), () => void openWorkspace(task)), button("task-prepare-delivery", tr("prepareDelivery"), () => void prepareDelivery(task)));
+      controls.append(button("task-receive", tr("receive"), () => void receiveTask(task)), button("task-workspace-open", tr("openWorkspace"), () => void openWorkspace(task)), button("task-prepare-delivery", tr("prepareDelivery"), () => void prepareDelivery(task)), button("task-inventory", tr("inventory"), () => void inventoryView.show(task)));
       body.append(controls);
+      inventoryView.paint(body, task);
       for (const draft of drafts.filter(item => item.taskId === task.id && item.state !== "completed")) body.append(button("task-resume-delivery", tr("resumeDelivery"), () => { workflow = { kind: "delivery", task, draft, locked: !!draft.state && draft.state !== "prepared" }; paintWorkflow(); }));
     }
     const recovery = pending.find(command => command.taskId === task.id);
@@ -146,22 +188,12 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     }, ["accept", "approve"].includes(action)));
     if (!footer.children.length) footer.append(node("p", "remote-task-meta", tr("waiting")));
   }
-  function paintConfirmation(footer) {
-    const action = confirming;
-    footer.classList.add("is-confirming");
-    footer.append(node("p", "remote-task-confirm-copy", tr(`confirm.${action}`, { number: selected.deliveries.at(-1)?.number || 1 })));
-    let reason;
-    const controls = node("div", "remote-task-controls");
-    const submit = button("task-confirm", tr(`action.${action}`), () => void commit(action), true);
-    if (action === "request_changes") {
-      const label = node("label", "remote-task-field", tr("reason"));
-      reason = node("textarea", "remote-task-reason"); reason.rows = 3; reason.maxLength = 4000; reason.value = reasonDraft; reason.required = true;
-      label.append(reason); footer.append(label);
-      reason.disabled = busy; submit.disabled = busy || !reasonDraft.trim();
-      reason.addEventListener("input", () => { reasonDraft = reason.value; submit.disabled = !reasonDraft.trim() || busy; });
-    }
-    controls.append(button("task-dismiss", tr("back"), () => { confirming = ""; reasonDraft = ""; paintDetail(); }), submit); footer.append(controls);
-  }
+  // The snapshot a sender consents to, and the confirmation an action asks for.
+  const { paintConfirmation, paintSnapshot } = createTaskDetailParts({
+    node, tr, button, commit, isBusy: () => busy, selected: () => selected, repaint: () => paintDetail(),
+    confirming: () => confirming, setConfirming: (v) => { confirming = v; },
+    reasonDraft: () => reasonDraft, setReasonDraft: (v) => { reasonDraft = v; },
+  });
   function valid(ticket) { return !disposed && !surface.hidden && ticket === generation && contextService === api(); }
   function restoreLocal(result) {
     drafts = result?.ok ? result.drafts || [] : [];
@@ -180,7 +212,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     return result || { ok: false };
   }
   async function createTask(draft = null, options = {}) {
-    const retryOptions = { projectId: options.projectId, assigneeUserId: options.assigneeUserId };
+    const retryOptions = { projectId: options.projectId, sessionId: options.sessionId, assigneeUserId: options.assigneeUserId };
     const ticket = ++generation; busy = false; showStatus("loading", { detail: true });
     try {
       const result = await api()?.getConversationDetails?.(context.conversationId);
@@ -189,7 +221,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       if (!result?.ok) { showStatus("loadFailed", { detail: true, retry: () => void createTask(draft, retryOptions) }); return; }
       const members = (result.members || []).filter(member => member.userId && member.userId !== context.userId);
       if (options.assigneeUserId && !members.some(member => member.userId === options.assigneeUserId)) { showStatus("loadFailed", { detail: true }); return; }
-      workflow = { kind: "create", projectId: options.projectId, draft, members, input: { assigneeUserId: options.assigneeUserId || members[0]?.userId || "", title: "", objective: "", acceptanceCriteria: "", ...draft?.input }, locked: !!draft?.input && draft.state !== "failed" };
+      workflow = { kind: "create", projectId: options.projectId, sessionId: options.sessionId, draft, members, input: { assigneeUserId: options.assigneeUserId || members[0]?.userId || "", title: "", objective: "", acceptanceCriteria: "", ...draft?.input }, locked: !!draft?.input && draft.state !== "failed" };
       paintWorkflow();
     } catch {
       if (!valid(ticket)) return;
@@ -197,21 +229,28 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       showStatus("loadFailed", { detail: true, retry: () => void createTask(draft, retryOptions) });
     }
   }
-  function paintSnapshot(body, draft) {
-    const section = node("section", "remote-task-section"); section.append(node("h4", "", tr("snapshot")), node("p", "remote-task-meta", tr("snapshotNote")));
-    const files = node("ul", "remote-task-files");
-    for (const file of draft.files || []) { const row = node("li", ""); row.append(node("span", "", file.path), node("span", "remote-task-meta", `${Number(file.sizeBytes) || 0} B`)); files.append(row); }
-    section.append(files);
-    if (draft.omitted) section.append(node("p", "remote-task-meta", tr("excluded", { count: draft.omitted })));
-    for (const warning of draft.warnings || []) section.append(node("p", "remote-task-notice", warning));
-    body.append(section);
-  }
   function paintWorkflow() {
     if (!workflow) return;
     phase = "workflow"; statusView = null;
-    const current = workflow, body = shell(tr(current.kind === "create" ? "create" : current.kind === "delivery" ? "prepareDelivery" : "previewApply"), true);
+    const current = workflow, body = shell(tr(current.kind === "binding" ? "bindWorkspace" : current.kind === "create" ? "create" : current.kind === "delivery" ? "prepareDelivery" : "previewApply"), true);
     if (current.error) notice(body, current.error);
-    if (current.kind === "create") {
+    if (current.kind === "binding") {
+      body.append(node("p","remote-task-meta",tr("bindingNote")));
+      const projectLabel=node("label","remote-task-field",tr("bindWorkspace")), projects=node("select","remote-task-input");projects.name="bindingProject";
+      for (const project of [{id:"",name:tr("chooseFolder")},...current.projects]) {const option=node("option","",project.name);option.value=project.id;projects.append(option);}
+      projects.value=current.projectId;projectLabel.append(projects);body.append(projectLabel);
+      const sessionLabel=node("label","remote-task-field",tr("bindSession")), sessions=node("select","remote-task-input");sessions.name="bindingSession";
+      for (const session of [{id:"",title:tr("newBindingSession")},...(current.projects.find(p=>p.id===current.projectId)?.sessions || [])]) {const option=node("option","",session.title);option.value=session.id;sessions.append(option);}
+      sessions.value=current.sessionId;sessionLabel.append(sessions);body.append(sessionLabel);
+      projects.addEventListener("change",()=>{current.projectId=projects.value;current.sessionId="";paintWorkflow();});
+      sessions.addEventListener("change",()=>{current.sessionId=sessions.value;});
+      body.append(button("task-bind",tr("bindContinue"),async()=>{
+        const result=await runWorkflow({operation:"bind",taskId:current.task.id,...(current.projectId?{projectId:current.projectId}:{}),...(current.sessionId?{sessionId:current.sessionId}:{})});
+        if (!result) return;
+        if (result.ok && !result.cancelled) {workflow=null;await current.resume();return;}
+        current.error=result.cancelled?null:workflowError(result);paintWorkflow();
+      },true));
+    } else if (current.kind === "create") {
       const form = node("div", "remote-task-form");
       for (const [name, labelKey] of [["assigneeUserId", "recipient"], ["title", "title"], ["objective", "objective"], ["acceptanceCriteria", "criteria"]]) {
         const label = node("label", "remote-task-field", tr(labelKey));
@@ -222,7 +261,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
         label.append(field); form.append(label);
       }
       body.append(form);
-      if (!current.draft) body.append(button("task-prepare", tr(current.projectId ? "previewWorkspace" : "chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare", ...(current.projectId ? { projectId: current.projectId } : {}) }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
+      if (!current.draft || ["preparing", "preparation_failed"].includes(current.draft.state)) body.append(button("task-prepare", tr(current.draft ? "resume" : current.projectId ? "previewWorkspace" : "chooseFolder"), async () => { const result = await runWorkflow({ operation: "prepare", ...(current.draft ? { draftId: current.draft.id } : current.projectId ? { projectId: current.projectId, ...(current.sessionId ? { sessionId: current.sessionId } : {}) } : {}) }); if (!result) return; current.error = null; if (result.ok && result.draft) current.draft = result.draft; else if (!result.cancelled) current.error = workflowError(result); paintWorkflow(); }));
       else {
         paintSnapshot(body, current.draft);
         if (current.locked) notice(body, "confirming");
@@ -247,7 +286,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       const submit = button("task-apply", tr("apply"), async () => {
         const result = await runWorkflow({ operation: "apply", taskId: current.task.id, deliveryId: current.deliveryId, applicationId: current.preview.applicationId, expectedPlanHash: current.preview.planHash, confirmDeletions: !!current.confirmDeletions }); if (!result) return;
         if (result.ok && result.state === "applied") { applications.set(current.task.id, { ...current.preview, state: "applied" }); selected = current.task; paintDetail(); }
-        else { current.error = workflowError(result, "applyConflict"); current.blocked = true; paintWorkflow(); }
+        else { current.error = workflowError(result, "applyConflict"); current.blocked = result.code !== "COLLAB_TASK_APPLICATION_BUSY"; paintWorkflow(); }
       }, true);
       submit.disabled = busy || current.blocked || !applicable || (deletions && !current.confirmDeletions);
       if (deletions) { const label = node("label", "remote-task-deletion-consent"), checkbox = node("input", ""); checkbox.type = "checkbox"; checkbox.name = "confirmDeletions"; checkbox.checked = !!current.confirmDeletions; checkbox.addEventListener("change", () => { current.confirmDeletions = checkbox.checked; submit.disabled = busy || current.blocked || !applicable || !checkbox.checked; }); label.append(checkbox, node("span", "", tr("confirmDeletions"))); body.append(label); }
@@ -258,7 +297,7 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     for (const child of [...body.children]) if (child.tagName === "BUTTON") controls.append(child);
     if (controls.children.length) body.append(controls);
   }
-  function canSend(current) { return !busy && !!current.draft && Object.values(current.input).every(value => typeof value === "string" && value.trim()) && current.input.assigneeUserId !== context.userId && current.members.some(member => member.userId === current.input.assigneeUserId); }
+  function canSend(current) { return !busy && !!current.draft && !["preparing", "preparation_failed"].includes(current.draft.state) && Object.values(current.input).every(value => typeof value === "string" && value.trim()) && current.input.assigneeUserId !== context.userId && current.members.some(member => member.userId === current.input.assigneeUserId); }
   async function sendDraft(current) {
     if (!canSend(current)) return;
     current.locked = true;
@@ -268,10 +307,14 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     current.error = result.ok && result.state === "confirming" ? null : workflowError(result, result.state === "failed" ? "sendFailed" : "checkFailed"); paintWorkflow();
   }
   async function receiveTask(task) {
+    const ticket=generation;
+    if (!await ensureTaskBinding(task,()=>receiveTask(task)) || !valid(ticket)) return;
     const result = await runWorkflow({ operation: "receive", taskId: task.id }); if (!result) return;
     paintDetail(); notice(surface.querySelector(".remote-task-content"), result.ok && result.state === "ready" ? "workspaceReady" : workflowError(result));
   }
   async function prepareDelivery(task) {
+    const ticket=generation;
+    if (!await ensureTaskBinding(task,()=>prepareDelivery(task)) || !valid(ticket)) return;
     const result = await runWorkflow({ operation: "prepareDelivery", taskId: task.id }); if (!result) return;
     if (result.cancelled) { paintDetail(); return; }
     if (result.ok && result.draft) { workflow = { kind: "delivery", task, draft: result.draft, locked: false }; paintWorkflow(); }
@@ -283,13 +326,21 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     if (result.ok && result.applicationId && result.planHash && result.plan) { workflow = { kind: "apply", task, deliveryId, preview: result }; paintWorkflow(); }
     else { paintDetail(); notice(surface.querySelector(".remote-task-content"), workflowError(result)); }
   }
+  // Files a task copy knows about but has not brought down yet — its own state and request.
+  const inventoryView = createTaskInventoryView({ node, tr, button, runWorkflow, repaint: () => paintDetail() });
   async function rollbackApplication(task, application) {
     const result = await runWorkflow({ operation: "rollback", taskId: task.id, applicationId: application.applicationId }); if (!result) return;
-    if (result.ok && result.state === "rolled_back") applications.set(task.id, { ...application, state: "rolled_back" });
-    paintDetail(); if (!result.ok) notice(surface.querySelector(".remote-task-content"), "applyConflict");
+    if (result.ok && ["rolled_back", "undone"].includes(result.state)) applications.set(task.id, { ...application, state: result.state });
+    if (result.ok && result.state === "undone" && integration) {
+      const ticket = generation, status = await Promise.resolve().then(() => api()?.taskWorkflow?.({ operation: "integrationStatus", conversationId: context.conversationId, taskId: task.id })).catch(() => null);
+      if (!valid(ticket)) return;
+      if (status?.ok && status.integration?.deliveryId === task.currentDeliveryId) integration = status.integration;
+    }
+    paintDetail(); if (!result.ok) notice(surface.querySelector(".remote-task-content"), result.code === "COLLAB_LOCAL_UNDO_CONFLICT" ? "undoConflict" : "applyConflict");
   }
   async function openWorkspace(task, deliveryId) {
     const ticket = generation;
+    if (!await ensureTaskBinding(task,()=>openWorkspace(task,deliveryId)) || !valid(ticket)) return;
     const result = await runWorkflow({ operation: "open", taskId: task.id, ...(deliveryId ? { deliveryId } : {}) }); if (!result) return;
     if (!result.ok || !result.sessionId) { if (phase === "workflow") paintWorkflow(); else paintDetail(); notice(surface.querySelector(".remote-task-content"), "workflowFailed"); return; }
     try {
@@ -309,6 +360,15 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
       await applySessionSwitch(switched, result.sessionId, result.projectId); await refreshState();
     } catch { if (valid(ticket)) { paintDetail(); notice(surface.querySelector(".remote-task-content"), "workflowFailed"); } }
   }
+  async function ensureTaskBinding(task,resume) {
+    if (!task.sharedWorkspaceId) return true;
+    const result=await runWorkflow({operation:"bindingOptions",taskId:task.id});
+    if (!result) return false;
+    if (!result.ok) {paintDetail();notice(surface.querySelector(".remote-task-content"),"workflowFailed");return false;}
+    if (result.binding) return true;
+    workflow={kind:"binding",task,projects:result.projects || [],projectId:result.projects?.[0]?.id || "",sessionId:"",resume};
+    paintWorkflow();return false;
+  }
   async function load() {
     if (!context.enabled) { showStatus("disabled", { retry: async () => { const ticket = generation; await refreshContext(); if (!valid(ticket)) return; update(); if (!surface.hidden) void load(); } }); return; }
     const ticket = ++generation; busy = false; confirming = ""; reasonDraft = "";
@@ -326,14 +386,17 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
   async function openTask(taskId) {
     const ticket = ++generation; busy = false; confirming = ""; reasonDraft = "";
     selected = null; pending = []; hasUpdate = false; showStatus("loading", { detail: true });
+    integration=null;integrationError=false;inventoryView.reset();
     try {
-      const [result, recovery, local] = await Promise.all([api()?.getTask?.({ conversationId: context.conversationId, taskId }), api()?.getTaskCommands?.(context.conversationId), api()?.taskWorkflow?.({ operation: "drafts", conversationId: context.conversationId })]);
+      const [result, recovery, local, integrationResult] = await Promise.all([api()?.getTask?.({ conversationId: context.conversationId, taskId }), api()?.getTaskCommands?.(context.conversationId), api()?.taskWorkflow?.({ operation: "drafts", conversationId: context.conversationId }),api()?.taskWorkflow?.({operation:"integrationStatus",conversationId:context.conversationId,taskId})]);
       if (!valid(ticket)) return;
       if (hasUpdate) { void openTask(taskId); return; }
       if (result?.ok !== true || recovery?.ok !== true || result.task?.id !== taskId || result.task?.conversationId !== context.conversationId) {
         showStatus("loadFailed", { detail: true, retry: () => void openTask(taskId) }); return;
       }
-      restoreLocal(local); selected = result.task; pending = recovery.commands || []; paintDetail(); surface.focus({ preventScroll: true });
+      restoreLocal(local); selected = result.task; pending = recovery.commands || [];
+      integration=integrationResult?.ok && integrationResult.integration?.deliveryId===selected.currentDeliveryId?integrationResult.integration:null;
+      paintDetail(); surface.focus({ preventScroll: true });
     } catch { if (valid(ticket)) showStatus("loadFailed", { detail: true, retry: () => void openTask(taskId) }); }
   }
   async function commit(action, clientCommandId) {
@@ -357,58 +420,20 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     confirming = ""; selected = null;
     showStatus(result?.code?.includes("CONFLICT") ? "conflict" : "checkFailed", { detail: true, retry: () => void openTask(task.id) });
   }
-  function clearRecoveries() {
-    recoveryGeneration++; localRecoveries = []; recoveryError = ""; recoveryEntry.hidden = true;
-  }
-  async function refreshRecoveries() {
-    const ticket = ++recoveryGeneration, userId = context.userId;
-    if (!userId || !api()?.taskWorkflow) { localRecoveries = []; recoveryEntry.hidden = true; return; }
-    let result;
-    try { result = await api().taskWorkflow({ operation: "recoveries" }); } catch { result = null; }
-    if (disposed || ticket !== recoveryGeneration || userId !== context.userId) return;
-    localRecoveries = result?.ok ? (result.applications || []).filter(row => row.state !== "rolled_back") : [];
-    recoveryEntry.hidden = !localRecoveries.length;
-    if (phase === "localRecovery" && !busy) paintRecoveries();
-  }
-  function paintRecoveries() {
-    phase = "localRecovery"; statusView = null;
-    const body = shell(tr("localRecovery"));
-    body.append(node("p", "remote-task-subtitle", tr("localRecoveryNote")));
-    if (recoveryError) notice(body, recoveryError);
-    if (!localRecoveries.length) { notice(body, "noLocalRecovery"); return; }
-    const list = node("div", "remote-task-list");
-    for (const record of localRecoveries) {
-      const card = node("article", "remote-task-card");
-      card.append(node("span", "remote-task-status", tr(record.state === "applied" ? "localApplied" : "localInterrupted")), node("h3", "", record.label || tr("localWorkspace")));
-      const footer = node("div", "remote-task-card-footer");
-      footer.append(node("p", "remote-task-meta", tr("localRecoverySafe")), button("task-local-rollback", tr("rollback"), async () => {
-        if (busy) return;
-        const ticket = generation; busy = true; recoveryError = ""; paintRecoveries();
-        let result;
-        try { result = await api()?.taskWorkflow?.({ operation: "rollback", conversationId: record.conversationId, taskId: record.taskId, applicationId: record.applicationId }); } catch { result = null; }
-        if (!valid(ticket)) return;
-        busy = false;
-        if (result?.ok && result.state === "rolled_back") {
-          localRecoveries = localRecoveries.filter(row => row.applicationId !== record.applicationId); recoveryEntry.hidden = !localRecoveries.length;
-        } else recoveryError = workflowError(result, "applyConflict");
-        paintRecoveries();
-      })); card.append(footer); list.append(card);
-    }
-    body.append(list);
-  }
-  function fitRecoverySurface() {
-    if (phase !== "localRecovery" || surface.hidden || recoveryRoot === root) return;
-    const rect = recoveryRoot.getBoundingClientRect();
-    Object.assign(surface.style, { position: "fixed", inset: "auto", top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` });
-  }
-  function openRecoveries() {
-    update(); if (disposed || recoveryEntry.hidden) return;
-    if (!surface.hidden) close({ restoreFocus: false });
-    returnFocus = document.activeElement;
-    if (surface.parentElement !== recoveryRoot) recoveryRoot.append(surface);
-    for (const el of recoveryRoot.children) if (el !== surface) { inertNodes.set(el, el.inert); el.inert = true; }
-    surface.hidden = false; recoveryError = ""; paintRecoveries(); fitRecoverySurface(); surface.focus();
-  }
+  // Recovering an interrupted local application: its own surface and state, which the task list never reads.
+  const recoveries = createRemoteTaskRecoveries({
+    node, tr, shell, notice, button, api, recoveryHeader, recoveryRoot, root, surface, inertNodes,
+    userId: () => context.userId,
+    isDisposed: () => disposed,
+    isBusy: () => busy, setBusy: (value) => { busy = value; },
+    phase: () => phase, setPhase: (value) => { phase = value; },
+    clearStatusView: () => { statusView = null; },
+    generation: () => generation,
+    valid, workflowError,
+    close, update: () => update(),
+    setReturnFocus: (value) => { returnFocus = value; },
+  });
+  const { clearRecoveries, refreshRecoveries, paintRecoveries, fitRecoverySurface, openRecoveries, recoveryEntry } = recoveries;
   function update() {
     if (disposed) return;
     const next = getContext?.() || {};
@@ -458,5 +483,17 @@ export function initRemoteTasks({ root, header, recoveryHeader = header, recover
     else if (phase === "detail" && !confirming) void openTask(selected.id);
     else if (phase === "detail") paintUpdate(surface.querySelector(".remote-task-footer"), selected);
   }
-  return { update, onChange, create: options => { close({ restoreFocus: false }); return open(options || {}); }, invalidate: () => { close({ restoreFocus: false }); clearRecoveries(); }, destroy() { close({ restoreFocus: false }); clearRecoveries(); disposed = true; recoveryResize.disconnect(); locale(); entry.removeEventListener("click", openEntry); recoveryEntry.removeEventListener("click", openRecoveries); surface.removeEventListener("keydown", keydown); entry.remove(); recoveryEntry.remove(); surface.remove(); } };
+  async function openCard(card) {
+    close({restoreFocus:false});open();
+    if (card.taskId) {await openTask(card.taskId);return {ok:phase==="detail"&&selected?.id===card.taskId};}
+    const ticket=++generation;
+    try {
+      const result=await api()?.taskWorkflow?.({operation:"drafts",conversationId:context.conversationId});
+      if (!valid(ticket)) return;
+      const draft=result?.drafts?.find(item=>item.id===card.id);
+      if (draft) await createTask(draft);
+    } catch {if(valid(ticket))showStatus("loadFailed");}
+    return {ok:phase==="workflow"&&workflow?.draft?.id===card.id};
+  }
+  return { update, onChange, openCard, create: options => { close({ restoreFocus: false }); return open(options || {}); }, invalidate: () => { close({ restoreFocus: false }); clearRecoveries(); }, destroy() { close({ restoreFocus: false }); clearRecoveries(); disposed = true; recoveryResize.disconnect(); locale(); entry.removeEventListener("click", openEntry); recoveryEntry.removeEventListener("click", openRecoveries); surface.removeEventListener("keydown", keydown); entry.remove(); recoveryEntry.remove(); surface.remove(); } };
 }

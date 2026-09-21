@@ -33,7 +33,7 @@ try {
     outputFiles: [outputFile],
     healthcheck: { type: "log", contains: "[lily-progress]" },
     waitForHealthMs: 5_000,
-  }, { registryDir: tmp });
+  }, { registryDir: tmp, writerLockPath:path.join(fs.realpathSync(tmp), "writer.sqlite") });
 
   assert(job.ok === true, `job_start should succeed: ${JSON.stringify(job)}`);
   startedPid = job.pid;
@@ -44,7 +44,7 @@ try {
   assert(Array.isArray(job.outputFiles) && job.outputFiles.includes(outputFile), `job_start exposes output files: ${JSON.stringify(job)}`);
   assert(job.recoverable === true, `running job is recoverable/observable: ${JSON.stringify(job)}`);
 
-  const status = await statusJob({ jobId: job.jobId, healthcheck: { type: "process" } }, { registryDir: tmp });
+  const status = await statusJob({ jobId: job.jobId, healthcheck: { type: "process" } }, { registryDir: tmp, writerLockPath:path.join(fs.realpathSync(tmp), "writer.sqlite") });
   assert(status.ok === true, `job_status should succeed: ${JSON.stringify(status)}`);
   assert(status.state === status.status, "state alias tracks existing status");
   assert(status.phase === "extract", `job_status exposes phase from latest progress: ${JSON.stringify(status)}`);
@@ -52,13 +52,13 @@ try {
   assert(status.outputFiles.includes(outputFile), `job_status preserves output file hints: ${JSON.stringify(status)}`);
   assert(status.heartbeatAt >= job.heartbeatAt, "heartbeat should not move backwards");
 
-  const listed = listJobs({}, { registryDir: tmp });
+  const listed = listJobs({}, { registryDir: tmp, writerLockPath:path.join(fs.realpathSync(tmp), "writer.sqlite") });
   assert(listed.ok === true, `job_list should succeed: ${JSON.stringify(listed)}`);
   const listedJob = listed.jobs.find((item) => item.jobId === job.jobId);
   assert(listedJob?.state === "running", `job_list exposes normalized state: ${JSON.stringify(listedJob)}`);
   assert(Array.isArray(listedJob.outputFiles), `job_list exposes outputFiles array: ${JSON.stringify(listedJob)}`);
 
-  const stopped = await stopJob({ jobId: job.jobId, timeoutMs: 2_000 }, { registryDir: tmp });
+  const stopped = await stopJob({ jobId: job.jobId, timeoutMs: 2_000 }, { registryDir: tmp, writerLockPath:path.join(fs.realpathSync(tmp), "writer.sqlite") });
   assert(stopped.ok === true && stopped.stopped === true, `job_stop should stop process: ${JSON.stringify(stopped)}`);
   assert(stopped.state === "stopped", `job_stop exposes normalized state: ${JSON.stringify(stopped)}`);
   assert(stopped.recoverable === false, `stopped job should not be marked recoverable: ${JSON.stringify(stopped)}`);

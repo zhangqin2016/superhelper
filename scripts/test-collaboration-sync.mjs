@@ -55,6 +55,11 @@ const event = (cursor, id, type = "message.created", payload = { messageId: id }
 });
 
 const events = [event(11, "evt-11"), event(12, "evt-12"), event(13, "evt-13")];
+for(const [type,scope] of [['task.updated','task'],['workspace.published','workspace']]){
+  const page=paginateSyncEvents([{...event(1,'evt-hint',type,{revision:1}),conversationId:null}],{afterCursor:0,limit:10});
+  assert.equal(page.events[0].scope,scope,'task and workspace hints must advance the account cursor without a fabricated conversation');
+  assert.equal(page.toCursor,1);
+}
 const bounded = paginateSyncEvents(events, { afterCursor: 10, limit: 2, maxPayloadBytes: 2048 });
 assert.deepEqual(bounded.events.map(({ cursor }) => cursor), [11, 12]);
 assert.equal(bounded.toCursor, 12);

@@ -1,0 +1,113 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createHash} from 'node:crypto';import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const {CollaborationStore}=require('../src/main/collaboration/collaboration-store');
+const {LocalCollaborationKeyring}=require('../src/main/collaboration/local-keyring');
+const {createIntegrationIntents}=require('../src/main/collaboration/integration-intents');
+const {createIntegrationWorker}=require('../src/main/collaboration/integration-worker');
+const {createTaskRecords}=require('../src/main/collaboration/task-records');
+const {TaskGit}=require('../src/main/collaboration/task-git');
+const root=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'integration-worker-'));
+const keyring=new LocalCollaborationKeyring({filePath:path.join(root,'keys'),safeStorage:{isEncryptionAvailable:()=>true,encryptString:s=>Buffer.from(s),decryptString:b=>b.toString()}});
+let now=1000,store,worker,acquired=0,networkFailure=false,pause=null;
+const open=()=>{store=new CollaborationStore({dbPath:path.join(root,'db'),accountId:'owner',keyring,now:()=>now});return createIntegrationIntents({store,assertActive(){},now:()=>now});};
+const write=(dir,text)=>{fs.mkdirSync(dir);fs.writeFileSync(path.join(dir,'work.txt'),text);return {path:'work.txt',sha256:createHash('sha256').update(text).digest('hex'),sizeBytes:Buffer.byteLength(text)};};
+try{
+ let intents=open(),onAcquire;store.replaceProjectionFromBootstrap({conversations:[{id:'chat',scopeId:'team:org',kind:'channel'}]});
+ const taskGit=new TaskGit({rootPath:path.join(root,'git'),gitOptions:{autoInstall:false}}),source=path.join(root,'source'),changed=path.join(root,'changed');
+ const base=[write(source,'before')],manifest=[write(changed,'after')],baseline=await taskGit.captureBaseline({taskId:'task',snapshotRoot:source,manifest:base});
+ const delivery=await taskGit.captureContribution({baseline,baseManifest:base,materializedPaths:['work.txt'],deliveryId:'delivery',snapshotRoot:changed,manifest});
+ const input={conversationId:'chat',workspaceId:'workspace',taskId:'task',deliveryId:'delivery',targetId:'target',chain:'shared',sessionId:'session',projectId:'project',baselineCommit:baseline.commit,deliveryCommit:delivery.commit};
+ const first=intents.enqueue(input);
+ const workflow={authorizeIntegration:async()=>true,acquireIntegrationInput:async()=>{acquired++;onAcquire?.();if(pause)await pause;if(networkFailure)throw Object.assign(Error('offline'),{code:'COLLAB_NETWORK_UNAVAILABLE'});return {taskGit,baseline,delivery};}};
+ const options={store,assertActive(){},getWorkflow:()=>workflow,now:()=>now};
+ worker=createIntegrationWorker(options);await worker.recover();
+ assert.equal(store.db.get('SELECT state FROM task_integration_work').state,'waiting');
+ assert.equal(store.db.get('SELECT code FROM task_integration_work').code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED');
+ assert.equal(intents.get(first.id).state,'pending','no validator never silently approves a candidate');
+ const initialEvidence=createTaskRecords({store,assertActive(){}}).list('chat').find(row=>row.kind==='candidate-validation');
+ assert.equal(initialEvidence.report.state,'required');assert.equal(initialEvidence.report.checks[0].status,'passed','production worker records actual integrity checks while waiting for policy');
+ await worker.recover();assert.equal(acquired,1,'waiting validation does not repeatedly download or prepare');
+ worker.stop();store.close();intents=open();
+ const checkText=expected=>async(candidate,context)=>{const bytes=fs.readFileSync(path.join(context.snapshotRoot,'work.txt'));return {ok:bytes.toString()===expected,commit:candidate.commit,policyId:'fixture-v1',evidenceHash:createHash('sha256').update(bytes).digest('hex')};};
+ worker=createIntegrationWorker({...options,store,validationPolicyId:'fixture-v1',validateIntegration:checkText('after')});
+ await worker.recover();assert.equal(intents.get(first.id).state,'completed');
+ assert.equal(store.db.get('SELECT state FROM task_integration_work').state,'done');
+ assert.equal(store.db.get("SELECT count(*) n FROM task_workspace_records WHERE id LIKE 'publication-outbox:%'").n,1);
+ const published=createTaskRecords({store,assertActive(){}}).list('chat').find(row=>row.kind==='shared-publication');
+ const receipt=createTaskRecords({store,assertActive(){}}).list('chat').find(row=>row.kind==='candidate-validation'&&row.evidenceHash===published.validation.evidenceHash);
+ assert.equal(receipt.report.state,'passed','publication receipt resolves to real persisted check evidence');
+ const second=intents.enqueue({...input,workspaceId:'second',targetId:'second'});networkFailure=true;
+ await worker.recover();const failed=store.db.get('SELECT * FROM task_integration_work WHERE intent_id=?',second.id);
+ assert.equal(failed.state,'pending');assert.equal(failed.attempts,1);const before=acquired;await worker.recover();assert.equal(acquired,before);
+ networkFailure=false;now=failed.next_attempt_at;await worker.recover();assert.equal(intents.get(second.id).state,'completed');
+ const competing=intents.enqueue({...input,workspaceId:'competing',targetId:'competing'}),acquire=workflow.acquireIntegrationInput;
+ workflow.acquireIntegrationInput=async()=>{throw Object.assign(Error('remote lease busy'),{code:'COLLAB_INTEGRATION_BUSY'});};
+ for(let attempt=0;attempt<4;attempt++){
+  await worker.recover();const row=store.db.get('SELECT * FROM task_integration_work WHERE intent_id=?',competing.id);
+  assert.equal(row.state,'pending','another device holding a workspace lease is coordination, not a permanently failed integration');
+  assert.equal(row.next_attempt_at-now,30000);now=row.next_attempt_at;
+ }
+ workflow.acquireIntegrationInput=acquire;await worker.recover();assert.equal(intents.get(competing.id).state,'completed');
+ worker.stop();worker=createIntegrationWorker({...options,store,validationPolicyId:'fixture-v1',validateIntegration:checkText('expected but absent')});
+ const rejected=intents.enqueue({...input,workspaceId:'rejected',targetId:'rejected'});await worker.recover();
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',rejected.id).code,'COLLAB_INTEGRATION_VALIDATION_FAILED','failed actual check is distinct from missing policy');
+ assert.equal(intents.get(rejected.id).state,'pending');
+ const interrupted=intents.enqueue({...input,workspaceId:'interrupted',targetId:'interrupted'});let turnCancelled=false,releaseTurn;
+ pause=new Promise(resolve=>{releaseTurn=resolve;});
+ const owned=worker.runIntent({accountId:'owner',intentId:interrupted.id,sessionId:'session'},{assertActive(){if(turnCancelled)throw Object.assign(Error('turn stopped'),{code:'COLLAB_INTEGRATION_FENCED'});}});
+ await Promise.resolve();turnCancelled=true;releaseTurn();await assert.rejects(owned,/turn stopped/);pause=null;
+ assert.equal(store.db.get('SELECT state FROM task_integration_work WHERE intent_id=?',interrupted.id).state,'waiting','cancelled owning turn leaves retryable work without late publication');
+ const third=intents.enqueue({...input,workspaceId:'third',targetId:'third'});let resolve;pause=new Promise(done=>{resolve=done;});
+ const entered=new Promise(done=>{onAcquire=done;});const pending=worker.recover();await entered;worker.stop();resolve();await pending;onAcquire=null;
+ assert.equal(intents.get(third.id).state,'running','stopped late response leaves a durable lease for successor recovery');
+ // A native worker must validate the resolved bytes, not stop at Git's text conflict.
+ pause=null;worker.stop();
+ const jsonSource=path.join(root,'json-source');fs.mkdirSync(jsonSource);
+ const jsonFile=(directory,text)=>{fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'config.json'),text);return {path:'config.json',sha256:createHash('sha256').update(text).digest('hex'),sizeBytes:Buffer.byteLength(text)};};
+ const jsonBase=[jsonFile(jsonSource,'{"left":1,"right":1}')];
+ const jsonBaseline=await taskGit.captureBaseline({taskId:'json-task',snapshotRoot:jsonSource,manifest:jsonBase});
+ const jsonDeliveries=[];
+ for(const [id,text] of [['json-first','{"left":2,"right":1}'],['json-second','{"left":1,"right":2}']]){
+  const directory=path.join(root,id),manifest=[jsonFile(directory,text)];
+  jsonDeliveries.push(await taskGit.captureContribution({baseline:jsonBaseline,baseManifest:jsonBase,materializedPaths:['config.json'],deliveryId:id,snapshotRoot:directory,manifest}));
+ }
+ const {createSharedGit}=require('../src/main/collaboration/shared-git'),shared=createSharedGit(taskGit);
+ const head=await shared.initialize({workspaceId:'json-worker',baseline:jsonBaseline});
+ const initial=await shared.prepare({workspaceId:'json-worker',baseline:jsonBaseline,delivery:jsonDeliveries[0],expectedHead:head.commit});
+ await shared.publish({candidate:initial,validate:async c=>({ok:true,commit:c.commit})});
+ const jsonInput={...input,workspaceId:'json-worker',targetId:'json-target',taskId:'json-task',deliveryId:'json-second',baselineCommit:jsonBaseline.commit,deliveryCommit:jsonDeliveries[1].commit};
+ const jsonIntent=intents.enqueue(jsonInput);
+ const jsonOptions={...options,store,getWorkflow:()=>({authorizeIntegration:async()=>true,acquireIntegrationInput:async()=>({taskGit,baseline:jsonBaseline,delivery:jsonDeliveries[1]})})};
+ worker=createIntegrationWorker(jsonOptions);await worker.runIntent({accountId:'owner',sessionId:'session',intentId:jsonIntent.id},{assertActive(){}});
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',jsonIntent.id).code,'COLLAB_INTEGRATION_VALIDATION_REQUIRED','typed resolution still requires project policy');
+ const jsonJournal=createTaskRecords({store,assertActive(){}}).list('chat').find(r=>r.kind==='shared-publication'&&r.intentId===jsonIntent.id);
+ assert.match(jsonJournal.candidate.resolutionHash,/^[a-f0-9]{64}$/);
+ worker.stop();
+ worker=createIntegrationWorker({...jsonOptions,validationPolicyId:'fixture-json-v1',validateIntegration:async(c,context)=>{
+  const bytes=fs.readFileSync(path.join(context.snapshotRoot,'config.json'));
+  assert.deepEqual(JSON.parse(bytes),{left:2,right:2});
+  return {ok:true,commit:c.commit,policyId:'fixture-json-v1',evidenceHash:createHash('sha256').update(bytes).digest('hex')};
+ }});
+ await worker.runIntent({accountId:'owner',sessionId:'session',intentId:jsonIntent.id},{assertActive(){}});
+ assert.equal(intents.get(jsonIntent.id).state,'completed');
+ assert.equal((await shared.publication(jsonJournal.candidate)).commit,jsonJournal.candidate.commit);
+ assert.equal(fs.readFileSync(path.join(jsonSource,'config.json'),'utf8'),'{"left":1,"right":1}');
+ worker.stop();let unrelatedCalled=false;
+ const pinned=intents.enqueue({...jsonInput,workspaceId:'pinned-checks',targetId:'pinned-target'});
+ worker=createIntegrationWorker({...jsonOptions,getWorkflow:()=>({...jsonOptions.getWorkflow(),getIntegrationCheckPolicy:async()=>({id:'validation-policy:'+'a'.repeat(64)})}),
+  validationPolicyId:'unrelated-policy',validateIntegration:async c=>{unrelatedCalled=true;return {ok:true,commit:c.commit,policyId:'unrelated-policy',evidenceHash:'b'.repeat(64)};}});
+ await worker.runIntent({accountId:'owner',sessionId:'session',intentId:pinned.id},{assertActive(){}});
+ assert.equal(unrelatedCalled,false,'a saved original check set cannot be bypassed by an unrelated callback');
+ assert.equal(intents.get(pinned.id).state,'pending');
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',pinned.id).code,'COLLAB_CHECK_POLICY_INVALID');
+ worker.stop();let policyReads=0;
+ const changedPolicy=intents.enqueue({...jsonInput,workspaceId:'changed-policy',targetId:'changed-policy-target'});
+ worker=createIntegrationWorker({...jsonOptions,getWorkflow:()=>({...jsonOptions.getWorkflow(),getIntegrationCheckPolicy:async()=>++policyReads===1?null:{id:'validation-policy:'+'c'.repeat(64)}}),
+  validationPolicyId:'old-policy',validateIntegration:async()=>{throw Error('old policy must not run');}});
+ await worker.runIntent({accountId:'owner',sessionId:'session',intentId:changedPolicy.id},{assertActive(){}});
+ assert.equal(store.db.get('SELECT code FROM task_integration_work WHERE intent_id=?',changedPolicy.id).code,'COLLAB_CHECK_POLICY_CHANGED','policy change at authorization fences stale validation');
+ assert.equal(intents.get(changedPolicy.id).state,'pending');
+ store.revokeScope({scopeId:'team:org'});assert.equal(store.db.get('SELECT count(*) n FROM task_integration_work').n,0,'scope retirement removes pending scheduler rows');
+ console.log('integration worker: actual candidate validation/evidence, missing/failed policy distinction, restart publication, bounded retry, stop and scope fences passed (input and project policy are fixtures)');
+}finally{worker?.stop();store?.close();fs.rmSync(root,{recursive:true,force:true});}

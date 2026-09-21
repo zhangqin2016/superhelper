@@ -16,7 +16,7 @@ const scope = { ownerScope: "owner-a", sessionId: "session-a", projectId: "proje
 const foreign = { ownerScope: "owner-a", sessionId: "session-b", projectId: "project-a", turnId: "turn-b" };
 const token = issueScopeToken({ secret, scope, operations: ["start", "status", "logs", "stop", "list"], ttlMs: 60_000 });
 const foreignToken = issueScopeToken({ secret, scope: foreign, operations: ["status", "logs", "stop", "list"], ttlMs: 60_000 });
-const options = { durable: { dbPath: path.join(dir, "long-tasks.db"), secret, jobsDir: path.join(dir, "jobs") } };
+const options = { durable: { dbPath: path.join(dir, "long-tasks.db"), secret, jobsDir: path.join(dir, "jobs"), writerLockPath:path.join(fs.realpathSync(dir),"writer.sqlite") } };
 
 try {
   const started = await startJob({

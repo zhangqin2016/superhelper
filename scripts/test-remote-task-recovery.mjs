@@ -55,7 +55,7 @@ try {
   const input={applicationId:'real-apply',rootPath:origin,deliveryRoot:delivery,baseManifest:manifest('old'),deliveryManifest:manifest('new'),editablePaths:['owned.txt']};
   let interrupted=true;
   let realRecord={id:'real-apply',kind:'application',conversationId:'team-chat',taskId:'task',deliveryId:'delivery',input,state:'preview',createdAt:Date.now()};
-  function broker(){return createTaskApplication({journalRoot:backup,assertAuthorized:active,journal:{get:()=>recovery.get('real-apply')?.journal,put:(_id,journal)=>{
+  function broker(){return createTaskApplication({writer:require('../src/main/collaboration/local-writer').createLocalWriter({filePath:path.join(dir,'writer.sqlite')}),journalRoot:backup,assertAuthorized:active,journal:{get:()=>recovery.get('real-apply')?.journal,put:(_id,journal)=>{
     if(interrupted && journal.operations.some(operation=>operation.state==='done'))throw new Error('simulated process interruption');
     recovery.put('real-apply',{...realRecord,journal,state:journal.state});
   }}});}

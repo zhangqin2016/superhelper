@@ -13,13 +13,13 @@
  * The SDK is ESM-only, so it's loaded via dynamic import() and cached.
  */
 const { EventEmitter } = require("node:events");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const {spawnForeground}=require("../collaboration/foreground-writer");
 const { getLogger } = require("../logger");
-const { killProcessTree } = require("../process-tree-kill");
+const { killProcessTree, terminateProcessGroup } = require("../process-tree-kill");
 const { parseServeDiagnostics } = require("./opencode-serve-diagnostics");
+const { parseListeningPort, processProfileEnv, serveIdentity, serveSignature } = require("./engine-serve-identity");
 
 const log = getLogger("opencode-shared-server");
 
@@ -28,12 +28,6 @@ let sdkModulePromise = null;
 function loadSdk() {
   if (!sdkModulePromise) sdkModulePromise = import("@opencode-ai/sdk/v2/client");
   return sdkModulePromise;
-}
-
-/** Parse the "listening on http://host:port" line opencode prints on stdout. */
-function parseListeningPort(text) {
-  const m = String(text).match(/listening on\s+https?:\/\/([^\s:]+):(\d{2,5})/i);
-  return m ? { host: m[1], port: Number(m[2]) } : null;
 }
 
 class OpencodeSharedServer extends EventEmitter {
@@ -48,8 +42,19 @@ class OpencodeSharedServer extends EventEmitter {
     this.dataDir = opts.dataDir;
     this.env = processProfileEnv(opts.env);
     this.configContent = opts.configContent || "";
+    this.writerLockPath = opts.writerLockPath;
+    // Retiring an idle engine for a collaboration application, never on an ordinary turn — see engine-idle-drain.js.
+    this._idleReady = false;
+    this._idleDrain = require("./engine-idle-drain").createEngineIdleDrain({
+      writerLockPath: this.writerLockPath, log,
+      stateOf: () => ({ terminated: this._terminated, activeWork: this._activeWork, ready: this._idleReady }),
+      // "idle-retire" invalidates views synchronously, so a new turn cannot reuse the old SDK mid-shutdown.
+      retire: () => { this.terminate(); this.emit("idle-retire", { code: 0 }); },
+    });
 
     this.process = null;
+    this._ownedProcess = null;
+    this._termination = null;
     this.host = "127.0.0.1";
     this.port = 0;
     this._starting = null;
@@ -90,8 +95,18 @@ class OpencodeSharedServer extends EventEmitter {
     return `http://${this.host}:${this.port}`;
   }
 
-  retainView() {
-    return this._retain("_activeViews");
+  retainView(isActive) {
+    const forget = this._idleDrain.retainView(isActive);
+    const release = this._retain("_activeViews");
+    return () => { forget(); release(); };
+  }
+
+  /** @returns {boolean} whether the engine was retired. */
+  drainIfIdle() {
+    if (!this._idleDrain.idle()) return false;
+    this.terminate();
+    this.emit("idle-retire", { code: 0 });
+    return true;
   }
 
   retainWork() {
@@ -120,6 +135,7 @@ class OpencodeSharedServer extends EventEmitter {
 
   /** Spawn the serve once; resolve when it reports its listening port. Idempotent. */
   ensureStarted({ timeoutMs = 20_000 } = {}) {
+    if(this._terminated)return Promise.reject(Object.assign(new Error("Engine server was terminated"),{code:"OPENCODE_SERVER_TERMINATED"}));
     if (this._baseClient) return Promise.resolve(this);
     if (this._starting) return this._starting;
     this._starting = new Promise((resolve, reject) => {
@@ -135,7 +151,7 @@ class OpencodeSharedServer extends EventEmitter {
       delete serveEnv.CLAUDE_CONFIG_DIR;
       if (this.configContent) {
         try {
-          const identity = crypto.createHash("sha256").update(serveSignature(this)).digest("hex");
+          const identity = serveIdentity(this);
           const cfgPath = path.join(path.dirname(this.dataDir), `opencode-config-${identity}.json`);
           fs.writeFileSync(cfgPath, this.configContent, { mode: 0o600 });
           this._configPath = cfgPath;
@@ -152,7 +168,7 @@ class OpencodeSharedServer extends EventEmitter {
       // error-level only (low noise). Combined with the un-truncated stderr
       // capture below, the real upstream cause lands in Lily's log instead of
       // being swallowed into an opaque "Unexpected server error" ref.
-      const child = spawn(
+      const child = spawnForeground(
         this.serverCommand,
         ["serve", "--hostname", this.host, "--port", "0", "--print-logs", "--log-level", "ERROR"],
         {
@@ -163,9 +179,10 @@ class OpencodeSharedServer extends EventEmitter {
           // tree via kill(-pid). Windows uses taskkill /T instead.
           detached: process.platform !== "win32",
           windowsHide: true,
-        },
+        },{filePath:this.writerLockPath,parentBound:true},
       );
       this.process = child;
+      this._ownedProcess = child;
       let settled = false;
       const settle = (fn) => {
         if (settled) return;
@@ -192,6 +209,8 @@ class OpencodeSharedServer extends EventEmitter {
             this._baseClient = createOpencodeClient({ baseUrl: this.baseUrl });
             this._startEventStream();
             await this._waitForEventStreamReady();
+            this._idleReady = true;
+            this._idleDrain.start();
             log.info("shared opencode serve ready on %s (cwd %s)", this.baseUrl, this.cwd);
             resolve(this);
           } catch (err) {
@@ -481,19 +500,23 @@ class OpencodeSharedServer extends EventEmitter {
   }
 
   terminate() {
+    if(this._termination)return this._termination;
     this._terminated = true;
+    this._idleReady = false;
+    this._idleDrain.stop();
+    const child = this._ownedProcess || this.process;
+    this.process = null;
+    this._termination = terminateProcessGroup(child).catch(()=>({ok:false,code:"TERMINATION_FAILED"}));
     this._sseAbort?.abort();
     this._flushEvents();
     this._eventHandlers.clear();
     this._clients.clear();
     this._baseClient = null;
-    const child = this.process;
-    this.process = null;
-    killProcessTree(child); // reap the serve + its tool children (unlock the dir)
     if (this._configPath) {
       try { fs.unlinkSync(this._configPath); } catch { /* best-effort credential cleanup */ }
       this._configPath = null;
     }
+    return this._termination;
   }
 }
 
@@ -510,29 +533,6 @@ const _profiles = new Map();
  *  stale and must be rebuilt — otherwise it keeps talking to the OLD gateway and
  *  every turn fails to reach the model. Env matters too: short-lived gateway
  *  tokens are injected via LILY_* env, not the config JSON. */
-function processProfileEnv(env = {}) {
-  // Legacy Claude guide directories are conversation-scoped, not OpenCode config.
-  const profile = { ...env };
-  delete profile.CLAUDE_CONFIG_DIR;
-  return profile;
-}
-
-function envSignature(env = {}) {
-  const keys = Object.keys(processProfileEnv(env)).sort();
-  const stable = {};
-  for (const key of keys) stable[key] = String(env[key] ?? "");
-  return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
-}
-
-function serveSignature(opts) {
-  return JSON.stringify({
-    cmd: opts.serverCommand || "",
-    dataDir: opts.dataDir || "",
-    cfg: opts.configContent || "",
-    env: envSignature(opts.env || {}),
-  });
-}
-
 /** Reuse a compatible serve without mutating another conversation's policy. */
 function getSharedServer(opts) {
   const sig = serveSignature(opts);

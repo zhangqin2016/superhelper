@@ -81,7 +81,7 @@ function registerFileTreeHandlers(ctx = {}) {
   // not touch anything outside it, no matter what path the renderer sends.
   function sessionProjectRoot(sessionId) {
     const session = sessionManager?.findById?.(sessionId);
-    const project = session ? projectManager?.find?.(session.projectId) : null;
+    const project = session ? require("./session-workspace").resolveSessionWorkspace(projectManager, session) : null;
     return project?.path || null;
   }
 

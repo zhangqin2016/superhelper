@@ -3,15 +3,13 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const jsonFile = require("../json-file");
-const http = require("node:http");
-const https = require("node:https");
-const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { isHostNoiseOnlyFile, jobWorkEvidence, withoutHostNoise } = require("./job-observation");
-const { stopRecordedProcess } = require("../process-tree-kill");
+const { stopRecordedProcess, terminateProcessGroup } = require("../process-tree-kill");
 const { captureProcessIdentity } = require("../long-task/process-identity");
+const { createJobHealthProbes } = require("./process-job-health");
 const { latestWorkProgress } = require("../work-progress-protocol");
 const { sameJobGeneration, updateJobGeneration } = require("./process-job-generation").createJobGenerationGuard({ readRegistry, writeRegistry });
 
@@ -247,88 +245,15 @@ function latestProgressForRecord(record = {}) {
   return latestWorkProgress(`${stdout}\n${stderr}`);
 }
 
-function healthProcess(record) {
-  return {
-    ok: isPidAlive(record.pid),
-    type: "process",
-    detail: isPidAlive(record.pid) ? "process_alive" : "process_not_running",
-  };
-}
-
-function healthTcp(check = {}) {
-  return new Promise((resolve) => {
-    const host = check.host || "127.0.0.1";
-    const port = Number(check.port);
-    if (!Number.isInteger(port) || port <= 0) {
-      resolve({ ok: false, type: "tcp", detail: "port_required" });
-      return;
-    }
-    const socket = net.createConnection({ host, port });
-    const timeout = setTimeout(() => {
-      socket.destroy();
-      resolve({ ok: false, type: "tcp", detail: "timeout" });
-    }, Number(check.timeoutMs || DEFAULT_HEALTH_TIMEOUT_MS));
-    socket.once("connect", () => {
-      clearTimeout(timeout);
-      socket.end();
-      resolve({ ok: true, type: "tcp", detail: `${host}:${port}` });
-    });
-    socket.once("error", (err) => {
-      clearTimeout(timeout);
-      resolve({ ok: false, type: "tcp", detail: err?.code || err?.message || "connect_failed" });
-    });
-  });
-}
-
-function healthHttp(check = {}) {
-  return new Promise((resolve) => {
-    if (!check.url) {
-      resolve({ ok: false, type: "http", detail: "url_required" });
-      return;
-    }
-    let parsed;
-    try {
-      parsed = new URL(check.url);
-    } catch {
-      resolve({ ok: false, type: "http", detail: "invalid_url" });
-      return;
-    }
-    const client = parsed.protocol === "https:" ? https : http;
-    const req = client.request(parsed, { method: "GET", timeout: Number(check.timeoutMs || DEFAULT_HEALTH_TIMEOUT_MS) }, (res) => {
-      res.resume();
-      const min = Number(check.minStatus || 200);
-      const max = Number(check.maxStatus || 399);
-      resolve({ ok: res.statusCode >= min && res.statusCode <= max, type: "http", detail: `status_${res.statusCode}` });
-    });
-    req.on("timeout", () => {
-      req.destroy();
-      resolve({ ok: false, type: "http", detail: "timeout" });
-    });
-    req.on("error", (err) => resolve({ ok: false, type: "http", detail: err?.code || err?.message || "request_failed" }));
-    req.end();
-  });
-}
-
-function healthLog(record, check = {}) {
-  const needle = String(check.contains || "");
-  if (!needle) return { ok: false, type: "log", detail: "contains_required" };
-  const tailBytes = Number(check.tailBytes || DEFAULT_LOG_TAIL_BYTES);
-  const stdout = readRange(record.stdoutPath, { tailBytes }).text;
-  const stderr = readRange(record.stderrPath, { tailBytes }).text;
-  const ok = stdout.includes(needle) || stderr.includes(needle);
-  return { ok, type: "log", detail: ok ? "matched" : "not_found" };
-}
-
-async function evaluateHealth(record = {}, check = null) {
-  const healthcheck = check || record.healthcheck || { type: "process" };
-  const type = String(healthcheck.type || "process");
-  if (type === "none") return { ok: true, type: "none", detail: "not_required" };
-  if (type === "process") return healthProcess(record);
-  if (type === "tcp") return healthTcp(healthcheck);
-  if (type === "http") return healthHttp(healthcheck);
-  if (type === "log") return healthLog(record, healthcheck);
-  return { ok: false, type, detail: "unsupported_healthcheck" };
-}
+const { evaluateHealth } = createJobHealthProbes({
+  isPidAlive,
+  readRange,
+  logTailBytes: DEFAULT_LOG_TAIL_BYTES,
+  timeoutMs: DEFAULT_HEALTH_TIMEOUT_MS,
+  http: require("node:http"),
+  https: require("node:https"),
+  net: require("node:net"),
+});
 
 async function waitForHealth(record, healthcheck, timeoutMs) {
   const deadline = Date.now() + Math.max(0, Number(timeoutMs || 0));
@@ -364,14 +289,14 @@ async function startLegacyJob(input = {}, options = {}) {
   const errFd = fs.openSync(stderrPath, "a");
   let child;
   try {
-    child = spawn(command, args, {
+    child = require("../collaboration/foreground-writer").spawnForeground(command, args, {
       cwd,
       env: { ...process.env, ...(input.env && typeof input.env === "object" ? input.env : {}) },
       shell: input.shell === undefined ? args.length === 0 : input.shell,
       detached: true,
       stdio: ["ignore", outFd, errFd],
       windowsHide: true,
-    });
+    },{filePath:options.writerLockPath,deferLaunch:true});
   } catch (err) {
     fs.closeSync(outFd);
     fs.closeSync(errFd);
@@ -381,12 +306,19 @@ async function startLegacyJob(input = {}, options = {}) {
   fs.closeSync(errFd);
 
   child.unref();
+  const processIdentity=process.platform!=="win32"?captureProcessIdentity(child.pid,{processGroupId:child.pid}):null;
+  if(process.platform!=="win32"&&!processIdentity){
+    await terminateProcessGroup(child);
+    return fail("PROCESS_IDENTITY_UNAVAILABLE");
+  }
+  // Capture the wrapper identity while it is still waiting for stdin, so even
+  // a command that exits immediately retains a verifiable stop identity.
+  child.startForeground?.();
   const record = {
     jobId,
     generationId: crypto.randomUUID(),
     pid: child.pid || null,
-    // Who this pid IS right now (start time + command), so a later stop can tell the job's process from whatever reuses its number.
-    identity: child.pid ? captureProcessIdentity(child.pid, { command: [command, ...args].join(" ") }) : null,
+    processIdentity,
     status: child.pid ? "running" : "failed",
     command,
     args,
@@ -481,24 +413,39 @@ async function stopLegacyJob(input = {}, options = {}) {
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const pid = Number(found.record.pid);
   const signal = input.signal || "SIGTERM";
-  // Windows: the recorded pid is usually the cmd.exe wrapper, so the guard tree-kills there. A refusal means the pid is no longer this job's process (reused, or one of our own): the job is over, the stranger is left alone.
-  const term = isPidAlive(pid) ? stopRecordedProcess({ pid, identity: found.record.identity || null, signal, tree: process.platform === "win32" }) : { ok: false, error: "EXITED" };
+  const group = found.record.processIdentity || null;
+  // A POSIX job is its own process group, so both liveness and the signal target
+  // the group. Windows has no group semantics and the recorded pid is usually the
+  // cmd.exe wrapper, which the guard tree-kills instead.
+  const alive = () => {
+    if (!group) return isPidAlive(pid);
+    try { process.kill(-pid, 0); return true; } catch (error) { return error.code !== "ESRCH"; }
+  };
+  const stop = (sig) => stopRecordedProcess({ pid, identity: group, signal: sig, tree: Boolean(group) });
+  // A refusal means the recorded pid is not this job's process any more: a changed
+  // identity is reported as such, and anything else (a reused pid that is now one
+  // of ours) means the job is simply over.
+  const term = alive() ? stop(signal) : { ok: false, error: "EXITED" };
   if (!term.ok && term.error === "SIGNAL_FAILED") return fail("STOP_FAILED", { jobId: found.id, pid, message: term.message });
+  if (!term.ok && term.error === "IDENTITY_MISMATCH") return fail("PROCESS_IDENTITY_CHANGED", { jobId: found.id });
   if (!term.ok) {
     found.registry.jobs[found.id] = { ...found.record, status: "exited", updatedAt: nowIso() };
     writeRegistry(found.registry, options);
     return { ok: true, stopped: true, alreadyExited: true, ...compactJob(found.registry.jobs[found.id]) };
   }
   const deadline = Date.now() + Number(input.timeoutMs || DEFAULT_STOP_TIMEOUT_MS);
-  while (isPidAlive(pid) && Date.now() < deadline) {
+  while (alive() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   const latest = readRegistry(options);
   if (!sameJobGeneration(latest.jobs[found.id], found.record)) return fail("JOB_REPLACED", { jobId: found.id });
-  if (isPidAlive(pid) && input.force !== false) {
-    stopRecordedProcess({ pid, identity: found.record.identity || null, signal: "SIGKILL", tree: process.platform === "win32" });
+  if (alive() && input.force !== false) {
+    const kill = stop("SIGKILL");
+    if (!kill.ok && kill.error === "IDENTITY_MISMATCH") return fail("PROCESS_IDENTITY_CHANGED", { jobId: found.id });
+    const killDeadline = Date.now() + 2_000;
+    while (alive() && Date.now() < killDeadline) await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  const stopped = !isPidAlive(pid);
+  const stopped = !alive();
   latest.jobs[found.id] = {
     ...latest.jobs[found.id],
     status: stopped ? "stopped" : "running",

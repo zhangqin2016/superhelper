@@ -1,6 +1,35 @@
 import assert from 'node:assert/strict';
 import {resolveCollaborationPolicy,resolveServerCollaborationPolicy,applyCollaborationPolicyGate} from '../server/src/services/collaboration/policy.js';
+import {createConfiguredTaskService} from '../server/src/services/collaboration/task-config.js';
 const policy={enabled:true,workspaceShares:true,tasks:true};
+const server={collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true,collaborationTaskGitEnabled:true};
+assert.equal(resolveServerCollaborationPolicy(server).sharedPublicationProtocol,undefined,'remote publication requires explicit operator rollout');
+assert.equal(resolveServerCollaborationPolicy({...server,collaborationSharedPublicationEnabled:true}).sharedPublicationProtocol,1);
+assert.equal(resolveServerCollaborationPolicy({...server,collaborationTaskGitEnabled:false,collaborationSharedPublicationEnabled:true}).sharedPublicationProtocol,undefined);
+const options={collaborationEnabled:true,workspaceShares:true,tasks:true,taskGit:true,sharedPublication:true};
+assert.equal(applyCollaborationPolicyGate({collaboration:policy},options).collaboration.sharedPublicationProtocol,1);
+for(const key of ['collaborationEnabled','workspaceShares','tasks','taskGit','sharedPublication'])
+  assert.equal(applyCollaborationPolicyGate({collaboration:{...policy,taskGitProtocol:1,sharedWorkspaceProtocol:1,sharedPublicationProtocol:1}},{...options,[key]:false}).collaboration.sharedPublicationProtocol,undefined);
+for(const sharedPublicationProtocol of [undefined,2,'1',true])
+  assert.equal(resolveCollaborationPolicy({...policy,taskGitProtocol:1,sharedWorkspaceProtocol:1,sharedPublicationProtocol}).sharedPublicationProtocol,undefined);
+const disabled=createConfiguredTaskService({database:{transaction(){throw Error('Disabled protocol reached storage');}},config:{...server,collaborationMessageKek:'a'.repeat(64),collaborationMessageKekVersion:'v1'}});
+for(const method of ['getIntegrationTarget','claimIntegration','renewIntegration','releaseIntegration','publishIntegration','getIntegrationPublication','getIntegrationBaseline','resolveIntegrationBaseline'])
+  await assert.rejects(disabled[method]({}),{code:'COLLAB_INTEGRATION_PROTOCOL_UNAVAILABLE'},'an old cached client policy cannot bypass the operator publication gate');
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).taskGitProtocol,undefined,'Git rollout stays off by default');
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true,collaborationTaskGitEnabled:true}).taskGitProtocol,1);
+assert.equal(resolveCollaborationPolicy({...policy,taskGitProtocol:2}).taskGitProtocol,undefined);
+assert.equal(applyCollaborationPolicyGate({collaboration:{...policy,taskGitProtocol:1}},{collaborationEnabled:true,workspaceShares:true,tasks:true,taskGit:false}).collaboration.taskGitProtocol,undefined,'profile cannot override Git rollout');
+assert.equal(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:true,tasks:true,taskGit:true}).collaboration.taskGitProtocol,1);
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).sharedWorkspaceProtocol,1);
+assert.equal(resolveServerCollaborationPolicy({collaborationEnabled:true,collaborationWorkspaceSharesEnabled:true,collaborationTasksEnabled:true}).taskHistoryProtocol,1);
+assert.equal(resolveCollaborationPolicy(policy).taskHistoryProtocol,undefined,'old profiles do not invent task history support');
+assert.equal(resolveCollaborationPolicy({...policy,taskHistoryProtocol:2}).taskHistoryProtocol,undefined);
+assert.equal(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:true,tasks:true}).collaboration.taskHistoryProtocol,1);
+assert.equal(applyCollaborationPolicyGate({collaboration:{...policy,taskHistoryProtocol:1}},{collaborationEnabled:true,workspaceShares:true,tasks:false}).collaboration.taskHistoryProtocol,undefined);
+assert.equal(resolveCollaborationPolicy(policy).sharedWorkspaceProtocol,undefined,'old profiles do not invent support');
+assert.equal(resolveCollaborationPolicy({...policy,sharedWorkspaceProtocol:2}).sharedWorkspaceProtocol,undefined,'unknown versions cannot authorize new commands');
+assert.equal(applyCollaborationPolicyGate({collaboration:policy},{collaborationEnabled:true,workspaceShares:true,tasks:true}).collaboration.sharedWorkspaceProtocol,1);
+assert.equal(applyCollaborationPolicyGate({collaboration:{...policy,sharedWorkspaceProtocol:1}},{collaborationEnabled:true,workspaceShares:true,tasks:false}).collaboration.sharedWorkspaceProtocol,undefined);
 assert.equal(resolveCollaborationPolicy(policy).tasks,true);
 assert.notEqual(resolveCollaborationPolicy({...policy,workspaceShares:false}).tasks,true);
 assert.notEqual(resolveCollaborationPolicy({...policy,enabled:false}).tasks,true);

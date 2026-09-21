@@ -28,8 +28,9 @@ const html = read("src/renderer/index.html");
   assert.match(html, /id="collaborationPanelTitle"/, "the panel header carries the destination name");
   assert.doesNotMatch(html, /id="collaborationListTitle"/,
     "the list must not carry a second title: the header already names the destination");
-  const center = read("src/renderer/modules/collaboration-center.js");
-  assert.match(center, /if \(panelTitle\) panelTitle\.textContent = t\(`collaboration\.\$\{section\}`\)/,
+  // The switch itself moved to the panel surfaces module; the rule did not.
+  const surfaces = read("src/renderer/modules/collaboration-panel-surfaces.js");
+  assert.match(surfaces, /if \(panelTitle\) panelTitle\.textContent = t\(`collaboration\.\$\{section\}`\)/,
     "the one title follows the active destination");
   // The rail is icon-only, so if the header stopped naming the destination
   // there would be nothing left that does.

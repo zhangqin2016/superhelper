@@ -18,7 +18,7 @@ function fixture() {
   let nextPid = 10001;
   const module = { exports: {} };
   const load = (id) => {
-    if (id === "node:child_process") return { spawn() {
+    if (id === "../collaboration/foreground-writer") return { spawnForeground() {
       const child = new EventEmitter();
       child.pid = nextPid++;
       child.unref = () => {};
@@ -32,13 +32,14 @@ function fixture() {
       requests.push((statusCode = 200) => callback({ statusCode, resume() {} }));
       return req;
     } };
-    if (id === "../process-tree-kill") return { stopPid: () => null, stopRecordedProcess: () => ({ ok: true }) };
+    if (id === "../process-tree-kill") return { stopPid: () => null, stopPidTree: () => null, stopRecordedProcess: () => ({ ok: true }) };
+    if (id === "../long-task/process-identity") return {captureProcessIdentity:pid=>({pid}),matchesProcessIdentity:()=>true};
     return coreRequire(id);
   };
   // Real production code and registry IO; only OS child/health boundaries are controlled.
   vm.runInNewContext(`(function(require,module,exports){${fs.readFileSync(sourcePath, "utf8")}\n})`, {
     Buffer, URL, setTimeout, clearTimeout,
-    process: { ...process, kill(pid) { if (!alive.has(pid)) throw new Error("ESRCH"); } },
+    process: { ...process, kill(pid) { if (!alive.has(Math.abs(pid))) throw Object.assign(new Error("ESRCH"),{code:"ESRCH"}); } },
   }, { filename: sourcePath })(load, module, module.exports);
   const api = module.exports;
   const options = { registryDir: tmp };

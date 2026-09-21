@@ -1,20 +1,45 @@
 "use strict";
 const id = v => typeof v === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(v);
+const {integrationView}=require("./integration-status");
+const cursor=v=>v&&typeof v==="object"&&!Array.isArray(v)&&Object.keys(v).length===2&&id(v.id)&&Number.isSafeInteger(v.createdAt)&&v.createdAt>=0;
 const fields = {
   recoveries:[],
-  prepare:["projectId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
+  cards:["before"],
+  sessionCards:["sessionId","before"],
+  bind:["taskId","projectId","sessionId"],
+  bindingOptions:["taskId"],
+  integrationStatus:["taskId"],retryIntegration:["taskId","deliveryId"],answerIntegration:["taskId","deliveryId","answers"],
+  configureIntegrationChecks:["taskId","deliveryId"],
+  prepare:["projectId","sessionId","draftId"],drafts:[],send:["draftId","assigneeUserId","title","objective","acceptanceCriteria"],
   receive:["taskId"],open:["taskId","deliveryId"],prepareDelivery:["taskId"],submitDelivery:["taskId","draftId"],
+  inventory:["taskId"],materialize:["taskId","paths"],
   preview:["taskId","deliveryId"],apply:["taskId","deliveryId","applicationId","expectedPlanHash","confirmDeletions"],rollback:["taskId","applicationId"],
 };
 function taskWorkflowCommand(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(fields,value.operation)
-    || (value.operation === "recoveries" ? value.conversationId != null : !id(value.conversationId))) return null;
+    || (["recoveries","sessionCards"].includes(value.operation) ? value.conversationId != null : !id(value.conversationId))) return null;
   const keys = fields[value.operation];
+  if (value.operation === "prepare" && Object.hasOwn(value,"projectId") && Object.hasOwn(value,"draftId")) return null;
+  if (value.operation === "prepare" && Object.hasOwn(value,"sessionId") && !Object.hasOwn(value,"projectId")) return null;
+  if (value.operation === "bind" && Object.hasOwn(value,"sessionId") && !Object.hasOwn(value,"projectId")) return null;
   if (Object.keys(value).some(key=>!["operation","conversationId",...keys].includes(key))) return null;
   for (const key of keys) {
-    if (key === "projectId" && !Object.hasOwn(value,key)) continue;
+    if(key==="before") {if(Object.hasOwn(value,key)&&!cursor(value[key]))return null;continue;}
+    if (value.operation === "prepare" && !Object.hasOwn(value,key)) continue;
+    if (value.operation === "bind" && ["projectId","sessionId"].includes(key) && !Object.hasOwn(value,key)) continue;
     const v = value[key];
     if (key === "deliveryId" && value.operation === "open" && v == null) continue;
+    if (key === "paths") {
+      if (!Object.hasOwn(value,key)) continue;
+      if (!Array.isArray(v) || !v.length || v.length > 2000 || v.some(item=>typeof item !== "string" || !item || item.length > 1024 || /[\x00-\x1f\x7f]/.test(item) || item.startsWith("/") || item.split("/").some(part=>!part||part==="."||part===".."))) return null;
+      continue;
+    }
+    if (key === "answers") {
+      if (!Array.isArray(v) || !v.length || v.length > 8 || v.some(item=>!item || typeof item !== "object" || Array.isArray(item) || Object.keys(item).some(k=>!["path","answer"].includes(k))
+        || typeof item.path !== "string" || !item.path || item.path.length > 1024 || /[\x00-\x1f\x7f]/.test(item.path)
+        || typeof item.answer !== "string" || !item.answer.trim() || item.answer.length > 4000 || item.answer.includes("\0"))) return null;
+      continue;
+    }
     if (key === "confirmDeletions") { if (typeof v !== "boolean") return null; }
     else if (key === "expectedPlanHash") { if (!/^[a-f0-9]{64}$/.test(v || "")) return null; }
     else if (["title","objective","acceptanceCriteria"].includes(key)) {
@@ -26,6 +51,23 @@ function taskWorkflowCommand(value) {
 // Closed projection: local absolute paths, keys and recovery journals never cross.
 function taskWorkflowResult(value) {
   const result = {ok:value?.ok === true};
+  if(Object.hasOwn(value||{},"integration"))result.integration=integrationView(value.integration);
+  if(Object.hasOwn(value || {},"nextCursor"))result.nextCursor=cursor(value.nextCursor)?{id:value.nextCursor.id,createdAt:value.nextCursor.createdAt}:null;
+  if (Array.isArray(value?.conversationIds)) result.conversationIds=value.conversationIds.filter(id).slice(0,1000);
+  if (Array.isArray(value?.cards) && value.cards.length>1000) result.hasMoreCards=true;
+  if (Array.isArray(value?.cards)) result.cards = value.cards.slice(-1000).filter(c=>id(c.id)).map(c=>({
+    id:c.id,taskId:id(c.taskId)?c.taskId:null,title:String(c.title || "").slice(0,200),
+    ...(id(c.conversationId)?{conversationId:c.conversationId}:{}),
+    createdAt:Number.isSafeInteger(c.createdAt)&&c.createdAt>=0?c.createdAt:0,
+    revision:Number.isSafeInteger(c.revision)&&c.revision>=0?c.revision:0,
+    state:id(c.state)?c.state:"preparing",localState:id(c.localState)?c.localState:null,
+    ...(integrationView(c.integration)?{integration:integrationView(c.integration)}:{}),
+  }));
+  if (Array.isArray(value?.projects)) result.projects = value.projects.slice(0,100).filter(p=>id(p.id)).map(p=>({
+    id:p.id,name:String(p.name || "").slice(0,200),sessions:(p.sessions || []).slice(0,100).filter(s=>id(s.id)).map(s=>({id:s.id,title:String(s.title || "").slice(0,200)})),
+  }));
+  if (Object.hasOwn(value || {},"binding")) result.binding = id(value.binding?.projectId) && id(value.binding?.sessionId)
+    ? {projectId:value.binding.projectId,sessionId:value.binding.sessionId} : null;
   for (const key of ["state","code","taskId","draftId","applicationId","projectId","sessionId","clientCommandId","planHash"]) if (id(value?.[key])) result[key] = value[key];
   if (value?.cancelled === true) result.cancelled = true;
   const draft = v => ({id:v.id,name:String(v.name || "").slice(0,200),state:v.state,
@@ -39,6 +81,11 @@ function taskWorkflowResult(value) {
     ...(typeof v.label === "string" ? {label:v.label.slice(0,200)} : {}),
   }));
   if (value?.plan) result.plan = {canApply:value.plan.canApply === true,entries:value.plan.entries.map(v=>({path:v.path,operation:v.operation,status:v.status}))};
+  if (value?.inventory) {
+    const counts=value.inventory.counts||{},number=v=>Number.isSafeInteger(v)&&v>=0?v:0;
+    result.inventory={files:(value.inventory.files||[]).slice(0,2000).filter(f=>typeof f.path==="string"&&["local","remote"].includes(f.state)).map(f=>({path:f.path.slice(0,1024),sizeBytes:number(f.sizeBytes),state:f.state})),
+      truncated:value.inventory.truncated===true,counts:{total:number(counts.total),local:number(counts.local),remote:number(counts.remote),remoteBytes:number(counts.remoteBytes)}};
+  }
   return result;
 }
 module.exports = {taskWorkflowCommand,taskWorkflowResult};

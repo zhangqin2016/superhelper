@@ -413,7 +413,7 @@ class TurnOrchestrator {
     try {
       const session = this.ctx.sessionManager?.findById?.(sessionId);
       const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
-        ? this.ctx.projectManager.find(session.projectId)
+        ? require("./session-workspace").resolveSessionWorkspace(this.ctx.projectManager, session)
         : null;
       const activeSkillIds = require("./skill-manager").resolveSessionSkillIds(session);
       binding = require("./resume-binding").buildResumeBinding({
@@ -695,11 +695,14 @@ class TurnOrchestrator {
 
     emitLocalAssistantStarted({ emit: this._emit.bind(this), sessionId: session.id, text: rawUserText, queueLength: state.queue.length });
 
-    const assistant = String(opts.assistant || "").trim();
+    const integration = opts.collaborationIntegration
+      ? await require("./collaboration/integration-turn").runIntegrationTurn(this,session,state,opts.collaborationIntegration) : null;
+    const assistant = integration?.assistant || String(opts.assistant || "").trim();
     state.assistantText = assistant;
     const completedTurnId = state.turnId;
-    this._finalize(session.id, "turn.completed", {
+    this._finalize(session.id, integration?.failed ? "turn.failed" : "turn.completed", {
       assistant,
+      ...(integration?.failed?{failed:true,errorCode:integration.errorCode,retryable:true}:{}),
       scheduledDraft: opts.scheduledDraft || null,
       resultFromCli: false,
     });
@@ -731,7 +734,7 @@ class TurnOrchestrator {
     let ensured = null;
     let runner = null;
     const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
-      ? this.ctx.projectManager.find(session.projectId)
+      ? require("./session-workspace").resolveSessionWorkspace(this.ctx.projectManager, session)
       : null;
     const workspaceBusy = rejectIfWorkspaceVersionBusy(this.ctx.workspaceVersionService, project?.path);
     if (workspaceBusy) return workspaceBusy;

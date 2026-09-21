@@ -3,6 +3,7 @@
  */
 
 import store from "./state.js";
+import {initSessionTaskCards} from "./session-task-cards.js";
 import {
   $,
   bindPanelScroll,
@@ -143,6 +144,9 @@ function ensurePanel(sessionId) {
 
   const listEl = document.createElement("div");
   listEl.className = "messages runtime-messages";
+  const cardsEl=document.createElement("section");cardsEl.className="session-task-cards";
+  panel.appendChild(cardsEl);
+  v.taskCards=initSessionTaskCards({root:cardsEl,sessionId});
   panel.appendChild(listEl);
   root.appendChild(panel);
   bindPanelScroll(panel);
@@ -171,6 +175,7 @@ export function showSessionMessages(sessionId) {
     const active = el.dataset.sessionId === sessionId;
     el.classList.toggle("is-active", active);
     el.setAttribute("aria-hidden", active ? "false" : "true");
+    sessionViews.get(el.dataset.sessionId)?.taskCards?.setActive(active);
   }
   clearStackMinimaps();
   syncWorkbenchEmptyState(view(sessionId).listEl);
@@ -193,12 +198,14 @@ export function hideAllSessionMessages() {
   for (const el of stackEl()?.querySelectorAll(".session-messages") || []) {
     el.classList.remove("is-active");
     el.setAttribute("aria-hidden", "true");
+    sessionViews.get(el.dataset.sessionId)?.taskCards?.setActive(false);
   }
 }
 
 export function removeSessionMessages(sessionId) {
   const v = sessionViews.get(sessionId);
   if (!v) return;
+  v.taskCards?.destroy();
   v.panel?.remove();
   sessionViews.delete(sessionId);
   renderedMessageKeys.delete(sessionId);

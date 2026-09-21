@@ -92,7 +92,8 @@ async function openTask(win) {
   await action(win, "task-entry"); await action(win, "task-open");
 }
 app.whenReady().then(async () => {
-  fixture = createFixture(temporary);
+  fixture = createFixture(temporary,{sharedWorkspaceProtocol:process.env.LILY_TEST_SHARED_WORKSPACE === "1" ? 1 : undefined,
+    taskGitProtocol:process.env.LILY_TEST_GIT_PROTOCOL === "1" ? 1 : undefined});
   ipcMain.handle("dual-ui-command", async (event, channel, payload) => {
     const account = identities.get(event.sender.id); assert.ok(account);
     return account.invoke(channel, payload);
@@ -120,17 +121,31 @@ app.whenReady().then(async () => {
   await waitFor(owner.win, "!!document.querySelector('.remote-task-hero')", "send retry resolves");
   assert.equal(fixture.events.filter(e => e.action === "create").length, 1, "retry does not duplicate the task");
   const task = [...fixture.serverTasks.values()][0];
+  assert.equal(Boolean(task.inputGit),process.env.LILY_TEST_GIT_PROTOCOL === "1");
   await openTask(helper.win); await action(helper.win, "accept"); await action(helper.win, "task-confirm");
   await action(helper.win, "task-receive");
+  if (process.env.LILY_TEST_SHARED_WORKSPACE === "1") {
+    assert.ok(task.sharedWorkspaceId,"create retains the negotiated workspace identity");
+    await action(helper.win,"task-bind");
+  }
   await waitFor(helper.win, "!!document.querySelector('[data-action=task-workspace-open]') && !document.querySelector('[data-action=task-workspace-open]').disabled", "receive completes");
   await action(helper.win, "task-workspace-open");
   await waitFor(helper.win, "document.querySelector('.remote-tasks').hidden", "open independent workspace");
   const work = helper.account.opened().rootPath, binding = helper.account.records.get(`task:${task.id}`);
+  if (process.env.LILY_TEST_SHARED_WORKSPACE === "1") {
+    assert.equal(helper.account.opened().projectId,"existing-project","isolated task opens under chosen top-level project");
+    assert.ok(binding.workspaceBindingId,"binding is persisted through production SQLite workflow");
+  }
   assert.notEqual(work, fixture.source); assert.notEqual(work, binding.snapshotRoot);
   // Synthetic external editing step, NOT an AI-run or editor-UI claim. All
   // collaboration lifecycle actions above and below are actual button clicks.
-  fs.writeFileSync(path.join(work, "budget.txt"), "reviewed budget\n");
-  fs.unlinkSync(path.join(work, "remove.txt")); fs.writeFileSync(path.join(work, "evidence.txt"), "totals checked\n");
+  const deleteAll = process.env.LILY_TEST_DELETE_ALL === "1";
+  if (deleteAll) {
+    for (const file of binding.baseManifest) fs.unlinkSync(path.join(work,file.path));
+  } else {
+    fs.writeFileSync(path.join(work, "budget.txt"), "reviewed budget\n");
+    fs.unlinkSync(path.join(work, "remove.txt")); fs.writeFileSync(path.join(work, "evidence.txt"), "totals checked\n");
+  }
   assert.equal(fs.readFileSync(path.join(binding.snapshotRoot, "budget.txt"), "utf8"), "original budget\n");
   assertOriginalSource("editing helper copy leaves all requester files unchanged");
   await action(helper.win, "task-entry"); await action(helper.win, "task-open");
@@ -146,15 +161,19 @@ app.whenReady().then(async () => {
   assert.equal(await owner.win.webContents.executeJavaScript("document.querySelector('[data-action=task-apply]').disabled"), true);
   await click(owner.win, "[name=confirmDeletions]"); await action(owner.win, "task-apply");
   await waitFor(owner.win, "!!document.querySelector('[data-action=task-rollback]')", "applied with rollback");
-  assert.equal(fs.readFileSync(path.join(fixture.source, "budget.txt"), "utf8"), "reviewed budget\n");
+  if (deleteAll) {
+    for (const file of binding.baseManifest) assert.equal(fs.existsSync(path.join(fixture.source,file.path)),false);
+  } else {
+    assert.equal(fs.readFileSync(path.join(fixture.source, "budget.txt"), "utf8"), "reviewed budget\n");
+    assert.equal(fs.readFileSync(path.join(fixture.source, "evidence.txt"), "utf8"), "totals checked\n");
+  }
   assert.equal(fs.existsSync(path.join(fixture.source, "remove.txt")), false);
-  assert.equal(fs.readFileSync(path.join(fixture.source, "evidence.txt"), "utf8"), "totals checked\n");
   await action(owner.win, "task-rollback");
   await waitFor(owner.win, "document.querySelector('.remote-tasks').innerText.includes('rolled back')", "rollback rendered");
   assertOriginalSource("rollback restores every original and removes the added file");
   assert.equal(fixture.serverTasks.get(task.id).state, "accepted", "local rollback does not change remote approval");
   await capture(owner.win, "rolled-back");
   assert.deepEqual(fixture.events.filter(e => e.action).map(e => e.action), ["create", "accept", "submit", "approve"]);
-  console.log("dual-client UI: native clicks create/retry/accept/receive/open/deliver/approve/preview/apply/rollback; real IPC, SQLite, ZIP and source-file assertions passed. Transport, accounts and editing are explicit fixtures; not production or physical-device acceptance.");
+  console.log(`dual-client UI (${process.env.LILY_TEST_GIT_PROTOCOL === "1" ? "Git bundles" : "ZIP"}): native clicks create/retry/accept/receive/open/deliver/approve/preview/apply/rollback; real IPC, SQLite and source-file assertions passed. Transport, accounts and editing are explicit fixtures; not production or physical-device acceptance.`);
   finish(0);
 }).catch(error => { console.error(error); finish(1); });

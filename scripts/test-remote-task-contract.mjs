@@ -5,6 +5,26 @@ const { createTask, transitionTask } = require('../server/src/services/collabora
 const { planTaskApplication, manifestMap } = require('../src/main/collaboration/task-apply-plan');
 const hash = (n) => String(n).repeat(64);
 const context = (actorUserId, now = 2) => ({ actorUserId, now, authorizedParticipantIds: ['owner','helper'] });
+const sharedInput = {id:'shared-task',conversationId:'chat',assigneeUserId:'helper',inputSnapshotId:'snapshot',title:'Budget',objective:'Review',acceptanceCriteria:'Verified',sharedWorkspaceId:'workspace'};
+const shared = createTask(sharedInput, context('owner',1));
+const inputGit={version:1,format:'git-bundle-v2',ref:`refs/tasks/${'a'.repeat(64)}/baseline`,commit:'b'.repeat(40),prerequisites:[],sha256:'c'.repeat(64),sizeBytes:500};
+const gitTask=createTask({...sharedInput,inputGit},context('owner',1));
+assert.deepEqual(gitTask.inputGit,inputGit);
+const gitActive=transitionTask(gitTask,{action:'accept',expectedRevision:1},context('helper',2));
+const deliveryGit={...inputGit,ref:`refs/tasks/${'a'.repeat(64)}/deliveries/${'d'.repeat(64)}`,commit:'e'.repeat(40),prerequisites:[inputGit.commit]};
+const gitSubmit={action:'submit',expectedRevision:2,deliveryId:'git-delivery',deliveryGit};
+const gitContext={...context('helper',3),verifiedDelivery:{id:'git-delivery',taskId:gitTask.id,inputSnapshotId:gitTask.inputSnapshotId,actorUserId:'helper',complete:true,manifestHash:'f'.repeat(64)}};
+assert.deepEqual(transitionTask(gitActive,gitSubmit,gitContext).deliveries[0].git,deliveryGit);
+for(const input of [null,{...inputGit,prerequisites:[inputGit.commit]},{...inputGit,repository:'/private/repo'},{...inputGit,sizeBytes:0}])
+  assert.throws(()=>createTask({...sharedInput,inputGit:input},context('owner',1)),{code:'COLLAB_TASK_INVALID'});
+for(const command of [{...gitSubmit,deliveryGit:undefined},{...gitSubmit,deliveryGit:{...deliveryGit,prerequisites:['0'.repeat(40)]}}])
+  assert.throws(()=>transitionTask(gitActive,command,gitContext),{code:'COLLAB_TASK_INVALID'});
+assert.equal(shared.sharedWorkspaceId, 'workspace');
+assert.equal(transitionTask(shared,{action:'accept',expectedRevision:1},context('helper')).sharedWorkspaceId,'workspace');
+for (const sharedWorkspaceId of [null, '', '../private', 123]) assert.throws(()=>createTask({...sharedInput,sharedWorkspaceId},context('owner',1)),{code:'COLLAB_TASK_INVALID'});
+const {taskView} = require('../src/main/collaboration/task-view');
+assert.equal(taskView(shared).sharedWorkspaceId,'workspace','desktop retains stable shared identity');
+assert.equal(taskView({...shared,sharedWorkspaceId:'../private'}),null);
 const task = createTask({ id:'task', conversationId:'chat', assigneeUserId:'helper', inputSnapshotId:'snapshot', title:'预算复核', objective:'核对预算表', acceptanceCriteria:'交付修订表和差异说明' }, context('owner',1));
 assert.equal(task.state, 'offered');
 assert.throws(() => transitionTask(task, {action:'accept',expectedRevision:1}, context('owner')), {code:'COLLAB_TASK_ACCESS_DENIED'});

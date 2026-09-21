@@ -259,13 +259,13 @@ async function preflight(zipBuffer, options = {}) {
   const payloadEntries = attachValidatedDigests(selectImportEntries(parsed.zip, parsed.layout), digestsByArchiveName);
   const skillEntries = attachValidatedDigests(selectImportWorkspaceSkillEntries(parsed.zip, parsed.manifest), digestsByArchiveName);
   const finalEntries = selectFinalEntries(payloadEntries, skillEntries);
-  if (!finalEntries.length) throw fail("COLLAB_WORKSPACE_PACKAGE_INVALID");
+  if (!finalEntries.length && options.allowEmpty !== true) throw fail("COLLAB_WORKSPACE_PACKAGE_INVALID");
   if (finalEntries.length > limits.maxFiles) throw fail("COLLAB_WORKSPACE_TOO_MANY_FILES");
   return { ...parsed, payloadEntries, skillEntries, finalEntries, limits, summary: safeSummary(parsed.manifest, parsed.layout, finalEntries, payloadEntries) };
 }
 
-async function inspectCollaborationWorkspacePackage({ zipBuffer, limits } = {}) {
-  return (await preflight(zipBuffer, { limits })).summary;
+async function inspectCollaborationWorkspacePackage({ zipBuffer, limits, allowEmpty = false } = {}) {
+  return (await preflight(zipBuffer, { limits, allowEmpty })).summary;
 }
 
 function checkedDirectory(value) {
@@ -332,8 +332,8 @@ function rebasePublishedImport(imported, stageRoot, targetRoot) {
   };
 }
 
-async function extractCollaborationWorkspacePackage({ zipBuffer, targetDir, limits, beforePublish } = {}) {
-  const prepared = await preflight(zipBuffer, { limits });
+async function extractCollaborationWorkspacePackage({ zipBuffer, targetDir, limits, beforePublish, allowEmpty = false } = {}) {
+  const prepared = await preflight(zipBuffer, { limits, allowEmpty });
   const target = targetFor(targetDir);
   let stage;
   try {
@@ -345,6 +345,7 @@ async function extractCollaborationWorkspacePackage({ zipBuffer, targetDir, limi
       maxFiles: prepared.limits.maxArchiveEntries,
       maxFileBytes: prepared.limits.maxFileBytes,
       maxTotalBytes: prepared.limits.maxTotalBytes,
+      allowEmpty,
     });
     if (typeof beforePublish === "function") await beforePublish();
     if (!sameFile(stage.identity, checkedDirectory(stage.stage)) || !sameFile(stage.parentIdentity, checkedDirectory(target.parent))

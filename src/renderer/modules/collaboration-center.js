@@ -13,7 +13,7 @@ import { applyCollaborationHistoryPage } from "./collaboration-history-view.js";
 import { refreshVisibleHistory } from "./collaboration-visible-history.js";
 import { initCollaborationFriends } from "./collaboration-friends.js";
 import { initCollaborationTeams } from "./collaboration-teams.js";
-import { createDetailSurface, createDetachControl, createDrawerSurface, wireConversationHeader } from "./collaboration-panel-surfaces.js";
+import { createDetailSurface, createDetachControl, createDrawerSurface, createSectionSwitch, wireConversationHeader } from "./collaboration-panel-surfaces.js";
 import { initCollaborationAttachments } from "./collaboration-attachments.js";
 import { createReplySourceMaskView } from "./collaboration-reply-view.js";
 import { initCollaborationPanelShell } from "./collaboration-panel-shell.js";
@@ -80,7 +80,11 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
     if (section === "teams" && socialDirty.teams) { socialDirty.teams = false; teams.update(lastSocial); }
   };
   let lastRenderedCount = 0;
+  let remoteTasks = null;
   const renderTimeline = createCenterTimeline({
+    get taskCards() { return remoteTasks?.cards?.() || []; },
+    get taskCardPagination() { return remoteTasks?.cardPagination?.(); },
+    openTaskCard:card=>remoteTasks?.openCard?.(card),
     get lastRenderedCount() { return lastRenderedCount; },
     set lastRenderedCount(value) { lastRenderedCount = value; },
     get activeConversationId() { return activeConversationId; },
@@ -141,7 +145,8 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
       if (byId('collaborationConversation')?.hidden || conversation?.kind !== 'direct') return '';
       return conversation.memberUserIds?.find(id => id !== directory?.profile?.userId) || '';
     } });
-  const remoteTasks = initCenterRemoteTasks({ root: byId("collaborationConversation"), header: byId("collaborationConversation")?.querySelector(".collaboration-conversation-header"),
+  remoteTasks = initCenterRemoteTasks({ root: byId("collaborationConversation"), header: byId("collaborationConversation")?.querySelector(".collaboration-conversation-header"),
+    onCardsChange:()=>renderTimeline(),
     recoveryHeader: byId("collaborationInboxColumn"), recoveryRoot: panel,
     refreshContext: () => refresh(),
     getContext: () => ({ enabled: !disposed && !panel.hidden && policyEnabled && transferPolicy.tasks === true, conversationId: activeConversationId, userId: directory?.profile?.userId || "" }),
@@ -150,36 +155,20 @@ export function initCollaborationCenter({ getPolicy = () => window.assistantClie
   });
   const sectionNodes = { inbox: byId("collaborationInbox"), people: byId("collaborationFriends"), teams: byId("collaborationTeams") };
   const sectionButtons = { inbox: byId("collaborationInboxTab"), people: byId("collaborationPeopleTab"), teams: byId("collaborationTeamsTab") };
-  function showSection(section) {
-    navigationGeneration += 1;
-    invalidateOpen();
-    activeSection = section;
-    for (const [name, node] of Object.entries(sectionNodes)) if (node) node.hidden = name !== section;
-    // One search box, always in the same place, retargeted at the list on
-    // screen. It used to be hidden outside the inbox, which is why the contacts
-    // view had grown a second search input of its own — below the list.
-    if (inboxSearch) {
-      inboxSearch.hidden = section === "teams";
-      const placeholder = t(section === "people" ? "collaboration.social.searchContacts" : "collaboration.search.placeholder");
-      inboxSearch.placeholder = placeholder;
-      inboxSearch.setAttribute("aria-label", placeholder);
-      if (inboxSearch.value) { inboxSearch.value = ""; inboxFilter = ""; friends?.setFilter(""); }
-    }
-    for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
-    // The rail is icon-only, so the header names where you are. This used to
-    // be a second heading inside the list, competing with the panel's own.
-    const panelTitle = byId("collaborationPanelTitle");
-    if (panelTitle) panelTitle.textContent = t(`collaboration.${section}`);
-    const title = byId("collaborationListTitle");
-    if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = false; }
-    // Changing destination leaves any detail behind: it belonged to the list
-    // you just left.
-    closeDetail();
-    groupDrawer.close();
-    // Render the destination now if it fell behind while it was hidden.
-    flushSocial(section);
-    panelShell?.setConversationOpen(false);
-  }
+  // Which destination the panel is showing is a surface concern, not a list one.
+  const showSection = createSectionSwitch({
+    t, byId, sectionNodes, sectionButtons, inboxSearch,
+    onSwitch: (section) => {
+      navigationGeneration += 1;
+      invalidateOpen();
+      activeSection = section;
+      if (inboxSearch?.value === "") { inboxFilter = ""; friends?.setFilter(""); }
+      closeDetail();
+      groupDrawer.close();
+      flushSocial(section);
+      panelShell?.setConversationOpen(false);
+    },
+  });
   const detailSurface = { open: openDetail, close: closeDetail };
   const groupDrawer = createDrawerSurface({ view: byId("collaborationGroupDrawer"), title: byId("collaborationGroupDrawerTitle"), body: byId("collaborationGroupDrawerBody"), close: byId("collaborationGroupDrawerClose"), onClose: () => { navigationGeneration += 1; } });
   const friends = initCollaborationFriends(sectionNodes.people, { onChanged: () => load({ checkAccess: true }), onOpen: (id) => openConversation(id), getNavigationGeneration: () => navigationGeneration, detail: detailSurface });

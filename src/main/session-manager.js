@@ -258,7 +258,9 @@ class SessionManager {
     this._enrichmentWorker = startEnrichmentWorker({
       store: this._store(),
       sessions: this.iterateSessions(),
-      workspacePathFor: (session) => this.pm?.find?.(session.projectId)?.path || "",
+      // Remote-task sessions have no project of their own; the shared resolver
+      // is the one place that knows where such a session's files actually live.
+      workspacePathFor: (session) => require("./session-workspace").resolveSessionWorkspace(this.pm, session)?.path || "",
       versions: { artifact: ARTIFACT_SCHEMA_VERSION, resultBlock: RESULT_BLOCK_SCHEMA_VERSION },
       // The same channel the legacy import uses. A customer once watched a
       // frozen window with no idea the app was re-deriving 1450 records; the

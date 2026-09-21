@@ -16,7 +16,7 @@ fs.mkdirSync(source);
 fs.writeFileSync(path.join(source, 'budget.txt'), 'original budget\n');
 const command = { operation: 'prepare', conversationId: 'chat', projectId: 'project_1' };
 const stores = [];
-function fixture({ resolve, choose, afterFreeze } = {}) {
+function fixture({ resolve, choose, afterFreeze, sourceSession } = {}) {
   const dir = fs.mkdtempSync(path.join(temporary, 'account-'));
   const keyring = new LocalCollaborationKeyring({ filePath: path.join(dir, 'keys'), safeStorage: {
     isEncryptionAvailable: () => true, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString(),
@@ -28,6 +28,8 @@ function fixture({ resolve, choose, afterFreeze } = {}) {
   const assertActive = () => { if (stopped) throw Object.assign(new Error('stopped'), { code: 'COLLAB_ACCOUNT_CHANGED' }); };
   const workflow = createTaskWorkflow({ store, assertActive, deviceId: 'device', rootPath: path.join(dir, 'managed'),
     resolveProjectDirectory: async id => { resolved++; assert.equal(id, command.projectId); return resolve ? resolve(store) : source; },
+    resolveSourceSession: sourceSession,
+    resolveCardSession: id=>id==='origin'?{sessionId:id,projectId:'project_1'}:null,
     chooseDirectory: async () => { chosen++; return choose ? choose(store) : { filePaths: [source] }; },
     bundle: { unpackTaskBundle, async freezeTaskBundle(input) {
       frozen++; const result = await freezeTaskBundle(input); await afterFreeze?.(store); return result;
@@ -39,6 +41,41 @@ function fixture({ resolve, choose, afterFreeze } = {}) {
     counts: () => ({ chosen, resolved, frozen }) };
 }
 try {
+  const sessionCommand={...command,sessionId:'origin'};
+  assert.deepEqual(taskWorkflowCommand(sessionCommand),sessionCommand);
+  assert.equal(taskWorkflowCommand({operation:'prepare',conversationId:'chat',sessionId:'origin'}),null);
+  let sessionResolved=0;
+  const linked=fixture({sourceSession:input=>{sessionResolved++;assert.equal(input.projectId,'project_1');assert.equal(input.sessionId,'origin');return {projectId:'project_1',sessionId:'origin',rootPath:source};},afterFreeze:()=>{
+    const draft=linked.records.list('chat').find(row=>row.kind==='draft');
+    assert.equal(draft.state,'preparing');assert.equal(draft.sourceSessionId,'origin','origin must persist before filesystem preparation finishes');
+  }});
+  const linkedResult=await linked.workflow.run(sessionCommand);
+  assert.equal(linkedResult.ok,true,JSON.stringify(linkedResult));assert.equal(sessionResolved,1);
+  assert.equal(linked.records.get(linkedResult.draft.id).sourceSessionId,'origin');
+  const projected=await linked.workflow.run({operation:'sessionCards',sessionId:'origin'});
+  assert.equal(projected.ok,true);assert.equal(projected.cards[0].id,linkedResult.draft.id);
+  assert.deepEqual(projected.conversationIds,['chat']);
+  assert.equal((await linked.workflow.run({operation:'sessionCards',sessionId:'missing'})).ok,false);
+  assert.equal(taskWorkflowCommand({operation:'sessionCards',sessionId:'origin',conversationId:'chat'}),null);
+  assert.equal(taskWorkflowCommand({operation:'cards',conversationId:'chat',before:{id:'card',createdAt:1}}).before.id,'card');
+  for(const before of [{id:'../card',createdAt:1},{id:'card',createdAt:-1},{id:'card',createdAt:1,path:'/tmp'},null])
+    assert.equal(taskWorkflowCommand({operation:'cards',conversationId:'chat',before}),null,'cursor cannot introduce paths or extra authority');
+  assert.doesNotMatch(JSON.stringify(taskWorkflowResult(projected)),/sourceRoot|sourceProjectId|sourceSessionId|snapshotRoot/);
+  const invalidSession=fixture({sourceSession:()=>null});
+  assert.equal((await invalidSession.workflow.run(sessionCommand)).ok,false);assert.equal(invalidSession.counts().frozen,0);
+  let failOnce=true,originExists=true;
+  const retryOrigin=fixture({sourceSession:input=>{
+    assert.equal(input.sessionId,'origin','retry must retain the original session');
+    return originExists?{projectId:'project_1',sessionId:'origin',rootPath:source}:null;
+  },afterFreeze:()=>{if(failOnce){failOnce=false;throw Error('interrupted preparation');}}});
+  assert.equal((await retryOrigin.workflow.run(sessionCommand)).ok,false);
+  const retryDraft=retryOrigin.records.list('chat').find(row=>row.kind==='draft');
+  assert.equal(retryDraft.sourceSessionId,'origin');
+  originExists=false;
+  assert.equal((await retryOrigin.workflow.run({operation:'prepare',conversationId:'chat',draftId:retryDraft.id})).ok,false);
+  assert.equal(retryOrigin.counts().frozen,1,'missing original session cannot trigger another freeze');
+  originExists=true;
+  assert.equal((await retryOrigin.workflow.run({operation:'prepare',conversationId:'chat',draftId:retryDraft.id})).ok,true);
   assert.deepEqual(taskWorkflowCommand(command), command, 'prepare accepts a registered project identity');
   for (const projectId of ['', null, undefined, '../private', source, 'a/b', 'a\\b', 'a'.repeat(201), {}, 1]) {
     assert.equal(taskWorkflowCommand({ ...command, projectId }), null, 'explicit project IDs must be identifiers');
@@ -84,7 +121,8 @@ try {
     }
     const blocked = fixture({ afterFreeze: async store => invalidate(store) });
     assert.equal((await blocked.workflow.run(command)).ok, false, 'authority is rechecked before committing frozen draft');
-    assert.equal(blocked.store.db.get('SELECT COUNT(*) AS n FROM task_workspace_records').n, 0);
+    assert.equal(blocked.store.db.get('SELECT COUNT(*) AS n FROM task_workspace_records').n, 1,
+      'preparation intent remains encrypted; a revoked late callback cannot publish prepared material');
   }
   let release, entered;
   const waiting = new Promise(resolve => { entered = resolve; });

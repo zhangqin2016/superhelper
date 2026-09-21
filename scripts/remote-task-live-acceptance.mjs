@@ -121,7 +121,7 @@ async function main() {
     const tasks = createTaskCommands({ store, client, deviceId, assertActive });
     const source = path.join(root, 'source'); fs.mkdirSync(source);
     let opened;
-    const workflow = createTaskWorkflow({ store, client, deviceId, tasks, transfers, assertActive, rootPath: path.join(root, 'managed'), chooseDirectory: async () => ({ canceled: false, filePaths: [source] }), openWorkspace: async input => { opened = input; return { projectId: `live-${index}`, sessionId: `live-${index}` }; } });
+    const workflow = createTaskWorkflow({ store, writerLockPath:path.join(root,'writer.sqlite'), client, deviceId, tasks, transfers, assertActive, rootPath: path.join(root, 'managed'), chooseDirectory: async () => ({ canceled: false, filePaths: [source] }), openWorkspace: async input => { opened = input; return { projectId: `live-${index}`, sessionId: `live-${index}` }; } });
     const item = { client, store, transfers, tasks, deviceId, source, userId: auth.user.id, run: command => workflow.run(command), records: createTaskRecords({ store, assertActive }), opened: () => opened, dropCreate: () => { dropCreate = true; }, createCalls: () => createCalls };
     clients.push(item); return item;
   }

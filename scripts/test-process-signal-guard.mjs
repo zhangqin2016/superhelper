@@ -72,10 +72,18 @@ check("every stop path that signals a recorded pid goes through the guard — no
       const rel = path.relative(ROOT, file).split(path.sep).join("/");
       if (allowed.has(rel)) continue;
       const src = fs.readFileSync(file, "utf8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-      // A raw signal to a number is the defect; kill(pid, 0) is a liveness probe and a
-      // held ChildProcess (child.kill / killProcessTree(child)) is not a recorded pid.
+      // A raw signal to a number is the defect; kill(pid, 0) is a liveness probe.
       for (const m of src.matchAll(/\b(stopPid|stopPidTree|killPidTreeBestEffort)\(/g)) offenders.push(`${rel}: ${m[1]}(`);
-      for (const m of src.matchAll(/process\.kill\(\s*([^,)]+)\s*,\s*("SIG[A-Z]+"|signal)\s*\)/g)) offenders.push(`${rel}: process.kill(${m[1]}, ${m[2]})`);
+      // Two shapes are not a recorded pid and stay allowed: this process's own
+      // group (a spawned wrapper reaping itself), and a ChildProcess still held
+      // in scope — proven by the file spawning it, not by what it is named.
+      const spawned = new Set([...src.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?spawn[A-Za-z]*\(/g)].map((m) => m[1]));
+      for (const m of src.matchAll(/process\.kill\(\s*(-?)([^,)]+?)\s*,\s*("SIG[A-Z]+"|signal)\s*\)/g)) {
+        const target = m[2].trim();
+        if (target === "process.pid") continue;
+        if (spawned.has(target.replace(/\.pid$/, ""))) continue;
+        offenders.push(`${rel}: process.kill(${m[1]}${target}, ${m[3]})`);
+      }
     }
   };
   walk(path.join(ROOT, "src/main"));
@@ -85,7 +93,7 @@ check("every stop path that signals a recorded pid goes through the guard — no
     assert.match(src, /stopRecordedProcess\(\{ pid(?:: [^,]+)?, identity: /, `${file} passes the record's identity`);
   }
   const core = fs.readFileSync(path.join(ROOT, "src/main/mcp/process-jobs-core.js"), "utf8");
-  assert.match(core, /identity: child\.pid \? captureProcessIdentity\(child\.pid/, "a new job records who its pid is at spawn time");
+  assert.match(core, /captureProcessIdentity\(child\.pid, *\{ *processGroupId/, "a new job records who its pid is at spawn time");
 });
 
 check("a stopped job whose pid now belongs to someone else is marked exited, and the stranger is untouched", async () => {
@@ -95,7 +103,7 @@ check("a stopped job whose pid now belongs to someone else is marked exited, and
     const core = require("../src/main/mcp/process-jobs-core.js");
     const options = { registryDir: dir };
     options.registryPath = core.registryPath(options);
-    const registry = { schemaVersion: 1, jobs: { j1: { jobId: "j1", generationId: "g", pid: process.pid, status: "running", command: "sleep", args: [], startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), identity: { pid: process.pid, fingerprint: "stale" } } } };
+    const registry = { schemaVersion: 1, jobs: { j1: { jobId: "j1", generationId: "g", pid: process.pid, status: "running", command: "sleep", args: [], startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), processIdentity: { pid: process.pid, fingerprint: "stale" } } } };
     fs.writeFileSync(options.registryPath, JSON.stringify(registry));
     const result = await core.stopJob({ jobId: "j1" }, options);
     assert.equal(result.ok, true);

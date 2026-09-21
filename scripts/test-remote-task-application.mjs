@@ -1,3 +1,4 @@
+import {createHash as lockedHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,9 +11,10 @@ const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'lily-applica
 const rootPath = path.join(dir, 'root'), deliveryRoot = path.join(dir, 'delivery'), journalRoot = path.join(dir, 'journal');
 for (const p of [rootPath, deliveryRoot, journalRoot]) fs.mkdirSync(p);
 const manifest = (name, bytes) => ({ path:name, sizeBytes:Buffer.byteLength(bytes), sha256:crypto.createHash('sha256').update(bytes).digest('hex') });
+const writer = require('../src/main/collaboration/local-writer').createLocalWriter({filePath:path.join(dir,'writer.sqlite')});
 const records = new Map();
 const journal = { get:id=>structuredClone(records.get(id)), put:(id,value)=>records.set(id,structuredClone(value)) };
-const broker = createTaskApplication({ journal, journalRoot, assertAuthorized: async()=>true });
+const broker = createTaskApplication({writer, journal, journalRoot, assertAuthorized: async()=>true });
 const baseManifest = [manifest('edit.txt','old'),manifest('delete.txt','gone')];
 const deliveryManifest = [manifest('edit.txt','new'),manifest('nested/add.txt','added')];
 fs.writeFileSync(path.join(rootPath,'edit.txt'),'old'); fs.writeFileSync(path.join(rootPath,'delete.txt'),'gone'); fs.writeFileSync(path.join(rootPath,'unrelated.txt'),'keep');
@@ -48,7 +50,7 @@ try {
   assert.equal(fs.readFileSync(path.join(rootPath,'delete.txt'),'utf8'),'gone');
   // Fail after the filesystem write but before its completion journal checkpoint.
   const brokenJournal = {get:journal.get,put(id,value){ if(value.operations?.some(o=>o.state==='done')) throw new Error('injected journal failure'); journal.put(id,value); }};
-  const broken = createTaskApplication({journal:brokenJournal,journalRoot,assertAuthorized:async()=>true});
+  const broken = createTaskApplication({writer,journal:brokenJournal,journalRoot,assertAuthorized:async()=>true});
   const second = {...input,applicationId:'app-2'};
   const next = await broken.preview(second);
   await assert.rejects(broken.apply({...second,expectedPlanHash:next.planHash,confirmDeletions:true}),/injected/);
@@ -63,14 +65,14 @@ try {
   } finally { fs.renameSync = rename; }
   assert.equal((await broker.recover({applicationId:'app-3',mode:'rollback'})).state,'rolled_back');
   assert.equal(fs.readdirSync(rootPath).some(name=>name.startsWith('.lily-apply-')),false);
-  const denied = createTaskApplication({journal,journalRoot,assertAuthorized:async()=>false});
+  const denied = createTaskApplication({writer,journal,journalRoot,assertAuthorized:async()=>false});
   await assert.rejects(denied.preview(input),/FORBIDDEN/);
   const outside = {...input,applicationId:'app-4',editablePaths:[]};
   const outsidePreview = await broker.preview(outside);
   await assert.rejects(broker.apply({...outside,expectedPlanHash:outsidePreview.planHash,confirmDeletions:true}),/CONFLICT/);
   // Another program edits a target at the write checkpoint: no stale overwrite.
   const racingJournal = {get:journal.get,put(id,value){ journal.put(id,value); if(value.operations?.some(o=>o.state==='writing')) fs.writeFileSync(path.join(rootPath,'edit.txt'),'raced'); }};
-  const racing = createTaskApplication({journal:racingJournal,journalRoot,assertAuthorized:async()=>true});
+  const racing = createTaskApplication({writer,journal:racingJournal,journalRoot,assertAuthorized:async()=>true});
   const fourth = {...input,applicationId:'app-5'};
   const fourthPreview = await racing.preview(fourth);
   await assert.rejects(racing.apply({...fourth,expectedPlanHash:fourthPreview.planHash,confirmDeletions:true}),/INPUT_CHANGED/);
@@ -88,5 +90,22 @@ try {
   fs.writeFileSync(path.join(saved.backupDirectory,editOperation.backupName),'corrupt backup');
   await assert.rejects(broker.recover({applicationId:'app-6',mode:'rollback'}),/BACKUP_MISMATCH/);
   assert.equal(fs.readFileSync(path.join(rootPath,'edit.txt'),'utf8'),'new');
-  console.log('remote task application: preview, conflicts, integrity, symlinks, deletion, idempotency and crash rollback passed');
+  // An externally locked destination is a retryable LOCKED condition, and the journal still recovers.
+{
+  const lockRoot=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'lily-locked-')),lockDelivery=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'lily-locked-delivery-')),lockJournal=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'lily-locked-journal-'));
+  try{
+    fs.mkdirSync(path.join(lockRoot,'docs'));fs.writeFileSync(path.join(lockRoot,'docs','report.txt'),'old');fs.mkdirSync(path.join(lockDelivery,'docs'));fs.writeFileSync(path.join(lockDelivery,'docs','report.txt'),'new');
+    const digestOf=text=>lockedHash('sha256').update(text).digest('hex');
+    const lockInput={applicationId:'locked',rootPath:lockRoot,deliveryRoot:lockDelivery,baseManifest:[{path:'docs/report.txt',sha256:digestOf('old'),sizeBytes:3}],deliveryManifest:[{path:'docs/report.txt',sha256:digestOf('new'),sizeBytes:3}],editablePaths:['docs/report.txt']};
+    const rows=new Map();
+    const lockBroker=createTaskApplication({journalRoot:lockJournal,writer:{run:fn=>fn()},assertAuthorized:async()=>true,journal:{get:id=>rows.get(id),put:(id,v)=>rows.set(id,structuredClone(v))}});
+    const preview=await lockBroker.preview(lockInput);
+    fs.chmodSync(path.join(lockRoot,'docs'),0o500);
+    try{await assert.rejects(lockBroker.apply({...lockInput,expectedPlanHash:preview.planHash}),error=>error.code==='COLLAB_TASK_APPLICATION_LOCKED');}
+    finally{fs.chmodSync(path.join(lockRoot,'docs'),0o700);}
+    assert.equal(fs.readFileSync(path.join(lockRoot,'docs','report.txt'),'utf8'),'old','a locked destination leaves the original bytes');
+    assert.equal((await lockBroker.recover({applicationId:'locked',mode:'rollback'})).state,'rolled_back');
+  }finally{for(const dir of [lockRoot,lockDelivery,lockJournal])fs.rmSync(dir,{recursive:true,force:true});}
+}
+console.log('remote task application: preview, conflicts, integrity, symlinks, deletion, idempotency and crash rollback passed');
 } finally { fs.rmSync(dir,{recursive:true,force:true}); }

@@ -29,15 +29,22 @@ try {
   skillManager.resolveSessionSkillIds = () => ["lily-media-generation"];
   skillManager.getDisallowedTools = () => [];
 
-  for (const scenario of ["approved-upgrade", "polluted", "foreign-owner", "stale", "unknown-version", "legacy-unbound"]) {
+  for (const scenario of ["approved-upgrade", "polluted", "foreign-owner", "stale", "unknown-version", "legacy-unbound", "task-isolated"]) {
     const session = {
       id: `image-session-${scenario}`,
       projectId: "project-a",
       agentResumeId: `ses_${scenario}`,
     };
     const originalResumeId = session.agentResumeId;
-    const shouldResume = scenario === "approved-upgrade" || scenario === "legacy-unbound";
+    const shouldResume = ["approved-upgrade","legacy-unbound","task-isolated"].includes(scenario);
     const project = { id: "project-a", path: process.cwd() };
+    let executionProject=project;
+    if (scenario === "task-isolated") {
+      const root=fs.realpathSync(fs.mkdtempSync(path.join(testRoot,'task-')));
+      session.remoteTaskBinding='task';
+      session.remoteTaskExecution=require('../src/main/session-workspace').captureExecutionWorkspace(root);
+      executionProject={...project,path:root};
+    }
     let clears = 0;
     let requestedResumeId;
     const ctx = {
@@ -79,7 +86,7 @@ try {
         },
         ensure(id, cwd, extra) {
           assert.equal(id, session.id);
-          assert.equal(cwd, project.path);
+          assert.equal(cwd, executionProject.path,'runner cwd must match the session-owned task directory');
           requestedResumeId = extra.resumeSessionId;
           return { isAlive: () => true, bindOrchestrator() {} };
         },
@@ -87,7 +94,7 @@ try {
       turnOrchestrator: { bindRunner() {} },
     };
 
-    const expected = buildResumeBinding({ session, project, activeSkillIds: ["lily-media-generation"], sessionManager: ctx.sessionManager });
+    const expected = buildResumeBinding({ session, project:executionProject, activeSkillIds: ["lily-media-generation"], sessionManager: ctx.sessionManager });
     assert.equal(expected.opencodeVersion, "1.18.30", "this integration guard targets the pinned upgrade runtime");
     const historicalBinding = Object.freeze({
       ...expected,
@@ -117,6 +124,10 @@ try {
       assert.equal(session.agentResumeBinding, scenario === "legacy-unbound" ? undefined : historicalBinding,
         "accepted upgrades must retain the original historical metadata object");
       assert.deepEqual(fs.readFileSync(artifactPath), artifactBytes, "accepted resume artifacts must remain unchanged");
+    }
+    if (scenario === "task-isolated") {
+      fs.renameSync(executionProject.path,executionProject.path+'-moved');
+      assert.equal(ensureSessionRunner(ctx,session.id,{spawn:true}).error,'NO_PROJECT','missing task root must not resume an engine in private project cwd');
     }
   }
 } finally {

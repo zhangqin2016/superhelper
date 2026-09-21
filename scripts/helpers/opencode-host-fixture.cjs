@@ -15,10 +15,11 @@ const root = path.resolve(__dirname, "../..");
 const sourceRoot = path.join(root, "src/main");
 const real = new Set([
   "ipc-utils", "turn-orchestrator", "session-runner-pool", "opencode-agent-session",
-  "runner-idle-lifecycle", "runner-live-config", "stage-profile", "engine-npm-registry",
+  "runner-idle-lifecycle", "runner-live-config", "stage-profile", "engine-npm-registry", "session-workspace",
   "spawn-env", "agent-env", "opencode-config-freshness", "model-route-audit",
   "context-budget-manager", "opencode-subagent-runtime", "usage-reporter",
   "runtime/opencode-shared-server", "runtime/opencode-server-manager",
+  "runtime/engine-idle-drain", "runtime/engine-serve-identity",
   "runtime/opencode-sdk-session", "runtime/opencode-config-builder",
   "runtime/opencode-model-config", "runtime/opencode-runtime-reducer",
   "runtime/opencode-event-ownership", "runtime/opencode-session-work",
@@ -57,6 +58,13 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     "runtime-node": { ensureRuntimeNodeShim: () => { stats.envBuilds++; }, runtimeBinDir: () => home },
     "runtime-python": { getRuntimePathEntries: () => [], getRuntimeEnvExtras: () => ({}) },
     "spawn-env-allowlist": { pickInheritedEnv: () => ({}) },
+    // Engine ownership is about the serve process, not the collaboration
+    // foreground-group coordination that wraps it (test-idle-foreground-drain
+    // owns that): spawn plainly and never request an idle drain.
+    "collaboration/foreground-writer": {
+      spawnForeground: (command, args, options) => require("node:child_process").spawn(command, args, options),
+      createForegroundWriter: () => ({ idleRequested: () => false, registerCurrentGroup() {}, run: (operation) => operation() }),
+    },
     "executable-paths": {
       discoverHostExecutablePaths: () => [],
       platformPathCandidates: () => [],
@@ -85,7 +93,10 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     "license-manager": { getLicenseStatus: () => ({}) },
     "usage-local-store": { mergeSessionRecord: noop },
     "service-client": { reportUsage: async record => { reports.push({ ...record }); return { ok: true }; } },
-    "process-tree-kill": { killProcessTree(child) {
+    "process-tree-kill": {
+      // A detached group the host owns; the fixture confirms the stop without signalling a real group.
+      async terminateProcessGroup(child) { try { child?.kill?.("SIGKILL"); } catch { /* already gone */ } return { ok: true, scope: "fixture" }; },
+      killProcessTree(child) {
       if (!child) return;
       kills.push(child.pid);
       for (const wait of summaryWaits) if (wait.pid === child.pid) wait.reject(new Error("fixture: serve killed during summarize"));

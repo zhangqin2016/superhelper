@@ -218,6 +218,50 @@ const COLLABORATION_MIGRATIONS = [
   (db) => db.exec(`CREATE TABLE task_local_recovery (
     account_id TEXT NOT NULL, id TEXT NOT NULL, payload_envelope_json TEXT NOT NULL,
     updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,id));`),
+  // v23 — task hints survive sync ACKs independently of UI lifecycle.
+  (db) => db.exec(`CREATE TABLE task_hydration (
+    account_id TEXT NOT NULL, task_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    generation TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+    access_denied INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
+    code TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(account_id,task_id));
+    CREATE INDEX task_hydration_due ON task_hydration(account_id,state,next_attempt_at);
+    INSERT INTO task_hydration(account_id,task_id,revision,generation,updated_at)
+      SELECT account_id,json_extract(payload_json,'$.taskId'),MAX(json_extract(payload_json,'$.revision')),lower(hex(randomblob(16))),MAX(created_at)
+      FROM events WHERE type='task.updated' AND json_valid(payload_json)
+        AND json_type(payload_json,'$.taskId')='text'
+        AND length(json_extract(payload_json,'$.taskId')) BETWEEN 1 AND 200
+        AND json_extract(payload_json,'$.taskId') NOT GLOB '*[^A-Za-z0-9_-]*'
+        AND json_type(payload_json,'$.revision')='integer' AND json_extract(payload_json,'$.revision')>0
+      GROUP BY account_id,json_extract(payload_json,'$.taskId');`),
+  // v24 — resumable discovery of tasks older than retained sync events.
+  (db) => db.exec(`CREATE TABLE task_history_scans (
+    account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, scope_id TEXT NOT NULL,
+    generation TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', access_denied INTEGER NOT NULL DEFAULT 0,
+    cursor_created_at INTEGER, cursor_task_id TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0, code TEXT, updated_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,conversation_id));
+    CREATE INDEX task_history_due ON task_history_scans(account_id,next_attempt_at,updated_at);
+    CREATE TABLE task_history_seen (
+      account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, generation TEXT NOT NULL, task_id TEXT NOT NULL,
+      PRIMARY KEY(account_id,conversation_id,generation,task_id),
+      FOREIGN KEY(account_id,conversation_id) REFERENCES task_history_scans(account_id,conversation_id) ON DELETE CASCADE);`),
+  // v25 — retain monotonic writer generations even after intent retirement.
+  (db) => db.exec(`CREATE TABLE task_integration_leases (
+    account_id TEXT NOT NULL, target_key TEXT NOT NULL, generation INTEGER NOT NULL,
+    intent_id TEXT, worker_id TEXT, expires_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id,target_key));`),
+  // v26 — bounded, indexed recovery scheduling; encrypted intent is authority.
+  (db) => db.exec(`CREATE TABLE task_integration_work (
+    account_id TEXT NOT NULL,intent_id TEXT NOT NULL,conversation_id TEXT NOT NULL,scope_id TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',generation INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,code TEXT,
+    PRIMARY KEY(account_id,intent_id));
+    CREATE INDEX task_integration_work_due ON task_integration_work(account_id,state,next_attempt_at);
+    INSERT INTO task_integration_work(account_id,intent_id,conversation_id,scope_id)
+      SELECT account_id,id,conversation_id,scope_id FROM task_workspace_records WHERE id LIKE 'integration:%';`),
+  // v27 — keyset pages for completed local-publication recovery.
+  (db) => db.exec(`CREATE INDEX task_integration_work_completed ON task_integration_work(account_id,state,intent_id);`),
 ];
 
 module.exports = { COLLABORATION_MIGRATIONS };

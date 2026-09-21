@@ -9,9 +9,11 @@ const { createOnlineStatus } = require("./online-status");
 const { createReactionCommand } = require("./reaction-command");
 const { readHistoryPage } = require("./history-page");
 const { cachedHistory } = require("./cached-history");
-const { hydratePendingConversation } = require("./history-hydration");
+const { createAuthorizedHistoryReader, hydratePendingConversation } = require("./history-hydration");
 const { isConversationRevoked, recoverAccessDenial } = require("./access-revocation");
-const { recoverConversationHydration, assertHydrationComplete } = require("./conversation-hydration");
+const { recoverConversationHydration, assertHydrationComplete, queueAuthorizedRefresh } = require("./conversation-hydration");
+const { createTaskHydration } = require("./task-hydration");
+const { createTaskHistory } = require("./task-history");
 const { directoryView } = require("./directory-view");
 const { createSocialCommands } = require("./social-commands");
 const { createTaskCommands } = require("./task-commands");
@@ -97,7 +99,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (page.events?.some(event => /^(directory\.|scope\.|member\.|friend\.|conversation\.(dissolved|updated))/.test(event.type))) onlineStatus.clear();
         try { return engine.applyPage(page); } finally {
           if (page.events?.some((event) => ["scope.revoked", "member.removed", "member.left", "conversation.dissolved"].includes(event.type)) && store.getSyncState().cursor >= page.toCursor) emitState("access-revoked");
-          if (page.events?.some((event) => event.type === "task.updated") && store.getSyncState().cursor >= page.toCursor) emitState("task");
+          if (page.events?.some((event) => event.type === "task.updated") && store.getSyncState().cursor >= page.toCursor) {
+            emitState("task");
+            void recoverTasks().catch(()=>undefined);
+          }
         }
       },
       applyBootstrap(snapshot) {
@@ -105,7 +110,7 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         candidateCache.clear();
         onlineStatus.clear();
         const previous = store.listConversationIds?.() || [];
-        try { return engine.applyBootstrap(snapshot); } finally {
+        try { const result=engine.applyBootstrap(snapshot);void recoverTasks().catch(()=>undefined);return result; } finally {
           if (previous.some((conversationId) => !store.getConversation({ conversationId }))) emitState("access-revoked");
         }
       },
@@ -118,48 +123,18 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
     const reads = createReadRecovery({ store, client, deviceId, assertActive, recoverDeniedHistory, onChange: () => emitState("read") });
     const recoverReadsSafely = () => reads.recover().catch(() => undefined);
     let httpPollTimer = null;
-    const hydrateAuthorizedHistory = async (conversationIds) => {
-      assertActive();
-      if (!client || !deviceId || typeof client.listMessageHistory !== "function" || typeof store.hydrateAuthorizedHistory !== "function") return;
-      for (const conversationId of [...new Set((conversationIds || []).map(String).filter(Boolean))]) {
-        if (isConversationRevoked(store, conversationId)) continue;
-        try {
-        if (typeof store.listHistoryTargets === "function") {
-          await hydratePendingConversation({ store, client, deviceId, conversationId, assertActive });
-          continue;
-        }
-        const history = await client.listMessageHistory({ deviceId, conversationId });
-        assertActive();
-        const messages = Array.isArray(history) ? history : history?.messages ?? history?.items;
-        if (!Array.isArray(messages)) throw Object.assign(new Error("Invalid collaboration history"), { code: "COLLAB_HISTORY_INVALID" });
-        store.hydrateAuthorizedHistory({ conversationId, messages });
-        } catch (error) {
-          assertActive();
-          if (!recoverDeniedHistory(conversationId, error)) throw error;
-        }
-      }
-    };
+    // Reading a conversation's authorized history, and catching up the pending
+    // ones, is one subject and lives with the rest of history hydration.
+    const { hydrateAuthorizedHistory, recoverPendingHistory } = createAuthorizedHistoryReader({
+      store, client, deviceId, assertActive, isConversationRevoked,
+      recoverDeniedHistory, recoverConversationHydration, hydratePendingConversation,
+      bootstrapNow: () => bootstrapNow(),
+    });
     const outbox = transport ? createCollaborationOutbox({ store, transport, deviceId, onStateChange: () => emitState("outbox") }) : null;
     if (transfers.ok && outbox) attachmentSend = createAttachmentSendCoordinator({ store, transfers, outbox, deviceId: deviceId || null, assertActive, onChange: () => emitState("attachment-send") });
     const messageConversationIdsFor = (events) => (events || [])
       .filter((event) => String(event?.type || "").startsWith("message."))
       .map((event) => event?.conversationId ?? event?.conversation_id);
-    const recoverPendingHistory = async () => {
-      assertActive();
-      store.flushRevokedKeys?.();
-      // The account event itself is the durable refresh checkpoint. Bootstrap
-      // removes it atomically with the authoritative directory replacement.
-      // A failed request/restart therefore cannot ACK past a stale roster.
-      if (store.db?.get(`SELECT 1 FROM events WHERE account_id = ? AND type = 'directory.changed' LIMIT 1`, store.accountId)) {
-        return bootstrapNow();
-      }
-      await recoverConversationHydration({ store, client, deviceId, assertActive, recoverDeniedHistory });
-      const pending = typeof store.listPendingHistoryHydration === "function"
-        ? store.listPendingHistoryHydration() : [];
-      // A failed history request intentionally rejects. The lane must not
-      // issue another page or ACK beyond a durable hydration checkpoint.
-      await hydrateAuthorizedHistory(pending);
-    };
     const synchronizeNow = () => {
       assertActive();
       const current = store.getSyncState();
@@ -252,9 +227,14 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         else if (client?.syncAndAcknowledge) await synchronize();
       },
     });
-    const tasks = createTaskCommands({ store, client, deviceId, assertActive, onChange: () => emitState("task") });
-    let workflow;
-    const getWorkflow = () => workflow ||= require("./task-workflow").createTaskWorkflow({...taskOptions,store,client,tasks,transfers,deviceId,assertActive,onChange:()=>emitState("task")});
+    const taskSubsystem = require("./task-subsystem").createTaskSubsystem({
+      store, client, deviceId, assertActive, policy, taskOptions, transfers,
+      emitState, enqueueSync, isConversationRevoked, queueAuthorizedRefresh,
+      recoverConversationHydration, recoverDeniedHistory,
+      createTaskCommands, createTaskHydration, createTaskHistory,
+    });
+    const { tasks, taskHydration, taskHistory, recoverTasks, getWorkflow, integrationWorker, integrationAdmission } = taskSubsystem;
+    let taskHydrationTimer = null;
     const taskOperation = (method, payload) => stopped ? stoppedResult()
       : policy?.enabled === true && policy?.tasks === true && policy?.workspaceShares === true ? tasks[method](payload) : unavailableService();
     const realtime = client && realtimeEnabled
@@ -272,6 +252,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
       : null;
     return {
       ok: true, store, syncEngine, outbox, realtime,
+      runIntegration(request,execution) {
+        if(stopped || policy?.enabled!==true || policy?.tasks!==true || policy?.workspaceShares!==true || !integrationAdmission)return Promise.reject(Object.assign(Error("Integration unavailable"),{code:"COLLAB_INTEGRATION_UNAVAILABLE"}));
+        return integrationAdmission.execute(request,execution);
+      },
       taskWorkflow(payload) {
         if (stopped) return stoppedResult();
         if (payload?.operation === "recoveries" && !store.db?.get("SELECT id FROM task_local_recovery WHERE account_id = ? LIMIT 1",store.accountId)) return {ok:true,applications:[]};
@@ -462,6 +446,11 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         if (stopped) return stoppedResult();
         if (started) return;
         started = true;
+        if(policy?.enabled===true&&policy?.tasks===true&&policy?.workspaceShares===true&&(client?.getTask||client?.listTaskHistory)) {
+          void recoverTasks().catch(()=>undefined);
+          taskHydrationTimer=setInterval(()=>{void recoverTasks().catch(()=>undefined);},2000);
+          taskHydrationTimer.unref?.();
+        }
         if (taskOptions.rootPath && store.db?.get("SELECT id FROM task_local_recovery WHERE account_id = ? LIMIT 1",store.accountId)) {
           try { void getWorkflow().recoverPending().then(()=>emitState("task")).catch(()=>emitState("task")); }
           catch { /* task recovery remains isolated from ordinary chat startup */ }
@@ -487,6 +476,10 @@ function createCollaborationService({ openStore = openCollaborationStore, storeO
         // Store operations are synchronous. Fence all async continuations
         // before closing SQLite so a hung network request cannot retain it.
         stopped = true;
+        integrationAdmission?.stop();
+        if(taskHydrationTimer!=null)clearInterval(taskHydrationTimer);
+        taskHydrationTimer=null;
+        integrationWorker?.stop();
         candidateCache.clear();
         onlineStatus.stop();
         // Typing hints are per-session state: a stopped panel must show nobody

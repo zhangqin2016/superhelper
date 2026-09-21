@@ -1,0 +1,73 @@
+{
+  "recordedAt": "2026-09-14T18:02:05.757Z",
+  "runtime": {
+    "node": "v22.19.0",
+    "platform": "darwin-arm64",
+    "git": "git version 2.45.0",
+    "electron": null
+  },
+  "transfer": {
+    "plaintextBytes": 268435456,
+    "ciphertextBytes": 268438136,
+    "parts": 65,
+    "concurrencyPolicy": 4,
+    "maxInFlight": 4,
+    "prepareEncryptMs": 525,
+    "uploadMs": 1346,
+    "faultInjectedAtPart": 17,
+    "recoveredByResume": true,
+    "decryptMs": 406,
+    "rssAfterPrepareBytes": 141197312,
+    "rssAfterUploadBytes": 150142976
+  },
+  "faults": {
+    "materializationKilledMidway": "killed-after-50-files",
+    "partialFilesLeft": 50,
+    "objectStoreIntactAfterKill": true,
+    "freshRun": "second-run-ok",
+    "rerunMs": 293,
+    "existingDestinationRefused": true,
+    "transferLostPartRecovered": true
+  },
+  "peakRssBytes": 152141824,
+  "gitScale": {
+    "files": 15000,
+    "largeBytes": 25165824,
+    "steps": [
+      {
+        "name": "captureBaseline",
+        "ms": 10179
+      },
+      {
+        "name": "inspectTree",
+        "ms": 442
+      },
+      {
+        "name": "materializeSnapshot",
+        "ms": 3531
+      },
+      {
+        "name": "ensureWorktree(full)",
+        "ms": 2344
+      },
+      {
+        "name": "ensureWorktree(sparse)",
+        "ms": 2356
+      },
+      {
+        "name": "materializePaths(large)",
+        "ms": 206
+      }
+    ],
+    "runtime": {
+      "node": "v24.15.0",
+      "platform": "darwin-arm64",
+      "git": "git version 2.45.0"
+    },
+    "totalBytes": 28320919,
+    "treeListingBytes": 1321982,
+    "peakRssBytes": 271728640,
+    "startRssBytes": 247365632,
+    "recordedAt": "2026-09-14T13:55:30.612Z"
+  }
+}

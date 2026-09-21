@@ -1545,6 +1545,545 @@
         "scripts/test-renderer-process-recovery.mjs",
         "scripts/test-window-appearance.mjs"
       ]
+    },
+    {
+      "id": "collaboration-task-cards",
+      "protects": "`test-remote-task-cards.mjs` guards encrypted reopen, participant/revocation checks, monotonic snapshots and delayed-ACK exact-content deduplication.",
+      "baseline": "Existing timeline, visible-read, reply UI and workflow UI tests passed.",
+      "failureFallback": "Not claimed by this gate: Local-session cards, durable background hydration, history pagination and live dual-device acceptance remain pending.",
+      "tests": [
+        "scripts/test-remote-task-cards.mjs",
+        "scripts/test-remote-task-cards-ui.cjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-source-session",
+      "protects": "`test-remote-task-project-source.mjs`, `test-remote-task-session.mjs`, and actual Electron `test-workspace-collaboration-entry.cjs` cover identity-only menu propagation, encrypted pre-I/O origin persistence, same-session retries, invalid/archived/execution-session rejection and real session-index restart.",
+      "baseline": "Association cannot start an engine or alter an existing running session.",
+      "failureFallback": "Task source session identity (2026-09-14): `test-remote-task-project-source.mjs`, `test-remote-task-session.mjs`, and actual Electron `test-workspace-collaboration-entry.cjs` cover identity-only menu propagation, encrypted pre-I/O origin persistence, same-session retries, invalid/archived/execution-session rejection and real session-index restart. Not claimed by this gate: Local-session card rendering remains pending.",
+      "tests": [
+        "scripts/test-remote-task-project-source.mjs",
+        "scripts/test-remote-task-session.mjs",
+        "scripts/test-workspace-collaboration-entry.cjs"
+      ]
+    },
+    {
+      "id": "collaboration-session-task-cards",
+      "protects": "`test-remote-task-cards.mjs` and `test-remote-task-project-source.mjs` guard account/device/session-scoped encrypted projection, both-party reopen and revocation.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "`test-session-task-cards-ui.cjs` exercises the actual message panel, rebuild-preserved nodes, engine-context exclusion, cached-state labeling and logout/teardown fences. Not claimed by this gate: Full renderer import regression passed with optional IPC fixture warnings; no live-service acceptance claim. Persistent background hydration and exhaustive task history remain pending.",
+      "tests": [
+        "scripts/test-remote-task-cards.mjs",
+        "scripts/test-remote-task-project-source.mjs",
+        "scripts/test-session-task-cards-ui.cjs",
+        "scripts/test-remote-task-cards-ui.cjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-hydration",
+      "protects": "`test-remote-task-hydration.mjs` verifies real SQLite migration/backfill, event/cursor atomicity, retry deadlines, encrypted snapshots, newer-generation and stop fences, denial masking, UI-independent startup/live events and service timer retry.",
+      "baseline": "Existing store/sync/client-service/conversation-hydration and 27 lifecycle regressions pass.",
+      "failureFallback": "Durable task hydration (2026-09-14): `test-remote-task-hydration.mjs` verifies real SQLite migration/backfill, event/cursor atomicity, retry deadlines, encrypted snapshots, newer-generation and stop fences, denial masking, UI-independent startup/live events and service timer retry. Not claimed by this gate: Historical discovery after bootstrap and full task pagination remain pending; no power-loss or live-device claim.",
+      "tests": [
+        "scripts/test-remote-task-hydration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-history-api",
+      "protects": "real PostgreSQL `server/scripts/collaboration-tasks-integration.mjs` verifies 107-task traversal with timestamp ties and changing progress, candidate-page advancement under denial, and per-task/actor authorization.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Task history pagination API (2026-09-14): real PostgreSQL `server/scripts/collaboration-tasks-integration.mjs` verifies 107-task traversal with timestamp ties and changing progress, candidate-page advancement under denial, and per-task/actor authorization. Missing and unauthorized get share COLLAB_TASK_ACCESS_DENIED; corrupt data retains a retryable unavailable error. Not claimed by this gate: Persistent desktop scans and local card pagination remain pending.",
+      "tests": [
+        "scripts/test-collaboration-policy.mjs",
+        "scripts/test-remote-task-ipc.mjs",
+        "scripts/test-remote-task-policy.mjs",
+        "scripts/test-remote-task-routes.mjs",
+        "server/scripts/collaboration-tasks-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-history-discovery",
+      "protects": "`test-remote-task-history.mjs` verifies 1150 encrypted SQLite snapshots, bounded page fetches, durable cursor restart, atomic snapshot/checkpoint rollback, bootstrap and stop fences, denial reconciliation, and UI-independent service startup.",
+      "baseline": "Existing store/sync/client/lifecycle tests pass.",
+      "failureFallback": "Persistent desktop task discovery (2026-09-14): `test-remote-task-history.mjs` verifies 1150 encrypted SQLite snapshots, bounded page fetches, durable cursor restart, atomic snapshot/checkpoint rollback, bootstrap and stop fences, denial reconciliation, and UI-independent service startup. Not claimed by this gate: The current projection retains the newest 1000 cards and signals more history; older-card UI pagination and batched completion reconciliation remain pending.",
+      "tests": [
+        "scripts/test-remote-task-history.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-card-pagination",
+      "protects": "`test-task-card-pagination-ui.cjs` exercises both conversation surfaces against real IPC, workflow validation and encrypted SQLite with 1150 cards, failed-page retry, refresh/page-load concurrency, stable DOM anchors, a newly added task and logout.",
+      "baseline": "Shared-workspace dual-client workflow regression passes with its documented transport/account/editing fixtures.",
+      "failureFallback": "Task-card pagination (2026-09-14): `test-task-card-pagination-ui.cjs` exercises both conversation surfaces against real IPC, workflow validation and encrypted SQLite with 1150 cards, failed-page retry, refresh/page-load concurrency, stable DOM anchors, a newly added task and logout.",
+      "tests": [
+        "scripts/test-task-card-pagination-ui.cjs",
+        "scripts/test-remote-task-history.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-baseline",
+      "protects": "real `test-remote-task-git.mjs` verifies isolated parentless history, manifest-only capture, exact bytes, immutable CAS/restart/concurrency, inherited-Git-environment isolation, file-integrity/link/control rejection and Git fsck.",
+      "baseline": "ZIP bundle, Git runtime dependency and existing workspace version-control regressions pass.",
+      "failureFallback": "Task Git baseline primitive (2026-09-14): real `test-remote-task-git.mjs` verifies isolated parentless history, manifest-only capture, exact bytes, immutable CAS/restart/concurrency, inherited-Git-environment isolation, file-integrity/link/control rejection and Git fsck. Not claimed by this gate: Workflow invocation, Git worktree execution and object transport are not yet connected; B1 remains incomplete.",
+      "tests": [
+        "scripts/test-remote-task-git.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-workflow",
+      "protects": "real Git and two-account SQLite workflow tests verify matching sender/receiver baseline commits, isolated worktree execution, clean baseline index, exact blob materialization despite attributes, restart/missing-final-save reuse without resetting edits, and rejection of incomplete worktrees.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Task Git workflow integration (2026-09-14): real Git and two-account SQLite workflow tests verify matching sender/receiver baseline commits, isolated worktree execution, clean baseline index, exact blob materialization despite attributes, restart/missing-final-save reuse without resetting edits, and rejection of incomplete worktrees. Not claimed by this gate: B1 implementation is complete; contribution commits/object transport (B2/B3), automatic partial-materialization recovery (C/D) and full-service/physical-device acceptance remain pending.",
+      "tests": [
+        "scripts/test-remote-task-git.mjs",
+        "scripts/test-remote-task-workflow.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-contributions",
+      "protects": "real Git changeset tests and two-account SQLite workflow tests verify explicit operations, baseline ancestry, inventory-gated deletion, unrelated-file exclusion, immutable refs and frozen restart/upload reuse.",
+      "baseline": "Shared-workspace Electron dual-client regression passes with documented fixtures.",
+      "failureFallback": "Not claimed by this gate: Contributions are currently device-local with ZIP transport; B2 still needs all-empty delivery support and explicit edited-rename identity/edge-case coverage. B3 object transport and C/D remain pending.",
+      "tests": [
+        "scripts/test-remote-task-changeset.mjs",
+        "scripts/test-remote-task-workflow.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-empty-delivery",
+      "protects": "real SQLite workflow and shared-workspace Electron dual-client UI verify empty-result preparation/submission, empty Git tree with deletion records, explicit delete confirmation, application and full rollback.",
+      "baseline": "Generic workspace import and preparation/source regressions pass.",
+      "failureFallback": "All-delete task delivery (2026-09-14): real SQLite workflow and shared-workspace Electron dual-client UI verify empty-result preparation/submission, empty Git tree with deletion records, explicit delete confirmation, application and full rollback. All-filtered input is blocked; ordinary empty workspace/input import remains rejected. Not claimed by this gate: Fixture transport is unchanged; B2 edited-rename/boundary verification and B3/C/D remain pending.",
+      "tests": [
+        "scripts/test-remote-task-bundle.mjs",
+        "scripts/test-remote-task-dual-client-ui.cjs",
+        "scripts/test-remote-task-workflow.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-edited-rename",
+      "protects": "real Git/SQLite workflow verifies same-file move plus complete rewrite across restart, with before/after path/hash identities, and an accepted-but-response-lost delivery replay after subsequent working edits.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Unit/integration cases reject malformed/duplicate identity and inode reuse with different birth time; legacy/unsupported identity remains conservative delete+add. Not claimed by this gate: No live cross-platform identity or physical-client claim; B2 boundary audit and B3/C/D remain pending.",
+      "tests": [
+        "scripts/test-remote-task-changeset.mjs",
+        "scripts/test-remote-task-workflow.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-contribution-boundaries",
+      "protects": "real Git/SQLite workflow verifies file/directory replacement contributions, filtered ancestor and symlink blocking, actual EACCES, sparse-inventory rejection on legacy ZIP and a persisted validation gate that prevents uploading a draft interrupted before omission checks.",
+      "baseline": "Baseline/worktree, changeset, bundle and final shared-workspace Electron UI regressions pass.",
+      "failureFallback": "Task contribution boundary audit (2026-09-14): real Git/SQLite workflow verifies file/directory replacement contributions, filtered ancestor and symlink blocking, actual EACCES, sparse-inventory rejection on legacy ZIP and a persisted validation gate that prevents uploading a draft interrupted before omission checks. Not claimed by this gate: B2 implementation is complete within the current regular-file manifest contract; actual Git transport (B3), safe transition application/recovery (C) and Office/scale/full-service acceptance (D) remain pending.",
+      "tests": [
+        "scripts/test-remote-task-workflow.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-bundles",
+      "protects": "real independent-repository tests verify baseline/ancestor reconstruction, incremental unchanged-object reuse (2,098,202-byte baseline vs 727-byte delta in the recorded run), unrelated-task exclusion, absent prerequisites, corrupted bytes/internal packs, conflicting refs and idempotent import.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Git bundle transport primitive (2026-09-14): real independent-repository tests verify baseline/ancestor reconstruction, incremental unchanged-object reuse (2,098,202-byte baseline vs 727-byte delta in the recorded run), unrelated-task exclusion, absent prerequisites, corrupted bytes/internal packs, conflicting refs and idempotent import. Not claimed by this gate: This is local Git plumbing only; server descriptors/ACL, missing-object query, encrypted network transport and task workflow integration are not yet connected. B3/C/D remain incomplete.",
+      "tests": [
+        "scripts/test-remote-task-git-transport.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-descriptors",
+      "protects": "contract/route/service tests and real PostgreSQL integration verify encrypted descriptors, immutable command replay, fixed task-input prerequisites, task-scoped missing-pack queries, bystander/removed-peer denial, revoked-input rollback and encrypted input-route consistency.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Task Git descriptor service (2026-09-14): contract/route/service tests and real PostgreSQL integration verify encrypted descriptors, immutable command replay, fixed task-input prerequisites, task-scoped missing-pack queries, bystander/removed-peer denial, revoked-input rollback and encrypted input-route consistency. Not claimed by this gate: Desktop protocol negotiation and encrypted Git pack transport are not connected yet; B3/C/D remain pending.",
+      "tests": [
+        "scripts/test-remote-task-contract.mjs",
+        "scripts/test-remote-task-routes.mjs",
+        "server/scripts/collaboration-tasks-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-desktop",
+      "protects": "real SQLite plus actual IPC-handler tests verify private Git input/delivery views, renderer stripping/injection rejection, mode checks and immutable encrypted descriptor replay.",
+      "baseline": "Existing ZIP workflow/card/IPC regressions pass.",
+      "failureFallback": "Desktop Git metadata and rollout gate (2026-09-14): real SQLite plus actual IPC-handler tests verify private Git input/delivery views, renderer stripping/injection rejection, mode checks and immutable encrypted descriptor replay. Not claimed by this gate: Actual workflow bundle upload/download/materialization and full network/service verification are still pending; B3/C/D remain incomplete.",
+      "tests": [
+        "scripts/test-collaboration-client-service.mjs",
+        "scripts/test-collaboration-policy.mjs",
+        "scripts/test-remote-task-git-desktop.mjs",
+        "scripts/test-remote-task-policy.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-workflow-transport",
+      "protects": "opted-in workflows export/import baseline and incremental bundles, validate ancestry and trees, and bind cache reuse to encrypted task/object proofs.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Not claimed by this gate: Workflow/UI transport and accounts remain fixtures; combined real encryption/network/service acceptance remains pending.",
+      "tests": [
+        "scripts/lib/remote-task-ui-fixture.cjs",
+        "scripts/test-remote-task-dual-client-ui.cjs",
+        "scripts/test-remote-task-git-transport.mjs",
+        "scripts/test-remote-task-workflow.mjs",
+        "server/scripts/collaboration-tasks-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-encrypted-http",
+      "protects": "test-remote-task-git-encrypted-transfer.mjs passes actual encryption, loopback multipart/Range networking, independent account journals/Git repositories, accepted-part response-loss restart, ciphertext corruption recovery, incremental size savings and cached-ticket revocation.",
+      "baseline": "Existing ZIP taskFiles tests pass.",
+      "failureFallback": "Not claimed by this gate: Provider, object API and ACL are fixtures; production TLS and combined signed domain-service verification remain unproven. B3/C/D remain incomplete.",
+      "tests": [
+        "scripts/test-remote-task-git-encrypted-transfer.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-git-signed-domain",
+      "protects": "collaboration-objects-http-integration.mjs now covers real encrypted desktop task workflows, device signatures, Fastify routes and PostgreSQL task/object verification/binding with shared identity.",
+      "baseline": "Lost create/delivery ACK restarts, immutable incremental delivery, ancestor reuse, application/rollback, outsider denial and revoked cached input pass alongside existing attachment/sync/log-secrecy checks.",
+      "failureFallback": "Not claimed by this gate: Provider and native selection are fixtures; Fastify uses injection. B3 implementation is complete; C and D, including physical clients, production TLS/provider and scale acceptance, remain pending.",
+      "tests": [
+        "server/scripts/collaboration-objects-http-integration.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs",
+        "server/scripts/collaboration-transfer-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-integration-intents",
+      "protects": "test-task-integration-intents.mjs verifies encrypted immutable intents, target serialization across chains/workspace mappings, two SQLite connections and competing processes, monotonic generations, expiry/stale-worker fencing, renewal/retry/completion/cancel and scope retirement.",
+      "baseline": "Existing store/local recovery regressions pass.",
+      "failureFallback": "Integration intent and writer lease substrate (2026-09-14): test-task-integration-intents.mjs verifies encrypted immutable intents, target serialization across chains/workspace mappings, two SQLite connections and competing processes, monotonic generations, expiry/stale-worker fencing, renewal/retry/completion/cancel and scope retirement. Not claimed by this gate: C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-task-integration-intents.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-integration-discovery",
+      "protects": "test-task-integration-discovery.mjs verifies task hydration/history and actual service startup create deduplicated pending shared intents from fresh authorized Git snapshots, with persisted original-session/root checks.",
+      "baseline": "SQLite reopen, withdrawn review cancellation, privacy, existing hydration/history and lease regressions pass.",
+      "failureFallback": "Not claimed by this gate: This does not admit engine turns or modify files; C1 orchestration and C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-task-integration-discovery.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-shared-git-candidate",
+      "protects": "test-shared-git-integration.mjs passes real Git explicit-base merges, immutable two-parent candidates/materialization, contributed-attribute isolation, text/binary conflict refusal, exact-commit validation gate, CAS head advancement and publish retry without touching private W.",
+      "baseline": "Existing Git baseline/transport regressions pass.",
+      "failureFallback": "Shared Git candidate prerequisite (2026-09-14): test-shared-git-integration.mjs passes real Git explicit-base merges, immutable two-parent candidates/materialization, contributed-attribute isolation, text/binary conflict refusal, exact-commit validation gate, CAS head advancement and publish retry without touching private W. Not claimed by this gate: C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-shared-git-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-shared-publication-recovery",
+      "protects": "test-shared-publication-recovery.mjs verifies real Git atomic head/receipt publication plus encrypted SQLite candidate, exact validation and outbox journals.",
+      "baseline": "Existing Git and lease regressions pass.",
+      "failureFallback": "Pre/post-Git exceptions, later head advancement, outbox-write rollback/reopen, failed/expired validation and fresh revocation pass. Not claimed by this gate: C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-shared-git-integration.mjs",
+        "scripts/test-shared-publication-recovery.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-integration-worker",
+      "protects": "production service recovery now runs a bounded, leased worker through private fresh task authorization and verified Git acquisition. test-integration-worker.mjs verifies real Git/SQLite preparation, explicit no-validator wait, configured test-validator recovery/publication, retry deadlines, stop fencing and scope cleanup.",
+      "baseline": "ZIP/Git workflow and store/history/lease/publication regressions pass.",
+      "failureFallback": "Background integration preparation (2026-09-14): production service recovery now runs a bounded, leased worker through private fresh task authorization and verified Git acquisition. test-integration-worker.mjs verifies real Git/SQLite preparation, explicit no-validator wait, configured test-validator recovery/publication, retry deadlines, stop fencing and scope cleanup. Not claimed by this gate: Formal validators, model conflict turns, visible retry/status and remote publication delivery remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-integration-worker.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-integration-status",
+      "protects": "closed main-process projections now expose durable integration progress on existing cards and details, including original-binding/validation waits and local publication awaiting remote sync.",
+      "baseline": "Integration status and retry (2026-09-14): closed main-process projections now expose durable integration progress on existing cards and details, including original-binding/validation waits and local publication awaiting remote sync. Existing worker, cards/history/hydration/IPC, ZIP/Git workflows and actual SQLite/IPC 1150-card Electron pagination pass.",
+      "failureFallback": "Real SQLite tests verify same-intent fresh-authorized retry, stale/running/withdrawn/completed fences and metadata isolation; Electron verifies status/localization, single-flight/failure handling and late-response navigation fences. Not claimed by this gate: Renderer domain/retry calls remain fixtures; formal validation, conflict turns, remote publication and C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-remote-task-cards-ui.cjs",
+        "scripts/test-task-integration-discovery.mjs",
+        "scripts/test-task-integration-status.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-candidate-validation",
+      "protects": "actual integration workers now bind isolated candidate bytes to workspace/input Git identities and persist immutable encrypted reports for integrity, host project checks and post-check content hashes, including runtime/policy versions.",
+      "baseline": "Real Git/SQLite regressions catch a clean merge with inconsistent related values, changed candidate bytes, invalid tree and late results; publication hashes resolve to persisted evidence, which survives reopen.",
+      "failureFallback": "Not claimed by this gate: Project policies/provider/native selection in tests remain fixtures. Installed project checker selection, code/Office semantic validation, bounded sandbox execution, bound-session evidence projection and C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-candidate-validation.mjs",
+        "scripts/test-integration-worker.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-integration-turn",
+      "protects": "the existing durable background queue/local assistant branch can now await a closed main-process integration operation after TaskCore creation.",
+      "baseline": "TaskCore host integration entry (2026-09-14): the existing durable background queue/local assistant branch can now await a closed main-process integration operation after TaskCore creation.",
+      "failureFallback": "Not claimed by this gate: Native service/worker admission and its cross-store recovery are not connected yet; C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-integration-turn-recovery.mjs",
+        "scripts/test-turn-orchestrator.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-native-integration-admission",
+      "protects": "main startup now queues worker execution into the original session's TaskCore through a persisted encrypted admission journal.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Real SQLite tests verify ACK-loss/reopen, stable attempts, cancellation/manual retry, explicit inactive unknown-dispatch recovery, live-turn preservation, bootstrap wait and stale-receipt fences. Not claimed by this gate: Project validators, isolated conflict engine work, final cross-account writer coordination, remote publication and C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-integration-admission.mjs",
+        "scripts/test-integration-worker.mjs",
+        "server/scripts/collaboration-native-turn-fixture.cjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-typed-and-syntax-validation",
+      "protects": "deterministic JSON object conflicts now produce immutable SharedGit candidates while preserving other file changes; ambiguous fields, arrays, unsupported precision and mixed conflicts remain pending.",
+      "baseline": "Existing signed Fastify/PG regression passes with prior provider/native selection fixtures.",
+      "failureFallback": "Not claimed by this gate: Bounded typed JSON and native syntax checks (2026-09-14): deterministic JSON object conflicts now produce immutable SharedGit candidates while preserving other file changes; ambiguous fields, arrays, unsupported precision and mixed conflicts remain pending. General trusted project tests/type checking, isolated model resolution and C1/C2/C3/D acceptance remain incomplete.",
+      "tests": [
+        "scripts/test-candidate-javascript.mjs",
+        "scripts/test-candidate-validation.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-original-validation-inputs",
+      "protects": "production host validators can read bounded immutable B/H/D files independently of candidate deletions, with exact Git/blob/content-hash provenance in encrypted reports.",
+      "baseline": "Real Git/SQLite regressions verify removed assertions still detect a candidate regression, separately advanced-H checks, absence versus failure, unsafe identity refusal, oversized/request limits, close/fencing and swallowed-read failure visibility. Worker/publication recovery and existing signed Fastify/PG regressions pass with their prior fixture scope.",
+      "failureFallback": "Not claimed by this gate: This does not discover/run every test or retain a trusted check policy across future tasks; that policy, model integration and C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-candidate-validation.mjs",
+        "scripts/test-validation-original-inputs.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-persistent-check-policy",
+      "protects": "a native identity-only selection workflow pins original Node test bytes in encrypted immutable policy revisions, with a CAS current pointer and account/workspace/project/physical-root binding.",
+      "baseline": "Final signed Fastify/PG regression passes with prior fixture limits.",
+      "failureFallback": "Candidate-v4 receipts distinguish missing validation from named policies and bind selected check identity; workers fence policy changes and cannot substitute unrelated callback approval.",
+      "tests": [
+        "scripts/test-candidate-validation.mjs",
+        "scripts/test-integration-check-policy-workflow.mjs",
+        "scripts/test-integration-check-policy.mjs",
+        "scripts/test-integration-worker.mjs",
+        "scripts/test-remote-task-cards-ui.cjs"
+      ]
+    },
+    {
+      "id": "collaboration-pinned-node-execution",
+      "protects": "the actual worker restores selected original tests into a separate candidate copy and executes them under macOS OS restrictions plus Node permissions, with structured per-file counts, output/time/sampled scratch limits, process-group cancellation and post-run content verification.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Real Node 22/Electron Node 24 tests reject removed/weakened assertions, empty/skipped checks, restricted file/process/network access and resource overflow; actual persisted-policy replacement cancels running checks. SQLite evidence/reopen and atomic policy-install/wakeup rollback pass. Not claimed by this gate: Signed Fastify/PG now verifies automatic selection-to-second-original-session-TaskCore execution and exact local publication while private files remain unchanged; provider/native selection adapters remain fixtures. Other OS execution, independently pinned helpers/dependencies, model con",
+      "tests": [
+        "scripts/test-integration-check-policy-workflow.mjs",
+        "scripts/test-integration-check-policy.mjs",
+        "scripts/test-integration-worker.mjs",
+        "scripts/test-node-check-execution.mjs",
+        "scripts/test-node-check-policy.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-server-integration-qualification",
+      "protects": "migration 049 and signed owner-only target/claim/renew/release APIs add a workspace-wide PostgreSQL lease with database-clock expiry, monotonic generations and exact head/task/delivery/device binding.",
+      "baseline": "Signed Fastify/PG tests use actual verified encrypted Git packages and main client transport to prove committed-but-lost claim ACK recovery, renewal and release; existing TaskCore/local publication and logger-secrecy regressions pass with provider/native selection fixtures.",
+      "failureFallback": "Real PostgreSQL tests verify two-device and multi-task exclusion, expired takeover, stale/head fencing, receipt replay without lease extension, object/device revocation, object expiry, review withdrawal and rollback.",
+      "tests": [
+        "scripts/test-integration-lease-routes.mjs",
+        "scripts/test-remote-task-ipc.mjs",
+        "server/scripts/collaboration-integration-lease-fixture.mjs",
+        "server/scripts/collaboration-objects-http-integration.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs",
+        "server/scripts/collaboration-tasks-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-shared-remote-publication",
+      "protects": "migration 050 and signed APIs atomically bind an encrypted workspace pack, advance H with lease/generation/revision CAS, release qualification, and commit owner-only event/receipt fanout.",
+      "baseline": "Existing task transport, crypto, route/client/service, transfer and lifecycle regressions pass.",
+      "failureFallback": "Real PostgreSQL tests cover race/replay, complete rollback, final-clock expiry, encrypted routing, retired incremental dependencies and a bounded 64-publication chain. Not claimed by this gate: Provider/native selection remain fixtures. Native automatic server qualification, canonical-chain reconciliation and outbox acknowledgement are still absent; C1/C2/C3/D remain incomplete, as do installed two-client and scale/Office acceptance.",
+      "tests": [
+        "scripts/test-collaboration-sync.mjs",
+        "scripts/test-integration-lease-routes.mjs",
+        "scripts/test-remote-task-ipc.mjs",
+        "scripts/test-shared-git-transport.mjs",
+        "server/scripts/collaboration-objects-http-integration.mjs",
+        "server/scripts/collaboration-publication-fixture.mjs",
+        "server/scripts/collaboration-publication-http-fixture.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs",
+        "server/scripts/collaboration-tasks-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-canonical-shared-head",
+      "protects": "the main workflow can freshly authorize and import the bounded encrypted publication chain, verify Git M/H/D/B ancestry and exact trees, and atomically CAS local H with a persistent monotonic remote checkpoint.",
+      "baseline": "Existing worker/transport/publication/service regressions pass.",
+      "failureFallback": "Not claimed by this gate: C1/C2/C3/D and full-client/Office/scale acceptance remain incomplete.",
+      "tests": [
+        "scripts/test-shared-head-sync.mjs",
+        "server/scripts/collaboration-publication-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-native-remote-publication",
+      "protects": "with the explicit sharedPublicationProtocol runtime policy, the original-session worker claims/renews server qualification, acquires canonical H, validates, resumes encrypted pack upload, confirms the immutable remote publication, then completes local Git/SQLite/outbox state.",
+      "baseline": "Real Git/SQLite adapter tests add database reopen, actual incremental second publication and renewal-failure fencing; existing lifecycle/admission/status/publication regressions pass.",
+      "failureFallback": "Not claimed by this gate: C1/C2/C3/D and full-client/Office/scale acceptance remain incomplete.",
+      "tests": [
+        "scripts/test-integration-worker.mjs",
+        "scripts/test-remote-publication.mjs",
+        "scripts/test-shared-publication-recovery.mjs",
+        "server/scripts/collaboration-publication-http-fixture.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-durable-initial-baseline",
+      "protects": "migration 051 anchors the original owner input object with separately encrypted workspace provenance.",
+      "baseline": "Existing native publication/worker/transfer/route/crypto/lifecycle regressions pass with provider/native-selection fixtures.",
+      "failureFallback": "Independent Git and actual signed HTTP/PG/encrypted-transfer tests verify original H acquisition when the current task has a different B, plus cancelled-task and cached-source denial. Legacy targets restore only exact B through 64-task pages with encrypted native cursor/reopen and lost-ACK recovery; explicit retry can restart an exhausted scan. Not claimed by this gate: Old completed-journal migration and protocol advertisement remain next; C1/C2/C3/D, installed full-client/Office/scale acceptance remain incomplete.",
+      "tests": [
+        "scripts/test-remote-baseline-recovery.mjs",
+        "scripts/test-remote-task-routes.mjs",
+        "scripts/test-shared-head-sync.mjs",
+        "scripts/test-task-integration-status.mjs",
+        "server/scripts/collaboration-baseline-fixture.mjs",
+        "server/scripts/collaboration-baseline-http-fixture.mjs",
+        "server/scripts/collaboration-objects-http-integration.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs",
+        "server/scripts/collaboration-tasks-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-legacy-publication-upgrade",
+      "protects": "a bounded indexed startup pass preserves original local journals/outboxes and atomically revives completed local-only intents for native remote confirmation.",
+      "baseline": "Real Git/SQLite faults/reopen/page tests and actual signed Fastify/PG/original TaskCore upgrade with lost publication ACK pass; policy/client/store/lifecycle regressions pass.",
+      "failureFallback": "Not claimed by this gate: Expired orphan/long-offline recovery, simultaneous installed clients/global writer coordination, model repair, private A/W/M/undo, Office and streaming/scale remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-collaboration-policy.mjs",
+        "scripts/test-legacy-publication-migration.mjs",
+        "scripts/test-remote-publication.mjs",
+        "scripts/test-remote-task-policy.mjs",
+        "server/scripts/collaboration-objects-http-integration.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-expired-publication-upload",
+      "protects": "signed owner status/init replay identifies only expired unbound orphans without restoring credentials.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Generic denial, explicit expiration, revocation and object-identity changes fail closed. Not claimed by this gate: Provider/native selection remain fixtures. Physical orphan cleanup, other long-offline staging cases, simultaneous full clients/global coordination, model repair, private A/W/M/undo, Office and scale remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-collaboration-object-recovery.mjs",
+        "scripts/test-collaboration-transfers.mjs",
+        "scripts/test-remote-publication.mjs",
+        "server/scripts/collaboration-objects-http-integration.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-missing-publication-staging",
+      "protects": "native publication can finish an already verified upload without its local package directory.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "After qualified retirement, a missing package is rebuilt from the same immutable Git candidate/prerequisites with a fresh actual descriptor; retained-manifest ciphertext loss can also request fenced replacement after current owner status. Not claimed by this gate: Unknown init identities/missing manifests and device adoption remain fail-closed; cleanup, global/full-client coordination, model repair, private A/W/M/undo, Office and scale remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-collaboration-transfers.mjs",
+        "scripts/test-remote-publication.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-unknown-init-recovery",
+      "protects": "with a retained encrypted manifest, missing ciphertext no longer blocks replay of the original init command/key.",
+      "baseline": "The client recovers the same object, rechecks current owner status and either finishes existing remote data or returns an identified missing-stage result to the lease-fenced publisher.",
+      "failureFallback": "Changed bytes and stale/cancelled/revoked/device-mismatched state fail closed. Not claimed by this gate: Missing manifests/device ownership, cleanup, global/full-client coordination, model repair, private A/W/M/undo, Office and scale remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-collaboration-transfers.mjs",
+        "server/scripts/collaboration-transfer-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-task-transfer-journal",
+      "protects": "task-owned uploads persist their immutable identity and latest state in encrypted SQLite before writing the file manifest.",
+      "baseline": "Nine SQLite/filesystem fault tests and existing transfer/workflow/lifecycle regressions pass.",
+      "failureFallback": "Not claimed by this gate: Provider/native selection remain fixtures. Already-lost unjournaled identity and device adoption are not inferred; cleanup, global/full-client coordination, model repair, private A/W/M/undo, Office and scale remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-task-transfer-journal.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-object-cleanup",
+      "protects": "a bounded SQL sweep retires expired objects, erases wrapped keys and waits out issued credentials before a row-locked private-store deletion.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Retry/backoff, idempotent post-delete rollback recovery and retained orphan provenance are implemented; bound live objects and foreign owners remain protected. Not claimed by this gate: Global/full-client coordination, model repair, private A/W/M/undo, Office and scale remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-collaboration-object-cleanup.mjs",
+        "scripts/test-collaboration-object-recovery.mjs",
+        "server/scripts/collaboration-object-cleanup-http-fixture.mjs",
+        "server/scripts/collaboration-objects-http-integration.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-local-application-writer",
+      "protects": "every task apply/rollback and local startup recovery uses one nonwaiting OS-user SQLite write lock, independent of account/profile and covering nested roots.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Cross-account application writer (2026-09-14): every task apply/rollback and local startup recovery uses one nonwaiting OS-user SQLite write lock, independent of account/profile and covering nested roots. Process death releases the lock without expiry; busy admission leaves no partial journal and retains a retryable UI plan. Node 22/Electron Node 24 independent-process tests verify stalled writes, SIGKILL recovery, stale-preview rejection and separate account journals; ZIP/Git workflows, encrypted recovery and Electron retry UI pass. Not claimed by this gate: This locks cooperating application",
+      "tests": [
+        "scripts/lib/remote-task-ui-fixture.cjs",
+        "scripts/remote-task-live-acceptance.mjs",
+        "scripts/test-local-writer.mjs",
+        "scripts/test-remote-task-application.mjs",
+        "scripts/test-remote-task-recovery.mjs",
+        "scripts/test-remote-task-workflow-ui.cjs",
+        "scripts/test-remote-task-workflow.mjs",
+        "scripts/test-remote-task-writer.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-independent-local-candidate",
+      "protects": "confirmed native remote publication now prepares W′ from explicit last-synchronized A, current W and shared M in private staging.",
+      "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
+      "failureFallback": "Not claimed by this gate: Automatic local validation/application, foreground writer admission, completed-intent startup reconciliation, A receipt/undo and local card projection remain pending, as do full clients/Office/scale. C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-integration-turn-recovery.mjs",
+        "scripts/test-local-materialization.mjs",
+        "scripts/test-task-local-candidate.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-private-candidate-validation",
+      "protects": "native remote publication now runs separate W′ validation using an immutable private Git commit, existing pinned original tests and sandboxed Node execution.",
+      "baseline": "Private candidate validation (2026-09-14): native remote publication now runs separate W′ validation using an immutable private Git commit, existing pinned original tests and sandboxed Node execution. Node 22/Electron Node 24 and shared-check regressions pass, with signed HTTP/PG/TaskCore coverage.",
+      "failureFallback": "Not claimed by this gate: Foreground write coordination, automatic local application/receipt/undo, restart reconciliation, local card projection, Office, full clients and scale remain incomplete with C1/C2/C3/D.",
+      "tests": [
+        "scripts/test-integration-turn-recovery.mjs",
+        "scripts/test-local-candidate-validation.mjs",
+        "server/scripts/collaboration-task-git-http-fixture.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-version-restore-writer",
+      "protects": "Git and snapshot version restores now hold the same OS-user SQLite lock as task apply/rollback across their awaited write and failure-recovery operations.",
+      "baseline": "Busy restoration uses the existing version-busy error; version-save scheduling is unchanged. Node/Electron real restore tests, independent child-task exclusion and existing version/application regressions pass.",
+      "failureFallback": "Version restore writer coordination (2026-09-14): Git and snapshot version restores now hold the same OS-user SQLite lock as task apply/rollback across their awaited write and failure-recovery operations. Not claimed by this gate: C1/C2/C3/D remain incomplete.",
+      "tests": [
+        "scripts/test-local-writer.mjs",
+        "scripts/test-remote-task-writer.mjs",
+        "scripts/test-version-task-writer.mjs",
+        "scripts/test-workspace-version-control.mjs"
+      ]
+    },
+    {
+      "id": "collaboration-engine-exit-confirmation",
+      "protects": "shared-server shutdown retains its child handle after leader exit and returns an idempotent awaitable process-group receipt.",
+      "baseline": "Existing server/kill/reaper regressions pass.",
+      "failureFallback": "Owned engine exit confirmation (2026-09-14): shared-server shutdown retains its child handle after leader exit and returns an idempotent awaitable process-group receipt. Actual Node/Electron tests prove a surviving tool writer delays confirmation until group absence; denied probes/timeouts/Windows dispatch do not claim success. Not claimed by this gate: This excludes detached tools and separate job actors and does not yet serialize foreground admission with application. Automatic W′ writes/A receipts/undo and C1/C2/C3/D full acceptance remain pending.",
+      "tests": [
+        "scripts/test-engine-exit-confirmation.mjs",
+        "scripts/test-shared-server-exit-confirmation.mjs"
+      ]
     }
   ]
 }

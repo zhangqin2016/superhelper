@@ -232,4 +232,8 @@ module.exports = {
   normalizeModelDraft,
   resolveMessagesUrl,
   resolveModelRequest,
+  buildLilyEnv,
+  modelIdFromEnv,
+  extractText,
+  parseJsonObject,
 };

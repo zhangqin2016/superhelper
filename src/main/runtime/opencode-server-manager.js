@@ -73,6 +73,7 @@ class OpencodeServerManager extends EventEmitter {
     this._terminated = false;
     this._sdkSession = null;
     this._releaseSharedView = null;
+    this._isChatActive=opts.isChatActive;
     this.lastPromptText = "";
     this._routingStats = { delivered: 0, dropped: 0, byReason: new Map() };
     this._recentRouting = [];
@@ -96,7 +97,7 @@ class OpencodeServerManager extends EventEmitter {
       env: this.env,
       configContent: this.configContent,
     });
-    if (!this._releaseSharedView) this._releaseSharedView = shared.retainView();
+    if (!this._releaseSharedView) this._releaseSharedView = shared.retainView(this._isChatActive);
     this._shared = shared;
 
     // A crash of the shared serve is a crash for every session on it: re-emit
@@ -119,6 +120,7 @@ class OpencodeServerManager extends EventEmitter {
       this.emit("diagnostic", info);
     };
     shared.on("exit", this._onSharedExit);
+    shared.on("idle-retire",this._onSharedExit);
     shared.on("error", this._onSharedError);
     shared.on("diagnostic", this._onSharedDiagnostic);
 
@@ -456,6 +458,7 @@ class OpencodeServerManager extends EventEmitter {
     if (this._shared) {
       try {
         if (this._onSharedExit) this._shared.off("exit", this._onSharedExit);
+        if (this._onSharedExit) this._shared.off("idle-retire",this._onSharedExit);
         if (this._onSharedError) this._shared.off("error", this._onSharedError);
         if (this._onSharedDiagnostic) this._shared.off("diagnostic", this._onSharedDiagnostic);
       } catch { /* best effort */ }

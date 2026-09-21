@@ -1,11 +1,15 @@
 import { registerWorkspaceCollaborationController } from "./workspace-collaboration-entry.js";
 import { initRemoteTasks } from "./collaboration-remote-tasks.js";
+import {createTaskCardController} from "./collaboration-task-cards.js";
 
 export function initCenterRemoteTasks({ workspace, ...options }) {
   const tasks = initRemoteTasks(options);
+  const cards=createTaskCardController({api:options.api || (()=>window.assistantClient?.collaboration),getContext:options.getContext,onChange:options.onCardsChange});
   const focusTask = () => { const surface = options.root?.querySelector('.remote-tasks:not([hidden])'); (surface?.querySelector('[name="assigneeUserId"]') || surface)?.focus({ preventScroll: true }); };
   const connection = connectWorkspaceCollaboration({ ...workspace, refreshPolicy: options.refreshContext, focusTask, tasks });
-  return { ...tasks, invalidateService() { connection.invalidate(); tasks.invalidate(); }, destroy() { connection.destroy(); tasks.destroy(); } };
+  return { ...tasks,cards:cards.cards,cardPagination:cards.pagination,update(){tasks.update();cards.update();},onChange(){tasks.onChange();cards.refresh();},
+    invalidate(){tasks.invalidate();cards.invalidate();},invalidateService() { connection.invalidate(); tasks.invalidate();cards.invalidate(); },
+    destroy() { connection.destroy();tasks.destroy();cards.destroy(); } };
 }
 
 /** Keeps the workspace chooser independent of center DOM/navigation details. */
@@ -24,7 +28,15 @@ export function connectWorkspaceCollaboration({ getContext, getPolicy, refreshPo
     if (!directory.ok || !list?.ok || !api()?.taskWorkflow) return { ok: false, reason: "unavailable" };
     return { ok: true, directory, conversations: list.conversations || [], captured: { ...captured, userId: directory.profile.userId } };
   }
-  return registerWorkspaceCollaborationController({ read, async continue({ snapshot, target, projectId, isCurrent }) {
+  return registerWorkspaceCollaborationController({ read, async openCard(card) {
+    const fresh=await read();
+    if(!fresh.ok || !fresh.conversations.some(item=>item.id===card.conversationId))return {ok:false};
+    await load();if(!current(fresh.captured))return {ok:false};
+    activate();const opening=open(card.conversationId),own=stamp();await opening;
+    if(!current(own)||getContext().conversationId!==card.conversationId)return {ok:false};
+    const result=await tasks.openCard(card);
+    return {ok:current(own)&&result?.ok===true};
+  }, async continue({ snapshot, target, projectId, sessionId, isCurrent }) {
     const valid = () => isCurrent() && current(snapshot.captured);
     if (!valid()) return { reason: "changed" };
     await refreshPolicy?.();
@@ -57,7 +69,7 @@ export function connectWorkspaceCollaboration({ getContext, getPolicy, refreshPo
     const opening = open(conversationId), own = stamp();
     await opening;
     if (!isCurrent() || !current(own) || getContext().conversationId !== conversationId) return { reason: "changed" };
-    await tasks.create({ projectId, isCurrent: () => isCurrent() && current(own), ...(target.userId ? { assigneeUserId: target.userId } : {}) });
+    await tasks.create({ projectId, ...(sessionId ? { sessionId } : {}), isCurrent: () => isCurrent() && current(own), ...(target.userId ? { assigneeUserId: target.userId } : {}) });
     return { ok: true, focus: () => { if (current(own)) focusTask?.(); } };
   } });
 }

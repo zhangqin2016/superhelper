@@ -11,6 +11,12 @@
 .remote-task-subtitle { color: var(--chat-muted); font-size: var(--text-sm); line-height: 1.6; margin-block: 0 20px; }
 .remote-task-list { display: grid; gap: 12px; }
 .remote-task-card { min-inline-size: 0; padding: 16px 18px; border: 1px solid var(--chat-divider); border-radius: var(--radius); background: var(--chat-input); box-shadow: var(--collab-composer-shadow); }
+.collaboration-task-card { align-self: stretch; margin-block: 8px; max-inline-size: 560px; overflow-wrap: anywhere; }
+.collaboration-task-card .task-card-title { display: block; font-size: var(--text-md); }
+.session-task-cards { max-inline-size: 780px; margin-inline: auto; padding: 8px 24px; --chat-divider: var(--border-subtle); --chat-input: var(--bg-surface); --chat-muted: var(--text-secondary); --chat-ink: var(--text-primary); --collab-accent: var(--accent); }
+.session-task-cards[hidden] { display: none; }
+.task-card-pager { padding-block: 8px; }
+.session-messages:has(> .session-task-cards:not([hidden])) .workbench-empty { display: none; }
 .remote-task-card h3 { margin: 10px 0 8px; font-size: var(--text-md); line-height: 1.5; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .remote-task-card-footer { display: flex; gap: 12px; justify-content: space-between; align-items: center; margin-block-start: 16px; }
 .remote-task-meta { color: var(--chat-muted); font-size: var(--text-sm); line-height: 1.6; margin: 0; overflow-wrap: anywhere; }

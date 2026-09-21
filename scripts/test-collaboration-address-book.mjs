@@ -98,7 +98,9 @@ assert.deepEqual(groupByLetter([{}, { displayName: null }]).map((s) => s.letter)
   assert.match(friends, /setFilter\(value\)/, "the panel drives this view's filter instead");
 
   const center = read("src/renderer/modules/collaboration-center.js");
-  assert.match(center, /inboxSearch\.hidden\s*=\s*section === "teams"/,
+  // Retargeting the one search box belongs to the section switch, in the panel surfaces module.
+  const surfaces = read("src/renderer/modules/collaboration-panel-surfaces.js");
+  assert.match(surfaces, /inboxSearch\.hidden\s*=\s*section === "teams"/,
     "the panel search stays visible in the contacts view; hiding it there is why a second box was added");
   assert.match(center, /activeSection === "people"[\s\S]{0,80}friends\.setFilter/,
     "input in the one search box is routed to the list on screen");

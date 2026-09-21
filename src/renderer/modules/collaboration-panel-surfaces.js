@@ -117,3 +117,38 @@ export function createDrawerSurface({ view, title, body, close: closeButton, onC
   closeButton?.addEventListener("click", close);
   return { open, close, destroy() { closeButton?.removeEventListener("click", close); } };
 }
+
+/**
+ * Switching the panel between its destinations — inbox, people, teams.
+ *
+ * The DOM half of a switch is the same every time: exactly one section visible,
+ * one search box retargeted at the list now on screen (it used to hide outside
+ * the inbox, which is why the contacts view had grown a second search input of
+ * its own), the rail buttons' pressed state, and the header naming where you
+ * are (a second heading inside the list used to compete with the panel's own).
+ *
+ * What the centre still owns — invalidating an open conversation, closing a
+ * detail surface, re-rendering a section that fell behind while hidden — is its
+ * own state, so it arrives as one `onSwitch` callback rather than a dozen
+ * parameters.
+ *
+ * @returns {(section: string) => void}
+ */
+export function createSectionSwitch({ t, byId, sectionNodes, sectionButtons, inboxSearch, onSwitch }) {
+  return function showSection(section) {
+    for (const [name, node] of Object.entries(sectionNodes)) if (node) node.hidden = name !== section;
+    if (inboxSearch) {
+      inboxSearch.hidden = section === "teams";
+      const placeholder = t(section === "people" ? "collaboration.social.searchContacts" : "collaboration.search.placeholder");
+      inboxSearch.placeholder = placeholder;
+      inboxSearch.setAttribute("aria-label", placeholder);
+      if (inboxSearch.value) inboxSearch.value = "";
+    }
+    for (const [name, button] of Object.entries(sectionButtons)) button?.setAttribute("aria-pressed", String(name === section));
+    const panelTitle = byId("collaborationPanelTitle");
+    if (panelTitle) panelTitle.textContent = t(`collaboration.${section}`);
+    const title = byId("collaborationListTitle");
+    if (title) { title.textContent = t(`collaboration.${section}`); title.hidden = false; }
+    onSwitch?.(section);
+  };
+}

@@ -1,0 +1,40 @@
+{
+  "files": 15000,
+  "largeBytes": 25165824,
+  "steps": [
+    {
+      "name": "captureBaseline",
+      "ms": 10179
+    },
+    {
+      "name": "inspectTree",
+      "ms": 442
+    },
+    {
+      "name": "materializeSnapshot",
+      "ms": 3531
+    },
+    {
+      "name": "ensureWorktree(full)",
+      "ms": 2344
+    },
+    {
+      "name": "ensureWorktree(sparse)",
+      "ms": 2356
+    },
+    {
+      "name": "materializePaths(large)",
+      "ms": 206
+    }
+  ],
+  "runtime": {
+    "node": "v24.15.0",
+    "platform": "darwin-arm64",
+    "git": "git version 2.45.0"
+  },
+  "totalBytes": 28320919,
+  "treeListingBytes": 1321982,
+  "peakRssBytes": 271728640,
+  "startRssBytes": 247365632,
+  "recordedAt": "2026-09-14T13:55:30.612Z"
+}

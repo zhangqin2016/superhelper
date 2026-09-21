@@ -38,13 +38,14 @@ class WorkspaceVersionService {
     this._locks = new Map();
     this._mutations = new Set();
     this._backend = new Map();
+    this._writer = require("./collaboration/local-writer").createLocalWriter({filePath:options.writerLockPath});
   }
 
   isMutating(workspacePath) {
     return this._mutations.has(normalizeWorkspace(workspacePath));
   }
 
-  async _withMutation(workspacePath, fn) {
+  async _withMutation(workspacePath, fn, writesWorkspace = false) {
     const key = normalizeWorkspace(workspacePath);
     if (this._mutations.has(key)) {
       const error = new Error("WORKSPACE_VERSION_BUSY");
@@ -53,7 +54,12 @@ class WorkspaceVersionService {
     }
     this._mutations.add(key);
     try {
-      return await this._withLock(key, fn);
+      return await (writesWorkspace ? this._writer.runAsync(() => this._withLock(key, fn)) : this._withLock(key, fn));
+    } catch(error) {
+      if(error.code==="COLLAB_TASK_APPLICATION_BUSY"){
+        const busy=new Error("WORKSPACE_VERSION_BUSY");busy.code="WORKSPACE_VERSION_BUSY";throw busy;
+      }
+      throw error;
     } finally {
       this._mutations.delete(key);
     }
@@ -384,7 +390,7 @@ class WorkspaceVersionService {
         version: restoredVersion,
         fileCount: changed,
       };
-    });
+    }, true);
   }
 }
 

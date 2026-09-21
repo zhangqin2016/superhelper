@@ -39,6 +39,15 @@ function safePath(root, relative, { createParents = false } = {}) {
   }
   throw fail("UNSAFE_PATH");
 }
+/** Optional creation modes (e.g. restoring a deleted file's original mode).
+ * They are part of the immutable binding and plan hash, never a side channel. */
+function modeBinding(input) {
+  if (input.fileModes === undefined) return {};
+  const modes = input.fileModes;
+  if (!modes || Object.getPrototypeOf(modes) !== Object.prototype || !Array.isArray(input.editablePaths)) throw fail("MODE_INVALID");
+  for (const [name, mode] of Object.entries(modes)) if (!input.editablePaths.includes(name) || !Number.isInteger(mode) || mode <= 0 || mode > 0o777) throw fail("MODE_INVALID");
+  return {fileModes:{...modes}};
+}
 function readFile(root, relative) {
   const { target, stat } = safePath(root, relative);
   if (!stat) return null;
@@ -68,8 +77,8 @@ function syncDirectory(directory) {
  * Filesystem commits use synchronous, per-file checkpoints. There is deliberately
  * no await between the final hash check and mutation. A hostile concurrent local
  * process is outside this broker's portable Node filesystem threat boundary. */
-function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) {
-  if (!journal?.get || !journal?.put || typeof assertAuthorized !== "function") throw fail("CONFIG_INVALID");
+function createTaskApplication({ journal, journalRoot, assertAuthorized, writer } = {}) {
+  if (!journal?.get || !journal?.put || typeof assertAuthorized !== "function" || typeof writer?.run !== "function") throw fail("CONFIG_INVALID");
   const storage = safeRoot(journalRoot);
   const busy = new Set();
   async function authorize(input) {
@@ -97,7 +106,7 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
       if (!delivered || delivered.sha256 !== file.sha256 || delivered.sizeBytes !== file.sizeBytes) throw fail("DELIVERY_MISMATCH");
     }
     const plan = planTaskApplication({base:baseManifest,current,delivery:deliveryManifest,editablePaths:input.editablePaths});
-    const binding = {applicationId:input.applicationId,rootPath,deliveryRoot,baseManifest,deliveryManifest,editablePaths:input.editablePaths};
+    const binding = {applicationId:input.applicationId,rootPath,deliveryRoot,baseManifest,deliveryManifest,editablePaths:input.editablePaths,...modeBinding(input)};
     return {binding, plan, planHash:digest({...binding,current,plan,rootIdentity:identity(fs.lstatSync(rootPath)),deliveryIdentity:identity(fs.lstatSync(deliveryRoot))})};
   }
   async function preview(input) {
@@ -109,7 +118,14 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
     if (safeRoot(record.binding.rootPath) !== record.binding.rootPath
       || identity(fs.lstatSync(record.binding.rootPath)) !== record.rootIdentity) throw fail("INPUT_CHANGED");
   }
+  // An external application holding the file (Office on Windows, an editor
+  // with an exclusive lock) is a retryable condition, not a corrupt workspace.
+  const LOCK_CODES = new Set(["EBUSY", "EPERM", "EACCES", "ETXTBSY", "ESHARINGVIOLATION"]);
+  function locked(error) { return LOCK_CODES.has(error?.code) ? Object.assign(fail("LOCKED"), { cause: error.code }) : error; }
   function mutate(record, operation, bytes, expectedHash, resultHash) {
+    try { return mutateUnlocked(record, operation, bytes, expectedHash, resultHash); } catch (error) { throw locked(error); }
+  }
+  function mutateUnlocked(record, operation, bytes, expectedHash, resultHash) {
     checkRoot(record);
     const root = record.binding.rootPath;
     const existing = readFile(root, operation.path);
@@ -135,10 +151,10 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
     await authorize(input);
     if (busy.has(input.applicationId)) throw fail("BUSY");
     busy.add(input.applicationId);
-    try {
+    try { return writer.run(() => {
       const previous = journal.get(input.applicationId);
       if (previous) {
-        const binding = {applicationId:input.applicationId,rootPath:path.resolve(input.rootPath),deliveryRoot:path.resolve(input.deliveryRoot),baseManifest:input.baseManifest,deliveryManifest:input.deliveryManifest,editablePaths:input.editablePaths};
+        const binding = {applicationId:input.applicationId,rootPath:path.resolve(input.rootPath),deliveryRoot:path.resolve(input.deliveryRoot),baseManifest:input.baseManifest,deliveryManifest:input.deliveryManifest,editablePaths:input.editablePaths,...modeBinding(input)};
         if (digest(binding) !== digest(previous.binding) || input.expectedPlanHash !== previous.planHash) throw fail("ID_REUSED");
         if (previous.state === "applied") return previous.result;
         throw fail("RECOVERY_REQUIRED");
@@ -157,7 +173,7 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
         const delivered = entry.operation === "delete" ? null : readFile(record.binding.deliveryRoot,entry.path);
         if ((local?.sha256 || null) !== entry.expectedLocalHash || (delivered?.sha256 || null) !== entry.resultHash) throw fail("INPUT_CHANGED");
         const index = record.operations.length;
-        const operation = {...entry,mode:local?.mode || 0o600,backupName:`${index}.before`,stagedName:`${index}.after`,temporaryName:`.lily-apply-${crypto.randomUUID()}`,state:"prepared"};
+        const operation = {...entry,mode:local?.mode || description.binding.fileModes?.[entry.path] || 0o600,backupName:`${index}.before`,stagedName:`${index}.after`,temporaryName:`.lily-apply-${crypto.randomUUID()}`,state:"prepared"};
         if (local) writeExclusive(path.join(backupDirectory,operation.backupName),local.bytes);
         if (delivered) writeExclusive(path.join(backupDirectory,operation.stagedName),delivered.bytes);
         record.operations.push(operation);
@@ -181,14 +197,14 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
       record.result = {ok:true,state:"applied",applicationId:input.applicationId,planHash:record.planHash,entries:record.plan.entries};
       journal.put(input.applicationId,record);
       return record.result;
-    } finally { busy.delete(input.applicationId); }
+    }); } finally { busy.delete(input.applicationId); }
   }
   async function recover(input) {
     await authorize(input);
     if (input.mode !== "rollback") throw fail("RECOVERY_MODE_INVALID");
     if (busy.has(input.applicationId)) throw fail("BUSY");
     busy.add(input.applicationId);
-    try {
+    try { return writer.run(() => {
       const record = journal.get(input.applicationId);
       if (!record) throw fail("NOT_FOUND");
       if (record.state === "rolled_back") return {ok:true,state:"rolled_back",applicationId:input.applicationId,conflicts:[]};
@@ -226,8 +242,8 @@ function createTaskApplication({ journal, journalRoot, assertAuthorized } = {}) 
       record.state = conflicts.length ? "recovery_conflict" : "rolled_back";
       journal.put(input.applicationId,record);
       return {ok:conflicts.length===0,state:record.state,applicationId:input.applicationId,conflicts};
-    } finally { busy.delete(input.applicationId); }
+    }); } finally { busy.delete(input.applicationId); }
   }
   return {preview,apply,recover};
 }
-module.exports = { createTaskApplication };
+module.exports = { createTaskApplication, readTaskFile:readFile, safeTaskRoot:safeRoot };

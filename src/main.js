@@ -297,6 +297,7 @@ app.whenReady().then(async () => {
   const accountManager = require("./main/account-manager");
   const serviceClient = require("./main/service-client");
   let collaborationService = null;
+  let collaborationTurnOrchestrator = null;
   let unsubscribeCollaborationService = null;
   const collaborationStateListeners = new Set();
   const notifyCollaborationState = (change) => {
@@ -341,8 +342,21 @@ app.whenReady().then(async () => {
           policy,
           taskOptions: {
             rootPath: path.join(collaborationTransferRoot(), "task-workspaces"),
+            localApplicationWriter:process.platform==="win32"?undefined:require("./main/collaboration/foreground-writer").createForegroundWriter(),
+            enqueueIntegrationTurn: request => collaborationTurnOrchestrator
+              ? require("./main/collaboration/integration-turn").enqueueIntegrationTurn(collaborationTurnOrchestrator,request)
+              : {ok:false,error:"COLLAB_INTEGRATION_NOT_READY"},
             chooseDirectory: () => dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] }),
+            chooseValidationChecks: ({sourceRoot}) => require("./main/collaboration/integration-check-selection").chooseChecks(dialog,mainWindow,sourceRoot),
             resolveProjectDirectory: (projectId) => projectManager.find(projectId)?.path,
+            resolveSourceSession: (input) => require("./main/collaboration/task-session").resolveRemoteTaskSourceSession(projectManager,sessionManager,input),
+            resolveCardSession: (id) => {
+              const session=sessionManager._find(id);
+              return session && !session.archived && projectManager.find(session.projectId)
+                ? {sessionId:session.id,projectId:session.projectId} : null;
+            },
+            resolveWorkspaceBinding: (input) => require("./main/collaboration/task-session").resolveRemoteTaskBinding(projectManager, sessionManager, input),
+            listWorkspaceBindings: () => require("./main/collaboration/task-session").listRemoteTaskBindingTargets(projectManager,sessionManager),
             openWorkspace: (input) => require("./main/collaboration/task-session").registerRemoteTaskWorkspace(projectManager, sessionManager, input),
           },
           transferOptions: {
@@ -455,6 +469,10 @@ app.whenReady().then(async () => {
     get collaborationService() {
       return collaborationService;
     },
+    executeCollaborationIntegration: (request,execution) => {
+      if(!collaborationService?.ok)throw Object.assign(Error("Integration unavailable"),{code:"COLLAB_INTEGRATION_UNAVAILABLE"});
+      return collaborationService.runIntegration(request,execution);
+    },
     refreshCollaborationService,
     onCollaborationStateChange(listener) {
       if (typeof listener !== "function") return () => {};
@@ -464,6 +482,7 @@ app.whenReady().then(async () => {
   };
 
   ipcHandlers.registerAll(appContext);
+  collaborationTurnOrchestrator = appContext.turnOrchestrator || null;
   agentRuntimeControlServerRef = appContext.agentRuntimeControlServer || null;
   turnRecoveryRuntimeRef = appContext.turnOrchestrator?.turnRecoveryRuntime || null;
   publicHookBridgeRef = appContext.publicHookBridge || null;

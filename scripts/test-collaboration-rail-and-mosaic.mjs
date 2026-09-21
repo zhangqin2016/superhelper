@@ -55,7 +55,8 @@ const { conversationRosters, MAX_MEMBERS_PER_CONVERSATION } = require("../src/ma
   assert.match(read("src/renderer/modules/collaboration-unread-badge.js"), /railUnread\.hidden = total <= 0/,
     "the rail dot follows the same unread total as the panel badge");
   assert.match(center, /createUnreadBadge\(\{ railUnread, unreadBadge/, "the centre wires the rail dot and the panel badge together");
-  assert.match(center, /title\.hidden = false/, "the list heading always names the destination; the rail is icon-only");
+  assert.match(read("src/renderer/modules/collaboration-panel-surfaces.js"), /title\.hidden = false/,
+    "the list heading always names the destination; the rail is icon-only");
 }
 
 // ---- The roster is bounded, ordered, and fail-open ----------------------

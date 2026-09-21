@@ -1,8 +1,8 @@
 "use strict";
 
 const fail = (code) => Object.assign(new Error(`COLLAB_TASK_RECOVERY_${code}`), {code:`COLLAB_TASK_RECOVERY_${code}`});
-const fields = ["id","conversationId","taskId","deliveryId","input","planHash","journal","state","kind","createdAt"];
-const inputFields = ["applicationId","rootPath","deliveryRoot","baseManifest","deliveryManifest","editablePaths"];
+const fields = ["id","conversationId","taskId","deliveryId","input","planHash","journal","state","kind","createdAt","jobId","undoApplicationId","undoOf"];
+const inputFields = ["applicationId","rootPath","deliveryRoot","baseManifest","deliveryManifest","editablePaths","fileModes"];
 const journalFields = ["binding","plan","planHash","state","rootIdentity","backupDirectory","operations","result"];
 const entryFields = ["path","operation","status","expectedLocalHash","resultHash","mode","backupName","stagedName","temporaryName","state"];
 function identifier(value) {
@@ -19,6 +19,10 @@ function validateInput(value) {
     for (const file of list) closed(file,["path","sha256","sizeBytes"]);
   }
   if (!Array.isArray(value.editablePaths) || value.editablePaths.some(item=>typeof item!=="string")) throw fail("INVALID");
+  if (value.fileModes !== undefined) {
+    if (!value.fileModes || Object.getPrototypeOf(value.fileModes) !== Object.prototype) throw fail("INVALID");
+    for (const [name,mode] of Object.entries(value.fileModes)) if (!value.editablePaths.includes(name) || !Number.isInteger(mode) || mode <= 0 || mode > 0o777) throw fail("INVALID");
+  }
 }
 function validatePlan(value) {
   closed(value,["entries","canApply"]);
@@ -29,7 +33,12 @@ function project(id,value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || value.id !== id) throw fail("INVALID");
   const result = Object.fromEntries(fields.filter(key=>value[key]!==undefined).map(key=>[key,value[key]]));
   for (const key of ["id","conversationId","taskId","deliveryId"]) identifier(result[key]);
-  if (result.kind !== undefined && result.kind !== "application") throw fail("INVALID");
+  if (result.kind !== undefined && !["application","materialization","inverse"].includes(result.kind)) throw fail("INVALID");
+  // Undo linkage: an original materialization points at its current inverse
+  // attempt; an inverse points back. Neither may alias the record itself.
+  for (const key of ["jobId","undoApplicationId","undoOf"]) if (result[key] !== undefined) { identifier(result[key]); if (key !== "jobId" && result[key] === id) throw fail("INVALID"); }
+  if (result.kind === "inverse" && result.undoOf === undefined) throw fail("INVALID");
+  if (result.kind !== "inverse" && result.undoOf !== undefined) throw fail("INVALID");
   if (result.createdAt !== undefined && (!Number.isSafeInteger(result.createdAt) || result.createdAt < 0)) throw fail("INVALID");
   if (typeof result.state !== "string" || !/^[a-z_]{1,40}$/.test(result.state)
     || typeof result.planHash !== "string" || !/^[a-f0-9]{64}$/.test(result.planHash)) throw fail("INVALID");

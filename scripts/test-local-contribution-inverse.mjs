@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createHash} from 'node:crypto';import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const {prepareContributionInverse}=require('../src/main/collaboration/local-contribution-inverse');
+const {createTaskApplication}=require('../src/main/collaboration/task-application');
+const root=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'lily-inverse-'));
+const dirs=Object.fromEntries(['w','delivery','journal','stage'].map(k=>{const p=path.join(root,k);fs.mkdirSync(p);return [k,p];}));
+const hash=b=>createHash('sha256').update(b).digest('hex');
+const manifest=files=>Object.entries(files).map(([path,b])=>({path,sha256:hash(b),sizeBytes:Buffer.byteLength(b)}));
+const save=(dir,files)=>{for(const [name,b]of Object.entries(files))fs.writeFileSync(path.join(dir,name),b);};
+const before={'doc.txt':'one\ntwo\nthree\nfour\nfive\n','removed.txt':'restore me','same.txt':'already present'};
+const after={'doc.txt':'one\ntwo\nthree\nfour\ncontribution\n','added.txt':'new contribution','same.txt':'already present'};
+const rows=new Map();
+const broker=createTaskApplication({journalRoot:dirs.journal,writer:{run:fn=>fn()},assertAuthorized:async()=>true,journal:{get:id=>rows.get(id),put:(id,v)=>rows.set(id,structuredClone(v))}});
+try{
+ save(dirs.w,before);save(dirs.delivery,after);
+ const input={applicationId:'original',rootPath:dirs.w,deliveryRoot:dirs.delivery,baseManifest:manifest(before),deliveryManifest:manifest(after),editablePaths:[...new Set([...Object.keys(before),...Object.keys(after)])]};
+ const preview=await broker.preview(input);await broker.apply({...input,expectedPlanHash:preview.planHash,confirmDeletions:true});
+ const record={id:'original',kind:'materialization',state:'applied',input,journal:rows.get('original')};
+ const prepare=r=>prepareContributionInverse({record:r||record,journalRoot:dirs.journal,destinationRoot:dirs.stage,assertActive(){}});
+ fs.writeFileSync(path.join(dirs.w,'doc.txt'),'LATER PRIVATE\ntwo\nthree\nfour\ncontribution\n');
+ fs.writeFileSync(path.join(dirs.w,'same.txt'),'later unrelated');
+ const candidate=await prepare();assert.equal(candidate.state,'ready');
+ assert.equal(fs.readFileSync(path.join(candidate.snapshotRoot,'doc.txt'),'utf8'),'LATER PRIVATE\ntwo\nthree\nfour\nfive\n');
+ assert.equal(candidate.paths.includes('same.txt'),false,'already-applied bytes are not this contribution');
+ assert.equal(fs.readFileSync(path.join(dirs.w,'doc.txt'),'utf8').endsWith('contribution\n'),true,'preparation must not write W');
+ fs.writeFileSync(path.join(dirs.w,'added.txt'),'later edit to created file');
+ fs.writeFileSync(path.join(dirs.w,'removed.txt'),'user recreated deleted file');
+ const conflict=await prepare();assert.equal(conflict.state,'conflicts');assert.deepEqual(new Set(conflict.conflicts.map(x=>x.path)),new Set(['added.txt','removed.txt']));
+ fs.writeFileSync(path.join(dirs.w,'added.txt'),after['added.txt']);fs.unlinkSync(path.join(dirs.w,'removed.txt'));
+ const inverse={applicationId:'inverse',rootPath:dirs.w,deliveryRoot:candidate.snapshotRoot,baseManifest:candidate.currentManifest,deliveryManifest:candidate.manifest,editablePaths:candidate.paths};
+ const inversePreview=await broker.preview(inverse);await broker.apply({...inverse,expectedPlanHash:inversePreview.planHash,confirmDeletions:true});
+ assert.equal(fs.readFileSync(path.join(dirs.w,'doc.txt'),'utf8'),'LATER PRIVATE\ntwo\nthree\nfour\nfive\n');assert.equal(fs.existsSync(path.join(dirs.w,'added.txt')),false);assert.equal(fs.readFileSync(path.join(dirs.w,'removed.txt'),'utf8'),'restore me');assert.equal(fs.readFileSync(path.join(dirs.w,'same.txt'),'utf8'),'later unrelated');
+ await assert.rejects(prepare({...record,state:'applying'}),/NOT_APPLIED/);
+ const bad=structuredClone(record);bad.journal.operations[0].backupName='../escape';await assert.rejects(prepare(bad),/JOURNAL_INVALID/);
+ fs.writeFileSync(path.join(record.journal.backupDirectory,record.journal.operations[0].backupName),'corrupt');await assert.rejects(prepare(),/BACKUP_MISMATCH/);
+ console.log('PASS contribution inverse: real receipt backups, disjoint later edits, add/delete conflicts, unrelated preservation, guarded application, corrupt journal rejection');
+}finally{fs.rmSync(root,{recursive:true,force:true});}

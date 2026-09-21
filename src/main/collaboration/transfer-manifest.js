@@ -7,6 +7,7 @@ const crypto = require("node:crypto");
 const MAX_BYTES = 128 * 1024;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const FILES = new Set(["manifest.json", "ciphertext.part", "ciphertext.lilyenc", "plaintext.part", "plaintext.verified"]);
+const manifestTemp = name => name.startsWith('.manifest-') && name.endsWith('.tmp') && UUID.test(name.slice(10,-4));
 const error = (code) => Object.assign(new Error(code), { code, retryable: false });
 const unsafe = () => error("COLLAB_TRANSFER_UNSAFE_PATH");
 const invalid = () => error("COLLAB_TRANSFER_MANIFEST_INVALID");
@@ -106,7 +107,7 @@ function safeCheckpoint(value) {
  * Process-restart recovery is covered; machine power-loss recovery additionally
  * depends on the OS-backed keyring's own persistence guarantees.
  */
-function createTransferManifestStore({ rootPath, accountId, keyring } = {}) {
+function createTransferManifestStore({ rootPath, accountId, keyring, recovery } = {}) {
   if (typeof rootPath !== "string" || !path.isAbsolute(rootPath) || path.resolve(rootPath) !== rootPath || path.basename(rootPath) !== "collaboration-transfer") throw unsafe();
   if (!validId(accountId) || typeof keyring?.encrypt !== "function" || typeof keyring?.decrypt !== "function") throw invalid();
   assertDirectory(path.dirname(rootPath));
@@ -123,15 +124,15 @@ function createTransferManifestStore({ rootPath, accountId, keyring } = {}) {
     try { assertDirectory(folder, { privateMode: true }); } catch (cause) { if (cause.code === "ENOENT") throw unavailable(); throw cause; }
     return folder;
   }
-  function read(id) {
+  function readFile(id, links = 1) {
     const folder = directory(id);
     let fd;
     try {
       const filename = path.join(folder, "manifest.json"), before = fs.lstatSync(filename);
-      if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > MAX_BYTES) throw unavailable();
+      if (!before.isFile() || before.isSymbolicLink() || before.nlink !== links || before.size > MAX_BYTES) throw unavailable();
       fd = fs.openSync(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
       const stat = fs.fstatSync(fd);
-      if (!sameFile(before, stat) || !stat.isFile() || stat.nlink !== 1 || stat.size > MAX_BYTES) throw unavailable();
+      if (!sameFile(before, stat) || !stat.isFile() || stat.nlink !== links || stat.size > MAX_BYTES) throw unavailable();
       const outer = JSON.parse(fs.readFileSync(fd, "utf8"));
       if (outer.version !== 1 || !validId(outer.scopeId)) throw unavailable();
       const value = JSON.parse(keyring.decrypt({ accountId, scopeId: outer.scopeId, recordId: `transfer:${id}`, envelope: outer.envelope }));
@@ -143,7 +144,54 @@ function createTransferManifestStore({ rootPath, accountId, keyring } = {}) {
       return value;
     } catch { throw unavailable(); } finally { if (fd !== undefined) fs.closeSync(fd); }
   }
-  function write(folder, value) {
+  function read(id) {
+    if (typeof id !== 'string' || !UUID.test(id)) throw unsafe();
+    assertRoot();
+    const journal = recovery?.get(id);
+    if (journal?.deleted) throw unavailable();
+    if (!journal) {
+      const value = readFile(id); recovery?.commit(value); return value;
+    }
+    const saved = journal.snapshot;
+    if (saved?.id !== id || saved.accountId !== accountId || !validId(saved.scopeId) || !validId(saved.conversationId)
+      || saved.direction !== 'upload' || saved.purpose !== 'workspace' || saved.checkpoint?.taskOwned !== true
+      || !Number.isSafeInteger(saved.revision) || saved.revision < 1
+      || !['init','complete','send'].every(action=>UUID.test(saved.commandIds?.[action]))) throw invalid();
+    safeCheckpoint(saved.checkpoint);
+    const folder = path.join(accountPath,id), filename = path.join(folder,'manifest.json');
+    try { assertDirectory(folder,{privateMode:true}); }
+    catch (cause) { if (cause.code !== 'ENOENT') throw cause; privateDirectory(folder); }
+    let present;
+    try { fs.lstatSync(filename); present = true; } catch (cause) { if (cause.code !== 'ENOENT') throw cause; present = false; }
+    if (!present) {
+      for (const name of fs.readdirSync(folder)) {
+        const stat = fs.lstatSync(path.join(folder,name));
+        if ((!FILES.has(name) && !manifestTemp(name)) || !stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw unsafe();
+      }
+      write(folder,saved,{cacheOnly:true,exclusive:true}); return saved;
+    }
+    // Exclusive restoration links a complete temporary file before unlinking
+    // its old name. Recover only this authenticated two-name interruption.
+    const linked = fs.lstatSync(filename);
+    if (linked.isFile() && linked.nlink===2) {
+      const names=fs.readdirSync(folder).filter(name=>manifestTemp(name) && sameFile(linked,fs.lstatSync(path.join(folder,name))));
+      if (names.length===1 && JSON.stringify(readFile(id,2))===JSON.stringify(saved)) {
+        const temporary=path.join(folder,names[0]);assertRoot();assertDirectory(folder,{privateMode:true});
+        if (!sameFile(linked,fs.lstatSync(filename)) || !sameFile(linked,fs.lstatSync(temporary)) || fs.lstatSync(filename).nlink!==2) throw unsafe();
+        fs.unlinkSync(temporary);syncDirectory(folder);
+      }
+    }
+    const local = readFile(id);
+    const immutable=value=>JSON.stringify([value.id,value.accountId,value.scopeId,value.conversationId,value.direction,value.purpose,value.commandIds]);
+    const unowned = local.revision===1 && Object.keys(local.checkpoint).length===0;
+    if (immutable(local)!==immutable(saved) || !unowned && local.checkpoint.deviceId!==saved.checkpoint.deviceId || local.revision>saved.revision) throw error('COLLAB_TRANSFER_CONFLICT');
+    if (local.revision===saved.revision) {
+      if (JSON.stringify(local)!==JSON.stringify(saved)) throw error('COLLAB_TRANSFER_CONFLICT');
+    } else write(folder,saved,{cacheOnly:true});
+    return saved;
+  }
+  function write(folder, value, {cacheOnly=false,exclusive=false}={}) {
+    if (!cacheOnly) recovery?.commit(value);
     const bytes = JSON.stringify({ version: 1, scopeId: value.scopeId,
       envelope: keyring.encrypt({ accountId, scopeId: value.scopeId, recordId: `transfer:${value.id}`, plaintext: JSON.stringify(value) }) });
     if (Buffer.byteLength(bytes) > MAX_BYTES) throw invalid();
@@ -152,11 +200,12 @@ function createTransferManifestStore({ rootPath, accountId, keyring } = {}) {
     try { fs.writeFileSync(fd, bytes); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     try {
       assertRoot(); assertDirectory(folder, { privateMode: true });
-      fs.renameSync(temp, path.join(folder, "manifest.json"));
+      if (exclusive) fs.linkSync(temp,path.join(folder,'manifest.json'));
+      else fs.renameSync(temp, path.join(folder, "manifest.json"));
       // Durability of the rename matters for a crash immediately after upload.
       syncDirectory(folder);
     } finally {
-      try { if (sameFile(identity, fs.lstatSync(temp))) fs.unlinkSync(temp); } catch (cause) { if (cause.code !== "ENOENT") throw cause; }
+      try { if (sameFile(identity, fs.lstatSync(temp))) { fs.unlinkSync(temp); if (exclusive) syncDirectory(folder); } } catch (cause) { if (cause.code !== "ENOENT") throw cause; }
     }
   }
   return Object.freeze({
@@ -186,7 +235,7 @@ function createTransferManifestStore({ rootPath, accountId, keyring } = {}) {
       assertRoot();
       const transfers = [], unrecognized = [];
       for (const entry of fs.readdirSync(accountPath).sort()) {
-        try { transfers.push(read(entry)); }
+        try { if (UUID.test(entry) && recovery?.get(entry)?.deleted) continue; transfers.push(read(entry)); }
         catch { unrecognized.push({ entry, code: "COLLAB_TRANSFER_UNAVAILABLE" }); }
       }
       return { transfers, unrecognized };
@@ -200,6 +249,7 @@ function createTransferManifestStore({ rootPath, accountId, keyring } = {}) {
       if (entries.some(({ name, stat }) => !FILES.has(name) || !stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)) throw unsafe();
       assertRoot();
       for (const { name, stat } of entries) if (!sameFile(stat, fs.lstatSync(path.join(folder, name)))) throw unsafe();
+      recovery?.remove(id);
       for (const { name } of entries) fs.unlinkSync(path.join(folder, name));
       fs.rmdirSync(folder);
       return { removed: true };

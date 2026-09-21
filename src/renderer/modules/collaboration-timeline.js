@@ -4,6 +4,8 @@ import { formatBytes } from "./format-bytes.js";
 import { replyDisplay } from "./collaboration-reply-view.js";
 import { avatarHue } from "./collaboration-social-ui.js";
 import { isBrowserImage } from "../../shared/file-kinds.mjs";
+import {renderTaskCards} from "./collaboration-task-cards.js";
+import {renderCardPager} from "./task-card-pages.js";
 
 function messageFingerprint(message) {
   const text = String(message.bodyText || "");
@@ -150,11 +152,11 @@ function attachmentGlyph(isImage) {
   return svg;
 }
 
-export function renderCollaborationTimeline(node, messages = [], { onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "", resolveAttachmentPreview = null, onPreview = null, onForward = null, selection = null, onDeleteLocal = null } = {}) {
+export function renderCollaborationTimeline(node, messages = [], { taskCards = [], taskCardPagination, onOpenTask, onDownload, canDownload = () => true, onReply, canReply = () => true, onEdit, canEdit = () => true, onRevoke, canRevoke = () => true, currentUserId = "", resolveSender = (id) => id, showSenderNames = true, peerReadSeq = 0, onReact, canReact = () => true, unreadFromSeq = 0, highlight = "", resolveAttachmentPreview = null, onPreview = null, onForward = null, selection = null, onDeleteLocal = null } = {}) {
   if (!node) return;
   node.classList.toggle("is-selecting", Boolean(selection?.isActive?.()));
   node.querySelectorAll(":scope > .collaboration-date-separator").forEach((el) => el.remove());
-  const prior = indexTimelineRows([...node.children]);
+  const prior = indexTimelineRows([...node.children].filter(row=>!row.classList.contains("collaboration-task-card")&&!row.classList.contains("task-card-pager")));
   const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
   const viewportTop = node.getBoundingClientRect().top + node.clientTop;
   const anchor = [...node.children].find((child) => child.getBoundingClientRect().bottom > viewportTop);
@@ -210,6 +212,7 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     row.classList.toggle("is-selected", selecting && Boolean(message.id) && selection.has(message.id));
     row.onclick = selecting && message.id ? (event) => { event.preventDefault(); selection.toggle(message.id); } : null;
     row.dataset.messageKey = String(message.clientCommandId || message.id || keyList[0] || "");
+    row.dataset.createdAt=String(createdAt);
     row.dataset.messageKeys = keyList.join(" ");
     row.dataset.clientCommandId = String(message.clientCommandId || "");
     const resolvedSender = String(resolveSender(message.senderUserId || "") || "");
@@ -485,6 +488,8 @@ export function renderCollaborationTimeline(node, messages = [], { onDownload, c
     previous = message;
   }
   for (const child of prior.set) child.remove();
+  renderTaskCards(node,taskCards,onOpenTask);
+  renderCardPager(node,taskCardPagination || {},t);
   if (atBottom) node.scrollTop = node.scrollHeight;
   else if (anchor?.parentElement === node) node.scrollTop += anchor.getBoundingClientRect().top - viewportTop - anchorOffset;
 }

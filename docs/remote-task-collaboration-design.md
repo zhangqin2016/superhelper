@@ -85,3 +85,41 @@ P5：本地预览/应用/回滚；两台客户端加真实私有对象桶验收�
 本地恢复补充：远端任务授权决定下载、提交和新的文件应用；对用户已批准的本机文件事务，恢复日志单独以个人账号加密保存，组织撤权不能销毁原文件恢复能力。启动恢复未完成事务，并提供不依赖已撤销任务的本地恢复入口；退出账号后不能访问其他账号的恢复记录。
 
 验证：相关 `test-collaboration*.mjs` 与 `test-remote-task*.mjs` 共 124 个脚本通过；新增 `test-remote-task-ui.cjs` 运行真实 Electron DOM（受控 API），覆盖权限按钮、版本绑定、重复点击、未知结果恢复、语言切换失败屏保真、输入焦点、导航隔离以及 1100/420px × 浅/深主题。原 `test-collaboration-social-navigation.cjs` 通过。旧 center 生命周期测试的夹具已适配已有本地预览与串行队列，没有修改导航业务去迎合旧夹具。本轮未跑全仓测试、未部署或打安装包。
+
+
+2026-09-14 远端共享发布：新增 `COLLABORATION_SHARED_PUBLICATION_ENABLED`（默认关闭），依赖既有 IM、workspace、tasks 和 task Git 开关。服务器最终配置 gate 发布 `sharedPublicationProtocol: 1`，桌面只接受匹配的 Git/workspace 协议版本；配置的 integration API 同时检查发布开关，旧缓存策略不能绕过关闭状态。启用后的启动恢复会分批保留并重新排队旧本地已完成、outbox 尚未发送的任务，由原会话重新检查并确认远端发布；确认后才原子地标记旧 outbox 被替代。该开关与本轮代码均未部署启用，剩余私有工作区合并/撤销、Office、流式大目录和完整双客户端验收见协作核心计划及 CAPABILITY-GATE。
+
+
+2026-09-14 对象清理：新增服务端开关 `COLLABORATION_OBJECT_CLEANUP_ENABLED`，默认关闭。应用迁移 052、配置独立私有存储后，服务启动时注册清理循环，关闭时等待当前操作结束。每轮最多退出 64 个过期对象，再处理 8 个到期清理任务；对象锁与绑定操作互斥，密钥先移除，已有上传凭证等待 16 分钟失效后才删除密文。清理失败保留固定错误码并退避重试，服务商删除成功而数据库未提交时可幂等重试。已绑定且未到显式过期时间的对象不会因 orphan 截止时间被清理。保留清理原因，使原所有者仍能区分过期孤立对象和撤销；这不恢复下载权限。删除请求按[七牛资源删除](https://developer.qiniu.com/kodo/1257/delete)和[管理凭证](https://developer.qiniu.com/kodo/1201/access-token)签名，仅使用独立私有桶，200/612 才表示已删除或不存在。代码和测试均未启用生产清理，也未连接真实七牛执行删除。
+
+
+本地应用并发边界（2026-09-14）：任务应用、回滚及启动恢复共用系统用户目录下的永久 SQLite 协调文件，不随账号或 Electron 数据目录变化。同步操作持有内核写锁，进程崩溃自动释放；占用立即返回可重试提示，取得锁后仍复核预览和文件哈希。锁文件不保存任务内容，也不能在清理中删除或替换。当前保守地串行处理所有协作应用目录，包含父子目录。普通编辑器及前台引擎写入尚未接入此锁；独立 A/W/M 与按贡献撤销也仍待实施，不以这项改动声称完成全部双链或双客户端验收。
+
+
+独立本地候选（2026-09-14）：原会话原生整合在共享发布确认后，用明确的 A、真实 W 与 M 生成私有 W′ 暂存。文本采用 [Git merge-file](https://git-scm.com/docs/git-merge-file) 的标准输出模式，私有内容不写入共享 Git 对象库；支持的 JSON 冲突使用已有结构化合并器。本地修改、未共享文件与本地删除会保留；二进制和未解决冲突等待后续处理。候选身份与 A 记录加密持久化，丢失暂存可重建，旧异步代次不能覆盖新候选，旧共享修订不能倒退 A。只有可证明的初始共享基线可自动建立 A。候选准备不等于项目验证或本地落盘，也不推进 A；自动写入、写入回执恢复、按贡献撤销及完成任务的启动恢复仍待接通。
+
+
+私有候选验证（2026-09-14）：W′ 在独立的本地验证 Git 仓库中固化为真实提交，再用固定的原始测试及现有隔离检查器验证；共享 M 的通过结果不能代替 W′ 的检查。证据与当前候选代次、检查策略和私有提交绑定，并加密存储。缺少检查仍需等待，检查失败不会因共享发布成功而被标记通过。原会话显示两者区别；验证本身不写入工作目录或推进 A，自动落盘与按贡献撤销仍待接入。
+
+
+版本恢复写入协调（2026-09-14）：Git 版本恢复和本地快照恢复现与协作应用、回滚共用系统用户级锁，并在异步恢复及失败回滚期间持续持锁。占用返回现有版本忙提示，普通版本保存保持原调度。当前前台引擎入口仍只检查进程内版本服务状态，不能据此声称已完成跨客户端写入协调；引擎活动的完成与崩溃归属尚需接入，自动 W′ 落盘与 A 回执暂未启用。
+
+
+引擎退出确认（2026-09-14）：共享引擎停止现保留所属子进程句柄，避免主进程退出并清空字段后遗漏工具进程。停止调用返回可等待回执；POSIX 原进程组消失才确认该组已退出，发送信号、主进程退出、权限错误或等待超时均不等价于工具全部停止。Windows 暂无进程树完成证明，主动脱离原组的工具及独立后台作业也不在此回执范围内。现有退出调用仍为尽力清理，自动落盘还需将前台活动注册及完整静默条件接入同一写入协调器。
+
+
+Checkpoint 56: private A/W/M preparation now offers conservative DOCX part merging via the existing bundled Python resolver. Paragraphs/cells are atomic and only stable Word container positions are reconciled; opaque unchanged OPC parts retain their bytes. Relationship/content-type changes and digital signatures are outside this policy. Runtime failure remains an explicit candidate conflict, and the policy version invalidates older cached candidates. Shared-chain Office merging, rendered fidelity, other Office formats and automatic W′ application remain pending; this does not advance A.
+
+
+Checkpoint 57 connects native private validation to application through an explicitly supplied foreground-aware writer. The final applied recovery journal, candidate receipt and A generation/revision advance share one SQLite transaction after whole-candidate verification; A references shared M. Interrupted receipts retain per-file rollback evidence without advancing A. Replayed completed publication preserves later private edits. Production still needs the cross-profile foreground admission implementation; only the controlled native/HTTP fixture supplies admission today. Applied materializations require contribution-specific inverse undo, not the legacy whole-file rollback.
+
+
+Checkpoint 58: controlled POSIX engine/job groups register durably under the global local-writer lock before command execution. Application admission requires every registered group to be absent, including tools surviving their leader. Engine owner IPC closes the running group on main-process death; persistent jobs retain their independent lifecycle. Safe warm-profile draining and local-write retry still need to connect this admission to automatic materialization. Existing Windows paths are unchanged and no Windows foreground-completion proof is claimed.
+
+
+Checkpoint 59 supplies POSIX foreground admission in the desktop source path. Busy application requests advisory idle-profile retirement without interrupting active/unknown views or retained SDK work. Completed-shared local continuation persists in the existing work schedule and returns through a fresh original-session TaskCore turn after admission becomes available. Work-generation changes do not replace the current local validator's turn. Local A/application receipts remain atomic; contribution-specific undo and task-card local state are the next required steps. Existing operator protocol gates remain unchanged.
+
+
+Checkpoint 60 adds a separate persisted local stage to existing task cards and task details. Shared publication remains its own stage; applied requires the bound local receipt and validation identity. Waiting, validation failures, conflicts and baseline recovery are visible without exposing native paths or evidence contents. Contribution-specific undo remains the next implementation step.
+Checkpoint 62 replaces whole-file rollback for successful materializations with a contribution-specific undo. The personal receipt's exact after/before bytes form the inverse, merged with the current W so later edits survive or block the undo without any write. Undo is a new private W change: A and shared history do not rewind, the same shared M is not re-applied, and a completed undo is history that no recovery path reverses. Interrupted inverse attempts recover to the pre-inverse W by identity and at startup.
+Checkpoints 63-66 close the remaining C behavior and D1: pinned checks carry their test infrastructure and read-only project dependencies; unresolved conflicts and failed checks reach the requester's configured model with goal and evidence under bounded budgets, producing either a validated candidate or one question for the requester; Office packages merge at the OPC part level for Word, Excel and PowerPoint on both chains with LibreOffice render verification when the bundled runtime is present.

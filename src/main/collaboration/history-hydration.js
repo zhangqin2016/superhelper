@@ -96,4 +96,60 @@ async function hydratePendingConversation({ store, client, deviceId, conversatio
   completeHistoryHydration(store, conversationId, targets);
 }
 
-module.exports = { queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration, hydratePendingConversation };
+
+/**
+ * Reading a conversation's authorized history, and catching up every pending
+ * one after a restart.
+ *
+ * Both were closures inside the collaboration service, where the sync lane's
+ * own concerns hid what they promise: a history request that fails REJECTS
+ * rather than skipping, so the lane cannot acknowledge past a conversation it
+ * never hydrated; a revoked conversation is passed over, not attempted; and a
+ * pending directory change is bootstrapped first, because acknowledging on a
+ * stale roster would hide messages the account can now see.
+ */
+function createAuthorizedHistoryReader({
+  store, client, deviceId, assertActive, isConversationRevoked,
+  recoverDeniedHistory, recoverConversationHydration, hydratePendingConversation, bootstrapNow,
+}) {
+  const hydrateAuthorizedHistory = async (conversationIds) => {
+    assertActive();
+    if (!client || !deviceId || typeof client.listMessageHistory !== "function" || typeof store.hydrateAuthorizedHistory !== "function") return;
+    for (const conversationId of [...new Set((conversationIds || []).map(String).filter(Boolean))]) {
+      if (isConversationRevoked(store, conversationId)) continue;
+      try {
+      if (typeof store.listHistoryTargets === "function") {
+        await hydratePendingConversation({ store, client, deviceId, conversationId, assertActive });
+        continue;
+      }
+      const history = await client.listMessageHistory({ deviceId, conversationId });
+      assertActive();
+      const messages = Array.isArray(history) ? history : history?.messages ?? history?.items;
+      if (!Array.isArray(messages)) throw Object.assign(new Error("Invalid collaboration history"), { code: "COLLAB_HISTORY_INVALID" });
+      store.hydrateAuthorizedHistory({ conversationId, messages });
+      } catch (error) {
+        assertActive();
+        if (!recoverDeniedHistory(conversationId, error)) throw error;
+      }
+    }
+  };
+  const recoverPendingHistory = async () => {
+    assertActive();
+    store.flushRevokedKeys?.();
+    // The account event itself is the durable refresh checkpoint. Bootstrap
+    // removes it atomically with the authoritative directory replacement.
+    // A failed request/restart therefore cannot ACK past a stale roster.
+    if (store.db?.get(`SELECT 1 FROM events WHERE account_id = ? AND type = 'directory.changed' LIMIT 1`, store.accountId)) {
+      return bootstrapNow();
+    }
+    await recoverConversationHydration({ store, client, deviceId, assertActive, recoverDeniedHistory });
+    const pending = typeof store.listPendingHistoryHydration === "function"
+      ? store.listPendingHistoryHydration() : [];
+    // A failed history request intentionally rejects. The lane must not
+    // issue another page or ACK beyond a durable hydration checkpoint.
+    await hydrateAuthorizedHistory(pending);
+  };
+  return { hydrateAuthorizedHistory, recoverPendingHistory };
+}
+
+module.exports = { createAuthorizedHistoryReader, queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration, hydratePendingConversation };

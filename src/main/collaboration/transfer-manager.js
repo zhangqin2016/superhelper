@@ -7,6 +7,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { encryptFile } = require("./encrypted-container");
 const { MAX_PART_BYTES } = require("./multipart-transport");
+// Parts in flight per upload: operator policy with a hard ceiling; memory stays at concurrency × part size.
+const PART_CONCURRENCY = (() => { const value = Number(process.env.LILY_COLLAB_UPLOAD_CONCURRENCY); return Number.isSafeInteger(value) && value >= 1 && value <= 8 ? value : 1; })();
 const { downloadTransfer, verifiedDownloadFile } = require("./download-transfer");
 const fail = (code, retryable = false) => Object.assign(new Error(code), { code, retryable });
 const ensure = (value) => { if (!value) throw fail("COLLAB_TRANSFER_RESPONSE_INVALID"); };
@@ -20,7 +22,10 @@ function view(item) {
     ...(c.content ? { originalName: c.content.originalName, totalBytes: c.content.ciphertextSize } : {}) };
 }
 async function checkedCiphertext(filename, content) {
-  const before = await fs.promises.lstat(filename);
+  const before = await fs.promises.lstat(filename).catch(error => {
+    if (error.code === "ENOENT") throw fail("COLLAB_TRANSFER_STAGING_MISSING");
+    throw error;
+  });
   if (!before.isFile() || before.nlink !== 1 || before.size !== content.ciphertextSize) throw fail("COLLAB_TRANSFER_INTEGRITY_FAILED");
   const file = await fs.promises.open(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
   try {
@@ -62,6 +67,11 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
     guard(item);
     return manifests.update({ id: item.id, expectedRevision: item.revision, checkpoint: { ...item.checkpoint, ...patch } });
   }
+  function current(item) {
+    guard(item);
+    const latest = manifests.read(item.id); guard(latest);
+    if (latest.revision !== item.revision) throw fail("COLLAB_TRANSFER_CONFLICT");
+  }
   function failureView(error, item) {
     const code = /^(COLLAB[A-Z_]*|LILYENC_[A-Z_]+)$/.test(error?.code || "") ? error.code : "COLLAB_TRANSFER_FAILED";
     const retryable = error?.retryable === true || ["COLLAB_RESPONSE_UNKNOWN", "COLLAB_NETWORK_UNAVAILABLE", "COLLAB_TRANSFER_AUTH_REQUIRED"].includes(code);
@@ -83,12 +93,29 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
         guard(item);
         ensure(status?.objectId === item.checkpoint.objectId && status.ciphertextSize === content.ciphertextSize && status.ciphertextSha256 === content.ciphertextSha256);
       } else {
-        file = await checkedCiphertext(path.join(manifests.directory(id), "ciphertext.lilyenc"), content); guard(item);
+        try { file = await checkedCiphertext(path.join(manifests.directory(id), "ciphertext.lilyenc"), content); }
+        catch (error) { if (error?.code !== "COLLAB_TRANSFER_STAGING_MISSING") throw error; current(item); }
+        guard(item);
         const result = await objectClient.init({ deviceId, clientCommandId: item.commandIds.init, conversationId: item.conversationId, purpose: item.purpose, ...content });
-        guard(item); ensure(safeId(result?.objectId) && result.state === "uploading" && result.upload);
+        guard(item);
+        if(result?.state==='expired'&&result.reason==='orphan-expired'){
+          ensure(safeId(result.objectId)&&result.ciphertextSize===content.ciphertextSize&&result.ciphertextSha256===content.ciphertextSha256);
+          item=save(item,{objectId:result.objectId,state:'failed'});throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
+        }
+        if (["verified", "bound"].includes(result?.state)) {
+          ensure(safeId(result.objectId) && result.ciphertextSize === content.ciphertextSize && result.ciphertextSha256 === content.ciphertextSha256);
+          return view(save(item, { objectId: result.objectId, state: result.state }));
+        }
+        ensure(safeId(result?.objectId) && result.state === "uploading" && result.upload);
         item = save(item, { objectId: result.objectId, state: "uploading" });
         status = { ...result, provider: { state: "missing" } };
+        if (!file) {
+          status = await objectClient.status({ deviceId, objectId: item.checkpoint.objectId, clientCommandId: `${item.commandIds.init}:status` });
+          current(item);
+          ensure(status?.objectId === item.checkpoint.objectId && status.ciphertextSize === content.ciphertextSize && status.ciphertextSha256 === content.ciphertextSha256);
+        }
       }
+      if(status.state==='expired'&&status.reason==='orphan-expired')throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
       if (["verified", "bound"].includes(status.state)) return view(save(item, { state: status.state }));
       ensure(status.state === "uploading" && status.upload && ["present", "missing"].includes(status.provider?.state));
       let etag = status.provider.etag;
@@ -113,6 +140,7 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
             const fresh = await objectClient.status({ deviceId, objectId: item.checkpoint.objectId, clientCommandId: `${item.commandIds.init}:status` });
             guard(item);
             ensure(fresh?.objectId === item.checkpoint.objectId && fresh.ciphertextSize === content.ciphertextSize && fresh.ciphertextSha256 === content.ciphertextSha256);
+            if(fresh.state==='expired'&&fresh.reason==='orphan-expired')throw fail('COLLAB_TRANSFER_ORPHAN_EXPIRED');
             if (["verified", "bound"].includes(fresh.state)) return view(save(item, { state: fresh.state }));
             ensure(fresh.state === "uploading" && ["present", "missing"].includes(fresh.provider?.state));
             if (fresh.provider.state === "present") etag = fresh.provider.etag;
@@ -133,20 +161,32 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
           }
           const completed = () => [...byNumber].sort((a, b) => a[0] - b[0]).map(([number, value]) => ({ number, etag: value }));
           item = save(item, { state: "uploading", completedParts: completed() });
-          for (let number = 1; number <= Math.ceil(content.ciphertextSize / MAX_PART_BYTES); number++) {
-            if (byNumber.has(number)) continue;
-            guard(item);
-            const position = (number - 1) * MAX_PART_BYTES;
-            const bytes = Buffer.alloc(Math.min(MAX_PART_BYTES, content.ciphertextSize - position));
-            for (let offset = 0; offset < bytes.length;) {
-              const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, position + offset);
-              if (!bytesRead) throw fail("COLLAB_TRANSFER_INTEGRITY_FAILED"); offset += bytesRead;
+          // Bounded concurrency: a few parts in flight, one 4 MiB buffer each,
+          // every completed etag journaled as it lands so a crash resumes from
+          // the provider's part list rather than from zero.
+          const pending = [];
+          for (let number = 1; number <= Math.ceil(content.ciphertextSize / MAX_PART_BYTES); number++) if (!byNumber.has(number)) pending.push(number);
+          let failure = null;
+          const uploadNext = async () => {
+            while (pending.length && !failure) {
+              const number = pending.shift();
+              try {
+                guard(item);
+                const position = (number - 1) * MAX_PART_BYTES;
+                const bytes = Buffer.alloc(Math.min(MAX_PART_BYTES, content.ciphertextSize - position));
+                for (let offset = 0; offset < bytes.length;) {
+                  const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, position + offset);
+                  if (!bytesRead) throw fail("COLLAB_TRANSFER_INTEGRITY_FAILED"); offset += bytesRead;
+                }
+                guard(item);
+                const result = await multipart.uploadPart({ ticket, uploadId, partNumber: number, bytes }); guard(item);
+                ensure(result?.partNumber === number && safeId(result.etag)); byNumber.set(number, result.etag);
+                item = save(item, { completedParts: completed() });
+              } catch (error) { failure ||= error; }
             }
-            guard(item);
-            const result = await multipart.uploadPart({ ticket, uploadId, partNumber: number, bytes }); guard(item);
-            ensure(result?.partNumber === number && safeId(result.etag)); byNumber.set(number, result.etag);
-            item = save(item, { completedParts: completed() });
-          }
+          };
+          await Promise.all(Array.from({ length: Math.max(1, Math.min(PART_CONCURRENCY, pending.length)) }, uploadNext));
+          if (failure) throw failure;
           const result = await multipart.complete({ ticket, uploadId, parts: completed().map(({ number, etag: value }) => ({ partNumber: number, etag: value })) });
           guard(item); etag = result?.etag;
         }
@@ -157,6 +197,11 @@ function createTransferManager({ manifests, objectClient, multipart, deviceId, a
       guard(item); ensure(verified?.objectId === item.checkpoint.objectId && verified.state === "verified");
       return view(save(item, { state: "verified" }));
     } catch (error) {
+      if (error?.code === "COLLAB_TRANSFER_STAGING_MISSING") {
+        try {
+          current(item);
+        } catch (fenced) { return failureView(fenced, item); }
+      }
       return failureView(error, item);
     } finally { await file?.close(); }
   }

@@ -112,6 +112,47 @@ function createCollaborationClient({ accountManager, signDeviceRequest, request,
       const response = await invoke({ path: "/api/collaboration/v1/tasks/list", body: { deviceId, conversationId }, deviceId });
       return response?.result;
     },
+    async listTaskHistory({ deviceId, conversationId, cursor }) {
+      const response = await invoke({ path: "/api/collaboration/v1/tasks/history", body: {deviceId,conversationId,...(cursor?{cursor}:{})}, deviceId });
+      return response?.result;
+    },
+    async missingTaskGitObjects({deviceId,taskId,deliveryId,haveCommits=[]}) {
+      const response = await invoke({path:"/api/collaboration/v1/tasks/git/missing",
+        body:{deviceId,taskId,...(deliveryId?{deliveryId}:{}),haveCommits},deviceId});
+      return response?.result;
+    },
+    async getIntegrationTarget({deviceId,workspaceId,taskId,deliveryId}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/get',body:{deviceId,workspaceId,taskId,deliveryId},deviceId});
+      return response?.result;
+    },
+    async getIntegrationPublication({deviceId,workspaceId,publicationId}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/publication',body:{deviceId,workspaceId,...(publicationId?{publicationId}:{})},deviceId});
+      return response?.result;
+    },
+    async getIntegrationBaseline({deviceId,workspaceId}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/baseline',body:{deviceId,workspaceId},deviceId});
+      return response?.result;
+    },
+    async resolveIntegrationBaseline({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,afterTaskId}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/baseline/resolve',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,...(afterTaskId?{afterTaskId}:{})},deviceId});
+      return response?.result;
+    },
+    async publishIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation,publicationId,objectId,baselineCommit,deliveryCommit,tree,git,validation}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/publish',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation,publicationId,objectId,baselineCommit,deliveryCommit,tree,git,validation},deviceId});
+      return response?.result;
+    },
+    async claimIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/claim',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision},deviceId});
+      return response?.result;
+    },
+    async renewIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/renew',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation},deviceId});
+      return response?.result;
+    },
+    async releaseIntegration({deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation}) {
+      const response=await invoke({path:'/api/collaboration/v1/tasks/integration/release',body:{deviceId,clientCommandId,workspaceId,taskId,deliveryId,expectedHead,expectedRevision,leaseId,generation},deviceId});
+      return response?.result;
+    },
     async getConversationProjection({ deviceId, conversationId }) {
       const response = await invoke({ path: "/api/collaboration/v1/conversations/get", body: { deviceId, conversationId }, deviceId });
       return response?.result;

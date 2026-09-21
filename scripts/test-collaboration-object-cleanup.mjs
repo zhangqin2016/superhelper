@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {createHmac} from 'node:crypto';
+import {createPrivateQiniuObjectStore} from '../server/src/services/collaboration/object-store.js';
+import {startObjectCleanup} from '../server/src/services/collaboration/object-cleanup.js';
+import {createConfiguredObjectCleanup} from '../server/src/services/collaboration/object-config.js';
+const config={accessKey:'test-ak',secretKey:'test-sk',bucket:'private-test',privateBucket:true,privateBaseUrl:'https://private.invalid',uploadUrl:'https://upload.invalid'};
+test('private object deletion authenticates the exact dedicated bucket/key and accepts only success or proven absence',async()=>{
+ const calls=[],objectKey='collaboration/'+'a'.repeat(64),now=()=>Date.parse('2026-09-14T00:00:00Z');let status=200;
+ const store=createPrivateQiniuObjectStore({config,now,fetchImpl:async(url,options)=>{calls.push({url,options});return {status,body:{cancel:async()=>{}}};}});
+ assert.equal(typeof store.delete,'function');await store.delete({objectKey});
+ const {url,options}=calls[0],target=new URL(url);assert.equal(target.origin,'https://rs.qiniuapi.com');assert.equal(Buffer.from(target.pathname.slice(8),'base64url').toString(),config.bucket+':'+objectKey);
+ assert.equal(options.method,'POST');assert.equal(options.redirect,'error');assert.equal(options.headers['X-Qiniu-Date'],'20260914T000000Z');
+ const signing=`POST ${target.pathname}\nHost: ${target.host}\nContent-Type: application/x-www-form-urlencoded\nX-Qiniu-Date: 20260914T000000Z\n\n`;
+ const signature=createHmac('sha1',config.secretKey).update(signing).digest('base64').replaceAll('+','-').replaceAll('/','_');assert.equal(options.headers.Authorization,`Qiniu ${config.accessKey}:${signature}`);
+ status=612;await store.delete({objectKey});
+ for(status of [401,404,429,500,599])await assert.rejects(store.delete({objectKey}),{code:'COLLAB_OBJECT_STORE_UNAVAILABLE'});
+ const count=calls.length;await assert.rejects(store.delete({objectKey:'public/other'}));assert.equal(calls.length,count);
+});
+test('cleanup is opt-in, bounded, non-overlapping and drains its active transaction on shutdown',async()=>{
+ assert.equal(createConfiguredObjectCleanup({}),null);
+ assert.throws(()=>createConfiguredObjectCleanup({config:{collaborationObjectCleanupEnabled:true}}),{code:'COLLAB_OBJECT_STORE_UNAVAILABLE'});
+ let release,deleted=0,retired=0,cancelled=false;const gate=new Promise(resolve=>{release=resolve;});
+ const worker=startObjectCleanup({cleanup:{async retireExpired(){retired++;await gate;},async deleteNext(){deleted++;return {state:'completed'};}},schedule:()=>({unref(){}}),cancel:()=>{cancelled=true;}});
+ const first=worker.tick();assert.equal(worker.tick(),first);assert.equal(retired,1);release();await first;assert.equal(deleted,8);
+ await worker.stop();assert.equal(cancelled,true);await worker.tick();assert.equal(retired,1);
+ let finish,closed=false,dispatched=false;
+ const active=startObjectCleanup({cleanup:{retireExpired:()=>new Promise(resolve=>{finish=resolve;}),async deleteNext(){dispatched=true;}},schedule:()=>({}),cancel(){}});
+ active.tick();const closing=active.stop().then(()=>{closed=true;});await Promise.resolve();assert.equal(closed,false);finish();await closing;assert.equal(dispatched,false);
+});

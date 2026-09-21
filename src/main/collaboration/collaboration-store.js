@@ -7,6 +7,8 @@ const { hydrateAuthorizedHistory, backfillMessageCommandIds, adoptOptimisticIden
 const { queueHistoryTarget, listHistoryTargets, capturePendingHistoryTargets, restorePendingHistoryTargets, completeHistoryHydration } = require("./history-hydration");
 const access = require("./access-revocation");
 const { queueConversationHydration, queueAuthorizedRefresh } = require("./conversation-hydration");
+const { queueTaskHydration } = require("./task-hydration");
+const { seedTaskHistory } = require("./task-history");
 const directory = require("./directory-projection");
 const { validateAttachmentPayload, optimisticAttachmentProjection, attachmentProjectionFromOutboxIntent } = require("./message-attachment-payload");
 const mutationOutbox = require("./message-mutation-outbox");
@@ -303,6 +305,7 @@ class CollaborationStore {
         const inserted = this.db.run(`INSERT OR IGNORE INTO applied_events (account_id, event_id, applied_at) VALUES (?, ?, ?)`, this.accountId, id, this.now());
         if (inserted.changes === 0) continue;
         projectEvent(row);
+        queueTaskHydration(this, row);
         activity.projectMessageActivity(this, row);
         queueConversationHydration(this, row);
         queueHistoryTarget(this, row);
@@ -403,6 +406,7 @@ class CollaborationStore {
       }
       this.db.run(`DELETE FROM reply_source_masks WHERE account_id = ? AND conversation_id NOT IN (SELECT id FROM conversations WHERE account_id = ?)`, this.accountId, this.accountId);
       restorePendingHistoryTargets(this, pendingHistoryTargets, rows.map((row) => row.id));
+      seedTaskHistory(this,{reset:true});
       this.db.run(
         `INSERT INTO sync_state (account_id, cursor, watermark, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(account_id) DO UPDATE SET cursor = excluded.cursor, watermark = excluded.watermark, updated_at = excluded.updated_at`,
