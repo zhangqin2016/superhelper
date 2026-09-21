@@ -64,7 +64,7 @@ check("中英文的自我宣告都认，长句不认", () => {
 check("闸门的前置条件：只在干净结束、做过事、且本轮没用过时才进", () => {
   const base = () => ({
     _server: {}, _pendingPermissions: new Set(), _pendingQuestions: new Set(),
-    _turnGates: createTurnGateState(), _toolCalls: new Set(["bash"]),
+    _turnGates: createTurnGateState(), _sawToolActivity: true,
     sessionId: "s1", collectedOutput: "", _armResponseTimer() {}, _armProgressNoticeTimer() {},
   });
   const deps = () => { const sent = []; return { sent, claimContinuation, nudgePlatformPrompt: (_s, input) => sent.push(input), kind: "self_check", log: { warn() {} } }; };
@@ -81,7 +81,7 @@ check("闸门的前置条件：只在干净结束、做过事、且本轮没用�
     ["引擎已停", (s) => { s._server = null; return s; }, payload],
     ["等待用户许可", (s) => { s._pendingPermissions.add("x"); return s; }, payload],
     ["本轮已用过", (s) => { s._turnGates.announcedGated = true; return s; }, payload],
-    ["没做过事", (s) => { s._toolCalls = new Set(); return s; }, payload],
+    ["没做过事", (s) => { s._sawToolActivity = false; return s; }, payload],
   ]) {
     const d = deps();
     assert.equal(policy.continueAnnouncedWork(mutate(base()), load, d), false, name);
@@ -92,7 +92,7 @@ check("闸门的前置条件：只在干净结束、做过事、且本轮没用�
 check("每回合至多一次，并且共享全局重入预算", () => {
   const session = {
     _server: {}, _pendingPermissions: new Set(), _pendingQuestions: new Set(),
-    _turnGates: createTurnGateState(), _toolCalls: new Set(["bash"]),
+    _turnGates: createTurnGateState(), _sawToolActivity: true,
     sessionId: "s2", collectedOutput: "", _armResponseTimer() {}, _armProgressNoticeTimer() {},
   };
   const sent = [];
@@ -105,13 +105,27 @@ check("每回合至多一次，并且共享全局重入预算", () => {
   assert.equal(sent.length, 1);
 });
 
+// 上一版这道闸门读的是 `_toolCalls` 和 `todo.executed`——两个字段在真实会话上
+// 根本不存在，单测却因为伪造了它们而全绿：闸门在生产里永远不会触发。所以这里
+// 直接对着真实源码断言字段存在。
+check("闸门依赖的字段必须真实存在于会话实现里，而不只是存在于本测试的假对象上", () => {
+  const fs = require("node:fs");
+  const session = fs.readFileSync(new URL("../src/main/opencode-agent-session.js", import.meta.url), "utf8");
+  assert.match(session, /this\._sawToolActivity = true;/, "_sawToolActivity 必须由会话真实置位");
+  assert.match(session, /_continueAnnouncedWorkBeforeCompletion\(payload\)\) return;/, "闸门必须挂在完成路径上");
+  const policy = fs.readFileSync(new URL("../src/main/announced-continuation-policy.js", import.meta.url), "utf8");
+  for (const field of [...policy.matchAll(/session\?\._([A-Za-z]+)/g)].map((m) => m[1])) {
+    assert.ok(session.includes(`this._${field}`), `策略读取的 _${field} 在会话里不存在`);
+  }
+});
+
 check("关闭开关后完全不生效", () => {
   const before = process.env.LILY_ANNOUNCED_CONTINUATION_GATE;
   process.env.LILY_ANNOUNCED_CONTINUATION_GATE = "0";
   try {
     const session = {
       _server: {}, _pendingPermissions: new Set(), _pendingQuestions: new Set(),
-      _turnGates: createTurnGateState(), _toolCalls: new Set(["bash"]),
+      _turnGates: createTurnGateState(), _sawToolActivity: true,
       sessionId: "s3", collectedOutput: "", _armResponseTimer() {}, _armProgressNoticeTimer() {},
     };
     const sent = [];

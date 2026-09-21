@@ -148,11 +148,16 @@ function continueAnnouncedWork(session, payload, deps = {}) {
   return true;
 }
 
-/** Did the turn run tools, or record execution progress? */
+/**
+ * Did the turn run tools?
+ *
+ * `_sawToolActivity` is the session's own flag, set from the same tool.* event
+ * stream the required-tool gate and execution progress read, and cleared with
+ * the rest of the turn state. An announcement only means abandoned work if work
+ * was happening.
+ */
 function didWork(session) {
-  if (session?._turnGates?.todo?.executed) return true;
-  const calls = session?._toolCalls;
-  return Boolean(calls?.size || calls?.length);
+  return session?._sawToolActivity === true;
 }
 
 module.exports = { buildAnnouncedContinuationPrompt, closingSentences, continueAnnouncedWork, detectAnnouncedContinuation };
