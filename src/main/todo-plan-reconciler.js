@@ -115,11 +115,12 @@ function shouldReconcileWithModel(taskRun) {
 }
 
 /**
- * @param {{taskRun: object, post?: Function, resolveConnection?: Function}} input
+ * @param {{taskRun: object, post?: Function, resolveConnection?: Function, modelRoute?: object|null}} input
  *   `post`/`resolveConnection` are injectable for tests; defaults come from the
  *   evidence judge so the reconciler uses the SAME connection discipline.
+ *   `modelRoute` is the turn's own route trace, preferred over the active preset.
  */
-async function reconcilePlanWithModel({ taskRun, post, resolveConnection } = {}) {
+async function reconcilePlanWithModel({ taskRun, post, resolveConnection, modelRoute = null } = {}) {
   const gate = shouldReconcileWithModel(taskRun);
   if (!gate.ok) return { applied: 0, reason: gate.reason };
   let judge;
@@ -128,9 +129,10 @@ async function reconcilePlanWithModel({ taskRun, post, resolveConnection } = {})
   } catch (error) {
     return { applied: 0, reason: `judge_unavailable:${error?.message || error}` };
   }
-  const resolve = resolveConnection || judge.resolveJudgeConnectionDetailed;
   const send = post || judge.postJudgeChat;
-  const { connection, reason } = resolve() || {};
+  // Reconcile on the connection the turn ran on, falling back to the active
+  // preset — the shared audit rule, not a second opinion about connections.
+  const { connection, reason } = judge.resolveAuditConnection({ modelRoute, resolve: resolveConnection });
   if (!connection) return { applied: 0, reason: reason || "no_connection" };
   const diagnostics = { reason: "" };
   const raw = await send({ connection, prompt: buildPrompt(taskRun), timeoutMs: timeoutMs(), diagnostics });

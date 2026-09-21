@@ -57,7 +57,6 @@ const {
 } = require("./opencode-todo-completion-policy");
 const { INTERNAL_PROMPT_KINDS, nudgePlatformPrompt, sendPlatformPrompt } = require("./platform-prompt");
 const { claimContinuation, createTurnGateState } = require("./turn-continuation-budget");
-const { continueAnnouncedWork } = require("./announced-continuation-policy");
 const { earliestPendingRequestAt } = require("./turn-user-wait");
 const requiredToolCompletion = require("./required-tool-completion-gate");
 const { rememberExecutionProgress, executionProgressKeys } = require("./task-execution-progress");
@@ -1495,7 +1494,6 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._turnSettled || pauseForPendingUserInput(this, payload)) return;
     if (requiredToolCompletion.continueBeforeCompletion(this, payload)) return;
     if (this._continueUnfinishedTodosBeforeCompletion(payload)) return;
-    if (this._continueAnnouncedWorkBeforeCompletion(payload)) return;
     // Pillar 3-B completion gate: on a clean turn end, if the assistant claimed a
     // file deliverable that is actually missing/empty, inject ONE corrective
     // follow-up so the turn doesn't settle on a broken/hallucinated result. Fires
@@ -1526,11 +1524,6 @@ class OpencodeAgentSession extends EventEmitter {
       }
     }
     this._settleTurn(payload);
-  }
-
-  /** @see announced-continuation-policy.js — the model's own closing sentence as a signal. */
-  _continueAnnouncedWorkBeforeCompletion(payload) {
-    return continueAnnouncedWork(this, payload, { claimContinuation, nudgePlatformPrompt, kind: INTERNAL_PROMPT_KINDS.SELF_CHECK, log });
   }
 
   _continueUnfinishedTodosBeforeCompletion(payload) {

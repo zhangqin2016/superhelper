@@ -92,6 +92,35 @@ function resolveJudgeConnectionDetailed(modelRoute = null) {
   }
 }
 
+/**
+ * The connection an end-of-turn AUDIT should run on.
+ *
+ * Preference: the model the work itself ran on (`state.turnModelRoute`), so the
+ * audit stays inside the same entitlement, gateway contract and request shape
+ * as the turn it is judging. Fallback: the active preset, which is what every
+ * audit used before this existed — because an audit that cannot run is worse
+ * than an audit run on a substitute judge, and a user who switched or unpinned
+ * a model mid-session must not silently lose the audit.
+ *
+ * A model that just ran the task with tools is not weaker than an audit needs,
+ * and when it answers off-contract the audit reports ITSELF as unavailable
+ * rather than pretending to a verdict — so preferring it cannot quietly lower
+ * the bar.
+ *
+ * `routed` tells the caller which of the two it got, so the distinction stays
+ * observable instead of being inferred.
+ *
+ * @param {{ modelRoute?: object|null, resolve?: Function }} [input]
+ * @returns {{ connection: object|null, reason: string, routed: boolean }}
+ */
+function resolveAuditConnection({ modelRoute = null, resolve = resolveJudgeConnectionDetailed } = {}) {
+  const routed = modelRoute ? (resolve(modelRoute) || {}) : null;
+  if (routed?.connection) return { connection: routed.connection, reason: "", routed: true };
+  const baseline = resolve(null) || {};
+  if (baseline.connection) return { connection: baseline.connection, reason: "", routed: false };
+  return { connection: null, reason: routed?.reason || baseline.reason || "no_connection", routed: false };
+}
+
 function resolveJudgeConnection() {
   return resolveJudgeConnectionDetailed().connection;
 }
@@ -282,6 +311,11 @@ async function judgeTurnSemantics({
   timeoutMs = Number(process.env.LILY_EVIDENCE_JUDGE_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
   transport = postJudgeChat,
   diagnostics,
+  // The route trace of the turn being judged. The finalizer has always handed
+  // it down; until 2026-09-22 this function dropped it and resolved the active
+  // preset instead, so a mid-session model switch audited on the wrong
+  // connection (or on none).
+  modelRoute = null,
 } = {}) {
   const fail = (reason) => {
     if (diagnostics) diagnostics.reason = diagnostics.reason || reason;
@@ -300,7 +334,7 @@ async function judgeTurnSemantics({
   if (!judgedClaims.length && !judgedUrls.length) return fail("no_judgable_input");
   let connection = null;
   if (transport === postJudgeChat) {
-    const resolved = resolveJudgeConnectionDetailed();
+    const resolved = resolveAuditConnection({ modelRoute });
     connection = resolved.connection;
     if (!connection) return fail(resolved.reason || "connection_unavailable");
   }
@@ -331,4 +365,5 @@ module.exports = {
   postJudgeChat,
   resolveJudgeConnection,
   resolveJudgeConnectionDetailed,
+  resolveAuditConnection,
 };

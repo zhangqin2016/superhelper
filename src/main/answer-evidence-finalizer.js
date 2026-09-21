@@ -528,7 +528,7 @@ async function evaluateAnswerEvidenceWithJudge(params = {}, { judge, pendingDocu
     if (!claimParams.length && !urls.length) return result;
     const judgeFn = judge || require("./evidence-entailment-judge").judgeTurnSemantics;
     const judgeDiag = {};
-    const verdict = await judgeFn({ claims: claimParams, urls, userText: String(params_.userText || ""), diagnostics: judgeDiag });
+    const verdict = await judgeFn({ claims: claimParams, urls, userText: String(params_.userText || ""), diagnostics: judgeDiag, modelRoute: params_.modelRoute || null });
     // Judge unavailable/failed: the deterministic delivery encodes the fail boundary
     // (bounded fail-open ordinary, zero-content high-stakes). Record WHY in the gate
     // meta so field diagnosis reads messages.db (2026-07-20 silently-dead-judge lesson).

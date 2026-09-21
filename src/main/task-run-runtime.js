@@ -272,7 +272,7 @@ function createTaskRunRuntime(options = {}) {
         if (changed) emitPlanUpdated(sessionId, state);
         return state.taskRun;
       }
-      return reconciler.reconcilePlanWithModel({ taskRun: state.taskRun })
+      return reconciler.reconcilePlanWithModel({ taskRun: state.taskRun, modelRoute: state.turnModelRoute || null })
         .then((result) => {
           if (changed || result?.applied) emitPlanUpdated(sessionId, state);
           return state.taskRun;

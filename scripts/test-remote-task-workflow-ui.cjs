@@ -20,7 +20,16 @@ app.whenReady().then(async()=>{
  const hiddenDetail=document.createElement('section');hiddenDetail.hidden=true;hiddenDetail.id='collaborationDetail';hiddenDetail.innerHTML='<header class="collaboration-conversation-header"></header>';shell.append(hiddenDetail);
  const inbox=document.createElement('section');inbox.id='collaborationInboxColumn';shell.append(inbox);
  const root=document.createElement('section'),header=document.createElement('header');root.className='collaboration-conversation';root.style='display:flex;height:100%;position:relative';header.className='collaboration-conversation-header';shell.append(root);root.append(header);
- const check=(x,s)=>{if(!x)throw Error(s)}, settle=async()=>{for(let i=0;i<12;i++)await new Promise(r=>setTimeout(r,0));};
+ const check=(x,s)=>{if(!x)throw Error(s)};
+ // Settling waits for the fixture to go QUIET, not for a fixed number of ticks:
+ // every api call crosses an IPC boundary, and on a loaded machine one round
+ // trip outlasts any tick count, which is how this suite produced a failure
+ // that no standalone run could reproduce (2026-09-22).
+ let inFlight=0; const slow=${Number(process.env.REMOTE_TASK_UI_TEST_LATENCY_MS) || 0};
+ const track=fn=>async(...args)=>{inFlight++;try{if(slow)await new Promise(r=>setTimeout(r,slow));return await fn(...args);}finally{inFlight--;}};
+ const settle=async()=>{for(let i=0;i<400;i++){await new Promise(r=>setTimeout(r,0));if(!inFlight&&i>=12)return;}};
+ // An assertion about state that FOLLOWS async work waits for that state.
+ const until=async(fn,s)=>{for(let i=0;i<400;i++){if(fn())return;await new Promise(r=>setTimeout(r,5));}check(false,s);};
  const click=async action=>{let b;for(let i=0;i<200;i++){b=shell.querySelector('[data-action="'+action+'"]');if(b&&!b.disabled)break;await new Promise(r=>setTimeout(r,5));}check(b&&!b.disabled,'missing or disabled '+action+': '+shell.textContent);b.click();await settle();};
  let context={enabled:true,conversationId:'chat',userId:'owner'},commands=[],drafts=[],applications=[],localRecoveries=[],hold,conflict=false,cancelPrepare=true,sendFailed=true,deliveryError='',writerBusy=true,undoMode='',integrationFixture={stage:'published',deliveryId:'v1',canRetry:false,localStage:'waiting'},inventoryFixture={files:[{path:'assets/large.bin',sizeBytes:4096,state:'remote'},{path:'notes.txt',sizeBytes:12,state:'local'}],truncated:false,counts:{total:3,local:2,remote:1,remoteBytes:4096}};
  let task={id:'task',conversationId:'chat',requesterUserId:'owner',assigneeUserId:'helper',title:'Budget',objective:'Review',acceptanceCriteria:'Correct',state:'accepted',revision:4,acceptedDeliveryId:'v1',currentDeliveryId:'v1',deliveries:[{id:'v1',number:1,submittedAt:1000}],updatedAt:1000};
@@ -39,6 +48,7 @@ app.whenReady().then(async()=>{
  if(c.operation==='open'){await new Promise(r=>hold=r);return{ok:true,sessionId:'session'};}return{ok:false};};
  const api={listTasks:async()=>({ok:true,tasks:[task]}),getTask:async()=>({ok:true,task}),getTaskCommands:async()=>({ok:true,commands:[]}),getConversationDetails:async()=>({ok:true,members:[{userId:'owner',displayName:'Me'},{userId:'helper',displayName:'Helper'}]}),taskWorkflow:async c=>{const result=await window.workflowFixture.project(c,await workflow(c));check(!('rootPath' in result),'projection removes native paths');return result;}};
  let focusedSessions=[];window.assistantClient={focusSession:async id=>{focusedSessions.push(id);return{ok:true};}};
+ for(const key of Object.keys(api)) api[key]=track(api[key]);
  const ui=initRemoteTasks({root,header,recoveryHeader:inbox,recoveryRoot:shell,api:()=>api,getContext:()=>context});
  check(!commands.some(c=>c.operation!=='recoveries'),'closed reads only local recovery journals');await click('task-entry');await click('task-create');
  check(!root.querySelector('select option[value="owner"]'),'self is not a recipient');
@@ -47,7 +57,7 @@ app.whenReady().then(async()=>{
  check(root.querySelectorAll('.remote-task-files li').length===frozen.files.length,'all shared files are inspectable');check(root.textContent.includes('excluded from sharing'),'excluded items are distinguished from shared files');
  for(const [name,value] of Object.entries({title:'Budget',objective:'Review',acceptanceCriteria:'Correct'})){const field=root.querySelector('[name="'+name+'"]');field.value=value;field.dispatchEvent(new Event('input'));}
  await setLocale('zh-CN',{persist:false});root.querySelector('.remote-task-files li span').textContent='年度预算核查.xlsx';root.querySelector('[name="title"]').value='年度预算核查';root.querySelector('[name="objective"]').value='核对各部门预算数据，标明差异并附上复核记录。';root.querySelector('[name="acceptanceCriteria"]').value='分项金额与总额一致；所有差异均附有说明。';root.querySelector('[name="assigneeUserId"] option').textContent='林悦';root.querySelector('.remote-task-section .remote-task-notice').textContent='请确认材料中不含不应共享的敏感信息。';await window.workflowFixture.capture('create');await setLocale('en',{persist:false});
- await click('task-send');check(!root.querySelector('[name="title"]').disabled,'definite rejection permits correcting fields');await click('task-back');await click('task-resume');check(!root.querySelector('[name="title"]').disabled,'failed restored draft remains editable');
+ await click('task-send');await until(()=>{const f=root.querySelector('[name="title"]');return Boolean(f)&&!f.disabled;},'definite rejection permits correcting fields');await click('task-back');await click('task-resume');check(!root.querySelector('[name="title"]').disabled,'failed restored draft remains editable');
  await click('task-send');check(root.querySelector('[name="title"]').disabled,'unknown send freezes original intent');
  await click('task-send');const sends=commands.filter(c=>c.operation==='send');check(sends.length===3&&JSON.stringify(sends[1])===JSON.stringify(sends[2]),'retry uses identical immutable draft and fields');
  await click('task-back');await click('task-resume');check(root.querySelector('[name="title"]').value==='Budget','draft restored');await click('task-back');await click('task-open');check(root.textContent.includes('Waiting for foreground work'),'detail separates shared publication from local application');await click('task-preview');
