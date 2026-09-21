@@ -9,7 +9,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import os from "node:os";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -120,6 +121,51 @@ if (fs.existsSync(imgRoot)) {
   fail("缺少 app.asar.unpacked/node_modules/@img，sharp 原生包未打入 Mac 包");
 }
 
+// 前台包装进程：POSIX 上引擎不再由主进程直接 spawn，而是先起
+// src/main/collaboration/foreground-launcher.js（asar 内），由它登记自己的进程组
+// 再拉起引擎。这一层只在打包后才可能失效——脚本在 asar 里、要用包内 Electron 以
+// ELECTRON_RUN_AS_NODE 执行、并且依赖包内 Node 的 node:sqlite。开发树跑得通不代表
+// 安装包跑得通，而它失效的后果是引擎起不来，也就是整个对话不可用。
+// Windows 不走这条路径（无进程组语义，仍是普通 spawn），故不在此校验。
+{
+  const electronBin = fs
+    .readdirSync(path.join(appPath, "Contents", "MacOS"))
+    .map((name) => path.join(appPath, "Contents", "MacOS", name))
+    .find((file) => fs.statSync(file).isFile());
+  if (!electronBin) fail("缺少 Contents/MacOS 可执行文件，无法验证前台包装脚本");
+  const launcher = path.join(resources, "app.asar", "src", "main", "collaboration", "foreground-launcher.js");
+  // 真实路径：macOS 的 /var/folders 是 /private/var 的软链接，而协调文件会拒绝
+  // realpath 与自身不一致的目录（UNSAFE_PATH）。
+  const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lily-foreground-verify-")));
+  const marker = "lily-foreground-ok";
+  try {
+    const result = spawnSync(electronBin, [launcher], {
+      // 与生产完全一致：detached 让它成为进程组组长，命令经 stdin 传入而非命令行。
+      detached: true,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      input: JSON.stringify({
+        command: "/bin/sh",
+        args: ["-c", `printf %s ${marker}`],
+        cwd: scratch,
+        env: { PATH: process.env.PATH || "/usr/bin:/bin" },
+        shell: false,
+        filePath: path.join(scratch, "writer.sqlite"),
+      }),
+      encoding: "utf8",
+      timeout: 60_000,
+    });
+    if (result.error) fail(`前台包装脚本无法在安装包内启动：${result.error.message}`);
+    if (result.status !== 0) {
+      fail(`前台包装脚本在安装包内退出码 ${result.status}：${String(result.stderr || "").trim().slice(0, 200)}`);
+    }
+    if (!String(result.stdout || "").includes(marker)) {
+      fail("前台包装脚本在安装包内没有拉起被包装的命令（引擎将无法启动）");
+    }
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 try {
   execFileSync(
     process.execPath,
@@ -130,4 +176,4 @@ try {
   fail("Mac 安装包 Resources 内含有 __MACOSX / .DS_Store 等元数据");
 }
 
-console.log(`[verify-mac-pack] ok — base Python runtime present — ${path.relative(ROOT, appPath)}`);
+console.log(`[verify-mac-pack] ok — base Python runtime present, foreground launcher runs from the asar — ${path.relative(ROOT, appPath)}`);
