@@ -8,7 +8,9 @@ const tool=`const fs=require('node:fs');process.on('SIGTERM',()=>{});setInterval
 fs.writeFileSync(engine,`#!${process.execPath}\nconst fs=require('node:fs');require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(tool)}],{stdio:'ignore'});setTimeout(()=>process.exit(2),5000);setInterval(()=>{if(fs.existsSync(${JSON.stringify(marker)}))process.exit(0);},20);\n`,{mode:0o700});
 const server=new OpencodeSharedServer({serverCommand:engine,cwd:root,dataDir:':memory:',writerLockPath:path.join(root,'writer.sqlite')});
 try{
- await assert.rejects(server.ensureStarted({timeoutMs:4000}),/exited before listening/);
+ // Use the production startup deadline: wrapper/engine/tool startup may exceed
+ // four seconds under packaging load; this test checks exit ownership, not speed.
+ await assert.rejects(server.ensureStarted(),/exited before listening/);
  assert.equal(server.process,null,'leader exit cleared the live process field');
  const receipt=server.terminate();assert.equal(receipt,server.terminate(),'repeated termination observes the same pending shutdown');
  let resolved=false;receipt.then(()=>resolved=true);
